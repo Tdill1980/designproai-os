@@ -1,0 +1,57 @@
+name: designproai
+services:
+  runtime-1: &runtime
+    image: "designproai-runtime:${DESIGNPRO_SHA:?missing DESIGNPRO_SHA}"
+    restart: unless-stopped
+    env_file: ["/opt/designproai/shared/runtime.env"]
+    environment:
+      PORT: "3001"
+      GIT_SHA: "${DESIGNPRO_SHA}"
+      DESIGNPRO_WORKER_ID: "designpro-worker-1"
+      DESIGNPRO_PANEL_POLLER_ENABLED: "false"
+      VECTORIZE_IT_URL: "http://host.docker.internal:3200/vectorize"
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["127.0.0.1:3001:3001"]
+    networks: [designpro_internal]
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 45s
+    volumes: ["/opt/designproai/shared/artifacts:/app/artifacts"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+  runtime-2:
+    <<: *runtime
+    environment:
+      PORT: "3001"
+      GIT_SHA: "${DESIGNPRO_SHA}"
+      DESIGNPRO_WORKER_ID: "designpro-worker-2"
+      DESIGNPRO_PANEL_POLLER_ENABLED: "false"
+      VECTORIZE_IT_URL: "http://host.docker.internal:3200/vectorize"
+    ports: ["127.0.0.1:3002:3001"]
+  gateway:
+    image: "designproai-gateway:${DESIGNPRO_SHA}"
+    restart: unless-stopped
+    env_file: ["/opt/designproai/shared/gateway.env"]
+    environment:
+      NODE_ENV: "production"
+      PORT: "8787"
+      DESIGNPRO_RELEASE_SHA: "${DESIGNPRO_SHA}"
+    ports: ["127.0.0.1:8787:8787"]
+    networks: [designpro_internal]
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+networks:
+  designpro_internal:
+    name: designproai_internal
+    driver: bridge

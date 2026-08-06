@@ -1,0 +1,18 @@
+[Unit]
+Description=DesignProAI standalone runtime
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/designproai/current/deploy
+EnvironmentFile=/opt/designproai/current/deploy/release.env
+ExecStart=/usr/bin/docker compose -f compose.yaml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f compose.yaml stop gateway runtime-1 runtime-2
+TimeoutStartSec=180
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

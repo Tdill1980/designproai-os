@@ -1,0 +1,36 @@
+os.designproai.com {
+  encode zstd gzip
+
+  handle_path /worker/* {
+    reverse_proxy 127.0.0.1:3001 127.0.0.1:3002 {
+      lb_policy round_robin
+      health_uri /health
+      health_status 200
+    }
+  }
+
+  handle /api/* {
+    reverse_proxy 127.0.0.1:8787
+  }
+
+  handle /gateway-healthz {
+    rewrite * /healthz
+    reverse_proxy 127.0.0.1:8787
+  }
+
+  handle {
+    root * /opt/designproai/current/web/dist
+    try_files {path} /index.html
+    file_server
+  }
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+  log {
+    output file /var/log/caddy/designpro-access.log
+  }
+}

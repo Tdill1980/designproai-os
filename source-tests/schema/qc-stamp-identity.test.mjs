@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname,join } from "node:path";
+import { fileURLToPath } from "node:url";
+const root=join(dirname(fileURLToPath(import.meta.url)),"../migrations");
+const qc=readFileSync(join(root,"20260806180200_designpro_qc_delivery.sql"),"utf8").toLowerCase();
+const flow=readFileSync(join(root,"20260806180100_designpro_workflow_rpcs.sql"),"utf8").toLowerCase();
+assert.ok(qc.includes("raw_user_meta_data->>'full_name'"));
+assert.ok(qc.includes("raw_user_meta_data->>'first_name'"));
+assert.ok(qc.includes("raw_user_meta_data->>'last_name'"));
+assert.ok(qc.includes("nullif(btrim(email),'')"));
+assert.ok(qc.includes("'verifiedby',v_verified_by"));
+assert.ok(qc.includes("'actor',p_actor,'verifiedby',v_verified_by,'approvalref'"),"QC receipt hash must bind server-derived display identity");
+assert.ok(flow.includes("q.receipt->>'verifiedby'=p_receipt->>'verifiedby'"),"stamp must use exact server-derived QC identity");
+console.log("server-derived final-QC stamp identity contract passed");

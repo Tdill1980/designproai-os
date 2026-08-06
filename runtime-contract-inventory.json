@@ -1,0 +1,311 @@
+{
+  "schemaVersion": "designpro.runtime-contract-inventory.v1",
+  "generatedFrom": {
+    "runtimeEntry": "worktracks/runtime_closure/runtime/standalone-index.js",
+    "claimant": "worktracks/runtime_closure/runtime/designpro-standalone-claimant.cjs",
+    "gateway": "worktracks/runtime_closure/integration/gateway/server.mjs"
+  },
+  "storage": {
+    "buckets": [
+      "wrap-files"
+    ],
+    "access": "Supabase service-role; public URL generation and authenticated object upload/download"
+  },
+  "tables": {
+    "designpro_artifacts": {
+      "consumers": [
+        {
+          "source": "claimant",
+          "line": 278
+        }
+      ],
+      "selects": [
+        "artifact_kind,surface_key,storage_path,content_hash,byte_size,metadata"
+      ],
+      "writes": []
+    },
+    "designpro_revision_sources": {
+      "consumers": [
+        {
+          "source": "claimant",
+          "line": 129
+        },
+        {
+          "source": "claimant",
+          "line": 301
+        },
+        {
+          "source": "claimant",
+          "line": 368
+        }
+      ],
+      "selects": [
+        "snapshot,snapshot_hash"
+      ],
+      "writes": []
+    },
+    "designpro_stage_receipts": {
+      "consumers": [
+        {
+          "source": "claimant",
+          "line": 269
+        }
+      ],
+      "selects": [
+        "receipt,receipt_hash,identity"
+      ],
+      "writes": []
+    },
+    "designpro_vehicle_dimensions": {
+      "consumers": [
+        {
+          "source": "claimant",
+          "line": 134
+        }
+      ],
+      "selects": [
+        "*"
+      ],
+      "writes": []
+    },
+    "designpro_workflow_runs": {
+      "consumers": [
+        {
+          "source": "claimant",
+          "line": 253
+        }
+      ],
+      "selects": [
+        "*"
+      ],
+      "writes": []
+    },
+    "designpro_workflow_stages": {
+      "consumers": [
+        {
+          "source": "claimant",
+          "line": 259
+        }
+      ],
+      "selects": [
+        "status,output,verification,output_hash"
+      ],
+      "writes": []
+    }
+  },
+  "rpcs": {
+    "bind_designpro_entice_manifest": {
+      "callsites": [
+        {
+          "payloadExpression": "{ p_run_id: run.id, p_stage_id: stage.id, p_lease_token: stage.lease_token, p_dimension_manifest_id: manifestId, p_manifest: spec, p_manifest_hash: null, p_dimension_basis_hash: basisHash, }",
+          "source": "claimant",
+          "line": 312
+        }
+      ]
+    },
+    "claim_designpro_stage": {
+      "callsites": [
+        {
+          "payloadExpression": "{ p_worker: id, p_lease_seconds: CLAIM_SECONDS }",
+          "source": "claimant",
+          "line": 543
+        }
+      ]
+    },
+    "complete_designpro_stage": {
+      "callsites": [
+        {
+          "payloadExpression": "{ p_stage_id: stage.id, p_lease_token: stage.lease_token, p_identity: identity(run), p_receipt: receiptValue, p_receipt_hash: finalHash, p_artifacts: produced, }",
+          "source": "claimant",
+          "line": 286
+        }
+      ]
+    },
+    "fail_designpro_stage": {
+      "callsites": [
+        {
+          "payloadExpression": "{ p_stage_id: stage.id, p_lease_token: stage.lease_token, p_error_code: error.code || \"stage_execution_failed\", p_error_message: String(error.message || error).slice(0, 2000), p_retryable: error.retryable !== false }",
+          "source": "claimant",
+          "line": 559
+        }
+      ]
+    },
+    "finalize_designpro_entice_identity": {
+      "callsites": [
+        {
+          "payloadExpression": "{ p_run_id: run.id, p_stage_id: stage.id, p_lease_token: stage.lease_token, p_source_contract_hash: null, p_artifact_set_hash: null, p_pack_receipt: packReceipt }",
+          "source": "claimant",
+          "line": 392
+        }
+      ]
+    },
+    "heartbeat_designpro_stage": {
+      "callsites": [
+        {
+          "payloadExpression": "{ p_stage_id: stage.id, p_lease_token: stage.lease_token, p_lease_seconds: CLAIM_SECONDS }",
+          "source": "claimant",
+          "line": 549
+        }
+      ]
+    },
+    "request_designpro_human_gate": {
+      "callsites": [
+        {
+          "payloadExpression": "{ p_run_id: run.id, p_stage_key: stage.stage_key, p_details: { requestedBy: \"designpro-standalone-claimant\", requestedAt: new Date().toISOString() } }",
+          "source": "claimant",
+          "line": 479
+        }
+      ]
+    }
+  },
+  "endpoints": {
+    "runtime": [
+      {
+        "method": "POST",
+        "path": "/compose-proof-sheet",
+        "auth": "bearer-worker-secret",
+        "requestBodyDestructuring": [
+          "canvas, tiles = [], overlaySvg"
+        ],
+        "source": "runtimeEntry",
+        "line": 57
+      },
+      {
+        "method": "GET",
+        "path": "/health",
+        "auth": "public",
+        "requestBodyDestructuring": [],
+        "source": "runtimeEntry",
+        "line": 52
+      }
+    ],
+    "gateway": [
+      {
+        "method": "GET",
+        "path": "/healthz",
+        "auth": "public",
+        "request": {},
+        "response": [
+          "status",
+          "service"
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "auth": "public",
+        "request": {
+          "required": [
+            "email",
+            "password"
+          ]
+        },
+        "response": [
+          "HttpOnly dp_session cookie",
+          "ok"
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/api/jobs",
+        "auth": "HttpOnly dp_session -> Supabase access token",
+        "request": {},
+        "upstream": {
+          "mode": "workflow-type-dependent",
+          "action": "status",
+          "workflowRunId": "run.id"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/revisions",
+        "auth": "HttpOnly dp_session -> Supabase access token",
+        "request": {
+          "required": [
+            "revisionId",
+            "generationId",
+            "visualizationId",
+            "expectedUpdatedAt",
+            "renderUrls",
+            "idempotencyKey",
+            "revisionSnapshot"
+          ],
+          "optional": [
+            "view",
+            "instruction",
+            "attachmentIds"
+          ]
+        },
+        "upstream": {
+          "rpcs": [
+            "save_designpro_revision_source",
+            "create_designpro_entice_workflow"
+          ]
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/production",
+        "auth": "HttpOnly dp_session -> Supabase access token",
+        "request": {
+          "required": [
+            "enticeWorkflowRunId",
+            "idempotencyKey"
+          ],
+          "optional": [
+            "orderRequestId"
+          ]
+        },
+        "upstream": {
+          "rpc": "create_designpro_production_workflow"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/jobs/:id",
+        "auth": "HttpOnly dp_session -> Supabase access token",
+        "upstream": {
+          "action": "status"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/jobs/:id/resume",
+        "auth": "HttpOnly dp_session -> Supabase access token",
+        "upstream": {
+          "action": "resume",
+          "retryFailed": true
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/jobs/:id/approvals/preflight",
+        "auth": "HttpOnly dp_session -> Supabase access token; production job only",
+        "request": {
+          "optional": [
+            "notes"
+          ]
+        },
+        "upstream": {
+          "mode": "designpro_job",
+          "action": "approve_preflight"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/jobs/:id/approvals/final",
+        "auth": "HttpOnly dp_session -> Supabase access token; production job only",
+        "request": {
+          "optional": [
+            "notes"
+          ]
+        },
+        "upstream": {
+          "mode": "designpro_job",
+          "action": "approve"
+        }
+      }
+    ],
+    "orchestrator": null
+  }
+}
