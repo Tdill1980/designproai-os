@@ -1,0 +1,117 @@
+name: Standalone database shadow gate
+
+on:
+  pull_request:
+  push:
+    branches: [main, agent/shadow-database-gate]
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-shadow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.4-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: designpro_shadow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d designpro_shadow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: designpro_shadow
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap Supabase auth boundary
+        shell: bash
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN BYPASSRLS; END IF;
+          END
+          $$;
+          CREATE SCHEMA auth;
+          CREATE TABLE auth.users (
+            id uuid PRIMARY KEY,
+            email text,
+            raw_user_meta_data jsonb NOT NULL DEFAULT '{}'::jsonb
+          );
+          CREATE FUNCTION auth.uid() RETURNS uuid
+            LANGUAGE sql STABLE
+            AS $$ SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+          CREATE FUNCTION auth.role() RETURNS text
+            LANGUAGE sql STABLE
+            AS $$ SELECT COALESCE(NULLIF(current_setting('request.jwt.claim.role', true), ''), current_user) $$;
+          SQL
+
+      - name: Apply all standalone migrations in order
+        shell: bash
+        run: |
+          shopt -s nullglob
+          migrations=(migrations/*.sql)
+          test "${#migrations[@]}" -eq 7
+          for migration in "${migrations[@]}"; do
+            echo "Applying ${migration}"
+            psql -v ON_ERROR_STOP=1 -f "${migration}"
+          done
+
+      - name: Verify standalone closure
+        shell: bash
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE
+            required_tables text[] := ARRAY[
+              'designpro_revision_sources',
+              'designpro_workflow_runs',
+              'designpro_workflow_stages',
+              'designpro_stage_receipts',
+              'designpro_artifacts',
+              'designpro_qc_members',
+              'designpro_vehicle_dimensions'
+            ];
+            missing text;
+          BEGIN
+            SELECT string_agg(name, ', ') INTO missing
+            FROM unnest(required_tables) AS name
+            WHERE to_regclass('public.' || name) IS NULL;
+            IF missing IS NOT NULL THEN
+              RAISE EXCEPTION 'missing standalone tables: %', missing;
+            END IF;
+            IF EXISTS (
+              SELECT 1
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public'
+                AND c.relname IN (
+                  'color_visualizations','designiq_generations','panelizer_jobs',
+                  'production_flow_assets','production_panel_dispatches',
+                  'workforce_runs','workflow_stage_runs'
+                )
+            ) THEN
+              RAISE EXCEPTION 'legacy/shared table leaked into shadow database';
+            END IF;
+          END
+          $$;
+          SQL
+
+      - name: Run source contract tests
+        run: |
+          node --test source-tests/runtime/*.test.mjs
+          node --test source-tests/schema/*.test.mjs
