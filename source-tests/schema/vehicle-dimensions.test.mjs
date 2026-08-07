@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { dirname,join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const sql=readFileSync(join(dirname(fileURLToPath(import.meta.url)),"../migrations/20260806180500_designpro_vehicle_dimensions.sql"),"utf8").toLowerCase();
-for(const column of ["id","make","model","year_range","year_start","year_end","side_width","side_height","hood_width","hood_length","roof_width","roof_length","back_width","back_height","total_sqft","overall_length","recommended_size"])
+const sql=readFileSync(join(dirname(fileURLToPath(import.meta.url)),"../../supabase/migrations/20260806180500_designpro_vehicle_dimensions.sql"),"utf8").toLowerCase();
+for(const column of ["id","make","model","year_range","year_start","year_end","side_width","side_height","hood_width","hood_length","roof_width","roof_length","front_width","front_height","rear_width","rear_height","back_width","back_height","total_sqft","overall_length","recommended_size"])
   assert.match(sql,new RegExp(`\\b${column}\\b`),`missing GENIE column ${column}`);
 assert.ok(sql.includes("public.designpro_vehicle_dimensions"));
 assert.ok(!/public\.vehicle_dimensions\b/.test(sql),"shared vehicle_dimensions dependency forbidden");

@@ -1,0 +1,20 @@
+{
+  "contract": "designpro.standalone-refactor-closure.v3",
+  "decision": "release-candidate",
+  "verifiedReleaseOwners": [
+    "runtime/designpro-standalone-claimant.cjs",
+    "runtime/genie-universal-resolver.cjs",
+    "runtime/gemini-flat-surface.cjs",
+    "runtime/output-qc.cjs",
+    "runtime/wrapbox-delivery.cjs",
+    "gateway/src/server.mjs"
+  ],
+  "remainingLegacyTables": [],
+  "remainingLegacyRpcs": [],
+  "remainingCodeBlocks": {},
+  "prohibited": [
+    "shipping shared-monorepo adapters",
+    "stubbing stage success",
+    "weakening lease tokens, hashes, receipts or human gates"
+  ]
+}

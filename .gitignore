@@ -1,0 +1,8 @@
+runtime/node_modules/
+gateway/node_modules/
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+dist/
+*.env
+!*.env.example

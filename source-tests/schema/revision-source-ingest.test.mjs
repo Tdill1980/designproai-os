@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { dirname,join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const sql=readFileSync(join(dirname(fileURLToPath(import.meta.url)),"../migrations/20260806180600_designpro_revision_source_ingest.sql"),"utf8").toLowerCase();
-const immutable=readFileSync(join(dirname(fileURLToPath(import.meta.url)),"../migrations/20260806180400_designpro_progressive_identity.sql"),"utf8").toLowerCase();
+const sql=readFileSync(join(dirname(fileURLToPath(import.meta.url)),"../../supabase/migrations/20260806180600_designpro_revision_source_ingest.sql"),"utf8").toLowerCase();
+const immutable=readFileSync(join(dirname(fileURLToPath(import.meta.url)),"../../supabase/migrations/20260806180400_designpro_progressive_identity.sql"),"utf8").toLowerCase();
 assert.ok(sql.includes("public.save_designpro_revision_source"));
 assert.ok(sql.includes("v_owner uuid:=auth.uid()"));
-assert.ok(sql.includes("auth.role() is distinct from 'authenticated'"));
-assert.ok(sql.includes("v_tenant:='user:'||v_owner::text"));
+assert.ok(sql.includes("auth.jwt()->>'role', '') is distinct from 'authenticated'"));
+assert.ok(sql.includes("v_tenant:='user_'||v_owner::text"));
 assert.ok(sql.includes("extensions.digest(convert_to(p_snapshot::text,'utf8'),'sha256')"),"hash must be derived in database");
 assert.ok(sql.includes("revision_snapshot_hash_mismatch"));
 assert.ok(sql.includes("nullif(btrim(coalesce(p_snapshot_hash,'')),'') is not null"),"client hash must be optional");

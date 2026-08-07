@@ -1,12 +1,11 @@
 os.designproai.com {
   encode zstd gzip
 
-  handle_path /worker/* {
-    reverse_proxy 127.0.0.1:3001 127.0.0.1:3002 {
-      lb_policy round_robin
-      health_uri /health
-      health_status 200
-    }
+  # The browser is a control panel. It never calls a production worker.
+  # Keeping this explicit prevents the SPA fallback from making a worker path
+  # appear to exist if a stale client tries to use one.
+  handle /worker/* {
+    respond 404
   }
 
   handle /api/* {
@@ -19,18 +18,25 @@ os.designproai.com {
   }
 
   handle {
-    root * /opt/designproai/current/web/dist
+    root * /opt/designproai/public/web/dist
     try_files {path} /index.html
     file_server
   }
 
   header {
+    -Server
     Strict-Transport-Security "max-age=31536000; includeSubDomains"
     X-Content-Type-Options "nosniff"
     X-Frame-Options "DENY"
     Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
   }
+
   log {
-    output file /var/log/caddy/designpro-access.log
+    output file /var/log/caddy/designpro-access.log {
+      roll_size 25MiB
+      roll_keep 10
+      roll_keep_for 336h
+    }
   }
 }

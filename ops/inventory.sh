@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+
 echo "timestamp=$(date -u +%FT%TZ)"
 echo "hostname=$(hostname)"
 echo "kernel=$(uname -r)"
@@ -17,6 +19,9 @@ pm2 jlist 2>/dev/null | python3 -c 'import json,sys; a=json.load(sys.stdin); pri
 echo "--- systemd candidates (read-only) ---"
 systemctl list-units --type=service --all --no-pager | grep -Ei 'designpro|restyle|vector|parser|render|agent|caddy|docker' || true
 echo "--- protected VectorizIt probe ---"
-curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3200/health || \
-  curl --fail --silent --show-error --max-time 5 -X OPTIONS http://127.0.0.1:3200/vectorize || true
+if [[ $EUID -eq 0 ]]; then
+  "$OPS_DIR/vectorize-guard.sh" print || true
+else
+  echo "Run inventory as root to identify the protected :3200 owner"
+fi
 echo

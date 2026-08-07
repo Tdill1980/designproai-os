@@ -1,0 +1,185 @@
+name: Exact DesignProAI release gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      production_migration:
+        description: "Protected production migration action"
+        required: true
+        type: choice
+        default: DO_NOT_APPLY
+        options:
+          - DO_NOT_APPLY
+          - APPLY_DESIGNPRO_PRODUCTION
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designpro-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  SUPABASE_CLI_VERSION: 2.111.0
+
+jobs:
+  executable-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.EXACT_SHA }}
+          persist-credentials: false
+      - name: Prove checkout is the exact requested head
+        run: test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            runtime/package-lock.json
+            gateway/package-lock.json
+            web/package-lock.json
+      - run: npm ci --prefix runtime
+      - run: npm ci --prefix gateway
+      - run: npm ci --prefix web
+      - run: npm test
+
+  supabase-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.EXACT_SHA }}
+          persist-credentials: false
+      - name: Prove checkout is the exact requested head
+        run: test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Prove the pinned Supabase CLI can execute
+        run: npx --yes "supabase@${SUPABASE_CLI_VERSION}" --version
+      - name: Fresh Supabase Auth, Storage, PostgREST, migrations and pgTAP
+        run: bash scripts/test-supabase-shadow.sh
+
+  immutable-archive:
+    needs: [executable-contracts, supabase-shadow]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      archive_sha256: ${{ steps.archive-identity.outputs.archive_sha256 }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.EXACT_SHA }}
+          persist-credentials: false
+      - name: Prove checkout is the exact requested head
+        run: test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - run: npm ci --prefix runtime
+      - run: npm ci --prefix gateway
+      - run: npm ci --prefix web
+      - run: npm run build --prefix web
+      - name: Build twice and prove byte-for-byte archive reproducibility
+        run: |
+          bash scripts/build-release.sh "$EXACT_SHA" dist-release-a
+          bash scripts/build-release.sh "$EXACT_SHA" dist-release-b
+          cmp "dist-release-a/designproai-release-$EXACT_SHA.tgz" "dist-release-b/designproai-release-$EXACT_SHA.tgz"
+          cmp "dist-release-a/designproai-release-$EXACT_SHA.tgz.sha256" "dist-release-b/designproai-release-$EXACT_SHA.tgz.sha256"
+      - name: Build both manifest-bound images without provider secrets
+        run: |
+          npm run check --prefix runtime
+          node --check gateway/src/server.mjs
+          node --check ops/runtime-healthcheck.js
+          node --check ops/gateway-healthcheck.mjs
+          mkdir -p dist-image-context
+          tar -xzf "dist-release-a/designproai-release-$EXACT_SHA.tgz" -C dist-image-context
+          docker build --label "com.designpro.sha=$EXACT_SHA" --label "org.opencontainers.image.revision=$EXACT_SHA" \
+            -f dist-image-context/ops/Dockerfile.runtime -t "designproai-runtime-ci:$EXACT_SHA" dist-image-context
+          docker build --label "com.designpro.sha=$EXACT_SHA" --label "org.opencontainers.image.revision=$EXACT_SHA" \
+            -f dist-image-context/ops/Dockerfile.gateway -t "designproai-gateway-ci:$EXACT_SHA" dist-image-context
+          runtime_id=$(docker image inspect -f '{{.Id}}' "designproai-runtime-ci:$EXACT_SHA")
+          gateway_id=$(docker image inspect -f '{{.Id}}' "designproai-gateway-ci:$EXACT_SHA")
+          test -n "$runtime_id" && test -n "$gateway_id"
+          test "$(docker image inspect -f '{{index .Config.Labels "com.designpro.sha"}}' "designproai-runtime-ci:$EXACT_SHA")" = "$EXACT_SHA"
+          test "$(docker image inspect -f '{{index .Config.Labels "com.designpro.sha"}}' "designproai-gateway-ci:$EXACT_SHA")" = "$EXACT_SHA"
+          printf 'CI runtime image: %s\nCI gateway image: %s\n' "$runtime_id" "$gateway_id" >> "$GITHUB_STEP_SUMMARY"
+      - id: archive-identity
+        name: Record the exact archive digest
+        run: |
+          digest=$(awk '{print $1}' "dist-release-a/designproai-release-$EXACT_SHA.tgz.sha256")
+          test "$digest" = "$(sha256sum "dist-release-a/designproai-release-$EXACT_SHA.tgz" | awk '{print $1}')"
+          echo "archive_sha256=$digest" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: designproai-release-${{ env.EXACT_SHA }}
+          path: dist-release-a/*
+          if-no-files-found: error
+          retention-days: 30
+
+  production-migrate:
+    if: github.event_name == 'workflow_dispatch' && inputs.production_migration == 'APPLY_DESIGNPRO_PRODUCTION'
+    needs: [executable-contracts, supabase-shadow, immutable-archive]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: designproai-production
+    env:
+      EXPECTED_PROJECT_REF: wozyamlnygaddievzuwn
+      EXPECTED_ARCHIVE_SHA256: ${{ needs.immutable-archive.outputs.archive_sha256 }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.DESIGNPRO_SUPABASE_DB_PASSWORD }}
+      PRODUCTION_APPROVAL_TOKEN: ${{ secrets.DESIGNPRO_PRODUCTION_APPROVAL_TOKEN }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.EXACT_SHA }}
+          persist-credentials: false
+      - name: Prove protected exact-head production intent
+        run: |
+          set +x
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "${{ inputs.production_migration }}" = "APPLY_DESIGNPRO_PRODUCTION"
+          test -n "$EXPECTED_ARCHIVE_SHA256"
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_DB_PASSWORD"
+          test "$PRODUCTION_APPROVAL_TOKEN" = "APPROVED_DESIGNPRO_PRODUCTION_MIGRATION"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Link only the isolated DesignProAI production project
+        run: |
+          set +x
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" link --project-ref "$EXPECTED_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          test "$(cat supabase/.temp/project-ref)" = "$EXPECTED_PROJECT_REF"
+      - name: Record the exact dry-run migration plan
+        run: |
+          set -o pipefail
+          {
+            printf 'git_sha=%s\narchive_sha256=%s\nproject_ref=%s\n' "$EXACT_SHA" "$EXPECTED_ARCHIVE_SHA256" "$EXPECTED_PROJECT_REF"
+            NO_COLOR=1 npx --yes "supabase@${SUPABASE_CLI_VERSION}" db push --linked --include-all --dry-run
+          } | tee production-migration-plan.txt
+          grep -q "git_sha=$EXACT_SHA" production-migration-plan.txt
+          sha256sum production-migration-plan.txt > production-migration-plan.txt.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: designproai-production-migration-plan-${{ env.EXACT_SHA }}
+          path: |
+            production-migration-plan.txt
+            production-migration-plan.txt.sha256
+          if-no-files-found: error
+          retention-days: 90
+      - name: Apply the approved exact-head plan without reset
+        run: |
+          set +x
+          test "$(cat supabase/.temp/project-ref)" = "$EXPECTED_PROJECT_REF"
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" db push --linked --include-all --yes
