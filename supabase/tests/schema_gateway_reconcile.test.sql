@@ -303,8 +303,8 @@ select ok(
 );
 select is(
   (select file_size_limit from storage.buckets where id='wrap-files'),
-  53687091200::bigint,
-  'private production bucket is bounded at 50 GiB'
+  50000000000::bigint,
+  'private production bucket is bounded at 50 GB'
 );
 
 select * from finish();

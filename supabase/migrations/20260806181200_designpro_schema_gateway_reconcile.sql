@@ -1,6 +1,6 @@
 -- DesignProAI production reconciliation: immutable delivery bindings,
 -- operator-mediated registration, heavy-work readiness, WrapBox readiness,
--- and the 50 GiB private production-pack boundary.
+-- and the 50 GB private production-pack boundary.
 
 CREATE OR REPLACE FUNCTION public.register_designpro_operator_wrapbox_recipient(
   p_operator_id uuid,
@@ -183,7 +183,7 @@ BEGIN
     AND pg_catalog.to_regprocedure('public.validate_designpro_vehicle_spec_universal(uuid,jsonb,text,jsonb)') IS NOT NULL;
 
   SELECT pg_catalog.coalesce(bool_and(
-    NOT b.public AND b.file_size_limit=53687091200
+    NOT b.public AND b.file_size_limit=50000000000
   ),false) INTO v_storage_ok
   FROM storage.buckets b WHERE b.id='wrap-files' AND b.name='wrap-files';
 
@@ -227,7 +227,7 @@ BEGIN
   ) INTO v_security_ok;
 
   IF NOT v_schema_ok THEN v_missing:=pg_catalog.array_append(v_missing,'schema_or_rpc'); END IF;
-  IF NOT v_storage_ok THEN v_missing:=pg_catalog.array_append(v_missing,'private_wrap_files_50gib_bucket'); END IF;
+  IF NOT v_storage_ok THEN v_missing:=pg_catalog.array_append(v_missing,'private_wrap_files_50gb_bucket'); END IF;
   IF NOT v_policy_ok THEN v_missing:=pg_catalog.array_append(v_missing,'exact_storage_policies'); END IF;
   IF NOT v_heavy_lease_ok THEN v_missing:=pg_catalog.array_append(v_missing,'output_build_singleton_lease'); END IF;
   IF NOT v_security_ok THEN v_missing:=pg_catalog.array_append(v_missing,'function_privilege_boundary'); END IF;
@@ -251,14 +251,14 @@ BEGIN
     'validatedSpecCount',v_validated_count,
     'pendingCandidateCount',v_pending_count,
     'storageLimits',pg_catalog.jsonb_build_object(
-      'bucketFileSizeLimitBytes',53687091200,
-      'requiredProjectGlobalFileSizeLimitBytes',53687091200,
+      'bucketFileSizeLimitBytes',50000000000,
+      'requiredProjectGlobalFileSizeLimitBytes',50000000000,
       'globalLimitVerification','dashboard_required_before_canary',
       'largePackUpload','tus-or-s3-multipart-required'
     ),
     'missing',pg_catalog.to_jsonb(v_missing),
     'externalChecks',pg_catalog.jsonb_build_array(
-      'project_global_storage_limit_gte_50gib'
+      'project_global_storage_limit_gte_50gb'
     ),
     'checkedAt',pg_catalog.clock_timestamp()
   );
@@ -344,7 +344,7 @@ BEGIN
     'capabilities',pg_catalog.jsonb_build_object(
       'validatedGeometrySeeded',v_dimension_seed_count>0,
       'qcOperatorSeeded',v_qc_seed_count>0,
-      'private50GiBBucketRequired',true,
+      'private50GBBucketRequired',true,
       'largePackUpload','tus-or-s3-multipart'
     )
   );

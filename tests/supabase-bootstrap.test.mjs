@@ -40,7 +40,7 @@ test('tenant and Storage identities use the canonical three namespaces', () => {
 });
 
 test('wrap-files is private, immutable for users, and owner-readable', () => {
-  assert.match(sql, /VALUES\(\s*'wrap-files'[\s\S]*?false,\s*53687091200(?:\s|,)/);
+  assert.match(sql, /VALUES\(\s*'wrap-files'[\s\S]*?false,\s*50000000000(?:\s|,)/);
   assert.match(sql, /CREATE POLICY designpro_owner_read_wrap_files/);
   assert.match(sql, /CREATE POLICY designpro_owner_insert_revision_inputs/);
   assert.match(sql, /REVOKE UPDATE, DELETE ON storage\.objects FROM authenticated/);

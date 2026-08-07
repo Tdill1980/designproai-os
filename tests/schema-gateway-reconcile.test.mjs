@@ -111,10 +111,10 @@ test("WrapBox is authenticated, RLS-backed, and signs only exact row paths for 3
   assert.match(migrations, /v_source_entice_run_id/);
 });
 
-test("private bucket and readiness agree on the bounded 50 GiB contract", () => {
-  assert.match(config, /file_size_limit = "50GiB"/);
-  assert.match(migrations, /53687091200/);
-  assert.match(migrations, /project_global_storage_limit_gte_50gib/);
+test("private bucket and readiness agree on the bounded 50 GB contract", () => {
+  assert.match(config, /file_size_limit = 50000000000/);
+  assert.match(migrations, /50000000000/);
+  assert.match(migrations, /project_global_storage_limit_gte_50gb/);
   assert.match(migrations, /tus-or-s3-multipart/);
 });
 

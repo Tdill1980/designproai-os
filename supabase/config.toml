@@ -41,11 +41,11 @@ port = 54324
 
 [storage]
 enabled = true
-file_size_limit = "50GiB"
+file_size_limit = 50000000000
 
 [storage.buckets."wrap-files"]
 public = false
-file_size_limit = "50GiB"
+file_size_limit = 50000000000
 allowed_mime_types = [
   "image/png",
   "image/jpeg",

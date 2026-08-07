@@ -241,7 +241,7 @@ VALUES(
   'wrap-files',
   'wrap-files',
   false,
-  53687091200,
+  50000000000,
   ARRAY['image/png','image/jpeg','image/webp','image/tiff','image/svg+xml',
         'application/pdf','application/postscript','application/zip','application/json']::text[]
 )

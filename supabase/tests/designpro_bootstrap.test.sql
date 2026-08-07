@@ -39,9 +39,9 @@ select has_column('public','designpro_wrapbox_packs','order_number',
   'WrapBox freezes required business Order #');
 
 select ok(
-  (select NOT public AND file_size_limit=53687091200
+  (select NOT public AND file_size_limit=50000000000
    from storage.buckets where id='wrap-files'),
-  'wrap-files bucket is private with the bounded 50 GiB pack limit'
+  'wrap-files bucket is private with the bounded 50 GB pack limit'
 );
 select policies_are(
   'storage','objects',

@@ -45,7 +45,7 @@ BEGIN
   SELECT EXISTS(
     SELECT 1 FROM storage.buckets
     WHERE id = 'wrap-files' AND name = 'wrap-files' AND public IS false
-      AND file_size_limit = 53687091200
+      AND file_size_limit = 50000000000
   ) INTO v_storage_ok;
 
   SELECT count(*) = 2
