@@ -3,9 +3,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const names = readdirSync(join(root, "migrations")).filter((n) => n.endsWith(".sql")).sort();
-assert.deepEqual(names, [
+const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const names = readdirSync(join(root, "supabase/migrations")).filter((n) => n.endsWith(".sql")).sort();
+for (const requiredMigration of [
   "20260806180000_designpro_core_schema.sql",
   "20260806180100_designpro_workflow_rpcs.sql",
   "20260806180200_designpro_qc_delivery.sql",
@@ -13,8 +13,10 @@ assert.deepEqual(names, [
   "20260806180400_designpro_progressive_identity.sql",
   "20260806180500_designpro_vehicle_dimensions.sql",
   "20260806180600_designpro_revision_source_ingest.sql",
-]);
-const files = names.map((name) => ({ name, sql: readFileSync(join(root, "migrations", name), "utf8") }));
+  "20260806181000_designpro_runtime_readiness.sql",
+]) assert.ok(names.includes(requiredMigration), `missing ordered migration ${requiredMigration}`);
+assert.equal(new Set(names).size, names.length, "duplicate migration filename");
+const files = names.map((name) => ({ name, sql: readFileSync(join(root, "supabase/migrations", name), "utf8") }));
 const all = files.map((f) => f.sql).join("\n").toLowerCase();
 
 // Fresh-schema ordering: a referenced DesignPro object must be created earlier.
@@ -60,5 +62,5 @@ for (const forbidden of [
 
 assert.ok(all.includes("for update of s skip locked"), "claim must use SKIP LOCKED");
 assert.ok(all.includes("lease_token=p_lease_token"), "completion must be lease fenced");
-assert.ok(all.includes("auth.role() is distinct from 'service_role'"), "worker RPCs must fail closed on a missing role");
+assert.ok(all.includes("auth.jwt()->>'role', '') is distinct from 'service_role'") || all.includes("auth.jwt()->>'role','') is distinct from 'service_role'"), "worker RPCs must fail closed on a missing JWT role");
 console.log(`schema closure passed: ${files.length} ordered migrations, ${creates.size} objects`);

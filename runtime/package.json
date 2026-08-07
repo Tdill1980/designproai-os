@@ -1,0 +1,21 @@
+{
+  "name": "@designproai/server-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone durable DesignProAI production runtime",
+  "main": "index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0 <23"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js && node --check designpro-standalone-claimant.cjs && node --check runtime-contract.cjs && node --check runtime-readiness.cjs && node --check genie-universal-resolver.cjs && node --check gemini-flat-surface.cjs && node --check output-qc.cjs && node --check zip-spool.cjs && node --check wrapbox-delivery.cjs && node --check resend-transport.cjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.55.0",
+    "express": "4.21.2",
+    "sharp": "0.34.3",
+    "tus-js-client": "4.3.1"
+  }
+}

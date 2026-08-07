@@ -1,50 +1,117 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import test from "node:test";
 
-const root = new URL("../", import.meta.url);
-const read = (path) => readFile(new URL(path, root), "utf8");
+const require = createRequire(import.meta.url);
+const universal = require("../../runtime/genie-universal-resolver.cjs");
+const claimant = require("../../runtime/designpro-standalone-claimant.cjs");
+const universalSource = readFileSync(new URL("../../runtime/genie-universal-resolver.cjs", import.meta.url), "utf8");
+const claimantSource = readFileSync(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");
 
-test("exact frozen validator and governing specs are present", async () => {
-  const [source, provenance, artboardSpec, call8Spec] = await Promise.all([
-    read("integration/adapters/panelizer-step-validate/upstream-index.ts"),
-    read("integration/adapters/panelizer-step-validate/SOURCE.json").then(JSON.parse),
-    read("integration/specs/ARTBOARD_DIMENSION_FIX_SPEC.md"),
-    read("integration/specs/DESIGNPRO_CALL8_PER_SIDE_SURGICAL_FIX.md"),
-  ]);
-  const digest = createHash("sha256").update(source).digest("hex");
-  assert.equal(digest, provenance.retrievedSha256);
-  assert.match(artboardSpec, /panelizer-step-validate/);
-  assert.match(call8Spec, /Call 8/);
+const surfaceValues = Object.fromEntries(universal.SURFACES.map((surfaceKey, index) => [
+  surfaceKey,
+  { widthInches: 50 + index, heightInches: 20 + index },
+]));
+
+test("standalone Universal GENIE accepts only operator-validated exact six-surface geometry", () => {
+  const row = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    requires_validation: false,
+    validated_by: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    validated_at: "2026-08-06T00:00:00Z",
+    source_urls: ["https://manufacturer.example/spec.pdf"],
+    validated_surfaces: {
+      contractVersion: "designpro.genie-validated-surfaces.v1",
+      surfaces: surfaceValues,
+    },
+  };
+  const exact = universal._test.validatedSurfaces(row);
+  assert.deepEqual(
+    universal.SURFACES.map((surfaceKey) => {
+      const fields = {
+        driver: ["side_width", "side_height"],
+        passenger: ["passenger_width", "passenger_height"],
+        hood: ["hood_width", "hood_length"],
+        roof: ["roof_width", "roof_length"],
+        front: ["front_width", "front_height"],
+        rear: ["rear_width", "rear_height"],
+      }[surfaceKey];
+      return [surfaceKey, exact[fields[0]], exact[fields[1]]];
+    }),
+    universal.SURFACES.map((surfaceKey) => [
+      surfaceKey,
+      surfaceValues[surfaceKey].widthInches,
+      surfaceValues[surfaceKey].heightInches,
+    ]),
+  );
+  assert.deepEqual(exact.universalValidation, {
+    validatorId: row.validated_by,
+    validatedAt: row.validated_at,
+    sourceUrls: row.source_urls,
+    candidateId: row.id,
+  });
 });
 
-test("GENIE validator fails closed and preserves exact print geometry rules", async () => {
-  const source = await read("integration/adapters/panelizer-step-validate/index.ts");
-  assert.match(source, /dims_verified: dimsVerified/);
-  assert.match(source, /reason: unresolvedReason/);
-  assert.match(source, /NO generic default/);
-  assert.match(source, /widthWithBleed: wBleed/);
-  assert.match(source, /heightWithBleed: hBleed/);
-  assert.match(source, /isTwoPanelVehicle\(vehicle\)/);
-  assert.match(source, /OVERLAP_INCHES/);
-  assert.match(source, /roof: \{ widthInches: roofWidth, heightInches: roofLength/);
+test("Universal GENIE fails closed for estimates, missing approval, or incomplete surfaces", () => {
+  const base = {
+    requires_validation: false,
+    validated_by: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    validated_at: "2026-08-06T00:00:00Z",
+    validated_surfaces: { contractVersion: "designpro.genie-validated-surfaces.v1", surfaces: surfaceValues },
+  };
+  assert.equal(universal._test.validatedSurfaces({ ...base, requires_validation: true }), null);
+  assert.equal(universal._test.validatedSurfaces({ ...base, validated_by: null }), null);
+  const incomplete = { ...surfaceValues };
+  delete incomplete.rear;
+  assert.equal(universal._test.validatedSurfaces({ ...base, validated_surfaces: { ...base.validated_surfaces, surfaces: incomplete } }), null);
+  assert.match(universalSource, /This is a candidate for human validation; do not invent missing values/);
 });
 
-test("all validator local imports are included", async () => {
-  for (const path of [
-    "integration/adapters/_shared/cors.ts",
-    "integration/adapters/_shared/gemini-key-pool.ts",
-    "integration/adapters/_shared/panelizer-os/constants.ts",
-    "integration/adapters/_shared/panelizer-os/vehicle-database.ts",
-  ]) assert.ok((await read(path)).length > 0, path);
+test("standalone Call 8 request uses exact raw square feet and five-inch bleed on all six surfaces", () => {
+  const ownerId = "12345678-1234-4123-8123-123456789abc";
+  const revisionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const runId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const tenantKey = `user_${ownerId}`;
+  const viewKeys = ["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"];
+  const viewLineage = viewKeys.map((viewKey, index) => ({
+    viewKey,
+    storagePath: `users/${ownerId}/revisions/${revisionId}/inputs/${viewKey}/${String(index + 1).padStart(64, "0")}.png`,
+    contentHash: String(index + 1).padStart(64, "0"),
+    byteSize: index + 1,
+    contentType: "image/png",
+  }));
+  const expectedSurfaces = universal.SURFACES.map((surfaceKey, index) => {
+    const widthInches = 50 + index;
+    const heightInches = 20 + index;
+    return {
+      surfaceKey,
+      widthInches,
+      heightInches,
+      surfaceSqFt: claimant._test.round2(widthInches * heightInches / 144),
+      bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+      sourceAsset: viewLineage.find((item) => item.viewKey === surfaceKey),
+    };
+  });
+  const totalSqFt = claimant._test.round2(expectedSurfaces.reduce(
+    (sum, surface) => sum + surface.widthInches * surface.heightInches / 144,
+    0,
+  ));
+  const result = claimant._test.call8ProofRequest(
+    { id: runId, revision_id: revisionId, tenant_key: tenantKey },
+    { expectedSurfaces, totalSqFt, vehicle: { type: "car", year: 2024, make: "Porsche", model: "911" } },
+    viewLineage,
+    { bodyText: {}, logoPlacements: [] },
+  );
+  assert.equal(result.totalSqFt, totalSqFt);
+  assert.equal(result.request.tiles.length, 6);
+  assert.ok(result.request.tiles.every((tile) => tile.bleedIn === 5));
+  assert.match(result.request.overlaySvg, new RegExp(`GENIE TOTAL: ${totalSqFt.toFixed(2)} SQ FT · 5 IN BLEED EACH EDGE`));
 });
 
-test("standalone validator changes only the DesignPro-owned dimensions table name", async () => {
-  const [upstream, standalone] = await Promise.all([
-    read("integration/adapters/panelizer-step-validate/upstream-index.ts"),
-    read("integration/adapters/panelizer-step-validate/index.ts"),
-  ]);
-  assert.equal(standalone, upstream.replaceAll("vehicle_dimensions", "designpro_vehicle_dimensions"));
-  assert.doesNotMatch(standalone, /(?<!designpro_)vehicle_dimensions/);
+test("standalone panel authority contains no estimated or shared-runtime success path", () => {
+  assert.match(claimantSource, /Every vehicle,[\s\S]*?validated Universal GENIE gate/);
+  assert.match(claimantSource, /genie_total_square_feet_mismatch/);
+  assert.match(claimantSource, /call9_surface_reuse/);
+  assert.doesNotMatch(universalSource + claimantSource, /143\.110\.237\.145|RAILWAY_|restyleproai\.com/i);
 });

@@ -2,19 +2,22 @@ import assert from "node:assert/strict";
 import { existsSync,readFileSync } from "node:fs";
 import { dirname,resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-const workspace=resolve(dirname(fileURLToPath(import.meta.url)),"../../..");
-const path=resolve(workspace,"worktracks/runtime_closure/runtime/designpro-standalone-claimant.cjs");
+const workspace=resolve(dirname(fileURLToPath(import.meta.url)),"../..");
+const path=resolve(workspace,"runtime/designpro-standalone-claimant.cjs");
 assert.ok(existsSync(path),"standalone claimant missing: designpro-standalone-claimant.cjs");
 const source=readFileSync(path,"utf8");
-const lower=source.toLowerCase();
+const resolver=readFileSync(resolve(workspace,"runtime/genie-universal-resolver.cjs"),"utf8");
+const lower=(source+"\n"+resolver).toLowerCase();
 assert.doesNotThrow(()=>new Function(source),"claimant must parse as JavaScript");
 const tables=[...new Set([...source.matchAll(/\.from\(\s*["']([^"']+)/g)].map(m=>m[1]))];
-const allowedTables=new Set(["designpro_workflow_runs","designpro_workflow_stages","designpro_revision_sources","designpro_stage_receipts","designpro_artifacts","designpro_vehicle_dimensions"]);
+const allowedTables=new Set(["designpro_workflow_runs","designpro_workflow_stages","designpro_revision_sources","designpro_stage_receipts","designpro_artifacts","designpro_vehicle_dimensions","designpro_vehicle_specs_universal"]);
 for(const table of tables) assert.ok(allowedTables.has(table),`claimant reads forbidden table ${table}`);
 for(const forbidden of ["workforce_runs","workflow_stage_runs","panelizer_jobs","color_visualizations","design_version_commits","designiq_generations","designpro_entice_packs","designpro_production_jobs","production_flow_assets","production_panel_dispatches","user_roles","railway"])
   assert.ok(!lower.includes(forbidden),`claimant retains legacy/shared surface ${forbidden}`);
-for(const rpc of ["claim_designpro_stage","heartbeat_designpro_stage","complete_designpro_stage","fail_designpro_stage","bind_designpro_entice_manifest","finalize_designpro_entice_identity","request_designpro_human_gate"])
+for(const rpc of ["claim_designpro_stage","heartbeat_designpro_stage","complete_designpro_stage","fail_designpro_stage","bind_designpro_entice_manifest","finalize_designpro_entice_identity","request_designpro_human_gate","request_designpro_universal_dimension_validation","acquire_designpro_heavy_lease"])
   assert.ok(lower.includes(rpc),`claimant missing RPC ${rpc}`);
+assert.ok(!lower.includes('sb.rpc("release_designpro_heavy_lease"'),"heavy slot must remain bound until the durable complete/fail transition releases it");
+assert.ok(!lower.includes("deliver_designpro_wrapbox_pack"),"claimant must use the durable WrapBox v2 publisher/reconciler, not the retired one-shot delivery RPC");
 for(const leaseArg of ["p_stage_id","p_lease_token"]) assert.ok(lower.includes(leaseArg),`claimant missing lease fence ${leaseArg}`);
 for(const stage of ["revision.freeze","manifest.resolve","proof.build","panels.build","logos.extract","pack.verify","pack.activate","source.verify","await_panelpro_preflight_qc","output.build","output.verify","await_final_human_qc","stamp.build","zip.build","wrapbox.deliver"])
   assert.ok(lower.includes(stage),`claimant missing stage ${stage}`);
@@ -29,6 +32,6 @@ for(const exactField of ["viewreceipts","viewlineage","dimensionmanifestid","man
   assert.ok(lower.includes(exactField),`claimant is not aligned to schema field ${exactField}`);
 for(const edge of ["top: 5","right: 5","bottom: 5","left: 5"])
   assert.ok(lower.includes(edge),`claimant does not bind exact ${edge} bleed`);
-assert.match(lower,/metadata:\s*\{\s*sourceregionhash:[\s\S]{0,400}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
-  'panel artifact metadata must bind four-edge bleed, not only manifest-level bleed');
+assert.match(lower,/metadata:\s*\{\s*sourcemasterhash:[\s\S]{0,500}displayedregionhash:[\s\S]{0,500}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
+  'panel artifact metadata must bind the Call 8 master, displayed region, and four-edge bleed');
 console.log("standalone claimant matches all schema lease, receipt, artifact and human-gate contracts");

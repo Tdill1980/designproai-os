@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const rpc = readFileSync(new URL('../migrations/20260806180100_designpro_workflow_rpcs.sql', import.meta.url), 'utf8').toLowerCase();
-const identity = readFileSync(new URL('../migrations/20260806180400_designpro_progressive_identity.sql', import.meta.url), 'utf8').toLowerCase();
+const rpc = readFileSync(new URL('../../supabase/migrations/20260806180100_designpro_workflow_rpcs.sql', import.meta.url), 'utf8').toLowerCase();
+const identity = readFileSync(new URL('../../supabase/migrations/20260806180400_designpro_progressive_identity.sql', import.meta.url), 'utf8').toLowerCase();
 
 test('automatic chain requires seven distinct views before Call 8 proof', () => {
   for (const contract of [

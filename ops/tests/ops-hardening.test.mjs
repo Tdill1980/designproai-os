@@ -1,0 +1,138 @@
+import assert from "node:assert/strict";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+const ops = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const track = resolve(ops, "..");
+const workflow = readFileSync(join(track, ".github/workflows/release.yml"), "utf8");
+const read = (name) => readFileSync(join(ops, name), "utf8");
+const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+const fixed = policy.filter((line) => !line.includes("*"));
+
+test("one canonical policy includes all twelve runtime files and five deploy controls", () => {
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 12);
+  for (const name of [
+    "runtime/resend-transport.cjs", "runtime/wrapbox-delivery.cjs", "runtime/zip-spool.cjs",
+    "ops/Dockerfile.runtime", "ops/Dockerfile.gateway", "ops/runtime-healthcheck.js",
+    "ops/gateway-healthcheck.mjs", "ops/compose.yaml",
+  ]) assert.ok(fixed.includes(name), name);
+  for (const source of [read("build-release-manifest.py"), read("validate-archive.py")]) {
+    assert.match(source, /release-files\.txt/);
+    assert.doesNotMatch(source, /"runtime\/index\.js",/);
+  }
+  assert.match(readFileSync(join(track, "scripts/build-release.sh"), "utf8"), /ops\/release-files\.txt/);
+});
+
+test("actual builder emits reproducible bytes with every fixed file manifest-bound", () => {
+  const root = mkdtempSync(join(tmpdir(), "dp-repro-"));
+  try {
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, "ops"), { recursive: true });
+    cpSync(join(track, "scripts/build-release.sh"), join(root, "scripts/build-release.sh"));
+    for (const name of ["release-files.txt", "build-release-manifest.py", "validate-archive.py"]) cpSync(join(ops, name), join(root, "ops", name));
+    chmodSync(join(root, "scripts/build-release.sh"), 0o755);
+    for (const name of fixed) {
+      const path = join(root, name);
+      mkdirSync(dirname(path), { recursive: true });
+      if (name === "ops/release-files.txt") cpSync(join(track, name), path);
+      else writeFileSync(path, name.endsWith(".json") ? "{}\n" : `fixture:${name}\n`);
+    }
+    mkdirSync(join(root, "web/dist/assets"), { recursive: true });
+    writeFileSync(join(root, "web/dist/assets/app.js"), "console.log('dp');\n");
+    const sha = "a".repeat(40);
+    execFileSync("bash", [join(root, "scripts/build-release.sh"), sha, join(root, "one")]);
+    execFileSync("bash", [join(root, "scripts/build-release.sh"), sha, join(root, "two")]);
+    const first = readFileSync(join(root, "one", `designproai-release-${sha}.tgz`));
+    const second = readFileSync(join(root, "two", `designproai-release-${sha}.tgz`));
+    assert.deepEqual(first, second);
+    const manifest = JSON.parse(execFileSync("tar", ["-xOzf", join(root, "one", `designproai-release-${sha}.tgz`), ".designpro-release.json"], { encoding: "utf8" }));
+    assert.deepEqual(Object.keys(manifest.files).sort(), [...fixed, "web/dist/assets/app.js"].sort());
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("deploy copies then validates one archive and never injects mutable ops controls", () => {
+  const deploy = read("deploy.sh");
+  assert.match(deploy, /install -m 0600 -- "\$archive" "\$incoming"/);
+  assert.ok(deploy.indexOf('sha256sum "$incoming"') < deploy.indexOf('validate-archive.py" "$incoming"'));
+  assert.ok(deploy.indexOf('validate-archive.py" "$incoming"') < deploy.indexOf('tar --extract --gzip --file "$incoming"'));
+  assert.match(deploy, /-f "\$staging\/ops\/Dockerfile\.runtime"/);
+  assert.match(deploy, /-f "\$staging\/ops\/Dockerfile\.gateway"/);
+  assert.doesNotMatch(deploy, /install -m 0644 "\$OPS_DIR\/(?:Dockerfile|compose|runtime-healthcheck|gateway-healthcheck)/);
+});
+
+test("persistent spool, host floors, and bounded containers are explicit", () => {
+  const install = read("install.sh");
+  const compose = read("compose.yaml");
+  for (const value of ["minimum_cpu=8", "15 * 1024 * 1024", "15 * 512 * 1024", "120 * 1024 * 1024 * 1024"]) assert.match(install, new RegExp(value.replaceAll("*", "\\*")));
+  const toleratedSwapFloorKiB = 15 * 512 * 1024;
+  assert.ok(8_388_604 >= toleratedSwapFloorKiB, "a kernel-reported 8-GiB swapfile must pass");
+  assert.ok(toleratedSwapFloorKiB - 1 < toleratedSwapFloorKiB, "a value below the documented 7.5-GiB tolerance must fail");
+  assert.match(install, /active swapfile configured as 8 GiB/);
+  assert.match(install, /install -d -o 10001 -g 10001 -m 0700 "\$ROOT\/shared\/spool"/);
+  assert.ok((compose.match(/source: \/opt\/designproai\/shared\/spool/g) || []).length >= 1);
+  assert.match(compose, /mem_limit: 6g/);
+  assert.match(compose, /cpus: "3\.0"/);
+  assert.match(compose, /mem_limit: 512m/);
+});
+
+test("expanded exact env shares only the internal bearer with gateway", () => {
+  const validator = read("validate-env.py");
+  for (const key of ["DESIGNPRO_APP_ORIGIN", "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"]) assert.match(validator, new RegExp(`"${key}"`));
+  assert.match(validator, /runtime\["WORKER_SECRET"\] != gateway\["WORKER_SECRET"\]/);
+  assert.match(read("gateway.env.example"), /DESIGNPRO_RUNTIME_INTERNAL_URL=http:\/\/runtime-1:3001/);
+  assert.doesNotMatch(read("gateway.env.example"), /SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test("acceptance proves shared spool, both container-to-3200 routes, and image IDs", () => {
+  const acceptance = read("acceptance.sh");
+  assert.match(acceptance, /runtime-1 node -e/);
+  assert.match(acceptance, /runtime-2 node -e/);
+  assert.match(acceptance, /host\.docker\.internal.*port:3200/s);
+  assert.match(acceptance, /RUNTIME_IMAGE_ID/);
+  assert.match(acceptance, /GATEWAY_IMAGE_ID/);
+  assert.match(read("rollback.sh"), /validate-release-tree\.py/);
+  assert.match(read("rollback.sh"), /docker image inspect/);
+});
+
+test("healthcheck and acceptance require the canonical runtime-readiness v2 contract", () => {
+  const healthcheck = read("runtime-healthcheck.js");
+  const acceptance = read("acceptance.sh");
+  for (const source of [healthcheck, acceptance]) {
+    assert.match(source, /designpro\.runtime-readiness\.v2/);
+    assert.doesNotMatch(source, /designpro\.runtime-readiness\.v1/);
+  }
+  assert.match(read("gateway.env.example"), /DESIGNPRO_RUNTIME_INTERNAL_URL=http:\/\/runtime-1:3001/);
+});
+
+test("official actions are full-SHA pinned and Supabase CLI is pinned npx", () => {
+  const uses = [...workflow.matchAll(/uses:\s+([^\s]+)/g)].map((match) => match[1]);
+  assert.ok(uses.length >= 8);
+  for (const value of uses) assert.match(value, /@[0-9a-f]{40}$/);
+  assert.match(workflow, /actions\/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd/);
+  assert.match(workflow, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
+  assert.match(workflow, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
+  assert.doesNotMatch(workflow, /supabase\/setup-cli/);
+  assert.match(workflow, /supabase@\$\{SUPABASE_CLI_VERSION\}/);
+  assert.match(workflow, /cmp "dist-release-a/);
+  assert.match(workflow, /tar -xzf "dist-release-a[^"]+" -C dist-image-context/);
+  assert.match(workflow, /docker build[\s\S]*-f dist-image-context\/ops\/Dockerfile\.runtime/);
+  assert.match(workflow, /docker build[\s\S]*-f dist-image-context\/ops\/Dockerfile\.gateway/);
+  assert.match(workflow, /npm run check --prefix runtime/);
+  assert.match(workflow, /node --check gateway\/src\/server\.mjs/);
+});
+
+test("production migration is manual, exact-main, environment protected, and secret gated", () => {
+  assert.match(workflow, /production_migration:[\s\S]*APPLY_DESIGNPRO_PRODUCTION/);
+  assert.match(workflow, /environment:\s*\n\s*name: designproai-production/);
+  assert.match(workflow, /PRODUCTION_APPROVAL_TOKEN: \$\{\{ secrets\.DESIGNPRO_PRODUCTION_APPROVAL_TOKEN \}\}/);
+  assert.match(workflow, /test "\$GITHUB_REF" = "refs\/heads\/main"/);
+  assert.match(workflow, /db push --linked --include-all --dry-run/);
+  assert.match(workflow, /db push --linked --include-all --yes/);
+  assert.doesNotMatch(workflow, /db reset/);
+});

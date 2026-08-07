@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://os.designproai.com/contracts/genie-candidate-catalog.schema.json",
+  "title": "DesignPro Universal GENIE Candidate Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "catalogVersion", "source", "records"],
+  "properties": {
+    "contractVersion": {
+      "const": "designpro.genie-candidate-catalog.v1"
+    },
+    "catalogVersion": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string", "minLength": 1 }
+      }
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/candidate" }
+    }
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRecordKey",
+        "vehicleClass",
+        "make",
+        "model",
+        "confidence",
+        "sourceUrls"
+      ],
+      "properties": {
+        "sourceRecordKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+        },
+        "vehicleClass": {
+          "enum": [
+            "car", "truck", "suv", "van", "motorcycle", "boat", "bus",
+            "rv", "trailer", "aircraft", "heavy_equipment"
+          ]
+        },
+        "make": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "year": { "type": "string" },
+        "subType": { "type": "string" },
+        "overallLengthIn": { "type": "number", "exclusiveMinimum": 0 },
+        "overallWidthIn": { "type": "number", "exclusiveMinimum": 0 },
+        "overallHeightIn": { "type": "number", "exclusiveMinimum": 0 },
+        "wheelbaseIn": { "type": "number", "exclusiveMinimum": 0 },
+        "estimatedPanels": {
+          "description": "Coverage estimates only; never accepted as print geometry.",
+          "type": "object"
+        },
+        "source": {
+          "enum": [
+            "gemini_grounded", "manual", "oem_spec_sheet",
+            "dealer_brochure", "legacy_candidate_import"
+          ]
+        },
+        "sourceUrls": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "format": "uri" }
+        },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "rawResponse": {}
+      }
+    }
+  }
+}
