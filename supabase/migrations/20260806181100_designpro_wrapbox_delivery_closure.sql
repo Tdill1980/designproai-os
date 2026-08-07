@@ -893,9 +893,9 @@ BEGIN
     available_at = CASE
       WHEN p_retryable AND q.attempt < q.max_attempts
       THEN pg_catalog.clock_timestamp() + pg_catalog.make_interval(
-        secs => pg_catalog.least(
+        secs => LEAST(
           900,
-          15 * pg_catalog.power(2, pg_catalog.greatest(q.attempt - 1, 0))::integer
+          15 * pg_catalog.power(2, GREATEST(q.attempt - 1, 0))::integer
         )
       )
       ELSE q.available_at

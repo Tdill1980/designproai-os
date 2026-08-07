@@ -268,19 +268,19 @@ select is(
   'ORDER-2026-0042',
   'business Order # is required and frozen independently of run identity'
 );
-select like(
+select matches(
   pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure),
-  '%placementKey%',
+  'placementKey',
   'Call 10 completion is placement-aware for repeated logo identity/hash'
 );
-select like(
+select matches(
   pg_get_functiondef('public.approve_designpro_human_gate(uuid,text,uuid,text,jsonb)'::regprocedure),
-  '%textLockVerified%',
+  'textLockVerified',
   'PanelPro preflight requires the frozen text lock check'
 );
-select like(
+select matches(
   pg_get_functiondef('public.approve_designpro_human_gate(uuid,text,uuid,text,jsonb)'::regprocedure),
-  '%final_qc_evidence_or_business_identity_incomplete%',
+  'final_qc_evidence_or_business_identity_incomplete',
   'final QC receipt binds canonical DesignID and business Order #'
 );
 select ok(
