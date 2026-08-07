@@ -15,7 +15,7 @@ SET search_path = pg_catalog, public, extensions
 AS $fn$
 DECLARE v_binding jsonb;
 BEGIN
-  IF pg_catalog.coalesce(auth.jwt()->>'role','') IS DISTINCT FROM 'service_role'
+  IF COALESCE(auth.jwt()->>'role','') IS DISTINCT FROM 'service_role'
   THEN RAISE EXCEPTION 'service_role_required'; END IF;
   IF p_operator_id IS NULL OR NOT EXISTS (
     SELECT 1
@@ -145,7 +145,7 @@ DECLARE
   v_pending_count bigint;
   v_missing text[] := ARRAY[]::text[];
 BEGIN
-  IF pg_catalog.coalesce(auth.jwt()->>'role','') IS DISTINCT FROM 'service_role'
+  IF COALESCE(auth.jwt()->>'role','') IS DISTINCT FROM 'service_role'
     AND session_user NOT IN ('postgres','supabase_admin')
   THEN RAISE EXCEPTION 'service_role_or_database_owner_required'; END IF;
 
@@ -182,7 +182,7 @@ BEGIN
     AND pg_catalog.to_regprocedure('public.request_designpro_universal_dimension_validation(uuid,uuid,uuid,uuid)') IS NOT NULL
     AND pg_catalog.to_regprocedure('public.validate_designpro_vehicle_spec_universal(uuid,jsonb,text,jsonb)') IS NOT NULL;
 
-  SELECT pg_catalog.coalesce(bool_and(
+  SELECT COALESCE(bool_and(
     NOT b.public AND b.file_size_limit=50000000000
   ),false) INTO v_storage_ok
   FROM storage.buckets b WHERE b.id='wrap-files' AND b.name='wrap-files';
@@ -215,13 +215,13 @@ BEGIN
     FROM pg_catalog.pg_proc p
     JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
     CROSS JOIN LATERAL pg_catalog.aclexplode(
-      pg_catalog.coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))
+      COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))
     ) privilege
     WHERE p.prosecdef
       AND (n.nspname='designpro_private'
         OR (n.nspname='public' AND p.proname LIKE '%designpro%'))
       AND privilege.privilege_type='EXECUTE'
-      AND (privilege.grantee=0 OR privilege.grantee=pg_catalog.coalesce(
+      AND (privilege.grantee=0 OR privilege.grantee=COALESCE(
         (SELECT oid FROM pg_catalog.pg_roles WHERE rolname='anon'),0
       ))
   ) INTO v_security_ok;
@@ -280,7 +280,7 @@ DECLARE
   v_heavy_lease_fence boolean;
   v_wrapbox_fence boolean;
 BEGIN
-  IF pg_catalog.coalesce(auth.jwt()->>'role','') IS DISTINCT FROM 'service_role'
+  IF COALESCE(auth.jwt()->>'role','') IS DISTINCT FROM 'service_role'
   THEN RAISE EXCEPTION 'service_role_required'; END IF;
 
   WITH required(signature) AS (VALUES
@@ -302,7 +302,7 @@ BEGIN
     ('public.complete_designpro_wrapbox_notification(uuid,uuid,text)'),
     ('public.fail_designpro_wrapbox_notification(uuid,uuid,text,boolean)')
   )
-  SELECT pg_catalog.coalesce(
+  SELECT COALESCE(
       pg_catalog.jsonb_agg(signature ORDER BY signature)
         FILTER (WHERE pg_catalog.to_regprocedure(signature) IS NULL),
       '[]'::jsonb

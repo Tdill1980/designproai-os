@@ -311,7 +311,7 @@ DECLARE
   v_customer designpro_private.business_customer_bindings%ROWTYPE;
   v_recipient designpro_private.wrapbox_delivery_recipients%ROWTYPE;
 BEGIN
-  IF pg_catalog.coalesce(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
+  IF COALESCE(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'service_role_required';
   END IF;
   v_email := pg_catalog.lower(pg_catalog.btrim(p_customer_email));
@@ -444,7 +444,7 @@ DECLARE
   v_logo_inventory jsonb;
   v_pack_created boolean := false;
 BEGIN
-  IF pg_catalog.coalesce(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
+  IF COALESCE(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'service_role_required';
   END IF;
 
@@ -644,7 +644,7 @@ BEGIN
           NOT IN ('driver','passenger','hood','roof','front','rear')
       )
   ) THEN RAISE EXCEPTION 'logo_placement_identity_incomplete'; END IF;
-  SELECT pg_catalog.coalesce(
+  SELECT COALESCE(
     pg_catalog.jsonb_agg(
       pg_catalog.jsonb_build_object(
         'placementKey', a.metadata->>'placementKey',
@@ -796,7 +796,7 @@ DECLARE
   v_id uuid;
   v_token uuid := extensions.gen_random_uuid();
 BEGIN
-  IF pg_catalog.coalesce(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
+  IF COALESCE(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'service_role_required';
   END IF;
   IF NULLIF(pg_catalog.btrim(p_worker), '') IS NULL
@@ -848,7 +848,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog
 AS $fn$
 BEGIN
-  IF pg_catalog.coalesce(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
+  IF COALESCE(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'service_role_required';
   END IF;
   IF NULLIF(pg_catalog.btrim(p_provider_message_id), '') IS NULL
@@ -882,7 +882,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog
 AS $fn$
 BEGIN
-  IF pg_catalog.coalesce(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
+  IF COALESCE(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'service_role_required';
   END IF;
   UPDATE designpro_private.wrapbox_notification_outbox q
@@ -901,7 +901,7 @@ BEGIN
       ELSE q.available_at
     END,
     last_error = pg_catalog.left(
-      pg_catalog.coalesce(NULLIF(pg_catalog.btrim(p_error), ''),
+      COALESCE(NULLIF(pg_catalog.btrim(p_error), ''),
         'notification_transport_failed'),
       1000
     ),
