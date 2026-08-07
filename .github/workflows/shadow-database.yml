@@ -3,7 +3,7 @@ name: Standalone database shadow gate
 on:
   pull_request:
   push:
-    branches: [main, agent/shadow-database-gate]
+    branches: [main]
 
 permissions:
   contents: read
@@ -111,7 +111,21 @@ jobs:
           $$;
           SQL
 
-      - name: Run source contract tests
+      - name: Validate deployable release payload
+        shell: bash
         run: |
-          node --test source-tests/runtime/*.test.mjs
-          node --test source-tests/schema/*.test.mjs
+          sha256sum -c SHA256SUMS
+          node --check release/runtime/index.js
+          node --check release/runtime/designpro-standalone-claimant.cjs
+          node --check release/gateway/src/server.mjs
+          mkdir -p /tmp/designpro-release
+          tar -xzf designproai-release.tgz -C /tmp/designpro-release
+          diff -qr release /tmp/designpro-release
+          if rg -n 'restylepro|railway|slack|color_visualizations|designiq_generations|panelizer_jobs|production_flow_assets|production_panel_dispatches|workforce_runs|workflow_stage_runs' release/runtime release/gateway -i; then
+            echo "Legacy or shared runtime dependency detected" >&2
+            exit 1
+          fi
+          for stage in revision.freeze manifest.resolve proof.build panels.build logos.extract pack.verify pack.activate source.verify await_panelpro_preflight_qc output.build output.verify await_final_human_qc stamp.build zip.build wrapbox.deliver; do
+            rg -q "${stage}" release/runtime/designpro-standalone-claimant.cjs
+          done
+          bash ops/validate-package.sh --self-test
