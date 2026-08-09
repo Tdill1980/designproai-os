@@ -56,8 +56,6 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
       GOOGLE_AI_API_KEY: ${{ secrets.DESIGNPRO_GOOGLE_AI_API_KEY }}
-      RESEND_API_KEY: ${{ secrets.DESIGNPRO_RESEND_API_KEY }}
-      RESEND_FROM: DesignProAI WrapBox <delivery@designproai.com>
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -98,7 +96,7 @@ jobs:
           test "$EXPECTED_PROJECT_REF" = wozyamlnygaddievzuwn
           ! grep -q '143[.]110[.]237[.]145' .github/workflows/deploy-production.yml
 
-      - name: Fail closed on all provider secret classes before any host call
+      - name: Fail closed on required dark-deploy secret classes before any host call
         id: provider-secrets
         shell: bash
         run: |
@@ -108,17 +106,13 @@ jobs:
           grep -q -- 'BEGIN OPENSSH PRIVATE KEY' <<<"$SSH_PRIVATE_KEY"
           test "${#SUPABASE_ACCESS_TOKEN}" -ge 20
           test "${#GOOGLE_AI_API_KEY}" -ge 20
-          test "${#RESEND_API_KEY}" -ge 20
-          test -n "$RESEND_FROM"
-          [[ $RESEND_FROM == *"@"* ]]
-          for value in "$SUPABASE_ACCESS_TOKEN" "$GOOGLE_AI_API_KEY" "$RESEND_API_KEY" "$RESEND_FROM"; do
+          for value in "$SUPABASE_ACCESS_TOKEN" "$GOOGLE_AI_API_KEY"; do
             [[ $value != *$'\n'* && $value != *$'\r'* ]]
           done
 
           project_json="$RUNNER_TEMP/supabase-project.json"
           keys_json="$RUNNER_TEMP/supabase-api-keys.json"
           google_json="$RUNNER_TEMP/google-models.json"
-          resend_json="$RUNNER_TEMP/resend-domains.json"
           auth_header="Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
           curl --fail --silent --show-error \
             -H "$auth_header" \
@@ -142,11 +136,7 @@ jobs:
             -H "x-goog-api-key: $GOOGLE_AI_API_KEY" \
             "https://generativelanguage.googleapis.com/v1beta/models" > "$google_json"
           jq -e '.models | type == "array" and length > 0' "$google_json" >/dev/null
-          curl --fail --silent --show-error \
-            -H "Authorization: Bearer $RESEND_API_KEY" \
-            "https://api.resend.com/domains" > "$resend_json"
-          jq -e '.data | any(.name == "designproai.com" and .status == "verified")' "$resend_json" >/dev/null
-          rm -f -- "$project_json" "$keys_json" "$google_json" "$resend_json"
+          rm -f -- "$project_json" "$keys_json" "$google_json"
           echo "runtime_key_file=$runtime_key_file" >> "$GITHUB_OUTPUT"
 
       - name: Select the one successful exact-main release run
@@ -307,12 +297,9 @@ jobs:
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
           remote_stage=$(<"$RUNNER_TEMP/remote-stage")
           test -f "$RUNTIME_KEY_FILE" && test ! -L "$RUNTIME_KEY_FILE"
-          printf '%s\n%s\n%s\n%s\n%s\n' \
+          printf '%s\n%s\n' \
             "$(<"$RUNTIME_KEY_FILE")" \
-            "$GOOGLE_AI_API_KEY" \
-            "$RESEND_API_KEY" \
-            "$RESEND_FROM" \
-            "RESEND_DOMAIN_VERIFIED" | \
+            "$GOOGLE_AI_API_KEY" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
@@ -328,3 +315,4 @@ jobs:
           remote_stage="/tmp/designproai-dark-$EXACT_SHA-$GITHUB_RUN_ID"
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "if test -d '$remote_stage' && test ! -L '$remote_stage'; then find '$remote_stage' -depth -mindepth 1 -delete && rmdir '$remote_stage'; fi"
+

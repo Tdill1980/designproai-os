@@ -90,15 +90,26 @@ validates role separation, and atomically writes these root-owned `0600` files:
 - `/opt/designproai/shared/runtime.env`, copied from `runtime.env.example`:
   isolated Supabase secret key, an independent random worker secret, Google AI
   key, Google image model, app origin, persistent spool and direct TUS paths,
-  verified Resend sender/key.
+  and `DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false`. The dark environment contains
+  no Resend key, sender, placeholder token, or legacy RP/WPW credential.
 - `/opt/designproai/shared/gateway.env`, copied from `gateway.env.example`:
   isolated Supabase publishable key, HTTPS app origin, Docker-internal runtime
   URL, and the same internal `WORKER_SECRET`. It must never contain a Supabase
   secret key.
 
 `validate-env.py` checks exact key sets, file ownership/mode, the isolated
-project URL, secret separation, HTTPS origin. It
-does not print values.
+project URL, secret separation, HTTPS origin, and the explicit email mode. A
+dark file with email disabled rejects all provider-email fields. Enabling email
+requires the complete Resend key, verified sender, and verification
+attestation; an incomplete enabled configuration fails closed. It does not
+print values.
+
+Outbound email is a public-go-live blocker, not a dark-acceptance dependency.
+Until a dedicated DesignProAI provider key is available, the runtime continues
+durable WrapBox reconciliation without sending mail and reports
+`publicGoLiveReady=false` with `outbound_email_disabled`. Do not substitute
+an RP/WPW key. Public go-live requires changing the explicit mode to `true`
+and supplying the exact provider contract.
 
 ## Protected exact-artifact dark deployment
 
@@ -117,14 +128,14 @@ purpose-specific environment secrets:
 - `DESIGNPROAI_SSH_PRIVATE_KEY`
 - `DESIGNPRO_SUPABASE_ACCESS_TOKEN`
 - `DESIGNPRO_GOOGLE_AI_API_KEY`
-- `DESIGNPRO_RESEND_API_KEY`
 
 The Supabase access token is used read-only to verify project
 `wozyamlnygaddievzuwn` and fetch its current `service_role` key from the
 Management API. That key is masked immediately and is never stored as a second
 GitHub secret. The existing `DESIGNPRO_SUPABASE_DB_PASSWORD` remains exclusive
-to the separately approved migration job. Google credentials and the verified
-`designproai.com` Resend domain are checked before the first host call.
+to the separately approved migration job. Google credentials are checked
+before the first host call. Dark deployment neither requires nor probes a
+Resend secret.
 
 This workflow is deliberately dark: it performs local loopback acceptance but
 does not install Caddy, change DNS, call a migration, or expose public traffic.
@@ -180,3 +191,4 @@ Rollback only the DesignPro release symlink and containers:
 ```bash
 sudo ./rollback.sh <previous-40-char-sha> ROLLBACK_DESIGNPRO_ONLY
 ```
+

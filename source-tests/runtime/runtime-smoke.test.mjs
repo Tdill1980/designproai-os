@@ -32,6 +32,7 @@ test("runtime boots fail-closed while dependencies are unavailable and rejects u
       GOOGLE_AI_API_KEY: "test-gemini-key",
       DESIGNPRO_SPOOL_DIR: "/tmp",
       DESIGNPRO_APP_ORIGIN: "https://os.designproai.com",
+      DESIGNPRO_OUTBOUND_EMAIL_ENABLED: "false",
       DESIGNPRO_PANEL_POLLER_ENABLED: "false",
     },
     stdio: "ignore",
@@ -43,9 +44,13 @@ test("runtime boots fail-closed while dependencies are unavailable and rejects u
     assert.equal(health.body.workerId, "smoke-worker");
     assert.equal(health.body.commit, "0123456789abcdef");
     assert.equal(health.body.workerLoopsStarted, false);
+    assert.equal(health.body.publicGoLiveReady, false);
+    assert.deepEqual(health.body.publicGoLiveBlockers, ["outbound_email_disabled"]);
+    assert.equal(health.body.dependencies.notifications.configurationValid, true);
+    assert.equal(health.body.dependencies.notifications.enabled, false);
 
     const claimant = await fetch(`http://127.0.0.1:${port}/designpro-os/claimant`);
-    assert.equal(claimant.status, 404, "claimant route must not exist before every dependency, including Resend, is ready");
+    assert.equal(claimant.status, 404, "claimant route must not exist while the required Supabase dependency is unavailable");
 
     const denied = await fetch(`http://127.0.0.1:${port}/compose-proof-sheet`, {
       method: "POST",
@@ -57,3 +62,4 @@ test("runtime boots fail-closed while dependencies are unavailable and rejects u
     child.kill("SIGTERM");
   }
 });
+

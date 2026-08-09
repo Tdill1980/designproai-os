@@ -44,8 +44,11 @@ test("HTTP tools are authenticated and health is explicit", () => {
   }
   assert.match(entry, /SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_SECRET, GIT_SHA, GOOGLE_AI_API_KEY/);
   assert.match(entry, /DESIGNPRO_SPOOL_DIR and DESIGNPRO_APP_ORIGIN are required/);
-  for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET", "GIT_SHA", "GOOGLE_AI_API_KEY \(or GEMINI_API_KEY\)", "DESIGNPRO_SPOOL_DIR", "DESIGNPRO_APP_ORIGIN", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED=true"]) assert.ok(entry.includes(`"${key}"`), `missing exact environment contract ${key}`);
-  assert.match(entry, /if \(!notificationReadiness\.available\) \{[\s\S]*?stopWorkerLoops\(\);[\s\S]*?workerLoopsStarted: false[\s\S]*?return;/);
+  for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET", "GIT_SHA", "GOOGLE_AI_API_KEY \(or GEMINI_API_KEY\)", "DESIGNPRO_SPOOL_DIR", "DESIGNPRO_APP_ORIGIN", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true|false"]) assert.ok(entry.includes(`"${key}"`), `missing exact dark environment contract ${key}`);
+  for (const key of ["DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED=true"]) assert.ok(entry.includes(`"${key}"`), `missing public go-live blocker contract ${key}`);
+  assert.match(entry, /if \(!notificationReadiness\.configurationValid\) \{[\s\S]*?stopWorkerLoops\(\);[\s\S]*?workerLoopsStarted: false[\s\S]*?return;/);
+  assert.match(entry, /notificationReadiness\.enabled && notificationReadiness\.available \? createResendTransport\(\) : null/);
+  assert.match(entry, /publicGoLiveReady: notificationReadiness\.publicGoLiveReady, publicGoLiveBlockers/);
   assert.match(entry, /if \(!claimant\) claimant = registerDesignProStandaloneClaimant[\s\S]*?ensureDeliveryWorkers\(\);[\s\S]*?workerLoopsStarted: true/);
   assert.doesNotMatch(entry, /kfapjdyythzyvnpdeghu/);
   assert.doesNotMatch(entry, /process\.env\.SUPABASE_SERVICE_KEY/);
@@ -81,3 +84,4 @@ test("container uses the real runtime entrypoint and fail-closed health", () => 
   assert.match(dockerfile, /USER (?:node|[1-9][0-9]*:[1-9][0-9]*)/);
   assert.doesNotMatch(dockerfile, /worker\.mjs|Railway|restyle|designpro-workflow\.cjs|designpro-entice-workflow\.cjs/i);
 });
+

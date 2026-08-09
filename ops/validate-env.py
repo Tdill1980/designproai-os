@@ -17,12 +17,12 @@ SPOOL_DIR = "/var/lib/designproai/spool"
 INTERNAL_RUNTIME_URL = "http://runtime-1:3001"
 IMAGE_MODEL = "gemini-3-pro-image"
 
-RUNTIME_KEYS = {
+RUNTIME_BASE_KEYS = {
     "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET",
     "GOOGLE_AI_API_KEY", "GOOGLE_IMAGE_MODEL", "DESIGNPRO_APP_ORIGIN",
-    "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "RESEND_API_KEY",
-    "RESEND_FROM", "RESEND_FROM_VERIFIED",
+    "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED",
 }
+EMAIL_PROVIDER_KEYS = {"RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"}
 GATEWAY_KEYS = {
     "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "DESIGNPRO_APP_ORIGIN",
     "DESIGNPRO_RUNTIME_INTERNAL_URL", "WORKER_SECRET",
@@ -83,7 +83,11 @@ def sender_email(value: str) -> str:
 def validate(runtime_path: Path, gateway_path: Path) -> None:
     runtime = load(runtime_path, "runtime")
     gateway = load(gateway_path, "gateway")
-    exact_keys("runtime", runtime, RUNTIME_KEYS)
+    email_mode = runtime.get("DESIGNPRO_OUTBOUND_EMAIL_ENABLED")
+    if email_mode not in {"true", "false"}:
+        raise ValidationError("DESIGNPRO_OUTBOUND_EMAIL_ENABLED must be exactly true or false")
+    runtime_keys = RUNTIME_BASE_KEYS | (EMAIL_PROVIDER_KEYS if email_mode == "true" else set())
+    exact_keys("runtime", runtime, runtime_keys)
     exact_keys("gateway", gateway, GATEWAY_KEYS)
 
     if runtime["SUPABASE_URL"] != PROJECT_URL or gateway["SUPABASE_URL"] != PROJECT_URL:
@@ -100,10 +104,11 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
         raise ValidationError("gateway may call only the Docker-internal runtime endpoint")
     if runtime["WORKER_SECRET"] != gateway["WORKER_SECRET"]:
         raise ValidationError("gateway and runtime must share the same internal WORKER_SECRET")
-    if runtime["RESEND_FROM_VERIFIED"] != "true":
-        raise ValidationError("Resend verified-domain attestation must be true")
-    if not EMAIL_RE.fullmatch(sender_email(runtime["RESEND_FROM"])):
-        raise ValidationError("RESEND_FROM must contain one valid sender email")
+    if email_mode == "true":
+        if runtime["RESEND_FROM_VERIFIED"] != "true":
+            raise ValidationError("Resend verified-domain attestation must be true")
+        if not EMAIL_RE.fullmatch(sender_email(runtime["RESEND_FROM"])):
+            raise ValidationError("RESEND_FROM must contain one valid sender email")
 
     parsed = urlparse(runtime["SUPABASE_URL"])
     if parsed.scheme != "https" or parsed.username or parsed.password:
@@ -112,10 +117,15 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
         raise ValidationError("runtime Supabase secret key is too short")
     if len(runtime["WORKER_SECRET"]) < 32:
         raise ValidationError("WORKER_SECRET must contain at least 32 characters")
-    if runtime["WORKER_SECRET"] in {runtime["SUPABASE_SERVICE_ROLE_KEY"], runtime["RESEND_API_KEY"], runtime["GOOGLE_AI_API_KEY"]}:
+    provider_secrets = {runtime["SUPABASE_SERVICE_ROLE_KEY"], runtime["GOOGLE_AI_API_KEY"]}
+    if email_mode == "true":
+        provider_secrets.add(runtime["RESEND_API_KEY"])
+    if runtime["WORKER_SECRET"] in provider_secrets:
         raise ValidationError("WORKER_SECRET must not reuse a provider secret")
-    if len(runtime["GOOGLE_AI_API_KEY"]) < 20 or len(runtime["RESEND_API_KEY"]) < 20:
+    if len(runtime["GOOGLE_AI_API_KEY"]) < 20:
         raise ValidationError("provider API key is too short")
+    if email_mode == "true" and len(runtime["RESEND_API_KEY"]) < 20:
+        raise ValidationError("email provider API key is too short")
     publishable = gateway["SUPABASE_PUBLISHABLE_KEY"]
     if not (publishable.startswith("sb_publishable_") or len(publishable) >= 80):
         raise ValidationError("gateway publishable key has an unexpected format")
@@ -136,3 +146,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

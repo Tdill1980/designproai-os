@@ -76,7 +76,8 @@ test("role-specific env templates cannot cross the Supabase secret boundary", ()
   assert.doesNotMatch(runtime, /SUPABASE_PUBLISHABLE_KEY=/);
   assert.match(gateway, /SUPABASE_PUBLISHABLE_KEY=/);
   assert.doesNotMatch(gateway, /SUPABASE_SERVICE_ROLE_KEY=/);
-  assert.match(runtime, /RESEND_API_KEY=/);
+  assert.match(runtime, /DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false/);
+  assert.doesNotMatch(runtime, /RESEND_API_KEY=|RESEND_FROM=/);
   assert.match(runtime, /SUPABASE_TUS_ENDPOINT=/);
   assert.match(runtime, /DESIGNPRO_SPOOL_DIR=/);
   assert.match(gateway, /WORKER_SECRET=/);
@@ -149,9 +150,7 @@ test("env validator accepts only root-mode role-separated values", () => {
     "DESIGNPRO_APP_ORIGIN=https://os.designproai.com",
     "DESIGNPRO_SPOOL_DIR=/var/lib/designproai/spool",
     "SUPABASE_TUS_ENDPOINT=https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable",
-    `RESEND_API_KEY=re_${"r".repeat(32)}`,
-    "RESEND_FROM=DesignProAI WrapBox <delivery@designproai.com>",
-    "RESEND_FROM_VERIFIED=true",
+    "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false",
     "",
   ].join("\n"));
   writeFileSync(gateway, [
@@ -165,9 +164,59 @@ test("env validator accepts only root-mode role-separated values", () => {
   chmodSync(runtime, 0o600);
   chmodSync(gateway, 0o600);
   execFileSync("python3", [join(root, "validate-env.py"), runtime, gateway]);
+  const darkRuntime = readFileSync(runtime, "utf8");
+  writeFileSync(runtime, darkRuntime + `RESEND_API_KEY=re_${"r".repeat(32)}\n`);
+  chmodSync(runtime, 0o600);
+  const staleEmail = spawnSync("python3", [join(root, "validate-env.py"), runtime, gateway], { encoding: "utf8" });
+  assert.notEqual(staleEmail.status, 0);
+  assert.match(staleEmail.stderr, /unapproved keys: RESEND_API_KEY/);
+  writeFileSync(runtime, darkRuntime);
+  chmodSync(runtime, 0o600);
   writeFileSync(gateway, readFileSync(gateway, "utf8") + `SUPABASE_SERVICE_ROLE_KEY=${"x".repeat(40)}\n`);
   chmodSync(gateway, 0o600);
   const result = spawnSync("python3", [join(root, "validate-env.py"), runtime, gateway], { encoding: "utf8" });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /unapproved keys: SUPABASE_SERVICE_ROLE_KEY/);
 });
+
+test("env validator fails closed when email is enabled without an exact provider contract", () => {
+  const dir = mkdtempSync(join(tmpdir(), "designpro-email-env-"));
+  const runtime = join(dir, "runtime.env");
+  const gateway = join(dir, "gateway.env");
+  const baseRuntime = [
+    "SUPABASE_URL=https://wozyamlnygaddievzuwn.supabase.co",
+    `SUPABASE_SERVICE_ROLE_KEY=sb_secret_${"s".repeat(40)}`,
+    `WORKER_SECRET=${"w".repeat(40)}`,
+    `GOOGLE_AI_API_KEY=${"g".repeat(32)}`,
+    "GOOGLE_IMAGE_MODEL=gemini-3-pro-image",
+    "DESIGNPRO_APP_ORIGIN=https://os.designproai.com",
+    "DESIGNPRO_SPOOL_DIR=/var/lib/designproai/spool",
+    "SUPABASE_TUS_ENDPOINT=https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable",
+  ];
+  writeFileSync(runtime, [...baseRuntime, "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true", ""].join("\n"));
+  writeFileSync(gateway, [
+    "SUPABASE_URL=https://wozyamlnygaddievzuwn.supabase.co",
+    `SUPABASE_PUBLISHABLE_KEY=sb_publishable_${"p".repeat(32)}`,
+    "DESIGNPRO_APP_ORIGIN=https://os.designproai.com",
+    "DESIGNPRO_RUNTIME_INTERNAL_URL=http://runtime-1:3001",
+    `WORKER_SECRET=${"w".repeat(40)}`,
+    "",
+  ].join("\n"));
+  chmodSync(runtime, 0o600);
+  chmodSync(gateway, 0o600);
+  const missing = spawnSync("python3", [join(root, "validate-env.py"), runtime, gateway], { encoding: "utf8" });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /missing keys: RESEND_API_KEY,RESEND_FROM,RESEND_FROM_VERIFIED/);
+
+  writeFileSync(runtime, [
+    ...baseRuntime,
+    "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true",
+    `RESEND_API_KEY=re_${"r".repeat(32)}`,
+    "RESEND_FROM=DesignProAI WrapBox <delivery@designproai.com>",
+    "RESEND_FROM_VERIFIED=true",
+    "",
+  ].join("\n"));
+  chmodSync(runtime, 0o600);
+  execFileSync("python3", [join(root, "validate-env.py"), runtime, gateway]);
+});
+

@@ -10,19 +10,66 @@ const {
 } = require("../../runtime/resend-transport.cjs");
 
 const configuredEnv = Object.freeze({
-  RESEND_API_KEY: "placeholder-api-key-value",
+  DESIGNPRO_OUTBOUND_EMAIL_ENABLED: "true",
+  RESEND_API_KEY: "re_test_0123456789abcdef",
   RESEND_FROM: "DesignProAI WrapBox <delivery@designpro.example>",
   RESEND_FROM_VERIFIED: "true",
 });
 
-test("readiness reports mail unavailable until key, FROM, and verification attestation exist", () => {
+test("email mode is explicit and enabled mode fails closed without every provider setting", () => {
   assert.deepEqual(resendReadiness({}), {
+    enabled: null,
+    configurationValid: false,
     available: false,
+    publicGoLiveReady: false,
+    provider: "resend",
+    missing: ["DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true|false"],
+    unexpected: [],
+    detail: "Outbound WrapBox email mode must be explicitly enabled or disabled",
+  });
+  assert.deepEqual(resendReadiness({ DESIGNPRO_OUTBOUND_EMAIL_ENABLED: "true" }), {
+    enabled: true,
+    configurationValid: false,
+    available: false,
+    publicGoLiveReady: false,
     provider: "resend",
     missing: ["RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED=true"],
+    unexpected: [],
     detail: "WrapBox mail is unavailable until a Resend key and verified FROM sender are configured",
   });
-  assert.equal(resendReadiness(configuredEnv).available, true);
+  assert.deepEqual(resendReadiness(configuredEnv), {
+    enabled: true,
+    configurationValid: true,
+    available: true,
+    publicGoLiveReady: true,
+    provider: "resend",
+    missing: [],
+    unexpected: [],
+    detail: "WrapBox mail is configured with an explicitly attested verified FROM sender",
+  });
+});
+
+test("dark mode is usable only when email is explicitly disabled and provider secrets are absent", () => {
+  const dark = { DESIGNPRO_OUTBOUND_EMAIL_ENABLED: "false" };
+  assert.deepEqual(resendReadiness(dark), {
+    enabled: false,
+    configurationValid: true,
+    available: false,
+    publicGoLiveReady: false,
+    provider: "resend",
+    missing: [],
+    unexpected: [],
+    detail: "Outbound WrapBox email is explicitly disabled for dark deployment",
+  });
+  assert.throws(
+    () => createResendTransport({ env: dark, fetchImpl: async () => { throw new Error("network must not run"); } }),
+    (error) => error.code === "outbound_email_disabled" && error.retryable === false,
+  );
+
+  const stale = resendReadiness({ ...dark, RESEND_API_KEY: "must-not-be-reused" });
+  assert.equal(stale.configurationValid, false);
+  assert.deepEqual(stale.unexpected, ["RESEND_API_KEY"]);
+  assert.match(stale.detail, /credentials must be omitted/);
 });
 
 test("adapter posts only to Resend HTTPS emails endpoint with exact idempotency header", async () => {
@@ -88,3 +135,4 @@ test("adapter classifies provider retryability without persisting response conte
     },
   );
 });
+
