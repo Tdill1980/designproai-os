@@ -89,11 +89,16 @@ test("expanded exact env shares only the internal bearer with gateway", () => {
   assert.doesNotMatch(read("gateway.env.example"), /SUPABASE_SERVICE_ROLE_KEY/);
 });
 
-test("acceptance proves shared spool, both container-to-3200 routes, and image IDs", () => {
+test("acceptance proves shared spool, both runtime identities, health contracts, and image IDs", () => {
   const acceptance = read("acceptance.sh");
   assert.match(acceptance, /runtime-1 node -e/);
   assert.match(acceptance, /runtime-2 node -e/);
-  assert.match(acceptance, /host\.docker\.internal.*port:3200/s);
+  assert.match(acceptance, /designpro-shared-spool/);
+  assert.match(acceptance, /designpro-worker-1/);
+  assert.match(acceptance, /designpro-worker-2/);
+  assert.match(acceptance, /127\.0\.0\.1:3001/);
+  assert.match(acceptance, /127\.0\.0\.1:3002/);
+  assert.doesNotMatch(acceptance, /host\.docker\.internal.*port:3200/s);
   assert.match(acceptance, /RUNTIME_IMAGE_ID/);
   assert.match(acceptance, /GATEWAY_IMAGE_ID/);
   assert.match(read("rollback.sh"), /validate-release-tree\.py/);
