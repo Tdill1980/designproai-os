@@ -101,6 +101,8 @@ for (const match of text.runtimeEntry.matchAll(/app\.(get|post|put|delete|patch)
 const gatewayEndpoints = [
   { method: "GET", path: "/healthz", auth: "public", request: {}, response: ["status", "service"] },
   { method: "POST", path: "/api/auth/login", auth: "public", request: { required: ["email", "password"] }, response: ["HttpOnly dp_session cookie", "ok"] },
+  { method: "POST", path: "/api/generation/requests", auth: "HttpOnly dp_session -> authenticated owner RPC", request: { required: ["generationId", "idempotencyKey", "input"], serverOwnedProhibited: ["prompt", "model", "seed", "viewAngles", "engineContract", "sourceBlobs"] }, upstream: { rpc: "create_designpro_generation_request" } },
+  { method: "GET", path: "/api/generation/requests/:id", auth: "HttpOnly dp_session -> owner RLS", request: {}, response: ["private immutable view identities", "no signed or public URLs", "explicit close-up handoff blocker"] },
   { method: "GET", path: "/api/jobs", auth: "HttpOnly dp_session -> Supabase access token", request: {}, upstream: { mode: "workflow-type-dependent", action: "status", workflowRunId: "run.id" } },
   { method: "POST", path: "/api/revisions", auth: "HttpOnly dp_session -> Supabase access token", request: { required: ["revisionId", "generationId", "visualizationId", "expectedUpdatedAt", "renderAssets", "idempotencyKey", "revisionSnapshot"], optional: ["view", "instruction", "attachmentIds"] }, upstream: { rpcs: ["save_designpro_revision_source", "create_designpro_entice_workflow"] } },
   { method: "POST", path: "/api/production", auth: "HttpOnly dp_session -> Supabase access token", request: { required: ["enticeWorkflowRunId", "idempotencyKey"], optional: ["orderRequestId"] }, upstream: { rpc: "create_designpro_production_workflow" } },
@@ -120,3 +122,4 @@ const inventory = {
 };
 
 process.stdout.write(`${JSON.stringify(inventory, null, 2)}\n`);
+
