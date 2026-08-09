@@ -925,6 +925,229 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
   throw new StageError("unsupported_production_stage", stage.stage_key, false);
 }
 
+const CALLS_1_7_HANDOFF_BLOCKER = "source_close_up_has_no_verified_hero3d_role_mapping";
+const CALLS_1_7_VIEW_PLAN = Object.freeze([
+  Object.freeze({ sourceViewType: "side", consumerRole: "driver" }),
+  Object.freeze({ sourceViewType: "passenger-side", consumerRole: "passenger" }),
+  Object.freeze({ sourceViewType: "hood_detail", consumerRole: "hood" }),
+  Object.freeze({ sourceViewType: "front", consumerRole: "front" }),
+  Object.freeze({ sourceViewType: "rear", consumerRole: "rear" }),
+  Object.freeze({ sourceViewType: "close-up", consumerRole: "closeup" }),
+  Object.freeze({ sourceViewType: "roof", consumerRole: "roof" }),
+]);
+const CALLS_1_7_ENGINE_CONTRACT = Object.freeze({
+  contractVersion: "designpro.calls-1-7-engine.v1",
+  sourceCommit: "bdb26365904e91be446894e84b01b4a24f64aac0",
+  sourceBlobs: Object.freeze({
+    "design-panel-ai-generate": "4df3a9741c4f0721afb00b4db823fe7022147aa6",
+    "generate-color-render": "0eda353a80eb3e60b293d9a99ba3e7d69ab9f065",
+    "generate-pattern-render": "8114c56cbb1934569bf659a5f6957c680b9bf868",
+    "generate-2d-proof": "2946bc1ba26b374d21ae563f01bb464ee41477d2",
+    "design-on-vehicle-photo": "a962133b04c335754cf3df307505ed2da652bdda",
+    "edit-vehicle-photo": "3843e2b66a8583e16e514a545b7827cf77fade17",
+    "studio-os": "6870eaebab4d43ef8605d812416f86621727d3e9",
+    "view-angles-os": "03d6282d71faeec37d0fd304f3bc234d9a3cf0a4",
+  }),
+  sourceViewOrder: Object.freeze(CALLS_1_7_VIEW_PLAN.map((item) => item.sourceViewType)),
+  freezePolicy: "exact-source-blob-behavior",
+});
+const CALLS_1_7_SERVER_CONTROL_KEYS = new Set([
+  "prompt", "systemprompt", "negativeprompt", "model", "imagemodel", "seed",
+  "temperature", "topk", "topp", "viewangle", "viewangles", "cameraangle",
+  "cameraangles", "enginecontract", "sourcecommit", "sourceblobs",
+]);
+const CALLS_1_7_CONTENT_EXTENSIONS = Object.freeze({
+  "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp",
+});
+const CALLS_1_7_VEHICLE_CLASSES = new Set([
+  "car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv",
+  "trailer", "aircraft", "heavy_equipment",
+]);
+const MAX_CALLS_1_7_VIEW_BYTES = 512 * 1024 * 1024;
+
+function generationInputHasServerControls(value, path = []) {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((child) =>
+    generationInputHasServerControls(child, [...path, "[]"]));
+  return Object.entries(value).some(([key, child]) => {
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const requiredVehicleModel = normalized === "model"
+      && path.length === 1 && path[0] === "vehicle";
+    return CALLS_1_7_SERVER_CONTROL_KEYS.has(normalized) && !requiredVehicleModel
+      || generationInputHasServerControls(child, [...path, key]);
+  });
+}
+
+function assertCalls1To7Claim(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new StageError("generation_claim_invalid", "Calls 1-7 claim is missing", false);
+  }
+  const exactKeys = [
+    "attempt", "claimToken", "engineContract", "engineContractHash", "generationId",
+    "input", "inputHash", "leaseExpiresAt", "requestId", "tenantKey", "viewPlan",
+  ].sort();
+  if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(exactKeys)) {
+    throw new StageError("generation_claim_invalid", "Calls 1-7 claim shape changed", false);
+  }
+  const requestId = String(value.requestId || "").toLowerCase();
+  const generationIdValue = String(value.generationId || "").toLowerCase();
+  const claimToken = String(value.claimToken || "").toLowerCase();
+  if (!UUID_RE.test(requestId) || !UUID_RE.test(generationIdValue) || !UUID_RE.test(claimToken)
+    || !HASH_RE.test(String(value.inputHash || ""))
+    || !HASH_RE.test(String(value.engineContractHash || ""))
+    || !Number.isInteger(Number(value.attempt)) || Number(value.attempt) < 1 || Number(value.attempt) > 12
+    || !Number.isFinite(Date.parse(String(value.leaseExpiresAt || "")))) {
+    throw new StageError("generation_claim_invalid", "Calls 1-7 claim identity is invalid", false);
+  }
+  const tenant = tenantKey(value.tenantKey);
+  const input = value.input;
+  const vehicle = input?.vehicle;
+  const delivery = input?.delivery;
+  const orderNumber = String(input?.orderNumber || "");
+  const recipientIdentityHash = String(delivery?.recipientIdentityHash || "");
+  if (!input || typeof input !== "object" || Array.isArray(input)
+    || input.contractVersion !== "designpro.calls-1-7-input.v1"
+    || orderNumber !== orderNumber.trim()
+    || !/^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$/.test(orderNumber)
+    || !delivery || typeof delivery !== "object" || Array.isArray(delivery)
+    || Object.keys(delivery).sort().join(",") !== "contractVersion,orderNumber,recipientIdentityHash"
+    || delivery.contractVersion !== "designpro.wrapbox-recipient.v1"
+    || recipientIdentityHash !== recipientIdentityHash.toLowerCase()
+    || !HASH_RE.test(recipientIdentityHash)
+    || delivery.orderNumber !== orderNumber
+    || !vehicle || typeof vehicle !== "object" || Array.isArray(vehicle)
+    || [vehicle.year, vehicle.make, vehicle.model, vehicle.type].some((item) => !String(item || "").trim())
+    || !CALLS_1_7_VEHICLE_CLASSES.has(String(vehicle.type || ""))
+    || generationInputHasServerControls(input)
+    || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
+    throw new StageError("generation_claim_invalid", "Calls 1-7 input contract is invalid", false);
+  }
+  if (JSON.stringify(canonical(value.engineContract)) !== JSON.stringify(canonical(CALLS_1_7_ENGINE_CONTRACT))
+    || JSON.stringify(canonical(value.viewPlan)) !== JSON.stringify(canonical(CALLS_1_7_VIEW_PLAN))) {
+    throw new StageError("generation_contract_drift", "Frozen Calls 1-7 source contract changed", false);
+  }
+  return Object.freeze({ ...value, requestId, generationId: generationIdValue, claimToken, tenantKey: tenant });
+}
+
+function normalizeCalls1To7Views(claim, rawViews) {
+  if (!Array.isArray(rawViews) || rawViews.length !== CALLS_1_7_VIEW_PLAN.length) {
+    throw new StageError("exact_seven_generation_views_required", "Exactly seven Calls 1-7 outputs are required", false);
+  }
+  const bySource = new Map();
+  const paths = new Set();
+  const hashes = new Set();
+  for (const raw of rawViews) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)
+      || Object.keys(raw).sort().join(",") !== "byteSize,consumerRole,contentHash,contentType,metadata,sourceViewType,storagePath") {
+      throw new StageError("generation_view_identity_invalid", "Calls 1-7 view identity shape changed", false);
+    }
+    const plan = CALLS_1_7_VIEW_PLAN.find((item) => item.sourceViewType === raw.sourceViewType);
+    const contentHash = String(raw.contentHash || "").toLowerCase();
+    const contentType = String(raw.contentType || "").toLowerCase();
+    const byteSize = Number(raw.byteSize);
+    const extension = CALLS_1_7_CONTENT_EXTENSIONS[contentType];
+    const expectedPath = `designpro/${claim.tenantKey}/${claim.generationId}/calls-1-7/`
+      + `${raw.sourceViewType}/${contentHash}.${extension}`;
+    let storagePath;
+    try { storagePath = safeStoragePath(raw.storagePath); }
+    catch (error) { throw new StageError("generation_view_identity_invalid", error.message, false); }
+    if (!plan || raw.consumerRole !== plan.consumerRole || !HASH_RE.test(contentHash)
+      || !Number.isSafeInteger(byteSize) || byteSize < 1 || byteSize > MAX_CALLS_1_7_VIEW_BYTES
+      || !extension || storagePath !== expectedPath
+      || !raw.metadata || typeof raw.metadata !== "object" || Array.isArray(raw.metadata)
+      || bySource.has(raw.sourceViewType) || paths.has(storagePath) || hashes.has(contentHash)) {
+      throw new StageError("generation_view_identity_invalid", "Calls 1-7 view identity is invalid", false);
+    }
+    const normalized = Object.freeze({
+      sourceViewType: raw.sourceViewType, consumerRole: raw.consumerRole, storagePath,
+      contentHash, byteSize, contentType, metadata: raw.metadata,
+    });
+    bySource.set(raw.sourceViewType, normalized);
+    paths.add(storagePath);
+    hashes.add(contentHash);
+  }
+  return CALLS_1_7_VIEW_PLAN.map((item) => bySource.get(item.sourceViewType));
+}
+
+async function claimCalls1To7Generation(sb, workerId, leaseSeconds = CLAIM_SECONDS) {
+  const id = requiredString(workerId, "Calls 1-7 workerId");
+  if (!Number.isInteger(leaseSeconds) || leaseSeconds < 30 || leaseSeconds > 1800) {
+    throw new StageError("generation_claim_invalid", "Calls 1-7 lease is invalid", false);
+  }
+  const { data, error } = await sb.rpc("claim_designpro_generation_request", {
+    p_worker_id: id, p_lease_seconds: leaseSeconds,
+  });
+  if (error) throw new StageError("generation_claim_failed", error.message || "Generation claim failed", true);
+  const claim = Array.isArray(data) ? data[0] : data;
+  return claim ? assertCalls1To7Claim(claim) : null;
+}
+
+async function heartbeatCalls1To7Generation(sb, claim, leaseSeconds = CLAIM_SECONDS) {
+  const normalized = assertCalls1To7Claim(claim);
+  if (!Number.isInteger(leaseSeconds) || leaseSeconds < 30 || leaseSeconds > 1800) {
+    throw new StageError("generation_heartbeat_invalid", "Calls 1-7 lease is invalid", false);
+  }
+  const { data, error } = await sb.rpc("heartbeat_designpro_generation_request", {
+    p_request_id: normalized.requestId,
+    p_claim_token: normalized.claimToken,
+    p_lease_seconds: leaseSeconds,
+  });
+  if (error) throw new StageError("generation_heartbeat_failed", error.message || "Generation heartbeat failed", true);
+  return data === true;
+}
+
+async function completeCalls1To7Generation(sb, rawClaim, rawViews) {
+  const claim = assertCalls1To7Claim(rawClaim);
+  const views = normalizeCalls1To7Views(claim, rawViews);
+  for (const view of views) {
+    const { data, error } = await sb.storage.from(BUCKET).download(view.storagePath);
+    if (error || !data) {
+      throw new StageError("generation_view_download_failed", `${view.sourceViewType}: ${error?.message || "empty object"}`, true);
+    }
+    const observedType = String(data.type || "").toLowerCase().split(";", 1)[0].trim();
+    if (observedType !== view.contentType) {
+      throw new StageError("generation_view_content_type_mismatch", `${view.sourceViewType} content type changed`, false);
+    }
+    try { verifySourceBytes(view, Buffer.from(await data.arrayBuffer())); }
+    catch (errorValue) {
+      throw new StageError("generation_view_byte_identity_mismatch", `${view.sourceViewType}: ${errorValue.message}`, false);
+    }
+  }
+  const receipt = {
+    contractVersion: "designpro.calls-1-7-receipt.v1",
+    sourceCommit: CALLS_1_7_ENGINE_CONTRACT.sourceCommit,
+    frozenContractHash: claim.engineContractHash,
+    inputHash: claim.inputHash,
+    byteVerified: true,
+    callsCompleted: 7,
+  };
+  const { data, error } = await sb.rpc("complete_designpro_generation_request", {
+    p_request_id: claim.requestId,
+    p_claim_token: claim.claimToken,
+    p_views: views,
+    p_engine_receipt: receipt,
+  });
+  if (error) throw new StageError("generation_completion_failed", error.message || "Generation completion failed", true);
+  if (!data || data.state !== "outputs_ready" || data.handoffReady !== false
+    || data.handoffBlocker !== CALLS_1_7_HANDOFF_BLOCKER) {
+    throw new StageError("generation_completion_response_invalid", "Calls 1-7 completion response changed", false);
+  }
+  return data;
+}
+
+async function failCalls1To7Generation(sb, rawClaim, errorValue) {
+  const claim = assertCalls1To7Claim(rawClaim);
+  const code = String(errorValue?.code || "generation_failed").slice(0, 160);
+  const message = String(errorValue?.message || errorValue || "Generation failed").slice(0, 1000);
+  const retryable = errorValue?.retryable !== false;
+  const { data, error } = await sb.rpc("fail_designpro_generation_request", {
+    p_request_id: claim.requestId, p_claim_token: claim.claimToken,
+    p_error_code: code, p_error_message: message, p_retryable: retryable,
+  });
+  if (error) throw new StageError("generation_failure_record_failed", error.message || "Generation failure was not recorded", true);
+  return data === true;
+}
+
 function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, serviceRoleKey, workerSecret, workerId, port, spoolDir, tusEndpoint }) {
   const id = requiredString(workerId, "workerId");
   const baseUrl = `http://127.0.0.1:${Number(port || 3001)}`;
@@ -995,4 +1218,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, _test: { tenantKey, exactSevenViews, call8ProofRequest, ensureAutomaticProduction, reconcileAutomaticProduction, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2 } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, ensureAutomaticProduction, reconcileAutomaticProduction, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };

@@ -10,6 +10,28 @@ const env = {
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
 };
 
+const CALLS17_RECIPIENT_HASH = "c".repeat(64);
+const CALLS17_ORDER_NUMBER = "DP-9001";
+
+function calls17Input(extra = {}) {
+  return {
+    contractVersion: "designpro.calls-1-7-input.v1",
+    orderNumber: CALLS17_ORDER_NUMBER,
+    delivery: {
+      contractVersion: "designpro.wrapbox-recipient.v1",
+      recipientIdentityHash: CALLS17_RECIPIENT_HASH,
+      orderNumber: CALLS17_ORDER_NUMBER,
+    },
+    vehicle: { year: "2026", make: "Porsche", model: "911", type: "car" },
+    ...extra,
+  };
+}
+
+function calls17Idempotency(generationId, input) {
+  return `calls17:${generationId}:${input.delivery.recipientIdentityHash}:`
+    + createHash("sha256").update(input.orderNumber, "utf8").digest("hex");
+}
+
 async function listen(server) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -787,4 +809,201 @@ test("revision accepts one frozen logo identity on distinct target surfaces with
     `${identityKey}@driver`, `${identityKey}@passenger`,
   ]);
   assert.equal(new Set(frozenSnapshot.expectedLogoInventory.map((logo) => logo.contentHash)).size, 1);
+});
+
+test("authenticated browser can enqueue Calls 1-7 without selecting engine controls", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-000000000009";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/create_designpro_generation_request")) return Response.json({
+        requestId: "10000000-0000-4000-8000-000000000001",
+        generationId, state: "queued", inputHash: "a".repeat(64),
+        engineContractHash: "b".repeat(64), idempotent: false,
+      });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const input = calls17Input({
+    designBrief: { campaign: "Martini heritage" },
+  });
+  const idempotencyKey = calls17Idempotency(generationId, input);
+  const response = await fetch(`${base}/api/generation/requests`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId, idempotencyKey, input }),
+  });
+  assert.equal(response.status, 202);
+  const payload = await response.json();
+  assert.equal(payload.state, "queued");
+  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_generation_request"));
+  assert.ok(rpcCall);
+  assert.deepEqual(JSON.parse(rpcCall.init.body), {
+    p_generation_id: generationId,
+    p_input: input,
+    p_idempotency_key: idempotencyKey,
+  });
+});
+
+test("Calls 1-7 enqueue rejects nested prompt, model, seed, and view controls before RPC", async (t) => {
+  for (const forbidden of [
+    { prompt: "override" }, { nested: { image_model: "override" } },
+    { options: [{ seed: 12 }] }, { camera_angles: ["invented"] },
+  ]) {
+    const calls = [];
+    const server = createGateway({
+      env,
+      fetchImpl: async (url, init = {}) => {
+        calls.push({ url: String(url), init });
+        if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const input = calls17Input(forbidden);
+    const response = await fetch(`${base}/api/generation/requests`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        generationId: "90000000-0000-4000-8000-000000000009",
+        idempotencyKey: calls17Idempotency(
+          "90000000-0000-4000-8000-000000000009", input,
+        ),
+        input,
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "generation_request_invalid" });
+    assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
+  }
+});
+
+test("Calls 1-7 enqueue rejects missing or null registered order identity before RPC", async (t) => {
+  const missingOrder = calls17Input();
+  delete missingOrder.orderNumber;
+  const nullRecipientHash = calls17Input();
+  nullRecipientHash.delivery.recipientIdentityHash = null;
+  const changedDeliveryOrder = calls17Input();
+  changedDeliveryOrder.delivery.orderNumber = "DP-9002";
+  for (const input of [missingOrder, nullRecipientHash, changedDeliveryOrder]) {
+    const calls = [];
+    const server = createGateway({
+      env,
+      fetchImpl: async (url, init = {}) => {
+        calls.push({ url: String(url), init });
+        if (String(url).endsWith("/auth/v1/user")) return Response.json({
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", is_anonymous: false,
+        });
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/generation/requests`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        generationId: "90000000-0000-4000-8000-000000000009",
+        idempotencyKey: "calls17:invalid",
+        input,
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "generation_request_invalid" });
+    assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
+  }
+});
+
+test("Calls 1-7 routes are inaccessible without the HttpOnly session", async (t) => {
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith("/auth/v1/user")) return new Response("{}", { status: 401 });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/10000000-0000-4000-8000-000000000001`);
+  assert.equal(response.status, 401);
+  assert.equal(calls.some((item) => item.url.includes("designpro_generation_")), false);
+});
+
+test("Supabase anonymous Auth users cannot enqueue Calls 1-7", async (t) => {
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith("/auth/v1/user")) return Response.json({
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", is_anonymous: true,
+      });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests`, {
+    method: "POST",
+    headers: { cookie: "dp_session=anonymous-token", "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
+  assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
+});
+
+test("generation status returns private immutable identities without signing objects", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000001";
+  const generationId = "90000000-0000-4000-8000-000000000009";
+  const contentHash = "c".repeat(64);
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (value.endsWith("/rest/v1/rpc/get_designpro_generation_request")) return Response.json({
+        requestId, generationId, state: "outputs_ready",
+        inputHash: "a".repeat(64), engineContractHash: "b".repeat(64),
+        attempt: 1, outputSetHash: "d".repeat(64), failureCode: null,
+        createdAt: "2026-08-08T00:00:00Z", updatedAt: "2026-08-08T00:01:00Z",
+        completedAt: "2026-08-08T00:01:00Z", handoffReady: false,
+        handoffBlocker: "source_close_up_has_no_verified_hero3d_role_mapping",
+        views: [{
+          sourceViewType: "side", consumerRole: "driver", contentHash,
+          byteSize: 100, contentType: "image/png", createdAt: "2026-08-08T00:01:00Z",
+        }],
+      });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.requestId, requestId);
+  assert.equal(payload.handoffReady, false);
+  assert.equal(payload.handoffBlocker, "source_close_up_has_no_verified_hero3d_role_mapping");
+  assert.equal("storagePath" in payload.views[0], false);
+  assert.equal("error" in payload, false);
+  assert.equal(payload.failureCode, null);
+  assert.equal("signedUrl" in payload.views[0], false);
+  assert.equal("engineContract" in payload, false);
+  assert.equal(calls.some((item) => item.url.includes("/rest/v1/designpro_generation_")), false);
+  assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
 });

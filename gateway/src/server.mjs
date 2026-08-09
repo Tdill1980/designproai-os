@@ -143,7 +143,8 @@ async function authenticate(req, res, fetchImpl, cfg) {
       res.setHeader("set-cookie", sessionCookies(payload, cfg));
     }
   }
-  return user?.id ? { token, user } : null;
+  return user?.id && user.is_anonymous !== true && user.is_anonymous !== "true"
+    ? { token, user } : null;
 }
 
 function assertSameOrigin(req, cfg) {
@@ -570,6 +571,119 @@ async function validateRevisionAssets(fetchImpl, token, cfg, userId, body) {
   }
 }
 
+const GENERATION_SERVER_CONTROL_KEYS = new Set([
+  "prompt", "systemprompt", "negativeprompt", "model", "imagemodel", "seed",
+  "temperature", "topk", "topp", "viewangle", "viewangles", "cameraangle",
+  "cameraangles", "enginecontract", "sourcecommit", "sourceblobs",
+]);
+const GENERATION_VIEW_ROLE = new Map([
+  ["side", "driver"], ["passenger-side", "passenger"],
+  ["hood_detail", "hood"], ["front", "front"], ["rear", "rear"],
+  ["close-up", "closeup"], ["roof", "roof"],
+]);
+
+function generationInputHasServerControls(value, path = []) {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((child) =>
+    generationInputHasServerControls(child, [...path, "[]"]));
+  return Object.entries(value).some(([key, child]) => {
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const requiredVehicleModel = normalized === "model"
+      && path.length === 1 && path[0] === "vehicle";
+    return GENERATION_SERVER_CONTROL_KEYS.has(normalized) && !requiredVehicleModel
+      || generationInputHasServerControls(child, [...path, key]);
+  });
+}
+
+function validatedGenerationRequest(body) {
+  const exactKeys = ["generationId", "idempotencyKey", "input"];
+  if (!body || typeof body !== "object" || Array.isArray(body)
+    || JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(exactKeys)) {
+    throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
+  }
+  const generationIdValue = String(body.generationId || "").trim().toLowerCase();
+  const idempotencyKey = String(body.idempotencyKey || "");
+  const input = body.input;
+  const vehicle = input?.vehicle;
+  const delivery = input?.delivery;
+  const orderNumber = String(input?.orderNumber || "");
+  const recipientIdentityHash = String(delivery?.recipientIdentityHash || "");
+  const deliveryKeys = ["contractVersion", "orderNumber", "recipientIdentityHash"];
+  const expectedIdempotencyKey = `calls17:${generationIdValue}:${recipientIdentityHash}:`
+    + createHash("sha256").update(orderNumber, "utf8").digest("hex");
+  if (!UUID_PATTERN.test(generationIdValue)
+    || idempotencyKey !== expectedIdempotencyKey || idempotencyKey.length > 200
+    || !input || typeof input !== "object" || Array.isArray(input)
+    || input.contractVersion !== "designpro.calls-1-7-input.v1"
+    || orderNumber !== orderNumber.trim() || !ORDER_NUMBER_PATTERN.test(orderNumber)
+    || !delivery || typeof delivery !== "object" || Array.isArray(delivery)
+    || JSON.stringify(Object.keys(delivery).sort()) !== JSON.stringify(deliveryKeys)
+    || delivery.contractVersion !== "designpro.wrapbox-recipient.v1"
+    || recipientIdentityHash !== recipientIdentityHash.toLowerCase()
+    || !SHA256_PATTERN.test(recipientIdentityHash)
+    || delivery.orderNumber !== orderNumber
+    || !vehicle || typeof vehicle !== "object" || Array.isArray(vehicle)
+    || [vehicle.year, vehicle.make, vehicle.model, vehicle.type].some((item) => !String(item || "").trim())
+    || !VEHICLE_CLASSES.includes(String(vehicle.type || ""))
+    || generationInputHasServerControls(input)
+    || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
+    throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
+  }
+  return { generationId: generationIdValue, idempotencyKey, input };
+}
+
+async function generationRequestFor(fetchImpl, token, cfg, requestId) {
+  return rpc(fetchImpl, token, cfg, "get_designpro_generation_request", {
+    p_request_id: requestId,
+  });
+}
+
+function validatedGenerationStatus(value) {
+  if (value === null) return null;
+  const state = String(value?.state || "");
+  const views = value?.views;
+  const attempt = Number(value?.attempt);
+  const outputSetHash = value?.outputSetHash;
+  const failureCode = value?.failureCode;
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || !UUID_PATTERN.test(String(value.requestId || ""))
+    || !UUID_PATTERN.test(String(value.generationId || ""))
+    || !["queued", "leased", "retryable", "outputs_ready", "failed", "cancelled"].includes(state)
+    || !SHA256_PATTERN.test(String(value.inputHash || ""))
+    || !SHA256_PATTERN.test(String(value.engineContractHash || ""))
+    || !Number.isInteger(attempt) || attempt < 0 || attempt > 12
+    || outputSetHash !== null && !SHA256_PATTERN.test(String(outputSetHash || ""))
+    || failureCode !== null && !/^[a-z0-9][a-z0-9_:-]{0,79}$/.test(String(failureCode || ""))
+    || value.handoffReady !== false
+    || value.handoffBlocker !== null
+      && value.handoffBlocker !== "source_close_up_has_no_verified_hero3d_role_mapping"
+    || !Array.isArray(views) || views.length > 7) {
+    throw Object.assign(new Error("generation_status_response_invalid"), { status: 502 });
+  }
+  const publicViews = views.map((view) => {
+    const exactKeys = ["byteSize", "consumerRole", "contentHash", "contentType", "createdAt", "sourceViewType"];
+    if (!view || typeof view !== "object" || Array.isArray(view)
+      || JSON.stringify(Object.keys(view).sort()) !== JSON.stringify(exactKeys)
+      || GENERATION_VIEW_ROLE.get(view.sourceViewType) !== view.consumerRole
+      || !SHA256_PATTERN.test(String(view.contentHash || ""))
+      || !Number.isSafeInteger(Number(view.byteSize)) || Number(view.byteSize) < 1
+      || !["image/png", "image/jpeg", "image/webp"].includes(view.contentType)) {
+      throw Object.assign(new Error("generation_status_response_invalid"), { status: 502 });
+    }
+    return { ...view, byteSize: Number(view.byteSize) };
+  });
+  return {
+    requestId: String(value.requestId), generationId: String(value.generationId),
+    state, inputHash: String(value.inputHash),
+    engineContractHash: String(value.engineContractHash), attempt,
+    outputSetHash: outputSetHash ? String(outputSetHash) : null,
+    failureCode: failureCode ? String(failureCode) : null,
+    createdAt: value.createdAt, updatedAt: value.updatedAt,
+    completedAt: value.completedAt || null, handoffReady: false,
+    handoffBlocker: value.handoffBlocker || null, views: publicViews,
+  };
+}
+
 export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
   const cfg = config(env);
   return createServer(async (req, res) => {
@@ -629,6 +743,40 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       }
       if (req.method === "POST" && url.pathname === "/api/assets/verify") {
         return json(res, 200, { asset: await verifyStoredAsset(fetchImpl, token, cfg, user.id, (await readBody(req)).asset || {}) });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/generation/requests") {
+        const request = validatedGenerationRequest(await readBody(req));
+        const result = await rpc(fetchImpl, token, cfg, "create_designpro_generation_request", {
+          p_generation_id: request.generationId,
+          p_input: request.input,
+          p_idempotency_key: request.idempotencyKey,
+        });
+        if (!UUID_PATTERN.test(String(result?.requestId || ""))
+          || result?.generationId !== request.generationId
+          || !["queued", "leased", "retryable", "outputs_ready", "failed", "cancelled"].includes(result?.state)
+          || !SHA256_PATTERN.test(String(result?.inputHash || ""))
+          || !SHA256_PATTERN.test(String(result?.engineContractHash || ""))) {
+          throw Object.assign(new Error("generation_request_response_invalid"), { status: 502 });
+        }
+        return json(res, 202, {
+          requestId: result.requestId,
+          generationId: result.generationId,
+          state: result.state,
+          inputHash: result.inputHash,
+          engineContractHash: result.engineContractHash,
+          idempotent: result.idempotent === true,
+        });
+      }
+      const generationRequestMatch = url.pathname.match(/^\/api\/generation\/requests\/([0-9a-f-]{36})$/);
+      if (req.method === "GET" && generationRequestMatch) {
+        const requestId = generationRequestMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        const request = validatedGenerationStatus(
+          await generationRequestFor(fetchImpl, token, cfg, requestId)
+        );
+        if (!request) return json(res, 404, { error: "generation_request_not_found" });
+        return json(res, 200, request);
       }
 
       if (req.method === "GET" && url.pathname === "/api/genie/candidates") {
