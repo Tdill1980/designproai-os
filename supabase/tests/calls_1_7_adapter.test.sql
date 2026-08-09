@@ -118,7 +118,7 @@ select throws_ok(
     '90000000-0000-4000-8000-000000000009',
     (select payload from calls17_fixture),
     (select idempotency_key from calls17_fixture))$$,
-  'P0001'::char(5),'authentication_required',
+  'authentication_required',
   'Supabase anonymous Auth users cannot enqueue');
 
 select set_config('request.jwt.claims',
@@ -129,7 +129,7 @@ select throws_ok(
     '90000000-0000-4000-8000-000000000009',
     (select payload from calls17_fixture),
     (select idempotency_key from calls17_fixture))$$,
-  'P0001'::char(5),'confirmed_operator_order_binding_required',
+  'confirmed_operator_order_binding_required',
   'a permanent Auth user without the confirmed operator/order binding cannot enqueue');
 
 select set_config('request.jwt.claims',
@@ -169,7 +169,7 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '91000000-0000-4000-8000-000000000009'))$$,
-  'P0001'::char(5),'generation_request_invalid',
+  'generation_request_invalid',
   'the direct RPC rejects a vehicle class outside the exact allowlist');
 select throws_ok(
   $$select public.create_designpro_generation_request(
@@ -179,7 +179,7 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '91500000-0000-4000-8000-000000000009'))$$,
-  'P0001'::char(5),'generation_request_invalid',
+  'generation_request_invalid',
   'a missing or changed delivery/order equality fails at contract validation');
 select throws_ok(
   $$select public.create_designpro_generation_request(
@@ -188,7 +188,7 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '91600000-0000-4000-8000-000000000009'))$$,
-  'P0001'::char(5),'generation_request_invalid',
+  'generation_request_invalid',
   'a missing top-level order fails deterministically at contract validation');
 select throws_ok(
   $$select public.create_designpro_generation_request(
@@ -198,7 +198,7 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '91700000-0000-4000-8000-000000000009'))$$,
-  'P0001'::char(5),'generation_request_invalid',
+  'generation_request_invalid',
   'a null recipient hash fails deterministically at contract validation');
 select throws_ok(
   $$select public.create_designpro_generation_request(
@@ -207,11 +207,11 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '92000000-0000-4000-8000-000000000009'))$$,
-  'P0001'::char(5),'generation_active_request_limit',
+  'generation_active_request_limit',
   'one nonterminal request per owner is enforced inside the database');
 select throws_ok(
   $$select public.claim_designpro_generation_request('browser',900)$$,
-  'P0001'::char(5),'service_role_required',
+  'service_role_required',
   'an authenticated JWT cannot claim the queue even through direct SQL');
 
 reset role;
@@ -284,7 +284,7 @@ select throws_ok(
     (select (payload->>'requestId')::uuid from calls17_claim),
     (select (payload->>'claimToken')::uuid from calls17_claim),
     '[]'::jsonb,'{}'::jsonb)$$,
-  'P0001'::char(5),'generation_lease_lost',
+  'generation_lease_lost',
   'a consumed completion lease cannot be replayed');
 select ok(not public.heartbeat_designpro_generation_request(
   (select (payload->>'requestId')::uuid from calls17_claim),
