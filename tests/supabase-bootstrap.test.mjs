@@ -12,15 +12,15 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirteen-migration chain', () => {
-  assert.equal(migrationNames.length, 13);
+test('fresh bootstrap contains one ordered fourteen-migration chain', () => {
+  assert.equal(migrationNames.length, 14);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
       '20260806180000', '20260806180100', '20260806180200', '20260806180300',
       '20260806180400', '20260806180500', '20260806180600', '20260806180700',
       '20260806180800', '20260806180900', '20260806181000', '20260806181100',
-      '20260806181200',
+      '20260806181200', '20260808024500',
     ],
   );
 });
@@ -98,7 +98,8 @@ test('final privilege migration clears implicit execution and grants an allowlis
 });
 
 test('runtime readiness starts without a seed deadlock and reports capabilities', () => {
-  const readiness = migrations.at(-1);
+  const readiness = migrations.find((migration) => migration.includes("'contract','designpro.runtime-readiness.v2'"));
+  assert.ok(readiness);
   assert.match(readiness, /'contract','designpro\.runtime-readiness\.v2'/);
   assert.doesNotMatch(readiness, /designpro\.runtime-readiness\.v1/);
   assert.match(readiness, /'ready',pg_catalog\.jsonb_array_length\(v_missing\)=0[\s\S]*v_grounded_identity_fence[\s\S]*v_heavy_lease_fence[\s\S]*v_wrapbox_fence/);
@@ -141,3 +142,4 @@ test('GENIE import schema parses and does not claim verified geometry', async ()
   assert.equal(contract.$defs.candidate.properties.estimatedPanels.type, 'object');
   assert.equal(contract.$defs.candidate.properties.validatedSurfaces, undefined);
 });
+
