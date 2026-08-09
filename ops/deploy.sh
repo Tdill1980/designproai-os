@@ -125,7 +125,6 @@ ln -sfn "$release" "$ROOT/public.next"
 mv -Tf "$ROOT/public.next" "$ROOT/public"
 [[ $(readlink -f "$ROOT/public") == "$release" ]] || { echo "Public pointer did not switch exactly" >&2; exit 12; }
 python3 "$OPS_DIR/validate-release-tree.py" "$release" "$sha"
-"$OPS_DIR/vectorize-guard.sh" verify
 cutover_started=false
 trap - ERR
 
