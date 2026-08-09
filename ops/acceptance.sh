@@ -8,8 +8,10 @@ ROOT=/opt/designproai
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "Exact lowercase SHA required" >&2; exit 2; }
+release="$ROOT/releases/$sha"
 [[ -L $ROOT/current ]] || { echo "Current DesignPro release symlink is missing" >&2; exit 3; }
-[[ $(readlink -f "$ROOT/current") == "$ROOT/releases/$sha" ]] || { echo "Current release is not the requested SHA" >&2; exit 3; }
+[[ $(readlink -f "$ROOT/current") == "$release" ]] || { echo "Current release is not the requested SHA" >&2; exit 3; }
+[[ -d $release && ! -L $release ]] || { echo "Exact immutable release directory is missing or unsafe" >&2; exit 3; }
 [[ -f $ROOT/current/web/dist/index.html ]] || { echo "Web build missing" >&2; exit 4; }
 [[ -f $ROOT/current/deploy/release.tgz && -f $ROOT/current/deploy/image-ids.env ]] || { echo "Release provenance is missing" >&2; exit 4; }
 archive_sha=$(awk -F= '$1 == "RELEASE_ARCHIVE_SHA256" {print $2}' "$ROOT/current/deploy/release.env")
@@ -17,7 +19,7 @@ archive_sha=$(awk -F= '$1 == "RELEASE_ARCHIVE_SHA256" {print $2}' "$ROOT/current
   echo "Release archive identity mismatch" >&2; exit 4;
 }
 python3 "$OPS_DIR/validate-archive.py" "$ROOT/current/deploy/release.tgz" "$sha"
-python3 "$OPS_DIR/validate-release-tree.py" "$ROOT/current" "$sha"
+python3 "$OPS_DIR/validate-release-tree.py" "$release" "$sha"
 systemctl is-active --quiet designproai.service || { echo "DesignPro systemd service is not active" >&2; exit 5; }
 python3 "$OPS_DIR/validate-env.py" "$ROOT/shared/runtime.env" "$ROOT/shared/gateway.env"
 
