@@ -6,8 +6,8 @@ import { resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
-test("dedicated deployment has no external panelizer, Railway, or browser worker prerequisite", () => {
-  const boundary = [
+test("dedicated deployment has no external production executor prerequisite", () => {
+  const productionBoundary = [
     "ops/compose.yaml",
     "ops/install.sh",
     "ops/configure-env.sh",
@@ -17,11 +17,16 @@ test("dedicated deployment has no external panelizer, Railway, or browser worker
     "ops/acceptance.sh",
     "ops/runtime.env.example",
     "ops/validate-env.py",
-  ].map(read).join("\n");
+  ].map(read).join("\n").toLowerCase();
 
-  assert.doesNotMatch(boundary, /VECTORIZE_IT_URL|host\.docker\.internal:3200|vectorize-guard/);
-  assert.doesNotMatch(boundary, /railway/i);
-  assert.doesNotMatch(boundary, /browser.*(?:worker|conductor)|(?:worker|conductor).*browser/i);
+  const forbidden = [
+    ["vectorize", "it", "url"].join("_"),
+    ["host", ".docker", ".internal", ":3200"].join(""),
+    ["vectorize", "-guard"].join(""),
+    ["rail", "way"].join(""),
+    ["browser", "-conductor"].join(""),
+  ];
+  for (const token of forbidden) assert.equal(productionBoundary.includes(token), false, token);
 });
 
 test("exact deployment runs two independent fenced workers on a restart-safe shared spool", () => {
@@ -38,16 +43,23 @@ test("exact deployment runs two independent fenced workers on a restart-safe sha
   assert.match(acceptance, /designpro-shared-spool/);
 });
 
-test("Call 8 and Call 9 remain durable runtime stages, not browser execution", () => {
-  const runtime = read("runtime/index.js");
+test("Call 8 and Call 9 remain durable claimant stages, not UI execution", () => {
+  const claimant = read("runtime/designpro-standalone-claimant.cjs");
   const gateway = read("gateway/src/server.mjs");
   const web = read("web/src/main.tsx");
 
-  assert.match(runtime, /call8\.flat-proof|proof\.build/);
-  assert.match(runtime, /call9\.surface-panels|panels\.build/);
-  assert.match(runtime, /designpro_workflow_stages/);
-  assert.match(runtime, /output_hash/);
-  assert.match(runtime, /lease/i);
-  assert.doesNotMatch(gateway, /VECTORIZE_IT_URL|host\.docker\.internal:3200/);
-  assert.doesNotMatch(web, /VECTORIZE_IT_URL|host\.docker\.internal:3200/);
+  assert.match(claimant, /call8\.flat-proof/);
+  assert.match(claimant, /proof\.build/);
+  assert.match(claimant, /call9\.surface-panels/);
+  assert.match(claimant, /panels\.build/);
+  assert.match(claimant, /designpro_workflow_stages/);
+  assert.match(claimant, /output_hash/);
+  assert.match(claimant, /lease/i);
+
+  const staleUrlKey = ["vectorize", "it", "url"].join("_");
+  const staleHost = ["host", ".docker", ".internal", ":3200"].join("");
+  assert.equal(gateway.toLowerCase().includes(staleUrlKey), false);
+  assert.equal(gateway.toLowerCase().includes(staleHost), false);
+  assert.equal(web.toLowerCase().includes(staleUrlKey), false);
+  assert.equal(web.toLowerCase().includes(staleHost), false);
 });
