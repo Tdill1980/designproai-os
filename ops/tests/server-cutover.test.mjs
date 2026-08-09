@@ -69,6 +69,15 @@ test("Caddy exposes only UI/gateway and explicitly denies worker routes", () => 
   assert.ok(deploy.lastIndexOf('acceptance.sh" "$sha"') < deploy.lastIndexOf('public.next'), "public web switches only after local acceptance");
 });
 
+test("acceptance validates the regular exact release target, never the current symlink", () => {
+  const acceptance = read("acceptance.sh");
+  assert.match(acceptance, /release="\$ROOT\/releases\/\$sha"/);
+  assert.match(acceptance, /readlink -f "\$ROOT\/current"\) == "\$release"/);
+  assert.match(acceptance, /\[\[ -d \$release && ! -L \$release \]\]/);
+  assert.match(acceptance, /validate-release-tree\.py" "\$release" "\$sha"/);
+  assert.doesNotMatch(acceptance, /validate-release-tree\.py" "\$ROOT\/current"/);
+});
+
 test("role-specific env templates cannot cross the Supabase secret boundary", () => {
   const runtime = read("runtime.env.example");
   const gateway = read("gateway.env.example");
