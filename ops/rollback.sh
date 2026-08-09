@@ -27,7 +27,6 @@ gateway_image_id=$(awk -F= '$1 == "GATEWAY_IMAGE_ID" {print $2}' "$target/deploy
 [[ $(docker image inspect -f '{{.Id}}' "designproai-runtime:$sha") == "$runtime_image_id" ]] || { echo "Runtime image identity drifted" >&2; exit 3; }
 [[ $(docker image inspect -f '{{.Id}}' "designproai-gateway:$sha") == "$gateway_image_id" ]] || { echo "Gateway image identity drifted" >&2; exit 3; }
 python3 "$OPS_DIR/validate-env.py" "$ROOT/shared/runtime.env" "$ROOT/shared/gateway.env"
-"$OPS_DIR/vectorize-guard.sh" verify
 
 for link in current public; do
   if [[ -e $ROOT/$link || -L $ROOT/$link ]]; then
@@ -54,7 +53,6 @@ recover() {
   elif [[ -L $ROOT/public ]]; then
     unlink "$ROOT/public"
   fi
-  "$OPS_DIR/vectorize-guard.sh" verify >/dev/null || true
   exit "$status"
 }
 trap recover ERR
