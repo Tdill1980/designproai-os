@@ -11,10 +11,7 @@ x-runtime: &runtime
   environment:
     PORT: "3001"
     GIT_SHA: "${DESIGNPRO_SHA}"
-    VECTORIZE_IT_URL: "http://host.docker.internal:3200/vectorize"
     DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
   networks:
     - designpro_internal
   healthcheck:
@@ -55,8 +52,7 @@ services:
       PORT: "3001"
       GIT_SHA: "${DESIGNPRO_SHA}"
       DESIGNPRO_WORKER_ID: "designpro-worker-1"
-      VECTORIZE_IT_URL: "http://host.docker.internal:3200/vectorize"
-      DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
+        DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
     ports:
       - "127.0.0.1:3001:3001"
 
@@ -66,8 +62,7 @@ services:
       PORT: "3001"
       GIT_SHA: "${DESIGNPRO_SHA}"
       DESIGNPRO_WORKER_ID: "designpro-worker-2"
-      VECTORIZE_IT_URL: "http://host.docker.internal:3200/vectorize"
-      DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
+        DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
     ports:
       - "127.0.0.1:3002:3001"
 
