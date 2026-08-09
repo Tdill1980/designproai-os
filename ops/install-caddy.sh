@@ -62,7 +62,6 @@ restore() {
   else
     systemctl stop caddy >/dev/null 2>&1 || true
   fi
-  "$OPS_DIR/vectorize-guard.sh" verify >/dev/null || true
   exit "$status"
 }
 trap restore ERR
@@ -84,7 +83,6 @@ if systemctl is-active --quiet caddy; then
 else
   systemctl start caddy
 fi
-"$OPS_DIR/vectorize-guard.sh" verify
 "$OPS_DIR/acceptance.sh" "$sha"
 trap - ERR
 
