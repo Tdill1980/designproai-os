@@ -570,6 +570,99 @@ async function validateRevisionAssets(fetchImpl, token, cfg, userId, body) {
   }
 }
 
+const GENERATION_SERVER_CONTROL_KEYS = new Set([
+  "prompt", "systemprompt", "negativeprompt", "model", "imagemodel", "seed",
+  "temperature", "topk", "topp", "viewangle", "viewangles", "cameraangle",
+  "cameraangles", "enginecontract", "sourcecommit", "sourceblobs",
+]);
+const GENERATION_REQUEST_FIELDS = "id,generation_id,state,input_hash,engine_contract_hash,attempt,output_set_hash,error,created_at,updated_at,completed_at";
+const GENERATION_VIEW_FIELDS = "source_view_type,consumer_role,storage_path,content_hash,byte_size,content_type,created_at";
+
+function generationInputHasServerControls(value, path = []) {
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((child) =>
+    generationInputHasServerControls(child, [...path, "[]"]));
+  return Object.entries(value).some(([key, child]) => {
+    const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const requiredVehicleModel = normalized === "model"
+      && path.length === 1 && path[0] === "vehicle";
+    return GENERATION_SERVER_CONTROL_KEYS.has(normalized) && !requiredVehicleModel
+      || generationInputHasServerControls(child, [...path, key]);
+  });
+}
+
+function validatedGenerationRequest(body) {
+  const exactKeys = ["generationId", "idempotencyKey", "input"];
+  if (!body || typeof body !== "object" || Array.isArray(body)
+    || JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(exactKeys)) {
+    throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
+  }
+  const generationIdValue = String(body.generationId || "").trim().toLowerCase();
+  const idempotencyKey = String(body.idempotencyKey || "");
+  const input = body.input;
+  const vehicle = input?.vehicle;
+  if (!UUID_PATTERN.test(generationIdValue)
+    || idempotencyKey !== idempotencyKey.trim() || idempotencyKey.length < 1 || idempotencyKey.length > 200
+    || !input || typeof input !== "object" || Array.isArray(input)
+    || input.contractVersion !== "designpro.calls-1-7-input.v1"
+    || !vehicle || typeof vehicle !== "object" || Array.isArray(vehicle)
+    || [vehicle.year, vehicle.make, vehicle.model, vehicle.type].some((item) => !String(item || "").trim())
+    || !VEHICLE_CLASSES.includes(String(vehicle.type || ""))
+    || generationInputHasServerControls(input)
+    || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
+    throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
+  }
+  return { generationId: generationIdValue, idempotencyKey, input };
+}
+
+async function generationRequestFor(fetchImpl, token, cfg, requestId) {
+  const response = await upstream(fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${encodeURIComponent(GENERATION_REQUEST_FIELDS)}`
+      + `&id=eq.${encodeURIComponent(requestId)}&limit=1`,
+    { method: "GET" }, token, cfg);
+  if (!response.ok) throw Object.assign(new Error(`generation_request_query_${response.status}`), { status: response.status });
+  const rows = await response.json();
+  return Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+}
+
+async function generationViewsFor(fetchImpl, token, cfg, requestId) {
+  const response = await upstream(fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_generation_views?select=${encodeURIComponent(GENERATION_VIEW_FIELDS)}`
+      + `&request_id=eq.${encodeURIComponent(requestId)}&order=source_view_type.asc`,
+    { method: "GET" }, token, cfg);
+  if (!response.ok) throw Object.assign(new Error(`generation_views_query_${response.status}`), { status: response.status });
+  const rows = await response.json();
+  return Array.isArray(rows) ? rows : [];
+}
+
+function publicGenerationRequest(row, views) {
+  return {
+    requestId: String(row.id),
+    generationId: String(row.generation_id),
+    state: String(row.state),
+    inputHash: String(row.input_hash),
+    engineContractHash: String(row.engine_contract_hash),
+    attempt: Number(row.attempt || 0),
+    outputSetHash: row.output_set_hash ? String(row.output_set_hash) : null,
+    error: row.error && typeof row.error === "object" ? row.error : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at || null,
+    handoffReady: false,
+    handoffBlocker: row.state === "outputs_ready"
+      ? "source_close_up_has_no_verified_hero3d_role_mapping" : null,
+    views: views.map((view) => ({
+      sourceViewType: String(view.source_view_type),
+      consumerRole: String(view.consumer_role),
+      storagePath: String(view.storage_path),
+      contentHash: String(view.content_hash),
+      byteSize: Number(view.byte_size),
+      contentType: String(view.content_type),
+      createdAt: view.created_at,
+    })),
+  };
+}
+
 export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
   const cfg = config(env);
   return createServer(async (req, res) => {
@@ -629,6 +722,40 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       }
       if (req.method === "POST" && url.pathname === "/api/assets/verify") {
         return json(res, 200, { asset: await verifyStoredAsset(fetchImpl, token, cfg, user.id, (await readBody(req)).asset || {}) });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/generation/requests") {
+        const request = validatedGenerationRequest(await readBody(req));
+        const result = await rpc(fetchImpl, token, cfg, "create_designpro_generation_request", {
+          p_generation_id: request.generationId,
+          p_input: request.input,
+          p_idempotency_key: request.idempotencyKey,
+        });
+        if (!UUID_PATTERN.test(String(result?.requestId || ""))
+          || result?.generationId !== request.generationId
+          || !["queued", "leased", "retryable", "outputs_ready", "failed", "cancelled"].includes(result?.state)
+          || !SHA256_PATTERN.test(String(result?.inputHash || ""))
+          || !SHA256_PATTERN.test(String(result?.engineContractHash || ""))) {
+          throw Object.assign(new Error("generation_request_response_invalid"), { status: 502 });
+        }
+        return json(res, 202, {
+          requestId: result.requestId,
+          generationId: result.generationId,
+          state: result.state,
+          inputHash: result.inputHash,
+          engineContractHash: result.engineContractHash,
+          idempotent: result.idempotent === true,
+        });
+      }
+      const generationRequestMatch = url.pathname.match(/^\/api\/generation\/requests\/([0-9a-f-]{36})$/);
+      if (req.method === "GET" && generationRequestMatch) {
+        const requestId = generationRequestMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        const request = await generationRequestFor(fetchImpl, token, cfg, requestId);
+        if (!request) return json(res, 404, { error: "generation_request_not_found" });
+        return json(res, 200, publicGenerationRequest(
+          request, await generationViewsFor(fetchImpl, token, cfg, requestId)
+        ));
       }
 
       if (req.method === "GET" && url.pathname === "/api/genie/candidates") {
