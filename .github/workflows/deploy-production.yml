@@ -33,6 +33,7 @@ concurrency:
 env:
   TARGET_HOST: 137.184.0.4
   TARGET_HOSTNAME: designproai-prod-sfo3
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
   EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCu7YrIRL+/qm1EcxQ0uEdQXFSN4/JwBjWng
   EXPECTED_PROJECT_REF: wozyamlnygaddievzuwn
   EXACT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.exact_sha }}
@@ -221,7 +222,11 @@ jobs:
           if [[ $automation_fingerprint != SHA256:* ]]; then
             fail_identity_pin 32 "automation public-key fingerprint could not be derived"
           fi
-          printf 'Automation public-key fingerprint: %s\n' "$automation_fingerprint"
+          printf 'Observed automation public-key fingerprint: %s\n' "$automation_fingerprint"
+          printf 'Expected automation public-key fingerprint: %s\n' "$EXPECTED_AUTOMATION_KEY_FINGERPRINT"
+          if [[ $automation_fingerprint != "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]]; then
+            fail_identity_pin 38 "automation public-key fingerprint does not match the protected client pin"
+          fi
 
           if ! ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts"; then
             fail_identity_pin 33 "unauthenticated ed25519 host-key scan failed for the pinned target"
