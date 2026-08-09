@@ -10,6 +10,7 @@ const remote = readFileSync(resolve(root, "ops/ci-dark-deploy.sh"), "utf8");
 const backup = readFileSync(resolve(root, "ops/backup.sh"), "utf8");
 const deploy = readFileSync(resolve(root, "ops/deploy.sh"), "utf8");
 const inventoryScript = readFileSync(resolve(root, "ops/inventory.sh"), "utf8");
+const configure = readFileSync(resolve(root, "ops/configure-env.sh"), "utf8");
 
 test("dark deploy is exact-main, environment protected, and new-host pinned", () => {
   assert.match(workflow, /workflow_run:/);
@@ -38,7 +39,7 @@ test("deploy consumes one existing successful exact-main artifact and never rebu
 });
 
 test("inventory precedes transfer and dark acceptance changes no public routing", () => {
-  const providers = workflow.indexOf("Fail closed on all provider secret classes");
+  const providers = workflow.indexOf("Fail closed on required dark-deploy secret classes");
   const ssh = workflow.indexOf("Pin the new droplet SSH identity");
   const inventory = workflow.indexOf("Inventory the exact new droplet");
   const transfer = workflow.indexOf("Stage exact controls and artifact");
@@ -51,19 +52,21 @@ test("inventory precedes transfer and dark acceptance changes no public routing"
   assert.doesNotMatch(`${workflow}\n${remote}`, /install-caddy\.sh|os\.designproai\.com.*curl|cloudflare|godaddy/i);
 });
 
-test("deployment does not apply migrations and requires all deployment secret names", () => {
+test("dark deployment requires only its existing provider secrets and explicitly disables email", () => {
   const source = `${workflow}\n${remote}`;
   for (const name of [
     "DESIGNPROAI_SSH_PRIVATE_KEY",
     "DESIGNPRO_SUPABASE_ACCESS_TOKEN",
     "DESIGNPRO_GOOGLE_AI_API_KEY",
-    "DESIGNPRO_RESEND_API_KEY",
   ]) assert.match(source, new RegExp(name));
+  assert.doesNotMatch(source, /DESIGNPRO_RESEND_API_KEY|api\.resend\.com/);
   assert.doesNotMatch(source, /secrets\.DESIGNPRO_SUPABASE_SERVICE_ROLE_KEY/);
   assert.match(source, /api\.supabase\.com\/v1\/projects\/\$EXPECTED_PROJECT_REF\/api-keys/);
   assert.match(source, /\.id == \$ref/);
   assert.match(source, /::add-mask::\$service_key/);
-  assert.match(source, /api\.resend\.com\/domains/);
+  assert.match(configure, /DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false/);
+  assert.doesNotMatch(configure, /RESEND_API_KEY|RESEND_FROM|RP_|WPW_/);
+  assert.match(workflow, /printf '%s\\n%s\\n'/);
   assert.doesNotMatch(source, /supabase\s+(?:db|migration)|db\s+(?:push|reset)|APPLY_DESIGNPRO_PRODUCTION/);
   assert.match(remote, /runtime-1/);
   assert.match(remote, /runtime-2/);
@@ -92,3 +95,4 @@ test("inventory records every Docker state class before deployment without readi
   ]) assert.match(inventoryScript, contract);
   assert.doesNotMatch(inventoryScript, /cat .*\.env|source .*\.env/);
 });
+

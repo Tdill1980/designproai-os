@@ -20,6 +20,35 @@ function senderEmail(value) {
 }
 
 function resendReadiness(env = process.env) {
+  const mode = String(env.DESIGNPRO_OUTBOUND_EMAIL_ENABLED || "").trim().toLowerCase();
+  const providerKeys = ["RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"];
+  const unexpected = providerKeys.filter((key) => String(env[key] || "").trim());
+  if (mode !== "true" && mode !== "false") {
+    return Object.freeze({
+      enabled: null,
+      configurationValid: false,
+      available: false,
+      publicGoLiveReady: false,
+      provider: "resend",
+      missing: ["DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true|false"],
+      unexpected,
+      detail: "Outbound WrapBox email mode must be explicitly enabled or disabled",
+    });
+  }
+  if (mode === "false") {
+    return Object.freeze({
+      enabled: false,
+      configurationValid: unexpected.length === 0,
+      available: false,
+      publicGoLiveReady: false,
+      provider: "resend",
+      missing: [],
+      unexpected,
+      detail: unexpected.length
+        ? "Outbound WrapBox email is disabled; provider credentials must be omitted"
+        : "Outbound WrapBox email is explicitly disabled for dark deployment",
+    });
+  }
   const missing = [];
   const apiKey = String(env.RESEND_API_KEY || "").trim();
   const from = senderEmail(env.RESEND_FROM);
@@ -29,9 +58,13 @@ function resendReadiness(env = process.env) {
     missing.push("RESEND_FROM_VERIFIED=true");
   }
   return Object.freeze({
+    enabled: true,
+    configurationValid: missing.length === 0,
     available: missing.length === 0,
+    publicGoLiveReady: missing.length === 0,
     provider: "resend",
     missing,
+    unexpected: [],
     detail: missing.length
       ? "WrapBox mail is unavailable until a Resend key and verified FROM sender are configured"
       : "WrapBox mail is configured with an explicitly attested verified FROM sender",
@@ -43,6 +76,12 @@ function createResendTransport({
   fetchImpl = globalThis.fetch,
 } = {}) {
   const readiness = resendReadiness(env);
+  if (readiness.enabled === false && readiness.configurationValid) {
+    throw new ResendConfigurationError(
+      "outbound_email_disabled",
+      "Outbound WrapBox email is explicitly disabled",
+    );
+  }
   if (!readiness.available) {
     throw new ResendConfigurationError(
       "resend_mail_unavailable",
@@ -109,3 +148,4 @@ module.exports = {
   createResendTransport,
   resendReadiness,
 };
+

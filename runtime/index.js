@@ -26,7 +26,10 @@ const DESIGNPRO_APP_ORIGIN = String(process.env.DESIGNPRO_APP_ORIGIN || "").trim
 const REQUIRED_RUNTIME_ENV = Object.freeze([
   "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET", "GIT_SHA",
   "GOOGLE_AI_API_KEY (or GEMINI_API_KEY)", "DESIGNPRO_SPOOL_DIR", "DESIGNPRO_APP_ORIGIN",
-  "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED=true",
+  "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true|false",
+]);
+const PUBLIC_GO_LIVE_ENV = Object.freeze([
+  "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED=true",
 ]);
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !WORKER_SECRET || !GIT_SHA || !GOOGLE_AI_API_KEY || !DESIGNPRO_SPOOL_DIR || !DESIGNPRO_APP_ORIGIN) {
   throw new Error("SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_SECRET, GIT_SHA, GOOGLE_AI_API_KEY (or GEMINI_API_KEY), DESIGNPRO_SPOOL_DIR and DESIGNPRO_APP_ORIGIN are required");
@@ -83,11 +86,14 @@ let claimant = null;
 let deliveryTimer = null;
 let deliveryBusy = false;
 const notificationReadiness = resendReadiness(process.env);
-const emailTransport = notificationReadiness.available ? createResendTransport() : null;
+const emailTransport = notificationReadiness.enabled && notificationReadiness.available ? createResendTransport() : null;
+const publicGoLiveBlockers = Object.freeze(notificationReadiness.publicGoLiveReady
+  ? []
+  : [notificationReadiness.enabled === false ? "outbound_email_disabled" : "outbound_email_not_configured"]);
 
 function ensureDeliveryWorkers() {
   if (deliveryTimer) return;
-  if (!emailTransport || !notificationReadiness.available) throw new Error("WrapBox notification transport is not ready");
+  if (notificationReadiness.enabled && (!emailTransport || !notificationReadiness.available)) throw new Error("WrapBox notification transport is not ready");
   const tick = async () => {
     if (deliveryBusy) return;
     deliveryBusy = true;
@@ -114,14 +120,15 @@ function stopWorkerLoops() {
 async function refreshReadiness() {
   try {
     const dependencies = await probeRuntimeDependencies(supabase);
-    if (!notificationReadiness.available) {
+    if (!notificationReadiness.configurationValid) {
       stopWorkerLoops();
       readiness = {
         ready: false, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID,
-        imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV,
+        imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV, publicGoLiveEnvironment: PUBLIC_GO_LIVE_ENV,
+        publicGoLiveReady: false, publicGoLiveBlockers,
         workerLoopsStarted: false,
         dependencies: { ...dependencies, wrapboxPublisher: false, notifications: notificationReadiness },
-        error: `WrapBox notification unavailable: ${notificationReadiness.missing.join(", ")}`,
+        error: `WrapBox notification unavailable: ${notificationReadiness.detail}`,
         checkedAt: new Date().toISOString(),
       };
       return;
@@ -130,14 +137,15 @@ async function refreshReadiness() {
     ensureDeliveryWorkers();
     readiness = {
       ready: true, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID,
-      imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV,
+      imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV, publicGoLiveEnvironment: PUBLIC_GO_LIVE_ENV,
+      publicGoLiveReady: notificationReadiness.publicGoLiveReady, publicGoLiveBlockers,
       workerLoopsStarted: true,
       dependencies: { ...dependencies, wrapboxPublisher: true, notifications: notificationReadiness },
       checkedAt: new Date().toISOString(),
     };
   } catch (error) {
     stopWorkerLoops();
-    readiness = { ready: false, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID, imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV, workerLoopsStarted: false, error: String(error.message || error), checkedAt: new Date().toISOString() };
+    readiness = { ready: false, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID, imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV, publicGoLiveEnvironment: PUBLIC_GO_LIVE_ENV, publicGoLiveReady: false, publicGoLiveBlockers, workerLoopsStarted: false, dependencies: { notifications: notificationReadiness }, error: String(error.message || error), checkedAt: new Date().toISOString() };
   }
 }
 app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(readiness));
@@ -289,3 +297,4 @@ app.listen(PORT, "0.0.0.0", () => {
   const readinessTimer = setInterval(() => void refreshReadiness(), 30_000);
   readinessTimer.unref?.();
 });
+

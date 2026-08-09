@@ -81,9 +81,13 @@ test("persistent spool, host floors, and bounded containers are explicit", () =>
   assert.match(compose, /mem_limit: 512m/);
 });
 
-test("expanded exact env shares only the internal bearer with gateway", () => {
+test("expanded dark env disables email and keeps an exact public-go-live provider gate", () => {
   const validator = read("validate-env.py");
-  for (const key of ["DESIGNPRO_APP_ORIGIN", "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"]) assert.match(validator, new RegExp(`"${key}"`));
+  for (const key of ["DESIGNPRO_APP_ORIGIN", "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"]) assert.match(validator, new RegExp(`"${key}"`));
+  assert.match(read("runtime.env.example"), /DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false/);
+  assert.doesNotMatch(read("runtime.env.example"), /RESEND_API_KEY=|RESEND_FROM=/);
+  assert.match(read("configure-env.sh"), /DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false/);
+  assert.doesNotMatch(read("configure-env.sh"), /RP_|WPW_|RESEND_API_KEY|RESEND_FROM/);
   assert.match(validator, /runtime\["WORKER_SECRET"\] != gateway\["WORKER_SECRET"\]/);
   assert.match(read("gateway.env.example"), /DESIGNPRO_RUNTIME_INTERNAL_URL=http:\/\/runtime-1:3001/);
   assert.doesNotMatch(read("gateway.env.example"), /SUPABASE_SERVICE_ROLE_KEY/);
@@ -141,3 +145,4 @@ test("production migration is manual, exact-main, environment protected, and sec
   assert.match(workflow, /db push --linked --include-all --yes/);
   assert.doesNotMatch(workflow, /db reset/);
 });
+
