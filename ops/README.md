@@ -1,6 +1,6 @@
 # DesignProAI standalone server cutover
 
-Target host: `143.110.237.145` (Ubuntu 24.04). The displayed DigitalOcean
+Target host: `137.184.0.4` (Ubuntu 24.04). The displayed DigitalOcean
 droplet name and old repository documentation are not trusted for capacity;
 `inventory.sh` reports the live CPU, RAM, disk, listeners, and service owners.
 
@@ -11,10 +11,7 @@ owner/session responsibility.
 
 ## Non-negotiable boundary
 
-- The existing service on `:3200` is VectorizIt and belongs to DesignPro
-  ProductionFlow. `install.sh` records its exact container/socket identity;
-  deploy, rollback, proxy installation, and acceptance all fail closed if that
-  identity changes or the service becomes unhealthy.
+- Calls 8–11 and all production-file work execute in the two fenced DesignProAI runtimes. No external VectorizIt, Railway conductor, or browser worker is a deployment prerequisite.
 - Runtime ports `3001` and `3002` and gateway port `8787` bind only to
   loopback. Caddy exposes the white UI and `/api/*` gateway only.
 - The runtime `current` pointer is accepted locally before the separate Caddy
@@ -93,14 +90,14 @@ validates role separation, and atomically writes these root-owned `0600` files:
 - `/opt/designproai/shared/runtime.env`, copied from `runtime.env.example`:
   isolated Supabase secret key, an independent random worker secret, Google AI
   key, Google image model, app origin, persistent spool and direct TUS paths,
-  verified Resend sender/key, and the protected VectorizIt URL.
+  verified Resend sender/key.
 - `/opt/designproai/shared/gateway.env`, copied from `gateway.env.example`:
   isolated Supabase publishable key, HTTPS app origin, Docker-internal runtime
   URL, and the same internal `WORKER_SECRET`. It must never contain a Supabase
   secret key.
 
 `validate-env.py` checks exact key sets, file ownership/mode, the isolated
-project URL, secret separation, HTTPS origin, and the fixed port-3200 URL. It
+project URL, secret separation, HTTPS origin. It
 does not print values.
 
 ## Safe sequence
@@ -124,7 +121,7 @@ does not print values.
    `sudo ./acceptance.sh <40-char-git-sha>`
 7. Install/reload only the isolated Caddy site:
    `sudo ./install-caddy.sh <40-char-git-sha> INSTALL_DESIGNPRO_CADDY_ONLY`
-8. Add `os.designproai.com -> 143.110.237.145` only after local acceptance.
+8. Add `os.designproai.com -> 137.184.0.4` only after local acceptance.
 9. Public TLS acceptance:
    `sudo ./acceptance.sh <40-char-git-sha> https://os.designproai.com`
 10. Run the real distressed-Porsche canary: seven distinct views, GENIE
