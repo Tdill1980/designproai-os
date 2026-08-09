@@ -100,6 +100,37 @@ validates role separation, and atomically writes these root-owned `0600` files:
 project URL, secret separation, HTTPS origin. It
 does not print values.
 
+## Protected exact-artifact dark deployment
+
+`.github/workflows/deploy-production.yml` deploys only the artifact uploaded by
+the successful `Exact DesignProAI release gate` run for the exact `main` SHA.
+It never rebuilds the artifact. An automatic dark deployment is eligible only
+when that successful push commit contains `[dark-deploy]`; the same protected
+workflow also has a manual inventory-only option. The job targets only
+`designproai-prod-sfo3` at `137.184.0.4`, pins its ED25519 host fingerprint,
+and inventories all containers, images, volumes, networks, Compose projects,
+listeners, services, and DesignPro deployment metadata before any transfer.
+
+The `designproai-production` GitHub Environment must expose these existing or
+purpose-specific environment secrets:
+
+- `DESIGNPROAI_SSH_PRIVATE_KEY`
+- `DESIGNPRO_SUPABASE_ACCESS_TOKEN`
+- `DESIGNPRO_GOOGLE_AI_API_KEY`
+- `DESIGNPRO_RESEND_API_KEY`
+
+The Supabase access token is used read-only to verify project
+`wozyamlnygaddievzuwn` and fetch its current `service_role` key from the
+Management API. That key is masked immediately and is never stored as a second
+GitHub secret. The existing `DESIGNPRO_SUPABASE_DB_PASSWORD` remains exclusive
+to the separately approved migration job. Google credentials and the verified
+`designproai.com` Resend domain are checked before the first host call.
+
+This workflow is deliberately dark: it performs local loopback acceptance but
+does not install Caddy, change DNS, call a migration, or expose public traffic.
+An already accepted exact SHA is a verified no-op; partial or duplicate
+releases, images, services, volumes, or staging state fail closed for review.
+
 ## Safe sequence
 
 1. Read-only inventory:

@@ -49,6 +49,12 @@ jobs:
       - run: npm ci --prefix gateway
       - run: npm ci --prefix web
       - run: npm test
+      - name: Parse the exact production Compose structure
+        run: |
+          sudo install -d -m 0700 /opt/designproai/shared
+          sudo install -m 0600 ops/runtime.env.example /opt/designproai/shared/runtime.env
+          sudo install -m 0600 ops/gateway.env.example /opt/designproai/shared/gateway.env
+          sudo env DESIGNPRO_SHA="$EXACT_SHA" docker compose -f ops/compose.yaml config --quiet
 
   supabase-shadow:
     runs-on: ubuntu-latest

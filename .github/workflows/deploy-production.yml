@@ -1,0 +1,330 @@
+name: Audit or dark deploy exact DesignProAI artifact
+
+on:
+  workflow_run:
+    workflows:
+      - Exact DesignProAI release gate
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      exact_sha:
+        description: "Exact successful main SHA to deploy"
+        required: true
+        type: string
+      confirmation:
+        description: "Protected new-droplet dark-deploy action"
+        required: true
+        type: choice
+        default: DO_NOT_DEPLOY
+        options:
+          - DO_NOT_DEPLOY
+          - AUDIT_ONLY_DESIGNPROAI_PROD_SFO3
+          - DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: designproai-production-dark-deploy
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  TARGET_HOSTNAME: designproai-prod-sfo3
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCu7YrIRL+/qm1EcxQ0uEdQXFSN4/JwBjWng
+  EXPECTED_PROJECT_REF: wozyamlnygaddievzuwn
+  EXACT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.exact_sha }}
+  DEPLOY_MODE: ${{ github.event_name == 'workflow_run' && 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3' || inputs.confirmation }}
+
+jobs:
+  dark-deploy:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.confirmation == 'AUDIT_ONLY_DESIGNPROAI_PROD_SFO3' ||
+        inputs.confirmation == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+      GOOGLE_AI_API_KEY: ${{ secrets.DESIGNPRO_GOOGLE_AI_API_KEY }}
+      RESEND_API_KEY: ${{ secrets.DESIGNPRO_RESEND_API_KEY }}
+      RESEND_FROM: DesignProAI WrapBox <delivery@designproai.com>
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.EXACT_SHA }}
+          persist-credentials: false
+
+      - name: Prove exact protected main intent
+        env:
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          [[ $EXACT_SHA =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          case "$GITHUB_EVENT_NAME" in
+            workflow_run)
+              test "$TRIGGER_CONCLUSION" = success
+              test "$TRIGGER_EVENT" = push
+              test "$TRIGGER_BRANCH" = main
+              git log -1 --format=%B | grep -Fq '[dark-deploy]'
+              test "$DEPLOY_MODE" = DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3
+              ;;
+            workflow_dispatch)
+              test "$GITHUB_REF" = refs/heads/main
+              test "$GITHUB_SHA" = "$EXACT_SHA"
+              case "$DEPLOY_MODE" in
+                AUDIT_ONLY_DESIGNPROAI_PROD_SFO3|DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3) ;;
+                *) exit 2 ;;
+              esac
+              ;;
+            *) exit 2 ;;
+          esac
+          test "$TARGET_HOST" = "137.184.0.4"
+          test "$TARGET_HOSTNAME" = "designproai-prod-sfo3"
+          test "$EXPECTED_PROJECT_REF" = wozyamlnygaddievzuwn
+          ! grep -q '143[.]110[.]237[.]145' .github/workflows/deploy-production.yml
+
+      - name: Fail closed on all provider secret classes before any host call
+        id: provider-secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          test -n "$SSH_PRIVATE_KEY"
+          grep -q -- 'BEGIN OPENSSH PRIVATE KEY' <<<"$SSH_PRIVATE_KEY"
+          test "${#SUPABASE_ACCESS_TOKEN}" -ge 20
+          test "${#GOOGLE_AI_API_KEY}" -ge 20
+          test "${#RESEND_API_KEY}" -ge 20
+          test -n "$RESEND_FROM"
+          [[ $RESEND_FROM == *"@"* ]]
+          for value in "$SUPABASE_ACCESS_TOKEN" "$GOOGLE_AI_API_KEY" "$RESEND_API_KEY" "$RESEND_FROM"; do
+            [[ $value != *$'\n'* && $value != *$'\r'* ]]
+          done
+
+          project_json="$RUNNER_TEMP/supabase-project.json"
+          keys_json="$RUNNER_TEMP/supabase-api-keys.json"
+          google_json="$RUNNER_TEMP/google-models.json"
+          resend_json="$RUNNER_TEMP/resend-domains.json"
+          auth_header="Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+          curl --fail --silent --show-error \
+            -H "$auth_header" \
+            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF" > "$project_json"
+          jq -e --arg ref "$EXPECTED_PROJECT_REF" '.id == $ref' "$project_json" >/dev/null
+          curl --fail --silent --show-error \
+            -H "$auth_header" \
+            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/api-keys" > "$keys_json"
+          service_key=$(jq -er '
+            [.[] | select(.name == "service_role" and (.api_key | type == "string"))]
+            | if length == 1 then .[0].api_key else error("expected exactly one service_role key") end
+          ' "$keys_json")
+          test "${#service_key}" -ge 32
+          echo "::add-mask::$service_key"
+          runtime_key_file="$RUNNER_TEMP/designproai-supabase-service-role"
+          umask 077
+          printf '%s' "$service_key" > "$runtime_key_file"
+          unset service_key auth_header SUPABASE_ACCESS_TOKEN
+
+          curl --fail --silent --show-error \
+            -H "x-goog-api-key: $GOOGLE_AI_API_KEY" \
+            "https://generativelanguage.googleapis.com/v1beta/models" > "$google_json"
+          jq -e '.models | type == "array" and length > 0' "$google_json" >/dev/null
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            "https://api.resend.com/domains" > "$resend_json"
+          jq -e '.data | any(.name == "designproai.com" and .status == "verified")' "$resend_json" >/dev/null
+          rm -f -- "$project_json" "$keys_json" "$google_json" "$resend_json"
+          echo "runtime_key_file=$runtime_key_file" >> "$GITHUB_OUTPUT"
+
+      - name: Select the one successful exact-main release run
+        id: release-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ $GITHUB_EVENT_NAME == workflow_run ]]; then
+            [[ $TRIGGER_RUN_ID =~ ^[0-9]+$ ]]
+            response=$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "/repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGER_RUN_ID")
+            run_id=$TRIGGER_RUN_ID
+          else
+            response=$(gh api \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "/repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?head_sha=$EXACT_SHA&branch=main&event=push&status=success&per_page=100")
+            count=$(jq -r '.workflow_runs | length' <<<"$response")
+            test "$count" -eq 1
+            response=$(jq -c '.workflow_runs[0]' <<<"$response")
+            run_id=$(jq -r '.id' <<<"$response")
+          fi
+          test "$run_id" != null
+          test "$(jq -r '.head_sha' <<<"$response")" = "$EXACT_SHA"
+          test "$(jq -r '.head_branch' <<<"$response")" = main
+          test "$(jq -r '.event' <<<"$response")" = push
+          test "$(jq -r '.conclusion' <<<"$response")" = success
+          test "$(jq -r '.name' <<<"$response")" = 'Exact DesignProAI release gate'
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download and validate the existing exact artifact
+        id: artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN_ID: ${{ steps.release-run.outputs.run_id }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          release_dir="$RUNNER_TEMP/release"
+          mkdir -p "$release_dir"
+          gh run download "$RELEASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "designproai-release-$EXACT_SHA" \
+            --dir "$release_dir"
+          archive="$release_dir/designproai-release-$EXACT_SHA.tgz"
+          sidecar="$archive.sha256"
+          test -f "$archive" && test ! -L "$archive"
+          test -f "$sidecar" && test ! -L "$sidecar"
+          expected_digest=$(awk 'NF {print $1; exit}' "$sidecar")
+          test "$expected_digest" = "$(sha256sum "$archive" | awk '{print $1}')"
+          python3 ops/validate-archive.py "$archive" "$EXACT_SHA"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "archive_digest=$expected_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Pin the new droplet SSH identity
+        id: ssh
+        shell: bash
+        run: |
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" >/dev/null
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts"
+          test -s "$known_hosts"
+          fingerprints=$(ssh-keygen -lf "$known_hosts" -E sha256 | awk '{print $2}' | sort -u)
+          test "$(wc -l <<<"$fingerprints" | tr -d ' ')" -eq 1
+          test "$fingerprints" = "$EXPECTED_HOST_FINGERPRINT"
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Inventory the exact new droplet before any transfer or mutation
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" 'bash -s' < ops/inventory.sh | tee "$RUNNER_TEMP/designproai-inventory.txt"
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXPECTED_SHA='$EXACT_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          test "$(hostname)" = "$EXPECTED_HOSTNAME"
+          . /etc/os-release
+          test "$ID" = ubuntu
+          test "$VERSION_ID" = 24.04
+          test ! -e /opt/restylepro
+          docker info >/dev/null
+          docker compose version >/dev/null
+          mapfile -t project_services < <(docker ps -a --filter label=com.docker.compose.project=designproai --format '{{.Label "com.docker.compose.service"}}' | sort)
+          test "${#project_services[@]}" -le 3
+          test "$(printf '%s\n' "${project_services[@]}" | sed '/^$/d' | sort -u | wc -l)" -eq "${#project_services[@]}"
+          for service in "${project_services[@]}"; do
+            case "$service" in runtime-1|runtime-2|gateway) ;; *) echo "Unexpected DesignPro container: $service" >&2; exit 20 ;; esac
+          done
+          test "$(docker volume ls --filter label=com.docker.compose.project=designproai -q | wc -l)" -eq 0
+          current=$(readlink -f /opt/designproai/current 2>/dev/null || true)
+          if [[ -e /opt/designproai/releases/$EXPECTED_SHA ]] && [[ $current != "/opt/designproai/releases/$EXPECTED_SHA" ]]; then
+            echo "Exact immutable release exists but is not current; refusing duplicate deployment" >&2
+            exit 21
+          fi
+          for image in "designproai-runtime:$EXPECTED_SHA" "designproai-gateway:$EXPECTED_SHA"; do
+            if docker image inspect "$image" >/dev/null 2>&1 && [[ $current != "/opt/designproai/releases/$EXPECTED_SHA" ]]; then
+              echo "Exact image exists without the exact current release; refusing duplicate build" >&2
+              exit 21
+            fi
+          done
+          if [[ -d /opt/designproai/staging ]] && find /opt/designproai/staging -mindepth 1 -print -quit | grep -q .; then
+            echo "Incomplete DesignPro staging state requires audit before retry" >&2
+            exit 21
+          fi
+          REMOTE
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: designproai-new-droplet-inventory-${{ env.EXACT_SHA }}
+          path: ${{ runner.temp }}/designproai-inventory.txt
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Stage exact controls and artifact only after inventory passes
+        if: env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3'
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+          ARCHIVE: ${{ steps.artifact.outputs.archive }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          remote_stage="/tmp/designproai-dark-$EXACT_SHA-$GITHUB_RUN_ID"
+          control="$RUNNER_TEMP/designproai-control-$EXACT_SHA.tgz"
+          tar -czf "$control" ops
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "test ! -e '$remote_stage' && install -d -m 0700 '$remote_stage'"
+          scp "${ssh_args[@]}" "$control" "$ARCHIVE" "root@$TARGET_HOST:$remote_stage/"
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "install -d -m 0700 '$remote_stage/control' && tar -xzf '$remote_stage/designproai-control-$EXACT_SHA.tgz' -C '$remote_stage/control' --no-same-owner --no-same-permissions && chmod 0700 '$remote_stage/control/ops/'*.sh"
+          printf '%s\n' "$remote_stage" > "$RUNNER_TEMP/remote-stage"
+
+      - name: No-op if this exact release is already accepted; otherwise dark deploy it once
+        if: env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3'
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+          ARCHIVE_DIGEST: ${{ steps.artifact.outputs.archive_digest }}
+          RUNTIME_KEY_FILE: ${{ steps.provider-secrets.outputs.runtime_key_file }}
+        shell: bash
+        run: |
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          remote_stage=$(<"$RUNNER_TEMP/remote-stage")
+          test -f "$RUNTIME_KEY_FILE" && test ! -L "$RUNTIME_KEY_FILE"
+          printf '%s\n%s\n%s\n%s\n%s\n' \
+            "$(<"$RUNTIME_KEY_FILE")" \
+            "$GOOGLE_AI_API_KEY" \
+            "$RESEND_API_KEY" \
+            "$RESEND_FROM" \
+            "RESEND_DOMAIN_VERIFIED" | \
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' '$remote_stage/control/ops/ci-dark-deploy.sh'"
+
+      - name: Remove only this run's temporary remote staging directory
+        if: always() && env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3' && steps.ssh.outputs.key_file != ''
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          remote_stage="/tmp/designproai-dark-$EXACT_SHA-$GITHUB_RUN_ID"
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "if test -d '$remote_stage' && test ! -L '$remote_stage'; then find '$remote_stage' -depth -mindepth 1 -delete && rmdir '$remote_stage'; fi"

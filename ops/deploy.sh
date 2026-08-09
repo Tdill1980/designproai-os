@@ -13,7 +13,7 @@ ROOT=/opt/designproai
 [[ -f $archive && ! -L $archive ]] || { echo "Release archive must be a regular, non-symlink file" >&2; exit 3; }
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "Exact lowercase 40-character Git SHA required" >&2; exit 4; }
 [[ $archive_sha256 =~ ^[0-9a-f]{64}$ ]] || { echo "Exact release archive SHA-256 required" >&2; exit 5; }
-for command in curl docker install node python3 sha256sum stat systemctl tar; do
+for command in curl docker install python3 sha256sum stat systemctl tar; do
   command -v "$command" >/dev/null || { echo "Required command missing: $command" >&2; exit 6; }
 done
 docker compose version >/dev/null || { echo "Docker Compose v2 is required" >&2; exit 6; }
