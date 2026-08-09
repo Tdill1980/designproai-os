@@ -52,7 +52,7 @@ services:
       PORT: "3001"
       GIT_SHA: "${DESIGNPRO_SHA}"
       DESIGNPRO_WORKER_ID: "designpro-worker-1"
-        DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
+      DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
     ports:
       - "127.0.0.1:3001:3001"
 
@@ -62,7 +62,7 @@ services:
       PORT: "3001"
       GIT_SHA: "${DESIGNPRO_SHA}"
       DESIGNPRO_WORKER_ID: "designpro-worker-2"
-        DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
+      DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"
     ports:
       - "127.0.0.1:3002:3001"
 
