@@ -1,0 +1,148 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import test from "node:test";
+
+const require = createRequire(import.meta.url);
+const claimant = require("../../runtime/designpro-standalone-claimant.cjs");
+const adapter = claimant.CALLS_1_7_ADAPTER;
+
+const claim = {
+  requestId: "10000000-0000-4000-8000-000000000001",
+  generationId: "90000000-0000-4000-8000-000000000009",
+  tenantKey: "user_20000000-0000-4000-8000-000000000002",
+  input: {
+    contractVersion: "designpro.calls-1-7-input.v1",
+    vehicle: { year: "2026", make: "Porsche", model: "911", type: "car" },
+    designBrief: { campaign: "Martini heritage" },
+  },
+  inputHash: "a".repeat(64),
+  engineContract: adapter.engineContract,
+  engineContractHash: "b".repeat(64),
+  attempt: 1,
+  claimToken: "30000000-0000-4000-8000-000000000003",
+  leaseExpiresAt: "2026-08-08T18:00:00.000Z",
+  viewPlan: adapter.viewPlan,
+};
+
+function calls17Views() {
+  const bytes = new Map();
+  const views = adapter.viewPlan.map((item, index) => {
+    const body = Buffer.from(`frozen-view-${index + 1}`);
+    const contentHash = createHash("sha256").update(body).digest("hex");
+    const storagePath = `designpro/${claim.tenantKey}/${claim.generationId}/calls-1-7/`
+      + `${item.sourceViewType}/${contentHash}.png`;
+    bytes.set(storagePath, new Blob([body], { type: "image/png" }));
+    return {
+      ...item, storagePath, contentHash, byteSize: body.byteLength,
+      contentType: "image/png", metadata: { call: index + 1 },
+    };
+  });
+  return { bytes, views };
+}
+
+function supabaseDouble({ bytes = new Map(), claimResult = claim } = {}) {
+  const calls = [];
+  return {
+    calls,
+    client: {
+      rpc: async (name, payload) => {
+        calls.push({ name, payload });
+        if (name === "claim_designpro_generation_request") return { data: claimResult, error: null };
+        if (name === "complete_designpro_generation_request") return {
+          data: {
+            state: "outputs_ready", handoffReady: false,
+            handoffBlocker: "source_close_up_has_no_verified_hero3d_role_mapping",
+          },
+          error: null,
+        };
+        if (name === "heartbeat_designpro_generation_request") return { data: true, error: null };
+        if (name === "fail_designpro_generation_request") return { data: true, error: null };
+        throw new Error(`unexpected RPC ${name}`);
+      },
+      storage: {
+        from: (bucket) => ({
+          download: async (path) => {
+            assert.equal(bucket, "wrap-files");
+            return bytes.has(path)
+              ? { data: bytes.get(path), error: null }
+              : { data: null, error: { message: "missing" } };
+          },
+        }),
+      },
+    },
+  };
+}
+
+test("Calls 1-7 adapter claims only the exact frozen source contract", async () => {
+  const fake = supabaseDouble();
+  const result = await adapter.claim(fake.client, "calls17-worker", 900);
+  assert.equal(result.requestId, claim.requestId);
+  assert.deepEqual(result.engineContract, adapter.engineContract);
+  assert.deepEqual(result.viewPlan.map((item) => item.sourceViewType), [
+    "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
+  ]);
+  assert.deepEqual(fake.calls, [{
+    name: "claim_designpro_generation_request",
+    payload: { p_worker_id: "calls17-worker", p_lease_seconds: 900 },
+  }]);
+});
+
+test("browser prompt, model, seed, and angle controls are rejected recursively", () => {
+  for (const input of [
+    { prompt: "override" }, { nested: { image_model: "override" } },
+    { nested: [{ seed: 42 }] }, { options: { view_angles: ["invented"] } },
+  ]) {
+    assert.throws(() => claimant._test.assertCalls1To7Claim({
+      ...claim, input: { ...claim.input, ...input },
+    }), (error) => error.code === "generation_claim_invalid");
+  }
+});
+
+test("completion verifies all seven stored bytes before fenced persistence", async () => {
+  const { bytes, views } = calls17Views();
+  const fake = supabaseDouble({ bytes });
+  const result = await adapter.complete(fake.client, claim, views);
+  assert.equal(result.state, "outputs_ready");
+  assert.equal(result.handoffReady, false);
+  const completion = fake.calls.find((item) => item.name === "complete_designpro_generation_request");
+  assert.ok(completion);
+  assert.deepEqual(completion.payload.p_views.map((item) => item.sourceViewType),
+    adapter.viewPlan.map((item) => item.sourceViewType));
+  assert.deepEqual(completion.payload.p_engine_receipt, {
+    contractVersion: "designpro.calls-1-7-receipt.v1",
+    sourceCommit: "bdb26365904e91be446894e84b01b4a24f64aac0",
+    frozenContractHash: claim.engineContractHash,
+    inputHash: claim.inputHash,
+    byteVerified: true,
+    callsCompleted: 7,
+  });
+});
+
+test("source close-up cannot be silently relabeled as hero3d", () => {
+  const { views } = calls17Views();
+  const closeup = views.find((item) => item.sourceViewType === "close-up");
+  closeup.consumerRole = "hero3d";
+  assert.throws(() => claimant._test.normalizeCalls1To7Views(claim, views),
+    (error) => error.code === "generation_view_identity_invalid");
+});
+
+test("a changed stored byte prevents the completion RPC", async () => {
+  const { bytes, views } = calls17Views();
+  bytes.set(views[0].storagePath, new Blob([Buffer.from("changed")], { type: "image/png" }));
+  const fake = supabaseDouble({ bytes });
+  await assert.rejects(adapter.complete(fake.client, claim, views),
+    (error) => error.code === "generation_view_byte_identity_mismatch");
+  assert.equal(fake.calls.some((item) => item.name === "complete_designpro_generation_request"), false);
+});
+
+test("heartbeat and failure remain fenced by the exact request and claim token", async () => {
+  const fake = supabaseDouble();
+  assert.equal(await adapter.heartbeat(fake.client, claim, 900), true);
+  assert.equal(await adapter.fail(fake.client, claim, Object.assign(new Error("transient"), { code: "engine_busy" })), true);
+  assert.deepEqual(fake.calls.map((item) => item.name), [
+    "heartbeat_designpro_generation_request", "fail_designpro_generation_request",
+  ]);
+  assert.equal(fake.calls[1].payload.p_retryable, true);
+});
+
