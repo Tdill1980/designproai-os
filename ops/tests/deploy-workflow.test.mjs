@@ -72,7 +72,7 @@ test("deployment does not apply migrations and requires all deployment secret na
 });
 
 test("the exact release gate asks Docker Compose itself to parse expanded production structure", () => {
-  assert.match(release, /DESIGNPRO_SHA="\$EXACT_SHA" docker compose -f ops\/compose\.yaml config --quiet/);
+  assert.match(release, /sudo env DESIGNPRO_SHA="\$EXACT_SHA" docker compose -f ops\/compose\.yaml config --quiet/);
 });
 
 test("fresh host deploy has no obsolete VectorizIt guard or host Node prerequisite", () => {
