@@ -1,0 +1,75 @@
+name: Cleanup archived failed DesignProAI staging
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cleanup-failed-staging.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-failed-staging-cleanup
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  TARGET_HOSTNAME: designproai-prod-sfo3
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Pin the exact new droplet SSH identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          pub_file="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$pub_file"
+          test "$(ssh-keygen -lf "$pub_file" -E sha256 | awk 'NR==1 {print $2}')" = "$EXPECTED_AUTOMATION_KEY_FINGERPRINT"
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts"
+          test "$(ssh-keygen -lf "$known_hosts" -E sha256 | awk 'NR==1 {print $2}')" = "$EXPECTED_HOST_FINGERPRINT"
+          echo "key_file=$key_file" >> "$GITHUB_ENV"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_ENV"
+
+      - name: Remove only validated archived failed staging directories
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          test "$(hostname)" = "$EXPECTED_HOSTNAME"
+          staging=/opt/designproai/staging
+          test -d "$staging"
+          shopt -s nullglob
+          failed=("$staging"/failed-*)
+          for dir in "${failed[@]}"; do
+            test -d "$dir"
+            test ! -L "$dir"
+            test -f "$dir/.designpro-release.json"
+            test ! -L "$dir/.designpro-release.json"
+            mode=$(stat -c '%a' "$dir")
+            owner=$(stat -c '%U:%G' "$dir")
+            test "$mode" = 555
+            test "$owner" = root:root
+            find "$dir" -depth -mindepth 1 -delete
+            rmdir "$dir"
+          done
+          if find "$staging" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+            echo "Unexpected non-archived staging state remains" >&2
+            exit 21
+          fi
+          REMOTE
