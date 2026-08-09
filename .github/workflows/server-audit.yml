@@ -1,0 +1,71 @@
+name: Read-only DesignProAI new-server audit
+
+on:
+  push:
+    branches: [ops/new-server-readonly-audit-20260808]
+    paths: [.github/workflows/server-audit.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-new-server-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_HOST: 137.184.0.4
+      TARGET_USER: root
+      EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCu7YrIRL+/qm1EcxQ0uEdQXFSN4/JwBjWng
+    steps:
+      - name: Configure pinned SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/designproai"
+          chmod 0600 "$HOME/.ssh/designproai"
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" > "$HOME/.ssh/known_hosts"
+          actual=$(ssh-keygen -lf "$HOME/.ssh/known_hosts" | awk '{print $2}')
+          test "$actual" = "$EXPECTED_HOST_FINGERPRINT"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Inventory new server without mutation
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/designproai" -o BatchMode=yes -o StrictHostKeyChecking=yes "$TARGET_USER@$TARGET_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo "timestamp=$(date -u +%FT%TZ)"
+          echo "hostname=$(hostname)"
+          echo "kernel=$(uname -r)"
+          echo "--- resources ---"
+          nproc
+          free -h
+          df -h / /opt
+          echo "--- swap ---"
+          cat /proc/swaps
+          echo "--- listeners ---"
+          ss -lntp
+          echo "--- docker compose projects ---"
+          docker compose ls 2>/dev/null || true
+          echo "--- containers ---"
+          docker ps -a --no-trunc
+          echo "--- images ---"
+          docker images --no-trunc
+          echo "--- volumes ---"
+          docker volume ls
+          echo "--- DesignPro paths ---"
+          find /opt/designproai -maxdepth 3 -printf '%y %m %u:%g %p -> %l\n' 2>/dev/null | sort || true
+          echo "--- relevant services ---"
+          systemctl list-unit-files --type=service --no-pager | grep -Ei 'designpro|vector|caddy|docker' || true
+          echo "--- protected port probes ---"
+          for port in 3001 3002 3200 8787; do
+            if ss -H -lnt "sport = :$port" | grep -q .; then echo "$port=LISTENING"; else echo "$port=EMPTY"; fi
+          done
+          REMOTE
