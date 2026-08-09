@@ -15,11 +15,12 @@ const web = readFileSync(new URL("../web/src/main.tsx", import.meta.url), "utf8"
   + readFileSync(new URL("../web/src/api.ts", import.meta.url), "utf8");
 const config = readFileSync(new URL("../supabase/config.toml", import.meta.url), "utf8");
 
-test("ordered migration chain includes WrapBox then the reconciliation closure", () => {
+test("ordered migration chain includes WrapBox, reconciliation, then the isolated Calls 1-7 adapter", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-2), [
+  assert.deepEqual(names.slice(-3), [
     "20260806181100_designpro_wrapbox_delivery_closure.sql",
     "20260806181200_designpro_schema_gateway_reconcile.sql",
+    "20260808024500_designpro_calls_1_7_adapter.sql",
   ]);
 });
 
@@ -125,3 +126,4 @@ test("closure remains standalone DesignPro-only", () => {
   }
   assert.doesNotMatch(web, /value="other"|value="box-truck"/);
 });
+
