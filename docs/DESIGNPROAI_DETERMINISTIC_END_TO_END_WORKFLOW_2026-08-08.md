@@ -15,9 +15,9 @@ RestylePro is not the deployment target. Railway must not remain the production-
 
 The existing software already produced top-tier designs. Do not rewrite or replace prompts, models, seeds, call ordering, image-generation parameters, view selection, UI, or revision behavior merely to migrate it.
 
-The **Porsche Martini design** is the upstream golden reference. Its real database records, storage artifacts, deployed function versions, Git provenance, models, prompts, parameters, and seven-view outputs must be traced before migration. Do not assume that its producer was a component named A.C.E.; the evidence identifies the actual working iteration.
+The **Porsche Martini design**, generated approximately **2026-08-06**, is the latest upstream golden reference. Its real database records, storage artifacts, deployed function versions, Git provenance, models, prompts, parameters, and seven-view outputs must be traced before migration. Do not assume that its producer was a component named A.C.E.; the evidence identifies the actual working iteration.
 
-The **2026-07-24 panelizer run** is the downstream failure reference. It produced panel files, but their physical dimensions were wrong. This establishes the repair boundary: preserve the proven upstream generator and repair the panelizer/dimension/output path.
+The panelizer has been broken for weeks. The **2026-07-24 panelizer run** is the last known point where it still extracted panel files, although their physical dimensions were wrong. The current regression is more severe: panels no longer load or deploy into RevisionStudio or PanelProStudio/PanelizerStudio. The repair investigation must therefore compare three evidence boundaries: the August 6 working Porsche generation, the July 24 wrong-size extraction, and the current no-load/no-deploy path. Preserve the proven upstream generator and repair only the panelizer/dimension/handoff/output chain.
 
 Before upstream extraction:
 
@@ -188,7 +188,7 @@ The exact standalone SHA `013140ba72673c07de6fea0f567f7a19c8122ccd` is a product
 ## 11. Acceptance gates
 
 1. Trace and freeze Porsche Martini provenance and golden outputs.
-2. Trace the July 24 wrong-size panelizer output and its exact dimension math/function version.
+2. Trace the July 24 wrong-size panelizer output and its exact dimension math/function version, then identify the later regression that stopped loading/deployment into RevisionStudio and PanelProStudio.
 3. Inventory every app route/module/function/schema/storage dependency.
 4. Preserve Calls 1–7 through source/prompt/model/config hashes and golden regression.
 5. Correct Calls 8–11 without changing upstream generation.
