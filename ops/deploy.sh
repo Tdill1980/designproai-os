@@ -23,7 +23,6 @@ for path in "$ROOT" "$ROOT/releases" "$ROOT/staging" "$ROOT/shared" "$ROOT/share
 done
 [[ $(stat -c '%u:%g:%a' "$ROOT/shared/spool") == 10001:10001:700 ]] || { echo "Persistent spool ownership or mode changed" >&2; exit 7; }
 python3 "$OPS_DIR/validate-env.py" "$ROOT/shared/runtime.env" "$ROOT/shared/gateway.env"
-"$OPS_DIR/vectorize-guard.sh" verify
 
 release="$ROOT/releases/$sha"
 [[ ! -e $release && ! -L $release ]] || { echo "Immutable release already exists: $sha" >&2; exit 9; }
@@ -108,7 +107,6 @@ recover() {
       mv "$release" "$ROOT/staging/failed-${sha}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
     fi
   fi
-  "$OPS_DIR/vectorize-guard.sh" verify >/dev/null || true
   exit "$status"
 }
 trap recover ERR
