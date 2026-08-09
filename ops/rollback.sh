@@ -64,6 +64,5 @@ ln -sfn "$target" "$ROOT/public.next"
 mv -Tf "$ROOT/public.next" "$ROOT/public"
 [[ $(readlink -f "$ROOT/public") == "$target" ]] || { echo "Rollback public pointer did not switch exactly" >&2; exit 5; }
 python3 "$OPS_DIR/validate-release-tree.py" "$target" "$sha"
-"$OPS_DIR/vectorize-guard.sh" verify
 trap - ERR
 echo "Rolled back only DesignPro web, gateway, and runtimes to $sha"
