@@ -54,7 +54,7 @@ jobs:
           sudo install -d -m 0700 /opt/designproai/shared
           sudo install -m 0600 ops/runtime.env.example /opt/designproai/shared/runtime.env
           sudo install -m 0600 ops/gateway.env.example /opt/designproai/shared/gateway.env
-          DESIGNPRO_SHA="$EXACT_SHA" docker compose -f ops/compose.yaml config --quiet
+          sudo env DESIGNPRO_SHA="$EXACT_SHA" docker compose -f ops/compose.yaml config --quiet
 
   supabase-shadow:
     runs-on: ubuntu-latest
