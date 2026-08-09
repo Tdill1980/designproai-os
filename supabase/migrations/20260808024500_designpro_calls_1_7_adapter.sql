@@ -401,6 +401,7 @@ DECLARE
   v_hash text;
   v_bytes bigint;
   v_type text;
+  v_extension text;
   v_prefix text;
   v_output_hash text;
 BEGIN
@@ -447,16 +448,16 @@ BEGIN
     BEGIN v_bytes:=(v_view->>'byteSize')::bigint;
     EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'generation_view_identity_invalid'; END;
     v_type:=pg_catalog.lower(v_view->>'contentType');
+    IF v_type='image/png' THEN v_extension:='.png';
+    ELSIF v_type='image/jpeg' THEN v_extension:='.jpg';
+    ELSIF v_type='image/webp' THEN v_extension:='.webp';
+    ELSE RAISE EXCEPTION 'generation_view_identity_invalid'; END IF;
     IF v_expected_role IS NULL OR v_role<>v_expected_role
       OR v_path !~ '^[A-Za-z0-9._/-]+$' OR pg_catalog.strpos(v_path,'..')>0
       OR pg_catalog.left(v_path,pg_catalog.length(v_prefix))<>v_prefix
       OR v_hash !~ '^[0-9a-f]{64}$' OR v_bytes NOT BETWEEN 1 AND 536870912
       OR v_type NOT IN ('image/png','image/jpeg','image/webp')
-      OR v_path<>v_prefix||v_source||'/'||v_hash||CASE v_type
-        WHEN 'image/png' THEN '.png'
-        WHEN 'image/jpeg' THEN '.jpg'
-        WHEN 'image/webp' THEN '.webp'
-      END
+      OR v_path<>v_prefix||v_source||'/'||v_hash||v_extension
     THEN RAISE EXCEPTION 'generation_view_identity_invalid'; END IF;
     INSERT INTO public.designpro_generation_views(
       request_id,source_view_type,consumer_role,storage_path,content_hash,
