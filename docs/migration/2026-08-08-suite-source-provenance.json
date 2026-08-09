@@ -1,0 +1,220 @@
+{
+  "schemaVersion": "designproai.suite-source-provenance.v1",
+  "auditDate": "2026-08-08",
+  "decision": {
+    "state": "blocked-no-executable-copy",
+    "reason": "The working suite source is not a self-contained DesignProAI application. Its router, auth client, DesignPro generation UI, MyVehiclePro, and Gallery are coupled to the RestylePro Supabase project, legacy tables and edge functions that the standalone runtime explicitly prohibits.",
+    "safeAction": "Record exact provenance and adapter gaps; do not copy or deploy the mixed application shell."
+  },
+  "repositories": {
+    "target": {
+      "name": "Tdill1980/designproai-os",
+      "baseCommit": "b0cf022396a22b86d6a0b471aef82af5e375606e",
+      "files": {
+        "package.json": "bbea5085daf9d01eada80608588e47205de012b3",
+        "web/package.json": "9ca317615a3779f217bb487c1976f1da481a3c39",
+        "web/src/main.tsx": "c1bd4ec8acbb2c9102e28f2b4c67f86ed0f4fb99",
+        "web/src/api.ts": "9d8651632f93f92cb9f514515afad656bbe26ae7",
+        "gateway/src/server.mjs": "c4dc84afd5ceb5096ea85dc55cd2f89b282d38fa",
+        "source-tests/runtime-contract.json": "78cffba9a889e76cb3313cc1d5f63e364c83ff17",
+        "source-tests/contracts/standalone-refactor-blockers.json": "ec830f8a65e45855a8941b870777b8d4aa0c0422"
+      },
+      "existingRoutes": [
+        "/login",
+        "/app",
+        "/app/revisions/new",
+        "/app/revisions/:generationId",
+        "/app/genie-qc",
+        "/app/wrapbox",
+        "/app/wrapbox/:packId"
+      ],
+      "existingApiFamilies": [
+        "/api/auth",
+        "/api/assets",
+        "/api/genie",
+        "/api/wrapbox",
+        "/api/jobs",
+        "/api/revisions",
+        "/api/production"
+      ],
+      "blockedLegacyTables": [
+        "color_visualizations",
+        "design_version_commits",
+        "designiq_generations",
+        "designpro_entice_packs",
+        "designpro_production_jobs",
+        "panelizer_jobs",
+        "production_flow_assets",
+        "production_panel_dispatches",
+        "user_roles",
+        "workforce_runs",
+        "workflow_stage_runs"
+      ]
+    },
+    "source": {
+      "name": "Tdill1980/restylepro-os",
+      "auditedCommit": "bdb26365904e91be446894e84b01b4a24f64aac0",
+      "supabaseProjectPinnedBySourceClient": "kfapjdyythzyvnpdeghu",
+      "files": {
+        "package.json": "e9e3e79aff746f39a4a1b7da3af81f112c44207c",
+        "src/App.tsx": "100fe03e259af049cf136d4c87636b2ff6df17f5",
+        "src/main.tsx": "4edfa7c6fa0417320ddeb1da9c8b76d9135268ca",
+        "src/components/layout/AppShell.tsx": "595d72c4786f81cf3e61f6560d9d3b6c5060076e",
+        "src/components/RequireAuth.tsx": "f29f222c9fb986d4c5e83b499a45c29377313dad",
+        "src/components/SessionGuard.tsx": "38a709ccbf09936c39388dd62d7ec8bc3a888c43",
+        "src/integrations/supabase/client.ts": "98c6797949db09eaa31b40d3dda1efbb3d6e775d",
+        "src/integrations/supabase/renderClient.ts": "256960c680fdd2973a3e357bc1c3122a3b9c896f",
+        "src/pages/DesignPro.tsx": "ab1540f4b53bbdb048e97ce1c939764faeaca880",
+        "src/components/productTools/DesignProToolUI.tsx": "81e6e10a65d7dc646315d99de8d076977b682974",
+        "src/hooks/useDesignProLogic.ts": "81afc73a38d2dc15b67395eafe6a5c53a51081a4",
+        "src/pages/DesignProAIHome.tsx": "c41c10bd77d3a3d415293f6cbe2c101ed0f59484",
+        "src/pages/MyVehiclePro.tsx": "843035950656ec48d5acbbed7824d56548924bb2",
+        "src/components/colorpro/MyVehicleToolCore.tsx": "83867eae76599e908552cf65ff9ba15e80af26bd",
+        "src/hooks/useMyVehicleLogic.ts": "6f9b15fef13cdaebde2d3d7eb6f8da1645e13151",
+        "src/hooks/useMyVehicleGenerate.ts": "df73d43d84a361151a24b6787f83fb1176acd13e",
+        "src/hooks/useMyVehicleMode.ts": "97f0a9a0f1607505e71aa6f6b05e04ce7195ab4a",
+        "src/lib/myvehicleEndpoint.ts": "0093950abf7bc76f3930abdaa3d7869f6f89f3e0",
+        "src/pages/Gallery.tsx": "042a7b53eac9bbd6b3fb4374afa2e7f18b2697a7",
+        "src/pages/RevisionStudioIQ.tsx": "6ac300bbff1802018b600dfe32a06bafe1b94450",
+        "src/pages/DesignPanelProWorkspace.tsx": "5984f287b50207f07ebd1ae009efb5ebe3a2486e",
+        "src/pages/ProductionFlow.tsx": "c51e3a48fc19f67185ef59b794c67fd1bff6cd91",
+        "src/pages/WrapBox.tsx": "e313d329596e737acf81049d80549100b1fc5284"
+      }
+    }
+  },
+  "generationFreeze": {
+    "policy": "Do not edit, shorten, restate, re-seed, re-model, or silently replace these source blobs while extracting Calls 1-7.",
+    "artifactEvidence": "The Porsche Martini output is not committed as a row or immutable artifact receipt in either repository; its database/storage identity must be verified read-only before canary acceptance.",
+    "sourceFiles": {
+      "supabase/functions/design-panel-ai-generate/index.ts": "4df3a9741c4f0721afb00b4db823fe7022147aa6",
+      "supabase/functions/generate-color-render/index.ts": "0eda353a80eb3e60b293d9a99ba3e7d69ab9f065",
+      "supabase/functions/generate-pattern-render/index.ts": "8114c56cbb1934569bf659a5f6957c680b9bf868",
+      "supabase/functions/generate-2d-proof/index.ts": "2946bc1ba26b374d21ae563f01bb464ee41477d2",
+      "supabase/functions/design-on-vehicle-photo/index.ts": "a962133b04c335754cf3df307505ed2da652bdda",
+      "supabase/functions/edit-vehicle-photo/index.ts": "3843e2b66a8583e16e514a545b7827cf77fade17",
+      "supabase/functions/_shared/studio-os.ts": "6870eaebab4d43ef8605d812416f86621727d3e9",
+      "supabase/functions/_shared/view-angles-os.ts": "03d6282d71faeec37d0fd304f3bc234d9a3cf0a4"
+    }
+  },
+  "applicationClosures": [
+    {
+      "app": "DesignPro generation",
+      "route": "/designpro",
+      "status": "blocked",
+      "entrypoint": "src/pages/DesignPro.tsx",
+      "directEdgeFunctions": [
+        "generate-color-render",
+        "generate-pattern-render",
+        "generate-2d-proof",
+        "auto-generate-artboard",
+        "run-production-flow"
+      ],
+      "blockingEvidence": [
+        "Target gateway has no Calls 1-7 generation API family.",
+        "Source UI reads color_visualizations and panelizer_jobs, both prohibited by the target runtime contract.",
+        "Source DesignProToolUI directly imports WPW quote and product comparison components."
+      ]
+    },
+    {
+      "app": "MyVehiclePro",
+      "route": "/myvehiclepro",
+      "status": "blocked",
+      "entrypoint": "src/pages/MyVehiclePro.tsx",
+      "directEdgeFunctions": [
+        "design-on-vehicle-photo",
+        "edit-vehicle-photo",
+        "myvehicle-color-grounding",
+        "generate-2d-proof",
+        "auto-generate-artboard",
+        "send-client-proof-email"
+      ],
+      "blockingEvidence": [
+        "MyVehicleToolCore imports RestylePro color constants and MightyMail orchestration.",
+        "MyVehicleToolCore reads shop_profiles and its hook persists through legacy visualization/generation tables.",
+        "No standalone MyVehicle endpoint or storage contract exists in the target gateway."
+      ]
+    },
+    {
+      "app": "Gallery",
+      "route": "/gallery",
+      "status": "blocked",
+      "entrypoint": "src/pages/Gallery.tsx",
+      "directLegacyTables": [
+        "user_roles",
+        "inkfusion_carousel",
+        "wbty_products",
+        "wbty_carousel",
+        "approvemode_carousel",
+        "fadewraps_carousel",
+        "designpanelpro_carousel",
+        "color_visualizations",
+        "marketplace_listings",
+        "inkfusion_swatches",
+        "fadewraps_patterns"
+      ],
+      "blockingEvidence": [
+        "The 76 KB source page is a cross-product marketplace, newsletter and MyVehicle composite, not a DesignPro-only gallery.",
+        "The target exposes artifacts and WrapBox packs but no gallery read model/API."
+      ]
+    },
+    {
+      "app": "Shared shell and auth",
+      "status": "blocked",
+      "entrypoint": "src/App.tsx",
+      "blockingEvidence": [
+        "The 67 KB router imports RestylePro questions, WPW cart/onboarding, Meta Pixel, marketing/admin tools and Vercel chunk-reload behavior.",
+        "The source Supabase client hard-pins the RestylePro project kfapjdyythzyvnpdeghu.",
+        "Copying it would reconnect the new server UI to RestylePro instead of the isolated DesignProAI project."
+      ]
+    }
+  ],
+  "prohibitedExtractionDependencies": [
+    "RestylePro marketing or CRM modules",
+    "WPW cart, quote, onboarding or tenant modules",
+    "MightyMail",
+    "Meta Pixel",
+    "Vercel deployment recovery",
+    "the RestylePro Supabase project kfapjdyythzyvnpdeghu",
+    "legacy shared tables prohibited by source-tests/runtime-contract.json",
+    "Railway or browser execution authority"
+  ],
+  "nextExecutablePullRequest": {
+    "name": "standalone Calls 1-7 generation adapter",
+    "must": [
+      "Expose authenticated server-owned generation endpoints behind the existing standalone gateway.",
+      "Persist only to designpro_* standalone objects or an explicitly reviewed new isolated schema.",
+      "Vendor the frozen source generation blobs with recorded hashes and byte/behavior locks.",
+      "Add an immutable Porsche Martini source-receipt lookup or record its exact production row/storage hashes before acceptance.",
+      "Keep Calls 8-11 routed to the existing two-worker durable runtime."
+    ],
+    "mustNot": [
+      "Copy src/App.tsx wholesale.",
+      "Point the standalone UI at kfapjdyythzyvnpdeghu.",
+      "Create compatibility views over prohibited legacy tables.",
+      "Change prompts, models, seeds or view-angle instructions.",
+      "Declare Gallery or MyVehiclePro complete before their server APIs and isolated storage contracts exist."
+    ]
+  },
+  "checklist": {
+    "ALREADY_COMPLETE": [
+      "Exact standalone production kernel base identified",
+      "Exact mixed-source commit and blob identities recorded"
+    ],
+    "VERIFIED_WORKING": [
+      "Standalone auth/revision/GENIE/production/WrapBox control routes exist",
+      "Standalone runtime explicitly rejects shared legacy schema dependencies"
+    ],
+    "NEEDS_FIX": [
+      "Create isolated Calls 1-7 server adapter without changing frozen generation behavior",
+      "Split DesignPro-only shell/auth from mixed RestylePro/WPW router"
+    ],
+    "MISSING": [
+      "Standalone MyVehiclePro API/storage closure",
+      "Standalone Gallery read model/API",
+      "Immutable Porsche Martini artifact provenance in Git-visible evidence"
+    ],
+    "BLOCKED": [
+      "Direct executable UI extraction is unsafe until the isolated server APIs exist"
+    ]
+  }
+}
