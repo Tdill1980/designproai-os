@@ -788,3 +788,141 @@ test("revision accepts one frozen logo identity on distinct target surfaces with
   ]);
   assert.equal(new Set(frozenSnapshot.expectedLogoInventory.map((logo) => logo.contentHash)).size, 1);
 });
+
+test("authenticated browser can enqueue Calls 1-7 without selecting engine controls", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-000000000009";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/create_designpro_generation_request")) return Response.json({
+        requestId: "10000000-0000-4000-8000-000000000001",
+        generationId, state: "queued", inputHash: "a".repeat(64),
+        engineContractHash: "b".repeat(64), idempotent: false,
+      });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const input = {
+    contractVersion: "designpro.calls-1-7-input.v1",
+    vehicle: { year: "2026", make: "Porsche", model: "911", type: "car" },
+    designBrief: { campaign: "Martini heritage" },
+  };
+  const response = await fetch(`${base}/api/generation/requests`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId, idempotencyKey: `calls17:${generationId}`, input }),
+  });
+  assert.equal(response.status, 202);
+  const payload = await response.json();
+  assert.equal(payload.state, "queued");
+  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_generation_request"));
+  assert.ok(rpcCall);
+  assert.deepEqual(JSON.parse(rpcCall.init.body), {
+    p_generation_id: generationId,
+    p_input: input,
+    p_idempotency_key: `calls17:${generationId}`,
+  });
+});
+
+test("Calls 1-7 enqueue rejects nested prompt, model, seed, and view controls before RPC", async (t) => {
+  for (const forbidden of [
+    { prompt: "override" }, { nested: { image_model: "override" } },
+    { options: [{ seed: 12 }] }, { camera_angles: ["invented"] },
+  ]) {
+    const calls = [];
+    const server = createGateway({
+      env,
+      fetchImpl: async (url, init = {}) => {
+        calls.push({ url: String(url), init });
+        if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/generation/requests`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        generationId: "90000000-0000-4000-8000-000000000009",
+        idempotencyKey: "calls17:override",
+        input: {
+          contractVersion: "designpro.calls-1-7-input.v1",
+          vehicle: { year: "2026", make: "Porsche", model: "911", type: "car" },
+          ...forbidden,
+        },
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "generation_request_invalid" });
+    assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
+  }
+});
+
+test("Calls 1-7 routes are inaccessible without the HttpOnly session", async (t) => {
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith("/auth/v1/user")) return new Response("{}", { status: 401 });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/10000000-0000-4000-8000-000000000001`);
+  assert.equal(response.status, 401);
+  assert.equal(calls.some((item) => item.url.includes("designpro_generation_")), false);
+});
+
+test("generation status returns private immutable identities without signing objects", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000001";
+  const generationId = "90000000-0000-4000-8000-000000000009";
+  const contentHash = "c".repeat(64);
+  const storagePath = `designpro/user_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/${generationId}/calls-1-7/side/${contentHash}.png`;
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (value.includes("/rest/v1/designpro_generation_requests?")) return Response.json([{
+        id: requestId, generation_id: generationId, state: "outputs_ready",
+        input_hash: "a".repeat(64), engine_contract_hash: "b".repeat(64),
+        attempt: 1, output_set_hash: "d".repeat(64), error: null,
+        created_at: "2026-08-08T00:00:00Z", updated_at: "2026-08-08T00:01:00Z",
+        completed_at: "2026-08-08T00:01:00Z",
+      }]);
+      if (value.includes("/rest/v1/designpro_generation_views?")) return Response.json([{
+        source_view_type: "side", consumer_role: "driver", storage_path: storagePath,
+        content_hash: contentHash, byte_size: 100, content_type: "image/png",
+        created_at: "2026-08-08T00:01:00Z",
+      }]);
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.requestId, requestId);
+  assert.equal(payload.handoffReady, false);
+  assert.equal(payload.handoffBlocker, "source_close_up_has_no_verified_hero3d_role_mapping");
+  assert.equal(payload.views[0].storagePath, storagePath);
+  assert.equal("signedUrl" in payload.views[0], false);
+  assert.equal("engineContract" in payload, false);
+  assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
+});
+
