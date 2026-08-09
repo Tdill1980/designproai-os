@@ -89,7 +89,7 @@ BEGIN
     END LOOP;
   END IF;
   RETURN false;
-END
+END;
 $fn$;
 
 CREATE OR REPLACE FUNCTION designpro_private.generation_input_has_server_controls(
@@ -297,7 +297,7 @@ BEGIN
     'engineContractHash',v_row.engine_contract_hash,
     'createdAt',v_row.created_at,'idempotent',v_insert_count=0
   );
-END
+END;
 $fn$;
 
 CREATE OR REPLACE FUNCTION public.claim_designpro_generation_request(
@@ -355,7 +355,7 @@ BEGIN
     'claimToken',v_row.lease_token,'leaseExpiresAt',v_row.lease_expires_at,
     'viewPlan',designpro_private.calls_1_7_view_plan()
   );
-END
+END;
 $fn$;
 
 CREATE OR REPLACE FUNCTION public.heartbeat_designpro_generation_request(
@@ -378,7 +378,7 @@ BEGIN
   WHERE id=p_request_id AND state='leased' AND lease_token=p_claim_token
     AND lease_expires_at>pg_catalog.clock_timestamp();
   RETURN FOUND;
-END
+END;
 $fn$;
 
 CREATE OR REPLACE FUNCTION public.complete_designpro_generation_request(
@@ -491,7 +491,7 @@ BEGIN
     'handoffReady',false,
     'handoffBlocker','source_close_up_has_no_verified_hero3d_role_mapping'
   );
-END
+END;
 $fn$;
 
 CREATE OR REPLACE FUNCTION public.fail_designpro_generation_request(
@@ -527,7 +527,7 @@ BEGIN
     lease_expires_at=NULL
   WHERE id=p_request_id;
   RETURN true;
-END
+END;
 $fn$;
 
 REVOKE ALL ON public.designpro_generation_requests,
