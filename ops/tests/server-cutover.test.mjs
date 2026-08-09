@@ -39,13 +39,17 @@ test("mutable scripts are DesignPro-only and contain no RP retirement path", () 
   assert.doesNotMatch(mutable, /\/opt\/restylepro|\bpm2\b|docker compose down|docker (?:system )?prune/);
 });
 
-test("compose binds only loopback and preserves the exact VectorizIt boundary", () => {
+test("compose binds only loopback with two internal workers, shared spool, and no external executor", () => {
   const compose = read("compose.yaml");
   for (const binding of ["127.0.0.1:3001:3001", "127.0.0.1:3002:3001", "127.0.0.1:8787:8787"]) assert.match(compose, new RegExp(binding.replaceAll(".", "\\.")));
-  assert.match(compose, /host\.docker\.internal:3200\/vectorize/);
+  assert.equal((compose.match(/^  runtime-[12]:$/gm) || []).length, 2);
+  assert.match(compose, /DESIGNPRO_WORKER_ID: "designpro-worker-1"/);
+  assert.match(compose, /DESIGNPRO_WORKER_ID: "designpro-worker-2"/);
+  assert.doesNotMatch(compose, /host\.docker\.internal:3200|VECTORIZE_IT_URL/);
   assert.doesNotMatch(compose, /0\.0\.0\.0:(3001|3002|8787)/);
   assert.ok((compose.match(/read_only: true/g) || []).length >= 2);
   assert.match(compose, /source: \/opt\/designproai\/shared\/spool/);
+  assert.match(compose, /target: \/var\/lib\/designproai\/spool/);
   assert.ok((compose.match(/mem_limit: 6g/g) || []).length >= 1);
   assert.ok((compose.match(/cpus: "3\.0"/g) || []).length >= 1);
 });
@@ -145,7 +149,6 @@ test("env validator accepts only root-mode role-separated values", () => {
     `RESEND_API_KEY=re_${"r".repeat(32)}`,
     "RESEND_FROM=DesignProAI WrapBox <delivery@designproai.com>",
     "RESEND_FROM_VERIFIED=true",
-    "VECTORIZE_IT_URL=http://host.docker.internal:3200/vectorize",
     "",
   ].join("\n"));
   writeFileSync(gateway, [

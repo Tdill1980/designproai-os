@@ -52,7 +52,6 @@ trap cleanup EXIT
   printf 'RESEND_API_KEY=%s\n' "$resend_key"
   printf 'RESEND_FROM=%s\n' "$resend_from"
   printf 'RESEND_FROM_VERIFIED=true\n'
-  printf 'VECTORIZE_IT_URL=http://host.docker.internal:3200/vectorize\n'
 } > "$runtime_tmp"
 {
   printf 'SUPABASE_URL=%s\n' "$PROJECT_URL"

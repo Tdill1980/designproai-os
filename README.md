@@ -30,10 +30,8 @@ approves the two human gates, and requests an explicit resume.
 - Runtime and gateway deploy under `/opt/designproai`.
 - Runtime ports `3001` and `3002`, and gateway `8787`, bind to loopback only.
 - Caddy exposes the white UI and `/api/*`; `/worker/*` is an explicit 404.
-- The existing VectorizIt service on host port `3200` is identity-pinned and
-  checked before and after every deployment.
-- No script in this repository stops RP processes, edits `/opt/restylepro`,
-  changes port `3200`, or runs PR #4119.
+- Calls 8–11 and production-file execution run inside the two fenced DesignProAI runtimes; no external VectorizIt, Railway conductor, or browser worker is required.
+- No script in this repository stops RP processes, edits `/opt/restylepro`, or runs PR #4119.
 
 ## Validation and deployment
 

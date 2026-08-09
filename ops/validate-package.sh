@@ -31,8 +31,10 @@ grep -q 'mem_limit: 6g' compose.yaml
 grep -q 'cpus: "3.0"' compose.yaml
 grep -q '/opt/designproai/shared/spool' compose.yaml
 grep -q 'DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"' compose.yaml
-grep -q 'host.docker.internal:3200/vectorize' runtime.env.example
-grep -q 'host.docker.internal:3200/vectorize' compose.yaml
+if rg -n 'VECTORIZE_IT_URL|host\.docker\.internal:3200|vectorize-guard' install.sh configure-env.sh deploy.sh rollback.sh install-caddy.sh acceptance.sh compose.yaml runtime.env.example validate-env.py; then
+  echo "Stale external VectorizIt deployment dependency found" >&2
+  exit 1
+fi
 [[ $(grep -Ec '^  runtime-[12]:' compose.yaml) -eq 2 ]]
 
 # Caddy must explicitly deny browser/Internet access to production workers.
@@ -49,7 +51,6 @@ grep -q 'validate-archive.py' deploy.sh
 grep -q 'validate-release-tree.py' deploy.sh
 grep -q 'validate-env.py' deploy.sh
 grep -q 'archive_sha256' deploy.sh
-grep -q 'vectorize-guard.sh.*verify' deploy.sh
 grep -qx 'runtime/runtime-contract.cjs' release-files.txt
 grep -qx 'runtime/resend-transport.cjs' release-files.txt
 grep -qx 'runtime/wrapbox-delivery.cjs' release-files.txt
@@ -58,7 +59,6 @@ grep -qx 'gateway/src/server.mjs' release-files.txt
 grep -qx 'web/dist/index.html' release-files.txt
 grep -qx 'ops/compose.yaml' release-files.txt
 grep -q '.designpro-release.json' validate-archive.py
-grep -q 'host.docker.internal.*3200' acceptance.sh
 grep -q 'RUNTIME_IMAGE_ID' rollback.sh
 
 if rg -n 'worker\.mjs|/readyz|/version|:3400|SUPABASE_ANON_KEY|DESIGNPRO_ORCHESTRATOR_URL' . \

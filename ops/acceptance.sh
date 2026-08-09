@@ -20,7 +20,6 @@ python3 "$OPS_DIR/validate-archive.py" "$ROOT/current/deploy/release.tgz" "$sha"
 python3 "$OPS_DIR/validate-release-tree.py" "$ROOT/current" "$sha"
 systemctl is-active --quiet designproai.service || { echo "DesignPro systemd service is not active" >&2; exit 5; }
 python3 "$OPS_DIR/validate-env.py" "$ROOT/shared/runtime.env" "$ROOT/shared/gateway.env"
-"$OPS_DIR/vectorize-guard.sh" verify
 
 [[ -d $ROOT/shared/spool && ! -L $ROOT/shared/spool && $(stat -c '%u:%g:%a' "$ROOT/shared/spool") == 10001:10001:700 ]] || {
   echo "Persistent spool path, ownership, or mode is unsafe" >&2; exit 5;
@@ -97,17 +96,6 @@ const s=fs.lstatSync(p); if(fs.readFileSync(`${p}/${m}`,"utf8")!=="designpro-sha
 fs.unlinkSync(`${p}/${m}`); process.stdout.write(String(s.dev));' "$marker")
 [[ $runtime_2_device == "$host_spool_device" ]] || { echo "runtime-2 spool is not the approved shared host filesystem" >&2; exit 9; }
 
-# Host health alone is insufficient: Docker routing to protected :3200 must be
-# reachable from each worker. This is a bounded TCP connect only and cannot
-# stop, reconfigure, or mutate VectorizIt.
-for service in runtime-1 runtime-2; do
-  docker compose --env-file deploy/release.env -f ops/compose.yaml exec -T "$service" node -e '
-const net=require("node:net"); const socket=net.connect({host:"host.docker.internal",port:3200});
-const timer=setTimeout(()=>{socket.destroy();process.exit(2)},5000);
-socket.once("connect",()=>{clearTimeout(timer);socket.end();});
-socket.once("close",()=>process.exit(0)); socket.once("error",()=>{clearTimeout(timer);process.exit(3)});'
-done
-
 if [[ -n $public ]]; then
   [[ $public == https://os.designproai.com ]] || { echo "Public acceptance URL must be the DesignPro HTTPS origin" >&2; exit 10; }
   [[ -L $ROOT/public && $(readlink -f "$ROOT/public") == "$ROOT/releases/$sha" ]] || { echo "Public web pointer is not the requested release" >&2; exit 10; }
@@ -122,5 +110,5 @@ if [[ -n $public ]]; then
   grep -qi '^x-frame-options: *DENY' <<<"$headers"
 fi
 
-echo "PASS: isolated web/gateway + two unique exact-SHA runtimes; VectorizIt identity unchanged"
+echo "PASS: isolated web/gateway + two unique exact-SHA server-owned runtimes with shared restart-safe spool"
 echo "NOTE: infrastructure acceptance is not the seven-view production workflow canary"

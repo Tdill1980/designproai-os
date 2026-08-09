@@ -23,7 +23,6 @@ for path in "$ROOT" "$ROOT/releases" "$ROOT/staging" "$ROOT/shared" "$ROOT/share
 done
 [[ $(stat -c '%u:%g:%a' "$ROOT/shared/spool") == 10001:10001:700 ]] || { echo "Persistent spool ownership or mode changed" >&2; exit 7; }
 python3 "$OPS_DIR/validate-env.py" "$ROOT/shared/runtime.env" "$ROOT/shared/gateway.env"
-"$OPS_DIR/vectorize-guard.sh" verify
 
 release="$ROOT/releases/$sha"
 [[ ! -e $release && ! -L $release ]] || { echo "Immutable release already exists: $sha" >&2; exit 9; }
@@ -108,7 +107,6 @@ recover() {
       mv "$release" "$ROOT/staging/failed-${sha}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
     fi
   fi
-  "$OPS_DIR/vectorize-guard.sh" verify >/dev/null || true
   exit "$status"
 }
 trap recover ERR
@@ -127,7 +125,6 @@ ln -sfn "$release" "$ROOT/public.next"
 mv -Tf "$ROOT/public.next" "$ROOT/public"
 [[ $(readlink -f "$ROOT/public") == "$release" ]] || { echo "Public pointer did not switch exactly" >&2; exit 12; }
 python3 "$OPS_DIR/validate-release-tree.py" "$release" "$sha"
-"$OPS_DIR/vectorize-guard.sh" verify
 cutover_started=false
 trap - ERR
 

@@ -6,13 +6,12 @@ ROOT=/opt/designproai
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
 [[ ${1:-} == I_UNDERSTAND_NO_RP_CHANGES ]] || { echo "Confirmation token required" >&2; exit 2; }
-for command in curl df docker install nproc python3 ss stat systemctl; do
+for command in df docker install nproc python3 ss stat systemctl; do
   command -v "$command" >/dev/null || { echo "Required command missing: $command" >&2; exit 3; }
 done
 docker compose version >/dev/null || { echo "Docker Compose v2 is required" >&2; exit 3; }
 
-# Refuse a server that cannot safely hold one 50-GiB resumable production pack,
-# two workers, and the protected pre-existing VectorizIt process. These checks
+# Refuse a server that cannot safely hold one 50-GiB resumable production pack\n# and two independent server-owned workers. These checks
 # happen before the first DesignPro directory is created.
 minimum_cpu=8
 minimum_ram_kib=$((15 * 1024 * 1024))
@@ -36,10 +35,6 @@ for path in "$ROOT" "$ROOT/releases" "$ROOT/staging" "$ROOT/shared" "$ROOT/share
   [[ ! -L $path ]] || { echo "Refusing symlinked DesignPro path: $path" >&2; exit 4; }
 done
 
-"$OPS_DIR/vectorize-guard.sh" print >/dev/null || {
-  echo "Protected VectorizIt :3200 is not healthy; refusing install" >&2
-  exit 5
-}
 
 # Never claim loopback ports already owned by a non-DesignPro process. An
 # idempotent reinstall may see containers from this exact Compose project.
@@ -73,11 +68,6 @@ done
 }
 install -m 0644 "$OPS_DIR/designproai.service" /etc/systemd/system/designproai.service
 systemctl daemon-reload
-if [[ -f $ROOT/shared/vectorize.identity ]]; then
-  "$OPS_DIR/vectorize-guard.sh" verify
-else
-  "$OPS_DIR/vectorize-guard.sh" capture
-fi
 
 echo "Base installed. No existing service, firewall, or public port was changed."
 echo "Populate the two 0600 env files, then run deploy.sh with its exact archive digest."
