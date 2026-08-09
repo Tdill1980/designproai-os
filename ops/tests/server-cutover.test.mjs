@@ -45,6 +45,9 @@ test("compose binds only loopback with two internal workers, shared spool, and n
   assert.equal((compose.match(/^  runtime-[12]:$/gm) || []).length, 2);
   assert.match(compose, /DESIGNPRO_WORKER_ID: "designpro-worker-1"/);
   assert.match(compose, /DESIGNPRO_WORKER_ID: "designpro-worker-2"/);
+  assert.ok(compose.includes('      DESIGNPRO_WORKER_ID: "designpro-worker-1"\n      DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"'));
+  assert.ok(compose.includes('      DESIGNPRO_WORKER_ID: "designpro-worker-2"\n      DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"'));
+  assert.equal(compose.includes('        DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"'), false);
   assert.doesNotMatch(compose, /host\.docker\.internal:3200|VECTORIZE_IT_URL/);
   assert.doesNotMatch(compose, /0\.0\.0\.0:(3001|3002|8787)/);
   assert.ok((compose.match(/read_only: true/g) || []).length >= 2);
