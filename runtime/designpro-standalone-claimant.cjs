@@ -959,6 +959,10 @@ const CALLS_1_7_SERVER_CONTROL_KEYS = new Set([
 const CALLS_1_7_CONTENT_EXTENSIONS = Object.freeze({
   "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp",
 });
+const CALLS_1_7_VEHICLE_CLASSES = new Set([
+  "car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv",
+  "trailer", "aircraft", "heavy_equipment",
+]);
 const MAX_CALLS_1_7_VIEW_BYTES = 512 * 1024 * 1024;
 
 function generationInputHasServerControls(value, path = []) {
@@ -998,10 +1002,22 @@ function assertCalls1To7Claim(value) {
   const tenant = tenantKey(value.tenantKey);
   const input = value.input;
   const vehicle = input?.vehicle;
+  const delivery = input?.delivery;
+  const orderNumber = String(input?.orderNumber || "");
+  const recipientIdentityHash = String(delivery?.recipientIdentityHash || "");
   if (!input || typeof input !== "object" || Array.isArray(input)
     || input.contractVersion !== "designpro.calls-1-7-input.v1"
+    || orderNumber !== orderNumber.trim()
+    || !/^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$/.test(orderNumber)
+    || !delivery || typeof delivery !== "object" || Array.isArray(delivery)
+    || Object.keys(delivery).sort().join(",") !== "contractVersion,orderNumber,recipientIdentityHash"
+    || delivery.contractVersion !== "designpro.wrapbox-recipient.v1"
+    || recipientIdentityHash !== recipientIdentityHash.toLowerCase()
+    || !HASH_RE.test(recipientIdentityHash)
+    || delivery.orderNumber !== orderNumber
     || !vehicle || typeof vehicle !== "object" || Array.isArray(vehicle)
     || [vehicle.year, vehicle.make, vehicle.model, vehicle.type].some((item) => !String(item || "").trim())
+    || !CALLS_1_7_VEHICLE_CLASSES.has(String(vehicle.type || ""))
     || generationInputHasServerControls(input)
     || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
     throw new StageError("generation_claim_invalid", "Calls 1-7 input contract is invalid", false);

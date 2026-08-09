@@ -143,7 +143,8 @@ async function authenticate(req, res, fetchImpl, cfg) {
       res.setHeader("set-cookie", sessionCookies(payload, cfg));
     }
   }
-  return user?.id ? { token, user } : null;
+  return user?.id && user.is_anonymous !== true && user.is_anonymous !== "true"
+    ? { token, user } : null;
 }
 
 function assertSameOrigin(req, cfg) {
@@ -575,8 +576,11 @@ const GENERATION_SERVER_CONTROL_KEYS = new Set([
   "temperature", "topk", "topp", "viewangle", "viewangles", "cameraangle",
   "cameraangles", "enginecontract", "sourcecommit", "sourceblobs",
 ]);
-const GENERATION_REQUEST_FIELDS = "id,generation_id,state,input_hash,engine_contract_hash,attempt,output_set_hash,error,created_at,updated_at,completed_at";
-const GENERATION_VIEW_FIELDS = "source_view_type,consumer_role,storage_path,content_hash,byte_size,content_type,created_at";
+const GENERATION_VIEW_ROLE = new Map([
+  ["side", "driver"], ["passenger-side", "passenger"],
+  ["hood_detail", "hood"], ["front", "front"], ["rear", "rear"],
+  ["close-up", "closeup"], ["roof", "roof"],
+]);
 
 function generationInputHasServerControls(value, path = []) {
   if (!value || typeof value !== "object") return false;
@@ -601,10 +605,23 @@ function validatedGenerationRequest(body) {
   const idempotencyKey = String(body.idempotencyKey || "");
   const input = body.input;
   const vehicle = input?.vehicle;
+  const delivery = input?.delivery;
+  const orderNumber = String(input?.orderNumber || "");
+  const recipientIdentityHash = String(delivery?.recipientIdentityHash || "");
+  const deliveryKeys = ["contractVersion", "orderNumber", "recipientIdentityHash"];
+  const expectedIdempotencyKey = `calls17:${generationIdValue}:${recipientIdentityHash}:`
+    + createHash("sha256").update(orderNumber, "utf8").digest("hex");
   if (!UUID_PATTERN.test(generationIdValue)
-    || idempotencyKey !== idempotencyKey.trim() || idempotencyKey.length < 1 || idempotencyKey.length > 200
+    || idempotencyKey !== expectedIdempotencyKey || idempotencyKey.length > 200
     || !input || typeof input !== "object" || Array.isArray(input)
     || input.contractVersion !== "designpro.calls-1-7-input.v1"
+    || orderNumber !== orderNumber.trim() || !ORDER_NUMBER_PATTERN.test(orderNumber)
+    || !delivery || typeof delivery !== "object" || Array.isArray(delivery)
+    || JSON.stringify(Object.keys(delivery).sort()) !== JSON.stringify(deliveryKeys)
+    || delivery.contractVersion !== "designpro.wrapbox-recipient.v1"
+    || recipientIdentityHash !== recipientIdentityHash.toLowerCase()
+    || !SHA256_PATTERN.test(recipientIdentityHash)
+    || delivery.orderNumber !== orderNumber
     || !vehicle || typeof vehicle !== "object" || Array.isArray(vehicle)
     || [vehicle.year, vehicle.make, vehicle.model, vehicle.type].some((item) => !String(item || "").trim())
     || !VEHICLE_CLASSES.includes(String(vehicle.type || ""))
@@ -616,50 +633,54 @@ function validatedGenerationRequest(body) {
 }
 
 async function generationRequestFor(fetchImpl, token, cfg, requestId) {
-  const response = await upstream(fetchImpl,
-    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${encodeURIComponent(GENERATION_REQUEST_FIELDS)}`
-      + `&id=eq.${encodeURIComponent(requestId)}&limit=1`,
-    { method: "GET" }, token, cfg);
-  if (!response.ok) throw Object.assign(new Error(`generation_request_query_${response.status}`), { status: response.status });
-  const rows = await response.json();
-  return Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+  return rpc(fetchImpl, token, cfg, "get_designpro_generation_request", {
+    p_request_id: requestId,
+  });
 }
 
-async function generationViewsFor(fetchImpl, token, cfg, requestId) {
-  const response = await upstream(fetchImpl,
-    `${cfg.supabaseUrl}/rest/v1/designpro_generation_views?select=${encodeURIComponent(GENERATION_VIEW_FIELDS)}`
-      + `&request_id=eq.${encodeURIComponent(requestId)}&order=source_view_type.asc`,
-    { method: "GET" }, token, cfg);
-  if (!response.ok) throw Object.assign(new Error(`generation_views_query_${response.status}`), { status: response.status });
-  const rows = await response.json();
-  return Array.isArray(rows) ? rows : [];
-}
-
-function publicGenerationRequest(row, views) {
+function validatedGenerationStatus(value) {
+  if (value === null) return null;
+  const state = String(value?.state || "");
+  const views = value?.views;
+  const attempt = Number(value?.attempt);
+  const outputSetHash = value?.outputSetHash;
+  const failureCode = value?.failureCode;
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || !UUID_PATTERN.test(String(value.requestId || ""))
+    || !UUID_PATTERN.test(String(value.generationId || ""))
+    || !["queued", "leased", "retryable", "outputs_ready", "failed", "cancelled"].includes(state)
+    || !SHA256_PATTERN.test(String(value.inputHash || ""))
+    || !SHA256_PATTERN.test(String(value.engineContractHash || ""))
+    || !Number.isInteger(attempt) || attempt < 0 || attempt > 12
+    || outputSetHash !== null && !SHA256_PATTERN.test(String(outputSetHash || ""))
+    || failureCode !== null && !/^[a-z0-9][a-z0-9_:-]{0,79}$/.test(String(failureCode || ""))
+    || value.handoffReady !== false
+    || value.handoffBlocker !== null
+      && value.handoffBlocker !== "source_close_up_has_no_verified_hero3d_role_mapping"
+    || !Array.isArray(views) || views.length > 7) {
+    throw Object.assign(new Error("generation_status_response_invalid"), { status: 502 });
+  }
+  const publicViews = views.map((view) => {
+    const exactKeys = ["byteSize", "consumerRole", "contentHash", "contentType", "createdAt", "sourceViewType"];
+    if (!view || typeof view !== "object" || Array.isArray(view)
+      || JSON.stringify(Object.keys(view).sort()) !== JSON.stringify(exactKeys)
+      || GENERATION_VIEW_ROLE.get(view.sourceViewType) !== view.consumerRole
+      || !SHA256_PATTERN.test(String(view.contentHash || ""))
+      || !Number.isSafeInteger(Number(view.byteSize)) || Number(view.byteSize) < 1
+      || !["image/png", "image/jpeg", "image/webp"].includes(view.contentType)) {
+      throw Object.assign(new Error("generation_status_response_invalid"), { status: 502 });
+    }
+    return { ...view, byteSize: Number(view.byteSize) };
+  });
   return {
-    requestId: String(row.id),
-    generationId: String(row.generation_id),
-    state: String(row.state),
-    inputHash: String(row.input_hash),
-    engineContractHash: String(row.engine_contract_hash),
-    attempt: Number(row.attempt || 0),
-    outputSetHash: row.output_set_hash ? String(row.output_set_hash) : null,
-    error: row.error && typeof row.error === "object" ? row.error : null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    completedAt: row.completed_at || null,
-    handoffReady: false,
-    handoffBlocker: row.state === "outputs_ready"
-      ? "source_close_up_has_no_verified_hero3d_role_mapping" : null,
-    views: views.map((view) => ({
-      sourceViewType: String(view.source_view_type),
-      consumerRole: String(view.consumer_role),
-      storagePath: String(view.storage_path),
-      contentHash: String(view.content_hash),
-      byteSize: Number(view.byte_size),
-      contentType: String(view.content_type),
-      createdAt: view.created_at,
-    })),
+    requestId: String(value.requestId), generationId: String(value.generationId),
+    state, inputHash: String(value.inputHash),
+    engineContractHash: String(value.engineContractHash), attempt,
+    outputSetHash: outputSetHash ? String(outputSetHash) : null,
+    failureCode: failureCode ? String(failureCode) : null,
+    createdAt: value.createdAt, updatedAt: value.updatedAt,
+    completedAt: value.completedAt || null, handoffReady: false,
+    handoffBlocker: value.handoffBlocker || null, views: publicViews,
   };
 }
 
@@ -751,11 +772,11 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       if (req.method === "GET" && generationRequestMatch) {
         const requestId = generationRequestMatch[1].toLowerCase();
         if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
-        const request = await generationRequestFor(fetchImpl, token, cfg, requestId);
+        const request = validatedGenerationStatus(
+          await generationRequestFor(fetchImpl, token, cfg, requestId)
+        );
         if (!request) return json(res, 404, { error: "generation_request_not_found" });
-        return json(res, 200, publicGenerationRequest(
-          request, await generationViewsFor(fetchImpl, token, cfg, requestId)
-        ));
+        return json(res, 200, request);
       }
 
       if (req.method === "GET" && url.pathname === "/api/genie/candidates") {

@@ -10,12 +10,53 @@ test("Calls 1-7 schema is isolated, authenticated, and service-claimed", () => {
     assert.match(sql, new RegExp(`ALTER TABLE public\\.${table} ENABLE ROW LEVEL SECURITY`));
   }
   assert.match(sql, /CREATE POLICY designpro_owner_read_generation_requests[\s\S]*owner_id=auth\.uid\(\)/);
-  assert.match(sql, /GRANT SELECT ON public\.designpro_generation_requests,[\s\S]*TO authenticated/);
+  assert.doesNotMatch(sql, /GRANT SELECT ON public\.designpro_generation_requests,[\s\S]*TO authenticated/);
+  assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.get_designpro_generation_request\(uuid\)[\s\S]*TO authenticated/);
   assert.match(sql, /claim_designpro_generation_request[\s\S]*service_role_required/);
   assert.match(sql, /FOR UPDATE SKIP LOCKED/);
   assert.match(sql, /complete_designpro_generation_request[\s\S]*generation_lease_lost/);
   assert.doesNotMatch(sql, /GRANT (?:ALL|INSERT|UPDATE|DELETE)[^;]*TO authenticated/i);
   assert.doesNotMatch(sql, /GRANT [^;]+\bTO\s+(?:PUBLIC|anon)\b/i);
+});
+
+test("authenticated enqueue is non-anonymous, allowlisted, and concurrency cost-fenced", () => {
+  const createStart = sql.indexOf("CREATE OR REPLACE FUNCTION public.create_designpro_generation_request");
+  const claimStart = sql.indexOf("CREATE OR REPLACE FUNCTION public.claim_designpro_generation_request");
+  const createRpc = sql.slice(createStart, claimStart);
+  assert.match(createRpc, /auth\.jwt\(\)->>'is_anonymous'/);
+  assert.match(createRpc, /pg_advisory_xact_lock\(pg_catalog\.hashtextextended/);
+  assert.match(createRpc, /state IN \('queued','leased','retryable'\)/);
+  assert.match(createRpc, /v_active_count>=1[\s\S]*generation_active_request_limit/);
+  assert.match(sql, /CREATE UNIQUE INDEX IF NOT EXISTS designpro_generation_one_active_owner_idx[\s\S]*WHERE state IN \('queued','leased','retryable'\)/);
+  for (const vehicleClass of [
+    "car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv",
+    "trailer", "aircraft", "heavy_equipment",
+  ]) assert.ok(createRpc.includes(`'${vehicleClass}'`));
+});
+
+test("enqueue requires the exact confirmed operator and registered order identity", () => {
+  const createStart = sql.indexOf("CREATE OR REPLACE FUNCTION public.create_designpro_generation_request");
+  const claimStart = sql.indexOf("CREATE OR REPLACE FUNCTION public.claim_designpro_generation_request");
+  const createRpc = sql.slice(createStart, claimStart);
+  assert.match(createRpc, /NULLIF\(pg_catalog\.btrim\(p_input->>'orderNumber'\),''\) IS NULL/);
+  assert.match(createRpc, /p_input#>>'\{delivery,recipientIdentityHash\}' !~ '\^\[0-9a-f\]\{64\}\$'/);
+  assert.match(createRpc, /p_input#>>'\{delivery,orderNumber\}'<>p_input->>'orderNumber'/);
+  assert.match(createRpc, /v_expected_idempotency:='calls17:'\|\|p_generation_id::text/);
+  assert.match(createRpc, /FROM public\.designpro_qc_members q[\s\S]*q\.can_operate/);
+  assert.match(createRpc, /JOIN designpro_private\.business_customer_bindings b[\s\S]*b\.created_by_operator=q\.user_id/);
+  assert.match(createRpc, /JOIN designpro_private\.wrapbox_delivery_recipients r[\s\S]*r\.recipient_identity_hash=v_recipient_identity_hash/);
+  assert.match(createRpc, /confirmed_operator_order_binding_required/);
+  assert.doesNotMatch(createRpc, /paid|credit|subscription|entitlement/i);
+});
+
+test("owner status RPC omits worker and private storage identities", () => {
+  const statusStart = sql.indexOf("CREATE OR REPLACE FUNCTION public.get_designpro_generation_request");
+  const grantsStart = sql.indexOf("REVOKE ALL ON public.designpro_generation_requests");
+  const statusRpc = sql.slice(statusStart, grantsStart);
+  assert.match(statusRpc, /owner_id=v_owner/);
+  assert.match(statusRpc, /auth\.jwt\(\)->>'is_anonymous'/);
+  assert.doesNotMatch(statusRpc, /storage_path|lease_token|lease_owner|engine_receipt|error_message/);
+  assert.match(statusRpc, /failureCode/);
 });
 
 test("frozen source blobs and exact seven source views cannot be browser overridden", () => {

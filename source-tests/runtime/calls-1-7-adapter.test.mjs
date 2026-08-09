@@ -13,6 +13,12 @@ const claim = {
   tenantKey: "user_20000000-0000-4000-8000-000000000002",
   input: {
     contractVersion: "designpro.calls-1-7-input.v1",
+    orderNumber: "DP-9001",
+    delivery: {
+      contractVersion: "designpro.wrapbox-recipient.v1",
+      recipientIdentityHash: "c".repeat(64),
+      orderNumber: "DP-9001",
+    },
     vehicle: { year: "2026", make: "Porsche", model: "911", type: "car" },
     designBrief: { campaign: "Martini heritage" },
   },
@@ -99,6 +105,23 @@ test("browser prompt, model, seed, and angle controls are rejected recursively",
   }
 });
 
+test("claimant rejects vehicle classes outside the exact gateway allowlist", () => {
+  assert.throws(() => claimant._test.assertCalls1To7Claim({
+    ...claim,
+    input: { ...claim.input, vehicle: { ...claim.input.vehicle, type: "spaceship" } },
+  }), (error) => error.code === "generation_claim_invalid");
+});
+
+test("claimant rejects an unbound or changed recipient order identity", () => {
+  assert.throws(() => claimant._test.assertCalls1To7Claim({
+    ...claim,
+    input: {
+      ...claim.input,
+      delivery: { ...claim.input.delivery, orderNumber: "DP-9002" },
+    },
+  }), (error) => error.code === "generation_claim_invalid");
+});
+
 test("completion verifies all seven stored bytes before fenced persistence", async () => {
   const { bytes, views } = calls17Views();
   const fake = supabaseDouble({ bytes });
@@ -145,4 +168,3 @@ test("heartbeat and failure remain fenced by the exact request and claim token",
   ]);
   assert.equal(fake.calls[1].payload.p_retryable, true);
 });
-

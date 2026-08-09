@@ -119,12 +119,41 @@ CREATE TABLE public.designpro_generation_requests (
   )),
   request_input jsonb NOT NULL CHECK (
     pg_catalog.jsonb_typeof(request_input)='object'
+    AND NULLIF(pg_catalog.btrim(request_input->>'contractVersion'),'') IS NOT NULL
     AND request_input->>'contractVersion'='designpro.calls-1-7-input.v1'
+    AND NULLIF(pg_catalog.btrim(request_input->>'orderNumber'),'') IS NOT NULL
+    AND request_input->>'orderNumber'=pg_catalog.btrim(request_input->>'orderNumber')
+    AND request_input->>'orderNumber' ~
+      '^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$'
+    AND pg_catalog.jsonb_typeof(request_input->'delivery')='object'
+    AND (request_input->'delivery') ?& ARRAY[
+      'contractVersion','recipientIdentityHash','orderNumber'
+    ]
+    AND (request_input->'delivery') - ARRAY[
+      'contractVersion','recipientIdentityHash','orderNumber'
+    ] = '{}'::jsonb
+    AND NULLIF(pg_catalog.btrim(
+      request_input#>>'{delivery,contractVersion}'
+    ),'') IS NOT NULL
+    AND request_input#>>'{delivery,contractVersion}'=
+      'designpro.wrapbox-recipient.v1'
+    AND NULLIF(pg_catalog.btrim(
+      request_input#>>'{delivery,recipientIdentityHash}'
+    ),'') IS NOT NULL
+    AND request_input#>>'{delivery,recipientIdentityHash}' ~ '^[0-9a-f]{64}$'
+    AND NULLIF(pg_catalog.btrim(
+      request_input#>>'{delivery,orderNumber}'
+    ),'') IS NOT NULL
+    AND request_input#>>'{delivery,orderNumber}'=request_input->>'orderNumber'
     AND pg_catalog.jsonb_typeof(request_input->'vehicle')='object'
     AND NULLIF(pg_catalog.btrim(request_input#>>'{vehicle,year}'),'') IS NOT NULL
     AND NULLIF(pg_catalog.btrim(request_input#>>'{vehicle,make}'),'') IS NOT NULL
     AND NULLIF(pg_catalog.btrim(request_input#>>'{vehicle,model}'),'') IS NOT NULL
     AND NULLIF(pg_catalog.btrim(request_input#>>'{vehicle,type}'),'') IS NOT NULL
+    AND request_input#>>'{vehicle,type}' = ANY(ARRAY[
+      'car','truck','suv','van','motorcycle','boat','bus','rv','trailer',
+      'aircraft','heavy_equipment'
+    ])
     AND pg_catalog.octet_length(request_input::text)<=262144
     AND NOT designpro_private.generation_input_has_server_controls(request_input)
   ),
@@ -150,6 +179,13 @@ CREATE TABLE public.designpro_generation_requests (
   completed_at timestamptz,
   UNIQUE(owner_id,generation_id),
   UNIQUE(tenant_key,idempotency_key),
+  CONSTRAINT designpro_generation_request_identity CHECK (
+    idempotency_key='calls17:'||generation_id::text||':'
+      ||(request_input#>>'{delivery,recipientIdentityHash}')||':'
+      ||pg_catalog.encode(extensions.digest(pg_catalog.convert_to(
+        request_input->>'orderNumber','UTF8'
+      ),'sha256'),'hex')
+  ),
   CONSTRAINT designpro_generation_lease_integrity CHECK (
     state<>'leased' OR (
       lease_owner IS NOT NULL AND lease_token IS NOT NULL
@@ -212,6 +248,9 @@ CREATE INDEX IF NOT EXISTS designpro_generation_claim_idx
   ON public.designpro_generation_requests(state,available_at,created_at);
 CREATE INDEX IF NOT EXISTS designpro_generation_owner_idx
   ON public.designpro_generation_requests(owner_id,created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS designpro_generation_one_active_owner_idx
+  ON public.designpro_generation_requests(owner_id)
+  WHERE state IN ('queued','leased','retryable');
 CREATE INDEX IF NOT EXISTS designpro_generation_views_request_idx
   ON public.designpro_generation_views(request_id,source_view_type);
 
@@ -248,24 +287,85 @@ DECLARE
   v_input_hash text;
   v_contract jsonb:=designpro_private.calls_1_7_engine_contract();
   v_contract_hash text;
-  v_insert_count integer:=0;
+  v_active_count integer;
+  v_recipient_identity_hash text;
+  v_order_number text;
+  v_expected_idempotency text;
   v_row public.designpro_generation_requests%ROWTYPE;
 BEGIN
-  IF v_owner IS NULL THEN RAISE EXCEPTION 'authentication_required'; END IF;
+  IF v_owner IS NULL OR COALESCE(auth.jwt()->>'is_anonymous','false')='true'
+  THEN RAISE EXCEPTION 'authentication_required'; END IF;
   IF p_generation_id IS NULL OR p_input IS NULL
     OR pg_catalog.jsonb_typeof(p_input)<>'object'
+    OR NULLIF(pg_catalog.btrim(p_input->>'contractVersion'),'') IS NULL
     OR p_input->>'contractVersion'<>'designpro.calls-1-7-input.v1'
+    OR NULLIF(pg_catalog.btrim(p_input->>'orderNumber'),'') IS NULL
+    OR p_input->>'orderNumber'<>pg_catalog.btrim(p_input->>'orderNumber')
+    OR p_input->>'orderNumber' !~
+      '^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$'
+    OR pg_catalog.jsonb_typeof(p_input->'delivery')<>'object'
+    OR NOT ((p_input->'delivery') ?& ARRAY[
+      'contractVersion','recipientIdentityHash','orderNumber'
+    ])
+    OR (p_input->'delivery') - ARRAY[
+      'contractVersion','recipientIdentityHash','orderNumber'
+    ] <> '{}'::jsonb
+    OR NULLIF(pg_catalog.btrim(
+      p_input#>>'{delivery,contractVersion}'
+    ),'') IS NULL
+    OR p_input#>>'{delivery,contractVersion}'<>
+      'designpro.wrapbox-recipient.v1'
+    OR NULLIF(pg_catalog.btrim(
+      p_input#>>'{delivery,recipientIdentityHash}'
+    ),'') IS NULL
+    OR p_input#>>'{delivery,recipientIdentityHash}' !~ '^[0-9a-f]{64}$'
+    OR NULLIF(pg_catalog.btrim(p_input#>>'{delivery,orderNumber}'),'') IS NULL
+    OR p_input#>>'{delivery,orderNumber}'<>p_input->>'orderNumber'
     OR pg_catalog.jsonb_typeof(p_input->'vehicle')<>'object'
     OR NULLIF(pg_catalog.btrim(p_input#>>'{vehicle,year}'),'') IS NULL
     OR NULLIF(pg_catalog.btrim(p_input#>>'{vehicle,make}'),'') IS NULL
     OR NULLIF(pg_catalog.btrim(p_input#>>'{vehicle,model}'),'') IS NULL
     OR NULLIF(pg_catalog.btrim(p_input#>>'{vehicle,type}'),'') IS NULL
+    OR p_input#>>'{vehicle,type}' <> ALL(ARRAY[
+      'car','truck','suv','van','motorcycle','boat','bus','rv','trailer',
+      'aircraft','heavy_equipment'
+    ])
     OR pg_catalog.octet_length(p_input::text)>262144
     OR designpro_private.generation_input_has_server_controls(p_input)
     OR p_idempotency_key IS NULL
     OR pg_catalog.length(pg_catalog.btrim(p_idempotency_key)) NOT BETWEEN 1 AND 200
     OR p_idempotency_key<>pg_catalog.btrim(p_idempotency_key)
   THEN RAISE EXCEPTION 'generation_request_invalid'; END IF;
+
+  v_recipient_identity_hash:=p_input#>>'{delivery,recipientIdentityHash}';
+  v_order_number:=p_input->>'orderNumber';
+  v_expected_idempotency:='calls17:'||p_generation_id::text||':'
+    ||v_recipient_identity_hash||':'||pg_catalog.encode(
+      extensions.digest(pg_catalog.convert_to(v_order_number,'UTF8'),'sha256'),
+      'hex'
+    );
+  IF p_idempotency_key IS DISTINCT FROM v_expected_idempotency
+  THEN RAISE EXCEPTION 'generation_request_invalid'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.designpro_qc_members q
+    JOIN auth.users ou ON ou.id=q.user_id
+    JOIN designpro_private.business_customer_bindings b
+      ON b.created_by_operator=q.user_id
+    JOIN designpro_private.wrapbox_delivery_recipients r
+      ON r.customer_id=b.customer_id
+      AND r.customer_auth_user_id=b.customer_auth_user_id
+      AND r.customer_email=b.customer_email
+    JOIN auth.users cu ON cu.id=r.customer_auth_user_id
+    WHERE q.user_id=v_owner AND q.can_operate
+      AND ou.email_confirmed_at IS NOT NULL
+      AND r.recipient_identity_hash=v_recipient_identity_hash
+      AND r.order_number=v_order_number
+      AND p_input#>>'{delivery,orderNumber}'=r.order_number
+      AND cu.email_confirmed_at IS NOT NULL
+      AND pg_catalog.lower(pg_catalog.btrim(cu.email))=r.customer_email
+  ) THEN RAISE EXCEPTION 'confirmed_operator_order_binding_required'; END IF;
 
   v_tenant:='user_'||v_owner::text;
   v_input_hash:=pg_catalog.encode(
@@ -275,6 +375,30 @@ BEGIN
     extensions.digest(pg_catalog.convert_to(v_contract::text,'UTF8'),'sha256'),'hex'
   );
 
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+    'designpro.calls-1-7.owner:'||v_owner::text,0
+  ));
+
+  SELECT * INTO v_row FROM public.designpro_generation_requests
+  WHERE owner_id=v_owner AND generation_id=p_generation_id;
+  IF FOUND THEN
+    IF v_row.idempotency_key<>p_idempotency_key
+      OR v_row.input_hash<>v_input_hash OR v_row.engine_contract<>v_contract
+    THEN RAISE EXCEPTION 'generation_request_identity_conflict'; END IF;
+    RETURN pg_catalog.jsonb_build_object(
+      'requestId',v_row.id,'generationId',v_row.generation_id,
+      'state',v_row.state,'inputHash',v_row.input_hash,
+      'engineContractHash',v_row.engine_contract_hash,
+      'createdAt',v_row.created_at,'idempotent',true
+    );
+  END IF;
+
+  SELECT pg_catalog.count(*)::integer INTO v_active_count
+  FROM public.designpro_generation_requests
+  WHERE owner_id=v_owner AND state IN ('queued','leased','retryable');
+  IF v_active_count>=1
+  THEN RAISE EXCEPTION 'generation_active_request_limit'; END IF;
+
   INSERT INTO public.designpro_generation_requests(
     generation_id,owner_id,tenant_key,idempotency_key,request_input,input_hash,
     engine_contract,engine_contract_hash
@@ -283,11 +407,17 @@ BEGIN
     v_contract,v_contract_hash
   )
   ON CONFLICT DO NOTHING;
-  GET DIAGNOSTICS v_insert_count=ROW_COUNT;
 
   SELECT * INTO v_row FROM public.designpro_generation_requests
   WHERE owner_id=v_owner AND generation_id=p_generation_id;
-  IF NOT FOUND OR v_row.idempotency_key<>p_idempotency_key
+  IF NOT FOUND THEN
+    IF EXISTS(
+      SELECT 1 FROM public.designpro_generation_requests
+      WHERE owner_id=v_owner AND state IN ('queued','leased','retryable')
+    ) THEN RAISE EXCEPTION 'generation_active_request_limit'; END IF;
+    RAISE EXCEPTION 'generation_request_identity_conflict';
+  END IF;
+  IF v_row.idempotency_key<>p_idempotency_key
     OR v_row.input_hash<>v_input_hash OR v_row.engine_contract<>v_contract
   THEN RAISE EXCEPTION 'generation_request_identity_conflict'; END IF;
 
@@ -295,7 +425,7 @@ BEGIN
     'requestId',v_row.id,'generationId',v_row.generation_id,
     'state',v_row.state,'inputHash',v_row.input_hash,
     'engineContractHash',v_row.engine_contract_hash,
-    'createdAt',v_row.created_at,'idempotent',v_insert_count=0
+    'createdAt',v_row.created_at,'idempotent',false
   );
 END;
 $fn$;
@@ -531,10 +661,58 @@ BEGIN
 END;
 $fn$;
 
+CREATE OR REPLACE FUNCTION public.get_designpro_generation_request(
+  p_request_id uuid
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $fn$
+DECLARE
+  v_owner uuid:=auth.uid();
+  v_request public.designpro_generation_requests%ROWTYPE;
+  v_views jsonb;
+  v_handoff_blocker text;
+  v_failure_code text;
+BEGIN
+  IF v_owner IS NULL OR COALESCE(auth.jwt()->>'is_anonymous','false')='true'
+  THEN RAISE EXCEPTION 'authentication_required'; END IF;
+  SELECT * INTO v_request FROM public.designpro_generation_requests
+  WHERE id=p_request_id AND owner_id=v_owner;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+
+  SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+    'sourceViewType',source_view_type,'consumerRole',consumer_role,
+    'contentHash',content_hash,'byteSize',byte_size,
+    'contentType',content_type,'createdAt',created_at
+  ) ORDER BY source_view_type),'[]'::jsonb)
+  INTO v_views FROM public.designpro_generation_views
+  WHERE request_id=v_request.id;
+
+  IF v_request.state='outputs_ready' THEN
+    v_handoff_blocker:='source_close_up_has_no_verified_hero3d_role_mapping';
+  END IF;
+  IF v_request.state IN ('retryable','failed') THEN
+    v_failure_code:=pg_catalog.lower(COALESCE(v_request.error->>'code',''));
+    IF v_failure_code !~ '^[a-z0-9][a-z0-9_:-]{0,79}$'
+    THEN v_failure_code:='generation_failed'; END IF;
+  END IF;
+
+  RETURN pg_catalog.jsonb_build_object(
+    'requestId',v_request.id,'generationId',v_request.generation_id,
+    'state',v_request.state,'inputHash',v_request.input_hash,
+    'engineContractHash',v_request.engine_contract_hash,
+    'attempt',v_request.attempt,'outputSetHash',v_request.output_set_hash,
+    'failureCode',v_failure_code,'createdAt',v_request.created_at,
+    'updatedAt',v_request.updated_at,'completedAt',v_request.completed_at,
+    'handoffReady',false,'handoffBlocker',v_handoff_blocker,
+    'views',v_views
+  );
+END;
+$fn$;
+
 REVOKE ALL ON public.designpro_generation_requests,
   public.designpro_generation_views FROM PUBLIC,anon,authenticated;
-GRANT SELECT ON public.designpro_generation_requests,
-  public.designpro_generation_views TO authenticated;
 GRANT ALL ON public.designpro_generation_requests,
   public.designpro_generation_views TO service_role;
 
@@ -556,6 +734,8 @@ REVOKE ALL ON FUNCTION public.complete_designpro_generation_request(uuid,uuid,js
   FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.fail_designpro_generation_request(uuid,uuid,text,text,boolean)
   FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.get_designpro_generation_request(uuid)
+  FROM PUBLIC,anon,authenticated,service_role;
 
 GRANT EXECUTE ON FUNCTION public.create_designpro_generation_request(uuid,jsonb,text)
   TO authenticated;
@@ -567,6 +747,8 @@ GRANT EXECUTE ON FUNCTION public.complete_designpro_generation_request(uuid,uuid
   TO service_role;
 GRANT EXECUTE ON FUNCTION public.fail_designpro_generation_request(uuid,uuid,text,text,boolean)
   TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_designpro_generation_request(uuid)
+  TO authenticated;
 
 COMMENT ON TABLE public.designpro_generation_requests IS
   'Isolated authenticated Calls 1-7 queue. Browser input cannot select prompts, models, seeds, source blobs, or view angles; only service-role workers may claim or complete.';
