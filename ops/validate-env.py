@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 
 PROJECT_URL = "https://wozyamlnygaddievzuwn.supabase.co"
 APP_ORIGIN = "https://os.designproai.com"
-VECTOR_URL = "http://host.docker.internal:3200/vectorize"
 TUS_ENDPOINT = "https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable"
 SPOOL_DIR = "/var/lib/designproai/spool"
 INTERNAL_RUNTIME_URL = "http://runtime-1:3001"
@@ -22,7 +21,7 @@ RUNTIME_KEYS = {
     "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET",
     "GOOGLE_AI_API_KEY", "GOOGLE_IMAGE_MODEL", "DESIGNPRO_APP_ORIGIN",
     "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "RESEND_API_KEY",
-    "RESEND_FROM", "RESEND_FROM_VERIFIED", "VECTORIZE_IT_URL",
+    "RESEND_FROM", "RESEND_FROM_VERIFIED",
 }
 GATEWAY_KEYS = {
     "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "DESIGNPRO_APP_ORIGIN",
@@ -89,8 +88,6 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
 
     if runtime["SUPABASE_URL"] != PROJECT_URL or gateway["SUPABASE_URL"] != PROJECT_URL:
         raise ValidationError("both roles must use the isolated DesignProAI Supabase project")
-    if runtime["VECTORIZE_IT_URL"] != VECTOR_URL:
-        raise ValidationError("runtime VECTORIZE_IT_URL must preserve host port 3200")
     if runtime["DESIGNPRO_APP_ORIGIN"] != APP_ORIGIN or gateway["DESIGNPRO_APP_ORIGIN"] != APP_ORIGIN:
         raise ValidationError("both roles must use the HTTPS DesignProAI OS origin")
     if runtime["DESIGNPRO_SPOOL_DIR"] != SPOOL_DIR:
