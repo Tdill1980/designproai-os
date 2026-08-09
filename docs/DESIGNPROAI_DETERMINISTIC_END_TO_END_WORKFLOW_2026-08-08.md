@@ -1,9 +1,69 @@
 # DesignProAI Deterministic End-to-End Workflow
 
-**Date:** 2026-08-08  
+**Contract date:** 2026-08-08  
+**Status updated:** 2026-08-09  
 **Repository:** `Tdill1980/designproai-os`  
 **Deployment target:** dedicated DesignProAI production droplet `137.184.0.4`  
 **Status:** canonical migration, preservation, repair, deployment, and acceptance contract
+
+## 0. Verified migration status and zero-duplication checklist — 2026-08-09
+
+This checklist records evidence at the continuation point after PRs #4 and #5. A completed or verified item is frozen: do not recreate it, rerun it, or replace it. Test proof is identified as test proof; it is not upgraded into a live-production claim.
+
+### ALREADY COMPLETE
+
+- [x] The dedicated DesignProAI droplet is the only deployment target: `designproai-prod-sfo3`, public IPv4 `137.184.0.4`, Ubuntu 24.04, 8 vCPU, 15 GiB usable RAM, 309 GiB root disk, and 8 GiB swap.
+- [x] SSH access to the new droplet from the owner's laptop was proven; Docker `29.1.3` and Docker Compose `2.40.3` were installed there.
+- [x] The pre-deployment host inventory found no DesignProAI application containers, images, or volumes. That clean baseline is preserved; it is not permission to create parallel stacks.
+- [x] PR [#4](https://github.com/Tdill1980/designproai-os/pull/4) merged the canonical preservation and end-to-end workflow at `a38b952ffd3e5bc544992fa19275b7ebb422f1cf`.
+- [x] PR [#5](https://github.com/Tdill1980/designproai-os/pull/5) merged the server-owned downstream production boundary at current main `b0cf022396a22b86d6a0b471aef82af5e375606e`.
+- [x] The dedicated Supabase project already exists: `designproai-os-prod`, ref `wozyamlnygaddievzuwn`, region `us-west-1`.
+- [x] Production Supabase already contains exactly the 13 repository migrations `20260806180000` through `20260806181200`. Do not rerun or recreate them.
+- [x] The old RestylePro droplet and `/opt/restylepro` are outside this deployment. PRs #4/#5 do not stop, replace, clone, or mutate them.
+
+### VERIFIED WORKING
+
+- [x] PR #5 head `d7b4fdc94f6fb76ac08b3990cac0b5c4f09b9675` passed **Exact DesignProAI release gate #14**. This proves the checked release contracts, fresh shadow migration path, pgTAP/schema gate, gateway, UI, runtime, output/delivery contracts, reproducible release assembly, and image builds for that PR head.
+- [x] The merged code preserves Calls 1–7; PR #5 did not change generation prompts, models, seeds, source-view ordering, or upstream generator files.
+- [x] Contract tests verify two independent fenced workers, one shared persistent spool, durable Call 8/9 receipts, leases, hashes, restart-safe state, and no external VectorizIt `:3200`, Railway conductor, or browser worker prerequisite.
+- [x] Supabase `wozyamlnygaddievzuwn` is currently `ACTIVE_HEALTHY`, and its live migration list matches the same 13 repository migrations exactly.
+- [x] The standalone database, worker, gateway, storage, RLS, QC, stamp, deterministic archive, and WrapBox contracts have passed automated gates. This is kernel/contract verification, not proof that the complete application suite is live.
+- [x] The Porsche Martini generation from approximately 2026-08-06 remains the latest known good upstream design reference. It is frozen as a comparison target, not regenerated or replaced.
+- [x] The 2026-07-24 run remains the last known panelizer output that extracted panels; those outputs are a failure reference because their physical dimensions were wrong.
+
+### NEEDS FIX
+
+- [ ] Repair the current downstream regression in which panels no longer load or deploy into RevisionStudio and PanelProStudio/PanelizerStudio.
+- [ ] Correct Call 8 so the eighth artifact is the designated flat 2D proof tied to validated GENIE surface dimensions, exactly 5-inch bleed on all edges, per-surface dimensions, and square footage.
+- [ ] Correct Call 9 so six unique panels derive only from their corresponding accepted flat sources; driver pixels may not substitute for passenger, hood, roof, front, or rear.
+- [ ] Complete versioned deterministic Call 10 variants without altering existing `call10.logo-inventory` history.
+- [ ] Complete Call 11 Entice previews, RevisionStudio locking, Production Pack/Logo Pack entitlement, and exactly-once downstream activation.
+- [ ] Wire approved revisions to create one immutable new revision and rebuild Call 8 onward exactly once while leaving older accepted artifacts untouched.
+- [ ] Replace any preview-scale or metadata-only output claim with verified full-scale production upscaling/output: correct physical dimensions, real resolution, color requirements, formats, bleed, hashes, and raster equivalence.
+- [ ] Prove the PanelProStudio human checklist, final QC, DesignID + registered Order # stamp, deterministic ZIP/ZIP64, WrapBox delivery, and customer GENIE progress projection with real artifacts.
+
+### MISSING
+
+- [ ] The standalone repository does not yet prove the complete application suite is present and wired. The migration still needs DesignPro's actual working generator iteration, RecreatePro, WallPro, GraphicsPro, MyVehiclePro, full RevisionStudio, GENIE Universal Panelizer/progress, full PanelProStudio, ApprovePro, Gallery, ProductionFlow, WrapBox, customer/account/order/design pages, operator/admin pages, authentication, tenancy, audit, storage, and entitlement.
+- [ ] A single source-of-truth inventory is still required for every app route, API, edge function, database object, storage bucket/path, secret class, worker stage, and external service. Historical RestylePro code may be inspected as migration evidence, but RP runtime is not deployable to this droplet.
+- [ ] The Porsche Martini record still needs one bounded provenance capture: canonical generation/revision IDs, seven source artifacts, selected proof, deployed function versions, prompts/models/parameters, and SHA-256 evidence. This is preservation evidence, not permission to redesign Calls 1–7.
+- [ ] The July 24 wrong-size extraction still needs its exact run IDs, artifacts, dimension manifest/math, and producing function version captured once for the repair comparison.
+- [ ] Deployment of an exact current-main release at `b0cf022396a22b86d6a0b471aef82af5e375606e` to `137.184.0.4` is not yet verified in this checklist. The older `013140ba72673c07de6fea0f567f7a19c8122ccd` artifact is a limited kernel and cannot be represented as the complete suite.
+- [ ] Root-owned production environment files and their required secret classes are not yet verified on the new droplet. Secret values must be configured through protected GitHub/server mechanisms and never placed in this document, chat, logs, or repository.
+
+### BLOCKED
+
+- [ ] Automated DigitalOcean backup enablement and a recoverable pre-deployment snapshot are not yet verified. Do not treat backup selection in the UI as proof until the droplet reports it enabled or a snapshot exists.
+- [ ] A dark server deployment cannot be marked complete until the exact current-main artifact, archive SHA-256, release manifest, environment validation, image IDs, container count, listeners, health checks, and rollback target are captured on `137.184.0.4`.
+- [ ] Production cutover is blocked until the full-suite gaps above are closed and one real Porsche Martini canary passes Calls 1–11, PanelProStudio, output verification, human QC, stamp, ZIP, WrapBox, progress, worker interruption/resume, and revision rebuild without duplicate work.
+- [ ] Public DNS/TLS traffic must remain unchanged until local acceptance and the real canary pass. A successful dark kernel deploy alone is not authorization for go-live.
+
+### Only the next incomplete work may proceed
+
+1. Verify backup/recovery, build or retrieve the exact current-main artifact, configure protected runtime secrets, and dark-deploy only the intended three-service topology: `runtime-1`, `runtime-2`, and `gateway`.
+2. Inventory and surgically migrate the missing application suite from verified source code without changing the Porsche Martini upstream behavior.
+3. Run the single Porsche / July 24 / current regression comparison, then repair only Call 8 onward and its RevisionStudio/PanelProStudio handoffs.
+4. Pass full-suite integration, security, deterministic-output, restart/resume, and real-customer canary gates before DNS cutover.
 
 ## 1. Owner directive
 
