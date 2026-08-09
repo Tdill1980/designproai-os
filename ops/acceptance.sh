@@ -34,6 +34,10 @@ gateway_image_id=$(awk -F= '$1 == "GATEWAY_IMAGE_ID" {print $2}' "$ROOT/current/
 }
 [[ $(docker image inspect -f '{{.Id}}' "designproai-runtime:$sha") == "$runtime_image_id" ]] || { echo "Runtime image ID drifted" >&2; exit 5; }
 [[ $(docker image inspect -f '{{.Id}}' "designproai-gateway:$sha") == "$gateway_image_id" ]] || { echo "Gateway image ID drifted" >&2; exit 5; }
+[[ $(docker image inspect -f '{{index .Config.Labels "com.designpro.sha"}}' "designproai-runtime:$sha") == "$sha" ]] || { echo "Runtime image release label drifted" >&2; exit 5; }
+[[ $(docker image inspect -f '{{index .Config.Labels "com.designpro.sha"}}' "designproai-gateway:$sha") == "$sha" ]] || { echo "Gateway image release label drifted" >&2; exit 5; }
+[[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "designproai-runtime:$sha") == "$sha" ]] || { echo "Runtime OCI revision drifted" >&2; exit 5; }
+[[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "designproai-gateway:$sha") == "$sha" ]] || { echo "Gateway OCI revision drifted" >&2; exit 5; }
 
 ids=()
 for port in 3001 3002; do
@@ -77,8 +81,17 @@ for spec in runtime-1:127.0.0.1:3001 runtime-2:127.0.0.1:3002 gateway:127.0.0.1:
   [[ -n $cid && $(printf '%s\n' "$cid" | wc -l) -eq 1 ]] || { echo "Expected one $service container" >&2; exit 8; }
   expected_image_id=$gateway_image_id
   [[ $service == runtime-* ]] && expected_image_id=$runtime_image_id
-  STATE=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{index .Config.Labels "com.designpro.sha"}}|{{.HostConfig.ReadonlyRootfs}}|{{.Image}}' "$cid") \
-    EXPECTED="$sha" EXPECTED_IMAGE="$expected_image_id" python3 -c 'import os; state,health,sha,readonly,image=os.environ["STATE"].split("|"); assert state=="running" and health=="healthy" and sha==os.environ["EXPECTED"] and readonly=="true" and image==os.environ["EXPECTED_IMAGE"]'
+
+  state=$(docker inspect -f '{{.State.Status}}' "$cid")
+  health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid")
+  readonly=$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$cid")
+  image_id=$(docker inspect -f '{{.Image}}' "$cid")
+
+  [[ $state == running ]] || { echo "$service is not running: $state" >&2; exit 8; }
+  [[ $health == healthy ]] || { echo "$service is not healthy: $health" >&2; exit 8; }
+  [[ $readonly == true ]] || { echo "$service root filesystem is not read-only" >&2; exit 8; }
+  [[ $image_id == "$expected_image_id" ]] || { echo "$service image identity drifted: $image_id" >&2; exit 8; }
+
   container_port=8787
   [[ $service == runtime-* ]] && container_port=3001
   [[ $(docker port "$cid" "$container_port/tcp") == "$binding" ]] || { echo "$service is not bound only to $binding" >&2; exit 9; }
