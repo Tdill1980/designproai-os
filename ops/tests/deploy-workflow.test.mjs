@@ -74,7 +74,7 @@ test("dark deploy is exact-main, environment protected, and new-host pinned", ()
   assert.match(workflow, /TARGET_HOST: 137\.184\.0\.4/);
   assert.match(workflow, /TARGET_HOSTNAME: designproai-prod-sfo3/);
   assert.match(workflow, /SHA256:Kum4lu4ntmC5\+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic/);
-  assert.match(workflow, /SHA256:2MADGyqFCu7YrIRL\+\/qm1EcxQ0uEdQXFSN4\/JwBjWng/);
+  assert.match(workflow, /SHA256:2MADGyqFCuZYrIRL\+\/qm1EcxQOuFdQXFSN4\/JWBjWng/);
   assert.match(workflow, /ssh-keyscan[\s\S]*ssh-keygen -lf[\s\S]*EXPECTED_HOST_FINGERPRINT/);
   assert.doesNotMatch(workflow, /143\.110\.237\.145/);
 });
