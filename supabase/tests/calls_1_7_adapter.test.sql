@@ -109,7 +109,6 @@ select jsonb_build_object(
     idempotency_key;
 grant select on calls17_fixture to authenticated;
 
-set local role authenticated;
 select set_config('request.jwt.claims',
   '{"role":"authenticated","sub":"10000000-0000-4000-8000-000000000001","is_anonymous":true}',
   true);
@@ -118,7 +117,7 @@ select throws_ok(
     '90000000-0000-4000-8000-000000000009',
     (select payload from calls17_fixture),
     (select idempotency_key from calls17_fixture))$$,
-  'authentication_required',
+  'P0001','authentication_required',
   'Supabase anonymous Auth users cannot enqueue');
 
 select set_config('request.jwt.claims',
@@ -129,7 +128,7 @@ select throws_ok(
     '90000000-0000-4000-8000-000000000009',
     (select payload from calls17_fixture),
     (select idempotency_key from calls17_fixture))$$,
-  'confirmed_operator_order_binding_required',
+  'P0001','confirmed_operator_order_binding_required',
   'a permanent Auth user without the confirmed operator/order binding cannot enqueue');
 
 select set_config('request.jwt.claims',
@@ -150,7 +149,6 @@ select is(
   )->>'idempotent')::boolean,true,
   'the exact same immutable request replays idempotently before the active cap');
 
-reset role;
 select is(
   (select engine_contract->>'sourceCommit'
    from public.designpro_generation_requests
@@ -158,7 +156,6 @@ select is(
   'bdb26365904e91be446894e84b01b4a24f64aac0',
   'request freezes the reviewed source commit');
 
-set local role authenticated;
 select set_config('request.jwt.claims',
   '{"role":"authenticated","sub":"10000000-0000-4000-8000-000000000001","is_anonymous":false}',
   true);
@@ -169,7 +166,7 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '91000000-0000-4000-8000-000000000009'))$$,
-  'generation_request_invalid',
+  'P0001','generation_request_invalid',
   'the direct RPC rejects a vehicle class outside the exact allowlist');
 select throws_ok(
   $$select public.create_designpro_generation_request(
@@ -179,7 +176,7 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '91500000-0000-4000-8000-000000000009'))$$,
-  'generation_request_invalid',
+  'P0001','generation_request_invalid',
   'a missing or changed delivery/order equality fails at contract validation');
 select throws_ok(
   $$select public.create_designpro_generation_request(
@@ -188,7 +185,7 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '91600000-0000-4000-8000-000000000009'))$$,
-  'generation_request_invalid',
+  'P0001','generation_request_invalid',
   'a missing top-level order fails deterministically at contract validation');
 select throws_ok(
   $$select public.create_designpro_generation_request(
@@ -198,7 +195,7 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '91700000-0000-4000-8000-000000000009'))$$,
-  'generation_request_invalid',
+  'P0001','generation_request_invalid',
   'a null recipient hash fails deterministically at contract validation');
 select throws_ok(
   $$select public.create_designpro_generation_request(
@@ -207,14 +204,13 @@ select throws_ok(
     replace((select idempotency_key from calls17_fixture),
       '90000000-0000-4000-8000-000000000009',
       '92000000-0000-4000-8000-000000000009'))$$,
-  'generation_active_request_limit',
+  'P0001','generation_active_request_limit',
   'one nonterminal request per owner is enforced inside the database');
 select throws_ok(
   $$select public.claim_designpro_generation_request('browser',900)$$,
-  'service_role_required',
+  'P0001','service_role_required',
   'an authenticated JWT cannot claim the queue even through direct SQL');
 
-reset role;
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 create temporary table calls17_claim as
 select public.claim_designpro_generation_request('calls17-worker',900) payload;
@@ -284,7 +280,7 @@ select throws_ok(
     (select (payload->>'requestId')::uuid from calls17_claim),
     (select (payload->>'claimToken')::uuid from calls17_claim),
     '[]'::jsonb,'{}'::jsonb)$$,
-  'generation_lease_lost',
+  'P0001','generation_lease_lost',
   'a consumed completion lease cannot be replayed');
 select ok(not public.heartbeat_designpro_generation_request(
   (select (payload->>'requestId')::uuid from calls17_claim),
@@ -295,7 +291,6 @@ select set_config('test.calls17_request_id',(
   select id::text from public.designpro_generation_requests
   where generation_id='90000000-0000-4000-8000-000000000009'
 ),true);
-set local role authenticated;
 select set_config('request.jwt.claims',
   '{"role":"authenticated","sub":"10000000-0000-4000-8000-000000000001","is_anonymous":false}',
   true);
@@ -340,7 +335,6 @@ select is(
   )->>'state','queued',
   'the cap releases after the first request becomes terminal');
 
-reset role;
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 create temporary table calls17_failed_claim as
 select public.claim_designpro_generation_request('calls17-worker',900) payload;
@@ -354,7 +348,6 @@ select set_config('test.calls17_failed_request_id',(
   where generation_id='93000000-0000-4000-8000-000000000009'
 ),true);
 
-set local role authenticated;
 select set_config('request.jwt.claims',
   '{"role":"authenticated","sub":"10000000-0000-4000-8000-000000000001","is_anonymous":false}',
   true);
@@ -368,6 +361,5 @@ select ok(
   ) ?| ARRAY['message','error','errorMessage'],
   'status never exposes the private provider failure message');
 
-reset role;
 select * from finish();
 rollback;
