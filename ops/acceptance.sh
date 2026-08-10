@@ -115,8 +115,17 @@ for spec in runtime-1:127.0.0.1:3001 runtime-2:127.0.0.1:3002 gateway:127.0.0.1:
   expected_image_id=$gateway_image_id
   [[ $service == runtime-* ]] && expected_image_id=$runtime_image_id
 
+  # compose.yaml declares start_period 45s (runtime) and 20s (gateway); Docker
+  # reports "starting" until the first probe lands inside that window. Wait for
+  # a terminal verdict rather than sampling once and racing the interval.
+  health=""
+  for _ in $(seq 1 60); do
+    health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid")
+    [[ $health != starting ]] && break
+    sleep 2
+  done
+
   state=$(docker inspect -f '{{.State.Status}}' "$cid")
-  health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid")
   readonly=$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$cid")
   image_id=$(docker inspect -f '{{.Image}}' "$cid")
 
