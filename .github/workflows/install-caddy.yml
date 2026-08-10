@@ -2,15 +2,15 @@ name: Install DesignProAI Caddy site
 
 # Step 7 of ops/README.md.
 #
-# The operator scripts are NOT in the deployed release. release-files.txt
-# packages what the containers need — Dockerfiles, compose, healthchecks — and
-# ops/*.sh was never part of it. INSPECT_ONLY on 2026-08-10 confirmed the
-# deployed ops directory holds six files and no scripts.
+# Two things this had to work around, both discovered on 2026-08-10:
 #
-# ci-dark-deploy.sh already handles this by shipping its own copy of ops/ to a
-# run-scoped /tmp path and deleting it on EXIT. This workflow does the same for
-# the one script it needs, so step 7 stops depending on a file the packaging
-# never produced.
+#   1. ops/*.sh is not in the deployed release. release-files.txt packages what
+#      the containers need; the operator scripts were never in it. So the script
+#      is shipped from the pinned checkout, exactly as ci-dark-deploy.sh does.
+#   2. The Caddy package was never installed on the host. install-caddy.sh
+#      configures Caddy, it does not install it, and refuses with exit 4 —
+#      correctly, since silently apt-installing a web server onto production is
+#      not its job. BOOTSTRAP_CADDY_PACKAGE_AND_SITE does that explicitly.
 #
 # Preconditions report the value they observed. A guard that cannot say why it
 # refused costs a debugging cycle every time it fires.
@@ -23,7 +23,7 @@ on:
         required: true
         type: string
       confirmation:
-        description: "Protected Caddy install action"
+        description: "Protected Caddy action"
         required: true
         type: choice
         default: DO_NOT_INSTALL
@@ -31,6 +31,7 @@ on:
           - DO_NOT_INSTALL
           - INSPECT_ONLY
           - INSTALL_DESIGNPRO_CADDY_ONLY
+          - BOOTSTRAP_CADDY_PACKAGE_AND_SITE
 
 permissions:
   contents: read
@@ -49,7 +50,7 @@ jobs:
   install-caddy:
     if: inputs.confirmation != 'DO_NOT_INSTALL'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment:
       name: designproai-production
     env:
@@ -91,6 +92,48 @@ jobs:
           echo "known_hosts=$known_hosts" >> "$GITHUB_ENV"
           echo "script_sha256=$(sha256sum ops/install-caddy.sh | awk '{print $1}')" >> "$GITHUB_ENV"
 
+      - name: Install the Caddy package, if that mode was requested
+        if: inputs.confirmation == 'BOOTSTRAP_CADDY_PACKAGE_AND_SITE'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          host=$(hostname)
+          [[ $host == "$EXPECTED_HOSTNAME" ]] || { echo "hostname mismatch: on '$host'" >&2; exit 10; }
+
+          # Never reinstall over a working install — that is what
+          # INSTALL_DESIGNPRO_CADDY_ONLY is for.
+          if command -v caddy >/dev/null 2>&1; then
+            echo "caddy is already installed: $(caddy version 2>&1 | head -1)" >&2
+            echo "use INSTALL_DESIGNPRO_CADDY_ONLY instead" >&2
+            exit 20
+          fi
+
+          # Never contend with an existing listener. The DesignProAI compose
+          # publishes only 127.0.0.1:3001, :3002 and :8787, so 80/443 are
+          # expected free — assert it rather than assume it.
+          busy=$(ss -tlnH '( sport = :80 or sport = :443 )' 2>/dev/null | awk '{print $4}' | paste -sd' ' -)
+          if [[ -n ${busy:-} ]]; then
+            echo "refusing: something already listens on 80/443: $busy" >&2
+            exit 21
+          fi
+
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl gnupg
+          curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+            | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+          curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+            > /etc/apt/sources.list.d/caddy-stable.list
+          apt-get update -qq
+          apt-get install -y -qq caddy
+
+          command -v caddy >/dev/null || { echo "caddy still not on PATH after install" >&2; exit 22; }
+          echo "installed: $(caddy version 2>&1 | head -1)"
+          REMOTE
+
       - name: Ship the pinned script, run it, then remove it
         shell: bash
         run: |
@@ -129,7 +172,7 @@ jobs:
           [[ $observed == "$EXPECTED_SCRIPT_SHA256" ]] || {
             echo "shipped script digest mismatch: observed $observed" >&2; exit 13; }
 
-          if [[ $MODE != INSTALL_DESIGNPRO_CADDY_ONLY ]]; then
+          if [[ $MODE == INSPECT_ONLY ]]; then
             echo "INSPECT_ONLY — script shipped and verified, not installing."
             exit 0
           fi
@@ -149,6 +192,8 @@ jobs:
           # above should be read rather than re-run.
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" bash -s <<'REMOTE' || true
           set -uo pipefail
+          echo "--- caddy package ---"
+          command -v caddy >/dev/null 2>&1 && caddy version 2>&1 | head -1 || echo "(not installed)"
           echo "--- caddy unit ---"
           systemctl is-active caddy 2>&1 || true
           echo "--- configured site hostnames ---"
