@@ -119,14 +119,21 @@ jobs:
           set -Eeuo pipefail
           [[ "$(hostname)" == "$EXPECTED_HOSTNAME" ]] || { echo "hostname mismatch: on '$(hostname)'" >&2; exit 10; }
           umask 077
-          if [[ ! -f /root/designpro_deploy ]]; then
-            ssh-keygen -t ed25519 -f /root/designpro_deploy -N "" -C restylepro-deploy >/dev/null
-          fi
+          # ROTATE, never reuse. The first minted key was displayed in a
+          # screenshot outside the server, and a manual attempt overwrote the
+          # pair on disk, so any existing key here is untrusted. Burn it,
+          # purge every authorization it ever had, and mint fresh.
           install -d -m 700 /root/.ssh
           touch /root/.ssh/authorized_keys
           chmod 600 /root/.ssh/authorized_keys
-          grep -qF "$(cat /root/designpro_deploy.pub)" /root/.ssh/authorized_keys \
-            || cat /root/designpro_deploy.pub >> /root/.ssh/authorized_keys
+          if [[ -f /root/designpro_deploy.pub ]]; then
+            old_pub="$(awk '{print $2}' /root/designpro_deploy.pub 2>/dev/null || true)"
+            [[ -n $old_pub ]] && sed -i "\#$old_pub#d" /root/.ssh/authorized_keys
+          fi
+          sed -i '/restylepro-deploy/d' /root/.ssh/authorized_keys
+          rm -f /root/designpro_deploy /root/designpro_deploy.pub
+          ssh-keygen -t ed25519 -f /root/designpro_deploy -N "" -C restylepro-deploy >/dev/null
+          cat /root/designpro_deploy.pub >> /root/.ssh/authorized_keys
           command -v docker >/dev/null || { curl -fsSL https://get.docker.com | sh; }
           docker compose version >/dev/null
           install -d -m 700 /opt/designproai/config /opt/designproai/incoming
