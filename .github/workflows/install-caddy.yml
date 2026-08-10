@@ -2,11 +2,18 @@ name: Install DesignProAI Caddy site
 
 # Step 7 of ops/README.md.
 #
-# Preconditions below report the value they observed. The first run of this
-# workflow exited 1 in 1.1s with no output, because a bare `test` prints
-# nothing — the same failure shape that let proof.build report a naked
-# AssertionError for 27 runs. A guard that cannot say why it refused is a
-# guard that costs a debugging cycle every time it fires.
+# The operator scripts are NOT in the deployed release. release-files.txt
+# packages what the containers need — Dockerfiles, compose, healthchecks — and
+# ops/*.sh was never part of it. INSPECT_ONLY on 2026-08-10 confirmed the
+# deployed ops directory holds six files and no scripts.
+#
+# ci-dark-deploy.sh already handles this by shipping its own copy of ops/ to a
+# run-scoped /tmp path and deleting it on EXIT. This workflow does the same for
+# the one script it needs, so step 7 stops depending on a file the packaging
+# never produced.
+#
+# Preconditions report the value they observed. A guard that cannot say why it
+# refused costs a debugging cycle every time it fires.
 
 on:
   workflow_dispatch:
@@ -50,6 +57,13 @@ jobs:
       EXACT_SHA: ${{ inputs.exact_sha }}
       MODE: ${{ inputs.confirmation }}
     steps:
+      # Pinned to the requested SHA so the script that runs is the one belonging
+      # to the live release. It cannot drift from the release it configures.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.exact_sha }}
+          persist-credentials: false
+
       - name: Pin the exact new droplet SSH identity
         shell: bash
         run: |
@@ -57,6 +71,8 @@ jobs:
           set +x
           umask 077
           [[ $EXACT_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Exact lowercase 40-character SHA required; got '$EXACT_SHA'" >&2; exit 2; }
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          test -f ops/install-caddy.sh
           key_file="$RUNNER_TEMP/designproai_ssh"
           pub_file="$RUNNER_TEMP/designproai_ssh.pub"
           known_hosts="$RUNNER_TEMP/designproai_known_hosts"
@@ -73,14 +89,28 @@ jobs:
             echo "host fingerprint mismatch: observed ${observed[0]}" >&2; exit 37; }
           echo "key_file=$key_file" >> "$GITHUB_ENV"
           echo "known_hosts=$known_hosts" >> "$GITHUB_ENV"
+          echo "script_sha256=$(sha256sum ops/install-caddy.sh | awk '{print $1}')" >> "$GITHUB_ENV"
 
-      - name: Inspect the deployed release, then install if asked
+      - name: Ship the pinned script, run it, then remove it
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          remote_dir="/tmp/designproai-caddy-$EXACT_SHA-$GITHUB_RUN_ID"
+
+          # Run-scoped, mode 0700, removed on exit whether or not the install
+          # succeeded — the same shape ci-dark-deploy.sh uses for its controls.
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "test ! -e '$remote_dir' && install -d -m 0700 '$remote_dir'"
+          cleanup() {
+            ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+              "if test -d '$remote_dir' && test ! -L '$remote_dir'; then find '$remote_dir' -depth -mindepth 1 -delete && rmdir '$remote_dir'; fi" || true
+          }
+          trap cleanup EXIT
+
+          scp "${ssh_args[@]}" ops/install-caddy.sh "root@$TARGET_HOST:$remote_dir/install-caddy.sh"
+
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXACT_SHA='$EXACT_SHA' MODE='$MODE' bash -s" <<'REMOTE'
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXACT_SHA='$EXACT_SHA' MODE='$MODE' REMOTE_DIR='$remote_dir' EXPECTED_SCRIPT_SHA256='$script_sha256' bash -s" <<'REMOTE'
           set -Eeuo pipefail
 
           host=$(hostname)
@@ -88,28 +118,23 @@ jobs:
 
           current=$(readlink -f /opt/designproai/current 2>/dev/null || echo "")
           echo "current release : ${current:-<none>}"
-          echo "requested       : /opt/designproai/releases/$EXACT_SHA"
           [[ $current == "/opt/designproai/releases/$EXACT_SHA" ]] || {
             echo "refusing: requested SHA is not the live release" >&2; exit 11; }
 
-          ops="$current/ops"
-          echo "--- $ops ---"
-          ls -la "$ops" 2>&1 || echo "(ops directory is missing)"
+          script="$REMOTE_DIR/install-caddy.sh"
+          [[ -f $script && ! -L $script ]] || { echo "shipped script missing at $script" >&2; exit 12; }
 
-          if [[ ! -f $ops/install-caddy.sh ]]; then
-            echo "install-caddy.sh is NOT present in the deployed release." >&2
-            echo "It exists in git but was not packaged into this release tree." >&2
-            exit 12
-          fi
+          # The bytes that run are the bytes from the pinned checkout.
+          observed=$(sha256sum "$script" | awk '{print $1}')
+          [[ $observed == "$EXPECTED_SCRIPT_SHA256" ]] || {
+            echo "shipped script digest mismatch: observed $observed" >&2; exit 13; }
 
           if [[ $MODE != INSTALL_DESIGNPRO_CADDY_ONLY ]]; then
-            echo "INSPECT_ONLY — not installing."
+            echo "INSPECT_ONLY — script shipped and verified, not installing."
             exit 0
           fi
 
-          # The release tree is mode 0444 by construction (deploy.sh), so the
-          # interpreter is invoked explicitly rather than relying on +x.
-          cd "$ops"
+          cd "$REMOTE_DIR"
           bash install-caddy.sh "$EXACT_SHA" INSTALL_DESIGNPRO_CADDY_ONLY
           REMOTE
 
