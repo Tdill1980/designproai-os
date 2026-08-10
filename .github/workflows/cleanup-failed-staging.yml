@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/cleanup-failed-staging.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
