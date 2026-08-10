@@ -39,39 +39,72 @@ gateway_image_id=$(awk -F= '$1 == "GATEWAY_IMAGE_ID" {print $2}' "$ROOT/current/
 [[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "designproai-runtime:$sha") == "$sha" ]] || { echo "Runtime OCI revision drifted" >&2; exit 5; }
 [[ $(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "designproai-gateway:$sha") == "$sha" ]] || { echo "Gateway OCI revision drifted" >&2; exit 5; }
 
+# Probe failures are diagnosed, not swallowed. `python3 -I` runs isolated so
+# Ubuntu's apport excepthook cannot replace a real AssertionError with
+# "FileNotFoundError: .../-c", and each assert carries the observed value.
+probe_err=$(mktemp)
+trap 'rm -f -- "$probe_err"' EXIT
+
 ids=()
 for port in 3001 3002; do
   result=""
+  last_body=""
+  last_error=""
   for _ in $(seq 1 75); do
     body=$(curl -fsS --max-time 5 "http://127.0.0.1:${port}/health" 2>/dev/null || true)
-    if parsed=$(BODY="$body" EXPECTED="$sha" python3 -c '
+    [[ -n $body ]] && last_body=$body
+    if parsed=$(BODY="$body" EXPECTED="$sha" python3 -I -c '
 import json, os
-h=json.loads(os.environ["BODY"])
-assert h.get("ready") is True
-assert h.get("commit") == os.environ["EXPECTED"]
-assert h.get("dependencies",{}).get("ready") is True
-assert h.get("dependencies",{}).get("contract") == "designpro.runtime-readiness.v2"
-print(h.get("workerId", ""))' 2>/dev/null); then
+raw = os.environ["BODY"]
+assert raw.strip(), "empty /health response"
+h = json.loads(raw)
+assert h.get("ready") is True, "ready=%r" % (h.get("ready"),)
+assert h.get("commit") == os.environ["EXPECTED"], "commit=%r expected=%r" % (h.get("commit"), os.environ["EXPECTED"])
+deps = h.get("dependencies", {})
+assert deps.get("ready") is True, "dependencies.ready=%r detail=%r" % (deps.get("ready"), deps)
+assert deps.get("contract") == "designpro.runtime-readiness.v2", "dependencies.contract=%r" % (deps.get("contract"),)
+print(h.get("workerId", ""))' 2>"$probe_err"); then
       result=$parsed
       [[ -n $result ]] && break
     fi
+    last_error=$(tail -n 3 -- "$probe_err" | tr '\n' ' ')
     sleep 2
   done
-  [[ -n $result ]] || { echo "Missing worker ID on $port" >&2; exit 6; }
+  if [[ -z $result ]]; then
+    echo "Missing worker ID on $port" >&2
+    echo "  last /health body : ${last_body:-<no response>}" >&2
+    echo "  last probe failure: ${last_error:-<none>}" >&2
+    exit 6
+  fi
   ids+=("$result")
 done
-[[ ${ids[0]} == designpro-worker-1 && ${ids[1]} == designpro-worker-2 ]] || { echo "Unexpected worker identities" >&2; exit 7; }
+[[ ${ids[0]} == designpro-worker-1 && ${ids[1]} == designpro-worker-2 ]] || { echo "Unexpected worker identities: ${ids[*]}" >&2; exit 7; }
 
 gateway_ok=false
+gateway_last_body=""
+gateway_last_error=""
 for _ in $(seq 1 30); do
   gateway_body=$(curl -fsS --max-time 5 http://127.0.0.1:8787/healthz 2>/dev/null || true)
-  if BODY="$gateway_body" python3 -c 'import json,os; h=json.loads(os.environ["BODY"]); assert h == {"status":"ok","service":"designpro-api-gateway"}' 2>/dev/null; then
+  [[ -n $gateway_body ]] && gateway_last_body=$gateway_body
+  if BODY="$gateway_body" python3 -I -c '
+import json, os
+raw = os.environ["BODY"]
+assert raw.strip(), "empty /healthz response"
+h = json.loads(raw)
+expected = {"status": "ok", "service": "designpro-api-gateway"}
+assert h == expected, "healthz=%r expected=%r" % (h, expected)' 2>"$probe_err"; then
     gateway_ok=true
     break
   fi
+  gateway_last_error=$(tail -n 3 -- "$probe_err" | tr '\n' ' ')
   sleep 2
 done
-[[ $gateway_ok == true ]] || { echo "Gateway did not become healthy" >&2; exit 8; }
+if [[ $gateway_ok != true ]]; then
+  echo "Gateway did not become healthy" >&2
+  echo "  last /healthz body : ${gateway_last_body:-<no response>}" >&2
+  echo "  last probe failure : ${gateway_last_error:-<none>}" >&2
+  exit 8
+fi
 
 cd "$ROOT/current"
 for spec in runtime-1:127.0.0.1:3001 runtime-2:127.0.0.1:3002 gateway:127.0.0.1:8787; do
@@ -88,7 +121,11 @@ for spec in runtime-1:127.0.0.1:3001 runtime-2:127.0.0.1:3002 gateway:127.0.0.1:
   image_id=$(docker inspect -f '{{.Image}}' "$cid")
 
   [[ $state == running ]] || { echo "$service is not running: $state" >&2; exit 8; }
-  [[ $health == healthy ]] || { echo "$service is not healthy: $health" >&2; exit 8; }
+  if [[ $health != healthy ]]; then
+    echo "$service is not healthy: ${health:-<none>}" >&2
+    docker inspect -f '{{range .State.Health.Log}}exit={{.ExitCode}} out={{println .Output}}{{end}}' "$cid" 2>/dev/null | tail -n 5 >&2 || true
+    exit 8
+  fi
   [[ $readonly == true ]] || { echo "$service root filesystem is not read-only" >&2; exit 8; }
   [[ $image_id == "$expected_image_id" ]] || { echo "$service image identity drifted: $image_id" >&2; exit 8; }
 
@@ -116,7 +153,10 @@ if [[ -n $public ]]; then
   [[ -L $ROOT/public && $(readlink -f "$ROOT/public") == "$ROOT/releases/$sha" ]] || { echo "Public web pointer is not the requested release" >&2; exit 10; }
   curl --proto '=https' --tlsv1.2 -fsS "$public/" | grep -qi '<!doctype html'
   public_gateway=$(curl --proto '=https' --tlsv1.2 -fsS "$public/gateway-healthz")
-  BODY="$public_gateway" python3 -c 'import json,os; h=json.loads(os.environ["BODY"]); assert h.get("status")=="ok" and h.get("service")=="designpro-api-gateway"'
+  BODY="$public_gateway" python3 -I -c '
+import json, os
+h = json.loads(os.environ["BODY"])
+assert h.get("status") == "ok" and h.get("service") == "designpro-api-gateway", "public healthz=%r" % (h,)'
   worker_status=$(curl --proto '=https' --tlsv1.2 -sS -o /dev/null -w '%{http_code}' "$public/worker/health")
   [[ $worker_status == 404 ]] || { echo "A production worker path is publicly reachable" >&2; exit 11; }
   headers=$(curl --proto '=https' --tlsv1.2 -fsSI "$public/")
