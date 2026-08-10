@@ -45,7 +45,7 @@ test("flat material identity binds all seven sources, dimensions, model, and fro
   const changedText = flat.flatInputHash({ sourceViews: sources, tiles, revisionId, textLock: { ...textLock, bodyText: { phone: "555-9999" } }, model: "gemini-3-pro-image" });
   assert.match(first, /^[0-9a-f]{64}$/);
   assert.notEqual(first, changedText);
-  assert.equal(flat.PROMPT_VERSION, "designproai-flat-surface-20260806.v1");
+  assert.equal(flat.PROMPT_VERSION, "designproai-flat-surface-20260810.v2");
   assert.equal(flat.selectedImageModel(), "gemini-3-pro-image");
   assert.throws(() => flat.selectedImageModel("gemini-2.5-flash"), /image-generation model/);
 });

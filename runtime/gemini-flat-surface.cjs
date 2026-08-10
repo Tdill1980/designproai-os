@@ -2,9 +2,13 @@
 
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
+const {
+  assertDistinctSurfaces, extractNamedRegion, mirroredSurfaceFingerprint,
+  namedRegionRect, surfaceFingerprint, trimRectangle, PIXELS_PER_INCH,
+} = require("./proof-region-extract.cjs");
 
-const FLAT_SURFACE_CONTRACT = "designpro.gemini-flat-surface.v1";
-const PROMPT_VERSION = "designproai-flat-surface-20260806.v1";
+const FLAT_SURFACE_CONTRACT = "designpro.gemini-flat-surface.v2";
+const PROMPT_VERSION = "designproai-flat-surface-20260810.v2";
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 const VIEW_KEYS = Object.freeze([...SURFACE_KEYS, "hero3d"]);
@@ -151,7 +155,9 @@ function flatPrompt(surfaceKey, vehicleName, sourceSetHash, textLock) {
   const allowedText = textLock.allowedVisibleStrings.length
     ? textLock.allowedVisibleStrings.map((value) => JSON.stringify(value)).join(", ")
     : "NONE";
-  return `Create the FLAT, RECTANGULAR, PANEL-READY artwork for the ${label} of this ${vehicleName || "vehicle"}, using the attached approved render as the surface source and the attached hero render only as the cross-vehicle design anchor.
+  return `Create the FLAT, RECTANGULAR, PANEL-READY artwork for the ${label} of this ${vehicleName || "vehicle"} using the single attached approved ${label} render as the only surface source.
+
+SURFACE ISOLATION: this rectangle carries the ${label} surface and nothing else. Do not import, recall, mirror, or continue artwork from the driver side, from any other surface, or from any earlier request. If part of the ${label} surface is not visible in the attached render, continue only the artwork that this render actually shows; never substitute another surface to fill it.
 
 OUTPUT ONLY THE ARTWORK CANVAS. Completely remove the vehicle body, cab, windows, glass, wheels, tires, wheel arches, bumpers, mirrors, lights, handles, seams, ground, studio, shadows, reflections, highlights, and every white or transparent cutout. Continue the real surrounding artwork through every area those vehicle parts covered. Fill all four edges with the design. There must be no vehicle silhouette, no white margin, no transparency, no labels, no dimensions, no border, and no mockup.
 
@@ -159,7 +165,7 @@ Do not redesign, restyle, simplify, or substitute anything. Preserve every graph
 
 TEXT LOCK: the ONLY visible strings you may render are: ${allowedText}. Never invent, correct, autocomplete, replace, or add a phone number, URL, tagline, company name, badge, or other lettering. If the source contains text not present in this list, omit that text rather than guessing it. PanelPro will compare the result against this exact frozen list.
 
-This returned rectangle becomes the immutable Call 8 flat-surface source. Nothing after it is allowed to heal, invent, or substitute pixels. Seven-view source-set binding: ${sourceSetHash}.`;
+This returned rectangle becomes the immutable Call 8 flat-surface source. Call 9 will crop its production panel out of this rectangle deterministically; nothing after this response is allowed to heal, invent, or substitute pixels. Seven-view source-set binding: ${sourceSetHash}.`;
 }
 
 async function compactReference(item) {
@@ -202,7 +208,12 @@ async function assertOpaqueImage(bytes, label) {
   return metadata;
 }
 
-async function generateOneSurface({ apiKey, model, surface, ownReference, heroReference, sourceSetHash, textLock, vehicleName, fetchImpl = fetch, signal }) {
+/**
+ * One surface, one source. The hero render is deliberately NOT attached here:
+ * feeding a driver-side three-quarter anchor into every surface is what let the
+ * driver flank reappear as the passenger, front, and rear artwork.
+ */
+async function generateOneSurface({ apiKey, model, surface, ownReference, sourceSetHash, textLock, vehicleName, fetchImpl = fetch, signal }) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   let lastError = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -213,9 +224,7 @@ async function generateOneSurface({ apiKey, model, surface, ownReference, heroRe
         body: JSON.stringify({
           contents: [{ parts: [
             { text: flatPrompt(surface.key, vehicleName, sourceSetHash, textLock) },
-            { text: "APPROVED HERO DESIGN ANCHOR — palette, typography, photography, and graphic routing only:" },
-            { inlineData: heroReference },
-            { text: `AUTHORITATIVE ${surface.key.toUpperCase()} SURFACE RENDER — geometry and content source:` },
+            { text: `AUTHORITATIVE ${surface.key.toUpperCase()} SURFACE RENDER — the only geometry and content source:` },
             { inlineData: ownReference },
           ] }],
           generationConfig: {
@@ -240,31 +249,26 @@ async function generateOneSurface({ apiKey, model, surface, ownReference, heroRe
   throw new Error(`${surface.key} flat-surface generation failed closed after 3 attempts: ${lastError?.message || lastError}`);
 }
 
-async function masterFromFlat(flatBytes, surface, pixelsPerInch = 150) {
-  await assertOpaqueImage(flatBytes, surface.key);
-  const trimWidth = Math.max(1, Math.round(surface.trimWidthIn * pixelsPerInch));
-  const trimHeight = Math.max(1, Math.round(surface.trimHeightIn * pixelsPerInch));
-  const bleed = Math.round(surface.bleedIn * pixelsPerInch);
-  if ((trimWidth + bleed * 2) * (trimHeight + bleed * 2) > MAX_MASTER_PIXELS) {
+/**
+ * The named region of this surface's frozen flat source, and the master that
+ * region produces. Bleed is real artwork carried by the crop, not mirrored
+ * padding invented around a contain-fit, so Call 9 can reproduce these exact
+ * bytes later from the frozen source plus the recorded rectangle alone.
+ */
+async function masterFromFlat(flatBytes, surface, pixelsPerInch = PIXELS_PER_INCH) {
+  const metadata = await assertOpaqueImage(flatBytes, surface.key);
+  const region = namedRegionRect({
+    sourceWidth: metadata.width, sourceHeight: metadata.height,
+    trimWidthIn: surface.trimWidthIn, trimHeightIn: surface.trimHeightIn,
+    bleedIn: surface.bleedIn, pixelsPerInch,
+  });
+  if (region.targetWidth * region.targetHeight > MAX_MASTER_PIXELS) {
     throw new Error(`${surface.key} validated geometry exceeds the bounded 1:10 @1500dpi worker budget`);
   }
-  let trim = await sharp(flatBytes, { limitInputPixels: false })
-    .resize(trimWidth, trimHeight, { fit: "inside", kernel: "lanczos3" })
-    .flatten({ background: "#ffffff" })
-    .png()
-    .toBuffer();
-  const fitted = await sharp(trim).metadata();
-  const left = Math.floor((trimWidth - fitted.width) / 2);
-  const right = trimWidth - fitted.width - left;
-  const top = Math.floor((trimHeight - fitted.height) / 2);
-  const bottom = trimHeight - fitted.height - top;
-  if (left || right || top || bottom) {
-    trim = await sharp(trim).extend({ left, right, top, bottom, extendWith: "mirror" }).png().toBuffer();
-  }
-  return sharp(trim).extend({ left: bleed, right: bleed, top: bleed, bottom: bleed, extendWith: "mirror" }).png().toBuffer();
+  return { bytes: await extractNamedRegion(flatBytes, region), region };
 }
 
-async function validateMaster(bytes, surface, pixelsPerInch = 150) {
+async function validateMaster(bytes, surface, pixelsPerInch = PIXELS_PER_INCH) {
   const metadata = await assertOpaqueImage(bytes, `${surface.key} master`);
   const expectedWidth = Math.round((surface.trimWidthIn + surface.bleedIn * 2) * pixelsPerInch);
   const expectedHeight = Math.round((surface.trimHeightIn + surface.bleedIn * 2) * pixelsPerInch);
@@ -290,7 +294,6 @@ async function authorFlatSurfaceMasters(options) {
   const apiKey = String(options.apiKey || "").trim();
   if (!apiKey && !options.generateSurface) throw new Error("Google image API key is required");
   const generated = options.generateSurface || generateOneSurface;
-  const heroReference = await compactReference(sources.get("hero3d"));
   const results = [];
   for (const key of SURFACE_KEYS) {
     if (options.signal?.aborted) throw new Error("flat-surface authoring aborted after lease loss");
@@ -301,7 +304,7 @@ async function authorFlatSurfaceMasters(options) {
     if (!flatBytes) {
       const ownReference = await compactReference(sources.get(key));
       const generatedBytes = await generated({
-        apiKey, model, surface, ownReference, heroReference, sourceSetHash: inputHash, textLock,
+        apiKey, model, surface, ownReference, sourceSetHash: inputHash, textLock,
         vehicleName: options.vehicleName, fetchImpl: options.fetchImpl, signal: options.signal,
       });
       await assertOpaqueImage(generatedBytes, key);
@@ -313,31 +316,39 @@ async function authorFlatSurfaceMasters(options) {
       flatBytes = Buffer.from(flatBytes);
     }
     const flatMetadata = await assertOpaqueImage(flatBytes, key);
+    // The named region is derived from the frozen flat source alone, so a
+    // resumed run and a later Call 9 crop reach the exact same rectangle.
+    const derived = await masterFromFlat(flatBytes, surface);
+    let bytes = derived.bytes;
     if (existingMaster) {
-      const bytes = Buffer.from(existingMaster);
-      const metadata = await validateMaster(bytes, surface);
-      results.push({
-        key, bytes, metadata, inputHash, model, flatHash: sha256(flatBytes),
-        flatPixelWidth: flatMetadata.width, flatPixelHeight: flatMetadata.height,
-        normalizationScaleX: Math.round((surface.trimWidthIn * 150 / flatMetadata.width) * 10000) / 10000,
-        normalizationScaleY: Math.round((surface.trimHeightIn * 150 / flatMetadata.height) * 10000) / 10000,
-      });
-      continue;
+      bytes = Buffer.from(existingMaster);
+      if (sha256(bytes) !== sha256(derived.bytes)) {
+        throw new Error(`${key} immutable master is no longer the named region of its frozen flat source`);
+      }
+    } else {
+      if (options.signal?.aborted) throw new Error("flat-surface authoring aborted before immutable write");
+      await options.persist(surface, bytes);
     }
-    const master = await masterFromFlat(flatBytes, surface);
-    const metadata = await validateMaster(master, surface);
-    if (options.signal?.aborted) throw new Error("flat-surface authoring aborted before immutable write");
-    await options.persist(surface, master);
+    const metadata = await validateMaster(bytes, surface);
     results.push({
-      key, bytes: master, metadata, inputHash, model, flatHash: sha256(flatBytes),
+      key, bytes, metadata, inputHash, model, flatHash: sha256(flatBytes),
       flatPixelWidth: flatMetadata.width, flatPixelHeight: flatMetadata.height,
-      normalizationScaleX: Math.round((surface.trimWidthIn * 150 / flatMetadata.width) * 10000) / 10000,
-      normalizationScaleY: Math.round((surface.trimHeightIn * 150 / flatMetadata.height) * 10000) / 10000,
+      region: derived.region, trimRect: trimRectangle(surface),
+      ownSourceViewSha256: sources.get(key).contentHash,
+      fingerprint: await surfaceFingerprint(bytes),
+      mirrorFingerprint: await mirroredSurfaceFingerprint(bytes),
     });
   }
   if (results.length !== SURFACE_KEYS.length || new Set(results.map((item) => sha256(item.bytes))).size !== SURFACE_KEYS.length) {
     throw new Error("the six flat-surface masters must be complete and byte-distinct");
   }
+  // Byte distinctness cannot see a repainted driver flank standing in for the
+  // passenger, front, or rear. Compare the surfaces as images before any of
+  // them is allowed to become a production source.
+  const uniqueness = assertDistinctSurfaces(results.map((item) => ({
+    surfaceKey: item.key, fingerprint: item.fingerprint, mirrorFingerprint: item.mirrorFingerprint,
+  })));
+  for (const item of results) item.surfaceUniqueness = uniqueness;
   return results;
 }
 
@@ -345,6 +356,7 @@ module.exports = {
   DEFAULT_IMAGE_MODEL,
   FLAT_SURFACE_CONTRACT,
   MAX_MASTER_PIXELS,
+  PIXELS_PER_INCH,
   PROMPT_VERSION,
   SURFACE_KEYS,
   VIEW_KEYS,

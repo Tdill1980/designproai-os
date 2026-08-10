@@ -8,6 +8,7 @@ const { registerDesignProStandaloneClaimant } = require("./designpro-standalone-
 const { canonicalTenantKey, canonicalUuid, immutableStorageUpload, normalizeSourceAsset, verifySourceBytes } = require("./runtime-contract.cjs");
 const { probeRuntimeDependencies } = require("./runtime-readiness.cjs");
 const { authorFlatSurfaceMasters, flatInputHash, normalizeTextLock, selectedImageModel, PROMPT_VERSION, SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
+const { assertProofRegionMap, PIXELS_PER_INCH, PROOF_REGION_MAP_CONTRACT, PROOF_TILE_CONTRACT } = require("./proof-region-extract.cjs");
 const { dispatchOneWrapboxNotification, reconcileCompletedWrapboxDeliveries } = require("./wrapbox-delivery.cjs");
 const { createResendTransport, resendReadiness } = require("./resend-transport.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolImmutableBuffer, uploadSpoolWithTus } = require("./zip-spool.cjs");
@@ -193,8 +194,11 @@ app.post("/internal/wrapbox/recipient", authMiddleware, async (req, res) => {
 
 // Seven immutable renders -> Call 8 flat 2D proof -> six own-surface masters.
 // Each master is authored by the bounded Gemini flat-tile boundary ported from
-// RP main 02ceea8/proof-sheet.ts blob 814363e, then composed deterministically.
+// RP main 02ceea8/proof-sheet.ts blob 814363e, from that surface's own render
+// only, then cropped to its named region and composed deterministically.
 // A full vehicle render is never resized directly into a printable master.
+// The response carries the proof region map: the addressable rectangles Call 9
+// crops. Call 9 re-derives its panels from that map alone, with no image model.
 app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
   const requestAbort = new AbortController();
   req.once("aborted", () => requestAbort.abort(new Error("claimant request aborted")));
@@ -265,18 +269,34 @@ app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
       if (Math.abs(w / h - meta.width / meta.height) > 0.01) throw new Error(`${key} proof region would distort`);
       const preview = await sharp(master).resize(w, h, { fit: "fill", kernel: "lanczos3" }).png().toBuffer();
       layers.push({ input: preview, left: x, top: y });
+      const masterSha256 = createHash("sha256").update(master).digest("hex");
       surfaceMasters.push({
-        key, masterPath, sha256: createHash("sha256").update(master).digest("hex"), bytes: master.length,
+        key, masterPath, sha256: masterSha256, bytes: master.length,
         pixelWidth: meta.width, pixelHeight: meta.height, trimWidthIn, trimHeightIn, bleedIn,
         printWidthIn: trimWidthIn + bleedIn * 2, printHeightIn: trimHeightIn + bleedIn * 2,
+        // The addressable Call 9 crop: this surface's own frozen flat source
+        // plus the exact integer rectangle that is its production panel.
+        proofTile: {
+          contract: PROOF_TILE_CONTRACT, tileKey: key,
+          flatSourcePath: String(tile.rawFlatPath), flatSourceSha256: generated.flatHash,
+          flatSourceWidth: generated.flatPixelWidth, flatSourceHeight: generated.flatPixelHeight,
+          masterPath, masterSha256,
+          ownSourceViewKey: key, ownSourceViewSha256: generated.ownSourceViewSha256,
+          sevenViewSourceSetHash: computedMaterialHash,
+          region: generated.region, trimRect: generated.trimRect,
+          pixelsPerInch: PIXELS_PER_INCH, trimWidthIn, trimHeightIn, bleedIn,
+          fingerprint: generated.fingerprint, mirrorFingerprint: generated.mirrorFingerprint,
+          previewRect: { left: x, top: y, width: w, height: h },
+          model: generated.model, promptVersion: PROMPT_VERSION,
+          authoring: "own-surface-render-only-no-cross-surface-anchor",
+        },
         sourceCrop: {
-          contract: "call8-gemini-flat-surface-transform.v1", sourceSha256: sourceByKey.get(key).contentHash,
+          contract: "call8-named-flat-region-crop.v1", sourceSha256: sourceByKey.get(key).contentHash,
           sevenViewSourceSetHash: computedMaterialHash, generatedFlatSha256: generated.flatHash,
           generatedFlatPixelWidth: generated.flatPixelWidth, generatedFlatPixelHeight: generated.flatPixelHeight,
-          normalizationScaleX: generated.normalizationScaleX, normalizationScaleY: generated.normalizationScaleY,
-          model: generated.model, promptVersion: PROMPT_VERSION,
-          fit: "gemini-flat-then-contain-mirror-fill-at-call8", stretch: false,
-          rotationDegrees: 0, truncated: false,
+          region: generated.region, model: generated.model, promptVersion: PROMPT_VERSION,
+          fit: "exact-named-region-no-padding", stretch: false,
+          rotationDegrees: 0, truncated: false, mirrorFilled: false,
         },
       });
     }
@@ -286,8 +306,17 @@ app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
       const tile = tiles.find((item) => String(item.key) === master.key);
       const region = await sharp(proof).extract({ left: Math.round(Number(tile.x)), top: Math.round(Number(tile.y)), width: Math.round(Number(tile.w)), height: Math.round(Number(tile.h)) }).png().toBuffer();
       master.regionSha256 = createHash("sha256").update(region).digest("hex"); master.regionBytes = region.length;
+      master.proofTile.previewSha256 = master.regionSha256;
     }
-    res.json({ success: true, contract: "designpro.call8-flat-proof.v1", imageModel: GOOGLE_IMAGE_MODEL, flatMaterialHash: computedMaterialHash, textLock: frozenTextLock, pngBase64: proof.toString("base64"), width: W, height: H, bytes: proof.length, surfaceMasters });
+    const proofRegionMap = assertProofRegionMap({
+      contract: PROOF_REGION_MAP_CONTRACT,
+      pixelsPerInch: PIXELS_PER_INCH,
+      flatMaterialHash: computedMaterialHash,
+      proofWidth: W, proofHeight: H,
+      proofSha256: createHash("sha256").update(proof).digest("hex"),
+      tiles: surfaceMasters.map((master) => master.proofTile),
+    }, SURFACE_KEYS);
+    res.json({ success: true, contract: "designpro.call8-flat-proof.v1", imageModel: GOOGLE_IMAGE_MODEL, flatMaterialHash: computedMaterialHash, textLock: frozenTextLock, pngBase64: proof.toString("base64"), width: W, height: H, bytes: proof.length, surfaceMasters, proofRegionMap: { ...proofRegionMap, byKey: undefined } });
   } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 

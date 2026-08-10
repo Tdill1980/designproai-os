@@ -32,6 +32,9 @@ for(const exactField of ["viewreceipts","viewlineage","dimensionmanifestid","man
   assert.ok(lower.includes(exactField),`claimant is not aligned to schema field ${exactField}`);
 for(const edge of ["top: 5","right: 5","bottom: 5","left: 5"])
   assert.ok(lower.includes(edge),`claimant does not bind exact ${edge} bleed`);
-assert.match(lower,/metadata:\s*\{\s*sourcemasterhash:[\s\S]{0,500}displayedregionhash:[\s\S]{0,500}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
-  'panel artifact metadata must bind the Call 8 master, displayed region, and four-edge bleed');
+assert.match(lower,/imagemodelused: false,[\s\S]{0,300}sourcemasterhash:[\s\S]{0,400}sourceregionhash:[\s\S]{0,400}displayedregionhash:[\s\S]{0,900}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
+  'panel artifact metadata must bind the Call 8 master, its named source region, four-edge bleed, and no image model');
+assert.ok(lower.includes('sourcerule: call9_source_rule'),'Call 9 must send the exact database-accepted sourceRule');
+assert.ok(lower.includes('call9_source_rule = "one-own-surface-region-per-output-side"'),'Call 9 sourceRule drifted from complete_designpro_stage');
+assert.ok(lower.includes('sourceregionhashes'),'Call 9 receipt must carry the sourceRegionHashes the database verifies');
 console.log("standalone claimant matches all schema lease, receipt, artifact and human-gate contracts");

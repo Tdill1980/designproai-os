@@ -13,10 +13,11 @@ const read = (name) => readFileSync(join(ops, name), "utf8");
 const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
 const fixed = policy.filter((line) => !line.includes("*"));
 
-test("one canonical policy includes all twelve runtime files and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 12);
+test("one canonical policy includes all thirteen runtime files and five deploy controls", () => {
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 13);
   for (const name of [
     "runtime/resend-transport.cjs", "runtime/wrapbox-delivery.cjs", "runtime/zip-spool.cjs",
+    "runtime/proof-region-extract.cjs",
     "ops/Dockerfile.runtime", "ops/Dockerfile.gateway", "ops/runtime-healthcheck.js",
     "ops/gateway-healthcheck.mjs", "ops/compose.yaml",
   ]) assert.ok(fixed.includes(name), name);

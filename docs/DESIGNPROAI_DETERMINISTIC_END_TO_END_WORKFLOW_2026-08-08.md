@@ -65,6 +65,32 @@ This checklist records evidence at the continuation point after PRs #4 and #5. A
 3. Run the single Porsche / July 24 / current regression comparison, then repair only Call 8 onward and its RevisionStudio/PanelProStudio handoffs.
 4. Pass full-suite integration, security, deterministic-output, restart/resume, and real-customer canary gates before DNS cutover.
 
+## 0.1 Deterministic Call 8/9 panel repair — 2026-08-10
+
+Code repair only. Nothing below is a deployment or canary claim; the real Porsche Martini canary in section 11 still governs acceptance.
+
+### Root causes found in the merged code
+
+1. **Call 9 extracted nothing.** `panels.build` re-read the Call 8 masters and relabelled them as `panel` artifacts. Every production pixel on the path was authored by an image model; the recorded `sourceCrop` contract named a crop that was never taken.
+2. **The driver flank was fed into every surface.** Call 8 attached the hero three-quarter render to all six generations as a "cross-vehicle design anchor". The hero is a driver-side view, so passenger, front, rear, hood, and roof were repainted from driver artwork — the observed "one driver side repeated".
+3. **The uniqueness gates could not see it.** `call9_surface_reuse` and `call9_driver_passenger_reuse` compared SHA-256 hashes. Two repaints of the same flank are never byte-identical, so a visually duplicated driver panel passed every gate.
+4. **Bleed was invented.** Masters were contain-fitted to trim and then mirror-extended, so the 5-inch bleed — and any letterboxed margin — was padding, not artwork.
+5. **`panels.build` could not complete at all.** `complete_designpro_stage` requires `sourceRule = 'one-own-surface-region-per-output-side'` and a `sourceRegionHashes` map; the runtime sent `own-call8-bound-surface-master` with `sourceMasterHashes`, so every Call 9 completion raised `call9_unique_proof_region_contract_failed`. `logos.extract` read the same wrong key. This is the regression that stopped panels loading or deploying into RevisionStudio and PanelProStudio/PanelizerStudio.
+
+### What the repair changes
+
+- New `runtime/proof-region-extract.cjs` owns RUNG 0: named-region geometry, deterministic extraction, and surface fingerprinting. It has no network and no model.
+- Call 8 authors each flat from **its own** render only (no hero cross-feed), then freezes a **proof region map**: for every surface, the immutable flat source, the exact integer rectangle inside it, the resulting master hash, the rectangle it occupies on the proof sheet, and a 320-bit structural + colour fingerprint with its mirror.
+- The named rectangle is the largest centred rect whose aspect equals validated GENIE trim plus 5-inch bleed, so trim **and** bleed are real artwork. Mirror fill is gone.
+- Call 9 crops each panel from the frozen proof under a bounded heavy-output lease and verifies: frozen source bytes, byte-for-byte reproduction of the accepted Call 8 master, exact 1:10 @1500dpi trim-plus-bleed geometry, the region shown on the approved proof sheet, and fingerprint identity. A missing region fails closed with `call9_proof_reference_missing`; Call 9 never synthesizes a panel.
+- Surfaces are compared as images, directly and mirrored, so a repainted or flipped driver flank fails as `call9_driver_passenger_visual_reuse` / `call9_surface_visual_reuse`.
+- The Call 9 receipt and panel artifacts now carry the exact `sourceRule` and `sourceRegionHashes` the database verifies, and Call 10 reads the same key.
+
+### Still open after this repair
+
+- No real generation has been run through the repaired chain. The Porsche Martini canary, the July 24 comparison capture, and PanelProStudio human verification remain required.
+- Changing the Call 8 prompt and geometry changes `flatInputHash`, so repaired runs are new immutable artifacts. Existing accepted artifacts are untouched and are not retro-fitted.
+
 ## 1. Owner directive
 
 This is a continuation of completed migration work, not a rebuild. The complete existing DesignProAI suite must run as one server-owned operating system: DesignPro, RecreatePro, WallPro, GraphicsPro, MyVehiclePro, RevisionStudio, GENIE Universal Panelizer, PanelProStudio, ApprovePro, Gallery, customer/admin pages, ProductionFlow, production-file output/upscaling, QC, packaging, and WrapBox.

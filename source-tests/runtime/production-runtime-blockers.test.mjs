@@ -152,7 +152,7 @@ test("visible stamp, ZIP identity file, and WrapBox bind immutable DesignID plus
   assert.doesNotMatch(claimantSource, /DesignID:.*run\.id|Order #:.*run\.id/);
 });
 
-test("Call 8 is an actual bounded flat authoring boundary and Call 9 promotes bound masters", () => {
+test("Call 8 authors one flat per own surface and Call 9 crops the frozen proof", () => {
   const entry = readFileSync(new URL("../../runtime/index.js", import.meta.url), "utf8");
   const flatSource = readFileSync(new URL("../../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8");
   assert.match(entry, /authorFlatSurfaceMasters/);
@@ -160,7 +160,16 @@ test("Call 8 is an actual bounded flat authoring boundary and Call 9 promotes bo
   assert.match(flatSource, /gemini-3-pro-image/);
   assert.match(flatSource, /imageSize: "4K"/);
   assert.match(flatSource, /OUTPUT ONLY THE ARTWORK CANVAS/);
-  assert.match(claimantSource, /sourceRule: "own-call8-bound-surface-master"/);
+  // The hero three-quarter render is no longer attached to every surface: that
+  // cross-feed is what let the driver flank reappear on the other five sides.
+  assert.match(flatSource, /SURFACE ISOLATION/);
+  assert.doesNotMatch(flatSource, /heroReference/);
+  assert.match(flatSource, /assertDistinctSurfaces/);
+  // complete_designpro_stage accepts exactly this Call 9 sourceRule.
+  assert.match(claimantSource, /sourceRule: CALL9_SOURCE_RULE/);
+  assert.match(claimantSource, /CALL9_SOURCE_RULE = "one-own-surface-region-per-output-side"/);
+  assert.match(claimantSource, /sourceRegionHashes,/);
+  assert.match(claimantSource, /RUNG 0 — use the deterministic named crop from the frozen 2D proof\./);
   assert.match(claimantSource, /\* 150\)/);
 });
 

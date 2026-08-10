@@ -13,7 +13,7 @@ const dockerfile = readFileSync(join(root, "ops/Dockerfile.runtime"), "utf8");
 const healthcheck = readFileSync(join(root, "ops/runtime-healthcheck.js"), "utf8");
 
 test("all local CommonJS imports are closed", () => {
-  for (const file of ["index.js", "designpro-standalone-claimant.cjs", "runtime-contract.cjs", "runtime-readiness.cjs", "genie-universal-resolver.cjs", "gemini-flat-surface.cjs", "output-qc.cjs", "zip-spool.cjs", "wrapbox-delivery.cjs", "resend-transport.cjs"]) {
+  for (const file of ["index.js", "designpro-standalone-claimant.cjs", "runtime-contract.cjs", "runtime-readiness.cjs", "genie-universal-resolver.cjs", "gemini-flat-surface.cjs", "proof-region-extract.cjs", "output-qc.cjs", "zip-spool.cjs", "wrapbox-delivery.cjs", "resend-transport.cjs"]) {
     const source = read(file);
     for (const match of source.matchAll(/require\(["'](\.\.?\/[^"']+)["']\)/g)) {
       const absolute = resolve(dirname(join(runtime, file)), match[1]);

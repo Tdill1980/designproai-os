@@ -18,6 +18,7 @@ const required = [
   "runtime/runtime-readiness.cjs",
   "runtime/genie-universal-resolver.cjs",
   "runtime/gemini-flat-surface.cjs",
+  "runtime/proof-region-extract.cjs",
   "runtime/output-qc.cjs",
   "runtime/resend-transport.cjs",
   "runtime/wrapbox-delivery.cjs",

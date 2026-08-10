@@ -5,6 +5,7 @@
     "runtime/designpro-standalone-claimant.cjs",
     "runtime/genie-universal-resolver.cjs",
     "runtime/gemini-flat-surface.cjs",
+    "runtime/proof-region-extract.cjs",
     "runtime/output-qc.cjs",
     "runtime/wrapbox-delivery.cjs",
     "gateway/src/server.mjs"
