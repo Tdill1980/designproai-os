@@ -1,9 +1,12 @@
 name: Install DesignProAI Caddy site
 
-# Step 7 of ops/README.md. The script lives in the immutable release, which
-# deploy.sh chmods to 0444 — so `./install-caddy.sh` can never work and the
-# interpreter must be invoked explicitly. Automating it removes the only
-# runbook step that depended on remembering that.
+# Step 7 of ops/README.md.
+#
+# Preconditions below report the value they observed. The first run of this
+# workflow exited 1 in 1.1s with no output, because a bare `test` prints
+# nothing — the same failure shape that let proof.build report a naked
+# AssertionError for 27 runs. A guard that cannot say why it refused is a
+# guard that costs a debugging cycle every time it fires.
 
 on:
   workflow_dispatch:
@@ -19,6 +22,7 @@ on:
         default: DO_NOT_INSTALL
         options:
           - DO_NOT_INSTALL
+          - INSPECT_ONLY
           - INSTALL_DESIGNPRO_CADDY_ONLY
 
 permissions:
@@ -36,7 +40,7 @@ env:
 
 jobs:
   install-caddy:
-    if: inputs.confirmation == 'INSTALL_DESIGNPRO_CADDY_ONLY'
+    if: inputs.confirmation != 'DO_NOT_INSTALL'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -44,6 +48,7 @@ jobs:
     env:
       SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
       EXACT_SHA: ${{ inputs.exact_sha }}
+      MODE: ${{ inputs.confirmation }}
     steps:
       - name: Pin the exact new droplet SSH identity
         shell: bash
@@ -51,38 +56,56 @@ jobs:
           set -Eeuo pipefail
           set +x
           umask 077
-          [[ $EXACT_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Exact lowercase 40-character SHA required" >&2; exit 2; }
+          [[ $EXACT_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Exact lowercase 40-character SHA required; got '$EXACT_SHA'" >&2; exit 2; }
           key_file="$RUNNER_TEMP/designproai_ssh"
           pub_file="$RUNNER_TEMP/designproai_ssh.pub"
           known_hosts="$RUNNER_TEMP/designproai_known_hosts"
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
           ssh-keygen -y -f "$key_file" > "$pub_file"
-          test "$(ssh-keygen -lf "$pub_file" -E sha256 | awk 'NR==1 {print $2}')" = "$EXPECTED_AUTOMATION_KEY_FINGERPRINT"
+          observed_key=$(ssh-keygen -lf "$pub_file" -E sha256 | awk 'NR==1 {print $2}')
+          [[ $observed_key == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || {
+            echo "automation key fingerprint mismatch: observed $observed_key" >&2; exit 31; }
           ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts"
-          test -s "$known_hosts"
+          [[ -s $known_hosts ]] || { echo "host-key scan returned nothing for $TARGET_HOST" >&2; exit 33; }
           mapfile -t observed < <(ssh-keygen -lf "$known_hosts" -E sha256 | awk '{print $2}' | sort -u)
-          test "${#observed[@]}" -eq 1
-          test "${observed[0]}" = "$EXPECTED_HOST_FINGERPRINT"
+          [[ ${#observed[@]} -eq 1 ]] || { echo "expected one host key; observed ${#observed[@]}" >&2; exit 36; }
+          [[ ${observed[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || {
+            echo "host fingerprint mismatch: observed ${observed[0]}" >&2; exit 37; }
           echo "key_file=$key_file" >> "$GITHUB_ENV"
           echo "known_hosts=$known_hosts" >> "$GITHUB_ENV"
 
-      - name: Install the Caddy site for the live release
+      - name: Inspect the deployed release, then install if asked
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXACT_SHA='$EXACT_SHA' bash -s" <<'REMOTE'
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXACT_SHA='$EXACT_SHA' MODE='$MODE' bash -s" <<'REMOTE'
           set -Eeuo pipefail
-          test "$(hostname)" = "$EXPECTED_HOSTNAME"
 
-          # Never configure Caddy for a release that is not the live one.
-          current=$(readlink -f /opt/designproai/current)
-          test "$current" = "/opt/designproai/releases/$EXACT_SHA"
+          host=$(hostname)
+          [[ $host == "$EXPECTED_HOSTNAME" ]] || { echo "hostname mismatch: on '$host', expected '$EXPECTED_HOSTNAME'" >&2; exit 10; }
+
+          current=$(readlink -f /opt/designproai/current 2>/dev/null || echo "")
+          echo "current release : ${current:-<none>}"
+          echo "requested       : /opt/designproai/releases/$EXACT_SHA"
+          [[ $current == "/opt/designproai/releases/$EXACT_SHA" ]] || {
+            echo "refusing: requested SHA is not the live release" >&2; exit 11; }
 
           ops="$current/ops"
-          test -f "$ops/install-caddy.sh"
-          test ! -L "$ops/install-caddy.sh"
+          echo "--- $ops ---"
+          ls -la "$ops" 2>&1 || echo "(ops directory is missing)"
+
+          if [[ ! -f $ops/install-caddy.sh ]]; then
+            echo "install-caddy.sh is NOT present in the deployed release." >&2
+            echo "It exists in git but was not packaged into this release tree." >&2
+            exit 12
+          fi
+
+          if [[ $MODE != INSTALL_DESIGNPRO_CADDY_ONLY ]]; then
+            echo "INSPECT_ONLY — not installing."
+            exit 0
+          fi
 
           # The release tree is mode 0444 by construction (deploy.sh), so the
           # interpreter is invoked explicitly rather than relying on +x.
