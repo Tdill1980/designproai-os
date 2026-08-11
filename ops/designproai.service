@@ -9,7 +9,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/designproai/current
 EnvironmentFile=/opt/designproai/current/deploy/release.env
-Environment=COMPOSE_PROJECT_NAME=designproai
+Environment=COMPOSE_PROJECT_NAME=designproai-app
 ExecStartPre=/usr/bin/test -L /opt/designproai/current
 ExecStartPre=/usr/bin/test -f /opt/designproai/current/deploy/release.env
 ExecStartPre=/usr/bin/test -f /opt/designproai/current/ops/compose.yaml

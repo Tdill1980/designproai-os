@@ -39,6 +39,11 @@ on:
         required: false
         type: string
         default: ""
+      resume_production_job_id:
+        description: "Optional: resume this failed production job (retryFailed) instead of submitting a new order"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -61,6 +66,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
       PANELIZER_JOB_ID: ${{ inputs.panelizer_job_id }}
       ENTICE_PACK_ID: ${{ inputs.entice_pack_id }}
+      RESUME_PRODUCTION_JOB_ID: ${{ inputs.resume_production_job_id }}
     steps:
       - name: Fetch and PROVE a working service key before ordering
         shell: bash
@@ -115,9 +121,17 @@ jobs:
           set -Eeuo pipefail
           set +x
           base="https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/designpro-file-output-api"
-          body=$(jq -n --arg job "$PANELIZER_JOB_ID" --arg pack "$ENTICE_PACK_ID" \
-            '{action:"start", jobId:$job} + (if $pack != "" then {enticePackId:$pack} else {} end)')
-          echo "POST action=start jobId=$PANELIZER_JOB_ID enticePackId=${ENTICE_PACK_ID:-<newest active>}"
+          if [[ -n $RESUME_PRODUCTION_JOB_ID ]]; then
+            # A failed durable workflow is retried through the sanctioned
+            # resume path, which requires the explicit retryFailed flag.
+            body=$(jq -n --arg id "$RESUME_PRODUCTION_JOB_ID" \
+              '{action:"resume", productionJobId:$id, retryFailed:true}')
+            echo "POST action=resume productionJobId=$RESUME_PRODUCTION_JOB_ID retryFailed=true"
+          else
+            body=$(jq -n --arg job "$PANELIZER_JOB_ID" --arg pack "$ENTICE_PACK_ID" \
+              '{action:"start", jobId:$job} + (if $pack != "" then {enticePackId:$pack} else {} end)')
+            echo "POST action=start jobId=$PANELIZER_JOB_ID enticePackId=${ENTICE_PACK_ID:-<newest active>}"
+          fi
           code=$(curl -sS -o /tmp/submit.json -w '%{http_code}' -X POST "$base" \
             -H "Authorization: Bearer $SERVICE_ROLE" \
             -H "apikey: $SERVICE_ROLE" \
@@ -127,6 +141,7 @@ jobs:
           jq . /tmp/submit.json
           [[ $code == 200 ]] || { echo "submit refused" >&2; exit 50; }
           production_job_id=$(jq -r '.productionJob.id // .productionJobId // empty' /tmp/submit.json)
+          [[ -n $production_job_id || -z $RESUME_PRODUCTION_JOB_ID ]] || production_job_id="$RESUME_PRODUCTION_JOB_ID"
           workflow_run_id=$(jq -r '.workflowRun.id // .workflowRunId // empty' /tmp/submit.json)
           [[ -n $production_job_id ]] || { echo "no productionJob id in response" >&2; exit 51; }
           echo "PRODUCTION_JOB_ID=$production_job_id" >> "$GITHUB_ENV"

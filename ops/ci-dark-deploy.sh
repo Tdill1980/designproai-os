@@ -46,8 +46,8 @@ fi
 "$control/deploy.sh" "$archive" "$EXACT_SHA" "$ARCHIVE_DIGEST" DEPLOY_DESIGNPRO_ONLY
 "$control/acceptance.sh" "$EXACT_SHA"
 
-services=$(docker ps --filter label=com.docker.compose.project=designproai --format '{{.Label "com.docker.compose.service"}}' | sort)
+services=$(docker ps --filter label=com.docker.compose.project=designproai-app --format '{{.Label "com.docker.compose.service"}}' | sort)
 test "$(wc -l <<<"$services" | tr -d ' ')" -eq 3
 test "$services" = $'gateway\nruntime-1\nruntime-2'
-test "$(docker volume ls --filter label=com.docker.compose.project=designproai -q | wc -l)" -eq 0
+test "$(docker volume ls --filter label=com.docker.compose.project=designproai-app -q | wc -l)" -eq 0
 echo "VERIFIED_WORKING: exact artifact passed dark loopback acceptance; Caddy, DNS, and public traffic were not changed"

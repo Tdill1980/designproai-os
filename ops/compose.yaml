@@ -1,4 +1,4 @@
-name: designproai
+name: designproai-app
 
 x-runtime: &runtime
   image: "designproai-runtime:${DESIGNPRO_SHA:?missing DESIGNPRO_SHA}"

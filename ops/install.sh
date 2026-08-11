@@ -41,7 +41,7 @@ done
 for port in 3001 3002 8787; do
   if ss -H -lnt "sport = :$port" | grep -q .; then
     case "$port" in 3001) expected=runtime-1 ;; 3002) expected=runtime-2 ;; 8787) expected=gateway ;; esac
-    owner=$(docker ps --filter "publish=$port" --filter label=com.docker.compose.project=designproai --format '{{.Label "com.docker.compose.service"}}')
+    owner=$(docker ps --filter "publish=$port" --filter label=com.docker.compose.project=designproai-app --format '{{.Label "com.docker.compose.service"}}')
     [[ $owner == "$expected" ]] || { echo "Loopback port $port is already owned outside the expected DesignPro service" >&2; exit 6; }
   fi
 done
