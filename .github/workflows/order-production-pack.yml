@@ -80,6 +80,12 @@ jobs:
           [[ -n $service_role && $service_role != null ]] || {
             echo "service_role key not returned by the Management API" >&2; exit 41; }
           echo "::add-mask::$service_role"
+          # The functions gateway rejects a bearer-only request with 401
+          # "Authentication required" before the facade runs; supabase-js
+          # always sends BOTH apikey and Authorization, so this job does too.
+          # The prefix identifies the key format (legacy JWT = "eyJ...",
+          # new secret = "sb_secret_...") without revealing the key.
+          echo "key format prefix: ${service_role:0:10}"
           echo "SERVICE_ROLE=$service_role" >> "$GITHUB_ENV"
 
       - name: Submit the order through the sanctioned facade
@@ -93,6 +99,7 @@ jobs:
           echo "POST action=start jobId=$PANELIZER_JOB_ID enticePackId=${ENTICE_PACK_ID:-<newest active>}"
           code=$(curl -sS -o /tmp/submit.json -w '%{http_code}' -X POST "$base" \
             -H "Authorization: Bearer $SERVICE_ROLE" \
+            -H "apikey: $SERVICE_ROLE" \
             -H "Content-Type: application/json" \
             -d "$body")
           echo "HTTP $code"
@@ -119,6 +126,7 @@ jobs:
             sleep 20
             code=$(curl -sS -o /tmp/status.json -w '%{http_code}' -X POST "$base" \
               -H "Authorization: Bearer $SERVICE_ROLE" \
+              -H "apikey: $SERVICE_ROLE" \
               -H "Content-Type: application/json" \
               -d "{\"action\":\"status\",\"productionJobId\":\"$PRODUCTION_JOB_ID\"}")
             if [[ $code != 200 ]]; then

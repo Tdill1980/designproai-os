@@ -1,3 +1,18 @@
+# The apex and www resolve to this droplet (verified 2026-08-11) but served
+# nothing. One canonical host keeps the SPA and API on a single origin, so
+# both redirect to it; Caddy issues certificates for all three names.
+designproai.com, www.designproai.com {
+  redir https://os.designproai.com{uri} 301
+
+  log {
+    output file /var/log/caddy/designpro-apex-access.log {
+      roll_size 25MiB
+      roll_keep 10
+      roll_keep_for 336h
+    }
+  }
+}
+
 os.designproai.com {
   encode zstd gzip
 
