@@ -1,23 +1,14 @@
-# One-shot droplet bootstrap for the RestylePro worker deploy.
+# READ-ONLY credential-fingerprint diagnosis for the open 401 finding
+# (docs/DNS_WORKER_MIGRATION_2026-08-11.md). This branch variant of the
+# bootstrap workflow makes the ONE MOVE the migration record calls for:
+# diff /opt/designproai/config/designpro.env (file AND the env inside the
+# running worker containers) against the Supabase function env, via the same
+# pinned SSH identity and Management API token the bootstrap already holds.
 #
-# The owner could not complete the droplet checklist by hand: the DigitalOcean
-# web console intermittently refuses keyboard input and paste, and the droplet
-# is key-only so a local terminal cannot get in either. This repository already
-# holds a WORKING pinned SSH identity for that droplet (the same one
-# install-caddy.yml uses), so this job does the whole checklist server-side:
-#
-#   1. generates the restylepro-os deploy keypair on the droplet (idempotent)
-#   2. authorizes its public half
-#   3. installs Docker if missing
-#   4. writes /opt/designproai/config/designpro.env with the live credentials,
-#      fetched from the Supabase Management API on the runner - the values the
-#      Railway worker already uses, never typed by a human
-#   5. prints exactly what to paste into restylepro-os repository secrets
-#
-# The printed private key is NEWLY MINTED for the restylepro deploy - it is not
-# any existing secret. Printing it in a private-repo job log is the handoff
-# mechanism; rotate it any time by re-running this job after deleting
-# /root/designpro_deploy* on the droplet.
+# It prints ONLY SHA-256 fingerprints, value lengths, and format classes
+# (jwt-like / sb-secret / opaque) — never a credential. It rotates nothing,
+# writes nothing, restarts nothing. The real bootstrap lives on main;
+# dispatch this file from its branch with confirmation=DIAGNOSE.
 
 name: Bootstrap RestylePro worker access
 
@@ -25,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Type BOOTSTRAP to run against the production droplet"
+        description: "Type DIAGNOSE to run the read-only credential fingerprint audit"
         required: true
         default: ""
 
@@ -44,16 +35,15 @@ env:
   SUPABASE_PROJECT_REF: kfapjdyythzyvnpdeghu
 
 jobs:
-  bootstrap:
-    if: inputs.confirmation == 'BOOTSTRAP'
+  diagnose:
+    if: inputs.confirmation == 'DIAGNOSE'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
     environment:
       name: designproai-production
     env:
       SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
-      GOOGLE_AI_API_KEY: ${{ secrets.DESIGNPRO_GOOGLE_AI_API_KEY }}
     steps:
       - name: Pin the droplet SSH identity
         shell: bash
@@ -76,38 +66,56 @@ jobs:
           echo "key_file=$key_file" >> "$GITHUB_ENV"
           echo "known_hosts=$known_hosts" >> "$GITHUB_ENV"
 
-      - name: Fetch worker credentials from the Supabase Management API
+      - name: Fingerprint the function-side credentials (Management API)
         shell: bash
         run: |
           set -Eeuo pipefail
           set +x
           umask 077
+          classify() {
+            local v="$1"
+            case "$v" in
+              eyJ*) echo "jwt-like" ;;
+              sb_secret_*) echo "sb-secret" ;;
+              sbp_*) echo "sbp-token" ;;
+              *) echo "opaque" ;;
+            esac
+          }
+          fp() { printf %s "$1" | sha256sum | cut -c1-16; }
           auth=(-H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN")
-          service_role="$(curl -fsS "${auth[@]}" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys" \
-            | jq -r '.[] | select(.name == "service_role") | .api_key')"
-          [[ -n $service_role && $service_role != null ]] || {
-            echo "service_role key not returned by the Management API" >&2; exit 41; }
-          echo "::add-mask::$service_role"
-          worker_secret="$(curl -fsS "${auth[@]}" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/secrets" \
-            | jq -r '.[] | select(.name == "WORKER_SECRET") | .value')"
-          [[ -n $worker_secret && $worker_secret != null ]] || {
-            echo "WORKER_SECRET is not among the project function secrets; the env file would break worker auth" >&2; exit 42; }
-          echo "::add-mask::$worker_secret"
-          env_file="$RUNNER_TEMP/designpro.env"
-          {
-            echo "SUPABASE_URL=https://$SUPABASE_PROJECT_REF.supabase.co"
-            echo "SUPABASE_SERVICE_ROLE_KEY=$service_role"
-            echo "WORKER_SECRET=$worker_secret"
-            echo "GOOGLE_AI_API_KEY=$GOOGLE_AI_API_KEY"
-            echo "DESIGNPRO_WORKER_HOST=os.designproai.com"
-            echo "PUBLIC_SITE_URL=https://designproai.com"
-            echo "DISABLE_REPLICATE=true"
-          } > "$env_file"
-          echo "env_file=$env_file" >> "$GITHUB_ENV"
 
-      - name: Bootstrap the droplet
+          echo "== project api-keys (what the platform injects as SUPABASE_SERVICE_ROLE_KEY comes from here) =="
+          keys_json="$(curl -fsS "${auth[@]}" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys")"
+          count=$(jq 'length' <<<"$keys_json")
+          echo "api-key entries: $count"
+          for i in $(seq 0 $((count - 1))); do
+            name=$(jq -r ".[$i].name" <<<"$keys_json")
+            val=$(jq -r ".[$i].api_key // empty" <<<"$keys_json")
+            [[ -n $val ]] && echo "::add-mask::$val"
+            echo "  name=$name class=$(classify "$val") len=${#val} sha256_16=$(fp "$val")"
+          done
+
+          echo ""
+          echo "== function secrets (the env the edge functions actually see) =="
+          secrets_json="$(curl -fsS "${auth[@]}" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/secrets")"
+          for n in WORKER_SECRET WORKER_URL; do
+            val=$(jq -r --arg n "$n" '.[] | select(.name == $n) | .value // empty' <<<"$secrets_json")
+            if [[ -z $val ]]; then
+              echo "  $n: NOT PRESENT in function secrets"
+              continue
+            fi
+            if [[ $n == WORKER_URL ]]; then
+              echo "  $n=$val"
+            else
+              echo "::add-mask::$val"
+              echo "  $n class=$(classify "$val") len=${#val} sha256_16=$(fp "$val")"
+            fi
+          done
+          echo ""
+          echo "all function secret NAMES (values not shown):"
+          jq -r '.[].name' <<<"$secrets_json" | sort | sed 's/^/  /'
+
+      - name: Fingerprint the droplet env (file + running containers)
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -118,60 +126,42 @@ jobs:
             "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           [[ "$(hostname)" == "$EXPECTED_HOSTNAME" ]] || { echo "hostname mismatch: on '$(hostname)'" >&2; exit 10; }
-          umask 077
-          # ROTATE, never reuse. The first minted key was displayed in a
-          # screenshot outside the server, and a manual attempt overwrote the
-          # pair on disk, so any existing key here is untrusted. Burn it,
-          # purge every authorization it ever had, and mint fresh.
-          install -d -m 700 /root/.ssh
-          touch /root/.ssh/authorized_keys
-          chmod 600 /root/.ssh/authorized_keys
-          if [[ -f /root/designpro_deploy.pub ]]; then
-            old_pub="$(awk '{print $2}' /root/designpro_deploy.pub 2>/dev/null || true)"
-            [[ -n $old_pub ]] && sed -i "\#$old_pub#d" /root/.ssh/authorized_keys
+          classify() {
+            local v="$1"
+            case "$v" in
+              eyJ*) echo "jwt-like" ;;
+              sb_secret_*) echo "sb-secret" ;;
+              *) echo "opaque" ;;
+            esac
+          }
+          fp() { printf %s "$1" | sha256sum | cut -c1-16; }
+          CONFIG=/opt/designproai/config/designpro.env
+          echo "== droplet env file: $CONFIG =="
+          if [[ ! -f $CONFIG ]]; then echo "MISSING"; else
+            echo "  mtime: $(stat -c %y "$CONFIG")"
+            for n in SUPABASE_SERVICE_ROLE_KEY WORKER_SECRET; do
+              val="$(grep -m1 "^${n}=" "$CONFIG" | cut -d= -f2- || true)"
+              if [[ -z $val ]]; then echo "  $n: NOT PRESENT"; else
+                echo "  $n class=$(classify "$val") len=${#val} sha256_16=$(fp "$val")"
+              fi
+            done
+            grep -m1 '^SUPABASE_URL=' "$CONFIG" | sed 's/^/  /' || true
+            grep -m1 '^DESIGNPRO_WORKER_HOST=' "$CONFIG" | sed 's/^/  /' || true
           fi
-          sed -i '/restylepro-deploy/d' /root/.ssh/authorized_keys
-          rm -f /root/designpro_deploy /root/designpro_deploy.pub
-          ssh-keygen -t ed25519 -f /root/designpro_deploy -N "" -C restylepro-deploy >/dev/null
-          cat /root/designpro_deploy.pub >> /root/.ssh/authorized_keys
-          command -v docker >/dev/null || { curl -fsSL https://get.docker.com | sh; }
-          docker compose version >/dev/null
-          install -d -m 700 /opt/designproai/config /opt/designproai/incoming
-          echo "droplet bootstrap complete"
+          echo ""
+          echo "== running containers =="
+          docker ps --format '{{.Names}} {{.Image}} up:{{.RunningFor}}'
+          echo ""
+          for c in $(docker ps --format '{{.Names}}' | grep -E 'worker|poller' || true); do
+            echo "== container $c env fingerprints =="
+            for n in SUPABASE_SERVICE_ROLE_KEY WORKER_SECRET DESIGNPRO_WORKER_ID; do
+              val="$(docker exec "$c" sh -c "printf %s \"\$$n\"" 2>/dev/null || true)"
+              if [[ -z $val ]]; then echo "  $n: EMPTY/UNSET"; continue; fi
+              if [[ $n == DESIGNPRO_WORKER_ID ]]; then echo "  $n=$val"; else
+                echo "  $n class=$(classify "$val") len=${#val} sha256_16=$(fp "$val")"
+              fi
+            done
+          done
+          echo ""
+          echo "read-only diagnosis complete — nothing was modified"
           REMOTE
-          scp "${ssh_args[@]}" "$env_file" "root@$TARGET_HOST:/opt/designproai/config/designpro.env"
-          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "chmod 600 /opt/designproai/config/designpro.env && wc -l < /opt/designproai/config/designpro.env"
-
-      - name: Print the values to paste into restylepro-os secrets
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +x
-          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
-          echo ""
-          echo "Add these four repository secrets at:"
-          echo "  https://github.com/Tdill1980/restylepro-os/settings/secrets/actions"
-          echo ""
-          echo "=============== DESIGNPRO_DO_SSH_KEY (ONE long line - copy it whole) ==============="
-          # base64 of the whole key file, single line. GitHub masks any log line
-          # matching a stored multiline secret, and every OpenSSH private key
-          # shares identical BEGIN/END/first-content lines -- so printing the key
-          # verbatim got its head and tail censored to *** and made it unusable.
-          # An encoded single line shares no line with any stored secret, so it
-          # survives. The restylepro-os deploy accepts this form directly.
-          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "base64 -w0 /root/designpro_deploy && echo"
-          echo "========================================= END =========================================="
-          echo ""
-          echo "=============== DESIGNPRO_DO_KNOWN_HOSTS (copy everything between the lines) ==========="
-          ssh-keyscan -H "$TARGET_HOST" 2>/dev/null
-          echo "========================================= END =========================================="
-          echo ""
-          echo "=============== DESIGNPRO_DO_HOST ==============="
-          echo "$TARGET_HOST"
-          echo "=============== DESIGNPRO_DO_USER ==============="
-          echo "root"
-          echo ""
-          echo "This private key was minted by this job for the restylepro-os deploy only."
-          echo "To rotate it: delete /root/designpro_deploy* on the droplet and re-run this workflow."
