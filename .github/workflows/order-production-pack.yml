@@ -62,7 +62,7 @@ jobs:
       PANELIZER_JOB_ID: ${{ inputs.panelizer_job_id }}
       ENTICE_PACK_ID: ${{ inputs.entice_pack_id }}
     steps:
-      - name: Fetch the service key from the Supabase Management API
+      - name: Fetch and PROVE a working service key before ordering
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -74,19 +74,40 @@ jobs:
             [[ $ENTICE_PACK_ID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || {
               echo "entice_pack_id must be a UUID when provided; got '$ENTICE_PACK_ID'" >&2; exit 2; }
           fi
-          service_role="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys" \
-            | jq -r '.[] | select(.name == "service_role") | .api_key')"
-          [[ -n $service_role && $service_role != null ]] || {
-            echo "service_role key not returned by the Management API" >&2; exit 41; }
-          echo "::add-mask::$service_role"
-          # The functions gateway rejects a bearer-only request with 401
-          # "Authentication required" before the facade runs; supabase-js
-          # always sends BOTH apikey and Authorization, so this job does too.
-          # The prefix identifies the key format (legacy JWT = "eyJ...",
-          # new secret = "sb_secret_...") without revealing the key.
-          echo "key format prefix: ${service_role:0:10}"
-          echo "SERVICE_ROLE=$service_role" >> "$GITHUB_ENV"
+          base_url="https://$SUPABASE_PROJECT_REF.supabase.co"
+          keys_json="$RUNNER_TEMP/api-keys.json"
+          # Run 2 proved the api-keys "service_role" legacy JWT is NOT the key
+          # run-production-flow's env holds (it resolved the bearer as
+          # anonymous -> 401 "Authentication required"). So: inventory every
+          # key the Management API will reveal, then PROVE one against
+          # run-production-flow itself (mode:get_packages is public; the
+          # decisive probe is a designpro_job status call, which requires the
+          # service principal) before spending the order.
+          curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys?reveal=true" \
+            > "$keys_json"
+          echo "--- key inventory (name/type/prefix/length only) ---"
+          jq -r '.[] | "\(.name) type=\(.type // "legacy") prefix=\(.api_key[0:10]) len=\(.api_key | length)"' "$keys_json"
+          mapfile -t candidates < <(jq -r '.[] | select(.type != "publishable" and .name != "anon") | .api_key' "$keys_json")
+          working=""
+          for key in "${candidates[@]}"; do
+            [[ -n $key && $key != null ]] || continue
+            echo "::add-mask::$key"
+            probe=$(curl -sS -o "$RUNNER_TEMP/probe.json" -w '%{http_code}' -X POST \
+              "$base_url/functions/v1/run-production-flow" \
+              -H "Authorization: Bearer $key" -H "apikey: $key" \
+              -H "Content-Type: application/json" \
+              -d '{"mode":"designpro_job","action":"status","productionJobId":"00000000-0000-4000-8000-000000000000"}')
+            body_err=$(jq -r '.error // ""' "$RUNNER_TEMP/probe.json" 2>/dev/null || true)
+            echo "probe prefix=${key:0:10} -> HTTP $probe (${body_err:0:60})"
+            # A service principal reaches the job lookup and gets 404
+            # "Production job not found" for a nonexistent id; an anonymous
+            # or user principal gets 401/403 instead.
+            if [[ $probe == 404 ]]; then working="$key"; break; fi
+          done
+          [[ -n $working ]] || { echo "no candidate key was accepted as the service principal by run-production-flow" >&2; exit 42; }
+          echo "service principal PROVEN with key prefix ${working:0:10}"
+          echo "SERVICE_ROLE=$working" >> "$GITHUB_ENV"
 
       - name: Submit the order through the sanctioned facade
         shell: bash
