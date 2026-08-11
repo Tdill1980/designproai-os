@@ -84,36 +84,47 @@ jobs:
           fp() { printf %s "$1" | sha256sum | cut -c1-16; }
           auth=(-H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN")
 
-          echo "== project api-keys (what the platform injects as SUPABASE_SERVICE_ROLE_KEY comes from here) =="
+          fpfull() { printf %s "$1" | sha256sum | awk '{print $1}'; }
+
+          # KEY DISCOVERY (proved by run #4 of this workflow): GET /v1/projects/
+          # {ref}/secrets returns the SHA-256 DIGEST of each value, not the value
+          # (the returned WORKER_URL "value" equals sha256 of the URL string).
+          # So digests are directly printable, and comparing sha256(api_key)
+          # against a /secrets digest identifies exactly which key the function
+          # runtime injects under each SUPABASE_* name.
+          echo "== project api-keys: full sha256 of each REAL value (digest only, never the value) =="
           keys_json="$(curl -fsS "${auth[@]}" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys")"
           count=$(jq 'length' <<<"$keys_json")
-          echo "api-key entries: $count"
+          declare -A KEYFP
           for i in $(seq 0 $((count - 1))); do
             name=$(jq -r ".[$i].name" <<<"$keys_json")
+            ktype=$(jq -r ".[$i].type // \"?\"" <<<"$keys_json")
             val=$(jq -r ".[$i].api_key // empty" <<<"$keys_json")
             [[ -n $val ]] && echo "::add-mask::$val"
-            echo "  name=$name class=$(classify "$val") len=${#val} sha256_16=$(fp "$val")"
+            d=$(fpfull "$val")
+            KEYFP["$name/$ktype/$i"]="$d"
+            echo "  name=$name type=$ktype class=$(classify "$val") len=${#val} sha256=$d"
           done
 
           echo ""
-          echo "== function secrets (the env the edge functions actually see) =="
+          echo "== /secrets digests (what the function env holds, as sha256) =="
           secrets_json="$(curl -fsS "${auth[@]}" "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/secrets")"
-          for n in WORKER_SECRET WORKER_URL; do
-            val=$(jq -r --arg n "$n" '.[] | select(.name == $n) | .value // empty' <<<"$secrets_json")
-            if [[ -z $val ]]; then
-              echo "  $n: NOT PRESENT in function secrets"
-              continue
-            fi
-            if [[ $n == WORKER_URL ]]; then
-              echo "  $n=$val"
-            else
-              echo "::add-mask::$val"
-              echo "  $n class=$(classify "$val") len=${#val} sha256_16=$(fp "$val")"
+          for n in SUPABASE_SERVICE_ROLE_KEY SUPABASE_ANON_KEY WORKER_SECRET WORKER_URL; do
+            dg=$(jq -r --arg n "$n" '.[] | select(.name == $n) | .value // empty' <<<"$secrets_json")
+            echo "  $n digest=$dg"
+          done
+
+          echo ""
+          echo "== verdict: which real key does the function env SUPABASE_SERVICE_ROLE_KEY correspond to? =="
+          srk_digest=$(jq -r '.[] | select(.name == "SUPABASE_SERVICE_ROLE_KEY") | .value // empty' <<<"$secrets_json")
+          matched=""
+          for k in "${!KEYFP[@]}"; do
+            if [[ "${KEYFP[$k]}" == "$srk_digest" ]]; then
+              matched="$k"
+              echo "  MATCH: function-env SUPABASE_SERVICE_ROLE_KEY == api-key [$k]"
             fi
           done
-          echo ""
-          echo "all function secret NAMES (values not shown):"
-          jq -r '.[].name' <<<"$secrets_json" | sort | sed 's/^/  /'
+          [[ -z $matched ]] && echo "  NO api-key matches the function-env SUPABASE_SERVICE_ROLE_KEY digest"
 
       - name: Fingerprint the droplet env (file + running containers)
         shell: bash
