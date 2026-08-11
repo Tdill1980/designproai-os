@@ -10,12 +10,18 @@ correct the file.
 
 ## The goal
 
-Every DesignPro application runs on the owner's own server (`designproai-prod-sfo3`)
-under her own domain (`designproai.com`), independent of Railway and Vercel.
+DesignPro stands **completely on its own** — its own repo, its own server, its
+own domain, its own data. Nothing rented: no Railway, no Vercel, no managed
+Supabase. The owner restated this on 2026-08-11 when an earlier draft of this
+file proposed leaving the database behind; she was clear, and the scope is
+everything.
+
 Today DesignPro is a subset of a much larger mixed repo (`restylepro-os`, which
 also holds WePrintWraps marketing, Canva/GBP/Klaviyo integrations, Behind the
-Install, etc.). The end state is the DesignPro half living in `designproai-os`,
-deployed to the droplet.
+Install, etc.), its front end is on Vercel, and its data is on managed Supabase.
+The end state is the DesignPro half living in `designproai-os`, running on
+`designproai-prod-sfo3` at `designproai.com`, with its own Postgres and storage
+on that box and proven backups off it.
 
 ## Verified live (2026-08-11, measured)
 
@@ -77,12 +83,18 @@ deployed to the droplet.
    listed paths require owner branch `claude/call7-live` and commit trailers
    `Orchestration-Owner: Codex` / `Orchestration-Change: <desc>`; enforced by
    `tests/orchestration-freeze-lock.test.ts`. Check before editing.
-5. **Supabase is managed and should stay managed.** Moving Postgres, auth,
-   storage and 463 edge functions onto a single 16 GB droplet trades a managed,
-   backed-up service for a single point of failure. The honest scope of "own
-   server" is: **app + worker on the droplet, data stays on Supabase.** Anyone
-   proposing otherwise should say so explicitly and get the owner's decision
-   first — do not migrate the database silently.
+5. **Supabase moves too — the owner decided this explicitly (2026-08-11).**
+   "On its own server" means *everything*: Postgres, storage, and the edge
+   functions, not just the app and worker. Self-hosted Supabase runs as a Docker
+   stack and 16 GB is enough for this workload, so this is a real migration, not
+   a compromise. What genuinely changes hands is **durability**: managed Supabase
+   takes backups for her, and self-hosted does not until someone builds it. So
+   automated off-droplet backups (pg_dump + storage sync to DO Spaces, restore
+   drill proven, not just scheduled) are **part of this phase, not a follow-up** —
+   the migration is not done until a restore has been demonstrated. The 463 edge
+   functions are the long tail: most are not DesignPro, so inventory them and
+   port only what DesignPro actually calls. Do not silently leave the database
+   behind and call the migration finished.
 
 ## Suggested order
 
@@ -107,9 +119,17 @@ studio surfaces (RevisionStudio, PanelPro Studio, DesignPanelPro) and the
 design-call pipeline are the payload. Keep `restylepro-os` running until each
 slice is proven on the droplet — no big-bang cutover.
 
-**Phase 4 — retire the rented infrastructure.**
-Only after Phases 1–3 are proven: point the studio domain at the droplet, then
-kill Railway, then decide about Vercel. Get the owner's explicit go for each.
+**Phase 4 — bring the data home.**
+Stand up self-hosted Supabase on the droplet (Postgres + storage + the DesignPro
+edge functions), migrate the data, and cut over. Ship automated off-droplet
+backups **and prove a restore** in this same phase — that is the one capability
+the managed service was providing for free. Inventory the 463 edge functions
+first and port only the ones DesignPro calls.
+
+**Phase 5 — retire the rented infrastructure.**
+Only after Phases 1–4 are proven: kill Railway, then Vercel, then managed
+Supabase. Get the owner's explicit go for each, and keep the last known-good
+backup before each teardown.
 
 ## Open build items carried forward
 
