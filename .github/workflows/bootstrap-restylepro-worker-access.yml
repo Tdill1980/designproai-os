@@ -165,6 +165,85 @@ jobs:
           echo "after this rotation, update WORKER_SECRET in the Railway dashboard to match."
           REMOTE
 
+  # Railway's broken-credential claimants poll the same 5s interval as the
+  # fixed droplet replicas and keep winning the claim race, burning each
+  # resumed proof.build attempt with an instant 401. This job removes the
+  # race: resume the run and fire the droplet's own /workflow/entice/drain in
+  # the same second, ON the droplet, so a digitalocean replica claims first.
+  prove-droplet:
+    if: inputs.confirmation == 'PROVE-DROPLET'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+      RUN_ID: f07eb5ee-a5e2-4516-b983-982c91cde12b
+      ACTOR_ID: 61cc6c1c-554c-440c-8e07-a64469f1f4eb
+    steps:
+      - name: Pin the droplet SSH identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_key"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          observed_key="$(ssh-keygen -lf "$key_file" -E sha256 | awk '{print $2}')"
+          [[ $observed_key == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || {
+            echo "automation key fingerprint mismatch: $observed_key" >&2; exit 31; }
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts"
+          [[ -s $known_hosts ]] || { echo "host-key scan returned nothing for $TARGET_HOST" >&2; exit 33; }
+          mapfile -t observed < <(ssh-keygen -lf "$known_hosts" -E sha256 | awk '{print $2}' | sort -u)
+          [[ ${#observed[@]} -eq 1 && ${observed[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || {
+            echo "host fingerprint mismatch: ${observed[*]}" >&2; exit 34; }
+          echo "key_file=$key_file" >> "$GITHUB_ENV"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_ENV"
+
+      - name: Resume the run and drain the droplet claimant in the same second
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' RUN_ID='$RUN_ID' ACTOR_ID='$ACTOR_ID' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          [[ "$(hostname)" == "$EXPECTED_HOSTNAME" ]] || { echo "hostname mismatch: on '$(hostname)'" >&2; exit 10; }
+          umask 077
+          CONFIG=/opt/designproai/config/designpro.env
+          SERVICE_KEY="$(grep -m1 '^SUPABASE_SERVICE_ROLE_KEY=' "$CONFIG" | cut -d= -f2-)"
+          WORKER_SECRET="$(grep -m1 '^WORKER_SECRET=' "$CONFIG" | cut -d= -f2-)"
+          SUPABASE_URL="$(grep -m1 '^SUPABASE_URL=' "$CONFIG" | cut -d= -f2-)"
+          [[ -n $SERVICE_KEY && -n $WORKER_SECRET && -n $SUPABASE_URL ]] || { echo "env incomplete" >&2; exit 11; }
+          echo "resuming run $RUN_ID via PostgREST (droplet service key)…"
+          resume=$(curl -sS -X POST "$SUPABASE_URL/rest/v1/rpc/resume_designpro_entice_pack" \
+            -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"p_run_id\":\"$RUN_ID\",\"p_actor\":\"$ACTOR_ID\",\"p_retry_failed\":true}")
+          echo "resume result: $resume"
+          echo "$resume" | grep -q 'resumedStages' || { echo "resume did not succeed" >&2; exit 12; }
+          echo "draining droplet entice claimant on loopback 3101…"
+          curl -sS -X POST -H "Authorization: Bearer $WORKER_SECRET" \
+            "http://127.0.0.1:3101/workflow/entice/drain"
+          echo ""
+          for i in $(seq 1 6); do
+            sleep 10
+            state=$(curl -sS "$SUPABASE_URL/rest/v1/workflow_stage_runs?run_id=eq.$RUN_ID&stage_key=eq.proof.build&select=status,attempt,lease_owner,error_code,error_message" \
+              -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY")
+            echo "t+$((i*10))s proof.build: $state"
+          done
+          echo ""
+          echo "== worker log lines from the last 3 minutes =="
+          for c in designproai-worker-a-1 designproai-worker-b-1; do
+            echo "-- $c --"
+            docker logs --since 3m "$c" 2>&1 | grep -iE 'proof|claim|401|Authentication|entice|stage' | tail -n 25 || true
+          done
+          REMOTE
+
   diagnose:
     if: inputs.confirmation == 'DIAGNOSE'
     runs-on: ubuntu-latest
