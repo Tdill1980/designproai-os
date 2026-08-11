@@ -172,16 +172,71 @@ to the **paid source-bound** path (`activate-print-worker` with a frozen Call-7
 source). So the proof-of-done "TIFF + PNG + **EPS** per side" is only fully
 reachable via the paid path, not the admin "Build Print Files" trigger.
 
-### What remains (needs a human + an owner deploy decision)
+### Both blockers FIXED, DEPLOYED, and PROVEN (2026-08-11, Trish authorized "fix it")
 
-1. Deploy the `stampPrintWorker` fix to the droplet worker (rebuilds both
-   replicas via `deploy-designpro-digitalocean.yml`, main-only).
-2. Re-run the per-side build → stamp lands → `pending_qc` → auto-ZIP.
-3. **STEP 3 is human-only:** Trish works the six-box `ProductionPackQCCard`
-   checklist and stamps. Nothing ships without her.
-4. STEP 4: `deploy-to-wrapbox` copies to `wrap-files/wrapbox/{order}/`, upserts
-   `production_packs` (`pack_url` = ZIP), emails with `expiresAt`, sets
-   `panelizer_jobs.status = "ready"`; verify `/productionflow` + WrapBox.
+Fix shipped in restylepro-os **PR #4265** (frozen path `worker/index.js`, so it
+rode the owner branch `claude/call7-live` with the `Orchestration-Owner: Codex`
+/ `Orchestration-Change:` trailers; lock-suite's freeze gate + all 41 steps
+green), merged to main `22022e9f`, and deployed to the droplet via
+`deploy-designpro-digitalocean.yml` run #39. **Verified live:**
+`worker.designproai.com/health` → commit `22022e9f`, both replicas ready.
+
+1. **Stamp CAS** — replaced `.eq("concept_json", <object>)` with a scalar
+   `.eq("updated_at", row.updated_at)` optimistic lock (the
+   `panelizer_jobs_updated_at` trigger bumps it on every write, so it is a
+   correct fence and filters cleanly).
+2. **EPS on the native admin path** — the native build has the exact pixels, so
+   it now takes the same deterministic raster EPS (`encodeDeterministicRasterEps`,
+   no AI) as the paid path.
+
+**Proof (queried in prod, job `603b8392` / order RP-101092):** all **6 sides**
+(driver_side, passenger_side, hood, roof, front, rear) now stamp into
+`concept_json.print_worker.panels`, each with `tiffPath` + `pngPath` + `epsPath`
++ `completed_at`. Storage holds **6 × 1500-DPI CMYK TIFF + 6 × full-res PNG +
+6 × EPS = 661 MB** under `production-packs/07e934b4-…/RP-101092/`. Every file is
+a native upscale of the existing entice master (`proof-tiles/e207b170-…/masters/`)
+— no re-slice, no regenerate. Before the fix, `concept_json` stayed `{}`; after,
+the stamp lands every time.
+
+**Build gotcha (worked around, worth recording):** the `studioboard-build-print`
+edge function has a 150 s idle timeout. Firing all six sides at once saturated
+the worker's 2 panel slots, so the late-starting sides were mid-flight when the
+edge disconnected and were aborted under load — only the sides that finished
+under 150 s stamped. Firing the large sides **one at a time** (each gets a slot
+immediately) stamps every one. The board's own `buildPrintFiles` already loops
+sides sequentially and polls storage after a timeout, so real board usage is
+unaffected; this only bit the parallel manual driver.
+
+### What remains — the QC card is a PAID-workflow construct, not reachable from the admin build
+
+The stamp (the blocker Trish named) is fixed and proven. But driving THIS job
+onto the human `ProductionPackQCCard` at a *stampable* state is a separate,
+payment-gated path, confirmed in code:
+
+- The QC card's stamp button gate is `readyToStamp = … && pw.durableAwaitingQc`
+  (`ProductionPackQCCard.tsx:296`), where `durableAwaitingQc` means the **durable
+  production-pack workflow** (`run-production-flow`) is in `awaiting_admin_qc` /
+  `approval_required`.
+- That durable job is created and advanced only by the paid path
+  (`run-production-flow` `payment_confirmed` → `activate-print-worker` → panels
+  complete → `awaiting_admin_qc`), and it is bound to a **verified paid revision
+  pack** (`paid_pack_binding_invalid` / `paid_pack_pin_mismatch` guards).
+- The admin "Build Print Files" trigger (`studioboard-build-print`) produces and
+  stamps the print FILES only; it does not set the `activated` manifest, the
+  `zip`, `pending_qc`, or the durable QC job. So CLAUDE.md's "Build Print Files →
+  job status pending_qc" is aspirational for the admin path — the wiring lives on
+  the paid workflow. The auto-ZIP (`packageOrderPack`) likewise needs the
+  `activated` manifest and is skipped on the admin path ("no activation
+  manifest"); `/package-pack` needs the worker secret, held only by
+  `activate-print-worker` (paid) and `deploy-to-wrapbox` (delivery, post-QC).
+
+**So the honest state:** the print-file production is fixed and complete for the
+candidate job; reaching the live human QC card + ZIP + WrapBox requires the
+job to go through the durable **paid** production-pack flow (a real order with a
+verified pack pin), which the GATING RULE reserves for post-payment and which
+must not be hand-forged. That is a product/payment decision for Trish, not a
+worker bug — and it was not something the admin proving trigger could ever
+reach on its own.
 
 ## Rollback
 
