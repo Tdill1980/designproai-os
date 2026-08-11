@@ -304,5 +304,13 @@ jobs:
             done
           done
           echo ""
+          echo "== last 20 min of worker logs: entice claim / proof / auth lines =="
+          for c in $(docker ps --format '{{.Names}}' | grep -E 'worker' || true); do
+            echo "-- $c --"
+            docker logs --since 20m "$c" 2>&1 \
+              | grep -iE 'proof|claim|401|Authentication|entice|f07eb5ee|stage' \
+              | tail -n 40 || echo "  (no matching lines)"
+          done
+          echo ""
           echo "read-only diagnosis complete — nothing was modified"
           REMOTE
