@@ -383,12 +383,12 @@ jobs:
             done
           done
           echo ""
-          echo "== last 20 min of worker logs: entice claim / proof / auth lines =="
+          echo "== last 30 min of worker logs: process-panel / stamp / tiff / package =="
           for c in $(docker ps --format '{{.Names}}' | grep -E 'worker' || true); do
             echo "-- $c --"
-            docker logs --since 20m "$c" 2>&1 \
-              | grep -iE 'proof|claim|401|Authentication|entice|f07eb5ee|stage' \
-              | tail -n 40 || echo "  (no matching lines)"
+            docker logs --since 30m "$c" 2>&1 \
+              | grep -iE 'process-panel|driver_side|panelKey|stamp|TIFF|EPS|PNG|package|pending_qc|603b8392|RP-101092|WORKER|error|fail' \
+              | tail -n 60 || echo "  (no matching lines)"
           done
           echo ""
           echo "read-only diagnosis complete — nothing was modified"
