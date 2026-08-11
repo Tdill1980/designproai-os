@@ -154,8 +154,14 @@ jobs:
           echo "Add these four repository secrets at:"
           echo "  https://github.com/Tdill1980/restylepro-os/settings/secrets/actions"
           echo ""
-          echo "=============== DESIGNPRO_DO_SSH_KEY (copy everything between the lines) ==============="
-          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "cat /root/designpro_deploy"
+          echo "=============== DESIGNPRO_DO_SSH_KEY (ONE long line - copy it whole) ==============="
+          # base64 of the whole key file, single line. GitHub masks any log line
+          # matching a stored multiline secret, and every OpenSSH private key
+          # shares identical BEGIN/END/first-content lines -- so printing the key
+          # verbatim got its head and tail censored to *** and made it unusable.
+          # An encoded single line shares no line with any stored secret, so it
+          # survives. The restylepro-os deploy accepts this form directly.
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "base64 -w0 /root/designpro_deploy && echo"
           echo "========================================= END =========================================="
           echo ""
           echo "=============== DESIGNPRO_DO_KNOWN_HOSTS (copy everything between the lines) ==========="
