@@ -1,0 +1,147 @@
+# Order Production Pack — the droplet upscale proof run.
+#
+# Phase 1 of the server migration (docs/DESIGNPRO_SERVER_MIGRATION_BRIEF.md):
+# designpro.production_pack has run exactly once ever and failed on 2026-07-29
+# (`pinned_atomic_pack_lookup_failed` — the order was placed on a design whose
+# Entice Pack was never committed, so the pinned pack id was literally
+# "undefined"). The droplet was bought to make large upscales possible, and
+# this job is how the owner proves it: submit a real Order Production Pack for
+# a 6/6-eligible pack, then follow the durable workflow while the droplet
+# worker (worker.designproai.com) runs the hi-res upscale.
+#
+# The job never handles key material by hand: the service_role key is fetched
+# from the Supabase Management API at run time, exactly as
+# bootstrap-restylepro-worker-access.yml does, and masked.
+#
+# It submits through the sanctioned facade (designpro-file-output-api ->
+# run-production-flow -> enqueue_designpro_production_pack_v2), the same path
+# the Order Production Pack button uses — not a side channel.
+
+name: Order Production Pack (droplet proof)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Protected production order"
+        required: true
+        type: choice
+        default: DO_NOT_ORDER
+        options:
+          - DO_NOT_ORDER
+          - ORDER_PRODUCTION_PACK
+      panelizer_job_id:
+        description: "Panelizer job UUID to order (must have an active verified Entice Pack)"
+        required: true
+        type: string
+      entice_pack_id:
+        description: "Optional: pin the exact Entice Pack UUID (else newest active is used)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-order-production-pack
+  cancel-in-progress: false
+
+env:
+  SUPABASE_PROJECT_REF: kfapjdyythzyvnpdeghu
+
+jobs:
+  order:
+    if: inputs.confirmation == 'ORDER_PRODUCTION_PACK'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: designproai-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+      PANELIZER_JOB_ID: ${{ inputs.panelizer_job_id }}
+      ENTICE_PACK_ID: ${{ inputs.entice_pack_id }}
+    steps:
+      - name: Fetch the service key from the Supabase Management API
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          [[ $PANELIZER_JOB_ID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || {
+            echo "panelizer_job_id must be a UUID; got '$PANELIZER_JOB_ID'" >&2; exit 2; }
+          if [[ -n $ENTICE_PACK_ID ]]; then
+            [[ $ENTICE_PACK_ID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || {
+              echo "entice_pack_id must be a UUID when provided; got '$ENTICE_PACK_ID'" >&2; exit 2; }
+          fi
+          service_role="$(curl -fsS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/api-keys" \
+            | jq -r '.[] | select(.name == "service_role") | .api_key')"
+          [[ -n $service_role && $service_role != null ]] || {
+            echo "service_role key not returned by the Management API" >&2; exit 41; }
+          echo "::add-mask::$service_role"
+          echo "SERVICE_ROLE=$service_role" >> "$GITHUB_ENV"
+
+      - name: Submit the order through the sanctioned facade
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          base="https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/designpro-file-output-api"
+          body=$(jq -n --arg job "$PANELIZER_JOB_ID" --arg pack "$ENTICE_PACK_ID" \
+            '{action:"start", jobId:$job} + (if $pack != "" then {enticePackId:$pack} else {} end)')
+          echo "POST action=start jobId=$PANELIZER_JOB_ID enticePackId=${ENTICE_PACK_ID:-<newest active>}"
+          code=$(curl -sS -o /tmp/submit.json -w '%{http_code}' -X POST "$base" \
+            -H "Authorization: Bearer $SERVICE_ROLE" \
+            -H "Content-Type: application/json" \
+            -d "$body")
+          echo "HTTP $code"
+          jq . /tmp/submit.json
+          [[ $code == 200 ]] || { echo "submit refused" >&2; exit 50; }
+          production_job_id=$(jq -r '.productionJob.id // .productionJobId // empty' /tmp/submit.json)
+          workflow_run_id=$(jq -r '.workflowRun.id // .workflowRunId // empty' /tmp/submit.json)
+          [[ -n $production_job_id ]] || { echo "no productionJob id in response" >&2; exit 51; }
+          echo "PRODUCTION_JOB_ID=$production_job_id" >> "$GITHUB_ENV"
+          echo "production job : $production_job_id"
+          echo "workflow run   : ${workflow_run_id:-<pending>}"
+
+      - name: Follow the workflow until the upscale is proven (or it fails)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          base="https://$SUPABASE_PROJECT_REF.supabase.co/functions/v1/designpro-file-output-api"
+          # Success for THIS proof = the droplet worker built and verified the
+          # hi-res outputs, i.e. activate_print_worker AND verify_print_outputs
+          # completed and the run is parked at await_admin_qc (human QC is a
+          # person's job, not this workflow's). Failure = workflow failed.
+          for i in $(seq 1 120); do
+            sleep 20
+            code=$(curl -sS -o /tmp/status.json -w '%{http_code}' -X POST "$base" \
+              -H "Authorization: Bearer $SERVICE_ROLE" \
+              -H "Content-Type: application/json" \
+              -d "{\"action\":\"status\",\"productionJobId\":\"$PRODUCTION_JOB_ID\"}")
+            if [[ $code != 200 ]]; then
+              echo "[poll $i] status HTTP $code"; jq -c . /tmp/status.json || cat /tmp/status.json
+              continue
+            fi
+            wf_status=$(jq -r '.workflowRun.workflow_status // "none"' /tmp/status.json)
+            summary=$(jq -r '[.stages[] | "\(.stage_key)=\(.status)\(if .error_code then "(" + .error_code + ")" else "" end)"] | join(" ")' /tmp/status.json)
+            echo "[poll $i] workflow=$wf_status | $summary"
+            if [[ $wf_status == "failed" ]]; then
+              echo "--- failed stage detail ---"
+              jq '[.stages[] | select(.status=="failed") | {stage_key, error_code, error_message, error_details}]' /tmp/status.json
+              exit 60
+            fi
+            upscale_done=$(jq -r '[.stages[] | select(.stage_key=="activate_print_worker" or .stage_key=="verify_print_outputs") | select(.status=="completed")] | length' /tmp/status.json)
+            if [[ $wf_status == "completed" || $upscale_done == 2 ]]; then
+              echo ""
+              echo "=== UPSCALE PROVEN ==="
+              jq '{workflow: .workflowRun.workflow_status, job_state: .productionJob.state, stages: [.stages[] | {stage_key, status, started_at, completed_at}]}' /tmp/status.json
+              exit 0
+            fi
+          done
+          echo "workflow did not reach verified print outputs within 40 minutes" >&2
+          echo "--- last status ---"
+          jq '{workflow: .workflowRun.workflow_status, stages: [.stages[] | {stage_key, status, error_code, wait_reason, deferred_count}]}' /tmp/status.json
+          exit 61
