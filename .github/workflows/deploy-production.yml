@@ -271,13 +271,13 @@ jobs:
           test ! -e /opt/restylepro
           docker info >/dev/null
           docker compose version >/dev/null
-          mapfile -t project_services < <(docker ps -a --filter label=com.docker.compose.project=designproai --format '{{.Label "com.docker.compose.service"}}' | sort)
+          mapfile -t project_services < <(docker ps -a --filter label=com.docker.compose.project=designproai-app --format '{{.Label "com.docker.compose.service"}}' | sort)
           test "${#project_services[@]}" -le 3
           test "$(printf '%s\n' "${project_services[@]}" | sed '/^$/d' | sort -u | wc -l)" -eq "${#project_services[@]}"
           for service in "${project_services[@]}"; do
             case "$service" in runtime-1|runtime-2|gateway) ;; *) echo "Unexpected DesignPro container: $service" >&2; exit 20 ;; esac
           done
-          test "$(docker volume ls --filter label=com.docker.compose.project=designproai -q | wc -l)" -eq 0
+          test "$(docker volume ls --filter label=com.docker.compose.project=designproai-app -q | wc -l)" -eq 0
           current=$(readlink -f /opt/designproai/current 2>/dev/null || true)
           if [[ -e /opt/designproai/releases/$EXPECTED_SHA ]] && [[ $current != "/opt/designproai/releases/$EXPECTED_SHA" ]]; then
             echo "Exact immutable release exists but is not current; refusing duplicate deployment" >&2
