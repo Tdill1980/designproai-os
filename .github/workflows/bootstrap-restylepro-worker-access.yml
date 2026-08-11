@@ -109,15 +109,26 @@ jobs:
 
           # 2) Droplet side: swap the env line, recreate the replicas with the
           #    exact compose invocation deploy.sh uses, wait for health.
+          #    The secret travels in a root-only temp file, NOT on bash -s
+          #    stdin: run #6 proved the heredoc script IS stdin there, so a
+          #    piped secret gets swallowed and `read` eats a script line
+          #    instead — which skipped the length guard and wrote that line
+          #    into the env file. This pass also repairs that damage: the awk
+          #    below replaces the whole WORKER_SECRET line whatever it holds.
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
           printf '%s\n' "$new_secret" | ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' bash -s" <<'REMOTE'
+            "umask 077 && cat > /root/.designpro_ws_new && chmod 600 /root/.designpro_ws_new"
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXPECTED_DIGEST='$new_digest' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           [[ "$(hostname)" == "$EXPECTED_HOSTNAME" ]] || { echo "hostname mismatch: on '$(hostname)'" >&2; exit 10; }
           umask 077
-          IFS= read -r NEW_SECRET
-          [[ ${#NEW_SECRET} -eq 64 ]] || { echo "did not receive a 64-char secret on stdin" >&2; exit 11; }
+          NEW_SECRET="$(head -n1 /root/.designpro_ws_new)"
+          rm -f /root/.designpro_ws_new
+          [[ ${#NEW_SECRET} -eq 64 ]] || { echo "secret file did not hold a 64-char secret" >&2; exit 11; }
+          observed_digest="$(printf %s "$NEW_SECRET" | sha256sum | awk '{print $1}')"
+          [[ $observed_digest == "$EXPECTED_DIGEST" ]] || { echo "received secret digest $observed_digest != expected $EXPECTED_DIGEST" >&2; exit 15; }
           ROOT=/opt/designproai
           CONFIG="$ROOT/config/designpro.env"
           RELEASE="$(readlink -f "$ROOT/current")"
@@ -129,7 +140,9 @@ jobs:
             "$CONFIG" > "$tmp"
           chmod 600 "$tmp"
           mv "$tmp" "$CONFIG"
-          echo "droplet env updated; WORKER_SECRET sha256: $(grep -m1 '^WORKER_SECRET=' "$CONFIG" | cut -d= -f2- | tr -d '\n' | sha256sum | awk '{print $1}')"
+          file_digest="$(grep -m1 '^WORKER_SECRET=' "$CONFIG" | cut -d= -f2- | tr -d '\n' | sha256sum | awk '{print $1}')"
+          echo "droplet env updated; WORKER_SECRET sha256: $file_digest"
+          [[ $file_digest == "$EXPECTED_DIGEST" ]] || { echo "env file digest does not match the minted secret; aborting before compose" >&2; exit 16; }
           export GIT_SHA="$SHA"
           export DESIGNPRO_ENV_FILE="$CONFIG"
           docker compose --project-name designproai --env-file "$CONFIG" \
