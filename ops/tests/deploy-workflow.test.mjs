@@ -172,12 +172,82 @@ test("dark deployment requires only its existing provider secrets and explicitly
   assert.match(source, /::add-mask::\$service_key/);
   assert.match(configure, /DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false/);
   assert.doesNotMatch(configure, /RESEND_API_KEY|RESEND_FROM|RP_|WPW_/);
-  assert.match(workflow, /printf '%s\\n%s\\n'/);
+  assert.match(workflow, /printf '%s\\n%s\\n%s\\n'/);
   assert.doesNotMatch(source, /supabase\s+(?:db|migration)|db\s+(?:push|reset)|APPLY_DESIGNPRO_PRODUCTION/);
   assert.match(remote, /runtime-1/);
   assert.match(remote, /runtime-2/);
   assert.match(remote, /gateway/);
   assert.match(remote, /docker volume ls[\s\S]*-eq 0/);
+});
+
+/**
+ * Runs configure-env.sh's real secret-reading section against a given stdin,
+ * so the channel is exercised rather than described. Everything after it needs
+ * root and /opt/designproai; the reads do not.
+ */
+function runSecretChannel(stdin) {
+  const start = configure.indexOf("read_secret() {");
+  const lastCall = configure.indexOf('"the Topaz Labs API key for Call 12"');
+  assert.ok(start >= 0 && lastCall > start, "the secret-reading section moved");
+  const section = configure.slice(start, configure.indexOf("\n", lastCall));
+  return spawnSync("bash", ["-c", `set -Eeuo pipefail\n${section}\nprintf 'supabase=%s google=%s topaz=%s\\n' "$service_key" "$google_key" "$topaz_key"`], {
+    encoding: "utf8",
+    input: stdin,
+  });
+}
+
+test("the secret channel consumes exactly the three lines the deploy sends, in order", () => {
+  const result = runSecretChannel("SUPABASE-KEY\nGOOGLE-KEY\nTOPAZ-KEY\n");
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /supabase=SUPABASE-KEY google=GOOGLE-KEY topaz=TOPAZ-KEY/);
+});
+
+test("an empty third line is a decision to leave Call 12 disabled, and is accepted", () => {
+  const result = runSecretChannel("SUPABASE-KEY\nGOOGLE-KEY\n\n");
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /supabase=SUPABASE-KEY google=GOOGLE-KEY topaz=$/m);
+});
+
+test("a truncated pipe fails loudly instead of silently disabling Call 12", () => {
+  // The regression this guards: a caller that sends only the two older secrets
+  // used to abort at EOF under set -e with no explanation. Leaving Call 12
+  // quietly off would have been worse - production packs would fail closed in
+  // front of a customer, far from the cause.
+  const result = runSecretChannel("SUPABASE-KEY\nGOOGLE-KEY\n");
+  assert.equal(result.status, 5);
+  assert.match(result.stderr, /Secret input ended early: expected the Topaz Labs API key/);
+  assert.doesNotMatch(result.stdout, /topaz=/);
+});
+
+test("the deploy pipe sends exactly as many secrets as configure-env.sh reads", () => {
+  const reads = configure.match(/^read_secret \w+/gm) || [];
+  assert.equal(reads.length, 3);
+  for (const source of [workflow, readFileSync(resolve(root, ".github/workflows/configure-droplet-env.yml"), "utf8")]) {
+    const pipe = source.match(/printf '((?:%s\\n)+)' \\\n((?:[^\n]*\\\n)*[^\n]*\| \\\n)/);
+    assert.ok(pipe, "the secret pipe is not in the expected printf form");
+    assert.equal((pipe[1].match(/%s/g) || []).length, reads.length, "pipe width does not match the read count");
+    assert.equal(pipe[2].trimEnd().split("\n").length, reads.length, "argument count does not match the read count");
+  }
+});
+
+test("configuring the droplet environment is protected, pinned, and deploys nothing", () => {
+  const configureWorkflow = readFileSync(resolve(root, ".github/workflows/configure-droplet-env.yml"), "utf8");
+  assert.match(configureWorkflow, /workflow_dispatch:/);
+  assert.match(configureWorkflow, /default: DO_NOT_CONFIGURE/);
+  assert.match(configureWorkflow, /WRITE_DESIGNPROAI_DROPLET_ENV/);
+  assert.match(configureWorkflow, /name: designproai-production/);
+  assert.match(configureWorkflow, /TARGET_HOST: 137\.184\.0\.4/);
+  assert.match(configureWorkflow, /SHA256:Kum4lu4ntmC5\+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic/);
+  assert.match(configureWorkflow, /SHA256:2MADGyqFCuZYrIRL\+\/qm1EcxQOuFdQXFSN4\/JWBjWng/);
+  // One canonical writer, and the same validator judges the result.
+  assert.match(configureWorkflow, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY/);
+  assert.match(configureWorkflow, /validate-env\.py"/);
+  // It configures. It does not deploy, restart, or touch public routing.
+  assert.doesNotMatch(configureWorkflow, /deploy\.sh|ci-dark-deploy\.sh|gh run download|docker compose (?:up|restart)|systemctl (?:restart|start)|install-caddy\.sh/);
+  assert.doesNotMatch(configureWorkflow, /designproai\/current['"]? *(?:->|=)|ln -sfn/);
+  // The inspection path reports key names and file facts, never a value.
+  assert.match(configureWorkflow, /sed -n 's\/\^\\\(\[A-Z\]\[A-Z0-9_\]\*\\\)=\.\*\/\\1\/p'/);
+  assert.doesNotMatch(configureWorkflow, /cat .*\.env|source .*\.env|sha256sum .*\.env/);
 });
 
 test("the exact release gate asks Docker Compose itself to parse expanded production structure", () => {

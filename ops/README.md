@@ -36,6 +36,10 @@ Its exact code layout is:
 - `runtime/flat-wrap-layout.cjs`
 - `runtime/proof-sheet.cjs`
 - `runtime/topaz-upscale.cjs`
+- `runtime/view-angles.cjs`
+- `runtime/generation-provider.cjs`
+- `runtime/generation-engine.cjs`
+- `runtime/generation-store.cjs`
 - `runtime/output-qc.cjs`
 - `runtime/resend-transport.cjs`
 - `runtime/wrapbox-delivery.cjs`
@@ -87,6 +91,44 @@ any private value into chat or committing it:
 ```bash
 sudo ./configure-env.sh CONFIGURE_DESIGNPRO_SECRETS_ONLY
 ```
+
+Secrets arrive on standard input, one per line, in this exact order:
+
+1. DesignProAI Supabase secret key (project `wozyamlnygaddievzuwn`)
+2. DesignProAI Google AI API key
+3. Topaz Labs API key for Call 12 — an **empty line** leaves Call 12 disabled
+
+A human at a terminal sees hidden prompts. A workflow pipes three lines and
+bash suppresses the prompts because stdin is not a tty; one channel serves
+both. All three lines are mandatory, including the empty one, because a short
+pipe is a truncated channel rather than a decision about Call 12, and a droplet
+whose production packs fail closed weeks later in front of a customer is the
+worse outcome.
+
+Two callers use that channel and both come from GitHub, so nobody has to open
+an SSH session to configure a server:
+
+- **Configure the droplet environment from GitHub Secrets**
+  (`.github/workflows/configure-droplet-env.yml`) writes the environment and
+  nothing else — no build, no transfer, no release symlink, no container
+  start or stop, no Caddy, DNS, or public port change. Use it to add or rotate
+  a key on a droplet that is already installed. `INSPECT_DROPLET_ENV_ONLY`
+  reports key names, file sizes and modes without reading a single value.
+- **Audit or dark deploy exact DesignProAI artifact** configures a droplet
+  that has no environment yet, from the same secrets, so a first deployment
+  needs no separate configuration step.
+
+Both read `DESIGNPRO_TOPAZ_API_KEY` from the `designproai-production`
+environment. The Supabase secret key is not stored at all; it is fetched from
+the Supabase Management API for exactly this project ref, leaving one fewer
+long-lived copy to leak or drift.
+
+An environment written while containers are running does not reach them: they
+hold the values they started with until the next deploy, and the configurator
+says so. For that reason it reuses the `WORKER_SECRET` the gateway and runtime
+already share rather than minting a new one, so adding a provider key cannot
+desynchronize a serving pair. A fresh one is generated whenever the two sides
+do not already agree.
 
 It pins the public project identity, generates a separate worker secret,
 validates role separation, and atomically writes these root-owned `0600` files:
@@ -154,8 +196,9 @@ releases, images, services, volumes, or staging state fail closed for review.
    `sudo ./backup.sh`
 3. Base boundary:
    `sudo ./install.sh I_UNDERSTAND_NO_RP_CHANGES`
-4. Configure secrets through hidden server-console prompts:
-   `sudo ./configure-env.sh CONFIGURE_DESIGNPRO_SECRETS_ONLY`
+4. Configure secrets, either from GitHub with the **Configure the droplet
+   environment from GitHub Secrets** workflow, or through hidden server-console
+   prompts: `sudo ./configure-env.sh CONFIGURE_DESIGNPRO_SECRETS_ONLY`
 5. Deploy an exact artifact (arguments deliberately include both identities):
 
    ```bash
