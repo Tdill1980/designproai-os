@@ -25,11 +25,16 @@ function releaseTree() {
   }
   mkdirSync(join(dir, "web/dist/assets"), { recursive: true });
   writeFileSync(join(dir, "web/dist/assets/app.js"), "console.log('dp');\n");
+  // The migrated application ships its own dist, including the public/ tree
+  // Vite copies through, so the fixture exercises a real subdirectory too.
+  mkdirSync(join(dir, "app/dist/genie-examples"), { recursive: true });
+  writeFileSync(join(dir, "app/dist/index-abc.js"), "console.log('app');\n");
+  writeFileSync(join(dir, "app/dist/genie-examples/sample.png"), "fixture-png\n");
   return dir;
 }
 
 function archive(dir, output) {
-  execFileSync("tar", ["-C", dir, "-czf", output, ".designpro-release.json", "runtime", "gateway", "web", "ops"]);
+  execFileSync("tar", ["-C", dir, "-czf", output, ".designpro-release.json", "runtime", "gateway", "web", "app", "ops"]);
 }
 
 test("mutable scripts are DesignPro-only and contain no RP retirement path", () => {

@@ -1,8 +1,11 @@
 runtime/node_modules/
 gateway/node_modules/
 web/node_modules/
+app/node_modules/
 web/dist/
 web/tsconfig.tsbuildinfo
 dist/
 *.env
 !*.env.example
+# The app's build target is a publishable pair, deliberately committed.
+!app/.env.production

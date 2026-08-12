@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RestyleProAI — DesignPro™ Memberships Banner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cyan: #00C7FF;
+    --cyan-soft: #4dd9ff;
+    --fuchsia: #D946EF;
+    --gold: #E0B45A;
+    --bg: #05050B;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #0a0a12; }
+  body {
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 20px 60px;
+    gap: 20px;
+  }
+  .toolbar-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    background: #11111c;
+    border: 1px solid #1f1f2e;
+    border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .toolbar-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #888;
+    font-weight: 700;
+  }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .toolbar button, .upload-btn {
+    background: #1a1a2a;
+    color: #fff;
+    border: 1px solid #2a2a3e;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .toolbar button:hover, .upload-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+  .toolbar button.active {
+    background: linear-gradient(90deg, var(--cyan), var(--fuchsia));
+    border-color: transparent;
+  }
+  .upload-btn { background: rgba(0,199,255,0.1); border-color: rgba(0,199,255,0.4); color: var(--cyan); }
+
+  /* === BANNER === */
+  .banner {
+    width: 100%;
+    max-width: 1600px;
+    aspect-ratio: 1600 / 500;
+    background: var(--bg);
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    box-shadow:
+      0 0 0 1px rgba(0,199,255,0.15),
+      0 30px 80px rgba(0, 199, 255, 0.10),
+      0 30px 80px rgba(217, 70, 239, 0.08);
+  }
+
+  /* Background */
+  .bg-base {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 50% 70% at 18% 50%, rgba(0,199,255,0.22), transparent 60%),
+      radial-gradient(ellipse 50% 70% at 82% 50%, rgba(217,70,239,0.22), transparent 60%),
+      radial-gradient(ellipse 80% 100% at 50% 100%, rgba(0,199,255,0.08), transparent 60%),
+      linear-gradient(135deg, #08081a 0%, #0a0a14 50%, #100515 100%);
+    z-index: 1;
+  }
+  .streaks {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    overflow: hidden;
+  }
+  .streak {
+    position: absolute;
+    width: 200%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan) 40%, var(--fuchsia) 60%, transparent);
+    transform-origin: 0 0;
+    filter: blur(0.5px);
+  }
+  .streak.s1 { top: 22%; left: -50%; transform: rotate(-6deg); opacity: 0.5; }
+  .streak.s2 { top: 78%; left: -50%; transform: rotate(-6deg); opacity: 0.4; }
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,199,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,199,255,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: 3;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  }
+
+  /* Top bar with logo + ProductionPacks badge */
+  .topbar {
+    position: absolute;
+    top: 18px;
+    left: 26px;
+    right: 26px;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .logo-lockup {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-lockup img {
+    height: 38px;
+    filter: drop-shadow(0 4px 14px rgba(0,199,255,0.5));
+  }
+  .logo-lockup .tm {
+    font-family: 'Oswald', sans-serif;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--cyan);
+    font-weight: 700;
+    background: rgba(0,199,255,0.10);
+    border: 1px solid rgba(0,199,255,0.4);
+    padding: 4px 9px;
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+  }
+  .pp-mini {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1.5px solid var(--gold);
+    border-radius: 999px;
+    padding: 7px 14px 7px 12px;
+    background: linear-gradient(180deg, rgba(224,180,90,0.18), rgba(0,0,0,0.6));
+    box-shadow: 0 0 18px rgba(224,180,90,0.3), 0 0 0 1px rgba(224,180,90,0.4) inset;
+    backdrop-filter: blur(6px);
+  }
+  .pp-mini .pp-eye {
+    font-family: 'Oswald', sans-serif;
+    font-size: 9px;
+    color: var(--gold);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .pp-mini .pp-name {
+    font-family: 'Oswald', sans-serif;
+    font-size: 14px;
+    color: #fff;
+    text-transform: uppercase;
+    line-height: 1;
+    margin-top: 2px;
+    letter-spacing: 0.04em;
+  }
+  .pp-mini .pp-name strong { color: var(--gold); }
+  .pp-mini .divider { width: 1px; height: 22px; background: rgba(224,180,90,0.4); margin: 0 4px; }
+  .pp-mini .pp-price {
+    font-family: 'Oswald', sans-serif;
+    font-size: 17px;
+    color: var(--gold);
+    font-weight: 700;
+    line-height: 1;
+  }
+  .pp-mini .pp-price small {
+    display: block;
+    font-size: 9px;
+    color: rgba(255,255,255,0.7);
+    letter-spacing: 0.12em;
+    margin-top: 2px;
+  }
+
+  /* Side screenshots — floating browser windows */
+  .ui-frame {
+    position: absolute;
+    top: 50%;
+    width: 30%;
+    aspect-ratio: 16 / 10;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #11131a;
+    box-shadow:
+      0 0 0 1px rgba(0,199,255,0.4),
+      0 0 32px rgba(0,199,255,0.4),
+      0 24px 60px rgba(0,0,0,0.6);
+    z-index: 4;
+    transform: translateY(-50%);
+  }
+  .ui-frame.left {
+    left: 2.2%;
+    transform: translateY(-50%) perspective(1000px) rotateY(8deg);
+  }
+  .ui-frame.right {
+    right: 2.2%;
+    transform: translateY(-50%) perspective(1000px) rotateY(-8deg);
+    box-shadow:
+      0 0 0 1px rgba(217,70,239,0.4),
+      0 0 32px rgba(217,70,239,0.4),
+      0 24px 60px rgba(0,0,0,0.6);
+  }
+  .ui-frame .chrome {
+    height: 22px;
+    background: linear-gradient(180deg, #1a1c28, #14151e);
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .ui-frame .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .dot.r { background: #ff5f57; }
+  .dot.y { background: #febc2e; }
+  .dot.g { background: #28c840; }
+  .ui-frame .chrome .url {
+    flex: 1;
+    text-align: center;
+    font-size: 9px;
+    color: rgba(255,255,255,0.4);
+    font-family: 'Inter', monospace;
+    letter-spacing: 0.05em;
+  }
+  .ui-frame img {
+    width: 100%;
+    height: calc(100% - 22px);
+    object-fit: cover;
+    object-position: top center;
+    display: block;
+  }
+  .ui-tag {
+    position: absolute;
+    top: -10px;
+    background: linear-gradient(90deg, var(--cyan), var(--fuchsia));
+    color: #fff;
+    font-family: 'Oswald', sans-serif;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    box-shadow: 0 4px 14px rgba(0,199,255,0.4);
+    z-index: 5;
+  }
+  .ui-frame.left .ui-tag { left: 50%; transform: translateX(-50%); }
+  .ui-frame.right .ui-tag { left: 50%; transform: translateX(-50%); }
+
+  /* Center copy zone */
+  .center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 38%;
+    z-index: 5;
+    text-align: center;
+    padding-top: 8px;
+  }
+  .headline {
+    font-family: 'Oswald', sans-serif;
+    font-size: clamp(22px, 2.6vw, 38px);
+    font-weight: 700;
+    line-height: 1.0;
+    letter-spacing: -0.5px;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 0 4px 20px rgba(0,0,0,0.8);
+    margin-bottom: 8px;
+  }
+  .headline .accent {
+    background: linear-gradient(90deg, var(--cyan), var(--fuchsia));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    display: block;
+  }
+  .subline {
+    font-size: clamp(11px, 0.95vw, 14px);
+    font-weight: 400;
+    line-height: 1.5;
+    color: rgba(255,255,255,0.85);
+    margin-bottom: 12px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  }
+  .designpro-lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(90deg, rgba(0,199,255,0.18), rgba(217,70,239,0.18));
+    border: 1px solid rgba(0,199,255,0.4);
+    backdrop-filter: blur(8px);
+    padding: 8px 14px;
+    border-radius: 999px;
+    margin-bottom: 12px;
+  }
+  .designpro-lockup img {
+    height: 20px;
+    filter: drop-shadow(0 0 10px rgba(0,199,255,0.6));
+  }
+  .designpro-lockup .price-text {
+    font-family: 'Oswald', sans-serif;
+    font-size: clamp(11px, 0.95vw, 14px);
+    font-weight: 600;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .designpro-lockup .price-text strong { color: var(--cyan); }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 26px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--cyan), var(--fuchsia));
+    color: #fff;
+    font-family: 'Oswald', sans-serif;
+    font-size: clamp(12px, 1.05vw, 15px);
+    font-weight: 700;
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.2) inset,
+      0 12px 36px rgba(217,70,239,0.45),
+      0 4px 16px rgba(0,199,255,0.4);
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .cta:hover { transform: translateY(-2px); }
+  .cta::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.4), transparent 70%);
+    transform: translateX(-100%);
+    transition: transform 0.6s;
+  }
+  .cta:hover::after { transform: translateX(100%); }
+
+  .scale-note {
+    text-align: center;
+    color: #888;
+    font-size: 12px;
+    max-width: 800px;
+    line-height: 1.6;
+  }
+  .scale-note code {
+    background: #1a1a2a;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--cyan);
+    font-size: 11px;
+  }
+
+  @media (max-width: 900px) {
+    .banner { aspect-ratio: auto; min-height: 800px; }
+    .ui-frame { position: relative; width: 90%; left: auto; right: auto; top: auto; transform: none !important; margin: 16px auto; }
+    .center { position: relative; width: 90%; left: auto; top: auto; transform: none; padding: 24px 0; }
+    .topbar { position: relative; flex-direction: column; gap: 12px; padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="toolbar-group">
+    <div class="toolbar-label">Left side — Dashboard</div>
+    <div class="toolbar" id="leftToolbar">
+      <button data-target="left" data-img="/screenshots/productionflow-system.png" class="active">ProductionFlow</button>
+      <button data-target="left" data-img="/screenshots/productionflow-panelizer.png">Panelizer</button>
+      <button data-target="left" data-img="/screenshots/revisionstudio-render.png">RevisionStudio</button>
+      <button data-target="left" data-img="/screenshots/closeup-render.png">Render Closeup</button>
+      <button data-target="left" data-img="/screenshots/production-proof.png">Production Proof</button>
+      <label class="upload-btn">Upload PNG <input type="file" accept="image/*" data-target="left" hidden /></label>
+    </div>
+  </div>
+
+  <div class="toolbar-group">
+    <div class="toolbar-label">Right side — DesignPro Interface</div>
+    <div class="toolbar" id="rightToolbar">
+      <button data-target="right" data-img="/screenshots/designproai-system.png" class="active">DesignProAI System</button>
+      <button data-target="right" data-img="/screenshots/revisionstudio-render.png">RevisionStudio</button>
+      <button data-target="right" data-img="/screenshots/porsche-distressed-hero.png">Porsche Render</button>
+      <button data-target="right" data-img="/screenshots/closeup-render.png">Render Closeup</button>
+      <button data-target="right" data-img="/screenshots/productionflow-panelizer.png">Panelizer</button>
+      <label class="upload-btn">Upload PNG <input type="file" accept="image/*" data-target="right" hidden /></label>
+    </div>
+  </div>
+
+  <div class="banner" id="banner">
+    <div class="bg-base"></div>
+    <div class="streaks">
+      <div class="streak s1"></div>
+      <div class="streak s2"></div>
+    </div>
+    <div class="grid-overlay"></div>
+
+    <div class="topbar">
+      <div class="logo-lockup">
+        <img src="/sprocket/restyleproai-logo.png" alt="RestyleProAI" />
+        <span class="tm">Wrap Design Suite</span>
+      </div>
+      <div class="pp-mini">
+        <div>
+          <div class="pp-eye">Production</div>
+          <div class="pp-name">Packs<strong>™</strong></div>
+        </div>
+        <div class="divider"></div>
+        <div class="pp-price">$299<small>PRINT-READY</small></div>
+      </div>
+    </div>
+
+    <!-- LEFT: Dashboard window -->
+    <div class="ui-frame left">
+      <div class="ui-tag">Dashboard</div>
+      <div class="chrome">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="url">restyleproai.com / dashboard</span>
+      </div>
+      <img id="leftImg" src="/screenshots/productionflow-system.png" alt="Dashboard" />
+    </div>
+
+    <!-- CENTER: Copy -->
+    <div class="center">
+      <h1 class="headline">Custom Wrap Design<span class="accent">at your fingertips</span></h1>
+      <p class="subline">Real vehicle mockups. Customer proofs. Production-ready visuals — all in one place.</p>
+      <div class="designpro-lockup">
+        <img src="/sprocket/designproai-logo.png" alt="DesignPro" />
+        <span class="price-text">Memberships from <strong>$350/mo</strong></span>
+      </div>
+      <br/>
+      <a href="#" class="cta">Explore DesignPro™ →</a>
+    </div>
+
+    <!-- RIGHT: DesignPro UI -->
+    <div class="ui-frame right">
+      <div class="ui-tag" style="background: linear-gradient(90deg, var(--fuchsia), var(--cyan));">DesignPro™ Interface</div>
+      <div class="chrome">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="url">restyleproai.com / designpro</span>
+      </div>
+      <img id="rightImg" src="/screenshots/designproai-system.png" alt="DesignPro Interface" />
+    </div>
+  </div>
+
+  <div class="scale-note">
+    Pick screenshots for the left (dashboard) and right (DesignPro UI) sides — or upload your own PNG.<br/>
+    To export: right-click banner → Inspect → find <code>&lt;div class="banner"&gt;</code> → right-click in Elements → Capture node screenshot.
+  </div>
+
+  <script>
+    function bindToolbar(toolbarId, imgId) {
+      const toolbar = document.getElementById(toolbarId);
+      const img = document.getElementById(imgId);
+      toolbar.querySelectorAll('button[data-img]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          toolbar.querySelectorAll('button[data-img]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          img.src = btn.dataset.img;
+        });
+      });
+      toolbar.querySelectorAll('input[type=file]').forEach(inp => {
+        inp.addEventListener('change', e => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = ev => {
+            img.src = ev.target.result;
+            toolbar.querySelectorAll('button[data-img]').forEach(b => b.classList.remove('active'));
+          };
+          reader.readAsDataURL(file);
+        });
+      });
+    }
+    bindToolbar('leftToolbar', 'leftImg');
+    bindToolbar('rightToolbar', 'rightImg');
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!--
+  ════════════════════════════════════════════════════════════════════════
+  WRAP TV WORLD — landing page (dark "network" UI)
+  ════════════════════════════════════════════════════════════════════════
+  Paste into an Elementor "HTML" widget (or Gutenberg "Custom HTML" block).
+  Scoped under #wtvw — cannot affect your theme. No plugins.
+  EDIT (optional): SUBMIT_URL / WATCH_URL at the top of the script.
+  ════════════════════════════════════════════════════════════════════════
+-->
+<div id="wtvw">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+
+    #wtvw{
+      --teal:#19b0c4; --lime:#a6ce39; --orange:#f0855a; --red:#ff3b46;
+      --bg:#07080b; --panel:#0f1218; --line:rgba(255,255,255,.10);
+      --ink:#ffffff; --sub:#c3c9d4; --mut:#8a93a2;
+      --fd:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      --fb:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+      box-sizing:border-box; color:var(--ink); background:var(--bg); font-family:var(--fb); line-height:1.5; -webkit-font-smoothing:antialiased;
+      border-radius:20px; overflow:hidden;
+    }
+    #wtvw *,#wtvw *::before,#wtvw *::after{box-sizing:border-box;}
+    #wtvw .wrap{max-width:1120px; margin:0 auto;}
+    #wtvw .ic{width:22px;height:22px;stroke:currentColor;stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block;}
+    #wtvw .bar{height:5px; background:linear-gradient(90deg,var(--teal),var(--lime) 50%,var(--orange));}
+
+    /* Hero */
+    #wtvw .hero{position:relative; text-align:center; padding:50px 22px 54px; overflow:hidden;}
+    #wtvw .hero .g1{position:absolute; top:-120px; left:-80px; width:420px; height:420px; border-radius:50%; background:rgba(25,176,196,.30); filter:blur(90px); pointer-events:none;}
+    #wtvw .hero .g2{position:absolute; bottom:-140px; right:-80px; width:420px; height:420px; border-radius:50%; background:rgba(240,133,90,.28); filter:blur(90px); pointer-events:none;}
+    #wtvw .hero .scan{position:absolute; inset:0; background:repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 4px); pointer-events:none; opacity:.5;}
+    #wtvw .onair{position:relative; display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:800; letter-spacing:.22em; text-transform:uppercase; color:#fff; background:rgba(255,59,70,.16); border:1px solid rgba(255,59,70,.5); border-radius:999px; padding:7px 15px; margin-bottom:22px;}
+    #wtvw .onair .dot{width:9px;height:9px;border-radius:50%;background:var(--red); box-shadow:0 0 0 0 rgba(255,59,70,.6); animation:wtvwPulse 1.8s infinite;}
+    @keyframes wtvwPulse{0%{box-shadow:0 0 0 0 rgba(255,59,70,.55)}70%{box-shadow:0 0 0 10px rgba(255,59,70,0)}100%{box-shadow:0 0 0 0 rgba(255,59,70,0)}}
+    @media (prefers-reduced-motion: reduce){ #wtvw .onair .dot{animation:none;} }
+    #wtvw .hero img.logo{position:relative; width:min(460px,82%); height:auto; margin:0 auto; display:block; filter:drop-shadow(0 12px 40px rgba(0,0,0,.5));}
+    #wtvw .hero h1{position:relative; font-family:var(--fd); font-weight:900; text-transform:uppercase; letter-spacing:.01em; font-size:clamp(30px,5.2vw,52px); line-height:1; margin:26px 0 0;}
+    #wtvw .hero h1 .g{background:linear-gradient(90deg,var(--teal),var(--orange)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #wtvw .hero p{position:relative; color:var(--sub); font-size:clamp(15px,2vw,19px); max-width:600px; margin:16px auto 0;}
+    #wtvw .cta{position:relative; display:flex; flex-wrap:wrap; gap:14px; justify-content:center; margin-top:30px;}
+    #wtvw a.btn{display:inline-flex; align-items:center; gap:10px; height:56px; padding:0 28px; border-radius:14px; font-family:var(--fd); font-weight:800; font-size:15px; letter-spacing:.02em; text-transform:uppercase; text-decoration:none;}
+    #wtvw a.btn.solid{color:#04222a; background:linear-gradient(90deg,var(--teal),var(--lime)); box-shadow:0 14px 34px rgba(25,176,196,.34);}
+    #wtvw a.btn.ghost{color:#fff; background:rgba(255,255,255,.06); border:1.5px solid rgba(255,255,255,.28);}
+    #wtvw a.btn:hover{filter:brightness(1.07); transform:translateY(-1px); transition:.15s;}
+    #wtvw a.btn .ic{width:20px;height:20px;}
+
+    /* Section shell */
+    #wtvw section{padding:44px 22px;}
+    #wtvw .sec-h{text-align:center; margin-bottom:30px;}
+    #wtvw .sec-h .eyebrow{font-size:12px; font-weight:800; letter-spacing:.2em; text-transform:uppercase; color:var(--orange); margin-bottom:8px;}
+    #wtvw .sec-h h2{font-family:var(--fd); font-weight:800; text-transform:uppercase; letter-spacing:.01em; font-size:clamp(24px,3.6vw,36px); margin:0;}
+    #wtvw .sec-h p{color:var(--mut); font-size:15px; margin:10px auto 0; max-width:560px;}
+
+    /* What's on */
+    #wtvw .cards{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; max-width:1120px; margin:0 auto;}
+    @media(max-width:820px){ #wtvw .cards{grid-template-columns:repeat(2,1fr);} }
+    @media(max-width:460px){ #wtvw .cards{grid-template-columns:1fr;} }
+    #wtvw .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px; text-align:center;}
+    #wtvw .card .pic{width:54px;height:54px;border-radius:14px;display:flex;align-items:center;justify-content:center;color:#04222a;margin:0 auto 14px;}
+    #wtvw .card b{display:block; font-family:var(--fd); font-weight:800; font-size:15px; text-transform:uppercase; letter-spacing:.02em; margin-bottom:6px;}
+    #wtvw .card span{color:var(--sub); font-size:13.5px;}
+
+    /* Get on the show */
+    #wtvw .show{background:var(--panel); border-top:1px solid var(--line); border-bottom:1px solid var(--line);}
+    #wtvw .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; max-width:1000px; margin:0 auto;}
+    @media(max-width:760px){ #wtvw .steps{grid-template-columns:1fr;} }
+    #wtvw .step{position:relative; padding:24px; border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.02);}
+    #wtvw .step .n{font-family:var(--fd); font-weight:900; font-size:34px; line-height:1; background:linear-gradient(90deg,var(--teal),var(--orange)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #wtvw .step b{display:block; font-family:var(--fd); font-weight:800; font-size:16px; text-transform:uppercase; margin:10px 0 6px;}
+    #wtvw .step span{color:var(--sub); font-size:14px;}
+    #wtvw .show .mid{text-align:center; margin-top:26px;}
+
+    /* Featured tiles */
+    #wtvw .tiles{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; max-width:1120px; margin:0 auto;}
+    @media(max-width:760px){ #wtvw .tiles{grid-template-columns:1fr;} }
+    #wtvw a.tile{position:relative; display:block; border-radius:16px; overflow:hidden; min-height:210px; text-decoration:none; border:1px solid var(--line); color:#fff;}
+    #wtvw a.tile .bgc{position:absolute; inset:0;}
+    #wtvw a.tile .ov{position:absolute; inset:0; background:linear-gradient(180deg, rgba(7,8,11,.15), rgba(7,8,11,.86));}
+    #wtvw a.tile .play{position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:56px; height:56px; border-radius:50%; background:rgba(255,255,255,.16); border:1.5px solid rgba(255,255,255,.6); display:flex; align-items:center; justify-content:center; color:#fff;}
+    #wtvw a.tile:hover .play{background:var(--orange); border-color:var(--orange);}
+    #wtvw a.tile .cap{position:absolute; left:0; right:0; bottom:0; padding:16px 18px; z-index:2;}
+    #wtvw a.tile .cap .t{font-family:var(--fd); font-weight:800; font-size:16px; text-transform:uppercase;}
+    #wtvw a.tile .cap .s{color:var(--sub); font-size:12.5px;}
+
+    /* Finale */
+    #wtvw .finale{position:relative; text-align:center; overflow:hidden;}
+    #wtvw .finale .g{position:absolute; inset:0; background:radial-gradient(60% 100% at 50% 0%, rgba(240,133,90,.25), transparent 70%);}
+    #wtvw .finale h2{position:relative; font-family:var(--fd); font-weight:900; text-transform:uppercase; font-size:clamp(26px,4.4vw,44px); line-height:1.02; margin:0;}
+    #wtvw .finale p{position:relative; color:var(--sub); margin:14px auto 0; max-width:520px;}
+
+    /* Footer */
+    #wtvw .foot{display:flex; flex-direction:column; align-items:center; gap:12px; padding:34px 22px; border-top:1px solid var(--line);}
+    #wtvw .foot img{height:34px;}
+    #wtvw .foot span{color:var(--mut); font-size:12px;}
+  </style>
+
+  <div class="bar"></div>
+  <div class="wrap">
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="g1"></div><div class="g2"></div><div class="scan"></div>
+      <span class="onair"><span class="dot"></span> On Air · Worldwide</span>
+      <img class="logo" src="https://weprintwraps.com/wp-content/uploads/2026/07/wrap-tv-world-logo-dark.png" alt="Wrap TV World">
+      <h1>Wrap Culture, <span class="g">On Camera.</span></h1>
+      <p>Wrap TV World is the wrap industry's entertainment &amp; culture platform — creator spotlights, viral builds, transformations, and behind-the-shop life.</p>
+      <div class="cta">
+        <a class="btn solid" id="wtvw-submit" href="#"><span class="pic-play"></span> Submit Your Build</a>
+        <a class="btn ghost" id="wtvw-watch" href="#"><span class="pic-watch"></span> Watch the Latest</a>
+      </div>
+    </div>
+
+    <!-- What's on -->
+    <section>
+      <div class="sec-h">
+        <div class="eyebrow">The Programming</div>
+        <h2>What's on Wrap TV World</h2>
+      </div>
+      <div class="cards" id="wtvw-cards"></div>
+    </section>
+
+    <!-- Get on the show -->
+    <section class="show">
+      <div class="sec-h">
+        <div class="eyebrow">Installers Worldwide</div>
+        <h2>Get Your Build on the Show</h2>
+        <p>Shot an install? Send it in. We produce it network-style — MTV-style captions and a commercially-licensed soundtrack — then it airs.</p>
+      </div>
+      <div class="steps">
+        <div class="step"><div class="n">01</div><b>Upload Your Footage</b><span>Any length — resumable uploads handle long install clips with no login.</span></div>
+        <div class="step"><div class="n">02</div><b>We Produce It</b><span>Your credit + shop caption, a licensed track, and the Wrap TV World treatment.</span></div>
+        <div class="step"><div class="n">03</div><b>It Airs</b><span>Featured across Wrap TV World — and you get tagged for the whole world to see.</span></div>
+      </div>
+      <div class="mid">
+        <a class="btn solid" id="wtvw-submit2" href="#"><span class="pic-upload"></span> Submit Your Install</a>
+      </div>
+    </section>
+
+    <!-- Featured -->
+    <section>
+      <div class="sec-h">
+        <div class="eyebrow">Now Playing</div>
+        <h2>Featured</h2>
+      </div>
+      <div class="tiles" id="wtvw-tiles"></div>
+    </section>
+
+    <!-- Finale -->
+    <section class="finale">
+      <div class="g"></div>
+      <h2>Think your build belongs<br>on <span style="color:var(--orange)">Wrap TV World</span>?</h2>
+      <p>The wrap world is watching. Put your work on camera.</p>
+      <div class="cta">
+        <a class="btn solid" id="wtvw-submit3" href="#"><span class="pic-play"></span> Submit Your Build</a>
+      </div>
+    </section>
+
+    <div class="foot">
+      <img src="https://weprintwraps.com/wp-content/uploads/2026/07/wrap-tv-world-logo-dark.png" alt="Wrap TV World">
+      <span>A WePrintWraps original.</span>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    var root=document.getElementById('wtvw');
+    if(!root||root.dataset.init) return; root.dataset.init='1';
+    var $=function(id){return root.querySelector('#'+id);};
+
+    // EDIT these:
+    var SUBMIT_URL='https://restyleproai.com/wraptv/submit';
+    var WATCH_URL='https://www.instagram.com/weprintwraps/';
+
+    var SVG={
+      play:'<path d="M7 5l12 7-12 7z"/>',
+      watch:'<rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/>',
+      upload:'<path d="M12 15V4M8 8l4-4 4 4"/><path d="M4 20h16"/>',
+      star:'<path d="M12 3l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.2l1-5.9L3.5 9.2l5.9-.8z"/>',
+      fire:'<path d="M12 3c1 3-1.5 4-1.5 6.5A2.5 2.5 0 0012 12a2.5 2.5 0 002-4c2 1.5 3 3.5 3 6a5 5 0 11-10 0c0-3 2-5 5-11z"/>',
+      swap:'<path d="M4 7h13l-3-3M20 17H7l3 3"/>',
+      camera:'<path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.2"/>'
+    };
+    function svg(n){return '<svg class="ic" viewBox="0 0 24 24">'+SVG[n]+'</svg>';}
+
+    // CTA links + icons
+    ['wtvw-submit','wtvw-submit2','wtvw-submit3'].forEach(function(id){$(id).href=SUBMIT_URL;});
+    $('wtvw-watch').href=WATCH_URL;
+    root.querySelector('#wtvw-submit .pic-play').innerHTML=svg('play');
+    root.querySelector('#wtvw-submit3 .pic-play').innerHTML=svg('play');
+    root.querySelector('#wtvw-watch .pic-watch').innerHTML=svg('watch');
+    root.querySelector('#wtvw-submit2 .pic-upload').innerHTML=svg('upload');
+
+    // What's on cards
+    var CARDS=[
+      ['star','#19b0c4','Creator Spotlights','The installers and artists shaping the culture.'],
+      ['fire','#f0855a','Viral Builds','The wraps blowing up your feed — up close.'],
+      ['swap','#a6ce39','Transformations','Before & after reveals that hit different.'],
+      ['camera','#19b0c4','Behind the Shop','Real shop life, real installs, unfiltered.']
+    ];
+    $('wtvw-cards').innerHTML=CARDS.map(function(c){
+      return '<div class="card"><div class="pic" style="background:'+c[1]+'">'+svg(c[0])+'</div><b>'+c[2]+'</b><span>'+c[3]+'</span></div>';
+    }).join('');
+
+    // Featured tiles (category tiles → watch). Gradient backdrops, no external art needed.
+    var TILES=[
+      ['Behind the Install','New episodes weekly','linear-gradient(135deg,#0e5b66,#19b0c4)'],
+      ['Transformations','Before → after','linear-gradient(135deg,#4a6b12,#a6ce39)'],
+      ['Creator Spotlights','Meet the artists','linear-gradient(135deg,#7a3417,#f0855a)']
+    ];
+    $('wtvw-tiles').innerHTML=TILES.map(function(t){
+      return '<a class="tile" href="'+WATCH_URL+'" target="_blank" rel="noopener"><div class="bgc" style="background:'+t[2]+'"></div><div class="ov"></div><div class="play">'+svg('play')+'</div><div class="cap"><div class="t">'+t[0]+'</div><div class="s">'+t[1]+'</div></div></a>';
+    }).join('');
+  })();
+  </script>
+</div>

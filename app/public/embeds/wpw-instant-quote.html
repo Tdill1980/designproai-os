@@ -1,0 +1,418 @@
+<!--
+  ════════════════════════════════════════════════════════════════════════
+  WePrintWraps — INSTANT QUOTE → BUY NOW landing tool (high-intent funnel)
+  ════════════════════════════════════════════════════════════════════════
+  Paste into an Elementor "HTML" widget (or Gutenberg "Custom HTML" block).
+  Scoped under #wpwq — cannot affect your theme.
+
+  WHAT IT DOES
+  • Visitor picks vehicle + film → sees the REAL price instantly (same
+    per-sqft price as the Woo product, so cart total matches the quote).
+  • BUY NOW opens the WooCommerce cart pre-loaded with their exact sqft.
+  • "Email me this quote" and "Free print-file check" both save the lead to
+    wpw-calc-lead (Supabase) and notify trish@weprintwraps.com.
+  • UTM/gclid from the ad click is appended to the lead's page path.
+
+  EDIT (optional): the CONFIG block at the top of the script —
+    TURNAROUND text, COUPON (leave '' until the code exists in Woo),
+    FREE_SHIP threshold, PHONE.
+  ════════════════════════════════════════════════════════════════════════
+-->
+<div id="wpwq">
+  <style>
+    #wpwq{
+      --blue:#3b82f6; --magenta:#ec4899;
+      --ink:#111827; --body:#4b5563; --mut:#6b7280; --line:#e5e7eb; --soft:#f9fafb; --dark:#000000;
+      --grad:linear-gradient(90deg,var(--blue),var(--magenta));
+      --fd:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      --fb:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+      box-sizing:border-box; color:var(--ink); background:#fff; font-family:var(--fb); line-height:1.5; -webkit-font-smoothing:antialiased;
+    }
+    #wpwq *,#wpwq *::before,#wpwq *::after{box-sizing:border-box;}
+    #wpwq .wrap{max-width:1060px; margin:0 auto; padding:34px 20px 46px;}
+    #wpwq .ic{width:20px;height:20px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block;}
+
+    /* Urgency ribbon */
+    #wpwq .ribbon{display:flex; align-items:center; justify-content:center; gap:10px; background:var(--dark); color:#fff; border-radius:12px; padding:11px 18px; font-size:14px; font-weight:700;}
+    #wpwq .ribbon .pulse{width:9px;height:9px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:wpwq-pulse 1.6s infinite;flex:0 0 auto;}
+    @keyframes wpwq-pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55);}70%{box-shadow:0 0 0 9px rgba(34,197,94,0);}100%{box-shadow:0 0 0 0 rgba(34,197,94,0);}}
+    #wpwq .ribbon b{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+
+    /* Hero */
+    #wpwq .head{text-align:center; margin:26px 0 24px;}
+    #wpwq h1{font-family:var(--fd); font-weight:800; letter-spacing:-.01em; line-height:1.04; margin:0; font-size:clamp(34px,5.4vw,56px);}
+    #wpwq h1 .g{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #wpwq .tag{color:var(--body); font-size:clamp(15px,1.9vw,18px); margin:12px auto 0; max-width:600px;}
+    #wpwq .tag b{color:var(--ink);}
+
+    /* Quote card */
+    #wpwq .calc{border:1px solid var(--line); border-radius:20px; background:#fff; box-shadow:0 24px 60px rgba(17,24,39,.12); overflow:hidden;}
+    #wpwq .calc-top{height:4px; background:var(--grad);}
+    #wpwq .calc-in{display:grid; grid-template-columns:1.05fr 1fr;}
+    @media(max-width:820px){ #wpwq .calc-in{grid-template-columns:1fr;} }
+    #wpwq .col{padding:26px 28px;}
+    #wpwq .col.res{background:var(--soft); border-left:1px solid var(--line);}
+    @media(max-width:820px){ #wpwq .col.res{border-left:none; border-top:1px solid var(--line);} }
+    #wpwq .step{display:flex; align-items:center; gap:9px; font-family:var(--fd); font-weight:700; font-size:13.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink); margin:0 0 10px;}
+    #wpwq .step .n{width:22px;height:22px;border-radius:50%;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex:0 0 auto;}
+    #wpwq .field{margin-bottom:18px;}
+    #wpwq select,#wpwq input{width:100%; height:52px; border:1.5px solid var(--line); border-radius:12px; background:#fff; padding:0 15px; font-family:var(--fb); font-size:16px; font-weight:600; color:var(--ink); -webkit-appearance:none; appearance:none;}
+    #wpwq select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat:no-repeat; background-position:right 15px center; padding-right:42px;}
+    #wpwq select:focus,#wpwq input:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 4px rgba(59,130,246,.14);}
+    #wpwq .hint{font-size:12.5px; color:var(--mut); margin-top:6px;}
+    #wpwq .adv-toggle{background:none;border:none;padding:0;font:inherit;font-size:13px;font-weight:700;color:var(--blue);cursor:pointer;}
+    #wpwq .adv{display:none; margin-top:12px;}
+    #wpwq .adv.open{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+    #wpwq .adv label{display:block; font-size:12px; font-weight:700; color:var(--body); margin-bottom:5px;}
+    #wpwq .adv input{height:46px;}
+
+    /* Price side */
+    #wpwq .pricebox{border-radius:16px; padding:20px 22px; color:#fff; background:var(--dark); position:relative; overflow:hidden;}
+    #wpwq .pricebox::after{content:""; position:absolute; left:0; right:0; top:0; height:3px; background:var(--grad);}
+    #wpwq .pricebox .k{font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#9ca3af;}
+    #wpwq .pricebox .v{font-family:var(--fd); font-weight:900; font-size:clamp(38px,5vw,50px); line-height:1.05; margin-top:2px;}
+    #wpwq .pricebox .sub{font-size:13px; color:#d1d5db; margin-top:6px;}
+    #wpwq .pricebox .sub b{color:#fff;}
+    #wpwq .ship{margin-top:12px;}
+    #wpwq .ship .bar{height:8px; border-radius:6px; background:#e5e7eb; overflow:hidden;}
+    #wpwq .ship .fill{height:100%; width:0; border-radius:6px; background:var(--grad); transition:width .3s;}
+    #wpwq .ship .msg{font-size:13px; font-weight:600; margin-top:7px; color:var(--body);}
+    #wpwq .ship .msg.ok{color:#067647;}
+
+    /* CTAs */
+    #wpwq .buy{display:flex; align-items:center; justify-content:center; gap:10px; width:100%; height:58px; margin-top:16px; border:none; border-radius:14px; cursor:pointer; color:#fff; font-family:var(--fd); font-weight:800; font-size:17px; background:var(--grad); box-shadow:0 14px 32px rgba(236,72,153,.32); text-decoration:none;}
+    #wpwq .buy:hover{filter:brightness(1.06);}
+    #wpwq .buy small{font-family:var(--fb); font-weight:600; font-size:12px; opacity:.9;}
+    #wpwq .guarantee{display:flex; align-items:center; justify-content:center; gap:7px; font-size:12.5px; color:var(--mut); margin-top:10px;}
+    #wpwq .guarantee .ic{width:15px;height:15px;color:#067647;}
+
+    /* Lead capture */
+    #wpwq .lead{margin-top:18px; border-top:1px dashed var(--line); padding-top:16px;}
+    #wpwq .lead .lh{font-size:13.5px; font-weight:800; color:var(--ink); margin-bottom:9px;}
+    #wpwq .lead .lr{display:flex; gap:8px;}
+    @media(max-width:460px){ #wpwq .lead .lr{flex-direction:column;} }
+    #wpwq .lead input{height:48px; flex:1; min-width:0;}
+    #wpwq .lead button{height:48px; padding:0 18px; border:1.5px solid var(--ink); background:#fff; color:var(--ink); border-radius:12px; cursor:pointer; font-family:var(--fb); font-weight:700; font-size:14px; white-space:nowrap;}
+    #wpwq .lead button:hover{background:var(--soft);}
+    #wpwq .lead button:disabled{opacity:.55; cursor:default;}
+    #wpwq .lmsg{font-size:12.5px; font-weight:600; margin-top:8px; min-height:16px;}
+    #wpwq .lmsg.ok{color:#067647;} #wpwq .lmsg.err{color:#d92d20;}
+
+    /* Trust row */
+    #wpwq .trust{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:30px;}
+    @media(max-width:760px){ #wpwq .trust{grid-template-columns:repeat(2,1fr);} }
+    #wpwq .tc{display:flex; gap:10px; align-items:flex-start; background:#fff; border:1px solid var(--line); border-radius:14px; padding:15px 16px;}
+    #wpwq .tc .tic{color:var(--blue); margin-top:1px; flex:0 0 auto;}
+    #wpwq .tc b{display:block; font-size:13px; font-weight:800; color:var(--ink);}
+    #wpwq .tc span{color:var(--mut); font-size:12.5px;}
+
+    /* File-check band */
+    #wpwq .fileband{margin-top:30px; border-radius:18px; background:var(--dark); color:#fff; padding:28px 30px; display:grid; grid-template-columns:1.2fr 1fr; gap:22px; align-items:center;}
+    @media(max-width:760px){ #wpwq .fileband{grid-template-columns:1fr;} }
+    #wpwq .fileband h3{font-family:var(--fd); font-weight:800; font-size:clamp(21px,3vw,27px); margin:0; line-height:1.15;}
+    #wpwq .fileband h3 .g{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #wpwq .fileband p{margin:8px 0 0; font-size:14px; color:#d1d5db;}
+    #wpwq .fileband .fr{display:flex; gap:8px;}
+    @media(max-width:460px){ #wpwq .fileband .fr{flex-direction:column;} }
+    #wpwq .fileband input{height:48px; flex:1; min-width:0; border:1.5px solid #374151; border-radius:12px; background:#111827; color:#fff; padding:0 14px; font-family:var(--fb); font-size:15px; font-weight:600;}
+    #wpwq .fileband input:focus{outline:none; border-color:var(--blue);}
+    #wpwq .fileband button{height:48px; padding:0 20px; border:none; border-radius:12px; cursor:pointer; color:#fff; font-family:var(--fb); font-weight:700; font-size:14px; background:var(--grad); white-space:nowrap;}
+    #wpwq .fileband .lmsg{color:#9ca3af;}
+    #wpwq .fileband .lmsg.ok{color:#4ade80;} #wpwq .fileband .lmsg.err{color:#f87171;}
+
+    #wpwq .foot{text-align:center; color:var(--mut); font-size:12.5px; margin-top:26px;}
+    #wpwq .foot a{color:var(--blue); font-weight:700; text-decoration:none;}
+  </style>
+
+  <div class="wrap">
+    <!-- Urgency -->
+    <div class="ribbon"><span class="pulse"></span><span id="wpwq-ribbon-txt"></span></div>
+
+    <!-- Hero -->
+    <div class="head">
+      <h1>Price Your Wrap in <span class="g">10 Seconds.</span><br>Printed &amp; Shipped in 48 Hours.</h1>
+      <p class="tag">Premium <b>3M</b> &amp; <b>Avery Dennison</b> printed wrap film, produced in-house in the USA. Real price, real checkout — <b>no signup, no phone call, no waiting on a quote.</b></p>
+    </div>
+
+    <!-- Quote card -->
+    <div class="calc">
+      <div class="calc-top"></div>
+      <div class="calc-in">
+        <div class="col">
+          <div class="field">
+            <div class="step"><span class="n">1</span> What are you wrapping?</div>
+            <select id="wpwq-vehicle"></select>
+            <div class="hint" id="wpwq-sqft-hint"></div>
+          </div>
+          <div class="field">
+            <div class="step"><span class="n">2</span> Pick your film</div>
+            <select id="wpwq-material"></select>
+            <div class="hint">Same price you'll see in the cart — what you see is what you pay.</div>
+          </div>
+          <button type="button" class="adv-toggle" id="wpwq-adv-btn">+ Installer options (exact sq ft, extra material)</button>
+          <div class="adv" id="wpwq-adv">
+            <div><label>Exact area (sq ft)</label><input id="wpwq-area" type="number" inputmode="decimal" min="1"></div>
+            <div><label>Extra material %</label><input id="wpwq-waste" type="number" inputmode="decimal" min="0" value="10"></div>
+          </div>
+        </div>
+
+        <div class="col res">
+          <div class="step"><span class="n">3</span> Your price — live</div>
+          <div class="pricebox">
+            <div class="k">Total, printed &amp; ready to install</div>
+            <div class="v">$<span id="wpwq-price">0</span></div>
+            <div class="sub"><b><span id="wpwq-total-sqft">0</span> sq ft</b> of <span id="wpwq-mat-name"></span></div>
+          </div>
+          <div class="ship">
+            <div class="bar"><div class="fill" id="wpwq-ship-fill"></div></div>
+            <div class="msg" id="wpwq-ship-msg"></div>
+          </div>
+          <a class="buy" id="wpwq-buy" href="#" rel="nofollow">Buy Now — Lock This Price <small id="wpwq-buy-sub"></small></a>
+          <div class="guarantee">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4.5"/></svg>
+            Checkout on weprintwraps.com — file upload &amp; free print check after purchase
+          </div>
+          <div class="lead">
+            <div class="lh">Not ready this second? Get this exact quote in your inbox:</div>
+            <div class="lr">
+              <input id="wpwq-email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com">
+              <button type="button" id="wpwq-email-btn">Email my quote</button>
+            </div>
+            <div class="lmsg" id="wpwq-lmsg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Trust -->
+    <div class="trust">
+      <div class="tc"><span class="tic"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><b>48-Hour Turnaround</b><span>Open press time this week — order today, prints tomorrow.</span></div></div>
+      <div class="tc"><span class="tic"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg></span><div><b>3M &amp; Avery Film</b><span>Genuine IJ180Cv3 and MPI 1105 with premium laminate.</span></div></div>
+      <div class="tc"><span class="tic"><svg class="ic" viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-1.5 3L16 10H5"/></svg></span><div><b>Printed in the USA</b><span>In-house HP Latex production. No brokers, no middlemen.</span></div></div>
+      <div class="tc"><span class="tic"><svg class="ic" viewBox="0 0 24 24"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><path d="M4 13h3v5H5a1 1 0 0 1-1-1zM20 13h-3v5h2a1 1 0 0 0 1-1z"/></svg></span><div><b>Wrap People, Real Answers</b><span>Questions? Call <a id="wpwq-phone" href="#" style="color:inherit"></a> — we pick up.</span></div></div>
+    </div>
+
+    <!-- WrapGuru — instant file check (drag a file, get a verdict) -->
+    <div class="fileband" id="wpwq-guru">
+      <div>
+        <h3>Free Instant File Check — drop your design, get a <span class="g">print-readiness verdict in 10 seconds.</span></h3>
+        <p>We measure your file's real resolution against the print size you picked above and tell you straight: print-ready, fixable, or needs rework. Free, instant, right here.</p>
+        <div class="fr" style="margin-top:14px;">
+          <input id="wpwq-file-email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com">
+          <button type="button" id="wpwq-file-btn">Email me my full report</button>
+        </div>
+        <div class="lmsg" id="wpwq-fmsg"></div>
+      </div>
+      <div>
+        <div id="wpwq-drop" style="border:2px dashed #4b5563;border-radius:14px;padding:26px 18px;text-align:center;cursor:pointer;transition:border-color .2s;">
+          <div style="font-size:32px;line-height:1;">📐</div>
+          <div style="font-weight:800;font-size:15px;margin-top:8px;">Drop your design file here</div>
+          <div style="color:#9ca3af;font-size:12.5px;margin-top:4px;">or tap to choose — JPG / PNG / WebP · analyzed on your device, never uploaded</div>
+          <input id="wpwq-file-input" type="file" accept="image/*" style="display:none;">
+        </div>
+        <div id="wpwq-verdict" style="display:none;margin-top:12px;border-radius:12px;padding:14px 16px;background:#111827;border:1px solid #374151;">
+          <div id="wpwq-verdict-badge" style="font-weight:900;font-size:16px;"></div>
+          <div id="wpwq-verdict-detail" style="font-size:13px;color:#d1d5db;margin-top:6px;line-height:1.5;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">Prices are live product pricing from weprintwraps.com. Need something custom? <a id="wpwq-foot-phone" href="#">Call us</a> — we answer.</div>
+  </div>
+
+  <script>
+  (function(){
+    var root=document.getElementById('wpwq');
+    if(!root||root.dataset.init) return; root.dataset.init='1';
+    var $=function(id){return root.querySelector('#'+id);};
+
+    /* ── CONFIG — edit freely ────────────────────────────────────────── */
+    var TURNAROUND='Open press time this week — orders placed today <b>print tomorrow</b> and ship in 48 hours.';
+    var COUPON='';               // e.g. 'PRESSTIME' — leave '' until the code exists in WooCommerce
+    var COUPON_TEXT='10% off';   // shown next to the coupon when COUPON is set
+    var FREE_SHIP=750;           // free-shipping threshold ($)
+    var PHONE='549-622-4678';    // shown in trust row + footer
+    var LEAD_ENDPOINT='https://kfapjdyythzyvnpdeghu.functions.supabase.co/wpw-calc-lead';
+    var CART_BASE='https://weprintwraps.com/cart/';
+    /* ────────────────────────────────────────────────────────────────── */
+
+    // Real Woo products — id + per-sqft price must match the live store.
+    var MATERIALS=[
+      {id:79,   key:'avery', label:'Avery MPI 1105 + DOL 1460Z laminate — $5.27/sq ft', short:'Avery MPI 1105 (laminated)', price:5.27},
+      {id:72,   key:'3m',    label:'3M IJ180Cv3 + 8518 laminate — $5.27/sq ft',         short:'3M IJ180Cv3 (laminated)',   price:5.27},
+      {id:80,   key:'perf',  label:'Perforated Window Vinyl 50/50 — $5.95/sq ft',       short:'Window Perf 50/50',         price:5.95}
+    ];
+    var VEHICLES=[
+      {label:'Sedan / coupe — full wrap', sqft:250},
+      {label:'Compact car — full wrap', sqft:200},
+      {label:'Sports car — full wrap', sqft:220},
+      {label:'Crossover / small SUV — full wrap', sqft:275},
+      {label:'Full-size SUV — full wrap', sqft:325},
+      {label:'Pickup truck — full wrap', sqft:350},
+      {label:'Minivan — full wrap', sqft:300},
+      {label:'Cargo van (144″ WB) — full wrap', sqft:450},
+      {label:'Sprinter (170″ ext) — full wrap', sqft:550},
+      {label:'Box truck — sides + rear', sqft:600},
+      {label:'Partial / panels — enter exact sq ft', sqft:0},
+      {label:'Wall or flat surface — enter exact sq ft', sqft:0}
+    ];
+
+    var ribbon=TURNAROUND + (COUPON ? ' Use code <b>'+COUPON+'</b> for '+COUPON_TEXT+'.' : '');
+    $('wpwq-ribbon-txt').innerHTML=ribbon;
+    $('wpwq-phone').textContent=PHONE; $('wpwq-phone').href='tel:'+PHONE.replace(/[^0-9]/g,'');
+    $('wpwq-foot-phone').textContent=PHONE; $('wpwq-foot-phone').href='tel:'+PHONE.replace(/[^0-9]/g,'');
+
+    var vehicle=$('wpwq-vehicle'), material=$('wpwq-material'), area=$('wpwq-area'), waste=$('wpwq-waste');
+    VEHICLES.forEach(function(v,i){var o=document.createElement('option');o.value=i;o.textContent=v.label+(v.sqft?' (~'+v.sqft+' sq ft)':'');vehicle.appendChild(o);});
+    MATERIALS.forEach(function(m,i){var o=document.createElement('option');o.value=i;o.textContent=m.label;material.appendChild(o);});
+
+    $('wpwq-adv-btn').addEventListener('click',function(){
+      var a=$('wpwq-adv'); a.classList.toggle('open');
+      this.textContent=(a.classList.contains('open')?'− Installer options':'+ Installer options (exact sq ft, extra material)');
+    });
+
+    // Attribution: keep the ad's utm/gclid on the lead.
+    var attrib=((location&&location.pathname)||'')+((location&&location.search)||'');
+    attrib=attrib.slice(0,190);
+
+    // Ad-platform events: GTM dataLayer (→ GA4 / Google Ads conversions)
+    // + Meta pixel if present (PixelYourSite installs fbq site-wide).
+    function track(ev,params){
+      try{window.dataLayer=window.dataLayer||[];window.dataLayer.push(Object.assign({event:ev},params||{}));}catch(e){}
+      try{if(typeof window.fbq==='function')window.fbq('trackCustom',ev,params||{});}catch(e){}
+    }
+    var engaged=false;
+    function markEngaged(){if(!engaged){engaged=true;track('wpw_quote_engaged',{});}}
+
+    var lastQuote={};
+    function fmt(n,d){return (isFinite(n)?n:0).toLocaleString('en-US',{minimumFractionDigits:d||0,maximumFractionDigits:d||0});}
+    function calc(){
+      var v=VEHICLES[vehicle.value]||VEHICLES[0];
+      var base=parseFloat(area.value);
+      if(!isFinite(base)||base<=0) base=v.sqft||250;
+      var w=Math.max(0,parseFloat(waste.value)||0);
+      var m=MATERIALS[material.value]||MATERIALS[0];
+      var sqft=Math.ceil(base*(1+w/100));
+      var cost=sqft*m.price;
+      lastQuote={vehicle:v.label, material:m.short, area_sqft:base, roll_width:60, quantity:1,
+        waste_pct:w, total_sqft:sqft, linear_ft:+(sqft/5).toFixed(1), linear_yd:+(sqft/15).toFixed(1), est_cost:+cost.toFixed(2)};
+      $('wpwq-price').textContent=fmt(cost,2);
+      $('wpwq-total-sqft').textContent=fmt(sqft);
+      $('wpwq-mat-name').textContent=m.short;
+      $('wpwq-buy').href=CART_BASE+'?add-to-cart='+m.id+'&quantity='+sqft;
+      $('wpwq-buy-sub').textContent='('+fmt(sqft)+' sq ft → checkout)';
+      $('wpwq-sqft-hint').textContent=v.sqft?('Typical coverage ≈ '+v.sqft+' sq ft — fine-tune under installer options.'):'Enter your exact square footage under installer options.';
+      var pct=Math.max(0,Math.min(1,cost/FREE_SHIP));
+      $('wpwq-ship-fill').style.width=(pct*100)+'%';
+      var msg=$('wpwq-ship-msg');
+      if(cost>=FREE_SHIP){msg.className='msg ok';msg.textContent='✓ This order ships FREE ($'+FREE_SHIP+'+).';}
+      else{msg.className='msg';msg.textContent='$'+fmt(FREE_SHIP-cost,2)+' away from FREE shipping.';}
+    }
+    vehicle.addEventListener('change',function(){var v=VEHICLES[vehicle.value];if(v&&v.sqft)area.value=v.sqft;calc();markEngaged();});
+    [material,area,waste].forEach(function(el){el.addEventListener('input',function(){calc();markEngaged();});el.addEventListener('change',function(){calc();markEngaged();});});
+    area.value=VEHICLES[0].sqft; calc();
+
+    function sendLead(email,quote,tag,onDone){
+      return fetch(LEAD_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email:email,quote:quote,intent:tag==='filecheck'?'filecheck':'quote',pagePath:attrib+(tag?('#'+tag):'')})})
+      .then(function(r){return r.json().catch(function(){return null;});})
+      .then(onDone)
+      .catch(function(){onDone(null);});
+    }
+    var EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    // "Email my quote"
+    $('wpwq-email-btn').addEventListener('click',function(){
+      var btn=this, em=($('wpwq-email').value||'').trim(), lm=$('wpwq-lmsg');
+      if(!EMAIL_RE.test(em)){lm.textContent='Please enter a valid email address.';lm.className='lmsg err';$('wpwq-email').focus();return;}
+      btn.disabled=true; var old=btn.textContent; btn.textContent='Sending…'; lm.textContent=''; lm.className='lmsg';
+      sendLead(em,lastQuote,'quote',function(d){
+        if(d&&d.ok){track('wpw_lead',{lead_type:'quote',value:lastQuote.est_cost||0,currency:'USD'});lm.textContent='✓ Sent! Your quote is in your inbox — the Buy Now button locks it in.';lm.className='lmsg ok';$('wpwq-email').value='';btn.textContent=old;btn.disabled=false;}
+        else{lm.textContent=(d&&d.error)||'Could not send — please try again.';lm.className='lmsg err';btn.disabled=false;btn.textContent=old;}
+      });
+    });
+
+    // ── WrapGuru instant file check ─────────────────────────────────
+    // Pure client-side: read the image's pixel size, divide by the print
+    // width implied by the vehicle/area chosen above, and grade the PPI.
+    // Nothing is uploaded — the verdict is instant and private.
+    var guruResult=null;
+    function printWidthInches(){
+      // Approximate longest print dimension from the selected job:
+      // full wraps print as side panels (~len of vehicle), flat jobs use sqrt.
+      var sqft=(lastQuote&&lastQuote.total_sqft)||250;
+      var v=(lastQuote&&lastQuote.vehicle)||'';
+      if(/box truck/i.test(v)) return 288;
+      if(/sprinter|cargo van/i.test(v)) return 260;
+      if(/pickup|suv|minivan/i.test(v)) return 230;
+      if(/sedan|coupe|compact|sports|crossover/i.test(v)) return 215;
+      return Math.max(48,Math.round(Math.sqrt(sqft*144))); // flat/partial: square-ish
+    }
+    function gradeFile(w,h,name){
+      var pw=printWidthInches();
+      var ppi=Math.round((Math.max(w,h)/pw)*10)/10;
+      var badge=$('wpwq-verdict-badge'), detail=$('wpwq-verdict-detail'); $('wpwq-verdict').style.display='block';
+      var verdict, color, advice;
+      if(ppi>=50){verdict='✅ PRINT-READY'; color='#4ade80';
+        advice='At ~'+ppi+' PPI across '+pw+'″ this prints clean. Lock your price above and order — we can have it on the press tomorrow.';}
+      else if(ppi>=20){verdict='🟡 GOOD — we’ll enhance it free'; color='#fbbf24';
+        advice='~'+ppi+' PPI across '+pw+'″ is workable: wraps read great from viewing distance, and our print-prep includes a professional upscale pass at no charge. Order above, or email yourself the full report.';}
+      else{verdict='🔴 TOO LOW FOR THIS SIZE'; color='#f87171';
+        advice='~'+ppi+' PPI across '+pw+'″ will print soft. Options: send us the original source file (usually much larger), reduce the print size, or our design team can rebuild it print-ready. Email yourself the report and we’ll take a look free.';}
+      badge.textContent=verdict; badge.style.color=color;
+      detail.textContent=(name?name+' — ':'')+w+'×'+h+' px → ~'+ppi+' PPI at '+pw+'″ wide. '+advice;
+      guruResult={file:name||'file', px:w+'x'+h, ppi:ppi, printWidth:pw, verdict:verdict.replace(/^[^ ]+ /,'')};
+      track('wpw_file_check',{ppi:ppi,verdict:guruResult.verdict});
+    }
+    function analyzeFile(file){
+      if(!file||!/^image\//.test(file.type)){
+        $('wpwq-verdict').style.display='block';
+        $('wpwq-verdict-badge').textContent='📄 That format needs a human';
+        $('wpwq-verdict-badge').style.color='#d1d5db';
+        $('wpwq-verdict-detail').textContent='PDFs, AI and EPS files: drop your email on the left and we’ll check it by hand, free.';
+        guruResult={file:(file&&file.name)||'non-image', px:null, ppi:null, verdict:'needs manual check'};
+        return;
+      }
+      var url=URL.createObjectURL(file), img=new Image();
+      img.onload=function(){gradeFile(img.naturalWidth,img.naturalHeight,file.name);URL.revokeObjectURL(url);};
+      img.onerror=function(){URL.revokeObjectURL(url);};
+      img.src=url;
+    }
+    var drop=$('wpwq-drop'), fin=$('wpwq-file-input');
+    drop.addEventListener('click',function(){fin.click();});
+    fin.addEventListener('change',function(){if(fin.files&&fin.files[0])analyzeFile(fin.files[0]);});
+    ;['dragover','dragenter'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.style.borderColor='#3b82f6';});});
+    ;['dragleave','drop'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.style.borderColor='#4b5563';});});
+    drop.addEventListener('drop',function(e){var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)analyzeFile(f);});
+
+    // "Email me my full report" — sends the verdict (if any) with the lead.
+    $('wpwq-file-btn').addEventListener('click',function(){
+      var btn=this, em=($('wpwq-file-email').value||'').trim(), lm=$('wpwq-fmsg');
+      if(!EMAIL_RE.test(em)){lm.textContent='Please enter a valid email address.';lm.className='lmsg err';$('wpwq-file-email').focus();return;}
+      btn.disabled=true; var old=btn.textContent; btn.textContent='Sending…'; lm.textContent=''; lm.className='lmsg';
+      var g=guruResult||{};
+      sendLead(em,{vehicle:'INSTANT FILE CHECK'+(g.verdict?(' — '+g.verdict):' (no file analyzed yet)'),
+        material:(g.file?g.file+' ':'')+(g.px?g.px+' px, ~'+g.ppi+' PPI at '+g.printWidth+'″':'awaiting file'),
+        area_sqft:lastQuote.area_sqft||null,total_sqft:lastQuote.total_sqft||null,est_cost:lastQuote.est_cost||null},'filecheck',function(d){
+        if(d&&d.ok){track('wpw_lead',{lead_type:'filecheck'});lm.textContent='✓ Sent! Full report + next steps are in your inbox.';lm.className='lmsg ok';$('wpwq-file-email').value='';btn.textContent=old;btn.disabled=false;}
+        else{lm.textContent=(d&&d.error)||'Could not send — please try again.';lm.className='lmsg err';btn.disabled=false;btn.textContent=old;}
+      });
+    });
+
+    // Capture the quote on Buy click too (best-effort, never blocks navigation).
+    $('wpwq-buy').addEventListener('click',function(){
+      track('wpw_buy_now_click',{value:lastQuote.est_cost||0,currency:'USD',sqft:lastQuote.total_sqft||0,material:lastQuote.material||''});
+      var em=($('wpwq-email').value||'').trim();
+      if(EMAIL_RE.test(em)){
+        try{
+          navigator.sendBeacon&&navigator.sendBeacon(LEAD_ENDPOINT,new Blob([JSON.stringify({email:em,quote:lastQuote,pagePath:attrib+'#buy'})],{type:'application/json'}));
+        }catch(e){}
+      }
+    });
+
+    // Chat: the site-wide WrapGuru chat (WrapCommand's system) covers this
+    // page via its own script tag — no widget is loaded from this repo.
+    // Fallback API exists at wpw-sales-chat if ever needed (dormant).
+  })();
+  </script>
+</div>

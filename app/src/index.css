@@ -1,0 +1,1059 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Kill all glow/shadow on swatch cards */
+.swatch-card,
+.swatch-card * {
+  box-shadow: none !important;
+  filter: none !important;
+  -webkit-filter: none !important;
+  text-shadow: none !important;
+}
+
+/* === Global fallback swatch text === */
+.swatch-fallback {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: #ffffff !important;
+  font-weight: 600;
+  font-size: 0.8rem;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Custom blue scrollbar */
+/* Hidden scrollbar for the floating tool rail, which scrolls horizontally on
+   narrow desktop windows rather than overflowing past the viewport edge. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-blue::-webkit-scrollbar {
+  width: 12px;
+}
+
+.scrollbar-blue::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-blue::-webkit-scrollbar-thumb {
+  background: hsl(217 91% 60%);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar-blue::-webkit-scrollbar-thumb:hover {
+  background: hsl(217 91% 70%);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar-blue::-webkit-scrollbar-button {
+  display: block;
+  height: 12px;
+  background: transparent;
+}
+
+.scrollbar-blue::-webkit-scrollbar-button:vertical:decrement {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m18 15-6-6-6 6'/%3E%3C/svg%3E") no-repeat center;
+}
+
+.scrollbar-blue::-webkit-scrollbar-button:vertical:increment {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat center;
+}
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  /* Force native dropdown options to be readable (black text on white bg) */
+  select option {
+    color: #000 !important;
+    background: #fff !important;
+  }
+
+  :root {
+    /* Ultra-deep black backgrounds - exact RestyleProAI™ spec */
+    --background: 0 0% 0%;           /* Pure black #000000 */
+    --foreground: 0 0% 100%;         /* Pure white #FFFFFF */
+
+    /* Card styling - lifted from pure black */
+    --card: 0 0% 30%;                /* #4d4d4f — clear lift from black bg */
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 3%;
+    --popover-foreground: 0 0% 100%;
+
+    /* Blue accent color - #3B82F6 */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;  /* White text on blue */
+
+    /* Secondary dark gray - subtle UI elements */
+    --secondary: 0 0% 14%;           /* #242424 — visible lift from black bg */
+    --secondary-foreground: 0 0% 100%;
+
+    /* Muted text - soft gray #A0A0A0 */
+    --muted: 0 0% 6%;
+    --muted-foreground: 0 0% 63%;    /* #A0A0A0 */
+
+    /* Accent = blue */
+    --accent: 217 91% 60%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders - visible edge on dark bg */
+    --border: 0 0% 20%;              /* #333333 — clear edge against black */
+    --input: 0 0% 18%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;                /* Slightly less rounded for professional look */
+
+    /* DesignProAI accent gradient - bright blue → deep rich blue → magenta */
+    --gradient-designpro-start: 210 100% 65%;  /* Bright vivid blue */
+    --gradient-designpro-mid: 230 85% 42%;     /* Deep rich blue */
+    --gradient-designpro-end: 300 80% 48%;     /* Rich magenta */
+
+    /* RestyleProAI gradient - bright blue → deep rich blue → magenta (Primary CTA) */
+    --gradient-brand-start: 210 100% 65%;        /* Bright vivid blue */
+    --gradient-brand-mid: 230 85% 42%;           /* Deep rich blue */
+    --gradient-brand-end: 300 80% 48%;           /* Rich magenta */
+
+    /* Professional bright blue → deep blue → magenta gradient */
+    --gradient-blue-start: 210 100% 65%;       /* Bright vivid blue */
+    --gradient-blue-mid: 230 85% 40%;          /* Deep rich blue */
+    --gradient-blue-end: 310 75% 45%;          /* Rich magenta */
+
+    --sidebar-background: 0 0% 3%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 6%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 13%;
+    --sidebar-ring: 217 91% 60%;
+  }
+
+  /* Light mode overrides */
+  .light {
+    --background: 0 0% 100%;          /* White */
+    --foreground: 0 0% 7%;            /* Near-black text */
+
+    --card: 0 0% 98%;                 /* Very light gray */
+    --card-foreground: 0 0% 7%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 7%;
+
+    --primary: 217 91% 50%;           /* Slightly darker blue for white bg contrast */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 94%;
+    --secondary-foreground: 0 0% 7%;
+
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 40%;
+
+    --accent: 217 91% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 87%;
+    --input: 0 0% 87%;
+    --ring: 217 91% 50%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 7%;
+    --sidebar-primary: 217 91% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 95%;
+    --sidebar-accent-foreground: 0 0% 7%;
+    --sidebar-border: 0 0% 87%;
+    --sidebar-ring: 217 91% 50%;
+  }
+
+  /* ColorPro page-scoped theme — white bg, dark render cards, like design proof */
+  .colorpro-light {
+    --background: 0 0% 100%;           /* White page */
+    --foreground: 0 0% 10%;            /* Near-black text */
+    --card: 0 0% 8%;                   /* Dark cards for renders — like proof sheet */
+    --card-foreground: 0 0% 95%;       /* Light text on dark cards */
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 0 0% 10%;               /* Black primary buttons */
+    --primary-foreground: 0 0% 100%;   /* White text on black */
+    --secondary: 0 0% 96%;             /* Light gray sections */
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 192 100% 50%;            /* Cyan accent for CTAs */
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 88%;               /* Light borders on white */
+    --input: 0 0% 88%;
+    --ring: 0 0% 10%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  /* Reserve the vertical scrollbar gutter so pages whose content height
+     crosses the viewport boundary (e.g. ApprovePro swapping job details)
+     don't gain/lose the scrollbar and shift the layout ~15px sideways —
+     that flip-flop reads as the page "shaking" on click. No visual effect
+     on touch devices, which overlay their scrollbars. */
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-background text-foreground font-poppins antialiased;
+    overscroll-behavior-x: none;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  /* Global blue scrollbar for the page */
+  body::-webkit-scrollbar {
+    width: 12px;
+  }
+
+  body::-webkit-scrollbar-track {
+    background: hsl(0 0% 0%);
+  }
+
+  body::-webkit-scrollbar-corner {
+    background: hsl(0 0% 0%);
+  }
+
+  body::-webkit-scrollbar-thumb {
+    background: hsl(217 91% 60%);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  body::-webkit-scrollbar-thumb:hover {
+    background: hsl(217 91% 70%);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  body::-webkit-scrollbar-button {
+    display: none;
+    height: 0;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-poppins font-bold tracking-tight;
+  }
+
+  p {
+    @apply leading-relaxed;
+  }
+
+  /* Carousel Styles - Modern 16:10 Aspect Ratio */
+  .carousel-container {
+    max-width: 550px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .carousel-image-wrapper {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    border-radius: 18px;
+    overflow: hidden;
+    background: hsl(var(--background));
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.5);
+  }
+
+  .carousel-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+
+  .carousel-tag {
+    position: absolute;
+    bottom: 12px;
+    left: 14px;
+    background: rgba(0, 0, 0, 0.55);
+    padding: 6px 14px;
+    border-radius: 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: white;
+    backdrop-filter: blur(6px);
+  }
+}
+
+/* Premium automotive styling utilities */
+@layer utilities {
+  .text-gradient-designpro {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--gradient-designpro-start)),
+      hsl(var(--gradient-designpro-mid)),
+      hsl(var(--gradient-designpro-end))
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-gradient-designpro {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--gradient-designpro-start)),
+      hsl(var(--gradient-designpro-mid)),
+      hsl(var(--gradient-designpro-end))
+    );
+  }
+
+  .border-gradient-designpro {
+    border-image: linear-gradient(
+      135deg,
+      hsl(var(--gradient-designpro-start)),
+      hsl(var(--gradient-designpro-mid)),
+      hsl(var(--gradient-designpro-end))
+    ) 1;
+  }
+
+  .text-gradient-blue {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--gradient-blue-start)),
+      hsl(var(--gradient-blue-mid)),
+      hsl(var(--gradient-blue-end))
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    /* Static gradient - no animation on text */
+  }
+
+  .text-gradient-blue:hover {
+    filter: brightness(1.2);
+  }
+
+  /* Brand gradient for logo - animated blue → magenta shimmer */
+  .text-gradient-blue-subtle {
+    background: linear-gradient(90deg, #60A5FA, #5570F6, #D946EF, #60A5FA);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradient-shift 3s linear infinite;
+  }
+
+  @keyframes gradient-shift {
+    0% { background-position: 0% center; }
+    100% { background-position: 200% center; }
+  }
+
+  /* A.C.E button — a gradient with a glow that sweeps/moves across it. */
+  .ace-glow {
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899, #8b5cf6, #3b82f6);
+    background-size: 300% 100%;
+    animation: ace-glow-move 3s ease-in-out infinite;
+  }
+  @keyframes ace-glow-move {
+    0%   { background-position: 0% 50%;   box-shadow: 0 0 6px rgba(59,130,246,0.55); }
+    50%  { background-position: 100% 50%; box-shadow: 0 0 16px rgba(236,72,153,0.7); }
+    100% { background-position: 0% 50%;   box-shadow: 0 0 6px rgba(59,130,246,0.55); }
+  }
+
+  .bg-gradient-blue {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--gradient-blue-start)),
+      hsl(var(--gradient-blue-mid)),
+      hsl(var(--gradient-blue-end))
+    );
+  }
+
+  @keyframes gradient-pulse {
+    0%, 100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  @keyframes gradient-pulse-hover {
+    0%, 100% {
+      background-position: 0% 50%;
+      filter: brightness(1.2);
+    }
+    50% {
+      background-position: 100% 50%;
+      filter: brightness(1.4);
+    }
+  }
+
+  /* RestyleProAI gradient button utility with hover/active states */
+  .btn-brand {
+    background: linear-gradient(
+      90deg,
+      hsl(220 100% 42%) 0%,
+      hsl(300 90% 42%) 100%
+    );
+    color: white;
+    transition: all 0.2s ease;
+  }
+
+  .btn-brand:hover {
+    background: linear-gradient(
+      90deg,
+      hsl(220 100% 48%) 0%,
+      hsl(300 90% 48%) 100%
+    );
+  }
+
+  .btn-brand:active {
+    background: linear-gradient(
+      90deg,
+      hsl(220 100% 38%) 0%,
+      hsl(300 90% 38%) 100%
+    );
+  }
+
+  /* 360° Spin Button - Blue/Magenta Gradient Glow */
+  .btn-360-glow {
+    background: linear-gradient(
+      135deg,
+      hsl(215 90% 50%) 0%,
+      hsl(240 80% 55%) 50%,
+      hsl(292 75% 50%) 100%
+    );
+    color: white !important;
+    border: none !important;
+    box-shadow:
+      0 0 20px rgba(96, 165, 250, 0.4),
+      0 0 40px rgba(217, 70, 239, 0.2),
+      0 0 60px rgba(217, 70, 239, 0.1);
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .btn-360-glow:hover {
+    box-shadow:
+      0 0 30px rgba(96, 165, 250, 0.6),
+      0 0 60px rgba(217, 70, 239, 0.4),
+      0 0 90px rgba(217, 70, 239, 0.2);
+    transform: scale(1.02);
+  }
+
+  .btn-360-glow:disabled {
+    opacity: 0.7;
+    background: linear-gradient(135deg, hsl(215 60% 35%), hsl(292 50% 35%));
+    box-shadow: 0 0 10px rgba(96, 165, 250, 0.2);
+    cursor: not-allowed;
+    animation: none;
+  }
+
+  /* 360° Spin Button - BLUE Gradient Glow (Generating State) */
+  .btn-360-glow-generating {
+    background: linear-gradient(
+      135deg,
+      hsl(215 100% 50%) 0%,
+      hsl(205 100% 55%) 50%,
+      hsl(217 91% 70%) 100%
+    );
+    color: white !important;
+    border: none !important;
+    box-shadow: 
+      0 0 25px rgba(0, 150, 255, 0.6),
+      0 0 50px rgba(0, 150, 255, 0.4),
+      0 0 75px rgba(0, 150, 255, 0.2);
+    animation: pulse-glow-blue 1.5s ease-in-out infinite;
+  }
+
+  .btn-360-glow-generating:hover {
+    box-shadow: 
+      0 0 35px rgba(0, 150, 255, 0.7),
+      0 0 70px rgba(0, 150, 255, 0.5),
+      0 0 105px rgba(0, 150, 255, 0.3);
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 20px rgba(96, 165, 250, 0.4), 0 0 40px rgba(217, 70, 239, 0.2);
+    }
+    50% {
+      box-shadow: 0 0 30px rgba(96, 165, 250, 0.6), 0 0 60px rgba(217, 70, 239, 0.3);
+    }
+  }
+
+  @keyframes pulse-glow-blue {
+    0%, 100% { 
+      box-shadow: 0 0 25px rgba(0, 150, 255, 0.6), 0 0 50px rgba(0, 150, 255, 0.4); 
+    }
+    50% { 
+      box-shadow: 0 0 40px rgba(0, 150, 255, 0.8), 0 0 80px rgba(0, 150, 255, 0.5); 
+    }
+  }
+
+  @keyframes rotate-360 {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* 360° Navigation Icon - Pulsing Blue/Magenta Glow */
+  .icon-360-glow {
+    filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.6))
+            drop-shadow(0 0 8px rgba(217, 70, 239, 0.4));
+    animation: icon-pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes icon-pulse-glow {
+    0%, 100% {
+      filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.6))
+              drop-shadow(0 0 8px rgba(217, 70, 239, 0.4));
+    }
+    50% {
+      filter: drop-shadow(0 0 8px rgba(96, 165, 250, 0.9))
+              drop-shadow(0 0 16px rgba(217, 70, 239, 0.6))
+              drop-shadow(0 0 24px rgba(217, 70, 239, 0.3));
+    }
+  }
+
+  /* Gradient Blue Icons - Navigation Footer */
+  .icon-gradient-blue {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--gradient-blue-start)),
+      hsl(var(--gradient-blue-mid)),
+      hsl(var(--gradient-blue-end))
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* DesignIQ™ brand gradient — blue → magenta */
+  .text-gradient-designiq {
+    background: linear-gradient(
+      135deg,
+      hsl(210 100% 70%),
+      hsl(230 90% 60%),
+      hsl(320 80% 55%)
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-gradient-designiq {
+    background: linear-gradient(
+      135deg,
+      hsl(210 100% 70%) 0%,
+      hsl(230 90% 60%) 50%,
+      hsl(320 80% 55%) 100%
+    );
+  }
+
+  .btn-designiq {
+    background: linear-gradient(
+      90deg,
+      hsl(210 100% 70%) 0%,
+      hsl(230 90% 60%) 50%,
+      hsl(320 80% 55%) 100%
+    );
+    color: white;
+    transition: all 0.2s ease;
+  }
+
+  .btn-designiq:hover {
+    background: linear-gradient(
+      90deg,
+      hsl(210 100% 76%) 0%,
+      hsl(230 90% 66%) 50%,
+      hsl(320 80% 61%) 100%
+    );
+    filter: brightness(1.1);
+  }
+
+  .btn-designiq:disabled {
+    opacity: 0.5;
+    filter: saturate(0.5);
+    cursor: not-allowed;
+  }
+
+  .border-gradient-designiq {
+    border: 1px solid transparent;
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    background-image:
+      linear-gradient(hsl(0 0% 3%), hsl(0 0% 3%)),
+      linear-gradient(135deg, hsl(210 100% 70%), hsl(230 90% 60%), hsl(320 80% 55%));
+  }
+
+  /* Blue to Dark Magenta gradient — used on RevisionStudioIQ buttons */
+  .bg-gradient-blue-magenta {
+    background: linear-gradient(135deg, hsl(217 91% 60%), hsl(280 80% 40%));
+  }
+
+  .bg-gradient-blue-magenta:hover {
+    background: linear-gradient(135deg, hsl(217 91% 66%), hsl(280 80% 48%));
+  }
+
+  .text-gradient-blue-magenta {
+    background: linear-gradient(90deg, #60A5FA, #5570F6, #D946EF, #60A5FA);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradient-shift 3s linear infinite;
+  }
+
+  /* ─── Dashboard v7 — pure black root, charcoal cards ─────────────
+     Final feedback: "back to pure dark black and cards standard charcoal".
+     v7.1: surface lightened so cards float more visibly on the OLED root.
+
+     root      = #000000  (pure black, like an OLED dashboard)
+     surface   = #3a3a3c  (lifted card — clearly readable on pure black)
+     elevated  = #48484a  (hover + inner elements)
+     border    = #5a5a5c  (1px borders)
+  */
+  .bg-rp-root {
+    background-color: #000000;
+  }
+  .bg-rp-surface {
+    background-color: #4d4d4f;
+  }
+  .bg-rp-elevated {
+    background-color: #5c5c5e;
+  }
+  .border-rp {
+    border-color: #48484a;
+  }
+  .border-rp-subtle {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  /* Structural mid-blue → lighter blue gradient (no purple, no magenta)
+     Used on progress bars, accent bars, sidebar active state — quiet
+     supporting gradient. */
+  .bg-gradient-blue-deep {
+    background: linear-gradient(135deg, #2563EB, #60A5FA);
+  }
+  .bg-gradient-blue-deep-subtle {
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.14), rgba(96, 165, 250, 0.08));
+  }
+
+  /* Primary "pop" gradient — direct blue → magenta, NO purple middle.
+     Per spec: "more blue to magenta not purple". Two-stop only. */
+  .bg-gradient-rp-pop {
+    background: linear-gradient(135deg, #3B82F6 0%, #D946EF 100%);
+  }
+  .bg-gradient-rp-pop:hover {
+    background: linear-gradient(135deg, #60A5FA 0%, #E879F9 100%);
+  }
+
+  /* Horizontal snap slider used by HeroRow on mobile */
+  .snap-slider {
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .snap-slider::-webkit-scrollbar {
+    display: none;
+  }
+  .snap-slider > * {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  /* Blue-magenta tinted backgrounds for chips/badges */
+  .bg-blue-magenta-subtle {
+    background: linear-gradient(135deg, hsla(217, 91%, 60%, 0.12), hsla(280, 80%, 45%, 0.12));
+  }
+
+  .border-blue-magenta {
+    border-color: hsl(250 70% 55%);
+  }
+
+  .border-blue-magenta-glow {
+    border-color: hsl(250 70% 55%);
+    box-shadow: 0 0 0 3px hsla(250, 70%, 55%, 0.3);
+  }
+
+  .ring-blue-magenta {
+    --tw-ring-color: hsla(250, 70%, 55%, 0.3);
+  }
+
+  .text-blue-magenta {
+    color: hsl(240 70% 70%);
+  }
+
+  /* Progress bar: blue → magenta (replaces blue → green) */
+  .bg-gradient-blue-magenta-bar {
+    background: linear-gradient(90deg, hsl(217 91% 60%), hsl(280 80% 45%));
+  }
+
+  /* 🔒 Lock Header Layout (Prevents AI from breaking it) */
+  .header-container {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 0.25rem 0.75rem !important;
+    height: auto !important;
+    min-height: 48px !important;
+    max-height: 72px !important;
+    overflow: visible !important;
+  }
+
+  /* Logo Fix - for text elements */
+  .header-logo {
+    display: flex !important;
+    align-items: center !important;
+    flex-shrink: 0 !important;
+    line-height: 1.1 !important;
+  }
+
+  /* Sub-brand text fix */
+  .header-subtext {
+    font-size: 11px !important;
+    white-space: nowrap !important;
+    margin-left: 0 !important;
+    margin-top: -2px !important;
+    line-height: 1 !important;
+  }
+}
+
+/* Mobile Optimization - Prevents horizontal scroll and optimizes touch */
+@media (max-width: 767px) {
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  
+  /* Constrain layout containers — prevents horizontal overflow */
+  .container, main, section, article, aside, [role="main"] {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  img, video, canvas, svg, iframe {
+    max-width: 100%;
+  }
+
+  body {
+    touch-action: pan-y pinch-zoom;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  }
+  
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
+
+  /* Carousel / slider indicator dots — keep them small */
+  button.slide-dot {
+    min-height: auto;
+    min-width: auto;
+  }
+
+  h1 { 
+    font-size: 2rem;
+    line-height: 1.2;
+  }
+  
+  h2 { 
+    font-size: 1.75rem;
+    line-height: 1.3;
+  }
+  
+  h3 { 
+    font-size: 1.5rem;
+    line-height: 1.4;
+  }
+  
+  p { 
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    max-width: 100vw;
+  }
+
+  /* Preserve image fill inside aspect-ratio containers and galleries on mobile */
+  .gallery-card-image,
+  [class*="aspect-"] img {
+    height: 100% !important;
+    width: 100% !important;
+    object-fit: cover;
+  }
+
+  /* Card padding is handled by component classes — no blanket override needed */
+
+  input, textarea, select {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+
+  [role="dialog"] {
+    max-width: 95vw !important;
+    max-height: 90vh !important;
+    margin: 1rem;
+  }
+
+  /* Override for Sheet dialogs - flush left-slide with no margin */
+  [role="dialog"][data-state="open"].fixed.inset-y-0 {
+    margin: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+  }
+
+  [role="menu"], [role="listbox"] {
+    max-width: 90vw;
+  }
+
+  /* Mobile Header Fix */
+  .header-container {
+    padding: 0.15rem 0.5rem !important;
+    min-height: auto !important;
+    align-items: flex-start !important;
+  }
+
+  .header-logo {
+    line-height: 1.1 !important;
+  }
+
+  .header-subtext {
+    font-size: 8px !important;
+    margin-top: -2px !important;
+    line-height: 1 !important;
+  }
+}
+
+/* ===== FULL-WIDTH DESKTOP LAYOUT FIX ===== */
+/* Removes ALL Tailwind width caps only on desktop */
+/* ZERO BREAKAGE — does not modify any components */
+@layer utilities {
+  @media (min-width: 1024px) {
+    .container,
+    .mx-auto,
+    .max-w-screen-xl,
+    .max-w-screen-lg,
+    .max-w-screen-md,
+    .max-w-7xl,
+    .max-w-6xl,
+    .max-w-5xl,
+    .max-w-4xl,
+    .max-w-3xl,
+    .max-w-2xl,
+    .max-w-xl,
+    .max-w-lg,
+    .max-w-md,
+    .max-w-sm {
+      max-width: 100% !important;
+      width: 100% !important;
+    }
+  }
+}
+
+/* === Footer padding for content safety === */
+/* Pad footer so content isn't hidden behind fixed MobileToolNav (h-14 = 3.5rem + safe area) */
+/* Desktop: pad for floating DesktopToolNav */
+footer {
+  padding-bottom: 5rem;
+}
+
+@media (max-width: 767px) {
+  footer {
+    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* === Typewriter cursor animation === */
+.typewriter-cursor {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* === Sprocket Float Animation === */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+/* === Hero Typewriter === */
+@keyframes hero-typewriter {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@keyframes hero-blink-caret {
+  from, to { border-color: transparent; }
+  50% { border-color: #00C7FF; }
+}
+.hero-typewriter {
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 3px solid #00C7FF;
+  animation: hero-typewriter 3s steps(60, end) forwards, hero-blink-caret 0.75s step-end infinite;
+}
+
+/* === DesignGenie Animations === */
+@keyframes genie-breathe {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.3)); }
+  50% { transform: scale(1.05); filter: drop-shadow(0 0 16px rgba(6, 182, 212, 0.5)); }
+}
+@keyframes genie-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+@keyframes genie-smoke {
+  0% { opacity: 0.5; transform: translateY(0) translateX(0); }
+  50% { opacity: 0.2; transform: translateY(-4px) translateX(-2px); }
+  100% { opacity: 0.5; transform: translateY(0) translateX(0); }
+}
+@keyframes genie-smoke-2 {
+  0% { opacity: 0.4; transform: translateY(0) translateX(0); }
+  50% { opacity: 0.15; transform: translateY(-3px) translateX(2px); }
+  100% { opacity: 0.4; transform: translateY(0) translateX(0); }
+}
+.animate-genie-breathe { animation: genie-breathe 3s ease-in-out infinite; }
+.animate-genie-float { animation: genie-float 3s ease-in-out infinite; }
+.animate-genie-smoke { animation: genie-smoke 4s ease-in-out infinite; }
+.animate-genie-smoke-2 { animation: genie-smoke-2 5s ease-in-out infinite 0.5s; }
+
+/* === Gallery Image Normalization === */
+/* Prevents white bars, stretching, and display issues */
+/* Gallery hero - full bleed for proof modal */
+.gallery-hero-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background-color: hsl(var(--card));
+}
+
+/* Gallery card image wrapper - contains without cropping */
+.gallery-card-image-wrapper {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: hsl(var(--muted));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Gallery card image - CONTAIN to prevent cropping, fill wrapper fully */
+.gallery-card-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background-color: hsl(var(--card));
+}
+
+/* Top view images need extra breathing room */
+.gallery-card-image-wrapper.top-view {
+  padding: 6%;
+}
+
+/* Proof modal - full bleed cover */
+.inkfusion-proof-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Render container normalization */
+.render-container img,
+.render-preview img {
+  display: block;
+  max-width: 100%;
+  object-fit: cover;
+  background-color: hsl(var(--background));
+}
+
+/* Prevent inline image gaps */
+img {
+  vertical-align: middle;
+  display: block;
+}
+
+/* === Global Typography System === */
+h1 { 
+  font-size: 2rem; 
+  font-weight: 700; 
+  letter-spacing: -0.02em;
+}
+h2 { 
+  font-size: 1.5rem; 
+  font-weight: 600; 
+  letter-spacing: -0.01em;
+}
+h3 { 
+  font-size: 1.25rem; 
+  font-weight: 500; 
+}
+p { 
+  font-size: 1rem; 
+  line-height: 1.6; 
+}
+
+/* === Tool Container Consistency === */
+.tool-container {
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .tool-container {
+    padding: 2.5rem;
+  }
+}
+
+/* === Unified Card Styling === */
+.design-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.design-card:hover {
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 4px 20px -4px hsl(var(--primary) / 0.15);
+}
