@@ -109,10 +109,19 @@ function normalizeTiles(tiles) {
     const trimWidthIn = Number(tile?.trimWidthIn);
     const trimHeightIn = Number(tile?.trimHeightIn);
     const bleedIn = Number(tile?.bleedIn);
+    const trimWidthPx = Number(tile?.trimWidthPx);
+    const trimHeightPx = Number(tile?.trimHeightPx);
+    const bleedPx = Number(tile?.bleedPx);
     if (!SURFACE_KEYS.includes(key) || byKey.has(key) || !(trimWidthIn > 0 && trimHeightIn > 0) || bleedIn !== 5) {
       throw new Error(`invalid flat-surface geometry for ${key || "unknown surface"}`);
     }
-    byKey.set(key, Object.freeze({ ...tile, key, trimWidthIn, trimHeightIn, bleedIn }));
+    if (![trimWidthPx, trimHeightPx, bleedPx].every((value) => Number.isSafeInteger(value) && value > 0)) {
+      throw new Error(`${key} is missing its deterministic artboard cell geometry`);
+    }
+    byKey.set(key, Object.freeze({
+      ...tile, key, trimWidthIn, trimHeightIn, bleedIn, trimWidthPx, trimHeightPx, bleedPx,
+      cellWidthPx: trimWidthPx + bleedPx * 2, cellHeightPx: trimHeightPx + bleedPx * 2,
+    }));
   }
   if (SURFACE_KEYS.some((key) => !byKey.has(key))) throw new Error("the six-surface set is incomplete");
   return byKey;
@@ -134,7 +143,10 @@ function flatInputHash({ sourceViews, tiles, revisionId, textLock, model = selec
     }),
     surfaces: SURFACE_KEYS.map((key) => {
       const item = surfaces.get(key);
-      return { key, trimWidthIn: item.trimWidthIn, trimHeightIn: item.trimHeightIn, bleedIn: item.bleedIn };
+      return {
+        key, trimWidthIn: item.trimWidthIn, trimHeightIn: item.trimHeightIn, bleedIn: item.bleedIn,
+        trimWidthPx: item.trimWidthPx, trimHeightPx: item.trimHeightPx, bleedPx: item.bleedPx,
+      };
     }),
   });
 }
@@ -240,13 +252,22 @@ async function generateOneSurface({ apiKey, model, surface, ownReference, heroRe
   throw new Error(`${surface.key} flat-surface generation failed closed after 3 attempts: ${lastError?.message || lastError}`);
 }
 
-async function masterFromFlat(flatBytes, surface, pixelsPerInch = 150) {
+/**
+ * Renders one raw flat into the exact deterministic artboard cell: the GENIE
+ * trim rectangle in the middle, five inches of mirrored bleed on every edge,
+ * and no other transform. The result is what Call 8 pastes into the artboard,
+ * so a Call 9 cut of that rectangle returns this artwork unchanged.
+ */
+async function masterFromFlat(flatBytes, surface) {
   await assertOpaqueImage(flatBytes, surface.key);
-  const trimWidth = Math.max(1, Math.round(surface.trimWidthIn * pixelsPerInch));
-  const trimHeight = Math.max(1, Math.round(surface.trimHeightIn * pixelsPerInch));
-  const bleed = Math.round(surface.bleedIn * pixelsPerInch);
+  const trimWidth = Number(surface.trimWidthPx);
+  const trimHeight = Number(surface.trimHeightPx);
+  const bleed = Number(surface.bleedPx);
+  if (![trimWidth, trimHeight, bleed].every((value) => Number.isSafeInteger(value) && value > 0)) {
+    throw new Error(`${surface.key} is missing its deterministic artboard cell geometry`);
+  }
   if ((trimWidth + bleed * 2) * (trimHeight + bleed * 2) > MAX_MASTER_PIXELS) {
-    throw new Error(`${surface.key} validated geometry exceeds the bounded 1:10 @1500dpi worker budget`);
+    throw new Error(`${surface.key} validated geometry exceeds the bounded artboard cell budget`);
   }
   let trim = await sharp(flatBytes, { limitInputPixels: false })
     .resize(trimWidth, trimHeight, { fit: "inside", kernel: "lanczos3" })
@@ -264,10 +285,10 @@ async function masterFromFlat(flatBytes, surface, pixelsPerInch = 150) {
   return sharp(trim).extend({ left: bleed, right: bleed, top: bleed, bottom: bleed, extendWith: "mirror" }).png().toBuffer();
 }
 
-async function validateMaster(bytes, surface, pixelsPerInch = 150) {
+async function validateMaster(bytes, surface) {
   const metadata = await assertOpaqueImage(bytes, `${surface.key} master`);
-  const expectedWidth = Math.round((surface.trimWidthIn + surface.bleedIn * 2) * pixelsPerInch);
-  const expectedHeight = Math.round((surface.trimHeightIn + surface.bleedIn * 2) * pixelsPerInch);
+  const expectedWidth = Number(surface.trimWidthPx) + Number(surface.bleedPx) * 2;
+  const expectedHeight = Number(surface.trimHeightPx) + Number(surface.bleedPx) * 2;
   if (expectedWidth * expectedHeight > MAX_MASTER_PIXELS) throw new Error(`${surface.key} master exceeds the bounded pixel budget`);
   if (metadata.width !== expectedWidth || metadata.height !== expectedHeight) {
     throw new Error(`${surface.key} immutable master geometry drifted`);
@@ -319,8 +340,8 @@ async function authorFlatSurfaceMasters(options) {
       results.push({
         key, bytes, metadata, inputHash, model, flatHash: sha256(flatBytes),
         flatPixelWidth: flatMetadata.width, flatPixelHeight: flatMetadata.height,
-        normalizationScaleX: Math.round((surface.trimWidthIn * 150 / flatMetadata.width) * 10000) / 10000,
-        normalizationScaleY: Math.round((surface.trimHeightIn * 150 / flatMetadata.height) * 10000) / 10000,
+        normalizationScaleX: Math.round((surface.trimWidthPx / flatMetadata.width) * 10000) / 10000,
+        normalizationScaleY: Math.round((surface.trimHeightPx / flatMetadata.height) * 10000) / 10000,
       });
       continue;
     }
@@ -331,8 +352,8 @@ async function authorFlatSurfaceMasters(options) {
     results.push({
       key, bytes: master, metadata, inputHash, model, flatHash: sha256(flatBytes),
       flatPixelWidth: flatMetadata.width, flatPixelHeight: flatMetadata.height,
-      normalizationScaleX: Math.round((surface.trimWidthIn * 150 / flatMetadata.width) * 10000) / 10000,
-      normalizationScaleY: Math.round((surface.trimHeightIn * 150 / flatMetadata.height) * 10000) / 10000,
+      normalizationScaleX: Math.round((surface.trimWidthPx / flatMetadata.width) * 10000) / 10000,
+      normalizationScaleY: Math.round((surface.trimHeightPx / flatMetadata.height) * 10000) / 10000,
     });
   }
   if (results.length !== SURFACE_KEYS.length || new Set(results.map((item) => sha256(item.bytes))).size !== SURFACE_KEYS.length) {
