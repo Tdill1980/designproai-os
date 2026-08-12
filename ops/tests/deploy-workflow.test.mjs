@@ -230,6 +230,17 @@ test("the deploy pipe sends exactly as many secrets as configure-env.sh reads", 
   }
 });
 
+test("the droplet's remote configuration half is a staged script, not a heredoc", () => {
+  const remote = readFileSync(resolve(root, "ops/ci-configure-env.sh"), "utf8");
+  const configureWorkflow = readFileSync(resolve(root, ".github/workflows/configure-droplet-env.yml"), "utf8");
+  assert.match(configureWorkflow, /ci-configure-env\.sh/);
+  assert.match(remote, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY/);
+  assert.match(remote, /validate-env\.py"/);
+  assert.match(remote, /REMOTE_STAGE == \/tmp\/designproai-env-\*/, "the staging path is constrained");
+  // It configures. Deploy verbs belong to the deploy.
+  assert.doesNotMatch(remote, /deploy\.sh|docker compose|systemctl|install-caddy\.sh|designproai\/current/);
+});
+
 test("configuring the droplet environment is protected, pinned, and deploys nothing", () => {
   const configureWorkflow = readFileSync(resolve(root, ".github/workflows/configure-droplet-env.yml"), "utf8");
   assert.match(configureWorkflow, /workflow_dispatch:/);
