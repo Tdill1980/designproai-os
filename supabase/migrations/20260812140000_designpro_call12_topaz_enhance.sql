@@ -71,8 +71,13 @@ BEGIN
   RETURN jsonb_build_object('workflowRunId',v_run.id,'sourceEnticeRunId',v_entice.id,'status',v_run.status);
 END $fn$;
 
--- Same single-line change in the generic run builder's production branch.
-CREATE OR REPLACE FUNCTION public.create_designpro_workflow_run(
+-- Same single-line change in the generic builder's production branch. The name
+-- must be exactly the existing function: a mistyped name would CREATE a second
+-- SECURITY DEFINER function carrying PostgreSQL's default EXECUTE to PUBLIC
+-- rather than replacing this one.
+DROP FUNCTION IF EXISTS public.create_designpro_workflow_run(text,uuid,text,text,uuid,uuid,uuid,text,text,text,jsonb);
+
+CREATE OR REPLACE FUNCTION public.create_designpro_workflow(
   p_workflow_type text, p_owner_id uuid, p_tenant_key text, p_idempotency_key text,
   p_revision_id uuid, p_entice_pack_id uuid, p_dimension_manifest_id uuid,
   p_source_contract_hash text, p_manifest_hash text, p_artifact_set_hash text,
