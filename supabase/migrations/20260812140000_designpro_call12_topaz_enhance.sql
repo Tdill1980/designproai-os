@@ -71,37 +71,13 @@ BEGIN
   RETURN jsonb_build_object('workflowRunId',v_run.id,'sourceEnticeRunId',v_entice.id,'status',v_run.status);
 END $fn$;
 
--- Same single-line change in the generic builder's production branch. The name
--- must be exactly the existing function: a mistyped name would CREATE a second
--- SECURITY DEFINER function carrying PostgreSQL's default EXECUTE to PUBLIC
--- rather than replacing this one.
+-- The generic builder public.create_designpro_workflow is NOT reseeded here.
+-- 20260806180400 line 3 deliberately DROPs it: it was replaced by the two
+-- specific builders and nothing calls it. Recreating it would resurrect a
+-- deleted SECURITY DEFINER function carrying PostgreSQL's default EXECUTE to
+-- PUBLIC. A stale copy from an earlier revision of this branch is removed.
+DROP FUNCTION IF EXISTS public.create_designpro_workflow(text,uuid,text,text,uuid,uuid,uuid,text,text,text,jsonb);
 DROP FUNCTION IF EXISTS public.create_designpro_workflow_run(text,uuid,text,text,uuid,uuid,uuid,text,text,text,jsonb);
-
-CREATE OR REPLACE FUNCTION public.create_designpro_workflow(
-  p_workflow_type text, p_owner_id uuid, p_tenant_key text, p_idempotency_key text,
-  p_revision_id uuid, p_entice_pack_id uuid, p_dimension_manifest_id uuid,
-  p_source_contract_hash text, p_manifest_hash text, p_artifact_set_hash text,
-  p_input jsonb DEFAULT '{}'::jsonb
-) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $fn$
-DECLARE v_run public.designpro_workflow_runs%ROWTYPE; v_stages text[]; v_stage text; v_seq integer := 0;
-BEGIN
-  IF COALESCE(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' AND auth.uid() IS DISTINCT FROM p_owner_id THEN RAISE EXCEPTION 'owner_identity_required'; END IF;
-  IF p_workflow_type NOT IN ('designpro.entice_pack','designpro.production_pack') THEN RAISE EXCEPTION 'unsupported_workflow_type'; END IF;
-  IF p_source_contract_hash !~ '^[0-9a-f]{64}$' OR p_manifest_hash !~ '^[0-9a-f]{64}$' OR p_artifact_set_hash !~ '^[0-9a-f]{64}$' THEN RAISE EXCEPTION 'sha256_identity_required'; END IF;
-  INSERT INTO public.designpro_workflow_runs(workflow_type,owner_id,tenant_key,idempotency_key,revision_id,entice_pack_id,dimension_manifest_id,source_contract_hash,manifest_hash,artifact_set_hash,input)
-  VALUES(p_workflow_type,p_owner_id,p_tenant_key,p_idempotency_key,p_revision_id,p_entice_pack_id,p_dimension_manifest_id,lower(p_source_contract_hash),lower(p_manifest_hash),lower(p_artifact_set_hash),COALESCE(p_input,'{}'))
-  ON CONFLICT (tenant_key,workflow_type,idempotency_key) DO NOTHING;
-  SELECT * INTO v_run FROM public.designpro_workflow_runs WHERE tenant_key=p_tenant_key AND workflow_type=p_workflow_type AND idempotency_key=p_idempotency_key FOR UPDATE;
-  IF v_run.owner_id IS DISTINCT FROM p_owner_id OR v_run.revision_id IS DISTINCT FROM p_revision_id OR v_run.manifest_hash IS DISTINCT FROM lower(p_manifest_hash) THEN RAISE EXCEPTION 'idempotency_identity_conflict'; END IF;
-  v_stages := CASE WHEN p_workflow_type='designpro.entice_pack' THEN ARRAY['revision.freeze','manifest.resolve','proof.build','panels.build','logos.extract','pack.verify','pack.activate'] ELSE ARRAY['source.verify','await_panelpro_preflight_qc','enhance.upscale','output.build','output.verify','await_final_human_qc','stamp.build','zip.build','wrapbox.deliver'] END;
-  FOREACH v_stage IN ARRAY v_stages LOOP
-    INSERT INTO public.designpro_workflow_stages(run_id,stage_key,sequence,idempotency_key,input)
-    VALUES(v_run.id,v_stage,v_seq,v_run.id::text||':'||v_stage,jsonb_build_object('revisionId',v_run.revision_id,'enticePackId',v_run.entice_pack_id,'dimensionManifestId',v_run.dimension_manifest_id))
-    ON CONFLICT (run_id,stage_key) DO NOTHING;
-    v_seq := v_seq + 10;
-  END LOOP;
-  RETURN jsonb_build_object('workflowRunId',v_run.id,'status',v_run.status,'idempotent',v_run.created_at < clock_timestamp() - interval '1 millisecond');
-END $fn$;
 
 -- Retrofit runs that have not built outputs yet. Stage sequences step by 10, so
 -- the new stage lands at output.build's sequence minus 5: ordered correctly
