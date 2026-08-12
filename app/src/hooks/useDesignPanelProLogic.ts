@@ -617,27 +617,6 @@ export const useDesignPanelProLogic = () => {
       // artboard once all 7 views (including roof) are complete.
       console.log('[DesignIQ] Phase 3: Parallel-batch view rendering...');
 
-      // Helper to process batch results
-      const processBatchResults = (batchResults: PromiseSettledResult<any>[], batchTypes: string[]) => {
-        for (let i = 0; i < batchResults.length; i++) {
-          const settled = batchResults[i];
-          if (settled.status === 'fulfilled') {
-            const result = settled.value;
-            allResults.push(result);
-            if (result.url) {
-              setAllViews(prev => [...prev, { type: result.type, url: result.url! }]);
-            } else {
-              failed.push(result.type);
-            }
-          } else {
-            const viewType = batchTypes[i];
-            console.error(`[DesignIQ] View "${viewType}" unexpected rejection:`, settled.reason);
-            allResults.push({ type: viewType, url: null });
-            failed.push(viewType);
-          }
-        }
-      };
-
       // SPEED: fire every remaining AI view in ONE parallel wave. The hero
       // (driver side) is already rendered above and passenger is a deterministic
       // mirror, so hood, front, rear, close-up and roof each clone the hero with
@@ -649,10 +628,39 @@ export const useDesignPanelProLogic = () => {
         ? ['front', 'rear', 'close-up']
         : ['hood_detail', 'front', 'rear', 'close-up', 'roof'];
       console.log(`[DesignIQ] Phase 3: firing ${parallelTypes.length} views in one parallel wave: [${parallelTypes.join(', ')}]`);
-      const parallelResults = await Promise.allSettled(
-        parallelTypes.map(vt => renderSingleView(vt, year, make, model, userEmail, panelUrl))
-      );
-      processBatchResults(parallelResults, parallelTypes);
+      // Commit each view the moment it lands, not after the whole wave settles.
+      //
+      // The wave is only as fast as its slowest member, and a single view that
+      // burns all three attempts takes 150 + 3 + 150 + 3 + 160 = 466s. Reporting
+      // results only after Promise.allSettled pinned the counter at "1/7 views
+      // ready" for that entire time, with hood, front and rear possibly already
+      // rendered and simply not shown. To a customer watching a timer climb past
+      // five minutes on 1/7, a working render wave is indistinguishable from a
+      // pipeline stuck on the driver side — which is exactly how it was reported.
+      //
+      // Same completion semantics, same failure handling; only the moment of
+      // display moves earlier.
+      const renderAndCommit = async (viewType: string) => {
+        const result = await renderSingleView(viewType, year, make, model, userEmail, panelUrl);
+        allResults.push(result);
+        if (result.url) {
+          setAllViews(prev => [...prev, { type: result.type, url: result.url! }]);
+        } else {
+          failed.push(result.type);
+        }
+        return result;
+      };
+      const parallelResults = await Promise.allSettled(parallelTypes.map(renderAndCommit));
+      // renderSingleView resolves rather than throwing, so a rejection here is a
+      // genuine surprise and still has to be recorded as a failed view.
+      parallelResults.forEach((settled, i) => {
+        if (settled.status === 'rejected') {
+          const viewType = parallelTypes[i];
+          console.error(`[DesignIQ] View "${viewType}" unexpected rejection:`, settled.reason);
+          allResults.push({ type: viewType, url: null });
+          failed.push(viewType);
+        }
+      });
 
       // Fold in the passenger render that has been running concurrently with the wave.
       const passengerUrl = await passengerPromise;
