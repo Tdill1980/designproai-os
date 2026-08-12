@@ -87,12 +87,30 @@ jobs:
           for value in "$SUPABASE_ACCESS_TOKEN" "$GOOGLE_AI_API_KEY" "$TOPAZ_API_KEY"; do
             [[ $value != *$'\n'* && $value != *$'\r'* ]]
           done
-          # Optional. A present-but-malformed key is a misconfiguration, and it
-          # must fail here rather than silently leaving Call 12 disabled.
-          [[ -z $TOPAZ_API_KEY || ${#TOPAZ_API_KEY} -ge 20 ]]
+          # An absent Topaz key here is almost always a misplaced secret rather
+          # than a decision to run without Call 12 — the value resolves to an
+          # empty string with no error, and the run would go on to write a
+          # perfectly valid environment whose production packs fail closed
+          # weeks later. Somebody deliberately configuring the droplet is
+          # configuring it completely, so this fails now and says where to look.
           if [[ -z $TOPAZ_API_KEY ]]; then
-            printf '::warning title=Call 12::DESIGNPRO_TOPAZ_API_KEY is not set; Call 12 upscaling will be written disabled and production packs will fail closed.\n'
+            printf '::error title=Call 12::DESIGNPRO_TOPAZ_API_KEY resolved to an empty value.\n' >&2
+            cat >&2 <<'MISSING'
+          The other three secrets resolved, so the job reached the right
+          environment; this one is not in it. An environment secret is only
+          visible to a job whose `environment:` matches the environment holding
+          it — a secret of the right name in the wrong environment reads as
+          absent, with no error.
+
+          Add it as an Environment secret named DESIGNPRO_TOPAZ_API_KEY under
+          Settings -> Environments -> designproai-production, beside
+          DESIGNPROAI_SSH_PRIVATE_KEY, DESIGNPRO_SUPABASE_ACCESS_TOKEN and
+          DESIGNPRO_GOOGLE_AI_API_KEY.
+          MISSING
+            exit 1
           fi
+          # A present-but-malformed key is a misconfiguration too.
+          [[ ${#TOPAZ_API_KEY} -ge 20 ]]
 
           # The service_role key is not stored as a secret. It is fetched from
           # the Supabase Management API for exactly this project, so there is
@@ -207,27 +225,17 @@ jobs:
           # Three lines, in the order configure-env.sh consumes them. The third
           # is always sent — empty when no Topaz key is configured — because a
           # short pipe is a truncated channel, not a decision about Call 12.
+          #
+          # The remote half is a staged script invoked by path, NOT a heredoc.
+          # A heredoc would claim this ssh's stdin and silently discard the
+          # pipe, leaving the reader on the far side to consume the tail of the
+          # script where it expected a key.
           printf '%s\n%s\n%s\n' \
             "$(<"$RUNTIME_KEY_FILE")" \
             "$GOOGLE_AI_API_KEY" \
             "$TOPAZ_API_KEY" | \
-          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "REMOTE_STAGE='$remote_stage' bash -s" <<'REMOTE'
-          set -Eeuo pipefail
-          control="$REMOTE_STAGE/ops"
-          test -d "$control" && test ! -L "$control"
-
-          # configure-env.sh requires the base layout. Creating it is the same
-          # idempotent base install the dark deploy runs, and it changes no
-          # public port, firewall rule, or running service.
-          if [[ ! -d /opt/designproai/shared || -L /opt/designproai/shared ]]; then
-            echo "Base layout missing; running the idempotent base install first."
-            "$control/install.sh" I_UNDERSTAND_NO_RP_CHANGES
-          fi
-
-          "$control/configure-env.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY
-          python3 "$control/validate-env.py" \
-            /opt/designproai/shared/runtime.env /opt/designproai/shared/gateway.env
-          REMOTE
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "REMOTE_STAGE='$remote_stage' '$remote_stage/ops/ci-configure-env.sh'"
 
       - name: Remove only this run's staging directory
         if: always() && env.CONFIGURE_MODE == 'WRITE_DESIGNPROAI_DROPLET_ENV' && steps.ssh.outputs.key_file != ''

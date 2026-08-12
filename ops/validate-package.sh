@@ -13,7 +13,7 @@ PY
 node --check runtime-healthcheck.js
 node --check gateway-healthcheck.mjs
 
-mutable=(install.sh configure-env.sh backup.sh deploy.sh rollback.sh install-caddy.sh ci-dark-deploy.sh designproai.service compose.yaml)
+mutable=(install.sh configure-env.sh backup.sh deploy.sh rollback.sh install-caddy.sh ci-dark-deploy.sh ci-configure-env.sh designproai.service compose.yaml)
 if grep -InE 'pm2|docker (system )?prune|docker compose down|docker stop|/opt/restylepro|:(3100|8080)([^0-9]|$)|\bufw\b' -- "${mutable[@]}"; then
   echo "Forbidden RP/global mutation construct found" >&2
   exit 1
@@ -31,7 +31,7 @@ grep -q 'mem_limit: 6g' compose.yaml
 grep -q 'cpus: "3.0"' compose.yaml
 grep -q '/opt/designproai/shared/spool' compose.yaml
 grep -q 'DESIGNPRO_SPOOL_DIR: "/var/lib/designproai/spool"' compose.yaml
-if rg -n 'VECTORIZE_IT_URL|host\.docker\.internal:3200|vectorize-guard' install.sh configure-env.sh backup.sh deploy.sh rollback.sh install-caddy.sh acceptance.sh ci-dark-deploy.sh compose.yaml runtime.env.example validate-env.py; then
+if rg -n 'VECTORIZE_IT_URL|host\.docker\.internal:3200|vectorize-guard' install.sh configure-env.sh backup.sh deploy.sh rollback.sh install-caddy.sh acceptance.sh ci-dark-deploy.sh ci-configure-env.sh compose.yaml runtime.env.example validate-env.py; then
   echo "Stale external VectorizIt deployment dependency found" >&2
   exit 1
 fi
