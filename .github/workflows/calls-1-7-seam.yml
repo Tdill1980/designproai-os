@@ -120,7 +120,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           set +x
-          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           # The brief and vehicle travel as base64 so quoting cannot mangle the
           # exact text the render is judged on.
           vehicle_b64=$(printf '%s' "$SEAM_VEHICLE" | base64 -w0)

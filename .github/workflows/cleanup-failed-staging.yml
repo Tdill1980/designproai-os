@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           test "$(hostname)" = "$EXPECTED_HOSTNAME"
