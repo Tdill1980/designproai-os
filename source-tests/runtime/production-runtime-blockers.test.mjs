@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
@@ -152,16 +152,26 @@ test("visible stamp, ZIP identity file, and WrapBox bind immutable DesignID plus
   assert.doesNotMatch(claimantSource, /DesignID:.*run\.id|Order #:.*run\.id/);
 });
 
-test("Call 8 is an actual bounded flat authoring boundary and Call 9 promotes bound masters", () => {
+test("Call 8 authors one flat wrap design and Call 9 only cuts it", () => {
   const entry = readFileSync(new URL("../../runtime/index.js", import.meta.url), "utf8");
-  const flatSource = readFileSync(new URL("../../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8");
-  assert.match(entry, /authorFlatSurfaceMasters/);
-  assert.doesNotMatch(entry, /sourceBuffer\(tile\.sourceAsset/);
-  assert.match(flatSource, /gemini-3-pro-image/);
-  assert.match(flatSource, /imageSize: "4K"/);
-  assert.match(flatSource, /OUTPUT ONLY THE ARTWORK CANVAS/);
-  assert.match(claimantSource, /sourceRule: "own-call8-bound-surface-master"/);
-  assert.match(claimantSource, /\* 150\)/);
+  const wrapSource = readFileSync(new URL("../../runtime/gemini-flat-wrap.cjs", import.meta.url), "utf8");
+  const layoutSource = readFileSync(new URL("../../runtime/flat-wrap-layout.cjs", import.meta.url), "utf8");
+  assert.match(entry, /authorFlatWrapLayout/);
+  assert.match(entry, /cutAllPanels/);
+  assert.match(wrapSource, /gemini-3-pro-image|selectedImageModel/);
+  assert.match(wrapSource, /imageSize: "4K"/);
+  assert.match(wrapSource, /OUTPUT ONLY THE ARTWORK CANVAS/);
+  // The hero anchor put driver artwork on every panel. It must stay deleted,
+  // along with the per-surface generation calls that carried it.
+  assert.doesNotMatch(wrapSource, /cross-vehicle design anchor/i);
+  assert.doesNotMatch(wrapSource, /DESIGN ANCHOR/);
+  assert.doesNotMatch(entry, /authorFlatSurfaceMasters/);
+  assert.equal(existsSync(new URL("../../runtime/deterministic-artboard.cjs", import.meta.url)), false);
+  // Call 9 cuts and verifies; it never regenerates.
+  assert.match(claimantSource, /sourceRule: "deterministic-cut-of-approved-call8-flat-wrap-layout"/);
+  assert.match(claimantSource, /call9_cut_hash_mismatch/);
+  assert.match(claimantSource, /call9_layout_changed/);
+  assert.match(layoutSource, /layout_surface_artwork_reused/);
 });
 
 test("heavy output, lease-loss abort, structural output QC, deterministic stamp and delivery are wired", () => {
@@ -185,7 +195,7 @@ test("every server-produced artifact above 6 MiB uses persistent create-only res
   assert.match(claimantSource, /outputs\/\$\{slug\}[\s\S]*?uploadProducedBytes/);
   assert.match(claimantSource, /stamped-call8-proof\.png[\s\S]*?stampedStored\.spool/);
   assert.match(runtimeEntrySource, /body\.length <= MAX_STANDARD_UPLOAD_BYTES[\s\S]*?spoolImmutableBuffer[\s\S]*?uploadSpoolWithTus/);
-  assert.match(runtimeEntrySource, /persist: \(surface, master\) => uploadBuffer/);
+  assert.match(runtimeEntrySource, /persist: \(bytes\) => uploadBuffer/);
 });
 
 test("recipient registration remains worker-authenticated and strips service authority", () => {

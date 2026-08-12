@@ -5,107 +5,213 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const sharp = require("../../runtime/node_modules/sharp");
-const flat = require("../../runtime/gemini-flat-surface.cjs");
+const layoutModule = require("../../runtime/flat-wrap-layout.cjs");
+const wrap = require("../../runtime/gemini-flat-wrap.cjs");
 
 const revisionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const runId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-const ownerId = "12345678-1234-4123-8123-123456789abc";
+const viewKeys = ["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"];
+const textLock = {
+  bodyText: { phone: "555-0142" },
+  logoPlacements: [{ identityKey: "primary", displayName: "Flamingo Pools", targetSurfaceKey: "driver", contentHash: "f".repeat(64) }],
+};
+// Real 2023 Ford F-350 Crew Cab geometry from the production proof.
+const surfaces = [
+  { surfaceKey: "driver", widthInches: 153, heightInches: 56 },
+  { surfaceKey: "passenger", widthInches: 153, heightInches: 56 },
+  { surfaceKey: "hood", widthInches: 71.5, heightInches: 54 },
+  { surfaceKey: "roof", widthInches: 74.3, heightInches: 54.8 },
+  { surfaceKey: "front", widthInches: 68, heightInches: 40 },
+  { surfaceKey: "rear", widthInches: 76, heightInches: 34 },
+];
 
 async function sourceViews() {
-  const rows = [];
-  for (let index = 0; index < flat.VIEW_KEYS.length; index += 1) {
-    const viewKey = flat.VIEW_KEYS[index];
-    const bytes = await sharp({ create: { width: 512 + index, height: 512, channels: 3, background: { r: 20 + index * 17, g: 80 + index, b: 140 - index } } }).png().toBuffer();
-    const contentHash = createHash("sha256").update(bytes).digest("hex");
-    rows.push({ viewKey, storagePath: `users/${ownerId}/revisions/${revisionId}/inputs/${viewKey}/${contentHash}.png`, contentHash, byteSize: bytes.length, contentType: "image/png", bytes });
-  }
-  return rows;
-}
-
-function tileSet(materialPrefix = "pending") {
-  return flat.SURFACE_KEYS.map((key, index) => ({
-    key,
-    trimWidthIn: 0.04 + index * 0.01,
-    trimHeightIn: 0.03 + index * 0.01,
-    bleedIn: 5,
-    masterPath: `designpro/user_${ownerId}/${runId}/proof-masters/${key}-${materialPrefix}.png`,
-    rawFlatPath: `designpro/user_${ownerId}/${runId}/proof-masters/raw/${key}-${materialPrefix}.png`,
+  return Promise.all(viewKeys.map(async (viewKey, index) => {
+    const bytes = await sharp({ create: { width: 64 + index, height: 48 + index, channels: 3, background: { r: 20 + index * 30, g: 90, b: 160 } } }).png().toBuffer();
+    return {
+      viewKey,
+      storagePath: `users/owner/revisions/${revisionId}/inputs/${viewKey}.png`,
+      contentHash: createHash("sha256").update(bytes).digest("hex"),
+      byteSize: bytes.length,
+      contentType: "image/png",
+      bytes,
+    };
   }));
 }
 
-const textLock = {
-  bodyText: { phone: "555-0142", website: "example.test", tagline: "FAMILY OWNED SINCE 2009" },
-  logoPlacements: [{ identityKey: "primary-logo", displayName: "Cascade Stoneworks", targetSurfaceKey: "driver", contentHash: "f".repeat(64) }],
-};
+// A continuous design, the way Call 8 authors it: one composition running edge
+// to edge, never six tiles.
+async function continuousDesign(width, height, seed = 0) {
+  const shapes = Array.from({ length: 30 }, (_, index) =>
+    `<ellipse cx="${((index + seed) * 397) % width}" cy="${((index + seed) * 613) % height}" rx="${300 + index * 29}" ry="${180 + index * 17}" fill="hsl(${(index * 37 + 170 + seed * 20) % 360},70%,${35 + (index % 5) * 8}%)" opacity="0.6"/>`).join("");
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+    <rect width="${width}" height="${height}" fill="hsl(${(190 + seed * 25) % 360},65%,45%)"/>${shapes}</svg>`)).png().toBuffer();
+}
 
-test("flat material identity binds all seven sources, dimensions, model, and frozen text", async () => {
-  const sources = await sourceViews();
-  const tiles = tileSet();
-  const first = flat.flatInputHash({ sourceViews: sources, tiles, revisionId, textLock, model: "gemini-3-pro-image" });
-  const changedText = flat.flatInputHash({ sourceViews: sources, tiles, revisionId, textLock: { ...textLock, bodyText: { phone: "555-9999" } }, model: "gemini-3-pro-image" });
-  assert.match(first, /^[0-9a-f]{64}$/);
-  assert.notEqual(first, changedText);
-  assert.equal(flat.PROMPT_VERSION, "designproai-flat-surface-20260806.v1");
-  assert.equal(flat.selectedImageModel(), "gemini-3-pro-image");
-  assert.throws(() => flat.selectedImageModel("gemini-2.5-flash"), /image-generation model/);
+test("the cut map is a pure function of the validated GENIE manifest", () => {
+  const first = layoutModule.flatWrapLayout(surfaces);
+  const second = layoutModule.flatWrapLayout([...surfaces].reverse());
+  assert.equal(layoutModule.layoutIdentity(first), layoutModule.layoutIdentity(second));
+  assert.deepEqual(first.cells.map((cell) => cell.surfaceKey), ["driver", "passenger", "hood", "roof", "front", "rear"]);
+  for (const cell of first.cells) {
+    const surface = surfaces.find((item) => item.surfaceKey === cell.surfaceKey);
+    assert.equal(cell.bleedIn, 5);
+    assert.equal(cell.printWidthIn, surface.widthInches + 10);
+    assert.equal(cell.printHeightIn, surface.heightInches + 10);
+    assert.equal(cell.w, cell.trimWidthPx + cell.bleedPx * 2);
+    assert.equal(cell.h, cell.trimHeightPx + cell.bleedPx * 2);
+    assert.ok(cell.x >= 0 && cell.y >= 0 && cell.x + cell.w <= first.width && cell.y + cell.h <= first.height);
+  }
+  // Rectangles must never overlap, or one surface would carry another's art.
+  for (const left of first.cells) {
+    for (const right of first.cells) {
+      if (left === right) continue;
+      const disjoint = left.x + left.w <= right.x || right.x + right.w <= left.x
+        || left.y + left.h <= right.y || right.y + right.h <= left.y;
+      assert.ok(disjoint, `${left.surfaceKey} overlaps ${right.surfaceKey}`);
+    }
+  }
 });
 
-test("a mid-six-surface crash reuses immutable raw and master winners", async () => {
-  const sources = await sourceViews();
-  let tiles = tileSet();
-  const inputHash = flat.flatInputHash({ sourceViews: sources, tiles, revisionId, textLock, model: "gemini-3-pro-image" });
-  tiles = tileSet(inputHash.slice(0, 24));
-  const raw = new Map();
-  const masters = new Map();
-  const firstCalls = [];
-  const color = (key) => {
-    const index = flat.SURFACE_KEYS.indexOf(key);
-    return sharp({ create: { width: 512 + index * 3, height: 512 + index * 2, channels: 3, background: { r: 35 + index * 31, g: 70 + index * 11, b: 180 - index * 17 } } }).png().toBuffer();
-  };
-  const common = {
-    apiKey: "test-key",
-    model: "gemini-3-pro-image",
-    revisionId,
-    inputHash,
-    sourceViews: sources,
-    tiles,
-    textLock,
-    loadExisting: async (surface) => masters.get(surface.masterPath) || null,
-    loadExistingFlat: async (surface) => raw.get(surface.rawFlatPath) || null,
-    persist: async (surface, bytes) => { masters.set(surface.masterPath, Buffer.from(bytes)); },
-    persistFlat: async (surface, bytes) => { raw.set(surface.rawFlatPath, Buffer.from(bytes)); },
-  };
-  await assert.rejects(flat.authorFlatSurfaceMasters({
-    ...common,
-    generateSurface: async ({ surface }) => {
-      firstCalls.push(surface.key);
-      if (surface.key === "hood") throw new Error("forced mid-set crash");
-      return color(surface.key);
-    },
-  }), /forced mid-set crash/);
-  assert.deepEqual(firstCalls, ["driver", "passenger", "hood"]);
-  assert.equal(masters.size, 2);
-  assert.equal(raw.size, 2);
-  const driverWinner = Buffer.from(masters.get(tiles[0].masterPath));
+test("a drifted cut map is refused rather than trusted", () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  assert.equal(layoutModule.layoutIdentity(layoutModule.assertLayoutMatches(layout, surfaces)), layoutModule.layoutIdentity(layout));
+  const moved = { ...layout, cells: layout.cells.map((cell, index) => (index === 0 ? { ...cell, x: cell.x + 1 } : cell)) };
+  assert.throws(() => layoutModule.assertLayoutMatches(moved, surfaces), /not the deterministic layout/);
+  assert.throws(() => layoutModule.assertLayoutMatches(null, surfaces), /requires the deterministic flat wrap layout/);
+  assert.throws(() => layoutModule.flatWrapLayout(surfaces.map((item) => ({ ...item, bleedIn: 3 }))), /exactly 5 inches of bleed/);
+});
 
-  const resumeCalls = [];
-  const result = await flat.authorFlatSurfaceMasters({
-    ...common,
-    generateSurface: async ({ surface }) => { resumeCalls.push(surface.key); return color(surface.key); },
-  });
-  assert.deepEqual(resumeCalls, ["hood", "roof", "front", "rear"]);
-  assert.equal(result.length, 6);
-  assert.ok(result[0].bytes.equals(driverWinner));
-  assert.equal(masters.size, 6);
-  assert.equal(raw.size, 6);
-  assert.ok(result.every((item) => item.flatHash && item.flatPixelWidth >= 512 && item.flatPixelHeight >= 512));
-  assert.ok(result.every((item) => !Object.hasOwn(item, "reused")));
+test("Call 9 cuts reproduce byte for byte and never regenerate", async () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  const design = await continuousDesign(1400, Math.round(1400 * layout.height / layout.width));
+  const flat = await layoutModule.normalizeGeneratedLayout(design, layout);
+  const metadata = await sharp(flat).metadata();
+  assert.equal(metadata.width, layout.width);
+  assert.equal(metadata.height, layout.height);
+
+  const first = await layoutModule.cutAllPanels(flat, layout);
+  const second = await layoutModule.cutAllPanels(flat, layout);
+  assert.deepEqual(first.map((panel) => panel.contentHash), second.map((panel) => panel.contentHash));
+  assert.equal(new Set(first.map((panel) => panel.contentHash)).size, 6);
+  for (const panel of first) {
+    assert.equal(panel.bytes.length, panel.byteSize);
+    assert.equal(createHash("sha256").update(panel.bytes).digest("hex"), panel.contentHash);
+    const cut = await sharp(panel.bytes).metadata();
+    assert.equal(cut.width, panel.cell.w);
+    assert.equal(cut.height, panel.cell.h);
+  }
+});
+
+test("a layout raster that is not the recorded canvas fails the cut closed", async () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  const wrongSize = await sharp({ create: { width: layout.width - 7, height: layout.height, channels: 3, background: "#ffffff" } }).png().toBuffer();
+  await assert.rejects(() => layoutModule.cutPanel(wrongSize, layout, "driver"), /not the recorded/);
+  const correctSize = await sharp({ create: { width: layout.width, height: layout.height, channels: 3, background: "#ffffff" } }).png().toBuffer();
+  await assert.rejects(() => layoutModule.cutPanel(correctSize, layout, "spoiler"), /no layout rectangle/);
+});
+
+test("two surfaces carrying the same artwork fail the run", async () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  // A flat canvas: every rectangle is visually identical, which is exactly the
+  // July 24 failure where driver artwork reached every panel.
+  const uniform = await sharp({ create: { width: layout.width, height: layout.height, channels: 3, background: "#2f6f8f" } }).png().toBuffer();
+  const panels = await Promise.all(layout.cells.map(async (cell) => layoutModule.cutPanel(uniform, layout, cell.surfaceKey)));
+  await assert.rejects(() => layoutModule.assertSurfacesAreDistinct(panels), /carries the same artwork as/);
+
+  const design = await continuousDesign(1400, Math.round(1400 * layout.height / layout.width));
+  const flat = await layoutModule.normalizeGeneratedLayout(design, layout);
+  const real = await layoutModule.cutAllPanels(flat, layout);
+  const fingerprints = await layoutModule.assertSurfacesAreDistinct(real);
+  assert.equal(new Set(Object.values(fingerprints)).size, 6);
+});
+
+test("the authored design binds every source, the cut map, the text lock and the model", async () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  const views = await sourceViews();
+  const base = wrap.flatWrapInputHash({ sourceViews: views, layout, revisionId, textLock });
+  assert.match(base, /^[0-9a-f]{64}$/);
+  assert.equal(wrap.flatWrapInputHash({ sourceViews: [...views].reverse(), layout, revisionId, textLock }), base);
+
+  const swapped = views.map((item) => (item.viewKey === "roof" ? { ...item, contentHash: "a".repeat(64) } : item));
+  assert.notEqual(wrap.flatWrapInputHash({ sourceViews: swapped, layout, revisionId, textLock }), base);
+  const widerLayout = layoutModule.flatWrapLayout(surfaces.map((item) => (item.surfaceKey === "hood" ? { ...item, widthInches: 80 } : item)));
+  assert.notEqual(wrap.flatWrapInputHash({ sourceViews: views, layout: widerLayout, revisionId, textLock }), base);
+  assert.notEqual(wrap.flatWrapInputHash({ sourceViews: views, layout, revisionId, textLock: { ...textLock, bodyText: { phone: "555-0143" } } }), base);
+  assert.notEqual(wrap.flatWrapInputHash({ sourceViews: views, layout, revisionId, textLock, model: "gemini-2.5-flash-image" }), base);
+  assert.throws(() => wrap.flatWrapInputHash({ sourceViews: views.slice(0, 6), layout, revisionId, textLock }), /exactly seven immutable source views/);
+});
+
+test("a retry reuses the immutable authored design instead of authoring a second one", async () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  const views = await sourceViews();
+  const stored = new Map();
+  let authorCalls = 0;
+  const options = {
+    apiKey: "test-key", layout, revisionId, sourceViews: views, textLock, vehicleName: "2023 Ford F-350 Crew Cab",
+    generateLayout: async () => {
+      authorCalls += 1;
+      return continuousDesign(1200, Math.round(1200 * layout.height / layout.width), authorCalls);
+    },
+    loadExisting: async () => stored.get("layout") || null,
+    persist: async (bytes) => { stored.set("layout", Buffer.from(bytes)); },
+  };
+
+  const first = await wrap.authorFlatWrapLayout(options);
+  assert.equal(authorCalls, 1);
+  assert.equal(first.reused, false);
+  assert.match(first.contentHash, /^[0-9a-f]{64}$/);
+
+  const second = await wrap.authorFlatWrapLayout(options);
+  assert.equal(authorCalls, 1, "a retry must not ask the model for a second design");
+  assert.equal(second.reused, true);
+  assert.equal(second.contentHash, first.contentHash);
+
+  // The cuts taken from the reused winner are the same cuts.
+  const before = await layoutModule.cutAllPanels(first.bytes, layout);
+  const after = await layoutModule.cutAllPanels(second.bytes, layout);
+  assert.deepEqual(before.map((panel) => panel.contentHash), after.map((panel) => panel.contentHash));
+});
+
+test("authoring refuses a mismatched material hash and a stale winner of the wrong size", async () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  const views = await sourceViews();
+  await assert.rejects(() => wrap.authorFlatWrapLayout({
+    apiKey: "test-key", layout, revisionId, sourceViews: views, textLock,
+    inputHash: "b".repeat(64), generateLayout: async () => continuousDesign(800, 1200),
+    loadExisting: async () => null, persist: async () => {},
+  }), /material hash mismatch/);
+
+  const wrongSize = await sharp({ create: { width: 640, height: 480, channels: 3, background: "#ffffff" } }).png().toBuffer();
+  await assert.rejects(() => wrap.authorFlatWrapLayout({
+    apiKey: "test-key", layout, revisionId, sourceViews: views, textLock,
+    generateLayout: async () => continuousDesign(800, 1200),
+    loadExisting: async () => wrongSize, persist: async () => {},
+  }), /not the recorded/);
+});
+
+test("a generated design far off the required proportions is refused", async () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  const square = await continuousDesign(1200, 1200);
+  await assert.rejects(() => layoutModule.normalizeGeneratedLayout(square, layout), /too far from the required/);
+  const tiny = await sharp({ create: { width: 64, height: 96, channels: 3, background: "#ffffff" } }).png().toBuffer();
+  await assert.rejects(() => layoutModule.normalizeGeneratedLayout(tiny, layout), /missing or too small/);
+});
+
+test("the authoring prompt keeps logos out of the base and carries no cross-vehicle anchor", () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  const frozen = require("../../runtime/gemini-flat-surface.cjs").normalizeTextLock(textLock);
+  const prompt = wrap._test.wrapPrompt("2023 Ford F-350 Crew Cab", layout, "a".repeat(64), frozen);
+  assert.match(prompt, /ONE continuous FLAT wrap design/);
+  assert.match(prompt, /Customer logos are printed on top of these panels later and must NOT be drawn into this base artwork/);
+  assert.match(prompt, /"Flamingo Pools"/);
+  assert.doesNotMatch(prompt, /anchor/i);
+  assert.doesNotMatch(prompt, /driver side only|follow the hero/i);
 });
 
 test("Gemini response parser fails closed on missing, duplicate, or unsupported images", () => {
-  const valid = { candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: Buffer.from("x").toString("base64") } }] } }] };
-  assert.equal(flat._test.extractOneImageResponse(valid, "driver").contentType, "image/png");
-  assert.throws(() => flat._test.extractOneImageResponse({ candidates: [{ content: { parts: [] }, finishReason: "NO_IMAGE" }] }, "driver"), /exactly one image/);
-  assert.throws(() => flat._test.extractOneImageResponse({ candidates: [{ content: { parts: [valid.candidates[0].content.parts[0], valid.candidates[0].content.parts[0]] } }] }, "driver"), /received 2/);
-  assert.throws(() => flat._test.extractOneImageResponse({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "application/pdf", data: "eA==" } }] } }] }, "driver"), /unsupported/);
+  const inline = (mimeType) => ({ inlineData: { mimeType, data: Buffer.from("x").toString("base64") } });
+  assert.throws(() => wrap._test.extractOneImageResponse({ candidates: [{ content: { parts: [] } }] }, "layout"), /exactly one image/);
+  assert.throws(() => wrap._test.extractOneImageResponse({ candidates: [{ content: { parts: [inline("image/png"), inline("image/png")] } }] }, "layout"), /exactly one image/);
+  assert.throws(() => wrap._test.extractOneImageResponse({ candidates: [{ content: { parts: [inline("application/pdf")] } }] }, "layout"), /unsupported/);
+  assert.equal(wrap._test.extractOneImageResponse({ candidates: [{ content: { parts: [inline("image/png")] } }] }, "layout").length, 1);
 });

@@ -7,8 +7,9 @@ const { createHash } = require("node:crypto");
 const { registerDesignProStandaloneClaimant } = require("./designpro-standalone-claimant.cjs");
 const { canonicalTenantKey, canonicalUuid, immutableStorageUpload, normalizeSourceAsset, verifySourceBytes } = require("./runtime-contract.cjs");
 const { probeRuntimeDependencies } = require("./runtime-readiness.cjs");
-const { authorFlatSurfaceMasters, flatInputHash, normalizeTextLock, selectedImageModel, PROMPT_VERSION, SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
-const { ARTBOARD_CONTRACT, EXTRACTION_CONTRACT, assertLayoutMatches, assertSurfacesAreDistinct, extractAllPanels, layoutIdentity, PNG_OPTIONS } = require("./deterministic-artboard.cjs");
+const { normalizeTextLock, selectedImageModel, SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
+const { authorFlatWrapLayout, flatWrapInputHash } = require("./gemini-flat-wrap.cjs");
+const { EXTRACTION_CONTRACT, LAYOUT_CONTRACT, assertLayoutMatches, assertSurfacesAreDistinct, cutAllPanels, layoutIdentity } = require("./flat-wrap-layout.cjs");
 const { PROOF_SHEET_CONTRACT, renderProofSheet } = require("./proof-sheet.cjs");
 const { dispatchOneWrapboxNotification, reconcileCompletedWrapboxDeliveries } = require("./wrapbox-delivery.cjs");
 const { createResendTransport, resendReadiness } = require("./resend-transport.cjs");
@@ -194,27 +195,30 @@ app.post("/internal/wrapbox/recipient", authMiddleware, async (req, res) => {
   }
 });
 
-// Seven immutable renders -> six own-surface flat masters -> ONE deterministic
-// Call 8 artboard -> the human 2D proof drawn on top of that same artboard.
+// Seven immutable renders -> ONE continuous flat wrap design -> six exact cuts
+// -> the customer 2D Production Proof.
 //
-// Each flat master is authored by the bounded Gemini flat-tile boundary ported
-// from RP main 02ceea8/proof-sheet.ts blob 814363e and pasted into its own
-// artboard rectangle at exact trim plus five-inch bleed. Call 9 then cuts the
-// panels straight back out of the artboard, so no panel is ever regenerated
-// and no surface can inherit another surface's artwork.
+// The design is authored once. Call 9 cuts the six production panels straight
+// out of it at fixed rectangles, so no panel is ever regenerated and no
+// surface can inherit another surface's artwork. The proof sheet is the
+// customer document: every approved view with its GENIE trim callout, the
+// print size at five-inch bleed, per-surface and total square footage, and the
+// approval block.
 app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
   const requestAbort = new AbortController();
   req.once("aborted", () => requestAbort.abort(new Error("claimant request aborted")));
   res.once("close", () => { if (!res.writableEnded) requestAbort.abort(new Error("claimant connection closed")); });
   try {
-    const { tenantKey: rawTenantKey, workflowRunId: rawWorkflowRunId, revisionId: rawRevisionId, artboard: claimedLayout, tiles = [], sourceAssets = [], textLock, flatMaterialHash, vehicle, proofMeta } = req.body || {};
+    const { tenantKey: rawTenantKey, workflowRunId: rawWorkflowRunId, revisionId: rawRevisionId, layout: claimedLayout, surfaces = [], sourceAssets = [], textLock, flatMaterialHash, vehicle, proofMeta } = req.body || {};
     const tenantKey = canonicalTenantKey(rawTenantKey);
     const workflowRunId = canonicalUuid(rawWorkflowRunId, "workflowRunId");
     const revisionId = canonicalUuid(rawRevisionId, "revisionId");
-    const expectedSurfaceKeys = new Set(SURFACE_KEYS);
-    if (!Array.isArray(tiles) || tiles.length !== expectedSurfaceKeys.size || !Array.isArray(sourceAssets) || sourceAssets.length !== VIEW_KEYS.length) return res.status(400).json({ success: false, error: "exactly seven immutable views and exactly six production surfaces are required" });
-    const layout = assertLayoutMatches(claimedLayout, tiles.map((tile) => ({ surfaceKey: String(tile?.key || ""), widthInches: Number(tile?.trimWidthIn), heightInches: Number(tile?.trimHeightIn), bleedIn: Number(tile?.bleedIn) })));
-    const W = layout.width; const H = layout.height;
+    if (!Array.isArray(surfaces) || surfaces.length !== SURFACE_KEYS.length || !Array.isArray(sourceAssets) || sourceAssets.length !== VIEW_KEYS.length) {
+      return res.status(400).json({ success: false, error: "exactly seven immutable views and exactly six validated GENIE surfaces are required" });
+    }
+    // Geometry is recomputed here and compared. A claimant-supplied cut map is
+    // never taken on trust.
+    const layout = assertLayoutMatches(claimedLayout, surfaces);
     const loadedSources = [];
     const sourceKeys = new Set();
     for (const raw of sourceAssets) {
@@ -224,129 +228,73 @@ app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
       loadedSources.push({ viewKey, ...(await sourceObject(raw, tenantKey, revisionId)) });
     }
     if (VIEW_KEYS.some((key) => !sourceKeys.has(key))) return res.status(400).json({ success: false, error: "seven-view source set is incomplete" });
-    const sourceByKey = new Map(loadedSources.map((item) => [item.viewKey, item]));
     const frozenTextLock = normalizeTextLock(textLock);
-    const computedMaterialHash = flatInputHash({ sourceViews: loadedSources, tiles, revisionId, textLock: frozenTextLock, model: GOOGLE_IMAGE_MODEL });
-    if (String(flatMaterialHash || "").toLowerCase() !== computedMaterialHash) return res.status(409).json({ success: false, error: "Call 8 flat-surface material identity changed" });
-    const surfaceMasters = []; const seen = new Set();
-    for (const tile of tiles) {
-      const key = String(tile.key || "").trim();
-      const cell = layout.cells.find((item) => item.surfaceKey === key);
-      const x = Math.round(Number(tile.x)); const y = Math.round(Number(tile.y));
-      const w = Math.round(Number(tile.w)); const h = Math.round(Number(tile.h));
-      const trimWidthIn = Number(tile.trimWidthIn); const trimHeightIn = Number(tile.trimHeightIn); const bleedIn = Number(tile.bleedIn);
-      const masterPath = String(tile.masterPath || "").trim();
-      const rawFlatPath = String(tile.rawFlatPath || "").trim();
-      const expectedMasterPath = `designpro/${tenantKey}/${workflowRunId}/proof-masters/${key}-${computedMaterialHash.slice(0, 24)}.png`;
-      const expectedRawFlatPath = `designpro/${tenantKey}/${workflowRunId}/proof-masters/raw/${key}-${computedMaterialHash.slice(0, 24)}.png`;
-      const ownSource = sourceByKey.get(key);
-      // Every tile must land exactly on its recomputed artboard rectangle. A
-      // tile that drifts by one pixel would make the Call 9 cut disagree with
-      // the artwork, so the stage fails closed instead.
-      if (!expectedSurfaceKeys.has(key) || seen.has(key) || !cell || x !== cell.x || y !== cell.y || w !== cell.w || h !== cell.h
-        || Number(tile.trimWidthPx) !== cell.trimWidthPx || Number(tile.trimHeightPx) !== cell.trimHeightPx || Number(tile.bleedPx) !== cell.bleedPx
-        || !(trimWidthIn > 0 && trimHeightIn > 0) || bleedIn !== 5 || masterPath !== expectedMasterPath || rawFlatPath !== expectedRawFlatPath
-        || !ownSource || String(tile.sourceAsset?.contentHash || "").toLowerCase() !== ownSource.contentHash) return res.status(400).json({ success: false, error: `invalid Call 8 surface ${key || "?"}` });
-      seen.add(key);
-    }
-    if (seen.size !== expectedSurfaceKeys.size || [...expectedSurfaceKeys].some((key) => !seen.has(key))) return res.status(400).json({ success: false, error: "Call 8 surface set is incomplete" });
+    const computedMaterialHash = flatWrapInputHash({ sourceViews: loadedSources, layout, revisionId, textLock: frozenTextLock, model: GOOGLE_IMAGE_MODEL });
+    if (String(flatMaterialHash || "").toLowerCase() !== computedMaterialHash) return res.status(409).json({ success: false, error: "Call 8 flat wrap material identity changed" });
 
-    const authored = await authorFlatSurfaceMasters({
-      apiKey: GOOGLE_AI_API_KEY,
-      model: GOOGLE_IMAGE_MODEL,
-      revisionId,
-      inputHash: computedMaterialHash,
-      sourceViews: loadedSources,
-      tiles,
-      textLock: frozenTextLock,
+    // 1. The one continuous flat wrap design. Material-addressed, so a retry
+    //    reuses the immutable winner instead of authoring a second design.
+    const layoutPath = `designpro/${tenantKey}/${workflowRunId}/proof/flat-wrap-layout-${computedMaterialHash.slice(0, 24)}.png`;
+    const authored = await authorFlatWrapLayout({
+      apiKey: GOOGLE_AI_API_KEY, model: GOOGLE_IMAGE_MODEL, layout, revisionId,
+      inputHash: computedMaterialHash, sourceViews: loadedSources, textLock: frozenTextLock,
       vehicleName: [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ") || "vehicle",
       signal: requestAbort.signal,
-      loadExisting: (surface) => existingMaster(String(surface.masterPath)),
-      loadExistingFlat: (surface) => existingMaster(String(surface.rawFlatPath)),
-      persist: (surface, master) => uploadBuffer(String(surface.masterPath), master, "image/png", tenantKey, workflowRunId, requestAbort.signal),
-      persistFlat: (surface, flat) => uploadBuffer(String(surface.rawFlatPath), flat, "image/png", tenantKey, workflowRunId, requestAbort.signal),
+      loadExisting: () => existingMaster(layoutPath),
+      persist: (bytes) => uploadBuffer(layoutPath, bytes, "image/png", tenantKey, workflowRunId, requestAbort.signal),
     });
-    const authoredByKey = new Map(authored.map((item) => [item.key, item]));
-    const layers = [];
-    for (const cell of layout.cells) {
-      const key = cell.surfaceKey;
-      const tile = tiles.find((item) => String(item.key || "").trim() === key);
-      const generated = authoredByKey.get(key);
-      if (!generated) throw new Error(`${key} flat-surface master is missing`);
-      const master = generated.bytes;
-      const meta = generated.metadata;
-      // The master was authored at the cell's exact pixel geometry, so it is
-      // pasted, never resampled. Anything else would break the Call 9 cut.
-      if (meta.width !== cell.w || meta.height !== cell.h) throw new Error(`${key} master is ${meta.width}x${meta.height}, not the artboard cell ${cell.w}x${cell.h}`);
-      layers.push({ input: master, left: cell.x, top: cell.y });
-      surfaceMasters.push({
-        key, masterPath: String(tile.masterPath), sha256: createHash("sha256").update(master).digest("hex"), bytes: master.length,
-        pixelWidth: meta.width, pixelHeight: meta.height,
-        trimWidthIn: cell.trimWidthIn, trimHeightIn: cell.trimHeightIn, bleedIn: cell.bleedIn,
-        printWidthIn: cell.printWidthIn, printHeightIn: cell.printHeightIn, surfaceSqFt: cell.surfaceSqFt,
-        artboardRect: { x: cell.x, y: cell.y, w: cell.w, h: cell.h },
-        artboardTrimRect: cell.trim,
-        sourceCrop: {
-          contract: "call8-gemini-flat-surface-transform.v1", sourceSha256: sourceByKey.get(key).contentHash,
-          sevenViewSourceSetHash: computedMaterialHash, generatedFlatSha256: generated.flatHash,
-          generatedFlatPixelWidth: generated.flatPixelWidth, generatedFlatPixelHeight: generated.flatPixelHeight,
-          normalizationScaleX: generated.normalizationScaleX, normalizationScaleY: generated.normalizationScaleY,
-          model: generated.model, promptVersion: PROMPT_VERSION,
-          fit: "gemini-flat-then-contain-mirror-fill-at-call8", stretch: false,
-          rotationDegrees: 0, truncated: false,
-        },
-      });
-    }
+    const storedLayout = authored.reused
+      ? { storagePath: layoutPath, contentHash: authored.contentHash, byteSize: authored.bytes.length }
+      : await uploadBuffer(layoutPath, authored.bytes, "image/png", tenantKey, workflowRunId, requestAbort.signal);
 
-    // 1. The clean artboard: production artwork only, no labels, no rules.
-    const artboardBytes = await sharp({ create: { width: W, height: H, channels: 3, background: { r: 255, g: 255, b: 255 } } })
-      .composite(layers).png(PNG_OPTIONS).toBuffer();
-    const artboardPath = `designpro/${tenantKey}/${workflowRunId}/proof/artboard-${computedMaterialHash.slice(0, 24)}.png`;
-    const storedArtboard = await uploadBuffer(artboardPath, artboardBytes, "image/png", tenantKey, workflowRunId, requestAbort.signal);
-
-    // 2. The Call 9 cuts, taken from the encoded artboard the same way the
-    //    claimant will take them, so the recorded hashes are reproducible.
-    const panels = await extractAllPanels(artboardBytes, layout);
+    // 2. The Call 9 cuts, taken here exactly as the claimant will take them, so
+    //    the recorded hashes are reproducible rather than merely asserted.
+    const panels = await cutAllPanels(authored.bytes, layout);
     const fingerprints = await assertSurfacesAreDistinct(panels);
-    for (const master of surfaceMasters) {
-      const panel = panels.find((item) => item.surfaceKey === master.key);
-      master.regionSha256 = panel.contentHash;
-      master.regionBytes = panel.byteSize;
-      master.artworkFingerprint = fingerprints[master.key];
-    }
+    const surfacePanels = panels.map((panel) => ({
+      key: panel.surfaceKey,
+      cutRect: { x: panel.cell.x, y: panel.cell.y, w: panel.cell.w, h: panel.cell.h },
+      trimRect: panel.cell.trim,
+      contentHash: panel.contentHash, byteSize: panel.byteSize,
+      pixelWidth: panel.cell.w, pixelHeight: panel.cell.h,
+      trimWidthIn: panel.cell.trimWidthIn, trimHeightIn: panel.cell.trimHeightIn, bleedIn: panel.cell.bleedIn,
+      printWidthIn: panel.cell.printWidthIn, printHeightIn: panel.cell.printHeightIn,
+      surfaceSqFt: panel.cell.surfaceSqFt,
+      artworkFingerprint: fingerprints[panel.surfaceKey],
+      provenance: {
+        contract: EXTRACTION_CONTRACT, sourceLayoutSha256: storedLayout.contentHash,
+        sourceLayoutPath: storedLayout.storagePath, scalePxPerInch: layout.scalePxPerInch,
+        model: authored.model, promptVersion: authored.promptVersion, regenerated: false,
+      },
+    }));
 
-    // 3. The DesignProAI 2D Production Proof sheet: every approved view laid
-    //    out with its GENIE trim callout, the print size at five-inch bleed,
-    //    per-surface and total square footage, and the human approval block.
+    // 3. The customer document.
     const sheet = await renderProofSheet({
       views: Object.fromEntries(loadedSources.map((item) => [item.viewKey, item.bytes])),
       surfaces: layout.cells.map((cell) => ({ surfaceKey: cell.surfaceKey, widthInches: cell.trimWidthIn, heightInches: cell.trimHeightIn })),
       vehicle,
-      designName: proofMeta?.designName,
-      finish: proofMeta?.finish,
-      designId: proofMeta?.designId,
-      orderNumber: proofMeta?.orderNumber,
+      designName: proofMeta?.designName, finish: proofMeta?.finish,
+      designId: proofMeta?.designId, orderNumber: proofMeta?.orderNumber,
       proofBinding: computedMaterialHash,
     });
-    const proof = sheet.bytes;
     const proofPath = `designpro/${tenantKey}/${workflowRunId}/proof/call8-2d-production-proof-${computedMaterialHash.slice(0, 24)}.png`;
-    const storedProof = await uploadBuffer(proofPath, proof, "image/png", tenantKey, workflowRunId, requestAbort.signal);
+    const storedProof = await uploadBuffer(proofPath, sheet.bytes, "image/png", tenantKey, workflowRunId, requestAbort.signal);
 
     res.json({
       success: true, contract: "designpro.call8-flat-proof.v2", imageModel: GOOGLE_IMAGE_MODEL,
       flatMaterialHash: computedMaterialHash, textLock: frozenTextLock,
-      width: W, height: H, surfaceMasters,
-      artboard: {
-        contract: ARTBOARD_CONTRACT, extractionContract: EXTRACTION_CONTRACT,
-        storagePath: storedArtboard.storagePath, contentHash: storedArtboard.contentHash, byteSize: storedArtboard.byteSize, width: W, height: H,
-        scalePxPerInch: layout.scalePxPerInch, layoutHash: layoutIdentity(layout), cells: layout.cells,
+      flatLayout: {
+        contract: LAYOUT_CONTRACT, extractionContract: EXTRACTION_CONTRACT,
+        storagePath: storedLayout.storagePath, contentHash: storedLayout.contentHash, byteSize: storedLayout.byteSize,
+        width: layout.width, height: layout.height, scalePxPerInch: layout.scalePxPerInch,
+        layoutHash: layoutIdentity(layout), reusedImmutableWinner: authored.reused === true,
       },
       proof: {
         contract: PROOF_SHEET_CONTRACT,
         storagePath: storedProof.storagePath, contentHash: storedProof.contentHash, byteSize: storedProof.byteSize,
         width: sheet.width, height: sheet.height, totalSqFt: sheet.totalSqFt,
-        surfaces: sheet.surfaces,
       },
+      surfacePanels,
     });
   } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
