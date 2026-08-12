@@ -9,6 +9,7 @@ const { canonicalTenantKey, canonicalUuid, immutableStorageUpload, normalizeSour
 const { probeRuntimeDependencies } = require("./runtime-readiness.cjs");
 const { authorFlatSurfaceMasters, flatInputHash, normalizeTextLock, selectedImageModel, PROMPT_VERSION, SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
 const { ARTBOARD_CONTRACT, EXTRACTION_CONTRACT, assertLayoutMatches, assertSurfacesAreDistinct, extractAllPanels, layoutIdentity, PNG_OPTIONS } = require("./deterministic-artboard.cjs");
+const { PROOF_SHEET_CONTRACT, renderProofSheet } = require("./proof-sheet.cjs");
 const { dispatchOneWrapboxNotification, reconcileCompletedWrapboxDeliveries } = require("./wrapbox-delivery.cjs");
 const { createResendTransport, resendReadiness } = require("./resend-transport.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolImmutableBuffer, uploadSpoolWithTus } = require("./zip-spool.cjs");
@@ -206,7 +207,7 @@ app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
   req.once("aborted", () => requestAbort.abort(new Error("claimant request aborted")));
   res.once("close", () => { if (!res.writableEnded) requestAbort.abort(new Error("claimant connection closed")); });
   try {
-    const { tenantKey: rawTenantKey, workflowRunId: rawWorkflowRunId, revisionId: rawRevisionId, artboard: claimedLayout, tiles = [], sourceAssets = [], textLock, flatMaterialHash, vehicle, overlaySvg } = req.body || {};
+    const { tenantKey: rawTenantKey, workflowRunId: rawWorkflowRunId, revisionId: rawRevisionId, artboard: claimedLayout, tiles = [], sourceAssets = [], textLock, flatMaterialHash, vehicle, proofMeta } = req.body || {};
     const tenantKey = canonicalTenantKey(rawTenantKey);
     const workflowRunId = canonicalUuid(rawWorkflowRunId, "workflowRunId");
     const revisionId = canonicalUuid(rawRevisionId, "revisionId");
@@ -314,12 +315,21 @@ app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
       master.artworkFingerprint = fingerprints[master.key];
     }
 
-    // 3. The human 2D proof: the same artboard with the GENIE dimension
-    //    overlay drawn on top. Same canvas, same rectangles.
-    const proof = overlaySvg && String(overlaySvg).trim()
-      ? await sharp(artboardBytes, { limitInputPixels: false }).composite([{ input: Buffer.from(String(overlaySvg)), left: 0, top: 0 }]).png(PNG_OPTIONS).toBuffer()
-      : artboardBytes;
-    const proofPath = `designpro/${tenantKey}/${workflowRunId}/proof/call8-flat-2d-proof-${computedMaterialHash.slice(0, 24)}.png`;
+    // 3. The DesignProAI 2D Production Proof sheet: every approved view laid
+    //    out with its GENIE trim callout, the print size at five-inch bleed,
+    //    per-surface and total square footage, and the human approval block.
+    const sheet = await renderProofSheet({
+      views: Object.fromEntries(loadedSources.map((item) => [item.viewKey, item.bytes])),
+      surfaces: layout.cells.map((cell) => ({ surfaceKey: cell.surfaceKey, widthInches: cell.trimWidthIn, heightInches: cell.trimHeightIn })),
+      vehicle,
+      designName: proofMeta?.designName,
+      finish: proofMeta?.finish,
+      designId: proofMeta?.designId,
+      orderNumber: proofMeta?.orderNumber,
+      proofBinding: computedMaterialHash,
+    });
+    const proof = sheet.bytes;
+    const proofPath = `designpro/${tenantKey}/${workflowRunId}/proof/call8-2d-production-proof-${computedMaterialHash.slice(0, 24)}.png`;
     const storedProof = await uploadBuffer(proofPath, proof, "image/png", tenantKey, workflowRunId, requestAbort.signal);
 
     res.json({
@@ -332,7 +342,10 @@ app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
         scalePxPerInch: layout.scalePxPerInch, layoutHash: layoutIdentity(layout), cells: layout.cells,
       },
       proof: {
-        storagePath: storedProof.storagePath, contentHash: storedProof.contentHash, byteSize: storedProof.byteSize, width: W, height: H,
+        contract: PROOF_SHEET_CONTRACT,
+        storagePath: storedProof.storagePath, contentHash: storedProof.contentHash, byteSize: storedProof.byteSize,
+        width: sheet.width, height: sheet.height, totalSqFt: sheet.totalSqFt,
+        surfaces: sheet.surfaces,
       },
     });
   } catch (error) { res.status(500).json({ success: false, error: error.message }); }
