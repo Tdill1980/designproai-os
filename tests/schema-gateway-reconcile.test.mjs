@@ -15,13 +15,21 @@ const web = readFileSync(new URL("../web/src/main.tsx", import.meta.url), "utf8"
   + readFileSync(new URL("../web/src/api.ts", import.meta.url), "utf8");
 const config = readFileSync(new URL("../supabase/config.toml", import.meta.url), "utf8");
 
-test("ordered migration chain includes WrapBox, reconciliation, then the isolated Calls 1-7 adapter", () => {
+test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-3), [
+  assert.deepEqual(names.slice(-4), [
     "20260806181100_designpro_wrapbox_delivery_closure.sql",
     "20260806181200_designpro_schema_gateway_reconcile.sql",
     "20260808024500_designpro_calls_1_7_adapter.sql",
+    "20260812120000_designpro_retire_legacy_2d_proof.sql",
   ]);
+  // Calls 1-7 hand over seven renders and nothing else. The 2D proof is Call 8
+  // and belongs to this system, so the legacy proof function must not be
+  // sanctioned by the engine contract the retirement migration installs.
+  const retirement = readFileSync(new URL("20260812120000_designpro_retire_legacy_2d_proof.sql", migrationsDir), "utf8");
+  assert.match(retirement, /designpro\.calls-1-7-engine\.v2/);
+  assert.match(retirement, /'retiredBlobs'[\s\S]{0,120}generate-2d-proof/);
+  assert.doesNotMatch(retirement, /'generate-2d-proof','[0-9a-f]{40}'/);
 });
 
 test("production-heavy stages share one DB-owned race fence with expiry and exact-token release", () => {

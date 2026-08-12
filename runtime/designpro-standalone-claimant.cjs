@@ -1015,14 +1015,20 @@ const CALLS_1_7_VIEW_PLAN = Object.freeze([
   Object.freeze({ sourceViewType: "close-up", consumerRole: "closeup" }),
   Object.freeze({ sourceViewType: "roof", consumerRole: "roof" }),
 ]);
+// Calls 1-7 produce the seven immutable source renders and nothing else. The
+// 2D production proof is Call 8 and this system authors it. 'generate-2d-proof'
+// was sanctioned here from the period when the historical pipeline owned the
+// proof; while it stayed in this contract a legacy runner carrying that
+// function could present a valid claim and consume generation attempts. It is
+// retired, and the version bump makes a stale runner fail with a legible
+// mismatch rather than an opaque hash difference.
 const CALLS_1_7_ENGINE_CONTRACT = Object.freeze({
-  contractVersion: "designpro.calls-1-7-engine.v1",
+  contractVersion: "designpro.calls-1-7-engine.v2",
   sourceCommit: "bdb26365904e91be446894e84b01b4a24f64aac0",
   sourceBlobs: Object.freeze({
     "design-panel-ai-generate": "4df3a9741c4f0721afb00b4db823fe7022147aa6",
     "generate-color-render": "0eda353a80eb3e60b293d9a99ba3e7d69ab9f065",
     "generate-pattern-render": "8114c56cbb1934569bf659a5f6957c680b9bf868",
-    "generate-2d-proof": "2946bc1ba26b374d21ae563f01bb464ee41477d2",
     "design-on-vehicle-photo": "a962133b04c335754cf3df307505ed2da652bdda",
     "edit-vehicle-photo": "3843e2b66a8583e16e514a545b7827cf77fade17",
     "studio-os": "6870eaebab4d43ef8605d812416f86621727d3e9",
@@ -1030,6 +1036,8 @@ const CALLS_1_7_ENGINE_CONTRACT = Object.freeze({
   }),
   sourceViewOrder: Object.freeze(CALLS_1_7_VIEW_PLAN.map((item) => item.sourceViewType)),
   freezePolicy: "exact-source-blob-behavior",
+  retiredBlobs: Object.freeze(["generate-2d-proof"]),
+  proofAuthority: "designpro-os-call8",
 });
 const CALLS_1_7_SERVER_CONTROL_KEYS = new Set([
   "prompt", "systemprompt", "negativeprompt", "model", "imagemodel", "seed",
