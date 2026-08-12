@@ -57,6 +57,9 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
       GOOGLE_AI_API_KEY: ${{ secrets.DESIGNPRO_GOOGLE_AI_API_KEY }}
+      # Call 12 enhancement. Optional: absent leaves Call 12 disabled and
+      # production packs fail closed rather than shipping un-enhanced artwork.
+      TOPAZ_API_KEY: ${{ secrets.DESIGNPRO_TOPAZ_API_KEY }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -107,9 +110,12 @@ jobs:
           grep -q -- 'BEGIN OPENSSH PRIVATE KEY' <<<"$SSH_PRIVATE_KEY"
           test "${#SUPABASE_ACCESS_TOKEN}" -ge 20
           test "${#GOOGLE_AI_API_KEY}" -ge 20
-          for value in "$SUPABASE_ACCESS_TOKEN" "$GOOGLE_AI_API_KEY"; do
+          for value in "$SUPABASE_ACCESS_TOKEN" "$GOOGLE_AI_API_KEY" "$TOPAZ_API_KEY"; do
             [[ $value != *$'\n'* && $value != *$'\r'* ]]
           done
+          # Optional, but a present-and-malformed key is a misconfiguration that
+          # must not reach the host and quietly disable Call 12.
+          [[ -z $TOPAZ_API_KEY || ${#TOPAZ_API_KEY} -ge 20 ]]
 
           project_json="$RUNNER_TEMP/supabase-project.json"
           keys_json="$RUNNER_TEMP/supabase-api-keys.json"
@@ -335,9 +341,14 @@ jobs:
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
           remote_stage=$(<"$RUNNER_TEMP/remote-stage")
           test -f "$RUNTIME_KEY_FILE" && test ! -L "$RUNTIME_KEY_FILE"
-          printf '%s\n%s\n' \
+          # Three lines, in the order configure-env.sh consumes them. The third
+          # is always sent, empty when no Topaz key is configured, because that
+          # script treats a short pipe as a truncated channel rather than as a
+          # decision to leave Call 12 off.
+          printf '%s\n%s\n%s\n' \
             "$(<"$RUNTIME_KEY_FILE")" \
-            "$GOOGLE_AI_API_KEY" | \
+            "$GOOGLE_AI_API_KEY" \
+            "$TOPAZ_API_KEY" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 

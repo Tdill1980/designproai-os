@@ -16,11 +16,24 @@ customer who wants to *ask for a wrap* cannot, and that is the launch blocker.
 
 ## Finish line 1 — prove the kernel, then freeze it
 
-1. **Reconfigure the droplet environment.** `sudo ./configure-env.sh
-   CONFIGURE_DESIGNPRO_SECRETS_ONLY`, entering the Topaz key. This gates
-   everything: `ops/deploy.sh:25` runs `validate-env.py` before it touches the
-   host, and an environment file written before Call 12 has neither
-   `DESIGNPRO_TOPAZ_ENABLED` nor `TOPAZ_API_KEY`, so the deploy fails there.
+1. **Configure the droplet environment.** Put the Topaz key in the
+   `designproai-production` environment as the `DESIGNPRO_TOPAZ_API_KEY`
+   secret, then run the **Configure the droplet environment from GitHub
+   Secrets** workflow with `WRITE_DESIGNPROAI_DROPLET_ENV`. The key travels
+   from GitHub to the server over the same pinned SSH the deploy uses; it
+   never passes through a chat window or a shell history. On the server the
+   one canonical writer is still `ops/configure-env.sh`, so there is no second
+   idea of what a valid environment is.
+
+   This gates everything downstream: `ops/deploy.sh:25` runs `validate-env.py`
+   before it touches the host, and an environment file written before Call 12
+   has neither `DESIGNPRO_TOPAZ_ENABLED` nor `TOPAZ_API_KEY`, so the deploy
+   fails there.
+
+   `sudo ./configure-env.sh CONFIGURE_DESIGNPRO_SECRETS_ONLY` at a server
+   console does exactly the same thing and remains supported. The dark deploy
+   also configures a droplet that has no environment yet, from the same
+   secrets, so a first deployment needs no separate configuration step.
 2. **Dark deploy** the exact `main` SHA. Loopback only, no DNS.
 3. **Run one complete canary** on seven renders that already exist: seven views
    → GENIE → Call 8 → Call 9 → logos → PanelPro preflight → Call 12 → 18
