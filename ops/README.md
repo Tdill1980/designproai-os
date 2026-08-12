@@ -36,6 +36,8 @@ Its exact code layout is:
 - `runtime/flat-wrap-layout.cjs`
 - `runtime/proof-sheet.cjs`
 - `runtime/topaz-upscale.cjs`
+- `runtime/view-angles.cjs`
+- `runtime/generation-provider.cjs`
 - `runtime/output-qc.cjs`
 - `runtime/resend-transport.cjs`
 - `runtime/wrapbox-delivery.cjs`
