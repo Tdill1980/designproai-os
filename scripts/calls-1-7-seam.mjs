@@ -157,6 +157,53 @@ async function main() {
     && passengerAgain.winner?.content_hash === passenger.winner?.content_hash);
   gate("replay reports reuse", driverAgain.reused === true && passengerAgain.reused === true);
 
+  // The permanent record of this run. Written whether it passed or failed, so
+  // a failure is as evidenced as a success and nobody later has to rely on
+  // "it worked once".
+  const evidence = {
+    contract: "designpro.calls-1-7-seam-evidence.v1",
+    requestId: REQUEST_ID,
+    ranAt: new Date().toISOString(),
+    vehicle: VEHICLE,
+    prompt: PROMPT,
+    promptVersion: angles.VIEW_ORDER.length === 7 ? "view-angles-os.v4.1" : "unknown",
+    slots: {
+      driver: {
+        state: driver.state, attempts: driver.providerCalls,
+        contentHash: driver.winner?.content_hash || null,
+        storagePath: driver.winner?.storage_path || null,
+        byteSize: driver.winner?.byte_size ?? null,
+      },
+      passenger: {
+        state: passenger.state, attempts: passenger.providerCalls,
+        contentHash: passenger.winner?.content_hash || null,
+        storagePath: passenger.winner?.storage_path || null,
+        byteSize: passenger.winner?.byte_size ?? null,
+      },
+    },
+    // Fingerprints only. A provider key never appears in evidence.
+    attemptLog: (attemptRows || []).map((row) => ({
+      slot: row.source_view_type, attempt: row.attempt, model: row.model,
+      keyFingerprint: row.key_fingerprint, outcome: row.outcome,
+      durationMs: row.duration_ms, contentHash: row.content_hash,
+    })),
+    modelsUsed: [...new Set((attemptRows || []).map((row) => row.model).filter(Boolean))],
+    replayProviderCalls: replay.calls,
+    renderAssets,
+    gates: gates.map((g) => ({ name: g.name, passed: g.passed, detail: g.detail })),
+    // A machine cannot sign this off. A human opens the two files and says so.
+    manualVisualVerdict: {
+      recordedBy: null, recordedAt: null,
+      driverTextReadsCorrectly: null,
+      passengerTextReadsCorrectly: null,
+      passengerIsNotMirrored: null,
+      passengerIsADifferentComposition: null,
+      noVehicleAngleCorruption: null,
+    },
+  };
+  writeFileSync(`${OUT}/seam-evidence.json`, JSON.stringify(evidence, null, 2));
+  process.stdout.write(`\n        evidence written to ${OUT}/seam-evidence.json\n`);
+
   const failed = gates.filter((g) => !g.passed);
   process.stdout.write(`\n${gates.length - failed.length}/${gates.length} gates passed\n`);
   if (failed.length) {
