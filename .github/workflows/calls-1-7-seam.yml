@@ -1,0 +1,192 @@
+name: Run the Calls 1-7 driver/passenger seam on the droplet
+
+# Runs the live seam where the credentials actually are, and brings the
+# evidence back as workflow artifacts. Deliberately hard-stopped at two views:
+# a misconfiguration cannot burn provider calls on the other five.
+#
+# It changes nothing on the host. No deploy, no env write, no service restart —
+# it runs one script from the already-deployed release against the environment
+# configure-env.sh wrote.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Protected live provider action — this spends real Gemini calls"
+        required: true
+        type: choice
+        default: DO_NOT_RUN
+        options:
+          - DO_NOT_RUN
+          - RUN_DRIVER_PASSENGER_SEAM
+      vehicle:
+        description: "Vehicle"
+        required: true
+        type: string
+        default: 2024 Ford Transit 250 High Roof Extended
+      prompt:
+        description: "Design brief — include readable text so a mirrored render is obvious"
+        required: true
+        type: string
+        default: >-
+          Create a bold commercial vehicle wrap for HVAC HERO. Use deep navy, electric blue,
+          ice blue and white with high-energy angular airflow graphics and subtle frost/heat
+          contrast. Make the branding large, clean and professional with strong visual movement
+          from front to rear. Include the exact text "HVAC HERO", "HEATING • COOLING • AIR QUALITY",
+          "602-555-0147", and "HVACHERO.COM". All lettering, phone numbers and URLs must remain
+          clearly readable left-to-right on every vehicle view. The passenger side must be
+          independently composed for that side of the vehicle, not mirrored from the driver side.
+          Keep the design commercially realistic, premium, high contrast and suitable for a real
+          HVAC fleet vehicle.
+      tenant_key:
+        description: "Owner tenant key, e.g. user_<uuid>"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-calls-1-7-seam
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+
+jobs:
+  seam:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'RUN_DRIVER_PASSENGER_SEAM'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Prove protected live-provider intent
+        run: |
+          set +x
+          test "${{ inputs.confirmation }}" = "RUN_DRIVER_PASSENGER_SEAM"
+          test -n "$SSH_PRIVATE_KEY"
+          # A tenant key is required and must be well formed, so a typo cannot
+          # write generation rows under an unrelated owner.
+          printf '%s' '${{ inputs.tenant_key }}' | grep -Eq '^user_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+
+      - name: Pin the droplet SSH identity
+        id: ssh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          public_key="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          fail() { printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$1"; }
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$public_key" 2>/dev/null || fail 31 "automation private key could not be parsed"
+          observed=$(ssh-keygen -lf "$public_key" -E sha256 2>/dev/null | awk 'NR == 1 {print $2}')
+          [[ $observed == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || fail 38 "automation key fingerprint does not match the protected pin"
+
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts" || fail 33 "host-key scan failed"
+          [[ -s $known_hosts ]] || fail 34 "host-key scan returned nothing"
+          mapfile -t host_fingerprints < <(ssh-keygen -lf "$known_hosts" -E sha256 2>/dev/null | awk '{print $2}' | sort -u)
+          [[ ${#host_fingerprints[@]} -eq 1 ]] || fail 35 "ambiguous host key"
+          [[ ${host_fingerprints[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || fail 36 "host fingerprint does not match the protected pin"
+
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Run the driver/passenger seam on the droplet
+        id: run
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+          SEAM_VEHICLE: ${{ inputs.vehicle }}
+          SEAM_PROMPT: ${{ inputs.prompt }}
+          SEAM_TENANT: ${{ inputs.tenant_key }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          # The brief and vehicle travel as base64 so quoting cannot mangle the
+          # exact text the render is judged on.
+          vehicle_b64=$(printf '%s' "$SEAM_VEHICLE" | base64 -w0)
+          prompt_b64=$(printf '%s' "$SEAM_PROMPT" | base64 -w0)
+          tenant=$SEAM_TENANT
+
+          set +e
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "VEHICLE_B64='$vehicle_b64' PROMPT_B64='$prompt_b64' SEAM_TENANT='$tenant' bash -s" <<'REMOTE' > "$RUNNER_TEMP/seam.log" 2>&1
+          set -Eeuo pipefail
+          release=/opt/designproai/current
+          test -d "$release" || { echo "no deployed release at $release — dark deploy first"; exit 40; }
+          test -f /opt/designproai/shared/runtime.env || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
+
+          out=$(mktemp -d)
+          set -a; . /opt/designproai/shared/runtime.env; set +a
+          export DESIGNPRO_SEAM_TENANT="$SEAM_TENANT"
+          vehicle=$(printf '%s' "$VEHICLE_B64" | base64 -d)
+          prompt=$(printf '%s' "$PROMPT_B64" | base64 -d)
+
+          cd "$release"
+          node scripts/calls-1-7-seam.mjs --vehicle "$vehicle" --prompt "$prompt" --out "$out"
+          status=$?
+
+          # Hand the evidence back over stdout as one tar stream, so nothing is
+          # left behind on the host and nothing has to be fetched separately.
+          echo "---SEAM-EVIDENCE-TAR---"
+          tar -C "$out" -cz . | base64 -w0
+          rm -rf "$out"
+          exit $status
+          REMOTE
+          ssh_status=$?
+          set -e
+
+          mkdir -p seam-evidence
+          # Split the log from the evidence stream.
+          if grep -q -- '---SEAM-EVIDENCE-TAR---' "$RUNNER_TEMP/seam.log"; then
+            sed -n '1,/---SEAM-EVIDENCE-TAR---/p' "$RUNNER_TEMP/seam.log" | sed '$d' > seam-evidence/seam-run.log
+            sed -n '/---SEAM-EVIDENCE-TAR---/,$p' "$RUNNER_TEMP/seam.log" | tail -n +2 | tr -d '\n' | base64 -d | tar -C seam-evidence -xz
+          else
+            cp "$RUNNER_TEMP/seam.log" seam-evidence/seam-run.log
+          fi
+          cat seam-evidence/seam-run.log
+          echo "ssh_status=$ssh_status" >> "$GITHUB_OUTPUT"
+          exit "$ssh_status"
+
+      - name: Upload the seam evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: calls-1-7-seam-evidence-${{ github.run_id }}
+          path: seam-evidence/**
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Restate what a human still has to check
+        if: always()
+        run: |
+          cat <<'NOTE'
+          Green gates are not a pass. Download the artifact and open both images:
+
+            driver.png     text reads correctly, matches the brief
+            passenger.png  HVACHERO.COM and 602-555-0147 read LEFT TO RIGHT,
+                           not mirrored, and it is its own composition —
+                           not the driver side flipped
+
+          seam-evidence.json carries an unfilled manualVisualVerdict block.
+          Fill it in. An unreviewed run should look unreviewed.
+
+          Only after both images are right does hood/front/rear/close-up/roof
+          get wired. If either is wrong, the fix is in the Calls 1-7
+          prompt/camera/provider layer — not in Calls 8-12.
+          NOTE
