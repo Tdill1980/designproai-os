@@ -79,6 +79,9 @@ jobs:
         id: secrets
         if: env.CONFIGURE_MODE == 'WRITE_DESIGNPROAI_DROPLET_ENV'
         shell: bash
+        env:
+          # Consulted only for its keys, and only on the failure path below.
+          VISIBLE_SECRET_NAMES: ${{ toJSON(secrets) }}
         run: |
           set -Eeuo pipefail
           set +x
@@ -95,6 +98,13 @@ jobs:
           # configuring it completely, so this fails now and says where to look.
           if [[ -z $TOPAZ_API_KEY ]]; then
             printf '::error title=Call 12::DESIGNPRO_TOPAZ_API_KEY resolved to an empty value.\n' >&2
+            # Names only. A secret's value is masked in logs regardless, and
+            # none is read here — but the name is the whole diagnosis, and
+            # without it the next step is guessing at spelling from a list
+            # GitHub truncates in the UI. Print exactly what this job can see.
+            printf '\nSecret names visible to this job:\n' >&2
+            jq -r 'keys[] | "  " + .' <<<"$VISIBLE_SECRET_NAMES" >&2 || true
+            printf '\n' >&2
             cat >&2 <<'MISSING'
           The other three secrets resolved, so the job reached the right
           environment; this one is not in it. An environment secret is only
