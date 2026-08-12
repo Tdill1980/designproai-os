@@ -104,9 +104,17 @@ test("standalone Call 8 request uses exact raw square feet and five-inch bleed o
     { bodyText: {}, logoPlacements: [] },
   );
   assert.equal(result.totalSqFt, totalSqFt);
-  assert.equal(result.request.tiles.length, 6);
-  assert.ok(result.request.tiles.every((tile) => tile.bleedIn === 5));
-  assert.match(result.request.overlaySvg, new RegExp(`GENIE TOTAL: ${totalSqFt.toFixed(2)} SQ FT · 5 IN BLEED EACH EDGE`));
+  assert.equal(result.request.surfaces.length, 6);
+  assert.equal(result.layout.cells.length, 6);
+  assert.equal(result.layout.totalSqFt, totalSqFt);
+  // Every cut rectangle is the GENIE trim plus exactly five inches of bleed on
+  // all four edges, and every rectangle sits inside the authored canvas.
+  assert.ok(result.layout.cells.every((cell) => cell.bleedIn === 5));
+  assert.ok(result.layout.cells.every((cell) => cell.printWidthIn === cell.trimWidthIn + 10 && cell.printHeightIn === cell.trimHeightIn + 10));
+  assert.ok(result.layout.cells.every((cell) => cell.w === cell.trimWidthPx + cell.bleedPx * 2 && cell.h === cell.trimHeightPx + cell.bleedPx * 2));
+  assert.ok(result.layout.cells.every((cell) => cell.x >= 0 && cell.y >= 0
+    && cell.x + cell.w <= result.layout.width && cell.y + cell.h <= result.layout.height));
+  assert.match(result.materialHash, /^[0-9a-f]{64}$/);
 });
 
 test("standalone panel authority contains no estimated or shared-runtime success path", () => {

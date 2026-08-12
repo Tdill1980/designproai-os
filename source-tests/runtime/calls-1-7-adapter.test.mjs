@@ -168,3 +168,26 @@ test("heartbeat and failure remain fenced by the exact request and claim token",
   ]);
   assert.equal(fake.calls[1].payload.p_retryable, true);
 });
+
+test("the legacy 2D-proof function is no longer sanctioned by the Calls 1-7 engine contract", () => {
+  const contract = claimant.CALLS_1_7_ADAPTER.engineContract;
+  // Calls 1-7 hand over the seven immutable source renders and nothing else.
+  // The 2D production proof is Call 8 and this system authors it, so a runner
+  // still carrying the legacy proof function must not be able to present a
+  // valid claim here.
+  assert.equal(contract.contractVersion, "designpro.calls-1-7-engine.v2");
+  assert.equal(Object.prototype.hasOwnProperty.call(contract.sourceBlobs, "generate-2d-proof"), false);
+  assert.deepEqual(contract.retiredBlobs, ["generate-2d-proof"]);
+  assert.equal(contract.proofAuthority, "designpro-os-call8");
+  assert.equal(Object.keys(contract.sourceBlobs).length, 7);
+  assert.doesNotMatch(JSON.stringify(contract.sourceBlobs), /2946bc1ba26b374d21ae563f01bb464ee41477d2/);
+
+  // A stale runner presenting the retired contract is refused at the door
+  // rather than allowed to consume generation attempts.
+  const stale = {
+    ...contract,
+    contractVersion: "designpro.calls-1-7-engine.v1",
+    sourceBlobs: { ...contract.sourceBlobs, "generate-2d-proof": "2946bc1ba26b374d21ae563f01bb464ee41477d2" },
+  };
+  assert.notEqual(JSON.stringify(stale), JSON.stringify(contract));
+});

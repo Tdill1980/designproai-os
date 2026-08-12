@@ -32,6 +32,9 @@ for(const exactField of ["viewreceipts","viewlineage","dimensionmanifestid","man
   assert.ok(lower.includes(exactField),`claimant is not aligned to schema field ${exactField}`);
 for(const edge of ["top: 5","right: 5","bottom: 5","left: 5"])
   assert.ok(lower.includes(edge),`claimant does not bind exact ${edge} bleed`);
-assert.match(lower,/metadata:\s*\{\s*sourcemasterhash:[\s\S]{0,500}displayedregionhash:[\s\S]{0,500}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
-  'panel artifact metadata must bind the Call 8 master, displayed region, and four-edge bleed');
+assert.match(lower,/sourcerule: "deterministic-cut-of-approved-call8-flat-wrap-layout"[\s\S]{0,900}sourceregionhash:[\s\S]{0,900}sourcelayouthash:[\s\S]{0,900}cutrect:[\s\S]{0,900}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
+  'panel artifact metadata must bind the approved flat wrap layout, the exact cut rectangle, and four-edge bleed');
+for(const cutGuard of ["call9_cut_hash_mismatch","call9_layout_changed","call9_cut_map_drift"])
+  assert.ok(lower.includes(cutGuard.toLowerCase()),`Call 9 must fail closed on ${cutGuard}`);
+assert.ok(!lower.includes("own-call8-bound-surface-master"),"Call 9 must cut the approved layout, never promote a separate per-surface generation");
 console.log("standalone claimant matches all schema lease, receipt, artifact and human-gate contracts");

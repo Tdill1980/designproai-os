@@ -12,15 +12,15 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fourteen-migration chain', () => {
-  assert.equal(migrationNames.length, 14);
+test('fresh bootstrap contains one ordered sixteen-migration chain', () => {
+  assert.equal(migrationNames.length, 16);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
       '20260806180000', '20260806180100', '20260806180200', '20260806180300',
       '20260806180400', '20260806180500', '20260806180600', '20260806180700',
       '20260806180800', '20260806180900', '20260806181000', '20260806181100',
-      '20260806181200', '20260808024500',
+      '20260806181200', '20260808024500', '20260812120000', '20260812140000',
     ],
   );
 });

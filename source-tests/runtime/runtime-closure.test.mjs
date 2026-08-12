@@ -24,7 +24,7 @@ test("all local CommonJS imports are closed", () => {
 
 test("contains Calls 7/8/9 and all paid late-stage gates", () => {
   for (const stage of ["revision.freeze", "proof.build", "panels.build", "logos.extract", "pack.verify", "pack.activate", "source.verify", "await_panelpro_preflight_qc", "output.build", "output.verify", "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver"]) assert.ok(claimant.includes(stage), `missing stage ${stage}`);
-  assert.match(entry, /Call 8 flat 2D proof/); assert.match(entry, /authorFlatSurfaceMasters/); assert.match(claimant, /call8\.flat-proof/); assert.match(claimant, /call9\.surface-panels/); assert.match(claimant, /call10\.logo-inventory/);
+  assert.match(entry, /2D Production Proof/); assert.match(entry, /authorFlatWrapLayout/); assert.match(entry, /cutAllPanels/); assert.match(claimant, /call8\.flat-proof/); assert.match(claimant, /call9\.surface-panels/); assert.match(claimant, /call10\.logo-inventory/);
 });
 
 test("two-worker safety is durable and the legacy poller defaults off", () => {
@@ -45,10 +45,15 @@ test("HTTP tools are authenticated and health is explicit", () => {
   assert.match(entry, /SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_SECRET, GIT_SHA, GOOGLE_AI_API_KEY/);
   assert.match(entry, /DESIGNPRO_SPOOL_DIR and DESIGNPRO_APP_ORIGIN are required/);
   for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET", "GIT_SHA", "GOOGLE_AI_API_KEY \(or GEMINI_API_KEY\)", "DESIGNPRO_SPOOL_DIR", "DESIGNPRO_APP_ORIGIN", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true|false"]) assert.ok(entry.includes(`"${key}"`), `missing exact dark environment contract ${key}`);
-  for (const key of ["DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED=true"]) assert.ok(entry.includes(`"${key}"`), `missing public go-live blocker contract ${key}`);
+  for (const key of ["DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED=true", "DESIGNPRO_TOPAZ_ENABLED=true", "TOPAZ_API_KEY"]) assert.ok(entry.includes(`"${key}"`), `missing public go-live blocker contract ${key}`);
+  assert.ok(entry.includes('"DESIGNPRO_TOPAZ_ENABLED=true|false"'), "Call 12 must be an explicit dark environment mode");
   assert.match(entry, /if \(!notificationReadiness\.configurationValid\) \{[\s\S]*?stopWorkerLoops\(\);[\s\S]*?workerLoopsStarted: false[\s\S]*?return;/);
   assert.match(entry, /notificationReadiness\.enabled && notificationReadiness\.available \? createResendTransport\(\) : null/);
-  assert.match(entry, /publicGoLiveReady: notificationReadiness\.publicGoLiveReady, publicGoLiveBlockers/);
+  // A pack cannot be produced without Call 12, so an unconfigured enhancer
+  // blocks public go-live the same way outbound email does.
+  assert.match(entry, /publicGoLiveReady: notificationReadiness\.publicGoLiveReady && enhancementGoLiveBlockers\.length === 0/);
+  assert.match(entry, /publicGoLiveBlockers: \[\.\.\.publicGoLiveBlockers, \.\.\.enhancementGoLiveBlockers\]/);
+  assert.match(entry, /topaz_enhancement_disabled|topaz_enhancement_not_configured/);
   assert.match(entry, /if \(!claimant\) claimant = registerDesignProStandaloneClaimant[\s\S]*?ensureDeliveryWorkers\(\);[\s\S]*?workerLoopsStarted: true/);
   assert.doesNotMatch(entry, /kfapjdyythzyvnpdeghu/);
   assert.doesNotMatch(entry, /process\.env\.SUPABASE_SERVICE_KEY/);

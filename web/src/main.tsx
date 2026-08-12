@@ -338,6 +338,94 @@ function ArtifactReview({ artifacts, loading, error, onRefresh }: { artifacts: W
   </section>;
 }
 
+const panelOrder: GenieSurfaceKey[] = ["driver", "passenger", "hood", "roof", "front", "rear"];
+const panelLabel: Record<string, string> = {
+  driver: "DRIVER SIDE", passenger: "PASSENGER SIDE", hood: "HOOD",
+  roof: "ROOF", front: "FRONT", rear: "REAR",
+};
+
+function num(value: unknown) {
+  return typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : null;
+}
+
+function inchLabel(value: unknown) {
+  const parsed = num(value);
+  if (parsed == null || Number.isNaN(parsed)) return null;
+  return Number.isInteger(parsed) ? String(parsed) : String(Math.round(parsed * 100) / 100);
+}
+
+function SaveLink({ url, name }: { url: string; name: string }) {
+  return <a className="save-link" href={url} download={name} target="_blank" rel="noreferrer">↓ Save</a>;
+}
+
+/**
+ * Revision Studio. The customer-facing 2D Production Proof, and under it every
+ * print-ready panel that was cut out of the approved flat wrap layout. Each row
+ * carries the GENIE trim size, the print size at five-inch bleed, and the cut
+ * rectangle and hash the panel came from, so a panel that is not a cut of the
+ * approved design cannot look like one here.
+ */
+function RevisionStudio({ artifacts, loading }: { artifacts: WorkflowArtifact[]; loading: boolean }) {
+  const proof = artifacts.find((item) => item.kind === "flat-proof" && !item.surfaceKey);
+  const layout = artifacts.find((item) => item.kind === "flat-proof" && item.surfaceKey === "flat-wrap-layout");
+  const panels = panelOrder
+    .map((key) => artifacts.find((item) => item.kind === "panel" && item.surfaceKey === key))
+    .filter((item): item is WorkflowArtifact => Boolean(item));
+  if (loading && !proof && panels.length === 0) return <section className="panel"><div className="notice">Loading Revision Studio…</div></section>;
+  if (!proof && panels.length === 0) return null;
+  const totalSqFt = num(proof?.metadata?.totalSqFt);
+
+  return <section className="panel revision-studio">
+    <div className="artifact-head">
+      <div>
+        <div className="eyebrow">REVISION STUDIO</div>
+        <h2>2D Production Proof</h2>
+        <p>The approved proof and every print-ready panel cut from it. Deterministic per-side crops of the approved flat wrap layout — no re-render.</p>
+      </div>
+      {totalSqFt != null && <span className="status-chip">{totalSqFt.toFixed(2)} sq ft</span>}
+    </div>
+
+    {proof
+      ? <figure className="proof-figure">
+          <a href={proof.signedUrl} target="_blank" rel="noreferrer"><img src={proof.signedUrl} alt="2D Production Proof" /></a>
+          <figcaption><span>DesignProAI™ — 2D Production Proof</span><SaveLink url={proof.signedUrl} name="2d-production-proof.png" /></figcaption>
+        </figure>
+      : <div className="notice">The 2D production proof has not been published for this job yet.</div>}
+
+    <div className="studio-head">
+      <h3>Production Layers — {panels.length} {panels.length === 1 ? "side" : "sides"}</h3>
+      {layout && <a className="layout-link" href={layout.signedUrl} target="_blank" rel="noreferrer">Open approved flat wrap layout ↗</a>}
+    </div>
+
+    {panels.length === 0 && <div className="notice">No panels have been cut yet. They appear here once Call 9 completes.</div>}
+
+    <div className="studio-panels">{panels.map((panel) => {
+      const width = inchLabel(panel.metadata.trimWidthInches);
+      const height = inchLabel(panel.metadata.trimHeightInches);
+      const printWidth = inchLabel(panel.metadata.printWidthInches);
+      const printHeight = inchLabel(panel.metadata.printHeightInches);
+      const sqFt = num(panel.metadata.surfaceSqFt);
+      const rect = panel.metadata.cutRect as { x: number; y: number; w: number; h: number } | undefined;
+      return <article className="studio-row" key={panel.id}>
+        <header>
+          <strong>{panelLabel[panel.surfaceKey] || panel.surfaceKey.toUpperCase()}</strong>
+          {width && height && <span>{width}" × {height}"</span>}
+        </header>
+        <a className="studio-thumb" href={panel.signedUrl} target="_blank" rel="noreferrer">
+          <img src={panel.signedUrl} alt={`${panel.surfaceKey} print-ready panel`} />
+        </a>
+        <div className="studio-meta">
+          <div className="studio-line"><span>Print-ready panel</span><SaveLink url={panel.signedUrl} name={`${panel.surfaceKey}-print-panel.png`} /></div>
+          {printWidth && printHeight && <small>{printWidth}" × {printHeight}" printed · 5" bleed on all four edges{sqFt != null ? ` · ${sqFt.toFixed(2)} sq ft` : ""}</small>}
+          {rect && <small className="studio-provenance">Cut {rect.w}×{rect.h} px at ({rect.x}, {rect.y}) of the approved layout</small>}
+          <code title={panel.contentHash}>SHA-256 {panel.contentHash.slice(0, 16)}…</code>
+          <small className="muted">The panel is the print-ready base; your branding prints on top.</small>
+        </div>
+      </article>;
+    })}</div>
+  </section>;
+}
+
 function Workflow() {
   const { generationId = "" } = useParams();
   const [job, setJob] = useState<WorkflowStatus>();
@@ -358,6 +446,7 @@ function Workflow() {
     <div className="page-head"><div><Link className="back" to="/app">← Jobs</Link><h1>{job.designId}</h1><p>Order # {job.orderNumber} · Revision {job.revision} · {completeCount} of {job.stages.length} stages verified</p></div><span className={`state ${job.state}`}>{job.state.replaceAll("_", " ")}</span></div>
     {job.failure && <div className="notice error"><strong>{job.failure.stage}</strong><span>{job.failure.message}</span>{job.failure.retryable && <button className="secondary" onClick={() => dpApi.requestResume(generationId).then(load)}>Request server resume</button>}</div>}
     <section className="panel"><h2>Automatic workflow</h2><div className="timeline">{job.stages.map((stage) => <div className={`stage ${stage.state}`} key={stage.key}><i/><div><strong>{stageLabel[stage.key] || stage.label}</strong><small>{stage.state}</small>{stage.artifactPath && <code>{stage.artifactPath}</code>}</div></div>)}</div></section>
+    <RevisionStudio artifacts={artifacts} loading={artifactsLoading} />
     <ArtifactReview artifacts={artifacts} loading={artifactsLoading} error={artifactsError} onRefresh={loadArtifacts} />
     {job.state === "waiting_for_preflight" && <QcGate gate="preflight" onApprove={async (qc, notes) => { await dpApi.approvePreflight(generationId, qc as PreflightQc, notes); await load(); }} />}
     {job.state === "waiting_for_final_qc" && <QcGate gate="final" onApprove={async (qc, notes) => { await dpApi.approveFinalQc(generationId, qc as FinalQc, notes); await load(); }} />}
