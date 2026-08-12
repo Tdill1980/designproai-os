@@ -7,12 +7,12 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/designproai/current
-EnvironmentFile=/opt/designproai/current/deploy/release.env
-Environment=COMPOSE_PROJECT_NAME=designproai
-ExecStartPre=/usr/bin/test -L /opt/designproai/current
-ExecStartPre=/usr/bin/test -f /opt/designproai/current/deploy/release.env
-ExecStartPre=/usr/bin/test -f /opt/designproai/current/ops/compose.yaml
+WorkingDirectory=/opt/designproai-os/current
+EnvironmentFile=/opt/designproai-os/current/deploy/release.env
+Environment=COMPOSE_PROJECT_NAME=designproai-os
+ExecStartPre=/usr/bin/test -L /opt/designproai-os/current
+ExecStartPre=/usr/bin/test -f /opt/designproai-os/current/deploy/release.env
+ExecStartPre=/usr/bin/test -f /opt/designproai-os/current/ops/compose.yaml
 ExecStart=/usr/bin/docker compose --env-file deploy/release.env -f ops/compose.yaml up -d --remove-orphans
 ExecReload=/usr/bin/docker compose --env-file deploy/release.env -f ops/compose.yaml up -d --remove-orphans
 ExecStop=/usr/bin/docker compose --env-file deploy/release.env -f ops/compose.yaml stop gateway runtime-1 runtime-2

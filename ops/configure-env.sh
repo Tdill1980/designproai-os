@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-ROOT=/opt/designproai
+ROOT=/opt/designproai-os
 PROJECT_URL=https://wozyamlnygaddievzuwn.supabase.co
 PUBLISHABLE_KEY=sb_publishable_fXHc8sn8AgTY56RKa6zyvQ_5Dt2eDR3
 TUS_ENDPOINT=https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable
@@ -129,7 +129,7 @@ fi
 unset service_key google_key topaz_key worker_secret
 # These files are read into the container environment at start. A release that
 # is already running still holds the previous values until it is redeployed.
-if docker ps --filter label=com.docker.compose.project=designproai --format '{{.ID}}' 2>/dev/null | grep -q .; then
+if docker ps --filter label=com.docker.compose.project=designproai-os --format '{{.ID}}' 2>/dev/null | grep -q .; then
   echo "NOTE: DesignProAI containers are running with the previous environment. Redeploy to load these values."
 fi
 

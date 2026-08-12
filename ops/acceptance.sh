@@ -4,7 +4,7 @@ set -Eeuo pipefail
 OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 sha=${1:?expected SHA}
 public=${2:-}
-ROOT=/opt/designproai
+ROOT=/opt/designproai-os
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "Exact lowercase SHA required" >&2; exit 2; }
@@ -20,7 +20,7 @@ archive_sha=$(awk -F= '$1 == "RELEASE_ARCHIVE_SHA256" {print $2}' "$ROOT/current
 }
 python3 "$OPS_DIR/validate-archive.py" "$ROOT/current/deploy/release.tgz" "$sha"
 python3 "$OPS_DIR/validate-release-tree.py" "$release" "$sha"
-systemctl is-active --quiet designproai.service || { echo "DesignPro systemd service is not active" >&2; exit 5; }
+systemctl is-active --quiet designproai-os.service || { echo "DesignPro systemd service is not active" >&2; exit 5; }
 python3 "$OPS_DIR/validate-env.py" "$ROOT/shared/runtime.env" "$ROOT/shared/gateway.env"
 
 [[ -d $ROOT/shared/spool && ! -L $ROOT/shared/spool && $(stat -c '%u:%g:%a' "$ROOT/shared/spool") == 10001:10001:700 ]] || {

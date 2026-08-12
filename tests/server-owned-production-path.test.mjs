@@ -37,7 +37,7 @@ test("exact deployment runs two independent fenced workers on a restart-safe sha
   assert.match(compose, /DESIGNPRO_WORKER_ID: "designpro-worker-1"/);
   assert.match(compose, /DESIGNPRO_WORKER_ID: "designpro-worker-2"/);
   assert.match(compose, /restart: unless-stopped/);
-  assert.match(compose, /source: \/opt\/designproai\/shared\/spool/);
+  assert.match(compose, /source: \/opt\/designproai-os\/shared\/spool/);
   assert.match(compose, /target: \/var\/lib\/designproai\/spool/);
   assert.match(acceptance, /runtime-1[\s\S]*runtime-2/);
   assert.match(acceptance, /designpro-shared-spool/);

@@ -33,7 +33,7 @@ os.designproai.com {
   }
 
   handle {
-    root * /opt/designproai/public/web/dist
+    root * /opt/designproai-os/public/web/dist
     try_files {path} /index.html
     file_server
   }

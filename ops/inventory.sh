@@ -27,14 +27,14 @@ pm2 jlist 2>/dev/null | python3 -c 'import json,sys; a=json.load(sys.stdin); pri
 echo "--- systemd candidates (read-only) ---"
 systemctl list-units --type=service --all --no-pager | grep -Ei 'designpro|restyle|vector|parser|render|agent|caddy|docker' || true
 echo "--- DesignProAI deployment paths (metadata only; no env contents) ---"
-if [[ -e /opt/designproai || -L /opt/designproai ]]; then
-  find -P /opt/designproai -maxdepth 3 \
-    ! -path '/opt/designproai/shared/spool/*' \
+if [[ -e /opt/designproai-os || -L /opt/designproai-os ]]; then
+  find -P /opt/designproai-os -maxdepth 3 \
+    ! -path '/opt/designproai-os/shared/spool/*' \
     -printf '%y\t%u:%g\t%m\t%p\t%l\n' 2>/dev/null | LC_ALL=C sort
 else
-  echo "MISSING /opt/designproai"
+  echo "MISSING /opt/designproai-os"
 fi
-for path in /etc/systemd/system/designproai.service /etc/caddy/sites/designproai.caddy; do
+for path in /etc/systemd/system/designproai-os.service /etc/systemd/system/designproai.service /etc/caddy/sites/designproai-os.caddy /etc/caddy/sites/designproai.caddy; do
   if [[ -e $path || -L $path ]]; then
     stat -c '%F\t%U:%G\t%a\t%n' "$path"
   fi

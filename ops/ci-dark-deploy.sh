@@ -21,8 +21,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ -L /opt/designproai/current ]] && \
-   [[ $(readlink -f /opt/designproai/current) == "/opt/designproai/releases/$EXACT_SHA" ]]; then
+if [[ -L /opt/designproai-os/current ]] && \
+   [[ $(readlink -f /opt/designproai-os/current) == "/opt/designproai-os/releases/$EXACT_SHA" ]]; then
   "$control/acceptance.sh" "$EXACT_SHA"
   cat >/dev/null
   echo "ALREADY_COMPLETE: exact release is locally accepted; no deployment performed"
@@ -31,8 +31,8 @@ fi
 
 "$control/backup.sh"
 "$control/install.sh" I_UNDERSTAND_NO_RP_CHANGES
-runtime_env=/opt/designproai/shared/runtime.env
-gateway_env=/opt/designproai/shared/gateway.env
+runtime_env=/opt/designproai-os/shared/runtime.env
+gateway_env=/opt/designproai-os/shared/gateway.env
 if [[ -s $runtime_env && -s $gateway_env ]]; then
   python3 "$control/validate-env.py" "$runtime_env" "$gateway_env"
   cat >/dev/null
@@ -46,8 +46,8 @@ fi
 "$control/deploy.sh" "$archive" "$EXACT_SHA" "$ARCHIVE_DIGEST" DEPLOY_DESIGNPRO_ONLY
 "$control/acceptance.sh" "$EXACT_SHA"
 
-services=$(docker ps --filter label=com.docker.compose.project=designproai --format '{{.Label "com.docker.compose.service"}}' | sort)
+services=$(docker ps --filter label=com.docker.compose.project=designproai-os --format '{{.Label "com.docker.compose.service"}}' | sort)
 test "$(wc -l <<<"$services" | tr -d ' ')" -eq 3
 test "$services" = $'gateway\nruntime-1\nruntime-2'
-test "$(docker volume ls --filter label=com.docker.compose.project=designproai -q | wc -l)" -eq 0
+test "$(docker volume ls --filter label=com.docker.compose.project=designproai-os -q | wc -l)" -eq 0
 echo "VERIFIED_WORKING: exact artifact passed dark loopback acceptance; Caddy, DNS, and public traffic were not changed"

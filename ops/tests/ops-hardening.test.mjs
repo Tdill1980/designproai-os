@@ -76,7 +76,7 @@ test("persistent spool, host floors, and bounded containers are explicit", () =>
   assert.ok(toleratedSwapFloorKiB - 1 < toleratedSwapFloorKiB, "a value below the documented 7.5-GiB tolerance must fail");
   assert.match(install, /active swapfile configured as 8 GiB/);
   assert.match(install, /install -d -o 10001 -g 10001 -m 0700 "\$ROOT\/shared\/spool"/);
-  assert.ok((compose.match(/source: \/opt\/designproai\/shared\/spool/g) || []).length >= 1);
+  assert.ok((compose.match(/source: \/opt\/designproai-os\/shared\/spool/g) || []).length >= 1);
   assert.match(compose, /mem_limit: 6g/);
   assert.match(compose, /cpus: "3\.0"/);
   assert.match(compose, /mem_limit: 512m/);

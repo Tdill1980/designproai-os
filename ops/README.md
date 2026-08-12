@@ -5,7 +5,7 @@ droplet name and old repository documentation are not trusted for capacity;
 `inventory.sh` reports the live CPU, RAM, disk, listeners, and service owners.
 
 This package deploys only the standalone DesignPro OS under
-`/opt/designproai`. It never installs PR #4119, modifies an RP directory, or
+`/opt/designproai-os`. It never installs PR #4119, modifies an RP directory, or
 contains a tool for stopping RP services. RestylePro relocation is a separate
 owner/session responsibility.
 
@@ -77,7 +77,7 @@ recorded and rechecked during acceptance and rollback.
 Installation refuses hosts below 8 logical CPUs, 15 GiB RAM, a configured
 8-GiB active swapfile (7.5-GiB accounting floor for Linux page-size
 tolerance), or 120 GiB free on the `/opt` filesystem. Both fixed-UID (10001) runtime
-containers share `/opt/designproai/shared/spool`, mounted at
+containers share `/opt/designproai-os/shared/spool`, mounted at
 `/var/lib/designproai/spool`; the read-only container roots and 256 MiB `/tmp`
 are never used for production ZIPs. Runtime containers are capped at 6 GiB and
 3 CPUs each, and the gateway at 512 MiB and 0.5 CPU. The database-wide heavy
@@ -133,12 +133,12 @@ do not already agree.
 It pins the public project identity, generates a separate worker secret,
 validates role separation, and atomically writes these root-owned `0600` files:
 
-- `/opt/designproai/shared/runtime.env`, copied from `runtime.env.example`:
+- `/opt/designproai-os/shared/runtime.env`, copied from `runtime.env.example`:
   isolated Supabase secret key, an independent random worker secret, Google AI
   key, Google image model, app origin, persistent spool and direct TUS paths,
   and `DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false`. The dark environment contains
   no Resend key, sender, placeholder token, or legacy RP/WPW credential.
-- `/opt/designproai/shared/gateway.env`, copied from `gateway.env.example`:
+- `/opt/designproai-os/shared/gateway.env`, copied from `gateway.env.example`:
   isolated Supabase publishable key, HTTPS app origin, Docker-internal runtime
   URL, and the same internal `WORKER_SECRET`. It must never contain a Supabase
   secret key.

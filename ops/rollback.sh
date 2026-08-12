@@ -4,7 +4,7 @@ set -Eeuo pipefail
 OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 sha=${1:-}
 confirm=${2:-}
-ROOT=/opt/designproai
+ROOT=/opt/designproai-os
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
 [[ $confirm == ROLLBACK_DESIGNPRO_ONLY ]] || { echo "Confirmation token required" >&2; exit 2; }
@@ -45,7 +45,7 @@ recover() {
   if [[ -n $previous && -d $previous && $previous == "$ROOT/releases/"* ]]; then
     ln -sfn "$previous" "$ROOT/current.restore"
     mv -Tf "$ROOT/current.restore" "$ROOT/current"
-    systemctl restart designproai.service || true
+    systemctl restart designproai-os.service || true
   fi
   if [[ -n $previous_public && -d $previous_public && $previous_public == "$ROOT/releases/"* ]]; then
     ln -sfn "$previous_public" "$ROOT/public.restore"
@@ -58,7 +58,7 @@ recover() {
 trap recover ERR
 ln -sfn "$target" "$ROOT/current.next"
 mv -Tf "$ROOT/current.next" "$ROOT/current"
-systemctl restart designproai.service
+systemctl restart designproai-os.service
 "$OPS_DIR/acceptance.sh" "$sha"
 ln -sfn "$target" "$ROOT/public.next"
 mv -Tf "$ROOT/public.next" "$ROOT/public"

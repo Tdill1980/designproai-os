@@ -4,7 +4,7 @@ set -Eeuo pipefail
 OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 sha=${1:-}
 confirm=${2:-}
-site=/etc/caddy/sites/designproai.caddy
+site=/etc/caddy/sites/designproai-os.caddy
 main=/etc/caddy/Caddyfile
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
@@ -43,7 +43,7 @@ caddy_was_active=false
 systemctl is-active --quiet caddy && caddy_was_active=true
 if [[ -f $site ]]; then
   site_existed=true
-  cp -a "$site" "$backup_dir/designproai.caddy.before"
+  cp -a "$site" "$backup_dir/designproai-os.caddy.before"
 fi
 
 restore() {
@@ -52,7 +52,7 @@ restore() {
   echo "Caddy update failed; restoring the previous Caddy configuration" >&2
   cp -a "$backup_dir/Caddyfile.before" "$main"
   if [[ $site_existed == true ]]; then
-    cp -a "$backup_dir/designproai.caddy.before" "$site"
+    cp -a "$backup_dir/designproai-os.caddy.before" "$site"
   elif [[ -f $site && ! -L $site ]]; then
     unlink "$site"
   fi

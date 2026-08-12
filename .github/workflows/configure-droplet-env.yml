@@ -1,6 +1,6 @@
 name: Configure the droplet environment from GitHub Secrets
 
-# Writes /opt/designproai/shared/runtime.env and gateway.env on the droplet
+# Writes /opt/designproai-os/shared/runtime.env and gateway.env on the droplet
 # from the secrets stored in the designproai-production environment, over the
 # same pinned SSH channel the dark deploy uses. No secret is ever typed into a
 # terminal, echoed into a shell history, or printed by this workflow.
@@ -187,7 +187,7 @@ jobs:
           test ! -e /opt/restylepro
           # Key names and file facts only. No value is read, printed, or hashed.
           for role in runtime gateway; do
-            file=/opt/designproai/shared/$role.env
+            file=/opt/designproai-os/shared/$role.env
             if [[ -s $file ]]; then
               printf '%s.env  %s bytes  mode %s  keys: %s\n' \
                 "$role" "$(stat -c %s "$file")" "$(stat -c %a "$file")" \
@@ -196,9 +196,9 @@ jobs:
               printf '%s.env  absent or empty\n' "$role"
             fi
           done
-          printf 'current release: %s\n' "$(readlink -f /opt/designproai/current 2>/dev/null || echo none)"
+          printf 'current release: %s\n' "$(readlink -f /opt/designproai-os/current 2>/dev/null || echo none)"
           printf 'running containers: %s\n' \
-            "$(docker ps --filter label=com.docker.compose.project=designproai --format '{{.Label "com.docker.compose.service"}}' | sort | paste -sd, - || true)"
+            "$(docker ps --filter label=com.docker.compose.project=designproai-os --format '{{.Label "com.docker.compose.service"}}' | sort | paste -sd, - || true)"
           REMOTE
 
       - name: Stage the configuration controls

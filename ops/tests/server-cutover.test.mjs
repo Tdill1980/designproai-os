@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -34,9 +34,53 @@ function archive(dir, output) {
 
 test("mutable scripts are DesignPro-only and contain no RP retirement path", () => {
   assert.equal(existsSync(join(root, "retire-rp-service.sh")), false);
-  const mutable = ["install.sh", "deploy.sh", "rollback.sh", "install-caddy.sh", "compose.yaml", "designproai.service"]
+  const mutable = ["install.sh", "deploy.sh", "rollback.sh", "install-caddy.sh", "compose.yaml", "designproai-os.service"]
     .map(read).join("\n");
   assert.doesNotMatch(mutable, /\/opt\/restylepro|\bpm2\b|docker compose down|docker (?:system )?prune/);
+});
+
+test("nothing of ours claims the shared 'designproai' project or tree", () => {
+  // The droplet is shared. A RestylePro worker deploy holds the bare
+  // `designproai` Compose project name and the /opt/designproai tree, wired to
+  // the RestylePro Supabase project. Our systemd unit runs
+  // `docker compose up -d --remove-orphans`, so a single bare project name
+  // anywhere in our tooling is enough to delete two healthy containers that are
+  // serving traffic — which is exactly what the inventory guard caught.
+  //
+  // Coexistence that relies on nobody retyping the old name is not
+  // coexistence, so it is checked here rather than remembered.
+  const opsDir = root;
+  const repoRoot = resolve(root, "..");
+  const workflowDir = join(repoRoot, ".github/workflows");
+  const files = [
+    ...readdirSync(opsDir).filter((name) => /\.(sh|yaml|yml|service|txt|md|example)$/.test(name)).map((name) => join(opsDir, name)),
+    ...readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name)).map((name) => join(workflowDir, name)),
+  ];
+  const offenders = [];
+  for (const file of files) {
+    // The RestylePro bootstrap writes into the RestylePro tree on purpose. It
+    // is their path, and moving it is not ours to do.
+    if (file.endsWith("bootstrap-restylepro-worker-access.yml")) continue;
+    for (const [index, line] of readFileSync(file, "utf8").split("\n").entries()) {
+      // inventory.sh reports on their unit deliberately; reporting is not claiming.
+      if (/stat -c|for path in/.test(line)) continue;
+      if (/com\.docker\.compose\.project=designproai(?![-\w])/.test(line)
+        || /\/opt\/designproai(?![-\w])/.test(line)
+        || /^name: designproai$/.test(line)
+        || /COMPOSE_PROJECT_NAME=designproai(?![-\w])/.test(line)) {
+        offenders.push(`${file.slice(repoRoot.length + 1)}:${index + 1}  ${line.trim().slice(0, 90)}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], `these claim the RestylePro stack's project or tree:\n${offenders.join("\n")}`);
+});
+
+test("the unit that runs --remove-orphans is scoped to our own project", () => {
+  const unit = read("designproai-os.service");
+  assert.match(unit, /Environment=COMPOSE_PROJECT_NAME=designproai-os$/m);
+  assert.match(unit, /--remove-orphans/, "kept deliberately: it is safe once the project is ours alone");
+  assert.match(unit, /WorkingDirectory=\/opt\/designproai-os\/current$/m);
+  assert.match(read("compose.yaml"), /^name: designproai-os$/m);
 });
 
 test("compose binds only loopback with two internal workers, shared spool, and no external executor", () => {
@@ -51,7 +95,7 @@ test("compose binds only loopback with two internal workers, shared spool, and n
   assert.doesNotMatch(compose, /host\.docker\.internal:3200|VECTORIZE_IT_URL/);
   assert.doesNotMatch(compose, /0\.0\.0\.0:(3001|3002|8787)/);
   assert.ok((compose.match(/read_only: true/g) || []).length >= 2);
-  assert.match(compose, /source: \/opt\/designproai\/shared\/spool/);
+  assert.match(compose, /source: \/opt\/designproai-os\/shared\/spool/);
   assert.match(compose, /target: \/var\/lib\/designproai\/spool/);
   assert.ok((compose.match(/mem_limit: 6g/g) || []).length >= 1);
   assert.ok((compose.match(/cpus: "3\.0"/g) || []).length >= 1);
@@ -64,7 +108,7 @@ test("Caddy exposes only UI/gateway and explicitly denies worker routes", () => 
   assert.doesNotMatch(worker, /reverse_proxy/);
   assert.match(caddy, /handle \/api\/\*/);
   assert.doesNotMatch(caddy, /127\.0\.0\.1:300[12]/);
-  assert.match(caddy, /root \* \/opt\/designproai\/public\/web\/dist/);
+  assert.match(caddy, /root \* \/opt\/designproai-os\/public\/web\/dist/);
   const deploy = read("deploy.sh");
   assert.ok(deploy.lastIndexOf('acceptance.sh" "$sha"') < deploy.lastIndexOf('public.next'), "public web switches only after local acceptance");
 });

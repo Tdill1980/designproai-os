@@ -53,7 +53,7 @@ jobs:
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           test "$(hostname)" = "$EXPECTED_HOSTNAME"
-          staging=/opt/designproai/staging
+          staging=/opt/designproai-os/staging
           test -d "$staging"
           shopt -s nullglob
           failed=("$staging"/failed-*)
