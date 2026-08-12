@@ -6,7 +6,7 @@ archive=${1:-}
 sha=${2:-}
 archive_sha256=${3:-}
 confirm=${4:-}
-ROOT=/opt/designproai
+ROOT=/opt/designproai-os
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
 [[ $confirm == DEPLOY_DESIGNPRO_ONLY ]] || { echo "Confirmation token required" >&2; exit 2; }
@@ -92,9 +92,9 @@ recover() {
     if [[ -n $previous && -d $previous && $previous == "$ROOT/releases/"* ]]; then
       ln -sfn "$previous" "$ROOT/current.restore"
       mv -Tf "$ROOT/current.restore" "$ROOT/current"
-      systemctl restart designproai.service || true
+      systemctl restart designproai-os.service || true
     else
-      systemctl stop designproai.service || true
+      systemctl stop designproai-os.service || true
       [[ -L $ROOT/current ]] && unlink "$ROOT/current"
     fi
     if [[ -n $previous_public && -d $previous_public && $previous_public == "$ROOT/releases/"* ]]; then
@@ -114,11 +114,11 @@ trap recover ERR
 cutover_started=true
 ln -sfn "$release" "$ROOT/current.next"
 mv -Tf "$ROOT/current.next" "$ROOT/current"
-systemctl enable designproai.service
-if systemctl is-active --quiet designproai.service; then
-  systemctl restart designproai.service
+systemctl enable designproai-os.service
+if systemctl is-active --quiet designproai-os.service; then
+  systemctl restart designproai-os.service
 else
-  systemctl start designproai.service
+  systemctl start designproai-os.service
 fi
 "$OPS_DIR/acceptance.sh" "$sha"
 ln -sfn "$release" "$ROOT/public.next"

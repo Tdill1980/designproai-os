@@ -144,9 +144,9 @@ jobs:
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "VEHICLE_B64='$vehicle_b64' PROMPT_B64='$prompt_b64' SEAM_TENANT='$tenant' SEAM_PAYLOAD='$seam_payload' bash -s" <<'REMOTE' > "$RUNNER_TEMP/seam.log" 2>&1
           set -Eeuo pipefail
-          release=/opt/designproai/current
+          release=/opt/designproai-os/current
           test -d "$release" || { echo "no deployed release at $release — dark deploy first"; exit 40; }
-          test -f /opt/designproai/shared/runtime.env || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
+          test -f /opt/designproai-os/shared/runtime.env || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
           test -d "$release/runtime/node_modules/@supabase" || { echo "release dependencies missing"; exit 42; }
 
           work=$(mktemp -d /tmp/designpro-seam.XXXXXX)
@@ -169,7 +169,7 @@ jobs:
             [ -f "$release/runtime/$module" ] && ln -s "$release/runtime/$module" "$work/runtime/$module"
           done
 
-          set -a; . /opt/designproai/shared/runtime.env; set +a
+          set -a; . /opt/designproai-os/shared/runtime.env; set +a
           export DESIGNPRO_SEAM_TENANT="$SEAM_TENANT"
           vehicle=$(printf '%s' "$VEHICLE_B64" | base64 -d)
           prompt=$(printf '%s' "$PROMPT_B64" | base64 -d)

@@ -1,6 +1,6 @@
 name: Configure the droplet environment from GitHub Secrets
 
-# Writes /opt/designproai/shared/runtime.env and gateway.env on the droplet
+# Writes /opt/designproai-os/shared/runtime.env and gateway.env on the droplet
 # from the secrets stored in the designproai-production environment, over the
 # same pinned SSH channel the dark deploy uses. No secret is ever typed into a
 # terminal, echoed into a shell history, or printed by this workflow.
@@ -79,6 +79,9 @@ jobs:
         id: secrets
         if: env.CONFIGURE_MODE == 'WRITE_DESIGNPROAI_DROPLET_ENV'
         shell: bash
+        env:
+          # Consulted only for its keys, and only on the failure path below.
+          VISIBLE_SECRET_NAMES: ${{ toJSON(secrets) }}
         run: |
           set -Eeuo pipefail
           set +x
@@ -95,6 +98,13 @@ jobs:
           # configuring it completely, so this fails now and says where to look.
           if [[ -z $TOPAZ_API_KEY ]]; then
             printf '::error title=Call 12::DESIGNPRO_TOPAZ_API_KEY resolved to an empty value.\n' >&2
+            # Names only. A secret's value is masked in logs regardless, and
+            # none is read here — but the name is the whole diagnosis, and
+            # without it the next step is guessing at spelling from a list
+            # GitHub truncates in the UI. Print exactly what this job can see.
+            printf '\nSecret names visible to this job:\n' >&2
+            jq -r 'keys[] | "  " + .' <<<"$VISIBLE_SECRET_NAMES" >&2 || true
+            printf '\n' >&2
             cat >&2 <<'MISSING'
           The other three secrets resolved, so the job reached the right
           environment; this one is not in it. An environment secret is only
@@ -177,7 +187,7 @@ jobs:
           test ! -e /opt/restylepro
           # Key names and file facts only. No value is read, printed, or hashed.
           for role in runtime gateway; do
-            file=/opt/designproai/shared/$role.env
+            file=/opt/designproai-os/shared/$role.env
             if [[ -s $file ]]; then
               printf '%s.env  %s bytes  mode %s  keys: %s\n' \
                 "$role" "$(stat -c %s "$file")" "$(stat -c %a "$file")" \
@@ -186,9 +196,9 @@ jobs:
               printf '%s.env  absent or empty\n' "$role"
             fi
           done
-          printf 'current release: %s\n' "$(readlink -f /opt/designproai/current 2>/dev/null || echo none)"
+          printf 'current release: %s\n' "$(readlink -f /opt/designproai-os/current 2>/dev/null || echo none)"
           printf 'running containers: %s\n' \
-            "$(docker ps --filter label=com.docker.compose.project=designproai --format '{{.Label "com.docker.compose.service"}}' | sort | paste -sd, - || true)"
+            "$(docker ps --filter label=com.docker.compose.project=designproai-os --format '{{.Label "com.docker.compose.service"}}' | sort | paste -sd, - || true)"
           REMOTE
 
       - name: Stage the configuration controls

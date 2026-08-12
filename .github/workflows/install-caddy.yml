@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       exact_sha:
-        description: "Exact live release SHA (must equal /opt/designproai/current)"
+        description: "Exact live release SHA (must equal /opt/designproai-os/current)"
         required: true
         type: string
       confirmation:
@@ -159,9 +159,9 @@ jobs:
           host=$(hostname)
           [[ $host == "$EXPECTED_HOSTNAME" ]] || { echo "hostname mismatch: on '$host', expected '$EXPECTED_HOSTNAME'" >&2; exit 10; }
 
-          current=$(readlink -f /opt/designproai/current 2>/dev/null || echo "")
+          current=$(readlink -f /opt/designproai-os/current 2>/dev/null || echo "")
           echo "current release : ${current:-<none>}"
-          [[ $current == "/opt/designproai/releases/$EXACT_SHA" ]] || {
+          [[ $current == "/opt/designproai-os/releases/$EXACT_SHA" ]] || {
             echo "refusing: requested SHA is not the live release" >&2; exit 11; }
 
           script="$REMOTE_DIR/install-caddy.sh"

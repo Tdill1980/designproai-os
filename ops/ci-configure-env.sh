@@ -23,7 +23,7 @@ control="$REMOTE_STAGE/ops"
 # configure-env.sh writes into a layout it does not create. Building it is the
 # same idempotent base install the dark deploy runs, and it changes no public
 # port, firewall rule, or running service.
-if [[ ! -d /opt/designproai/shared || -L /opt/designproai/shared ]]; then
+if [[ ! -d /opt/designproai-os/shared || -L /opt/designproai-os/shared ]]; then
   echo "Base layout missing; running the idempotent base install first."
   "$control/install.sh" I_UNDERSTAND_NO_RP_CHANGES
 fi
@@ -34,4 +34,4 @@ fi
 # Judged by the same validator the deploy uses, so a configuration that would
 # fail at deploy time fails here instead, while nothing is at stake.
 python3 "$control/validate-env.py" \
-  /opt/designproai/shared/runtime.env /opt/designproai/shared/gateway.env
+  /opt/designproai-os/shared/runtime.env /opt/designproai-os/shared/gateway.env

@@ -1,4 +1,4 @@
-name: designproai
+name: designproai-os
 
 x-runtime: &runtime
   image: "designproai-runtime:${DESIGNPRO_SHA:?missing DESIGNPRO_SHA}"
@@ -7,7 +7,7 @@ x-runtime: &runtime
   init: true
   user: "10001:10001"
   env_file:
-    - /opt/designproai/shared/runtime.env
+    - /opt/designproai-os/shared/runtime.env
   environment:
     PORT: "3001"
     GIT_SHA: "${DESIGNPRO_SHA}"
@@ -25,7 +25,7 @@ x-runtime: &runtime
     - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001,mode=0700
   volumes:
     - type: bind
-      source: /opt/designproai/shared/spool
+      source: /opt/designproai-os/shared/spool
       target: /var/lib/designproai/spool
       read_only: false
       bind:
@@ -73,7 +73,7 @@ services:
     init: true
     user: "10001:10001"
     env_file:
-      - /opt/designproai/shared/gateway.env
+      - /opt/designproai-os/shared/gateway.env
     environment:
       NODE_ENV: "production"
       PORT: "8787"

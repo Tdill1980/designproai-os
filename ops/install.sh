@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-ROOT=/opt/designproai
+ROOT=/opt/designproai-os
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
 [[ ${1:-} == I_UNDERSTAND_NO_RP_CHANGES ]] || { echo "Confirmation token required" >&2; exit 2; }
@@ -41,7 +41,7 @@ done
 for port in 3001 3002 8787; do
   if ss -H -lnt "sport = :$port" | grep -q .; then
     case "$port" in 3001) expected=runtime-1 ;; 3002) expected=runtime-2 ;; 8787) expected=gateway ;; esac
-    owner=$(docker ps --filter "publish=$port" --filter label=com.docker.compose.project=designproai --format '{{.Label "com.docker.compose.service"}}')
+    owner=$(docker ps --filter "publish=$port" --filter label=com.docker.compose.project=designproai-os --format '{{.Label "com.docker.compose.service"}}')
     [[ $owner == "$expected" ]] || { echo "Loopback port $port is already owned outside the expected DesignPro service" >&2; exit 6; }
   fi
 done
@@ -63,10 +63,10 @@ for role in runtime gateway; do
   install -m 0600 "$OPS_DIR/$role.env.example" "$ROOT/shared/$role.env.example"
 done
 
-[[ ! -L /etc/systemd/system/designproai.service ]] || {
+[[ ! -L /etc/systemd/system/designproai-os.service ]] || {
   echo "Refusing a symlinked DesignPro systemd unit" >&2; exit 8;
 }
-install -m 0644 "$OPS_DIR/designproai.service" /etc/systemd/system/designproai.service
+install -m 0644 "$OPS_DIR/designproai-os.service" /etc/systemd/system/designproai-os.service
 systemctl daemon-reload
 
 echo "Base installed. No existing service, firewall, or public port was changed."

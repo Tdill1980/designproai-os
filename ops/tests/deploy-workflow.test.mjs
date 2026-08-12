@@ -183,7 +183,7 @@ test("dark deployment requires only its existing provider secrets and explicitly
 /**
  * Runs configure-env.sh's real secret-reading section against a given stdin,
  * so the channel is exercised rather than described. Everything after it needs
- * root and /opt/designproai; the reads do not.
+ * root and /opt/designproai-os; the reads do not.
  */
 function runSecretChannel(stdin) {
   const start = configure.indexOf("read_secret() {");
