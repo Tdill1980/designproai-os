@@ -39,6 +39,7 @@ Its exact code layout is:
 - `runtime/view-angles.cjs`
 - `runtime/generation-provider.cjs`
 - `runtime/generation-engine.cjs`
+- `runtime/generation-store.cjs`
 - `runtime/output-qc.cjs`
 - `runtime/resend-transport.cjs`
 - `runtime/wrapbox-delivery.cjs`
