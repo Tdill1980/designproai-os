@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -239,15 +239,55 @@ test("configuring the droplet environment is protected, pinned, and deploys noth
   assert.match(configureWorkflow, /TARGET_HOST: 137\.184\.0\.4/);
   assert.match(configureWorkflow, /SHA256:Kum4lu4ntmC5\+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic/);
   assert.match(configureWorkflow, /SHA256:2MADGyqFCuZYrIRL\+\/qm1EcxQOuFdQXFSN4\/JWBjWng/);
-  // One canonical writer, and the same validator judges the result.
-  assert.match(configureWorkflow, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY/);
-  assert.match(configureWorkflow, /validate-env\.py"/);
+  // One canonical writer, and the same validator judges the result. Both are
+  // reached through the staged remote half, not inlined into the workflow.
+  const remoteHalf = readFileSync(resolve(root, "ops/ci-configure-env.sh"), "utf8");
+  assert.match(configureWorkflow, /ops\/ci-configure-env\.sh/);
+  assert.match(remoteHalf, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY/);
+  assert.match(remoteHalf, /validate-env\.py"/);
+  // An absent Topaz key is a misplaced secret, not a decision, and it names
+  // the environment the secret has to live in rather than just failing.
+  assert.match(configureWorkflow, /DESIGNPRO_TOPAZ_API_KEY resolved to an empty value/);
+  assert.match(configureWorkflow, /Settings -> Environments -> designproai-production/);
   // It configures. It does not deploy, restart, or touch public routing.
   assert.doesNotMatch(configureWorkflow, /deploy\.sh|ci-dark-deploy\.sh|gh run download|docker compose (?:up|restart)|systemctl (?:restart|start)|install-caddy\.sh/);
   assert.doesNotMatch(configureWorkflow, /designproai\/current['"]? *(?:->|=)|ln -sfn/);
   // The inspection path reports key names and file facts, never a value.
   assert.match(configureWorkflow, /sed -n 's\/\^\\\(\[A-Z\]\[A-Z0-9_\]\*\\\)=\.\*\/\\1\/p'/);
   assert.doesNotMatch(configureWorkflow, /cat .*\.env|source .*\.env|sha256sum .*\.env/);
+});
+
+test("no ssh invocation is both piped into and fed a heredoc", () => {
+  // An `ssh ... bash -s <<'HEREDOC'` spends stdin on the script, so a pipe
+  // feeding the same ssh is discarded without a word and the reader on the far
+  // side consumes the tail of the script where it expected a secret. This is
+  // not theoretical: it is exactly how the first droplet configuration run
+  // failed, and only the reader's own EOF guard made it legible. Either use
+  // stdin for the script or for the data, never both.
+  const dir = resolve(root, ".github/workflows");
+  const offenders = [];
+  for (const file of readdirSync(dir).filter((name) => /\.ya?ml$/.test(name))) {
+    const lines = readFileSync(resolve(dir, file), "utf8").split("\n");
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!/(^|\s)ssh\s/.test(lines[index])) continue;
+      // Walk back over the pipe's own continuations to see if this ssh is a
+      // pipe target, and forward over the invocation's continuations to see
+      // whether it also opens a heredoc.
+      let back = index - 1;
+      while (back >= 0 && /\\\s*$/.test(lines[back]) && !/\|\s*\\\s*$/.test(lines[back])) back -= 1;
+      const piped = back >= 0 && /\|\s*\\\s*$/.test(lines[back]);
+      let invocation = lines[index];
+      let forward = index;
+      while (/\\\s*$/.test(lines[forward]) && forward + 1 < lines.length) {
+        forward += 1;
+        invocation += `\n${lines[forward]}`;
+      }
+      if (piped && /<<-?\s*['"]?\w+/.test(invocation)) {
+        offenders.push(`${file}:${index + 1}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], `ssh cannot read a heredoc and a pipe at once: ${offenders.join(", ")}`);
 });
 
 test("the exact release gate asks Docker Compose itself to parse expanded production structure", () => {
