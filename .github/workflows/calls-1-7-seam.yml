@@ -4,9 +4,13 @@ name: Run the Calls 1-7 driver/passenger seam on the droplet
 # evidence back as workflow artifacts. Deliberately hard-stopped at two views:
 # a misconfiguration cannot burn provider calls on the other five.
 #
-# It changes nothing on the host. No deploy, no env write, no service restart —
-# it runs one script from the already-deployed release against the environment
-# configure-env.sh wrote.
+# It changes nothing on the host. No deploy, no env write, no service restart.
+# The seam is staged into a temp directory at run time and removed afterwards,
+# so the deployed kernel stays exactly the artifact that was dark-deployed and
+# acceptance-tested. Unproven Calls 1-7 code never enters the release. It
+# borrows the release's installed dependencies, its claimant, and the
+# environment configure-env.sh wrote, so the run still happens in production
+# conditions.
 
 on:
   workflow_dispatch:
@@ -123,21 +127,54 @@ jobs:
           prompt_b64=$(printf '%s' "$SEAM_PROMPT" | base64 -w0)
           tenant=$SEAM_TENANT
 
+          # The seam is staged into a temp directory at run time rather than
+          # shipped inside the release. The deployed kernel stays exactly the
+          # artifact that was dark-deployed and acceptance-tested; unproven
+          # Calls 1-7 code never becomes part of it. It borrows the release's
+          # installed dependencies and its environment, so the run is still in
+          # the production environment, and the directory is removed afterwards.
+          seam_payload=$(tar -cz \
+            runtime/view-angles.cjs \
+            runtime/generation-provider.cjs \
+            runtime/generation-engine.cjs \
+            runtime/generation-store.cjs \
+            scripts/calls-1-7-seam.mjs | base64 -w0)
+
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "VEHICLE_B64='$vehicle_b64' PROMPT_B64='$prompt_b64' SEAM_TENANT='$tenant' bash -s" <<'REMOTE' > "$RUNNER_TEMP/seam.log" 2>&1
+            "VEHICLE_B64='$vehicle_b64' PROMPT_B64='$prompt_b64' SEAM_TENANT='$tenant' SEAM_PAYLOAD='$seam_payload' bash -s" <<'REMOTE' > "$RUNNER_TEMP/seam.log" 2>&1
           set -Eeuo pipefail
           release=/opt/designproai/current
           test -d "$release" || { echo "no deployed release at $release — dark deploy first"; exit 40; }
           test -f /opt/designproai/shared/runtime.env || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
+          test -d "$release/runtime/node_modules/@supabase" || { echo "release dependencies missing"; exit 42; }
 
-          out=$(mktemp -d)
+          work=$(mktemp -d /tmp/designpro-seam.XXXXXX)
+          out="$work/evidence"
+          mkdir -p "$out" "$work/runtime" "$work/scripts"
+          cleanup() { rm -rf "$work"; }
+          trap cleanup EXIT
+
+          printf '%s' "$SEAM_PAYLOAD" | base64 -d | tar -C "$work" -xz
+          # Borrow the deployed release's installed dependencies rather than
+          # installing anything on the host.
+          ln -s "$release/runtime/node_modules" "$work/runtime/node_modules"
+          # The claimant is read by the seam to prove Calls 8 resolves the slots
+          # unmodified, so it comes from the DEPLOYED release, not the checkout.
+          ln -s "$release/runtime/designpro-standalone-claimant.cjs" "$work/runtime/designpro-standalone-claimant.cjs"
+          for module in runtime-contract.cjs genie-universal-resolver.cjs gemini-flat-surface.cjs \
+                        flat-wrap-layout.cjs gemini-flat-wrap.cjs proof-sheet.cjs output-qc.cjs \
+                        wrapbox-delivery.cjs zip-spool.cjs topaz-upscale.cjs resend-transport.cjs \
+                        runtime-readiness.cjs; do
+            [ -f "$release/runtime/$module" ] && ln -s "$release/runtime/$module" "$work/runtime/$module"
+          done
+
           set -a; . /opt/designproai/shared/runtime.env; set +a
           export DESIGNPRO_SEAM_TENANT="$SEAM_TENANT"
           vehicle=$(printf '%s' "$VEHICLE_B64" | base64 -d)
           prompt=$(printf '%s' "$PROMPT_B64" | base64 -d)
 
-          cd "$release"
+          cd "$work"
           node scripts/calls-1-7-seam.mjs --vehicle "$vehicle" --prompt "$prompt" --out "$out"
           status=$?
 
@@ -145,7 +182,6 @@ jobs:
           # left behind on the host and nothing has to be fetched separately.
           echo "---SEAM-EVIDENCE-TAR---"
           tar -C "$out" -cz . | base64 -w0
-          rm -rf "$out"
           exit $status
           REMOTE
           ssh_status=$?
