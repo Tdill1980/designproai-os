@@ -86,6 +86,12 @@ test("expanded dark env disables email and keeps an exact public-go-live provide
   const validator = read("validate-env.py");
   for (const key of ["DESIGNPRO_APP_ORIGIN", "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"]) assert.match(validator, new RegExp(`"${key}"`));
   assert.match(read("runtime.env.example"), /DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false/);
+  // Call 12 must be an explicit mode in the template and the configurator, so a
+  // pack never reaches a customer built from un-enhanced artwork.
+  assert.match(read("runtime.env.example"), /DESIGNPRO_TOPAZ_ENABLED=false/);
+  assert.match(read("validate-env.py"), /DESIGNPRO_TOPAZ_ENABLED must be exactly true or false/);
+  assert.match(read("validate-env.py"), /TOPAZ_API_KEY is missing or too short for an enabled Call 12/);
+  assert.match(read("configure-env.sh"), /DESIGNPRO_TOPAZ_ENABLED=true/);
   assert.doesNotMatch(read("runtime.env.example"), /RESEND_API_KEY=|RESEND_FROM=/);
   assert.match(read("configure-env.sh"), /DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false/);
   assert.doesNotMatch(read("configure-env.sh"), /RP_|WPW_|RESEND_API_KEY|RESEND_FROM/);

@@ -16,10 +16,16 @@ read -r -s -p "DesignProAI Supabase secret key (project wozyamlnygaddievzuwn): "
 echo
 read -r -s -p "DesignProAI Google AI API key: " google_key
 echo
+# Call 12 enhancement. Leave blank to write a dark file with Call 12 disabled;
+# a production pack cannot be built until it is set, and it fails closed rather
+# than shipping un-enhanced artwork.
+read -r -s -p "Topaz Labs API key for Call 12 (blank to leave Call 12 disabled): " topaz_key
+echo
 
 [[ ${#service_key} -ge 32 ]] || { echo "Supabase secret key is too short" >&2; exit 4; }
 [[ ${#google_key} -ge 20 ]] || { echo "Google AI API key is too short" >&2; exit 4; }
-for secret in "$service_key" "$google_key"; do
+[[ -z $topaz_key || ${#topaz_key} -ge 20 ]] || { echo "Topaz API key is too short" >&2; exit 4; }
+for secret in "$service_key" "$google_key" "${topaz_key:-x}"; do
   [[ $secret != *$'\n'* && $secret != *$'\r'* ]] || { echo "A secret contains an invalid newline" >&2; exit 4; }
 done
 
@@ -27,7 +33,7 @@ worker_secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 runtime_tmp=$(mktemp "$ROOT/shared/runtime.env.new.XXXXXX")
 gateway_tmp=$(mktemp "$ROOT/shared/gateway.env.new.XXXXXX")
 cleanup() {
-  unset service_key google_key worker_secret
+  unset service_key google_key topaz_key worker_secret
   [[ ! -e ${runtime_tmp:-} ]] || rm -f -- "$runtime_tmp"
   [[ ! -e ${gateway_tmp:-} ]] || rm -f -- "$gateway_tmp"
 }
@@ -43,6 +49,13 @@ trap cleanup EXIT
   printf 'DESIGNPRO_SPOOL_DIR=/var/lib/designproai/spool\n'
   printf 'SUPABASE_TUS_ENDPOINT=%s\n' "$TUS_ENDPOINT"
   printf 'DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false\n'
+  if [[ -n $topaz_key ]]; then
+    printf 'DESIGNPRO_TOPAZ_ENABLED=true\n'
+    printf 'TOPAZ_API_KEY=%s\n' "$topaz_key"
+    printf 'TOPAZ_MODEL=High Fidelity V2\n'
+  else
+    printf 'DESIGNPRO_TOPAZ_ENABLED=false\n'
+  fi
 } > "$runtime_tmp"
 {
   printf 'SUPABASE_URL=%s\n' "$PROJECT_URL"

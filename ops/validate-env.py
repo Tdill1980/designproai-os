@@ -21,8 +21,13 @@ RUNTIME_BASE_KEYS = {
     "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET",
     "GOOGLE_AI_API_KEY", "GOOGLE_IMAGE_MODEL", "DESIGNPRO_APP_ORIGIN",
     "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED",
+    "DESIGNPRO_TOPAZ_ENABLED",
 }
 EMAIL_PROVIDER_KEYS = {"RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"}
+# Call 12 fails a production pack closed when it cannot run, so a half
+# configured enhancer is rejected here rather than at pack-build time in front
+# of a paying customer.
+TOPAZ_PROVIDER_KEYS = {"TOPAZ_API_KEY", "TOPAZ_MODEL"}
 GATEWAY_KEYS = {
     "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "DESIGNPRO_APP_ORIGIN",
     "DESIGNPRO_RUNTIME_INTERNAL_URL", "WORKER_SECRET",
@@ -86,7 +91,11 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
     email_mode = runtime.get("DESIGNPRO_OUTBOUND_EMAIL_ENABLED")
     if email_mode not in {"true", "false"}:
         raise ValidationError("DESIGNPRO_OUTBOUND_EMAIL_ENABLED must be exactly true or false")
+    topaz_mode = runtime.get("DESIGNPRO_TOPAZ_ENABLED")
+    if topaz_mode not in {"true", "false"}:
+        raise ValidationError("DESIGNPRO_TOPAZ_ENABLED must be exactly true or false")
     runtime_keys = RUNTIME_BASE_KEYS | (EMAIL_PROVIDER_KEYS if email_mode == "true" else set())
+    runtime_keys |= TOPAZ_PROVIDER_KEYS if topaz_mode == "true" else set()
     exact_keys("runtime", runtime, runtime_keys)
     exact_keys("gateway", gateway, GATEWAY_KEYS)
 
@@ -124,6 +133,12 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
         raise ValidationError("WORKER_SECRET must not reuse a provider secret")
     if len(runtime["GOOGLE_AI_API_KEY"]) < 20:
         raise ValidationError("provider API key is too short")
+    if topaz_mode == "true":
+        if len(runtime["TOPAZ_API_KEY"]) < 20:
+            raise ValidationError("TOPAZ_API_KEY is missing or too short for an enabled Call 12")
+        if not runtime["TOPAZ_MODEL"].strip():
+            raise ValidationError("TOPAZ_MODEL must name the exact Topaz enhancement model")
+        provider_secrets.add(runtime["TOPAZ_API_KEY"])
     if email_mode == "true" and len(runtime["RESEND_API_KEY"]) < 20:
         raise ValidationError("email provider API key is too short")
     publishable = gateway["SUPABASE_PUBLISHABLE_KEY"]
