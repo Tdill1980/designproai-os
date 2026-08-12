@@ -19,6 +19,7 @@ const { EXTRACTION_CONTRACT, assertSurfacesAreDistinct, cutAllPanels, flatWrapLa
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
+const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 
 const CLAIM_SECONDS = 900;
 const HEARTBEAT_MS = 30_000;
@@ -29,15 +30,15 @@ const stageLeaseContext = new AsyncLocalStorage();
 const STAGES = Object.freeze([
   "revision.freeze", "manifest.resolve", "proof.build", "panels.build",
   "logos.extract", "pack.verify", "pack.activate", "source.verify",
-  "await_panelpro_preflight_qc", "output.build", "output.verify",
+  "await_panelpro_preflight_qc", "enhance.upscale", "output.build", "output.verify",
   "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver",
 ]);
 const RECEIPTS = Object.freeze([
   "views.seven-source", "call8.flat-proof", "call9.surface-panels", "call10.logo-inventory",
-  "output.verified", "final.human-qc", "stamp", "zip", "wrapbox.delivery",
+  "call12.topaz-upscale", "output.verified", "final.human-qc", "stamp", "zip", "wrapbox.delivery",
 ]);
 const ARTIFACT_KINDS = Object.freeze([
-  "flat-proof", "panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
+  "flat-proof", "panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
 
@@ -624,8 +625,18 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
 
 async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
   const sourceRunId = requiredString(run.results?.sourceEnticeRunId || input.sourceEnticeRunId, "sourceEnticeRunId");
-  const panels = await artifacts(sb, run.id, ["panel"]);
-  if (panels.length !== SURFACE_KEYS.length || new Set(panels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) throw new StageError("source_panels_missing", "Exact six copied source panels are required", false);
+  // Production files are rendered from the Call 12 enhanced masters, which are
+  // already at full print geometry. The Call 9 panels stay bound as lineage but
+  // are never the raster source here: stretching them would discard the
+  // enhancement the customer is paying for.
+  const call12 = await receipt(sb, run.id, "call12.topaz-upscale");
+  const panels = await artifacts(sb, run.id, ["upscaled-panel"]);
+  if (panels.length !== SURFACE_KEYS.length || new Set(panels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) throw new StageError("enhanced_panels_missing", "Exact six Call 12 enhanced panels are required", false);
+  for (const panel of panels) {
+    if (String(panel.content_hash).toLowerCase() !== String(call12.receipt?.enhancedHashes?.[panel.surface_key] || "").toLowerCase()) {
+      throw new StageError("enhanced_panel_receipt_mismatch", `Call 12 ${panel.surface_key} receipt and stored enhanced panel differ`, false);
+    }
+  }
   const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
   const dimensions = new Map((dimensionManifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
   const produced = [];
@@ -849,6 +860,89 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const { error } = await sb.rpc("request_designpro_human_gate", { p_run_id: run.id, p_stage_key: stage.stage_key, p_details: { requestedBy: "designpro-standalone-claimant", requestedAt: new Date().toISOString() } });
     if (error) throw new StageError("human_gate_request_failed", error.message, false);
     return;
+  }
+  if (stage.stage_key === "enhance.upscale") {
+    // Call 12. Every approved panel is enhanced to full print geometry before a
+    // single production file is rendered, so the PNG/TIFF/EPS are built FROM
+    // the enhanced master rather than from an interpolated stretch.
+    const readiness = topazReadiness(process.env);
+    if (!readiness.configurationValid) throw new StageError("topaz_configuration_invalid", readiness.detail, false);
+    if (!readiness.enabled) throw new StageError("topaz_disabled", "Call 12 is disabled; a production pack cannot be built without the approved enhancement", false);
+    const panels = await artifacts(sb, run.id, ["panel"]);
+    if (panels.length !== SURFACE_KEYS.length || new Set(panels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
+      throw new StageError("enhance_source_panels_missing", "Exact six approved source panels are required", false);
+    }
+    const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
+    const dimensions = new Map((dimensionManifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
+    const produced = [];
+    const spools = [];
+    const enhancedHashes = {};
+    const plans = {};
+    const enhanced = await withHeavyOutputLease(sb, stage, async () => {
+      const results = [];
+      for (const panel of [...panels].sort((a, b) => String(a.surface_key).localeCompare(String(b.surface_key)))) {
+        assertStageLeaseActive();
+        const key = String(panel.surface_key);
+        const dims = dimensions.get(key);
+        if (!dims || !Object.values(dims.bleed || {}).every((value) => Number(value) === 5)) throw new StageError("enhance_dimensions_missing", `GENIE dimensions missing for ${key}`, false);
+        const source = await storageBytes(sb, panel.storage_path);
+        if (hashBytes(source) !== panel.content_hash) throw new StageError("enhance_source_panel_changed", key, false);
+        const targetWidthPx = Math.round((Number(dims.widthInches) + 10) * 150);
+        const targetHeightPx = Math.round((Number(dims.heightInches) + 10) * 150);
+        // An immutable winner at a material-addressed path. Topaz is not
+        // reproducible, so a retry reuses the approved bytes instead of
+        // authoring a second, different enhancement.
+        const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/enhanced/${key}-${String(panel.content_hash).slice(0, 24)}.png`;
+        const existing = await storageBytes(sb, storagePath).catch(() => null);
+        if (existing && existing.length) {
+          const metadata = await sharp(existing, { limitInputPixels: false }).metadata();
+          if (metadata.width !== targetWidthPx || metadata.height !== targetHeightPx) throw new StageError("enhance_winner_geometry_drift", key, false);
+          results.push({ key, bytes: existing, reused: true, dims, targetWidthPx, targetHeightPx, detail: null });
+          continue;
+        }
+        let outcome;
+        try {
+          outcome = await enhancePanel({
+            readiness, surfaceKey: key, bytes: source, mimeType: "image/png",
+            targetWidthPx, targetHeightPx, signal: stageLeaseContext.getStore()?.controller?.signal,
+          });
+        } catch (error) { throw new StageError(error.code || "topaz_enhance_failed", error.message, error.retryable === true); }
+        results.push({ key, bytes: outcome.bytes, reused: false, dims, targetWidthPx, targetHeightPx, detail: outcome, storagePath });
+      }
+      return results;
+    });
+
+    for (const item of enhanced) {
+      const key = item.key;
+      const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/enhanced/${key}-${String(panels.find((p) => p.surface_key === key).content_hash).slice(0, 24)}.png`;
+      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, item.bytes, "image/png");
+      if (stored.spool) spools.push(stored.spool);
+      enhancedHashes[key] = stored.hash;
+      plans[key] = item.detail ? item.detail.plan : { reusedImmutableWinner: true };
+      produced.push(artifact("upscaled-panel", stored.storagePath, stored.hash, stored.bytes, key, {
+        call: 12, contract: TOPAZ_CONTRACT, engine: "topaz-image-enhance", model: readiness.model,
+        sourcePanelPath: panels.find((p) => p.surface_key === key).storage_path,
+        sourcePanelHash: panels.find((p) => p.surface_key === key).content_hash,
+        enhancedSha256: item.detail?.enhancedSha256 || stored.hash,
+        reusedImmutableWinner: item.reused === true,
+        plan: item.detail?.plan || null,
+        clampedByEngineCeiling: item.detail?.plan?.clampedByEngineCeiling === true,
+        widthPx: item.targetWidthPx, heightPx: item.targetHeightPx,
+        trimWidthInches: item.dims.widthInches, trimHeightInches: item.dims.heightInches,
+        bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+        surfaceSqFt: item.dims.surfaceSqFt, dpi: 1500, outputScale: 0.1,
+      }));
+    }
+    if (new Set(Object.values(enhancedHashes)).size !== SURFACE_KEYS.length) throw new StageError("enhance_surface_reuse", "Every enhanced panel must be distinct", false);
+    const completed = await complete(sb, stage, run, {
+      verified: true, receiptKind: "call12.topaz-upscale", call: 12,
+      contract: TOPAZ_CONTRACT, engine: "topaz-image-enhance", model: readiness.model,
+      enhancedHashes, plans, surfaces: Object.keys(enhancedHashes).sort(),
+      authoredWinner: true, deterministic: false,
+      note: "Topaz output is not reproducible; downstream stages bind these exact hashes.",
+    }, null, produced);
+    for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 12 spool cleanup failed: ${error.message}`));
+    return completed;
   }
   if (stage.stage_key === "output.build") {
     const built = await withHeavyOutputLease(sb, stage, () => buildPrintOutputs(sb, run, input, stage, runtimeConfig));

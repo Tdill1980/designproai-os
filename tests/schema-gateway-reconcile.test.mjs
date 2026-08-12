@@ -17,12 +17,19 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-4), [
+  assert.deepEqual(names.slice(-5), [
     "20260806181100_designpro_wrapbox_delivery_closure.sql",
     "20260806181200_designpro_schema_gateway_reconcile.sql",
     "20260808024500_designpro_calls_1_7_adapter.sql",
     "20260812120000_designpro_retire_legacy_2d_proof.sql",
+    "20260812140000_designpro_call12_topaz_enhance.sql",
   ]);
+  // Call 12 must sit before output.build, or the enhancement would be applied
+  // to files that were already interpolated up to print size.
+  const call12 = readFileSync(new URL("20260812140000_designpro_call12_topaz_enhance.sql", migrationsDir), "utf8");
+  assert.match(call12, /'await_panelpro_preflight_qc','enhance\.upscale','output\.build'/);
+  assert.match(call12, /'call12\.topaz-upscale'/);
+  assert.match(call12, /'upscaled-panel'/);
   // Calls 1-7 hand over seven renders and nothing else. The 2D proof is Call 8
   // and belongs to this system, so the legacy proof function must not be
   // sanctioned by the engine contract the retirement migration installs.

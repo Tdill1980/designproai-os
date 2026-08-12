@@ -11,6 +11,7 @@ const { normalizeTextLock, selectedImageModel, SURFACE_KEYS, VIEW_KEYS } = requi
 const { authorFlatWrapLayout, flatWrapInputHash } = require("./gemini-flat-wrap.cjs");
 const { EXTRACTION_CONTRACT, LAYOUT_CONTRACT, assertLayoutMatches, assertSurfacesAreDistinct, cutAllPanels, layoutIdentity } = require("./flat-wrap-layout.cjs");
 const { PROOF_SHEET_CONTRACT, renderProofSheet } = require("./proof-sheet.cjs");
+const { topazReadiness } = require("./topaz-upscale.cjs");
 const { dispatchOneWrapboxNotification, reconcileCompletedWrapboxDeliveries } = require("./wrapbox-delivery.cjs");
 const { createResendTransport, resendReadiness } = require("./resend-transport.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolImmutableBuffer, uploadSpoolWithTus } = require("./zip-spool.cjs");
@@ -29,10 +30,11 @@ const DESIGNPRO_APP_ORIGIN = String(process.env.DESIGNPRO_APP_ORIGIN || "").trim
 const REQUIRED_RUNTIME_ENV = Object.freeze([
   "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET", "GIT_SHA",
   "GOOGLE_AI_API_KEY (or GEMINI_API_KEY)", "DESIGNPRO_SPOOL_DIR", "DESIGNPRO_APP_ORIGIN",
-  "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true|false",
+  "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true|false", "DESIGNPRO_TOPAZ_ENABLED=true|false",
 ]);
 const PUBLIC_GO_LIVE_ENV = Object.freeze([
   "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true", "RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED=true",
+  "DESIGNPRO_TOPAZ_ENABLED=true", "TOPAZ_API_KEY",
 ]);
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !WORKER_SECRET || !GIT_SHA || !GOOGLE_AI_API_KEY || !DESIGNPRO_SPOOL_DIR || !DESIGNPRO_APP_ORIGIN) {
   throw new Error("SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_SECRET, GIT_SHA, GOOGLE_AI_API_KEY (or GEMINI_API_KEY), DESIGNPRO_SPOOL_DIR and DESIGNPRO_APP_ORIGIN are required");
@@ -90,10 +92,17 @@ let claimant = null;
 let deliveryTimer = null;
 let deliveryBusy = false;
 const notificationReadiness = resendReadiness(process.env);
+const enhancementReadiness = topazReadiness(process.env);
 const emailTransport = notificationReadiness.enabled && notificationReadiness.available ? createResendTransport() : null;
 const publicGoLiveBlockers = Object.freeze(notificationReadiness.publicGoLiveReady
   ? []
   : [notificationReadiness.enabled === false ? "outbound_email_disabled" : "outbound_email_not_configured"]);
+// Call 12 is a production-pack dependency, not a dark-acceptance one: a pack
+// cannot be built without it, so an unconfigured enhancer blocks public go-live
+// the same way outbound email does.
+const enhancementGoLiveBlockers = Object.freeze(enhancementReadiness.enabled && enhancementReadiness.available
+  ? []
+  : [enhancementReadiness.enabled === false ? "topaz_enhancement_disabled" : "topaz_enhancement_not_configured"]);
 
 function ensureDeliveryWorkers() {
   if (deliveryTimer) return;
@@ -142,9 +151,10 @@ async function refreshReadiness() {
     readiness = {
       ready: true, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID,
       imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV, publicGoLiveEnvironment: PUBLIC_GO_LIVE_ENV,
-      publicGoLiveReady: notificationReadiness.publicGoLiveReady, publicGoLiveBlockers,
+      publicGoLiveReady: notificationReadiness.publicGoLiveReady && enhancementGoLiveBlockers.length === 0,
+      publicGoLiveBlockers: [...publicGoLiveBlockers, ...enhancementGoLiveBlockers],
       workerLoopsStarted: true,
-      dependencies: { ...dependencies, wrapboxPublisher: true, notifications: notificationReadiness },
+      dependencies: { ...dependencies, wrapboxPublisher: true, notifications: notificationReadiness, enhancement: enhancementReadiness },
       checkedAt: new Date().toISOString(),
     };
   } catch (error) {

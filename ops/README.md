@@ -35,6 +35,7 @@ Its exact code layout is:
 - `runtime/gemini-flat-wrap.cjs`
 - `runtime/flat-wrap-layout.cjs`
 - `runtime/proof-sheet.cjs`
+- `runtime/topaz-upscale.cjs`
 - `runtime/output-qc.cjs`
 - `runtime/resend-transport.cjs`
 - `runtime/wrapbox-delivery.cjs`
