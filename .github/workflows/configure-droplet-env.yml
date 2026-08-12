@@ -180,7 +180,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           test "$(hostname)" = "$EXPECTED_HOSTNAME"
@@ -209,7 +209,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           remote_stage="/tmp/designproai-env-$GITHUB_RUN_ID"
           control="$RUNNER_TEMP/designproai-control.tgz"
           tar -czf "$control" ops
@@ -228,7 +228,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           set +x
-          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           remote_stage="/tmp/designproai-env-$GITHUB_RUN_ID"
           test -f "$RUNTIME_KEY_FILE" && test ! -L "$RUNTIME_KEY_FILE"
 
@@ -255,7 +255,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           remote_stage="/tmp/designproai-env-$GITHUB_RUN_ID"
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "if test -d '$remote_stage' && test ! -L '$remote_stage'; then find '$remote_stage' -depth -mindepth 1 -delete && rmdir '$remote_stage'; fi"

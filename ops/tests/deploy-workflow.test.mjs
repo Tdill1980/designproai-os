@@ -230,6 +230,36 @@ test("the deploy pipe sends exactly as many secrets as configure-env.sh reads", 
   }
 });
 
+test("every remote step holds its connection open through a silent build", () => {
+  // A dark deploy spends most of its time inside `docker build`, which sends
+  // nothing down the SSH channel for many minutes at a stretch — output over
+  // SSH is block-buffered, not line-buffered. Without keepalives a silent
+  // connection is reaped by whatever NAT sits between the runner and the host,
+  // and the deploy dies at exit 255 with "Timeout, server not responding" after
+  // twenty minutes of apparent progress. That is precisely how the first real
+  // dark deploy of this stack failed, mid-build, having already passed every
+  // safety gate.
+  //
+  // The seam has the same shape for a different reason: it waits on a provider
+  // to render.
+  const dir = resolve(root, ".github/workflows");
+  const longRunning = ["deploy-production.yml", "calls-1-7-seam.yml", "configure-droplet-env.yml"];
+  for (const file of longRunning) {
+    const text = readFileSync(resolve(dir, file), "utf8");
+    const declarations = text.match(/ssh_args=\([^)]*\)/g) || [];
+    assert.ok(declarations.length > 0, `${file} declares no ssh_args`);
+    for (const declaration of declarations) {
+      assert.match(declaration, /ServerAliveInterval=30/, `${file}: an ssh_args without a keepalive interval`);
+      assert.match(declaration, /ServerAliveCountMax=20/, `${file}: an ssh_args without a keepalive ceiling`);
+      // The pins are what make this connection trustworthy; a keepalive must
+      // never arrive at the cost of one of them.
+      assert.match(declaration, /StrictHostKeyChecking=yes/);
+      assert.match(declaration, /BatchMode=yes/);
+      assert.match(declaration, /IdentitiesOnly=yes/);
+    }
+  }
+});
+
 test("the droplet's remote configuration half is a staged script, not a heredoc", () => {
   const remote = readFileSync(resolve(root, "ops/ci-configure-env.sh"), "utf8");
   const configureWorkflow = readFileSync(resolve(root, ".github/workflows/configure-droplet-env.yml"), "utf8");

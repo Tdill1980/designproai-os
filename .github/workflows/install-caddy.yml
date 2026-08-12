@@ -97,7 +97,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           host=$(hostname)
@@ -138,7 +138,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           remote_dir="/tmp/designproai-caddy-$EXACT_SHA-$GITHUB_RUN_ID"
 
           # Run-scoped, mode 0700, removed on exit whether or not the install
@@ -186,7 +186,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           # Read-only. Certificate issuance is NOT retried here: Let's Encrypt
           # rate limits a domain after repeated failed challenges, so a failure
           # above should be read rather than re-run.
