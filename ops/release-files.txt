@@ -34,6 +34,32 @@ web/dist/assets/*.woff
 web/dist/assets/*.woff2
 web/dist/assets/*.ttf
 web/dist/assets/*.txt
+
+# Migrated DesignProAI application. fnmatch '*' crosses '/', so these
+# patterns cover public/ subdirectories as well as the built bundle.
+app/dist/index.html
+app/dist/*.html
+app/dist/*.js
+app/dist/*.mjs
+app/dist/*.css
+app/dist/*.json
+app/dist/*.map
+app/dist/*.png
+app/dist/*.jpg
+app/dist/*.jpeg
+app/dist/*.webp
+app/dist/*.svg
+app/dist/*.ico
+app/dist/*.woff
+app/dist/*.woff2
+app/dist/*.ttf
+app/dist/*.txt
+app/dist/*.xml
+app/dist/*.pdf
+app/dist/*.zip
+app/dist/*.wasm
+app/dist/*.md
+app/dist/*.gitkeep
 ops/release-files.txt
 ops/Dockerfile.runtime
 ops/Dockerfile.gateway

@@ -93,7 +93,9 @@ jobs:
       - run: npm ci --prefix runtime
       - run: npm ci --prefix gateway
       - run: npm ci --prefix web
+      - run: npm ci --prefix app
       - run: npm run build --prefix web
+      - run: npm run build --prefix app
       - name: Build twice and prove byte-for-byte archive reproducibility
         run: |
           bash scripts/build-release.sh "$EXACT_SHA" dist-release-a

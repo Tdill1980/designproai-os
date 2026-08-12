@@ -1,0 +1,30 @@
+<svg width="800" height="400" viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="400" fill="#f8fafc"/>
+  
+  <!-- Bleed outline (outer) -->
+  <path d="M40 190 C140 40, 360 40, 460 190 S660 360, 760 190"
+        fill="none" stroke="#dc2626" stroke-width="4" opacity="0.7"/>
+  
+  <!-- Original contour (inner) -->
+  <path d="M60 200 C155 70, 345 70, 440 200 S640 330, 740 200"
+        fill="none" stroke="#1e293b" stroke-width="2"/>
+  
+  <!-- Bleed markers -->
+  <rect x="90" y="110" width="140" height="100" fill="none" stroke="#dc2626" stroke-width="2" opacity="0.5"/>
+  <rect x="100" y="120" width="120" height="80" fill="none" stroke="#1e293b" stroke-width="2"/>
+  
+  <rect x="330" y="130" width="170" height="120" fill="none" stroke="#dc2626" stroke-width="2" opacity="0.5"/>
+  <rect x="340" y="140" width="150" height="100" fill="none" stroke="#1e293b" stroke-width="2"/>
+  
+  <rect x="570" y="100" width="150" height="110" fill="none" stroke="#dc2626" stroke-width="2" opacity="0.5"/>
+  <rect x="580" y="110" width="130" height="90" fill="none" stroke="#1e293b" stroke-width="2"/>
+  
+  <!-- Legend -->
+  <rect x="50" y="340" width="20" height="10" fill="#dc2626" opacity="0.7"/>
+  <text x="80" y="350" fill="#64748b" font-family="Arial" font-size="12">0.125" Bleed</text>
+  
+  <rect x="200" y="340" width="20" height="10" fill="#1e293b"/>
+  <text x="230" y="350" fill="#64748b" font-family="Arial" font-size="12">Cut Line</text>
+  
+  <text x="400" y="380" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="14">Bleed Version - Production Ready</text>
+</svg>

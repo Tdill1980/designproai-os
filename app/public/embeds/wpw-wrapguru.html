@@ -1,0 +1,326 @@
+<!--
+  ════════════════════════════════════════════════════════════════════════
+  WRAPGURU — instant wrap pricing + file check (WHITE UI standard)
+  ════════════════════════════════════════════════════════════════════════
+  Paste into an Elementor "HTML" widget (or Gutenberg "Custom HTML" block),
+  or publish it as a standalone page via the "Publish to weprintwraps.com"
+  button in RestylePro admin (/admin/wrapguru).
+
+  Scoped under #wgru — cannot affect your theme. No plugins, no jQuery.
+  Talks straight to the wpw-sales-chat edge function, so every turn is
+  logged + geo-located and shows up in Admin → WrapGuru Chats.
+
+  EDIT (optional): the CONFIG block at the top of the script (PHONE, EMAIL).
+  Kill switch: set window.WPW_WRAPGURU_DISABLED = true before this loads.
+  ════════════════════════════════════════════════════════════════════════
+-->
+<div id="wgru">
+  <style>
+    #wgru{
+      --blue:#3b82f6; --magenta:#ec4899;
+      --ink:#111827; --body:#4b5563; --mut:#6b7280; --line:#e5e7eb; --soft:#f9fafb; --dark:#000000;
+      --grad:linear-gradient(90deg,var(--blue),var(--magenta));
+      --fd:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      --fb:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+      box-sizing:border-box; color:var(--ink); background:#fff; font-family:var(--fb); line-height:1.5; -webkit-font-smoothing:antialiased;
+    }
+    #wgru *,#wgru *::before,#wgru *::after{box-sizing:border-box;}
+    #wgru .wrap{max-width:1100px; margin:0 auto; padding:38px 20px 52px;}
+    #wgru .ic{width:20px;height:20px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block;}
+
+    /* Two-column: pitch | chat */
+    #wgru .grid{display:grid; grid-template-columns:1fr 420px; gap:52px; align-items:center;}
+    @media(max-width:900px){ #wgru .grid{grid-template-columns:1fr; gap:34px;} }
+
+    /* Pitch side */
+    #wgru .badge{display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:6px 13px; font-size:12px; font-weight:700; color:var(--body);}
+    #wgru .badge .d{width:8px;height:8px;border-radius:50%;background:var(--grad);}
+    #wgru h1{font-family:var(--fd); font-weight:800; letter-spacing:-.01em; line-height:1.04; margin:16px 0 0; font-size:clamp(34px,5.2vw,54px);}
+    #wgru h1 .g{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #wgru .tag{color:var(--body); font-size:clamp(15px,1.9vw,18px); margin:14px 0 0; max-width:440px;}
+    #wgru .perks{list-style:none; margin:30px 0 0; padding:0; display:flex; flex-direction:column; gap:17px;}
+    #wgru .perks li{display:flex; gap:13px;}
+    #wgru .perks .pic{flex:0 0 auto; width:38px;height:38px;border-radius:10px;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;}
+    #wgru .perks b{display:block; font-size:14.5px; font-weight:800; color:var(--ink);}
+    #wgru .perks span{color:var(--mut); font-size:13.5px;}
+    #wgru .callout{margin:30px 0 0; font-size:13.5px; color:var(--mut);}
+    #wgru .callout a{color:var(--blue); font-weight:700; text-decoration:none;}
+
+    /* Chat card */
+    #wgru .card{border:1px solid var(--line); border-radius:20px; background:#fff; box-shadow:0 24px 60px rgba(17,24,39,.14); overflow:hidden; display:flex; flex-direction:column; height:588px;}
+    @media(max-width:900px){ #wgru .card{height:544px; max-width:420px; margin:0 auto; width:100%;} }
+    /* header — ALWAYS black (WHITE UI standard) */
+    #wgru .chead{position:relative; background:var(--dark); color:#fff; padding:13px 15px; display:flex; align-items:center; gap:11px; flex:0 0 auto;}
+    #wgru .chead .bar{position:absolute; left:0; right:0; top:0; height:3px; background:var(--grad);}
+    #wgru .chead .av{position:relative; flex:0 0 auto; width:36px;height:36px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;}
+    #wgru .chead .av .ic{width:18px;height:18px;}
+    #wgru .chead .av .on{position:absolute; right:-1px; bottom:-1px; width:11px;height:11px;border-radius:50%;background:#34d399;box-shadow:0 0 0 2px #000;}
+    #wgru .chead b{display:block; font-size:14px; font-weight:800; letter-spacing:.01em;}
+    #wgru .chead .st{display:flex; align-items:center; gap:5px; font-size:11px; color:#34d399;}
+    #wgru .chead .st .dt{width:6px;height:6px;border-radius:50%;background:#34d399;}
+
+    /* messages */
+    #wgru .msgs{flex:1 1 auto; overflow-y:auto; padding:15px; background:var(--soft); display:flex; flex-direction:column; gap:12px;}
+    #wgru .row{display:flex; gap:8px; align-items:flex-start;}
+    #wgru .row.u{justify-content:flex-end;}
+    #wgru .row .mav{flex:0 0 auto; width:26px;height:26px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;margin-top:2px;}
+    #wgru .row .mav .ic{width:13px;height:13px;}
+    #wgru .stack{display:flex; flex-direction:column; max-width:80%;}
+    #wgru .row.u .stack{align-items:flex-end;}
+    #wgru .b{padding:9px 13px; border-radius:15px; font-size:13.5px; line-height:1.48; white-space:pre-wrap; word-wrap:break-word; overflow-wrap:anywhere;}
+    #wgru .b.u{background:#111827; color:#fff; border-bottom-right-radius:5px;}
+    #wgru .b.a{background:#fff; border:1px solid var(--line); color:#1f2937; border-bottom-left-radius:5px;}
+    #wgru .b.a a{color:#2563eb; font-weight:700; text-decoration:underline; overflow-wrap:anywhere;}
+    #wgru .b.a a.cta{display:inline-block; margin-top:8px; background:var(--grad); color:#fff; text-decoration:none; font-weight:800; font-size:13px; padding:9px 15px; border-radius:10px;}
+    #wgru .clock{font-size:10px; color:#9ca3af; margin:3px 4px 0;}
+
+    /* typing dots */
+    #wgru .typing{display:inline-flex; gap:4px; align-items:center; height:14px;}
+    #wgru .typing i{width:6px;height:6px;border-radius:50%;background:#c4c9d4;display:inline-block;animation:wgru-b 1.2s infinite ease-in-out;}
+    #wgru .typing i:nth-child(2){animation-delay:.15s;}
+    #wgru .typing i:nth-child(3){animation-delay:.3s;}
+    @keyframes wgru-b{0%,60%,100%{transform:translateY(0);opacity:.5;}30%{transform:translateY(-4px);opacity:1;}}
+    @media (prefers-reduced-motion: reduce){ #wgru .typing i{animation:none;} }
+
+    /* quick-reply chips */
+    #wgru .chips{display:flex; flex-wrap:wrap; gap:8px; padding-left:34px;}
+    #wgru .chips button{background:#fff; border:1px solid var(--line); border-radius:999px; padding:7px 13px; font-family:var(--fb); font-size:12.5px; font-weight:600; color:#374151; cursor:pointer; transition:.15s;}
+    #wgru .chips button:hover{border-color:var(--blue); color:#2563eb;}
+
+    /* composer */
+    #wgru form{display:flex; gap:8px; padding:11px; border-top:1px solid var(--line); background:#fff; flex:0 0 auto;}
+    #wgru form input{flex:1; min-width:0; height:44px; border:1.5px solid var(--line); border-radius:12px; padding:0 13px; font-family:var(--fb); font-size:14px; color:var(--ink); background:#fff;}
+    #wgru form input:focus{outline:none; border-color:var(--blue); box-shadow:0 0 0 4px rgba(59,130,246,.13);}
+    #wgru form button{flex:0 0 auto; width:44px;height:44px; border:none; border-radius:12px; cursor:pointer; background:var(--grad); color:#fff; display:flex; align-items:center; justify-content:center;}
+    #wgru form button:disabled{opacity:.5; cursor:default;}
+    #wgru .foot{text-align:center; font-size:10px; color:#9ca3af; padding:0 0 9px; background:#fff; flex:0 0 auto;}
+    #wgru .foot b{color:var(--mut); font-weight:700;}
+  </style>
+
+  <div class="wrap">
+    <div class="grid">
+
+      <!-- Pitch -->
+      <div>
+        <span class="badge"><span class="d"></span> 24/7 AI assistant</span>
+        <h1>Meet <span class="g">WrapGuru</span></h1>
+        <p class="tag">Instant printed-wrap-film pricing, free file checks, and order help &mdash; answered in seconds, any time.</p>
+        <ul class="perks" id="wgru-perks"></ul>
+        <p class="callout">
+          Prefer to talk to a human? Call <a id="wgru-tel" href="#">549-622-4678</a>
+          or email <a id="wgru-mail" href="#">hello@weprintwraps.com</a>.
+        </p>
+      </div>
+
+      <!-- Chat -->
+      <div class="card">
+        <div class="chead">
+          <div class="bar"></div>
+          <span class="av" id="wgru-av"><span class="on"></span></span>
+          <div>
+            <b>WrapGuru</b>
+            <span class="st"><span class="dt"></span> Online &middot; replies instantly</span>
+          </div>
+        </div>
+        <div class="msgs" id="wgru-msgs"></div>
+        <form id="wgru-form">
+          <input id="wgru-in" type="text" placeholder="Type a message&hellip;" autocomplete="off" aria-label="Message WrapGuru">
+          <button id="wgru-send" type="submit" aria-label="Send"></button>
+        </form>
+        <div class="foot">Powered by <b>WrapGuru</b> &middot; We Print Wraps</div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    "use strict";
+    if (window.WPW_WRAPGURU_DISABLED) return;
+    var root = document.getElementById('wgru');
+    if (!root || root.dataset.init) return;
+    root.dataset.init = '1';
+    var $ = function(id){ return root.querySelector('#' + id); };
+
+    // ── CONFIG ───────────────────────────────────────────────────────
+    var API   = 'https://kfapjdyythzyvnpdeghu.supabase.co/functions/v1/wpw-sales-chat';
+    var PHONE = '549-622-4678';
+    var EMAIL = 'hello@weprintwraps.com';
+    var SKEY  = 'wrapguru.page.v1';
+    var GREETING = "Hey! I'm WrapGuru 👋 I can price printed wrap film instantly, check your print file, or answer anything about your order. What are you working on?";
+    var CHIPS = [
+      ['💲', 'Price my wrap'],
+      ['📐', 'How much vinyl do I need?'],
+      ['🖼️', 'Check my design file'],
+      ['🚚', 'Turnaround & shipping']
+    ];
+
+    var SVG = {
+      chat:  '<path d="M21 12a8 8 0 0 1-8 8H5l-2 2V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/>',
+      send:  '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>',
+      zap:   '<path d="M13 2 3 14h8l-1 8 10-12h-8z"/>',
+      file:  '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/>',
+      truck: '<path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>'
+    };
+    function svg(n, cls){ return '<svg class="' + (cls || 'ic') + '" viewBox="0 0 24 24">' + SVG[n] + '</svg>'; }
+
+    // ── Static chrome ────────────────────────────────────────────────
+    var PERKS = [
+      ['zap',   'Instant pricing',   'Real per-sq-ft numbers on Avery &amp; 3M film — no waiting on a rep.'],
+      ['file',  'Free file check',   "Drop your artwork and we'll tell you straight: print-ready or what to fix."],
+      ['truck', 'Ships in 1-2 days', 'Premium laminate included. Free shipping on orders $750+.']
+    ];
+    $('wgru-perks').innerHTML = PERKS.map(function(p){
+      return '<li><span class="pic">' + svg(p[0]) + '</span><div><b>' + p[1] + '</b><span>' + p[2] + '</span></div></li>';
+    }).join('');
+    $('wgru-av').insertAdjacentHTML('afterbegin', svg('chat'));
+    $('wgru-send').innerHTML = svg('send');
+    var tel = $('wgru-tel'); tel.href = 'tel:' + PHONE.replace(/[^0-9]/g, ''); tel.textContent = PHONE;
+    var mail = $('wgru-mail'); mail.href = 'mailto:' + EMAIL; mail.textContent = EMAIL;
+
+    // ── Session + state ──────────────────────────────────────────────
+    var sessionId;
+    try {
+      sessionId = sessionStorage.getItem(SKEY + '.sid');
+      if (!sessionId) {
+        sessionId = 'wg-' + Math.random().toString(36).slice(2, 10);
+        sessionStorage.setItem(SKEY + '.sid', sessionId);
+      }
+    } catch (e) { sessionId = 'wg-anon'; }
+
+    var history = [];
+    try {
+      var saved = sessionStorage.getItem(SKEY);
+      if (saved) history = JSON.parse(saved).slice(-20);
+    } catch (e) {}
+    var busy = false;
+
+    var msgs = $('wgru-msgs'), form = $('wgru-form'), input = $('wgru-in'), send = $('wgru-send');
+
+    function persist(){
+      try { sessionStorage.setItem(SKEY, JSON.stringify(history.slice(-20))); } catch (e) {}
+    }
+    function esc(s){
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    // [text](url) + bare URLs; add-to-cart links become gradient CTA buttons.
+    function render(s){
+      var h = esc(s);
+      h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function(_m, t, u){
+        return '<a href="' + u + '"' + (/add-to-cart/.test(u) ? ' class="cta"' : '') + ' target="_blank" rel="noopener">' + t + '</a>';
+      });
+      h = h.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, function(_m, pre, u){
+        var isCart = /add-to-cart/.test(u);
+        var label = isCart ? 'Add to cart →' : u.replace(/^https?:\/\//, '');
+        return pre + '<a href="' + u + '"' + (isCart ? ' class="cta"' : '') + ' target="_blank" rel="noopener">' + label + '</a>';
+      });
+      return h;
+    }
+    function clock(){
+      try { return new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); }
+      catch (e) { return ''; }
+    }
+    function addMsg(role, text){
+      var row = document.createElement('div');
+      row.className = 'row ' + (role === 'user' ? 'u' : 'a');
+      var bubble = document.createElement('div');
+      bubble.className = 'b ' + (role === 'user' ? 'u' : 'a');
+      if (role === 'user') bubble.textContent = text; else bubble.innerHTML = render(text);
+      var stack = document.createElement('div');
+      stack.className = 'stack';
+      stack.appendChild(bubble);
+      var t = document.createElement('div');
+      t.className = 'clock'; t.textContent = clock();
+      stack.appendChild(t);
+      if (role !== 'user') {
+        var av = document.createElement('span');
+        av.className = 'mav'; av.innerHTML = svg('chat');
+        row.appendChild(av);
+      }
+      row.appendChild(stack);
+      msgs.appendChild(row);
+      msgs.scrollTop = msgs.scrollHeight;
+      return row;
+    }
+
+    // Quick-reply chips — shown until the visitor says something.
+    var chipsEl = null;
+    function showChips(){
+      if (chipsEl) return;
+      chipsEl = document.createElement('div');
+      chipsEl.className = 'chips';
+      CHIPS.forEach(function(c){
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.innerHTML = c[0] + ' ' + c[1];
+        b.addEventListener('click', function(){ submit(c[1]); });
+        chipsEl.appendChild(b);
+      });
+      msgs.appendChild(chipsEl);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    function killChips(){
+      if (chipsEl) { chipsEl.remove(); chipsEl = null; }
+    }
+
+    // Restore transcript or greet.
+    if (history.length) {
+      history.forEach(function(m){ addMsg(m.role, m.content); });
+    } else {
+      addMsg('assistant', GREETING);
+      showChips();
+    }
+
+    function submit(text){
+      text = String(text || '').trim();
+      if (!text || busy) return;
+      killChips();
+      addMsg('user', text);
+      history.push({ role: 'user', content: text });
+      persist();
+
+      busy = true; send.disabled = true;
+      var typing = document.createElement('div');
+      typing.className = 'row a';
+      typing.innerHTML = '<span class="mav">' + svg('chat') + '</span>' +
+        '<div class="stack"><div class="b a"><span class="typing"><i></i><i></i><i></i></span></div></div>';
+      msgs.appendChild(typing);
+      msgs.scrollTop = msgs.scrollHeight;
+
+      fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          session_id: sessionId,
+          history: history.slice(0, -1).slice(-10),
+          page_path: (location.pathname + location.search).slice(0, 300),
+          referrer: (document.referrer || '').slice(0, 400)
+        })
+      })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          typing.remove();
+          var reply = (d && d.reply) || ('Sorry — hiccup on my end. Call us at ' + PHONE + ' or try again.');
+          addMsg('assistant', reply);
+          history.push({ role: 'assistant', content: reply });
+          persist();
+        })
+        .catch(function(){
+          typing.remove();
+          addMsg('assistant', 'Connection hiccup — try again, or call ' + PHONE + '.');
+        })
+        .finally(function(){
+          busy = false; send.disabled = false;
+        });
+    }
+
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var v = input.value;
+      input.value = '';
+      submit(v);
+    });
+  })();
+  </script>
+</div>

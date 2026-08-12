@@ -52,9 +52,12 @@ def allowed_file(name: str) -> bool:
 
 
 def allowed_directory(name: str) -> bool:
-    if name in {"runtime", "gateway", "gateway/src", "web", "web/dist", "web/dist/assets", "ops"}:
+    if name in {"runtime", "gateway", "gateway/src", "web", "web/dist", "web/dist/assets", "app", "app/dist", "ops"}:
         return True
-    return name.startswith("web/dist/assets/")
+    # The migrated application's dist carries the public/ tree Vite copies
+    # through, so its subdirectories are real and arbitrarily named. Every file
+    # inside still has to match an allowlisted pattern in release-files.txt.
+    return name.startswith("web/dist/assets/") or name.startswith("app/dist/")
 
 
 def member_digest(archive: tarfile.TarFile, member: tarfile.TarInfo) -> str:

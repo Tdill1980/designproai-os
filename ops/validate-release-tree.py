@@ -12,7 +12,7 @@ from pathlib import Path
 
 SCHEMA = "designproai.release.v1"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
-TRACKED_ROOTS = ("runtime", "gateway", "web", "ops")
+TRACKED_ROOTS = ("runtime", "gateway", "web", "app", "ops")
 
 
 def digest(path: Path) -> str:

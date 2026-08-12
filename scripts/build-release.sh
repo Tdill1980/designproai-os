@@ -8,8 +8,8 @@ policy="$root/ops/release-files.txt"
 
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "Exact lowercase 40-character Git SHA required" >&2; exit 2; }
 [[ -f $policy && ! -L $policy ]] || { echo "Canonical release policy is missing or unsafe" >&2; exit 2; }
-[[ -d $root/runtime && -d $root/gateway && -d $root/web/dist ]] || {
-  echo "Runtime, gateway, and built web tree are required" >&2
+[[ -d $root/runtime && -d $root/gateway && -d $root/web/dist && -d $root/app/dist ]] || {
+  echo "Runtime, gateway, built web tree, and built application tree are required" >&2
   exit 2
 }
 
@@ -36,12 +36,22 @@ if [[ -e $root/web/dist/assets ]]; then
   done < <(find "$root/web/dist/assets" -type f -print0 | LC_ALL=C sort -z)
 fi
 
+# The migrated application's dist is a whole tree, not a single assets
+# directory: Vite copies public/ through, so panels/, golden-templates/ and the
+# rest are real subdirectories. Every file still has to match an allowlisted
+# pattern, which build-release-manifest.py enforces immediately below.
+while IFS= read -r -d '' source; do
+  [[ -f $source && ! -L $source ]] || { echo "Application dist cannot contain links or special files" >&2; exit 3; }
+  relative=${source#"$root/"}
+  install -D -m 0644 -- "$source" "$stage/$relative"
+done < <(find "$root/app/dist" -type f -print0 | LC_ALL=C sort -z)
+
 python3 "$root/ops/build-release-manifest.py" "$stage" "$sha" >/dev/null
 mkdir -p -- "$out"
 archive="$out/designproai-release-$sha.tgz"
 tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
   --mode='u+rwX,go+rX,go-w' --use-compress-program='gzip -n' -cf "$archive" -C "$stage" \
-  .designpro-release.json runtime gateway web ops
+  .designpro-release.json runtime gateway web app ops
 python3 "$root/ops/validate-archive.py" "$archive" "$sha"
 (cd "$out" && sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256")
 printf '%s\n' "$archive"
