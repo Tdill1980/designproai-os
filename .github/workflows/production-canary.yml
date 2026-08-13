@@ -158,26 +158,40 @@ jobs:
           release=/opt/designproai-os/current
           test -d "$release" || { echo "no deployed release at $release"; exit 40; }
           test -f /opt/designproai-os/shared/runtime.env || { echo "runtime.env missing"; exit 41; }
-          test -d "$release/runtime/node_modules/@supabase" || { echo "release dependencies missing"; exit 42; }
+
+          # The kernel installs its dependencies into the Docker image, not into
+          # the release tree, so there is no node_modules on disk to borrow. The
+          # canary therefore runs INSIDE the exact runtime image this release
+          # deployed — same node_modules, same Node, same code — rather than
+          # beside it. --network host is what lets it reach the runtime's
+          # loopback-published internal endpoint to mint the WrapBox recipient.
+          sha=$(basename "$(readlink -f "$release")")
+          image="designproai-runtime:$sha"
+          docker image inspect "$image" >/dev/null 2>&1 || { echo "runtime image $image is not present"; exit 42; }
 
           work=$(mktemp -d /tmp/designpro-canary.XXXXXX)
           out="$work/output"
-          mkdir -p "$out" "$work/runtime" "$work/scripts"
+          mkdir -p "$out" "$work/scripts"
           trap 'rm -rf "$work"' EXIT
 
           printf '%s' "$PAYLOAD" | base64 -d | tar -C "$work" -xz
-          ln -s "$release/runtime/node_modules" "$work/runtime/node_modules"
           printf '%s' "$VIEWS_B64" | base64 -d > "$work/views.json"
+          # The image runs as 10001; the canary writes its output into $work.
+          chmod -R 0777 "$work"
 
-          set -a; . /opt/designproai-os/shared/runtime.env; set +a
-          export DESIGNPRO_CANARY_TENANT="$CANARY_TENANT"
-          export DESIGNPRO_CANARY_EMAIL="$CEMAIL"
-
-          cd "$work"
-          node scripts/production-canary.mjs --views views.json --out "$out" \
-            --year "$YEAR" --make "$MAKE" --model "$MODEL" --type "$VTYPE" \
-            --design "July 24 canary"
+          set +e
+          docker run --rm --network host \
+            --env-file /opt/designproai-os/shared/runtime.env \
+            -e DESIGNPRO_CANARY_TENANT="$CANARY_TENANT" \
+            -e DESIGNPRO_CANARY_EMAIL="$CEMAIL" \
+            -v "$work/scripts/production-canary.mjs:/app/production-canary.mjs:ro" \
+            -v "$work:/canary" \
+            "$image" node /app/production-canary.mjs \
+              --views /canary/views.json --out /canary/output \
+              --year "$YEAR" --make "$MAKE" --model "$MODEL" --type "$VTYPE" \
+              --design "July 24 canary"
           status=$?
+          set -e
 
           echo "---CANARY-OUTPUT-TAR---"
           tar -C "$out" -cz . | base64 -w0
