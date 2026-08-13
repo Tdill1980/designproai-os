@@ -336,6 +336,17 @@ async function proceduralViewPlates({ manifest, plateSetId, vehicleId, dimension
     manufacturingAuthority: false,
     presentation: "orthographic-schematic",
     geometrySource: "genie-dimension-manifest",
+    // INTERNAL ONLY, and stated in the artefact so it cannot drift into the
+    // product by accident.
+    //
+    // The customer-facing proof experience is the photoreal RevisionStudioIQ
+    // view, which is what DesignProAI is worth paying for. These plates exist
+    // so the deterministic chain can be built and canaried before per-vehicle
+    // photographic plates are authored; showing a customer a schematic slab
+    // where they expect their truck would replace a premium product with a
+    // debug artefact. Anything rendering to a customer must refuse this.
+    audience: "internal",
+    neverShowToCustomer: true,
   });
 }
 

@@ -44,11 +44,19 @@ test("GATE: a plate set satisfies the Phase 4 contract without changing it", asy
   }
 });
 
-test("GATE: the plates are presentation only, and say so", async () => {
+test("GATE: the plates are presentation only, internal only, and say both", async () => {
   const built = await proceduralViewPlates(ARGS);
   assert.equal(built.manufacturingAuthority, false);
   assert.equal(built.presentation, "orthographic-schematic");
   assert.equal(built.geometrySource, "genie-dimension-manifest");
+
+  // The customer-facing proof experience is the photoreal RevisionStudioIQ
+  // view. These plates exist so the deterministic chain can be built and
+  // canaried before per-vehicle photographic plates are authored. A schematic
+  // shown where a customer expects their truck replaces a premium product with
+  // a debug artefact, so the artefact carries its own refusal.
+  assert.equal(built.audience, "internal");
+  assert.equal(built.neverShowToCustomer, true);
 });
 
 test("GATE: geometry comes from the manifest and nothing is fitted", async () => {
