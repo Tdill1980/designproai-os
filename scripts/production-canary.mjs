@@ -25,7 +25,14 @@ import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 
 const require = createRequire(import.meta.url);
-const { createClient } = require("../runtime/node_modules/@supabase/supabase-js");
+// Inside the runtime image the dependency resolves normally from /app; from a
+// checkout it does not, because the kernel installs into the image rather than
+// into the release tree on disk. That distinction is what the first canary run
+// got wrong, so both paths are handled explicitly instead of assumed.
+const { createClient } = (() => {
+  try { return require("@supabase/supabase-js"); }
+  catch { return require("../runtime/node_modules/@supabase/supabase-js"); }
+})();
 
 const arg = (name, fallback = null) => {
   const i = process.argv.indexOf(`--${name}`);
