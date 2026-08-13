@@ -289,7 +289,7 @@ async function withText(fontKey) {
   const bytes = fontBytes(fontKey);
   const candidate = clone(master);
   candidate.fonts = [{ fontId: "brand-sans", family: "Pinned", version: "1", contentHash: sha256(bytes), license: "bitstream-vera", storagePath: "a/f.ttf" }];
-  candidate.textObjects = [{ textId: "domain", string: "PrecisionClimateAZ.com", fontId: "brand-sans", sizeIn: 3, colorToken: "brand-blue", neverMirror: true, spellingAuthority: "revision-snapshot" }];
+  candidate.textObjects = [{ textId: "domain", string: "PrecisionClimateAZ.com", fontId: "brand-sans", sizeIn: 1.5, colorToken: "brand-blue", neverMirror: true, spellingAuthority: "revision-snapshot" }];
   candidate.layers.push({ layerId: "domain-type", type: "text", space: "driver", textId: "domain", extent: { widthIn: 24, heightIn: 5 },
     transform: { x: 1, y: 1, scale: 1, rotate: 0 }, zOrder: 60, opacity: 1, blend: "normal", mask: { type: "none" } });
   return { master: validateDesignMaster({ ...candidate, masterHash: undefined }), loadAsset, loadFont: async () => bytes };

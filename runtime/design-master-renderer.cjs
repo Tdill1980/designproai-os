@@ -291,6 +291,15 @@ async function renderLayerRegion(layer, context, layerWidthPx, layerHeightPx, re
       fill: palette.get(text.colorToken).srgb,
       boxWidthPx: layerWidthPx, boxHeightPx: layerHeightPx,
     });
+    // Type that does not fit its declared extent would be quietly cropped, and
+    // a cropped string still looks like a string. The master would say the
+    // customer's URL ends in /hvac while the panel printed only what fitted, and
+    // two different canonical strings could render byte-identically. Canonical
+    // content is never silently truncated.
+    if (outlined.advancePx > layerWidthPx + 0.5) {
+      fail("render_text_overflows_extent",
+        `${layer.layerId}: ${JSON.stringify(text.string)} sets ${outlined.advancePx.toFixed(1)}px wide in a ${layerWidthPx}px extent`);
+    }
     return rasterizeSvgExact(windowedSvg(`<path d="${outlined.path}" fill="${palette.get(text.colorToken).srgb}" fill-rule="nonzero"/>`, layerWidthPx, layerHeightPx, region), region.w, region.h);
   }
 

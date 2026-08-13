@@ -323,6 +323,7 @@ function outlineString({ fontBytes, string, sizeIn, pxPerInch }) {
     widthPx: Math.max(1, Math.ceil(penX)),
     heightPx: Math.max(1, Math.ceil(((font.ascender - font.descender) / font.unitsPerEm) * emPx)),
     advancePx: penX,
+    baselinePx,
     unitsPerEm: font.unitsPerEm,
   };
 }

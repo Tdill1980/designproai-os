@@ -518,8 +518,13 @@ function validateLayers(raw, { assets, palette, surfaceKeys, textObjects, logoOb
     if (type === "text") {
       const textId = requireToken(layer.textId, `${layerId}.textId`);
       if (!textObjects.has(textId)) fail("layer_text_unknown", `${layerId} references undeclared text object ${textId}`);
-      if (boundText.has(textId)) fail("layer_text_bound_twice", `text object ${textId} is placed by both ${boundText.get(textId)} and ${layerId}`);
-      boundText.set(textId, layerId);
+      // One string, many places. A wrap routinely carries the same URL on both
+      // flanks and the tailgate; requiring a separate text object per placement
+      // would mean duplicating the string, and duplicated strings are exactly
+      // how PrecisionClimateAZ.com became PrecisionsClimateAz.com. The layer
+      // names exactly one object; the object may be placed as often as needed.
+      if (!boundText.has(textId)) boundText.set(textId, []);
+      boundText.get(textId).push(layerId);
     } else if (layer.textId !== undefined) {
       fail("layer_text_unexpected", `${layerId} is a ${type} layer and must not name a text object`);
     }
@@ -529,6 +534,8 @@ function validateLayers(raw, { assets, palette, surfaceKeys, textObjects, logoOb
       if (space === GLOBAL_SPACE) fail("layer_logo_space_invalid", `${layerId} is a logo layer and must sit on a named surface`);
       const placementKey = `${space}:${identityKey}`;
       if (!logoObjects.has(placementKey)) fail("layer_logo_unknown", `${layerId} references undeclared logo placement ${placementKey}`);
+      // A logo placement is already surface-scoped, so the same mark on two
+      // flanks is two placements. One layer each keeps that unambiguous.
       if (boundLogos.has(placementKey)) fail("layer_logo_bound_twice", `logo placement ${placementKey} is placed by both ${boundLogos.get(placementKey)} and ${layerId}`);
       boundLogos.set(placementKey, layerId);
     } else if (layer.logoIdentityKey !== undefined) {
