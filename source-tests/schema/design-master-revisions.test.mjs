@@ -79,6 +79,20 @@ assert.ok(sql.includes("approval_identity_drift"), "an approval must be about th
 assert.ok(sql.includes("revision_id uuid primary key references public.designpro_design_master_revisions"),
   "at most one approval per revision");
 
+// The gate hands back the COMPLETE frozen approval, not a summary of it. The
+// database cannot verify approval_hash against the object it covers — that
+// digest is over the runtime's canonical form — so it must return everything
+// the runtime needs to do the verification itself. Returning only the hash and
+// the reference would leave production with nothing to check the hash against,
+// and "approved" would mean two different things on the two sides of this
+// boundary.
+assert.ok(sql.includes("'approval',v_approval.approval"), "the gate must return the complete frozen approval");
+// The stored object and the columns beside it must agree, or the row is one
+// approval by one reading and a different one by another.
+assert.ok(sql.includes("approval->>'approvalhash'=approval_hash"), "columns and stored approval must agree");
+assert.ok(sql.includes("approval->>'bundleidentity'=bundle_identity"));
+assert.ok(sql.includes("approval->>'revisionid'=revision_id::text"));
+
 // The production gate returns a revision only when it is approved and the
 // identity matches. There is no most-recent branch and no status column.
 assert.ok(sql.includes("production_not_approved"));

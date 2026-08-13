@@ -280,6 +280,17 @@ BEGIN
     'dimensionManifestId',v_revision.dimension_manifest_id,'manifestHash',v_revision.manifest_hash,
     'plateSetId',v_revision.plate_set_id,'plateSetHash',v_revision.plate_set_hash,
     'master',v_revision.master,
+    -- The complete frozen approval, not a summary of it.
+    --
+    -- The database cannot prove that approval_hash is the digest of this
+    -- object: that digest is over the runtime's canonical form, and a second
+    -- canonicalisation in SQL would be a second identity that could disagree
+    -- with the first. So the proof is done where the canonical form is defined,
+    -- and this RPC's job is to hand back everything needed to do it. Returning
+    -- only the hash and the reference would leave the caller with nothing to
+    -- check the hash against, and "approved" would mean two different things on
+    -- the two sides of this boundary.
+    'approval',v_approval.approval,
     'approvalHash',v_approval.approval_hash,'approvalRef',v_approval.approval_ref,'approvedAt',v_approval.approved_at,
     'approvedBy',v_approval.approved_by);
 END $fn$;

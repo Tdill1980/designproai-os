@@ -18,7 +18,7 @@ const {
 const { VIEW_PLATE_CONTRACT } = require("../../runtime/vehicle-view-plate.cjs");
 const {
   REVISION_REQUEST_CONTRACT, APPROVAL_CONTRACT, REVISION_OPERATIONS,
-  deriveRevision, freezeApproval, assertProductionEligible, validateRevisionBundle,
+  deriveRevision, freezeApproval, assertProductionEligible, validateRevisionBundle, approvalFromRecord,
 } = require("../../runtime/design-master-revision.cjs");
 const {
   runOriginCycle, runRevisionCycle, approveCycle, approvedProductionSurfaces, CYCLE_CONTRACT,
@@ -432,6 +432,61 @@ test("an approval records who accepted what, and when", async () => {
     bundle: { master: origin.master, render: origin.render, proof2d: origin.proof2d, proof3d: origin.proof3d },
   });
   assert.equal(identity.bundleIdentity, approval.bundleIdentity);
+});
+
+test("a stored approval with a forged hash cannot become production-eligible", async () => {
+  const origin = await runOriginCycle({ master: originMaster(), ...inputs() });
+  const approval = approveCycle({
+    cycle: origin, approvedBy: uuid("9"), approvalRef: "signed", approvedAt: "2026-08-13T12:00:00.000Z",
+  });
+  // What require_approved_designpro_revision returns: the row's columns plus
+  // the complete frozen approval. The database stores both but cannot verify
+  // one against the other, so the proof happens on this side of the boundary.
+  const record = (over = {}) => ({
+    revisionId: approval.revisionId,
+    bundleIdentity: approval.bundleIdentity,
+    approvalHash: approval.approvalHash,
+    approval,
+    ...over,
+  });
+
+  const verified = approvalFromRecord(record());
+  assert.equal(verified.approvalHash, approval.approvalHash);
+  assert.equal(
+    approvedProductionSurfaces({ approval: verified, cycle: origin }).bundleIdentity,
+    origin.identity.bundleIdentity);
+
+  // A summary is not enough: with no complete approval there is nothing for the
+  // hash to be checked against, and "approved" would mean two different things
+  // on the two sides of this boundary.
+  assert.throws(() => approvalFromRecord({ ...record(), approval: undefined }),
+    (error) => error.code === "production_approval_incomplete");
+
+  // A row edited in the database, with its digest left alone.
+  for (const forged of [
+    { ...approval, bundleIdentity: sha256(Buffer.from("elsewhere")) },
+    { ...approval, masterHash: sha256(Buffer.from("another design")) },
+    { ...approval, approvalRef: "someone else's signature" },
+    { ...approval, approvedBy: uuid("1") },
+    { ...approval, surfaceHashes: approval.surfaceHashes.slice(0, 5) },
+  ]) {
+    assert.throws(() => approvalFromRecord(record({ approval: forged })),
+      (error) => error.code === "production_approval_tampered",
+      `a forged ${Object.keys(forged).join(",")} survived the boundary`);
+  }
+
+  // A digest rewritten to match the forgery is still not the canonical digest
+  // of what it claims to cover.
+  const relabelled = { ...approval, approvalRef: "forged" };
+  assert.throws(() => approvalFromRecord(record({ approval: { ...relabelled, approvalHash: sha256(Buffer.from("made up")) } })),
+    (error) => error.code === "production_approval_tampered");
+
+  // And a row whose columns disagree with the approval they belong to is one
+  // approval by one reading and a different one by another.
+  assert.throws(() => approvalFromRecord(record({ bundleIdentity: sha256(Buffer.from("column drift")) })),
+    (error) => error.code === "production_approval_row_disagrees");
+  assert.throws(() => approvalFromRecord(record({ approvalHash: sha256(Buffer.from("column drift")) })),
+    (error) => error.code === "production_approval_row_disagrees");
 });
 
 test("the revision operation set is closed, and nothing on this path generates", () => {

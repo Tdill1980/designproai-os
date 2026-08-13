@@ -406,6 +406,44 @@ function freezeApproval({ bundle, approvedBy, approvalRef, approvedAt }) {
   return Object.freeze({ ...frozen, approvalHash: sha256(JSON.stringify(canonical(frozen))) });
 }
 
+/** The digest an approval must hash to, over the canonical form it was frozen in. */
+function approvalHashOf(approval) {
+  return sha256(JSON.stringify(canonical({ ...approval, approvalHash: undefined })));
+}
+
+/**
+ * The persisted boundary: turn what the production RPC returns into an approval
+ * that has been proved, not merely read.
+ *
+ * The database stores the approval and its digest, but cannot verify one
+ * against the other — the digest is over this module's canonical form, and a
+ * second canonicalisation in SQL would be a second identity that could disagree
+ * with the first. So the record carries the complete frozen object and the
+ * proof happens here, before any field of it is believed.
+ *
+ * The row's own columns are checked against that object too. They are what the
+ * database indexes, constrains and joins on, so a row whose columns and stored
+ * approval disagree is one approval by one reading and a different one by
+ * another.
+ */
+function approvalFromRecord(record) {
+  if (!record || typeof record !== "object") fail("production_record_invalid", "the production gate must return a revision record");
+  const approval = record.approval;
+  if (!approval || typeof approval !== "object" || approval.contract !== APPROVAL_CONTRACT) {
+    fail("production_approval_incomplete", "the production gate must return the complete frozen approval, not a summary of it");
+  }
+  if (approvalHashOf(approval) !== String(approval.approvalHash || "").toLowerCase()) {
+    fail("production_approval_tampered", "the frozen approval does not hash to its own contents");
+  }
+  for (const [column, field] of [["approvalHash", "approvalHash"], ["bundleIdentity", "bundleIdentity"], ["revisionId", "revisionId"]]) {
+    if (record[column] === undefined) continue;
+    if (String(record[column]).toLowerCase() !== String(approval[field]).toLowerCase()) {
+      fail("production_approval_row_disagrees", `the stored ${column} does not match the frozen approval it belongs to`);
+    }
+  }
+  return Object.freeze({ ...approval });
+}
+
 /**
  * The production gate.
  *
@@ -421,7 +459,7 @@ function assertProductionEligible({ approval, bundle }) {
   // The record's own integrity first. Every comparison below reads a field off
   // the approval, so a record that does not hash to its own contents must be
   // rejected before any of those fields is believed.
-  if (approval.approvalHash !== sha256(JSON.stringify(canonical({ ...approval, approvalHash: undefined })))) {
+  if (approval.approvalHash !== approvalHashOf(approval)) {
     fail("production_approval_tampered", "the frozen approval does not hash to its own contents");
   }
   const identity = bundle && bundle.bundleIdentity ? bundle : validateRevisionBundle(bundle);
@@ -446,6 +484,7 @@ module.exports = {
   validateRevisionBundle,
   bundleIdentity,
   freezeApproval,
+  approvalFromRecord,
   assertProductionEligible,
-  _test: { applyOperation, detach, sha256 },
+  _test: { applyOperation, detach, sha256, approvalHashOf },
 };
