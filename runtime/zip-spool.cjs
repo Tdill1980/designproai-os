@@ -263,7 +263,13 @@ async function uploadSpoolWithTus({
   const token = String(serviceRoleKey || "").trim();
   if (!token || token.length < 32 || /\s/.test(token)) fail("tus_service_token_invalid", "Supabase service bearer is missing or invalid", false);
   const target = String(storagePath || "");
-  const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|call8-flat-2d-proof\.png|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof-masters\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png)$/);
+  // The material-addressed Call 8 masters live under proof/ (the authored flat
+  // wrap layout and the customer 2D production proof) and under proof-masters/
+  // (the per-surface masters). Both directories are written by the one gateway
+  // writer in runtime/index.js, so both belong in this allowlist; keeping only
+  // proof-masters/ here silently rejected every Call 8 master over the 6 MB
+  // standard-upload threshold.
+  const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|call8-flat-2d-proof\.png|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof(?:-masters)?\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png)$/);
   if (!targetMatch) fail("tus_storage_path_invalid", "Resumable artifact path is outside the exact DesignPro run allowlist", false);
   const extension = target.split(".").pop().toLowerCase();
   const expectedType = ({ zip: "application/zip", png: "image/png", tiff: "image/tiff", eps: "application/postscript" })[extension];

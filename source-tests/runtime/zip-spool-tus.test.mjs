@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
@@ -183,5 +184,55 @@ test("an output larger than the standard-upload threshold is persistently spoole
     assert.equal(uploads[0].options.chunkSize, 6 * 1024 * 1024);
     assert.equal(uploads[0].options.headers["x-upsert"], "false");
     assert.deepEqual(uploads[0].options.metadata, { bucketName: "wrap-files", objectName: target, contentType: "image/png", cacheControl: "3600" });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// Call 8's masters are written by exactly one gateway writer (uploadBuffer in
+// runtime/index.js) and gated a second time by the TUS allowlist in
+// zip-spool.cjs. The two lists have already drifted apart once: moving the
+// authored flat wrap layout from proof-masters/ to proof/ left the allowlist
+// behind, so every Call 8 master over the 6 MB standard-upload threshold died
+// with tus_storage_path_invalid while the small ones kept working. This test
+// materializes the real path templates out of the gateway source, so a future
+// rename on either side fails here instead of in production.
+test("every Call 8 master path the gateway writes is inside the resumable allowlist", async () => {
+  const gatewaySource = await readFile(fileURLToPath(new URL("../../runtime/index.js", import.meta.url)), "utf8");
+  const tenantKey = "user_11111111-1111-4111-8111-111111111111";
+  const templates = [...gatewaySource.matchAll(/`(designpro\/\$\{tenantKey\}\/\$\{workflowRunId\}\/[^`]+)`/g)].map((match) => match[1]);
+  assert.ok(templates.length >= 2, "expected the gateway to declare its Call 8 master paths as template literals");
+  const targets = templates.map((template) => template
+    .replace("${tenantKey}", tenantKey)
+    .replace("${workflowRunId}", runId)
+    .replace("${computedMaterialHash.slice(0, 24)}", "0".repeat(24)));
+  for (const target of targets) assert.ok(!target.includes("${"), `unrecognized substitution in gateway path ${target}`);
+
+  const root = await mkdtemp(join(tmpdir(), "designpro-call8-allowlist-"));
+  try {
+    const body = Buffer.alloc(MAX_STANDARD_UPLOAD_BYTES + 1, 0x27);
+    const spool = await spoolImmutableBuffer({ spoolDir: root, runId, materialHash: "c".repeat(64), bytes: body });
+    for (const target of targets) {
+      const fixture = storageFixture();
+      class FakeUpload {
+        constructor(input, options) { this.input = input; this.options = options; }
+        async findPreviousUploads() { return []; }
+        start() {
+          void (async () => {
+            const chunks = [];
+            for await (const chunk of this.input) chunks.push(Buffer.from(chunk));
+            fixture.objects.set(this.options.metadata.objectName, Buffer.concat(chunks));
+            this.options.onSuccess();
+          })().catch((error) => this.options.onError(error));
+        }
+        async abort() {}
+      }
+      const stored = await uploadSpoolWithTus({
+        supabase: fixture.supabase,
+        supabaseUrl: "https://wozyamlnygaddievzuwn.supabase.co",
+        serviceRoleKey: "s".repeat(40), spoolDir: root, spool, storagePath: target,
+        contentType: "image/png", Upload: FakeUpload, FileUrlStorage: class {},
+      });
+      assert.equal(stored.storagePath, target);
+      assert.equal(stored.contentHash, sha(body));
+    }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
