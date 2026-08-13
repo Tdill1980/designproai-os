@@ -640,6 +640,7 @@ module.exports = {
   MASK_TYPES,
   ASSET_KINDS,
   SURFACE_OVERRIDE_KEYS,
+  TRANSFORM_KEYS,
   EXTENT_KEYS,
   GLOBAL_SPACE,
   DesignMasterError,
