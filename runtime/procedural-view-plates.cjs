@@ -78,10 +78,20 @@ const round2 = (value) => Math.round(value * 100) / 100;
  * schematic can be honest about for free, and it is also the thing that makes
  * a wrong panel obvious at a glance.
  */
-function cardFor(surface) {
+function cardFor(surface, viewKey) {
+  // Room for the vehicle drawn around the panel: a cab and roofline above a
+  // flank, wheels below it, fenders beside a hood. Without this the body would
+  // be clipped by the frame and the panel would once again be the whole
+  // subject, which is the thing that made an earlier version read as a swatch.
+  const headroom = viewKey === "driver" || viewKey === "passenger"
+    ? { above: 0.74, below: 0.52, beside: 0.02 }
+    : viewKey === "front" || viewKey === "rear"
+      ? { above: 0.60, below: 0.45, beside: 0.04 }
+      : { above: 0.10, below: 0.14, beside: 0.12 };
+
   const available = {
-    w: FRAME.widthPx - MARGIN_PX * 2,
-    h: FRAME.heightPx - CAPTION_PX - MARGIN_PX * 2,
+    w: (FRAME.widthPx - MARGIN_PX * 2) / (1 + headroom.beside * 2),
+    h: (FRAME.heightPx - CAPTION_PX - MARGIN_PX * 2) / (1 + headroom.above + headroom.below),
   };
   const aspect = surface.widthInches / surface.heightInches;
   let w = available.w;
@@ -90,9 +100,11 @@ function cardFor(surface) {
     h = available.h;
     w = h * aspect;
   }
+  // Sat so the drawn body is centred in the frame, not the panel.
+  const bodyTop = (FRAME.heightPx - CAPTION_PX - h * (1 + headroom.above + headroom.below)) / 2;
   return {
     x: Math.round((FRAME.widthPx - w) / 2),
-    y: Math.round((FRAME.heightPx - CAPTION_PX - h) / 2),
+    y: Math.round(bodyTop + h * headroom.above),
     w: Math.round(w),
     h: Math.round(h),
   };
@@ -104,20 +116,91 @@ function cardFor(surface) {
  * Deliberately quiet. The artwork is the subject; the plate's job is to give it
  * somewhere to sit and something to be lit by.
  */
-async function basePlate(card) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${FRAME.widthPx}" height="${FRAME.heightPx}">
-    <defs>
+function chrome() {
+  return `<defs>
       <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="${GROUND}"/><stop offset="1" stop-color="${INK}"/>
       </linearGradient>
       <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${EDGE}"/><stop offset="0.55" stop-color="${BODY}"/><stop offset="1" stop-color="#2b323c"/>
+        <stop offset="0" stop-color="${EDGE}"/><stop offset="0.5" stop-color="${BODY}"/><stop offset="1" stop-color="#262c35"/>
+      </linearGradient>
+      <linearGradient id="glass" x1="0" y1="0" x2="0.4" y2="1">
+        <stop offset="0" stop-color="#0f151d"/><stop offset="1" stop-color="#1d2732"/>
       </linearGradient>
     </defs>
-    <rect width="${FRAME.widthPx}" height="${FRAME.heightPx}" fill="url(#ground)"/>
-    <ellipse cx="${card.x + card.w / 2}" cy="${card.y + card.h + 26}" rx="${Math.round(card.w * 0.46)}" ry="16" fill="#000000" opacity="0.45"/>
-    <rect x="${card.x - 10}" y="${card.y - 10}" width="${card.w + 20}" height="${card.h + 20}" rx="10" fill="url(#body)"/>
-    <rect x="${card.x}" y="${card.y}" width="${card.w}" height="${card.h}" fill="${BODY}"/>
+    <rect width="${FRAME.widthPx}" height="${FRAME.heightPx}" fill="url(#ground)"/>`;
+}
+
+const wheel = (cx, cy, r) =>
+  `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#0a0d12"/><circle cx="${cx}" cy="${cy}" r="${Math.round(r * 0.46)}" fill="#414a57"/>`;
+
+/**
+ * The vehicle each view is looking at, drawn around the wrap area.
+ *
+ * The card is the panel, not the subject. A customer looking at a proof needs
+ * to see their design on a vehicle — a flank with a cab and wheels above and
+ * below it, a hood between fenders, a tailgate between lamps — because that is
+ * what tells them at a glance whether the artwork sits where they meant it to.
+ * A floating rectangle tells them nothing and looks like a swatch.
+ *
+ * Every dimension is a proportion of the card, and the card comes from the
+ * manifest, so the vehicle around it is still declared rather than observed.
+ * It is a schematic and does not claim to be a photograph of their truck.
+ */
+function bodyFor(viewKey, card) {
+  const { x, y, w, h } = card;
+  const cx = x + w / 2;
+  if (viewKey === "driver" || viewKey === "passenger") {
+    // Side elevation: cab and roofline above the wrap band, sills and wheels
+    // below it. The nose faces left on the driver side and right on the
+    // passenger side, matching the handedness the plate declares.
+    const noseLeft = viewKey === "driver";
+    const cabIn = Math.round(w * 0.30);
+    const cabX = noseLeft ? x + cabIn : x;
+    const roof = Math.round(h * 0.62);
+    const glassInset = Math.round(h * 0.12);
+    const wheelR = Math.round(h * 0.30);
+    const wheelY = y + h + Math.round(h * 0.12);
+    const frontWheel = noseLeft ? x + Math.round(w * 0.17) : x + Math.round(w * 0.83);
+    const rearWheel = noseLeft ? x + Math.round(w * 0.78) : x + Math.round(w * 0.22);
+    return `
+      ${wheel(frontWheel, wheelY, wheelR)}${wheel(rearWheel, wheelY, wheelR)}
+      <path d="M${cabX},${y} L${cabX + Math.round(w * 0.16)},${y - roof} L${cabX + Math.round(w * 0.56)},${y - roof} L${cabX + Math.round(w * 0.70)},${y} Z" fill="url(#body)"/>
+      <path d="M${cabX + Math.round(w * 0.04)},${y - glassInset} L${cabX + Math.round(w * 0.18)},${y - roof + glassInset} L${cabX + Math.round(w * 0.54)},${y - roof + glassInset} L${cabX + Math.round(w * 0.66)},${y - glassInset} Z" fill="url(#glass)"/>
+      <rect x="${x - 12}" y="${y - 12}" width="${w + 24}" height="${h + 24}" rx="8" fill="url(#body)"/>
+      <rect x="${x - 12}" y="${y + h + 6}" width="${w + 24}" height="${Math.round(h * 0.10)}" fill="#20262f"/>`;
+  }
+  if (viewKey === "hood" || viewKey === "roof") {
+    // Plan view: the panel between the fenders, seen from directly above.
+    const fender = Math.round(w * 0.09);
+    return `
+      <rect x="${x - fender}" y="${y - 16}" width="${w + fender * 2}" height="${h + 32}" rx="18" fill="url(#body)"/>
+      <rect x="${x - fender + 8}" y="${y - 8}" width="${fender - 12}" height="${h + 16}" rx="6" fill="#2a313b"/>
+      <rect x="${x + w + 4}" y="${y - 8}" width="${fender - 12}" height="${h + 16}" rx="6" fill="#2a313b"/>
+      ${viewKey === "roof"
+        ? `<rect x="${x - fender - 6}" y="${y - 44}" width="${w + fender * 2 + 12}" height="34" rx="10" fill="url(#glass)"/>
+           <rect x="${x - fender - 6}" y="${y + h + 10}" width="${w + fender * 2 + 12}" height="34" rx="10" fill="url(#glass)"/>`
+        : `<rect x="${x - fender - 6}" y="${y + h + 12}" width="${w + fender * 2 + 12}" height="40" rx="10" fill="url(#glass)"/>`}`;
+  }
+  // Front and rear elevation: the panel across the body, lamps either side.
+  const lampW = Math.round(w * 0.13);
+  const lampH = Math.round(h * 0.30);
+  return `
+    <rect x="${x - 18}" y="${y - Math.round(h * 0.55)}" width="${w + 36}" height="${h + Math.round(h * 0.55) + 20}" rx="16" fill="url(#body)"/>
+    <rect x="${x - 6}" y="${y - Math.round(h * 0.50)}" width="${w + 12}" height="${Math.round(h * 0.36)}" rx="10" fill="url(#glass)"/>
+    <rect x="${x - 2}" y="${y + Math.round(h * 0.34)}" width="${lampW}" height="${lampH}" rx="6" fill="#c9d4e2" opacity="0.55"/>
+    <rect x="${x + w - lampW + 2}" y="${y + Math.round(h * 0.34)}" width="${lampW}" height="${lampH}" rx="6" fill="#c9d4e2" opacity="0.55"/>
+    ${wheel(x + Math.round(w * 0.12), y + h + Math.round(h * 0.14), Math.round(h * 0.26))}
+    ${wheel(x + Math.round(w * 0.88), y + h + Math.round(h * 0.14), Math.round(h * 0.26))}
+    <rect x="${cx - Math.round(w * 0.5)}" y="${y + h + 4}" width="${w}" height="${Math.round(h * 0.12)}" fill="#20262f"/>`;
+}
+
+async function basePlate(viewKey, card) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${FRAME.widthPx}" height="${FRAME.heightPx}">
+    ${chrome()}
+    <ellipse cx="${card.x + card.w / 2}" cy="${card.y + card.h + Math.round(card.h * 0.42)}" rx="${Math.round(card.w * 0.56)}" ry="20" fill="#000000" opacity="0.5"/>
+    ${bodyFor(viewKey, card)}
+    <rect x="${card.x}" y="${card.y}" width="${card.w}" height="${card.h}" fill="#2f3742"/>
   </svg>`;
   return sharp(Buffer.from(svg)).png(PNG_OPTIONS).toBuffer();
 }
@@ -216,7 +299,7 @@ async function proceduralViewPlates({ manifest, plateSetId, vehicleId, dimension
   const views = [];
   for (const surfaceKey of SURFACE_KEYS) {
     const surface = byKey.get(surfaceKey);
-    const card = cardFor(surface);
+    const card = cardFor(surface, surfaceKey);
     const label = `${surfaceKey.toUpperCase()} · ${round2(surface.widthInches)}" × ${round2(surface.heightInches)}"`;
     views.push({
       viewKey: surfaceKey,
@@ -225,7 +308,7 @@ async function proceduralViewPlates({ manifest, plateSetId, vehicleId, dimension
       // contract's handedness check protects the schematic exactly as it would
       // protect a photograph.
       handedness: HANDEDNESS[surfaceKey] || "none",
-      base: put(`plate-${surfaceKey}-base`, await basePlate(card)),
+      base: put(`plate-${surfaceKey}-base`, await basePlate(surfaceKey, card)),
       shading: put(`plate-${surfaceKey}-shading`, await shadingBand(card)),
       specular: put(`plate-${surfaceKey}-specular`, await specularBand(card)),
       panels: [{
