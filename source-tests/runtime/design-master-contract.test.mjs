@@ -71,22 +71,22 @@ function master() {
       { token: "brand-blue", srgb: "#0b3d91", cmyk: [96, 74, 0, 20] },
       { token: "paper-white", srgb: "#f4f6f8" },
     ],
-    fonts: [{ fontId: "brand-sans", family: "Precision Sans", version: "2.1.0", contentHash: hash("4"), license: "commercial-embed" }],
+    fonts: [{ fontId: "brand-sans", family: "Precision Sans", version: "2.1.0", contentHash: hash("4"), license: "commercial-embed", storagePath: "users/x/fonts/precision-sans.ttf" }],
     layers: [
-      { layerId: "base", type: "solid", space: GLOBAL_SPACE, colorTokens: ["brand-blue"],
+      { layerId: "base", type: "solid", space: GLOBAL_SPACE, colorTokens: ["brand-blue"], extent: { widthIn: 300, heightIn: 80 },
         transform: { x: 0, y: 0, scale: 1, rotate: 0 }, zOrder: 0, opacity: 1, blend: "normal", mask: { type: "none" } },
       // One graphic running across the whole vehicle in shared coordinates.
-      { layerId: "swoosh", type: "raster", space: GLOBAL_SPACE, assetId: "swoosh-field",
+      { layerId: "swoosh", type: "raster", space: GLOBAL_SPACE, assetId: "swoosh-field", extent: { widthIn: 163, heightIn: 66 },
         transform: { x: 0, y: 0, scale: 1, rotate: 0 }, zOrder: 10, opacity: 1, blend: "screen", mask: { type: "none" } },
-      { layerId: "tech", type: "raster", space: "driver", assetId: "tech-photo",
+      { layerId: "tech", type: "raster", space: "driver", assetId: "tech-photo", extent: { widthIn: 40, heightIn: 40 },
         transform: { x: 96, y: 8, scale: 0.5, rotate: 0 }, zOrder: 20, opacity: 1, blend: "normal",
         mask: { type: "path", assetId: "tech-cutin" }, clipTo: ["driver", "passenger"],
         surfaceOverrides: { passenger: { transform: { x: 100 } } } },
-      { layerId: "domain-type", type: "text", space: GLOBAL_SPACE, textId: "domain",
+      { layerId: "domain-type", type: "text", space: GLOBAL_SPACE, textId: "domain", extent: { widthIn: 60, heightIn: 6 },
         transform: { x: 24, y: 40, scale: 1, rotate: 0 }, zOrder: 40, opacity: 1, blend: "normal", mask: { type: "none" } },
-      { layerId: "phone-type", type: "text", space: GLOBAL_SPACE, textId: "phone",
+      { layerId: "phone-type", type: "text", space: GLOBAL_SPACE, textId: "phone", extent: { widthIn: 40, heightIn: 8 },
         transform: { x: 24, y: 32, scale: 1, rotate: 0 }, zOrder: 40, opacity: 1, blend: "normal", mask: { type: "none" } },
-      { layerId: "mark", type: "logo", space: "driver", logoIdentityKey: "precision-mark",
+      { layerId: "mark", type: "logo", space: "driver", logoIdentityKey: "precision-mark", extent: { widthIn: 18, heightIn: 18 },
         transform: { x: 12, y: 18, scale: 1, rotate: 0 }, zOrder: 50, opacity: 1, blend: "normal", mask: { type: "none" } },
     ],
     textObjects: [
@@ -303,7 +303,7 @@ test("a mask resolves to a declared hashed asset of the right kind", () => {
 test("two surfaces may carry byte-identical artwork; only their identity must differ", () => {
   const shared = master();
   const twin = (layerId, space) => ({
-    layerId, type: "raster", space, assetId: "swoosh-field",
+    layerId, type: "raster", space, assetId: "swoosh-field", extent: { widthIn: 20, heightIn: 20 },
     transform: { x: 4, y: 4, scale: 1, rotate: 0 }, zOrder: 30, opacity: 1, blend: "normal", mask: { type: "none" },
   });
   shared.layers.push(twin("flank-a", "driver"), twin("flank-b", "passenger"));
@@ -352,4 +352,29 @@ test("the colour contract admits CMYK without requiring it", () => {
 
 test("the fixture round-trips through JSON unchanged", () => {
   assert.equal(designMasterHash(clone(master())), designMasterHash(master()));
+});
+
+// ------------------------------------------------------- v1.1 amendments
+
+test("every layer states its own extent, and the extent object is closed", () => {
+  const validated = validateDesignMaster(master());
+  for (const layer of validated.layers) {
+    assert.ok(layer.extent.widthIn > 0 && layer.extent.heightIn > 0, `${layer.layerId} must declare an extent`);
+  }
+  // v1 let the renderer infer that global artwork "means" the whole design
+  // space and that a string's width could be estimated from its characters.
+  // Manufacturing behaviour does not belong in renderer heuristics.
+  rejects((m) => { delete m.layers[1].extent; }, "master_object_invalid");
+  rejects((m) => { m.layers[1].extent = { widthIn: 10 }; }, "master_number_invalid");
+  rejects((m) => { m.layers[1].extent = { widthIn: 10, heightIn: 0 }; }, "master_number_invalid");
+  rejects((m) => { m.layers[1].extent = { widthIn: 10, heightIn: 10, depthIn: 3 }; }, "master_unknown_property");
+});
+
+test("a font names a file that can actually be loaded", () => {
+  rejects((m) => { delete m.fonts[0].storagePath; }, "font_field_missing");
+});
+
+test("the contract version is explicit", () => {
+  assert.equal(DESIGN_MASTER_CONTRACT, "designpro.design-master.v1.1");
+  rejects((m) => { m.contract = "designpro.design-master.v1"; }, "master_contract_invalid");
 });

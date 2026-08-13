@@ -34,7 +34,7 @@
 
 const { createHash } = require("node:crypto");
 
-const DESIGN_MASTER_CONTRACT = "designpro.design-master.v1";
+const DESIGN_MASTER_CONTRACT = "designpro.design-master.v1.1";
 const DESIGN_SPACE_CONTRACT = "designpro.design-space.v1";
 
 // The same six surfaces the GENIE manifest and every downstream stage already
@@ -67,6 +67,12 @@ const SPELLING_AUTHORITIES = Object.freeze(["revision-snapshot"]);
 // canonical rules this contract exists to enforce.
 const SURFACE_OVERRIDE_KEYS = Object.freeze(["visible", "opacity", "transform"]);
 const TRANSFORM_KEYS = Object.freeze(["x", "y", "scale", "rotate", "skew"]);
+// v1.1. Every drawable object states how large it is. v1 gave a layer a
+// transform but no extent, which forced the renderer to guess — global artwork
+// "means" the whole design space, surface artwork "means" the print window,
+// a string's width estimated from its character count. Manufacturing behaviour
+// does not belong in renderer heuristics, so extent is now authoritative.
+const EXTENT_KEYS = Object.freeze(["widthIn", "heightIn"]);
 const GLOBAL_SPACE = "global";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -329,7 +335,7 @@ function validateFonts(raw) {
     const font = requireObject(entry, "fonts[]");
     const fontId = requireToken(font.fontId, "font.fontId");
     if (byId.has(fontId)) fail("font_duplicate", `font ${fontId} is declared twice`);
-    for (const field of ["family", "version", "license"]) {
+    for (const field of ["family", "version", "license", "storagePath"]) {
       if (!String(font[field] || "").trim()) fail("font_field_missing", `${fontId}.${field} is required`);
     }
     // Deterministic type needs the exact file, not a family name. Silent
@@ -479,6 +485,10 @@ function validateLayers(raw, { assets, palette, surfaceKeys, textObjects, logoOb
     if (space !== GLOBAL_SPACE && !surfaceKeys.has(space)) fail("layer_space_invalid", `${layerId}.space must be "${GLOBAL_SPACE}" or a surface key`);
 
     validateTransform(layer.transform, `${layerId}.transform`);
+    const extent = requireObject(layer.extent, `${layerId}.extent`);
+    requireClosedKeys(extent, EXTENT_KEYS, `${layerId}.extent`);
+    requireFinite(extent.widthIn, `${layerId}.extent.widthIn`, { positive: true });
+    requireFinite(extent.heightIn, `${layerId}.extent.heightIn`, { positive: true });
     requireFinite(layer.zOrder, `${layerId}.zOrder`);
     requireFinite(layer.opacity, `${layerId}.opacity`, { min: 0, max: 1 });
     requireOneOf(layer.blend, BLEND_MODES, `${layerId}.blend`);
@@ -623,6 +633,7 @@ module.exports = {
   MASK_TYPES,
   ASSET_KINDS,
   SURFACE_OVERRIDE_KEYS,
+  EXTENT_KEYS,
   GLOBAL_SPACE,
   DesignMasterError,
   canonical,
