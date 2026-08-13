@@ -43,14 +43,18 @@ const BUCKET = "wrap-files";
 const POLL_INTERVAL_MS = 10_000;
 const MAX_POLLS = 180; // 30 minutes: Topaz upscaling of 18 print files is not fast.
 
+const RUNTIME_URL = String(process.env.DESIGNPRO_RUNTIME_INTERNAL_URL || "http://127.0.0.1:3001").trim();
+const WORKER_SECRET = String(process.env.WORKER_SECRET || "").trim();
+const CUSTOMER_EMAIL = String(process.env.DESIGNPRO_CANARY_EMAIL || "").trim().toLowerCase();
+
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
 const SERVICE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 const TENANT = String(process.env.DESIGNPRO_CANARY_TENANT || "").trim();
 const OUT = arg("out", "./canary-output");
 const ORDER_NUMBER = arg("order", `CANARY-${Date.now().toString(36).toUpperCase()}`);
 
-if (!SUPABASE_URL || !SERVICE_KEY || !TENANT) {
-  console.error("SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and DESIGNPRO_CANARY_TENANT are required");
+if (!SUPABASE_URL || !SERVICE_KEY || !TENANT || !WORKER_SECRET || !CUSTOMER_EMAIL) {
+  console.error("SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_SECRET, DESIGNPRO_CANARY_TENANT and DESIGNPRO_CANARY_EMAIL are required");
   process.exit(2);
 }
 const userId = TENANT.replace(/^user_/, "");
@@ -113,9 +117,37 @@ async function main() {
   if (distinct.size !== 7) throw new Error(`seven renders must be distinct; got ${distinct.size} unique hashes`);
   step(`seven distinct renders bound`);
 
+  // The WrapBox recipient identity is minted by the runtime over the internal
+  // channel, exactly as the gateway does it. The customer id and the one-way
+  // identity hash are server-derived; inventing either here would produce a
+  // snapshot that passes this script and fails the real contract.
+  step("registering the WrapBox recipient through the runtime");
+  const verificationRefHash = createHash("sha256").update(`canary:${ORDER_NUMBER}`, "utf8").digest("hex");
+  const recipientResponse = await fetch(`${RUNTIME_URL}/internal/wrapbox/recipient`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${WORKER_SECRET}` },
+    body: JSON.stringify({
+      operatorId: userId, customerEmail: CUSTOMER_EMAIL,
+      customerReference: ORDER_NUMBER, verificationRefHash, orderNumber: ORDER_NUMBER,
+    }),
+  });
+  const recipient = await recipientResponse.json().catch(() => ({}));
+  if (!recipientResponse.ok || !recipient?.recipientIdentityHash) {
+    throw new Error(`recipient registration failed (HTTP ${recipientResponse.status}): ${JSON.stringify(recipient).slice(0, 200)}`);
+  }
+  const delivery = {
+    contractVersion: "designpro.wrapbox-recipient.v1",
+    customerId: String(recipient.customerId).toLowerCase(),
+    customerEmail: String(recipient.customerEmail),
+    recipientIdentityHash: String(recipient.recipientIdentityHash).toLowerCase(),
+    orderNumber: ORDER_NUMBER,
+    designName: arg("design", "July 24 canary"),
+  };
+  step(`recipient bound ${delivery.customerId}`);
+
   const snapshot = {
     contractVersion: "designpro.revision-snapshot.v1",
-    vehicle: { type: "van", year: arg("year", "2022"), make: arg("make", "Ford"), model: arg("model", "Transit") },
+    vehicle: { type: arg("type", "truck"), year: arg("year", "2022"), make: arg("make", "Ford"), model: arg("model", "F250 Crew Cab") },
     surfaceOptions: { coverage: "full", addHood: true, addRoof: true },
     finish: "gloss",
     bodyText: "",
@@ -124,7 +156,7 @@ async function main() {
     // the contract rejects it rather than guessing what was intended.
     expectedLogoInventory: [],
     logoInventoryAttestation: { attested: true, mode: "none" },
-    delivery: { orderNumber: ORDER_NUMBER, method: "wrapbox" },
+    delivery,
     revisionId, generationId, visualizationId, renderAssets,
     designId: generationId,
   };

@@ -36,7 +36,17 @@ on:
         required: true
         type: string
         default: >-
-          {"side":"https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1786467714118_commercial.jpg","passenger-side":"https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/revisions/DesignPro_1786467794360.jpg","hood_detail":"https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1786467784406_restyle.jpg","front":"https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1786467784860_restyle.jpg","rear":"https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1786467789643_restyle.jpg","close-up":"https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1786467788075_restyle.jpg","roof":"https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1786467785611_restyle.jpg"}
+          {"side": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784931913896_commercial.jpg", "passenger-side": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/revisions/designpanelpro_1784932075617.jpg", "hood_detail": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932072890_restyle.jpg", "front": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932073375_restyle.jpg", "rear": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932075057_restyle.jpg", "close-up": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932071794_restyle.jpg", "roof": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932074924_restyle.jpg"}
+      customer_email:
+        description: "Owner email — derived from the source job's user, minted into a WrapBox recipient"
+        required: true
+        type: string
+        default: trish@weprintwraps.com
+      vehicle_type:
+        description: "Vehicle class"
+        required: true
+        type: string
+        default: truck
       vehicle_year:
         description: "Vehicle year"
         required: true
@@ -51,7 +61,7 @@ on:
         description: "Vehicle model"
         required: true
         type: string
-        default: Transit
+        default: F250 Crew Cab
 
 permissions:
   contents: read
@@ -127,6 +137,8 @@ jobs:
           CANARY_YEAR: ${{ inputs.vehicle_year }}
           CANARY_MAKE: ${{ inputs.vehicle_make }}
           CANARY_MODEL: ${{ inputs.vehicle_model }}
+          CANARY_TYPE: ${{ inputs.vehicle_type }}
+          CANARY_EMAIL: ${{ inputs.customer_email }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -139,7 +151,8 @@ jobs:
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "CANARY_TENANT='$CANARY_TENANT' VIEWS_B64='$views_b64' PAYLOAD='$payload' \
-             YEAR='$CANARY_YEAR' MAKE='$CANARY_MAKE' MODEL='$CANARY_MODEL' bash -s" \
+             YEAR='$CANARY_YEAR' MAKE='$CANARY_MAKE' MODEL='$CANARY_MODEL' \
+             VTYPE='$CANARY_TYPE' CEMAIL='$CANARY_EMAIL' bash -s" \
             > "$RUNNER_TEMP/canary.log" 2>&1 <<'REMOTE'
           set -Eeuo pipefail
           release=/opt/designproai-os/current
@@ -158,10 +171,12 @@ jobs:
 
           set -a; . /opt/designproai-os/shared/runtime.env; set +a
           export DESIGNPRO_CANARY_TENANT="$CANARY_TENANT"
+          export DESIGNPRO_CANARY_EMAIL="$CEMAIL"
 
           cd "$work"
           node scripts/production-canary.mjs --views views.json --out "$out" \
-            --year "$YEAR" --make "$MAKE" --model "$MODEL"
+            --year "$YEAR" --make "$MAKE" --model "$MODEL" --type "$VTYPE" \
+            --design "July 24 canary"
           status=$?
 
           echo "---CANARY-OUTPUT-TAR---"
