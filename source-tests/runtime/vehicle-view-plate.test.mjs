@@ -148,6 +148,56 @@ test("a mesh must be complete, in range, and free of folded or collapsed cells",
   rejects((p) => { p.views[0].panels[0].mesh.cols = MAX_MESH_COLS + 1; }, "plate_integer_invalid");
 });
 
+test("a cell that reads the surface backwards is rejected, however sound its geometry is", () => {
+  // The hole this closes: destination winding can be flawless while the source
+  // corners are reversed. Every (x,y) below is untouched — convex, consistently
+  // wound, agreeing with its neighbours — and only (u,v) is swapped. The mesh
+  // would paint the artwork mirrored inside an entirely ordinary-looking quad,
+  // which is locally reversed lettering on an approved proof.
+  rejects((p) => {
+    const points = p.views[0].panels[0].mesh.points; // 1x1: 0,1 over 2,3
+    [[0, 1], [2, 3]].forEach(([left, right]) => {
+      const swap = points[left].u;
+      points[left].u = points[right].u;
+      points[right].u = swap;
+    });
+  }, "plate_mesh_cell_reversed");
+
+  // Reversing v instead is the same defect turned through ninety degrees.
+  rejects((p) => {
+    const points = p.views[0].panels[0].mesh.points;
+    [[0, 2], [1, 3]].forEach(([top, bottom]) => {
+      const swap = points[top].v;
+      points[top].v = points[bottom].v;
+      points[bottom].v = swap;
+    });
+  }, "plate_mesh_cell_reversed");
+
+  // The subtle one: a multi-cell mesh where only the second cell is reversed.
+  // The panel as a whole still spans the surface left to right, so nothing
+  // about its outline looks wrong — one cell in the middle simply reads
+  // backwards.
+  rejects((p) => {
+    const draft = mesh({ x: 100, y: 100, w: 1200, h: 600 }, { rows: 1, cols: 2 });
+    for (const [left, right] of [[1, 2], [4, 5]]) {
+      const swap = draft.points[left].u;
+      draft.points[left].u = draft.points[right].u;
+      draft.points[right].u = swap;
+    }
+    p.views[0].panels[0].mesh = draft;
+  }, "plate_mesh_cell_reversed");
+
+  // A cell that samples a line rather than an area has no orientation at all.
+  rejects((p) => {
+    const points = p.views[0].panels[0].mesh.points;
+    points[1].u = points[0].u;
+    points[3].u = points[2].u;
+  }, "plate_mesh_cell_degenerate");
+
+  // And the honest mesh, with the same geometry, still passes.
+  assert.equal(validateViewPlates(plateSet()).views[0].panels[0].mesh.points.length, 4);
+});
+
 test("a curved mesh with many cells is accepted, and keeps its points verbatim", () => {
   const draft = clone(plateSet());
   draft.views[0].panels[0].mesh = mesh({ x: 120, y: 140, w: 1300, h: 560 }, { rows: 6, cols: 12, bow: 40 });

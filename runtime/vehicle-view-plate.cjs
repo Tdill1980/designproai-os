@@ -157,6 +157,15 @@ function validateMesh(mesh, label, frame) {
   // collapsed cell has no single inverse, so a destination pixel inside it
   // could be sampled from two places in the artwork, and which one won would
   // depend on the order the solver happened to return its roots.
+  //
+  // Destination winding alone is not enough, and the gap is the one that
+  // matters. A cell can have flawless (x,y) geometry — convex, consistently
+  // wound, agreeing with every neighbour — while its (u,v) corners are
+  // reversed. The mesh then reads the artwork backwards inside that cell and
+  // paints it into a perfectly ordinary-looking quad: locally mirrored
+  // lettering, in one panel, on a proof that passed every structural check.
+  // That is the defect this whole architecture exists to make impossible, so
+  // each cell must also prove its source and destination windings agree.
   let winding = 0;
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
@@ -164,15 +173,29 @@ function validateMesh(mesh, label, frame) {
       const p10 = validated[row * (cols + 1) + col + 1];
       const p01 = validated[(row + 1) * (cols + 1) + col];
       const p11 = validated[(row + 1) * (cols + 1) + col + 1];
-      // Shoelace over p00 -> p10 -> p11 -> p01.
+      // Shoelace over p00 -> p10 -> p11 -> p01, in the destination frame and
+      // in the surface the cell samples, taken over the same corner order.
       const area = (p00.x * p10.y - p10.x * p00.y)
         + (p10.x * p11.y - p11.x * p10.y)
         + (p11.x * p01.y - p01.x * p11.y)
         + (p01.x * p00.y - p00.x * p01.y);
+      const sourceArea = (p00.u * p10.v - p10.u * p00.v)
+        + (p10.u * p11.v - p11.u * p10.v)
+        + (p11.u * p01.v - p01.u * p11.v)
+        + (p01.u * p00.v - p00.u * p01.v);
       if (area === 0) fail("plate_mesh_cell_degenerate", `${label} cell ${row},${col} encloses no area`);
+      if (sourceArea === 0) fail("plate_mesh_cell_degenerate", `${label} cell ${row},${col} samples no area of the surface`);
       const sign = area > 0 ? 1 : -1;
+      const sourceSign = sourceArea > 0 ? 1 : -1;
       if (winding === 0) winding = sign;
       else if (sign !== winding) fail("plate_mesh_cell_folded", `${label} cell ${row},${col} folds back on the cells beside it`);
+      // The map from surface to frame must preserve orientation. Production
+      // already applies every mirror a design calls for; a plate that mirrors
+      // again is reversing artwork that was deliberately not reversed.
+      if (sign !== sourceSign) {
+        fail("plate_mesh_cell_reversed",
+          `${label} cell ${row},${col} reads the surface in the opposite orientation to the frame it paints, which mirrors the artwork inside that cell`);
+      }
     }
   }
   return { rows, cols, points: validated };
