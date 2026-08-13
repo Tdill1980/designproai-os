@@ -38,11 +38,17 @@ const PNG_OPTIONS = Object.freeze({ compressionLevel: 6, adaptiveFiltering: fals
 const RESAMPLER = "lanczos3";
 const VECTOR_DENSITY = 300;
 // Peak working set per surface, as a bound rather than a hope. Layers are
-// composited one at a time into a raw canvas, so at any moment memory holds the
-// canvas, the incoming layer (never larger than the canvas after clipping) and
-// one transient copy. Anything above the budget fails closed rather than
-// discovering the ceiling on a production host.
-const PEAK_BYTES_PER_PIXEL = 3 * 4;
+// composited one at a time into an RGBA canvas, so memory holds the canvas, the
+// incoming region (never larger than the canvas) and a transient copy, plus the
+// encoder's own buffer and libvips overhead.
+//
+// Calibrated against a real run rather than assumed. The full F-250 at
+// 150 px/in — all six surfaces, driver and passenger at 24450x9900 — measured
+// 3.26 GB peak RSS in 160 s. A three-buffer estimate predicted 2.90 GB and was
+// therefore not a bound at all, so the factor is four: 3.87 GB predicted
+// against 3.26 GB observed, inside the 4.29 GB budget with room for the
+// encoder. A budget that flatters a render is worse than none.
+const PEAK_BYTES_PER_PIXEL = 4 * 4;
 const DEFAULT_MAX_SURFACE_BYTES = 4 * 1024 * 1024 * 1024;
 
 // Contract blend names to libvips operators.

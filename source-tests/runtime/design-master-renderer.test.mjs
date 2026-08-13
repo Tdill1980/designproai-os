@@ -345,6 +345,19 @@ test("GATE: the real F-250 driver surface is inside a declared production budget
     `the F-250 driver surface needs ${(budget.peakBytes / 1e9).toFixed(2)} GB against a ${(DEFAULT_MAX_SURFACE_BYTES / 1e9).toFixed(2)} GB budget`);
 });
 
+// Measured, not assumed. A full six-surface F-250 render at 150 px/in — driver
+// and passenger at 24450x9900 — completed in 160 s at 3.26 GB peak RSS. The
+// first estimate predicted 2.90 GB and so was not a bound; the factor was
+// raised until the prediction sits above what was actually observed.
+test("the declared peak bounds the peak a real production render actually reached", () => {
+  const MEASURED_F250_PEAK_BYTES = 3.26e9;
+  const window = internals.surfaceWindow({ originIn: [0, 0], widthIn: 153, heightIn: 56 }, 5, 150);
+  const budget = internals.surfaceBudget(window, DEFAULT_MAX_SURFACE_BYTES);
+  assert.ok(budget.peakBytes >= MEASURED_F250_PEAK_BYTES,
+    `predicted ${(budget.peakBytes / 1e9).toFixed(2)} GB must bound the measured ${(MEASURED_F250_PEAK_BYTES / 1e9).toFixed(2)} GB`);
+  assert.ok(budget.withinBudget, "and must still sit inside the production budget");
+});
+
 test("a surface above the budget fails closed instead of finding the ceiling in production", async () => {
   const { master, loadAsset, loadFont } = await fixture();
   await assert.rejects(
