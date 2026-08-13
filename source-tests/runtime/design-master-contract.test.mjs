@@ -194,7 +194,13 @@ test("every surface declares how its rectangle reaches physical geometry", () =>
 test("a text layer must name exactly one canonical string, and every string must be placed", () => {
   rejects((m) => { delete m.layers[3].textId; }, "master_token_invalid");
   rejects((m) => { m.layers[3].textId = "ghost"; }, "layer_text_unknown");
-  rejects((m) => { m.layers[4].textId = "domain"; }, "layer_text_bound_twice");
+  // One string may be placed many times — the same URL on both flanks is a
+  // wrap requirement, and forcing a second text object would duplicate the
+  // string, which is how the original spelling defect happened.
+  const twice = master();
+  twice.layers[4].textId = "domain";
+  twice.textObjects = twice.textObjects.filter((t) => t.textId === "domain");
+  assert.ok(validateDesignMaster(twice).masterHash, "a canonical string may be placed on more than one surface");
   rejects((m) => { m.layers.splice(4, 1); }, "text_not_placed");
   rejects((m) => { m.layers[1].textId = "domain"; }, "layer_text_unexpected");
 });
