@@ -347,5 +347,12 @@ module.exports = {
   SURFACE_ORDER,
   MasterProofError,
   renderMasterProof,
+  // Shared with the 3D proof deliberately. Both proofs re-derive surface
+  // digests the same way and typeset from pinned bytes the same way; two
+  // implementations of a fail-closed check are one implementation and one
+  // liability, because only the one under test stays correct.
+  verifiedSurfaces,
+  canonicalIdentities,
+  outlinedLabel: label,
   _test: { dimensionsFromManifest, canonicalIdentities, verifiedSurfaces, totalSqFtFromManifest, label },
 };
