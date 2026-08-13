@@ -487,7 +487,10 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       },
     }, "flat-proof");
     return complete(sb, stage, await getRun(sb, run.id), {
-      verified: true, receiptKind: "call8.flat-proof", call: 8, proofKind: "2d-production-proof",
+      // proofKind is a frozen literal in complete_designpro_stage's Call 8
+      // contract, not a label. It must read exactly "flattened-2d-proof" or the
+      // RPC rejects the completed stage with call8_flat_proof_contract_failed.
+      verified: true, receiptKind: "call8.flat-proof", call: 8, proofKind: "flattened-2d-proof",
       dimensionsAuthority: "genie-universal-panelizer", bleedInches: 5,
       sourceProofHash: proofArtifact.contentHash, storagePath: proofArtifact.storagePath, totalSqFt: manifest.totalSqFt,
       dimensionManifestId: rebound.dimension_manifest_id, manifestHash: rebound.manifest_hash,
