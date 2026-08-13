@@ -11,11 +11,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
 const sharp = require("../../runtime/node_modules/sharp");
 const { DESIGN_MASTER_CONTRACT, DESIGN_SPACE_CONTRACT, SURFACE_KEYS, GLOBAL_SPACE, validateDesignMaster } = require("../../runtime/design-master.cjs");
-const { renderProductionSurfaces, _test: internals } = require("../../runtime/design-master-renderer.cjs");
+const { renderProductionSurfaces, DEFAULT_MAX_SURFACE_BYTES, PEAK_BYTES_PER_PIXEL, _test: internals } = require("../../runtime/design-master-renderer.cjs");
+
+// Real, materially different TrueType files. The whole point of outlining is
+// that these cannot produce the same glyphs.
+const FONT_FILES = {
+  sans: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+  serifBold: "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+};
+const fontBytes = (which) => readFileSync(FONT_FILES[which]);
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const uuid = (n) => `${n.repeat(8)}-${n.repeat(4)}-4${n.repeat(3)}-8${n.repeat(3)}-${n.repeat(12)}`;
@@ -79,27 +88,27 @@ async function fixture() {
       { assetId: "cutin", kind: "vector", contentHash: assets.cutin.hash, storagePath: "a/cutin.svg" },
     ],
     palette: [{ token: "brand-blue", srgb: "#0b3d91" }, { token: "paper-white", srgb: "#f4f6f8" }],
-    fonts: [{ fontId: "brand-sans", family: "Precision Sans", version: "2.1.0", contentHash: sha256(Buffer.from("font")), license: "commercial-embed" }],
+    fonts: [{ fontId: "brand-sans", family: "DejaVu Sans", version: "2.37", contentHash: sha256(fontBytes("sans")), license: "bitstream-vera", storagePath: "a/sans.ttf" }],
     layers: [
-      { layerId: "base", type: "solid", space: GLOBAL_SPACE, colorTokens: ["paper-white"],
+      { layerId: "base", type: "solid", space: GLOBAL_SPACE, colorTokens: ["paper-white"], extent: { widthIn: 182, heightIn: 22 },
         transform: { x: 0, y: 0, scale: 1, rotate: 0 }, zOrder: 0, opacity: 1, blend: "normal", mask: { type: "none" } },
       // One graphic painted once across the whole design space.
-      { layerId: "field", type: "raster", space: GLOBAL_SPACE, assetId: "field",
+      { layerId: "field", type: "raster", space: GLOBAL_SPACE, assetId: "field", extent: { widthIn: 182, heightIn: 22 },
         transform: { x: 0, y: 0, scale: 1, rotate: 0 }, zOrder: 10, opacity: 1, blend: "normal", mask: { type: "none" } },
-      { layerId: "mark", type: "logo", space: "driver", logoIdentityKey: "precision-mark",
-        widthIn: 6, heightIn: 6,
+      { layerId: "mark", type: "logo", space: "driver", logoIdentityKey: "precision-mark", extent: { widthIn: 6, heightIn: 6 },
         transform: { x: 2, y: 2, scale: 1, rotate: 0 }, zOrder: 50, opacity: 1, blend: "normal", mask: { type: "none" } },
     ],
     textObjects: [],
     logoObjects: [{ identityKey: "precision-mark", assetId: "mark", contentHash: assets.mark.hash, surfaceKey: "driver", neverMirror: true, neverRasterizeIntoBase: true }],
   });
   const loadAsset = async (asset) => assets[asset.assetId].bytes;
-  return { master, loadAsset, assets };
+  const loadFont = async () => fontBytes("sans");
+  return { master, loadAsset, loadFont, assets };
 }
 
 const render = async (over = {}) => {
-  const { master, loadAsset } = await fixture();
-  return renderProductionSurfaces({ master, loadAsset, pxPerInch: PPI, bleedInches: BLEED, ...over });
+  const { master, loadAsset, loadFont } = await fixture();
+  return renderProductionSurfaces({ master, loadAsset, loadFont, pxPerInch: PPI, bleedInches: BLEED, ...over });
 };
 
 // ------------------------------------------------------------- the gate
@@ -179,7 +188,7 @@ test("a mirrored surface is exactly the flip of the same surface unmirrored", as
     // The global field is uniform across this surface's window, so flipping it
     // is a no-op. Give the flank something asymmetric of its own to flip.
     candidate.layers.push({
-      layerId: "flank-art", type: "vector", space: "passenger", assetId: "mark", widthIn: 8, heightIn: 8,
+      layerId: "flank-art", type: "vector", space: "passenger", assetId: "mark", extent: { widthIn: 8, heightIn: 8 },
       transform: { x: 1, y: 1, scale: 1, rotate: 0 }, zOrder: 30, opacity: 1, blend: "normal", mask: { type: "none" },
     });
     const result = await renderProductionSurfaces({ master: validateDesignMaster({ ...candidate, masterHash: undefined }), loadAsset, pxPerInch: PPI, bleedInches: BLEED });
@@ -205,7 +214,7 @@ test("a neverMirror logo is not flipped, where the same asset as artwork would b
   const build = async (asProtectedLogo) => {
     const candidate = clone(master);
     const placed = {
-      layerId: "badge", space: "passenger", widthIn: 6, heightIn: 6,
+      layerId: "badge", space: "passenger", extent: { widthIn: 6, heightIn: 6 },
       transform: { x: 2, y: 2, scale: 1, rotate: 0 }, zOrder: 50, opacity: 1, blend: "normal", mask: { type: "none" },
     };
     if (asProtectedLogo) {
@@ -271,34 +280,83 @@ test("a raster below its declared resolution floor is refused before pixels are 
   );
 });
 
-// PHASE 2 FINDING. libvips resolves font-family through fontconfig and silently
-// substitutes: an embedded @font-face data URI is discarded, and serif-bold,
-// monospace and a nonexistent family all render byte-identically. Rasterising
-// type that way would put glyphs into production that are not the glyphs the
-// master specifies. The renderer therefore refuses rather than shipping type it
-// cannot prove.
-test("text refuses to render without a rasteriser that honours the pinned font", async () => {
+// Typography is cut from the pinned font file, never resolved by family name.
+// libvips goes through fontconfig and substitutes silently: an embedded
+// @font-face data URI is discarded, and DejaVu Serif Bold, DejaVu Sans Mono and
+// a family that does not exist all rasterise byte-identically.
+async function withText(fontKey) {
   const { master, loadAsset } = await fixture();
-  const withText = clone(master);
-  withText.textObjects = [{ textId: "domain", string: "PrecisionClimateAZ.com", fontId: "brand-sans", sizeIn: 2, colorToken: "brand-blue", neverMirror: true, spellingAuthority: "revision-snapshot" }];
-  withText.layers.push({ layerId: "domain-type", type: "text", space: "driver", textId: "domain",
-    transform: { x: 2, y: 8, scale: 1, rotate: 0 }, zOrder: 60, opacity: 1, blend: "normal", mask: { type: "none" } });
-  const validated = validateDesignMaster({ ...withText, masterHash: undefined });
+  const bytes = fontBytes(fontKey);
+  const candidate = clone(master);
+  candidate.fonts = [{ fontId: "brand-sans", family: "Pinned", version: "1", contentHash: sha256(bytes), license: "bitstream-vera", storagePath: "a/f.ttf" }];
+  candidate.textObjects = [{ textId: "domain", string: "PrecisionClimateAZ.com", fontId: "brand-sans", sizeIn: 3, colorToken: "brand-blue", neverMirror: true, spellingAuthority: "revision-snapshot" }];
+  candidate.layers.push({ layerId: "domain-type", type: "text", space: "driver", textId: "domain", extent: { widthIn: 24, heightIn: 5 },
+    transform: { x: 1, y: 1, scale: 1, rotate: 0 }, zOrder: 60, opacity: 1, blend: "normal", mask: { type: "none" } });
+  return { master: validateDesignMaster({ ...candidate, masterHash: undefined }), loadAsset, loadFont: async () => bytes };
+}
 
+test("GATE: the exact pinned font bytes govern the glyphs", async () => {
+  const sans = await withText("sans");
+  const serif = await withText("serifBold");
+  const one = await renderProductionSurfaces({ ...sans, pxPerInch: 24, bleedInches: BLEED });
+  const two = await renderProductionSurfaces({ ...serif, pxPerInch: 24, bleedInches: BLEED });
+  const driverOf = (r) => r.surfaces.find((s) => s.surfaceKey === "driver");
+
+  assert.notEqual(driverOf(one).contentHash, driverOf(two).contentHash,
+    "two materially different pinned fonts must not produce the same glyph bytes");
+
+  // Same pinned font, twice, byte-identical.
+  const again = await renderProductionSurfaces({ ...(await withText("sans")), pxPerInch: 24, bleedInches: BLEED });
+  assert.equal(driverOf(again).contentHash, driverOf(one).contentHash);
+
+  // The canonical string survives into the receipt exactly as declared.
+  assert.deepEqual(driverOf(one).textIdentities, [{ textId: "domain", string: "PrecisionClimateAZ.com" }]);
+});
+
+test("a substituted or missing font fails closed", async () => {
+  const { master, loadAsset } = await withText("sans");
   await assert.rejects(
-    renderProductionSurfaces({ master: validated, loadAsset, pxPerInch: PPI, bleedInches: BLEED }),
-    (error) => error.code === "render_text_rasterizer_required",
-  );
+    renderProductionSurfaces({ master, loadAsset, loadFont: async () => fontBytes("serifBold"), pxPerInch: 24, bleedInches: BLEED }),
+    (error) => error.code === "render_font_hash_mismatch", "a different font file must be refused");
+  await assert.rejects(
+    renderProductionSurfaces({ master, loadAsset, pxPerInch: 24, bleedInches: BLEED }),
+    (error) => error.code === "render_font_loader_required", "no loader at all must be refused");
+});
 
-  // With one supplied, the canonical string is carried into the surface receipt
-  // exactly as the master declares it.
-  const rasterizeText = async ({ text, widthPx, heightPx }) => ({
-    bytes: await sharp({ create: { width: Math.max(1, widthPx), height: Math.max(1, heightPx), channels: 4, background: { r: 11, g: 61, b: 145, alpha: 1 } } }).png().toBuffer(),
-    widthPx, heightPx, string: text.string,
-  });
-  const rendered = await renderProductionSurfaces({ master: validated, loadAsset, pxPerInch: PPI, bleedInches: BLEED, rasterizeText });
-  const driver = rendered.surfaces.find((s) => s.surfaceKey === "driver");
-  assert.deepEqual(driver.textIdentities, [{ textId: "domain", string: "PrecisionClimateAZ.com" }]);
+test("a glyph the pinned font does not contain fails closed rather than printing .notdef", async () => {
+  const { master, loadAsset, loadFont } = await withText("sans");
+  const exotic = clone(master);
+  exotic.textObjects[0].string = "Precision \u{1F600} Climate";
+  await assert.rejects(
+    renderProductionSurfaces({ master: validateDesignMaster({ ...exotic, masterHash: undefined }), loadAsset, loadFont, pxPerInch: 24, bleedInches: BLEED }),
+    (error) => error.code === "font_glyph_missing");
+});
+
+// ------------------------------------------------- production resource budget
+
+test("GATE: the real F-250 driver surface is inside a declared production budget", () => {
+  const window = internals.surfaceWindow({ originIn: [0, 0], widthIn: 153, heightIn: 56 }, 5, 150);
+  assert.equal(window.widthPx, 24450);
+  assert.equal(window.heightPx, 9900);
+
+  const budget = internals.surfaceBudget(window, DEFAULT_MAX_SURFACE_BYTES);
+  assert.equal(budget.peakBytes, 24450 * 9900 * PEAK_BYTES_PER_PIXEL);
+  assert.equal(budget.withinBudget, true,
+    `the F-250 driver surface needs ${(budget.peakBytes / 1e9).toFixed(2)} GB against a ${(DEFAULT_MAX_SURFACE_BYTES / 1e9).toFixed(2)} GB budget`);
+});
+
+test("a surface above the budget fails closed instead of finding the ceiling in production", async () => {
+  const { master, loadAsset, loadFont } = await fixture();
+  await assert.rejects(
+    renderProductionSurfaces({ master, loadAsset, loadFont, pxPerInch: PPI, bleedInches: BLEED, maxSurfaceBytes: 1024 }),
+    (error) => error.code === "render_surface_exceeds_budget");
+});
+
+test("the render reports the peak it expects, so a host can be sized for it", async () => {
+  const result = await render();
+  const widest = result.surfaces.reduce((max, s) => Math.max(max, s.pixelWidth * s.pixelHeight * PEAK_BYTES_PER_PIXEL), 0);
+  assert.equal(result.peakBytesPerSurface, widest);
+  assert.equal(result.maxSurfaceBytes, DEFAULT_MAX_SURFACE_BYTES);
 });
 
 test("layer order is by depth then identifier, never by array position", () => {
