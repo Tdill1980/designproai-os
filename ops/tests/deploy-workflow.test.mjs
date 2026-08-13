@@ -352,3 +352,39 @@ test("inventory records every Docker state class before deployment without readi
   ]) assert.match(inventoryScript, contract);
   assert.doesNotMatch(inventoryScript, /cat .*\.env|source .*\.env/);
 });
+
+// Storage enforces the smaller of two ceilings. The per-bucket limit is created
+// by migration and visible in SQL; the project-wide limit lives only in hosted
+// config, defaults to 50 MB, and is invisible from SQL. A bucket declared at
+// 50 GB behind a project still at 50 MB reads as healthy and then rejects
+// uploads with a bare "413 Maximum size exceeded" that names neither limit.
+// Call 8's 48-megapixel flat wrap layout is well past 50 MB, so the deploy has
+// to reconcile the project limit rather than trusting the bucket's.
+test("the deploy reconciles the project-wide Storage limit from config.toml, not a literal", () => {
+  const start = workflow.indexOf("Reconcile the project-wide Storage upload limit with config.toml");
+  assert.ok(start > 0, "the deploy must reconcile the project-wide Storage upload limit");
+  const step = workflow.slice(start, workflow.indexOf("\n      - name: Select the one successful exact-main release run", start));
+
+  assert.match(step, /supabase\/config\.toml/, "the declared limit must be read from config.toml");
+  assert.match(step, /config\/storage/, "it must read and write the project Storage config endpoint");
+  assert.match(step, /-X PATCH/, "it must be able to correct drift, not merely report it");
+  // A literal byte count here would silently diverge from config.toml the first
+  // time either side is edited, which is the exact failure this step exists for.
+  assert.doesNotMatch(step, /\b\d{9,}\b/, "the limit must come from config.toml rather than a hardcoded byte count");
+  // Audit mode inspects; only a real dark deploy mutates the project.
+  assert.match(step, /DEPLOY_MODE != DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3/, "audit mode must not mutate the project");
+  // A plan ceiling or bad payload can clamp the value server-side; deploying as
+  // though it took would reproduce the original bug with a green checkmark.
+  assert.match(step, /applied == "\$declared"|\[\[ \$applied == "\$declared" \]\]/, "the applied limit must be re-read and verified");
+});
+
+test("config.toml declares one project-wide Storage limit that outranks the bucket's", () => {
+  const config = readFileSync(resolve(root, "supabase/config.toml"), "utf8");
+  const storageSection = config.slice(config.indexOf("\n[storage]\n"));
+  const declared = /file_size_limit\s*=\s*(\d+)/.exec(storageSection);
+  assert.ok(declared, "[storage] must declare a file_size_limit for the deploy to reconcile against");
+  // The layout raster is bounded at 48 megapixels; a limit at the hosted
+  // default would reject it. Anything at or below 50 MB is the bug, not a
+  // configuration choice.
+  assert.ok(Number(declared[1]) > 50_000_000, "the project-wide limit must exceed the 50 MB hosted default");
+});

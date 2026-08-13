@@ -146,6 +146,62 @@ jobs:
           rm -f -- "$project_json" "$keys_json" "$google_json"
           echo "runtime_key_file=$runtime_key_file" >> "$GITHUB_OUTPUT"
 
+      # Storage has TWO upload ceilings and the smaller one always wins. The
+      # per-bucket limit lives in the database and is created by migration, so
+      # it is already correct. The project-wide limit lives only in the hosted
+      # project's config, defaults to 50 MB, and is invisible from SQL — a
+      # bucket declared at 50 GB behind a project still at 50 MB looks entirely
+      # healthy right up until an upload is rejected with a bare
+      # "413 Maximum size exceeded" that names neither limit.
+      #
+      # Call 8's flat wrap layout is a bounded 48-megapixel PNG and is
+      # comfortably past 50 MB, so it can never be stored until the project
+      # limit matches what supabase/config.toml declares. Reconciling it here
+      # rather than in the dashboard keeps it reproducible: a project restored
+      # from backup, or a second environment, converges on the next deploy
+      # instead of failing this way again.
+      - name: Reconcile the project-wide Storage upload limit with config.toml
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          # config.toml is the single source of truth. Read the [storage]
+          # section's limit only — the per-bucket key of the same name sits in
+          # a later section and must not be picked up instead.
+          declared=$(awk '
+            /^\[storage\]$/ { inside = 1; next }
+            /^\[/ { inside = 0 }
+            inside && $1 == "file_size_limit" { print $3; exit }
+          ' supabase/config.toml)
+          [[ $declared =~ ^[0-9]+$ ]] || { echo "::error::supabase/config.toml declares no [storage] file_size_limit"; exit 60; }
+
+          auth_header="Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+          config_json="$RUNNER_TEMP/supabase-storage-config.json"
+          curl --fail --silent --show-error -H "$auth_header" \
+            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/config/storage" > "$config_json"
+          observed=$(jq -r '.fileSizeLimit // empty' "$config_json")
+          echo "project-wide Storage upload limit: observed=${observed:-unset} declared=$declared"
+
+          if [[ $observed == "$declared" ]]; then
+            echo "already reconciled"
+          elif [[ $DEPLOY_MODE != DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3 ]]; then
+            echo "::warning::audit only — project limit ${observed:-unset} does not match declared $declared, not changing it"
+          else
+            curl --fail --silent --show-error -X PATCH -H "$auth_header" \
+              -H 'Content-Type: application/json' \
+              -d "{\"fileSizeLimit\": $declared}" \
+              "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/config/storage" > /dev/null
+            curl --fail --silent --show-error -H "$auth_header" \
+              "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/config/storage" > "$config_json"
+            applied=$(jq -r '.fileSizeLimit // empty' "$config_json")
+            # Fail closed: a silently clamped value (plan ceiling, bad payload)
+            # would otherwise deploy as if it had taken.
+            [[ $applied == "$declared" ]] || { echo "::error::project Storage limit is $applied after PATCH, expected $declared"; exit 61; }
+            echo "raised project-wide Storage upload limit ${observed:-unset} -> $applied"
+          fi
+          rm -f -- "$config_json"
+          unset auth_header SUPABASE_ACCESS_TOKEN
+
       - name: Select the one successful exact-main release run
         id: release-run
         env:
