@@ -1,19 +1,13 @@
 name: Run one production canary on the droplet
 
-# Takes seven renders that already exist, drives them through Calls 8 to 12 on
-# the deployed kernel, and brings the output files back as workflow artifacts.
+# Replays the exact July 24 seven-render set through the standalone production
+# kernel and returns every artifact it actually produced. The canary bootstraps
+# its own confirmed operator/customer identities in the isolated Supabase Auth
+# project; the old RestylePro user UUID is evidence provenance only, never the
+# owner of a new-project workflow.
 #
-# It generates nothing. Every input is a render produced previously, so a run
-# costs no provider calls and can be repeated freely while diagnosing — which is
-# the point: a canary you cannot afford to re-run is a canary nobody runs.
-#
-# The canary is staged into a temp directory at run time and removed afterwards,
-# so the deployed kernel stays exactly the artifact that was acceptance-tested.
-# It borrows the release's installed dependencies and the environment
-# configure-env.sh wrote, so the run happens in production conditions.
-#
-# Call 12 upscales through Topaz, so a complete run is slow. The SSH connection
-# carries keepalives for exactly that reason.
+# Calls 8 and 12 use their real configured providers. The canary is therefore
+# bounded by the production workflow itself and must never be treated as a mock.
 
 on:
   workflow_dispatch:
@@ -26,39 +20,30 @@ on:
         options:
           - DO_NOT_RUN
           - RUN_PRODUCTION_CANARY
-      tenant_key:
-        description: "Owner tenant key, e.g. user_<uuid> — derive it from the source job"
-        required: true
-        type: string
-        default: user_61cc6c1c-554c-440c-8e07-a64469f1f4eb
       views_json:
-        description: "The seven source slots mapped to public render URLs"
+        description: "The exact seven July 24 source render URLs"
         required: true
         type: string
         default: >-
           {"side": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784931913896_commercial.jpg", "passenger-side": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/revisions/designpanelpro_1784932075617.jpg", "hood_detail": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932072890_restyle.jpg", "front": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932073375_restyle.jpg", "rear": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932075057_restyle.jpg", "close-up": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932071794_restyle.jpg", "roof": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932074924_restyle.jpg"}
       customer_email:
-        description: "Owner email — derived from the source job's user, minted into a WrapBox recipient"
+        description: "Confirmed customer identity used for the canary WrapBox recipient"
         required: true
         type: string
         default: trish@weprintwraps.com
       vehicle_type:
-        description: "Vehicle class"
         required: true
         type: string
         default: truck
       vehicle_year:
-        description: "Vehicle year"
         required: true
         type: string
         default: "2022"
       vehicle_make:
-        description: "Vehicle make"
         required: true
         type: string
         default: Ford
       vehicle_model:
-        description: "Vehicle model"
         required: true
         type: string
         default: F250 Crew Cab
@@ -79,7 +64,7 @@ jobs:
   canary:
     if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'RUN_PRODUCTION_CANARY'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     environment:
       name: designproai-production
     env:
@@ -90,16 +75,16 @@ jobs:
           persist-credentials: false
 
       - name: Prove protected intent
+        shell: bash
         run: |
           set -Eeuo pipefail
           set +x
           test "${{ inputs.confirmation }}" = "RUN_PRODUCTION_CANARY"
           test -n "$SSH_PRIVATE_KEY"
-          printf '%s' '${{ inputs.tenant_key }}' | grep -Eq '^user_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-          # Seven slots, exactly, before a byte moves.
           printf '%s' '${{ inputs.views_json }}' | jq -e '
             (keys | sort) == (["side","passenger-side","hood_detail","front","rear","close-up","roof"] | sort)
             and (to_entries | all(.value | test("^https://")))' >/dev/null
+          printf '%s' '${{ inputs.customer_email }}' | grep -Eq '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
 
       - name: Pin the droplet SSH identity
         id: ssh
@@ -111,7 +96,7 @@ jobs:
           key_file="$RUNNER_TEMP/designproai_ssh"
           public_key="$RUNNER_TEMP/designproai_ssh.pub"
           known_hosts="$RUNNER_TEMP/designproai_known_hosts"
-          fail() { printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$1"; }
+          fail() { local code="$1"; shift; printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$code"; }
 
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
           ssh-keygen -y -f "$key_file" > "$public_key" 2>/dev/null || fail 31 "automation private key could not be parsed"
@@ -127,12 +112,10 @@ jobs:
           echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
           echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
 
-      - name: Run the canary on the droplet
-        id: run
+      - name: Run the exact July 24 production canary
         env:
           KEY_FILE: ${{ steps.ssh.outputs.key_file }}
           KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
-          CANARY_TENANT: ${{ inputs.tenant_key }}
           CANARY_VIEWS: ${{ inputs.views_json }}
           CANARY_YEAR: ${{ inputs.vehicle_year }}
           CANARY_MAKE: ${{ inputs.vehicle_make }}
@@ -150,7 +133,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "CANARY_TENANT='$CANARY_TENANT' VIEWS_B64='$views_b64' PAYLOAD='$payload' \
+            "VIEWS_B64='$views_b64' PAYLOAD='$payload' \
              YEAR='$CANARY_YEAR' MAKE='$CANARY_MAKE' MODEL='$CANARY_MODEL' \
              VTYPE='$CANARY_TYPE' CEMAIL='$CANARY_EMAIL' bash -s" \
             > "$RUNNER_TEMP/canary.log" 2>&1 <<'REMOTE'
@@ -159,12 +142,6 @@ jobs:
           test -d "$release" || { echo "no deployed release at $release"; exit 40; }
           test -f /opt/designproai-os/shared/runtime.env || { echo "runtime.env missing"; exit 41; }
 
-          # The kernel installs its dependencies into the Docker image, not into
-          # the release tree, so there is no node_modules on disk to borrow. The
-          # canary therefore runs INSIDE the exact runtime image this release
-          # deployed — same node_modules, same Node, same code — rather than
-          # beside it. --network host is what lets it reach the runtime's
-          # loopback-published internal endpoint to mint the WrapBox recipient.
           sha=$(basename "$(readlink -f "$release")")
           image="designproai-runtime:$sha"
           docker image inspect "$image" >/dev/null 2>&1 || { echo "runtime image $image is not present"; exit 42; }
@@ -176,20 +153,18 @@ jobs:
 
           printf '%s' "$PAYLOAD" | base64 -d | tar -C "$work" -xz
           printf '%s' "$VIEWS_B64" | base64 -d > "$work/views.json"
-          # The image runs as 10001; the canary writes its output into $work.
           chmod -R 0777 "$work"
 
           set +e
           docker run --rm --network host \
             --env-file /opt/designproai-os/shared/runtime.env \
-            -e DESIGNPRO_CANARY_TENANT="$CANARY_TENANT" \
             -e DESIGNPRO_CANARY_EMAIL="$CEMAIL" \
             -v "$work/scripts/production-canary.mjs:/app/production-canary.mjs:ro" \
             -v "$work:/canary" \
             "$image" node /app/production-canary.mjs \
               --views /canary/views.json --out /canary/output \
               --year "$YEAR" --make "$MAKE" --model "$MODEL" --type "$VTYPE" \
-              --design "July 24 canary"
+              --design "Precision Climate Solutions — July 24 canary"
           status=$?
           set -e
 
@@ -221,19 +196,17 @@ jobs:
 
       - name: State the acceptance criterion
         if: always()
+        shell: bash
         run: |
           cat <<'NOTE'
-          The only question this run answers: can DesignProAI produce files a shop
-          can print?
+          PASS requires the real standalone chain to produce:
+            - customer 2D proof + immutable flat layout
+            - six Call 9 panel cuts
+            - six Call 12 Topaz-enhanced panel masters
+            - eighteen production output files
+            - one production ZIP
+            - one WrapBox manifest
 
-          Download the artifact and open what is there. A pass looks like:
-
-            the 2D flat proof, showing GENIE dimensions and square footage
-            six panels cut from that proof at trim + 5" bleed
-            18 production files, upscaled through Topaz
-            a ZIP production pack, and a WrapBox artifact
-
-          canary-evidence.json records every stage transition observed and where
-          it stopped. If there are no output files, that file names the stage —
-          which is the whole reason it is written on failure as well as success.
+          canary-evidence.json is authoritative. A red run still uploads it and
+          names the exact stage/error. No runtime contract is weakened for this canary.
           NOTE
