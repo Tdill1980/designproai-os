@@ -263,7 +263,13 @@ async function uploadSpoolWithTus({
   const token = String(serviceRoleKey || "").trim();
   if (!token || token.length < 32 || /\s/.test(token)) fail("tus_service_token_invalid", "Supabase service bearer is missing or invalid", false);
   const target = String(storagePath || "");
-  const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof-masters\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png|proof\/(?:flat-wrap-layout|call8-2d-production-proof)-[0-9a-f]{24}\.png)$/);
+  // Every producer that can cross MAX_STANDARD_UPLOAD_BYTES has to be named
+  // here, because uploadProducedBytes routes to this transport purely on size:
+  // a path that is only ever written small is never checked, and the day one
+  // vehicle is large enough to cross the line the stage fails closed. The six
+  // surface keys are spelled out rather than matched loosely so a new
+  // directory still has to be added deliberately.
+  const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof-masters\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png|proof\/(?:flat-wrap-layout|call8-2d-production-proof)-[0-9a-f]{24}\.png|panels\/(?:driver|passenger|hood|roof|front|rear)\.png|enhanced\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png)$/);
   if (!targetMatch) fail("tus_storage_path_invalid", "Resumable artifact path is outside the exact DesignPro run allowlist", false);
   const extension = target.split(".").pop().toLowerCase();
   const expectedType = ({ zip: "application/zip", png: "image/png", tiff: "image/tiff", eps: "application/postscript" })[extension];
