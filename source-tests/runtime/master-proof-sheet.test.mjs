@@ -74,7 +74,8 @@ async function build(mutate = (m) => m) {
     master, loadAsset: async (a) => bytesFor[a.assetId], loadFont: async () => FONT, pxPerInch: PPI, bleedInches: BLEED,
   });
   const manifest = {
-    totalSqFt: 0,
+    // Rounded once from the raw area, which is what the proof re-derives.
+    totalSqFt: Math.round((SURFACE_ORDER.reduce((sum, key) => sum + TRIM[key][0] * TRIM[key][1], 0) / 144) * 100) / 100,
     expectedSurfaces: SURFACE_ORDER.map((key) => ({
       surfaceKey: key, widthInches: TRIM[key][0], heightInches: TRIM[key][1],
       surfaceSqFt: Math.round((TRIM[key][0] * TRIM[key][1] / 144) * 100) / 100,
@@ -83,10 +84,11 @@ async function build(mutate = (m) => m) {
   return { master, render, manifest };
 }
 
-const proofFor = async (built) => renderMasterProof({
-  render: built.render, manifest: built.manifest, bleedInches: BLEED,
+const proofFor = async (built, over = {}) => renderMasterProof({
+  render: built.render, manifest: built.manifest, bleedInches: BLEED, proofFonts: { regular: FONT },
   vehicle: { year: 2022, make: "Ford", model: "F250 Crew Cab" },
   designName: "Precision Climate Solutions", finish: "gloss", designId: "DID-PHASE3", orderNumber: "CANARY-1",
+  ...over,
 });
 
 // ------------------------------------------------------------ 1, 2 and 6
@@ -210,15 +212,15 @@ test("a surface that disagrees with the manifest it was built from fails closed"
   const drifted = clone(built.manifest);
   drifted.expectedSurfaces.find((s) => s.surfaceKey === "hood").widthInches = 11;
   await assert.rejects(
-    renderMasterProof({ render: built.render, manifest: drifted, bleedInches: BLEED }),
+    renderMasterProof({ render: built.render, manifest: drifted, bleedInches: BLEED, proofFonts: { regular: FONT } }),
     (error) => error.code === "proof_surface_manifest_drift");
 
   await assert.rejects(
-    renderMasterProof({ render: built.render, manifest: { expectedSurfaces: [] }, bleedInches: BLEED }),
+    renderMasterProof({ render: built.render, manifest: { expectedSurfaces: [], totalSqFt: 1 }, bleedInches: BLEED, proofFonts: { regular: FONT } }),
     (error) => error.code === "proof_manifest_incomplete");
 
   await assert.rejects(
-    renderMasterProof({ render: { contract: "something-else" }, manifest: built.manifest }),
+    renderMasterProof({ render: { contract: "something-else" }, manifest: built.manifest, proofFonts: { regular: FONT } }),
     (error) => error.code === "proof_render_invalid");
 });
 
@@ -242,4 +244,79 @@ test("a canonical string too long for its declared extent fails closed", async (
   await assert.rejects(
     build((draft) => { draft.textObjects[0].string = "PrecisionClimateAZ.com/commercial-hvac-service"; return draft; }),
     (error) => error.code === "render_text_overflows_extent");
+});
+
+// ------------------------------------------------- Phase 3 final tightening
+
+test("surface bytes are re-hashed, and exactly one of each six keys is required", async () => {
+  const built = await build();
+  const tamper = (mutate) => {
+    const render = clone({ ...built.render, surfaces: built.render.surfaces.map((s) => ({ ...s })) });
+    render.surfaces = render.surfaces.map((s, i) => ({ ...s, bytes: built.render.surfaces[i].bytes }));
+    mutate(render);
+    return renderMasterProof({ render, manifest: built.manifest, bleedInches: BLEED, proofFonts: { regular: FONT } });
+  };
+
+  // A hash that does not match the bytes beside it.
+  await assert.rejects(tamper((r) => { r.surfaces[0].contentHash = sha256(Buffer.from("other")); }),
+    (error) => error.code === "proof_surface_hash_mismatch");
+  // The same surface twice.
+  await assert.rejects(tamper((r) => { r.surfaces[1] = { ...r.surfaces[0] }; }),
+    (error) => error.code === "proof_surface_duplicated");
+  // A missing surface.
+  await assert.rejects(tamper((r) => { r.surfaces = r.surfaces.slice(0, 5); }),
+    (error) => error.code === "proof_surface_set_incomplete");
+  // A surface that is not one of the six.
+  await assert.rejects(tamper((r) => { r.surfaces[2] = { ...r.surfaces[2], surfaceKey: "tailgate" }; }),
+    (error) => error.code === "proof_surface_unknown");
+});
+
+test("the proof is typeset from a pinned font, never a system family", async () => {
+  const built = await build();
+  await assert.rejects(renderMasterProof({ render: built.render, manifest: built.manifest, bleedInches: BLEED }),
+    (error) => error.code === "proof_font_required");
+
+  // No family-name text survives in the module's code: every label is outline
+  // geometry. Comments are stripped first so prose about the retired approach
+  // cannot trip the scan.
+  const source = readFileSync(new URL("../../runtime/master-proof-sheet.cjs", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  assert.equal(/font-family/.test(source), false, "no label may resolve a family name");
+  assert.equal(/<text\b/.test(source), false, "no label may be an SVG text element");
+
+  // Two different pinned fonts must produce two different pages.
+  const serif = readFileSync("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf");
+  const withSans = await proofFor(built);
+  const withSerif = await proofFor(built, { proofFonts: { regular: serif } });
+  assert.notEqual(withSans.contentHash, withSerif.contentHash);
+});
+
+test("the manifest total is authoritative and verified against the raw area", async () => {
+  const built = await build();
+  const rawOnce = Math.round((SURFACE_ORDER.reduce((sum, key) => sum + TRIM[key][0] * TRIM[key][1], 0) / 144) * 100) / 100;
+  const proof = await proofFor(built);
+  assert.equal(proof.totalSqFt, built.manifest.totalSqFt);
+  assert.equal(proof.totalSqFt, rawOnce);
+
+  const drifted = { ...built.manifest, totalSqFt: rawOnce + 0.5 };
+  await assert.rejects(renderMasterProof({ render: built.render, manifest: drifted, bleedInches: BLEED, proofFonts: { regular: FONT } }),
+    (error) => error.code === "proof_manifest_total_drift");
+
+  const { totalSqFt, ...noTotal } = built.manifest;
+  await assert.rejects(renderMasterProof({ render: built.render, manifest: noTotal, bleedInches: BLEED, proofFonts: { regular: FONT } }),
+    (error) => error.code === "proof_manifest_total_missing");
+});
+
+test("one logo identity must be one file, though it may be placed many times", async () => {
+  const built = await build();
+  const render = { ...built.render, surfaces: built.render.surfaces.map((s) => ({ ...s })) };
+
+  // Same identity, same hash, on two surfaces: valid.
+  render.surfaces[0] = { ...render.surfaces[0], logoIdentities: [{ identityKey: "precision-mark", contentHash: sha256(MARK) }] };
+  assert.ok((await renderMasterProof({ render, manifest: built.manifest, bleedInches: BLEED, proofFonts: { regular: FONT } })).contentHash);
+
+  // Same identity, different file: two logos wearing one name.
+  render.surfaces[0] = { ...render.surfaces[0], logoIdentities: [{ identityKey: "precision-mark", contentHash: sha256(Buffer.from("different")) }] };
+  await assert.rejects(renderMasterProof({ render, manifest: built.manifest, bleedInches: BLEED, proofFonts: { regular: FONT } }),
+    (error) => error.code === "proof_logo_identity_conflict");
 });

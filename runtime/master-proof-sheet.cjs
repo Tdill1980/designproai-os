@@ -31,6 +31,7 @@ const {
   BLEED_INCHES, SHEET_WIDTH, SHEET_HEIGHT, proofSheetLayout,
   _test: proofInternals,
 } = require("./proof-sheet.cjs");
+const { outlineString } = require("./opentype-outline.cjs");
 
 const MASTER_PROOF_CONTRACT = "designpro.master-derived-2d-proof.v1";
 const SURFACE_ORDER = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
@@ -40,7 +41,22 @@ const MUTED = "#6b7280";
 const RULE = "#d1d5db";
 const ACCENT = "#059669";
 
-const { containedPlacement, escapeXml, round2, inches } = proofInternals;
+const { containedPlacement, round2, inches } = proofInternals;
+
+/**
+ * Every label on this page is outlined from a pinned font file.
+ *
+ * An SVG <text> element resolves its family through fontconfig, which
+ * substitutes without complaint — the same reason production typography is
+ * outlined. A proof whose captions silently change face between hosts is not
+ * reproducible, and the numbers beside those captions are what a customer signs.
+ */
+function label(fonts, string, { x, y, size, fill, anchor = "start", bold = false }) {
+  const fontBytes = bold && fonts.bold ? fonts.bold : fonts.regular;
+  const outlined = outlineString({ fontBytes, string: String(string), sizeIn: size, pxPerInch: 1 });
+  const left = anchor === "end" ? x - outlined.advancePx : x;
+  return `<g transform="translate(${round2(left)} ${round2(y - outlined.baselinePx)})"><path d="${outlined.path}" fill="${fill}"/></g>`;
+}
 
 class MasterProofError extends Error {
   constructor(code, message) {
@@ -101,6 +117,46 @@ function dimensionsFromManifest(manifest, surfaces, bleedInches) {
 }
 
 /**
+ * The total the customer reads is the manifest's, checked against the geometry
+ * rather than accumulated from per-surface figures that have each already been
+ * rounded. Summing rounded parts drifts; rounding the sum once does not.
+ */
+function totalSqFtFromManifest(manifest, dimensions) {
+  const computed = round2(dimensions.reduce((total, item) => total + item.widthInches * item.heightInches, 0) / 144);
+  const declared = Number(manifest?.totalSqFt);
+  if (!Number.isFinite(declared)) fail("proof_manifest_total_missing", "the bound manifest must declare totalSqFt");
+  if (round2(declared) !== computed) {
+    fail("proof_manifest_total_drift", `the manifest declares ${declared} sq ft but its six surfaces measure ${computed}`);
+  }
+  return round2(declared);
+}
+
+/**
+ * Exactly one of each of the six surfaces, each carrying the bytes it claims.
+ *
+ * The proof is the document a customer signs, so it re-derives the digest from
+ * the bytes it is about to draw rather than trusting the field beside them. A
+ * surface whose bytes and hash disagree is not the surface that was verified
+ * upstream, whatever it says about itself.
+ */
+function verifiedSurfaces(surfaces) {
+  const byKey = new Map();
+  for (const surface of surfaces) {
+    const surfaceKey = String(surface?.surfaceKey || "");
+    if (!SURFACE_ORDER.includes(surfaceKey)) fail("proof_surface_unknown", `${surfaceKey || "an unnamed surface"} is not a production surface`);
+    if (byKey.has(surfaceKey)) fail("proof_surface_duplicated", `${surfaceKey} appears more than once in the render`);
+    if (!Buffer.isBuffer(surface.bytes) || !surface.bytes.length) fail("proof_surface_missing", `the 2D proof requires the rendered ${surfaceKey} surface`);
+    const observed = sha256(surface.bytes);
+    if (observed !== String(surface.contentHash || "").toLowerCase()) {
+      fail("proof_surface_hash_mismatch", `${surfaceKey} bytes hash to ${observed.slice(0, 16)} but the render declares ${String(surface.contentHash).slice(0, 16)}`);
+    }
+    byKey.set(surfaceKey, surface);
+  }
+  if (SURFACE_ORDER.some((key) => !byKey.has(key))) fail("proof_surface_set_incomplete", "all six production surfaces are required");
+  return byKey;
+}
+
+/**
  * The canonical strings and logo identities the production surfaces actually
  * carry, gathered from the surfaces themselves rather than from the master, so
  * the proof cannot show a string the manufactured artwork does not contain.
@@ -118,9 +174,15 @@ function canonicalIdentities(surfaces) {
       text.get(identity.textId).surfaces.push(surface.surfaceKey);
     }
     for (const identity of surface.logoIdentities || []) {
-      const key = `${identity.identityKey}:${identity.contentHash}`;
-      if (!logos.has(key)) logos.set(key, { ...identity, surfaces: [] });
-      logos.get(key).surfaces.push(surface.surfaceKey);
+      // One identity, one file. The same mark may be placed on many surfaces,
+      // but a mark that is a different file on different panels is two logos
+      // wearing one name, and the proof would show only one of them.
+      const seen = logos.get(identity.identityKey);
+      if (seen && seen.contentHash !== identity.contentHash) {
+        fail("proof_logo_identity_conflict", `${identity.identityKey} is a different file on ${seen.surfaces.join(", ")} than on ${surface.surfaceKey}`);
+      }
+      if (!seen) logos.set(identity.identityKey, { ...identity, surfaces: [] });
+      logos.get(identity.identityKey).surfaces.push(surface.surfaceKey);
     }
   }
   return {
@@ -129,92 +191,97 @@ function canonicalIdentities(surfaces) {
   };
 }
 
-function headerMarkup({ vehicleName, designName, finish, totalSqFt }) {
-  return `<g font-family="Helvetica, Arial, sans-serif">
-    <text x="96" y="150" font-size="58" font-weight="700" fill="${INK}">DesignProAI 2D Production Proof</text>
-    <text x="96" y="205" font-size="27" fill="${MUTED}">${escapeXml(vehicleName)} &#183; ${escapeXml(designName)} &#183; ${escapeXml(finish)} finish</text>
-    <text x="${SHEET_WIDTH - 96}" y="150" font-size="42" font-weight="700" fill="${ACCENT}" text-anchor="end">${inches(totalSqFt)} SQ FT</text>
-    <text x="${SHEET_WIDTH - 96}" y="196" font-size="23" fill="${MUTED}" text-anchor="end">rendered from the canonical Design Master</text>
+function headerMarkup(fonts, { vehicleName, designName, finish, totalSqFt }) {
+  return `<g>
+    ${label(fonts, "DesignProAI 2D Production Proof", { x: 96, y: 150, size: 58, fill: INK, bold: true })}
+    ${label(fonts, `${vehicleName} \u00b7 ${designName} \u00b7 ${finish} finish`, { x: 96, y: 205, size: 27, fill: MUTED })}
+    ${label(fonts, `${inches(totalSqFt)} SQ FT`, { x: SHEET_WIDTH - 96, y: 150, size: 42, fill: ACCENT, anchor: "end", bold: true })}
+    ${label(fonts, "rendered from the canonical Design Master", { x: SHEET_WIDTH - 96, y: 196, size: 23, fill: MUTED, anchor: "end" })}
     <line x1="96" y1="238" x2="${SHEET_WIDTH - 96}" y2="238" stroke="${RULE}" stroke-width="3"/>
   </g>`;
 }
 
-function cellMarkup(cell, dimension, placement) {
+function cellMarkup(fonts, cell, dimension, placement) {
   const captionY = cell.frame.y + cell.frame.h - 74;
-  return `<g font-family="Helvetica, Arial, sans-serif">
+  return `<g>
     <rect x="${cell.frame.x + 8}" y="${cell.frame.y + 8}" width="${cell.frame.w - 16}" height="${cell.frame.h - 16}" fill="none" stroke="${RULE}" stroke-width="2"/>
     <rect x="${placement.x}" y="${placement.y}" width="${placement.w}" height="${placement.h}" fill="none" stroke="${RULE}" stroke-width="2"/>
-    <text x="${cell.frame.x + 26}" y="${captionY}" font-size="26" font-weight="700" fill="${INK}">${escapeXml(cell.label)}</text>
-    <text x="${cell.frame.x + 26}" y="${captionY + 34}" font-size="22" fill="${MUTED}">TRIM ${inches(dimension.widthInches)}&#8243; &#215; ${inches(dimension.heightInches)}&#8243; &#183; PRINT ${inches(dimension.printWidthInches)}&#8243; &#215; ${inches(dimension.printHeightInches)}&#8243; at ${inches(BLEED_INCHES)}&#8243; bleed</text>
-    <text x="${cell.frame.x + cell.frame.w - 26}" y="${captionY}" font-size="26" font-weight="700" fill="${ACCENT}" text-anchor="end">${inches(dimension.surfaceSqFt)} sq ft</text>
+    ${label(fonts, cell.label, { x: cell.frame.x + 26, y: captionY, size: 26, fill: INK, bold: true })}
+    ${label(fonts, `TRIM ${inches(dimension.widthInches)}" \u00d7 ${inches(dimension.heightInches)}" \u00b7 PRINT ${inches(dimension.printWidthInches)}" \u00d7 ${inches(dimension.printHeightInches)}" at ${inches(BLEED_INCHES)}" bleed`, { x: cell.frame.x + 26, y: captionY + 34, size: 22, fill: MUTED })}
+    ${label(fonts, `${inches(dimension.surfaceSqFt)} sq ft`, { x: cell.frame.x + cell.frame.w - 26, y: captionY, size: 26, fill: ACCENT, anchor: "end", bold: true })}
   </g>`;
 }
 
 /** The cell the retired sheet gave to the 3D hero now carries identity. */
-function identityMarkup(cell, identities, render) {
+function identityMarkup(fonts, cell, identities, render) {
   const lines = [];
   let y = cell.frame.y + 62;
-  lines.push(`<text x="${cell.frame.x + 26}" y="${y}" font-size="26" font-weight="700" fill="${INK}">CANONICAL IDENTITIES</text>`);
+  lines.push(label(fonts, "CANONICAL IDENTITIES", { x: cell.frame.x + 26, y, size: 26, fill: INK, bold: true }));
   y += 44;
   for (const item of identities.text) {
-    lines.push(`<text x="${cell.frame.x + 26}" y="${y}" font-size="22" fill="${INK}">&#8220;${escapeXml(item.string)}&#8221;</text>`);
+    lines.push(label(fonts, `\u201c${item.string}\u201d`, { x: cell.frame.x + 26, y, size: 22, fill: INK }));
     y += 30;
   }
   for (const item of identities.logos) {
-    lines.push(`<text x="${cell.frame.x + 26}" y="${y}" font-size="22" fill="${INK}">${escapeXml(item.identityKey)} &#183; ${escapeXml(item.contentHash.slice(0, 16))}</text>`);
+    lines.push(label(fonts, `${item.identityKey} \u00b7 ${item.contentHash.slice(0, 16)}`, { x: cell.frame.x + 26, y, size: 22, fill: INK }));
     y += 30;
   }
   y += 14;
-  lines.push(`<text x="${cell.frame.x + 26}" y="${y}" font-size="19" fill="${MUTED}">master ${escapeXml(render.masterHash.slice(0, 24))}</text>`);
-  lines.push(`<text x="${cell.frame.x + 26}" y="${y + 28}" font-size="19" fill="${MUTED}">render ${escapeXml(render.renderHash.slice(0, 24))}</text>`);
-  lines.push(`<text x="${cell.frame.x + 26}" y="${y + 56}" font-size="19" fill="${MUTED}">${render.pxPerInch} px/in &#183; no image generation</text>`);
-  return `<g font-family="Helvetica, Arial, sans-serif">
+  lines.push(label(fonts, `master ${render.masterHash.slice(0, 24)}`, { x: cell.frame.x + 26, y, size: 19, fill: MUTED }));
+  lines.push(label(fonts, `render ${render.renderHash.slice(0, 24)}`, { x: cell.frame.x + 26, y: y + 28, size: 19, fill: MUTED }));
+  lines.push(label(fonts, `${render.pxPerInch} px/in \u00b7 no image generation`, { x: cell.frame.x + 26, y: y + 56, size: 19, fill: MUTED }));
+  return `<g>
     <rect x="${cell.frame.x + 8}" y="${cell.frame.y + 8}" width="${cell.frame.w - 16}" height="${cell.frame.h - 16}" fill="none" stroke="${RULE}" stroke-width="2"/>
     ${lines.join("")}
   </g>`;
 }
 
-function footerMarkup(dimensions, totalSqFt, { designId, orderNumber, render }) {
+function footerMarkup(fonts, dimensions, totalSqFt, { designId, orderNumber, render }) {
   const top = SHEET_HEIGHT - 486;
   const columns = dimensions.map((dimension, index) => {
     const x = 96 + index * Math.floor((SHEET_WIDTH - 192) / 6);
-    return `<text x="${x}" y="${top + 96}" font-size="21" font-weight="700" fill="${INK}">${escapeXml(dimension.surfaceKey.toUpperCase())}</text>
-      <text x="${x}" y="${top + 126}" font-size="19" fill="${MUTED}">${inches(dimension.surfaceSqFt)} sq ft</text>
-      <text x="${x}" y="${top + 152}" font-size="19" fill="${MUTED}">${inches(dimension.printWidthInches)}&#8243; &#215; ${inches(dimension.printHeightInches)}&#8243;</text>`;
+    return label(fonts, dimension.surfaceKey.toUpperCase(), { x, y: top + 96, size: 21, fill: INK, bold: true })
+      + label(fonts, `${inches(dimension.surfaceSqFt)} sq ft`, { x, y: top + 126, size: 19, fill: MUTED })
+      + label(fonts, `${inches(dimension.printWidthInches)}" \u00d7 ${inches(dimension.printHeightInches)}"`, { x, y: top + 152, size: 19, fill: MUTED });
   }).join("");
-  return `<g font-family="Helvetica, Arial, sans-serif">
+  return `<g>
     <line x1="96" y1="${top + 40}" x2="${SHEET_WIDTH - 96}" y2="${top + 40}" stroke="${RULE}" stroke-width="3"/>
-    <text x="96" y="${top + 32}" font-size="24" font-weight="700" fill="${INK}">PRODUCTION COVERAGE &#183; ${inches(totalSqFt)} SQ FT TOTAL</text>
+    ${label(fonts, `PRODUCTION COVERAGE \u00b7 ${inches(totalSqFt)} SQ FT TOTAL`, { x: 96, y: top + 32, size: 24, fill: INK, bold: true })}
     ${columns}
-    <text x="96" y="${top + 240}" font-size="21" fill="${MUTED}">DesignID ${escapeXml(designId)} &#183; Order ${escapeXml(orderNumber)} &#183; revision ${escapeXml(render.revisionId)}</text>
-    <text x="96" y="${top + 274}" font-size="21" fill="${MUTED}">Dimensions from the bound GENIE manifest ${escapeXml(String(render.dimensionManifestId))}. Artwork is the manufactured surface, not a visualisation of it.</text>
+    ${label(fonts, `DesignID ${designId} \u00b7 Order ${orderNumber} \u00b7 revision ${render.revisionId}`, { x: 96, y: top + 240, size: 21, fill: MUTED })}
+    ${label(fonts, `Dimensions from the bound GENIE manifest ${String(render.dimensionManifestId)}. Artwork is the manufactured surface, not a visualisation of it.`, { x: 96, y: top + 274, size: 21, fill: MUTED })}
     <line x1="96" y1="${top + 356}" x2="1500" y2="${top + 356}" stroke="${INK}" stroke-width="2"/>
-    <text x="96" y="${top + 392}" font-size="21" fill="${MUTED}">Customer approval</text>
+    ${label(fonts, "Customer approval", { x: 96, y: top + 392, size: 21, fill: MUTED })}
     <line x1="1700" y1="${top + 356}" x2="${SHEET_WIDTH - 96}" y2="${top + 356}" stroke="${INK}" stroke-width="2"/>
-    <text x="1700" y="${top + 392}" font-size="21" fill="${MUTED}">Date</text>
+    ${label(fonts, "Date", { x: 1700, y: top + 392, size: 21, fill: MUTED })}
   </g>`;
 }
 
 /**
  * Build the customer proof from a completed production render.
  */
-async function renderMasterProof({ render, manifest, vehicle, designName, finish, designId, orderNumber, bleedInches = BLEED_INCHES }) {
+async function renderMasterProof({ render, manifest, proofFonts, vehicle, designName, finish, designId, orderNumber, bleedInches = BLEED_INCHES }) {
   if (!render || render.contract !== "designpro.production-surface-render.v1") {
     fail("proof_render_invalid", "the 2D proof must be derived from a completed production render");
   }
-  const surfaces = Array.isArray(render.surfaces) ? render.surfaces : [];
-  if (surfaces.length !== SURFACE_ORDER.length) fail("proof_surface_set_incomplete", "all six production surfaces are required");
+  // The proof page is typeset from a pinned file for the same reason production
+  // artwork is: a family name resolves through fontconfig and substitutes.
+  const fonts = { regular: proofFonts?.regular, bold: proofFonts?.bold };
+  if (!Buffer.isBuffer(fonts.regular) || !fonts.regular.length) {
+    fail("proof_font_required", "the 2D proof must be typeset from a pinned font file, not a system family name");
+  }
 
+  const surfaceByKey = verifiedSurfaces(Array.isArray(render.surfaces) ? render.surfaces : []);
+  const surfaces = SURFACE_ORDER.map((key) => surfaceByKey.get(key));
   const dimensions = dimensionsFromManifest(manifest, surfaces, bleedInches);
   const dimensionByKey = new Map(dimensions.map((item) => [item.surfaceKey, item]));
-  const surfaceByKey = new Map(surfaces.map((item) => [item.surfaceKey, item]));
   const identities = canonicalIdentities(surfaces);
-  const totalSqFt = round2(dimensions.reduce((total, item) => total + item.surfaceSqFt, 0));
+  const totalSqFt = totalSqFtFromManifest(manifest, dimensions);
 
   const layout = proofSheetLayout();
   const vehicleName = [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ") || "Vehicle";
   const composites = [];
-  const markup = [headerMarkup({
+  const markup = [headerMarkup(fonts, {
     vehicleName,
     designName: designName || "Approved design",
     finish: finish || "standard",
@@ -224,7 +291,6 @@ async function renderMasterProof({ render, manifest, vehicle, designName, finish
   for (const surfaceKey of SURFACE_ORDER) {
     const cell = layout.cells[surfaceKey];
     const surface = surfaceByKey.get(surfaceKey);
-    if (!surface || !Buffer.isBuffer(surface.bytes)) fail("proof_surface_missing", `the 2D proof requires the rendered ${surfaceKey} surface`);
     // Placed from the surface's own declared pixel geometry, not by reading the
     // raster back. The renderer already stated what it produced.
     const placement = containedPlacement(cell.image, surface.pixelWidth, surface.pixelHeight);
@@ -232,11 +298,11 @@ async function renderMasterProof({ render, manifest, vehicle, designName, finish
       .resize(placement.w, placement.h, { fit: "fill", kernel: "lanczos3" })
       .png(PNG_OPTIONS).toBuffer();
     composites.push({ input: resized, left: placement.x, top: placement.y });
-    markup.push(cellMarkup(cell, dimensionByKey.get(surfaceKey), placement));
+    markup.push(cellMarkup(fonts, cell, dimensionByKey.get(surfaceKey), placement));
   }
 
-  markup.push(identityMarkup(layout.cells.hero3d, identities, render));
-  markup.push(footerMarkup(dimensions, totalSqFt, {
+  markup.push(identityMarkup(fonts, layout.cells.hero3d, identities, render));
+  markup.push(footerMarkup(fonts, dimensions, totalSqFt, {
     designId: designId || "DesignID pending",
     orderNumber: orderNumber || "pending",
     render,
@@ -281,5 +347,5 @@ module.exports = {
   SURFACE_ORDER,
   MasterProofError,
   renderMasterProof,
-  _test: { dimensionsFromManifest, canonicalIdentities },
+  _test: { dimensionsFromManifest, canonicalIdentities, verifiedSurfaces, totalSqFtFromManifest, label },
 };
