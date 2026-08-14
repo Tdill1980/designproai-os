@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-three-migration chain', () => {
-  assert.equal(migrationNames.length, 23);
+test('fresh bootstrap contains one ordered twenty-four-migration chain', () => {
+  assert.equal(migrationNames.length, 24);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -32,6 +32,9 @@ test('fresh bootstrap contains one ordered twenty-three-migration chain', () => 
       // The revoke that supersession missed: designpro_generation_view_paths
       // was left executable by PUBLIC, which is anon reach into storage paths.
       '20260814140000',
+      // A non-owner read answers NULL, not a raise: the gateway turns NULL into
+      // a 404, and raising only for rows that exist is an existence oracle.
+      '20260814150000',
     ],
   );
 });
