@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Palette, Layers, Workflow, CheckSquare, Rotate3D, Sparkles, Blend, Scissors, Stamp, ChevronUp, X } from "lucide-react";
+import { Layers, Workflow, CheckSquare, Rotate3D, Sparkles, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useIsAppRoute } from "@/hooks/useIsAppRoute";
@@ -8,81 +8,50 @@ import { BRAND, BRAND_ACTIVE_GLOW, BRAND_GRADIENT, BRAND_RAIL_BG } from "@/lib/b
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCallback } from "react";
 
-// Map nav paths to their lazy chunk imports for prefetch-on-hover
+// Map nav paths to their lazy chunk imports for prefetch-on-hover.
+//
+// A static import() here puts the target page in the build graph whether or
+// not the route exists, and every asset that page names then looks referenced.
+// This table used to prefetch eight retired RestylePro pages, which is why a
+// 27 MB ColorPro hero shipped in a release that has no ColorPro route. Only
+// routes App.tsx declares belong in here.
 const prefetchMap: Record<string, () => Promise<any>> = {
-  "/graphics-pro": () => import("@/pages/GraphicsProV1"),
-  "/designpro": () => import("@/pages/DesignPanelProPremium"),
-  "/colorpro": () => import("@/pages/ColorPro"),
-  "/restylelibrary": () => import("@/pages/DesignPro"),
-  "/productionflow": () => import("@/pages/ProductionFlow"),
-  "/approvepro": () => import("@/pages/ApproveProPage"),
-  "/revision-studio": () => import("@/pages/RevisionStudioIQ"),
-  "/logopro": () => import("@/pages/LogoPro"),
+  "/designpro/generate": () => import("@/pages/designpro/GenerateDesign"),
+  "/designpro/jobs": () => import("@/pages/designpro/ProductionJobs"),
+  "/designpro/wrapbox": () => import("@/pages/designpro/WrapBoxDelivery"),
 };
 const prefetched = new Set<string>();
 
 const tools = [
   {
-    path: "/graphics-pro",
-    icon: Scissors,
-    label: "GraphicsPro™",
-    description: "Cut vinyl graphics design-to-production. Any surface. Photorealistic mockups. Production-ready cut files.",
-    highlight: false,
-    featured: true
-  },
-  {
-    path: "/designpro",
+    path: "/designpro/generate",
     icon: Sparkles,
     label: "DesignProAI™",
-    description: "The world's first prompt-to-print vehicle wrap design tool. AI-powered wrap creation.",
+    description: "Describe a wrap and a vehicle. The server generates seven distinct photoreal views.",
     highlight: false,
     featured: true
   },
   {
-    path: "/logopro",
-    icon: Stamp,
-    label: "LogoPro™",
-    description: "Professional logos in minutes. AI-generated, finished by real designers, delivered as PNG, SVG, and EPS.",
-    highlight: false,
-    featured: true
-  },
-  {
-    path: "/colorpro",
-    icon: Palette,
-    label: "ColorPro™",
-    description: "Visualize any vinyl wrap color on your vehicle. Upload swatches or browse manufacturer colors.",
-    highlight: false,
-    featured: false
-  },
-  {
-    path: "/restylelibrary",
-    icon: Layers,
-    label: "RestyleLibrary™",
-    description: "Professional wrap design library with curated panels and production packs.",
-    highlight: false,
-    featured: false
-  },
-  {
-    path: "/productionflow?tab=prep",
+    path: "/designpro/jobs",
     icon: Workflow,
-    label: "ProductionFlow™",
-    description: "Track and manage your print production pipeline from prep to ship.",
+    label: "Production",
+    description: "2D proof, the six production layers, QC gates and the verified output files.",
     highlight: false,
-    featured: false
+    featured: true
   },
   {
-    path: "/approvepro",
+    path: "/designpro/genie-qc",
     icon: CheckSquare,
-    label: "ApprovePro™",
-    description: "Send proofs, collect approvals, and manage revisions for every design job.",
+    label: "GENIE QC",
+    description: "Validate exact six-surface vehicle geometry and release blocked jobs.",
     highlight: false,
     featured: false
   },
   {
-    path: "/revision-studio",
-    icon: Sparkles,
-    label: "RevisionStudioIQ™",
-    description: "Clone, revise, and evolve your wrap designs with AI-powered version tracking.",
+    path: "/designpro/wrapbox",
+    icon: Layers,
+    label: "WrapBox",
+    description: "Delivered production packs with immutable ZIP and manifest hashes.",
     highlight: true,
     featured: false
   },
@@ -131,7 +100,7 @@ export const DesktopToolNav = () => {
           className="flex items-center gap-2 rounded-full px-4 py-1.5 backdrop-blur-lg transition-opacity hover:opacity-90"
           style={{ background: BRAND_RAIL_BG }}
         >
-          <span className="text-sm font-semibold text-white whitespace-nowrap">Restyle</span>
+          <span className="text-sm font-semibold text-white whitespace-nowrap">Design</span>
           <span className="text-sm font-semibold text-gradient-blue-magenta whitespace-nowrap">ProAI™</span>
           <ChevronUp className="h-4 w-4" style={{ color: BRAND.cyan }} />
         </button>
@@ -148,7 +117,7 @@ export const DesktopToolNav = () => {
       >
         <div className="flex items-center gap-2 rounded-full px-3 py-3 backdrop-blur-lg" style={{ background: BRAND_RAIL_BG }}>
           <Link to="/" className="flex shrink-0 items-center gap-1 px-2 py-1.5 border-r border-white/15 pr-3">
-            <span className="text-sm font-semibold text-white whitespace-nowrap">Restyle</span>
+            <span className="text-sm font-semibold text-white whitespace-nowrap">Design</span>
             <span className="text-sm font-semibold text-gradient-blue-magenta whitespace-nowrap">ProAI™</span>
           </Link>
           {/* Scrolls horizontally on narrow windows instead of pushing the rail

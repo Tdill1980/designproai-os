@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Palette, Layers, Workflow, CheckSquare, Sparkles, Blend, Scissors, ChevronUp, X } from "lucide-react";
+import { Layers, Workflow, CheckSquare, Sparkles, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useIsAppRoute } from "@/hooks/useIsAppRoute";
@@ -7,67 +7,42 @@ import { useToolNavCollapse } from "@/hooks/useToolNavCollapse";
 import { BRAND, BRAND_GRADIENT, BRAND_RAIL_BG } from "@/lib/brandColors";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+// Only routes App.tsx declares. The seven RestylePro tools this rail was
+// copied with have no route in this system, so every tap reached the 404 page.
 const tools = [
   {
-    path: "/graphics-pro",
-    icon: Scissors,
-    label: "Graphics",
-    fullLabel: "GraphicsPro™",
-    description: "Cut vinyl graphics design-to-production. Any surface. Photorealistic mockups. Production-ready cut files.",
-    highlight: false,
-    featured: true
-  },
-  {
-    path: "/designpro",
+    path: "/designpro/generate",
     icon: Sparkles,
     label: "Design",
     fullLabel: "DesignProAI™",
-    description: "The world's first prompt-to-print vehicle wrap design tool. AI-powered wrap creation.",
+    description: "Describe a wrap and a vehicle. The server generates seven distinct photoreal views.",
     highlight: false,
     featured: true
   },
   {
-    path: "/colorpro",
-    icon: Palette,
-    label: "Color",
-    fullLabel: "ColorPro™",
-    description: "Visualize any vinyl wrap color on your vehicle. Upload swatches or browse manufacturer colors.",
-    highlight: false,
-    featured: false
-  },
-  {
-    path: "/restylelibrary",
-    icon: Layers,
-    label: "Library",
-    fullLabel: "RestyleLibrary™",
-    description: "Professional wrap design library with curated panels and production packs.",
-    highlight: false,
-    featured: false
-  },
-  {
-    path: "/productionflow?tab=prep",
+    path: "/designpro/jobs",
     icon: Workflow,
-    label: "Production",
-    fullLabel: "ProductionFlow™",
-    description: "Track and manage your print production pipeline from prep to ship.",
+    label: "Jobs",
+    fullLabel: "Production jobs",
+    description: "2D proof, the six production layers, QC gates and the verified output files.",
     highlight: false,
-    featured: false
+    featured: true
   },
   {
-    path: "/approvepro",
+    path: "/designpro/genie-qc",
     icon: CheckSquare,
-    label: "Approve",
-    fullLabel: "ApprovePro™",
-    description: "Send proofs, collect approvals, and manage revisions for every design job.",
+    label: "GENIE",
+    fullLabel: "GENIE QC",
+    description: "Validate exact six-surface vehicle geometry and release blocked jobs.",
     highlight: false,
     featured: false
   },
   {
-    path: "/revision-studio",
-    icon: Sparkles,
-    label: "Revision",
-    fullLabel: "RevisionStudioIQ™",
-    description: "Clone, revise, and evolve your wrap designs with AI-powered version tracking.",
+    path: "/designpro/wrapbox",
+    icon: Layers,
+    label: "WrapBox",
+    fullLabel: "WrapBox",
+    description: "Delivered production packs with immutable ZIP and manifest hashes.",
     highlight: true,
     featured: false
   },
@@ -106,7 +81,7 @@ export const MobileToolNav = () => {
           className="flex h-8 w-full items-center justify-center gap-1.5"
           style={{ background: BRAND_RAIL_BG }}
         >
-          <span className="text-xs font-semibold text-white">Restyle</span>
+          <span className="text-xs font-semibold text-white">Design</span>
           <span className="text-xs font-semibold text-gradient-blue-magenta">ProAI™</span>
           <ChevronUp className="h-3.5 w-3.5" style={{ color: BRAND.cyan }} />
         </button>

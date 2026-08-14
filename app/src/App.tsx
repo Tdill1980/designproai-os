@@ -113,27 +113,22 @@ const DesignProWrapBoxPack = lazyWithRetry(() =>
 );
 
 // ── Lazy imports - Core tools ────────────────────────────────────
-const DesignPro = lazyWithRetry(() => import("./pages/DesignPro"));
 const ArtboardFirstDesignPro = lazyWithRetry(() => import("./pages/ArtboardFirstDesignPro"));
 const AdminDesignProV2Test = lazyWithRetry(() => import("./pages/AdminDesignProV2Test"));
 const PanelSizer = lazyWithRetry(() => import("./pages/PanelSizer"));
 const DesignStudio = lazyWithRetry(() => import("./pages/DesignStudio"));
 const DesignProStudio = lazyWithRetry(() => import("./pages/DesignProStudio"));
-const Proof = lazyWithRetry(() => import("./pages/Proof"));
 const DesignPanelProWorkspace = lazyWithRetry(() => import("./pages/DesignPanelProWorkspace"));
 const ProductionProof = lazyWithRetry(() => import("./pages/ProductionProof"));
 
 // ── Lazy imports - User pages ────────────────────────────────────
 const RestyleDashboard = lazyWithRetry(() => import("./pages/RestyleDashboard"));
-const MightyMail = lazyWithRetry(() => import("./pages/MightyMail"));
 const Pricing = lazyWithRetry(() => import("./pages/PricingColorPro"));
 const ResetPassword = lazyWithRetry(() => import("./pages/ResetPassword"));
-const Affiliate = lazyWithRetry(() => import("./pages/Affiliate"));
 const VehicleGallery = lazyWithRetry(() => import("./pages/VehicleGallery"));
 
 
 // ── Lazy imports - PrintPro ──────────────────────────────────────
-const PrintPro = lazyWithRetry(() => import("./pages/PrintPro"));
 const DesignPanelProPrintedProductPage = lazyWithRetry(() => import("./components/printpro/DesignPanelProPrintedProductPage"));
 const PrintProductionPipeline = lazyWithRetry(() => import("./components/printpro/PrintProductionPipeline"));
 const ProductionOS = lazyWithRetry(() => import("./pages/ProductionOS"));

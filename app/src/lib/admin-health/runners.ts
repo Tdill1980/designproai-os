@@ -210,24 +210,13 @@ export const RUNNERS: Record<string, Runner> = {
   // Design tool probes: combine UI chunk loadability + backing-table ping.
   // Either layer failing turns the card red with a prefixed message so you
   // know instantly whether it's a broken deploy or a DB issue.
-  colorpro: async () => {
-    const [ui, data] = await Promise.all([
-      runChunkLoad(() => import("@/pages/ColorPro")),
-      pingTable("color_visualizations"),
-    ]);
-    return combine(ui, data);
-  },
-  designpro: async () => {
-    const [ui, data] = await Promise.all([
-      runChunkLoad(() => import("@/pages/DesignPanelProPremium")),
-      pingTable("designpanelpro_patterns"),
-    ]);
-    return combine(ui, data);
-  },
-  // PatternPro has no standalone route — data-layer only
-  patternpro: () => pingTable("pattern_designs"),
-  // Chunk-only probes (no dedicated backing table for these tools)
-  quickquote: () => runChunkLoad(() => import("@/pages/QuickQuotePage")),
-  revisionstudio: () => runChunkLoad(() => import("@/pages/RevisionStudioIQ")),
-  wrapbox: () => runChunkLoad(() => import("@/pages/WrapBox")),
+  //
+  // These probes must only name pages this system routes. A chunk-load probe
+  // is a static import(), so probing a retired page keeps that page -- and
+  // every asset it references -- in the production build forever.
+  designpro: () => runChunkLoad(() => import("@/pages/designpro/GenerateDesign")),
+  productionjobs: () => runChunkLoad(() => import("@/pages/designpro/ProductionJobs")),
+  revisionstudio: () => runChunkLoad(() => import("@/pages/designpro/ProductionWorkflow")),
+  genieqc: () => runChunkLoad(() => import("@/pages/designpro/GenieQc")),
+  wrapbox: () => runChunkLoad(() => import("@/pages/designpro/WrapBoxDelivery")),
 };

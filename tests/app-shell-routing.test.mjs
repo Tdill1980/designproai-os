@@ -108,6 +108,54 @@ test("every sidebar destination is a route the router serves", () => {
   assert.deepEqual(dead, [], `sidebar entries with no route: ${dead.join(", ")}`);
 });
 
+test("every tool-rail destination is a route the router serves", () => {
+  // The rails build their links from a table and render them as `to={tool.path}`,
+  // so a check that only reads a literal `to="/..."` sees nothing here. Both
+  // rails shipped seven dead RestylePro routes behind exactly that blind spot.
+  for (const path of [
+    "app/src/components/DesktopToolNav.tsx",
+    "app/src/components/MobileToolNav.tsx",
+  ]) {
+    const routes = [...read(path).matchAll(/path:\s*"([^"]+)"/g)].map((m) => m[1].split("?")[0]);
+    assert.ok(routes.length > 0, `${path} declares no tool routes`);
+    const dead = routes.filter((route) => !isServed(route));
+    assert.deepEqual(dead, [], `${path} lists routes that do not exist: ${dead.join(", ")}`);
+  }
+});
+
+test("nothing statically imports a page the router does not mount", () => {
+  // This is the expensive one to get wrong. A prefetch table or a chunk-load
+  // health probe is a static import(), so naming a retired page keeps that
+  // page -- and every asset it references -- in the production build forever.
+  // A 27 MB ColorPro hero shipped in a release with no ColorPro route this way,
+  // and it looked "referenced" to every check that asked the bundler.
+  const pageImport = /import\(\s*"(?:@|\.)\/pages\/([A-Za-z0-9/_-]+)"\s*\)/g;
+  for (const path of [
+    "app/src/components/DesktopToolNav.tsx",
+    "app/src/components/MobileToolNav.tsx",
+    "app/src/lib/admin-health/runners.ts",
+  ]) {
+    const offenders = [...read(path).matchAll(pageImport)]
+      .map((match) => match[1])
+      .filter((page) => !page.startsWith("designpro/"));
+    assert.deepEqual(offenders, [], `${path} pulls retired pages into the build: ${offenders.join(", ")}`);
+  }
+});
+
+test("the router declares no page chunk it never mounts", () => {
+  // Same failure, one level up: a lazy declaration left behind after its route
+  // was pruned still emits a chunk and still anchors that page's assets.
+  const declared = [
+    ...[...APP.matchAll(/const (\w+) = lazyWithRetry/g)].map((m) => m[1]),
+    ...[...APP.matchAll(/^import (\w+) from "\.\/pages/gm)].map((m) => m[1]),
+  ];
+  const unmounted = declared.filter(
+    // Index is rendered by AuthedRootRedirect rather than by a <Route>.
+    (name) => name !== "Index" && !new RegExp(`<${name}[\\s/>]`).test(APP),
+  );
+  assert.deepEqual(unmounted, [], `declared but never routed: ${unmounted.join(", ")}`);
+});
+
 test("every mobile tab destination is a route the router serves", () => {
   const routes = [...TABS.matchAll(/route:\s*"([^"]+)"/g)].map((match) => match[1]);
   assert.ok(routes.length > 0, "the mobile tab bar declares no routes");
