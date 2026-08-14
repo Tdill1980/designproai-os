@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-four-migration chain', () => {
-  assert.equal(migrationNames.length, 24);
+test('fresh bootstrap contains one ordered twenty-five-migration chain', () => {
+  assert.equal(migrationNames.length, 25);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -35,6 +35,9 @@ test('fresh bootstrap contains one ordered twenty-four-migration chain', () => {
       // A non-owner read answers NULL, not a raise: the gateway turns NULL into
       // a 404, and raising only for rows that exist is an existence oracle.
       '20260814150000',
+      // Storage RLS never covered the calls-1-7 subtree, so an operator could
+      // not see the seven views their own generation had just produced.
+      '20260814160000',
     ],
   );
 });
