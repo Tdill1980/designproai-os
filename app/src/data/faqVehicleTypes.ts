@@ -2,16 +2,16 @@ import type { SEOFAQItem } from "@/components/SEOFAQPage";
 
 export const faqVehicleTypesData: SEOFAQItem[] = [
   {
-    question: "What types of vehicles can I render wraps on with RestyleProAI™?",
-    answer: "RestyleProAI™ now supports every major vehicle class. Pick a vehicle type with one tap: Car, Truck, SUV, Van, Motorcycle, Boat, Bus, or RV. Cars, trucks, SUVs, and vans use our 1,668-vehicle curated measurement database. Motorcycles, boats, buses, and RVs use Google-grounded AI dimension lookups that pull real specs from manufacturer sheets, dealer brochures, and OEM tech drawings — then cache the result for instant future renders. Any year, any make, any model — including vintage.",
+    question: "What types of vehicles can I render wraps on with DesignProAI™?",
+    answer: "DesignProAI™ now supports every major vehicle class. Pick a vehicle type with one tap: Car, Truck, SUV, Van, Motorcycle, Boat, Bus, or RV. Cars, trucks, SUVs, and vans use our 1,668-vehicle curated measurement database. Motorcycles, boats, buses, and RVs use Google-grounded AI dimension lookups that pull real specs from manufacturer sheets, dealer brochures, and OEM tech drawings — then cache the result for instant future renders. Any year, any make, any model — including vintage.",
   },
   {
-    question: "What car brands are available in RestyleProAI™?",
+    question: "What car brands are available in DesignProAI™?",
     answer: "Our library includes vehicles from BMW, Mercedes-Benz, Audi, Porsche, Tesla, Ford, Chevrolet, GMC, Ram, Toyota, Honda, Lexus, Lamborghini, Ferrari, Dodge, Jeep, Nissan, Hyundai, Kia, Volkswagen, Subaru, Mazda, and many more. We continuously add new makes and models based on wrap industry demand.",
   },
   {
     question: "Can I render wraps on trucks and SUVs?",
-    answer: "Yes. RestyleProAI™ fully supports trucks and SUVs - some of the most popular vehicles in the wrap industry. This includes Ford F-150, Ram 1500, Chevrolet Silverado, GMC Sierra, Toyota Tacoma, Ford Bronco, Jeep Wrangler, Chevrolet Tahoe, and many other truck and SUV models.",
+    answer: "Yes. DesignProAI™ fully supports trucks and SUVs - some of the most popular vehicles in the wrap industry. This includes Ford F-150, Ram 1500, Chevrolet Silverado, GMC Sierra, Toyota Tacoma, Ford Bronco, Jeep Wrangler, Chevrolet Tahoe, and many other truck and SUV models.",
   },
   {
     question: "Are sports cars and supercars available for renders?",
@@ -19,11 +19,11 @@ export const faqVehicleTypesData: SEOFAQItem[] = [
   },
   {
     question: "Can I render wraps on Tesla and other electric vehicles?",
-    answer: "Absolutely. Tesla is one of the most frequently wrapped vehicle brands, and RestyleProAI™ includes Tesla Model 3, Model Y, Model S, Model X, and Cybertruck. We also support other EVs like the Rivian R1T, Ford Mustang Mach-E, Hyundai Ioniq, and BMW iX as they become popular in wrap shops.",
+    answer: "Absolutely. Tesla is one of the most frequently wrapped vehicle brands, and DesignProAI™ includes Tesla Model 3, Model Y, Model S, Model X, and Cybertruck. We also support other EVs like the Rivian R1T, Ford Mustang Mach-E, Hyundai Ioniq, and BMW iX as they become popular in wrap shops.",
   },
   {
-    question: "Does RestyleProAI™ support vans and commercial vehicles?",
-    answer: "Yes. Commercial and fleet vehicles are a core part of the wrap industry. RestyleProAI™ supports cargo vans (Ford Transit, Mercedes Sprinter, Ram ProMaster), passenger vans, and commercial vehicles. Fleet managers use our tools to visualize branding and livery designs across their entire vehicle fleet.",
+    question: "Does DesignProAI™ support vans and commercial vehicles?",
+    answer: "Yes. Commercial and fleet vehicles are a core part of the wrap industry. DesignProAI™ supports cargo vans (Ford Transit, Mercedes Sprinter, Ram ProMaster), passenger vans, and commercial vehicles. Fleet managers use our tools to visualize branding and livery designs across their entire vehicle fleet.",
   },
   {
     question: "Can I request a vehicle that isn't in the library?",
@@ -35,7 +35,7 @@ export const faqVehicleTypesData: SEOFAQItem[] = [
   },
   {
     question: "Can I render wraps on modified or aftermarket vehicles?",
-    answer: "RestyleProAI™ renders vehicles in their stock configuration. For modified vehicles (widebody kits, aftermarket bumpers, lifted trucks), you can upload photos of the actual vehicle through VisionBoardIQ™ in DesignProAI™ to provide visual context for the AI. The standard vehicle library uses factory body styles.",
+    answer: "DesignProAI™ renders vehicles in their stock configuration. For modified vehicles (widebody kits, aftermarket bumpers, lifted trucks), you can upload photos of the actual vehicle through VisionBoardIQ™ in DesignProAI™ to provide visual context for the AI. The standard vehicle library uses factory body styles.",
   },
   {
     question: "Are vehicle models updated with new model years?",

@@ -198,7 +198,7 @@ const AdminInkFusionSampleChart = () => {
                           <span className="text-purple-400 text-sm">™</span>
                         </div>
                         <div className="text-[10px] text-gray-500 mt-1">Premium Latex Printed Films</div>
-                        <div className="text-[9px] text-pink-500 font-semibold mt-0.5">by RestylePro™</div>
+                        <div className="text-[9px] text-pink-500 font-semibold mt-0.5">by DesignProAI™</div>
                       </div>
                       <div className="text-right">
                         <div className="text-xs font-bold text-blue-400">WePrintWraps.com</div>
@@ -244,7 +244,7 @@ const AdminInkFusionSampleChart = () => {
                   {/* Mini footer - Premium dark */}
                   <div className="bg-[#0a0a0f] p-2 text-center border-t border-blue-500/30">
                     <div className="text-[8px] text-blue-400 font-medium">sales@weprintwraps.com</div>
-                    <div className="text-[6px] text-pink-500 mt-0.5">Powered by RestylePro™</div>
+                    <div className="text-[6px] text-pink-500 mt-0.5">Powered by DesignProAI™</div>
                   </div>
                 </div>
               ) : (

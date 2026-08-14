@@ -248,7 +248,7 @@ export default function PublicQuotePage() {
             <div className="flex items-start justify-between gap-6 flex-wrap mb-8">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-600 mb-1">
-                  RestyleProAI
+                  DesignProAI
                 </p>
                 <h1 className="text-2xl sm:text-3xl font-black text-gray-900 truncate">
                   {quote.shop_name || "Your wrap shop"}
@@ -463,7 +463,7 @@ export default function PublicQuotePage() {
                     Want a graphic designer at your fingertips?
                   </h3>
                   <p className="text-sm text-gray-600 mt-2 max-w-xl mx-auto">
-                    RestyleProAI gives you the entire wrap-design toolkit — try any of these tools free.
+                    DesignProAI gives you the entire wrap-design toolkit — try any of these tools free.
                   </p>
                 </div>
 
@@ -476,28 +476,28 @@ export default function PublicQuotePage() {
                     {
                       name: "ColorPro™",
                       tagline: "Color visualizer · every tier",
-                      href: "https://www.restyleproai.com/colorpro",
+                      href: "https://designproai.com/colorpro",
                       img: "/colorpro-hero-corvette.png",
                       grad: "from-cyan-500 to-blue-600",
                     },
                     {
                       name: "MyVehiclePro™",
                       tagline: "Your photo + AI",
-                      href: "https://www.restyleproai.com/myvehiclepro",
+                      href: "https://designproai.com/myvehiclepro",
                       img: "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/wpw-founder/myvehiclepro-1778253166069-IMG_6538.jpeg",
                       grad: "from-amber-500 to-orange-600",
                     },
                     {
                       name: "DesignPro™",
                       tagline: "AI wrap designs",
-                      href: "https://www.restyleproai.com/designpro",
+                      href: "https://designproai.com/designpro",
                       img: "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/wpw-founder/designproai-1778216355003-IMG_4216.jpeg",
                       grad: "from-fuchsia-500 to-rose-500",
                     },
                     {
                       name: "RecreatePro™",
                       tagline: "Recreate any design",
-                      href: "https://www.restyleproai.com/recreatepro",
+                      href: "https://designproai.com/recreatepro",
                       img: null,
                       grad: "from-emerald-500 to-teal-600",
                     },
@@ -544,7 +544,7 @@ export default function PublicQuotePage() {
                   </p>
                   <p className="text-sm text-gray-700 leading-relaxed mb-3">
                     Or — for <span className="font-semibold text-gray-900">less than that</span> — subscribe to{" "}
-                    <strong className="text-gray-900">RestylePro DesignPro Studio at $699/mo</strong> and get unlimited
+                    <strong className="text-gray-900">DesignProAI DesignPro Studio at $699/mo</strong> and get unlimited
                     photoreal AI mockups, our real human designer producing Production Packs, all the design tools, and
                     print-ready files included.
                   </p>
@@ -552,7 +552,7 @@ export default function PublicQuotePage() {
                     One subscription month &lt; one custom design. And you keep designing — forever.
                   </p>
                   <a
-                    href="https://www.restyleproai.com/pricing"
+                    href="https://designproai.com/pricing"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-block bg-gradient-to-r from-cyan-500 to-fuchsia-500 hover:from-cyan-600 hover:to-fuchsia-600 text-white font-bold text-sm px-6 py-3 rounded-lg shadow-md transition-all"

@@ -289,8 +289,8 @@ export default function ConnectionsExternalApps() {
         accentClass={isX ? "bg-black text-white" : "bg-[#0A66C2] text-white"}
         connected={connected}
         note={isX
-          ? "Authorize the X account RestyleProAI should operate for this shop."
-          : "Authorize the LinkedIn identity/Page RestyleProAI should operate for this shop."}
+          ? "Authorize the X account DesignProAI should operate for this shop."
+          : "Authorize the LinkedIn identity/Page DesignProAI should operate for this shop."}
         detail={query.isLoading
           ? "Checking provider setup…"
           : connected
@@ -328,7 +328,7 @@ export default function ConnectionsExternalApps() {
       <div>
         <h2 className="text-lg font-semibold">All Connections</h2>
         <p className="mt-1 text-sm text-gray-500">
-          One place for every account RestyleProAI can operate. Provider color identifies the authority; the status badge tells you whether this shop is actually connected.
+          One place for every account DesignProAI can operate. Provider color identifies the authority; the status badge tells you whether this shop is actually connected.
         </p>
       </div>
 

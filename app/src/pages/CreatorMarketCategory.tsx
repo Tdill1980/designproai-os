@@ -9,7 +9,7 @@ import {
 } from "@/lib/cm-seo";
 import { getIndustryTitle, getVehicleSubtitle, PRINT_READY_PRICE } from "@/components/creatormarket/listing-display";
 
-const ORIGIN = "https://www.restyleproai.com";
+const ORIGIN = "https://designproai.com";
 const SELECT =
   "id, title, industry_title, thumbnail_url, price, vehicle_year, vehicle_make, vehicle_model, trade_category, design_style, featured_creator_name, listed_at, display_order";
 
@@ -70,7 +70,7 @@ export default function CreatorMarketCategory() {
         name: category.h1,
         description: category.metaDescription,
         url: canonical,
-        isPartOf: { "@type": "WebSite", name: "RestyleProAI CreatorMarket", url: `${ORIGIN}/creatormarket` },
+        isPartOf: { "@type": "WebSite", name: "DesignProAI CreatorMarket", url: `${ORIGIN}/creatormarket` },
         mainEntity: { "@type": "ItemList", numberOfItems: rows.length, itemListElement: itemList },
       },
       {

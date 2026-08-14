@@ -85,10 +85,10 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-black text-white">
       <Helmet>
-        <title>You're Invited · The Future of Vehicle Wrap Design | RestyleProAI</title>
+        <title>You're Invited · The Future of Vehicle Wrap Design | DesignProAI</title>
         <meta
           name="description"
-          content="RestyleProAI was built to help wrap shops, sign companies, and restyle shops 10X their design capabilities, customer visuals, and sales workflow. WePrintWraps customers receive $50 off membership."
+          content="DesignProAI was built to help wrap shops, sign companies, and restyle shops 10X their design capabilities, customer visuals, and sales workflow. WePrintWraps customers receive $50 off membership."
         />
       </Helmet>
 
@@ -96,7 +96,7 @@ export default function LandingPage() {
         {/* ── Hero ── */}
         <section className="text-center mb-14 sm:mb-16">
           <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/60 mb-3">
-            RestyleProAI™ for WePrintWraps
+            DesignProAI™ for WePrintWraps
           </div>
           <h1 className="font-montserrat text-4xl sm:text-5xl md:text-6xl font-bold leading-[1.05] tracking-tight mb-6">
             You're Invited to the{" "}
@@ -105,11 +105,11 @@ export default function LandingPage() {
             </span>
           </h1>
           <p className="text-base sm:text-lg text-white/80 leading-relaxed max-w-3xl mx-auto mb-4">
-            RestyleProAI™ was built to help wrap shops, sign companies, and restyle shops{" "}
+            DesignProAI™ was built to help wrap shops, sign companies, and restyle shops{" "}
             <strong className="text-white">10X</strong> their design capabilities, customer visuals, and sales workflow.
           </p>
           <p className="text-sm sm:text-base text-white/70 leading-relaxed max-w-3xl mx-auto">
-            Whether you're a solo operator or a high-volume graphics company, RestyleProAI™ gives you the power to create premium-level visuals faster than ever before.
+            Whether you're a solo operator or a high-volume graphics company, DesignProAI™ gives you the power to create premium-level visuals faster than ever before.
           </p>
         </section>
 
@@ -210,7 +210,7 @@ export default function LandingPage() {
                 <span className="text-sm text-white/55 font-inter">/mo</span>
               </div>
               <p className="text-sm text-white/80 leading-relaxed">
-                Create custom wrap designs inside RestyleProAI™ with access to the full design and visualization system.
+                Create custom wrap designs inside DesignProAI™ with access to the full design and visualization system.
               </p>
             </div>
 

@@ -291,7 +291,7 @@ const SubAccountQuotePage = () => {
       </main>
 
       <footer className="border-t border-white/10 mt-16 py-6 text-center text-xs text-white/40">
-        Powered by RestylePro · {shop.website ? <a href={shop.website} className="text-[#00C7FF] hover:underline">Visit {shop.name}</a> : shop.name}
+        Powered by DesignProAI · {shop.website ? <a href={shop.website} className="text-[#00C7FF] hover:underline">Visit {shop.name}</a> : shop.name}
       </footer>
     </div>
   );

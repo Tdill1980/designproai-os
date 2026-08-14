@@ -22,7 +22,7 @@ import { useAutoBuildVideo, BuildFormat, StaticLayout } from "@/hooks/useAutoBui
 
 const BRANDS: { slug: string; label: string }[] = [
   { slug: "weprintwraps", label: "WePrintWraps" },
-  { slug: "restylepro", label: "RestyleProAI" },
+  { slug: "restylepro", label: "DesignProAI" },
   { slug: "wraptvworld", label: "WrapTVWorld" },
   { slug: "designproai", label: "DesignProAI" },
   { slug: "inkandedge", label: "Ink & Edge" },

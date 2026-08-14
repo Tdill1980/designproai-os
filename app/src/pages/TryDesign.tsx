@@ -102,12 +102,12 @@ const TryDesign = () => {
   return (
     <>
       <Helmet>
-        <title>Custom Wrap Design — $250 | RestyleProAI</title>
+        <title>Custom Wrap Design — $250 | DesignProAI</title>
         <meta
           name="description"
-          content="Design one custom full vehicle wrap yourself in DesignPro by RestyleProAI — prompt-based, finished in under 5 minutes. Includes 3 revisions, 7 view angles + a 3D proof. $250, no subscription."
+          content="Design one custom full vehicle wrap yourself in DesignPro by DesignProAI — prompt-based, finished in under 5 minutes. Includes 3 revisions, 7 view angles + a 3D proof. $250, no subscription."
         />
-        <link rel="canonical" href="https://www.restyleproai.com/try-design" />
+        <link rel="canonical" href="https://designproai.com/try-design" />
       </Helmet>
 
       <div className="min-h-screen bg-white text-gray-900">
@@ -117,7 +117,7 @@ const TryDesign = () => {
           {/* Top eyebrow */}
           <div className="text-center mb-8">
             <div className="text-gray-900 text-[20px] font-bold tracking-wide">
-              RestyleProAI
+              DesignProAI
             </div>
             <div className="text-gray-500 text-[11px] font-semibold tracking-[2px] uppercase mt-2.5">
               Single Design · No Signup · $250
@@ -141,7 +141,7 @@ const TryDesign = () => {
               </h1>
               <p className="text-base sm:text-lg text-gray-600 mt-5 leading-relaxed">
                 Pay once and design one custom full wrap yourself in DesignPro
-                by RestyleProAI — prompt-based design software. Describe the
+                by DesignProAI — prompt-based design software. Describe the
                 wrap you want and get a finished design in under 5 minutes.
                 Includes 3 revisions, 7 view angles, and a 3D proof. No
                 subscription, ever.
@@ -229,7 +229,7 @@ const TryDesign = () => {
           <div className="max-w-xl mx-auto mt-12 mb-1 text-center">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900">After your design — two ways to go</h2>
             <p className="text-sm text-gray-600 mt-1.5">
-              Get this one design made print-ready, or unlock the full RestyleProAI system and design as much as you want.
+              Get this one design made print-ready, or unlock the full DesignProAI system and design as much as you want.
             </p>
           </div>
 
@@ -237,7 +237,7 @@ const TryDesign = () => {
           <div className="max-w-xl mx-auto mt-12 mb-1 text-center">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900">After your design — two ways to go</h2>
             <p className="text-sm text-gray-600 mt-1.5">
-              Get this one design made print-ready, or unlock the full RestyleProAI system and design as much as you want.
+              Get this one design made print-ready, or unlock the full DesignProAI system and design as much as you want.
             </p>
           </div>
 
@@ -248,7 +248,7 @@ const TryDesign = () => {
                 Or subscribe &amp; design all you want
               </h2>
               <p className="text-sm text-gray-600 mt-1.5">
-                The full RestyleProAI DesignPro plans — pick one, cancel anytime.
+                The full DesignProAI DesignPro plans — pick one, cancel anytime.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

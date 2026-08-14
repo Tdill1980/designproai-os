@@ -4,7 +4,7 @@ import { getRelatedPages } from "@/data/faqRelatedPages";
 
 const FAQFadeWraps = () => (
   <SEOFAQPage
-    title="FadeWraps™ FAQ - Gradient & Fade Vehicle Wraps | RestyleProAI™"
+    title="FadeWraps™ FAQ - Gradient & Fade Vehicle Wraps | DesignProAI™"
     headline="FadeWraps™ Frequently Asked Questions"
     description="Learn how FadeWraps™ creates photorealistic gradient wraps, color transitions, and racing stripe designs on any vehicle. Preview fade effects before production."
     canonicalPath="/faq/fadewraps"

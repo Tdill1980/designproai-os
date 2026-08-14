@@ -76,9 +76,9 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     html: `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0a0a0a;color:#fff;padding:32px;border-radius:12px">
   <h1 style="color:#06b6d4;margin:0 0 16px">Your Heading Here</h1>
   <p style="color:#ccc;line-height:1.6">Your content goes here. Use the editor to customize this template.</p>
-  <a href="https://restyleproai.com" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#8b5cf6);color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:600;margin:24px 0">Call to Action</a>
+  <a href="https://designproai.com" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#8b5cf6);color:#fff;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:600;margin:24px 0">Call to Action</a>
   <hr style="border:none;border-top:1px solid #333;margin:24px 0"/>
-  <p style="color:#666;font-size:12px;margin:0">RestyleProAI — <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
+  <p style="color:#666;font-size:12px;margin:0">DesignProAI — <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
 </div>`,
   },
   {
@@ -90,19 +90,19 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     html: `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0a0a0a;color:#fff;padding:0;border-radius:12px;overflow:hidden">
   <div style="background:linear-gradient(135deg,#06b6d4,#8b5cf6);padding:40px 32px;text-align:center">
     <h1 style="color:#fff;margin:0;font-size:28px">Something Big Just Dropped</h1>
-    <p style="color:rgba(255,255,255,0.85);margin:12px 0 0;font-size:16px">RestylePro just got a major upgrade</p>
+    <p style="color:rgba(255,255,255,0.85);margin:12px 0 0;font-size:16px">DesignProAI just got a major upgrade</p>
   </div>
   <div style="padding:32px">
     <p style="color:#ccc;line-height:1.7;font-size:15px">Hey {{customer_name}},</p>
     <p style="color:#ccc;line-height:1.7;font-size:15px">We've been working on something incredible and it's finally here. Our new visualization tools are now live — giving you photorealistic wrap renders in seconds.</p>
     <div style="text-align:center;margin:32px 0">
-      <a href="https://restyleproai.com/colorpro" style="display:inline-block;background:#06b6d4;color:#000;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Try It Now →</a>
+      <a href="https://designproai.com/colorpro" style="display:inline-block;background:#06b6d4;color:#000;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Try It Now →</a>
     </div>
     <p style="color:#ccc;line-height:1.7;font-size:15px">This is the tool your shop has been waiting for. Sell more wraps, close more deals, impress every customer.</p>
-    <p style="color:#06b6d4;font-weight:600;margin-top:24px">— The RestylePro Team</p>
+    <p style="color:#06b6d4;font-weight:600;margin-top:24px">— The DesignProAI Team</p>
   </div>
   <div style="padding:20px 32px;border-top:1px solid #222">
-    <p style="color:#666;font-size:12px;margin:0;text-align:center">RestyleProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
+    <p style="color:#666;font-size:12px;margin:0;text-align:center">DesignProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
   </div>
 </div>`,
   },
@@ -116,21 +116,21 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
   <div style="background:#0a0a0a;padding:32px;text-align:center;border-bottom:2px solid #06b6d4">
     <p style="color:#06b6d4;font-weight:700;font-size:14px;letter-spacing:2px;margin:0">LIMITED TIME OFFER</p>
     <h1 style="color:#fff;margin:12px 0 0;font-size:36px">50% OFF</h1>
-    <p style="color:#999;margin:8px 0 0;font-size:16px">Your first month of RestylePro</p>
+    <p style="color:#999;margin:8px 0 0;font-size:16px">Your first month of DesignProAI</p>
   </div>
   <div style="padding:32px">
     <p style="color:#ccc;line-height:1.7;font-size:15px">Hey {{customer_name}},</p>
-    <p style="color:#ccc;line-height:1.7;font-size:15px">For the next 48 hours, get 50% off any RestylePro subscription plan. Create stunning wrap visualizations, close more deals, and wow your customers with photorealistic renders.</p>
+    <p style="color:#ccc;line-height:1.7;font-size:15px">For the next 48 hours, get 50% off any DesignProAI subscription plan. Create stunning wrap visualizations, close more deals, and wow your customers with photorealistic renders.</p>
     <div style="background:#111;border:1px solid #333;border-radius:12px;padding:24px;margin:24px 0;text-align:center">
       <p style="color:#06b6d4;font-size:24px;font-weight:700;margin:0">Use code: WRAP50</p>
       <p style="color:#999;font-size:13px;margin:8px 0 0">Expires in 48 hours</p>
     </div>
     <div style="text-align:center">
-      <a href="https://restyleproai.com/pricing" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#000;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Claim Your Discount →</a>
+      <a href="https://designproai.com/pricing" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#0891b2);color:#000;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Claim Your Discount →</a>
     </div>
   </div>
   <div style="padding:20px 32px;border-top:1px solid #222">
-    <p style="color:#666;font-size:12px;margin:0;text-align:center">RestyleProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
+    <p style="color:#666;font-size:12px;margin:0;text-align:center">DesignProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
   </div>
 </div>`,
   },
@@ -142,12 +142,12 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     category: 'newsletter',
     html: `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0a0a0a;color:#fff;padding:0;border-radius:12px;overflow:hidden">
   <div style="padding:32px 32px 20px;border-bottom:1px solid #222">
-    <h1 style="color:#06b6d4;margin:0;font-size:20px">RestylePro Weekly</h1>
+    <h1 style="color:#06b6d4;margin:0;font-size:20px">DesignProAI Weekly</h1>
     <p style="color:#666;font-size:13px;margin:4px 0 0">Your wrap industry digest</p>
   </div>
   <div style="padding:32px">
     <h2 style="color:#fff;font-size:18px;margin:0 0 12px">What's New This Week</h2>
-    <p style="color:#ccc;line-height:1.7;font-size:15px">Hey {{customer_name}}, here's what's been happening at RestylePro this week:</p>
+    <p style="color:#ccc;line-height:1.7;font-size:15px">Hey {{customer_name}}, here's what's been happening at DesignProAI this week:</p>
 
     <div style="background:#111;border-left:3px solid #06b6d4;padding:16px;margin:20px 0;border-radius:0 8px 8px 0">
       <h3 style="color:#06b6d4;margin:0 0 8px;font-size:15px">New Feature: DesignPro Upgrade</h3>
@@ -160,11 +160,11 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     </div>
 
     <div style="text-align:center;margin:32px 0">
-      <a href="https://restyleproai.com/gallery" style="display:inline-block;background:#06b6d4;color:#000;padding:12px 28px;text-decoration:none;border-radius:8px;font-weight:600">View Gallery →</a>
+      <a href="https://designproai.com/gallery" style="display:inline-block;background:#06b6d4;color:#000;padding:12px 28px;text-decoration:none;border-radius:8px;font-weight:600">View Gallery →</a>
     </div>
   </div>
   <div style="padding:20px 32px;border-top:1px solid #222">
-    <p style="color:#666;font-size:12px;margin:0;text-align:center">RestyleProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
+    <p style="color:#666;font-size:12px;margin:0;text-align:center">DesignProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
   </div>
 </div>`,
   },
@@ -176,7 +176,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     category: 'welcome',
     html: `<div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0a0a0a;color:#fff;padding:0;border-radius:12px;overflow:hidden">
   <div style="background:linear-gradient(135deg,#06b6d4 0%,#8b5cf6 50%,#d946ef 100%);padding:48px 32px;text-align:center">
-    <h1 style="color:#fff;margin:0;font-size:32px">Welcome to RestylePro</h1>
+    <h1 style="color:#fff;margin:0;font-size:32px">Welcome to DesignProAI</h1>
     <p style="color:rgba(255,255,255,0.9);margin:12px 0 0;font-size:16px">Your wrap visualization journey starts now</p>
   </div>
   <div style="padding:32px">
@@ -199,12 +199,12 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     </div>
 
     <div style="text-align:center;margin:32px 0">
-      <a href="https://restyleproai.com/colorpro" style="display:inline-block;background:#06b6d4;color:#000;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Create Your First Render →</a>
+      <a href="https://designproai.com/colorpro" style="display:inline-block;background:#06b6d4;color:#000;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Create Your First Render →</a>
     </div>
     <p style="color:#999;font-size:14px;text-align:center">Questions? Just reply to this email — we read every one.</p>
   </div>
   <div style="padding:20px 32px;border-top:1px solid #222">
-    <p style="color:#666;font-size:12px;margin:0;text-align:center">RestyleProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
+    <p style="color:#666;font-size:12px;margin:0;text-align:center">DesignProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
   </div>
 </div>`,
   },
@@ -232,11 +232,11 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     <p style="color:#ccc;line-height:1.7;font-size:15px">Come back and see what's new — your next render is on us.</p>
 
     <div style="text-align:center;margin:32px 0">
-      <a href="https://restyleproai.com" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#8b5cf6);color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Come Back & Explore →</a>
+      <a href="https://designproai.com" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#8b5cf6);color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Come Back & Explore →</a>
     </div>
   </div>
   <div style="padding:20px 32px;border-top:1px solid #222">
-    <p style="color:#666;font-size:12px;margin:0;text-align:center">RestyleProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
+    <p style="color:#666;font-size:12px;margin:0;text-align:center">DesignProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
   </div>
 </div>`,
   },
@@ -250,9 +250,9 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
 
   <!-- LOGO HEADER -->
   <div style="background:#000;padding:24px 32px;text-align:center;border-bottom:2px solid #111">
-    <img src="https://restyleproai.com/sproket-rocket-logo.png" alt="RestyleProAI" style="height:56px;display:inline-block" />
+    <img src="https://designproai.com/sproket-rocket-logo.png" alt="DesignProAI" style="height:56px;display:inline-block" />
     <div style="margin-top:8px">
-      <img src="https://restyleproai.com/restyleproai-logo-full.png" alt="RestyleProAI" style="height:28px;display:inline-block" />
+      <img src="https://designproai.com/restyleproai-logo-full.png" alt="DesignProAI" style="height:28px;display:inline-block" />
     </div>
   </div>
 
@@ -263,7 +263,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
 
   <!-- HERO: Porsche Martini with SPROKET hook -->
   <div style="padding:16px 0 0">
-    <img src="https://restyleproai.com/email-assets/porsche-martini-hook.png" alt="Porsche 911 Distressed Martini Wrap — AI-designed wraps. Photorealistic in seconds." style="width:100%;display:block" />
+    <img src="https://designproai.com/email-assets/porsche-martini-hook.png" alt="Porsche 911 Distressed Martini Wrap — AI-designed wraps. Photorealistic in seconds." style="width:100%;display:block" />
   </div>
 
   <!-- HEADLINE -->
@@ -274,23 +274,23 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
 
   <!-- RENDER: Mini Cooper commercial wrap -->
   <div style="padding:20px 0 0">
-    <img src="https://restyleproai.com/email-assets/mini-cooper-hook.png" alt="Mini Cooper Practical Magic Day Spa Wrap — From concept to print-ready. One platform." style="width:100%;display:block" />
+    <img src="https://designproai.com/email-assets/mini-cooper-hook.png" alt="Mini Cooper Practical Magic Day Spa Wrap — From concept to print-ready. One platform." style="width:100%;display:block" />
   </div>
 
   <!-- RENDER: Lambo X-Ray with SPROKET hook -->
   <div style="padding:4px 0 0">
-    <img src="https://restyleproai.com/email-assets/lambo-xray-hook.png" alt="Lamborghini X-Ray Engine Wrap — 10,000+ renders trained DesignIQ." style="width:100%;display:block" />
+    <img src="https://designproai.com/email-assets/lambo-xray-hook.png" alt="Lamborghini X-Ray Engine Wrap — 10,000+ renders trained DesignIQ." style="width:100%;display:block" />
   </div>
 
   <!-- MINI CTA -->
   <div style="padding:20px 32px;text-align:center">
-    <p style="color:#999;font-size:14px;margin:0 0 16px;line-height:1.5">Every image above was generated by AI on RestyleProAI.<br/>Not designed by a human. Not outsourced. Not $975.</p>
-    <a href="https://restyleproai.com/gallery" style="display:inline-block;background:#111;border:2px solid #06b6d4;padding:14px 28px;border-radius:10px;text-decoration:none;color:#06b6d4;font-weight:700;font-size:15px">&#9654; See More Renders in the Gallery</a>
+    <p style="color:#999;font-size:14px;margin:0 0 16px;line-height:1.5">Every image above was generated by AI on DesignProAI.<br/>Not designed by a human. Not outsourced. Not $975.</p>
+    <a href="https://designproai.com/gallery" style="display:inline-block;background:#111;border:2px solid #06b6d4;padding:14px 28px;border-radius:10px;text-decoration:none;color:#06b6d4;font-weight:700;font-size:15px">&#9654; See More Renders in the Gallery</a>
   </div>
 
   <!-- RENDER: BBQ Sprinter Van -->
   <div style="padding:16px 0 0">
-    <img src="https://restyleproai.com/email-assets/bbq-sprinter-hook.png" alt="Pitmaster Jack BBQ Sprinter Van Wrap — Every design is unique. DesignIQ was engineered using 10+ years of real wrap data." style="width:100%;display:block" />
+    <img src="https://designproai.com/email-assets/bbq-sprinter-hook.png" alt="Pitmaster Jack BBQ Sprinter Van Wrap — Every design is unique. DesignIQ was engineered using 10+ years of real wrap data." style="width:100%;display:block" />
   </div>
 
   <!-- SECTION: SEE THE ACTUAL PLATFORM -->
@@ -302,7 +302,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
   <!-- UI: DesignVault Gallery -->
   <div style="padding:0 8px 8px">
     <div style="border:1px solid #222;border-radius:12px;overflow:hidden;background:#111">
-      <img src="https://restyleproai.com/email-assets/designvault-gallery.png" alt="DesignVault — QC'd by real designers. Stamped with your DesignID." style="width:100%;display:block" />
+      <img src="https://designproai.com/email-assets/designvault-gallery.png" alt="DesignVault — QC'd by real designers. Stamped with your DesignID." style="width:100%;display:block" />
       <div style="padding:12px 16px">
         <p style="color:#06b6d4;font-size:14px;font-weight:700;margin:0">DesignVault&#8482; &amp; Gallery</p>
         <p style="color:#999;font-size:12px;margin:4px 0 0;line-height:1.4">Browse, search, and manage every design you create. QC'd by real designers. Stamped with your DesignID.</p>
@@ -313,7 +313,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
   <!-- UI: Pricing Page Screenshot -->
   <div style="padding:0 8px 8px">
     <div style="border:1px solid #222;border-radius:12px;overflow:hidden;background:#111">
-      <img src="https://restyleproai.com/email-assets/pricing-page.png" alt="RestyleProAI Pricing — Pre-Sale Ends April 7" style="width:100%;display:block" />
+      <img src="https://designproai.com/email-assets/pricing-page.png" alt="DesignProAI Pricing — Pre-Sale Ends April 7" style="width:100%;display:block" />
       <div style="padding:12px 16px">
         <p style="color:#D4AF37;font-size:14px;font-weight:700;margin:0">Pre-Sale is LIVE — Ends April 7th</p>
         <p style="color:#999;font-size:12px;margin:4px 0 0;line-height:1.4">The ONLY system that gives you a vehicle wrap designer at your fingertips. Prompt to production.</p>
@@ -324,7 +324,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
   <!-- UI: ProductionFlow Screenshot -->
   <div style="padding:0 8px 8px">
     <div style="border:1px solid #222;border-radius:12px;overflow:hidden;background:#111">
-      <img src="https://restyleproai.com/screenshots/productionflow-system.png" alt="ProductionFlow — Print-Ready Panel Output" style="width:100%;display:block" />
+      <img src="https://designproai.com/screenshots/productionflow-system.png" alt="ProductionFlow — Print-Ready Panel Output" style="width:100%;display:block" />
       <div style="padding:12px 16px">
         <p style="color:#d946ef;font-size:14px;font-weight:700;margin:0">ProductionFlow&#8482;</p>
         <p style="color:#999;font-size:12px;margin:4px 0 0;line-height:1.4">8K print-ready panel files + PDF proof — sized to the exact vehicle. Send straight to your printer.</p>
@@ -375,8 +375,8 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
       <p style="color:#D4AF37;font-size:11px;font-weight:800;letter-spacing:2px;margin:0 0 12px">WHY I BUILT THIS</p>
       <p style="color:#ccc;font-size:14px;line-height:1.7;margin:0 0 12px">If your designer is constantly behind — or you don't have one at all — I built this for you.</p>
       <p style="color:#ccc;font-size:14px;line-height:1.7;margin:0 0 12px">At WePrintWraps.com, we had to raise our custom wrap design price from $500 to $975 just to keep up with demand. I kept getting emails from friends in the industry fed up with our turnaround and price increases. That told me everything — thousands of shops have the same problem. <strong style="color:#fff">Design is the bottleneck.</strong></p>
-      <p style="color:#ccc;font-size:14px;line-height:1.7;margin:0 0 12px">I built RestyleProAI to solve my own problems at WePrintWraps.com — but also for my friends across the graphics industry. Whether you own a sign company or a restyling shop, this is for you.</p>
-      <p style="color:#fff;font-size:15px;line-height:1.7;margin:0 0 4px;font-weight:600">RestyleProAI will 10X your existing designer's output. And if you don't have a designer, you can finally say goodbye to overpriced outsourcing.</p>
+      <p style="color:#ccc;font-size:14px;line-height:1.7;margin:0 0 12px">I built DesignProAI to solve my own problems at WePrintWraps.com — but also for my friends across the graphics industry. Whether you own a sign company or a restyling shop, this is for you.</p>
+      <p style="color:#fff;font-size:15px;line-height:1.7;margin:0 0 4px;font-weight:600">DesignProAI will 10X your existing designer's output. And if you don't have a designer, you can finally say goodbye to overpriced outsourcing.</p>
       <p style="color:#D4AF37;font-size:14px;font-weight:600;margin:16px 0 0">— Trish Dill, Co-Founder</p>
     </div>
   </div>
@@ -425,14 +425,14 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
 
   <!-- BIG GOLD CTA -->
   <div style="text-align:center;padding:8px 32px 32px">
-    <a href="https://restyleproai.com/pricing" style="display:inline-block;background:linear-gradient(135deg,#D4AF37,#F5E6A3,#D4AF37);color:#000;padding:18px 48px;text-decoration:none;border-radius:10px;font-weight:800;font-size:18px;letter-spacing:0.5px">Lock In WPW Family Pricing &#8594;</a>
+    <a href="https://designproai.com/pricing" style="display:inline-block;background:linear-gradient(135deg,#D4AF37,#F5E6A3,#D4AF37);color:#000;padding:18px 48px;text-decoration:none;border-radius:10px;font-weight:800;font-size:18px;letter-spacing:0.5px">Lock In WPW Family Pricing &#8594;</a>
     <p style="color:#999;font-size:12px;margin:12px 0 0">Pre-Sale ends April 7th · No credit card to explore free tools</p>
   </div>
 
   <!-- FOOTER -->
   <div style="padding:20px 32px;border-top:1px solid #222;text-align:center">
-    <img src="https://restyleproai.com/sproket-rocket-logo.png" alt="RestyleProAI" style="height:28px;margin-bottom:8px" />
-    <p style="color:#666;font-size:11px;margin:0">RestyleProAI&#8482; by LoopMighty · WePrintWraps.com Family</p>
+    <img src="https://designproai.com/sproket-rocket-logo.png" alt="DesignProAI" style="height:28px;margin-bottom:8px" />
+    <p style="color:#666;font-size:11px;margin:0">DesignProAI&#8482; by LoopMighty · WePrintWraps.com Family</p>
     <p style="color:#555;font-size:11px;margin:6px 0 0"><a href="{{unsubscribe_url}}" style="color:#555">Unsubscribe</a></p>
   </div>
 </div>`,
@@ -459,7 +459,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
 
     <p style="color:#ccc;line-height:1.7;font-size:15px">You signed up because you knew something better was coming for the wrap industry. <strong style="color:#fff">Today it's here.</strong></p>
 
-    <p style="color:#ccc;line-height:1.7;font-size:15px"><strong style="color:#06b6d4">RestylePro</strong> is the first AI-powered wrap visualization platform built by wrap professionals, for wrap professionals. Show any customer a photorealistic preview of their vehicle wrapped &mdash; any color, any design, any finish &mdash; in seconds.</p>
+    <p style="color:#ccc;line-height:1.7;font-size:15px"><strong style="color:#06b6d4">DesignProAI</strong> is the first AI-powered wrap visualization platform built by wrap professionals, for wrap professionals. Show any customer a photorealistic preview of their vehicle wrapped &mdash; any color, any design, any finish &mdash; in seconds.</p>
 
     <!-- Feature Grid -->
     <div style="margin:28px 0">
@@ -499,7 +499,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
       </table>
     </div>
 
-    <p style="color:#ccc;line-height:1.7;font-size:15px">Wrap shops using RestylePro are closing deals faster, upselling more finishes, and eliminating costly remakes. You signed up early &mdash; so we're giving you first access.</p>
+    <p style="color:#ccc;line-height:1.7;font-size:15px">Wrap shops using DesignProAI are closing deals faster, upselling more finishes, and eliminating costly remakes. You signed up early &mdash; so we're giving you first access.</p>
 
     <!-- Early Bird Box -->
     <div style="background:#111;border:2px solid #06b6d4;border-radius:12px;padding:24px;text-align:center;margin:28px 0">
@@ -512,17 +512,17 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     </div>
 
     <div style="text-align:center;margin:28px 0">
-      <a href="https://restyleproai.com/signup" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#8b5cf6);color:#fff;padding:16px 36px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Claim Your Spot &rarr;</a>
+      <a href="https://designproai.com/signup" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#8b5cf6);color:#fff;padding:16px 36px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px">Claim Your Spot &rarr;</a>
     </div>
 
-    <p style="color:#999;font-size:14px;text-align:center;line-height:1.6">Join the wrap shops already using RestylePro to win more business.</p>
+    <p style="color:#999;font-size:14px;text-align:center;line-height:1.6">Join the wrap shops already using DesignProAI to win more business.</p>
 
-    <p style="color:#06b6d4;font-weight:600;margin-top:24px">&mdash; Trish &amp; the RestylePro Team</p>
+    <p style="color:#06b6d4;font-weight:600;margin-top:24px">&mdash; Trish &amp; the DesignProAI Team</p>
   </div>
 
   <!-- Footer -->
   <div style="padding:20px 32px;border-top:1px solid #222">
-    <p style="color:#666;font-size:12px;margin:0;text-align:center">RestyleProAI &middot; restyleproai.com &middot; <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
+    <p style="color:#666;font-size:12px;margin:0;text-align:center">DesignProAI &middot; restyleproai.com &middot; <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>
   </div>
 </div>`,
   },
@@ -637,13 +637,13 @@ export const SMS_TEMPLATES: SmsTemplate[] = [
     name: 'WePrintWraps Promo Text',
     description: 'Short promo SMS for WePrintWraps.com customers',
     category: 'promo',
-    body: `Hey {{customer_name}}! Trish here from RestylePro. We built an AI tool that shows your wrap customers a photorealistic preview BEFORE you print. WePrintWraps fam gets 40% off first 3 months - code WRAPFAM40 at restyleproai.com/pricing. Free to try, no card needed. Reply STOP to opt out.`,
+    body: `Hey {{customer_name}}! Trish here from DesignProAI. We built an AI tool that shows your wrap customers a photorealistic preview BEFORE you print. WePrintWraps fam gets 40% off first 3 months - code WRAPFAM40 at restyleproai.com/pricing. Free to try, no card needed. Reply STOP to opt out.`,
   },
   {
     id: 'sms-subscriber-launch',
     name: 'Subscriber Launch Text',
     description: 'Launch announcement SMS for email list subscribers',
     category: 'announcement',
-    body: `{{customer_name}}, it's live! RestylePro - the AI wrap visualizer you signed up for - is now open. Show customers photorealistic wrap previews in seconds. Early subscriber bonus: 30% off any plan with code EARLY30. Start free: restyleproai.com/signup. Reply STOP to opt out.`,
+    body: `{{customer_name}}, it's live! DesignProAI - the AI wrap visualizer you signed up for - is now open. Show customers photorealistic wrap previews in seconds. Early subscriber bonus: 30% off any plan with code EARLY30. Start free: restyleproai.com/signup. Reply STOP to opt out.`,
   },
 ];

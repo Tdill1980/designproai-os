@@ -49,7 +49,7 @@ export function AffiliateLayout({ children, title, subtitle }: AffiliateLayoutPr
   }, []);
 
   // Derive page name from title or current path so heading always shows
-  // "RestylePro Affiliate <Page>" with branded styling.
+  // "DesignProAI Affiliate <Page>" with branded styling.
   const pageName =
     title ||
     (location.pathname.includes("/marketing")
@@ -65,7 +65,7 @@ export function AffiliateLayout({ children, title, subtitle }: AffiliateLayoutPr
         <div className="bg-[#05050A] border-b border-[#38BDF8]/30 px-3 py-2.5 flex items-center justify-between shadow-[0_2px_12px_rgba(56,189,248,0.08)]">
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-bold tracking-[1.5px] text-[#38BDF8]">
-              RestyleProAI&trade;
+              DesignProAI&trade;
             </span>
             <span className="text-[11px] text-white/30">&rarr;</span>
             <span className="text-[11px] font-semibold text-white/70">
@@ -94,7 +94,7 @@ export function AffiliateLayout({ children, title, subtitle }: AffiliateLayoutPr
             </div>
             <div className="min-w-0">
               <h1 className="text-2xl sm:text-3xl font-extrabold leading-none flex items-baseline gap-1.5 flex-wrap">
-                <span className="text-gray-900">RestylePro</span>
+                <span className="text-gray-900">DesignProAI</span>
                 <span className="text-gray-900">Affiliate</span>
                 <span className="bg-gradient-to-r from-[#0284C7] via-[#38BDF8] to-[#0284C7] bg-clip-text text-transparent">
                   {pageName}
@@ -183,7 +183,7 @@ function RepShareStrip({ rep }: { rep: ReturnType<typeof getWpwRepByPartnerCode>
   const origin =
     typeof window !== "undefined"
       ? window.location.origin
-      : "https://restyleproai.com";
+      : "https://designproai.com";
   const shareUrl = `${origin}/wpw/${rep.slug}`;
   const headshot = defaultHeadshotPath(rep);
 

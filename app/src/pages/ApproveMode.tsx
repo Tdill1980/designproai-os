@@ -61,13 +61,13 @@ const ApproveMode = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>ApprovePro - Client Wrap Approval Workflow | RestyleProAI</title>
+        <title>ApprovePro - Client Wrap Approval Workflow | DesignProAI</title>
         <meta name="description" content="Streamline client approvals for vehicle wrap designs. Share renders, collect feedback, get sign-off. Design it. Panel it. Print it. The world's first prompt-to-production wrap platform." />
-        <link rel="canonical" href="https://www.restyleproai.com/approvemode" />
-        <meta property="og:title" content="ApprovePro - Client Wrap Approval Workflow | RestyleProAI" />
+        <link rel="canonical" href="https://designproai.com/approvemode" />
+        <meta property="og:title" content="ApprovePro - Client Wrap Approval Workflow | DesignProAI" />
         <meta property="og:description" content="Streamline client approvals for vehicle wrap designs. Share renders, collect feedback, get sign-off - all in one place." />
-        <meta property="og:url" content="https://www.restyleproai.com/approvemode" />
-        <meta property="og:image" content="https://restyleproai.com/hero-mustang.jpg" />
+        <meta property="og:url" content="https://designproai.com/approvemode" />
+        <meta property="og:image" content="https://designproai.com/hero-mustang.jpg" />
       </Helmet>
       
       <main className="flex-1">

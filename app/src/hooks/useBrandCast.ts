@@ -135,7 +135,7 @@ export const LONGFORM_THRESHOLD_S = 240;
 // ── ecosystem brands ─────────────────────────────────────────────────────────
 export const CAST_BRANDS: Array<{ slug: string; label: string; site: string }> = [
   { slug: "weprintwraps", label: "WePrintWraps", site: "weprintwraps.com" },
-  { slug: "restylepro", label: "RestyleProAI", site: "restyleproai.com" },
+  { slug: "restylepro", label: "DesignProAI", site: "restyleproai.com" },
   { slug: "designproai", label: "DesignProAI", site: "designproai.com" },
   { slug: "wraptvworld", label: "WrapTVWorld", site: "wraptvworld.com" },
   { slug: "inkandedge", label: "Ink & Edge Magazine", site: "inkandedgemagazine.com" },

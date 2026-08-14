@@ -107,7 +107,7 @@ export const useProductionFiles = (): UseProductionFilesReturn => {
 
       if (data.status === 'subscription_required') {
         setSubscriptionRequired(true);
-        toast.info(data.message || 'Upgrade to RestylePro Pro to unlock production features');
+        toast.info(data.message || 'Upgrade to DesignProAI Pro to unlock production features');
         return;
       }
 

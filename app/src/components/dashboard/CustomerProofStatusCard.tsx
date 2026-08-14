@@ -95,7 +95,7 @@ export const CustomerProofStatusCard = () => {
         <div className="flex items-center gap-2">
           <img
             src="/sproket-rocket-logo.png"
-            alt="RestylePro"
+            alt="DesignProAI"
             className="w-9 h-9 object-contain shrink-0"
           />
           <div>

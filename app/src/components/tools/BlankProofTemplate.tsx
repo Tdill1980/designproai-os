@@ -212,7 +212,7 @@ export const BlankProofTemplate: React.FC<BlankProofTemplateProps> = ({
             </div>
             <div style={{ fontSize: 9.5, color: '#333', lineHeight: 1.45 }}>
               Your approval, either in writing or by utilizing our online proofing system,
-              constitutes acceptance of the final design. RestyleProAI will not be liable for
+              constitutes acceptance of the final design. DesignProAI will not be liable for
               errors, omissions, or legal and ethical compliance after approval. It is your
               responsibility to confirm spelling, placement, sizing, colors, etc.
             </div>

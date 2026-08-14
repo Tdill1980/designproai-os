@@ -19,8 +19,8 @@ interface BlogPostLayoutProps {
 }
 
 export const BlogPostLayout = ({ meta, children }: BlogPostLayoutProps) => {
-  const canonicalUrl = `https://www.restyleproai.com/blog/${meta.slug}`;
-  const ogImage = meta.ogImage || "https://restyleproai.com/hero-mustang.jpg";
+  const canonicalUrl = `https://designproai.com/blog/${meta.slug}`;
+  const ogImage = meta.ogImage || "https://designproai.com/hero-mustang.jpg";
 
   const articleSchema = {
     "@context": "https://schema.org",
@@ -29,11 +29,11 @@ export const BlogPostLayout = ({ meta, children }: BlogPostLayoutProps) => {
     description: meta.description,
     image: ogImage,
     datePublished: meta.date,
-    author: { "@type": "Organization", name: "RestyleProAI", url: "https://restyleproai.com" },
+    author: { "@type": "Organization", name: "DesignProAI", url: "https://designproai.com" },
     publisher: {
       "@type": "Organization",
-      name: "RestyleProAI",
-      logo: { "@type": "ImageObject", url: "https://restyleproai.com/logo.png" },
+      name: "DesignProAI",
+      logo: { "@type": "ImageObject", url: "https://designproai.com/logo.png" },
     },
     mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
   };
@@ -42,8 +42,8 @@ export const BlogPostLayout = ({ meta, children }: BlogPostLayoutProps) => {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://restyleproai.com" },
-      { "@type": "ListItem", position: 2, name: "Blog", item: "https://restyleproai.com/blog" },
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://designproai.com" },
+      { "@type": "ListItem", position: 2, name: "Blog", item: "https://designproai.com/blog" },
       { "@type": "ListItem", position: 3, name: meta.title, item: canonicalUrl },
     ],
   };
@@ -51,7 +51,7 @@ export const BlogPostLayout = ({ meta, children }: BlogPostLayoutProps) => {
   return (
     <>
       <Helmet>
-        <title>{meta.title} | RestyleProAI Blog</title>
+        <title>{meta.title} | DesignProAI Blog</title>
         <meta name="description" content={meta.description} />
         <link rel="canonical" href={canonicalUrl} />
         <meta property="og:title" content={meta.title} />

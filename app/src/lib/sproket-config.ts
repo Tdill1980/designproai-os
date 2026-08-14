@@ -70,7 +70,7 @@ export const PAGE_GREETINGS: Record<string, SproketGreeting> = {
   "/gallery": {
     image: "/characters/sproket/sproket-star-rating.png",
     headline: "Welcome to the gallery.",
-    subtext: "The best wraps from the RestylePro community.",
+    subtext: "The best wraps from the DesignProAI community.",
   },
   "/my-renders": {
     image: "/characters/sproket/sproket-loves-it.png",
@@ -367,8 +367,8 @@ export interface SproketFAQ {
 // Global FAQ shown on pages without page-specific FAQ
 export const GLOBAL_FAQ: SproketFAQ[] = [
   {
-    q: "What is RestyleProAI?",
-    a: "RestyleProAI is a complete Vehicle Wrap Design System — it's like having a custom vehicle wrap designer at your fingertips. From prompt to production. No designer. No outsourcing. No waiting.",
+    q: "What is DesignProAI?",
+    a: "DesignProAI is a complete Vehicle Wrap Design System — it's like having a custom vehicle wrap designer at your fingertips. From prompt to production. No designer. No outsourcing. No waiting.",
   },
   {
     q: "How do I get started?",
@@ -376,7 +376,7 @@ export const GLOBAL_FAQ: SproketFAQ[] = [
   },
   {
     q: "Who is SPROKET?",
-    a: "That's me! I'm your dedicated RestyleProAI Systems Guide. I'm here to guide you so that you skyrocket your design abilities.",
+    a: "That's me! I'm your dedicated DesignProAI Systems Guide. I'm here to guide you so that you skyrocket your design abilities.",
   },
   {
     q: "Who is ACE?",

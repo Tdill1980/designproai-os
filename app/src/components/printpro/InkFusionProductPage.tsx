@@ -347,7 +347,7 @@ const InkFusionProductPage = () => {
               <div>
                 <h2 className="text-2xl font-bold text-foreground mb-4">What is InkFusion™?</h2>
                 <p className="text-foreground mb-4">
-                  InkFusion™ is RestyleProAI™'s proprietary ink formula that delivers automotive paint-quality 
+                  InkFusion™ is DesignProAI™'s proprietary ink formula that delivers automotive paint-quality 
                   finishes on premium Avery SW900 cast vinyl. Each color is precision-matched and calibrated 
                   for perfect consistency.
                 </p>

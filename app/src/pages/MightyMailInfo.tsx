@@ -7,7 +7,7 @@
  *
  * Signup writes a lead row to public.email_subscribers with
  * source='mightymail-landing' so the marketing team can drip the WPW
- * onboarding series. The CTA also links to /signup for full RestylePro
+ * onboarding series. The CTA also links to /signup for full DesignProAI
  * account creation.
  */
 
@@ -87,7 +87,7 @@ const FAQ = [
   },
   {
     q: "Do I need a subscription?",
-    a: "MightyMail is included with every RestylePro plan. The booster packs (Authority, Educate, Inspire, Promote, ClientCare, Protect) are all built in — no add-ons, no per-email fees.",
+    a: "MightyMail is included with every DesignProAI plan. The booster packs (Authority, Educate, Inspire, Promote, ClientCare, Protect) are all built in — no add-ons, no per-email fees.",
   },
   {
     q: "Can I change the tone?",
@@ -141,7 +141,7 @@ export default function MightyMailInfo() {
       setSubmitted(true);
       toast({
         title: "You're in.",
-        description: "Check your inbox — we'll show you how MightyMail works inside RestylePro.",
+        description: "Check your inbox — we'll show you how MightyMail works inside DesignProAI.",
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Sign-up failed";
@@ -154,10 +154,10 @@ export default function MightyMailInfo() {
   return (
     <div className="min-h-screen bg-black text-white">
       <Helmet>
-        <title>MightyMail — Automatic email retargeting for wrap shops · RestylePro</title>
+        <title>MightyMail — Automatic email retargeting for wrap shops · DesignProAI</title>
         <meta
           name="description"
-          content="MightyMail follows up on every open quote with the actual design, on autopilot. Six booster packs, two tones, zero per-email fees — included with every RestylePro plan."
+          content="MightyMail follows up on every open quote with the actual design, on autopilot. Six booster packs, two tones, zero per-email fees — included with every DesignProAI plan."
         />
       </Helmet>
 
@@ -173,7 +173,7 @@ export default function MightyMailInfo() {
         <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-black/40 to-purple-500/10" />
         <div className="relative max-w-4xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold uppercase tracking-wider mb-6">
-            <Mail className="w-3.5 h-3.5" /> Included with every RestylePro plan
+            <Mail className="w-3.5 h-3.5" /> Included with every DesignProAI plan
           </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-4">
             Every quote you send.{" "}
@@ -182,7 +182,7 @@ export default function MightyMailInfo() {
             </span>
           </h1>
           <p className="text-lg sm:text-xl text-white/70 max-w-2xl mx-auto mb-3">
-            MightyMail is the auto-email retargeting engine inside RestylePro. The customer goes silent,
+            MightyMail is the auto-email retargeting engine inside DesignProAI. The customer goes silent,
             we keep showing up — with their <span className="text-cyan-300 font-semibold">actual design</span>{" "}
             in every email — until they book or politely tap out.
           </p>
@@ -212,7 +212,7 @@ export default function MightyMailInfo() {
             </Button>
           </div>
           <p className="text-xs text-white/40 mt-3">
-            Already a RestylePro shop?{" "}
+            Already a DesignProAI shop?{" "}
             <Link to="/mightymail" className="text-cyan-300 hover:underline">
               Open MightyMail
             </Link>
@@ -574,7 +574,7 @@ export default function MightyMailInfo() {
             </div>
             <h2 className="text-3xl sm:text-4xl font-bold mb-3">Start using MightyMail today</h2>
             <p className="text-white/60">
-              Drop your details and we'll send you the inside tour. Already have a RestylePro account?{" "}
+              Drop your details and we'll send you the inside tour. Already have a DesignProAI account?{" "}
               <Link to="/login" className="text-cyan-300 hover:underline">
                 Log in
               </Link>{" "}
@@ -672,7 +672,7 @@ export default function MightyMailInfo() {
                 className="flex-1 border-white/20 text-white hover:bg-white/10"
                 asChild
               >
-                <Link to="/signup">Create a RestylePro Account</Link>
+                <Link to="/signup">Create a DesignProAI Account</Link>
               </Button>
             </div>
 
@@ -719,7 +719,7 @@ export default function MightyMailInfo() {
             Quote sent. Wrap installed. No follow-up missed.
           </h2>
           <p className="text-white/60 mb-6">
-            MightyMail is included with every RestylePro plan. QuickText handles the SMS side.
+            MightyMail is included with every DesignProAI plan. QuickText handles the SMS side.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Button asChild className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:brightness-110 text-white font-bold px-8">

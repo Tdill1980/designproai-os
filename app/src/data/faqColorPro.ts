@@ -3,7 +3,7 @@ import type { SEOFAQItem } from "@/components/SEOFAQPage";
 export const faqColorProData: SEOFAQItem[] = [
   {
     question: "What is ColorPro™ and how does it work?",
-    answer: "ColorPro™ is RestyleProAI's flagship solid color wrap visualization tool. Select any vehicle, choose a vinyl wrap color from our manufacturer-matched library, pick a finish (gloss, matte, satin, chrome, etc.), and generate photorealistic renders in seconds. It's designed for wrap shops to show clients exactly what their vehicle will look like before ordering materials.",
+    answer: "ColorPro™ is DesignProAI's flagship solid color wrap visualization tool. Select any vehicle, choose a vinyl wrap color from our manufacturer-matched library, pick a finish (gloss, matte, satin, chrome, etc.), and generate photorealistic renders in seconds. It's designed for wrap shops to show clients exactly what their vehicle will look like before ordering materials.",
   },
   {
     question: "What vinyl wrap brands and colors are available in ColorPro™?",
@@ -27,7 +27,7 @@ export const faqColorProData: SEOFAQItem[] = [
   },
   {
     question: "What is InkFusion™ color matching?",
-    answer: "InkFusion™ is RestyleProAI's proprietary color-matching system that uses manufacturer-provided LAB color values to ensure on-screen colors accurately represent the real-world vinyl material. This means the Avery Dennison Gloss Black Rose you see on screen closely matches the physical roll you'd order.",
+    answer: "InkFusion™ is DesignProAI's proprietary color-matching system that uses manufacturer-provided LAB color values to ensure on-screen colors accurately represent the real-world vinyl material. This means the Avery Dennison Gloss Black Rose you see on screen closely matches the physical roll you'd order.",
   },
   {
     question: "Can I use ColorPro™ renders for client presentations?",
@@ -35,7 +35,7 @@ export const faqColorProData: SEOFAQItem[] = [
   },
   {
     question: "Does ColorPro™ support two-tone or accent color wraps?",
-    answer: "ColorPro™ focuses on full-body solid color visualization. For two-tone designs, accent panels, and custom graphics, use DesignProAI™ or FadeWraps™ - both are included in the RestyleProAI suite and share the same color library.",
+    answer: "ColorPro™ focuses on full-body solid color visualization. For two-tone designs, accent panels, and custom graphics, use DesignProAI™ or FadeWraps™ - both are included in the DesignProAI suite and share the same color library.",
   },
   {
     question: "How fast are ColorPro™ renders generated?",

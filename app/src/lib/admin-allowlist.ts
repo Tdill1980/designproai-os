@@ -62,14 +62,14 @@ export function isWpwTenantMember(email: string | null | undefined): boolean {
 }
 
 /**
- * WPW Internal Staff allowlist — STRICTLY internal RestylePro/WPW team only.
+ * WPW Internal Staff allowlist — STRICTLY internal DesignProAI/WPW team only.
  *
  * Distinct from WPW_TENANT_ALLOWLIST and from any onboarded WPW shop tenant.
  * Used to gate "admin-wide" analytics views (all-customer aggregate revenue,
  * all-orders status board) so onboarded WPW shop tenants only see their own
  * data — not other shops' data.
  *
- * Rule of thumb: if an email belongs to a person on payroll at RestylePro
+ * Rule of thumb: if an email belongs to a person on payroll at DesignProAI
  * or WePrintWraps internally, list it here. Outside WPW shop tenants
  * (paying or free) must NEVER appear here.
  */

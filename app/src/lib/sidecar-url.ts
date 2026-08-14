@@ -6,7 +6,7 @@
  * `restyleproai.com` returns Vercel `404 DEPLOYMENT_NOT_FOUND` for `/api/*`,
  * which made "Build Panel Files" silently 404 when the app was loaded on the
  * apex. The server-to-server caller already hardcodes the www host
- * (`designpro-ensure-qc-job` → `https://www.restyleproai.com/api/...`); this
+ * (`designpro-ensure-qc-job` → `https://designproai.com/api/...`); this
  * mirrors that decision for browser callers.
  *
  * On the apex we return an absolute www URL (cross-origin — the sidecar sends
@@ -18,7 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 export function sidecarUrl(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
   if (typeof window !== "undefined" && window.location.hostname === "restyleproai.com") {
-    return `https://www.restyleproai.com${p}`;
+    return `https://designproai.com${p}`;
   }
   return p;
 }

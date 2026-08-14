@@ -1,7 +1,7 @@
 /**
  * wpw-cart — build a WePrintWraps cart URL from estimator line items.
  *
- * Phase 7 / Path B model: RestylePro is the design tool, WPW is the
+ * Phase 7 / Path B model: DesignProAI is the design tool, WPW is the
  * storefront. Customer accepts the estimate → clicks "Checkout on
  * WePrintWraps" → lands on weprintwraps.com/cart with the WPW SKUs
  * pre-loaded → pays on WPW → WPW handles fulfillment.
@@ -11,7 +11,7 @@
  *     row with a `wooProductId` go into the cart. WPW only sells the
  *     printed/cut vinyl; everything else (chrome delete, carbon fiber
  *     roof, racing stripe, color-change labor, custom design fees) is
- *     shop-side labor that lives on the RestylePro side of the quote.
+ *     shop-side labor that lives on the DesignProAI side of the quote.
  *
  *   • Items with no `productId` (manual lines, source='upsell' from
  *     the precision-mod buttons) are dropped from the WPW cart and

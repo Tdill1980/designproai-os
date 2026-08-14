@@ -136,7 +136,7 @@ const TOOLS: Tool[] = [
     name: "Gallery Feature",
     tagline: "Put your work in front of buyers.",
     description:
-      "Feature one of your finished designs in the public RestylePro gallery.",
+      "Feature one of your finished designs in the public DesignProAI gallery.",
     priceCents: 2500,
     unitLabel: "1 feature credit",
     accent: "from-teal-400 to-cyan-500",
@@ -215,10 +215,10 @@ export default function PayPerUseLanding() {
   return (
     <>
       <Helmet>
-        <title>Pay-Per-Use — RestylePro</title>
+        <title>Pay-Per-Use — DesignProAI</title>
         <meta
           name="description"
-          content="Buy a single use of any RestylePro tool. No subscription. No commitment. Pay once, render once."
+          content="Buy a single use of any DesignProAI tool. No subscription. No commitment. Pay once, render once."
         />
       </Helmet>
 

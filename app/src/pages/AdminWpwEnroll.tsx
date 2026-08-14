@@ -290,7 +290,7 @@ export default function AdminWpwEnroll() {
   return (
     <div className="min-h-screen bg-[#FAFAFA] text-[#0F172A]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <Helmet>
-        <title>WPW Drip Enrollment — RestylePro</title>
+        <title>WPW Drip Enrollment — DesignProAI</title>
       </Helmet>
 
       <div className="max-w-[1100px] mx-auto px-4 sm:px-6 py-8">

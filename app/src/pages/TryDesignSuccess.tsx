@@ -14,7 +14,7 @@ const TryDesignSuccess = () => {
   return (
     <>
       <Helmet>
-        <title>Check your email — RestyleProAI</title>
+        <title>Check your email — DesignProAI</title>
         <meta name="robots" content="noindex" />
       </Helmet>
 
@@ -41,7 +41,7 @@ const TryDesignSuccess = () => {
               <div>
                 <p className="text-sm font-semibold">Email from noreply@restyleproai.com</p>
                 <p className="text-xs text-white/55 mt-0.5">
-                  Subject: "Your RestyleProAI design credit is ready"
+                  Subject: "Your DesignProAI design credit is ready"
                 </p>
               </div>
             </div>

@@ -11,12 +11,12 @@ const MyVehiclePro = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>MyVehicle Pro - Upload Your Vehicle Photo & Visualize Wraps | RestyleProAI</title>
+        <title>MyVehicle Pro - Upload Your Vehicle Photo & Visualize Wraps | DesignProAI</title>
         <meta name="description" content="Upload a photo of your actual vehicle and see any wrap color, design, or graphic applied to it instantly with AI. The ultimate vehicle wrap visualization tool." />
-        <link rel="canonical" href="https://www.restyleproai.com/myvehiclepro" />
-        <meta property="og:title" content="MyVehicle Pro - Upload Your Vehicle Photo & Visualize Wraps | RestyleProAI" />
+        <link rel="canonical" href="https://designproai.com/myvehiclepro" />
+        <meta property="og:title" content="MyVehicle Pro - Upload Your Vehicle Photo & Visualize Wraps | DesignProAI" />
         <meta property="og:description" content="Upload a photo of your actual vehicle and see any wrap color, design, or graphic applied to it instantly with AI." />
-        <meta property="og:url" content="https://www.restyleproai.com/myvehiclepro" />
+        <meta property="og:url" content="https://designproai.com/myvehiclepro" />
       </Helmet>
 
       <main className="flex-1">

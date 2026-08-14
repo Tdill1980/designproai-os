@@ -66,12 +66,12 @@ const BlogCover = () => {
     return <Navigate to="/blog" replace />;
   }
 
-  const ogImage = post.featured_image_url || "https://restyleproai.com/hero-mustang.jpg";
+  const ogImage = post.featured_image_url || "https://designproai.com/hero-mustang.jpg";
 
   return (
     <>
       <Helmet>
-        <title>{post.title} | RestyleProAI</title>
+        <title>{post.title} | DesignProAI</title>
         <meta name="description" content={post.description} />
         <meta property="og:title" content={post.title} />
         <meta property="og:description" content={post.description} />
@@ -92,7 +92,7 @@ const BlogCover = () => {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
               <span className="absolute top-3 left-3 text-[9px] font-medium tracking-widest uppercase text-white/80 bg-black/30 backdrop-blur-sm px-2.5 py-1 rounded">
-                RestyleProAI
+                DesignProAI
               </span>
             </div>
 
@@ -117,7 +117,7 @@ const BlogCover = () => {
               )}
 
               <div className="flex items-center gap-2 text-xs text-neutral-400 mb-4 pb-4 border-b border-neutral-100">
-                <span>{post.author || "RestyleProAI"}</span>
+                <span>{post.author || "DesignProAI"}</span>
                 <span>·</span>
                 <span>{post.read_time}</span>
                 <span>·</span>

@@ -177,7 +177,7 @@ export default function AdminOperatorOnboarding() {
                   <p className="text-lg text-muted-foreground leading-relaxed max-w-lg mx-auto">
                     This wizard walks you through every system you need access to as a{" "}
                     <span className="text-foreground font-semibold">
-                      RestyleProAI operator
+                      DesignProAI operator
                     </span>
                     . By the end, you'll have Supabase access, Stripe dashboard access,
                     and a full understanding of the admin tools.
@@ -548,7 +548,7 @@ export default function AdminOperatorOnboarding() {
                 Admin Panel Tools
               </h2>
               <p className="text-muted-foreground mt-1">
-                Everything you can do from the RestyleProAI admin dashboard
+                Everything you can do from the DesignProAI admin dashboard
               </p>
             </div>
 
@@ -748,7 +748,7 @@ export default function AdminOperatorOnboarding() {
                     You're all set!
                   </h3>
                   <p className="text-muted-foreground">
-                    You now have full operator access to RestyleProAI. Head to the admin dashboard to get started.
+                    You now have full operator access to DesignProAI. Head to the admin dashboard to get started.
                   </p>
                 </CardContent>
               </Card>

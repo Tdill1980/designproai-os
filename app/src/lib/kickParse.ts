@@ -1,7 +1,7 @@
 /**
  * kickParse — queueing footage should START the parser, not just file a row.
  *
- * Owner, 2026-08-05: "My entire Marketing Suite in RestyleProAI only works
+ * Owner, 2026-08-05: "My entire Marketing Suite in DesignProAI only works
  * from Claude Code! I need an operating system."
  *
  * That was literally true, and this is the mechanism that made it true. Six

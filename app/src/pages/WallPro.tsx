@@ -493,7 +493,7 @@ const WallPro = () => {
 
   return (
     <div style={{ minHeight: "100vh", background: "#FFF" }}>
-      <Helmet><title>WallPro - AI Wall Wrap Designer | RestyleProAI</title></Helmet>
+      <Helmet><title>WallPro - AI Wall Wrap Designer | DesignProAI</title></Helmet>
 
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px 80px" }}>
         {/* ── Breadcrumb + Hero ───────────────────────────────── */}

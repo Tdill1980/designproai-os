@@ -1,5 +1,5 @@
 /**
- * brand-copy.ts — Single source of truth for RestyleProAI™ and WePrintWraps brand positioning.
+ * brand-copy.ts — Single source of truth for DesignProAI™ and WePrintWraps brand positioning.
  * Used by ContentStudio, Marketing Hub, MightyMail, and edge functions.
  *
  * Server-side mirror: supabase/functions/_shared/brand-os.ts (Deno functions
@@ -7,7 +7,7 @@
  */
 
 // ── THE CHIEF AIM ──────────────────────────────────────────────────
-// The strategic spine of all DesignProAI / RestyleProAI content. Every
+// The strategic spine of all DesignProAI / DesignProAI content. Every
 // generated piece must serve this positioning.
 export const CHIEF_AIM = {
   statement:
@@ -28,10 +28,10 @@ export const CHIEF_AIM = {
 
 // ── BRAND IDENTITY ─────────────────────────────────────────────────
 export const BRAND_IDENTITY = {
-  RestyleProAI: {
+  DesignProAI: {
     tagline: "Design. Output. Profit.",
-    positioning: "RestyleProAI™ is a Design-to-Production and Marketing Engine built for sign, wrap, tint, and restyle shops.",
-    description: "It gives you the ability to create high-end custom designs, move them into production, and generate profit—all from one streamlined system. Whether you're branding commercial vehicles, restyling cars, installing tint, or running a full sign operation—RestyleProAI™ adapts to how your shop operates. It's modular—so you can use it for design and production, or run a complete system with CMS and marketing built in. Every account includes PrintPro™, your verified wholesale print partner—so you're never limited by production capacity.",
+    positioning: "DesignProAI™ is a Design-to-Production and Marketing Engine built for sign, wrap, tint, and restyle shops.",
+    description: "It gives you the ability to create high-end custom designs, move them into production, and generate profit—all from one streamlined system. Whether you're branding commercial vehicles, restyling cars, installing tint, or running a full sign operation—DesignProAI™ adapts to how your shop operates. It's modular—so you can use it for design and production, or run a complete system with CMS and marketing built in. Every account includes PrintPro™, your verified wholesale print partner—so you're never limited by production capacity.",
     pillars: [
       { name: "DesignPro™", role: "High-end design", description: "Engineered to think and create like a designer. Takes your direction and turns it into high-end, intentional design. The more detail you provide, the more refined the result." },
       { name: "ProductionFlow™", role: "Real output", description: "Connects design directly to output. No disconnect. No guesswork. From concept to print—everything stays aligned." },
@@ -61,7 +61,7 @@ export const BRAND_IDENTITY = {
   TheWrap: {
     tagline: "The wrap industry's weekly read.",
     positioning: "The Wrap is the ecosystem's weekly email newsletter — a 5-minute Tuesday digest of the week across the wrap industry.",
-    description: "The week's best builds and content, new WrapTVWorld episodes, design drops, shop tips, and what's new across WePrintWraps, RestyleProAI, DesignProAI, and Ink & Edge. Repurposed, not rewritten — it rounds up real content that already shipped.",
+    description: "The week's best builds and content, new WrapTVWorld episodes, design drops, shop tips, and what's new across WePrintWraps, DesignProAI, DesignProAI, and Ink & Edge. Repurposed, not rewritten — it rounds up real content that already shipped.",
     tone: "Smart, fast, industry-insider — a trade morning-brew for wrap people. Warm but efficient, zero corporate filler. Credits shops and creators by name.",
     audience: "Installers, shop owners, designers, and wrap-culture fans across every ecosystem brand's list.",
     neverSay: ["invented stats", "invented prices", "hype walls", "more than one CTA"],

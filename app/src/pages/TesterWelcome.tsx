@@ -78,7 +78,7 @@ export default function TesterWelcome() {
             Tester Access Granted
           </Badge>
           <h1 className="text-3xl font-bold text-foreground mb-2">
-            Welcome to RestyleProAI™ Vehicle Wrap Design Suite
+            Welcome to DesignProAI™ Vehicle Wrap Design Suite
           </h1>
           <p className="text-muted-foreground">
             You have unlimited access to all tools. Here's how to test and give feedback.

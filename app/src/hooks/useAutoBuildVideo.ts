@@ -1,7 +1,7 @@
 /**
  * useAutoBuildVideo — one-button AI auto-build for the Engine Room Video Studio.
  *
- * Orchestrates the RestylePro-native pipeline (docs/VIDEO-AUTOCREATE-PILOT-KICKOFF.md):
+ * Orchestrates the DesignProAI-native pipeline (docs/VIDEO-AUTOCREATE-PILOT-KICKOFF.md):
  *   clips:  video-auto-assemble  (AI picks + trims clips from agent_media_assets)
  *   OR      content_moments      (Parse Footage hook-scored moments, long-form fast-cut)
  *   words:  video-captions       (timeline captions)

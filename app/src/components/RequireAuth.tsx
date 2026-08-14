@@ -149,7 +149,7 @@ export const RequireAuth = ({ children }: { children: React.ReactNode }) => {
           </Button>
         </div>
         <p className="text-zinc-600 text-xs mt-8">
-          RestyleProAI — Vehicle Wrap Design System
+          DesignProAI — Vehicle Wrap Design System
         </p>
       </div>
     );

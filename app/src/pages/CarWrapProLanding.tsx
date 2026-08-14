@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/accordion";
 import { Boxes, Camera, FileCheck, Layers, Package, Ruler, Sparkles } from "lucide-react";
 
-const CANONICAL = "https://www.restyleproai.com/carwrappro";
+const CANONICAL = "https://designproai.com/carwrappro";
 
 const FAQS = [
   {
@@ -132,7 +132,7 @@ export default function CarWrapProLanding() {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://restyleproai.com" },
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://designproai.com" },
       { "@type": "ListItem", position: 2, name: "CarWrapPro", item: CANONICAL },
     ],
   };

@@ -65,13 +65,13 @@ const ColorPro = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>ColorPro - AI Vehicle Color Change Visualizer | RestyleProAI</title>
+        <title>ColorPro - AI Vehicle Color Change Visualizer | DesignProAI</title>
         <meta name="description" content="See any vehicle in any color instantly with AI. Professional color-change renders for client presentations. Design it. Panel it. Print it. The world's first prompt-to-production wrap platform." />
-        <link rel="canonical" href="https://www.restyleproai.com/colorpro" />
-        <meta property="og:title" content="ColorPro - AI Vehicle Color Change Visualizer | RestyleProAI" />
+        <link rel="canonical" href="https://designproai.com/colorpro" />
+        <meta property="og:title" content="ColorPro - AI Vehicle Color Change Visualizer | DesignProAI" />
         <meta property="og:description" content="See any vehicle in any color instantly with AI. Professional color-change renders for client presentations." />
-        <meta property="og:url" content="https://www.restyleproai.com/colorpro" />
-        <meta property="og:image" content="https://restyleproai.com/hero-mustang.jpg" />
+        <meta property="og:url" content="https://designproai.com/colorpro" />
+        <meta property="og:image" content="https://designproai.com/hero-mustang.jpg" />
       </Helmet>
       
       <main className="flex-1">

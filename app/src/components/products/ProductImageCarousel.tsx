@@ -3,7 +3,7 @@ import { useProductCarousel } from "@/hooks/useProductCarousel";
 import { cn } from "@/lib/utils";
 
 /**
- * 3-image product carousel shown above the fold on RestyleProAI product
+ * 3-image product carousel shown above the fold on DesignProAI product
  * pages. Images are admin-managed at /admin/product-images. Styled to the
  * ApprovePro look (white card, blue→magenta gradient accents).
  *
@@ -49,7 +49,7 @@ export function ProductImageCarousel({
           <div className="h-1 bg-gradient-to-r from-[#3b82f6] to-[#ec4899]" />
           <div className="relative aspect-[16/9] bg-gradient-to-br from-[#3b82f6]/8 via-white to-[#ec4899]/8 flex flex-col items-center justify-center gap-4">
             <div className="flex items-center gap-3 opacity-70">
-              <img src="/sprocket/restyleproai-logo.png" alt="RestyleProAI" className="h-7 w-auto object-contain" />
+              <img src="/sprocket/restyleproai-logo.png" alt="DesignProAI" className="h-7 w-auto object-contain" />
               <span className="text-gray-300 text-xl font-light">·</span>
               <img src="/sprocket/designproai-logo.png" alt="DesignProAI" className="h-7 w-auto object-contain" />
             </div>

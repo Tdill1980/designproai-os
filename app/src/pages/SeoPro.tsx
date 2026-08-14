@@ -68,7 +68,7 @@ const PILLARS = [
 const PROOF = [
   "Multi-tenant by design — every shop you manage gets its own Search Console, GA4, GBP, and WordPress connection.",
   "Yoast / RankMath / AIOSEO compatible — meta updates push through whichever plugin the site already uses.",
-  "Built into RestylePro — same login, same billing, same support.",
+  "Built into DesignProAI — same login, same billing, same support.",
 ];
 
 export default function SeoPro() {
@@ -87,7 +87,7 @@ export default function SeoPro() {
         <div className="relative max-w-6xl mx-auto px-6 py-20 sm:py-28">
           <div className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/70 px-3 py-1 text-xs text-zinc-300 mb-6">
             <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-            New in RestylePro · AutoSEO Toolkit
+            New in DesignProAI · AutoSEO Toolkit
           </div>
           <h1 className="text-4xl sm:text-6xl font-semibold tracking-tight">
             Seo
@@ -137,7 +137,7 @@ export default function SeoPro() {
             Eight features. One outcome.
           </h2>
           <p className="text-zinc-400 mt-2 max-w-2xl">
-            Every pillar below is already built into RestylePro and shipping
+            Every pillar below is already built into DesignProAI and shipping
             today. Each one moves a different lever on your organic traffic —
             and they compound when used together.
           </p>
@@ -180,7 +180,7 @@ export default function SeoPro() {
           </p>
           <div className="mt-8 inline-flex flex-wrap justify-center gap-2 text-xs text-zinc-300">
             {[
-              "Blog post (RestylePro)",
+              "Blog post (DesignProAI)",
               "→ WordPress",
               "→ Google Business",
               "→ MightyMail email",
@@ -204,7 +204,7 @@ export default function SeoPro() {
           Stop hand-writing SEO. Start automating it.
         </h2>
         <p className="text-zinc-400 mt-3">
-          SeoPro ships with every RestylePro plan. Connect WordPress + Google
+          SeoPro ships with every DesignProAI plan. Connect WordPress + Google
           once and the whole engine starts running in the background.
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">

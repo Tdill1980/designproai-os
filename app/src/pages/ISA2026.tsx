@@ -235,9 +235,9 @@ export default function ISA2026() {
   return (
     <>
       <Helmet>
-        <title>RestyleProAI at ISA 2026 | AI Vehicle Wrap Design System</title>
-        <meta name="description" content="Visit RestyleProAI at ISA International Sign Expo 2026 in Orlando. See the world's first AI vehicle wrap design system live. From prompt to print-ready in minutes." />
-        <meta property="og:title" content="RestyleProAI at ISA International Sign Expo 2026" />
+        <title>DesignProAI at ISA 2026 | AI Vehicle Wrap Design System</title>
+        <meta name="description" content="Visit DesignProAI at ISA International Sign Expo 2026 in Orlando. See the world's first AI vehicle wrap design system live. From prompt to print-ready in minutes." />
+        <meta property="og:title" content="DesignProAI at ISA International Sign Expo 2026" />
         <meta property="og:description" content="The world's first AI vehicle wrap design system. See it live at ISA 2026 in Orlando, April 8-10." />
         <meta property="og:image" content="/hero-mustang.jpg" />
         <meta name="twitter:card" content="summary_large_image" />
@@ -571,7 +571,7 @@ export default function ISA2026() {
 
             <div className="flex flex-col items-center gap-3 mt-6">
               <a
-                href="https://restyleproai.com"
+                href="https://designproai.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors font-mono"
@@ -579,7 +579,7 @@ export default function ISA2026() {
                 restyleproai.com
               </a>
               <p className="text-xs text-[#444] font-mono">
-                &copy; {new Date().getFullYear()} RestyleProAI. All rights reserved.
+                &copy; {new Date().getFullYear()} DesignProAI. All rights reserved.
               </p>
             </div>
           </div>

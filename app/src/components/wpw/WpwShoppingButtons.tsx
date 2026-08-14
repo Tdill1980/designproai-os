@@ -57,13 +57,13 @@ const RESTYLEPRO_TIERS: TierRow[] = [
 ];
 
 const RESTYLEPRO_TOOLTIP =
-  "RestylePro Design Tool — your prompt-based AI wrap design engine. Render quotas are shared across the entire suite. WPW Customer pricing locks in $50/mo less than standard, for life.";
+  "DesignProAI Design Tool — your prompt-based AI wrap design engine. Render quotas are shared across the entire suite. WPW Customer pricing locks in $50/mo less than standard, for life.";
 
 const PRINT_TOOLTIP =
   "Your on-call printing partner. PrintPro takes care of your printing needs and ships anywhere in the USA with FREE shipping over $750 — whether you need a rush job printed or you don't have a printer at all and want to expand to selling printed wrap film.";
 
 const DESIGN_TOOLTIP =
-  "Design Products — the human kind. WPW design pricing if you want to go that route. (Compare to a $300/mo RestylePro Starter subscription for AI-only design.)";
+  "Design Products — the human kind. WPW design pricing if you want to go that route. (Compare to a $300/mo DesignProAI Starter subscription for AI-only design.)";
 
 // ── Price row UI ────────────────────────────────────────────────────
 
@@ -140,7 +140,7 @@ const HoverPanel = ({ title, tooltip, rows, isWpw, manageHref }: PanelProps) => 
 
     {/* Subscribe / upgrade CTA — shown to EVERYONE, including current
         subscribers (they can use this link to move to a higher tier).
-        End goal of every visit through this dropdown is RestylePro
+        End goal of every visit through this dropdown is DesignProAI
         dashboard access. */}
     <Link
       to="/pricing"
@@ -237,13 +237,13 @@ export const WpwShoppingButtons = ({ className }: WpwShoppingButtonsProps) => {
         </HoverCardContent>
       </HoverCard>
 
-      {/* RestylePro Design Products — subscription tier qtys + WPW pricing.
+      {/* DesignProAI Design Products — subscription tier qtys + WPW pricing.
           End goal: non-subscribers convert; current subscribers see upgrade. */}
       <HoverCard openDelay={120} closeDelay={150}>
         <HoverCardTrigger asChild>
           <TriggerButton
             icon={<Wand2 className="w-3.5 h-3.5" />}
-            label="RestylePro Design Products"
+            label="DesignProAI Design Products"
           />
         </HoverCardTrigger>
         <HoverCardContent
@@ -253,7 +253,7 @@ export const WpwShoppingButtons = ({ className }: WpwShoppingButtonsProps) => {
         >
           <div className="space-y-3">
             <div>
-              <h4 className="text-sm font-bold text-slate-900 mb-1">RestylePro Design Products — subscription tiers</h4>
+              <h4 className="text-sm font-bold text-slate-900 mb-1">DesignProAI Design Products — subscription tiers</h4>
               <p className="text-[12px] text-slate-600 leading-relaxed">{RESTYLEPRO_TOOLTIP}</p>
             </div>
 

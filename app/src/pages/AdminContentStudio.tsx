@@ -37,7 +37,7 @@ import { brandMeta, productMeta, tint } from "@/lib/content-tags";
 
 // Content Studio brand-selector value → ecosystem brand slug (for canonical colors).
 const CS_BRAND_SLUG: Record<string, string> = {
-  RestyleProAI: "restylepro", WePrintWraps: "weprintwraps", DesignProAI: "designproai", WrapTV: "wraptvworld", InkAndEdge: "inkandedge",
+  DesignProAI: "restylepro", WePrintWraps: "weprintwraps", DesignProAI: "designproai", WrapTV: "wraptvworld", InkAndEdge: "inkandedge",
 };
 const csBrandColor = (v: string) => brandMeta(CS_BRAND_SLUG[v] || v).color;
 
@@ -227,7 +227,7 @@ function refineText(text: string, zone: string): string {
 }
 
 const BRAND_LABEL: Record<string, string> = {
-  RestyleProAI: "RestyleProAI\u2122",
+  DesignProAI: "DesignProAI\u2122",
   WePrintWraps: "WePrintWraps.com",
   WrapTV: "WrapTV World",
   InkAndEdge: "Ink & Edge Magazine",
@@ -246,7 +246,7 @@ const TEMPLATE_ASPECT: Record<string, string> = {
 // and deleted from this file — Content OS execution priority 1: one hook
 // library in the DB, nothing competing with it in code.
 const BRAND_HOOK_SLUGS: Record<string, string[]> = {
-  RestyleProAI: ["restylepro", "designproai"],
+  DesignProAI: ["restylepro", "designproai"],
   DesignProAI: ["designproai"],
   WePrintWraps: ["weprintwraps"],
   WrapTV: ["wraptvworld"],
@@ -333,7 +333,7 @@ const CONTENT_PACKS: ContentPack[] = [
   { id: "ad-1", style: "Scroll-Stop Ad", headline: "YOUR CAR. YOUR WRAP.", body: "See it before you print it", cta: "MyVehiclePro™" },
   { id: "ad-2", style: "Scroll-Stop Ad", headline: "STOP SENDING MOCKUPS", body: "Show them the real vehicle", cta: "See it in action" },
   { id: "ad-3", style: "Scroll-Stop Ad", headline: "THIS CLOSES THE DEAL", body: "Photoreal on their car", cta: "Start your next design" },
-  { id: "ad-4", style: "Scroll-Stop Ad", headline: "SEE IT. SELL IT.", body: "Real previews. Faster approvals.", cta: "RestyleProAI.com" },
+  { id: "ad-4", style: "Scroll-Stop Ad", headline: "SEE IT. SELL IT.", body: "Real previews. Faster approvals.", cta: "DesignProAI.com" },
   { id: "ad-5", style: "Scroll-Stop Ad", headline: "NOT A MOCKUP", body: "Their actual vehicle", cta: "Show it before you sell it" },
   { id: "ad-6", style: "Scroll-Stop Ad", headline: "STILL USING MOCKUPS?", body: "This is why you lose", cta: "Fix your workflow today" },
   { id: "ad-7", style: "Scroll-Stop Ad", headline: "UPLOAD → RENDER → CLOSE", body: "Minutes, not days", cta: "Stop waiting on design" },
@@ -364,7 +364,7 @@ const CONTENT_PACKS: ContentPack[] = [
   { id: "kill-rev-3", style: "One-Screen Killer", headline: "STOP CHASING DESIGN CHANGES", body: "Control it yourself.", cta: "RevisionStudioIQ™", tool: "RevisionStudio" },
   { id: "kill-rev-4", style: "One-Screen Killer", headline: "EDIT IT. APPROVE IT. MOVE ON.", body: "Faster jobs.", cta: "RevisionStudioIQ™", tool: "RevisionStudio" },
   { id: "kill-sys-1", style: "One-Screen Killer", headline: "SEE EVERY JOB. LIVE.", body: "Total visibility.", cta: "Design. Output. Profit." },
-  { id: "kill-sys-2", style: "One-Screen Killer", headline: "JUST TELL IT WHAT YOU WANT", body: "It builds the rest.", cta: "RestyleProAI.com" },
+  { id: "kill-sys-2", style: "One-Screen Killer", headline: "JUST TELL IT WHAT YOU WANT", body: "It builds the rest.", cta: "DesignProAI.com" },
 
   // SET 12 — Bottom Bar / Tool Strip
   { id: "bar-pf-1", style: "Tool Strip", headline: "ProductionFlow™", body: "Design → Output → Profit", cta: "" },
@@ -385,7 +385,7 @@ const CONTENT_PACKS: ContentPack[] = [
   { id: "inhouse-1", style: "In-House Designer", headline: "READY TO HAVE YOUR OWN IN-HOUSE DESIGNER?", body: "No hiring. No delays.", cta: "DesignPro™", tool: "DesignProAI" },
   { id: "inhouse-2", style: "In-House Designer", headline: "YOUR OWN IN-HOUSE DESIGNER", body: "Built into your workflow.", cta: "Start designing in 60 seconds" },
   { id: "inhouse-3", style: "In-House Designer", headline: "ADD A DESIGNER — WITHOUT HIRING", body: "Scale instantly.", cta: "See it in action" },
-  { id: "inhouse-4", style: "In-House Designer", headline: "STOP OUTSOURCING DESIGN", body: "Bring it in-house.", cta: "RestyleProAI.com" },
+  { id: "inhouse-4", style: "In-House Designer", headline: "STOP OUTSOURCING DESIGN", body: "Bring it in-house.", cta: "DesignProAI.com" },
 
   // SET 15 — Scale / 20X angle
   { id: "scale-1", style: "Scale / 20X", headline: "20X YOUR DESIGN OUTPUT", body: "Or stop outsourcing altogether.", cta: "DesignPro™", tool: "DesignProAI" },
@@ -401,7 +401,7 @@ const CONTENT_PACKS: ContentPack[] = [
   { id: "witty-4", style: "Witty / Smart Alec", headline: "WE DIDN'T REPLACE YOUR DESIGNER", body: "We gave them superpowers.", cta: "20X their output" },
   { id: "witty-5", style: "Witty / Smart Alec", headline: "FLAT PROOFS IN 2026?", body: "Bold move.", cta: "See photoreal previews" },
   { id: "witty-6", style: "Witty / Smart Alec", headline: "7 ANGLES. 30 SECONDS.", body: "Your move.", cta: "Design. Output. Profit." },
-  { id: "witty-7", style: "Witty / Smart Alec", headline: "YOUR COMPETITOR JUST SAW THIS", body: "Sleep tight.", cta: "RestyleProAI.com" },
+  { id: "witty-7", style: "Witty / Smart Alec", headline: "YOUR COMPETITOR JUST SAW THIS", body: "Sleep tight.", cta: "DesignProAI.com" },
   { id: "witty-8", style: "Witty / Smart Alec", headline: "SORRY, FREELANCERS", body: "The AI showed up.", cta: "Start designing in 60 seconds" },
 ];
 
@@ -478,7 +478,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 60, y: 740, width: 960, height: 60, text: "Photorealistic • 7 Views • Instant Preview", fontSize: 28, fontFamily: "Poppins", fill2: "#AAAAAA", align: "center" },
         { type: "rect", x: 200, y: 840, width: 680, height: 70, fill: BRAND.cyan, cornerRadius: 12 },
         { type: "text", x: 200, y: 840, width: 680, height: 70, text: "TRY IT FREE → RESTYLEPROAI.COM", fontSize: 26, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
-        { type: "text", x: 60, y: 940, width: 960, height: 40, text: "RestyleProAI™", fontSize: 22, fontFamily: "Poppins", fill2: "#555555", align: "center" },
+        { type: "text", x: 60, y: 940, width: 960, height: 40, text: "DesignProAI™", fontSize: 22, fontFamily: "Poppins", fill2: "#555555", align: "center" },
       ],
     },
     {
@@ -492,7 +492,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 80, y: 200, width: 920, height: 400, text: "YOUR COMPETITORS\nARE ALREADY\nUSING THIS", fontSize: 72, fontFamily: "Oswald", fill2: BRAND.white, align: "center", fontStyle: "bold" },
         { type: "rect", x: 390, y: 640, width: 300, height: 4, fill: BRAND.cyan },
         { type: "text", x: 80, y: 680, width: 920, height: 80, text: "AI Vehicle Wrap Visualization", fontSize: 32, fontFamily: "Poppins", fill2: BRAND.cyan, align: "center" },
-        { type: "text", x: 80, y: 800, width: 920, height: 60, text: "RestyleProAI.com", fontSize: 28, fontFamily: "Poppins", fill2: "#888888", align: "center" },
+        { type: "text", x: 80, y: 800, width: 920, height: 60, text: "DesignProAI.com", fontSize: 28, fontFamily: "Poppins", fill2: "#888888", align: "center" },
       ],
     },
     {
@@ -508,7 +508,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 60, y: 920, width: 960, height: 80, text: "AI-powered previews for any color,\nfinish, or design panel", fontSize: 24, fontFamily: "Poppins", fill2: "#BBBBBB", align: "center" },
         { type: "rect", x: 200, y: 1050, width: 680, height: 70, fill: BRAND.cyan, cornerRadius: 12 },
         { type: "text", x: 200, y: 1050, width: 680, height: 70, text: "TRY IT FREE", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
-        { type: "text", x: 60, y: 1160, width: 960, height: 40, text: "RestyleProAI™ — RestyleProAI.com", fontSize: 18, fontFamily: "Inter", fill2: "#666666", align: "center" },
+        { type: "text", x: 60, y: 1160, width: 960, height: 40, text: "DesignProAI™ — DesignProAI.com", fontSize: 18, fontFamily: "Inter", fill2: "#666666", align: "center" },
       ],
     },
     {
@@ -526,7 +526,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 60, y: 1070, width: 960, height: 60, text: "See any wrap before you commit.", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.white, align: "center" },
         { type: "rect", x: 240, y: 1160, width: 600, height: 65, fill: BRAND.cyan, cornerRadius: 12 },
         { type: "text", x: 240, y: 1160, width: 600, height: 65, text: "TRY IT FREE", fontSize: 26, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
-        { type: "text", x: 60, y: 1260, width: 960, height: 40, text: "RestyleProAI™", fontSize: 20, fontFamily: "Poppins", fill2: "#555555", align: "center" },
+        { type: "text", x: 60, y: 1260, width: 960, height: 40, text: "DesignProAI™", fontSize: 20, fontFamily: "Poppins", fill2: "#555555", align: "center" },
       ],
     },
     {
@@ -542,8 +542,8 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 60, y: 450, width: 700, height: 80, text: "Before you commit.", fontSize: 36, fontFamily: "Poppins", fill2: BRAND.cyan },
         { type: "text", x: 60, y: 1480, width: 960, height: 60, text: "SWIPE UP TO TRY FREE", fontSize: 32, fontFamily: "Poppins", fill2: BRAND.white, align: "center", fontStyle: "bold" },
         { type: "rect", x: 200, y: 1580, width: 680, height: 70, fill: BRAND.cyan, cornerRadius: 35 },
-        { type: "text", x: 200, y: 1580, width: 680, height: 70, text: "RestyleProAI.com", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
-        { type: "text", x: 60, y: 1700, width: 960, height: 40, text: "RestyleProAI™ Vehicle Wrap Design Suite", fontSize: 18, fontFamily: "Inter", fill2: "#666666", align: "center" },
+        { type: "text", x: 200, y: 1580, width: 680, height: 70, text: "DesignProAI.com", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
+        { type: "text", x: 60, y: 1700, width: 960, height: 40, text: "DesignProAI™ Vehicle Wrap Design Suite", fontSize: 18, fontFamily: "Inter", fill2: "#666666", align: "center" },
       ],
     },
     {
@@ -559,7 +559,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 40, y: 250, width: 440, height: 120, text: "AI-powered previews\nfor any color, finish\nor design panel", fontSize: 22, fontFamily: "Poppins", fill2: "#BBBBBB" },
         { type: "rect", x: 40, y: 420, width: 380, height: 60, fill: BRAND.cyan, cornerRadius: 8 },
         { type: "text", x: 40, y: 420, width: 380, height: 60, text: "START FREE TRIAL", fontSize: 22, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
-        { type: "text", x: 40, y: 520, width: 440, height: 80, text: "RestyleProAI.com\n@RestyleProAI", fontSize: 18, fontFamily: "Inter", fill2: "#666666" },
+        { type: "text", x: 40, y: 520, width: 440, height: 80, text: "DesignProAI.com\n@RestyleProAI", fontSize: 18, fontFamily: "Inter", fill2: "#666666" },
       ],
     },
     {
@@ -572,7 +572,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 80, y: 120, width: 920, height: 120, text: "7 STUDIO-QUALITY\nVIEWS", fontSize: 56, fontFamily: "Oswald", fill2: BRAND.white, align: "center", fontStyle: "bold" },
         { type: "imagePlaceholder", x: 140, y: 300, width: 800, height: 440, id: "feature" },
         { type: "text", x: 80, y: 780, width: 920, height: 100, text: "Side • Front • Rear • Hood Detail\nPassenger • Close-Up • Roof", fontSize: 24, fontFamily: "Poppins", fill2: "#AAAAAA", align: "center" },
-        { type: "text", x: 80, y: 940, width: 920, height: 40, text: "RestyleProAI™ — Swipe →", fontSize: 20, fontFamily: "Poppins", fill2: BRAND.cyan, align: "center" },
+        { type: "text", x: 80, y: 940, width: 920, height: 40, text: "DesignProAI™ — Swipe →", fontSize: 20, fontFamily: "Poppins", fill2: BRAND.cyan, align: "center" },
       ],
     },
     {
@@ -588,7 +588,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "rect", x: 390, y: 920, width: 300, height: 4, fill: BRAND.cyan },
         { type: "text", x: 60, y: 950, width: 960, height: 80, text: "Supporting copy for this carousel slide", fontSize: 24, fontFamily: "Poppins", fill2: "#AAAAAA", align: "center" },
         { type: "text", x: 60, y: 1100, width: 960, height: 40, text: "Swipe → for more", fontSize: 22, fontFamily: "Poppins", fill2: BRAND.cyan, align: "center" },
-        { type: "text", x: 60, y: 1260, width: 960, height: 40, text: "RestyleProAI™", fontSize: 18, fontFamily: "Inter", fill2: "#555555", align: "center" },
+        { type: "text", x: 60, y: 1260, width: 960, height: 40, text: "DesignProAI™", fontSize: 18, fontFamily: "Inter", fill2: "#555555", align: "center" },
       ],
     },
     {
@@ -604,7 +604,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 80, y: 680, width: 920, height: 60, text: "Preview any color or design", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.cyan, align: "center" },
         { type: "rect", x: 300, y: 1580, width: 480, height: 70, fill: BRAND.cyan, cornerRadius: 35 },
         { type: "text", x: 300, y: 1580, width: 480, height: 70, text: "SWIPE UP", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
-        { type: "text", x: 60, y: 1700, width: 960, height: 40, text: "RestyleProAI.com", fontSize: 20, fontFamily: "Inter", fill2: "#888888", align: "center" },
+        { type: "text", x: 60, y: 1700, width: 960, height: 40, text: "DesignProAI.com", fontSize: 20, fontFamily: "Inter", fill2: "#888888", align: "center" },
       ],
     },
     {
@@ -632,7 +632,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 60, y: 60, width: 960, height: 200, text: "RESTYLE", fontSize: 120, fontFamily: "Oswald", fill2: BRAND.white, fontStyle: "bold" },
         { type: "text", x: 60, y: 230, width: 960, height: 60, text: "PRO AI™", fontSize: 48, fontFamily: "Poppins", fill2: BRAND.cyan },
         { type: "text", x: 60, y: 860, width: 600, height: 80, text: "The future of vehicle\nwrap visualization.", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.white },
-        { type: "text", x: 60, y: 980, width: 400, height: 40, text: "RestyleProAI.com", fontSize: 22, fontFamily: "Inter", fill2: "#888888" },
+        { type: "text", x: 60, y: 980, width: 400, height: 40, text: "DesignProAI.com", fontSize: 22, fontFamily: "Inter", fill2: "#888888" },
       ],
     },
     {
@@ -648,7 +648,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 80, y: 680, width: 920, height: 80, text: "AI-Powered Vehicle Wrap Visualization", fontSize: 30, fontFamily: "Poppins", fill2: BRAND.cyan, align: "center" },
         { type: "text", x: 80, y: 1500, width: 920, height: 70, text: "WATCH TO SEE HOW", fontSize: 36, fontFamily: "Poppins", fill2: BRAND.white, align: "center", fontStyle: "bold" },
         { type: "rect", x: 240, y: 1600, width: 600, height: 70, fill: BRAND.cyan, cornerRadius: 35 },
-        { type: "text", x: 240, y: 1600, width: 600, height: 70, text: "RestyleProAI.com", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
+        { type: "text", x: 240, y: 1600, width: 600, height: 70, text: "DesignProAI.com", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
         { type: "text", x: 60, y: 1720, width: 960, height: 40, text: "@RestyleProAI", fontSize: 20, fontFamily: "Inter", fill2: "#666666", align: "center" },
       ],
     },
@@ -667,7 +667,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 80, y: 1420, width: 920, height: 100, text: "See any wrap before\nyou commit.", fontSize: 36, fontFamily: "Poppins", fill2: BRAND.white, align: "center" },
         { type: "rect", x: 240, y: 1560, width: 600, height: 70, fill: BRAND.cyan, cornerRadius: 35 },
         { type: "text", x: 240, y: 1560, width: 600, height: 70, text: "TRY IT FREE", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
-        { type: "text", x: 60, y: 1680, width: 960, height: 40, text: "RestyleProAI™ — Swipe Up", fontSize: 20, fontFamily: "Poppins", fill2: "#888888", align: "center" },
+        { type: "text", x: 60, y: 1680, width: 960, height: 40, text: "DesignProAI™ — Swipe Up", fontSize: 20, fontFamily: "Poppins", fill2: "#888888", align: "center" },
       ],
     },
     {
@@ -683,7 +683,7 @@ function buildTemplates(): TemplatePreset[] {
         { type: "text", x: 40, y: 360, width: 500, height: 80, text: "Photorealistic Vehicle\nWrap Design System", fontSize: 28, fontFamily: "Poppins", fill2: BRAND.cyan },
         { type: "text", x: 40, y: 480, width: 500, height: 50, text: "WATCH THE FULL DEMO", fontSize: 24, fontFamily: "Poppins", fill2: "#AAAAAA" },
         { type: "rect", x: 40, y: 560, width: 300, height: 50, fill: BRAND.cyan, cornerRadius: 8 },
-        { type: "text", x: 40, y: 560, width: 300, height: 50, text: "RestyleProAI™", fontSize: 22, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
+        { type: "text", x: 40, y: 560, width: 300, height: 50, text: "DesignProAI™", fontSize: 22, fontFamily: "Poppins", fill2: BRAND.black, align: "center", verticalAlign: "middle", fontStyle: "bold" },
       ],
     },
     {
@@ -936,7 +936,7 @@ const AdminContentStudio = () => {
   }, []);
 
   // ContentFlow AI state
-  const [cfBrand, setCfBrand] = useState("RestyleProAI");
+  const [cfBrand, setCfBrand] = useState("DesignProAI");
   const [cfTopic, setCfTopic] = useState("");
   const [cfFormat, setCfFormat] = useState("post");
   const [cfTone, setCfTone] = useState("Hype/Launch");
@@ -954,7 +954,7 @@ const AdminContentStudio = () => {
   // brand changes, so the picker below is always in that brand's voice.
   useEffect(() => {
     const slug = ({
-      RestyleProAI: "restylepro", WePrintWraps: "weprintwraps",
+      DesignProAI: "restylepro", WePrintWraps: "weprintwraps",
       WrapTV: "wraptvworld", WrapTVWorld: "wraptvworld",
       InkAndEdge: "inkandedge", DesignProAI: "designproai", TheWrap: "thewrap",
     } as Record<string, string>)[cfBrand] || cfBrand.toLowerCase();
@@ -1087,7 +1087,7 @@ const AdminContentStudio = () => {
   // Canva Template Library state
   const [canvaTemplates, setCanvaTemplates] = useState<CanvaTemplate[]>([]);
   const [canvaUploading, setCanvaUploading] = useState(false);
-  const [canvaBrandTab, setCanvaBrandTab] = useState<"RestyleProAI" | "WePrintWraps" | "DesignProAI" | "WrapTV" | "InkAndEdge">("RestyleProAI");
+  const [canvaBrandTab, setCanvaBrandTab] = useState<"DesignProAI" | "WePrintWraps" | "DesignProAI" | "WrapTV" | "InkAndEdge">("DesignProAI");
   const [canvaUploadType, setCanvaUploadType] = useState<CanvaTemplateType>("static-1x1");
   const [rewriteResult, setRewriteResult] = useState<{ replacements: { original: string; replacement: string; position: string }[]; templateDescription?: string } | null>(null);
   const [rewritingTemplate, setRewritingTemplate] = useState<string | null>(null);
@@ -1166,7 +1166,7 @@ const AdminContentStudio = () => {
   // on-mount effect) so anything that ADDS a template — the AI generator, an
   // upload — can refresh the list without a page reload.
   const reloadCanvaLibrary = useCallback(async () => {
-    const brands = ["RestyleProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"];
+    const brands = ["DesignProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"];
     const allTemplates: CanvaTemplate[] = [];
     for (const b of brands) {
       for (const ct of CONTENT_TYPES) {
@@ -1597,8 +1597,8 @@ const AdminContentStudio = () => {
           tone: cfTone,
           mode: "rewrite_template_image",
           context: cfGenContext(),
-          focusTools: tpl.brand === "RestyleProAI" && cfFocusTools.length > 0 ? cfFocusTools : undefined,
-          hookType: tpl.brand === "RestyleProAI" ? cfHookType : undefined,
+          focusTools: tpl.brand === "DesignProAI" && cfFocusTools.length > 0 ? cfFocusTools : undefined,
+          hookType: tpl.brand === "DesignProAI" ? cfHookType : undefined,
           templateConstraints: TEXT_ZONE_CONSTRAINTS,
           // The hooks brain — the brand's own tested hook patterns steer every rewrite.
           hooksLibrary: await hooksLibraryForBrand(tpl.brand),
@@ -2236,7 +2236,7 @@ const AdminContentStudio = () => {
     // The edge function now handles text-only mode (no image), so we always
     // route through Claude. The previous "no image → local generateContent"
     // path was the source of generic boilerplate that ignored tool selection
-    // (it shipped "New AI Launch / RestyleProAI / 7 camera angles" no matter
+    // (it shipped "New AI Launch / DesignProAI / 7 camera angles" no matter
     // what the user typed). Local generation is now last-resort only when
     // the edge call truly fails.
     {
@@ -2292,8 +2292,8 @@ const AdminContentStudio = () => {
             format: formatMap[cfFormat] || "Post",
             tone: cfTone,
             context: cfGenContext(),
-            focusTools: cfBrand === "RestyleProAI" && cfFocusTools.length > 0 ? cfFocusTools : undefined,
-            hookType: cfBrand === "RestyleProAI" ? cfHookType : undefined,
+            focusTools: cfBrand === "DesignProAI" && cfFocusTools.length > 0 ? cfFocusTools : undefined,
+            hookType: cfBrand === "DesignProAI" ? cfHookType : undefined,
             templateConstraints: TEXT_ZONE_CONSTRAINTS,
             hooksLibrary: await hooksLibraryForBrand(cfBrand),
             templateAspect: shouldBake ? cwAspect : undefined,
@@ -2418,8 +2418,8 @@ const AdminContentStudio = () => {
           format: cfFormat,
           tone: cfTone,
           context: cfGenContext(),
-          focusTools: cfBrand === "RestyleProAI" && cfFocusTools.length > 0 ? cfFocusTools : undefined,
-          hookType: cfBrand === "RestyleProAI" ? cfHookType : undefined,
+          focusTools: cfBrand === "DesignProAI" && cfFocusTools.length > 0 ? cfFocusTools : undefined,
+          hookType: cfBrand === "DesignProAI" ? cfHookType : undefined,
           templateConstraints: TEXT_ZONE_CONSTRAINTS,
           hooksLibrary: await hooksLibraryForBrand(cfBrand),
         },
@@ -2498,7 +2498,7 @@ const AdminContentStudio = () => {
         body: {
           // Style reference — the Canva template loaded on canvas
           ...(isDataUrl ? { imageData: templateSrc } : { imageUrl: templateSrc }),
-          // Hero subject — the user's render/design from RestylePro tools
+          // Hero subject — the user's render/design from DesignProAI tools
           heroImageUrl,
           heroImageData: heroImageBase64,
           brand: cfBrand,
@@ -2508,8 +2508,8 @@ const AdminContentStudio = () => {
           templateConstraints: TEXT_ZONE_CONSTRAINTS,
           freshCopy,
           context: cfGenContext(),
-          focusTools: cfBrand === "RestyleProAI" && cfFocusTools.length > 0 ? cfFocusTools : undefined,
-          hookType: cfBrand === "RestyleProAI" ? cfHookType : undefined,
+          focusTools: cfBrand === "DesignProAI" && cfFocusTools.length > 0 ? cfFocusTools : undefined,
+          hookType: cfBrand === "DesignProAI" ? cfHookType : undefined,
           hooksLibrary: await hooksLibraryForBrand(cfBrand),
           templateAspect,
         },
@@ -2720,7 +2720,7 @@ const AdminContentStudio = () => {
   const buildCanvaDesign = async () => {
     if (!cfResult) return;
     const brandSlug = ({
-      RestyleProAI: "restylepro", WePrintWraps: "weprintwraps",
+      DesignProAI: "restylepro", WePrintWraps: "weprintwraps",
       WrapTV: "wraptvworld", WrapTVWorld: "wraptvworld",
       InkAndEdge: "inkandedge", DesignProAI: "designproai", TheWrap: "thewrap",
     } as Record<string, string>)[cfBrand] || cfBrand.toLowerCase();
@@ -3349,7 +3349,7 @@ const AdminContentStudio = () => {
         {/* Brand bar */}
         <div style={{ background: "#0A0A0F", borderBottom: "1px solid rgba(56,189,248,0.15)", padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: "#38BDF8" }}>RestyleProAI™</span>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: "#38BDF8" }}>DesignProAI™</span>
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>→</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.6)" }}>Content Studio™</span>
           </div>
@@ -3516,7 +3516,7 @@ const AdminContentStudio = () => {
                         <button onClick={() => setShowLibPicker(false)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", fontSize: 12, fontWeight: 700 }}>✕</button>
                       </div>
                       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                        {(["RestyleProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"] as const).map(b => {
+                        {(["DesignProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"] as const).map(b => {
                           const c = canvaTemplates.filter(t => t.brand === b).length;
                           return (
                             <button key={b} onClick={() => setCanvaBrandTab(b)} style={{ flex: 1, padding: "4px 0", borderRadius: 6, fontSize: 10, fontWeight: 700, background: canvaBrandTab === b ? "#0080dd" : "#eef2f7", color: canvaBrandTab === b ? "#fff" : "#6b7280", border: "none", cursor: "pointer" }}>
@@ -3593,7 +3593,7 @@ const AdminContentStudio = () => {
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>Brand</label>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {[["RestyleProAI", "RestyleProAI™"], ["WePrintWraps", "WePrintWraps.com"], ["DesignProAI", "DesignProAI™"], ["WrapTV", "WrapTV World"], ["InkAndEdge", "Ink & Edge"]].map(([v, label]) => {
+                      {[["DesignProAI", "DesignProAI™"], ["WePrintWraps", "WePrintWraps.com"], ["DesignProAI", "DesignProAI™"], ["WrapTV", "WrapTV World"], ["InkAndEdge", "Ink & Edge"]].map(([v, label]) => {
                         const c = csBrandColor(v);
                         const on = cfBrand === v;
                         return (
@@ -3616,7 +3616,7 @@ const AdminContentStudio = () => {
                       })}
                     </div>
                   </div>
-                  {cfBrand === "RestyleProAI" && (
+                  {cfBrand === "DesignProAI" && (
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>
                         Focus on tools {cfFocusTools.length > 0 ? `(${cfFocusTools.length})` : "(all)"}
@@ -3676,7 +3676,7 @@ const AdminContentStudio = () => {
                       </Select>
                     </div>
                   </div>
-                  {cfBrand === "RestyleProAI" && (
+                  {cfBrand === "DesignProAI" && (
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>Hook</label>
                       <Select value={cfHookType} onValueChange={setCfHookType}>
@@ -3748,7 +3748,7 @@ const AdminContentStudio = () => {
                 {/* Brand tabs — with a live asset count so you can see which
                     brand has library assets (e.g. "WePrintWraps (33)"). */}
                 <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                  {(["RestyleProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"] as const).map(b => {
+                  {(["DesignProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"] as const).map(b => {
                     const count = canvaTemplates.filter(t => t.brand === b).length;
                     return (
                     <button
@@ -3804,7 +3804,7 @@ const AdminContentStudio = () => {
                 </div>
 
                 {/* Focus tool reminder */}
-                {cfBrand === "RestyleProAI" && cfFocusTools.length === 0 && (
+                {cfBrand === "DesignProAI" && cfFocusTools.length === 0 && (
                   <p style={{ fontSize: 10, color: "#f59e0b", textAlign: "center", padding: "6px 0", background: "#fffbeb", borderRadius: 6, marginBottom: 10 }}>
                     Tip: pick a focus tool in the AI tab first (ColorPro / GraphicsPro / PatternPro)
                   </p>
@@ -4210,7 +4210,7 @@ const AdminContentStudio = () => {
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: "#38BDF8" }}>RestyleProAI™</span>
+          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: "#38BDF8" }}>DesignProAI™</span>
           <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>→</span>
           <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.6)" }}>Content Studio™</span>
         </div>
@@ -4327,7 +4327,7 @@ const AdminContentStudio = () => {
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 <select value={deployBrand} onChange={(e) => setDeployBrand(e.target.value as any)}
                   style={{ flex: 1, fontSize: 12, padding: "8px", borderRadius: 6, border: "1px solid #e5e7eb" }}>
-                  <option value="restylepro">RestyleProAI account</option>
+                  <option value="restylepro">DesignProAI account</option>
                   <option value="weprintwraps">WePrintWraps account</option>
                 </select>
                 <select value={deployPlatform} onChange={(e) => setDeployPlatform(e.target.value as any)}
@@ -4489,7 +4489,7 @@ const AdminContentStudio = () => {
                             <button onClick={() => setShowLibPicker(false)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", fontSize: 12, fontWeight: 700 }}>✕</button>
                           </div>
                           <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                            {(["RestyleProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"] as const).map(b => {
+                            {(["DesignProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"] as const).map(b => {
                               const c = canvaTemplates.filter(t => t.brand === b).length;
                               return (
                                 <button key={b} onClick={() => setCanvaBrandTab(b)} style={{ flex: 1, padding: "4px 0", borderRadius: 6, fontSize: 10, fontWeight: 700, background: canvaBrandTab === b ? "#0080dd" : "#eef2f7", color: canvaBrandTab === b ? "#fff" : "#6b7280", border: "none", cursor: "pointer" }}>
@@ -4590,7 +4590,7 @@ const AdminContentStudio = () => {
                       <Select value={cfBrand} onValueChange={setCfBrand}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="RestyleProAI" className="text-xs">RestyleProAI™</SelectItem>
+                          <SelectItem value="DesignProAI" className="text-xs">DesignProAI™</SelectItem>
                           <SelectItem value="WePrintWraps" className="text-xs">WePrintWraps.com</SelectItem>
                           <SelectItem value="DesignProAI" className="text-xs">DesignProAI™</SelectItem>
                           <SelectItem value="WrapTV" className="text-xs">WrapTV World</SelectItem>
@@ -4599,7 +4599,7 @@ const AdminContentStudio = () => {
                       </Select>
                     </div>
 
-                    {cfBrand === "RestyleProAI" && (
+                    {cfBrand === "DesignProAI" && (
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>
                           Focus on tools {cfFocusTools.length > 0 ? `(${cfFocusTools.length})` : "(all)"}
@@ -4662,7 +4662,7 @@ const AdminContentStudio = () => {
                       </Select>
                     </div>
 
-                    {cfBrand === "RestyleProAI" && (
+                    {cfBrand === "DesignProAI" && (
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>Hook</label>
                         <Select value={cfHookType} onValueChange={setCfHookType}>
@@ -4938,9 +4938,9 @@ const AdminContentStudio = () => {
 
                     <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 8, marginTop: 8 }} />
                     <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>Quick Text Presets</p>
-                    <Button size="sm" variant="ghost" className="w-full justify-start text-xs h-7" onClick={() => addText("RestyleProAI™", { fontSize: 36, fontFamily: "Poppins", fill: BRAND.cyan })}>Brand Name (Cyan)</Button>
+                    <Button size="sm" variant="ghost" className="w-full justify-start text-xs h-7" onClick={() => addText("DesignProAI™", { fontSize: 36, fontFamily: "Poppins", fill: BRAND.cyan })}>Brand Name (Cyan)</Button>
                     <Button size="sm" variant="ghost" className="w-full justify-start text-xs h-7" onClick={() => addText("TRY IT FREE →", { fontSize: 28, fontFamily: "Poppins", fill: BRAND.black, y: canvasHeight - 120 })}>CTA Button Text</Button>
-                    <Button size="sm" variant="ghost" className="w-full justify-start text-xs h-7" onClick={() => addText("RestyleProAI.com", { fontSize: 20, fontFamily: "Inter", fill: "#888888", y: canvasHeight - 60 })}>Website URL</Button>
+                    <Button size="sm" variant="ghost" className="w-full justify-start text-xs h-7" onClick={() => addText("DesignProAI.com", { fontSize: 20, fontFamily: "Inter", fill: "#888888", y: canvasHeight - 60 })}>Website URL</Button>
                     <Button size="sm" variant="ghost" className="w-full justify-start text-xs h-7" onClick={() => addText("@RestyleProAI", { fontSize: 18, fontFamily: "Inter", fill: "#666666", y: canvasHeight - 50 })}>Social Handle</Button>
 
                     <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 8, marginTop: 8 }} />
@@ -5297,7 +5297,7 @@ const AdminContentStudio = () => {
 
                     {/* Brand tabs */}
                     <div style={{ display: "flex", gap: 0, background: "#f3f4f6", borderRadius: 6, padding: 2 }}>
-                      {(["RestyleProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"] as const).map(b => (
+                      {(["DesignProAI", "WePrintWraps", "DesignProAI", "WrapTV", "InkAndEdge"] as const).map(b => (
                         <button
                           key={b}
                           onClick={() => { setCanvaBrandTab(b); setRewriteResult(null); }}

@@ -139,7 +139,7 @@ export function WpwOrderStatusCard() {
   const linked = data?.linked ?? false;
   const personalOrders = data?.orders || [];
 
-  // PRIVACY: only RestylePro/WPW internal staff see the cross-tenant admin
+  // PRIVACY: only DesignProAI/WPW internal staff see the cross-tenant admin
   // view. Onboarded WPW shop tenants must see ONLY their own orders, even
   // though they pass useIsWpwTenant. Internal staff is allowlist-only.
   const { data: allOrders = [], isLoading: allLoading } = useAllWpwOrders(isWpwInternalStaff);

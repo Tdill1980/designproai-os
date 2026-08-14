@@ -291,7 +291,7 @@ export default function AdminMightyMail() {
           download_url: 'https://example.com/download',
           expiry_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
           order_id: 'TEST-12345',
-          shop_name: 'RestylePro Test Shop',
+          shop_name: 'DesignProAI Test Shop',
         },
       },
     });

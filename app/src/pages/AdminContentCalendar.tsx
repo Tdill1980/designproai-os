@@ -198,7 +198,7 @@ export default function AdminContentCalendar({ tenantMode }: { tenantMode?: Tena
   const { toast } = useToast();
   const queryClient = useQueryClient();
   // In WPW-tenant mode, brand is locked so the internal WPW team can never
-  // accidentally toggle into RestylePro data.
+  // accidentally toggle into DesignProAI data.
   const [brand, setBrand] = useState<Brand>(isWpwTenant ? "weprintwraps" : "restylepro");
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
@@ -241,7 +241,7 @@ export default function AdminContentCalendar({ tenantMode }: { tenantMode?: Tena
         setBulkProgress((p) => ({ ...p, current: `${tool} / ${ANGLE_LABELS[angle] || angle}` }));
         try {
           const { data: result, error } = await supabase.functions.invoke("generate-ad-copy-batch", {
-            body: { tool, angle, count: 5, brand: "RestyleProAI", persist: true },
+            body: { tool, angle, count: 5, brand: "DesignProAI", persist: true },
           });
           if (!error && result?.count) generated += result.count;
         } catch (e) {
@@ -457,7 +457,7 @@ export default function AdminContentCalendar({ tenantMode }: { tenantMode?: Tena
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="restylepro">RestylePro</SelectItem>
+                    <SelectItem value="restylepro">DesignProAI</SelectItem>
                     <SelectItem value="weprintwraps">WePrintWraps</SelectItem>
                     <SelectItem value="wraptv">Wrap TV World</SelectItem>
                     <SelectItem value="inkandedge">Ink & Edge</SelectItem>
@@ -931,7 +931,7 @@ export default function AdminContentCalendar({ tenantMode }: { tenantMode?: Tena
                     <FileText className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <div className="min-w-0">
                       <div className="text-[9px] font-bold text-emerald-600 uppercase">Source Blog</div>
-                      <div className="text-[11px] text-emerald-800 font-medium truncate">The RestyleProAI™ Manifesto</div>
+                      <div className="text-[11px] text-emerald-800 font-medium truncate">The DesignProAI™ Manifesto</div>
                     </div>
                   </div>
                 </div>

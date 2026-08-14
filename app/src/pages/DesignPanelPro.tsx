@@ -63,7 +63,7 @@ export default function DesignPanelPro() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>DesignPanelPro™ - Custom Panel Design Visualizer | RestylePro Suite™</title>
+        <title>DesignPanelPro™ - Custom Panel Design Visualizer | DesignProAI Suite™</title>
         <meta name="description" content="Transform custom vinyl panels into photorealistic 3D vehicle renders with DesignPanelPro™. Upload designs or browse our curated library. Design it. Panel it. Print it." />
         <meta property="og:title" content="DesignPanelPro™ - Custom Panel Design Visualizer" />
         <meta property="og:description" content="Upload custom panel designs or choose from curated library. Photorealistic 3D vehicle proofs." />

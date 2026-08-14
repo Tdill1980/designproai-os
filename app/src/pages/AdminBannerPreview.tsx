@@ -14,7 +14,7 @@ import { useLandingHeroRenders } from "@/hooks/useLandingHeroRenders";
  * embed the live /landing page instead of a static PNG.
  */
 
-const LANDING_URL = "https://www.restyleproai.com/landing";
+const LANDING_URL = "https://designproai.com/landing";
 
 const HERO_VIEWS = [
   {
@@ -64,7 +64,7 @@ export default function AdminBannerPreview() {
     frameborder="0"
     scrolling="no"
     style="border:0;display:block;border-radius:14px;overflow:hidden;"
-    title="RestyleProAI - Vehicle Wrap Design Engine"
+    title="DesignProAI - Vehicle Wrap Design Engine"
   ></iframe>
 </div>`;
 
@@ -251,7 +251,7 @@ const BannerFrame = forwardRef<
       >
         <img
           src="/sprocket/restyleproai-logo.png"
-          alt="RestyleProAI"
+          alt="DesignProAI"
           style={{ height: 44, filter: "drop-shadow(0 4px 14px rgba(0,199,255,0.5))" }}
         />
         <span
@@ -351,7 +351,7 @@ const BannerFrame = forwardRef<
                 "0 0 0 1px rgba(255,255,255,0.18) inset, 0 12px 36px rgba(217,70,239,0.4), 0 4px 16px rgba(0,199,255,0.3)",
             }}
           >
-            Enter RestyleProAI™ →
+            Enter DesignProAI™ →
           </div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", lineHeight: 1.5 }}>
             WePrintWraps customers · <strong style={{ color: "#fff" }}>$50 off every tier</strong> · from $350/mo

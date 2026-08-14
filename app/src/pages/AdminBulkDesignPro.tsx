@@ -385,7 +385,7 @@ export default function AdminBulkDesignPro() {
   // Configurable creator label that appears on every published card
   // ("Created by …"). Kept editable so Trish can swap to a per-batch
   // brand without re-deploying.
-  const [creatorLabel, setCreatorLabel] = useState("RestylePro Team");
+  const [creatorLabel, setCreatorLabel] = useState("DesignProAI Team");
 
   // VisionBoardIQ state (shared across batch)
   const [vbImages, setVbImages] = useState<VisionBoardImage[]>([]);
@@ -700,7 +700,7 @@ export default function AdminBulkDesignPro() {
                   onChange={(e) => setCreatorLabel(e.target.value)}
                   disabled={running || aiPromptLoading}
                   className="w-full h-10 px-3 rounded-md bg-zinc-800 border border-zinc-700 text-sm text-white"
-                  placeholder="RestylePro Team"
+                  placeholder="DesignProAI Team"
                 />
               </div>
             )}

@@ -2,7 +2,7 @@
  * Rep profiles — drives the /wpw/:rep landing pages.
  *
  * Started as WPW-only (Troy/Lance/Brice/Jackson) and grew to cover the
- * RestylePro team (Carley, Jess, Trish) plus external partners (RJ).
+ * DesignProAI team (Carley, Jess, Trish) plus external partners (RJ).
  * The URL prefix stays /wpw/ for backwards compatibility; the `org`
  * field controls which company name is shown on each landing page.
  *
@@ -28,7 +28,7 @@
 
 export type RepOrg =
   | "WePrintWraps"
-  | "RestyleProAI"
+  | "DesignProAI"
   | "RoyaltyWraps"
   | "VinylVixenWraps"
   | "Independent";
@@ -139,7 +139,7 @@ export const WPW_REPS: Record<string, WpwRep> = {
     intro:
       "Hey, I'm RJ — RJ The Wrapper. This is the exact design system I run my whole shop on. $25 gets you the kind of proof I'd charge $300+ for — 7 angles, 3 revisions, you keep it. Code RJ10 takes 10% off.",
     bio:
-      "I run RJ The Wrapper. RestyleProAI is the design and proofing system I run my own shop on — try it before you commit.",
+      "I run RJ The Wrapper. DesignProAI is the design and proofing system I run my own shop on — try it before you commit.",
     orgLogoUrl: "/orgs/rjthewrapper-logo.png",
     accent: "#22C55E",
     accentSoft: "#DCFCE7",
@@ -147,15 +147,15 @@ export const WPW_REPS: Record<string, WpwRep> = {
   carley: {
     slug: "carley",
     name: "Carley",
-    title: "Customer Success · RestyleProAI",
+    title: "Customer Success · DesignProAI",
     ref: "carley",
     coupon: "CARLEY10",
     partnerCode: "RP-CARLEY",
-    org: "RestyleProAI",
+    org: "DesignProAI",
     intro:
-      "Hey, I'm Carley — Customer Success at RestyleProAI. Customers ask me 'what will this look like on MY truck?' every single day. $25 is the answer — your vehicle, your idea, 7 angles. Code CARLEY10 takes 10% off.",
+      "Hey, I'm Carley — Customer Success at DesignProAI. Customers ask me 'what will this look like on MY truck?' every single day. $25 is the answer — your vehicle, your idea, 7 angles. Code CARLEY10 takes 10% off.",
     bio:
-      "I run customer success at RestyleProAI — which means I see what every kind of shop and vehicle owner asks for. These tools answer 90% of those questions in under a minute.",
+      "I run customer success at DesignProAI — which means I see what every kind of shop and vehicle owner asks for. These tools answer 90% of those questions in under a minute.",
     email: "carley@restyleproai.com",
     accent: "#EC4899",
     accentSoft: "#FCE7F3",
@@ -213,15 +213,15 @@ export const WPW_REPS: Record<string, WpwRep> = {
   trish: {
     slug: "trish",
     name: "Trish",
-    title: "Founder · RestyleProAI",
+    title: "Founder · DesignProAI",
     ref: "trish",
     coupon: "TRISH10",
     partnerCode: "TRISH",
-    org: "RestyleProAI",
+    org: "DesignProAI",
     intro:
       "Hey, I'm Trish — I built this. After a decade running wrap production at WePrintWraps, the $25 design tool is the one I wished existed when I was the one quoting jobs. Try it yourself. Code TRISH10 takes 10% off.",
     bio:
-      "I founded RestyleProAI after a decade running wrap production at WePrintWraps. The tools here are the ones I wished existed when I was the one quoting and designing.",
+      "I founded DesignProAI after a decade running wrap production at WePrintWraps. The tools here are the ones I wished existed when I was the one quoting and designing.",
     email: "trish@weprintwraps.com",
     photoUrl: "/founder-trish-dill.jpg",
     accent: "#06B6D4",

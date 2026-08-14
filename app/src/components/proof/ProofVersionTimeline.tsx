@@ -43,7 +43,7 @@ const ROLE_CONFIG: Record<Role, { label: string; color: string; icon: typeof Use
     icon: Sparkles,
   },
   support: {
-    label: "RestylePro support",
+    label: "DesignProAI support",
     color: "bg-amber-100 text-amber-700 border-amber-200",
     icon: User,
   },

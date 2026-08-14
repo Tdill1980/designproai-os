@@ -60,16 +60,16 @@ const FAQ = () => {
   return (
     <>
       <Helmet>
-        <title>FAQ | RestyleProAI™ Vehicle Wrap Design Suite</title>
+        <title>FAQ | DesignProAI™ Vehicle Wrap Design Suite</title>
         <meta
           name="description"
-          content="Find answers about the world's first prompt-to-production vehicle wrap design software. Learn about RestyleProAI tools, pricing, wrap design, and print-ready output. Design it. Panel it. Print it."
+          content="Find answers about the world's first prompt-to-production vehicle wrap design software. Learn about DesignProAI tools, pricing, wrap design, and print-ready output. Design it. Panel it. Print it."
         />
-        <link rel="canonical" href="https://www.restyleproai.com/faq" />
-        <meta property="og:title" content="FAQ | RestyleProAI™ Vehicle Wrap Design Suite" />
+        <link rel="canonical" href="https://designproai.com/faq" />
+        <meta property="og:title" content="FAQ | DesignProAI™ Vehicle Wrap Design Suite" />
         <meta property="og:description" content="Find answers about AI vehicle wrap design, pricing, print-ready output, and more." />
-        <meta property="og:url" content="https://www.restyleproai.com/faq" />
-        <meta property="og:image" content="https://restyleproai.com/hero-mustang.jpg" />
+        <meta property="og:url" content="https://designproai.com/faq" />
+        <meta property="og:image" content="https://designproai.com/hero-mustang.jpg" />
         <script type="application/ld+json">
           {JSON.stringify({
             "@context": "https://schema.org",
@@ -102,7 +102,7 @@ const FAQ = () => {
                 Frequently Asked Questions
               </h1>
               <p className="text-lg text-muted-foreground mb-8">
-                Everything you need to know about RestyleProAI™ Vehicle Wrap Design Suite
+                Everything you need to know about DesignProAI™ Vehicle Wrap Design Suite
               </p>
 
               {/* Search Input */}

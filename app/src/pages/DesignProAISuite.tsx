@@ -123,7 +123,7 @@ const anchorTools = [
   },
   {
     name: 'CreatorMarket',
-    description: 'Sell your original wrap designs, panel packs, and templates to the RestylePro community. Turn design equity into revenue.',
+    description: 'Sell your original wrap designs, panel packs, and templates to the DesignProAI community. Turn design equity into revenue.',
     icon: Store,
     gradient: 'from-violet-400 via-purple-500 to-indigo-600',
     badge: 'Coming Soon',
@@ -278,12 +278,12 @@ const DesignProAISuite = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>DesignPro AI Suite - Complete Vehicle Wrap Design Tools | RestyleProAI</title>
+        <title>DesignPro AI Suite - Complete Vehicle Wrap Design Tools | DesignProAI</title>
         <meta name="description" content="The world's first prompt-to-production vehicle wrap design software. From wrap design prompt to print-ready production. Design it. Panel it. Print it. ColorPro, DesignPro, FadeWraps, GraphicsPro - all in one platform." />
-        <link rel="canonical" href="https://www.restyleproai.com/tools" />
-        <meta property="og:title" content="DesignPro AI Suite - Complete Wrap Design Tools | RestyleProAI" />
-        <meta property="og:description" content="All RestyleProAI design tools in one place. Professional vehicle wrap design powered by AI." />
-        <meta property="og:url" content="https://www.restyleproai.com/tools" />
+        <link rel="canonical" href="https://designproai.com/tools" />
+        <meta property="og:title" content="DesignPro AI Suite - Complete Wrap Design Tools | DesignProAI" />
+        <meta property="og:description" content="All DesignProAI design tools in one place. Professional vehicle wrap design powered by AI." />
+        <meta property="og:url" content="https://designproai.com/tools" />
       </Helmet>
 
       <main className="flex-1">

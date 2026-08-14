@@ -7,12 +7,12 @@ const UserGuide = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>User Guide - How to Use RestyleProAI Vehicle Wrap Design Suite</title>
-        <meta name="description" content="Complete guide to the world's first prompt-to-production wrap platform. Learn ColorPro, DesignPro, FadeWraps, and all RestyleProAI tools. Design it. Panel it. Print it." />
-        <link rel="canonical" href="https://www.restyleproai.com/user-guide" />
-        <meta property="og:title" content="User Guide - RestyleProAI Vehicle Wrap Design Suite" />
-        <meta property="og:description" content="Complete guide to using RestyleProAI wrap visualization tools. Step-by-step tutorials for professionals." />
-        <meta property="og:url" content="https://www.restyleproai.com/user-guide" />
+        <title>User Guide - How to Use DesignProAI Vehicle Wrap Design Suite</title>
+        <meta name="description" content="Complete guide to the world's first prompt-to-production wrap platform. Learn ColorPro, DesignPro, FadeWraps, and all DesignProAI tools. Design it. Panel it. Print it." />
+        <link rel="canonical" href="https://designproai.com/user-guide" />
+        <meta property="og:title" content="User Guide - DesignProAI Vehicle Wrap Design Suite" />
+        <meta property="og:description" content="Complete guide to using DesignProAI wrap visualization tools. Step-by-step tutorials for professionals." />
+        <meta property="og:url" content="https://designproai.com/user-guide" />
       </Helmet>
 
       <main className="flex-1 bg-gradient-to-b from-background to-secondary/20">
@@ -34,7 +34,7 @@ const UserGuide = () => {
               {/* Free Club */}
               <Card className="border-2 hover:border-primary/50 transition-all">
                 <CardHeader>
-                  <CardTitle className="text-2xl">RestylePro Club</CardTitle>
+                  <CardTitle className="text-2xl">DesignProAI Club</CardTitle>
                   <CardDescription>Free club membership</CardDescription>
                   <div className="text-4xl font-bold mt-4">$0<span className="text-lg text-muted-foreground">/mo</span></div>
                 </CardHeader>
@@ -75,7 +75,7 @@ const UserGuide = () => {
                     </div>
                     <div className="flex items-start gap-2">
                       <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
-                      <span>Access to all RestyleProAI™ tools</span>
+                      <span>Access to all DesignProAI™ tools</span>
                     </div>
                     <div className="flex items-start gap-2">
                       <Check className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />

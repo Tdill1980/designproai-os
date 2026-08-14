@@ -336,7 +336,7 @@ export function ShopOnboardingWizard({ triggerOpen, onClose }: ShopOnboardingWiz
       }
 
       localStorage.setItem(ONBOARDING_KEY, "true");
-      toast.success("You're all set! Welcome to RestyleProAI.");
+      toast.success("You're all set! Welcome to DesignProAI.");
       setOpen(false);
     } catch (err: any) {
       toast.error("Failed to save — please try again");

@@ -711,7 +711,7 @@ SCALING RULES:
 
     • Aspect ratio MUST be maintained exactly
     • NO stretching, warping, or distortion allowed
-    • Output MUST match RestyleProAI print-ready requirements
+    • Output MUST match DesignProAI print-ready requirements
 
 VEHICLE CLASS REFERENCES:
     • Compact sedan: ~180" L × 70" W × 55" H

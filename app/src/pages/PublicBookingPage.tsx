@@ -189,7 +189,7 @@ const PublicBookingPage = () => {
       </main>
 
       <footer className="border-t border-white/10 mt-8 py-6 text-center text-xs text-white/40">
-        Powered by RestylePro
+        Powered by DesignProAI
         {shop.website && (
           <> &middot; <a href={shop.website} className="text-[#00C7FF] hover:underline">Visit {shop.name}</a></>
         )}

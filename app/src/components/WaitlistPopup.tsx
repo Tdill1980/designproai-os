@@ -136,7 +136,7 @@ export const WaitlistPopup = () => {
     ? activeSlides[currentSlide % activeSlides.length]?.title
     : "";
 
-  const headline = popupConfig?.title || "RestyleProAI Wrap Visualizer";
+  const headline = popupConfig?.title || "DesignProAI Wrap Visualizer";
   const body = popupConfig?.alt_text || "Design it. Panel it. Print it.";
 
   return (
@@ -160,12 +160,12 @@ export const WaitlistPopup = () => {
             <img
               key={currentSlide}
               src={currentImage}
-              alt={currentSlideTitle || "RestyleProAI"}
+              alt={currentSlideTitle || "DesignProAI"}
               className="w-full h-[180px] object-cover animate-in fade-in duration-500"
             />
           ) : (
             <div className="w-full h-[180px] bg-gradient-to-br from-cyan-600 via-blue-700 to-purple-800 flex items-center justify-center">
-              <span className="text-4xl font-black text-white/20 tracking-tight">RestyleProAI</span>
+              <span className="text-4xl font-black text-white/20 tracking-tight">DesignProAI</span>
             </div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-transparent to-transparent" />

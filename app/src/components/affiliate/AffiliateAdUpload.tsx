@@ -172,7 +172,7 @@ export function AffiliateAdUpload({ affiliateId, affiliateName }: AffiliateAdUpl
             <div>
               <CardTitle className="text-lg">Submit Your Ads</CardTitle>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Upload finished ads featuring RestyleProAI. If we choose your ad, we pay for a{" "}
+                Upload finished ads featuring DesignProAI. If we choose your ad, we pay for a{" "}
                 <span className="text-primary font-medium">paid partner ad campaign</span> and share your
                 code to a much larger audience - at our cost.
               </p>
@@ -270,7 +270,7 @@ export function AffiliateAdUpload({ affiliateId, affiliateName }: AffiliateAdUpl
             {/* Requirements Notice */}
             <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-300 space-y-1">
               <p className="font-medium text-yellow-400">Requirements:</p>
-              <p>Videos must be a <strong>finished ad</strong> featuring RestyleProAI - not raw footage or screen recordings.</p>
+              <p>Videos must be a <strong>finished ad</strong> featuring DesignProAI - not raw footage or screen recordings.</p>
               <p>Static ads should be polished, branded creative ready for social media.</p>
             </div>
 
@@ -367,7 +367,7 @@ export function AffiliateAdUpload({ affiliateId, affiliateName }: AffiliateAdUpl
           <div className="text-center py-6 text-muted-foreground">
             <Upload className="h-8 w-8 mx-auto mb-2 opacity-50" />
             <p className="text-sm">
-              No submissions yet. Upload a finished ad featuring RestyleProAI and
+              No submissions yet. Upload a finished ad featuring DesignProAI and
               we may run it as a paid partner ad with your code!
             </p>
           </div>

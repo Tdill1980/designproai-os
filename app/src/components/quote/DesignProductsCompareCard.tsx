@@ -4,7 +4,7 @@
  * Side-by-side design pricing comparison shown on every QuickQuote and
  * design-tool estimator. Left panel is WePrintWraps' a-la-carte design
  * pricing (real WooCommerce SKUs — anchor for what design typically
- * costs in the wrap industry). Right panel is the RestylePro tier the
+ * costs in the wrap industry). Right panel is the DesignProAI tier the
  * user is on (or could subscribe to) — bundled designs/renders for a
  * flat monthly fee.
  *
@@ -75,11 +75,11 @@ export function DesignProductsCompareCard({
             WPW Design Products
           </div>
           <h3 className="text-base font-bold text-white leading-tight mt-0.5">
-            Pay-per-job at WePrintWraps vs. subscribe to a RestylePro tier
+            Pay-per-job at WePrintWraps vs. subscribe to a DesignProAI tier
           </h3>
           <p className="text-[11px] text-white/50 mt-1">
             Compare what design costs a-la-carte at WPW with what you'd pay
-            monthly on RestylePro — every tier below includes the same design
+            monthly on DesignProAI — every tier below includes the same design
             work bundled in. Click a tier to subscribe.
           </p>
         </div>
@@ -168,7 +168,7 @@ export function DesignProductsCompareCard({
           <div className="flex items-center justify-between mb-2">
             <div className="text-[10px] font-bold uppercase tracking-wider text-white/70 flex items-center gap-1">
               <Crown className="w-3 h-3 text-[#ec4899]" />
-              RestylePro — included monthly
+              DesignProAI — included monthly
             </div>
             <div className="text-[9px] font-semibold uppercase tracking-wider text-emerald-300">
               No per-design fees
@@ -182,7 +182,7 @@ export function DesignProductsCompareCard({
               const isFree = t === "free";
               // DesignPro (complete) is the design-tier — describe the
               // full workflow: DesignPro AI designs from the shop's
-              // prompt, the shop revises, and a real RestylePro
+              // prompt, the shop revises, and a real DesignProAI
               // graphic-design team member outputs the design on
               // vehicle templates as print-ready files. Bundles 1
               // Production Pack / mo, $299 each additional. Global
@@ -267,14 +267,14 @@ export function DesignProductsCompareCard({
         <div className="text-[10px] text-white/50 leading-snug text-center">
           A single full wrap design on the open market is{" "}
           <span className="font-bold text-white">$500</span> — and at WPW the
-          files stay with the print shop. Most RestylePro tiers cost less than
+          files stay with the print shop. Most DesignProAI tiers cost less than
           that <em>per month</em>, include unlimited design iterations + AI
           renders, and a real human designer signs off on every output.
         </div>
         <div className="text-[10px] text-cyan-200/80 leading-snug text-center">
           <span className="font-bold text-white">How DesignPro works:</span>{" "}
           DesignPro AI designs from your prompt → you revise until it's right →
-          a real RestylePro graphic-design team member outputs your design on
+          a real DesignProAI graphic-design team member outputs your design on
           vehicle templates and produces print-ready files. Production Packs
           are sold separately at{" "}
           <span className="font-bold text-white">

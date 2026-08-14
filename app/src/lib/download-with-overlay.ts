@@ -97,7 +97,7 @@ export async function downloadWithOverlay(
         await navigator.share({
           files: [file],
           title: filename,
-          text: `${filename} — RestylePro render`,
+          text: `${filename} — DesignProAI render`,
         });
         return;
       } catch (shareErr) {
@@ -127,7 +127,7 @@ export async function downloadWithOverlay(
           await navigator.share({
             files: [file],
             title: filename,
-            text: `${filename} — RestylePro render`,
+            text: `${filename} — DesignProAI render`,
           });
           return;
         } catch (shareErr) {
@@ -194,8 +194,8 @@ export async function downloadAllWithOverlay(
       try {
         await navigator.share({
           files,
-          title: 'RestylePro renders',
-          text: `${files.length} renders from RestylePro`,
+          title: 'DesignProAI renders',
+          text: `${files.length} renders from DesignProAI`,
         });
         return;
       } catch (shareErr) {

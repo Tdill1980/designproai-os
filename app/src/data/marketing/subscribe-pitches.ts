@@ -1,6 +1,6 @@
 /**
  * Subscribe pitch library — reusable, multi-channel marketing copy
- * for driving RestylePro tier subscriptions.
+ * for driving DesignProAI tier subscriptions.
  *
  * Each pitch hits a specific angle (cost, time, equity, speed, toolkit,
  * urgency) and ships ready-to-use copy for FIVE channels:
@@ -64,7 +64,7 @@ export interface SubscribePitch {
 // Shared landing URL — points at the live pricing page now that the
 // /wpw-offer campaign page has been retired. Each pitch can still
 // override per-channel if a tighter URL helps tracking.
-const OFFER_URL = "https://restyleproai.com/pricing";
+const OFFER_URL = "https://designproai.com/pricing";
 
 export const ALL_PITCHES: SubscribePitch[] = [
   // ── COST ──────────────────────────────────────────────────────────
@@ -74,15 +74,15 @@ export const ALL_PITCHES: SubscribePitch[] = [
     thesis: "Lead with the savings number. Concrete, specific, math-friendly.",
     bestFor: "Price-sensitive shop owners; warm WPW customers comparing value.",
     copy: {
-      emailSubject: "{{customer_name}}, save $50/mo on RestylePro — for life",
+      emailSubject: "{{customer_name}}, save $50/mo on DesignProAI — for life",
       emailPreview:
         "WPW Customer pricing locks $50/mo less than standard. Forever. From $349/mo.",
-      sms: `{{customer_name}} — RestylePro WPW pricing $349/mo, $50 less than standard, locked for life: ${OFFER_URL}#tiers  STOP to opt out.`,
+      sms: `{{customer_name}} — DesignProAI WPW pricing $349/mo, $50 less than standard, locked for life: ${OFFER_URL}#tiers  STOP to opt out.`,
       adHeadline: "Save $50/mo. Locked for life.",
       adPrimary:
-        "WPW Customer pricing on RestylePro: $50/mo less than standard, on every tier, forever. From $349/mo.",
+        "WPW Customer pricing on DesignProAI: $50/mo less than standard, on every tier, forever. From $349/mo.",
       adDescription: "WPW Customer pricing",
-      heroH1: "Save $50/mo on RestylePro — locked for life.",
+      heroH1: "Save $50/mo on DesignProAI — locked for life.",
       heroSub:
         "WPW Customer pricing is $50/mo less than standard on every tier. Subscribe today and your rate stays — even after public launch.",
       inApp: "Save $50/mo for life — see WPW Customer pricing →",
@@ -201,7 +201,7 @@ export const ALL_PITCHES: SubscribePitch[] = [
       sms: `Last call {{customer_name}} — WPW Customer rate $349/mo before public launch resets pricing to $399/mo. Lock it in: ${OFFER_URL}#tiers`,
       adHeadline: "Last call — $349/mo locked",
       adPrimary:
-        "Public launch resets RestylePro Starter to $399/mo. Subscribe at WPW Customer pricing today and your rate stays at $349/mo — for life.",
+        "Public launch resets DesignProAI Starter to $399/mo. Subscribe at WPW Customer pricing today and your rate stays at $349/mo — for life.",
       adDescription: "Pricing locks soon",
       heroH1: "Last call — lock in $349/mo for life.",
       heroSub:

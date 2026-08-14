@@ -18,7 +18,7 @@ const COPY_VARIANTS = [
     name: "Short · Reimagined",
     headline: "Custom Wrap Design. Reimagined.",
     body: "DesignPro™ memberships start at $350/mo. ProductionPacks™ $299 — print-ready file ownership included.",
-    cta: "Enter RestyleProAI™",
+    cta: "Enter DesignProAI™",
   },
   {
     key: "future",
@@ -32,12 +32,12 @@ const COPY_VARIANTS = [
     name: "Compact · One-liner",
     headline: "Custom Wrap Design at your fingertips",
     body: "DesignPro™ from $350/mo · ProductionPacks™ $299",
-    cta: "Try RestyleProAI™",
+    cta: "Try DesignProAI™",
   },
 ];
 
-const SIGNATURE_HOSTED_URL = "https://www.restyleproai.com/email-signature.png";
-const SIGNATURE_LINK = "https://www.restyleproai.com/pricing";
+const SIGNATURE_HOSTED_URL = "https://designproai.com/email-signature.png";
+const SIGNATURE_LINK = "https://designproai.com/pricing";
 
 export default function AdminEmailSignature() {
   const navigate = useNavigate();
@@ -85,7 +85,7 @@ export default function AdminEmailSignature() {
   };
 
   const outlookSnippet = `<a href="${SIGNATURE_LINK}" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none;border:0;outline:none;">
-  <img src="${SIGNATURE_HOSTED_URL}" alt="RestyleProAI - Custom Wrap Design" width="600" style="display:block;border:0;outline:none;text-decoration:none;max-width:600px;width:100%;height:auto;" />
+  <img src="${SIGNATURE_HOSTED_URL}" alt="DesignProAI - Custom Wrap Design" width="600" style="display:block;border:0;outline:none;text-decoration:none;max-width:600px;width:100%;height:auto;" />
 </a>`;
 
   const handleCopySnippet = async () => {
@@ -227,7 +227,7 @@ const SignatureFrame = forwardRef<
       >
         <img
           src="/sprocket/restyleproai-logo.png"
-          alt="RestyleProAI"
+          alt="DesignProAI"
           style={{ height: 32, filter: "drop-shadow(0 4px 12px rgba(0,199,255,0.5))" }}
         />
       </div>

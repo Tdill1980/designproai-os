@@ -28,7 +28,7 @@ export default function PreviewModal() {
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-md bg-gradient-to-br from-purple-500 to-fuchsia-500" />
           <span className="font-extrabold tracking-tight">
-            RestyleProAI
+            DesignProAI
             <span className="text-white/40 text-xs">™</span>
           </span>
         </div>

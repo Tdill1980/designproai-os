@@ -508,7 +508,7 @@ const AdminCampaignVideos = () => {
           <div className="space-y-6">
             {[
               { label: "WPW", color: GOLD, badge: "WPW FAMILY", initial: wpwSmsRendered, follow: wpwSmsFollowupRendered, sender: "From: WePrintWraps · +1 (555) 555-0101" },
-              { label: "Launch", color: CYAN, badge: "PRE-SALE LAUNCH", initial: launchSmsRendered, follow: launchSmsFollowupRendered, sender: "From: RestylePro · +1 (555) 555-0202" },
+              { label: "Launch", color: CYAN, badge: "PRE-SALE LAUNCH", initial: launchSmsRendered, follow: launchSmsFollowupRendered, sender: "From: DesignProAI · +1 (555) 555-0202" },
             ].map((c) => (
               <section key={c.label} className="rounded-2xl border border-[#1A1A1A] bg-[#111] overflow-hidden">
                 <div className="px-5 sm:px-6 py-4 border-b border-[#1A1A1A] flex flex-wrap items-center gap-3">

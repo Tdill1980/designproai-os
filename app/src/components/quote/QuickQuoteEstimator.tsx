@@ -105,7 +105,7 @@ export interface QuickQuoteEstimatorProps {
   /**
    * Phase 7 / Path B: open the WPW cart pre-loaded with the WPW SKUs
    * from the current estimate. Only the WPW print products go in the
-   * cart — shop labor / precision mods stay on the RestylePro side.
+   * cart — shop labor / precision mods stay on the DesignProAI side.
    * Pass undefined to hide the button (e.g. for non-WPW shops).
    */
   onCheckoutOnWpw?: (state: EstimatorState, cartUrl: string) => void | Promise<void>;
@@ -165,7 +165,7 @@ const BASE_CATEGORIES: CategoryMeta[] = [
   { id: "chrome_delete", label: "Chrome Delete", icon: Sparkles,    accent: "text-purple-300" },
   { id: "services",      label: "Other Services", icon: Wrench,     accent: "text-white/85" },
   { id: "wpw_design",    label: "WPW Design Products", icon: Store, accent: "text-cyan-300" },
-  { id: "rp_design",     label: "RestylePro Design Products", icon: Crown, accent: "text-fuchsia-300" },
+  { id: "rp_design",     label: "DesignProAI Design Products", icon: Crown, accent: "text-fuchsia-300" },
 ];
 const WPW_CATEGORY: CategoryMeta = {
   id: "wpw",
@@ -723,7 +723,7 @@ export function QuickQuoteEstimator({
         </div>
       </div>
 
-      {/* ── WPW-only RestylePro pitch ───────────────────────────────
+      {/* ── WPW-only DesignProAI pitch ───────────────────────────────
           Auto-appended to every WPW quote. Single line that pitches
           the full subscription value (designs + marketing + CMS).
           Non-WPW shops don't see this — they don't sell the RP
@@ -738,7 +738,7 @@ export function QuickQuoteEstimator({
               rel="noopener noreferrer"
               className="text-fuchsia-300 font-semibold underline underline-offset-2 hover:text-fuchsia-200"
             >
-              Subscribe to RestylePro for unlimited wrap designs + marketing + CMS →
+              Subscribe to DesignProAI for unlimited wrap designs + marketing + CMS →
             </a>
           </p>
         </div>

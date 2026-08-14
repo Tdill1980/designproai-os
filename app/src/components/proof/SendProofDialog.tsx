@@ -4,7 +4,7 @@
  *   • type / edit the message the customer sees in the email + portal,
  *   • click "✨ Make it sound better" to have AI (draft-reply) rewrite it,
  *   • CHOOSE what the customer sees on the portal (2D proof / 3D proof) — the
- *     flat master artboard is ALWAYS hidden (RestyleProAI property).
+ *     flat master artboard is ALWAYS hidden (DesignProAI property).
  *
  * The portal selection is persisted to proof_approvals.metadata.portal_includes,
  * which the customer portal (Proof.tsx) reads to show/hide the proof buttons.
@@ -121,7 +121,7 @@ export function SendProofDialog(props: Props) {
       const { data: row } = await supabase.from("proof_approvals" as any)
         .select("view_token").eq("id", props.proofId).maybeSingle();
       const token = (row as any)?.view_token;
-      const portalUrl = token ? `https://restyleproai.com/approve/${token}` : undefined;
+      const portalUrl = token ? `https://designproai.com/approve/${token}` : undefined;
       const views: { type: string; url: string; label?: string }[] = [];
       if (threeD && props.hero3dUrl) views.push({ type: "hero", url: props.hero3dUrl, label: "Design" });
       allViews.filter((v) => pickViews.has(v.key)).forEach((v) => views.push({ type: v.key, url: v.url, label: v.label }));

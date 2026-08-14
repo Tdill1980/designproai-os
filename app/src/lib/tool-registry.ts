@@ -54,7 +54,7 @@ export type ToolKey = keyof typeof TOOL_REGISTRY;
  * @returns The branded label (e.g., "ColorPro™")
  */
 export function getToolLabel(toolKey: ToolKey): string {
-  return TOOL_REGISTRY[toolKey]?.label || 'RestylePro™';
+  return TOOL_REGISTRY[toolKey]?.label || 'DesignProAI™';
 }
 
 /**
@@ -76,4 +76,4 @@ export function isValidToolKey(key: string): key is ToolKey {
 /**
  * Platform label for footer/generic branding
  */
-export const PLATFORM_LABEL = 'RestylePro™';
+export const PLATFORM_LABEL = 'DesignProAI™';

@@ -143,7 +143,7 @@ interface DirectorData {
 }
 
 const BRAND_LABEL: Record<string, string> = {
-  restylepro: "RestylePro", weprintwraps: "WePrintWraps", designproai: "DesignProAI",
+  restylepro: "DesignProAI", weprintwraps: "WePrintWraps", designproai: "DesignProAI",
   wraptvworld: "WrapTVWorld", inkandedge: "Ink & Edge", thewrap: "The Wrap",
 };
 

@@ -5,7 +5,7 @@ import { useLocation } from "react-router-dom";
  * CanonicalTag — emits a self-referential canonical for the CURRENT route.
  *
  * Why this exists: `index.html` shipped a hardcoded
- * `<link rel="canonical" href="https://www.restyleproai.com">`, and `vercel.json`
+ * `<link rel="canonical" href="https://designproai.com">`, and `vercel.json`
  * rewrites `/(.*)` -> `/`, so that one tag was served for EVERY route. Only 38
  * of ~284 page components override it via their own Helmet, so every other
  * page was telling Google "I am the homepage" — an instruction to drop it from
@@ -21,7 +21,7 @@ import { useLocation } from "react-router-dom";
  * URLs competing with each other.
  */
 
-const ORIGIN = "https://www.restyleproai.com";
+const ORIGIN = "https://designproai.com";
 
 export function canonicalFor(pathname: string): string {
   // Collapse duplicate slashes and drop a trailing slash so `/colorpro/` and

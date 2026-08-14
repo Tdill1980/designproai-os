@@ -246,9 +246,9 @@ export default function DesignVault() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>DesignVault Plus - QC Stamped Production Packs | RestyleProAI</title>
+        <title>DesignVault Plus - QC Stamped Production Packs | DesignProAI</title>
         <meta name="description" content="QC-stamped production packs with DesignID tracking, DesignEquity, and PrintReady verification. Every design is a sellable asset on CreatorMarket." />
-        <link rel="canonical" href="https://www.restyleproai.com/designvault" />
+        <link rel="canonical" href="https://designproai.com/designvault" />
       </Helmet>
       <main className="flex-1 container mx-auto px-4 py-8 pt-24">
         {/* ── Header ── */}
@@ -732,7 +732,7 @@ export default function DesignVault() {
                           onClick={() => navigate("/creatormarket")}
                         >
                           <Store className="w-3 h-3" />
-                          Sell On CreatorMarket — 60% You · 40% RestylePro
+                          Sell On CreatorMarket — 60% You · 40% DesignProAI
                         </Button>
                       </div>
                     </CardContent>

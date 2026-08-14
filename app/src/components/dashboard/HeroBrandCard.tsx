@@ -15,7 +15,7 @@ import { useHeroRenderCarousel } from "@/hooks/useHeroRenderCarousel";
  *
  * Right side: Welcome, {shopName} + WPW Connect Portal badge
  *
- * Does NOT repeat the "RestylePro" wordmark — that's already the Header.
+ * Does NOT repeat the "DesignProAI" wordmark — that's already the Header.
  */
 interface HeroBrandCardProps {
   className?: string;
@@ -134,7 +134,7 @@ export const HeroBrandCard = ({ className, shopName, isWpwTenant }: HeroBrandCar
               <span className="bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">{shopName}</span>
             </div>
             <div className="text-[10px] text-zinc-400 mt-0.5">
-              <span className="text-white/80 font-semibold">Shop Engine</span> by RestyleProAI
+              <span className="text-white/80 font-semibold">Shop Engine</span> by DesignProAI
             </div>
           </div>
         )}

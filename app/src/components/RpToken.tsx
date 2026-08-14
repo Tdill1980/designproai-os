@@ -1,5 +1,5 @@
 /**
- * RpToken — the canonical "$25 RestylePro design credit" coin.
+ * RpToken — the canonical "$25 DesignProAI design credit" coin.
  *
  * The visual was originally inlined in TokenBalanceCard. Extracted so the
  * try-modal, the header balance pill, and any future credit surface use
@@ -72,7 +72,7 @@ export const RpToken = ({
   const s = SIZE[size];
   return (
     <div
-      aria-label="One RestylePro design token — $25 retail value"
+      aria-label="One DesignProAI design token — $25 retail value"
       className={cn(
         "relative rounded-full bg-gradient-to-br from-cyan-400 to-fuchsia-500 flex items-center justify-center shrink-0",
         s.coin,

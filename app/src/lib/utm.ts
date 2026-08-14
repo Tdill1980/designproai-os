@@ -2,12 +2,12 @@
  * UTM parameter utilities for tracking traffic sources.
  *
  * Usage:
- *   appendUtm("https://restyleproai.com/signup", {
+ *   appendUtm("https://designproai.com/signup", {
  *     source: "instagram",
  *     medium: "social",
  *     campaign: "spring2026",
  *   })
- *   // => "https://restyleproai.com/signup?utm_source=instagram&utm_medium=social&utm_campaign=spring2026"
+ *   // => "https://designproai.com/signup?utm_source=instagram&utm_medium=social&utm_campaign=spring2026"
  */
 
 export interface UtmParams {
@@ -34,7 +34,7 @@ export function buildShareUrl(
   platform: "instagram" | "facebook" | "tiktok" | "twitter" | "email" | "web",
   path: string = "/"
 ): string {
-  return appendUtm(`https://restyleproai.com${path}`, {
+  return appendUtm(`https://designproai.com${path}`, {
     source: platform,
     medium: platform === "email" ? "email" : "social",
     campaign: "user_share",
@@ -46,7 +46,7 @@ export function buildAffiliateUrl(
   refCode: string,
   campaign: string = "affiliate"
 ): string {
-  const url = appendUtm("https://restyleproai.com/signup", {
+  const url = appendUtm("https://designproai.com/signup", {
     source: "affiliate",
     medium: "referral",
     campaign,

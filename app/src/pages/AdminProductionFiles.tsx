@@ -431,13 +431,13 @@ export default function AdminProductionFiles() {
     }
   };
 
-  // Vectorize the panel via the RestyleProAI vectorize-it API and register
+  // Vectorize the panel via the DesignProAI vectorize-it API and register
   // the SVG as a design asset on the same job.
   const vectorize = async (asset: PAAsset, orderKey: string) => {
     setBusy(`${asset.id}:vector`);
     try {
       const base = slug(asset.panel_label || asset.label || "panel");
-      const resp = await fetch("https://www.restyleproai.com/api/vectorize-it", {
+      const resp = await fetch("https://designproai.com/api/vectorize-it", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

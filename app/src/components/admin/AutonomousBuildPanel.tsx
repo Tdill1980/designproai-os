@@ -32,7 +32,7 @@ import { Link } from "react-router-dom";
 
 /** Director post slug → the brand's template-library folder name. */
 const BRAND_FOLDER: Record<string, string> = {
-  restylepro: "RestyleProAI",
+  restylepro: "DesignProAI",
   weprintwraps: "WePrintWraps",
   designproai: "DesignProAI",
   wraptvworld: "WrapTV",

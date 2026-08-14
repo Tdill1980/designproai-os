@@ -1,5 +1,5 @@
 /**
- * RestyleProAI brand palette — the single source of truth for chrome accents
+ * DesignProAI brand palette — the single source of truth for chrome accents
  * (the floating tool rails, and anything else that needs the brand look).
  *
  * These mirror the tokens documented in CLAUDE.md:

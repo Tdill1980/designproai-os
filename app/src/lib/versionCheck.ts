@@ -1,6 +1,6 @@
 // Auto-update the long-lived SPA when a new build is deployed.
 //
-// RestylePro is a single-page app: users keep the tab open for hours/days and
+// DesignProAI is a single-page app: users keep the tab open for hours/days and
 // client-side route, so the browser NEVER re-requests index.html or the JS
 // bundle it first loaded. Vercel cache headers can't help (no new request is
 // ever made), and `vite:preloadError` only fires when an old chunk 404s.
@@ -99,7 +99,7 @@ export function initVersionCheck() {
   // turns "did my fix deploy?" from an inference into a five-second check.
   try {
     console.info(
-      `[RestylePro] build ${typeof __BUILD_ID__ !== "undefined" ? __BUILD_ID__ : "dev"} — run __BUILD__.status() to check for a newer one`,
+      `[DesignProAI] build ${typeof __BUILD_ID__ !== "undefined" ? __BUILD_ID__ : "dev"} — run __BUILD__.status() to check for a newer one`,
     );
     (window as unknown as Record<string, unknown>).__BUILD__ = {
       id: typeof __BUILD_ID__ !== "undefined" ? __BUILD_ID__ : "dev",

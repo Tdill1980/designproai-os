@@ -233,7 +233,7 @@ const MyRenders = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>My Renders - RestyleProAI</title>
+        <title>My Renders - DesignProAI</title>
         <meta name="description" content="View and manage your AI-generated vehicle wrap designs. Download, revise, and share your renders." />
         <meta name="robots" content="noindex" />
       </Helmet>

@@ -15,7 +15,7 @@ export const legacyBlogPosts: BlogPostMeta[] = [
       "Full breakdown of vehicle wrap costs by type — color change, commercial fleet, custom design — plus how AI design tools are cutting costs by 40%.",
     date: "2026-03-25",
     readTime: "8 min read",
-    author: "RestyleProAI",
+    author: "DesignProAI",
     tags: ["Pricing", "Guide", "Vehicle Wraps"],
   },
   {
@@ -25,7 +25,7 @@ export const legacyBlogPosts: BlogPostMeta[] = [
       "The hottest wrap colors dominating 2026 — from deep ocean teal to satin bronze. See which finishes clients are requesting most.",
     date: "2026-03-25",
     readTime: "6 min read",
-    author: "RestyleProAI",
+    author: "DesignProAI",
     tags: ["Colors", "Trends", "Vehicle Wraps"],
   },
   {
@@ -35,7 +35,7 @@ export const legacyBlogPosts: BlogPostMeta[] = [
       "Compare matte, gloss, and satin vehicle wrap finishes — durability, maintenance, cost, and which looks best on different vehicles.",
     date: "2026-03-25",
     readTime: "7 min read",
-    author: "RestyleProAI",
+    author: "DesignProAI",
     tags: ["Finishes", "Guide", "Vehicle Wraps"],
   },
 ];
@@ -101,34 +101,34 @@ const Blog = () => {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://restyleproai.com" },
-      { "@type": "ListItem", position: 2, name: "Blog", item: "https://restyleproai.com/blog" },
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://designproai.com" },
+      { "@type": "ListItem", position: 2, name: "Blog", item: "https://designproai.com/blog" },
     ],
   };
 
   return (
     <>
       <Helmet>
-        <title>The Source Blog | RestyleProAI</title>
+        <title>The Source Blog | DesignProAI</title>
         <meta
           name="description"
           content="Expert guides on vehicle wrap design, pricing, trends, and AI-powered design tools. Learn from 20+ years of wrap industry experience."
         />
-        <meta name="keywords" content="vehicle wrap design, wrap pricing, wrap colors, wrap trends, AI wrap design, vinyl wrap, car wrap, fleet wraps, RestyleProAI, DesignPro" />
-        <link rel="canonical" href="https://www.restyleproai.com/blog" />
-        <meta property="og:title" content="The Source Blog | RestyleProAI" />
+        <meta name="keywords" content="vehicle wrap design, wrap pricing, wrap colors, wrap trends, AI wrap design, vinyl wrap, car wrap, fleet wraps, DesignProAI, DesignPro" />
+        <link rel="canonical" href="https://designproai.com/blog" />
+        <meta property="og:title" content="The Source Blog | DesignProAI" />
         <meta
           property="og:description"
           content="Expert guides on vehicle wrap design, pricing, trends, and AI-powered design tools."
         />
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://www.restyleproai.com/blog" />
-        <meta property="og:image" content="https://restyleproai.com/hero-mustang.jpg" />
-        <meta property="og:site_name" content="RestyleProAI" />
+        <meta property="og:url" content="https://designproai.com/blog" />
+        <meta property="og:image" content="https://designproai.com/hero-mustang.jpg" />
+        <meta property="og:site_name" content="DesignProAI" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="The Source Blog | RestyleProAI" />
+        <meta name="twitter:title" content="The Source Blog | DesignProAI" />
         <meta name="twitter:description" content="Expert guides on vehicle wrap design, pricing, trends, and AI-powered design tools." />
-        <meta name="twitter:image" content="https://restyleproai.com/hero-mustang.jpg" />
+        <meta name="twitter:image" content="https://designproai.com/hero-mustang.jpg" />
         <script type="application/ld+json">{JSON.stringify(breadcrumbSchema)}</script>
       </Helmet>
 
@@ -140,7 +140,7 @@ const Blog = () => {
             <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
               <div>
                 <p className="text-xs font-medium tracking-widest uppercase text-neutral-400 mb-2">
-                  RestyleProAI
+                  DesignProAI
                 </p>
                 <h1 className="text-3xl sm:text-4xl font-semibold text-neutral-900 tracking-tight">
                   The Source Blog
@@ -296,7 +296,7 @@ const Blog = () => {
             <div className="max-w-5xl mx-auto pt-8 border-t border-neutral-200">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <p className="text-xs text-neutral-400">
-                  &copy; {new Date().getFullYear()} RestyleProAI · Powered by WePrintWraps
+                  &copy; {new Date().getFullYear()} DesignProAI · Powered by WePrintWraps
                 </p>
                 <div className="flex items-center gap-4 text-xs text-neutral-400">
                   <Link to="/colorpro" className="hover:text-neutral-700 transition-colors">ColorPro</Link>

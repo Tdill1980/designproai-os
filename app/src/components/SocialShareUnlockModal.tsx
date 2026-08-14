@@ -1,6 +1,6 @@
 /**
  * SocialShareUnlockModal — claim 1 free render in exchange for posting
- * RestylePro on a social platform. v1 is honor-system + UTM tracking
+ * DesignProAI on a social platform. v1 is honor-system + UTM tracking
  * (no OAuth verification of the actual post — that's a v2 polish item
  * if abuse becomes a problem).
  *
@@ -36,8 +36,8 @@ import {
 } from "@/hooks/useFreemiumLimits";
 
 const SHARE_TEXT =
-  "I just designed a custom vehicle wrap with RestyleProAI in 60 seconds. Wild. Try it free →";
-const BASE_URL = "https://restyleproai.com/?utm_source=social_share";
+  "I just designed a custom vehicle wrap with DesignProAI in 60 seconds. Wild. Try it free →";
+const BASE_URL = "https://designproai.com/?utm_source=social_share";
 
 interface PlatformMeta {
   id: SocialSharePlatform;

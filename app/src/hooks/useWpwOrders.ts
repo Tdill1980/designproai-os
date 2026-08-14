@@ -212,7 +212,7 @@ export function useUpdateWpwStatus() {
 }
 
 /**
- * Links the current RestylePro user to their WPW customer record by
+ * Links the current DesignProAI user to their WPW customer record by
  * email. Used by the "Sign in with WePrintWraps" button on /signup
  * and /login and by the "Connect your WPW orders" CTA on the
  * dashboard My Orders page.
@@ -261,7 +261,7 @@ export function useLinkWpwAccount() {
 
 /**
  * Request a 6-digit OTP code to a cross-domain alt email. Used when the
- * shop's RestylePro account is on a different domain than their WPW
+ * shop's DesignProAI account is on a different domain than their WPW
  * customer email (e.g. signed up under their LLC, but ordered with a
  * personal gmail). Email-ownership of the alt inbox is the proof of
  * authorization.
@@ -286,7 +286,7 @@ export function useRequestWpwLinkOtp() {
 
 /**
  * Verify the 6-digit OTP code and complete the WPW link. On success,
- * the alt email's WPW customer is linked to this RestylePro account.
+ * the alt email's WPW customer is linked to this DesignProAI account.
  */
 export function useVerifyWpwLinkOtp() {
   const qc = useQueryClient();

@@ -661,9 +661,9 @@ export default function WrapBox() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900">
       <Helmet>
-        <title>WrapBox - Order Management & Production Tracking | RestyleProAI</title>
+        <title>WrapBox - Order Management & Production Tracking | DesignProAI</title>
         <meta name="description" content="Track wrap orders, production packs, and design fulfillment. Design it. Panel it. Print it. The world's first prompt-to-production vehicle wrap design software." />
-        <link rel="canonical" href="https://www.restyleproai.com/wrapbox" />
+        <link rel="canonical" href="https://designproai.com/wrapbox" />
       </Helmet>
       <main className="flex-1 container mx-auto px-4 py-8 pt-24">
         <div className="mb-6 rounded-xl bg-white border border-gray-200 shadow-sm px-5 py-4">
@@ -672,7 +672,7 @@ export default function WrapBox() {
               className="text-xs font-bold tracking-wide text-white px-2.5 py-1 rounded-md"
               style={{ background: "linear-gradient(135deg, #0ea5e9, #3b82f6)" }}
             >
-              RestyleProAI<span className="text-sky-200">™</span>
+              DesignProAI<span className="text-sky-200">™</span>
             </span>
             <span className="text-gray-300">|</span>
             <div className="p-2 rounded-lg" style={{ background: "linear-gradient(135deg, #0ea5e9, #3b82f6)" }}>
@@ -1052,7 +1052,7 @@ export default function WrapBox() {
                               onClick={() => navigate("/creatormarket")}
                             >
                               <Store className="w-3 h-3" />
-                              Sell On Creator Market — 60% to you · 40% to RestylePro
+                              Sell On Creator Market — 60% to you · 40% to DesignProAI
                             </Button>
                           )}
                         </div>

@@ -1,4 +1,4 @@
-// Vehicle Measurement Data for RestylePro Visualizer Suite
+// Vehicle Measurement Data for DesignProAI Visualizer Suite
 // Imports CSV at build time via Vite ?raw and parses into typed objects
 import csvRaw from "./vehicle-measurements.csv?raw";
 

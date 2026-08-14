@@ -33,7 +33,7 @@ export default function TemplateGeneratorPanel({
 }) {
   const [brands, setBrands] = useState<string[]>([]);
   const [styles, setStyles] = useState<StyleOption[]>([]);
-  const [brand, setBrand] = useState("RestyleProAI");
+  const [brand, setBrand] = useState("DesignProAI");
   const [styleKey, setStyleKey] = useState("grid");
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<MadeTemplate[]>([]);

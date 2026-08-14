@@ -188,7 +188,7 @@ const AdminPopupManager = () => {
               <Label htmlFor="bold-title">Bold Title</Label>
               <Input
                 id="bold-title"
-                placeholder={configTitle || "RestyleProAI Wrap Visualizer System"}
+                placeholder={configTitle || "DesignProAI Wrap Visualizer System"}
                 defaultValue={configTitle}
                 onChange={(e) => setBoldTitle(e.target.value)}
                 className="mt-1"
@@ -346,7 +346,7 @@ const AdminPopupManager = () => {
               <div className="px-4 py-3">
                 <div className="rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/5 px-3 py-2.5 text-center">
                   <p className="text-xs text-white font-bold">
-                    {boldTitle || configTitle || "RestyleProAI Wrap Visualizer System"}
+                    {boldTitle || configTitle || "DesignProAI Wrap Visualizer System"}
                   </p>
                   <p className="text-[10px] text-cyan-400 mt-1">
                     {subMessage || configSub || "ColorPro • FadeWrap • ApprovePro • MyVehicleProAI"}

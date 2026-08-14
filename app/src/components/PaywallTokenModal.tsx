@@ -135,7 +135,7 @@ export function PaywallTokenModal() {
           <div className="px-6 pt-6 pb-4 bg-gradient-to-br from-cyan-500/15 via-fuchsia-500/10 to-purple-500/15 border-b border-white/5">
             <div className="flex items-center gap-3 mb-1">
               <div
-                aria-label="One RestylePro design token — $25 retail value"
+                aria-label="One DesignProAI design token — $25 retail value"
                 className="relative w-14 h-14 rounded-full bg-gradient-to-br from-cyan-400/40 to-fuchsia-500/40 ring-2 ring-cyan-300/80 flex items-center justify-center shadow-[0_0_16px_rgba(34,211,238,0.55)] mr-2 mb-2 shrink-0"
               >
                 <div className="flex flex-col items-center leading-none select-none">

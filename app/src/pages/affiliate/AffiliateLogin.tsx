@@ -143,7 +143,7 @@ const AffiliateLogin = () => {
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
               <span className="text-foreground">Mighty</span>
               <span className="text-gradient-blue">Affiliate</span>
-              <span className="text-muted-foreground text-lg font-normal ml-2">by RestyleProAI</span>
+              <span className="text-muted-foreground text-lg font-normal ml-2">by DesignProAI</span>
             </h1>
             <p className="text-muted-foreground">
               Sign in to your affiliate dashboard

@@ -112,7 +112,7 @@ export const WaitlistGate = ({ children, toolName }: WaitlistGateProps) => {
               Unlock {toolName}
             </h2>
             <p className="text-slate-400">
-              Join our waitlist to access the full RestyleProAI™ Vehicle Wrap Design Suite
+              Join our waitlist to access the full DesignProAI™ Vehicle Wrap Design Suite
             </p>
           </div>
 

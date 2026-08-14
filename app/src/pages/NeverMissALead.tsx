@@ -40,9 +40,9 @@ const SAMPLE_AI_TRANSCRIPT = [
 ];
 
 const FAQ = [
-  { q: "Do I need a RestylePro subscription to add NML?", a: "Yes — Never Miss a Lead is an add-on for active RestylePro shops. The dashboard, dedicated number, AI auto-text, and lead capture all live inside RestylePro. If you don't have a plan yet, pick one from /pricing and come back to add NML." },
+  { q: "Do I need a DesignProAI subscription to add NML?", a: "Yes — Never Miss a Lead is an add-on for active DesignProAI shops. The dashboard, dedicated number, AI auto-text, and lead capture all live inside DesignProAI. If you don't have a plan yet, pick one from /pricing and come back to add NML." },
   { q: "How much business am I really losing to missed calls?", a: "Industry average is 27% of inbound calls go unanswered at small shops. If your average wrap is $3,000 and you book even 1 in 5 quotes, every 5 missed calls = $3,000 in lost revenue. NML pays for itself the first month it saves a single wrap." },
-  { q: "Do I need to install anything?", a: "No. Your new number forwards to your existing cell. If you miss it, our AI handles the rest. Everything shows up on your RestylePro dashboard — leads, transcripts, conversion rate, revenue." },
+  { q: "Do I need to install anything?", a: "No. Your new number forwards to your existing cell. If you miss it, our AI handles the rest. Everything shows up on your DesignProAI dashboard — leads, transcripts, conversion rate, revenue." },
   { q: "Can I keep my existing number?", a: "Yes — this is an additional business line. Your personal number stays private. Put the new number on your website, ads, and Google Business listing so customers reach the AI safety net, not your voicemail." },
   { q: "What happens when I answer the call?", a: "Nothing extra — it's a normal phone call. The AI only kicks in when you don't pick up after 20 seconds." },
   { q: "Basic vs Pro — what's the real difference?", a: "Basic: customer calls, you miss it, AI texts them a QuickQuote link. Pro: customer calls, you miss it, AI picks up and has a real conversation — gets their name, vehicle, service, urgency — then texts the quote link AND books the install slot. Basic captures leads. Pro closes them." },
@@ -82,7 +82,7 @@ export default function NeverMissALead() {
       if (error) throw error;
       if (data?.error === "subscription_required") {
         toast({
-          title: "RestylePro plan required",
+          title: "DesignProAI plan required",
           description: data.message || "Pick a plan first, then come back to add NML.",
           variant: "destructive",
         });
@@ -108,7 +108,7 @@ export default function NeverMissALead() {
         <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />
         <div className="relative max-w-4xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold uppercase tracking-wider mb-6">
-            <Phone className="w-3.5 h-3.5" /> RestylePro Add-On
+            <Phone className="w-3.5 h-3.5" /> DesignProAI Add-On
           </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-4">
             Stop losing wraps to your voicemail.
@@ -118,7 +118,7 @@ export default function NeverMissALead() {
             every 5 missed calls = <span className="text-cyan-300 font-bold">$3,000 in lost revenue</span>.
           </p>
           <p className="text-base text-white/50 max-w-2xl mx-auto mb-8">
-            Never Miss a Lead is an add-on for active RestylePro shops. Miss a call? Basic auto-texts the customer
+            Never Miss a Lead is an add-on for active DesignProAI shops. Miss a call? Basic auto-texts the customer
             your QuickQuote link. Pro picks up the phone and books the job for you.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -141,7 +141,7 @@ export default function NeverMissALead() {
           {!hasActivePlan && (
             <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
               <Lock className="w-3 h-3" />
-              <span>Requires an active RestylePro plan ·</span>
+              <span>Requires an active DesignProAI plan ·</span>
               <Link to="/pricing" className="font-semibold underline hover:text-amber-200">
                 See plans
               </Link>
@@ -322,7 +322,7 @@ export default function NeverMissALead() {
               { icon: Smartphone, title: "Rings your cell first", desc: "Calls forward straight to you for 20 seconds. AI only kicks in if you don't pick up." },
               { icon: Bot, title: "AI voicemail → structured lead", desc: "Voicemails are transcribed in seconds. Vehicle info, service, name, urgency auto-parsed." },
               { icon: MessageSquare, title: "Branded QuickQuote auto-text", desc: "Customer gets your shop's QuickQuote link the moment they hang up. They price the wrap while you're in the bay." },
-              { icon: Wand2, title: "Lives inside your dashboard", desc: "Every lead, transcript, text, and conversion shows up in RestylePro. No second tool to log into." },
+              { icon: Wand2, title: "Lives inside your dashboard", desc: "Every lead, transcript, text, and conversion shows up in DesignProAI. No second tool to log into." },
               { icon: Shield, title: "No contract, no setup", desc: "Live in under 60 seconds after checkout. Cancel anytime from the dashboard." },
             ].map((f) => (
               <div key={f.title} className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
@@ -339,7 +339,7 @@ export default function NeverMissALead() {
       <section className="py-16 px-4 border-t border-white/5">
         <h2 className="text-2xl sm:text-3xl font-bold text-center mb-2">Pick your add-on</h2>
         <p className="text-sm text-white/50 text-center mb-10">
-          Both tiers add a dedicated number + lead capture to your existing RestylePro plan.
+          Both tiers add a dedicated number + lead capture to your existing DesignProAI plan.
         </p>
         <div className="max-w-3xl mx-auto grid sm:grid-cols-2 gap-6">
           {/* Basic */}
@@ -361,7 +361,7 @@ export default function NeverMissALead() {
                 "Dedicated local business number",
                 "AI voicemail transcription",
                 "Auto-text with QuickQuote link",
-                "Lead capture in RestylePro dashboard",
+                "Lead capture in DesignProAI dashboard",
                 "Inbound + outbound SMS",
                 "Call forwarding to your cell",
               ].map((item) => (
@@ -481,7 +481,7 @@ export default function NeverMissALead() {
           </div>
           {!hasActivePlan && (
             <p className="text-xs text-amber-300/80 mt-4">
-              Need a plan first? <Link to="/pricing" className="underline hover:text-amber-200">See RestylePro pricing →</Link>
+              Need a plan first? <Link to="/pricing" className="underline hover:text-amber-200">See DesignProAI pricing →</Link>
             </p>
           )}
         </div>
@@ -499,7 +499,7 @@ export default function NeverMissALead() {
               <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-200 flex items-start gap-2">
                 <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                 <span>
-                  NML is an add-on for active RestylePro shops. <Link to="/pricing" className="underline font-semibold">Pick a plan</Link> first, then come back.
+                  NML is an add-on for active DesignProAI shops. <Link to="/pricing" className="underline font-semibold">Pick a plan</Link> first, then come back.
                 </span>
               </div>
             )}

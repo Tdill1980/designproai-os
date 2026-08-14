@@ -90,7 +90,7 @@ const LogoPro = () => {
                 <h3 className="font-semibold">Saved to your brand kit</h3>
                 <p className="text-sm text-muted-foreground">
                   Use your finished logo across DesignPro, GraphicsPro, and the rest of the
-                  RestylePro suite.
+                  DesignProAI suite.
                 </p>
               </div>
             </div>
@@ -104,7 +104,7 @@ const LogoPro = () => {
           <h2 className="text-2xl md:text-3xl font-bold">Already have a logo?</h2>
           <p className="text-muted-foreground">
             Wrap your fleet, your storefront, or your next custom job with the rest of the
-            RestylePro suite.
+            DesignProAI suite.
           </p>
           <Button asChild size="lg" variant="outline">
             <Link to="/designpro">

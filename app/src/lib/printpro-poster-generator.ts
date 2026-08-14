@@ -83,7 +83,7 @@ const addBlackBackground = (pdf: jsPDF) => {
 const addFooter = (pdf: jsPDF) => {
   pdf.setFontSize(8);
   pdf.setTextColor(255, 255, 255);
-  pdf.text('RestyleProAI PrintPro™', MARGIN, PAGE_HEIGHT - 10);
+  pdf.text('DesignProAI PrintPro™', MARGIN, PAGE_HEIGHT - 10);
   pdf.text('weprintwraps.com', PAGE_WIDTH - MARGIN - 35, PAGE_HEIGHT - 10);
   pdf.setFontSize(7);
   pdf.setTextColor(180, 180, 180);
@@ -97,7 +97,7 @@ const addCoverPage = async (pdf: jsPDF) => {
   // Title with gradient effect simulation (magenta to purple)
   pdf.setFontSize(32);
   pdf.setTextColor(217, 70, 239); // Magenta
-  pdf.text('RestyleProAI', PAGE_WIDTH / 2, 50, { align: 'center' });
+  pdf.text('DesignProAI', PAGE_WIDTH / 2, 50, { align: 'center' });
   
   pdf.setFontSize(28);
   pdf.setTextColor(155, 135, 245); // Purple
@@ -354,7 +354,7 @@ export const generatePrintProPoster = async (): Promise<void> => {
     await addVehicleRenderPage(pdf);
 
     // Save the PDF
-    pdf.save('RestyleProAI-PrintPro-Color-Catalog.pdf');
+    pdf.save('DesignProAI-PrintPro-Color-Catalog.pdf');
     
     console.log('PrintPro poster generated successfully!');
   } catch (error) {

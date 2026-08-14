@@ -185,7 +185,7 @@ export const HELLO_TEMPLATES: Record<string, HelloDraft> = {
       "",
       "No pitch, no offer. Just hello.",
       "",
-      "You've used RestylePro at some point, and I realised we only ever show up in your",
+      "You've used DesignProAI at some point, and I realised we only ever show up in your",
       "inbox when there's something to announce. Felt worth fixing.",
       "",
       "Hope the shop's full and the quotes are closing.",
@@ -194,7 +194,7 @@ export const HELLO_TEMPLATES: Record<string, HelloDraft> = {
       "",
       "— Trish",
     ].join("\n"),
-    audienceNote: "Past RestylePro users. Suppression enforced by Klaviyo.",
+    audienceNote: "Past DesignProAI users. Suppression enforced by Klaviyo.",
   },
 };
 

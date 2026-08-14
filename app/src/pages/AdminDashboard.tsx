@@ -549,7 +549,7 @@ export default function AdminDashboard() {
               <p className="text-lg font-bold text-gray-900">
                 Production<span className="bg-gradient-to-r from-blue-500 to-pink-500 bg-clip-text text-transparent">Files</span>
               </p>
-              <p className="text-sm text-gray-500">Print-ready panels by job — WrapDesignJobs (ApprovePro) + RestylePro — download, Build Print Files, Topaz upscale.</p>
+              <p className="text-sm text-gray-500">Print-ready panels by job — WrapDesignJobs (ApprovePro) + DesignProAI — download, Build Print Files, Topaz upscale.</p>
             </div>
             <span className="rounded-lg bg-gradient-to-r from-blue-500 to-pink-500 px-4 py-2 text-sm font-semibold text-white">Open</span>
           </a>

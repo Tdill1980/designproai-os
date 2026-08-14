@@ -298,7 +298,7 @@ export const MyVehicleToolCore = () => {
           .eq("user_id", user?.id ?? "")
           .maybeSingle();
         const shopId = shopProfile?.id ?? null;
-        const shopWebsite = shopProfile?.website || "https://restyleproai.com";
+        const shopWebsite = shopProfile?.website || "https://designproai.com";
 
         const merge = {
           customer_name: customerName,

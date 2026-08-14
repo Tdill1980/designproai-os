@@ -31,7 +31,7 @@ import { Copy, Check, QrCode, DollarSign, Send, Mail, Link2 } from "lucide-react
 import { toast } from "sonner";
 
 const SITE_ORIGIN =
-  typeof window !== "undefined" ? window.location.origin : "https://restyleproai.com";
+  typeof window !== "undefined" ? window.location.origin : "https://designproai.com";
 
 // Known team roster — used to pretty-print the rep name + show "team" badge.
 const TEAM_NAMES: Record<string, string> = {
@@ -173,7 +173,7 @@ const SellKit = () => {
       {
         key: "quote-request",
         label: "Reply: customer asked for a quote",
-        body: `Hey — happy to price that out. I use RestyleProAI's quote tool to keep it fast and accurate, and you can try it yourself if you want a head start:
+        body: `Hey — happy to price that out. I use DesignProAI's quote tool to keep it fast and accurate, and you can try it yourself if you want a head start:
 
 Get one custom wrap design + 2 revisions + 6-view 3D proof for $25 (no signup):
 ${personalLink}
@@ -246,7 +246,7 @@ WePrintWraps`,
   return (
     <>
       <Helmet>
-        <title>Sell Kit — RestylePro</title>
+        <title>Sell Kit — DesignProAI</title>
         <meta name="robots" content="noindex" />
       </Helmet>
 

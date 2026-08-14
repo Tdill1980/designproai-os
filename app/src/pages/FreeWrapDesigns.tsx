@@ -23,12 +23,12 @@ export default function FreeWrapDesigns() {
   return (
     <>
       <Helmet>
-        <title>3 free custom wrap designs — RestyleProAI</title>
+        <title>3 free custom wrap designs — DesignProAI</title>
         <meta
           name="description"
           content="3 free design tokens ($75 value). Use them on DesignProAI, MyVehiclePro, ColorPro, FadeWraps, or GraphicsPro. Customer-ready 6-view 3D approval proofs in minutes."
         />
-        <link rel="canonical" href="https://www.restyleproai.com/free-wrap-designs" />
+        <link rel="canonical" href="https://designproai.com/free-wrap-designs" />
       </Helmet>
 
       <div className="min-h-screen bg-black text-white">
@@ -36,7 +36,7 @@ export default function FreeWrapDesigns() {
         <div className="max-w-6xl mx-auto px-5 sm:px-8 pt-10">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="text-[#888] text-[20px] font-light tracking-wide">RestyleProAI</div>
+            <div className="text-[#888] text-[20px] font-light tracking-wide">DesignProAI</div>
             <div className="text-[#888] text-[11px] font-semibold tracking-[2px] uppercase mt-2.5">
               Pro Wrap Design Suite · DesignProAI · MyVehiclePro · ColorPro · FadeWraps · GraphicsPro
             </div>
@@ -313,7 +313,7 @@ export default function FreeWrapDesigns() {
 
           {/* Footer */}
           <div className="border-t border-[#222] pt-8 text-center text-[#555] text-xs leading-relaxed">
-            <div className="text-[#888] text-sm font-light tracking-wide mb-2.5">RestyleProAI</div>
+            <div className="text-[#888] text-sm font-light tracking-wide mb-2.5">DesignProAI</div>
             Pro wrap design suite &middot; Built for shops that close jobs on the proof.
             <br />
             <a href="/user-guide" className="text-[#666] underline">

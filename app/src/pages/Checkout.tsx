@@ -179,7 +179,7 @@ const CheckoutPage = () => {
             Back to Pricing
           </Button>
           <div className="flex-1 text-center">
-            <span className="text-white font-semibold">RestyleProAI</span>
+            <span className="text-white font-semibold">DesignProAI</span>
             <span className="text-[#888] text-sm ml-2">Secure Checkout</span>
           </div>
           <div className="w-[120px]" />
@@ -290,7 +290,7 @@ const CheckoutPage = () => {
             </div>
             <p className="text-[#888] mb-6">
               {authMode === "signup"
-                ? "Set up your RestyleProAI account to get started"
+                ? "Set up your DesignProAI account to get started"
                 : "Sign in to your existing account to continue"}
             </p>
 

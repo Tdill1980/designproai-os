@@ -112,7 +112,7 @@ const DownloadSuccess = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Helmet>
-        <title>Purchase Complete | RestyleProAI™ Vehicle Wrap Design Suite</title>
+        <title>Purchase Complete | DesignProAI™ Vehicle Wrap Design Suite</title>
       </Helmet>
 
 

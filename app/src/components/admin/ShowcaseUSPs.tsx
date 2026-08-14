@@ -71,7 +71,7 @@ export function ShowcaseUSPs() {
       {/* Hero banner */}
       <div className="text-center py-12 px-6 rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-950 to-black border border-zinc-800">
         <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight mb-4">
-          RestylePro Visualizer Suite
+          DesignProAI Visualizer Suite
         </h1>
         <p className="text-lg md:text-xl text-cyan-400 font-medium max-w-3xl mx-auto">
           World's First Prompt-to-Print Production Design Software System

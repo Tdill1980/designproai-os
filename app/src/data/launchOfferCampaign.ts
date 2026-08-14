@@ -14,8 +14,8 @@
  * Merge tags: {{customer_name}} {{customer_email}} {{current_year}} {{unsubscribe_url}}
  */
 
-export const LAUNCH_OFFER_URL = "https://restyleproai.com/pricing";
-export const LAUNCH_OFFER_URL_VERTICAL = "https://restyleproai.com/pricing";
+export const LAUNCH_OFFER_URL = "https://designproai.com/pricing";
+export const LAUNCH_OFFER_URL_VERTICAL = "https://designproai.com/pricing";
 
 export const LAUNCH_EMAIL_SUBJECT =
   "{{customer_name}}, the design + marketing engine for wrap shops is live";
@@ -23,7 +23,7 @@ export const LAUNCH_EMAIL_SUBJECT =
 export const LAUNCH_EMAIL_PREVIEW =
   "From $350/mo. Photoreal AI mocks → branded quotes → print-ready files.";
 
-export const LAUNCH_EMAIL_FROM_NAME = "RestylePro";
+export const LAUNCH_EMAIL_FROM_NAME = "DesignProAI";
 export const LAUNCH_EMAIL_FROM_EMAIL = "hello@restyleproai.com";
 
 export const LAUNCH_EMAIL_HTML = `<!DOCTYPE html>
@@ -73,7 +73,7 @@ export const LAUNCH_EMAIL_HTML = `<!DOCTYPE html>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#000000;">
                 <tr>
                   <td>
-                    <img src="https://restyleproai.com/screenshots/porsche-distressed-hero.png" alt="Watch the 2-minute demo" width="600" style="display:block;width:100%;height:auto;opacity:0.75;" />
+                    <img src="https://designproai.com/screenshots/porsche-distressed-hero.png" alt="Watch the 2-minute demo" width="600" style="display:block;width:100%;height:auto;opacity:0.75;" />
                   </td>
                 </tr>
                 <tr>
@@ -149,7 +149,7 @@ export const LAUNCH_EMAIL_HTML = `<!DOCTYPE html>
               Questions? Just hit reply — a real person answers.
             </p>
             <p style="margin:0;color:#888888;font-size:14px;line-height:1.6;">
-              — The RestylePro team
+              — The DesignProAI team
             </p>
           </td>
         </tr>
@@ -160,7 +160,7 @@ export const LAUNCH_EMAIL_HTML = `<!DOCTYPE html>
             <p style="margin:0;color:#444444;font-size:11px;line-height:1.6;">
               <a href="{{unsubscribe_url}}" style="color:#666666;text-decoration:underline;">Unsubscribe</a>
               &nbsp;•&nbsp;
-              © {{current_year}} RestylePro
+              © {{current_year}} DesignProAI
             </p>
           </td>
         </tr>
@@ -175,6 +175,6 @@ export const LAUNCH_EMAIL_HTML = `<!DOCTYPE html>
 /**
  * SMS — single-segment friendly. {{customer_name}} substituted server-side.
  */
-export const LAUNCH_SMS = `Hey {{customer_name}} — RestylePro is live. Design + marketing engine for wrap shops. From $350/mo, cancel anytime: ${LAUNCH_OFFER_URL}  Reply STOP to opt out.`;
+export const LAUNCH_SMS = `Hey {{customer_name}} — DesignProAI is live. Design + marketing engine for wrap shops. From $350/mo, cancel anytime: ${LAUNCH_OFFER_URL}  Reply STOP to opt out.`;
 
-export const LAUNCH_SMS_FOLLOWUP = `{{customer_name}}, RestylePro: photoreal AI mocks, branded quotes, print-ready panels. Starter $350/mo. See all plans: ${LAUNCH_OFFER_URL}`;
+export const LAUNCH_SMS_FOLLOWUP = `{{customer_name}}, DesignProAI: photoreal AI mocks, branded quotes, print-ready panels. Starter $350/mo. See all plans: ${LAUNCH_OFFER_URL}`;

@@ -4,7 +4,7 @@
  * White UI with brand gradient (blue → magenta).
  * Color-coded by team member AND task type.
  * Split into Dev tasks and Marketing tasks.
- * Brand toggle: RestylePro / WePrintWraps.
+ * Brand toggle: DesignProAI / WePrintWraps.
  *
  * Built to replace Monday.com for the internal team.
  */
@@ -99,7 +99,7 @@ const MEMBER_SERIES: Record<string, Array<{name: string; frequency: string; desc
     { name: "💵 Sales tracker — $10K/day", frequency: "Daily", cadence: "daily", desc: "NON-NEGOTIABLE: track the day's sales, log revenue, flag if we're off the $10K/day target" },
     // Weekly cadence — two anchors (Tue + Thu)
     { name: "Mon — Quick Tip Monday", frequency: "Weekly", cadence: "weekly", desc: "Social only: prompt/wrap/material/shop tip → IG·FB·LinkedIn·TikTok·X·Stories" },
-    { name: "Tue — Behind the Design", frequency: "Weekly", cadence: "weekly", desc: "RestylePro tutorial: publish + distribute (live·email·web·blog·shorts·reels)" },
+    { name: "Tue — Behind the Design", frequency: "Weekly", cadence: "weekly", desc: "DesignProAI tutorial: publish + distribute (live·email·web·blog·shorts·reels)" },
     { name: "Wed — Community", frequency: "Weekly", cadence: "weekly", desc: "BTS · teaser · polls · office life · Royalty Wraps" },
     { name: "Thu — Wrap TV World + WOTW", frequency: "Weekly", cadence: "weekly", desc: "Publish the episode + distribute Wrap of the Week everywhere (BIG DAY)" },
     { name: "Fri — Community + close-out", frequency: "Weekly", cadence: "weekly", desc: "Community clips/reels/stories + analytics + queue next week" },
@@ -127,7 +127,7 @@ type Brand = "restylepro" | "weprintwraps" | "designproai" | "wraptv" | "inkande
 // Ink & Edge or CreatorMarket selected, every one of them claimed you were
 // saving to "WePrintWraps". A label must never lie about the destination.
 const BRAND_LABEL: Record<Brand, string> = {
-  restylepro: "RestylePro",
+  restylepro: "DesignProAI",
   weprintwraps: "WePrintWraps",
   designproai: "DesignProAI",
   wraptv: "WrapTVWorld",
@@ -143,7 +143,7 @@ const BRAND_SHORT: Record<Brand, string> = {
   creatormarket: "CM",
 };
 type Category = "marketing" | "dev";
-// Board brands. RestylePro + WePrintWraps are the operating brands; WrapTV and
+// Board brands. DesignProAI + WePrintWraps are the operating brands; WrapTV and
 // Ink & Edge are added so their content cards can be QC'd on the same board.
 type TenantMode = "wpw" | undefined;
 type TeamMember = "trish" | "jess" | "carley" | "amanda" | "xavier" | "houdini" | "jackson" | "rj" | "brice" | "troy" | "lance";
@@ -353,9 +353,9 @@ type TeamKey = keyof typeof TEAM;
  *
  * - WPW brand: only members with a wpwEmail (the WPW-facing team).
  *   This keeps the /wpw/engine-room directory clean and avoids confusing
- *   internal-WPW users with RestylePro-only members like Xavier, Houdini,
+ *   internal-WPW users with DesignProAI-only members like Xavier, Houdini,
  *   RJ, or Amanda.
- * - RestylePro brand: the full team (minus the "agent" automation entry).
+ * - DesignProAI brand: the full team (minus the "agent" automation entry).
  */
 function getVisibleTeamEntries(brand: Brand): [TeamKey, typeof TEAM[TeamKey]][] {
   const entries = Object.entries(TEAM) as [TeamKey, typeof TEAM[TeamKey]][];
@@ -493,7 +493,7 @@ const CHANNELS = {
     ],
   },
   youtube_rp: {
-    name: "YouTube RestylePro",
+    name: "YouTube DesignProAI",
     icon: Youtube,
     color: "from-red-500 to-pink-600",
     text: "text-red-500",
@@ -3119,9 +3119,9 @@ function RecommendationsView() {
   );
 }
 
-// ─── Video Production (native RestylePro Video Studio) ─────────────────────
+// ─── Video Production (native DesignProAI Video Studio) ─────────────────────
 // The old wrapcommandai.com launcher was retired (2026-07): heavy media
-// production now runs natively on the RestylePro pipeline (drive-sync →
+// production now runs natively on the DesignProAI pipeline (drive-sync →
 // video-auto-assemble → video-captions/video-music → video-render → ffmpeg
 // worker). VideoStudio is the Engine Room front door to it.
 
@@ -3133,7 +3133,7 @@ function VideoProductionView() {
 
 export default function AdminMarketingHub({ tenantMode }: { tenantMode?: TenantMode } = {}) {
   const isWpwTenant = tenantMode === "wpw";
-  // In WPW-tenant mode, brand is locked — the WPW team should never see RestylePro data.
+  // In WPW-tenant mode, brand is locked — the WPW team should never see DesignProAI data.
   const [brand, setBrand] = useState<Brand>(isWpwTenant ? "weprintwraps" : "restylepro");
   const [category, setCategory] = useState<Category>("marketing");
   const [selectedMember, setSelectedMember] = useState<string | null>(null);

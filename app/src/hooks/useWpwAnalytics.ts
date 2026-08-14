@@ -1,6 +1,6 @@
 /**
  * useWpwAnalytics — fetches WPW's cross-project analytics via the
- * RestylePro `wpw-analytics-proxy` edge function. The proxy injects
+ * DesignProAI `wpw-analytics-proxy` edge function. The proxy injects
  * the shared secret server-side so the key never touches the browser.
  *
  * Returns the WPW analytics-dashboard payload mapped into shapes the

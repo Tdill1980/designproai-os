@@ -154,7 +154,7 @@ interface Job {
   approved_render_url?: string;
   all_view_urls?: any;
   concept_json?: any;
-  // "panelizer" = RestylePro production job (default). "approvepro" = a
+  // "panelizer" = DesignProAI production job (default). "approvepro" = a
   // WePrintWraps/ApprovePro proof_approvals row — Studio Board state persists
   // into proof_approvals.metadata.studio_board instead of panelizer_jobs.
   source?: "panelizer" | "approvepro";
@@ -748,7 +748,7 @@ export default function AdminGeminiCompareStudio() {
       }
       // Fallback 2: WePrintWraps / ApprovePro orders live in proof_approvals,
       // with the order number inside metadata (wpw_order_number / wpw_woo_order_id).
-      // Wrapped so a query issue here can never break the RestylePro search above.
+      // Wrapped so a query issue here can never break the DesignProAI search above.
       if (!found) {
         try {
           const term = digits || q;
@@ -1001,7 +1001,7 @@ export default function AdminGeminiCompareStudio() {
   }, [proof2d, viewMap, job?.concept_json]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Write the managed concept (qc_side_panels) to the correct backing table:
-  // panelizer_jobs.concept_json for RestylePro jobs, or
+  // panelizer_jobs.concept_json for DesignProAI jobs, or
   // proof_approvals.metadata.studio_board for WePrintWraps/ApprovePro jobs.
   const writeConcept = useCallback(async (nextConcept: any) => {
     const cur = jobRef.current || job;
@@ -1034,7 +1034,7 @@ export default function AdminGeminiCompareStudio() {
   }, [job]);
 
   // Ensure an ApprovePro/WPW order has a backing panelizer_jobs row so it can flow
-  // into ProductionFlow + the GENIE panelizer (RestylePro jobs already ARE that
+  // into ProductionFlow + the GENIE panelizer (DesignProAI jobs already ARE that
   // row). Reuses an existing job for the order number, else mints one carrying the
   // views + 2D proof + current approvals, and remembers it on the proof.
   const ensureBackingPanelizerJob = useCallback(async (): Promise<string | null> => {

@@ -59,9 +59,9 @@ const WBTY = () => {
   return (
     <div className="min-h-screen flex flex-col bg-zinc-900">
       <Helmet>
-        <title>PatternPro - Wrap By The Yard Pattern Designer | RestyleProAI</title>
+        <title>PatternPro - Wrap By The Yard Pattern Designer | DesignProAI</title>
         <meta name="description" content="Design premium wrap patterns by the yard with PatternPro. Metal & Marble, Camo & Carbon, and more with 3D renders. Design it. Panel it. Print it. The world's first prompt-to-production wrap platform." />
-        <meta property="og:title" content="PatternPro - Wrap By The Yard Pattern Designer | RestyleProAI" />
+        <meta property="og:title" content="PatternPro - Wrap By The Yard Pattern Designer | DesignProAI" />
         <meta property="og:description" content="Premium patterns by the yard. 3D renders with accurate yardage calculations." />
       </Helmet>
       

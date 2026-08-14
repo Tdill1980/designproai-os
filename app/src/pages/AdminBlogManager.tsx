@@ -63,7 +63,7 @@ const EMPTY_POST: EditorPost = {
   content: "",
   featured_image_url: null,
   tags: [],
-  author: "RestyleProAI",
+  author: "DesignProAI",
   read_time: "5 min read",
   status: "draft",
   published_at: null,

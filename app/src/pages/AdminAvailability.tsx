@@ -94,7 +94,7 @@ const AdminAvailability = () => {
   const { data: bookings = [], refetch: refetchBookings } = useUpcomingBookings();
 
   useEffect(() => {
-    document.title = "Availability & Services — RestylePro";
+    document.title = "Availability & Services — DesignProAI";
   }, []);
 
   const updateService = async (id: string, patch: Partial<ServiceRow>) => {

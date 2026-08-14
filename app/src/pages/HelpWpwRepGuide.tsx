@@ -36,14 +36,14 @@ const HelpWpwRepGuide = () => {
   return (
     <>
       <Helmet>
-        <title>WPW Rep Playbook — RestyleProAI</title>
+        <title>WPW Rep Playbook — DesignProAI</title>
         <meta
           name="description"
-          content="How to use your RestyleProAI rep toolkit: share your branded landing page, earn 20% commission on $25 designs and first-month subscriptions, and handle customer questions."
+          content="How to use your DesignProAI rep toolkit: share your branded landing page, earn 20% commission on $25 designs and first-month subscriptions, and handle customer questions."
         />
         <link
           rel="canonical"
-          href="https://restyleproai.com/help/wpw-rep-guide"
+          href="https://designproai.com/help/wpw-rep-guide"
         />
       </Helmet>
 
@@ -56,7 +56,7 @@ const HelpWpwRepGuide = () => {
             Your rep playbook.
           </h1>
           <p className="text-base sm:text-lg text-gray-600 mt-4 leading-relaxed">
-            Everything you need to start sharing RestyleProAI today: your
+            Everything you need to start sharing DesignProAI today: your
             branded link, paste-able templates, how commissions get paid,
             and how to handle the questions you'll get back.
           </p>

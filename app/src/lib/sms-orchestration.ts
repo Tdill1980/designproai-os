@@ -36,8 +36,8 @@ export interface SmsSeries {
 }
 
 // /wpw-offer + /wpw-offer-vertical retired — both redirect to /pricing.
-const OFFER_URL = 'https://restyleproai.com/pricing';
-const OFFER_URL_VERTICAL = 'https://restyleproai.com/pricing';
+const OFFER_URL = 'https://designproai.com/pricing';
+const OFFER_URL_VERTICAL = 'https://designproai.com/pricing';
 
 /**
  * SMS series definitions. Mirrors MIGHTYMAIL_SERIES on the email side

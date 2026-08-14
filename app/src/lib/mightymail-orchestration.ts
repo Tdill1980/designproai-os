@@ -247,8 +247,8 @@ export async function fireWpwOfferSeries(args: FireWpwOfferArgs): Promise<{
       orientation,
       landing_url:
         orientation === 'vertical'
-          ? 'https://restyleproai.com/wpw-offer-vertical'
-          : 'https://restyleproai.com/wpw-offer',
+          ? 'https://designproai.com/wpw-offer-vertical'
+          : 'https://designproai.com/wpw-offer',
     },
   });
 

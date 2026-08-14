@@ -9,7 +9,7 @@
  *         name, filter chips + search.
  *   RIGHT: active-item detail card — enlarged hero image, customer
  *          context, shop-side action buttons (Open client page,
- *          Copy link, Resend, Revoke, Escalate to RestylePro Support,
+ *          Copy link, Resend, Revoke, Escalate to DesignProAI Support,
  *          Push New Version), and an internal notes box the shop can
  *          save to proof_approvals.internal_notes.
  *
@@ -425,10 +425,10 @@ function orderKeyOf(r: any): string | null {
 // NOT an internally-generated RP- proof) AND one of the paid design products
 // (Custom/Full Wrap Design 234/58160, Hourly Design 290, Design Setup/Output
 // 289). This keeps the queue to genuine WPW design orders and excludes both
-// RestylePro test/internal proofs and pure print/material orders.
+// DesignProAI test/internal proofs and pure print/material orders.
 function isRealWpwOrder(r: any): boolean {
   // Strict: only orders the WPW sync ingested (auto_ingested === "wpw", the
-  // purple WPW badge). RestylePro-generated proofs (RP-#### in
+  // purple WPW badge). DesignProAI-generated proofs (RP-#### in
   // wpw_order_number, auto_ingested null) are NOT real WPW orders and must
   // never enter the design queue.
   return r?.metadata?.auto_ingested === "wpw";
@@ -537,7 +537,7 @@ function realRenderUrl(v: ActiveVersion | null): string | null {
 }
 
 function getPublicBase(): string {
-  return typeof window !== "undefined" ? window.location.origin : "https://restyleproai.com";
+  return typeof window !== "undefined" ? window.location.origin : "https://designproai.com";
 }
 
 export default function ApproveProPage() {
@@ -804,7 +804,7 @@ export default function ApproveProPage() {
     // Team-scoped query — RLS widens this to every proof on every shop the
     // caller's team belongs to via proof_shop_shared_team(shop_id). No explicit
     // shop_id filter so the whole team sees the same queue (WPW Woo orders AND
-    // RestyleProAI-native jobs), each tagged by origin in the rail.
+    // DesignProAI-native jobs), each tagged by origin in the rail.
     const { data, error } = await supabase
       .from("proof_approvals" as any)
       .select("*")
@@ -1097,7 +1097,7 @@ export default function ApproveProPage() {
     }
 
     // ENFORCED: ApprovePro only ever shows real WPW design orders. This is
-    // not an optional toggle — RestylePro internal proofs and pure print
+    // not an optional toggle — DesignProAI internal proofs and pure print
     // orders must never appear in the design queue.
     r = r.filter((row) => isDesignOrder(row));
 
@@ -1331,7 +1331,7 @@ export default function ApproveProPage() {
       // store the sanctioned chain filters out). Fire-and-forget: wrapped +
       // non-blocking so it can never break the queue handoff above.
       // WPW/autogen jobs store their design under metadata.autogen_visualization_id
-      // (source_visualization_id is only set for RestylePro-native designs).
+      // (source_visualization_id is only set for DesignProAI-native designs).
       const genId = ((selected as any).source_visualization_id || (selected.metadata as any)?.autogen_visualization_id) as string | undefined;
       if (genId) {
         (async () => {
@@ -2083,7 +2083,7 @@ export default function ApproveProPage() {
         view_urls: activeVersion.render_urls,
         shopName, vehicleName, designName, finish: "Gloss",
       };
-      const resp = await fetch("https://www.restyleproai.com/api/compose-2d-proof", {
+      const resp = await fetch("https://designproai.com/api/compose-2d-proof", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       const j = await resp.json().catch(() => ({}));
@@ -2137,7 +2137,7 @@ export default function ApproveProPage() {
           }
         } catch { /* non-fatal — sheet still composes without dims */ }
       }
-      const resp = await fetch("https://www.restyleproai.com/api/compose-production-artboard", {
+      const resp = await fetch("https://designproai.com/api/compose-production-artboard", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ generation_id: genId, view_urls: activeVersion.render_urls, vehicleName, companyName, dimensions }),
       });
@@ -2358,7 +2358,7 @@ export default function ApproveProPage() {
         return;
       }
       const genId = (selected as any).source_visualization_id || (selected.metadata as any)?.autogen_visualization_id || undefined;
-      const resp = await fetch("https://www.restyleproai.com/api/compose-colorway-compare", {
+      const resp = await fetch("https://designproai.com/api/compose-colorway-compare", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ generation_id: genId, panels }),
       });
@@ -2845,7 +2845,7 @@ export default function ApproveProPage() {
   const revisionCount = sortedVersions.length;
   const uploadsCount = (((selected?.metadata as any)?.customer_uploads) || []).length;
   const hasDesign = !!hero;
-  // Canonical design generation id for THIS order — RestylePro-native designs set
+  // Canonical design generation id for THIS order — DesignProAI-native designs set
   // source_visualization_id; WPW/autogen jobs set metadata.autogen_visualization_id.
   // Used to gate + feed the Design Assets section and the Panel Studio deep-link so
   // tenant jobs aren't hidden.
@@ -2854,7 +2854,7 @@ export default function ApproveProPage() {
   return (
     <div className="min-h-screen bg-gray-200 pb-8 text-gray-900" style={{ scrollbarGutter: "stable" }}>
       <Helmet>
-        <title>ApprovePro™ · RestylePro</title>
+        <title>ApprovePro™ · DesignProAI</title>
       </Helmet>
 
       <header>
@@ -3239,7 +3239,7 @@ export default function ApproveProPage() {
                                 ? "bg-purple-100 text-purple-700"
                                 : "bg-blue-100 text-blue-700",
                             )}>
-                              {isWpwOrigin ? "WPW" : "RestylePro"}
+                              {isWpwOrigin ? "WPW" : "DesignProAI"}
                             </span>
                             {rowOrderDate(r) && (
                               <span className="font-semibold text-gray-900 shrink-0">
@@ -5780,7 +5780,7 @@ export default function ApproveProPage() {
               }).filter((p) => p.url);
               if (panels.length < 2) return;
               const genId = (selected as any).source_visualization_id || (selected.metadata as any)?.autogen_visualization_id || undefined;
-              const resp = await fetch("https://www.restyleproai.com/api/compose-colorway-compare", {
+              const resp = await fetch("https://designproai.com/api/compose-colorway-compare", {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ generation_id: genId, panels }),
               });
               const j = await resp.json().catch(() => ({}));

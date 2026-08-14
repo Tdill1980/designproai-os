@@ -1,7 +1,7 @@
 /**
  * PROOF ANGLES - LOCKED CONFIGURATION
  * 
- * This file defines the EXACT 6 angles used for all RestylePro proof generation.
+ * This file defines the EXACT 6 angles used for all DesignProAI proof generation.
  * These angles are LOCKED and should NOT be modified without system-wide review.
  * 
  * Used by: ColorPro, GraphicsPro, FadeWraps, ApprovePro, PatternPro, DesignPanelPro

@@ -297,7 +297,7 @@ export default function Proof() {
         return;
       }
       // Escalated — still let the client view/sign/decline, but show a
-      // support badge. RestylePro team is working on it in parallel.
+      // support badge. DesignProAI team is working on it in parallel.
       setState({ kind: "loaded", proof: data as ProofData });
       if (data.customer_name && !typedName) setTypedName(data.customer_name);
     } catch (err: any) {
@@ -1062,11 +1062,11 @@ export default function Proof() {
             </div>
             <div>
               <p className="text-sm font-semibold text-amber-900">
-                RestylePro Support is on this
+                DesignProAI Support is on this
               </p>
               <p className="text-xs text-amber-800 mt-0.5">
                 The shop escalated this proof for hands-on help. You can still
-                approve, decline, or request a revision — a RestylePro designer
+                approve, decline, or request a revision — a DesignProAI designer
                 is reviewing in the background.
               </p>
             </div>
@@ -1253,10 +1253,10 @@ export default function Proof() {
             roof: "Roof", hood_detail: "Hood", hood: "Hood", "close-up": "Close-Up",
             production_proof: "2D Production Proof", proof_2d: "2D Proof",
           };
-          // Artboard + production sheets are RestyleProAI/admin property — the
+          // Artboard + production sheets are DesignProAI/admin property — the
           // customer sees the 3D angles only, never the flat master artboard.
           // Customer sees the 3D angles AND the 2D production proof — only the
-          // flat artboard is admin-only (RestyleProAI property). Transparent
+          // flat artboard is admin-only (DesignProAI property). Transparent
           // element PNGs + clean background live in design_generation_assets and
           // are never in render_urls, so they're admin-only by nature.
           const SKIP = new Set(["master_artboard", "artboard", "flat_artboard"]);

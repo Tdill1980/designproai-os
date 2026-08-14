@@ -77,7 +77,7 @@ export default function Try() {
 
   const handleShare = async () => {
     const shareData = {
-      title: "Custom Wrap Design — $25 — RestylePro",
+      title: "Custom Wrap Design — $25 — DesignProAI",
       text: "Custom AI vehicle wrap design for $25. Try it before you commit.",
       url: shareUrl,
     };
@@ -112,7 +112,7 @@ export default function Try() {
   return (
     <>
       <Helmet>
-        <title>{`${config.headline} — ${PRICE_LABEL} — RestylePro`}</title>
+        <title>{`${config.headline} — ${PRICE_LABEL} — DesignProAI`}</title>
         <meta
           name="description"
           content={
@@ -130,7 +130,7 @@ export default function Try() {
           {/* Hero */}
           <div className="text-center">
             <p className="text-[11px] uppercase tracking-[0.3em] text-[#0284C7] font-bold mb-3">
-              RestyleProAI&trade; · No subscription required
+              DesignProAI&trade; · No subscription required
             </p>
             <h1 className="font-display text-[40px] sm:text-[60px] font-black leading-[1.02] tracking-tight">
               <span className="text-gray-900">{config.headline}</span>

@@ -37,7 +37,7 @@ import {
 /**
  * DesignPro Studio — branded, Canva/Photoshop-style three-column editor shell.
  *
- * Layout mirrors the approved WrapStudio mockup, reskinned to RestylePro
+ * Layout mirrors the approved WrapStudio mockup, reskinned to DesignProAI
  * branding (black chrome, blue→magenta accent gradient, Poppins/Oswald/Inter):
  *   • LEFT  — collapsible tool rail (Design / Upload / Text / Logo / Adjust / Layers)
  *   • CENTER — large vehicle design canvas + multi-view thumbnails
@@ -103,7 +103,7 @@ type ViewId = (typeof VIEWS)[number]["id"];
 /**
  * Trademark superscript — matches the ™ treatment used in Header.tsx
  * (muted, superscripted). Use on the FIRST prominent appearance of each mark:
- * RestyleProAI™, DesignProAI™, DesignIQ™, LiftIQ™, VisionBoardIQ™,
+ * DesignProAI™, DesignProAI™, DesignIQ™, LiftIQ™, VisionBoardIQ™,
  * RevisionStudioIQ™, GENIE™. See docs/TRADEMARKS.md.
  */
 const Tm = () => <span className="align-super text-[0.6em] opacity-60">&#8482;</span>;
@@ -218,7 +218,7 @@ export default function DesignProStudio() {
   return (
     <div className="min-h-[100dvh] bg-black text-white" style={{ fontFamily: "Inter, sans-serif" }}>
       <Helmet>
-        <title>DesignProAI™ Studio — Vehicle Wrap Design Editor | RestyleProAI™</title>
+        <title>DesignProAI™ Studio — Vehicle Wrap Design Editor | DesignProAI™</title>
         <meta
           name="description"
           content="DesignProAI™ Studio — a layer-based vehicle wrap design editor powered by DesignIQ™. Design, place text and logos with LiftIQ™, and export print-ready panels via the GENIE™ Universal Panelizer."
@@ -228,7 +228,7 @@ export default function DesignProStudio() {
       {/* ── Studio top bar (BLACK chrome — header contrast standard) ──── */}
       <div className="flex items-center justify-between border-b border-white/10 bg-black px-4 h-14">
         <div className="flex items-center gap-3 min-w-0">
-          {/* Exact RestyleProAI™ logo + wordmark (matches Header.tsx) */}
+          {/* Exact DesignProAI™ logo + wordmark (matches Header.tsx) */}
           <a href="/" className="flex items-center gap-0.5 shrink-0">
             <img
               src="/sproket-rocket-logo.png"

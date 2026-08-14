@@ -85,7 +85,7 @@ function getSourceMetas(isWpwTenant: boolean): SourceMeta[] {
     label: "PrintPro",
     accent: "text-fuchsia-300",
     icon: Printer,
-    caption: `Design + renders included with RestylePro tier — ${tierQuantityCaption()}.`,
+    caption: `Design + renders included with DesignProAI tier — ${tierQuantityCaption()}.`,
   };
   const services: SourceMeta = {
     source: "services",

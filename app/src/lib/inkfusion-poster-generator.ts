@@ -186,7 +186,7 @@ export async function generateInkFusionPoster(
   // Right side branding section
   const rightX = POSTER_WIDTH - 60;
   
-  // RestylePro™ Logo - Blue/White branding
+  // DesignProAI™ Logo - Blue/White branding
   doc.setFontSize(48);
   doc.setFont('helvetica', 'bold');
   
@@ -216,11 +216,11 @@ export async function generateInkFusionPoster(
   doc.setFontSize(24);
   doc.text(tmText, restyleStartX + restyleWidth + proWidth, logoY - 30);
   
-  // RestyleProAI.com - cyan accent
+  // DesignProAI.com - cyan accent
   doc.setFontSize(48);
   doc.setTextColor(BRAND_BLUE.r, BRAND_BLUE.g, BRAND_BLUE.b);
   doc.setFont('helvetica', 'bold');
-  doc.text('RestyleProAI.com', rightX, logoY + 35, { align: 'right' });
+  doc.text('DesignProAI.com', rightX, logoY + 35, { align: 'right' });
 
   // ============================================
   // SWATCH GRID SECTION - LARGER SWATCHES
@@ -368,7 +368,7 @@ export async function generateInkFusionPoster(
   // "See it on your vehicle" CTA
   doc.setFontSize(12);
   doc.setTextColor(LIGHT_GRAY.r, LIGHT_GRAY.g, LIGHT_GRAY.b);
-  doc.text('Visualize at RestylePro.com', vehicleX + vehicleWidth / 2, captionY + 42, { align: 'center' });
+  doc.text('Visualize at DesignProAI.com', vehicleX + vehicleWidth / 2, captionY + 42, { align: 'center' });
 
   // ============================================
   // FOOTER SECTION - Professional Design
@@ -405,13 +405,13 @@ export async function generateInkFusionPoster(
   // Copyright (far right)
   doc.setFontSize(13);
   doc.setTextColor(LIGHT_GRAY.r, LIGHT_GRAY.g, LIGHT_GRAY.b);
-  doc.text('© 2025 RestyleProAI™. All Rights Reserved.', POSTER_WIDTH - 60, specY + 25, { align: 'right' });
+  doc.text('© 2025 DesignProAI™. All Rights Reserved.', POSTER_WIDTH - 60, specY + 25, { align: 'right' });
 
-  // RestylePro branding in footer - Blue/White
+  // DesignProAI branding in footer - Blue/White
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   
-  // Footer RestylePro positioning
+  // Footer DesignProAI positioning
   const footerRestyleX = POSTER_WIDTH - 280;
   
   // "Powered by " in gray

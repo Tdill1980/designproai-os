@@ -2033,7 +2033,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   return (
     <div className={cn("flex flex-col", embedded ? "min-h-0 bg-transparent" : "min-h-screen bg-background")}>
       <Helmet>
-        <title>DesignProAI™ - The World's First AI Design to Print System | RestylePro Suite™</title>
+        <title>DesignProAI™ - The World's First AI Design to Print System | DesignProAI Suite™</title>
         <meta
           name="description"
           content="DesignProAI™ - AI designs custom wraps, renders them on vehicles, and generates production-ready print panels. The world's first AI Design to Print system."
@@ -2065,7 +2065,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
             <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-4 pt-2 pb-24">
               <Card className="overflow-hidden bg-black border-white/10">
 
-                {/* Main Content — 3-column collapsible workspace (dark RestylePro):
+                {/* Main Content — 3-column collapsible workspace (dark DesignProAI):
                     LEFT controls (collapsible) · CENTER Konva canvas (dominant) ·
                     RIGHT production deck (collapsible). On mobile it stacks. */}
                 <div className="flex flex-col lg:flex-row gap-4 p-3 sm:p-4 lg:p-6 items-start">
@@ -2075,7 +2075,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                   {(embedded || leftColOpen) ? (
                     <div className={cn("w-full lg:w-[420px] shrink-0 rounded-xl border border-white/10 bg-black/40 p-4 space-y-4", embedded && "hidden")}>
                       {/* DesignPro™ wordmark — blue→magenta gradient + magenta subtitle
-                          (mirrors the RestyleProAI™ wordmark pattern in Header.tsx). */}
+                          (mirrors the DesignProAI™ wordmark pattern in Header.tsx). */}
                       <div className="flex flex-col leading-none px-1">
                         <span className="text-2xl font-bold tracking-tight whitespace-nowrap">
                           <span className="text-white">Design</span><span className="bg-gradient-to-r from-blue-500 to-pink-500 bg-clip-text text-transparent">Pro</span>

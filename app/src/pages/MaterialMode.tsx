@@ -199,12 +199,12 @@ const MaterialMode = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>MaterialMode - Vehicle Material & Texture Visualization | RestyleProAI</title>
+        <title>MaterialMode - Vehicle Material & Texture Visualization | DesignProAI</title>
         <meta name="description" content="Visualize custom materials and textures on any vehicle. Carbon fiber, brushed metal, leather, and more. Design it. Panel it. Print it. The world's first prompt-to-production vehicle wrap design software." />
-        <link rel="canonical" href="https://www.restyleproai.com/material" />
-        <meta property="og:title" content="MaterialMode - Vehicle Material Visualization | RestyleProAI" />
+        <link rel="canonical" href="https://designproai.com/material" />
+        <meta property="og:title" content="MaterialMode - Vehicle Material Visualization | DesignProAI" />
         <meta property="og:description" content="Visualize custom materials and textures on any vehicle with AI-powered photorealistic renders." />
-        <meta property="og:url" content="https://www.restyleproai.com/material" />
+        <meta property="og:url" content="https://designproai.com/material" />
       </Helmet>
 
       <main className="flex-1">

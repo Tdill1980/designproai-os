@@ -47,14 +47,14 @@ export const SEOFAQPage = ({
     })),
   };
 
-  const canonicalUrl = `https://www.restyleproai.com${canonicalPath}`;
+  const canonicalUrl = `https://designproai.com${canonicalPath}`;
 
   const breadcrumbLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://restyleproai.com" },
-      { "@type": "ListItem", position: 2, name: "FAQ", item: "https://restyleproai.com/faq" },
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://designproai.com" },
+      { "@type": "ListItem", position: 2, name: "FAQ", item: "https://designproai.com/faq" },
       { "@type": "ListItem", position: 3, name: headline, item: canonicalUrl },
     ],
   };
@@ -163,7 +163,7 @@ export const SEOFAQPage = ({
                 Still have questions?
               </h2>
               <p className="text-muted-foreground mb-6">
-                Our support team is here to help you get the most out of RestyleProAI.
+                Our support team is here to help you get the most out of DesignProAI.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button asChild size="lg">

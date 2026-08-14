@@ -154,7 +154,7 @@ export default function AdminSeoConnections() {
           <h1 className="text-2xl font-semibold">Connections</h1>
         </div>
         <p className="text-gray-600 text-sm">
-          One control panel for the accounts RestyleProAI operates for this shop: website publishing,
+          One control panel for the accounts DesignProAI operates for this shop: website publishing,
           Google services, YouTube, Meta publishing and Ads Manager reporting, Canva, Klaviyo, LinkedIn and X.
           Provider credentials remain server-side and use their existing canonical authority.
         </p>

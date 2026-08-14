@@ -3,7 +3,7 @@
  *
  * Public, indexable. Linked from the WPW rep landing pages
  * (/wpw/:rep) and from the rep guide. Designed for someone who has
- * never seen RestylePro before — explains the $25 design path, the
+ * never seen DesignProAI before — explains the $25 design path, the
  * subscription path, and the core tools at a "what does it do" level
  * with screenshot placeholders ready to fill in.
  */
@@ -54,14 +54,14 @@ const HelpRestyleProWalkthrough = () => {
   return (
     <>
       <Helmet>
-        <title>How RestyleProAI works — walkthrough for customers</title>
+        <title>How DesignProAI works — walkthrough for customers</title>
         <meta
           name="description"
-          content="See exactly how to use RestyleProAI: get a $25 AI wrap design rendered on your vehicle, subscribe to the full design suite, or just price a job in 60 seconds."
+          content="See exactly how to use DesignProAI: get a $25 AI wrap design rendered on your vehicle, subscribe to the full design suite, or just price a job in 60 seconds."
         />
         <link
           rel="canonical"
-          href="https://restyleproai.com/help/restylepro-walkthrough"
+          href="https://designproai.com/help/restylepro-walkthrough"
         />
       </Helmet>
 
@@ -72,7 +72,7 @@ const HelpRestyleProWalkthrough = () => {
             Walkthrough · For customers
           </div>
           <h1 className="text-3xl sm:text-5xl font-extrabold leading-[1.05] tracking-tight">
-            How RestyleProAI works.
+            How DesignProAI works.
           </h1>
           <p className="text-base sm:text-lg text-white/75 mt-4 leading-relaxed">
             Three ways in: price a job in 60 seconds, pay $25 to see your idea

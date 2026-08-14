@@ -18,9 +18,9 @@ export const UpgradeRequired = ({
   const navigate = useNavigate();
 
   const tierNames = {
-    starter: "RestylePro Starter",
-    advanced: "RestylePro Advanced",
-    complete: "RestylePro Complete"
+    starter: "DesignProAI Starter",
+    advanced: "DesignProAI Advanced",
+    complete: "DesignProAI Complete"
   };
 
   const handleUpgrade = () => {

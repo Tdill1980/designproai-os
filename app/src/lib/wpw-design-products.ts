@@ -1,12 +1,12 @@
 /**
  * WPW Design Products — the three WooCommerce SKUs WePrintWraps charges
- * customers for design work that RestylePro tenants get bundled into
+ * customers for design work that DesignProAI tenants get bundled into
  * their monthly subscription.
  *
  * Used by the DesignProductsCompareCard on the QuickQuote/DesignPro
  * estimators to show WPW shops how much they'd be paying their print
  * partner for the same work, and to "Add to WPW cart" any design lines
- * that don't fit RestylePro's bundled allotment.
+ * that don't fit DesignProAI's bundled allotment.
  */
 
 export interface WpwDesignProduct {

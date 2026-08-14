@@ -335,7 +335,7 @@ export const MobileProofSheet: React.FC<MobileProofSheetProps> = ({
               {customerName && (
                 <p className="text-xs text-gray-700">Customer: <strong>{customerName}</strong></p>
               )}
-              <p className="text-[10px] text-gray-400">{proofDate} | {displayToolLabel} by RestyleProAI</p>
+              <p className="text-[10px] text-gray-400">{proofDate} | {displayToolLabel} by DesignProAI</p>
             </div>
             <div className="text-right text-[9px] text-gray-400 italic">
               Approval Proof — Not final production

@@ -153,7 +153,7 @@ function buildClaudePrompt(t: any) {
   const tx = (Array.isArray(t.transcript) ? t.transcript : [])
     .map((m: any) => `${m.role}: ${m.content}`).join("\n");
   return [
-    `Fix this RestylePro issue reported via the Sprocket helper.`,
+    `Fix this DesignProAI issue reported via the Sprocket helper.`,
     ``,
     `Page: ${t.page || "unknown"}`,
     `User: ${t.user_email || t.user_id || "anonymous"}`,

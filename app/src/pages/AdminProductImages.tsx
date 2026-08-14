@@ -18,7 +18,7 @@ import {
  * /admin/product-images
  *
  * Upload the up-to-3 carousel images shown above the fold on each new
- * RestyleProAI product page. Files go to wrap-files/product-carousel/ and
+ * DesignProAI product page. Files go to wrap-files/product-carousel/ and
  * the public URL is upserted into homepage_showcase keyed
  * `product-carousel:<slug>:<n>`. The product page reads them via
  * useProductCarousel — no code change needed to swap an image.
@@ -76,7 +76,7 @@ export default function AdminProductImages() {
           <h1 className="text-3xl font-bold mb-2">Product Page Images</h1>
           <p className="text-muted-foreground">
             Upload up to 3 carousel images per product page. They appear above
-            the fold on each RestyleProAI product page and rotate automatically.
+            the fold on each DesignProAI product page and rotate automatically.
             Stored in <code>wrap-files/product-carousel/</code> and served from
             Supabase's public CDN.
           </p>

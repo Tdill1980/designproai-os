@@ -81,9 +81,9 @@ export default function Visualize() {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>3D Vehicle Visualizer - RestyleProAI</title>
+        <title>3D Vehicle Visualizer - DesignProAI</title>
         <meta name="description" content="Visualize vehicle wraps in 3D with AI-powered rendering. See your design from every angle before printing." />
-        <link rel="canonical" href="https://www.restyleproai.com/visualize" />
+        <link rel="canonical" href="https://designproai.com/visualize" />
       </Helmet>
       <main className="flex-1">
         <div className="container mx-auto p-6 max-w-6xl">

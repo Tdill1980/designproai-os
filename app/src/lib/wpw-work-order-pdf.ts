@@ -298,7 +298,7 @@ export function buildWorkOrderPdf(order: WpwOrder): Blob {
   drawHr(s);
   drawText(
     s,
-    `Generated from RestylePro · ${new Date().toLocaleString("en-US")}    Order #${order.order_number || order.id}`,
+    `Generated from DesignProAI · ${new Date().toLocaleString("en-US")}    Order #${order.order_number || order.id}`,
     { size: 8, color: [120, 120, 120] },
   );
 

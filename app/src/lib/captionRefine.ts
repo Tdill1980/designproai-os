@@ -23,7 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 /** Board brand slug → the brand name the copy brains expect. */
 const COPY_BRAND: Record<string, string> = {
   weprintwraps: "WePrintWraps",
-  restylepro: "RestyleProAI",
+  restylepro: "DesignProAI",
   designproai: "DesignProAI",
   wraptvworld: "WrapTV",
   wraptv: "WrapTV",
@@ -33,7 +33,7 @@ const COPY_BRAND: Record<string, string> = {
 };
 
 export function copyBrandName(slug?: string | null): string {
-  return COPY_BRAND[(slug || "").toLowerCase()] || "RestyleProAI";
+  return COPY_BRAND[(slug || "").toLowerCase()] || "DesignProAI";
 }
 
 /** The hook registers the copy brain knows (see _shared/content-hook-recipes.ts). */

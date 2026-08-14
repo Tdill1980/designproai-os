@@ -133,7 +133,7 @@ export default function AdminQuotePdfCards() {
   return (
     <>
       <Helmet>
-        <title>Quote PDF Cards · Admin · RestylePro</title>
+        <title>Quote PDF Cards · Admin · DesignProAI</title>
       </Helmet>
       <div className="container mx-auto px-4 py-8 max-w-5xl">
         <div className="mb-6">
@@ -263,7 +263,7 @@ export default function AdminQuotePdfCards() {
                     <Input
                       value={draft.cta_url ?? card.cta_url}
                       onChange={(e) => updateDraft(card.id, { cta_url: e.target.value })}
-                      placeholder="https://restyleproai.com/pricing?tier=…"
+                      placeholder="https://designproai.com/pricing?tier=…"
                     />
                   </div>
 

@@ -1,5 +1,5 @@
 /**
- * ProjectPass — Pre-launch design preview of the RestyleProAI™
+ * ProjectPass — Pre-launch design preview of the DesignProAI™
  * Design & Marketing Engine.
  *
  * Project Pass is a one-time $49 purchase: ONE AI design generation
@@ -125,8 +125,8 @@ const ProjectPass = () => {
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white">
       <Helmet>
-        <title>Project Pass — $49 AI Design Gen | RestyleProAI Design & Marketing Engine</title>
-        <meta name="description" content={`$${PASS_PRICE} buys one AI design generation on one tool of your choice — 6 photorealistic 4K views of your vehicle. Pre-launch preview of the RestyleProAI Design & Marketing Engine. Limited-time offer before monthly plans go live.`} />
+        <title>Project Pass — $49 AI Design Gen | DesignProAI Design & Marketing Engine</title>
+        <meta name="description" content={`$${PASS_PRICE} buys one AI design generation on one tool of your choice — 6 photorealistic 4K views of your vehicle. Pre-launch preview of the DesignProAI Design & Marketing Engine. Limited-time offer before monthly plans go live.`} />
       </Helmet>
 
       {/* Gradient bar */}
@@ -138,7 +138,7 @@ const ProjectPass = () => {
         <div className="text-center space-y-4">
           <div className="inline-flex items-center gap-2 bg-[#111] border border-[#222] rounded-full px-4 py-1.5 text-[11px] text-cyan-400 uppercase tracking-widest font-mono">
             <Zap className="w-3.5 h-3.5 text-amber-400" />
-            Design Preview · RestyleProAI™ Design & Marketing Engine
+            Design Preview · DesignProAI™ Design & Marketing Engine
           </div>
 
           <h1 className="text-4xl sm:text-5xl font-black tracking-tight">
@@ -148,7 +148,7 @@ const ProjectPass = () => {
           <p className="text-base sm:text-lg text-[#bbb] max-w-2xl mx-auto leading-relaxed">
             <span className="text-white font-semibold">${PASS_PRICE} buys one AI design generation</span> on
             one tool of your choice — a hands-on preview of the
-            <span className={`font-semibold ${GRAD_TEXT}`}> RestyleProAI Design & Marketing Engine</span>
+            <span className={`font-semibold ${GRAD_TEXT}`}> DesignProAI Design & Marketing Engine</span>
             {" "}before it launches. 6 photorealistic 4K views of your vehicle, yours to keep.
           </p>
 
@@ -180,7 +180,7 @@ const ProjectPass = () => {
           <div className="relative rounded-2xl overflow-hidden border border-[#1A1A1A] aspect-video bg-[#111]">
             <iframe
               src="https://www.youtube.com/embed/YOUTUBE_VIDEO_ID"
-              title="Project Pass Demo — RestylePro"
+              title="Project Pass Demo — DesignProAI"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
               className="absolute inset-0 w-full h-full"
@@ -309,7 +309,7 @@ const ProjectPass = () => {
               How Project Pass Fits In
             </div>
             <h3 className="text-2xl sm:text-3xl font-bold">
-              Three tiers. One <span className={GRAD_TEXT}>RestyleProAI™</span> engine.
+              Three tiers. One <span className={GRAD_TEXT}>DesignProAI™</span> engine.
             </h3>
             <p className="text-sm text-[#888] max-w-xl mx-auto leading-relaxed">
               Sign up for free and run your shop. Pay ${PASS_PRICE} only when you want a hands-on AI

@@ -167,7 +167,7 @@ export default function AdminWBTYOrders() {
               <p className="text-xs text-zinc-600 mt-1">Settle monthly via B2B invoice</p>
             </Card>
             <Card className="p-4 bg-white border-zinc-200">
-              <p className="text-xs text-zinc-600">RestylePro Margin (2%)</p>
+              <p className="text-xs text-zinc-600">DesignProAI Margin (2%)</p>
               <p className="text-2xl font-bold text-pink-400">${(stats.totalMargin / 100).toFixed(2)}</p>
             </Card>
           </div>

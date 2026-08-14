@@ -27,7 +27,7 @@ export const SEOBreadcrumb = ({ items }: SEOBreadcrumbProps) => {
       "@type": "ListItem",
       position: index + 1,
       name: item.name,
-      item: `https://restyleproai.com${item.path}`,
+      item: `https://designproai.com${item.path}`,
     })),
   };
 

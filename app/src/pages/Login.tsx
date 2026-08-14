@@ -89,7 +89,7 @@ const Login = () => {
         msg.includes("invalid grant");
       if (isInvalidCreds) {
         setWpwHint(true);
-        toast.error("That password doesn't match a RestylePro account.");
+        toast.error("That password doesn't match a DesignProAI account.");
       } else {
         toast.error(error.message || "Failed to login");
       }
@@ -131,9 +131,9 @@ const Login = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Sign In - RestyleProAI</title>
-        <meta name="description" content="Sign in to RestyleProAI to design vehicle wraps with AI. Access ColorPro, DesignPro, FadeWraps, and more." />
-        <link rel="canonical" href="https://www.restyleproai.com/login" />
+        <title>Sign In - DesignProAI</title>
+        <meta name="description" content="Sign in to DesignProAI to design vehicle wraps with AI. Access ColorPro, DesignPro, FadeWraps, and more." />
+        <link rel="canonical" href="https://designproai.com/login" />
       </Helmet>
 
       <main className="flex-1 flex items-center justify-center px-4 py-16">
@@ -150,7 +150,7 @@ const Login = () => {
           <div className="bg-card border border-border rounded-lg p-8">
             <div className="text-center mb-4">
               <div className="text-[11px] font-semibold tracking-[0.2em] uppercase text-cyan-300/90">
-                WPW × RestylePro Connect Portal
+                WPW × DesignProAI Connect Portal
               </div>
             </div>
             <div className="flex items-center gap-3 mb-6">

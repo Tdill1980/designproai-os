@@ -2,12 +2,12 @@ import type { SEOFAQItem } from "@/components/SEOFAQPage";
 
 export const faqPricingData: SEOFAQItem[] = [
   {
-    question: "How much does RestyleProAI™ cost?",
-    answer: "RestyleProAI™ offers four paid tiers: Starter at $350/mo, DesignPro Lite at $499/mo, DesignPro Studio at $699/mo, and DesignPro Plus at $995/mo. Every tier includes the visualization toolkit plus a monthly render-and-revision allowance shared across every tool. WePrintWraps customers get free CMS, free quoting, and a $50/mo loyalty discount on every paid tier. Visit restyleproai.com/pricing for the current breakdown.",
+    question: "How much does DesignProAI™ cost?",
+    answer: "DesignProAI™ offers four paid tiers: Starter at $350/mo, DesignPro Lite at $499/mo, DesignPro Studio at $699/mo, and DesignPro Plus at $995/mo. Every tier includes the visualization toolkit plus a monthly render-and-revision allowance shared across every tool. WePrintWraps customers get free CMS, free quoting, and a $50/mo loyalty discount on every paid tier. Visit restyleproai.com/pricing for the current breakdown.",
   },
   {
     question: "Is there a free plan or free trial?",
-    answer: "There is no free plan. RestyleProAI™ is a paid platform with plans starting at $350/mo, and every plan is month-to-month so you can cancel anytime. If you'd rather pay per project instead of subscribing, you can buy single renders à la carte at $25 each or a Production Pack for $299.",
+    answer: "There is no free plan. DesignProAI™ is a paid platform with plans starting at $350/mo, and every plan is month-to-month so you can cancel anytime. If you'd rather pay per project instead of subscribing, you can buy single renders à la carte at $25 each or a Production Pack for $299.",
   },
   {
     question: "What's included in the Starter plan?",
@@ -31,7 +31,7 @@ export const faqPricingData: SEOFAQItem[] = [
   },
   {
     question: "Is there a contract or long-term commitment?",
-    answer: "No. All RestyleProAI™ plans are month-to-month with no long-term contracts. You can upgrade, downgrade, or cancel at any time. Annual plans are available at a discounted rate for shops that prefer to pay yearly.",
+    answer: "No. All DesignProAI™ plans are month-to-month with no long-term contracts. You can upgrade, downgrade, or cancel at any time. Annual plans are available at a discounted rate for shops that prefer to pay yearly.",
   },
   {
     question: "Can I upgrade or downgrade my plan?",
@@ -47,6 +47,6 @@ export const faqPricingData: SEOFAQItem[] = [
   },
   {
     question: "What payment methods do you accept?",
-    answer: "RestyleProAI™ processes payments through Stripe, which accepts all major credit cards (Visa, Mastercard, American Express, Discover), debit cards, and select digital wallets. All transactions are secure and encrypted.",
+    answer: "DesignProAI™ processes payments through Stripe, which accepts all major credit cards (Visa, Mastercard, American Express, Discover), debit cards, and select digital wallets. All transactions are secure and encrypted.",
   },
 ];

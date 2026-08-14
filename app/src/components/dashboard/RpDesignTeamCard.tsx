@@ -1,5 +1,5 @@
 /**
- * RpDesignTeamCard — Internal ops queue for the RestylePro design
+ * RpDesignTeamCard — Internal ops queue for the DesignProAI design
  * team (Trish, Carley, anyone with the `admin` or `designer` role).
  *
  * One compact dashboard card that gives the team an at-a-glance view

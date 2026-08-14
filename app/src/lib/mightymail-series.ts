@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 export type SeriesAudience =
-  | 'rp-to-shop' // RestylePro -> wrap / tint / sign shops (sales side)
+  | 'rp-to-shop' // DesignProAI -> wrap / tint / sign shops (sales side)
   | 'shop-to-customer' // Shop -> their end customer (drip / retarget)
   | 'shop-internal'; // Internal shop / admin notifications
 
@@ -247,7 +247,7 @@ export const MIGHTYMAIL_SERIES: MightyMailSeries[] = [
     id: 'wpw-offer',
     name: 'WPW Customer Subscribe Drip',
     description:
-      'WePrintWraps customers — 5-email drip that converts shop owners to paid RestylePro tiers ($349/mo Starter, locked for life).',
+      'WePrintWraps customers — 5-email drip that converts shop owners to paid DesignProAI tiers ($349/mo Starter, locked for life).',
     audience: 'rp-to-shop',
     phase: 'acquisition',
     trigger: {

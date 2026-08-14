@@ -581,7 +581,7 @@ export const WpwOrderDetailModal = ({
                       const fromLabel = wpwStatusLabel(order.status);
                       const toLabel = wpwStatusLabel(next);
                       const ok = window.confirm(
-                        `Move order #${order.order_number || order.id} from "${fromLabel}" to "${toLabel}"?\n\nWhile preview mode is on, this only logs the change in RestylePro and does NOT push to weprintwraps.com (no customer emails fire). Flip the WPW_STATUS_WRITE_PREVIEW env var to "false" when you're ready for real Woo writes.`,
+                        `Move order #${order.order_number || order.id} from "${fromLabel}" to "${toLabel}"?\n\nWhile preview mode is on, this only logs the change in DesignProAI and does NOT push to weprintwraps.com (no customer emails fire). Flip the WPW_STATUS_WRITE_PREVIEW env var to "false" when you're ready for real Woo writes.`,
                       );
                       if (!ok) return;
                       updateStatus.mutate({

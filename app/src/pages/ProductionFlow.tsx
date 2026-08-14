@@ -2420,7 +2420,7 @@ export default function ProductionFlow() {
   // ── RECREATEPRO: Download All Files ─────────────────────
   // Downloads every generated angle (or just the side hero if "Generate All
   // Sides" hasn't been run) plus the 2D production proof, each stamped with
-  // the RestylePro overlay.
+  // the DesignProAI overlay.
   const handleRecreateDownloadAll = useCallback(async () => {
     const baseName = `${recreateYear || ""}-${recreateMake}-${recreateModel}`
       .trim()
@@ -3044,7 +3044,7 @@ export default function ProductionFlow() {
             fontSize: 12, fontWeight: 700, letterSpacing: 1.5,
             color: "#38BDF8",
           }}>
-            RestyleProAI™
+            DesignProAI™
           </span>
           <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>→</span>
           <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.6)" }}>
@@ -7233,7 +7233,7 @@ export default function ProductionFlow() {
                     letterSpacing: 0.5,
                   }}
                 >
-                  Processed by RestyleProAI ProductionFlow™
+                  Processed by DesignProAI ProductionFlow™
                 </p>
               </div>
             )}

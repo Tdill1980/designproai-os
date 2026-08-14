@@ -326,7 +326,7 @@ export default function ProofViewer() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 18, fontWeight: 800, color: '#00C7FF', letterSpacing: -0.5 }}>
-              RestylePro<span style={{ fontSize: 10, verticalAlign: 'super', color: '#666' }}>AI</span>
+              DesignProAI<span style={{ fontSize: 10, verticalAlign: 'super', color: '#666' }}>AI</span>
             </span>
             {shopName && (
               <>
@@ -611,7 +611,7 @@ export default function ProofViewer() {
         borderTop: '1px solid #1f1f1f', marginTop: 48, padding: '20px 0',
         textAlign: 'center', color: '#333', fontSize: 12,
       }}>
-        Powered by RestylePro<span style={{ verticalAlign: 'super', fontSize: 8 }}>AI</span>
+        Powered by DesignProAI<span style={{ verticalAlign: 'super', fontSize: 8 }}>AI</span>
       </footer>
 
       {/* Revision Modal */}

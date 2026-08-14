@@ -8,7 +8,7 @@ const meta = {
     "The hottest wrap colors dominating 2026 — from deep ocean teal to satin bronze. See which finishes clients are requesting most and how to stock your shop.",
   date: "2026-03-25",
   readTime: "6 min read",
-  author: "RestyleProAI",
+  author: "DesignProAI",
   tags: ["Colors", "Trends", "Vehicle Wraps"],
 };
 
@@ -130,7 +130,7 @@ const BlogPostWrapColors2026 = () => (
     <p>
       The biggest challenge for shops and consumers is visualizing a color on a specific vehicle
       before committing. That's why tools like{" "}
-      <Link to="/" className="text-primary hover:underline">RestyleProAI</Link> exist — type
+      <Link to="/" className="text-primary hover:underline">DesignProAI</Link> exist — type
       a color and vehicle, get a photorealistic render in 60 seconds. No more "trust me, it'll
       look good."
     </p>

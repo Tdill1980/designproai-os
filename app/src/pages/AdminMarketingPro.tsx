@@ -124,7 +124,7 @@ const STEPS: Step[] = [
 export default function AdminMarketingPro() {
   return (
     <div className="min-h-screen bg-white">
-      <Helmet><title>MarketingPro™ — RestylePro</title></Helmet>
+      <Helmet><title>MarketingPro™ — DesignProAI</title></Helmet>
       <div className="mx-auto max-w-4xl px-5 py-10">
         <div className="mb-2 text-xs font-bold uppercase tracking-widest text-gray-500">The Brand Builder System</div>
         <h1 className="text-4xl font-extrabold text-gray-900">

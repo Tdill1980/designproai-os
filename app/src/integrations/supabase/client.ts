@@ -13,9 +13,9 @@ if (!SUPABASE_PUBLISHABLE_KEY) {
   console.error('VITE_SUPABASE_PUBLISHABLE_KEY is not set. Supabase requests will fail.');
 }
 
-// Standalone DesignProAI project. The legacy RestylePro project
+// Standalone DesignProAI project. The legacy DesignProAI project
 // (kfapjdyythzyvnpdeghu) is NOT a valid backend for this build — DesignProAI
-// owns its own project and RestylePro-owned systems stay behind on the old one.
+// owns its own project and DesignProAI-owned systems stay behind on the old one.
 const EXPECTED_PROJECT_ID = 'wozyamlnygaddievzuwn';
 if (SUPABASE_URL && !SUPABASE_URL.includes(EXPECTED_PROJECT_ID)) {
   console.error(

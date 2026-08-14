@@ -144,7 +144,7 @@ export const WPW_FOUNDER_SLOTS: WpwFounderSlot[] = [
   teamPhoto(
     "xavier-at-pc",
     "Xavier (Designer) — At the PC",
-    "Working photo of Xavier designing in RestyleProAI. Shown on his team card."
+    "Working photo of Xavier designing in DesignProAI. Shown on his team card."
   ),
   teamPhoto(
     "amanda-at-pc",

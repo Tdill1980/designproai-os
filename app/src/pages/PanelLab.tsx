@@ -464,9 +464,9 @@ const PanelLab = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>PanelLab - Custom Wrap Panel Design Tool | RestyleProAI</title>
+        <title>PanelLab - Custom Wrap Panel Design Tool | DesignProAI</title>
         <meta name="description" content="Design custom vehicle wrap panels with AI. Upload artwork, configure panel layouts, and generate print-ready designs. Design it. Panel it. Print it. The world's first prompt-to-production wrap platform." />
-        <link rel="canonical" href="https://www.restyleproai.com/panel-lab" />
+        <link rel="canonical" href="https://designproai.com/panel-lab" />
       </Helmet>
       <main className="flex-1">
         <section className="container mx-auto px-4 py-8 max-w-7xl">

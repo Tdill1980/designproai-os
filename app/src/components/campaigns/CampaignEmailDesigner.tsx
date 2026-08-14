@@ -50,7 +50,7 @@ export function CampaignEmailDesigner({ campaign, initialHtml, onSave, onSend, o
   const [name, setName] = useState(campaign?.name || '');
   const [subject, setSubject] = useState(campaign?.subject || '');
   const [htmlContent, setHtmlContent] = useState(campaign?.html_content || initialHtml || '');
-  const [fromName, setFromName] = useState(campaign?.from_name || 'RestylePro');
+  const [fromName, setFromName] = useState(campaign?.from_name || 'DesignProAI');
   const [fromEmail, setFromEmail] = useState(campaign?.from_email || 'hello@restyleproai.com');
   const [audience, setAudience] = useState<AudienceType>(campaign?.audience || 'all_users');
   const [subscriberSource, setSubscriberSource] = useState(campaign?.subscriber_source || '');
@@ -296,11 +296,11 @@ export function CampaignEmailDesigner({ campaign, initialHtml, onSave, onSend, o
     const blocks: Record<string, string> = {
       heading: '\n<h1 style="color:#06b6d4;margin:0 0 16px;font-size:24px">Your Heading</h1>\n',
       text: '\n<p style="color:#ccc;line-height:1.7;font-size:15px">Your text content here.</p>\n',
-      button: '\n<div style="text-align:center;margin:24px 0"><a href="https://restyleproai.com" style="display:inline-block;background:#06b6d4;color:#000;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700">Button Text →</a></div>\n',
+      button: '\n<div style="text-align:center;margin:24px 0"><a href="https://designproai.com" style="display:inline-block;background:#06b6d4;color:#000;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:700">Button Text →</a></div>\n',
       divider: '\n<hr style="border:none;border-top:1px solid #333;margin:24px 0"/>\n',
       image: '\n<img src="YOUR_IMAGE_URL" alt="Image" style="width:100%;border-radius:8px;margin:16px 0"/>\n',
       card: '\n<div style="background:#111;border:1px solid #333;border-radius:12px;padding:24px;margin:20px 0">\n  <h3 style="color:#06b6d4;margin:0 0 8px;font-size:16px">Card Title</h3>\n  <p style="color:#999;margin:0;font-size:14px">Card content goes here.</p>\n</div>\n',
-      footer: '\n<div style="padding:20px 0;border-top:1px solid #222;margin-top:24px">\n  <p style="color:#666;font-size:12px;margin:0;text-align:center">RestyleProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>\n</div>\n',
+      footer: '\n<div style="padding:20px 0;border-top:1px solid #222;margin-top:24px">\n  <p style="color:#666;font-size:12px;margin:0;text-align:center">DesignProAI · restyleproai.com · <a href="{{unsubscribe_url}}" style="color:#666">Unsubscribe</a></p>\n</div>\n',
     };
     setHtmlContent(prev => prev + (blocks[type] || ''));
   };

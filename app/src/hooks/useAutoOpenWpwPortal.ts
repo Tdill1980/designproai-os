@@ -17,7 +17,7 @@ const SEEN_KEY_PREFIX = "restylepro:wpw-portal-seen:";
  * Safety rails (all must pass before firing):
  *   1. User is authenticated (session present)
  *   2. User is a WPW tenant (useIsWpwTenant === true)
- *   3. User is NOT internal RestylePro/WPW staff — they've seen the tour
+ *   3. User is NOT internal DesignProAI/WPW staff — they've seen the tour
  *   4. localStorage flag for this user.id is not already set
  *   5. Hook's own ref hasn't fired this mount (idempotent on re-render)
  *

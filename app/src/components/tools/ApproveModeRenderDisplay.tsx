@@ -119,7 +119,7 @@ export const ApproveModeRenderDisplay = ({
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-border">
         <div>
           <h2 className="text-2xl font-bold bg-gradient-to-r from-primary via-purple-500 to-pink-500 bg-clip-text text-transparent">
-            RestylePro™ ApprovePro™
+            DesignProAI™ ApprovePro™
           </h2>
           <p className="text-sm text-muted-foreground mt-1">PROFESSIONAL 3D WRAP PREVIEW</p>
         </div>

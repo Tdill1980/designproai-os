@@ -65,7 +65,7 @@ export const REEL_SPINOFF_TEMPLATE: SpinOffTemplate[] = [
     format: "1080x1080 post",
     dayOffset: 1,
     contentAngle: "PRODUCT SPOTLIGHT",
-    description: "Spotlight the specific RestyleProAI tool shown in the reel — what it does, why it matters, one clear benefit. Not a pitch — a reveal. Use a screenshot or still from the reel. Single image post with strong caption.",
+    description: "Spotlight the specific DesignProAI tool shown in the reel — what it does, why it matters, one clear benefit. Not a pitch — a reveal. Use a screenshot or still from the reel. Single image post with strong caption.",
   },
   {
     id: "quote-card-story",
@@ -120,7 +120,7 @@ export const REEL_SPINOFF_TEMPLATE: SpinOffTemplate[] = [
     format: "4:5 video ad",
     dayOffset: 3,
     contentAngle: "PAID / BEST HOOK",
-    description: "Best 15-second hook from the reel, reformatted to 4:5 with headline overlay and CTA. The clip that makes people stop scrolling. Add: RestyleProAI logo bug, 'Learn more' CTA. Target wrap shop owners.",
+    description: "Best 15-second hook from the reel, reformatted to 4:5 with headline overlay and CTA. The clip that makes people stop scrolling. Add: DesignProAI logo bug, 'Learn more' CTA. Target wrap shop owners.",
   },
   {
     id: "recap-cta",

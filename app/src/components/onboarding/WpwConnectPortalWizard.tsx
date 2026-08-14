@@ -1,7 +1,7 @@
 /**
  * WpwConnectPortalWizard
  *
- * Purpose-built tour for past WPW customers landing on the RestylePro
+ * Purpose-built tour for past WPW customers landing on the DesignProAI
  * dashboard for the first time. NOT the generic 7-step shop-setup wizard
  * (that's ShopOnboardingWizard). This one just explains what they get
  * for free as a WPW customer:
@@ -55,7 +55,7 @@ const STEPS: Step[] = [
     icon: Sparkles,
     badge: "What's new for WPW",
     title: "Here's what we just shipped for you",
-    body: "Quick heads-up — as a WePrintWraps customer your RestylePro dashboard is free: QuickQuote, past orders, and the customer quote tool. Design any wrap with our AI tools, then take it to print — one design at a time with a $299 Production Pack, or unlock unlimited with a DesignPro plan (WPW customers get $50/mo off, auto-applied).",
+    body: "Quick heads-up — as a WePrintWraps customer your DesignProAI dashboard is free: QuickQuote, past orders, and the customer quote tool. Design any wrap with our AI tools, then take it to print — one design at a time with a $299 Production Pack, or unlock unlimited with a DesignPro plan (WPW customers get $50/mo off, auto-applied).",
     hero: "from-cyan-500/30 via-fuchsia-500/20 to-purple-500/30",
   },
   {

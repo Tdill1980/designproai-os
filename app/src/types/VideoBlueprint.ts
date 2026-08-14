@@ -1,5 +1,5 @@
 /**
- * VIDEO BLUEPRINT — the authoritative rendering object for RestylePro's
+ * VIDEO BLUEPRINT — the authoritative rendering object for DesignProAI's
  * native video pipeline. Ported from the proven WrapCommandAI SceneBlueprint
  * contract (2026-07). If it doesn't exist, nothing renders — no fallbacks,
  * no templates. The ffmpeg worker (worker/video-renderer) renders this

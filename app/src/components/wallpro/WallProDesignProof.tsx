@@ -180,7 +180,7 @@ export const WallProDesignProof = ({
                 </div>
                 <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600, letterSpacing: "0.1em" }}>OFFICIAL DESIGN PROOF</div>
               </div>
-              <div style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>RestyleProAI · AI-Powered Wall Wrap Designer</div>
+              <div style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>DesignProAI · AI-Powered Wall Wrap Designer</div>
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 10, color: "#9CA3AF", fontWeight: 600, letterSpacing: "0.08em" }}>PROOF NUMBER</div>
@@ -299,13 +299,13 @@ export const WallProDesignProof = ({
             <div>
               <div style={{ borderBottom: "1px solid #111", height: 36 }} />
               <div style={{ fontSize: 11, color: "#6B7280", marginTop: 4 }}>Designer / Shop authorization</div>
-              <div style={{ fontSize: 10, color: "#9CA3AF", marginTop: 2 }}>{shopName || "RestyleProAI"} · {issuedDate}</div>
+              <div style={{ fontSize: 10, color: "#9CA3AF", marginTop: 2 }}>{shopName || "DesignProAI"} · {issuedDate}</div>
             </div>
           </div>
 
           {/* FOOTER */}
           <div style={{ marginTop: 24, paddingTop: 12, borderTop: "1px solid #E5E7EB", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10, color: "#9CA3AF" }}>
-            <div>RestyleProAI · WallPro · restyleproai.com</div>
+            <div>DesignProAI · WallPro · restyleproai.com</div>
             <div>Proof #{proofNumber} · Page 1 of 1</div>
           </div>
         </div>

@@ -249,7 +249,7 @@ const ShareDesign = () => {
               <p className="text-sm text-muted-foreground">
                 Generated with{' '}
                 <span className="font-semibold bg-gradient-to-r from-blue-500 to-blue-600 bg-clip-text text-transparent">
-                  RestyleProAI™ Vehicle Wrap Design Suite
+                  DesignProAI™ Vehicle Wrap Design Suite
                 </span>
               </p>
             </div>

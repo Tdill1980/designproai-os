@@ -19,7 +19,7 @@ import MarketingSuiteGuide from "@/components/admin/MarketingSuiteGuide";
 
 const BRANDS: { slug: string; label: string }[] = [
   { slug: "weprintwraps", label: "WePrintWraps" },
-  { slug: "restylepro", label: "RestyleProAI" },
+  { slug: "restylepro", label: "DesignProAI" },
   { slug: "designproai", label: "DesignProAI" },
   { slug: "wraptvworld", label: "WrapTVWorld" },
   { slug: "inkandedge", label: "Ink & Edge" },

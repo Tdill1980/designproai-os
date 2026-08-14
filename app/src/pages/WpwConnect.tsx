@@ -3,7 +3,7 @@
  *
  * Public route. Reachable from WPW marketing emails. Tells active
  * WePrintWraps customers what they get when they sign in to
- * RestylePro and how to claim it. No hero gradients, no sales pitch
+ * DesignProAI and how to claim it. No hero gradients, no sales pitch
  * sections — just facts and a sign-in link.
  */
 import { Helmet } from "react-helmet-async";
@@ -24,10 +24,10 @@ export default function WpwConnect() {
   return (
     <>
       <Helmet>
-        <title>WPW Connect Portal | RestyleProAI</title>
+        <title>WPW Connect Portal | DesignProAI</title>
         <meta
           name="description"
-          content="What active WePrintWraps customers get when they sign in to RestylePro — free dashboard, QuickQuote, past-order portal, 3 free render tokens, and WPW Family pricing."
+          content="What active WePrintWraps customers get when they sign in to DesignProAI — free dashboard, QuickQuote, past-order portal, 3 free render tokens, and WPW Family pricing."
         />
       </Helmet>
 
@@ -40,7 +40,7 @@ export default function WpwConnect() {
             What active WPW customers get
           </h1>
           <p className="text-sm text-white/65 leading-relaxed mb-6">
-            Sign in to RestylePro with the email you use for WPW orders and
+            Sign in to DesignProAI with the email you use for WPW orders and
             you&apos;re auto-linked. Nothing to enter, no code, no card.
           </p>
 
@@ -70,7 +70,7 @@ export default function WpwConnect() {
           </div>
 
           <p className="mt-8 text-[11px] text-white/40 leading-relaxed">
-            Different email at WPW than RestylePro? Email
+            Different email at WPW than DesignProAI? Email
             {" "}
             <a href="mailto:Design@weprintwraps.com" className="text-white/60 hover:text-white underline underline-offset-2">
               Design@weprintwraps.com

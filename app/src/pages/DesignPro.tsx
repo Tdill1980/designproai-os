@@ -54,9 +54,9 @@ export default function DesignPro() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>AI Wrap Design Generator - Create Vehicle Wraps in 60 Seconds | RestyleProAI</title>
+        <title>AI Wrap Design Generator - Create Vehicle Wraps in 60 Seconds | DesignProAI</title>
         <meta name="description" content="Generate photorealistic vehicle wrap designs instantly. DesignIQ creates 4K renders across 7 views. From wrap design prompt to print-ready production. Design it. Panel it. Print it." />
-        <meta property="og:title" content="AI Wrap Design Generator - Create Vehicle Wraps in 60 Seconds | RestyleProAI" />
+        <meta property="og:title" content="AI Wrap Design Generator - Create Vehicle Wraps in 60 Seconds | DesignProAI" />
         <meta property="og:description" content="Generate photorealistic vehicle wrap designs instantly with AI. DesignIQ creates 4K renders across 7 views with intelligent prompt enhancement." />
       </Helmet>
       <main className="flex-1">

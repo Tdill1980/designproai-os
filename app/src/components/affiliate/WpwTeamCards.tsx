@@ -3,7 +3,7 @@
  *
  * Reads media URLs from useWpwFounderAssets (which now picks up both
  * wpw-founder:* and wpw-team:* rows from homepage_showcase). Renders
- * one card per team member with the RestyleProAI brand wordmark on
+ * one card per team member with the DesignProAI brand wordmark on
  * every card and the DesignProAI logo on designer cards (since the
  * tool they design in is DesignProAI).
  *

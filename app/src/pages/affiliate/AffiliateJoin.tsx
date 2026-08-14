@@ -152,7 +152,7 @@ export default function AffiliateJoin() {
                 Earn <span className="text-primary">20%</span> Commission
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mb-8">
-                Promote RestyleProAI to wrap shops, installers, and fleet services.
+                Promote DesignProAI to wrap shops, installers, and fleet services.
                 Earn 20% commission on every subscription you refer.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">

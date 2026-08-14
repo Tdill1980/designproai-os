@@ -6399,9 +6399,9 @@ export default function RevisionStudioIQ() {
         />
       )}
       <Helmet>
-        <title>RevisionStudioIQ - AI Wrap Design Revision Tool | RestyleProAI</title>
+        <title>RevisionStudioIQ - AI Wrap Design Revision Tool | DesignProAI</title>
         <meta name="description" content="Clone and revise wrap designs without starting over. Targeted changes to colors, elements, and styles. Design it. Panel it. Print it. The world's first prompt-to-production wrap platform." />
-        <meta property="og:title" content="RevisionStudioIQ - AI Wrap Design Revision Tool | RestyleProAI" />
+        <meta property="og:title" content="RevisionStudioIQ - AI Wrap Design Revision Tool | DesignProAI" />
         <meta property="og:description" content="Clone and revise custom wrap designs without starting over. Make targeted changes while keeping what works." />
       </Helmet>
       {/* ================================================================== */}

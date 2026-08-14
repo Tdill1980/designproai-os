@@ -21,7 +21,7 @@ const FleetServices = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Fleet Services | RestyleProAI™ Vehicle Wrap Design Suite</title>
+        <title>Fleet Services | DesignProAI™ Vehicle Wrap Design Suite</title>
         <meta name="description" content="Streamline fleet vehicle wrapping with the world's first prompt-to-production wrap software. One design, any vehicle. Trucks, vans, cars. Design it. Panel it. Print it." />
       </Helmet>
       <SEOBreadcrumb items={[{ name: "Home", path: "/" }, { name: "Fleet Services", path: "/fleet" }]} />
@@ -99,7 +99,7 @@ const FleetServices = () => {
                 <div className="bg-gradient-to-br from-orange-500/20 to-amber-500/20 border border-orange-500/30 rounded-2xl p-8">
                   <h3 className="text-2xl font-bold text-foreground mb-4 flex items-center gap-2">
                     <Sparkles className="w-6 h-6 text-orange-400" />
-                    The RestylePro Solution
+                    The DesignProAI Solution
                   </h3>
                   <div className="space-y-4">
                     <div className="flex items-start gap-3">
@@ -193,7 +193,7 @@ const FleetServices = () => {
                 Tools Built for Fleet Wrapping
               </h2>
               <p className="text-muted-foreground text-center mb-12 max-w-2xl mx-auto">
-                Every tool in RestyleProAI™ Vehicle Wrap Design Suite is optimized for fleet businesses
+                Every tool in DesignProAI™ Vehicle Wrap Design Suite is optimized for fleet businesses
               </p>
               
               <div className="grid md:grid-cols-2 gap-6">
@@ -317,7 +317,7 @@ const FleetServices = () => {
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-foreground">With RestylePro:</h3>
+                  <h3 className="font-semibold text-foreground">With DesignProAI:</h3>
                   <ol className="space-y-3 text-muted-foreground">
                     <li className="flex items-start gap-3">
                       <span className="w-6 h-6 bg-orange-500/20 text-orange-400 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">1</span>

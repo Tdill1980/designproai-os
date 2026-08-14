@@ -309,17 +309,17 @@ const Index = () => {
   return (
     <div className="min-h-screen flex flex-col bg-black">
       <Helmet>
-        <title>RestyleProAI - AI Vehicle Wrap Design Software | Prompt to Production</title>
+        <title>DesignProAI - AI Vehicle Wrap Design Software | Prompt to Production</title>
         <meta name="description" content="Design vehicle wraps in 60 seconds with AI. The world's first prompt-to-production wrap platform. Generate photorealistic designs, get print-ready EPS files." />
-        <link rel="canonical" href="https://www.restyleproai.com" />
-        <meta property="og:title" content="RestyleProAI - AI Vehicle Wrap Design Software" />
+        <link rel="canonical" href="https://designproai.com" />
+        <meta property="og:title" content="DesignProAI - AI Vehicle Wrap Design Software" />
         <meta property="og:description" content="Design vehicle wraps in 60 seconds with AI. From prompt to print-ready EPS files. The game changed." />
-        <meta property="og:url" content="https://www.restyleproai.com" />
-        <meta property="og:image" content="https://restyleproai.com/hero-mustang.jpg" />
+        <meta property="og:url" content="https://designproai.com" />
+        <meta property="og:image" content="https://designproai.com/hero-mustang.jpg" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="RestyleProAI - AI Vehicle Wrap Design Software" />
+        <meta name="twitter:title" content="DesignProAI - AI Vehicle Wrap Design Software" />
         <meta name="twitter:description" content="Design vehicle wraps in 60 seconds. From prompt to print-ready production files." />
-        <meta name="twitter:image" content="https://restyleproai.com/hero-mustang.jpg" />
+        <meta name="twitter:image" content="https://designproai.com/hero-mustang.jpg" />
       </Helmet>
 
       <main className="flex-1">
@@ -336,7 +336,7 @@ const Index = () => {
               <div className="space-y-5 order-2 lg:order-1">
                 {/* Thin subtitle text */}
                 <p className="text-[11px] sm:text-[13px] md:text-[15px] font-light tracking-[0.25em] sm:tracking-[0.35em] uppercase" style={{ fontFamily: 'Inter, sans-serif' }}>
-                  <span className="text-gradient-blue-subtle">RestyleProAI™</span><span className="text-white"> Design. Output. Profit.</span>
+                  <span className="text-gradient-blue-subtle">DesignProAI™</span><span className="text-white"> Design. Output. Profit.</span>
                 </p>
                 {/* Line 1: Hero headline */}
                 <h3 className="text-[28px] sm:text-[32px] font-bold text-white leading-snug min-h-[2.5em]">
@@ -473,7 +473,7 @@ const Index = () => {
                   <div className="relative w-[300px] sm:w-[340px] rounded-lg border border-[#00E5FF]/10 overflow-hidden">
                     <img
                       src={sectionImageMap['founder'] || "/founder-trish-dill.jpg"}
-                      alt="Trish Dill, Co-Founder of RestyleProAI™"
+                      alt="Trish Dill, Co-Founder of DesignProAI™"
                       className="w-full h-auto object-cover"
                       loading="lazy"
                     />
@@ -513,12 +513,12 @@ const Index = () => {
                   <p className="text-base text-white/60 leading-[1.75] mb-5">
                     I built this system to solve my own problems at WePrintWraps.com but also for my friends and customers across the graphics industry. Whether you own a{" "}
                     <span className="text-white/80 font-semibold">sign company</span> or a{" "}
-                    <span className="text-white/80 font-semibold">restyling shop</span>, RestyleProAI is for you.
+                    <span className="text-white/80 font-semibold">restyling shop</span>, DesignProAI is for you.
                   </p>
 
                   {/* Punchline - pull quote with cyan left border */}
                   <p className="text-lg font-bold text-white leading-[1.55] mt-2 pl-5 border-l-[3px] border-[#00E5FF]">
-                    RestyleProAI will{" "}
+                    DesignProAI will{" "}
                     <span className="text-[#00E5FF]">10X your existing designer's output.</span>{" "}
                     And if you don't have a designer, you can finally{" "}
                     <span className="text-[#00FF88]">say goodbye to overpriced outsourcing.</span>
@@ -528,7 +528,7 @@ const Index = () => {
                   <div className="mt-8 flex flex-col gap-0.5">
                     <span className="font-bold text-[15px] text-white">- Trish Dill, Co-Founder</span>
                     <span className="text-xs text-white/40 tracking-wide">
-                      RestyleProAI™ & WePrintWraps.com
+                      DesignProAI™ & WePrintWraps.com
                     </span>
                   </div>
 
@@ -993,7 +993,7 @@ const Index = () => {
                   <div className="relative aspect-video md:aspect-auto overflow-hidden">
                     <img
                       src={sectionImageMap['pdf-proof-example'] || "/pdf-proof-example.jpg"}
-                      alt="PDF Approval Proof Sheet Example - RestyleProAI"
+                      alt="PDF Approval Proof Sheet Example - DesignProAI"
                       className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                       loading="lazy"
                     />
@@ -1100,12 +1100,12 @@ const Index = () => {
             <div className="space-y-0">
               {[
                 {
-                  q: "What is RestyleProAI?",
-                  a: "RestyleProAI is a complete Vehicle Wrap Design System — it's like having a custom vehicle wrap designer at your fingertips. From prompt to production. No designer. No outsourcing. No waiting."
+                  q: "What is DesignProAI?",
+                  a: "DesignProAI is a complete Vehicle Wrap Design System — it's like having a custom vehicle wrap designer at your fingertips. From prompt to production. No designer. No outsourcing. No waiting."
                 },
                 {
                   q: "How fast can I design a vehicle wrap?",
-                  a: "60 seconds. Describe what you want, and RestyleProAI's AI generates a complete photorealistic wrap design across 7 views. The GENIE Panelizer then converts it to print-ready EPS files in minutes."
+                  a: "60 seconds. Describe what you want, and DesignProAI's AI generates a complete photorealistic wrap design across 7 views. The GENIE Panelizer then converts it to print-ready EPS files in minutes."
                 },
                 {
                   q: "What files do I get?",
@@ -1113,7 +1113,7 @@ const Index = () => {
                 },
                 {
                   q: "Do I need design experience?",
-                  a: "No. RestyleProAI replaces Adobe Illustrator and CorelDRAW for wrap design. Type a description of what you want, and AI handles the design, rendering, panelizing, and file output automatically."
+                  a: "No. DesignProAI replaces Adobe Illustrator and CorelDRAW for wrap design. Type a description of what you want, and AI handles the design, rendering, panelizing, and file output automatically."
                 },
                 {
                   q: "How many vehicles are supported?",
@@ -1129,7 +1129,7 @@ const Index = () => {
                 },
                 {
                   q: "How is this different from other wrap visualizers?",
-                  a: "RestyleProAI is built on over 10 years of real vehicle wrap production experience. ACE, your dedicated AI designer inside DesignProAI, was engineered to think like a wrap designer — not just generate generic images. The entire system runs on our proprietary DesignIQ engine, trained on real wrap workflows. Other tools show color previews on 3D models. We generate original designs and output production-ready print files."
+                  a: "DesignProAI is built on over 10 years of real vehicle wrap production experience. ACE, your dedicated AI designer inside DesignProAI, was engineered to think like a wrap designer — not just generate generic images. The entire system runs on our proprietary DesignIQ engine, trained on real wrap workflows. Other tools show color previews on 3D models. We generate original designs and output production-ready print files."
                 }
               ].map((item, i) => (
                 <details key={i} className="group border-b border-border/30">

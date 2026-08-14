@@ -58,7 +58,7 @@ const CheckoutReturn = () => {
         <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/10 mb-6">
           <CheckCircle className="w-10 h-10 text-green-500" />
         </div>
-        <h1 className="text-3xl font-bold text-white mb-3">Welcome to RestyleProAI!</h1>
+        <h1 className="text-3xl font-bold text-white mb-3">Welcome to DesignProAI!</h1>
         <p className="text-lg text-[#888] mb-2">
           Your subscription is being activated now.
         </p>

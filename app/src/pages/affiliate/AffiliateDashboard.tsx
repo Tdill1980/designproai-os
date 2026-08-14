@@ -143,7 +143,7 @@ export default function AffiliateDashboard() {
     ? format(new Date(profile.next_payout_date), "MMMM d, yyyy")
     : "N/A";
 
-  const shareText = `Check out RestyleProAI - the best vehicle wrap visualization tool. Use my code ${profile.referral_code} for 10% off! ${profile.referral_link}`;
+  const shareText = `Check out DesignProAI - the best vehicle wrap visualization tool. Use my code ${profile.referral_code} for 10% off! ${profile.referral_link}`;
 
   return (
     <AffiliateLayout
@@ -551,7 +551,7 @@ export default function AffiliateDashboard() {
       {/* Full Pricing Tiers */}
       <div className="mb-8">
         <PricingTiersSection
-          heading="RestyleProAI\u2122 Pricing Tiers"
+          heading="DesignProAI\u2122 Pricing Tiers"
           subheading="Share these plans with your audience. Every subscription earns you 20% commission."
           compact
         />
@@ -571,7 +571,7 @@ export default function AffiliateDashboard() {
                 Keep Creating Content - Keep Earning
               </h3>
               <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                Make videos, teach your audience, show them what RestyleProAI can
+                Make videos, teach your audience, show them what DesignProAI can
                 do. The more content you create, the more subscribers you bring
                 in. Share your code, grow your income.
               </p>
@@ -591,7 +591,7 @@ export default function AffiliateDashboard() {
             />
             <div>
               <CardTitle className="text-lg">SPROKET's Tips</CardTitle>
-              <p className="text-xs text-muted-foreground">Your RestyleProAI Systems Guide</p>
+              <p className="text-xs text-muted-foreground">Your DesignProAI Systems Guide</p>
             </div>
           </div>
         </CardHeader>
@@ -616,7 +616,7 @@ export default function AffiliateDashboard() {
               />
               <h4 className="font-semibold text-foreground text-sm mb-1">Design From Your Phone</h4>
               <p className="text-xs text-muted-foreground">
-                You can use RestyleProAI to design wraps right from your mobile phone — anywhere, anytime.
+                You can use DesignProAI to design wraps right from your mobile phone — anywhere, anytime.
               </p>
             </div>
             <div className="rounded-xl border border-border bg-card p-4 text-center">

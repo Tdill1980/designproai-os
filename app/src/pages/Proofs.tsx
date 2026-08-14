@@ -127,7 +127,7 @@ function formatRelative(iso: string): string {
 
 function getProofPublicBase(): string {
   if (typeof window !== "undefined") return window.location.origin;
-  return "https://restyleproai.com";
+  return "https://designproai.com";
 }
 
 export default function Proofs() {
@@ -273,7 +273,7 @@ export default function Proofs() {
 
   return (
     <div className="min-h-screen bg-background pb-12">
-      <Helmet><title>Proofs · RestylePro</title></Helmet>
+      <Helmet><title>Proofs · DesignProAI</title></Helmet>
 
       <header className="bg-white dark:bg-zinc-950 border-b border-border">
         <div className="max-w-6xl mx-auto px-4 py-5 flex items-center justify-between flex-wrap gap-3">

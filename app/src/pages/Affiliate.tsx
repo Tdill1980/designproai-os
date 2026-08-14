@@ -132,9 +132,9 @@ const Affiliate = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>MightyAffiliate - Earn with RestyleProAI</title>
-        <meta name="description" content="Join MightyAffiliate by RestyleProAI. Earn commissions by referring wrap shops to the world's first prompt-to-production vehicle wrap design software. Design it. Panel it. Print it." />
-        <link rel="canonical" href="https://www.restyleproai.com/affiliate" />
+        <title>MightyAffiliate - Earn with DesignProAI</title>
+        <meta name="description" content="Join MightyAffiliate by DesignProAI. Earn commissions by referring wrap shops to the world's first prompt-to-production vehicle wrap design software. Design it. Panel it. Print it." />
+        <link rel="canonical" href="https://designproai.com/affiliate" />
       </Helmet>
 
       <main className="flex-1 flex items-center justify-center px-4 py-16">
@@ -148,7 +148,7 @@ const Affiliate = () => {
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
               <span className="text-foreground">Mighty</span>
               <span className="text-gradient-blue">Affiliate</span>
-              <span className="text-muted-foreground text-lg font-normal ml-2">by RestyleProAI</span>
+              <span className="text-muted-foreground text-lg font-normal ml-2">by DesignProAI</span>
             </h1>
             <p className="text-muted-foreground">
               Sign in to your affiliate dashboard

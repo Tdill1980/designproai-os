@@ -1,9 +1,9 @@
 /**
  * /admin/wpw-grant-connect — Manual WPW Connect Portal enrollment.
  *
- * Used when a customer's RestylePro email ≠ their WPW WooCommerce
+ * Used when a customer's DesignProAI email ≠ their WPW WooCommerce
  * email so auto-link (useAutoLinkWpw) can't find them. Admin pastes
- * the RestylePro email + WPW customer ID, hits Grant, and the
+ * the DesignProAI email + WPW customer ID, hits Grant, and the
  * admin-grant-wpw-connect edge function sets woo_customer_id and
  * runs the 3-token grant idempotently.
  */
@@ -101,9 +101,9 @@ export default function AdminWpwGrantConnect() {
             Manual grant
           </h1>
           <p className="text-sm text-white/60 leading-relaxed">
-            Use this when a customer signed up at RestylePro with a different
+            Use this when a customer signed up at DesignProAI with a different
             email than their WPW order email — auto-link can&apos;t catch them.
-            Paste the RestylePro email and the WooCommerce customer ID and
+            Paste the DesignProAI email and the WooCommerce customer ID and
             we&apos;ll set <code className="px-1 py-0.5 rounded bg-white/5 border border-white/10 text-[11px]">woo_customer_id</code>
             {" "}on their subscription and credit the 3 free tokens ($75 retail
             value). Idempotent — re-running on the same user does not
@@ -117,7 +117,7 @@ export default function AdminWpwGrantConnect() {
         >
           <div className="space-y-2">
             <Label htmlFor="email" className="text-xs font-semibold uppercase tracking-wide text-white/70">
-              RestylePro email
+              DesignProAI email
             </Label>
             <Input
               id="email"

@@ -247,7 +247,7 @@ export const BRANDS: Record<string, BrandInterest> = {
     voice: "Trade to trade. Plain, specific, no consumer fluff. Assume they know the job.",
   },
   restylepro: {
-    label: "RestyleProAI",
+    label: "DesignProAI",
     audience: "Shop owners and restylers running the business — quoting, selling, closing.",
     interests: ["closing more jobs", "visualisation that sells", "pricing confidence", "shop workflow", "customer objections"],
     givesAway: "How to sell the job — the quote conversation, the visual that closes, the pricing logic.",

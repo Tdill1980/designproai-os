@@ -43,7 +43,7 @@ export const FAQ = ({ productName }: FAQProps) => {
         },
         {
           question: "How do I get started?",
-          answer: "Join Club RestylePro for a free trial render, then choose a plan that fits your shop. Cancel anytime, no contracts.",
+          answer: "Join Club DesignProAI for a free trial render, then choose a plan that fits your shop. Cancel anytime, no contracts.",
         },
       ];
     }
@@ -52,7 +52,7 @@ export const FAQ = ({ productName }: FAQProps) => {
       return [
         {
           question: "What is InkFusion™?",
-          answer: "InkFusion™ Vinyl is RestyleProAI™'s proprietary ink formula delivering automotive paint-quality finishes on premium vinyl wrap material (375 sq ft roll on Avery SW900 cast vinyl with DOL1360 Max Gloss laminate).",
+          answer: "InkFusion™ Vinyl is DesignProAI™'s proprietary ink formula delivering automotive paint-quality finishes on premium vinyl wrap material (375 sq ft roll on Avery SW900 cast vinyl with DOL1360 Max Gloss laminate).",
         },
         {
           question: "What makes InkFusion™ different from standard printed wraps?",
@@ -117,7 +117,7 @@ export const FAQ = ({ productName }: FAQProps) => {
       },
       {
         question: "How do I get started?",
-        answer: "Join Club RestylePro to get 1 free render emailed to you. When you're ready, choose a plan that fits your shop's needs - cancel anytime, no contracts.",
+        answer: "Join Club DesignProAI to get 1 free render emailed to you. When you're ready, choose a plan that fits your shop's needs - cancel anytime, no contracts.",
       },
     ];
   };

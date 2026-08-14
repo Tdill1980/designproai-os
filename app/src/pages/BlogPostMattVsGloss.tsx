@@ -8,7 +8,7 @@ const meta = {
     "Compare matte, gloss, and satin vehicle wrap finishes — durability, maintenance, cost, and which looks best on different vehicles. Includes visual examples.",
   date: "2026-03-25",
   readTime: "7 min read",
-  author: "RestyleProAI",
+  author: "DesignProAI",
   tags: ["Finishes", "Guide", "Vehicle Wraps"],
 };
 
@@ -162,7 +162,7 @@ const BlogPostMattVsGloss = () => (
       in matte on an Escalade.
     </p>
     <p>
-      <Link to="/" className="text-primary hover:underline">RestyleProAI</Link> lets you
+      <Link to="/" className="text-primary hover:underline">DesignProAI</Link> lets you
       visualize any color in any finish on your exact vehicle — in 60 seconds. Try{" "}
       <Link to="/signup" className="text-primary hover:underline">matte, gloss, and satin
       side by side</Link> before making your decision.

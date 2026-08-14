@@ -186,7 +186,7 @@ export async function generatePanelPDF(
   pdf.setProperties({
     title: `${panel.label} - Print Production File`,
     subject: `Vehicle wrap panel: ${panel.zone}`,
-    creator: 'RestyleProAI PrintPro Production OS',
+    creator: 'DesignProAI PrintPro Production OS',
     keywords: `vehicle wrap, ${panel.zone}, print production, ${panel.widthInches}x${panel.heightInches}`,
   });
 
@@ -266,7 +266,7 @@ export async function generateProductionPackPDF(
   // Add metadata
   pdf.setProperties({
     title: `Production Pack - ${panels.length} Panels`,
-    creator: 'RestyleProAI PrintPro Production OS',
+    creator: 'DesignProAI PrintPro Production OS',
   });
 
   const pdfBlob = pdf.output('blob');

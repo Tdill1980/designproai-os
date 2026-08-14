@@ -22,7 +22,7 @@ const SAMPLE_DATA: Record<string, string> = {
   expiry_date: 'December 15, 2025',
   order_id: 'ORD-2024-001234',
   shop_name: 'Elite Wraps Studio',
-  shop_logo_url: 'https://restyleproai.com/sprocket/restyleproai-logo.png',
+  shop_logo_url: 'https://designproai.com/sprocket/restyleproai-logo.png',
   shop_phone: '(555) 123-4567',
   shop_email: 'hello@elitewraps.com',
   shop_website: 'www.elitewraps.com',
@@ -72,7 +72,7 @@ export function TemplatePreview({ html, subject }: TemplatePreviewProps) {
     subject
   );
 
-  const fromDisplayName = currentShop?.name ?? 'RestylePro';
+  const fromDisplayName = currentShop?.name ?? 'DesignProAI';
 
   return (
     <div className="border border-border rounded-lg bg-card overflow-hidden">

@@ -30,7 +30,7 @@ import {
 import { toast } from "sonner";
 
 /**
- * Site-wide "Questions / Instant Answers" widget for RestylePro customers.
+ * Site-wide "Questions / Instant Answers" widget for DesignProAI customers.
  *
  * - A floating button on every customer-facing page opens the dialog.
  * - The same dialog also opens when any element dispatches the
@@ -47,7 +47,7 @@ export const RESTYLEPRO_QUESTIONS_EVENT = "restylepro:open-questions";
 
 const FAQ: Array<{ q: string; a: string }> = [
   {
-    q: "What is RestyleProAI?",
+    q: "What is DesignProAI?",
     a: "An AI vehicle-wrap design platform. Describe your wrap (or upload a reference) and get photorealistic, print-ready designs — with 7 view angles and a 3D proof — in minutes.",
   },
   {

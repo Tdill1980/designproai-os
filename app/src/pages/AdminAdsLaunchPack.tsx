@@ -1,5 +1,5 @@
 /**
- * AdminAdsLaunchPack — generate the 10 RestyleProAI Meta ad creatives.
+ * AdminAdsLaunchPack — generate the 10 DesignProAI Meta ad creatives.
  *
  * No edge function calls, no new tables, no migrations. Pulls existing
  * ColorPro / MyVehiclePro renders from color_visualizations, slots them

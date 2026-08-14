@@ -1,13 +1,13 @@
 /**
- * RestyleProAI Site Configuration
+ * DesignProAI Site Configuration
  * Central configuration for branding, domains, and contact information
  */
 
 export const SITE_CONFIG = {
   // Primary branding
-  siteName: 'RestyleProAI',
-  siteNameFormatted: 'RestyleProAI™',
-  platformLabel: 'RestylePro Visualizer Suite™',
+  siteName: 'DesignProAI',
+  siteNameFormatted: 'DesignProAI™',
+  platformLabel: 'DesignProAI Visualizer Suite™',
   
   // Domain configuration
   primaryDomain: 'www.restyleproai.com',
@@ -23,7 +23,7 @@ export const SITE_CONFIG = {
   wooCommerceBaseUrl: 'https://weprintwraps.com',
   
   // Copyright
-  copyrightHolder: 'RestyleProAI.com',
+  copyrightHolder: 'DesignProAI.com',
   copyrightYear: 2025,
 } as const;
 

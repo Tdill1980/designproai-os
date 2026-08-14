@@ -614,7 +614,7 @@ export default function Gallery() {
         fadewraps: 'FadeWraps™', wbty: 'PatternPro™',
         approvemode: 'ApprovePro™', GraphicsPro: 'GraphicsPro™',
       };
-      const toolName = MODE_TOOL_MAP[modeType] || 'RestyleProAI™';
+      const toolName = MODE_TOOL_MAP[modeType] || 'DesignProAI™';
       const manufacturer = renderItem?.infusion_color_id || '';
       const colorName = renderItem?.color_name || '';
 
@@ -633,13 +633,13 @@ export default function Gallery() {
   return (
     <div className="min-h-screen flex flex-col">
       <Helmet>
-        <title>Gallery | RestyleProAI</title>
+        <title>Gallery | DesignProAI</title>
         <meta name="description" content="Real wrap designs — color changes, full custom wraps, fade wraps, pattern wraps, wall murals, and more. Built on the world's first prompt-to-production wrap platform." />
-        <link rel="canonical" href="https://www.restyleproai.com/gallery" />
-        <meta property="og:title" content="Gallery | RestyleProAI" />
-        <meta property="og:description" content="Real vehicle wrap designs from the RestyleProAI platform." />
-        <meta property="og:url" content="https://www.restyleproai.com/gallery" />
-        <meta property="og:image" content="https://restyleproai.com/hero-mustang.jpg" />
+        <link rel="canonical" href="https://designproai.com/gallery" />
+        <meta property="og:title" content="Gallery | DesignProAI" />
+        <meta property="og:description" content="Real vehicle wrap designs from the DesignProAI platform." />
+        <meta property="og:url" content="https://designproai.com/gallery" />
+        <meta property="og:image" content="https://designproai.com/hero-mustang.jpg" />
       </Helmet>
       <SEOBreadcrumb items={[{ name: "Home", path: "/" }, { name: "Gallery", path: "/gallery" }]} />
 

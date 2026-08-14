@@ -4,7 +4,7 @@
  * Renders on the proof / preview / production screens when a render came from
  * a non-standard vehicle class (motorcycle, boat, bus, RV). These vehicles
  * have their dimensions looked up via Google-grounded Gemini rather than
- * RestylePro's curated 1,668-vehicle database, so the numbers must be
+ * DesignProAI's curated 1,668-vehicle database, so the numbers must be
  * human-verified before any panel is sent to print.
  *
  * Flow:
@@ -152,7 +152,7 @@ export const NonStandardVehicleWarning = ({ specs, onValidated, className }: Non
           </h4>
           <p className="text-xs text-blue-200/80 mt-1">
             This {classLabel}
-            {subType ? ` (${subType})` : ""} is outside RestylePro's standard vehicle library.
+            {subType ? ` (${subType})` : ""} is outside DesignProAI's standard vehicle library.
             We looked up dimensions via Google. Please confirm they match the actual vehicle
             before sending panels to print.
           </p>

@@ -58,7 +58,7 @@ export default function HowToProductionPack() {
   return (
     <div className="min-h-screen bg-white text-gray-900">
       <Helmet>
-        <title>How to Get Your Print-Ready Files — Production Pack | RestyleProAI</title>
+        <title>How to Get Your Print-Ready Files — Production Pack | DesignProAI</title>
         <meta
           name="description"
           content="Your design panelized — now what? Here's how to order a Production Pack and get flattened, print-ready vehicle wrap files for your shop."

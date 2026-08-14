@@ -61,7 +61,7 @@ export const SocialEngagementModal = ({ open, onClose, onUnlock }: SocialEngagem
             Unlock 2 FREE Bonus Renders
           </DialogTitle>
           <DialogDescription className="text-center pt-2">
-            Join 497+ wrap shops already using RestylePro
+            Join 497+ wrap shops already using DesignProAI
           </DialogDescription>
         </DialogHeader>
 
@@ -88,7 +88,7 @@ export const SocialEngagementModal = ({ open, onClose, onUnlock }: SocialEngagem
           {/* Social proof */}
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Users className="h-4 w-4" />
-            <span>497+ wrap professionals trust RestylePro</span>
+            <span>497+ wrap professionals trust DesignProAI</span>
           </div>
 
           {/* Email input */}

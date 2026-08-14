@@ -105,7 +105,7 @@ function resolveToolLabel(overlay: OverlaySpec): string {
   }
   
   // Priority 3: Fallback to platform label
-  return 'RestylePro™';
+  return 'DesignProAI™';
 }
 
 /**

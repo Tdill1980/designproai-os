@@ -105,7 +105,7 @@ export async function generateInkFusionSampleChart(
   // Company info right side
   pdf.setFontSize(9);
   pdf.setTextColor(100, 200, 255);
-  pdf.text('RestyleProAI.com', pageWidth - margin, 25, { align: 'right' });
+  pdf.text('DesignProAI.com', pageWidth - margin, 25, { align: 'right' });
   pdf.setTextColor(150, 150, 150);
   pdf.text('Professional Latex Printed Films', pageWidth - margin, 33, { align: 'right' });
 
@@ -271,7 +271,7 @@ export async function generateInkFusionSampleChart(
     // Copyright
     pdf.setFontSize(7);
     pdf.text(
-      `© ${new Date().getFullYear()} RestyleProAI™. All colors shown are representations and may vary in print.`,
+      `© ${new Date().getFullYear()} DesignProAI™. All colors shown are representations and may vary in print.`,
       pageWidth / 2,
       pageHeight - 8,
       { align: 'center' }

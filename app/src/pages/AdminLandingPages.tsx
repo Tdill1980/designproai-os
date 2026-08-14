@@ -8,7 +8,7 @@ import { RequireAdmin } from "@/components/RequireAdmin";
  * /admin/landing-pages
  *
  * Quick reference for the team: every public landing URL we can share
- * for the WPW × RestylePro Connect Portal launch, with one-click copy
+ * for the WPW × DesignProAI Connect Portal launch, with one-click copy
  * and "open in new tab" actions.
  */
 
@@ -65,7 +65,7 @@ const ENTRIES: Entry[] = [
 ];
 
 function fullUrl(path: string) {
-  if (typeof window === "undefined") return `https://restyleproai.com${path}`;
+  if (typeof window === "undefined") return `https://designproai.com${path}`;
   const origin = window.location.origin.replace(/\/$/, "");
   return `${origin}${path}`;
 }

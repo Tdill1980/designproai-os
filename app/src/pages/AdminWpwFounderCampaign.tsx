@@ -77,7 +77,7 @@ export default function AdminWpwFounderCampaign() {
   type TemplateKey = "founder" | "connect-portal";
   const TEMPLATE_DEFAULTS: Record<TemplateKey, { subject: string; label: string; landingPath: string }> = {
     "founder": {
-      subject: "You're invited — your RestyleProAI Founder Dashboard",
+      subject: "You're invited — your DesignProAI Founder Dashboard",
       label: "Founder Invitation (full pitch + $50 off membership)",
       landingPath: "/from/weprintwraps",
     },

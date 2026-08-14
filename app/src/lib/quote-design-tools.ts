@@ -1,7 +1,7 @@
 /**
  * QuickQuote Design & Visualization Tools catalog.
  *
- * These are the render-based tools in the RestylePro suite
+ * These are the render-based tools in the DesignProAI suite
  * (DesignPro, RecreatePro, PatternPro, RestyleLibrary, WallPro,
  * GraphicsPro). They aren't sold as line items — they're tools the
  * shop uses to generate the artwork, with monthly quantity governed
@@ -12,9 +12,9 @@
  * a shop is on a lower tier. The copy deliberately shows every tier's
  * included quantity side-by-side so the upgrade path is obvious.
  *
- * WPW tenants see the same tool list in a dedicated "RestylePro Design
+ * WPW tenants see the same tool list in a dedicated "DesignProAI Design
  * & Visualization Tools" dropdown alongside their WePrintWraps print
- * product dropdown — their first exposure to RestylePro's design gen
+ * product dropdown — their first exposure to DesignProAI's design gen
  * stack. Non-WPW tenants see it as "Design Gen Tools" with their
  * current tier's allowance highlighted.
  */

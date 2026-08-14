@@ -411,10 +411,10 @@ const FromWePrintWraps = ({ theme = "light" }: { theme?: "light" | "dark" } = {}
   return (
     <div className={`min-h-screen ${isDark ? "dark" : ""} ${t.bg}`}>
       <Helmet>
-        <title>You're Invited — RestyleProAI™ Founder Invitation for WPW Customers</title>
+        <title>You're Invited — DesignProAI™ Founder Invitation for WPW Customers</title>
         <meta
           name="description"
-          content="A personal invitation from Trish Dill to past WePrintWraps customers. Your ShopEngine Dashboard, your first custom wrap design, and $50 off your RestyleProAI membership."
+          content="A personal invitation from Trish Dill to past WePrintWraps customers. Your ShopEngine Dashboard, your first custom wrap design, and $50 off your DesignProAI membership."
         />
       </Helmet>
 
@@ -475,7 +475,7 @@ const FromWePrintWraps = ({ theme = "light" }: { theme?: "light" | "dark" } = {}
                 <p className={`text-base sm:text-lg leading-relaxed ${t.body} mb-7 max-w-xl`}>
                   So I built{" "}
                   <span className="font-bold text-black dark:text-white">
-                    RestyleProAI™
+                    DesignProAI™
                   </span>{" "}
                   — a powerful new design and visualization platform created
                   to fundamentally change how vehicle wraps are designed,
@@ -599,7 +599,7 @@ const FromWePrintWraps = ({ theme = "light" }: { theme?: "light" | "dark" } = {}
           </div>
         </section>
 
-        {/* ── Introducing RestyleProAI ── */}
+        {/* ── Introducing DesignProAI ── */}
         <section className="py-20 sm:py-24 border-t border-black/10 dark:border-white/10 bg-neutral-50 dark:bg-[#111114]">
           <div className="container mx-auto px-4">
             <div className="max-w-3xl mx-auto text-center">
@@ -608,7 +608,7 @@ const FromWePrintWraps = ({ theme = "light" }: { theme?: "light" | "dark" } = {}
               </div>
               <h2 className="font-montserrat text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight mb-7">
                 <span className="text-black dark:text-white">
-                  RestyleProAI™
+                  DesignProAI™
                 </span>
               </h2>
               <p className="text-lg text-black/80 dark:text-white/75 leading-relaxed mb-5">
@@ -622,7 +622,7 @@ const FromWePrintWraps = ({ theme = "light" }: { theme?: "light" | "dark" } = {}
               </p>
               <p className="text-base text-black/65 dark:text-white/60 leading-relaxed">
                 Whether you're a solo operator or a high-volume graphics
-                company, RestyleProAI™ gives you the ability to create
+                company, DesignProAI™ gives you the ability to create
                 premium-level visuals faster than ever before.
               </p>
             </div>
@@ -1044,7 +1044,7 @@ const FromWePrintWraps = ({ theme = "light" }: { theme?: "light" | "dark" } = {}
                   Trish Dill
                 </p>
                 <p className="text-sm text-black/55 dark:text-white/50">
-                  Founder, WePrintWraps™ &amp; RestyleProAI™
+                  Founder, WePrintWraps™ &amp; DesignProAI™
                 </p>
               </div>
 

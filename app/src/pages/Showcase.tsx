@@ -38,7 +38,7 @@ interface ShowcaseSlide {
 const SLIDES: ShowcaseSlide[] = [
   {
     id: "intro",
-    title: "RestyleProAI™",
+    title: "DesignProAI™",
     titleGradient: "from-cyan-400 via-blue-400 to-purple-500",
     sproketText: "Welcome to the world's first prompt-to-production vehicle wrap design system. Let me walk you through every tool in the suite. Engineered using 10+ years of real vehicle wrap design order data.",
     sproketImage: "/characters/sproket/sproket-presenting.png",
@@ -217,7 +217,7 @@ const SLIDES: ShowcaseSlide[] = [
     id: "closing",
     title: "Design. Output. Profit.",
     titleGradient: "from-cyan-400 via-purple-500 to-pink-500",
-    sproketText: "That's RestyleProAI — the complete vehicle wrap design system built for professionals. Every tool works together. Every render is production-ready. Your designs. Your IP. Your profit. Welcome to the future of vehicle wrap design.",
+    sproketText: "That's DesignProAI — the complete vehicle wrap design system built for professionals. Every tool works together. Every render is production-ready. Your designs. Your IP. Your profit. Welcome to the future of vehicle wrap design.",
     sproketImage: "/characters/sproket/sproket-rocket-launch.png",
     image16x9: "/screenshots/designproai-system.png",
     image9x16: "/screenshots/designproai-system.png",
@@ -329,7 +329,7 @@ const Showcase = () => {
   if (aspectMode === "portrait") {
     return (
       <>
-        <Helmet><title>RestyleProAI Showcase</title></Helmet>
+        <Helmet><title>DesignProAI Showcase</title></Helmet>
         <div className="fixed inset-0 z-50 bg-black flex flex-col overflow-hidden select-none">
           {/* Top bar */}
           <div className="flex items-center justify-between px-3 py-2 bg-zinc-950/80 backdrop-blur border-b border-white/5 shrink-0">
@@ -438,7 +438,7 @@ const Showcase = () => {
   /* ──────────────────────────── LANDSCAPE LAYOUT (16:9) ─────────────────── */
   return (
     <>
-      <Helmet><title>RestyleProAI Showcase</title></Helmet>
+      <Helmet><title>DesignProAI Showcase</title></Helmet>
       <div className="fixed inset-0 z-50 bg-black flex flex-col overflow-hidden select-none">
         {/* ─── TOP BAR ─── */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 bg-zinc-950/80 backdrop-blur border-b border-white/5 shrink-0">

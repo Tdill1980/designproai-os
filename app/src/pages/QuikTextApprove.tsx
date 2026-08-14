@@ -145,7 +145,7 @@ const QuikTextApprove = () => {
   return (
     <div className="min-h-screen bg-white">
       <Helmet>
-        <title>QuikText Approve | RestyleProAI</title>
+        <title>QuikText Approve | DesignProAI</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </Helmet>
 

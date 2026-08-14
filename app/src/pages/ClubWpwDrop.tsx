@@ -2,7 +2,7 @@
  * /club-wpw-drop (alias /design-drop) — "Club WPW Drop · Free Tool of the Week".
  *
  * Public, no auth. Ties to the weekly "Wrap of the Week" email (WPW × Paint Is
- * Dead) and the WePrintWraps × RestyleProAI co-brand. Each Thursday drops a free,
+ * Dead) and the WePrintWraps × DesignProAI co-brand. Each Thursday drops a free,
  * branded, shareable digital tool for wrap shops. THIS WEEK: the WPW Wrap
  * Calculator™ (Excel + PDF instructions). Upsells printed fade wraps with a
  * 10%-off code (FADE10).
@@ -40,7 +40,7 @@ import {
 const COLLAGE_IMG = "/wpw-drop/wotw-collage.jpeg";
 
 // ── This week's tool (swap these + DOWNLOAD_URL to run next week's drop) ──
-const TOOL_NAME = "WPW × RestyleProAI Wrap Calculator";
+const TOOL_NAME = "WPW × DesignProAI Wrap Calculator";
 const TOOL_TAGLINE = "Estimate wrap material in seconds. Quote jobs with confidence.";
 
 // Live tool — no download. Runs on a WePrintWraps-connected URL so it's always
@@ -63,7 +63,7 @@ const INSIDE = [
 
 // The recurring Thursday lineup (branded drop series).
 const LINEUP = [
-  "WPW × RestyleProAI Wrap Calculator",
+  "WPW × DesignProAI Wrap Calculator",
   "WPW Profit Calculator™ ⭐",
   "WPW Bleed Guide™",
   "WPW Color Guide™",
@@ -82,10 +82,10 @@ export default function ClubWpwDrop() {
   return (
     <>
       <Helmet>
-        <title>WPW × RestyleProAI Wrap Calculator — Free Live Tool | WePrintWraps</title>
+        <title>WPW × DesignProAI Wrap Calculator — Free Live Tool | WePrintWraps</title>
         <meta
           name="description"
-          content="Free live wrap-shop tool: the WPW × RestyleProAI Wrap Calculator estimates wrap material, linear feet/yards & material cost in seconds — right in your browser, no download. Plus 10% off printed fade wraps with code FADE10."
+          content="Free live wrap-shop tool: the WPW × DesignProAI Wrap Calculator estimates wrap material, linear feet/yards & material cost in seconds — right in your browser, no download. Plus 10% off printed fade wraps with code FADE10."
         />
         <link rel="canonical" href="https://weprintwraps.com/club-wpw-drop" />
       </Helmet>
@@ -110,12 +110,12 @@ export default function ClubWpwDrop() {
           <div className="relative max-w-6xl mx-auto px-5 sm:px-8 py-20 sm:py-28">
             <div className="max-w-2xl">
               <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold tracking-wide text-white bg-gradient-to-r from-[#3b82f6] to-[#ec4899] rounded-full px-4 py-1.5 mb-6 shadow-lg">
-                🧮 Free Live Tool · WePrintWraps × RestyleProAI
+                🧮 Free Live Tool · WePrintWraps × DesignProAI
               </span>
 
               <h1 className="font-extrabold leading-[1.02] tracking-tight text-[38px] sm:text-[56px]">
                 <span className="bg-gradient-to-r from-[#60a5fa] to-[#f472b6] bg-clip-text text-transparent">
-                  WPW × RestyleProAI
+                  WPW × DesignProAI
                 </span>
                 <br />
                 Wrap Calculator

@@ -99,7 +99,7 @@ export const TIER_PRICING: Record<Tier, TierPricing> = {
     overageLabel: "$20 / extra token (paying-tier discount)",
     target: "Best for working wrap shops ready to scale with a real human designer",
     tagline:
-      "Best for working wrap shops ready to scale with a real human graphic designer. Everything in DesignPro Lite plus the human-designer Design OS — every file output in 48 hours. Includes DesignProAI, GraphicsPro, RecreatePro, and CreatorMarket publisher access (list and sell your wraps to every RestylePro shop, keep 60% of every sale). 150 tokens / month — one shared pool across every tool, where 1 token = 1 render or 1 revision. Each token = $25 retail value ($3,750 bundled in). Paying-tier discount: $20 per extra token after cap (save $10/token vs Free + Starter). Production Packs sold separately at the $249 subscriber rate (save $50 vs $299 retail).",
+      "Best for working wrap shops ready to scale with a real human graphic designer. Everything in DesignPro Lite plus the human-designer Design OS — every file output in 48 hours. Includes DesignProAI, GraphicsPro, RecreatePro, and CreatorMarket publisher access (list and sell your wraps to every DesignProAI shop, keep 60% of every sale). 150 tokens / month — one shared pool across every tool, where 1 token = 1 render or 1 revision. Each token = $25 retail value ($3,750 bundled in). Paying-tier discount: $20 per extra token after cap (save $10/token vs Free + Starter). Production Packs sold separately at the $249 subscriber rate (save $50 vs $299 retail).",
   },
   agency: {
     // Hidden from customer UI — admin / tester bypass only

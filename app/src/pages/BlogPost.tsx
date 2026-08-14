@@ -61,8 +61,8 @@ const BlogPost = () => {
     );
   }
 
-  const canonicalUrl = `https://www.restyleproai.com/blog/${post.slug}`;
-  const ogImage = post.featured_image_url || "https://restyleproai.com/hero-mustang.jpg";
+  const canonicalUrl = `https://designproai.com/blog/${post.slug}`;
+  const ogImage = post.featured_image_url || "https://designproai.com/hero-mustang.jpg";
 
   const articleSchema = {
     "@context": "https://schema.org",
@@ -74,14 +74,14 @@ const BlogPost = () => {
     dateModified: post.published_at,
     author: {
       "@type": "Person",
-      name: post.author || "RestyleProAI",
-      url: "https://restyleproai.com",
+      name: post.author || "DesignProAI",
+      url: "https://designproai.com",
     },
     publisher: {
       "@type": "Organization",
-      name: "RestyleProAI",
-      url: "https://restyleproai.com",
-      logo: { "@type": "ImageObject", url: "https://restyleproai.com/logo.png" },
+      name: "DesignProAI",
+      url: "https://designproai.com",
+      logo: { "@type": "ImageObject", url: "https://designproai.com/logo.png" },
     },
     mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
     ...(post.tags?.length > 0 && { keywords: post.tags.join(", ") }),
@@ -93,8 +93,8 @@ const BlogPost = () => {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://restyleproai.com" },
-      { "@type": "ListItem", position: 2, name: "Blog", item: "https://restyleproai.com/blog" },
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://designproai.com" },
+      { "@type": "ListItem", position: 2, name: "Blog", item: "https://designproai.com/blog" },
       { "@type": "ListItem", position: 3, name: post.title, item: canonicalUrl },
     ],
   };
@@ -102,19 +102,19 @@ const BlogPost = () => {
   return (
     <>
       <Helmet>
-        <title>{post.title} | RestyleProAI Blog</title>
+        <title>{post.title} | DesignProAI Blog</title>
         <meta name="description" content={post.description} />
-        <meta name="keywords" content={post.tags?.length > 0 ? [...post.tags, "vehicle wraps", "wrap design", "RestyleProAI"].join(", ") : "vehicle wraps, wrap design, RestyleProAI"} />
-        <meta name="author" content={post.author || "RestyleProAI"} />
+        <meta name="keywords" content={post.tags?.length > 0 ? [...post.tags, "vehicle wraps", "wrap design", "DesignProAI"].join(", ") : "vehicle wraps, wrap design, DesignProAI"} />
+        <meta name="author" content={post.author || "DesignProAI"} />
         <link rel="canonical" href={canonicalUrl} />
         <meta property="og:title" content={post.title} />
         <meta property="og:description" content={post.description} />
         <meta property="og:type" content="article" />
         <meta property="og:url" content={canonicalUrl} />
         <meta property="og:image" content={ogImage} />
-        <meta property="og:site_name" content="RestyleProAI" />
+        <meta property="og:site_name" content="DesignProAI" />
         <meta property="article:published_time" content={post.published_at} />
-        <meta property="article:author" content={post.author || "RestyleProAI"} />
+        <meta property="article:author" content={post.author || "DesignProAI"} />
         {post.tags?.map((tag: string) => (
           <meta key={tag} property="article:tag" content={tag} />
         ))}
@@ -240,7 +240,7 @@ const BlogPost = () => {
                 to="/signup"
                 className="inline-flex items-center justify-center text-sm font-medium bg-white text-neutral-900 px-6 py-2.5 rounded-lg hover:bg-neutral-100 transition-colors"
               >
-                Try RestyleProAI
+                Try DesignProAI
               </Link>
               <a
                 href="https://weprintwraps.com"

@@ -170,10 +170,10 @@ const Signup = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Create Account - RestyleProAI | AI Vehicle Wrap Design</title>
-        <meta name="description" content="Create your free RestyleProAI account. Start designing professional vehicle wraps with AI in 60 seconds. No design skills required." />
-        <link rel="canonical" href="https://www.restyleproai.com/signup" />
-        <meta property="og:title" content="Get Started Free - RestyleProAI" />
+        <title>Create Account - DesignProAI | AI Vehicle Wrap Design</title>
+        <meta name="description" content="Create your free DesignProAI account. Start designing professional vehicle wraps with AI in 60 seconds. No design skills required." />
+        <link rel="canonical" href="https://designproai.com/signup" />
+        <meta property="og:title" content="Get Started Free - DesignProAI" />
         <meta property="og:description" content="Create your free account and start designing vehicle wraps with AI. From prompt to print-ready files in minutes." />
       </Helmet>
 
@@ -182,7 +182,7 @@ const Signup = () => {
           <div className="bg-card border border-border rounded-lg p-8">
             <div className="text-center mb-4">
               <div className="text-[11px] font-semibold tracking-[0.2em] uppercase text-cyan-300/90">
-                WPW × RestylePro Connect Portal
+                WPW × DesignProAI Connect Portal
               </div>
             </div>
             <div className="flex items-center gap-3 mb-6">

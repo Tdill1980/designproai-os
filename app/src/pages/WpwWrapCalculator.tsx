@@ -1,5 +1,5 @@
 /**
- * /wpw-wrap-calculator — the WPW × RestyleProAI Wrap Calculator.
+ * /wpw-wrap-calculator — the WPW × DesignProAI Wrap Calculator.
  *
  * Public, no auth. A live, in-browser wrap-material estimator for wrap shops:
  * pick a vehicle (or enter area) → get total square feet, linear feet/yards,
@@ -129,10 +129,10 @@ export default function WpwWrapCalculator() {
   return (
     <>
       <Helmet>
-        <title>WPW × RestyleProAI Wrap Calculator — Free Wrap Material Estimator</title>
+        <title>WPW × DesignProAI Wrap Calculator — Free Wrap Material Estimator</title>
         <meta
           name="description"
-          content="Free live wrap calculator by WePrintWraps × RestyleProAI. Estimate total square feet, linear feet/yards and material cost for any vehicle wrap in seconds — right in your browser."
+          content="Free live wrap calculator by WePrintWraps × DesignProAI. Estimate total square feet, linear feet/yards and material cost for any vehicle wrap in seconds — right in your browser."
         />
         <link rel="canonical" href="https://weprintwraps.com/wpw-wrap-calculator" />
       </Helmet>
@@ -149,7 +149,7 @@ export default function WpwWrapCalculator() {
             </div>
             <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
               <span className="bg-gradient-to-r from-[#3b82f6] to-[#ec4899] bg-clip-text text-transparent">
-                WPW × RestyleProAI
+                WPW × DesignProAI
               </span>{" "}
               <span className="text-gray-900">Wrap Calculator</span>
             </h1>

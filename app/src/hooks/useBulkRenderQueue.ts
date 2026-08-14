@@ -792,7 +792,7 @@ export function useBulkRenderQueue() {
    * already supported by the public browse query — see the comment in
    * CreatorMarket.tsx about "admin-curated rows that have no creator_id
    * still show up." We pass `featured_creator_name` so the card still
-   * reads "Created by RestylePro Team" instead of an empty label.
+   * reads "Created by DesignProAI Team" instead of an empty label.
    *
    * Returns the inserted row id on success, or null on failure (toast
    * is shown by the caller — this hook stays UI-free).
@@ -824,7 +824,7 @@ export function useBulkRenderQueue() {
       const insertRow: Record<string, unknown> = {
         title: `${job.vehicle.year} ${job.vehicle.make} ${job.vehicle.model} - ${job.prompt.name || job.prompt.subcategory}`,
         industry_title: opts.industry_title?.trim() || job.prompt.name || null,
-        featured_creator_name: opts.featured_creator_name?.trim() || "RestylePro Team",
+        featured_creator_name: opts.featured_creator_name?.trim() || "DesignProAI Team",
         trade_category: opts.trade_category,
         // design_style flags branded / commercial templates on the UI.
         design_style: opts.trade_category ? "branded" : "commercial",

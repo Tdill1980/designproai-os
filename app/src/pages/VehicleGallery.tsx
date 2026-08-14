@@ -137,7 +137,7 @@ export default function VehicleGallery() {
     );
   }
 
-  const canonicalUrl = `https://www.restyleproai.com/gallery/${vehiclePage.slug}`;
+  const canonicalUrl = `https://designproai.com/gallery/${vehiclePage.slug}`;
   const description = `Browse ${vehiclePage.title.replace(" & Ideas", "")} — photorealistic AI-generated vehicle wrap designs. Color changes, custom panels, fade wraps. Design it. Panel it. Print it.`;
 
   const productSchema = {
@@ -161,10 +161,10 @@ export default function VehicleGallery() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>{vehiclePage.title} | RestyleProAI</title>
+        <title>{vehiclePage.title} | DesignProAI</title>
         <meta name="description" content={description} />
         <link rel="canonical" href={canonicalUrl} />
-        <meta property="og:title" content={`${vehiclePage.title} | RestyleProAI`} />
+        <meta property="og:title" content={`${vehiclePage.title} | DesignProAI`} />
         <meta property="og:description" content={description} />
         <meta property="og:url" content={canonicalUrl} />
         <meta property="og:type" content="website" />

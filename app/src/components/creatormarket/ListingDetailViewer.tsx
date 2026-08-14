@@ -126,13 +126,13 @@ export function ListingDetailViewer({ listing, open, onOpenChange, onOrder, onOr
     const id = listing?.id;
     if (!id) return "";
     const origin =
-      typeof window !== "undefined" ? window.location.origin : "https://restyleproai.com";
+      typeof window !== "undefined" ? window.location.origin : "https://designproai.com";
     return `${origin}/c/${id}`;
   })();
 
   const handleShare = async () => {
     if (!shareUrl) return;
-    const title = listing?.title || "Wrap design — RestyleProAI";
+    const title = listing?.title || "Wrap design — DesignProAI";
     try {
       // Native share sheet on iOS / Android. Falls back to clipboard
       // copy if the browser doesn't have navigator.share.

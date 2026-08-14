@@ -1,5 +1,5 @@
 /**
- * RestyleProAI QuickQuote — deterministic pricing engine
+ * DesignProAI QuickQuote — deterministic pricing engine
  *
  * Uses the 1,664-vehicle measurement database for sq ft,
  * converts to linear yards, and applies regional labor rates.
@@ -230,7 +230,7 @@ export const SERVICE_CATEGORIES: Record<ServiceCategory, CategoryInfo> = {
 
 // ── Add-on services ─────────────────────────────────────────────
 // studio_proof / photoreal_proof / shop_drawing_2d removed — these are
-// included with the RestylePro subscription (renders + multi-angle
+// included with the DesignProAI subscription (renders + multi-angle
 // studio output). Hardcoding them here as $75-$150 add-ons obscured the
 // subscription's value, so they're stripped from the QuickQuote
 // upsell catalog. Visual upsells the shop installs (chrome delete,

@@ -103,7 +103,7 @@ export function AffiliateOnboardingWizard({
                 <h3 className="text-xl font-bold">Welcome, {partnerName}!</h3>
               </div>
               <p className="text-muted-foreground">
-                Thank you for joining the RestyleProAI Affiliate Partner Program. As a partner, you'll earn
+                Thank you for joining the DesignProAI Affiliate Partner Program. As a partner, you'll earn
                 recurring commissions on every subscription you refer - for the lifetime of the customer's subscription.
               </p>
               <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">

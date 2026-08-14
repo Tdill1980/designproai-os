@@ -69,7 +69,7 @@ export function ShareDesignButton({
 
   const handleEmail = () => {
     const subject = encodeURIComponent(`${designName} - Vehicle Wrap Design`);
-    const body = encodeURIComponent(`${shareText}\n\nView it here: ${shareUrl}\n\nCreated with RestyleProAI™`);
+    const body = encodeURIComponent(`${shareText}\n\nView it here: ${shareUrl}\n\nCreated with DesignProAI™`);
     window.open(`mailto:?subject=${subject}&body=${body}`);
     setOpen(false);
   };

@@ -146,7 +146,7 @@ const fmt = (n: number) =>
 const origin = () =>
   typeof window !== "undefined"
     ? window.location.origin
-    : "https://restyleproai.com";
+    : "https://designproai.com";
 
 interface AffiliateAdminAnalyticsProps {
   className?: string;

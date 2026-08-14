@@ -379,10 +379,10 @@ const PrintPro = () => {
   return (
     <div style={{ minHeight: "100vh", background: "#FFFFFF" }}>
       <Helmet>
-        <title>PrintPro - Print-Ready Tools & Production | RestyleProAI</title>
+        <title>PrintPro - Print-Ready Tools & Production | DesignProAI</title>
         <meta name="description" content="Design, price, and order print-ready graphics for any surface. Wall wraps, pattern panels, production packs, and more." />
-        <link rel="canonical" href="https://www.restyleproai.com/printpro" />
-        <meta property="og:title" content="PrintPro - Print-Ready Tools & Production | RestyleProAI" />
+        <link rel="canonical" href="https://designproai.com/printpro" />
+        <meta property="og:title" content="PrintPro - Print-Ready Tools & Production | DesignProAI" />
         <meta property="og:description" content="Design, price, and order print-ready graphics for any surface." />
       </Helmet>
 

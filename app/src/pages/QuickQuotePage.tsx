@@ -1,5 +1,5 @@
 /**
- * RestyleProAI QuickQuote — standalone quote-builder page.
+ * DesignProAI QuickQuote — standalone quote-builder page.
  *
  * Renders the exact same QuickQuoteCard + LatestQuotesCard pair the
  * dashboard shows, so the standalone /quick-quote page is identical
@@ -28,7 +28,7 @@ const QuickQuotePage = () => {
   return (
     <div className="min-h-screen flex flex-col bg-black">
       <Helmet>
-        <title>QuickQuote — RestylePro</title>
+        <title>QuickQuote — DesignProAI</title>
         <meta name="description" content="Build a wrap quote in seconds — vehicle-aware, render-aware, customer-ready." />
       </Helmet>
 

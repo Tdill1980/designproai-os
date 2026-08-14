@@ -244,7 +244,7 @@ const WPW_DESIGN_CAT: CategoryMeta = {
 };
 const RP_DESIGN_CAT: CategoryMeta = {
   id: "rp_design",
-  label: "RestylePro Design Products",
+  label: "DesignProAI Design Products",
   blurb: "DesignPro · GraphicsPro · Production Pack · upsells",
   icon: Crown,
   accent: "text-fuchsia-300",

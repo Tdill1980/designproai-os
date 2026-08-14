@@ -122,7 +122,7 @@ export function WpwRepToolkitCard({
     originProp ||
     (typeof window !== "undefined"
       ? window.location.origin
-      : "https://restyleproai.com");
+      : "https://designproai.com");
   // Customer-facing URL — lands them on DesignPro with the rep-branded
   // $25 popup pre-opened, code prefilled. This is the link reps share.
   const fullUrl = `${origin}/designpro?ref=${encodeURIComponent(
@@ -281,7 +281,7 @@ export function WpwRepToolkitCard({
               </div>
               <p className="text-[11px] text-gray-500 mt-1.5">
                 10% off the $250 custom design OR a customer&apos;s first month
-                of any RestylePro subscription. Auto-applies via your URL.
+                of any DesignProAI subscription. Auto-applies via your URL.
               </p>
             </div>
           </div>
@@ -440,7 +440,7 @@ export function WpwRepToolkitCard({
  * native Instagram feed resolution. Layout:
  *
  *   ┌──────────────────────────────────────────────┐
- *   │  RestyleProAI™  ·  DesignProAI               │
+ *   │  DesignProAI™  ·  DesignProAI               │
  *   │                                              │
  *   │  CUSTOM WRAP DESIGN                          │
  *   │  $25                                         │
@@ -553,7 +553,7 @@ const SocialPost4x5 = ({
           textShadow: "0 1px 4px rgba(0,0,0,0.55)",
         }}
       >
-        <span>RestyleProAI™</span>
+        <span>DesignProAI™</span>
         <span style={{ color: rep.accent }}>DesignProAI</span>
       </div>
 

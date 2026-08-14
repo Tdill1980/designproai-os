@@ -570,28 +570,28 @@ export default function CreatorMarket() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Buy Custom Vehicle Wrap Designs | Cars, Trucks, Vans, Fleet Wraps | CreatorMarket by RestyleProAI</title>
+        <title>Buy Custom Vehicle Wrap Designs | Cars, Trucks, Vans, Fleet Wraps | CreatorMarket by DesignProAI</title>
         <meta name="description" content="Browse production-ready vehicle wrap designs for cars, trucks, vans, and commercial fleets. Real print-ready files delivered to your inbox in 48 hours. $350 per wrap, $25 for slight customization." />
         <meta name="keywords" content="buy vehicle wrap designs, custom car wrap, truck wrap design, van wrap template, fleet wrap package, commercial vehicle wrap, food truck wrap, construction wrap, dental van wrap, delivery wrap design, buy wrap online, vehicle wrap marketplace, wrap design marketplace, print ready wrap files" />
         <meta property="og:title" content="Buy Custom Vehicle Wrap Designs | CreatorMarket" />
         <meta property="og:description" content="Production-ready wrap designs for any vehicle. Real print-ready files delivered to your inbox in 48 hours. $350 per wrap, $25 for slight customization." />
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://www.restyleproai.com/creatormarket" />
+        <meta property="og:url" content="https://designproai.com/creatormarket" />
         <meta property="og:image" content="https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1773948618569_commercial.jpg" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="675" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Buy Custom Vehicle Wrap Designs | CreatorMarket by RestyleProAI" />
+        <meta name="twitter:title" content="Buy Custom Vehicle Wrap Designs | CreatorMarket by DesignProAI" />
         <meta name="twitter:description" content="Production-ready wrap designs. Print-ready files in your inbox in 48 hours. $350 per wrap, $25 for slight customization." />
         <meta name="twitter:image" content="https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1773948618569_commercial.jpg" />
-        <link rel="canonical" href="https://www.restyleproai.com/creatormarket" />
+        <link rel="canonical" href="https://designproai.com/creatormarket" />
         <script type="application/ld+json">{JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Store",
-          "name": "CreatorMarket by RestyleProAI",
+          "name": "CreatorMarket by DesignProAI",
           "description": "Marketplace for production-ready vehicle wrap designs. Buy custom car wraps, truck wraps, van wraps, and commercial fleet branding packages.",
-          "url": "https://www.restyleproai.com/creatormarket",
-          "brand": { "@type": "Brand", "name": "RestyleProAI" },
+          "url": "https://designproai.com/creatormarket",
+          "brand": { "@type": "Brand", "name": "DesignProAI" },
           "offers": {
             "@type": "AggregateOffer",
             "lowPrice": "350",
@@ -1319,7 +1319,7 @@ export default function CreatorMarket() {
                               ) : (
                                 <>
                                   <Store className="w-3 h-3" />
-                                  Sell On Creator Market — 60% to you · 40% to RestylePro
+                                  Sell On Creator Market — 60% to you · 40% to DesignProAI
                                 </>
                               )}
                             </Button>

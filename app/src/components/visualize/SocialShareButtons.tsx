@@ -43,7 +43,7 @@ export const SocialShareButtons = ({
       const shareUrl = buildShareUrl("web", window.location.pathname);
       await navigator.share({
         title: `${vehicleName} - ${designName}`,
-        text: `Check out this 360° view of ${vehicleName} in ${designName}! Created with RestyleProAI™ Vehicle Wrap Design Suite`,
+        text: `Check out this 360° view of ${vehicleName} in ${designName}! Created with DesignProAI™ Vehicle Wrap Design Suite`,
         url: shareUrl,
         files: [file]
       });
@@ -106,7 +106,7 @@ export const SocialShareButtons = ({
     // We'll provide instructions to download and upload
     toast({
       title: "TikTok Sharing",
-      description: "Download the 360° spin and upload it to TikTok from your phone! Use hashtag #RestylePro",
+      description: "Download the 360° spin and upload it to TikTok from your phone! Use hashtag #DesignProAI",
       duration: 6000
     });
     handleDownloadAll();

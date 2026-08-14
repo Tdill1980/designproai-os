@@ -48,7 +48,7 @@ export type WpwUnit =
  *   • pack         — DesignPanelPro / production print packs (flat)
  *   • design       — human design services (variable)
  *   • sample       — swatch books & color charts
- *   • subscription — RestyleProAI plans WPW resells (NOT a quote line item)
+ *   • subscription — DesignProAI plans WPW resells (NOT a quote line item)
  */
 export type WpwKind =
   | "print"
@@ -345,11 +345,11 @@ export const WPW_CATALOG: WpwCatalogItem[] = [
     quotable: true,
   },
 
-  // ── RestyleProAI subscriptions WPW resells (NOT quote line items) ─────────
+  // ── DesignProAI subscriptions WPW resells (NOT quote line items) ─────────
   {
     wooProductId: 71966,
     sku: "WPW-RP-SUB-STARTER",
-    name: "RestyleProAI Starter — WPW Partner Rate",
+    name: "DesignProAI Starter — WPW Partner Rate",
     price: 300,
     unit: "month",
     kind: "subscription",
@@ -359,7 +359,7 @@ export const WPW_CATALOG: WpwCatalogItem[] = [
   {
     wooProductId: 71976,
     sku: "WPW-RP-SUB-DESIGNPRO-LITE",
-    name: "RestyleProAI DesignPro Lite — WPW Partner Rate",
+    name: "DesignProAI DesignPro Lite — WPW Partner Rate",
     price: 449,
     unit: "month",
     kind: "subscription",
@@ -369,7 +369,7 @@ export const WPW_CATALOG: WpwCatalogItem[] = [
   {
     wooProductId: 71977,
     sku: "WPW-RP-SUB-DESIGNPRO-STUDIO",
-    name: "RestyleProAI DesignPro Studio — WPW Partner Rate",
+    name: "DesignProAI DesignPro Studio — WPW Partner Rate",
     price: 649,
     unit: "month",
     kind: "subscription",
@@ -379,7 +379,7 @@ export const WPW_CATALOG: WpwCatalogItem[] = [
   {
     wooProductId: 71969,
     sku: "WPW-RP-SUB-DESIGNPRO-PLUS",
-    name: "RestyleProAI DesignPro Plus — WPW Partner Rate",
+    name: "DesignProAI DesignPro Plus — WPW Partner Rate",
     price: 945,
     unit: "month",
     kind: "subscription",

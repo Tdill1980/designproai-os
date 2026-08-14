@@ -14,8 +14,8 @@
  *   {{customer_name}}  {{customer_email}}  {{current_year}}  {{unsubscribe_url}}
  */
 
-export const WPW_OFFER_URL = "https://restyleproai.com/pricing";
-export const WPW_OFFER_URL_VERTICAL = "https://restyleproai.com/pricing";
+export const WPW_OFFER_URL = "https://designproai.com/pricing";
+export const WPW_OFFER_URL_VERTICAL = "https://designproai.com/pricing";
 
 export const WPW_OFFER_EMAIL_SUBJECT =
   "{{customer_name}}, try a design tool free — WPW Family pricing $50/mo off for life";
@@ -79,7 +79,7 @@ export const WPW_OFFER_EMAIL_HTML = `<!DOCTYPE html>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FFFFFF;">
                 <tr>
                   <td style="position:relative;">
-                    <img src="https://restyleproai.com/screenshots/porsche-distressed-hero.png" alt="Watch the 2-minute walkthrough" width="600" style="display:block;width:100%;height:auto;" />
+                    <img src="https://designproai.com/screenshots/porsche-distressed-hero.png" alt="Watch the 2-minute walkthrough" width="600" style="display:block;width:100%;height:auto;" />
                   </td>
                 </tr>
                 <tr>
@@ -307,7 +307,7 @@ export const WPW_OFFER_EMAIL_HTML = `<!DOCTYPE html>
             <p style="margin:0;color:#94A3B8;font-size:11px;line-height:1.6;">
               <a href="{{unsubscribe_url}}" style="color:#64748B;text-decoration:underline;">Unsubscribe</a>
               &nbsp;•&nbsp;
-              © {{current_year}} RestylePro / WePrintWraps
+              © {{current_year}} DesignProAI / WePrintWraps
             </p>
           </td>
         </tr>
@@ -384,7 +384,7 @@ interface OrientationConfig {
 }
 
 const HORIZONTAL_CONFIG: OrientationConfig = {
-  posterUrl: "https://restyleproai.com/screenshots/porsche-distressed-hero.png",
+  posterUrl: "https://designproai.com/screenshots/porsche-distressed-hero.png",
   posterAspect: "16/9",
   landingUrl: WPW_OFFER_URL,
 };
@@ -392,7 +392,7 @@ const HORIZONTAL_CONFIG: OrientationConfig = {
 const VERTICAL_CONFIG: OrientationConfig = {
   // TODO: swap to a true 9:16 poster when one's available. Until then,
   // the same hero image renders with a 9:16 frame around it (letterboxed).
-  posterUrl: "https://restyleproai.com/screenshots/porsche-distressed-hero.png",
+  posterUrl: "https://designproai.com/screenshots/porsche-distressed-hero.png",
   posterAspect: "9/16",
   landingUrl: WPW_OFFER_URL_VERTICAL,
 };
@@ -444,7 +444,7 @@ const EMAIL_FOOTER = `
             <p style="margin:0;color:#94A3B8;font-size:11px;line-height:1.6;">
               <a href="{{unsubscribe_url}}" style="color:#64748B;text-decoration:underline;">Unsubscribe</a>
               &nbsp;•&nbsp;
-              © {{current_year}} RestylePro / WePrintWraps
+              © {{current_year}} DesignProAI / WePrintWraps
             </p>
           </td>
         </tr>

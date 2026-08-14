@@ -165,8 +165,8 @@ ZONE 4 - Production pack
 
 const resolveCtaHref = (slider: WpwSlider, rep: SpotlightRep | null) =>
   rep
-    ? `https://www.restyleproai.com/wpw/${rep.full_name.toLowerCase().split(" ")[0]}`
-    : slider.cta_url || "https://www.restyleproai.com";
+    ? `https://designproai.com/wpw/${rep.full_name.toLowerCase().split(" ")[0]}`
+    : slider.cta_url || "https://designproai.com";
 
 const SliderPreview = ({ slider, rep }: { slider: WpwSlider; rep?: SpotlightRep | null }) => {
   const photo = repPhoto(rep || null);
@@ -484,7 +484,7 @@ const AdminWpwHomepageSliders = () => {
                     <div className="space-y-2">
                       <Label>Banner link URL</Label>
                       <Input
-                        placeholder="https://www.restyleproai.com/..."
+                        placeholder="https://designproai.com/..."
                         value={draft.cta_url || ""}
                         onChange={(e) => updateDraft(slider.id, "cta_url", e.target.value)}
                       />

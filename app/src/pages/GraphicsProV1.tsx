@@ -39,9 +39,9 @@ const GraphicsProV1 = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 overflow-x-hidden">
       <Helmet>
-        <title>GraphicsPro - Cut Vinyl Graphics Design-to-Production | RestyleProAI</title>
+        <title>GraphicsPro - Cut Vinyl Graphics Design-to-Production | DesignProAI</title>
         <meta name="description" content="Design cut vinyl graphics for any surface. AI-powered mockups on vehicles, walls, windows, floors. Get production-ready cut files with automatic pricing." />
-        <link rel="canonical" href="https://www.restyleproai.com/graphics-pro" />
+        <link rel="canonical" href="https://designproai.com/graphics-pro" />
       </Helmet>
 
       <main className="flex-1">

@@ -181,7 +181,7 @@ export default function BookingPro() {
   return (
     <div className="min-h-screen bg-black text-white">
       <Helmet>
-        <title>BookingPro — Calendar | RestyleProAI</title>
+        <title>BookingPro — Calendar | DesignProAI</title>
         <meta name="description" content="BookingPro — manage your booking calendar and upcoming appointments." />
       </Helmet>
       <Header />

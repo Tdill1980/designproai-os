@@ -2,7 +2,7 @@ import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 
 /**
- * /wpw — Public landing page mirroring the WPW × RestylePro Connect Portal
+ * /wpw — Public landing page mirroring the WPW × DesignProAI Connect Portal
  * Klaviyo email. Same offer, same images, same copy structure — so a customer
  * who clicks through from email or SMS lands somewhere coherent before signup.
  *
@@ -21,19 +21,19 @@ export default function WpwConnectPortal() {
   return (
     <>
       <Helmet>
-        <title>Your free Shop Engine Dashboard — WPW × RestylePro</title>
+        <title>Your free Shop Engine Dashboard — WPW × DesignProAI</title>
         <meta
           name="description"
           content="3 free design tokens ($75 value), past-order dashboard, customer quoting tool with WPW wholesale pricing baked in. Free forever for WePrintWraps shops."
         />
-        <link rel="canonical" href="https://www.restyleproai.com/wpw" />
+        <link rel="canonical" href="https://designproai.com/wpw" />
       </Helmet>
 
       <div className="min-h-screen bg-black text-white">
         <div className="max-w-[680px] mx-auto px-5 sm:px-8 py-10">
           {/* Header */}
           <div className="text-center mb-7">
-            <div className="text-[#888] text-[20px] font-light tracking-wide">RestyleProAI</div>
+            <div className="text-[#888] text-[20px] font-light tracking-wide">DesignProAI</div>
             <div className="text-[#888] text-[11px] font-semibold tracking-[2px] uppercase mt-2.5">
               × WePrintWraps.com · Free Shop Engine Dashboard
             </div>
@@ -50,13 +50,13 @@ export default function WpwConnectPortal() {
           </div>
 
           <div className="text-center text-white text-base sm:text-lg font-medium mb-8">
-            Built for WePrintWraps shops. Powered by RestylePro.
+            Built for WePrintWraps shops. Powered by DesignProAI.
           </div>
 
           {/* Intro */}
           <div className="border-y border-[#222] py-6 mb-8">
             <p className="text-[#ccc] text-base leading-relaxed">
-              We just unlocked your free <strong className="text-white">Shop Engine Dashboard</strong> — the WPW × RestylePro
+              We just unlocked your free <strong className="text-white">Shop Engine Dashboard</strong> — the WPW × DesignProAI
               Connect Portal, a no-cost account tier built for the shops we already work with. Sign in once and you get
               the design tool, the quote tool, and your full order history in one screen.
             </p>
@@ -333,8 +333,8 @@ export default function WpwConnectPortal() {
 
           {/* Footer */}
           <div className="border-t border-[#222] pt-8 text-center text-[#555] text-xs leading-relaxed">
-            <div className="text-[#888] text-sm font-light tracking-wide mb-2.5">RestyleProAI</div>
-            WePrintWraps.com × RestylePro free Shop Engine Dashboard · Built for shops that don't have time to wait.
+            <div className="text-[#888] text-sm font-light tracking-wide mb-2.5">DesignProAI</div>
+            WePrintWraps.com × DesignProAI free Shop Engine Dashboard · Built for shops that don't have time to wait.
             <br />
             <a href="/user-guide" className="text-[#666] underline">
               User guide

@@ -48,7 +48,7 @@ const Quotes = () => {
   return (
     <>
       <Helmet>
-        <title>Quotes — RestylePro</title>
+        <title>Quotes — DesignProAI</title>
         <meta
           name="description"
           content="Manage priced quotes, inbound requests, and retargeting all in one place."

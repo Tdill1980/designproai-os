@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import DesignPanelProPremium from "./DesignPanelProPremium";
 
 /**
- * DesignProAIHome — the /designpro front door (matches the RestyleProAI mockup).
+ * DesignProAIHome — the /designpro front door (matches the DesignProAI mockup).
  *
  * Motivating + functional: showcases real work (starred DesignPro renders), the
  * proof deliverables, and a SINGLE "Describe your wrap idea" prompt box. The AI

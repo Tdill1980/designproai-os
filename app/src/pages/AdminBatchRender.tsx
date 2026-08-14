@@ -1122,7 +1122,7 @@ export default function AdminBatchRender() {
           .from("neuralnetwork_creator_profiles")
           .insert({
             user_id: user.id,
-            display_name: "RestylePro Studio",
+            display_name: "DesignProAI Studio",
             status: "active",
             verified: true,
           })

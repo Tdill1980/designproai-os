@@ -129,7 +129,7 @@ export const ProofUsageMeter = ({ compact = false }: ProofUsageMeterProps) => {
         </span>
         <span className="flex items-center gap-1">
           <Palette className="w-3 h-3" />
-          {allowance.white_label_enabled ? "White-label enabled" : "RestylePro footer"}
+          {allowance.white_label_enabled ? "White-label enabled" : "DesignProAI footer"}
         </span>
       </div>
 

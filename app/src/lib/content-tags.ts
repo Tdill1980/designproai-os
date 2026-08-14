@@ -28,7 +28,7 @@ export const BRAND_META: Record<string, BrandMeta> = {
   wraptvworld: { label: "WrapTVWorld", color: "#EC4899", gradient: "from-cyan-400 to-orange-500" },
   wraptv: { label: "WrapTVWorld", color: "#EC4899", gradient: "from-cyan-400 to-orange-500" }, // alias — drafts land under both slugs
   inkandedge: { label: "Ink & Edge", color: "#F59E0B", gradient: "from-slate-700 to-slate-900" },
-  restylepro: { label: "RestyleProAI", color: "#3B82F6", gradient: "from-blue-500 to-pink-500" },
+  restylepro: { label: "DesignProAI", color: "#3B82F6", gradient: "from-blue-500 to-pink-500" },
   thewrap: { label: "The Wrap", color: "#10B981", gradient: "from-emerald-500 to-green-600" },
   creatormarket: { label: "CreatorMarket", color: "#22C55E", gradient: "from-emerald-500 to-teal-500" },
   colorpro: { label: "ColorPro", color: "#14B8A6", gradient: "from-teal-500 to-cyan-600" },
@@ -42,7 +42,7 @@ export function brandMeta(slug?: string | null): BrandMeta {
   return BRAND_META[k] || { label: slug || "Other", color: "#64748b", gradient: "from-slate-400 to-slate-600" };
 }
 
-// Products / tools — the whole RestylePro suite, each with a signature color.
+// Products / tools — the whole DesignProAI suite, each with a signature color.
 export const PRODUCT_META: Record<string, TagMeta> = {
   graphicspro: { label: "GraphicsPro", color: "#ef4444" },
   designproai: { label: "DesignProAI", color: "#a855f7" },

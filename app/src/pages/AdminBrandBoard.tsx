@@ -8,7 +8,7 @@
  *  - By Template — Canva Template, Reel/Short 9:16, Story 9:16, Feed Post,
  *    Carousel, Longform 16:9, Email/Newsletter, Blog Article, Landing Page,
  *    Ad Creative, Text/Copy.
- *  - By Brand — the ecosystem: WePrintWraps, RestyleProAI, DesignProAI,
+ *  - By Brand — the ecosystem: WePrintWraps, DesignProAI, DesignProAI,
  *    WrapTVWorld, Ink & Edge, CreatorMarket (colors from content-tags).
  *  - Calendar — month grid with thumbnails (Later-style).
  *
@@ -218,7 +218,7 @@ const TEMPLATE_ORDER = Object.keys(TEMPLATE_META) as TemplateKey[];
 
 const BOARD_BRANDS: Record<string, { label: string; color: string }> = {
   weprintwraps: { label: "WePrintWraps", color: brandMeta("weprintwraps").color },
-  restylepro: { label: "RestyleProAI", color: brandMeta("restylepro").color },
+  restylepro: { label: "DesignProAI", color: brandMeta("restylepro").color },
   designproai: { label: "DesignProAI", color: brandMeta("designproai").color },
   wraptvworld: { label: "WrapTVWorld", color: brandMeta("wraptvworld").color },
   inkandedge: { label: "Ink & Edge", color: brandMeta("inkandedge").color },

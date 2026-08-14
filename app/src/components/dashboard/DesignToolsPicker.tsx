@@ -2,7 +2,7 @@
  * DesignToolsPicker
  *
  * Secondary dropdown rendered beneath the Print Products picker in
- * QuickQuote. Lists the six RestylePro design & visualization tools
+ * QuickQuote. Lists the six DesignProAI design & visualization tools
  * (DesignPro, RecreatePro, PatternPro, RestyleLibrary, WallPro,
  * GraphicsPro) with a per-tier quantity caption so the shop can see
  * exactly what each paid tier includes — the compelling upgrade path
@@ -99,7 +99,7 @@ interface DesignToolsPickerProps {
   toolId: DesignToolId | null;
   onChange: (id: DesignToolId) => void;
   /**
-   * When true, the caption up-sells RestylePro ("RestylePro Design &
+   * When true, the caption up-sells DesignProAI ("DesignProAI Design &
    * Visualization Tools" with tier-qty breakdown). When false, the
    * heading matches the non-WPW branding ("Design Gen Tools"). Pricing
    * and behavior don't change between variants.
@@ -127,11 +127,11 @@ export const DesignToolsPicker = ({
   };
 
   const heading = isWpwTenant
-    ? "RestylePro Design & Visualization Tools"
+    ? "DesignProAI Design & Visualization Tools"
     : "Design & Visualization Tools";
 
   const subheading = isWpwTenant
-    ? "Render studios included with your RestylePro subscription."
+    ? "Render studios included with your DesignProAI subscription."
     : "Choose the design workflow this quote will use.";
 
   const triggerCls = compact

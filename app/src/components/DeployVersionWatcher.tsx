@@ -88,7 +88,7 @@ export const DeployVersionWatcher = () => {
           // The user is mid-review — prompt instead of pulling the page away.
           if (!promptShown) {
             promptShown = true;
-            toast.info("A new version of RestylePro is ready", {
+            toast.info("A new version of DesignProAI is ready", {
               description: "Refresh when you're done reviewing to pick it up.",
               duration: Infinity,
               action: { label: "Refresh now", onClick: () => window.location.reload() },

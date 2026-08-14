@@ -265,7 +265,7 @@ export const SavedQuotesTable = () => {
     const pdfData: QuotePDFData = {
       quoteNumber: row.quote_number,
       createdAt: row.created_at,
-      shopName: shopProfile?.shop_name || "RestylePro",
+      shopName: shopProfile?.shop_name || "DesignProAI",
       shopLogoUrl: shopProfile?.shop_logo_url ?? null,
       shopWebsite: shopProfile?.website ?? null,
       payUrl: buildPayUrl(shopProfile?.website, items),
@@ -297,7 +297,7 @@ export const SavedQuotesTable = () => {
 
   const handleWrapCarePDF = async (row: SavedQuoteRow) => {
     const careData: WrapCarePDFData = {
-      shopName: shopProfile?.shop_name || "RestylePro",
+      shopName: shopProfile?.shop_name || "DesignProAI",
       shopLogoUrl: shopProfile?.shop_logo_url ?? null,
       shopPhone: shopProfile?.phone,
       shopEmail: shopProfile?.email,
@@ -1250,7 +1250,7 @@ export const SavedQuotesTable = () => {
               <div className="space-y-4 text-[#111]">
                 {/* Shop + date */}
                 <div className="flex items-center justify-between text-xs text-[#6b7280]">
-                  <span>{shopProfile?.shop_name || "RestylePro"}</span>
+                  <span>{shopProfile?.shop_name || "DesignProAI"}</span>
                   <span>{new Date(viewingQuote.created_at).toLocaleString()}</span>
                 </div>
 

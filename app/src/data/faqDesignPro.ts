@@ -7,7 +7,7 @@ export const faqDesignProData: SEOFAQItem[] = [
   },
   {
     question: "What is VisionBoardIQ™ and how do I use it?",
-    answer: "VisionBoardIQ™ is RestyleProAI's visual reference system inside DesignProAI™. Upload inspiration images - mood boards, competitor wraps, color palettes, sketches, or SEMA photos - and VisionBoardIQ™ analyzes the visual elements and translates them into your custom wrap design. You can set the intent to 'exact reference' (closely match the uploaded image) or 'style inspiration' (extract the mood and colors into an original design). It's the fastest way to turn a client's Pinterest board into a real wrap concept.",
+    answer: "VisionBoardIQ™ is DesignProAI's visual reference system inside DesignProAI™. Upload inspiration images - mood boards, competitor wraps, color palettes, sketches, or SEMA photos - and VisionBoardIQ™ analyzes the visual elements and translates them into your custom wrap design. You can set the intent to 'exact reference' (closely match the uploaded image) or 'style inspiration' (extract the mood and colors into an original design). It's the fastest way to turn a client's Pinterest board into a real wrap concept.",
   },
   {
     question: "How does DesignIQ™ prompt intelligence work?",
@@ -23,7 +23,7 @@ export const faqDesignProData: SEOFAQItem[] = [
   },
   {
     question: "What is Universal Panelizer and how does it create print-ready files?",
-    answer: "Universal Panelizer is RestyleProAI's production system that converts rendered wrap designs into flat, print-ready panel files. After you approve a design, Universal Panelizer extracts each body panel (hood, fenders, doors, bumpers, etc.) as an individual flat artwork file ready for your wide-format printer. This bridges the gap between design visualization and physical production.",
+    answer: "Universal Panelizer is DesignProAI's production system that converts rendered wrap designs into flat, print-ready panel files. After you approve a design, Universal Panelizer extracts each body panel (hood, fenders, doors, bumpers, etc.) as an individual flat artwork file ready for your wide-format printer. This bridges the gap between design visualization and physical production.",
   },
   {
     question: "How photorealistic are DesignProAI™ renders?",
@@ -31,7 +31,7 @@ export const faqDesignProData: SEOFAQItem[] = [
   },
   {
     question: "Can I revise a DesignProAI™ design after generating it?",
-    answer: "Yes. RestyleProAI includes a revision system that lets you refine designs while preserving the original vehicle geometry and camera angle. You can adjust colors, modify patterns, change coverage areas, or add details - all without starting over from scratch.",
+    answer: "Yes. DesignProAI includes a revision system that lets you refine designs while preserving the original vehicle geometry and camera angle. You can adjust colors, modify patterns, change coverage areas, or add details - all without starting over from scratch.",
   },
   {
     question: "What kinds of custom wrap designs can DesignProAI™ create?",

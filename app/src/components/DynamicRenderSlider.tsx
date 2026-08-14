@@ -35,7 +35,7 @@ const USP_SLIDES = [
   { text: "From concept to print-ready. One platform.", image: "/characters/sproket/sproket-launch.png" },
   { text: "Your design, print-ready in minutes.", image: "/characters/sproket/sproket-designmasterpiece.png" },
   { text: "RevisionStudio. Dial in every detail.", image: "/characters/sproket/sproket-revision.png" },
-  { text: "Did you know? Use RestyleProAI from your cell phone or desktop!", image: "/characters/sproket/sproket-phone.png" },
+  { text: "Did you know? Use DesignProAI from your cell phone or desktop!", image: "/characters/sproket/sproket-phone.png" },
 ];
 
 interface DynamicRenderSliderProps {

@@ -5,7 +5,7 @@
  * load and don't show customer-uploaded artwork. This page renders a
  * single-column letter-paper layout straight from the wpw_orders +
  * wpw_order_items mirror, so the team prints (or "Save as PDF") in
- * under a second from any RestylePro tab.
+ * under a second from any DesignProAI tab.
  *
  * Data path: tries sessionStorage first (when opened by
  * WpwOrderDetailModal — the modal stores the row before opening this
@@ -127,7 +127,7 @@ export default function WpwOrderPrint() {
 
         {/* Footer */}
         <footer className="border-t border-neutral-300 mt-6 pt-2 text-[10px] text-neutral-600 flex justify-between">
-          <span>Generated from RestylePro · {new Date().toLocaleString("en-US")}</span>
+          <span>Generated from DesignProAI · {new Date().toLocaleString("en-US")}</span>
           <span className="font-mono">Order #{order.order_number || order.id}</span>
         </footer>
       </div>

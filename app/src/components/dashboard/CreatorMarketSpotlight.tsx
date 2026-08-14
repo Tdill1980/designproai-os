@@ -12,14 +12,14 @@ import type { Tier } from "@/hooks/useToolAccess";
 import { ToolWordmark } from "./ToolWordmark";
 
 /**
- * Solo spotlight card for CreatorMarket — the RestylePro revenue channel.
+ * Solo spotlight card for CreatorMarket — the DesignProAI revenue channel.
  *
  * Business model (from Trish):
  *   - DesignPro-tier users create custom designs in DesignPro
  *   - Any custom design can be published to CreatorMarket
  *   - The marketplace is PUBLIC — anyone can browse and buy, no account
  *     needed, SEO-indexed, organic + paid traffic (Google + Meta ads)
- *   - Creators keep 60%, RestylePro takes 40% (reinvested into Google
+ *   - Creators keep 60%, DesignProAI takes 40% (reinvested into Google
  *     + Meta ads that drive paid traffic to every published design)
  *   - Unlimited sales per design — not a one-time license
  *   - Every delivered file is stamped with the creator's logo
@@ -63,7 +63,7 @@ export const CreatorMarketSpotlight = () => {
             Publish any DesignPro creation to the public{" "}
             <strong className="text-white">CreatorMarket</strong>. Anyone can buy,
             no account required. You keep <strong className="text-white">60%</strong>{" "}
-            of every sale — sell each design unlimited times. RestylePro reinvests
+            of every sale — sell each design unlimited times. DesignProAI reinvests
             the 40% into Google + Meta ads that drive paid traffic to your listing.
           </p>
 

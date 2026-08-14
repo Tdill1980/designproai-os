@@ -146,7 +146,7 @@ const AcceptShopInvite = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Join a shop on RestylePro
+              Join a shop on DesignProAI
             </CardTitle>
             <CardDescription>
               Sign in with the email you were invited at, or create a free
@@ -228,7 +228,7 @@ function Shell({
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-16">
       <Helmet>
-        <title>{title} — RestylePro</title>
+        <title>{title} — DesignProAI</title>
       </Helmet>
       <div className="w-full max-w-md">{children}</div>
     </div>

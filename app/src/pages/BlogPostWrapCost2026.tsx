@@ -8,7 +8,7 @@ const meta = {
     "Full breakdown of vehicle wrap costs by type — color change, commercial fleet, custom design — plus how AI design tools are cutting costs by 40%.",
   date: "2026-03-25",
   readTime: "8 min read",
-  author: "RestyleProAI",
+  author: "DesignProAI",
   tags: ["Pricing", "Guide", "Vehicle Wraps"],
 };
 
@@ -122,7 +122,7 @@ const BlogPostWrapCost2026 = () => (
     </p>
     <p>
       <strong>AI-powered design tools compress this entire workflow into minutes.</strong>{" "}
-      With platforms like <Link to="/" className="text-primary hover:underline">RestyleProAI</Link>,
+      With platforms like <Link to="/" className="text-primary hover:underline">DesignProAI</Link>,
       wrap shops describe the design they want in plain English and get photorealistic
       renders plus print-ready EPS files — in under 60 seconds.
     </p>
@@ -184,7 +184,7 @@ const BlogPostWrapCost2026 = () => (
     <ul>
       <li>
         Ask your shop if they use AI design tools — shops using platforms like
-        RestyleProAI can pass design savings on to you
+        DesignProAI can pass design savings on to you
       </li>
       <li>Get at least 3 quotes and ask what's included (design, material, warranty)</li>
       <li>Don't choose based on price alone — a bad install will cost more in the long run</li>
@@ -212,7 +212,7 @@ const BlogPostWrapCost2026 = () => (
       If you're a shop looking to cut design costs and close jobs faster, or a
       consumer who wants to see exactly what your wrap will look like before
       committing — <Link to="/signup" className="text-primary hover:underline">try
-      RestyleProAI free</Link> and generate your first design in 60 seconds.
+      DesignProAI free</Link> and generate your first design in 60 seconds.
     </p>
   </BlogPostLayout>
 );

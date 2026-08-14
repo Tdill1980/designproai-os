@@ -20,7 +20,7 @@ import WrapGuruChat from "@/components/wrapguru/WrapGuruChat";
 // data-cfasync="false" is REQUIRED on Cloudflare — it excludes the file from
 // Rocket Loader, which rewrites script execution and is the usual reason a
 // third-party widget "gets blocked" on a Cloudflare site.
-const SNIPPET = '<script src="https://restyleproai.com/embeds/wpw-chat-widget.js" async data-cfasync="false"></script>';
+const SNIPPET = '<script src="https://designproai.com/embeds/wpw-chat-widget.js" async data-cfasync="false"></script>';
 
 export default function WrapGuru() {
   const [copied, setCopied] = useState(false);

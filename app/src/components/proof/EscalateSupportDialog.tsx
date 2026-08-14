@@ -1,7 +1,7 @@
 /**
  * EscalateSupportDialog
  *
- * Shop-owner triggered dialog for Tier-3 RestylePro Support escalation
+ * Shop-owner triggered dialog for Tier-3 DesignProAI Support escalation
  * (Phase 5). Collects an optional reason and calls proof-escalate-support.
  * The edge function snapshots the proof + versions + events, posts to Slack
  * (if SLACK_WEBHOOK_URL_PROOF_SUPPORT is set), and flips proof.status →
@@ -77,9 +77,9 @@ export const EscalateSupportDialog = ({
         return;
       }
       toast({
-        title: data.already_escalated ? "Already escalated" : "Escalated to RestylePro Support",
+        title: data.already_escalated ? "Already escalated" : "Escalated to DesignProAI Support",
         description: data.already_escalated
-          ? "The RestylePro team is already on it."
+          ? "The DesignProAI team is already on it."
           : "Lance + the team have been notified. Expect a response shortly.",
       });
       onSuccess(data.escalation_id);
@@ -94,14 +94,14 @@ export const EscalateSupportDialog = ({
   return (
     <Dialog open={open} onOpenChange={(v) => (v ? onOpenChange(v) : handleClose())}>
       <DialogContent className="max-w-md p-0 gap-0 overflow-hidden">
-        <ApproveProBrand subtitle="Escalate to RestylePro Support" />
+        <ApproveProBrand subtitle="Escalate to DesignProAI Support" />
         <div className="px-6 pt-4 pb-4 space-y-3">
         <DialogTitle className="flex items-center gap-2">
           <LifeBuoy className="w-4 h-4 text-amber-600" />
-          Escalate to RestylePro Support
+          Escalate to DesignProAI Support
         </DialogTitle>
         <DialogDescription>
-          Loop in Lance + the RestylePro team for deep iteration on this
+          Loop in Lance + the DesignProAI team for deep iteration on this
           design. They'll get the full session context — all versions, all
           notes — and can work directly on the proof.
         </DialogDescription>
@@ -141,7 +141,7 @@ export const EscalateSupportDialog = ({
             {isSubmitting ? (
               <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Escalating…</>
             ) : (
-              <><LifeBuoy className="w-4 h-4 mr-2" /> Send to RestylePro</>
+              <><LifeBuoy className="w-4 h-4 mr-2" /> Send to DesignProAI</>
             )}
           </Button>
         </div>

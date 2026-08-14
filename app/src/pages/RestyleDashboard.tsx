@@ -17,10 +17,10 @@ const RestyleDashboard = () => {
   return (
     <>
       <Helmet>
-        <title>ShopEngine — RestylePro</title>
+        <title>ShopEngine — DesignProAI</title>
         <meta
           name="description"
-          content="Design. Output. Profit. — RestylePro's unified wrap operating system."
+          content="Design. Output. Profit. — DesignProAI's unified wrap operating system."
         />
       </Helmet>
 

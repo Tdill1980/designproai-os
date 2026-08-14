@@ -5,7 +5,7 @@ import { isWpwInternalStaffMember } from "@/lib/admin-allowlist";
 /**
  * useIsWpwInternalStaff
  *
- * Returns true ONLY for the internal RestylePro / WePrintWraps team
+ * Returns true ONLY for the internal DesignProAI / WePrintWraps team
  * (allowlist-only). Distinct from `useIsWpwTenant`, which returns true
  * for any onboarded WPW shop tenant including paying customers.
  *
@@ -16,7 +16,7 @@ import { isWpwInternalStaffMember } from "@/lib/admin-allowlist";
  *
  * Rule:
  *   - useIsWpwTenant       → "is this person on a WPW shop dashboard?"
- *   - useIsWpwInternalStaff → "is this person on RestylePro/WPW payroll?"
+ *   - useIsWpwInternalStaff → "is this person on DesignProAI/WPW payroll?"
  */
 export function useIsWpwInternalStaff() {
   return useQuery({

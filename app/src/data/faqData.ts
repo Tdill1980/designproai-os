@@ -17,13 +17,13 @@ export const faqCategories: { id: FAQCategory; label: string; description: strin
 export const faqData: FAQItem[] = [
   // GENERAL - 10 questions
   {
-    question: "What is RestyleProAI™ Vehicle Wrap Design Suite?",
-    answer: "RestyleProAI is a complete Vehicle Wrap Design System — it's like having a custom vehicle wrap designer at your fingertips. From prompt to production. No designer. No outsourcing. No waiting. Built for wrap shops, sign companies, and the restyling trade.",
+    question: "What is DesignProAI™ Vehicle Wrap Design Suite?",
+    answer: "DesignProAI is a complete Vehicle Wrap Design System — it's like having a custom vehicle wrap designer at your fingertips. From prompt to production. No designer. No outsourcing. No waiting. Built for wrap shops, sign companies, and the restyling trade.",
     category: 'general',
   },
   {
-    question: "Who is RestylePro built for?",
-    answer: "RestylePro is designed for wrap shops, PPF installers, tint shops, car dealerships, automotive designers, fleet managers, and car enthusiasts who want to visualize vehicle modifications before committing to installation.",
+    question: "Who is DesignProAI built for?",
+    answer: "DesignProAI is designed for wrap shops, PPF installers, tint shops, car dealerships, automotive designers, fleet managers, and car enthusiasts who want to visualize vehicle modifications before committing to installation.",
     category: 'general',
   },
   {
@@ -53,7 +53,7 @@ export const faqData: FAQItem[] = [
   },
   {
     question: "What vehicles are supported?",
-    answer: "RestylePro supports a wide range of popular vehicles including cars, trucks, SUVs, and specialty vehicles. Our library is continuously expanding with new makes and models added regularly based on user demand.",
+    answer: "DesignProAI supports a wide range of popular vehicles including cars, trucks, SUVs, and specialty vehicles. Our library is continuously expanding with new makes and models added regularly based on user demand.",
     category: 'general',
   },
   {
@@ -73,12 +73,12 @@ export const faqData: FAQItem[] = [
   },
   {
     question: "Is there a mobile app?",
-    answer: "RestylePro is a web-based platform that works on any device with a modern browser. This means you can access all tools from your phone, tablet, or computer without downloading anything.",
+    answer: "DesignProAI is a web-based platform that works on any device with a modern browser. This means you can access all tools from your phone, tablet, or computer without downloading anything.",
     category: 'general',
   },
   {
-    question: "Can I use RestylePro offline?",
-    answer: "RestylePro requires an internet connection to generate renders and access the color library. However, you can save and download your renders for offline viewing and sharing.",
+    question: "Can I use DesignProAI offline?",
+    answer: "DesignProAI requires an internet connection to generate renders and access the color library. However, you can save and download your renders for offline viewing and sharing.",
     category: 'general',
   },
 
@@ -126,7 +126,7 @@ export const faqData: FAQItem[] = [
 
   // PRICING - 10 questions
   {
-    question: "How much does RestylePro cost?",
+    question: "How much does DesignProAI cost?",
     answer: "Four paid tiers, all with shared render quotas across the entire suite: Starter $350/mo (50 renders), DesignPro Lite $499/mo (75 renders + MyVehiclePro + DesignProAI), DesignPro Studio $699/mo (150 renders + real human designer), and DesignPro Plus $995/mo (300 renders + 24-hr priority designer). Extra renders are $25 each on Free/Starter/Lite and $15 each on Studio/Plus. Production Packs are sold separately: $299 retail, $249 for Studio subscribers, $199 for Plus subscribers. WePrintWraps customers get $50/mo off every tier. Visit /pricing for the full breakdown.",
     category: 'pricing',
   },
@@ -142,7 +142,7 @@ export const faqData: FAQItem[] = [
   },
   {
     question: "What's included in DesignPro Studio?",
-    answer: "DesignPro Studio ($699/mo) is the Design OS — 150 renders per month with a real human graphic designer outputting your files in 48 hours. Everything in Lite plus DesignProAI, GraphicsPro, RecreatePro, and CreatorMarket publisher access (list and sell your wraps to every RestylePro shop, keep 60% of every sale). Production Packs are sold separately at $249 each (subscriber discount, save $50 vs $299 retail). Extra renders are $15 each (top-tier discount, 40% off retail).",
+    answer: "DesignPro Studio ($699/mo) is the Design OS — 150 renders per month with a real human graphic designer outputting your files in 48 hours. Everything in Lite plus DesignProAI, GraphicsPro, RecreatePro, and CreatorMarket publisher access (list and sell your wraps to every DesignProAI shop, keep 60% of every sale). Production Packs are sold separately at $249 each (subscriber discount, save $50 vs $299 retail). Extra renders are $15 each (top-tier discount, 40% off retail).",
     category: 'pricing',
   },
   {
@@ -189,7 +189,7 @@ export const faqData: FAQItem[] = [
   },
   {
     question: "What vinyl brands are supported?",
-    answer: "RestylePro includes colors from leading manufacturers including 3M, Avery Dennison, KPMF, Inozetek, Oracal, TeckWrap, and more. Our library is continuously updated with new releases.",
+    answer: "DesignProAI includes colors from leading manufacturers including 3M, Avery Dennison, KPMF, Inozetek, Oracal, TeckWrap, and more. Our library is continuously updated with new releases.",
     category: 'technical',
   },
   {
@@ -214,7 +214,7 @@ export const faqData: FAQItem[] = [
   },
   {
     question: "What browsers are supported?",
-    answer: "RestylePro works best on modern browsers including Chrome, Firefox, Safari, and Edge. For optimal performance, we recommend keeping your browser updated to the latest version.",
+    answer: "DesignProAI works best on modern browsers including Chrome, Firefox, Safari, and Edge. For optimal performance, we recommend keeping your browser updated to the latest version.",
     category: 'technical',
   },
   {
@@ -226,7 +226,7 @@ export const faqData: FAQItem[] = [
   // BUSINESS - 7 questions
   {
     question: "Can I use renders for client presentations?",
-    answer: "Absolutely! RestylePro renders are designed for professional client presentations. Paid plans include high-resolution, watermark-free images perfect for showing clients exactly what their vehicle will look like.",
+    answer: "Absolutely! DesignProAI renders are designed for professional client presentations. Paid plans include high-resolution, watermark-free images perfect for showing clients exactly what their vehicle will look like.",
     category: 'business',
   },
   {
@@ -260,8 +260,8 @@ export const faqData: FAQItem[] = [
     category: 'business',
   },
   {
-    question: "How can RestylePro help me close more sales?",
-    answer: "By showing clients exactly what their vehicle will look like before ordering materials, RestylePro builds confidence, reduces hesitation, and helps close sales faster. Clients are more likely to commit when they can visualize the end result.",
+    question: "How can DesignProAI help me close more sales?",
+    answer: "By showing clients exactly what their vehicle will look like before ordering materials, DesignProAI builds confidence, reduces hesitation, and helps close sales faster. Clients are more likely to commit when they can visualize the end result.",
     category: 'business',
   },
 ];

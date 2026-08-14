@@ -8,13 +8,13 @@
  *                          existing WPW customers. Film only — no
  *                          design or output-file surcharge is applied
  *                          here; design renders come from the
- *                          RestylePro tier bundle. Only shown to WPW
+ *                          DesignProAI tier bundle. Only shown to WPW
  *                          tenants (internal team + weprintwraps.com
  *                          customers).
  *   • Color Change      — solid-color change vinyl priced per linear
  *                          yard, finish-based. Visible to every tenant.
  *   • PrintPro          — the full weprintwraps.com catalog mirrored
- *                          into RestylePro. Design / output files are
+ *                          into DesignProAI. Design / output files are
  *                          INCLUDED with the tier (Starter 20 / Advanced
  *                          50 / Complete 200 renders per month).
  *                          Visible to every tenant.
@@ -113,10 +113,10 @@ export const QUOTE_CATEGORIES: QuoteCategoryMeta[] = [
   },
   {
     id: "rp_design",
-    label: "RestylePro Design Products",
+    label: "DesignProAI Design Products",
     short: "RP Design",
     description:
-      "Design services bundled with the shop's RestylePro subscription — resell with markup",
+      "Design services bundled with the shop's DesignProAI subscription — resell with markup",
   },
 ];
 
@@ -600,7 +600,7 @@ export const WPW_DESIGN_PRODUCTS: QuoteProduct[] = [
 ];
 
 /**
- * RestylePro Design Products — design services the shop's RestylePro
+ * DesignProAI Design Products — design services the shop's DesignProAI
  * subscription enables them to resell to their customer. Default
  * prices are starting points; the line item is fully editable in the
  * estimator, and shops can override per-product defaults from the
@@ -758,7 +758,7 @@ export function getProductsForCategory(cat: QuoteCategory): QuoteProduct[] {
  *                    no surcharge) for existing WPW customers
  *   • color_change — solid-color change vinyl, finish-based
  *   • printpro     — same WPW catalog, design + renders included with
- *                    RestylePro tier (the compelling upsell)
+ *                    DesignProAI tier (the compelling upsell)
  */
 export type QuoteSource = "wpw" | "color_change" | "printpro" | "services";
 

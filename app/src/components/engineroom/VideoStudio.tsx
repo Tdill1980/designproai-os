@@ -3,7 +3,7 @@
  *
  * Replaces the old wrapcommandai.com launcher tab. One-button AI auto-build:
  * pick a format (Reel / Short / YouTube long-form), type a topic, press build —
- * the RestylePro pipeline assembles clips, writes captions, matches music and
+ * the DesignProAI pipeline assembles clips, writes captions, matches music and
  * queues the ffmpeg render. Also: Parse Footage intake (Drive link →
  * transcripts + hook-scored moments), clip library browser, render tracker
  * with send-to-Drive.
@@ -53,7 +53,7 @@ const STATIC_LAYOUTS: Array<[StaticLayout, string]> = [
 // video_render_jobs.brand, brand-os voice for hooks/captions).
 const BRANDS: Array<{ slug: string; label: string }> = [
   { slug: "weprintwraps", label: "WePrintWraps.com" },
-  { slug: "restylepro", label: "RestyleProAI" },
+  { slug: "restylepro", label: "DesignProAI" },
   { slug: "designproai", label: "DesignProAI" },
   { slug: "wraptvworld", label: "WrapTVWorld" },
   { slug: "inkandedge", label: "Ink & Edge Magazine" },

@@ -248,7 +248,7 @@ function buildEmailPreviewHtml(opts: {
         ${studioSection}
         ${quoteSection}
         <tr><td style="padding:32px;border-top:1px solid #1a1a1a;text-align:center;">
-          <p style="margin:0 0 8px;font-size:10px;color:#444;">Powered by <span style="color:#00C7FF;font-weight:600;">RestyleProAI</span></p>
+          <p style="margin:0 0 8px;font-size:10px;color:#444;">Powered by <span style="color:#00C7FF;font-weight:600;">DesignProAI</span></p>
           <p style="margin:0;font-size:9px;color:#333;">Professional Vehicle Wrap Visualization</p>
         </td></tr>
       </table>

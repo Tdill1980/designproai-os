@@ -14,7 +14,7 @@ import {
   PRINT_READY_PRICE, FILE_DELIVERY_HOURS,
 } from "@/components/creatormarket/listing-display";
 
-const ORIGIN = "https://www.restyleproai.com";
+const ORIGIN = "https://designproai.com";
 const FULL_SELECT =
   "id, title, description, industry_title, thumbnail_url, price, vehicle_year, vehicle_make, vehicle_model, trade_category, design_style, featured_creator_name, render_urls, preview_urls, panel_2d_url, status";
 
@@ -113,7 +113,7 @@ export default function CreatorMarketDesign() {
         name: metaTitle.replace(" | CreatorMarket", ""),
         image: images.length ? images.slice(0, 6) : undefined,
         description: metaDescription,
-        brand: { "@type": "Brand", name: "RestyleProAI CreatorMarket" },
+        brand: { "@type": "Brand", name: "DesignProAI CreatorMarket" },
         category: cat?.label || "Vehicle Wrap Design",
         ...(listing.featured_creator_name ? { creator: { "@type": "Organization", name: listing.featured_creator_name } } : {}),
         offers: {

@@ -377,7 +377,7 @@ export default function AdminSocialBatch() {
     const { data, error } = await supabase.functions.invoke("content-studio-ai-copy", {
       body: {
         imageUrl,
-        brand: "RestyleProAI",
+        brand: "DesignProAI",
         format: fmt,
         tone: "Hype/Launch",
         focusTools: [tool],

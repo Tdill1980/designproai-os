@@ -4,7 +4,7 @@
  * headshot, accent). No fake placeholders, no labels-on-color.
  *
  * Layouts share the same brand vocabulary as the existing 4:5
- * Sharing Kit post (RestyleProAI gradient wordmark, dark #0B1220
+ * Sharing Kit post (DesignProAI gradient wordmark, dark #0B1220
  * background, rep accent strip, $25 / coupon CTA, headshot row),
  * adapted per aspect ratio and per slot's specific hook.
  *

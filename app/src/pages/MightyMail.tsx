@@ -581,7 +581,7 @@ const MightyMail = () => {
   // ── Downloadable branded PDFs ──────────────────────────────────────
   const downloadWrapCarePDF = async () => {
     const data: WrapCarePDFData = {
-      shopName: shopProfile?.shop_name || "RestylePro",
+      shopName: shopProfile?.shop_name || "DesignProAI",
       shopLogoUrl: shopProfile?.shop_logo_url ?? null,
       shopPhone: shopProfile?.phone,
       shopEmail: shopProfile?.email,
@@ -604,7 +604,7 @@ const MightyMail = () => {
     const data: QuotePDFData = {
       quoteNumber: "SAMPLE-001",
       createdAt: new Date().toISOString(),
-      shopName: shopProfile?.shop_name || "RestylePro",
+      shopName: shopProfile?.shop_name || "DesignProAI",
       shopLogoUrl: shopProfile?.shop_logo_url ?? null,
       customer: { name: "John Doe", email: "john@example.com", phone: "(555) 123-4567" },
       vehicle: { year: "2024", make: "BMW", model: "M4" },

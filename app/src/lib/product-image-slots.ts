@@ -23,7 +23,7 @@ export interface ProductPageDef {
   path: string;
 }
 
-// The new RestyleProAI product pages sold through WePrintWraps.
+// The new DesignProAI product pages sold through WePrintWraps.
 export const PRODUCT_PAGES: ProductPageDef[] = [
   { slug: "custom-wrap-design", label: "Custom Wrap Design — $25", path: "/try-design" },
   { slug: "tier-starter", label: "Starter — $300/mo", path: "/pricing" },

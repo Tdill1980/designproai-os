@@ -214,9 +214,9 @@ const ProductionOS = () => {
   return (
     <div className="min-h-screen bg-background">
       <Helmet>
-        <title>ProductionOS - Print Production Pipeline | RestyleProAI</title>
+        <title>ProductionOS - Print Production Pipeline | DesignProAI</title>
         <meta name="description" content="The world's first prompt-to-production vehicle wrap pipeline. From wrap design prompt to print-ready production. Vehicle selection, panel configuration, EPS file generation. Design it. Panel it. Print it." />
-        <link rel="canonical" href="https://www.restyleproai.com/productionflow" />
+        <link rel="canonical" href="https://designproai.com/productionflow" />
       </Helmet>
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Back */}

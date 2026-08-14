@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 /**
  * Two-color tool wordmark.
  *
- * Matches the existing Header.tsx treatment for "RestyleProAI" exactly:
+ * Matches the existing Header.tsx treatment for "DesignProAI" exactly:
  *   - font:     font-bold tracking-tight (inherits default sans-serif)
  *   - base:     plain white
  *   - suffix:   bg-gradient-to-r from-blue-500 to-fuchsia-500

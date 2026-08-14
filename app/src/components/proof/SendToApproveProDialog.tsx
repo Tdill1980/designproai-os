@@ -41,7 +41,7 @@ interface Props {
   context: SendToApproveProContext;
 }
 
-/** Short, shop-facing order code for a RestylePro-only order (matches ApprovePro). */
+/** Short, shop-facing order code for a DesignProAI-only order (matches ApprovePro). */
 const proofCode = (id: string) => `PROOF-${id.slice(0, 8).toUpperCase()}`;
 
 export function SendToApproveProDialog({ open, onOpenChange, context }: Props) {

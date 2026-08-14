@@ -1,7 +1,7 @@
 /**
  * PROOF GENERATOR SERVICE
  * 
- * Centralized service for generating all 6 proof images across RestylePro tools.
+ * Centralized service for generating all 6 proof images across DesignProAI tools.
  * Uses the locked PROOF_CONFIG for consistent angle generation.
  * 
  * GENERATION ORDER:

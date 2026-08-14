@@ -321,7 +321,7 @@ const PricingColorPro = () => {
         "✓ Everything in Lite",
         "★ Real human graphic designer · 48-hour file turnaround on every Production Pack",
         "★ Full DesignPro Design OS + GraphicsPro + RecreatePro — the full creative stack",
-        "$$ CreatorMarket publisher — list and sell your wraps to every RestylePro shop, keep 60% of each sale",
+        "$$ CreatorMarket publisher — list and sell your wraps to every DesignProAI shop, keep 60% of each sale",
         "✓ 150 renders / month — shared across every tool, covers initial designs and revisions",
         "✓ $4.66 per render effective · $3,750 of work bundled into $699",
         "✓ Overage stays at $20 / token — paying-tier discount",
@@ -360,7 +360,7 @@ const PricingColorPro = () => {
       bullets: [
         "✓ Everything in Studio",
         "★ Priority 24-hour designer turnaround — front of the queue every time",
-        "$$ CreatorMarket publisher — list and sell your wraps to every RestylePro shop, keep 60% of each sale",
+        "$$ CreatorMarket publisher — list and sell your wraps to every DesignProAI shop, keep 60% of each sale",
         "✓ 300 renders / month — shared across every tool, covers initial designs and revisions",
         "✓ $3.32 per render effective — our lowest rate · $7,500 of work bundled into $995",
         "✓ Overage stays at $15 / render — 40% off retail",
@@ -387,7 +387,7 @@ const PricingColorPro = () => {
   return (
     <div className="min-h-screen bg-black text-white">
       <Helmet>
-        <title>Pricing — 4 Plans for Every Wrap Shop | RestylePro</title>
+        <title>Pricing — 4 Plans for Every Wrap Shop | DesignProAI</title>
         <meta
           name="description"
           content="Starter $350, DesignPro Lite $499 (adds MyVehiclePro + DesignProAI), DesignPro Studio $699 (real human designer), DesignPro Plus $995 (24-hr priority designer). Production Packs sold separately with subscriber discounts. 4 standalone plans. Render quota shared across all tools."
@@ -759,7 +759,7 @@ const PricingColorPro = () => {
             <div className="lg:col-span-5 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] px-3 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 mb-5">
                 <Sparkles className="w-3 h-3" />
-                RestyleProAI™ · Vehicle Wrap Design System
+                DesignProAI™ · Vehicle Wrap Design System
               </div>
               <h1 className="font-montserrat text-4xl sm:text-5xl md:text-[3.4rem] font-bold leading-[1.02] tracking-tight mb-5">
                 Meet Your New Vehicle Wrap{" "}
@@ -784,7 +784,7 @@ const PricingColorPro = () => {
                   onClick={() => navigate("/signup")}
                   className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-full font-bold text-sm font-montserrat uppercase tracking-[0.08em] text-white bg-gradient-to-r from-cyan-500 to-fuchsia-500 hover:brightness-110 shadow-[0_12px_36px_rgba(217,70,239,0.35),0_4px_16px_rgba(0,199,255,0.35)] transition"
                 >
-                  Enter RestyleProAI™
+                  Enter DesignProAI™
                   <ArrowRight className="w-4 h-4" />
                 </button>
                 <a
@@ -1026,7 +1026,7 @@ const PricingColorPro = () => {
                 onClick={() => navigate("/signup")}
                 className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-full font-bold text-sm sm:text-base font-montserrat uppercase tracking-[0.08em] text-white bg-gradient-to-r from-cyan-500 to-fuchsia-500 hover:brightness-110 shadow-[0_16px_44px_rgba(217,70,239,0.4),0_6px_20px_rgba(0,199,255,0.4)] transition"
               >
-                Enter RestyleProAI™
+                Enter DesignProAI™
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>

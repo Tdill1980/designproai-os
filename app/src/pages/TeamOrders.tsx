@@ -160,7 +160,7 @@ export default function TeamOrders() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
-      <Helmet><title>Orders — RestyleProAI</title></Helmet>
+      <Helmet><title>Orders — DesignProAI</title></Helmet>
 
       {/* Brand accent hairline */}
       <div className="h-1 bg-gradient-to-r from-[#3b82f6] to-[#ec4899]" />

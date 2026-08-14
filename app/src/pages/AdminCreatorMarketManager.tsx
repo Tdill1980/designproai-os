@@ -215,7 +215,7 @@ export default function AdminCreatorMarketManager() {
         return {
           title: `${vehicle ? vehicle + " - " : ""}${name}`,
           industry_title: name,
-          featured_creator_name: "RestylePro Team",
+          featured_creator_name: "DesignProAI Team",
           trade_category: trade,
           design_style: trade ? "branded" : "custom",
           price: 350,
@@ -622,7 +622,7 @@ export default function AdminCreatorMarketManager() {
                   type="text"
                   value={form.featured_creator_name}
                   onChange={(e) => setForm((f) => ({ ...f, featured_creator_name: e.target.value }))}
-                  placeholder='e.g. "RestylePro Studios"'
+                  placeholder='e.g. "DesignProAI Studios"'
                   className="w-full bg-[#1a1a22] border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-fuchsia-500/60"
                 />
                 <p className="text-[10px] text-white/40 mt-1">

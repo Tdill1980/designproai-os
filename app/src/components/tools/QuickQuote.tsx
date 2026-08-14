@@ -1,5 +1,5 @@
 /**
- * RestyleProAI QuickQuote
+ * DesignProAI QuickQuote
  *
  * Dark-themed deterministic wrap pricing card:
  * - Vehicle sq ft from 1,664-vehicle database
@@ -455,7 +455,7 @@ export const QuickQuote = ({
     const laborAmount = includeLabor ? installCost : 0;
     let lineNum = 1;
     const lines: string[] = [
-      shopName || `RestyleProAI`,
+      shopName || `DesignProAI`,
       `Quote #${estimate.quoteNumber}`,
       quoteMode === "full" ? `Mode: Full Quote` : `Mode: Quick Price`,
       ``,
@@ -1203,7 +1203,7 @@ export const QuickQuote = ({
           onClick={() => {
             if (!estimate) return;
             const text = [
-              shopName || "RestyleProAI",
+              shopName || "DesignProAI",
               `Quote #${estimate.quoteNumber}`,
               "",
               ...(customerInfo?.name || customerName ? [`Customer: ${customerInfo?.name || customerName}`] : []),

@@ -1,6 +1,6 @@
 /**
  * /admin/wotw-winners — manage the Wrap of the Week winners that power the
- * WPW × RestyleProAI Wrap Calculator carousel (embedded on weprintwraps.com).
+ * WPW × DesignProAI Wrap Calculator carousel (embedded on weprintwraps.com).
  *
  * Add / edit / reorder / delete winners; upload an image OR paste a URL; edit
  * all text; toggle active. Writes to public.wotw_winners (admin RLS). The

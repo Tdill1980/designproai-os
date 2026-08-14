@@ -4,9 +4,9 @@ import { getRelatedPages } from "@/data/faqRelatedPages";
 
 const FAQPhotorealisticRenders = () => (
   <SEOFAQPage
-    title="Photorealistic Vehicle Wrap Renders FAQ - AI Rendering Quality | RestyleProAI™"
+    title="Photorealistic Vehicle Wrap Renders FAQ - AI Rendering Quality | DesignProAI™"
     headline="Photorealistic Renders FAQ"
-    description="Learn how RestyleProAI™ generates studio-quality photorealistic vehicle wrap renders using AI. Covers resolution, lighting, finishes, camera angles, VisionBoardIQ™, and render accuracy."
+    description="Learn how DesignProAI™ generates studio-quality photorealistic vehicle wrap renders using AI. Covers resolution, lighting, finishes, camera angles, VisionBoardIQ™, and render accuracy."
     canonicalPath="/faq/photorealistic-renders"
     badgeText="Photorealistic Renders FAQ"
     faqs={faqPhotorealisticRendersData}

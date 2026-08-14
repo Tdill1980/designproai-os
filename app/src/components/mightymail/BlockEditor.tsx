@@ -53,7 +53,7 @@ const getDefaultContent = (type: EmailBlock['type']): Record<string, any> => {
     case 'divider':
       return { color: '#eeeeee', height: '1' };
     case 'footer':
-      return { text: '© {{current_year}} RestylePro. All rights reserved.', align: 'center' };
+      return { text: '© {{current_year}} DesignProAI. All rights reserved.', align: 'center' };
     default:
       return {};
   }

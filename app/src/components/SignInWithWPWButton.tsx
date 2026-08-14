@@ -32,7 +32,7 @@ type AltStage = "hidden" | "email" | "code";
  *      personal, anything).
  *   3. We send a 6-digit verification code to that email. The user
  *      enters the code to prove inbox ownership; we then link the
- *      matching WPW customer to their RestylePro account.
+ *      matching WPW customer to their DesignProAI account.
  *
  * This OTP path replaces the old same-domain guardrail so shops whose
  * WPW orders are under a personal/different-domain email can still
@@ -54,7 +54,7 @@ export function SignInWithWPWButton({ className, compact, onLinked }: Props) {
       const { data } = await supabase.auth.getSession();
       if (!data.session?.user) {
         toast.message(
-          "Create your RestylePro account first — then we'll sync your WePrintWraps orders automatically on your next sign-in.",
+          "Create your DesignProAI account first — then we'll sync your WePrintWraps orders automatically on your next sign-in.",
           { duration: 6000 },
         );
         return;

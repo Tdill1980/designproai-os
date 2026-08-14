@@ -22,9 +22,9 @@ const GraphicsProWall = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background overflow-x-hidden">
       <Helmet>
-        <title>GraphicsPro Wall - Wall Graphics Design-to-Production | RestyleProAI</title>
+        <title>GraphicsPro Wall - Wall Graphics Design-to-Production | DesignProAI</title>
         <meta name="description" content="Design cut vinyl wall graphics for indoor and outdoor walls. AI-powered mockups with production-ready cut files and automatic pricing." />
-        <link rel="canonical" href="https://www.restyleproai.com/graphics-pro-wall" />
+        <link rel="canonical" href="https://designproai.com/graphics-pro-wall" />
       </Helmet>
 
       <main className="flex-1">

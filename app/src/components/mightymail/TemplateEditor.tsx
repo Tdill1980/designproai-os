@@ -39,7 +39,7 @@ export function TemplateEditor({ template, onSave, onBack, onSendTest }: Templat
   const [subject, setSubject] = useState(template?.subject || '');
   const [htmlContent, setHtmlContent] = useState(template?.html_content || '');
   const [category, setCategory] = useState(template?.category || 'transactional');
-  const [fromName, setFromName] = useState(template?.from_name || 'RestylePro');
+  const [fromName, setFromName] = useState(template?.from_name || 'DesignProAI');
   const [fromEmail, setFromEmail] = useState(template?.from_email || 'onboarding@resend.dev');
   const [blocks, setBlocks] = useState<EmailBlock[]>([]);
 
@@ -187,7 +187,7 @@ export function TemplateEditor({ template, onSave, onBack, onSendTest }: Templat
               <Input
                 value={fromName}
                 onChange={(e) => setFromName(e.target.value)}
-                placeholder="RestylePro"
+                placeholder="DesignProAI"
               />
             </div>
           </div>

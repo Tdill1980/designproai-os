@@ -100,7 +100,7 @@ export default function PrintProShop() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>PrintPro Shop — Print Your Vehicle Wrap | WePrintWraps x RestyleProAI</title>
+        <title>PrintPro Shop — Print Your Vehicle Wrap | WePrintWraps x DesignProAI</title>
         <meta name="description" content="Get your vehicle wrap design printed and shipped. Avery and 3M films, contour-cut install-ready, fade wraps, and custom designs. Free shipping. Powered by WePrintWraps.com." />
       </Helmet>
 

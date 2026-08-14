@@ -563,7 +563,7 @@ export default function AdminContentEngine() {
               <Input
                 value={newBrandName}
                 onChange={(e) => setNewBrandName(e.target.value)}
-                placeholder="RestyleProAI"
+                placeholder="DesignProAI"
               />
             </div>
             <div>

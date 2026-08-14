@@ -104,7 +104,7 @@ export const TokenBalanceCard = ({ className }: TokenBalanceCardProps) => {
       {/* Centered branded coin */}
       <div className="relative flex justify-center mb-4">
         <div
-          aria-label="One RestylePro design token — $25 retail value"
+          aria-label="One DesignProAI design token — $25 retail value"
           className="relative w-16 h-16 rounded-full bg-gradient-to-br from-cyan-400/40 to-fuchsia-500/40 ring-2 ring-cyan-300/80 flex items-center justify-center shrink-0 shadow-[0_0_18px_rgba(34,211,238,0.55)]"
         >
           {/* Value + brand stacked in the center of the coin */}

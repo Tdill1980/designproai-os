@@ -2,7 +2,7 @@
  * EngineRoomIssueReporter
  *
  * A side-sheet opened from the Engine Room header's "Report Issue" button.
- * Internal WPW + RestylePro team members can:
+ * Internal WPW + DesignProAI team members can:
  *   1. Log new issues in markdown (the whole body is freeform markdown so
  *      it can be copied straight to Claude for systematic fixes).
  *   2. Browse, resolve, and copy existing issues.
@@ -316,7 +316,7 @@ export function EngineRoomIssueReporter({
     }
     const md = [
       `# Engine Room — Open Issues (${active.length})`,
-      `_Exported ${new Date().toISOString()} from ${isWpwTenant ? "WPW" : "RestylePro"} Engine Room._`,
+      `_Exported ${new Date().toISOString()} from ${isWpwTenant ? "WPW" : "DesignProAI"} Engine Room._`,
       "",
       ...active.map(issueToMarkdown),
     ].join("\n\n---\n\n");
@@ -344,7 +344,7 @@ export function EngineRoomIssueReporter({
             Report an Issue
           </SheetTitle>
           <SheetDescription>
-            Internal issue log for {isWpwTenant ? "WePrintWraps" : "RestylePro"}. Written in markdown so open
+            Internal issue log for {isWpwTenant ? "WePrintWraps" : "DesignProAI"}. Written in markdown so open
             reports can be copied straight into Claude for systematic non-breaking fixes.
           </SheetDescription>
         </SheetHeader>

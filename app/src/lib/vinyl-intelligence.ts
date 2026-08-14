@@ -1,4 +1,4 @@
-// --- RestyleProAI VINYL ENGINE ---
+// --- DesignProAI VINYL ENGINE ---
 import { supabase } from "@/integrations/supabase/client";
 
 export interface VinylSwatch {

@@ -526,7 +526,7 @@ export const StudioProofLayout = ({
         {/* Footer Info */}
         <div className="text-center py-6 border-t border-neutral-500">
           <p className="text-xs text-neutral-300">
-            Generated with {toolName} by RestyleProAI™ Vehicle Wrap Visualizer Suite
+            Generated with {toolName} by DesignProAI™ Vehicle Wrap Visualizer Suite
           </p>
         </div>
       </div>

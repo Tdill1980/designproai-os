@@ -85,11 +85,11 @@ interface PendingListing {
 
 const CAPTION_STYLES = {
   sabri: (vehicle: string, design: string, finish: string) =>
-    `This ${vehicle} just got the treatment. 🔥\n\n${design}${finish ? ` in ${finish}` : ""} - designed in RestylePro AI.\n\nYour shop could be running this. Your client could be driving this.\n\nStop scrolling. Start wrapping.\n\n🎯 Link in bio to visualize ANY vehicle in minutes.`,
+    `This ${vehicle} just got the treatment. 🔥\n\n${design}${finish ? ` in ${finish}` : ""} - designed in DesignProAI AI.\n\nYour shop could be running this. Your client could be driving this.\n\nStop scrolling. Start wrapping.\n\n🎯 Link in bio to visualize ANY vehicle in minutes.`,
   garyvee: (vehicle: string, design: string, finish: string) =>
-    `Listen.\n\nThis ${vehicle} wrap was designed by AI in under 60 seconds.\n\n${design}${finish ? ` - ${finish}` : ""}.\n\nThe wrap shops that adopt this tech RIGHT NOW are going to eat.\n\nThe ones that don't? They'll wonder why their competitors are closing 3x more jobs.\n\n💡 RestylePro AI → link in bio`,
+    `Listen.\n\nThis ${vehicle} wrap was designed by AI in under 60 seconds.\n\n${design}${finish ? ` - ${finish}` : ""}.\n\nThe wrap shops that adopt this tech RIGHT NOW are going to eat.\n\nThe ones that don't? They'll wonder why their competitors are closing 3x more jobs.\n\n💡 DesignProAI AI → link in bio`,
   subry: (vehicle: string, design: string, finish: string) =>
-    `When the vision hits different. 🎨\n\n${vehicle} wrapped in ${design}${finish ? ` with ${finish} finish` : ""}.\n\nDesigned. Visualized. Ready to print.\n\nThis is what happens when creativity meets AI.\n\n👇 Build yours at RestylePro AI`,
+    `When the vision hits different. 🎨\n\n${vehicle} wrapped in ${design}${finish ? ` with ${finish} finish` : ""}.\n\nDesigned. Visualized. Ready to print.\n\nThis is what happens when creativity meets AI.\n\n👇 Build yours at DesignProAI AI`,
   custom: () => "",
 };
 
@@ -131,11 +131,11 @@ const DEFAULT_SETTINGS: MarketSettings = {
   max_listing_price: 1999,
   auto_approve_verified: true,
   hero_video_url: "",
-  hero_video_title: "See RestyleProAI in Action",
+  hero_video_title: "See DesignProAI in Action",
   ig_auto_post_enabled: false,
   ig_caption_style: "sabri",
   ig_custom_caption_template: "",
-  ig_hashtags: "#RestyleProAI #VehicleWrap #WrapDesign #VinylWrap #CarWrap #WrapShop #WrapLife #AIDesign #VehicleVisualization",
+  ig_hashtags: "#DesignProAI #VehicleWrap #WrapDesign #VinylWrap #CarWrap #WrapShop #WrapLife #AIDesign #VehicleVisualization",
 };
 
 export default function AdminCreatorMarket() {
@@ -181,7 +181,7 @@ export default function AdminCreatorMarket() {
           max_listing_price: data.max_listing_price ?? 1999,
           auto_approve_verified: data.auto_approve_verified ?? true,
           hero_video_url: data.hero_video_url ?? "",
-          hero_video_title: data.hero_video_title ?? "See RestyleProAI in Action",
+          hero_video_title: data.hero_video_title ?? "See DesignProAI in Action",
           ig_auto_post_enabled: data.ig_auto_post_enabled ?? false,
           ig_caption_style: data.ig_caption_style ?? "sabri",
           ig_custom_caption_template: data.ig_custom_caption_template ?? "",
@@ -343,7 +343,7 @@ export default function AdminCreatorMarket() {
         max_listing_price: settings.max_listing_price,
         auto_approve_verified: settings.auto_approve_verified,
         hero_video_url: settings.hero_video_url || null,
-        hero_video_title: settings.hero_video_title || "See RestyleProAI in Action",
+        hero_video_title: settings.hero_video_title || "See DesignProAI in Action",
         ig_auto_post_enabled: settings.ig_auto_post_enabled,
         ig_caption_style: settings.ig_caption_style,
         ig_custom_caption_template: settings.ig_custom_caption_template,
@@ -974,7 +974,7 @@ export default function AdminCreatorMarket() {
                   <Input
                     value={settings.hero_video_title}
                     onChange={(e) => setSettings((s) => ({ ...s, hero_video_title: e.target.value }))}
-                    placeholder="See RestyleProAI in Action"
+                    placeholder="See DesignProAI in Action"
                   />
                 </div>
                 <div>

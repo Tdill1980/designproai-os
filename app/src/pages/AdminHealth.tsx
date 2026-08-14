@@ -140,7 +140,7 @@ export default function AdminHealth() {
           <header className="mb-8 pb-6 border-b border-neutral-800">
             <h1 className="text-3xl font-bold tracking-tight mb-1">System Health</h1>
             <p className="text-sm text-neutral-400">
-              Live status of every RestylePro tool and external dependency.
+              Live status of every DesignProAI tool and external dependency.
             </p>
           </header>
 
