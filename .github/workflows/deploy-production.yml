@@ -21,6 +21,15 @@ on:
           - DO_NOT_DEPLOY
           - AUDIT_ONLY_DESIGNPROAI_PROD_SFO3
           - DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3
+      audited_failed_release:
+        description: >-
+          Exact SHA of an already-diagnosed failed deploy whose quarantined
+          staging directory may be cleared. Leave blank unless the failure has
+          actually been audited; the guard exists so a rollback is looked at
+          before the next attempt, not stepped over.
+        required: false
+        type: string
+        default: ""
 
 permissions:
   actions: read
@@ -318,10 +327,34 @@ jobs:
         env:
           KEY_FILE: ${{ steps.ssh.outputs.key_file }}
           KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+          AUDITED_FAILED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.audited_failed_release || '' }}
         shell: bash
         run: |
           set -Eeuo pipefail
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+          # A rollback quarantines the release that failed, and the inventory
+          # then refuses every later attempt until someone has looked at it.
+          # That is the right default: a deploy that failed after cutover is
+          # exactly when automation should stop. Clearing it therefore requires
+          # naming the failed SHA explicitly, which is only possible once the
+          # failure has been read.
+          if [[ -n "${AUDITED_FAILED_RELEASE:-}" ]]; then
+            [[ $AUDITED_FAILED_RELEASE =~ ^[0-9a-f]{40}$ ]]
+            test "$AUDITED_FAILED_RELEASE" != "$EXACT_SHA"
+            ssh "${ssh_args[@]}" "root@$TARGET_HOST" "AUDITED='$AUDITED_FAILED_RELEASE' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          shopt -s nullglob
+          # Scoped to this one quarantine, by name. Releases, the current
+          # symlink and the shared spool are never touched here.
+          for dir in "/opt/designproai-os/staging/failed-$AUDITED"-*; do
+            test -d "$dir" || continue
+            test ! -L "$dir"
+            echo "Clearing audited quarantine: $dir"
+            find "$dir" -depth -mindepth 1 -delete
+            rmdir "$dir"
+          done
+          REMOTE
+          fi
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" 'bash -s' < ops/inventory.sh | tee "$RUNNER_TEMP/designproai-inventory.txt"
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXPECTED_SHA='$EXACT_SHA' bash -s" <<'REMOTE'
