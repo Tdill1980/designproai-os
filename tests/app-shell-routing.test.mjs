@@ -115,6 +115,33 @@ test("every mobile tab destination is a route the router serves", () => {
   assert.deepEqual(dead, [], `mobile tabs with no route: ${dead.join(", ")}`);
 });
 
+test("the shell chrome links only to routes the router serves", () => {
+  // Header and Footer render on every page, so a dead link here is the most
+  // visible failure in the product. Both are built from the navigation
+  // registry rather than hand-written lists, which is what keeps them honest;
+  // this proves the rendered result, not just the intent.
+  for (const path of ["app/src/components/Header.tsx", "app/src/components/Footer.tsx"]) {
+    const source = read(path);
+    const links = [
+      ...new Set([...source.matchAll(/to="(\/[^"]*)"/g)].map((match) => match[1].split("?")[0])),
+    ];
+    const dead = links.filter((link) => !isServed(link));
+    assert.deepEqual(dead, [], `${path} links to nothing: ${dead.join(", ")}`);
+  }
+});
+
+test("the shell chrome carries no RestylePro wordmark", () => {
+  // The shell is a duplicate of the RestylePro app. Every operator-visible
+  // brand string in the persistent chrome has to be DesignProAI's.
+  for (const path of ["app/src/components/Header.tsx", "app/src/components/Footer.tsx"]) {
+    // Comments explain what was replaced and name the old brand doing it.
+    assert.ok(
+      !/Restyle\s*<\/span>|RestylePro|ProductionFlow™/.test(stripComments(read(path))),
+      `${path} still renders a non-DesignProAI wordmark`,
+    );
+  }
+});
+
 test("no redirect points at a path the router does not serve", () => {
   const targets = [...APP.matchAll(/<Navigate\s+to="([^"]+)"/g)].map((match) => match[1]);
   const dead = targets.filter((target) => !isServed(target));
