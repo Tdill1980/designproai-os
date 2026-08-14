@@ -16,6 +16,21 @@ runtime/output-qc.cjs
 runtime/resend-transport.cjs
 runtime/wrapbox-delivery.cjs
 runtime/zip-spool.cjs
+# The canonical Design Master kernel. The claimant requires these at startup, so
+# a release without them dies at require time and the deploy reports nothing
+# more specific than an empty /health.
+runtime/design-master.cjs
+runtime/design-master-renderer.cjs
+runtime/design-master-author.cjs
+runtime/design-master-revision.cjs
+runtime/design-revision-cycle.cjs
+runtime/master-proof-sheet.cjs
+runtime/master-derived-3d-proof.cjs
+runtime/vehicle-view-plate.cjs
+runtime/procedural-view-plates.cjs
+runtime/mesh-warp.cjs
+runtime/opentype-outline.cjs
+runtime/designpro-master-cycle.cjs
 gateway/package.json
 gateway/package-lock.json
 gateway/src/server.mjs

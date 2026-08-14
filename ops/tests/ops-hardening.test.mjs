@@ -13,8 +13,8 @@ const read = (name) => readFileSync(join(ops, name), "utf8");
 const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
 const fixed = policy.filter((line) => !line.includes("*"));
 
-test("one canonical policy includes all sixteen runtime files and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 16);
+test("one canonical policy includes every required runtime file and five deploy controls", () => {
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 28);
   for (const name of [
     "runtime/resend-transport.cjs", "runtime/wrapbox-delivery.cjs", "runtime/zip-spool.cjs",
     "runtime/gemini-flat-wrap.cjs", "runtime/flat-wrap-layout.cjs", "runtime/proof-sheet.cjs", "runtime/topaz-upscale.cjs",
@@ -26,6 +26,32 @@ test("one canonical policy includes all sixteen runtime files and five deploy co
     assert.doesNotMatch(source, /"runtime\/index\.js",/);
   }
   assert.match(readFileSync(join(track, "scripts/build-release.sh"), "utf8"), /ops\/release-files\.txt/);
+});
+
+// The count above is a tripwire, not a guarantee. This is the guarantee.
+//
+// A release that ships the kernel's entry points but not everything they
+// require dies at require time inside the container, and the deploy can only
+// report an empty /health — no module name, no stack. That is exactly how
+// eleven Design Master modules were left out of one release: every test passed,
+// the archive validated, and the failure surfaced as a health probe timing out
+// after the cutover.
+test("the policy is closed over everything the runtime entry points require", () => {
+  const runtime = resolve(track, "runtime");
+  const seen = new Set();
+  const stack = ["index.js", "designpro-standalone-claimant.cjs"];
+  while (stack.length) {
+    const name = stack.pop();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    let source;
+    try { source = readFileSync(join(runtime, name), "utf8"); } catch { continue; }
+    for (const match of source.matchAll(/require\(\s*"\.\/([A-Za-z0-9._-]+)"\s*\)/g)) {
+      stack.push(match[1]);
+    }
+  }
+  const missing = [...seen].filter((name) => !fixed.includes(`runtime/${name}`));
+  assert.deepEqual(missing, [], `release policy is missing runtime modules the kernel requires: ${missing.join(", ")}`);
 });
 
 test("actual builder emits reproducible bytes with every fixed file manifest-bound", () => {
