@@ -97,16 +97,28 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Gallery from "./pages/Gallery";
 
+// ── Lazy imports - DesignProAI operating surfaces ────────────────
+// These are the server-owned surfaces: the browser reports state and asks for
+// the two human release gates, and never orchestrates the pipeline itself.
+const DesignProGenerate = lazyWithRetry(() => import("./pages/designpro/GenerateDesign"));
+const DesignProJobs = lazyWithRetry(() => import("./pages/designpro/ProductionJobs"));
+const DesignProWorkflow = lazyWithRetry(() => import("./pages/designpro/ProductionWorkflow"));
+const DesignProGenieQc = lazyWithRetry(() => import("./pages/designpro/GenieQc"));
+const DesignProNewRevision = lazyWithRetry(() => import("./pages/designpro/NewRevisionSource"));
+const DesignProWrapBox = lazyWithRetry(() =>
+  import("./pages/designpro/WrapBoxDelivery").then((mod) => ({ default: mod.WrapBoxList })),
+);
+const DesignProWrapBoxPack = lazyWithRetry(() =>
+  import("./pages/designpro/WrapBoxDelivery").then((mod) => ({ default: mod.WrapBoxPackDetail })),
+);
+
 // ── Lazy imports - Core tools ────────────────────────────────────
 const DesignPro = lazyWithRetry(() => import("./pages/DesignPro"));
-const DesignPanelProPremium = lazyWithRetry(() => import("./pages/DesignPanelProPremium"));
 const ArtboardFirstDesignPro = lazyWithRetry(() => import("./pages/ArtboardFirstDesignPro"));
 const AdminDesignProV2Test = lazyWithRetry(() => import("./pages/AdminDesignProV2Test"));
 const PanelSizer = lazyWithRetry(() => import("./pages/PanelSizer"));
 const DesignStudio = lazyWithRetry(() => import("./pages/DesignStudio"));
 const DesignProStudio = lazyWithRetry(() => import("./pages/DesignProStudio"));
-const RevisionStudioIQ = lazyWithRetry(() => import("./pages/RevisionStudioIQ"));
-const WrapBox = lazyWithRetry(() => import("./pages/WrapBox"));
 const Proof = lazyWithRetry(() => import("./pages/Proof"));
 const DesignPanelProWorkspace = lazyWithRetry(() => import("./pages/DesignPanelProWorkspace"));
 const ProductionProof = lazyWithRetry(() => import("./pages/ProductionProof"));
@@ -125,7 +137,6 @@ const PrintPro = lazyWithRetry(() => import("./pages/PrintPro"));
 const DesignPanelProPrintedProductPage = lazyWithRetry(() => import("./components/printpro/DesignPanelProPrintedProductPage"));
 const PrintProductionPipeline = lazyWithRetry(() => import("./components/printpro/PrintProductionPipeline"));
 const ProductionOS = lazyWithRetry(() => import("./pages/ProductionOS"));
-const ProductionFlow = lazyWithRetry(() => import("./pages/ProductionFlow"));
 
 // ── Lazy imports - Admin pages ───────────────────────────────────
 const AdminDashboard = lazyWithRetry(() => import("./pages/AdminDashboard"));
@@ -232,7 +243,21 @@ const App = () => {
               /pricing, matching the /wpw-offer redirect below. */}
           {/* Single unified studio page — the real brief + big Konva canvas.
               /create is the deleted duplicate → redirect so nothing splits. */}
-          <Route path="/designpro" element={<DesignPanelProPremium />} />
+          {/* ── The server-owned DesignProAI operating path ──────────────
+              Calls 1-7 generate the seven immutable source views; Calls 8-12
+              turn them into a verified production pack. Every one of these
+              surfaces reports state the gateway owns. The legacy browser-side
+              orchestration pages below redirect in here rather than 404,
+              because the edge functions they drove are not part of this
+              standalone system. */}
+          <Route path="/designpro" element={<Navigate to="/designpro/jobs" replace />} />
+          <Route path="/designpro/jobs" element={<RequireAuth><DesignProJobs /></RequireAuth>} />
+          <Route path="/designpro/jobs/:generationId" element={<RequireAuth><DesignProWorkflow /></RequireAuth>} />
+          <Route path="/designpro/generate" element={<RequireAuth><DesignProGenerate /></RequireAuth>} />
+          <Route path="/designpro/revisions/new" element={<RequireAuth><DesignProNewRevision /></RequireAuth>} />
+          <Route path="/designpro/genie-qc" element={<RequireAuth><DesignProGenieQc /></RequireAuth>} />
+          <Route path="/designpro/wrapbox" element={<RequireAuth><DesignProWrapBox /></RequireAuth>} />
+          <Route path="/designpro/wrapbox/:packId" element={<RequireAuth><DesignProWrapBoxPack /></RequireAuth>} />
           <Route path="/designpro/artboard-first" element={<RequireAuth><ArtboardFirstDesignPro /></RequireAuth>} />
           {/* CarWrapPro™ — public SEO/AEO product page + the Design Assets admin production page */}
           {/* DesignPro v2 object-graph engine — isolated experimental module, admin test bench only */}
@@ -270,17 +295,24 @@ const App = () => {
           {/* WPW-tenant Engine Room — scoped to WePrintWraps internal team */}
           <Route path="/admin/print-production" element={<RequireAdmin><AdminPrintProduction /></RequireAdmin>} />
           {/* Builder removed — it cropped the vehicle proof (distorted output). Use the deterministic export. */}
-          <Route path="/revision-studio" element={<RequireAuth><RevisionStudioIQ /></RequireAuth>} />
+          {/* RevisionStudio is now a section of the job it belongs to, built
+              from the approved flat wrap layout the server cut the panels
+              from. The standalone page drove revise-render / proof-save-version
+              / panelizer-step-validate in the browser; the runtime owns those. */}
+          <Route path="/revision-studio" element={<Navigate to="/designpro/jobs" replace />} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/printpro/designpanelpro" element={<DesignPanelProPrintedProductPage />} />
           <Route path="/printpro/production" element={<PrintProductionPipeline />} />
           <Route path="/printpro/production-os" element={<ProductionOS />} />
-          <Route path="/wrapbox" element={<WrapBox />} />
+          <Route path="/wrapbox" element={<Navigate to="/designpro/wrapbox" replace />} />
           {/* SEO: individual design pages (declare before the category
               catch so `/design/:id` never resolves as a category). */}
-          <Route path="/productionflow" element={<ProductionFlow />} />
-          <Route path="/productionflow/:jobId" element={<RequireAuth><ProductionFlow /></RequireAuth>} />
-          <Route path="/production-flow" element={<Navigate to="/productionflow" replace />} />
+          {/* ProductionFlow drove run-production-flow / generate-2d-proof from
+              the browser. The runtime owns the whole pipeline now, so the job
+              page is the one place a job's state is reported. */}
+          <Route path="/productionflow" element={<Navigate to="/designpro/jobs" replace />} />
+          <Route path="/productionflow/:jobId" element={<Navigate to="/designpro/jobs" replace />} />
+          <Route path="/production-flow" element={<Navigate to="/designpro/jobs" replace />} />
           {/* Designer-side production QC — files land here first; writes to the SAME
               panelizer_jobs row the customer GENIE page on ProductionFlow polls. */}
           {/* RecreatePro is now a single flow inside ProductionFlow's prep tab */}
