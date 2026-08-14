@@ -92,22 +92,22 @@ async function groundedCandidate(vehicle) {
   const prompt = `Find exact OEM exterior dimensions for ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.vehicleClass}). Use primary manufacturer spec pages or official PDFs. Return JSON only: {"overall_length_in":number,"overall_width_in":number,"overall_height_in":number,"wheelbase_in":number|null,"sub_type":string|null,"confidence":"high|medium|low","source_urls":["https://..."]}. This is a candidate for human validation; do not invent missing values.`;
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
     method: "POST", headers: { "content-type": "application/json" },
-    // gemini-2.5-flash is a thinking model, and thinking tokens are charged
-    // against maxOutputTokens. At 2048, a grounded search can spend the entire
-    // budget before emitting a single character, which returns a candidate with
-    // no text and finishReason MAX_TOKENS -- indistinguishable, to the parser
-    // below, from a model that simply declined to answer. Observed live:
-    // manifest.resolve failed with "Grounding response contained no JSON
-    // candidate" on a 2021 Ford Transit 250. Thinking is disabled and the
-    // ceiling raised so the answer, not the deliberation, gets the budget.
+    // gemini-2.5-flash is a thinking model and thinking tokens are charged
+    // against maxOutputTokens, so at 2048 a grounded search could spend the
+    // whole budget before emitting a character -- returning empty text with
+    // finishReason MAX_TOKENS, which the parser below read as "no JSON here".
+    // Observed live on a 2021 Ford Transit 250.
+    //
+    // The ceiling is raised rather than the thinking suppressed. Turning
+    // thinking off did clear the truncation, but the model then answered with
+    // zeros for every dimension, which the range check rejected
+    // ("overall_length_in 0 is outside van range 160-290") -- reading OEM spec
+    // pages and reconciling trim variants is the part of this job that needs
+    // the reasoning. 8192 leaves room for both the deliberation and the answer.
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       tools: [{ googleSearch: {} }],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 8192,
-        thinkingConfig: { thinkingBudget: 0 },
-      },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
     }),
     signal: AbortSignal.timeout(45_000),
   });
