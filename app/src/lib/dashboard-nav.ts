@@ -54,11 +54,11 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
   {
     key: "designpro",
     label: "DesignPro",
-    route: "/designpro/generate",
+    route: "/designpro",
     icon: Brain,
     pillar: "design",
     tier: "starter",
-    description: "Describe a wrap and a vehicle — the server generates seven distinct photoreal views",
+    description: "The DesignPro workspace — vision board, design brief, canvas and photoreal renders",
     brandAnchor: true,
   },
   {

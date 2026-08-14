@@ -1,0 +1,30 @@
+<svg width="800" height="400" viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="400" fill="#f8fafc"/>
+  
+  <!-- Tile Grid -->
+  <rect x="20" y="20" width="240" height="160" fill="#e2e8f0" stroke="#1e293b" stroke-width="2"/>
+  <text x="140" y="100" text-anchor="middle" fill="#1e293b" font-family="Arial" font-size="16" font-weight="bold">PANEL 1</text>
+  <text x="140" y="120" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="12">53" × 36"</text>
+  
+  <rect x="280" y="20" width="240" height="160" fill="#e2e8f0" stroke="#1e293b" stroke-width="2"/>
+  <text x="400" y="100" text-anchor="middle" fill="#1e293b" font-family="Arial" font-size="16" font-weight="bold">PANEL 2</text>
+  <text x="400" y="120" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="12">53" × 36"</text>
+  
+  <rect x="540" y="20" width="240" height="160" fill="#e2e8f0" stroke="#1e293b" stroke-width="2"/>
+  <text x="660" y="100" text-anchor="middle" fill="#1e293b" font-family="Arial" font-size="16" font-weight="bold">PANEL 3</text>
+  <text x="660" y="120" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="12">53" × 36"</text>
+  
+  <rect x="20" y="200" width="240" height="160" fill="#e2e8f0" stroke="#1e293b" stroke-width="2"/>
+  <text x="140" y="280" text-anchor="middle" fill="#1e293b" font-family="Arial" font-size="16" font-weight="bold">PANEL 4</text>
+  <text x="140" y="300" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="12">53" × 36"</text>
+  
+  <rect x="280" y="200" width="240" height="160" fill="#e2e8f0" stroke="#1e293b" stroke-width="2"/>
+  <text x="400" y="280" text-anchor="middle" fill="#1e293b" font-family="Arial" font-size="16" font-weight="bold">PANEL 5</text>
+  <text x="400" y="300" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="12">53" × 36"</text>
+  
+  <rect x="540" y="200" width="240" height="160" fill="#e2e8f0" stroke="#1e293b" stroke-width="2"/>
+  <text x="660" y="280" text-anchor="middle" fill="#1e293b" font-family="Arial" font-size="16" font-weight="bold">PANEL 6</text>
+  <text x="660" y="300" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="12">53" × 36"</text>
+  
+  <text x="400" y="385" text-anchor="middle" fill="#64748b" font-family="Arial" font-size="14">Print Tiles - 53"/60" Roll Ready</text>
+</svg>

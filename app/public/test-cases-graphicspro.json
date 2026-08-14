@@ -1,0 +1,154 @@
+[
+  {
+    "id": 1,
+    "name": "Construction Truck - Bold",
+    "surface": {
+      "tab": "build",
+      "type": "vehicle",
+      "year": "2024",
+      "make": "Ford",
+      "model": "F-250",
+      "zones": ["door", "side-panel", "tailgate"],
+      "zoneContent": {
+        "door": "logo + name",
+        "side-panel": "phone + website",
+        "tailgate": "logo only"
+      }
+    },
+    "mode": "commercial",
+    "style": "bold",
+    "designPrompt": "Rugged construction company truck with hard hat icon, bold black and safety yellow color scheme",
+    "business": {
+      "name": "Titan Construction Co.",
+      "phone": "(555) 867-5309",
+      "website": "titanconstruction.com",
+      "industry": "Construction",
+      "tagline": "Building Tomorrow Today",
+      "copyText": "Licensed & Insured, Lic #CA-98765, Free Estimates",
+      "font": "Oswald",
+      "generateLogo": true
+    },
+    "vinylFinish": "matte"
+  },
+  {
+    "id": 2,
+    "name": "Plumber Van - Modern",
+    "surface": {
+      "tab": "build",
+      "type": "vehicle",
+      "year": "2023",
+      "make": "Mercedes-Benz",
+      "model": "Sprinter",
+      "zones": ["door", "side-panel"],
+      "zoneContent": {
+        "door": "logo + name",
+        "side-panel": "full contact"
+      }
+    },
+    "mode": "commercial",
+    "style": "modern",
+    "designPrompt": "Clean modern plumbing company with water drop icon, blue and white color scheme, professional and trustworthy",
+    "business": {
+      "name": "AquaFlow Plumbing",
+      "phone": "(555) 234-5678",
+      "website": "aquaflowplumbing.com",
+      "industry": "Plumbing",
+      "tagline": "Flow With Confidence",
+      "copyText": "24/7 Emergency Service, Licensed Master Plumber",
+      "font": "Inter",
+      "generateLogo": true
+    },
+    "vinylFinish": "glossy"
+  },
+  {
+    "id": 3,
+    "name": "Landscaper Truck - Playful",
+    "surface": {
+      "tab": "build",
+      "type": "vehicle",
+      "year": "2024",
+      "make": "Toyota",
+      "model": "Tacoma",
+      "zones": ["door", "tailgate"],
+      "zoneContent": {
+        "door": "logo + name",
+        "tailgate": "website only"
+      }
+    },
+    "mode": "commercial",
+    "style": "playful",
+    "designPrompt": "Friendly landscaping company with tree and leaf elements, green and earth tones, approachable feel",
+    "business": {
+      "name": "Green Thumb Landscapes",
+      "phone": "(555) 345-6789",
+      "website": "greenthumblandscapes.com",
+      "industry": "Landscaping",
+      "tagline": "Your Yard, Our Passion",
+      "copyText": "Lawn Care, Hardscaping, Tree Service",
+      "font": "Poppins",
+      "generateLogo": true
+    },
+    "vinylFinish": "satin"
+  },
+  {
+    "id": 4,
+    "name": "Electrician Van - Industrial",
+    "surface": {
+      "tab": "build",
+      "type": "vehicle",
+      "year": "2023",
+      "make": "Ford",
+      "model": "Transit",
+      "zones": ["door", "side-panel", "rear-window"],
+      "zoneContent": {
+        "door": "logo + name",
+        "side-panel": "phone + website",
+        "rear-window": "license + certs"
+      }
+    },
+    "mode": "commercial",
+    "style": "industrial",
+    "designPrompt": "Professional electrical contractor with lightning bolt icon, dark gray and safety orange, utilitarian and tough",
+    "business": {
+      "name": "Volt Electric Services",
+      "phone": "(555) 456-7890",
+      "website": "voltelectric.com",
+      "industry": "Electrical",
+      "tagline": "Powering Your World",
+      "copyText": "Master Electrician Lic #EL-44321, Commercial & Residential, Panel Upgrades",
+      "font": "Bebas Neue",
+      "generateLogo": true
+    },
+    "vinylFinish": "matte"
+  },
+  {
+    "id": 5,
+    "name": "Real Estate Car - Elegant",
+    "surface": {
+      "tab": "build",
+      "type": "vehicle",
+      "year": "2024",
+      "make": "BMW",
+      "model": "X5",
+      "zones": ["door", "rear-window"],
+      "zoneContent": {
+        "door": "logo + name",
+        "rear-window": "phone + website"
+      }
+    },
+    "mode": "commercial",
+    "style": "elegant",
+    "designPrompt": "Luxury real estate agent vehicle with gold and black color scheme, refined and upscale",
+    "business": {
+      "name": "Prestige Realty Group",
+      "phone": "(555) 789-0123",
+      "website": "prestigerealtygroup.com",
+      "industry": "Real Estate",
+      "tagline": "Where Luxury Lives",
+      "copyText": "Luxury Homes Specialist, DRE #01234567",
+      "font": "Playfair Display",
+      "generateLogo": true
+    },
+    "vinylFinish": "glossy"
+  }
+]

@@ -234,55 +234,12 @@ test("no redirect points at a path the router does not serve", () => {
   assert.deepEqual(dead, [], `redirects to nowhere: ${dead.join(", ")}`);
 });
 
-test("every public asset the shell ships is one it references", () => {
-  // The shell was pruned from 176 MB to 88 MB of public assets by deleting
-  // what no reachable code names. This is the other half of that contract: a
-  // file left in public/ that nothing references is dead weight in every
-  // release archive and every deploy.
-  //
-  // Reachability is judged against the built bundles when they exist, because
-  // src/ still holds hundreds of pages the router no longer mounts. Without a
-  // build to compare against there is nothing to prove, so the check is
-  // skipped rather than guessed at.
-  const dist = resolve(root, "app/dist/assets");
-  if (!existsSync(dist)) return;
-
-  const distRoot = resolve(root, "app/dist");
-  const walkFiles = (dir) =>
-    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-      entry.isDirectory()
-        ? walkFiles(resolve(dir, entry.name))
-        : [resolve(dir, entry.name)],
-    );
-
-  // The bundles, plus every standalone page: those are copied out of public/
-  // and served straight off the filesystem, so the SPA never names them or the
-  // images they use.
-  const hay = walkFiles(distRoot)
-    .filter((path) => /\.(js|css|html)$/.test(path))
-    .map((path) => readFileSync(path, "utf8"))
-    .join("\n");
-
-  // Files the browser fetches by convention, which no bundle has to name.
-  const byConvention =
-    /^(favicon\.[^/]+|robots\.txt|sitemap[^/]*\.xml|site\.webmanifest|manifest\.json|_deploy-marker\.txt|placeholder\.svg|_redirects)$/;
-
-  const publicRoot = resolve(root, "app/public");
-  const walk = (dir, prefix = "") =>
-    readdirSync(resolve(publicRoot, dir), { withFileTypes: true }).flatMap((entry) => {
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-      return entry.isDirectory() ? walk(rel, rel) : [rel];
-    });
-
-  const orphans = walk("").filter((rel) => {
-    if (byConvention.test(rel) || rel.endsWith(".html")) return false;
-    const name = rel.split("/").pop();
-    const stem = name.replace(/\.[^.]+$/, "");
-    return !hay.includes(`/${rel}`) && !hay.includes(name) && !hay.includes(stem);
-  });
-
-  assert.deepEqual(orphans, [], `public assets nothing references: ${orphans.join(", ")}`);
-});
+// An orphan-asset test lived here. It judged each public file by whether the
+// built bundle named it, which silently excludes every page the router does not
+// currently mount -- and that is how 13 assets the real DesignPro workspace
+// needs (visionboard-example.png, genie-prompt-helper.png, the ACE and Sprocket
+// characters) were deleted. Asset ownership has to follow the product, not the
+// current route table, so the check is gone rather than left to repeat it.
 
 test("the browser never drives the orchestration the runtime owns", () => {
   // These edge functions belong to the source suite. The runtime owns proof,
