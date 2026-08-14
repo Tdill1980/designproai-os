@@ -97,12 +97,24 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
     runtime_keys = RUNTIME_BASE_KEYS | (EMAIL_PROVIDER_KEYS if email_mode == "true" else set())
     runtime_keys |= TOPAZ_PROVIDER_KEYS if topaz_mode == "true" else set()
     exact_keys("runtime", runtime, runtime_keys)
-    exact_keys("gateway", gateway, GATEWAY_KEYS)
+    # DESIGNPRO_ADDITIONAL_ORIGINS is optional: present only when a second
+    # browser entry point (the apex, www) serves the same SPA against this
+    # gateway and must be allowed to write.
+    exact_keys("gateway", gateway, GATEWAY_KEYS | (
+        {"DESIGNPRO_ADDITIONAL_ORIGINS"} if "DESIGNPRO_ADDITIONAL_ORIGINS" in gateway else set()))
 
     if runtime["SUPABASE_URL"] != PROJECT_URL or gateway["SUPABASE_URL"] != PROJECT_URL:
         raise ValidationError("both roles must use the isolated DesignProAI Supabase project")
     if runtime["DESIGNPRO_APP_ORIGIN"] != APP_ORIGIN or gateway["DESIGNPRO_APP_ORIGIN"] != APP_ORIGIN:
         raise ValidationError("both roles must use the HTTPS DesignProAI OS origin")
+    # Optional extra browser origins allowed to write. The canonical origin above
+    # still owns emailed links; these only widen the same-origin write check.
+    extra = gateway.get("DESIGNPRO_ADDITIONAL_ORIGINS", "")
+    if extra:
+        for origin in [item.strip() for item in extra.split(",") if item.strip()]:
+            parsed = urlparse(origin)
+            if parsed.scheme != "https" or not parsed.netloc or parsed.path not in ("", "/"):
+                raise ValidationError("additional gateway origins must be bare HTTPS origins")
     if runtime["DESIGNPRO_SPOOL_DIR"] != SPOOL_DIR:
         raise ValidationError("runtime spool must use the persistent container path")
     if runtime["SUPABASE_TUS_ENDPOINT"] != TUS_ENDPOINT:

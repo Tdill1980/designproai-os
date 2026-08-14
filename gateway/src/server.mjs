@@ -71,6 +71,12 @@ function config(env) {
   const supabaseUrl = String(env.SUPABASE_URL || "").replace(/\/$/, "");
   const publishableKey = String(env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || "");
   const appOrigin = String(env.DESIGNPRO_APP_ORIGIN || "").replace(/\/$/, "");
+  // The canonical origin owns emailed links. Additional origins are browser
+  // entry points that may also write -- the apex and www now serve the same SPA
+  // against this same gateway, and a write from them was being rejected 403.
+  const additionalOrigins = String(env.DESIGNPRO_ADDITIONAL_ORIGINS || "")
+    .split(",").map((value) => value.trim().replace(/\/$/, "")).filter(Boolean);
+  const allowedOrigins = [...new Set([appOrigin, ...additionalOrigins].filter(Boolean))];
   const internalRuntimeUrl = String(env.DESIGNPRO_RUNTIME_INTERNAL_URL || "").replace(/\/$/, "");
   const workerSecret = String(env.WORKER_SECRET || "");
   const production = env.NODE_ENV === "production";
@@ -81,7 +87,7 @@ function config(env) {
       throw new Error("gateway_internal_runtime_url_invalid");
     }
   }
-  return { supabaseUrl, publishableKey, appOrigin, internalRuntimeUrl, workerSecret, production };
+  return { supabaseUrl, publishableKey, appOrigin, allowedOrigins, internalRuntimeUrl, workerSecret, production };
 }
 
 function encodeStoragePath(path) {
@@ -128,7 +134,15 @@ async function userFor(fetchImpl, token, cfg) {
 
 async function authenticate(req, res, fetchImpl, cfg) {
   const jar = cookies(req);
-  let token = jar.dp_session || "";
+  // The cookie session is primary. A Supabase access token presented as a
+  // bearer header is also accepted so a client that already holds a supabase-js
+  // session -- the migrated DesignProAI shell -- can call this API without a
+  // second login. It is validated against Supabase by userFor() exactly like the
+  // cookie value, so it grants nothing the cookie would not, and unlike a cookie
+  // a bearer header is never attached automatically by a cross-site request.
+  const header = String(req.headers.authorization || "");
+  const bearer = /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim() || "";
+  let token = jar.dp_session || bearer || "";
   let user = await userFor(fetchImpl, token, cfg);
   if (!user?.id && jar.dp_refresh) {
     const refreshed = await fetchImpl(`${cfg.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
@@ -150,7 +164,8 @@ async function authenticate(req, res, fetchImpl, cfg) {
 function assertSameOrigin(req, cfg) {
   if (!cfg.production || !["POST", "PUT", "PATCH", "DELETE"].includes(req.method || "")) return;
   const origin = String(req.headers.origin || "").replace(/\/$/, "");
-  if (origin !== cfg.appOrigin) throw Object.assign(new Error("origin_rejected"), { status: 403 });
+  const allowed = cfg.allowedOrigins?.length ? cfg.allowedOrigins : [cfg.appOrigin];
+  if (!allowed.includes(origin)) throw Object.assign(new Error("origin_rejected"), { status: 403 });
 }
 
 function generationId(run) {
