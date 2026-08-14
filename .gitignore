@@ -6,3 +6,6 @@ web/tsconfig.tsbuildinfo
 dist/
 *.env
 !*.env.example
+app/node_modules/
+app/dist/
+app/tsconfig.tsbuildinfo

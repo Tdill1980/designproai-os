@@ -1,0 +1,351 @@
+<!--
+  ════════════════════════════════════════════════════════════════════════
+  CLUB WPW × RestyleProAI — Wrap Calculator (in-page tool, white UI)
+  ════════════════════════════════════════════════════════════════════════
+  Paste into an Elementor "HTML" widget (or Gutenberg "Custom HTML" block).
+  Scoped under #wpwc — cannot affect your theme. No plugins, no download —
+  it's a live calculator used right on the page. Featured wrap comes live from
+  your database (/admin/wotw-winners) with a built-in fallback.
+  EDIT (optional): button URLs + FREE_SHIP threshold in the script.
+  ════════════════════════════════════════════════════════════════════════
+-->
+<div id="wpwc">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+
+    #wpwc{
+      --cyan:#00C7FF; --purple:#7E5BEC; --magenta:#FF2DC8;
+      --ink:#0d1220; --body:#475467; --mut:#98a2b3; --line:#e6e8ee; --soft:#f6f7fb; --dark:#0b0d14;
+      --grad:linear-gradient(90deg,var(--cyan),var(--purple) 55%,var(--magenta));
+      --fd:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      --fb:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+      box-sizing:border-box; color:var(--ink); background:#fff; font-family:var(--fb); line-height:1.5; -webkit-font-smoothing:antialiased;
+    }
+    #wpwc *,#wpwc *::before,#wpwc *::after{box-sizing:border-box;}
+    #wpwc .wrap{max-width:1080px; margin:0 auto; padding:38px 20px 44px;}
+    #wpwc .ic{width:22px;height:22px;stroke:currentColor;stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round;display:block;}
+
+    /* Brand lockup + header */
+    #wpwc .lockup{display:inline-flex; align-items:center; gap:12px; background:var(--dark); border-radius:999px; padding:9px 18px 9px 14px; box-shadow:0 10px 26px rgba(11,13,20,.22);}
+    #wpwc .lockup img{height:24px; width:auto; display:block;}
+    #wpwc .lockup .div{width:1px; height:20px; background:rgba(255,255,255,.22);}
+    #wpwc .lockup .cw{font-family:var(--fd); font-weight:800; font-size:14px; letter-spacing:.14em; color:#fff;}
+    #wpwc .lockup .cw span{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #wpwc .head{text-align:center; margin-bottom:26px;}
+    #wpwc .eyebrow{font-size:12.5px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:var(--magenta); margin:18px 0 8px;}
+    #wpwc h1{font-family:var(--fd); font-weight:800; letter-spacing:-.01em; line-height:1; margin:0; font-size:clamp(36px,5.6vw,60px);}
+    #wpwc h1 .g{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #wpwc .tag{color:var(--body); font-size:clamp(15px,1.9vw,18px); margin:14px auto 0; max-width:520px;}
+
+    /* Calculator card — soft gray so the tool stands out on the white page */
+    #wpwc .calc{border:1px solid #d5d9e2; border-radius:22px; background:#e6e9f0; box-shadow:0 30px 70px rgba(13,18,32,.16); overflow:hidden;}
+    #wpwc .calc-top{height:5px; background:var(--grad);}
+    #wpwc .calc-in{display:grid; grid-template-columns:1fr 1fr; gap:0;}
+    @media(max-width:800px){ #wpwc .calc-in{grid-template-columns:1fr;} }
+    #wpwc .col{padding:28px 30px;}
+    #wpwc .col.res{background:#dee2ec; border-left:1px solid #d0d5e0;}
+    @media(max-width:800px){ #wpwc .col.res{border-left:none; border-top:1px solid #d0d5e0;} }
+    #wpwc .col h2{font-family:var(--fd); font-weight:700; font-size:15px; letter-spacing:.02em; text-transform:uppercase; color:var(--ink); margin:0 0 20px; display:flex; align-items:center; gap:9px;}
+    #wpwc .col h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--grad);}
+
+    #wpwc .field{margin-bottom:16px;}
+    #wpwc .field label{display:block; font-size:12.5px; font-weight:700; color:#344054; margin-bottom:7px;}
+    #wpwc .field .with{position:relative;}
+    #wpwc .field .with .u{position:absolute; right:14px; top:0; height:50px; display:flex; align-items:center; color:var(--mut); font-size:13px; font-weight:600; pointer-events:none;}
+    #wpwc select,#wpwc input{width:100%; height:50px; border:1.5px solid var(--line); border-radius:12px; background:#fff; padding:0 15px; font-family:var(--fb); font-size:16px; font-weight:600; color:var(--ink); -webkit-appearance:none; appearance:none;}
+    #wpwc input.pad{padding-right:44px;}
+    #wpwc select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237E5BEC' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat:no-repeat; background-position:right 15px center; padding-right:42px;}
+    #wpwc select:focus,#wpwc input:focus{outline:none; border-color:var(--purple); box-shadow:0 0 0 4px rgba(126,91,236,.14);}
+    #wpwc .two{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+
+    /* Results */
+    #wpwc .stats{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+    #wpwc .stat{background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px;}
+    #wpwc .stat .k{font-size:11.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--mut);}
+    #wpwc .stat .v{font-family:var(--fd); font-weight:800; font-size:26px; line-height:1.1; margin-top:4px; color:var(--ink);}
+    #wpwc .stat .v .u{font-family:var(--fb); font-size:12px; font-weight:700; color:var(--mut); margin-left:3px;}
+    #wpwc .costcard{margin-top:14px; border-radius:16px; padding:18px 20px; color:#fff; background:var(--grad); box-shadow:0 16px 34px rgba(126,91,236,.32); display:flex; align-items:center; justify-content:space-between; gap:12px;}
+    #wpwc .costcard .k{font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.92;}
+    #wpwc .costcard .v{font-family:var(--fd); font-weight:900; font-size:34px; line-height:1;}
+    #wpwc .ship{margin-top:14px;}
+    #wpwc .ship .bar{height:9px; border-radius:6px; background:#e9ebf2; overflow:hidden;}
+    #wpwc .ship .fill{height:100%; width:0; border-radius:6px; background:var(--grad); transition:width .3s;}
+    #wpwc .ship .msg{display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; margin-top:9px;}
+    #wpwc .ship .msg.ok{color:#067647;} #wpwc .ship .msg.no{color:#5936c9;}
+    #wpwc .ship .msg .ic{width:18px;height:18px;flex:0 0 auto;}
+    #wpwc .disc{color:var(--mut); font-size:11.5px; margin:14px 0 0;}
+    /* Email-me-this-quote */
+    #wpwc .lead{margin-top:16px; border-top:1px dashed #c3c9d6; padding-top:16px;}
+    #wpwc .lead .lh{font-size:13px; font-weight:800; color:#344054; margin-bottom:9px;}
+    #wpwc .lead .lr{display:flex; gap:8px;}
+    @media(max-width:420px){ #wpwc .lead .lr{flex-direction:column;} }
+    #wpwc .lead input{height:46px; flex:1; min-width:0; border:1.5px solid var(--line); border-radius:11px; background:#fff; padding:0 13px; font-family:var(--fb); font-size:15px; font-weight:600; color:var(--ink);}
+    #wpwc .lead input:focus{outline:none; border-color:var(--purple); box-shadow:0 0 0 4px rgba(126,91,236,.14);}
+    #wpwc .lead button{height:46px; padding:0 18px; border:none; border-radius:11px; cursor:pointer; color:#fff; font-family:var(--fb); font-weight:700; font-size:14px; background:var(--grad); white-space:nowrap;}
+    #wpwc .lead button:hover{filter:brightness(1.06);}
+    #wpwc .lead button:disabled{opacity:.6; cursor:default;}
+    #wpwc .lead .lmsg{font-size:12.5px; font-weight:600; margin-top:9px; min-height:16px;}
+    #wpwc .lead .lmsg.ok{color:#067647;} #wpwc .lead .lmsg.err{color:#d92d20;}
+
+    /* Features */
+    #wpwc .feats{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:34px;}
+    @media(max-width:760px){ #wpwc .feats{grid-template-columns:repeat(2,1fr);} }
+    @media(max-width:420px){ #wpwc .feats{grid-template-columns:1fr;} }
+    #wpwc .feat{background:#fff; border:1px solid var(--line); border-radius:16px; padding:20px; text-align:center;}
+    #wpwc .feat .pic{width:52px;height:52px;border-radius:14px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#fff;margin:0 auto 12px;}
+    #wpwc .feat b{display:block; font-size:13.5px; font-weight:800; color:var(--ink); margin-bottom:4px;}
+    #wpwc .feat span{font-size:13px; color:var(--body);}
+
+    /* Print banner */
+    #wpwc .print{position:relative; margin-top:34px; border-radius:20px; overflow:hidden; background:var(--dark); color:#fff; display:grid; grid-template-columns:1fr 1fr; min-height:290px;}
+    @media(max-width:760px){ #wpwc .print{grid-template-columns:1fr;} }
+    #wpwc .print .pl{padding:36px; z-index:2;}
+    #wpwc .print h3{font-family:var(--fd); font-weight:800; font-size:clamp(26px,3.6vw,38px); line-height:1.02; margin:0;}
+    #wpwc .print .save{margin:12px 0 0; font-size:15px; font-weight:600; color:#d7dbe4;}
+    #wpwc .print .save b{color:var(--magenta);}
+    #wpwc .coupon{display:inline-flex; align-items:center; gap:12px; margin-top:18px; border:2px dashed var(--magenta); border-radius:12px; background:rgba(0,0,0,.35); padding:10px 18px;}
+    #wpwc .coupon .k{font-size:10.5px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:#9aa4b2;}
+    #wpwc .coupon .v{font-family:var(--fd); font-weight:800; font-size:24px; letter-spacing:.08em; color:#fff;}
+    #wpwc .pbtns{display:flex; flex-wrap:wrap; gap:12px; margin-top:22px;}
+    #wpwc a.pb{display:inline-flex; align-items:center; gap:8px; height:50px; padding:0 24px; border-radius:12px; font-size:14.5px; font-weight:700; text-decoration:none;}
+    #wpwc a.pb.grad{color:#fff; background:var(--grad); box-shadow:0 14px 30px rgba(255,45,200,.3);}
+    #wpwc a.pb.ghost{color:#fff; background:transparent; border:1.5px solid rgba(255,255,255,.32);}
+    #wpwc a.pb:hover{filter:brightness(1.08);}
+    #wpwc .print .pr{position:relative; background:#14061a;}
+    #wpwc .print .pr img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+    #wpwc .print .pr::before{content:""; position:absolute; inset:0; background:linear-gradient(90deg,var(--dark) 0%, rgba(11,13,20,.25) 32%, transparent 58%); z-index:1;}
+
+    /* Trust + footer */
+    #wpwc .trust{display:grid; grid-template-columns:repeat(4,1fr); gap:18px; margin-top:34px; padding-top:28px; border-top:1px solid var(--line);}
+    @media(max-width:760px){ #wpwc .trust{grid-template-columns:repeat(2,1fr);} }
+    #wpwc .tc{display:flex; gap:11px; align-items:flex-start;}
+    #wpwc .tc .tic{color:var(--purple); margin-top:1px; flex:0 0 auto;}
+    #wpwc .tc b{display:block; font-size:12.5px; font-weight:800; color:var(--ink);}
+    #wpwc .tc span{color:var(--mut); font-size:12.5px;}
+    #wpwc .foot{display:flex; align-items:center; justify-content:center; gap:12px; margin-top:30px; color:var(--mut); font-size:12px;}
+    #wpwc .foot img{height:26px; border-radius:6px;}
+    #wpwc .hide{display:none !important;}
+  </style>
+
+  <div class="wrap">
+    <div class="head">
+      <div class="lockup">
+        <img src="https://weprintwraps.com/wp-content/uploads/2025/04/Logo-WPW.png" alt="WePrintWraps">
+        <span class="div"></span>
+        <span class="cw">CLUB <span>WPW</span></span>
+      </div>
+      <div class="eyebrow">Free Tool of the Week</div>
+      <h1>Wrap <span class="g">Calculator</span></h1>
+      <p class="tag">Estimate wrap material in seconds. Quote jobs with confidence — right here, no download.</p>
+    </div>
+
+    <!-- Calculator -->
+    <div class="calc">
+      <div class="calc-top"></div>
+      <div class="calc-in">
+        <div class="col">
+          <h2><span class="dot"></span> Your Job</h2>
+          <div class="field">
+            <label>Vehicle / Project</label>
+            <select id="wpwc-vehicle"></select>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label>Wrap area</label>
+              <div class="with"><input class="pad" id="wpwc-area" type="number" inputmode="decimal" min="0"><span class="u">sq ft</span></div>
+            </div>
+            <div class="field">
+              <label>Roll width</label>
+              <select id="wpwc-roll"></select>
+            </div>
+          </div>
+          <div class="two">
+            <div class="field">
+              <label>Quantity</label>
+              <input id="wpwc-qty" type="number" inputmode="numeric" min="1">
+            </div>
+            <div class="field">
+              <label>Waste %</label>
+              <div class="with"><input class="pad" id="wpwc-waste" type="number" inputmode="decimal" min="0"><span class="u">%</span></div>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label>Material</label>
+            <select id="wpwc-material"></select>
+          </div>
+        </div>
+
+        <div class="col res">
+          <h2><span class="dot"></span> Your Estimate</h2>
+          <div class="stats">
+            <div class="stat"><div class="k">Total square feet</div><div class="v"><span id="wpwc-o-sqft">0</span><span class="u">sq ft</span></div></div>
+            <div class="stat"><div class="k">Linear feet</div><div class="v"><span id="wpwc-o-lf">0</span><span class="u">ft</span></div></div>
+            <div class="stat"><div class="k">Linear yards</div><div class="v"><span id="wpwc-o-ly">0</span><span class="u">yd</span></div></div>
+            <div class="stat"><div class="k">Rolls needed</div><div class="v"><span id="wpwc-o-rolls">0</span></div></div>
+          </div>
+          <div class="costcard">
+            <span class="k">Estimated material cost</span>
+            <span class="v">$<span id="wpwc-o-cost">0.00</span></span>
+          </div>
+          <div class="ship">
+            <div class="bar"><div class="fill" id="wpwc-ship-fill"></div></div>
+            <div class="msg no" id="wpwc-ship"><span class="sic"></span><span id="wpwc-ship-txt"></span></div>
+          </div>
+          <p class="disc">Estimates only. Actual material depends on vehicle, panel layout, roll width and install method.</p>
+          <div class="lead">
+            <div class="lh">📩 Want this quote in your inbox?</div>
+            <div class="lr">
+              <input id="wpwc-email" type="email" inputmode="email" autocomplete="email" placeholder="you@email.com">
+              <button type="button" id="wpwc-email-btn">Email me this quote</button>
+            </div>
+            <div class="lmsg" id="wpwc-lmsg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features -->
+    <div class="feats" id="wpwc-feats"></div>
+
+    <!-- Print banner -->
+    <div class="print">
+      <div class="pl">
+        <h3>Need us to print it?</h3>
+        <p class="save">Save <b>10%</b> on any fade wrap this week — premium Avery Dennison or 3M film.</p>
+        <div class="coupon"><span class="k">Use Code</span><span class="v">FADE10</span></div>
+        <div class="pbtns">
+          <a class="pb grad" id="wpwc-order" href="#">Order Your Wrap <span class="aic"></span></a>
+          <a class="pb ghost" id="wpwc-viewall" href="#">View Fade Wraps <span class="aic"></span></a>
+        </div>
+      </div>
+      <div class="pr"><img id="wpwc-carimg" alt="Featured wrap" onerror="this.style.display='none'"></div>
+    </div>
+
+    <!-- Trust -->
+    <div class="trust" id="wpwc-trust"></div>
+
+    <div class="foot">
+      Powered by
+      <img src="https://weprintwraps.com/wp-content/uploads/2026/07/restylepro-ai-logo-strip.png" alt="RestyleProAI" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    var root=document.getElementById('wpwc');
+    if(!root||root.dataset.init) return; root.dataset.init='1';
+    var $=function(id){return root.querySelector('#'+id);};
+
+    var WINNERS_ENDPOINT='https://kfapjdyythzyvnpdeghu.functions.supabase.co/wotw-winners';
+    var LEAD_ENDPOINT='https://kfapjdyythzyvnpdeghu.functions.supabase.co/wpw-calc-lead';
+    var ORDER_URL='https://weprintwraps.com/shop';    // EDIT
+    var VIEW_ALL_URL='https://weprintwraps.com/shop'; // EDIT
+    var FREE_SHIP=750;
+    var ROLL_YARDS=75; // linear yards per roll (reference)
+
+    var SVG={
+      calc:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h4M8 15h2M12 15h4"/>',
+      roll:'<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 7v10M17 7v10"/>',
+      dollar:'<circle cx="12" cy="12" r="9"/><path d="M12 7v10M14.5 9.2c-.5-.8-1.5-1.2-2.5-1.2-1.4 0-2.5.8-2.5 2s1.1 1.8 2.5 2 2.5.8 2.5 2-1.1 2-2.5 2c-1 0-2-.4-2.5-1.2"/>',
+      truck:'<path d="M3 6h11v9H3z"/><path d="M14 9h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/>',
+      shield:'<path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',
+      clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      flag:'<path d="M5 21V4M5 4h11l-1.5 3L16 10H5"/>',
+      headset:'<path d="M4 13v-1a8 8 0 0 1 16 0v1"/><path d="M4 13h3v5H5a1 1 0 0 1-1-1zM20 13h-3v5h2a1 1 0 0 0 1-1zM17 18a5 5 0 0 1-5 3"/>',
+      arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+      check:'<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>'
+    };
+    function svg(n){return '<svg class="ic" viewBox="0 0 24 24">'+SVG[n]+'</svg>';}
+
+    root.querySelectorAll('.aic').forEach(function(e){e.innerHTML=svg('arrow');});
+    $('wpwc-order').href=ORDER_URL; $('wpwc-viewall').href=VIEW_ALL_URL;
+
+    var FEATS=[
+      ['calc','Accurate Estimates','Square feet, linear yards & cost in seconds.'],
+      ['roll','Less Waste','Add your waste % to order the right amount.'],
+      ['dollar','Price With Confidence','Know your material cost before you quote.'],
+      ['truck','Free Shipping','See when you qualify for free shipping ($'+FREE_SHIP+'+).']
+    ];
+    $('wpwc-feats').innerHTML=FEATS.map(function(f){return '<div class="feat"><div class="pic">'+svg(f[0])+'</div><b>'+f[1]+'</b><span>'+f[2]+'</span></div>';}).join('');
+
+    var TRUST=[
+      ['shield','Premium Materials','Avery Dennison, 3M & HP Latex'],
+      ['clock','Fast Production','Ships in 1–2 business days'],
+      ['flag','Printed in the USA','Proudly printed in-house'],
+      ['headset','Real Support','Wrap people. Real answers.']
+    ];
+    $('wpwc-trust').innerHTML=TRUST.map(function(t){return '<div class="tc"><span class="tic">'+svg(t[0])+'</span><div><b>'+t[1]+'</b><span>'+t[2]+'</span></div></div>';}).join('');
+
+    // Data
+    var VEHICLES=[
+      {label:'Custom (enter area)', sqft:0},
+      {label:'Compact car', sqft:200},{label:'Sedan / coupe', sqft:250},
+      {label:'Sports car', sqft:220},{label:'Crossover / small SUV', sqft:275},
+      {label:'Full-size SUV', sqft:325},{label:'Pickup truck', sqft:350},
+      {label:'Minivan', sqft:300},{label:'Cargo van (144")', sqft:450},
+      {label:'Sprinter (170" ext)', sqft:550},{label:'Box truck', sqft:600}
+    ];
+    var ROLLS=[{w:54,yd:ROLL_YARDS},{w:60,yd:ROLL_YARDS},{w:72,yd:ROLL_YARDS}];
+    var MATERIALS=[
+      {label:'Avery Dennison 1105 — $5.15/sq ft', price:5.15},
+      {label:'Avery Dennison 1360Z — $6.10/sq ft', price:6.10},
+      {label:'3M IJ180Cv3 — $6.25/sq ft', price:6.25}
+    ];
+    var DEF={vehicle:2, area:250, roll:60, qty:1, waste:15, material:0};
+    var lastQuote={};
+
+    var vehicle=$('wpwc-vehicle'),roll=$('wpwc-roll'),material=$('wpwc-material');
+    var area=$('wpwc-area'),qty=$('wpwc-qty'),waste=$('wpwc-waste');
+    VEHICLES.forEach(function(v,i){var o=document.createElement('option');o.value=i;o.textContent=v.label+(v.sqft?' (~'+v.sqft+' sq ft)':'');vehicle.appendChild(o);});
+    ROLLS.forEach(function(r){var o=document.createElement('option');o.value=r.w;o.textContent=r.w+'" wide';roll.appendChild(o);});
+    MATERIALS.forEach(function(m,i){var o=document.createElement('option');o.value=i;o.textContent=m.label;material.appendChild(o);});
+
+    function fmt(n,d){return (isFinite(n)?n:0).toLocaleString('en-US',{minimumFractionDigits:d||0,maximumFractionDigits:d||0});}
+    function setDefaults(){vehicle.value=DEF.vehicle;area.value=DEF.area;roll.value=DEF.roll;qty.value=DEF.qty;waste.value=DEF.waste;material.value=DEF.material;}
+    function calc(){
+      var a=Math.max(0,parseFloat(area.value)||0), q=Math.max(1,parseInt(qty.value)||1);
+      var w=Math.max(0,parseFloat(waste.value)||0), rw=parseFloat(roll.value)||60;
+      var price=MATERIALS[material.value]?MATERIALS[material.value].price:0;
+      var sqft=a*q*(1+w/100);
+      var lf=sqft/(rw/12), ly=lf/3, cost=sqft*price, rolls=ly/ROLL_YARDS;
+      lastQuote={vehicle:(VEHICLES[vehicle.value]||{}).label||null, material:(MATERIALS[material.value]||{}).label||null,
+        area_sqft:a, roll_width:rw, quantity:q, waste_pct:w,
+        total_sqft:+sqft.toFixed(1), linear_ft:+lf.toFixed(1), linear_yd:+ly.toFixed(1), est_cost:+cost.toFixed(2)};
+      $('wpwc-o-sqft').textContent=fmt(sqft,1);
+      $('wpwc-o-lf').textContent=fmt(lf,1);
+      $('wpwc-o-ly').textContent=fmt(ly,1);
+      $('wpwc-o-rolls').textContent=fmt(Math.ceil(rolls*10)/10,1);
+      $('wpwc-o-cost').textContent=fmt(cost,2);
+      var pct=Math.max(0,Math.min(1,cost/FREE_SHIP));
+      $('wpwc-ship-fill').style.width=(pct*100)+'%';
+      var msg=$('wpwc-ship');
+      if(cost>=FREE_SHIP){msg.className='msg ok';msg.querySelector('.sic').innerHTML=svg('check');$('wpwc-ship-txt').textContent='You qualify for FREE shipping ($'+FREE_SHIP+'+).';}
+      else{msg.className='msg no';msg.querySelector('.sic').innerHTML=svg('truck');$('wpwc-ship-txt').textContent='$'+fmt(FREE_SHIP-cost,2)+' away from FREE shipping ($'+FREE_SHIP+'+).';}
+    }
+    vehicle.addEventListener('change',function(){var v=VEHICLES[vehicle.value];if(v&&v.sqft)area.value=v.sqft;calc();});
+    [area,roll,qty,waste,material].forEach(function(el){el.addEventListener('input',calc);el.addEventListener('change',calc);});
+    setDefaults();calc();
+
+    // Email me this quote
+    var emailInput=$('wpwc-email'), emailBtn=$('wpwc-email-btn'), lmsg=$('wpwc-lmsg');
+    function setMsg(t,cls){lmsg.textContent=t;lmsg.className='lmsg'+(cls?' '+cls:'');}
+    emailBtn.addEventListener('click',function(){
+      var em=(emailInput.value||'').trim();
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){setMsg('Please enter a valid email address.','err');emailInput.focus();return;}
+      emailBtn.disabled=true; var old=emailBtn.textContent; emailBtn.textContent='Sending…'; setMsg('','');
+      fetch(LEAD_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em,quote:lastQuote,pagePath:(location&&location.pathname)||''})})
+      .then(function(r){return r.json().catch(function(){return null;});})
+      .then(function(d){
+        if(d&&d.ok){setMsg('✓ Sent! Check your inbox for your wrap estimate.','ok');emailInput.value='';}
+        else{setMsg((d&&d.error)||'Could not send — please try again.','err');emailBtn.disabled=false;emailBtn.textContent=old;}
+      }).catch(function(){setMsg('Could not send — please try again.','err');emailBtn.disabled=false;emailBtn.textContent=old;});
+    });
+
+    // Featured wrap (live)
+    var FALLBACK={image_url:'https://www.restyleproai.com/wpw-drop/wotw-collage.jpeg',link_url:''};
+    function paint(x){var img=$('wpwc-carimg'); if(x.image_url){img.src=x.image_url;img.style.display='';} if(x.link_url)$('wpwc-order').href=x.link_url;}
+    paint(FALLBACK);
+    try{ fetch(WINNERS_ENDPOINT,{headers:{Accept:'application/json'}}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.winners&&d.winners.length)paint(d.winners[0]);}).catch(function(){}); }catch(e){}
+  })();
+  </script>
+</div>

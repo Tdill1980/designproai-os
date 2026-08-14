@@ -1,0 +1,664 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Download, Printer, Loader2, Sparkles, MessageSquarePlus, Send, Undo2, FlipHorizontal2, Upload, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from '@/hooks/use-toast';
+import { loadShopProfile } from '@/lib/proof-service';
+import { getToolLabel, type ToolKey } from '@/lib/tool-registry';
+import { findVehicle } from '@/data/vehicle-measurements';
+import { supabase } from '@/integrations/supabase/client';
+import { generateDisplaySafe2DProof } from '@/lib/generateDisplaySafe2DProof';
+
+interface RenderView {
+  type: string;
+  url: string;
+  label?: string;
+}
+
+interface TwoDProofSheetProps {
+  views: RenderView[];
+  vehicleYear?: string;
+  vehicleMake?: string;
+  vehicleModel?: string;
+  toolKey?: ToolKey;
+  designName?: string;
+  manufacturer?: string;
+  colorName?: string;
+  productCode?: string;
+  finish?: string;
+  hex?: string;
+  /**
+   * Optional callback fired after a successful generation. Callers use this to
+   * persist the generated proof URL (e.g. to the DB) so subsequent opens can
+   * skip the AI call and display the stored proof instantly.
+   */
+  onProofGenerated?: (proofUrl: string) => void | Promise<void>;
+  /**
+   * Pre-existing proof URL. When provided, skips auto-generation on mount and
+   * displays the stored proof immediately. Regenerate/Revise still work.
+   */
+  initialProofUrl?: string | null;
+  /**
+   * Generation/visualization id, passed through to generateDisplaySafe2DProof
+   * (the flat painter is primary for display; the composer is a fallback-only
+   * path — see src/lib/generateDisplaySafe2DProof.ts).
+   */
+  generationId?: string | null;
+  /**
+   * Canonical proof state is produced by the durable server workflow. The
+   * viewer observes the supplied initialProofUrl and never starts a browser
+   * proof producer.
+   */
+  serverOrchestrated?: boolean;
+  /**
+   * Durable-workflow observability. Without these the server spinner has no exit
+   * for a FAILED or never-created run, so every front-of-pipeline failure looked
+   * identical (an eternal "Building Production Proof on Server"). Supplying them
+   * lets the sheet surface the failed stage + reason and offer a Retry, and
+   * offer to START the build when no run is active.
+   */
+  workflowStatus?: string;
+  workflowFailedStage?: { stage_key?: string; error_message?: string } | null;
+  hasActiveRun?: boolean;
+  onRetryBuild?: () => void | Promise<void>;
+}
+
+export const TwoDProofSheet: React.FC<TwoDProofSheetProps> = ({
+  views,
+  vehicleYear,
+  vehicleMake,
+  vehicleModel,
+  toolKey,
+  designName,
+  manufacturer,
+  colorName,
+  productCode,
+  finish,
+  hex,
+  onProofGenerated,
+  initialProofUrl,
+  generationId,
+  serverOrchestrated = false,
+  workflowStatus,
+  workflowFailedStage,
+  hasActiveRun = false,
+  onRetryBuild,
+}) => {
+  // --- Cache key derivation -----------------------------------------------
+  // Build a stable, collision-safe cache key from BOTH the vehicle identity
+  // and the exact set of render URLs feeding this proof.
+  //
+  // The previous implementation used `btoa(urls).slice(0, 40)`, which only
+  // retained the shared Supabase URL prefix (every render URL starts with
+  // `https://kfapjdyythzyvnpdeghu.supabase.co/...`). That meant every vehicle
+  // collided on the same sessionStorage key, so e.g. a motorcycle's 2D proof
+  // would keep displaying when the user switched to a Lamborghini Urus.
+  const cacheKeyRaw = [
+    vehicleYear || '',
+    vehicleMake || '',
+    vehicleModel || '',
+    ...views.map(v => v.url).sort(),
+  ].join('|');
+
+  // FNV-1a-style 64-bit hash (two 32-bit halves). Every character contributes,
+  // so different URLs / vehicles always produce different keys.
+  const cacheStorageKey = (() => {
+    let h1 = 0x811c9dc5 >>> 0;
+    let h2 = 0x1b873593 >>> 0;
+    for (let i = 0; i < cacheKeyRaw.length; i++) {
+      const ch = cacheKeyRaw.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 16777619);
+      h2 = Math.imul(h2 ^ ch, 2246822519);
+    }
+    return `restylepro_2d_proof_${(h1 >>> 0).toString(36)}_${(h2 >>> 0).toString(36)}`;
+  })();
+
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [proofImageUrl, setProofImageUrl] = useState<string | null>(() => {
+    if (initialProofUrl) return initialProofUrl;
+    try { return sessionStorage.getItem(cacheStorageKey) || null; } catch { return null; }
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [shopProfile, setShopProfile] = useState<{ shop_name?: string; shop_logo_url?: string } | null>(null);
+  const [showReviseInput, setShowReviseInput] = useState(false);
+  const [revisionNote, setRevisionNote] = useState('');
+  const [isFlipped, setIsFlipped] = useState(false);
+  const autoGenerated = useRef(false);
+  // Failsafe source: a 3D proof the operator uploads when the job has no
+  // stored renders (the auto 2D-proof step is unreliable). When present it
+  // overrides `views`, so Generate works from the upload.
+  const [uploadedViews, setUploadedViews] = useState<RenderView[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const effectiveViews = uploadedViews.length ? uploadedViews : views;
+
+  const resolvedToolKey: ToolKey = toolKey || 'colorpro';
+  const displayToolLabel = getToolLabel(resolvedToolKey);
+  const shopName = shopProfile?.shop_name || displayToolLabel;
+  const vehicleFullName = [vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(' ');
+  const displayDesign = designName || colorName || 'Custom Design';
+
+  const getView = (types: string[], exclude?: string[]) => {
+    for (const type of types) {
+      const view = effectiveViews.find(v => {
+        const vl = v.type.toLowerCase();
+        if (exclude?.some(ex => vl.includes(ex.toLowerCase()))) return false;
+        return vl.includes(type.toLowerCase());
+      });
+      if (view) return view;
+    }
+    return undefined;
+  };
+
+  const sideView = getView(['side', 'driver', 'left'], ['passenger']);
+  const roofView = getView(['roof']);
+  const hoodView = getView(['hood']);
+
+  const getVehicleDimensions = () => {
+    if (!vehicleMake || !vehicleModel) return null;
+    const vehicle = findVehicle(vehicleMake, vehicleModel, vehicleYear);
+    if (!vehicle) return null;
+    return {
+      sideW: vehicle.sideW, sideH: vehicle.sideH,
+      hoodW: vehicle.hoodW, hoodL: vehicle.hoodL,
+      roofW: vehicle.roofW, roofL: vehicle.roofL,
+      backW: vehicle.backW, backH: vehicle.backH,
+      totalSqFt: vehicle.totalSqFt, corrSqFt: vehicle.corrSqFt,
+    };
+  };
+
+  const doGenerate = async (revision?: string) => {
+    if (!effectiveViews.length) return;
+    setIsGenerating(true);
+    setError(null);
+    setShowReviseInput(false);
+
+    try {
+      const dims = getVehicleDimensions();
+      const allViewUrls: Record<string, string> = {};
+      for (const v of effectiveViews) {
+        if (v.url) allViewUrls[v.type] = v.url;
+      }
+
+      const body: Record<string, unknown> = {
+        allViewUrls,
+        sideUrl: sideView?.url,
+        vehicleYear,
+        vehicleMake,
+        vehicleModel,
+        designName: displayDesign,
+        finish: finish || 'Gloss',
+        // shopName ONLY drives WPW-branded template selection server-side
+        // (generate-2d-proof / compose-2d-proof match it against
+        // "weprintwraps"/"wpw"). It must NEVER be sent for other tools — the
+        // operator's own shop_profiles.shop_name (e.g. an admin account that
+        // is itself "WePrintWraps") is not the same thing as "this job is a
+        // WBTY/WePrintWraps storefront order". Sending it unconditionally
+        // made every DesignPro/ColorPro/FadeWraps/GraphicsPro proof carry
+        // WePrintWraps branding instead of DesignProAI's own (live-verified
+        // 2026-07-27). WBTY is the one real WPW tenant tool.
+        ...(resolvedToolKey === 'wbty' ? { shopName } : {}),
+        dimensions: dims,
+        // This shared viewer is an on-demand preview surface. Canonical
+        // DesignPro proof/panel state is authored by the durable Entice Pack
+        // workflow, so a browser-opened modal must never race or overwrite it.
+        persistCanonical: false,
+      };
+      // Keep the id for source resolution and audit only. The server adapter
+      // uses persistCanonical:false to avoid canonical database/storage writes.
+      if (generationId) body.designiqGenerationId = generationId;
+      if (revision) {
+        body.revisionNote = revision;
+        if (proofImageUrl) body.previousProofUrl = proofImageUrl;
+      }
+
+      // CANONICAL two-producer proof (lib/generateDisplaySafe2DProof) — the
+      // ONE shared implementation of "panel-source flat painter + faithful
+      // composer for display", so this drift bug (wrong logo, missing contact
+      // bar — live-verified on Summit Ridge Electric 2026-07-27) can't
+      // resurface here or in any future caller that reaches for it instead of
+      // hand-rolling its own copy of this logic again.
+      const { proofUrl, error: proofGenError } = await generateDisplaySafe2DProof({
+        body,
+        generationId,
+        viewUrls: allViewUrls,
+      });
+      if (!proofUrl) throw new Error(proofGenError || 'Failed to generate 2D proof');
+
+      setProofImageUrl(proofUrl);
+      try { sessionStorage.setItem(cacheStorageKey, proofUrl); } catch {}
+      // AWAIT the persist so the proof is durably saved before we leave the
+      // generating state — a fire-and-forget here was racy and could be dropped
+      // (page close / re-render) leaving flat_proof_url NULL. The callback owns
+      // its own error toast, so persistence failures surface to the user.
+      await onProofGenerated?.(proofUrl);
+      toast({ title: '2D Proof Generated', description: 'Flat orthographic proof is ready.' });
+    } catch (err: any) {
+      console.error('2D proof generation error:', err);
+      setError(err.message || 'Failed to generate proof');
+      toast({ title: 'Generation Failed', description: err.message || 'Could not generate proof.', variant: 'destructive' });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Upload a 3D proof to generate the 2D proof from — the failsafe when the
+  // job has no stored renders. Uploads to storage and uses the signed URL.
+  const onUpload3DProof = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+      const path = `panels/2d-proof-source/${Date.now()}_3d.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('wrap-files')
+        .upload(path, file, { contentType: file.type || 'image/png', upsert: true });
+      if (upErr) throw upErr;
+      const { data } = await supabase.storage.from('wrap-files').createSignedUrl(path, 60 * 60 * 24 * 7);
+      if (!data?.signedUrl) throw new Error('Could not sign the uploaded file');
+      setUploadedViews([{ type: 'side', url: data.signedUrl, label: 'Uploaded 3D proof' }]);
+      toast({ title: '3D proof uploaded', description: 'Hit Generate 2D Proof to build the flat proof.' });
+    } catch (err: any) {
+      toast({ title: 'Upload failed', description: err?.message || 'Try again.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Load shop profile
+  useEffect(() => {
+    loadShopProfile().then(profile => {
+      if (profile) setShopProfile(profile);
+    });
+  }, []);
+
+  // Re-sync proof state whenever the cache key changes (e.g. user switched
+  // vehicles, new renders arrived, or the view set changed). Without this,
+  // the component would keep showing the proof from a previous vehicle's
+  // state even though its cache key no longer maps to that proof.
+  // Also kicks off auto-generation for freshly-loaded render sets that have
+  // no cached proof yet.
+  useEffect(() => {
+    setError(null);
+    let cancelled = false;
+
+    // If the caller provided a pre-existing proof (e.g. stored flat_proof_url),
+    // display it and skip auto-generation entirely. Only the user clicking
+    // Regenerate/Revise should trigger a new AI call.
+    if (initialProofUrl) {
+      setProofImageUrl(initialProofUrl);
+      autoGenerated.current = true;
+      try { sessionStorage.setItem(cacheStorageKey, initialProofUrl); } catch {}
+      return;
+    }
+
+    let cached: string | null = null;
+    try { cached = sessionStorage.getItem(cacheStorageKey); } catch {}
+
+    if (cached) {
+      setProofImageUrl(cached);
+      autoGenerated.current = true;
+      return;
+    }
+
+    // No initialProofUrl and nothing in this tab's session cache — but a proof
+    // may already be SAVED for this design from a previous session/device. Before
+    // burning a fresh ~60s Gemini render, look up the canonical saved proof from
+    // the DB by generationId. The 2D proof persists flat_proof_url to
+    // color_visualizations.admin_notes (universal cache) and to
+    // designiq_generations.flat_proof_url (production). This is what makes the
+    // "2D Proof" button reuse the saved proof — open shows it instantly and
+    // Download just downloads it — instead of regenerating every time.
+    setProofImageUrl(null);
+    autoGenerated.current = false;
+
+    (async () => {
+      if (generationId) {
+        try {
+          let saved: string | null = null;
+          let linkedGenId: string | null = null;
+
+          const { data: viz } = await supabase
+            .from('color_visualizations')
+            .select('admin_notes')
+            .eq('id', generationId)
+            .maybeSingle();
+          if ((viz as any)?.admin_notes) {
+            try {
+              const notes = JSON.parse((viz as any).admin_notes);
+              if (notes?.flat_proof_url && typeof notes.flat_proof_url === 'string') saved = notes.flat_proof_url;
+              if (typeof notes?.designiq_generation_id === 'string') linkedGenId = notes.designiq_generation_id;
+            } catch { /* admin_notes not JSON */ }
+          }
+
+          // Fallback: the production row (generationId may itself be a DesignIQ
+          // generation id, or the viz pointed us to a linked one).
+          if (!saved) {
+            const { data: g } = await supabase
+              .from('designiq_generations' as any)
+              .select('flat_proof_url')
+              .eq('id', linkedGenId || generationId)
+              .maybeSingle();
+            if ((g as any)?.flat_proof_url) saved = (g as any).flat_proof_url;
+          }
+
+          if (!cancelled && saved) {
+            setProofImageUrl(saved);
+            autoGenerated.current = true;
+            try { sessionStorage.setItem(cacheStorageKey, saved); } catch {}
+            return;
+          }
+        } catch { /* fall through to auto-generate */ }
+      }
+
+      // Truly no saved proof anywhere — auto-generate from renders if ready.
+      if (
+        !serverOrchestrated &&
+        !cancelled &&
+        effectiveViews.length > 0 &&
+        !isGenerating &&
+        !autoGenerated.current
+      ) {
+        autoGenerated.current = true;
+        doGenerate();
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheStorageKey, initialProofUrl, generationId]);
+
+  const handleDownload = () => {
+    if (!proofImageUrl) return;
+    const link = document.createElement('a');
+    link.href = proofImageUrl;
+    link.download = `${vehicleFullName || 'Vehicle'} - 2D Proof.png`.replace(/[^a-zA-Z0-9 _\-.]/g, '');
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrint = () => {
+    if (!proofImageUrl) return;
+    const w = window.open('', '_blank');
+    if (w) {
+      w.document.write(`<html><head><title>2D Proof</title><style>body{margin:0;background:#fff}img{width:100%;height:auto}@media print{img{width:100%}}</style></head><body><img src="${proofImageUrl}" onload="window.print();window.close()"/></body></html>`);
+      w.document.close();
+    }
+  };
+
+  // --- Error state ---
+  if (!proofImageUrl && !isGenerating && error) {
+    return (
+      <div className="w-full bg-background">
+        <div className="flex flex-col items-center justify-center py-12 px-6 space-y-4">
+          <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-4 max-w-md text-center">
+            {error}
+          </div>
+          <Button size="lg" onClick={() => doGenerate()} className="gap-2">
+            <Sparkles className="h-5 w-5" />
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Actively generating ---
+  if (isGenerating) {
+    return (
+      <div className="w-full bg-background">
+        <div className="flex flex-col items-center justify-center py-20 space-y-6">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <div className="text-center space-y-2">
+            <h2 className="text-xl font-bold">Generating Flat 2D Proof</h2>
+            <p className="text-muted-foreground">Transforming 3D renders into flat orthographic views...</p>
+            <p className="text-sm text-muted-foreground">~30-60 seconds</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- No proof yet: manual failsafe (generate if missing / upload a 3D proof) ---
+  if (!proofImageUrl) {
+    if (serverOrchestrated) {
+      const doRetry = async () => {
+        if (!onRetryBuild || retrying) return;
+        setRetrying(true);
+        try { await onRetryBuild(); } finally { setRetrying(false); }
+      };
+      const failed = workflowStatus === "failed" || workflowStatus === "cancelled" || !!workflowFailedStage;
+
+      // FAILED — surface the exact stage + reason instead of an eternal spinner.
+      // This is why the proof "never generates" kept recurring: every distinct
+      // failure (stale revision, missing surface manifest, worker down, Gemini
+      // parse) collapsed into the same silent spinner. Now it says what broke.
+      if (failed) {
+        const stage = workflowFailedStage?.stage_key || "an early stage";
+        const reason = workflowFailedStage?.error_message || "The server recorded a structured failure.";
+        return (
+          <div className="w-full bg-background">
+            <div className="flex flex-col items-center justify-center py-16 space-y-4 text-center max-w-lg mx-auto">
+              <AlertTriangle className="h-10 w-10 text-red-500" />
+              <h2 className="text-xl font-bold">Production proof build failed</h2>
+              <p className="text-sm text-muted-foreground">
+                The durable workflow stopped at <span className="font-semibold text-foreground">{stage}</span>, so no 2D proof was produced.
+              </p>
+              <p className="text-[13px] rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700 break-words w-full">
+                {reason}
+              </p>
+              {onRetryBuild && (
+                <button
+                  type="button"
+                  onClick={doRetry}
+                  disabled={retrying}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-60"
+                >
+                  {retrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Retry the build
+                </button>
+              )}
+              <p className="text-[11px] text-muted-foreground">Retry re-submits with the current saved revision — the usual fix for a stale-revision stop.</p>
+            </div>
+          </div>
+        );
+      }
+
+      // ACTIVELY RUNNING — an honest spinner (it really is building), but with a
+      // manual re-kick for a run that has genuinely stalled on the worker.
+      if (hasActiveRun) {
+        return (
+          <div className="w-full bg-background">
+            <div className="flex flex-col items-center justify-center py-20 space-y-4 text-center">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+              <h2 className="text-xl font-bold">Building Production Proof on Server</h2>
+              <p className="text-muted-foreground max-w-md">
+                The durable workflow is creating and verifying this proof. You can
+                close this window; it will continue without the browser.
+              </p>
+              {onRetryBuild && (
+                <button
+                  type="button"
+                  onClick={doRetry}
+                  disabled={retrying}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
+                >
+                  {retrying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Taking too long? Re-kick the build
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // NO ACTIVE RUN and no stored proof — the submit never produced a run
+      // (e.g. a stale-revision stop left nothing running). Offer to start it,
+      // rather than spin forever on a workflow that isn't there.
+      return (
+        <div className="w-full bg-background">
+          <div className="flex flex-col items-center justify-center py-16 space-y-4 text-center max-w-md mx-auto">
+            <Sparkles className="h-10 w-10 text-primary" />
+            <h2 className="text-xl font-bold">No production proof yet</h2>
+            <p className="text-sm text-muted-foreground">
+              No build is running for this design. Start the server workflow to generate the dimensioned 2D production proof.
+            </p>
+            {onRetryBuild && (
+              <button
+                type="button"
+                onClick={doRetry}
+                disabled={retrying}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-60"
+              >
+                {retrying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Build 2D Production Proof
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="w-full bg-background">
+        <div className="flex flex-col items-center justify-center py-16 space-y-5 text-center">
+          <Sparkles className="h-10 w-10 text-primary" />
+          <div className="space-y-1">
+            <h2 className="text-xl font-bold">No 2D Proof Yet</h2>
+            <p className="text-muted-foreground max-w-md mx-auto">
+              {effectiveViews.length
+                ? "Generate the flat 2D proof from this job's renders, or upload a 3D proof to build it from."
+                : "This job has no stored renders. Upload a 3D proof and generate the flat 2D proof from it."}
+            </p>
+          </div>
+          {uploadedViews.length > 0 && (
+            <div className="text-xs text-emerald-500">Uploaded 3D proof ready — hit Generate 2D Proof.</div>
+          )}
+          <div className="flex items-center gap-3">
+            <Button asChild variant="outline" size="lg" disabled={uploading} className="gap-2">
+              <label className="cursor-pointer">
+                {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                {uploading ? 'Uploading…' : 'Upload 3D Proof'}
+                <input type="file" accept="image/*" className="hidden" onChange={onUpload3DProof} disabled={uploading} />
+              </label>
+            </Button>
+            <Button size="lg" onClick={() => doGenerate()} disabled={!effectiveViews.length || uploading} className="gap-2">
+              <Sparkles className="h-5 w-5" /> Generate 2D Proof
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Result ---
+  return (
+    <div className="w-full bg-background">
+      <div className="p-4 border-b border-border bg-muted/30 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h3 className="font-semibold">
+            2D Production Proof — {vehicleFullName}
+            {displayDesign && displayDesign !== 'Custom Design' && (
+              <span className="ml-2 text-muted-foreground font-normal">· {displayDesign}</span>
+            )}
+          </h3>
+          <div className="flex items-center gap-2">
+            {initialProofUrl && proofImageUrl !== initialProofUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setProofImageUrl(initialProofUrl);
+                  setIsFlipped(false);
+                  setRevisionNote('');
+                  try { sessionStorage.setItem(cacheStorageKey, initialProofUrl); } catch {}
+                }}
+                className="gap-1.5 text-blue-500 border-blue-500/40 hover:bg-blue-500/10"
+              >
+                <Undo2 className="h-4 w-4" /> Revert
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsFlipped(f => !f)}
+              className={`gap-1.5 ${isFlipped ? 'text-cyan-400 border-cyan-500/40 bg-cyan-500/10' : ''}`}
+            >
+              <FlipHorizontal2 className="h-4 w-4" /> Flip Text
+            </Button>
+            {!serverOrchestrated && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowReviseInput(!showReviseInput)}
+                  className="gap-1.5 text-amber-600 border-amber-500/40 hover:bg-amber-500/10"
+                >
+                  <MessageSquarePlus className="h-4 w-4" /> Revise
+                </Button>
+                <Button asChild variant="outline" size="sm" disabled={uploading} className="gap-1.5">
+                  <label className="cursor-pointer">
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {uploading ? 'Uploading…' : 'Upload 3D'}
+                    <input type="file" accept="image/*" className="hidden" onChange={onUpload3DProof} disabled={uploading} />
+                  </label>
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => {
+                  setProofImageUrl(null);
+                  autoGenerated.current = false;
+                  setRevisionNote('');
+                  setIsFlipped(false);
+                  try { sessionStorage.removeItem(cacheStorageKey); } catch {}
+                  doGenerate();
+                }} className="gap-1.5">
+                  <Sparkles className="h-4 w-4" /> Regenerate
+                </Button>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5">
+              <Printer className="h-4 w-4" /> Print
+            </Button>
+            <Button size="sm" onClick={handleDownload} className="gap-1.5">
+              <Download className="h-4 w-4" /> Download
+            </Button>
+          </div>
+        </div>
+
+        {!serverOrchestrated && showReviseInput && (
+          <div className="flex gap-2 items-end">
+            <Textarea
+              value={revisionNote}
+              onChange={(e) => setRevisionNote(e.target.value)}
+              placeholder="What needs fixing? e.g. 'Missing passenger side', 'Dimensions are wrong on the hood', 'Colors don't match the 3D render'..."
+              className="flex-1 min-h-[60px] text-sm"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                if (!revisionNote.trim()) {
+                  toast({ title: 'Enter a revision note', description: 'Tell the AI what to fix.', variant: 'destructive' });
+                  return;
+                }
+                try { sessionStorage.removeItem(cacheStorageKey); } catch {}
+                autoGenerated.current = false;
+                setProofImageUrl(null);
+                doGenerate(revisionNote.trim());
+              }}
+              disabled={!revisionNote.trim()}
+              className="gap-1.5 h-[60px] px-4"
+            >
+              <Send className="h-4 w-4" /> Fix It
+            </Button>
+          </div>
+        )}
+      </div>
+      <div className="w-full max-w-[1920px] mx-auto bg-white p-2">
+        <img src={proofImageUrl} alt="2D Production Proof" className="w-full h-auto" style={isFlipped ? { transform: 'scaleX(-1)' } : undefined} />
+      </div>
+    </div>
+  );
+};
+
+export default TwoDProofSheet;
