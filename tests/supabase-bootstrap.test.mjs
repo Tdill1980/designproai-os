@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-two-migration chain', () => {
-  assert.equal(migrationNames.length, 22);
+test('fresh bootstrap contains one ordered twenty-three-migration chain', () => {
+  assert.equal(migrationNames.length, 23);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -29,6 +29,9 @@ test('fresh bootstrap contains one ordered twenty-two-migration chain', () => {
       '20260814060000',
       // Per-view regeneration: one active view per slot, history preserved.
       '20260814070000',
+      // The revoke that supersession missed: designpro_generation_view_paths
+      // was left executable by PUBLIC, which is anon reach into storage paths.
+      '20260814140000',
     ],
   );
 });
