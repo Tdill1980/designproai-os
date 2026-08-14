@@ -391,8 +391,21 @@ test("a bundle assembled from mismatched parts is refused before anyone approves
     (error) => error.code === "revision_bundle_proof_drift");
   assert.throws(() => validateRevisionBundle({ ...parts, proof3d: other.proof3d }),
     (error) => error.code === "revision_bundle_proof_drift");
-  assert.throws(() => validateRevisionBundle({ ...parts, proof3d: undefined }),
+  // Presentation does not gate manufacturing: a bundle with NO 3D proof is
+  // valid, and binds its absence. A bundle carrying something that is not the
+  // master-derived 3D proof is still refused - absent is a state, malformed is
+  // a fault.
+  const withoutPresentation = validateRevisionBundle({ ...parts, proof3d: null });
+  assert.equal(withoutPresentation.presentation3d, false);
+  assert.equal(withoutPresentation.proof3dHash, null);
+  assert.equal(withoutPresentation.plateSetHash, null);
+  assert.equal(validateRevisionBundle({ ...parts, proof3d: undefined }).bundleIdentity,
+    withoutPresentation.bundleIdentity, "absent and null must be one state, not two");
+  assert.notEqual(withoutPresentation.bundleIdentity, validateRevisionBundle(parts).bundleIdentity,
+    "an approval shown with a 3D proof is not the same approval as one shown without");
+  assert.throws(() => validateRevisionBundle({ ...parts, proof3d: { contract: "something.else" } }),
     (error) => error.code === "revision_bundle_proof3d_invalid");
+  assert.equal(validateRevisionBundle(parts).presentation3d, true);
 
   // The failure that retired Call 8, caught at the bundle: two proofs of one
   // design that disagree on a canonical string.

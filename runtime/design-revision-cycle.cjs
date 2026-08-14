@@ -22,8 +22,10 @@
  * not. Rendering is deterministic, so regenerating is cheap in the only
  * currency that matters here: it cannot be wrong.
  *
- * PHASE 5 SCOPE. The cycle and the gate. Nothing is wired to a workflow stage
- * and Call 8 keeps production authority until Phase 6.
+ * PRESENTATION NEVER GATES MANUFACTURING. The 2D proof and the six surfaces
+ * are the manufacturing record; the 3D proof is how the design is shown. If the
+ * 3D render fails, the cycle still produces an approvable bundle, records why
+ * there is no 3D proof, and binds its absence into the identity.
  */
 
 const { renderProductionSurfaces } = require("./design-master-renderer.cjs");
@@ -62,11 +64,29 @@ async function regenerate({
     designId: designId || master.designId,
     orderNumber,
   });
-  const proof3d = await renderMasterDerived3dProof({
-    render, plates, loadAsset, proofFonts,
-    ...(maxViewBytes ? { maxViewBytes } : {}),
-  });
-  return { render, proof2d, proof3d };
+  // The 3D proof is presentation. It is derived from the same surfaces the
+  // panels are cut from and contributes no pixel to any of them, so a plate set
+  // that will not render is a gap in how the design is SHOWN, never a reason to
+  // refuse to manufacture artwork that has already been rendered and proofed.
+  //
+  // The failure is captured rather than swallowed: the cycle reports exactly
+  // why there is no 3D proof, and the bundle identity binds its absence, so
+  // nothing downstream can mistake a presentation gap for a design that was
+  // approved with a 3D proof.
+  let proof3d = null;
+  let presentationFailure = null;
+  try {
+    proof3d = await renderMasterDerived3dProof({
+      render, plates, loadAsset, proofFonts,
+      ...(maxViewBytes ? { maxViewBytes } : {}),
+    });
+  } catch (error) {
+    presentationFailure = Object.freeze({
+      code: String(error?.code || "presentation_3d_failed"),
+      message: String(error?.message || error),
+    });
+  }
+  return { render, proof2d, proof3d, presentationFailure };
 }
 
 /**
@@ -88,6 +108,8 @@ async function runRevisionCycle({ base, request, ...inputs }) {
     render: derived.render,
     proof2d: derived.proof2d,
     proof3d: derived.proof3d,
+    presentation3d: identity.presentation3d,
+    presentationFailure: derived.presentationFailure,
     identity,
     // What a customer is shown, and what an approval will be a statement about.
     approvalCandidate: Object.freeze({
@@ -100,6 +122,7 @@ async function runRevisionCycle({ base, request, ...inputs }) {
       textIdentities: derived.proof2d.textIdentities,
       logoIdentities: derived.proof2d.logoIdentities,
       totalSqFt: derived.proof2d.totalSqFt,
+      presentation3d: identity.presentation3d,
     }),
   });
 }
@@ -124,6 +147,8 @@ async function runOriginCycle({ master, ...inputs }) {
     render: derived.render,
     proof2d: derived.proof2d,
     proof3d: derived.proof3d,
+    presentation3d: identity.presentation3d,
+    presentationFailure: derived.presentationFailure,
     identity,
     approvalCandidate: Object.freeze({
       revisionId: identity.revisionId,
@@ -135,6 +160,7 @@ async function runOriginCycle({ master, ...inputs }) {
       textIdentities: derived.proof2d.textIdentities,
       logoIdentities: derived.proof2d.logoIdentities,
       totalSqFt: derived.proof2d.totalSqFt,
+      presentation3d: identity.presentation3d,
     }),
   });
 }
