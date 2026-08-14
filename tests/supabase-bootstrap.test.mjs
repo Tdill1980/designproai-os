@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-one-migration chain', () => {
-  assert.equal(migrationNames.length, 21);
+test('fresh bootstrap contains one ordered twenty-two-migration chain', () => {
+  assert.equal(migrationNames.length, 22);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -27,6 +27,8 @@ test('fresh bootstrap contains one ordered twenty-one-migration chain', () => {
       '20260814050000', '20260814050100',
       // hero-3d seventh slot and the production handoff it unblocks.
       '20260814060000',
+      // Per-view regeneration: one active view per slot, history preserved.
+      '20260814070000',
     ],
   );
 });

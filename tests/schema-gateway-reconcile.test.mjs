@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-10), [
+  assert.deepEqual(names.slice(-11), [
     "20260806181100_designpro_wrapbox_delivery_closure.sql",
     "20260806181200_designpro_schema_gateway_reconcile.sql",
     "20260808024500_designpro_calls_1_7_adapter.sql",
@@ -30,6 +30,7 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     "20260814050000_designpro_generation_slot_leases.sql",
     "20260814050100_designpro_generation_complete_validates_in_place.sql",
     "20260814060000_designpro_generation_hero3d_and_handoff.sql",
+    "20260814070000_designpro_generation_view_supersession.sql",
   ]);
   // Call 12 must sit before output.build, or the enhancement would be applied
   // to files that were already interpolated up to print size.

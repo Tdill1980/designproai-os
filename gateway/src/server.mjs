@@ -711,8 +711,26 @@ function validatedGenerationStatus(value) {
     outputSetHash: outputSetHash ? String(outputSetHash) : null,
     failureCode: failureCode ? String(failureCode) : null,
     createdAt: value.createdAt, updatedAt: value.updatedAt,
-    completedAt: value.completedAt || null, handoffReady: false,
+    completedAt: value.completedAt || null,
+    handoffReady: value.handoffReady === true,
     handoffBlocker: value.handoffBlocker || null, views: publicViews,
+    // Staging and per-shot state. These carry the DesignPro capabilities that
+    // used to be driven from the browser -- designer/photographer staging,
+    // per-shot progress, failed-shot retry and per-view regeneration -- now
+    // derived from real slot state on the server.
+    phase: ["designer", "photographer", "complete", "failed"].includes(String(value.phase)) ? String(value.phase) : "designer",
+    shotsComplete: Number.isSafeInteger(Number(value.shotsComplete)) ? Number(value.shotsComplete) : publicViews.length,
+    shotsTotal: Number.isSafeInteger(Number(value.shotsTotal)) && Number(value.shotsTotal) > 0 ? Number(value.shotsTotal) : 7,
+    failedShots: Array.isArray(value.failedShots)
+      ? value.failedShots
+        .filter((shot) => GENERATION_VIEW_ROLE.has(String(shot?.sourceViewType)))
+        .map((shot) => ({ sourceViewType: String(shot.sourceViewType), consumerRole: GENERATION_VIEW_ROLE.get(String(shot.sourceViewType)), reason: shot?.reason ? String(shot.reason).slice(0, 160) : null }))
+      : [],
+    regeneratingShots: Array.isArray(value.regeneratingShots)
+      ? value.regeneratingShots.filter((view) => GENERATION_VIEW_ROLE.has(String(view))).map(String)
+      : [],
+    designAnchor: value.designAnchor ? String(value.designAnchor).slice(0, 2000) : null,
+    designName: value.designName ? String(value.designName).slice(0, 240) : null,
   };
 }
 
@@ -812,6 +830,36 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // a signed URL; viewing the images is a separate, explicit surface
         // (/views below), the same way artifacts are separate from job status.
         return json(res, 200, request);
+      }
+
+      // "Generate this angle again" — the per-view regenerate and failed-shot
+      // retry the DesignPro UI has always had, now executed by a fenced worker
+      // instead of the browser. The instruction is stored on the slot and the
+      // prompt is still assembled server-side; the old view is superseded, never
+      // mutated, so Calls 8+ can still trust anything it already hashed.
+      const regenerateMatch = url.pathname.match(/^\/api\/generation\/requests\/([0-9a-f-]{36})\/views\/([a-z0-9_-]{1,24})\/regenerate$/);
+      if (req.method === "POST" && regenerateMatch) {
+        const requestId = regenerateMatch[1].toLowerCase();
+        const sourceViewType = regenerateMatch[2];
+        if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        if (!GENERATION_VIEW_ROLE.has(sourceViewType)) return json(res, 400, { error: "generation_view_not_in_plan" });
+        const body = await readBody(req).catch(() => ({}));
+        const instruction = body?.instruction == null ? null : String(body.instruction).slice(0, 2000);
+        const result = await rpc(fetchImpl, token, cfg, "regenerate_designpro_generation_slot", {
+          p_request_id: requestId,
+          p_source_view_type: sourceViewType,
+          p_instruction: instruction,
+        });
+        if (!UUID_PATTERN.test(String(result?.requestId || ""))) {
+          throw Object.assign(new Error("generation_regenerate_response_invalid"), { status: 502 });
+        }
+        return json(res, 202, {
+          requestId: result.requestId,
+          sourceViewType: String(result.sourceViewType || sourceViewType),
+          consumerRole: String(result.consumerRole || GENERATION_VIEW_ROLE.get(sourceViewType)),
+          supersededViews: Number(result.supersededViews || 0),
+          state: String(result.state || "queued"),
+        });
       }
 
       // Viewing the generated photoreal views. Separate from the status route on

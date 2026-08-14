@@ -35,12 +35,17 @@ function createGenerationStore({ supabase, workerId }) {
   return {
     contract: STORE_CONTRACT,
 
-    /** An accepted winner is final; the caller must not regenerate it. */
+    /**
+     * The ACTIVE accepted winner. A superseded row is history from a previous
+     * "generate this angle again": it must not count as accepted, or the
+     * regenerated slot would be skipped and the operator's request ignored.
+     */
     async findAcceptedSlot({ requestId, sourceViewType }) {
       const { data, error } = await supabase
         .from("designpro_generation_views")
         .select("id,storage_path,content_hash,byte_size,content_type,consumer_role,metadata")
-        .eq("request_id", requestId).eq("source_view_type", sourceViewType).maybeSingle();
+        .eq("request_id", requestId).eq("source_view_type", sourceViewType)
+        .is("superseded_at", null).maybeSingle();
       if (error) throw new Error(`accepted slot lookup failed: ${error.message}`);
       return data || null;
     },
@@ -169,7 +174,7 @@ function createGenerationStore({ supabase, workerId }) {
     async projectRevisionSources({ requestId }) {
       const { data, error } = await supabase.from("designpro_generation_views")
         .select("source_view_type,consumer_role,storage_path,content_hash,byte_size,content_type")
-        .eq("request_id", requestId);
+        .eq("request_id", requestId).is("superseded_at", null);
       if (error) throw new Error(`revision source projection failed: ${error.message}`);
       const renderAssets = {};
       for (const row of data || []) {

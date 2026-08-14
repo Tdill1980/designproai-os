@@ -1007,3 +1007,57 @@ test("generation status returns private immutable identities without signing obj
   assert.equal(calls.some((item) => item.url.includes("/rest/v1/designpro_generation_")), false);
   assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
 });
+
+test("a view can be regenerated without mutating the accepted one", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000002";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (value.endsWith("/rest/v1/rpc/regenerate_designpro_generation_slot")) {
+        return Response.json({
+          requestId, sourceViewType: "hero-3d", consumerRole: "hero3d",
+          supersededViews: 1, state: "queued",
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/views/hero-3d/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json", origin: env.DESIGNPRO_APP_ORIGIN },
+    body: JSON.stringify({ instruction: "bolder lettering" }),
+  });
+  assert.equal(response.status, 202);
+  const payload = await response.json();
+  assert.equal(payload.sourceViewType, "hero-3d");
+  assert.equal(payload.consumerRole, "hero3d");
+  assert.equal(payload.supersededViews, 1);
+  // The instruction is carried to the server, never turned into a browser prompt.
+  const rpcCall = calls.find((item) => item.url.includes("regenerate_designpro_generation_slot"));
+  assert.equal(JSON.parse(rpcCall.init.body).p_instruction, "bolder lettering");
+});
+
+test("a view outside the frozen plan cannot be regenerated", async (t) => {
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/10000000-0000-4000-8000-000000000002/views/spoiler/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json", origin: env.DESIGNPRO_APP_ORIGIN },
+    body: "{}",
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "generation_view_not_in_plan" });
+});

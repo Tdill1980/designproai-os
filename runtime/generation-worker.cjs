@@ -70,12 +70,22 @@ function designBrief(input) {
   return lines.join("\n");
 }
 
-/** Prompt parts for one slot: the brief, then the frozen camera angle. */
-function promptPartsFor(input, sourceViewType) {
+/**
+ * Prompt parts for one slot: the brief, the operator's regeneration instruction
+ * if this slot is being redone, then the frozen camera angle.
+ *
+ * The instruction is what "generate this angle again, but bolder" becomes once
+ * that capability is server-owned. regenerate_designpro_generation_slot stores
+ * it on the slot; the browser never sends it, so the prompt stays server-owned
+ * while the operator keeps the control.
+ */
+function promptPartsFor(input, sourceViewType, instruction = "") {
   // Throws if the passenger angle ever loses its text-direction guard, which is
   // the defect this whole view contract exists to prevent.
   angles.assertTextDirectionGuard(sourceViewType);
-  return [{ text: `${designBrief(input)}\n\n${angles.cameraAngle(sourceViewType)}` }];
+  const note = String(instruction || "").trim();
+  const revision = note ? `\n\nRevision requested for this view: ${note}` : "";
+  return [{ text: `${designBrief(input)}${revision}\n\n${angles.cameraAngle(sourceViewType)}` }];
 }
 
 const MIME_EXTENSION = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" });
@@ -125,14 +135,14 @@ async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
   return placed;
 }
 
-function slotsFrom(viewPlan, input) {
+function slotsFrom(viewPlan, input, instructions = {}) {
   const plan = Array.isArray(viewPlan) && viewPlan.length ? viewPlan : angles.viewOrder().map((sourceViewType) => ({ sourceViewType }));
   return plan.map((entry) => {
     const sourceViewType = entry.sourceViewType;
     return {
       sourceViewType,
       consumerRole: entry.consumerRole,
-      promptParts: promptPartsFor(input, sourceViewType),
+      promptParts: promptPartsFor(input, sourceViewType, instructions[sourceViewType]),
       aspectRatio: angles.aspectRatio(sourceViewType),
       imageSize: angles.resolutionTier(sourceViewType),
     };
@@ -161,7 +171,7 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
     const { data, error } = await supabase
       .from("designpro_generation_views")
       .select("source_view_type,consumer_role,storage_path,content_hash,byte_size,content_type,metadata")
-      .eq("request_id", requestId);
+      .eq("request_id", requestId).is("superseded_at", null);
     if (error) throw new Error(`generation view readback failed: ${error.message}`);
     return (data || []).map((row) => ({
       sourceViewType: row.source_view_type,
@@ -185,13 +195,23 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
     heartbeat.unref?.();
 
     try {
+      // Per-slot regeneration instructions the operator asked for. Read here so
+      // a redone view carries its note and the untouched views do not.
+      const { data: slotRows } = await supabase
+        .from("designpro_generation_slots")
+        .select("source_view_type,instruction")
+        .eq("request_id", requestId);
+      const instructions = Object.fromEntries(
+        (slotRows || []).filter((row) => row.instruction).map((row) => [row.source_view_type, row.instruction]),
+      );
+
       const result = await engine.runRequest({
         requestId,
         generationId: claim.generationId,
         tenantKey: claim.tenantKey,
         provider: imageProvider,
         store,
-        slots: slotsFrom(claim.viewPlan, claim.input),
+        slots: slotsFrom(claim.viewPlan, claim.input, instructions),
       });
 
       if (result.state !== "outputs_ready") {
