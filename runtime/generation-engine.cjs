@@ -64,11 +64,22 @@ function extensionFor(contentType) {
 /**
  * Content-addressed path. The same bytes always land in the same place, which
  * is what makes crash reconciliation possible at all.
+ *
+ * The shape is not free. complete_designpro_generation_request recomputes this
+ * exact string and rejects the whole request with generation_view_identity_invalid
+ * if a single view disagrees, so the prefix is keyed on the GENERATION id — not
+ * the request id — and carries the calls-1-7 segment the database expects.
  */
-function slotStoragePath({ tenantKey, requestId, sourceViewType, contentHash, contentType }) {
+function slotStoragePath({ tenantKey, generationId, sourceViewType, contentHash, contentType }) {
   const extension = extensionFor(contentType);
   if (!extension) throw new EngineError("slot_content_type_invalid", `${contentType} is not a supported render type`);
-  return `designpro/${tenantKey}/generation/${requestId}/${sourceViewType}/${contentHash}.${extension}`;
+  if (!tenantKey || !generationId) throw new EngineError("slot_path_identity_missing", "Tenant key and generation id are required to address a slot");
+  return `designpro/${tenantKey}/${generationId}/calls-1-7/${sourceViewType}/${contentHash}.${extension}`;
+}
+
+/** The directory every attempt at one slot writes into. */
+function slotStoragePrefix({ tenantKey, generationId, sourceViewType }) {
+  return `designpro/${tenantKey}/${generationId}/calls-1-7/${sourceViewType}`;
 }
 
 function classifyFailure(error) {
@@ -87,7 +98,7 @@ function classifyFailure(error) {
  */
 async function runSlot(options) {
   const {
-    requestId, tenantKey, sourceViewType, consumerRole,
+    requestId, tenantKey, generationId, sourceViewType, consumerRole,
     provider, store, promptParts, aspectRatio, imageSize,
     validate, signal, now = () => Date.now(),
     maxProviderAttempts = MAX_PROVIDER_ATTEMPTS_PER_SLOT,
@@ -119,7 +130,7 @@ async function runSlot(options) {
   try {
     // 3. Storage-first reconciliation. A crash between upload and row commit
     //    leaves real bytes behind; finish that work instead of buying it twice.
-    const orphan = await store.findReconcilableBytes?.({ requestId, sourceViewType });
+    const orphan = await store.findReconcilableBytes?.({ requestId, tenantKey, generationId, sourceViewType });
     if (orphan && sha256(orphan.bytes) === orphan.contentHash) {
       const winner = await store.persistAcceptedSlot({
         requestId, sourceViewType, consumerRole,
@@ -188,7 +199,7 @@ async function runSlot(options) {
       }
 
       const contentHash = sha256(result.bytes);
-      const storagePath = slotStoragePath({ tenantKey, requestId, sourceViewType, contentHash, contentType: result.contentType });
+      const storagePath = slotStoragePath({ tenantKey, generationId, sourceViewType, contentHash, contentType: result.contentType });
       await store.putImmutableBytes({ storagePath, bytes: result.bytes, contentType: result.contentType });
       const winner = await store.persistAcceptedSlot({
         requestId, sourceViewType, consumerRole, storagePath, contentHash,
@@ -265,5 +276,6 @@ module.exports = {
   runRequest,
   runSlot,
   slotStoragePath,
+  slotStoragePrefix,
   _test: { classifyFailure, extensionFor, sha256 },
 };

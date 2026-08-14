@@ -15,6 +15,7 @@ const { topazReadiness } = require("./topaz-upscale.cjs");
 const { dispatchOneWrapboxNotification, reconcileCompletedWrapboxDeliveries } = require("./wrapbox-delivery.cjs");
 const { createResendTransport, resendReadiness } = require("./resend-transport.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolImmutableBuffer, uploadSpoolWithTus } = require("./zip-spool.cjs");
+const { createGenerationWorker } = require("./generation-worker.cjs");
 
 const PORT = Number(process.env.PORT || 3001);
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
@@ -89,6 +90,7 @@ async function existingMaster(storagePath) {
 
 let readiness = { ready: false, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID, imageModel: GOOGLE_IMAGE_MODEL, error: "dependency_probe_pending" };
 let claimant = null;
+let generationWorker = null;
 let deliveryTimer = null;
 let deliveryBusy = false;
 const notificationReadiness = resendReadiness(process.env);
@@ -126,8 +128,21 @@ function ensureDeliveryWorkers() {
 function stopWorkerLoops() {
   if (claimant) claimant.stop();
   claimant = null;
+  if (generationWorker) generationWorker.stop();
+  generationWorker = null;
   if (deliveryTimer) clearInterval(deliveryTimer);
   deliveryTimer = null;
+}
+
+/**
+ * Calls 1-7. Separate from the Calls 8-12 claimant on purpose: generation and
+ * production sit on opposite sides of the seven-view contract, and a generation
+ * outage must not stop production packs that already have their sources.
+ */
+function ensureGenerationWorker() {
+  if (generationWorker) return;
+  generationWorker = createGenerationWorker({ supabase, workerId: `${WORKER_ID}-calls-1-7` });
+  generationWorker.start();
 }
 
 async function refreshReadiness() {
@@ -148,13 +163,17 @@ async function refreshReadiness() {
     }
     if (!claimant) claimant = registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY, workerSecret: WORKER_SECRET, workerId: WORKER_ID, port: PORT, spoolDir: DESIGNPRO_SPOOL_DIR, tusEndpoint: SUPABASE_TUS_ENDPOINT });
     ensureDeliveryWorkers();
+    ensureGenerationWorker();
     readiness = {
       ready: true, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID,
       imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV, publicGoLiveEnvironment: PUBLIC_GO_LIVE_ENV,
       publicGoLiveReady: notificationReadiness.publicGoLiveReady && enhancementGoLiveBlockers.length === 0,
       publicGoLiveBlockers: [...publicGoLiveBlockers, ...enhancementGoLiveBlockers],
       workerLoopsStarted: true,
-      dependencies: { ...dependencies, wrapboxPublisher: true, notifications: notificationReadiness, enhancement: enhancementReadiness },
+      dependencies: {
+        ...dependencies, wrapboxPublisher: true, notifications: notificationReadiness, enhancement: enhancementReadiness,
+        generation: { started: Boolean(generationWorker), models: generationWorker?.provider?.models || [], keyCount: generationWorker?.provider?.keyCount || 0 },
+      },
       checkedAt: new Date().toISOString(),
     };
   } catch (error) {

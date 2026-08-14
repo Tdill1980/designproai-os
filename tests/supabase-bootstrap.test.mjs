@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered eighteen-migration chain', () => {
-  assert.equal(migrationNames.length, 18);
+test('fresh bootstrap contains one ordered twenty-migration chain', () => {
+  assert.equal(migrationNames.length, 20);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -22,6 +22,9 @@ test('fresh bootstrap contains one ordered eighteen-migration chain', () => {
       '20260806180800', '20260806180900', '20260806181000', '20260806181100',
       '20260806181200', '20260808024500', '20260812120000', '20260812140000', '20260812170000',
       '20260813190000',
+      // The slot-lease layer generation-store.cjs calls, and the completion RPC
+      // rewritten to validate the engine's rows in place instead of deleting them.
+      '20260814050000', '20260814050100',
     ],
   );
 });

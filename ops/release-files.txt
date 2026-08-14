@@ -31,6 +31,11 @@ runtime/procedural-view-plates.cjs
 runtime/mesh-warp.cjs
 runtime/opentype-outline.cjs
 runtime/designpro-master-cycle.cjs
+runtime/view-angles.cjs
+runtime/generation-provider.cjs
+runtime/generation-store.cjs
+runtime/generation-engine.cjs
+runtime/generation-worker.cjs
 gateway/package.json
 gateway/package-lock.json
 gateway/src/server.mjs

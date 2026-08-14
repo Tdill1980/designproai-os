@@ -47,8 +47,11 @@ function createGenerationStore({ supabase, workerId }) {
      * the row leaves them at a content-addressed path. Finding and verifying
      * them is far cheaper than paying a provider to make them again.
      */
-    async findReconcilableBytes({ requestId, sourceViewType, tenantKey }) {
-      const prefix = `designpro/${tenantKey}/generation/${requestId}/${sourceViewType}`;
+    async findReconcilableBytes({ tenantKey, generationId, sourceViewType }) {
+      if (!tenantKey || !generationId) return null;
+      // Must be the same prefix the engine writes and the completion RPC
+      // recomputes; a divergence here silently disables crash recovery.
+      const prefix = `designpro/${tenantKey}/${generationId}/calls-1-7/${sourceViewType}`;
       const { data: listed, error } = await supabase.storage.from(BUCKET).list(prefix, { limit: 2 });
       if (error || !listed?.length) return null;
       // Exactly one orphan is recoverable. Two means an ambiguous history that a

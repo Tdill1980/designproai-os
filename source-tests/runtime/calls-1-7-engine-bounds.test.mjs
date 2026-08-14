@@ -9,6 +9,10 @@ const engineSource = readFileSync(new URL("../../runtime/generation-engine.cjs",
 
 const REQUEST = "22222222-2222-4222-8222-222222222222";
 const TENANT = "user_11111111-1111-4111-8111-111111111111";
+// Slot paths are keyed on the generation id, not the request id:
+// complete_designpro_generation_request recomputes the exact string and rejects
+// the request if a single view disagrees.
+const GENERATION = "33333333-3333-4333-8333-333333333333";
 
 function makeStore(seed = {}) {
   const state = {
@@ -53,7 +57,7 @@ const deadProvider = (status = 500) => ({
   },
 });
 
-const base = { requestId: REQUEST, tenantKey: TENANT, sourceViewType: "side", consumerRole: "driver", promptParts: [{ text: "x" }], aspectRatio: "16:9", imageSize: "4K" };
+const base = { requestId: REQUEST, tenantKey: TENANT, generationId: GENERATION, sourceViewType: "side", consumerRole: "driver", promptParts: [{ text: "x" }], aspectRatio: "16:9", imageSize: "4K" };
 
 test("THE MONEY-FURNACE TEST: a provider that fails forever costs exactly four calls", async () => {
   const provider = deadProvider(500);
@@ -207,7 +211,12 @@ test("every provider call carries a hard timeout", async () => {
 });
 
 test("slot storage is content-addressed so reconciliation can find it", () => {
-  const path = engine.slotStoragePath({ tenantKey: TENANT, requestId: REQUEST, sourceViewType: "side", contentHash: "b".repeat(64), contentType: "image/png" });
-  assert.equal(path, `designpro/${TENANT}/generation/${REQUEST}/side/${"b".repeat(64)}.png`);
-  assert.throws(() => engine.slotStoragePath({ tenantKey: TENANT, requestId: REQUEST, sourceViewType: "side", contentHash: "b".repeat(64), contentType: "image/gif" }), /not a supported render type/);
+  const path = engine.slotStoragePath({ tenantKey: TENANT, generationId: GENERATION, sourceViewType: "side", contentHash: "b".repeat(64), contentType: "image/png" });
+  // Exactly the prefix complete_designpro_generation_request recomputes:
+  // designpro/<tenant>/<generationId>/calls-1-7/<view>/<hash><ext>
+  assert.equal(path, `designpro/${TENANT}/${GENERATION}/calls-1-7/side/${"b".repeat(64)}.png`);
+  assert.equal(path, `${engine.slotStoragePrefix({ tenantKey: TENANT, generationId: GENERATION, sourceViewType: "side" })}/${"b".repeat(64)}.png`);
+  assert.throws(() => engine.slotStoragePath({ tenantKey: TENANT, generationId: GENERATION, sourceViewType: "side", contentHash: "b".repeat(64), contentType: "image/gif" }), /not a supported render type/);
+  // A slot cannot be addressed without both identity parts.
+  assert.throws(() => engine.slotStoragePath({ tenantKey: TENANT, sourceViewType: "side", contentHash: "b".repeat(64), contentType: "image/png" }), /required to address a slot/);
 });
