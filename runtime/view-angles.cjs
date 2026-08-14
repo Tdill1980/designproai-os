@@ -181,8 +181,36 @@ function assertTextDirectionGuard(viewType) {
   return true;
 }
 
+/**
+ * Restored from the source blob, which carries it as the last export.
+ *
+ * The original port dropped it, and nothing noticed because nothing read it:
+ * the worker's prompt had no coverage rules at all, so the model decided for
+ * itself whether vinyl went over the grille, the glass, the lights and the
+ * wheels. That is the difference between a render of a wrapped vehicle and a
+ * render of a painted one, and it is also what the six-surface extraction
+ * later assumes about where artwork stops.
+ */
+const WRAP_COVERAGE_RULES = `
+WRAP COVERAGE — MANDATORY:
+The vinyl wrap covers ONLY painted body panels. The following areas must remain UNWRAPPED and show their original factory appearance:
+- Grille / front grille mesh — NOT wrapped, factory appearance
+- Manufacturer emblems and badges (Ford, Chevy, RAM, etc.) — NOT wrapped, visible
+- Windshield — NOT wrapped, clear glass
+- Driver and passenger side windows — NOT wrapped, clear glass
+- Rear window — NOT wrapped, clear glass
+- Headlights and taillights — NOT wrapped, factory appearance
+- Wheels, tires, wheel wells — NOT wrapped
+- Door handles — NOT wrapped
+- Side mirrors — NOT wrapped
+- Chrome trim, rain gutters, antenna — NOT wrapped
+TRUCK BED: on a pickup, the wrap covers the outer painted panels — cab, bed sides, and tailgate exterior; the open bed interior stays bare factory bedliner.
+This is how real vehicle wraps work. Vinyl goes on painted body panels only.
+`;
+
 module.exports = {
   CAMERA_ANGLES, VIEW_ASPECT_RATIOS, VIEW_LABELS, VIEW_ORDER, VIEW_RESOLUTION,
+  WRAP_COVERAGE_RULES,
   aspectRatio, assertTextDirectionGuard, cameraAngle, requiresOwnGeneration,
   resolutionTier, viewLabel, viewOrder,
 };

@@ -28,6 +28,7 @@ const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
 const { createProvider } = require("./generation-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
+const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 
 const RECEIPT_CONTRACT = "designpro.calls-1-7-receipt.v1";
 const REQUEST_LEASE_SECONDS = 900;
@@ -35,44 +36,64 @@ const HEARTBEAT_MS = 120_000;
 const POLL_MS = 5_000;
 
 /**
- * The design brief the customer typed, plus the vehicle it goes on.
+ * The DesignIQ prompt for one slot.
  *
- * The gateway forbids the client from sending prompt, model, seed or camera
- * angle -- those are server-owned. So the brief is assembled here from the
- * descriptive fields the contract does allow, and the camera angle is appended
- * from the frozen view contract, never from the request.
+ * This used to be a thirty-line concatenation of the request's descriptive
+ * fields with a camera angle stapled on. The engine contract had listed
+ * design-panel-ai-generate and studio-os as frozen source blobs the whole time,
+ * but neither was ported, so the seven views came back framed correctly by the
+ * camera contract and designed by nothing. That is the quality gap.
+ *
+ * The creative intelligence now lives in designiq-prompt.cjs, ported from the
+ * source blob: designer identity and quality bar, the studio kernel, finish and
+ * substrate physics, layered depth, translation of a named reference into
+ * geometry, VisionBoard grounding, logo direction, hood/roof continuity, the
+ * photographic-realism lock, wrap coverage, and the camera body.
+ *
+ * The camera angle is still interpolated from the frozen view contract inside
+ * that builder, never from the request: the gateway forbids the client from
+ * sending prompt, model, seed or camera angle, and that stays true.
  */
-function designBrief(input) {
+function designIqParams(input, sourceViewType) {
   const vehicle = input?.vehicle || {};
-  const descriptor = [vehicle.year, vehicle.make, vehicle.model]
-    .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
-  const lines = [];
-
-  const brief = String(input?.brief || input?.designBrief || input?.description || "").trim();
-  if (brief) lines.push(brief);
-
   const business = String(input?.businessName || input?.business || "").trim();
-  if (business) lines.push(`Business: ${business}`);
-  const industry = String(input?.industry || "").trim();
-  if (industry) lines.push(`Industry: ${industry}`);
-
   const colors = Array.isArray(input?.colors)
-    ? input.colors.map((value) => String(value || "").trim()).filter(Boolean)
-    : String(input?.colors || "").trim() ? [String(input.colors).trim()] : [];
-  if (colors.length) lines.push(`Colors: ${colors.join(", ")}`);
+    ? input.colors.map((value) => String(value || "").trim()).filter(Boolean).join(", ")
+    : String(input?.colors || "").trim();
 
-  const style = String(input?.style || "").trim();
-  if (style) lines.push(`Style: ${style}`);
+  // Commercial when the design carries a business identity; restyle otherwise.
+  // This is the same split the product's own mode toggle makes, derived here so
+  // an older request without an explicit mode still routes correctly.
+  const mode = String(input?.mode || "").trim().toLowerCase() === "restyle"
+    ? "restyle"
+    : (business || String(input?.industry || "").trim() ? "commercial" : "restyle");
 
-  if (!lines.length) lines.push("Professional commercial vehicle wrap design.");
-
-  lines.push(`Vehicle: ${descriptor || "commercial vehicle"}${vehicle.type ? ` (${vehicle.type})` : ""}`);
-  return lines.join("\n");
+  return {
+    mode,
+    prompt: String(input?.brief || input?.designBrief || input?.description || "").trim(),
+    finish: String(input?.finish || "Gloss").trim(),
+    substrate: input?.substrate,
+    companyName: business || undefined,
+    mascot: input?.mascot || undefined,
+    bulletPoints: Array.isArray(input?.bulletPoints) ? input.bulletPoints : undefined,
+    industryType: String(input?.industry || "").trim() || undefined,
+    phone: String(input?.phone || "").trim() || undefined,
+    brandColors: colors || undefined,
+    fontStyle: String(input?.fontStyle || "").trim() || undefined,
+    qrEnabled: input?.qrEnabled === true,
+    vehicleYear: String(vehicle.year || "").trim(),
+    vehicleMake: String(vehicle.make || "").trim(),
+    vehicleModel: String(vehicle.model || "").trim(),
+    visionBoardImages: Array.isArray(input?.visionBoardImages) ? input.visionBoardImages : undefined,
+    visionboard_intent: input?.visionboardIntent || input?.visionboard_intent,
+    styleDescriptors: input?.styleDescriptors || undefined,
+    viewType: sourceViewType,
+  };
 }
 
 /**
- * Prompt parts for one slot: the brief, the operator's regeneration instruction
- * if this slot is being redone, then the frozen camera angle.
+ * Prompt parts for one slot: the DesignIQ prompt, the wrap coverage rules, then
+ * the operator's regeneration instruction if this slot is being redone.
  *
  * The instruction is what "generate this angle again, but bolder" becomes once
  * that capability is server-owned. regenerate_designpro_generation_slot stores
@@ -85,7 +106,8 @@ function promptPartsFor(input, sourceViewType, instruction = "") {
   angles.assertTextDirectionGuard(sourceViewType);
   const note = String(instruction || "").trim();
   const revision = note ? `\n\nRevision requested for this view: ${note}` : "";
-  return [{ text: `${designBrief(input)}${revision}\n\n${angles.cameraAngle(sourceViewType)}` }];
+  const designed = buildDesignIQPrompt(designIqParams(input, sourceViewType));
+  return [{ text: `${designed}\n${angles.WRAP_COVERAGE_RULES}${revision}` }];
 }
 
 const MIME_EXTENSION = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" });
@@ -320,7 +342,7 @@ module.exports = {
   RECEIPT_CONTRACT,
   REQUEST_LEASE_SECONDS,
   createGenerationWorker,
-  designBrief,
+  designIqParams,
   promptPartsFor,
   slotsFrom,
 };
