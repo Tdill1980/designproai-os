@@ -24,6 +24,13 @@ const required = [
   "runtime/zip-spool.cjs",
   "gateway/src/server.mjs",
   "web/src/main.tsx",
+  // The branded operator shell and its gateway client. The shell is the
+  // browser-operable surface; without these the release ships a backend with
+  // nothing an operator can drive.
+  "app/src/App.tsx",
+  "app/src/lib/designpro-api.ts",
+  "app/src/pages/designpro/GenerateDesign.tsx",
+  "app/src/pages/designpro/ProductionWorkflow.tsx",
   "supabase/migrations/20260806181000_designpro_runtime_readiness.sql",
   "ops/validate-package.sh",
   "ops/release-files.txt",
@@ -65,6 +72,15 @@ run("standalone repository static contracts", process.execPath, ["--test", "--te
 run("authenticated gateway", "npm", ["test", "--prefix", "gateway"]);
 run("white control panel", "npm", ["test", "--prefix", "web"]);
 run("white control panel production build", "npm", ["run", "build", "--prefix", "web"]);
+// The operator shell is only gated when its dependencies are installed. It is
+// a large install, so a tree without app/node_modules still runs every other
+// gate rather than failing on a missing directory -- but CI installs it, so
+// the shell cannot regress there unnoticed.
+if (existsSync(resolve(root, "app/node_modules"))) {
+  run("operator shell production build", "npm", ["run", "build", "--prefix", "app"]);
+} else {
+  process.stdout.write("\n== operator shell production build (skipped: app/node_modules absent) ==\n");
+}
 run("server and archive boundary", "bash", ["ops/validate-package.sh"]);
 
 process.stdout.write("\nAll non-Docker exact-release gates passed.\n");

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, FileText, Mic, Camera, Grid3X3 } from "lucide-react";
+import { Home, Brain, Factory, Package, Grid3X3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AppBottomTabsProps {
@@ -14,12 +14,16 @@ interface AppBottomTabsProps {
  * navigating — that way the full tool list is one tap away anywhere
  * in the app.
  */
+// One thumb-reachable tab per step of the operating path. Every route here is
+// served by the router — the quote/quotes/renders tabs this was copied with
+// pointed at RestylePro surfaces that are not part of this system, so they
+// landed on the 404 page.
 const TABS = [
   { label: "Home", route: "/dashboard", icon: Home, match: ["/dashboard"], kind: "link" as const },
   { label: "Tools", icon: Grid3X3, match: [], kind: "drawer" as const },
-  { label: "Quote", route: "/quick-quote", icon: Mic, match: ["/quick-quote"], kind: "link" as const },
-  { label: "Quotes", route: "/quotes", icon: FileText, match: ["/quotes"], kind: "link" as const },
-  { label: "Renders", route: "/my-renders", icon: Camera, match: ["/my-renders"], kind: "link" as const },
+  { label: "Design", route: "/designpro/generate", icon: Brain, match: ["/designpro/generate"], kind: "link" as const },
+  { label: "Jobs", route: "/designpro/jobs", icon: Factory, match: ["/designpro/jobs"], kind: "link" as const },
+  { label: "WrapBox", route: "/designpro/wrapbox", icon: Package, match: ["/designpro/wrapbox"], kind: "link" as const },
 ];
 
 export const AppBottomTabs = ({ onOpenTools }: AppBottomTabsProps) => {

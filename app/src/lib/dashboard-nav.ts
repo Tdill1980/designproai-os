@@ -3,26 +3,31 @@
  * Used by the sidebar, tool grid, and access guards so every surface
  * stays in sync when tools move between groups or tiers.
  *
+ * Scoped to the DesignProAI-owned operating path. The shell was copied from a
+ * suite whose registry listed nineteen tools; most of them were RestylePro
+ * surfaces whose routes are not part of this standalone system, so every one
+ * of those sidebar entries landed on the 404 page. A navigation entry that
+ * cannot be reached is worse than a missing one, so this registry lists only
+ * what the router actually serves. The remaining DesignProAI-owned apps join
+ * it as their routes land.
+ *
  * 3-pillar structure that mirrors the brand tagline
  * "Design. Output. Profit.":
  *
- *   - DESIGN  → we eliminate the design bottleneck
- *     ColorPro, FadeWraps, PatternPro, GraphicsPro, DesignProAI,
- *     RevisionStudioIQ, RestyleLibrary, CreatorMarket
- *
- *   - OUTPUT  → we eliminate prepress + production friction
- *     ProductionFlow, ApprovePro, PrintPro, WrapBox
- *
- *   - PROFIT  → we help you close and track revenue
- *     QuickQuote, MightyMail, Gallery
+ *   - DESIGN  → the seven immutable source views (Calls 1-7)
+ *   - OUTPUT  → proof, panels, QC and verified production files (Calls 8-12)
+ *   - PROFIT  → delivery of the finished pack
  */
 
 import {
-  Palette, Layers, Grid3x3, Sparkles, GitBranch, Library,
-  FileCheck2, Printer, Package, Image as ImageIcon, Store,
-  Mic, Mail, Brain, Factory, Archive, TrendingUp,
-  LayoutDashboard, FileText, Camera, FolderHeart, CreditCard, Settings, Megaphone,
-  Calculator, Calendar, Phone,
+  Brain,
+  FileStack,
+  Factory,
+  Ruler,
+  Package,
+  Image as ImageIcon,
+  LayoutDashboard,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 import type { Tier } from "@/hooks/useToolAccess";
@@ -49,134 +54,21 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
   {
     key: "designpro",
     label: "DesignPro",
-    route: "/designpro",
+    route: "/designpro/generate",
     icon: Brain,
     pillar: "design",
-    tier: "agency",
-    description: "Custom wrap design tool — design any wrap from scratch with AI",
+    tier: "starter",
+    description: "Describe a wrap and a vehicle — the server generates seven distinct photoreal views",
     brandAnchor: true,
   },
   {
-    key: "colorpro",
-    label: "ColorPro",
-    route: "/colorpro",
-    icon: Palette,
+    key: "revisionsource",
+    label: "Revision source",
+    route: "/designpro/revisions/new",
+    icon: FileStack,
     pillar: "design",
     tier: "starter",
-    description: "Photoreal color change renders on any vehicle",
-    brandAnchor: true,
-  },
-  {
-    key: "graphicspro",
-    label: "GraphicsPro",
-    route: "/graphics-pro",
-    icon: Sparkles,
-    pillar: "design",
-    tier: "advanced",
-    description: "AI graphics on hood, roof, panel zones",
-  },
-  {
-    key: "patternpro",
-    label: "PatternPro",
-    route: "/wbty",
-    icon: Grid3x3,
-    pillar: "design",
-    tier: "starter",
-    description: "Pattern wraps with live pricing by the yard",
-  },
-  {
-    key: "revisionstudio",
-    label: "RevisionStudioIQ",
-    route: "/revision-studio",
-    icon: GitBranch,
-    pillar: "design",
-    tier: "complete",
-    description: "Version history, clone & revise, design equity",
-  },
-  {
-    key: "restylelibrary",
-    label: "RestyleLibrary",
-    route: "/restylelibrary",
-    icon: Library,
-    pillar: "design",
-    tier: "starter",
-    description: "Ready-made wrap panel library — browse, preview, buy",
-  },
-  {
-    key: "creatormarket",
-    label: "CreatorMarket",
-    route: "/creatormarket",
-    icon: Store,
-    pillar: "profit",
-    tier: "starter",
-    description: "Marketplace — sell your designs or buy from creators",
-  },
-
-  // ── OUTPUT ───────────────────────────────────────────────────
-  {
-    key: "productionflow",
-    label: "ProductionFlow",
-    route: "/productionflow",
-    icon: Factory,
-    pillar: "output",
-    tier: "complete",
-    description: "Job pipeline — proof to print to delivery",
-  },
-  {
-    key: "approvepro",
-    label: "ApprovePro",
-    route: "/approvepro",
-    icon: FileCheck2,
-    pillar: "output",
-    tier: "starter",
-    description: "Send proofs, capture e-signatures, track revisions",
-  },
-  {
-    key: "printpro",
-    label: "PrintPro",
-    route: "/printpro",
-    icon: Printer,
-    pillar: "output",
-    tier: "complete",
-    description: "Print-ready output and fulfillment",
-  },
-  {
-    key: "wrapbox",
-    label: "WrapBox",
-    route: "/wrapbox",
-    icon: Package,
-    pillar: "profit",
-    tier: "advanced",
-    description: "Bundled wrap delivery kits",
-  },
-
-  // ── PROFIT ───────────────────────────────────────────────────
-  {
-    key: "quickquote",
-    label: "QuickQuote",
-    route: "/quick-quote",
-    icon: Mic,
-    pillar: "profit",
-    tier: "starter",
-    description: "Voice-to-quote in seconds",
-  },
-  {
-    key: "mightymail",
-    label: "MightyMail",
-    route: "/mightymail",
-    icon: Mail,
-    pillar: "marketing",
-    tier: "starter",
-    description: "Email retargeting — cold quote follow-ups, day-3/7 drips, branded templates",
-  },
-  {
-    key: "designvault",
-    label: "DesignVault",
-    route: "/designvault",
-    icon: Archive,
-    pillar: "profit",
-    tier: "starter",
-    description: "Your saved designs & renders archive",
+    description: "Already have seven views? Freeze them as immutable production inputs",
   },
   {
     key: "gallery",
@@ -188,43 +80,37 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     description: "Public showcase — social proof",
   },
 
-  // ── MARKETING ────────────────────────────────────────────────
+  // ── OUTPUT ───────────────────────────────────────────────────
   {
-    key: "seopro",
-    label: "SeoPro",
-    route: "/seopro",
-    icon: TrendingUp,
-    pillar: "marketing",
+    key: "productionjobs",
+    label: "Production jobs",
+    route: "/designpro/jobs",
+    icon: Factory,
+    pillar: "output",
     tier: "starter",
-    description: "Automatic SEO toolkit — blogs, GMB, CTR sweep, local pages, indexing. Drives organic traffic to your shop website.",
+    description: "2D proof, six production layers, QC gates and the verified output files",
     brandAnchor: true,
   },
   {
-    key: "quotetool",
-    label: "QuoteTool",
-    route: "/quotetool",
-    icon: Calculator,
-    pillar: "marketing",
-    tier: "starter",
-    description: "Instant wrap quotes on your website — customers price their own job 24/7",
+    key: "genieqc",
+    label: "GENIE QC",
+    route: "/designpro/genie-qc",
+    icon: Ruler,
+    pillar: "output",
+    tier: "agency",
+    description: "Validate exact six-surface vehicle geometry and release blocked jobs",
   },
+
+  // ── PROFIT ───────────────────────────────────────────────────
   {
-    key: "bookingpro",
-    label: "BookingPro",
-    route: "/bookingpro",
-    icon: Calendar,
-    pillar: "marketing",
+    key: "wrapbox",
+    label: "WrapBox",
+    route: "/designpro/wrapbox",
+    icon: Package,
+    pillar: "profit",
     tier: "starter",
-    description: "Online calendar — customers self-book appointments from any quote link",
-  },
-  {
-    key: "quicktext",
-    label: "QuickText",
-    route: "/never-miss-a-lead",
-    icon: Phone,
-    pillar: "marketing",
-    tier: "starter",
-    description: "Dedicated business number + AI voicemail + auto-text quote links",
+    description: "Delivered production packs with immutable ZIP and manifest hashes",
+    brandAnchor: true,
   },
 ];
 
@@ -248,34 +134,6 @@ const staticHomeGroup: NavGroup = {
       icon: LayoutDashboard,
       description: "Your main dashboard — design output and profit at a glance",
     },
-    {
-      type: "link",
-      label: "Orders",
-      route: "/orders",
-      icon: Package,
-      description: "All WePrintWraps orders — search by email or order #, view artwork, print work orders",
-    },
-    {
-      type: "link",
-      label: "Quotes",
-      route: "/quotes",
-      icon: FileText,
-      description: "All customer quotes — track, follow up, and convert leads to jobs",
-    },
-    {
-      type: "link",
-      label: "My Renders",
-      route: "/my-renders",
-      icon: Camera,
-      description: "Every photoreal render you've generated — reuse, share, or revise",
-    },
-    {
-      type: "link",
-      label: "My Designs",
-      route: "/my-designs",
-      icon: FolderHeart,
-      description: "Your saved wrap designs — organize favorites and proven concepts",
-    },
   ],
 };
 
@@ -285,24 +143,10 @@ const staticAccountGroup: NavGroup = {
   items: [
     {
       type: "link",
-      label: "Marketing Hub",
-      route: "/engine-room",
-      icon: Megaphone,
-      description: "Run campaigns, manage content, and grow your shop's reach",
-    },
-    {
-      type: "link",
-      label: "Billing & plan",
-      route: "/billing",
+      label: "Plans & pricing",
+      route: "/pricing",
       icon: CreditCard,
-      description: "Manage subscription, render credits, and payment method",
-    },
-    {
-      type: "link",
-      label: "Shop settings",
-      route: "/account/shop",
-      icon: Settings,
-      description: "Branding, team members, defaults, and shop-wide preferences",
+      description: "Subscription plans and render token pricing",
     },
   ],
 };
@@ -321,7 +165,6 @@ export const NAV_GROUPS: NavGroup[] = [
   buildToolGroup("design", "Design"),
   buildToolGroup("output", "Output"),
   buildToolGroup("profit", "Profit"),
-  buildToolGroup("marketing", "Marketing"),
   staticAccountGroup,
 ];
 
@@ -336,7 +179,7 @@ export interface DashboardPillar {
   claim: string;           // "We eliminate the design bottleneck"
   accent: string;          // gradient CSS class for the pillar index + accent bar
   primaryAnchor: string;   // tool key rendered as the big CTA
-  secondaryAnchor?: string; // optional second tool key (Profit = QuickQuote + MightyMail)
+  secondaryAnchor?: string;
 }
 
 export const DASHBOARD_PILLARS: DashboardPillar[] = [
@@ -346,28 +189,21 @@ export const DASHBOARD_PILLARS: DashboardPillar[] = [
     claim: "We eliminate the design bottleneck.",
     accent: "bg-gradient-to-r from-blue-500 to-purple-500",
     primaryAnchor: "designpro",
+    secondaryAnchor: "revisionsource",
   },
   {
     id: "output",
     label: "Output",
     claim: "We eliminate prepress and production friction.",
     accent: "bg-gradient-to-r from-purple-500 to-fuchsia-500",
-    primaryAnchor: "productionflow",
+    primaryAnchor: "productionjobs",
   },
   {
     id: "profit",
     label: "Profit",
     claim: "We help you close and track revenue.",
     accent: "bg-gradient-to-r from-fuchsia-500 to-pink-500",
-    primaryAnchor: "quickquote",
-  },
-  {
-    id: "marketing",
-    label: "Marketing",
-    claim: "We bring traffic and turn leads into revenue.",
-    accent: "bg-gradient-to-r from-cyan-400 to-sky-500",
-    primaryAnchor: "seopro",
-    secondaryAnchor: "mightymail",
+    primaryAnchor: "wrapbox",
   },
 ];
 

@@ -45,9 +45,14 @@ jobs:
             runtime/package-lock.json
             gateway/package-lock.json
             web/package-lock.json
+            app/package-lock.json
       - run: npm ci --prefix runtime
       - run: npm ci --prefix gateway
       - run: npm ci --prefix web
+      # The branded operator shell. Installed here so `npm test` gates its
+      # production build -- the shell is the only browser-operable surface,
+      # so a shell that no longer builds is a broken release, not a warning.
+      - run: npm ci --prefix app
       - run: npm test
       - name: Parse the exact production Compose structure
         run: |

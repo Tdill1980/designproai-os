@@ -268,7 +268,9 @@ const App = () => {
           <Route path="/designpro/premium" element={<Navigate to="/designpro" replace />} />
           <Route path="/designpro/raster" element={<RequireAuth><DesignStudio /></RequireAuth>} />
           {/* FadeWrap generator hidden — use DesignProAI for fade wraps via prompt */}
-          <Route path="/designpanelpro" element={<Navigate to="/restylelibrary" replace />} />
+          {/* /restylelibrary is a RestylePro surface this system does not
+              serve, so this redirect used to land on the 404 page. */}
+          <Route path="/designpanelpro" element={<Navigate to="/designpro/jobs" replace />} />
           <Route path="/designpanelpro/premium" element={<Navigate to="/designpro" replace />} />
           <Route path="/approvemode" element={<ApproveProUnavailable />} />
           <Route path="/admin" element={<AdminDashboard />} />
