@@ -1,8 +1,13 @@
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
-const require = createRequire("file:///home/user/designproai-os/x.mjs");
-const R = "/home/user/designproai-os/runtime";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+// Resolved from this file so the canary runs against whatever checkout it
+// lives in. Hardcoded absolute paths meant it only ever ran on one machine.
+const require = createRequire(import.meta.url);
+const R = fileURLToPath(new URL("../runtime", import.meta.url));
 const sharp = require(`${R}/node_modules/sharp`);
 const { proceduralViewPlates } = require(`${R}/procedural-view-plates.cjs`);
 const { authorDesignMaster, CREATIVE_BRIEF_CONTRACT } = require(`${R}/design-master-author.cjs`);
@@ -10,7 +15,7 @@ const { runOriginCycle, approveCycle, approvedProductionSurfaces } = require(`${
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
 const uuid = (n) => `${n.repeat(8)}-${n.repeat(4)}-4${n.repeat(3)}-8${n.repeat(3)}-${n.repeat(12)}`;
-const FONT = readFileSync("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+const FONT = readFileSync(process.env.CANARY_FONT || "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
 const PNG = { compressionLevel: 6, adaptiveFiltering: false, force: true };
 const TRIM = { driver:[153,56], passenger:[153,56], hood:[71.5,56], roof:[74.3,54.8], front:[129,34], rear:[76,54] };
 const KEYS = Object.keys(TRIM);
@@ -87,7 +92,8 @@ const production = approvedProductionSurfaces({ approval, cycle });
 console.log("8. PRODUCTION GATE PASSED ->", production.surfaces.length, "panels,", production.surfaces.map(s=>s.surfaceKey).join(","));
 console.log("   text:", JSON.stringify(cycle.proof2d.textIdentities));
 
-writeFileSync("/tmp/claude-0/-home-user-designproai-os/eed283f8-4a26-56ef-8874-f4f04e7894ad/scratchpad/proof2d.png", cycle.proof2d.bytes);
+const OUT = process.env.CANARY_OUT || mkdtempSync(join(tmpdir(), "designpro-canary-"));
+writeFileSync(join(OUT, "proof2d.png"), cycle.proof2d.bytes);
 for (const v of cycle.proof3d.views) if (v.viewKey==="driver"||v.viewKey==="passenger")
-  writeFileSync(`/tmp/claude-0/-home-user-designproai-os/eed283f8-4a26-56ef-8874-f4f04e7894ad/scratchpad/3d-${v.viewKey}.png`, v.bytes);
-console.log("wrote proof images");
+  writeFileSync(join(OUT, `3d-${v.viewKey}.png`), v.bytes);
+console.log("wrote proof images ->", OUT);
