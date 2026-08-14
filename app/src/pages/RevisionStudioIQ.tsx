@@ -101,6 +101,7 @@ import { ApproveProContextPanel } from "@/components/proof/ApproveProContextPane
 import { ClipboardSignature as ClipboardSignatureIcon } from "lucide-react";
 import { MyVehicleProInline } from "@/components/tools/MyVehicleProInline";
 import { generatePassengerMirror, designLikelyHasText, fixMirrorText, producePassengerView } from "@/utils/passenger-mirror";
+import { resolveRowRenderUrls, resolveRenderUrls, resolveViewRef } from "@/lib/designpro-view-refs";
 // useStudioToggle removed - dark studio only
 
 // ApprovePro remains intentionally offline until its DesignProAI-owned OS
@@ -2697,7 +2698,12 @@ export default function RevisionStudioIQ() {
         );
       });
 
-      return filtered;
+      // Designs produced by the standalone Calls 1-7 runtime store their views
+      // as `dp://` references, because the bytes sit in a private bucket only
+      // the gateway may hand out URLs for. Resolve them here, as the rows enter
+      // the grid, so every downstream consumer of render_urls keeps working on
+      // ordinary URLs.
+      return resolveRowRenderUrls(filtered as any[]);
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
@@ -3254,9 +3260,12 @@ export default function RevisionStudioIQ() {
         const sUrls = ((s as any)?.render_urls || {}) as Record<string, string>;
         for (const [k, v] of Object.entries(sUrls)) if (!merged[k] && v) merged[k] = v as string;
       }
-      if (!cancelled && Object.keys(merged).length > Object.keys(urls).length) {
-        console.log(`[RevisionStudioIQ] Hydrated ${Object.keys(merged).length - Object.keys(urls).length} missing view(s) from generation ${genId}`);
-        setSelectedRender((prev: any) => (prev?.id === r.id ? { ...prev, render_urls: merged } : prev));
+      // The hydration sources are raw table reads, so anything they contribute
+      // is still a `dp://` reference — resolve before it reaches the viewer.
+      const resolved = await resolveRenderUrls(merged);
+      if (!cancelled && Object.keys(resolved).length > Object.keys(urls).length) {
+        console.log(`[RevisionStudioIQ] Hydrated ${Object.keys(resolved).length - Object.keys(urls).length} missing view(s) from generation ${genId}`);
+        setSelectedRender((prev: any) => (prev?.id === r.id ? { ...prev, render_urls: resolved } : prev));
       }
     })();
     return () => { cancelled = true; };
@@ -5129,6 +5138,8 @@ export default function RevisionStudioIQ() {
           const gUrls = (g?.render_urls || {}) as Record<string, string>;
           heroReferenceUrl =
             g?.hero_render_url || gUrls["side"] || gUrls["driver-side"] || Object.values(gUrls)[0] || null;
+          // Straight off the table, so this may still be a `dp://` reference.
+          heroReferenceUrl = await resolveViewRef(heroReferenceUrl);
           if (heroReferenceUrl) {
             console.log(`[RevisionStudioIQ] Anchored regeneration to design generation hero (${linkedGenId}) — prevents new-sky drift`);
           }
