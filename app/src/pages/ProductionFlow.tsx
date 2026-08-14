@@ -3097,7 +3097,7 @@ export default function ProductionFlow() {
               }}
             >
               <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", background: "linear-gradient(135deg, #0ea5e9, #3b82f6)", padding: "3px 10px", borderRadius: 6, letterSpacing: 0.5 }}>
-                Restyle<span style={{ color: "#bae6fd" }}>ProAI</span>™
+                Design<span style={{ color: "#bae6fd" }}>ProAI</span>™
               </span>
               <span style={{ fontSize: 13, color: "#d1d5db" }}>|</span>
               <span

@@ -236,7 +236,7 @@ export default function DesignProStudio() {
               className="h-9 w-auto object-contain -mr-1"
             />
             <span className="text-lg font-bold tracking-tight leading-none">
-              <span className="text-white">Restyle</span>
+              <span className="text-white">Design</span>
               <span className="bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">Pro</span>
               <span className="bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">AI</span>
               <span className="text-zinc-400 text-[10px] align-super ml-0.5">&#8482;</span>
