@@ -45,7 +45,8 @@ select ok(
 );
 select policies_are(
   'storage','objects',
-  ARRAY['designpro_customer_read_wrapbox_delivery','designpro_owner_insert_revision_inputs','designpro_owner_read_wrap_files'],
+  ARRAY['designpro_customer_read_wrapbox_delivery','designpro_owner_insert_revision_inputs',
+        'designpro_owner_read_generation_views','designpro_owner_read_wrap_files'],
   'only exact DesignPro Storage policies are installed by this bootstrap'
 );
 select ok(
