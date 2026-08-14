@@ -365,6 +365,40 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
+      # When the inventory refuses, its reason is the only thing that matters
+      # and it was previously reachable only by downloading an artifact. A
+      # refusal that cannot be read is a refusal that gets retried blindly, so
+      # the state the guards examined is echoed into the job log as well.
+      - name: Report the exact droplet state the inventory refused
+        if: failure()
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_SHA='$EXACT_SHA' bash -s" <<'REMOTE' || true
+          echo "== hostname ==";      hostname
+          echo "== current ==";       readlink -f /opt/designproai-os/current 2>/dev/null || echo "(none)"
+          echo "== releases ==";      ls -1 /opt/designproai-os/releases 2>/dev/null || echo "(none)"
+          echo "== staging ==";       ls -A1 /opt/designproai-os/staging 2>/dev/null || echo "(empty or absent)"
+          echo "== compose services ==";
+          docker ps -a --filter label=com.docker.compose.project=designproai-os \
+            --format '{{.Label "com.docker.compose.service"}}\t{{.State}}\t{{.Status}}' 2>/dev/null || echo "(none)"
+          echo "== compose volumes ==";
+          docker volume ls --filter label=com.docker.compose.project=designproai-os -q 2>/dev/null || echo "(none)"
+          echo "== images for expected sha ==";
+          docker image inspect "designproai-runtime:$EXPECTED_SHA" >/dev/null 2>&1 && echo "runtime image present" || echo "runtime image absent"
+          docker image inspect "designproai-gateway:$EXPECTED_SHA" >/dev/null 2>&1 && echo "gateway image present" || echo "gateway image absent"
+          echo "== /opt/restylepro ==";
+          test -e /opt/restylepro && echo "PRESENT" || echo "absent"
+          echo "== runtime container logs (last 40) ==";
+          for c in $(docker ps -aq --filter label=com.docker.compose.project=designproai-os --filter label=com.docker.compose.service=runtime-1 2>/dev/null); do
+            docker logs --tail 40 "$c" 2>&1 || true
+          done
+          REMOTE
+
       - name: Stage exact controls and artifact only after inventory passes
         if: env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3'
         env:
