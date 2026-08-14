@@ -394,17 +394,15 @@ const Index = () => {
 
                 {/* Tool names */}
                 <p className="text-xs sm:text-sm text-white/40 flex flex-wrap gap-x-2 gap-y-1 pt-1">
-                  <span>ColorPro™</span>
+                  <span>Seven photoreal views</span>
                   <span>•</span>
-                  <span>DesignPanelPro™</span>
+                  <span>2D Production Proof</span>
                   <span>•</span>
-                  <span>FadeWraps™</span>
+                  <span>Six Production Layers</span>
                   <span>•</span>
-                  <span>PatternPro™</span>
+                  <span>Print-ready files</span>
                   <span>•</span>
-                  <span>ApprovePro™</span>
-                  <span>•</span>
-                  <span>Revision<span className="text-gradient-blue-subtle">StudioIQ™</span></span>
+                  <span>Wrap<span className="text-gradient-blue-subtle">Box™</span> delivery</span>
                 </p>
               </div>
 
@@ -538,13 +536,13 @@ const Index = () => {
               {/* Tool pill bar */}
               <div className="flex justify-center gap-2 flex-wrap mt-10 sm:mt-14">
                 {[
-                  { name: "Restyle ProAI™", active: true },
-                  { name: "DesignProAI™" },
-                  { name: "ColorPro™" },
-                  { name: "RestyleLibrary™" },
-                  { name: "ProductionFlow™" },
-                  { name: "ApprovePro™" },
-                  { name: "RevisionStudioIQ™", hasGradient: true },
+                  { name: "DesignProAI™", active: true },
+                  { name: "Photoreal views" },
+                  { name: "Revision Studio" },
+                  { name: "2D Production Proof" },
+                  { name: "Production Layers" },
+                  { name: "PanelPro QC" },
+                  { name: "WrapBox™" },
                 ].map((tool) => (
                   <span
                     key={tool.name}
@@ -555,7 +553,7 @@ const Index = () => {
                     }`}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF]" />
-                    {tool.hasGradient ? (<>Revision<span className="text-gradient-blue-subtle">StudioIQ™</span></>) : tool.name}
+                    {tool.name}
                   </span>
                 ))}
               </div>

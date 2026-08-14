@@ -45,8 +45,6 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { AppCartProvider } from "@/contexts/AppCartContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { MetaPixel } from "@/components/MetaPixel";
-import { AppCartBubble } from "@/components/AppCartBubble";
-import { AppCartDrawer } from "@/components/AppCartDrawer";
 import { MobileToolNav } from "@/components/MobileToolNav";
 import { DesktopToolNav } from "@/components/DesktopToolNav";
 import { OfflineBanner } from "@/components/OfflineBanner";
@@ -192,7 +190,9 @@ const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
 };
 
 const App = () => {
-  const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
+  // The App Cart is RestylePro storefront commerce; this product sells
+  // nothing from the operator shell, and its drawer rendered as a dead panel
+  // pinned over the right third of every page.
 
   // When the app is rendered inside an iframe (ApprovePro's embedded WPW
   // proof / DesignPro panels), strip the global chrome — header, footer,
@@ -346,8 +346,6 @@ const App = () => {
         {!inIframe && (
           <HideOnCustomerProof>
         <Footer />
-        <AppCartBubble onClick={() => setIsCartDrawerOpen(true)} />
-        <AppCartDrawer isOpen={isCartDrawerOpen} onClose={() => setIsCartDrawerOpen(false)} />
           <MobileToolNav />
           <DesktopToolNav />
           <OfflineBanner />

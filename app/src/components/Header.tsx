@@ -458,27 +458,6 @@ const HeaderComponent = () => {
 
             <span className="text-muted-foreground/40">|</span>
 
-            <Link
-              to="/signup"
-              className={`text-sm font-semibold transition-colors flex items-center gap-1 ${
-                isActive('/signup') ? 'text-primary' : 'text-cyan-400 hover:text-cyan-300'
-              }`}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Sign Up Free
-            </Link>
-
-            <span className="text-muted-foreground/40">|</span>
-
-            <Link
-              to="/designpro?try=1"
-              className={`text-sm font-semibold transition-colors flex items-center gap-1 ${
-                isActive('/designpro') ? 'text-primary' : 'bg-gradient-to-r from-cyan-400 to-fuchsia-400 bg-clip-text text-transparent hover:from-cyan-300 hover:to-fuchsia-300'
-              }`}
-            >
-              Custom Wrap Design · $250
-            </Link>
-
             {/* Token balance pill — surfaces the user's design-token count
                 next to the Try CTA so logged-in buyers can see they already
                 own credits. Hidden when balance is 0 (Try CTA covers them). */}

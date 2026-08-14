@@ -31,9 +31,7 @@ import { BookingProCard } from "@/components/dashboard/BookingProCard";
 import { CreatorMarketSpotlight } from "@/components/dashboard/CreatorMarketSpotlight";
 import { GallerySliderCard } from "@/components/dashboard/GallerySliderCard";
 import { RecentRendersStrip } from "@/components/dashboard/RecentRendersStrip";
-import { ApproveProCard } from "@/components/dashboard/ApproveProCard";
 import { CustomerProofStatusCard } from "@/components/dashboard/CustomerProofStatusCard";
-import { UpcomingBookingsCard } from "@/components/dashboard/UpcomingBookingsCard";
 import { BookingCalendarCard } from "@/components/dashboard/BookingCalendarCard";
 import { WpwRewardsCard } from "@/components/dashboard/WpwRewardsCard";
 import { WpwOrderStatusCard } from "@/components/dashboard/WpwOrderStatusCard";
@@ -202,17 +200,11 @@ export default function RestyleDashboardContent() {
         <TokenBalanceCard />
       </div>
 
-      {/* ApprovePro live workbench — promoted to top-of-flow so designers
-          see their queue + customer responses BEFORE anything else. The
-          card itself glows pink when a customer just responded; the
-          banner above the HeroRow handles the louder "drop everything"
-          alert. Schedule rides shotgun on the right. */}
-      <section aria-label="ApprovePro and Schedule" className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-        <div className="lg:col-span-2">
-          <ApproveProCard />
-        </div>
-        <UpcomingBookingsCard />
-      </section>
+      {/* The ApprovePro workbench and the booking schedule that sat here are
+          RestylePro surfaces. ApprovePro is offline in this system -- its
+          route renders the "not live" notice -- so the card advertised a
+          product the operator cannot open, and queried tables this project
+          does not have. */}
 
       {/* Customer-facing proof status — only renders for users who are the
           customer on a design job (matched by email). Invisible to everyone

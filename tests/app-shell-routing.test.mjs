@@ -190,6 +190,44 @@ test("the shell chrome carries no RestylePro wordmark", () => {
   }
 });
 
+test("no page the operator can open advertises a RestylePro product", () => {
+  // Rendered live and checked in a browser: the marketing homepage and the
+  // dashboard were still naming ColorPro, PatternPro, ApprovePro,
+  // RestyleLibrary and RestyleProAI itself. None of them are products this
+  // system serves, so every one was either a dead link or an advert for
+  // something the operator cannot open.
+  const products = /Restyle\s?Pro\s?AI|RestyleLibrary|ColorPro|PatternPro|ApprovePro™|GraphicsPro|LogoPro/;
+  for (const path of [
+    "app/src/pages/Index.tsx",
+    "app/src/pages/RestyleDashboardContent.tsx",
+    "app/src/components/Header.tsx",
+    "app/src/components/Footer.tsx",
+    "app/src/components/layout/AppSidebar.tsx",
+    "app/src/components/dashboard/ToolWordmark.tsx",
+  ]) {
+    const offending = stripComments(read(path))
+      .split("\n")
+      .filter((line) => products.test(line));
+    assert.deepEqual(offending, [], `${path} still names a RestylePro product`);
+  }
+});
+
+test("every navigation entry has a wordmark to render", () => {
+  // The sidebar renders a tool's key when it has no wordmark, which is how
+  // "revisionsource", "productionjobs" and "genieqc" reached the live sidebar
+  // in lowercase and unspaced.
+  const keys = [...read("app/src/lib/dashboard-nav.ts").matchAll(/key:\s*"([^"]+)"/g)].map((m) => m[1]);
+  const wordmarks = read("app/src/components/dashboard/ToolWordmark.tsx");
+  const missing = keys.filter((key) => !new RegExp(`^\\s*${key}:`, "m").test(wordmarks));
+  assert.deepEqual(missing, [], `navigation keys with no wordmark: ${missing.join(", ")}`);
+});
+
+test("the storefront cart is not mounted in the operator shell", () => {
+  // Its drawer rendered as a dead panel pinned over the right third of every
+  // page, including the generation form.
+  assert.ok(!/<AppCartDrawer|<AppCartBubble/.test(APP), "the App Cart must not be mounted");
+});
+
 test("no redirect points at a path the router does not serve", () => {
   const targets = [...APP.matchAll(/<Navigate\s+to="([^"]+)"/g)].map((match) => match[1]);
   const dead = targets.filter((target) => !isServed(target));

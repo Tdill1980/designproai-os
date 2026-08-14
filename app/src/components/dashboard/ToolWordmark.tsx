@@ -22,30 +22,17 @@ export interface WordmarkSplit {
   subSuffix?: string; // optional 2nd gradient span (e.g. "AI")
 }
 
+// One entry per key in the navigation registry. A key with no entry renders
+// its raw key, which is how "revisionsource", "productionjobs" and "genieqc"
+// reached the sidebar in lowercase and unspaced.
 const TOOL_WORDMARKS: Record<string, WordmarkSplit> = {
-  colorpro:         { base: "Color",    suffix: "Pro" },
-  fadewraps:        { base: "Fade",     suffix: "Wraps" },
-  patternpro:       { base: "Pattern",  suffix: "Pro" },
-  graphicspro:      { base: "Graphics", suffix: "Pro" },
-  designpro:        { base: "Design",   suffix: "Pro", subSuffix: "AI" },
-  revisionstudio:   { base: "Revision", suffix: "Studio", subSuffix: "IQ" },
-  restylelibrary:   { base: "Restyle",  suffix: "Library" },
-  creatormarket:    { base: "Creator",  suffix: "Market" },
-  approvepro:       { base: "Approve",  suffix: "Pro" },
-  printpro:         { base: "Print",    suffix: "Pro" },
-  wrapbox:          { base: "Wrap",     suffix: "Box" },
-  productionflow:   { base: "Production", suffix: "Flow" },
-  quickquote:       { base: "Quick",    suffix: "Quote" },
-  mightymail:       { base: "Mighty",   suffix: "Mail" },
-  designvault:      { base: "Design",   suffix: "Vault" },
-  gallery:          { base: "Gallery",  suffix: "" },
-  seopro:           { base: "Seo",      suffix: "Pro" },
-  quotetool:        { base: "Quote",    suffix: "Tool" },
-  bookingpro:       { base: "Booking",  suffix: "Pro" },
-  quicktext:        { base: "Quick",    suffix: "Text" },
-  restylepro:       { base: "Restyle",  suffix: "Pro", subSuffix: "AI" },
-  restyledashboard: { base: "Restyle",  suffix: "Dashboard" },
-  shopengine:       { base: "Shop",     suffix: "Engine" },
+  designpro:        { base: "Design",     suffix: "Pro", subSuffix: "AI" },
+  revisionsource:   { base: "Revision",   suffix: "source" },
+  productionjobs:   { base: "Production", suffix: "jobs" },
+  genieqc:          { base: "GENIE",      suffix: "QC" },
+  wrapbox:          { base: "Wrap",       suffix: "Box" },
+  gallery:          { base: "Gallery",    suffix: "" },
+  shopengine:       { base: "Shop",       suffix: "Engine" },
 };
 
 /** WPW tenant overrides — shown instead of default when isWpw is true. */
