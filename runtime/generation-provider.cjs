@@ -19,9 +19,22 @@ const { createHash } = require("node:crypto");
 
 const ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const PROVIDER_CONTRACT = "designpro.generation-provider.v1";
-// Ported from the frozen source's model chain: pro image first, flash image as
-// the fallback when pro is unavailable or over capacity.
-const DEFAULT_IMAGE_MODELS = Object.freeze(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]);
+// THE MODEL IS LOCKED. One model, no fallback chain.
+//
+// This list used to carry gemini-3.1-flash-image-preview behind the pro model,
+// reasoning that a fallback buys resilience when pro is busy. The owner's
+// pipeline specification forbids exactly that: "Model LOCKED:
+// gemini-3-pro-image-preview ... No Flash downgrade, no fallback models."
+// Upstream had already lived through it -- PR #3380 removed a tier-4 downgrade
+// to this same flash model from generate-color-render because it produced the
+// muted/illustrated regression.
+//
+// A quality fallback is worse than an outage here. An outage is visible and
+// retries; a silent downgrade ships a weaker design to a customer under the
+// same content hash and the same receipts, and nothing downstream can tell.
+// Capacity pressure is answered by key rotation and cooldown below, which cost
+// latency rather than design quality.
+const DEFAULT_IMAGE_MODELS = Object.freeze(["gemini-3-pro-image-preview"]);
 const COOLDOWN_MS = 60_000;
 const ALLOWED_RESPONSE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
