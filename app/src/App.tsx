@@ -38,7 +38,6 @@ function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>)
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import SprocketHelper from "@/components/SprocketHelper";
-import RestyleProQuestionsWidget from "@/components/restylepro/RestyleProQuestionsWidget";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
@@ -221,7 +220,10 @@ const App = () => {
             <img src="/sprocket/planet-purple.png" alt="" className="fixed top-20 right-[-40px] w-20 sm:w-28 opacity-15 pointer-events-none z-0 hidden md:block" style={{ animation: 'float 6s ease-in-out infinite' }} />
             <img src="/sprocket/planet-cyan.png" alt="" className="fixed bottom-32 left-[-20px] w-16 sm:w-24 opacity-10 pointer-events-none z-0 hidden md:block" style={{ animation: 'float 8s ease-in-out infinite 2s' }} />
             {!inIframe && <Header />}
-            {!inIframe && <RestyleProQuestionsWidget />}
+            {/* RestyleProQuestionsWidget removed: a second floating helper stacked
+                on top of SprocketHelper in the bottom-left corner, so the two
+                pills overlapped and its bubble covered the Vehicle Type field on
+                the generation form. SprocketHelper is the DesignProAI one. */}
             {!inIframe && <SprocketHelper />}
             {/* OwnerSprocketDock unmounted 2026-08-04 (Trish): its bottom-left
                 chip floated over page content. The component is kept in the
