@@ -101,7 +101,7 @@ import { ApproveProContextPanel } from "@/components/proof/ApproveProContextPane
 import { ClipboardSignature as ClipboardSignatureIcon } from "lucide-react";
 import { MyVehicleProInline } from "@/components/tools/MyVehicleProInline";
 import { generatePassengerMirror, designLikelyHasText, fixMirrorText, producePassengerView } from "@/utils/passenger-mirror";
-import { resolveRowRenderUrls, resolveRenderUrls, resolveViewRef } from "@/lib/designpro-view-refs";
+import { listLibrary, renderUrlsFor } from "@/lib/designpro-library";
 // useStudioToggle removed - dark studio only
 
 // ApprovePro remains intentionally offline until its DesignProAI-owned OS
@@ -2574,136 +2574,43 @@ export default function RevisionStudioIQ() {
   } = useInfiniteQuery({
     queryKey: ["revision-studio-renders", modeFilter, searchQuery, isAdmin, showTeamRenders],
     queryFn: async ({ pageParam = 0 }) => {
-      const from = pageParam * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
+      // THE LIBRARY IS SERVED FROM CANONICAL STANDALONE OBJECTS.
+      //
+      // This used to query color_visualizations directly. That table is legacy
+      // RestylePro storage the standalone runtime contract prohibits, and
+      // projecting generations into it so this grid would light up was the wrong
+      // half of the migration to keep. The adapter derives the same row shape
+      // from designpro_generation_requests through the gateway instead, so the
+      // page below is unchanged and nothing durable is written to a blocked
+      // table.
+      //
+      // Owner scoping now lives in the gateway (list_designpro_generation_requests
+      // is owner-scoped in the database), so the admin / team-renders branches
+      // this query used to carry have no work left to do here.
+      const library = await listLibrary();
 
-      let query = supabase
-        .from("color_visualizations")
-        .select(GRID_COLUMNS)
-        // Some legacy rows landed on "complete" instead of "completed" —
-        // accept both so MyVehiclePro / RestyleLibrary renders that
-        // finished on the older status string still show up.
-        .in("generation_status", ["completed", "complete"])
-        .not("render_urls", "is", null)
-        .order("created_at", { ascending: false })
-        .range(from, to);
+      const q = searchQuery.trim().toLowerCase();
+      const matches = (row: any) => {
+        if (modeFilter !== "all" && modeFilter !== "designpanelpro") return false;
+        if (!q) return true;
+        return [
+          row.vehicle_make, row.vehicle_model, row.color_name, row.design_file_name,
+          row.custom_styling_prompt_key, row.order_number, row.mode_type,
+          row.vehicle_year == null ? "" : String(row.vehicle_year),
+        ].some((field) => String(field || "").toLowerCase().includes(q));
+      };
 
-      // Standard users only see their own renders (or team renders if toggled)
-      if (!isAdmin) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user?.email) {
-          if (showTeamRenders) {
-            // Find user's organization_id from their own renders
-            const { data: orgRow } = await supabase
-              .from("color_visualizations")
-              .select("organization_id")
-              .ilike("customer_email", session.user.email)
-              .not("organization_id", "is", null)
-              .limit(1)
-              .maybeSingle();
-
-            if (orgRow?.organization_id) {
-              // Show own renders + all renders in same org
-              query = query.or(`customer_email.ilike.${session.user.email},organization_id.eq.${orgRow.organization_id}`);
-            } else {
-              // No org found, fall back to own renders only
-              query = query.ilike("customer_email", session.user.email);
-            }
-          } else {
-            query = query.ilike("customer_email", session.user.email);
-          }
-        }
-      } else {
-        // Admins see all renders, but hide demo-seed clones (rows duplicated
-        // into another account purely for demo filming) so the admin view
-        // doesn't show every design twice.
-        query = query.not("admin_notes", "ilike", "%royaltywraps_demo_seed%");
-      }
-
-      if (modeFilter !== "all") {
-        if (modeFilter === "myvehicle") {
-          query = query.ilike("mode_type", "myvehicle\\_%");
-        } else if (modeFilter.startsWith("myvehicle_")) {
-          // MV × sub-filters: each tool category rolls up every saved
-          // mode_type variant so paid customers see every render they
-          // produced, not just the canonical name. Underscores are
-          // escaped (\\_) so PostgreSQL ILIKE treats them as literals
-          // instead of single-char wildcards.
-          const MV_VARIANTS: Record<string, string[]> = {
-            myvehicle_colorpro: ["myvehicle\\_colorpro%"],
-            myvehicle_designpanelpro: [
-              "myvehicle\\_designpanelpro%",
-              "myvehicle\\_designpro\\_direct",
-            ],
-            myvehicle_fadewraps: ["myvehicle\\_fadewraps%"],
-            myvehicle_graphicspro: ["myvehicle\\_graphicspro%"],
-            myvehicle_wbty: ["myvehicle\\_wbty%"],
-            myvehicle_wallpro: ["myvehicle\\_wallpro%"],
-          };
-          const patterns = MV_VARIANTS[modeFilter] ?? [modeFilter];
-          query = query.or(
-            patterns.map((p) => `mode_type.ilike.${p}`).join(",")
-          );
-        } else {
-          query = query.ilike("mode_type", modeFilter);
-        }
-      }
-
-      if (searchQuery) {
-        const q = searchQuery.trim();
-        // vehicle_year is an integer column — ilike against it makes PostgREST
-        // 400 the whole request (which blanked the grid the moment anyone
-        // typed in the search box). Match the year separately only when the
-        // query is purely numeric.
-        const orParts = [
-          `vehicle_make.ilike.%${searchQuery}%`,
-          `vehicle_model.ilike.%${searchQuery}%`,
-          `color_name.ilike.%${searchQuery}%`,
-          `design_file_name.ilike.%${searchQuery}%`,
-          `custom_styling_prompt_key.ilike.%${searchQuery}%`,
-          `customer_email.ilike.%${searchQuery}%`,
-          `admin_notes.ilike.%${searchQuery}%`,
-          `mode_type.ilike.%${searchQuery}%`,
-        ];
-        if (/^\d+$/.test(q)) {
-          orParts.push(`vehicle_year.eq.${q}`);
-          // Order-number search: color_visualizations has no order number, but
-          // the WePrintWraps order's proof links to the design it was made for
-          // (source_visualization_id). Resolve the order # → its proof(s) →
-          // the linked render id(s) so typing a WPW order # finds the design.
-          try {
-            const { data: proofs } = await supabase
-              .from("proof_approvals" as any)
-              .select("source_visualization_id")
-              .or(`metadata->>wpw_order_number.eq.${q},metadata->>woo_order_number.eq.${q},metadata->>wpw_woo_order_id.eq.${q}`)
-              .not("source_visualization_id", "is", null);
-            const ids = (proofs || [])
-              .map((p: any) => p.source_visualization_id)
-              .filter(Boolean);
-            if (ids.length) orParts.push(`id.in.(${ids.join(",")})`);
-          } catch { /* order lookup is best-effort */ }
-        }
-        query = query.or(orParts.join(","));
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      // Filter out phantom renders - records with empty render_urls objects
-      const filtered = (data || []).filter((r: any) => {
-        const urls = r.render_urls as Record<string, string> | null;
+      // Same phantom-row guard the table query carried: a record with an empty
+      // render_urls object is not a design anyone can open.
+      const filtered = library.filter((row) => {
+        if (!matches(row)) return false;
+        const urls = row.render_urls as Record<string, string> | null;
         if (!urls || typeof urls !== "object") return false;
-        return Object.values(urls).some(
-          (v) => typeof v === "string" && v.length > 0
-        );
+        return Object.values(urls).some((v) => typeof v === "string" && v.length > 0);
       });
 
-      // Designs produced by the standalone Calls 1-7 runtime store their views
-      // as `dp://` references, because the bytes sit in a private bucket only
-      // the gateway may hand out URLs for. Resolve them here, as the rows enter
-      // the grid, so every downstream consumer of render_urls keeps working on
-      // ordinary URLs.
-      return resolveRowRenderUrls(filtered as any[]);
+      const from = pageParam * PAGE_SIZE;
+      return filtered.slice(from, from + PAGE_SIZE);
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
@@ -3260,12 +3167,9 @@ export default function RevisionStudioIQ() {
         const sUrls = ((s as any)?.render_urls || {}) as Record<string, string>;
         for (const [k, v] of Object.entries(sUrls)) if (!merged[k] && v) merged[k] = v as string;
       }
-      // The hydration sources are raw table reads, so anything they contribute
-      // is still a `dp://` reference — resolve before it reaches the viewer.
-      const resolved = await resolveRenderUrls(merged);
-      if (!cancelled && Object.keys(resolved).length > Object.keys(urls).length) {
-        console.log(`[RevisionStudioIQ] Hydrated ${Object.keys(resolved).length - Object.keys(urls).length} missing view(s) from generation ${genId}`);
-        setSelectedRender((prev: any) => (prev?.id === r.id ? { ...prev, render_urls: resolved } : prev));
+      if (!cancelled && Object.keys(merged).length > Object.keys(urls).length) {
+        console.log(`[RevisionStudioIQ] Hydrated ${Object.keys(merged).length - Object.keys(urls).length} missing view(s) from generation ${genId}`);
+        setSelectedRender((prev: any) => (prev?.id === r.id ? { ...prev, render_urls: merged } : prev));
       }
     })();
     return () => { cancelled = true; };
@@ -5138,8 +5042,6 @@ export default function RevisionStudioIQ() {
           const gUrls = (g?.render_urls || {}) as Record<string, string>;
           heroReferenceUrl =
             g?.hero_render_url || gUrls["side"] || gUrls["driver-side"] || Object.values(gUrls)[0] || null;
-          // Straight off the table, so this may still be a `dp://` reference.
-          heroReferenceUrl = await resolveViewRef(heroReferenceUrl);
           if (heroReferenceUrl) {
             console.log(`[RevisionStudioIQ] Anchored regeneration to design generation hero (${linkedGenId}) — prevents new-sky drift`);
           }

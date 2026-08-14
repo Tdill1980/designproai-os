@@ -795,6 +795,35 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 200, { asset: await verifyStoredAsset(fetchImpl, token, cfg, user.id, (await readBody(req)).asset || {}) });
       }
 
+      // The caller's own generations, for the product's design library.
+      //
+      // The library used to be served by projecting finished generations into
+      // color_visualizations, which is legacy RestylePro storage the standalone
+      // runtime contract prohibits. The read model is derived here instead, from
+      // designpro_generation_requests, so nothing durable is written into a
+      // prohibited table to satisfy the original UI.
+      //
+      // Identity only, like the single-request route beside it: no storage path
+      // and no signed URL. Viewing the images stays the explicit /views surface.
+      if (req.method === "GET" && url.pathname === "/api/generation/requests") {
+        const rows = await rpc(fetchImpl, token, cfg, "list_designpro_generation_requests", {});
+        if (!Array.isArray(rows)) throw Object.assign(new Error("generation_list_response_invalid"), { status: 502 });
+        return json(res, 200, rows.map((row) => ({
+          requestId: String(row.requestId || ""),
+          generationId: String(row.generationId || ""),
+          state: String(row.state || ""),
+          createdAt: row.created_at || null,
+          completedAt: row.completedAt || null,
+          vehicle: row.vehicle && typeof row.vehicle === "object" ? row.vehicle : null,
+          designName: row.designName || null,
+          orderNumber: row.orderNumber || null,
+          brief: row.brief || null,
+          businessName: row.businessName || null,
+          finish: row.finish || null,
+          viewTypes: Array.isArray(row.viewTypes) ? row.viewTypes.map(String) : [],
+        })));
+      }
+
       if (req.method === "POST" && url.pathname === "/api/generation/requests") {
         const request = validatedGenerationRequest(await readBody(req));
         const result = await rpc(fetchImpl, token, cfg, "create_designpro_generation_request", {

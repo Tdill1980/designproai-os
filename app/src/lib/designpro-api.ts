@@ -294,6 +294,28 @@ export type GenerationView = {
   expiresIn?: 300;
 };
 
+/**
+ * One of the caller's generations, as the design library sees it.
+ *
+ * Identity only — no storage path, no signed URL. The views for a generation
+ * are fetched separately through listGenerationViews, which is the surface
+ * allowed to mint short-lived signed URLs.
+ */
+export type GenerationSummary = {
+  requestId: string;
+  generationId: string;
+  state: string;
+  createdAt: string | null;
+  completedAt: string | null;
+  vehicle: { year?: string; make?: string; model?: string; type?: string } | null;
+  designName: string | null;
+  orderNumber: string | null;
+  brief: string | null;
+  businessName: string | null;
+  finish: string | null;
+  viewTypes: string[];
+};
+
 export type RegenerateResult = {
   requestId: string;
   sourceViewType: string;
@@ -401,6 +423,8 @@ export const dpApi = {
   createGenerationRequest,
   getGenerationRequest: (requestId: string) =>
     request<GenerationRequestState>(`/generation/requests/${encodeURIComponent(requestId)}`),
+  listGenerationRequests: () =>
+    request<GenerationSummary[]>("/generation/requests"),
   listGenerationViews: (requestId: string) =>
     request<GenerationView[]>(`/generation/requests/${encodeURIComponent(requestId)}/views`),
   /**
