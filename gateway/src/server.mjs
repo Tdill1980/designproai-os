@@ -808,7 +808,43 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           await generationRequestFor(fetchImpl, token, cfg, requestId)
         );
         if (!request) return json(res, 404, { error: "generation_request_not_found" });
+        // Identity only. This route deliberately never returns a storage path or
+        // a signed URL; viewing the images is a separate, explicit surface
+        // (/views below), the same way artifacts are separate from job status.
         return json(res, 200, request);
+      }
+
+      // Viewing the generated photoreal views. Separate from the status route on
+      // purpose: that route is an identity contract and must never sign an
+      // object, so signing lives here, behind the owner's own token, minting the
+      // same five-minute URLs /api/wrapbox uses. Paths are resolved server-side
+      // and never returned.
+      const generationViewsMatch = url.pathname.match(/^\/api\/generation\/requests\/([0-9a-f-]{36})\/views$/);
+      if (req.method === "GET" && generationViewsMatch) {
+        const requestId = generationViewsMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        const located = await rpc(fetchImpl, token, cfg, "designpro_generation_view_paths", { p_request_id: requestId });
+        if (!Array.isArray(located)) return json(res, 404, { error: "generation_request_not_found" });
+        const views = await Promise.all(located.map(async (view) => {
+          const base = {
+            sourceViewType: String(view.sourceViewType || ""),
+            consumerRole: String(view.consumerRole || ""),
+            contentHash: String(view.contentHash || ""),
+            contentType: String(view.contentType || ""),
+            byteSize: Number(view.byteSize || 0),
+          };
+          if (!SHA256_PATTERN.test(base.contentHash) || GENERATION_VIEW_ROLE.get(base.sourceViewType) !== base.consumerRole) {
+            throw Object.assign(new Error("generation_view_identity_invalid"), { status: 502 });
+          }
+          try {
+            return { ...base, signedUrl: await signedArtifactUrl(fetchImpl, token, cfg, String(view.storagePath)), expiresIn: 300 };
+          } catch {
+            // One unsignable view must not fail the whole read; the caller
+            // renders it as pending.
+            return base;
+          }
+        }));
+        return json(res, 200, views);
       }
 
       // Calls 1-7 -> Calls 8-12. The runtime worker has already copied the seven
