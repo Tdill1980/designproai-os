@@ -320,12 +320,26 @@ function validateRevisionBundle(input) {
   if (!master || master.contract !== DESIGN_MASTER_CONTRACT) fail("revision_bundle_master_invalid", "the bundle must carry a validated Design Master");
   if (!render || render.contract !== "designpro.production-surface-render.v1") fail("revision_bundle_render_invalid", "the bundle must carry a completed production render");
   if (!proof2d || proof2d.contract !== "designpro.master-derived-2d-proof.v1") fail("revision_bundle_proof2d_invalid", "the bundle must carry the master-derived 2D proof");
-  if (!proof3d || proof3d.contract !== "designpro.master-derived-3d-proof.v1") fail("revision_bundle_proof3d_invalid", "the bundle must carry the master-derived 3D proof");
+  // PRESENTATION DOES NOT GATE MANUFACTURING. The 3D proof is how the design is
+  // shown, not what is printed: it is derived from the same six surfaces the
+  // panels are cut from, and it contributes no pixel to any of them. A plate
+  // set that fails to render is a presentation gap, and a presentation gap that
+  // stopped a paid order from being manufactured would be this system refusing
+  // to print artwork it had already verified.
+  //
+  // So a bundle may carry no 3D proof. When it does carry one it is checked
+  // exactly as before and bound into the identity, so nothing about an approval
+  // shown WITH a 3D proof changes. When it does not, the identity binds null in
+  // its place and says so, and an approval frozen over a presentation-less
+  // bundle can never be satisfied by one that has a 3D proof, or the reverse.
+  const has3d = proof3d !== null && proof3d !== undefined;
+  if (has3d && proof3d.contract !== "designpro.master-derived-3d-proof.v1") fail("revision_bundle_proof3d_invalid", "a bundle that carries a 3D proof must carry the master-derived one");
 
   if (render.masterHash !== master.masterHash) {
     fail("revision_bundle_render_drift", "the surfaces were rendered from a different master than the bundle carries");
   }
-  for (const [name, proof] of [["2D", proof2d], ["3D", proof3d]]) {
+  const proofs = has3d ? [["2D", proof2d], ["3D", proof3d]] : [["2D", proof2d]];
+  for (const [name, proof] of proofs) {
     if (proof.masterHash !== master.masterHash || proof.renderHash !== render.renderHash) {
       fail("revision_bundle_proof_drift", `the ${name} proof was built from different surfaces than the bundle carries`);
     }
@@ -333,7 +347,7 @@ function validateRevisionBundle(input) {
   // Both proofs must be showing the same six surfaces, not merely the same
   // render identity: a customer who approves one is approving the other.
   const bySurface = new Map(render.surfaces.map((surface) => [surface.surfaceKey, surface.contentHash]));
-  for (const [name, proof] of [["2D", proof2d], ["3D", proof3d]]) {
+  for (const [name, proof] of proofs) {
     for (const entry of proof.surfaceHashes) {
       if (bySurface.get(entry.surfaceKey) !== entry.contentHash) {
         fail("revision_bundle_surface_drift", `the ${name} proof shows a ${entry.surfaceKey} surface the render did not produce`);
@@ -343,7 +357,7 @@ function validateRevisionBundle(input) {
   // And they must be showing the same canonical strings. Two proofs of one
   // design that disagree on a string is the exact failure that retired Call 8.
   const strings = (proof) => proof.textIdentities.map((item) => `${item.textId}=${item.string}`).sort().join("\n");
-  if (strings(proof2d) !== strings(proof3d)) {
+  if (has3d && strings(proof2d) !== strings(proof3d)) {
     fail("revision_bundle_text_disagreement", "the 2D and 3D proofs of this revision carry different canonical text");
   }
 
@@ -359,13 +373,15 @@ function validateRevisionBundle(input) {
     pxPerInch: render.pxPerInch,
     bleedIn: render.bleedIn,
     proof2dHash: proof2d.contentHash,
-    proof3dHash: proof3d.proofHash,
-    plateSetId: proof3d.plateSetId,
-    plateSetHash: proof3d.plateSetHash,
+    proof3dHash: has3d ? proof3d.proofHash : null,
+    plateSetId: has3d ? proof3d.plateSetId : null,
+    plateSetHash: has3d ? proof3d.plateSetHash : null,
     dimensionManifestId: master.dimensionManifestId,
     manifestHash: master.manifestHash,
   };
-  return Object.freeze({ ...identity, bundleIdentity: bundleIdentity(identity) });
+  // Not part of the hashed identity: it is derivable from proof3dHash, and a
+  // field that restates a hashed one is a field that can contradict it.
+  return Object.freeze({ ...identity, presentation3d: has3d, bundleIdentity: bundleIdentity(identity) });
 }
 
 // ---------------------------------------------------------------- approval

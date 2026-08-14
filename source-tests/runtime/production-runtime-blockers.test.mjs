@@ -157,7 +157,6 @@ test("Call 8 authors one flat wrap design and Call 9 only cuts it", () => {
   const wrapSource = readFileSync(new URL("../../runtime/gemini-flat-wrap.cjs", import.meta.url), "utf8");
   const layoutSource = readFileSync(new URL("../../runtime/flat-wrap-layout.cjs", import.meta.url), "utf8");
   assert.match(entry, /authorFlatWrapLayout/);
-  assert.match(entry, /cutAllPanels/);
   assert.match(wrapSource, /gemini-3-pro-image|selectedImageModel/);
   assert.match(wrapSource, /imageSize: "4K"/);
   assert.match(wrapSource, /OUTPUT ONLY THE ARTWORK CANVAS/);
@@ -167,10 +166,15 @@ test("Call 8 authors one flat wrap design and Call 9 only cuts it", () => {
   assert.doesNotMatch(wrapSource, /DESIGN ANCHOR/);
   assert.doesNotMatch(entry, /authorFlatSurfaceMasters/);
   assert.equal(existsSync(new URL("../../runtime/deterministic-artboard.cjs", import.meta.url)), false);
-  // Call 9 cuts and verifies; it never regenerates.
-  assert.match(claimantSource, /sourceRule: "deterministic-cut-of-approved-call8-flat-wrap-layout"/);
-  assert.match(claimantSource, /call9_cut_hash_mismatch/);
-  assert.match(claimantSource, /call9_layout_changed/);
+  // Call 9 consumes and verifies; it never cuts an atlas and never regenerates.
+  // The rule is the one the database enforces on the completion receipt.
+  assert.match(claimantSource, /PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side"/);
+  assert.match(claimantSource, /call9_surface_changed/);
+  assert.doesNotMatch(claimantSource, /cutAllPanels/);
+  assert.doesNotMatch(claimantSource, /flatWrapLayout/);
+  assert.doesNotMatch(claimantSource, /deterministic-cut-of-approved-call8-flat-wrap-layout/);
+  // Call 8 runs the canonical producer, not an atlas author.
+  assert.match(claimantSource, /buildMasterCycle/);
   assert.match(layoutSource, /layout_surface_artwork_reused/);
 });
 

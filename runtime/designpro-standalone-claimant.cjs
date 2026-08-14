@@ -13,9 +13,8 @@ const { AsyncLocalStorage } = require("node:async_hooks");
 const sharp = require("sharp");
 const { canonicalTenantKey, immutableStorageUpload, normalizeLogoAsset, normalizeSourceAsset, safeStoragePath, verifySourceBytes } = require("./runtime-contract.cjs");
 const { resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
-const { selectedImageModel, SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
-const { flatWrapInputHash } = require("./gemini-flat-wrap.cjs");
-const { EXTRACTION_CONTRACT, assertSurfacesAreDistinct, cutAllPanels, flatWrapLayout, layoutIdentity } = require("./flat-wrap-layout.cjs");
+const { SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
+const { buildMasterCycle } = require("./designpro-master-cycle.cjs");
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
@@ -41,6 +40,13 @@ const ARTIFACT_KINDS = Object.freeze([
   "flat-proof", "panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
+// The Call 9 rule the database enforces. Each output side is its own rendered
+// surface from the canonical master -- not a region cut out of a shared atlas.
+const PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side";
+// Working resolution for the canonical surfaces. Print resolution is reached by
+// the Topaz enhance stage, exactly as it was before; rendering at print size
+// here would blow the surface byte budget for no gain.
+const SURFACE_PX_PER_INCH = Number(process.env.DESIGNPRO_SURFACE_PPI || 8);
 
 class StageError extends Error {
   constructor(code, message, retryable = true) {
@@ -136,51 +142,12 @@ async function fingerprintSevenViews(views, sb, tenantValue, revisionId) {
   return identities;
 }
 
-function call8TextLock(snapshot) {
-  if (!snapshot || snapshot.bodyText == null || !Array.isArray(snapshot.expectedLogoInventory)) {
-    throw new StageError("call8_text_lock_missing", "Revision must freeze bodyText and expected logo placements", false);
-  }
-  return {
-    bodyText: snapshot.bodyText,
-    logoPlacements: snapshot.expectedLogoInventory.map((item) => ({
-      identityKey: requiredString(item?.identityKey, "logo identityKey"),
-      displayName: requiredString(item?.displayName, "logo displayName"),
-      targetSurfaceKey: requiredString(item?.surfaceKey, "logo target surface"),
-      contentHash: requiredString(item?.contentHash, "logo contentHash").toLowerCase(),
-    })),
-  };
-}
-
-function call8ProofRequest(run, manifest, viewLineage, textLock, proofMeta) {
-  const tenant = tenantKey(run.tenant_key);
-  const surfaces = manifest.expectedSurfaces || [];
-  if (surfaces.length !== 6) throw new StageError("call8_surface_set_invalid", "Exactly six production surfaces are required", false);
-  if (!Array.isArray(viewLineage) || viewLineage.length !== 7) throw new StageError("call8_view_lineage_invalid", "Call 8 requires all seven immutable source identities", false);
-  const sourceAssets = VIEW_KEYS.map((viewKey) => {
-    const item = viewLineage.find((candidate) => String(candidate?.viewKey) === viewKey);
-    if (!item) throw new StageError("call8_view_lineage_invalid", `Call 8 is missing ${viewKey}`, false);
-    return { viewKey, bucket: "wrap-files", storagePath: item.storagePath, contentHash: item.contentHash, byteSize: item.byteSize, contentType: item.contentType };
-  });
-  // The cut map is derived here from the validated manifest and derived again
-  // inside the runtime. Both sides must agree before a single pixel is authored.
-  let layout;
-  try { layout = flatWrapLayout(surfaces.map(({ sourceAsset, ...surface }) => surface)); }
-  catch (error) { throw new StageError(error.code || "call8_cut_map_invalid", error.message, false); }
-  const totalSqFt = round2(surfaces.reduce((total, item) => total + Number(item.widthInches) * Number(item.heightInches) / 144, 0));
-  if (Number(manifest.totalSqFt) !== totalSqFt || Number(layout.totalSqFt) !== totalSqFt) {
-    throw new StageError("genie_total_square_feet_mismatch", "GENIE total square footage does not match raw per-surface dimensions", false);
-  }
-  const materialHash = flatWrapInputHash({ sourceViews: sourceAssets, layout, revisionId: run.revision_id, textLock, model: selectedImageModel() });
-  return {
-    request: {
-      tenantKey: tenant, workflowRunId: run.id, revisionId: run.revision_id,
-      layout, surfaces: surfaces.map(({ sourceAsset, ...surface }) => surface),
-      sourceAssets, textLock, flatMaterialHash: materialHash,
-      vehicle: manifest.vehicle, proofMeta: proofMeta || {},
-    },
-    layout, totalSqFt, materialHash,
-  };
-}
+// The Call 8 atlas request builder and its text lock lived here. They authored
+// ONE flat wrap layout that Call 9 then cut six panels out of. That model is
+// retired: each side is now rendered from the canonical Design Master in its
+// own right (designpro-master-cycle.cjs), which is the rule the database has
+// always required of Call 9 -- one-own-surface-region-per-output-side. Nothing
+// may reintroduce a shared atlas as a panel source.
 
 async function resolveGenieManifest(sb, run, stage) {
   const { data: source, error: sourceError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
@@ -449,128 +416,156 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const frozenViews = await stageOutput(sb, run.id, "revision.freeze");
     const { data: revisionSource, error: revisionError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
     if (revisionError || !revisionSource || revisionSource.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("call8_revision_source_drift", "Frozen Call 8 text source changed", false);
-    const textLock = call8TextLock(revisionSource.snapshot);
     const snapshot = revisionSource.snapshot || {};
-    const spec = call8ProofRequest(rebound, manifest, frozenViews.viewReceipts, textLock, {
-      designName: snapshot.designName || snapshot.delivery?.designName || "",
-      finish: snapshot.finish || "",
-      designId: snapshot.designId || "",
-      orderNumber: snapshot.orderNumber || "",
+
+    // The customer's total is the manifest's, and it must be the raw sum rounded
+    // once -- never a sum of per-surface figures that have each been rounded
+    // already. At wrap scale those differ, and this is the number that prints on
+    // the signature line of the proof the customer signs.
+    const surfaces = manifest.expectedSurfaces || [];
+    if (surfaces.length !== SURFACE_KEYS.length) throw new StageError("call8_surface_set_invalid", "Exactly six production surfaces are required", false);
+    const rawTotalSqFt = round2(surfaces.reduce((total, item) => total + Number(item.widthInches) * Number(item.heightInches), 0) / 144);
+    if (round2(Number(manifest.totalSqFt)) !== rawTotalSqFt) {
+      throw new StageError("genie_total_square_feet_mismatch", "GENIE total square footage does not match raw per-surface dimensions", false);
+    }
+
+    // THE CANONICAL CHAIN. The Design Master is authored from the frozen
+    // snapshot and the bound manifest, six surfaces are rendered from it, and
+    // the 2D production proof is built from those surfaces. Every one of those
+    // steps already existed and is used here as-is; this stage is their caller,
+    // not a second implementation of any of them.
+    let built;
+    try {
+      built = await buildMasterCycle({
+        run: rebound, manifest, snapshot,
+        download: (storagePath) => storageBytes(sb, storagePath),
+        pxPerInch: SURFACE_PX_PER_INCH, bleedInches: 5,
+        vehicle: manifest.vehicle,
+        designName: snapshot.designName || snapshot.delivery?.designName || "",
+        finish: snapshot.finish || "",
+        orderNumber: snapshot.orderNumber || "",
+      });
+    } catch (error) {
+      throw new StageError(String(error?.code || "call8_master_cycle_failed"), String(error?.message || error), false);
+    }
+
+    if (built.surfaces.length !== SURFACE_KEYS.length) {
+      throw new StageError("call8_surface_set_invalid", "The canonical render did not produce all six production surfaces", false);
+    }
+
+    // Each surface is persisted in its own right. Call 9 consumes these exact
+    // bytes, so there is no layout, no atlas and no region for a panel to be
+    // cut from incorrectly.
+    const spools = [];
+    const surfacePanels = [];
+    const surfaceArtifacts = [];
+    for (const surface of built.surfaces) {
+      // Content addressed, like every other size-routed producer path: the
+      // immutable upload refuses different bytes at a path it already holds.
+      const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/surfaces/${surface.surfaceKey}-${String(surface.contentHash).slice(0, 24)}.png`;
+      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, surface.bytes, "image/png");
+      if (stored.spool) spools.push(stored.spool);
+      surfacePanels.push({
+        key: surface.surfaceKey, storagePath: stored.storagePath, contentHash: stored.hash, byteSize: stored.bytes,
+        pixelWidth: surface.pixelWidth, pixelHeight: surface.pixelHeight,
+        trimWidthInches: surface.trimWidthIn, trimHeightInches: surface.trimHeightIn, bleedInches: surface.bleedIn,
+      });
+      surfaceArtifacts.push(artifact("flat-proof", stored.storagePath, stored.hash, stored.bytes, surface.surfaceKey, {
+        role: "canonical-production-surface", contract: built.cycle.render.contract,
+        masterHash: built.master.masterHash, renderHash: built.cycle.render.renderHash,
+        pixelWidth: surface.pixelWidth, pixelHeight: surface.pixelHeight,
+        trimWidthInches: surface.trimWidthIn, trimHeightInches: surface.trimHeightIn,
+        bleed: { top: 5, right: 5, bottom: 5, left: 5 }, pxPerInch: built.cycle.render.pxPerInch,
+      }));
+    }
+
+    const proofPath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/proof/call8-2d-production-proof-${String(built.proof2d.contentHash).slice(0, 24)}.png`;
+    const storedProof = await uploadProducedBytes(sb, run, stage, runtimeConfig, proofPath, built.proof2d.bytes, "image/png");
+    if (storedProof.spool) spools.push(storedProof.spool);
+    const proofArtifact = artifact("flat-proof", storedProof.storagePath, storedProof.hash, storedProof.bytes, "", {
+      role: "customer-2d-production-proof", contract: built.proof2d.contract,
+      masterHash: built.master.masterHash, renderHash: built.cycle.render.renderHash,
+      totalSqFt: built.proof2d.totalSqFt, bleedInches: 5, dimensionsAuthority: "genie-universal-panelizer",
     });
-    const result = await callTool(baseUrl, secret, "/compose-proof-sheet", spec.request);
-    if (result.contract !== "designpro.call8-flat-proof.v2" || result.flatMaterialHash !== spec.materialHash || result.imageModel !== selectedImageModel()
-      || !Array.isArray(result.surfacePanels) || result.surfacePanels.length !== SURFACE_KEYS.length) {
-      throw new StageError("call8_result_invalid", "Call 8 did not return the flat wrap layout, the 2D production proof and the exact six cut identities", false);
-    }
-    const flatLayout = requiredObject(result.flatLayout, "Call 8 flat wrap layout");
-    const proofSheet = requiredObject(result.proof, "Call 8 2D production proof");
-    if (flatLayout.layoutHash !== layoutIdentity(spec.layout) || Number(flatLayout.width) !== spec.layout.width || Number(flatLayout.height) !== spec.layout.height) {
-      throw new StageError("call8_cut_map_drift", "Call 8 authored a layout that is not the deterministic GENIE cut map", false);
-    }
-    // The customer document is the primary flat-proof artifact. The authored
-    // layout is registered beside it as the immutable source the Call 9 cuts
-    // come out of.
-    const proofArtifact = await exactStoredArtifact(sb, {
-      storagePath: proofSheet.storagePath, contentHash: String(proofSheet.contentHash).toLowerCase(), byteSize: Number(proofSheet.byteSize),
-      surfaceKey: "", metadata: {
-        role: "customer-2d-production-proof", contract: proofSheet.contract,
-        widthPx: proofSheet.width, heightPx: proofSheet.height, totalSqFt: proofSheet.totalSqFt,
-        bleedInches: 5, dimensionsAuthority: "genie-universal-panelizer",
-      },
-    }, "flat-proof");
-    const layoutArtifact = await exactStoredArtifact(sb, {
-      storagePath: flatLayout.storagePath, contentHash: String(flatLayout.contentHash).toLowerCase(), byteSize: Number(flatLayout.byteSize),
-      surfaceKey: "flat-wrap-layout", metadata: {
-        role: "call9-cut-source", contract: flatLayout.contract, extractionContract: flatLayout.extractionContract,
-        widthPx: flatLayout.width, heightPx: flatLayout.height, scalePxPerInch: flatLayout.scalePxPerInch,
-        layoutHash: flatLayout.layoutHash, reusedImmutableWinner: flatLayout.reusedImmutableWinner === true,
-      },
-    }, "flat-proof");
-    return complete(sb, stage, await getRun(sb, run.id), {
+
+    const completed = await complete(sb, stage, await getRun(sb, run.id), {
       // proofKind is a frozen literal in complete_designpro_stage's Call 8
       // contract, not a label. It must read exactly "flattened-2d-proof" or the
       // RPC rejects the completed stage with call8_flat_proof_contract_failed.
       verified: true, receiptKind: "call8.flat-proof", call: 8, proofKind: "flattened-2d-proof",
       dimensionsAuthority: "genie-universal-panelizer", bleedInches: 5,
-      sourceProofHash: proofArtifact.contentHash, storagePath: proofArtifact.storagePath, totalSqFt: manifest.totalSqFt,
+      sourceProofHash: proofArtifact.contentHash, storagePath: proofArtifact.storagePath,
+      totalSqFt: manifest.totalSqFt,
       dimensionManifestId: rebound.dimension_manifest_id, manifestHash: rebound.manifest_hash,
       perSurfaceDimensions: manifest.expectedSurfaces.map(({ sourceAsset, ...surface }) => surface),
-      viewLineage: frozenViews.viewReceipts, flatMaterialHash: spec.materialHash, imageModel: result.imageModel,
-      textLock: result.textLock, requiresPanelProTextReview: true,
-      flatLayout: {
-        storagePath: layoutArtifact.storagePath, contentHash: layoutArtifact.contentHash, byteSize: layoutArtifact.byteSize,
-        width: flatLayout.width, height: flatLayout.height, scalePxPerInch: flatLayout.scalePxPerInch, layoutHash: flatLayout.layoutHash,
-      },
-      surfacePanels: result.surfacePanels,
-    }, null, [proofArtifact, layoutArtifact]);
+      viewLineage: frozenViews.viewReceipts, requiresPanelProTextReview: true,
+      // The canonical identity this proof and these surfaces belong to.
+      masterHash: built.master.masterHash, renderHash: built.cycle.render.renderHash,
+      bundleIdentity: built.cycle.identity.bundleIdentity, pxPerInch: built.cycle.render.pxPerInch,
+      textIdentities: built.proof2d.textIdentities, logoIdentities: built.proof2d.logoIdentities,
+      // Presentation state, recorded and never gating.
+      presentation3d: built.presentation3d, presentationFailure: built.presentationFailure,
+      surfacePanels,
+    }, null, [proofArtifact, ...surfaceArtifacts]);
+    for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 8 spool cleanup failed: ${error.message}`));
+    return completed;
   }
   if (stage.stage_key === "panels.build") {
     const proof = await stageOutput(sb, run.id, "proof.build");
     const manifest = requiredObject(run.results?.dimensionManifest, "bound GENIE dimension manifest");
     const expected = new Map((manifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
-    const flatLayout = requiredObject(proof.flatLayout, "Call 8 flat wrap layout receipt");
-    let layout;
-    try { layout = flatWrapLayout((manifest.expectedSurfaces || []).map(({ sourceAsset, ...surface }) => surface)); }
-    catch (error) { throw new StageError(error.code || "call9_cut_map_invalid", error.message, false); }
-    if (layoutIdentity(layout) !== flatLayout.layoutHash) throw new StageError("call9_cut_map_drift", "The Call 9 cut map no longer matches the approved Call 8 layout", false);
+    const recorded = Array.isArray(proof.surfacePanels) ? proof.surfacePanels : [];
+    if (recorded.length !== SURFACE_KEYS.length) {
+      throw new StageError("call9_surface_set_invalid", "Call 8 did not record all six canonical production surfaces", false);
+    }
 
-    // Cut, never generate. The authored layout is downloaded, verified byte for
-    // byte, and the six panels are lifted straight out of it.
-    const layoutBytes = await storageBytes(sb, flatLayout.storagePath);
-    if (hashBytes(layoutBytes) !== String(flatLayout.contentHash).toLowerCase()) throw new StageError("call9_layout_changed", "The approved flat wrap layout changed after Call 8", false);
-    let cuts;
-    let fingerprints;
-    try {
-      cuts = await cutAllPanels(layoutBytes, layout);
-      fingerprints = await assertSurfacesAreDistinct(cuts);
-    } catch (error) { throw new StageError(error.code || "call9_cut_failed", error.message, false); }
-
-    const recorded = new Map((Array.isArray(proof.surfacePanels) ? proof.surfacePanels : []).map((item) => [String(item.key), item]));
-    const produced = [];
+    // Consume, never cut. Each panel IS the surface Call 8 rendered from the
+    // canonical master -- one own surface per output side. There is no atlas to
+    // crop, no region to locate, and no generative pass anywhere in this stage.
     const spools = [];
+    const produced = [];
     const sourceRegionHashes = {};
-    const artworkFingerprints = {};
-    for (const cut of cuts) {
-      const key = cut.surfaceKey;
+    for (const surface of recorded) {
+      const key = String(surface.key);
       const dims = expected.get(key);
-      if (!dims || !Object.values(dims.bleed || {}).every((value) => Number(value) === 5)) throw new StageError("call9_genie_identity_missing", key, false);
-      const call8Panel = recorded.get(key);
-      // The cut must reproduce the exact bytes Call 8 recorded. If it does not,
-      // something between the two stages moved, and the stage fails closed.
-      if (!call8Panel || String(call8Panel.contentHash).toLowerCase() !== cut.contentHash) {
-        throw new StageError("call9_cut_hash_mismatch", `${key} cut does not reproduce the hash Call 8 recorded`, false);
+      if (!dims) throw new StageError("call9_genie_identity_missing", key, false);
+      if (Number(surface.bleedInches) !== 5) throw new StageError("call9_bleed_drift", `${key} does not carry the 5in production bleed`, false);
+      if (round2(surface.trimWidthInches) !== round2(dims.widthInches) || round2(surface.trimHeightInches) !== round2(dims.heightInches)) {
+        throw new StageError("call9_geometry_drift", `${key} was rendered at dimensions the bound manifest does not declare`, false);
       }
-      if (Number(call8Panel.pixelWidth) !== cut.cell.w || Number(call8Panel.pixelHeight) !== cut.cell.h) throw new StageError("call9_geometry_drift", `${key} cut geometry drifted`, false);
+      // The bytes are re-hashed against what Call 8 recorded. A surface that
+      // moved between the two stages fails closed rather than printing.
+      const bytes = await storageBytes(sb, surface.storagePath);
+      const observed = hashBytes(bytes);
+      if (observed !== String(surface.contentHash).toLowerCase()) {
+        throw new StageError("call9_surface_changed", `${key} changed after Call 8 rendered it`, false);
+      }
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/panels/${key}.png`;
-      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, cut.bytes, "image/png");
+      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, bytes, "image/png");
       if (stored.spool) spools.push(stored.spool);
-      sourceRegionHashes[key] = cut.contentHash;
-      artworkFingerprints[key] = fingerprints[key];
+      sourceRegionHashes[key] = observed;
       produced.push(artifact("panel", stored.storagePath, stored.hash, stored.bytes, key, {
-        call: 9, sourceRule: "deterministic-cut-of-approved-call8-flat-wrap-layout",
-        extractionContract: EXTRACTION_CONTRACT,
-        sourceRegionHash: cut.contentHash,
-        sourceLayoutPath: flatLayout.storagePath, sourceLayoutHash: flatLayout.contentHash,
-        cutRect: { x: cut.cell.x, y: cut.cell.y, w: cut.cell.w, h: cut.cell.h },
-        trimRect: cut.cell.trim, artworkFingerprint: fingerprints[key],
+        call: 9, sourceRule: PANEL_SOURCE_RULE,
+        sourceRegionHash: observed,
+        sourceSurfacePath: surface.storagePath, sourceSurfaceHash: observed,
+        masterHash: proof.masterHash || null, renderHash: proof.renderHash || null,
         trimWidthInches: dims.widthInches, trimHeightInches: dims.heightInches,
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
-        surfaceSqFt: dims.surfaceSqFt, scalePxPerInch: layout.scalePxPerInch,
-        pixelWidth: cut.cell.w, pixelHeight: cut.cell.h,
-        printWidthInches: cut.cell.printWidthIn, printHeightInches: cut.cell.printHeightIn,
+        surfaceSqFt: dims.surfaceSqFt, pxPerInch: proof.pxPerInch || null,
+        pixelWidth: surface.pixelWidth, pixelHeight: surface.pixelHeight,
         dpi: 1500, outputScale: 0.1, regenerated: false,
       }));
     }
+
     const panelHashes = Object.fromEntries(produced.map((item) => [item.surfaceKey, item.contentHash]));
-    if (new Set(Object.values(panelHashes)).size !== produced.length) throw new StageError("call9_surface_reuse", "Every panel must be a distinct cut of the approved layout", false);
+    if (new Set(Object.values(panelHashes)).size !== produced.length) throw new StageError("call9_surface_reuse", "Every panel must be its own rendered surface", false);
     if (panelHashes.driver === panelHashes.passenger) throw new StageError("call9_driver_passenger_reuse", "Driver artwork cannot be reused for passenger", false);
     const trimDimensions = Object.fromEntries(manifest.expectedSurfaces.map((item) => [item.surfaceKey, { widthInches: item.widthInches, heightInches: item.heightInches, surfaceSqFt: item.surfaceSqFt }]));
     const completed = await complete(sb, stage, run, {
       verified: true, receiptKind: "call9.surface-panels", call: 9,
-      sourceRule: "deterministic-cut-of-approved-call8-flat-wrap-layout",
-      extractionContract: EXTRACTION_CONTRACT, regenerated: false,
-      sides: cuts.map((cut) => cut.surfaceKey), panelHashes, sourceRegionHashes, artworkFingerprints,
-      sourceLayoutHash: flatLayout.contentHash, layoutHash: flatLayout.layoutHash, scalePxPerInch: layout.scalePxPerInch,
+      sourceRule: PANEL_SOURCE_RULE, regenerated: false,
+      sides: produced.map((item) => item.surfaceKey), panelHashes, sourceRegionHashes,
+      masterHash: proof.masterHash || null, renderHash: proof.renderHash || null, pxPerInch: proof.pxPerInch || null,
       dimensionsAuthority: "genie-universal-panelizer", bleedInches: 5, dpi: 1500, outputScale: 0.1,
       dimensionManifestId: run.dimension_manifest_id, manifestHash: run.manifest_hash,
       totalSqFt: manifest.totalSqFt, trimDimensions,
@@ -1403,4 +1398,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, ensureAutomaticProduction, reconcileAutomaticProduction, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };
