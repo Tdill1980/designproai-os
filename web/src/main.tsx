@@ -6,6 +6,8 @@ import {
   AssetIdentity,
   dpApi,
   FinalQc,
+  GenerationRequestState,
+  GenerationVehicle,
   GenieCandidate,
   GenieSurfaceKey,
   GenieValidatedSurfaces,
@@ -64,7 +66,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return <div className="shell">
     <header>
       <Link className="brand" to="/app">DesignPro<span>AI</span></Link>
-      <nav><Link to="/app">Jobs</Link><Link to="/app/revisions/new">New revision</Link><Link to="/app/genie-qc">GENIE QC</Link><Link to="/app/wrapbox">WrapBox</Link><span>{email}</span><button className="nav-button" onClick={logout}>Sign out</button></nav>
+      <nav><Link to="/app">Jobs</Link><Link to="/app/generate">Generate</Link><Link to="/app/revisions/new">New revision</Link><Link to="/app/genie-qc">GENIE QC</Link><Link to="/app/wrapbox">WrapBox</Link><span>{email}</span><button className="nav-button" onClick={logout}>Sign out</button></nav>
     </header>
     <main>{children}</main>
   </div>;
@@ -114,7 +116,7 @@ function Dashboard() {
   return <Shell>
     <div className="page-head"><div><div className="eyebrow">OPERATIONS</div><h1>Production jobs</h1></div><span className="status-chip">Server owned</span></div>
     {error && <div className="notice error">{error}</div>}
-    {!error && jobs.length === 0 && <div className="empty"><h2>No DesignPro jobs yet</h2><p>Upload the seven distinct source views to start the automatic operating-system chain.</p><Link className="button-link" to="/app/revisions/new">Create first revision</Link></div>}
+    {!error && jobs.length === 0 && <div className="empty"><h2>No DesignPro jobs yet</h2><p>Describe a wrap and let the server generate the seven views, or upload seven you already have.</p><Link className="button-link" to="/app/generate">Generate a design</Link><Link className="button-link secondary" to="/app/revisions/new">Upload seven views</Link></div>}
     <div className="grid">{jobs.map((job) => <Link className="card" key={job.generationId} to={`/app/revisions/${job.generationId}`}><div className="card-top"><strong>{job.designId}</strong><span className={`state ${job.state}`}>{job.state.replaceAll("_", " ")}</span></div><h2>{stageLabel[job.currentStage] || job.currentStage}</h2><p>Order # {job.orderNumber} · Revision {job.revision}</p></Link>)}</div>
   </Shell>;
 }
@@ -478,8 +480,120 @@ function WrapboxDetail() {
   return <Shell><div className="page-head"><div><Link className="back" to="/app/wrapbox">← WrapBox</Link><h1>{pack.designId}</h1><p>{pack.designName} · Order # {pack.orderNumber} · Delivered {new Date(pack.readyAt).toLocaleString()}</p></div><button className="secondary" onClick={load}>Refresh five-minute links</button></div><section className="panel"><div className="eyebrow">EXACT VERIFIED DELIVERY</div><h2>Production ZIP</h2><p><strong>{pack.designId}</strong> · Order # {pack.orderNumber}</p><code>SHA-256 {pack.zip.contentHash}</code><p>{pack.zip.byteSize.toLocaleString()} bytes</p>{pack.zip.signedUrl && <a className="button-link" href={pack.zip.signedUrl}>Download production ZIP</a>}</section><section className="panel"><h2>Manifest</h2><code>SHA-256 {pack.manifest.contentHash}</code><p>{pack.manifest.byteSize.toLocaleString()} bytes</p>{pack.manifest.signedUrl && <a className="button-link" href={pack.manifest.signedUrl}>Open exact manifest</a>}</section></Shell>;
 }
 
+/**
+ * Calls 1-7. The other entry point, NewRevision, requires the operator to
+ * already own seven renders. This is the one that makes them: a brief and a
+ * vehicle go in, the runtime generation worker produces the seven immutable
+ * source views, and the same WrapBox recipient binding both paths use is
+ * registered first because the generation request is refused without it.
+ */
+function GenerateDesign() {
+  const [request, setRequest] = useState<GenerationRequestState>();
+  const [progress, setProgress] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Poll while the worker runs. The request is durable, so a browser refresh
+  // resumes reporting rather than losing the job.
+  useEffect(() => {
+    if (!request || ["outputs_ready", "failed", "cancelled"].includes(request.state)) return;
+    const timer = setInterval(() => {
+      dpApi.getGenerationRequest(request.requestId)
+        .then(setRequest)
+        .catch((cause) => redirectIfUnauthenticated(cause));
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [request?.requestId, request?.state]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      setProgress("Registering the confirmed WrapBox recipient…");
+      const { delivery } = await dpApi.registerDeliveryRecipient({
+        customerEmail: String(form.get("customerEmail") || "").trim().toLowerCase(),
+        customerReference: String(form.get("customerReference") || "").trim(),
+        verificationReference: String(form.get("verificationReference") || "").trim(),
+        orderNumber: String(form.get("orderNumber") || "").trim(),
+        designName: String(form.get("designName") || "").trim(),
+      });
+      setProgress("Queueing the seven-view generation…");
+      const created = await dpApi.createGenerationRequest({
+        delivery,
+        vehicle: {
+          year: String(form.get("year") || "").trim(),
+          make: String(form.get("make") || "").trim(),
+          model: String(form.get("model") || "").trim(),
+          type: String(form.get("type") || "van") as GenerationVehicle["type"],
+        },
+        brief: {
+          brief: String(form.get("brief") || "").trim(),
+          businessName: String(form.get("businessName") || "").trim() || undefined,
+          industry: String(form.get("industry") || "").trim() || undefined,
+          style: String(form.get("style") || "").trim() || undefined,
+          colors: String(form.get("colors") || "").split(",").map((value) => value.trim()).filter(Boolean),
+        },
+      });
+      setRequest(created);
+    } catch (cause) {
+      redirectIfUnauthenticated(cause);
+      setError(cause instanceof ApiError ? `The generation request was refused (${cause.code}).` : cause instanceof Error ? cause.message : "The design could not be generated.");
+    } finally {
+      setBusy(false);
+      setProgress("");
+    }
+  }
+
+  const views = request?.views || [];
+  return <Shell>
+    <div className="page-head"><div><Link className="back" to="/app">← Jobs</Link><h1>Generate a design</h1><p>Describe the wrap and the vehicle. The server generates seven distinct photoreal views — it never mirrors one side to make another.</p></div><span className="status-chip">Calls 1–7</span></div>
+    {!request && <form className="revision-form" onSubmit={submit}>
+      <section className="panel"><div className="eyebrow">THE DESIGN</div><div className="form-grid">
+        <label className="wide">Design brief<textarea name="brief" rows={3} required maxLength={2000} placeholder="Bold commercial wrap, clean geometric shapes, large legible phone number" /></label>
+        <label>Business name<input name="businessName" maxLength={160} /></label>
+        <label>Industry<input name="industry" maxLength={160} placeholder="HVAC services" /></label>
+        <label>Colors<input name="colors" maxLength={240} placeholder="dark blue, ice blue, white" /></label>
+        <label>Style<input name="style" maxLength={160} placeholder="bold modern commercial" /></label>
+      </div></section>
+      <section className="panel"><div className="eyebrow">VEHICLE IDENTITY</div><div className="form-grid">
+        <label>Year<input name="year" required /></label>
+        <label>Make<input name="make" required /></label>
+        <label>Model<input name="model" required /></label>
+        <label>Vehicle type<select name="type" defaultValue="van" required><option value="car">Car</option><option value="truck">Truck / box truck</option><option value="suv">SUV</option><option value="van">Van</option><option value="motorcycle">Motorcycle</option><option value="boat">Boat</option><option value="bus">Bus</option><option value="rv">RV</option><option value="trailer">Trailer</option><option value="aircraft">Aircraft</option><option value="heavy_equipment">Heavy equipment</option></select></label>
+      </div></section>
+      <section className="panel"><div className="eyebrow">IMMUTABLE ORDER + WRAPBOX RECIPIENT</div><p className="muted">Enter normal business information — never database IDs or hashes. The order/payment reference is hashed at the gateway and never stored in its original form.</p><div className="form-grid">
+        <label>Order #<input name="orderNumber" pattern="[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}" maxLength={120} required /></label>
+        <label>Confirmed customer email<input name="customerEmail" type="email" autoComplete="email" maxLength={320} required /></label>
+        <label>Customer reference / name<input name="customerReference" minLength={1} maxLength={160} required /></label>
+        <label className="wide">Order or payment verification reference<input name="verificationReference" minLength={3} maxLength={256} autoComplete="off" spellCheck={false} required /></label>
+        <label className="wide">Design name<input name="designName" maxLength={240} required /></label>
+      </div></section>
+      {error && <div className="notice error">{error}</div>}
+      {progress && <div className="notice">{progress}</div>}
+      <button disabled={busy}>{busy ? "Working…" : "Generate seven views"}</button>
+    </form>}
+    {request && <>
+      <section className="panel"><div className="eyebrow">GENERATION STATE</div><h2>{request.state.replaceAll("_", " ")}</h2><p className="muted">Request {request.requestId}</p>
+        {request.state === "queued" && <p>Waiting for a production runtime to claim this request.</p>}
+        {request.state === "leased" && <p>A runtime is generating the seven views now. This page keeps reporting if you refresh or close it.</p>}
+        {request.state === "retryable" && <p>A view failed and will be retried.</p>}
+        {request.state === "failed" && <div className="notice error">{request.failureCode || "Generation failed."}</div>}
+        {request.state === "outputs_ready" && <p className="success">All seven views are generated and byte-verified.</p>}
+      </section>
+      <section className="panel"><div className="eyebrow">SEVEN DISTINCT SOURCE VIEWS</div><div className="grid">
+        {viewDefinitions.map(({ key, label }) => {
+          const view = views.find((item) => (item.consumerRole === "closeup" ? "hero3d" : item.consumerRole) === key);
+          return <div className={`card ${view ? "" : "pending"}`} key={key}><div className="card-top"><strong>{label}</strong><span className={`state ${view ? "outputs_ready" : "queued"}`}>{view ? "ready" : "pending"}</span></div>{view && <code>SHA-256 {view.contentHash.slice(0, 32)}…</code>}</div>;
+        })}
+      </div></section>
+    </>}
+  </Shell>;
+}
+
 function App() {
-  return <BrowserRouter><Routes><Route path="/login" element={<Login/>}/><Route path="/app" element={<Dashboard/>}/><Route path="/app/revisions/new" element={<NewRevision/>}/><Route path="/app/revisions/:generationId" element={<Workflow/>}/><Route path="/app/genie-qc" element={<GenieQc/>}/><Route path="/app/wrapbox" element={<Wrapbox/>}/><Route path="/app/wrapbox/:packId" element={<WrapboxDetail/>}/><Route path="*" element={<Navigate to="/app" replace/>}/></Routes></BrowserRouter>;
+  return <BrowserRouter><Routes><Route path="/login" element={<Login/>}/><Route path="/app" element={<Dashboard/>}/><Route path="/app/generate" element={<GenerateDesign/>}/><Route path="/app/revisions/new" element={<NewRevision/>}/><Route path="/app/revisions/:generationId" element={<Workflow/>}/><Route path="/app/genie-qc" element={<GenieQc/>}/><Route path="/app/wrapbox" element={<Wrapbox/>}/><Route path="/app/wrapbox/:packId" element={<WrapboxDetail/>}/><Route path="*" element={<Navigate to="/app" replace/>}/></Routes></BrowserRouter>;
 }
 
 createRoot(document.getElementById("root")!).render(<React.StrictMode><App/></React.StrictMode>);

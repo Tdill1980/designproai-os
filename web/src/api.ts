@@ -156,7 +156,95 @@ export async function uploadRevisionAsset(revisionId: string, kind: RenderRole |
   return verified.asset;
 }
 
+/**
+ * Calls 1-7 entry. The generation queue existed and the worker executes it, but
+ * nothing in any UI ever created a request, so this was the one hole in the
+ * operating path.
+ *
+ * Two rules the gateway enforces and the browser must respect:
+ *
+ * - The idempotency key is not free-form. It is
+ *   calls17:<generationId>:<recipientIdentityHash>:<sha256(orderNumber)> and the
+ *   gateway recomputes it, so it is derived here rather than invented.
+ * - prompt, model, seed and camera angle are server-owned and rejected if sent.
+ *   The customer supplies the brief and the vehicle; the frozen view contract in
+ *   the runtime supplies the angles.
+ */
+export type GenerationBrief = {
+  brief: string;
+  businessName?: string;
+  industry?: string;
+  colors?: string[];
+  style?: string;
+};
+
+export type GenerationVehicle = {
+  year: string;
+  make: string;
+  model: string;
+  type: "car" | "truck" | "suv" | "van" | "motorcycle" | "boat" | "bus" | "rv" | "trailer" | "aircraft" | "heavy_equipment";
+};
+
+export type GenerationRequestState = {
+  requestId: string;
+  generationId: string;
+  state: "queued" | "leased" | "retryable" | "outputs_ready" | "failed" | "cancelled";
+  inputHash: string;
+  engineContractHash: string;
+  idempotent?: boolean;
+  attempt?: number;
+  outputSetHash?: string | null;
+  // Storage paths are deliberately never exposed to the browser; a view is
+  // identified by its byte hash and role.
+  views?: Array<{ sourceViewType: string; consumerRole: string; contentHash: string; byteSize: number; contentType: string; createdAt?: string }>;
+  failureCode?: string | null;
+  handoffReady?: false;
+  handoffBlocker?: string | null;
+};
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function createGenerationRequest(options: {
+  delivery: FrozenDeliveryRecipient;
+  vehicle: GenerationVehicle;
+  brief: GenerationBrief;
+  generationId?: string;
+}): Promise<GenerationRequestState> {
+  const generationId = (options.generationId || crypto.randomUUID()).toLowerCase();
+  const orderNumber = options.delivery.orderNumber;
+  const recipientIdentityHash = options.delivery.recipientIdentityHash;
+  const idempotencyKey = `calls17:${generationId}:${recipientIdentityHash}:${await sha256Hex(orderNumber)}`;
+
+  const input: Record<string, unknown> = {
+    contractVersion: "designpro.calls-1-7-input.v1",
+    orderNumber,
+    vehicle: options.vehicle,
+    // Exactly the three keys the delivery contract allows; anything else is a
+    // hard 400 at the gateway and again in the database.
+    delivery: {
+      contractVersion: "designpro.wrapbox-recipient.v1",
+      orderNumber,
+      recipientIdentityHash,
+    },
+    brief: options.brief.brief,
+  };
+  if (options.brief.businessName) input.businessName = options.brief.businessName;
+  if (options.brief.industry) input.industry = options.brief.industry;
+  if (options.brief.colors?.length) input.colors = options.brief.colors;
+  if (options.brief.style) input.style = options.brief.style;
+
+  return request<GenerationRequestState>("/generation/requests", {
+    method: "POST",
+    body: JSON.stringify({ generationId, idempotencyKey, input }),
+  });
+}
+
 export const dpApi = {
+  createGenerationRequest,
+  getGenerationRequest: (requestId: string) => request<GenerationRequestState>(`/generation/requests/${encodeURIComponent(requestId)}`),
   signup: (email: string, password: string) => request<{ ok: true; confirmationRequired: boolean }>("/auth/signup", { method: "POST", body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) => request<{ ok: true; user: { id: string; email: string } }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   session: () => request<{ user: { id: string; email: string | null } }>("/auth/session"),
