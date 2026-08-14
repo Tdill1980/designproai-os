@@ -19,7 +19,10 @@ const BUCKET = "wrap-files";
 const STORE_CONTRACT = "designpro.calls-1-7-store.v1";
 const VIEW_TO_ROLE = Object.freeze({
   side: "driver", "passenger-side": "passenger", hood_detail: "hood",
-  front: "front", rear: "rear", "close-up": "closeup", roof: "roof",
+  front: "front", rear: "rear", "hero-3d": "hero3d", roof: "roof",
+  // Retained so historical close-up rows still resolve a role. It is not part
+  // of the seven-view plan and must never stand in for hero3d.
+  "close-up": "closeup",
 });
 
 function sha256(bytes) {
@@ -170,7 +173,10 @@ function createGenerationStore({ supabase, workerId }) {
       if (error) throw new Error(`revision source projection failed: ${error.message}`);
       const renderAssets = {};
       for (const row of data || []) {
-        renderAssets[row.consumer_role === "closeup" ? "hero3d" : row.consumer_role] = {
+        // No role aliasing. hero3d comes from a generated hero-3d view; a
+        // close-up is a panel detail and is not a substitute for it.
+        if (row.consumer_role === "closeup") continue;
+        renderAssets[row.consumer_role] = {
           bucket: BUCKET, storagePath: row.storage_path, contentHash: row.content_hash,
           byteSize: Number(row.byte_size), contentType: row.content_type,
         };

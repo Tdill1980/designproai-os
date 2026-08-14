@@ -488,10 +488,27 @@ function WrapboxDetail() {
  * registered first because the generation request is refused without it.
  */
 function GenerateDesign() {
+  const navigate = useNavigate();
   const [request, setRequest] = useState<GenerationRequestState>();
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [handingOff, setHandingOff] = useState(false);
+
+  // The seven views are only half the job. As soon as the database confirms the
+  // handoff is valid, advance into the existing Calls 8-12 workflow — the
+  // operator should not have to re-enter anything to get a production pack.
+  useEffect(() => {
+    if (request?.state !== "outputs_ready" || request.handoffReady !== true || handingOff) return;
+    setHandingOff(true);
+    dpApi.handoffGeneration(request.requestId)
+      .then((result) => navigate(`/app/revisions/${result.generationId || request.generationId}`))
+      .catch((cause) => {
+        redirectIfUnauthenticated(cause);
+        setHandingOff(false);
+        setError(cause instanceof ApiError ? `The production handoff was refused (${cause.code}).` : "The production handoff failed.");
+      });
+  }, [request?.state, request?.handoffReady, request?.requestId]);
 
   // Poll while the worker runs. The request is durable, so a browser refresh
   // resumes reporting rather than losing the job.
@@ -581,10 +598,12 @@ function GenerateDesign() {
         {request.state === "retryable" && <p>A view failed and will be retried.</p>}
         {request.state === "failed" && <div className="notice error">{request.failureCode || "Generation failed."}</div>}
         {request.state === "outputs_ready" && <p className="success">All seven views are generated and byte-verified.</p>}
+        {request.state === "outputs_ready" && handingOff && <p>Freezing the revision and starting the production workflow…</p>}
+        {request.state === "outputs_ready" && request.handoffReady === false && <div className="notice error">Production handoff blocked: {request.handoffBlocker || "unknown"}</div>}
       </section>
       <section className="panel"><div className="eyebrow">SEVEN DISTINCT SOURCE VIEWS</div><div className="grid">
         {viewDefinitions.map(({ key, label }) => {
-          const view = views.find((item) => (item.consumerRole === "closeup" ? "hero3d" : item.consumerRole) === key);
+          const view = views.find((item) => item.consumerRole === key);
           return <div className={`card ${view ? "" : "pending"}`} key={key}><div className="card-top"><strong>{label}</strong><span className={`state ${view ? "outputs_ready" : "queued"}`}>{view ? "ready" : "pending"}</span></div>{view && <code>SHA-256 {view.contentHash.slice(0, 32)}…</code>}</div>;
         })}
       </div></section>

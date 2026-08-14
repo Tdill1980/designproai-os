@@ -16,7 +16,19 @@
  * its angle carries the explicit text-direction guard.
  */
 
-const VIEW_ORDER = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
+/**
+ * The seventh slot is a true three-quarter hero view, not the close-up.
+ *
+ * The revision contract downstream requires the role `hero3d`
+ * (gemini-flat-surface.cjs: VIEW_KEYS = [...SURFACE_KEYS, "hero3d"]), and
+ * `closeup` is not a role it accepts at all. Aliasing the close-up into that
+ * slot would put a two-square-foot panel detail where every downstream proof
+ * expects a whole vehicle — the same class of defect as the mirrored passenger
+ * side: a plausible image in the wrong semantic slot, which no hash check
+ * catches. The close-up angle is retained below for provenance and may be
+ * generated on request, but it is not one of the seven.
+ */
+const VIEW_ORDER = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof"]);
 
 const VIEW_LABELS = Object.freeze({
   "side": "Driver Side",
@@ -25,6 +37,7 @@ const VIEW_LABELS = Object.freeze({
   "hood_detail": "Hood",
   "rear": "Rear",
   "close-up": "Close-Up",
+  "hero-3d": "3D Hero View",
   "roof": "Roof",
   "front": "Front",
 });
@@ -88,6 +101,15 @@ FRAME FILL: Roof panel fills minimum 90% of frame area. No visible floor or wall
 The wrap design on the roof is the primary subject. Camera is DIRECTLY ABOVE looking DOWN.
 `,
 
+  'hero-3d': `
+Camera: Three-quarter hero view from the front driver corner, 25-30 degrees off the vehicle's centreline and 20 degrees off the side, at roughly chest height. 35mm lens at 20-foot distance so the whole vehicle stays in frame without wide-angle distortion.
+Framing: The COMPLETE vehicle, bumper to bumper and roof to tyre contact patch. Both the driver side and the front fascia are visible in one image, which is what makes this the hero.
+FRAME FILL: Vehicle fills minimum 80% of frame width and 70% of frame height. This is a whole-vehicle presentation shot, NOT a panel detail and NOT a close-up of the wrap surface.
+Vehicle faces left-forward in frame. All four wheels on the ground, front wheels turned slightly toward camera.
+Lighting: Even studio key with a soft gradient background. The wrap design across the side and front reads clearly and continuously around the body corner.
+TEXT DIRECTION: All text, lettering, phone numbers and URLs on the wrap MUST read correctly left-to-right. Text is NEVER mirrored or backwards.
+`,
+
   front: `
 Camera: Straight-on front view. 10-foot distance. Bumper/grille height.
 Focus: Symmetrical grille, headlights, hood edge, front bumper, windshield.
@@ -104,6 +126,7 @@ const VIEW_ASPECT_RATIOS = Object.freeze({
   "front":          "16:9",   // Consistent 360 presentation
   "rear":           "16:9",   // Consistent 360 presentation
   "close-up":       "16:9",   // Match standard views
+  "hero-3d":        "16:9",   // Whole-vehicle hero presentation
   "roof":           "16:9",   // Consistent 360 presentation
 });
 
@@ -115,6 +138,7 @@ const VIEW_RESOLUTION = Object.freeze({
   "front":          "4K",     // GENIE front bumper extract
   "rear":           "4K",     // GENIE rear bumper extract
   "close-up":       "4K",     // Restored to 4K per Trish (was 2K for edge-function memory limit — watch for crashes)
+  "hero-3d":        "4K",     // Whole-vehicle hero — needs max detail
   "roof":           "4K",     // Roof panel extract
 });
 

@@ -1097,6 +1097,9 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
   throw new StageError("unsupported_production_stage", stage.stage_key, false);
 }
 
+// Retained as a recognised historical value. The seventh slot is now a real
+// hero-3d view carrying the hero3d role, so the handoff is decided from the
+// persisted views by calls_1_7_handoff_state rather than pinned shut.
 const CALLS_1_7_HANDOFF_BLOCKER = "source_close_up_has_no_verified_hero3d_role_mapping";
 const CALLS_1_7_VIEW_PLAN = Object.freeze([
   Object.freeze({ sourceViewType: "side", consumerRole: "driver" }),
@@ -1104,7 +1107,7 @@ const CALLS_1_7_VIEW_PLAN = Object.freeze([
   Object.freeze({ sourceViewType: "hood_detail", consumerRole: "hood" }),
   Object.freeze({ sourceViewType: "front", consumerRole: "front" }),
   Object.freeze({ sourceViewType: "rear", consumerRole: "rear" }),
-  Object.freeze({ sourceViewType: "close-up", consumerRole: "closeup" }),
+  Object.freeze({ sourceViewType: "hero-3d", consumerRole: "hero3d" }),
   Object.freeze({ sourceViewType: "roof", consumerRole: "roof" }),
 ]);
 // Calls 1-7 produce the seven immutable source renders and nothing else. The
@@ -1308,8 +1311,11 @@ async function completeCalls1To7Generation(sb, rawClaim, rawViews) {
     p_engine_receipt: receipt,
   });
   if (error) throw new StageError("generation_completion_failed", error.message || "Generation completion failed", true);
-  if (!data || data.state !== "outputs_ready" || data.handoffReady !== false
-    || data.handoffBlocker !== CALLS_1_7_HANDOFF_BLOCKER) {
+  // handoffReady is now evidence, not a constant: true once the seven persisted
+  // views cover exactly the planned roles with distinct bytes. A blocker may
+  // still arrive, but a ready handoff must never carry one.
+  if (!data || data.state !== "outputs_ready" || typeof data.handoffReady !== "boolean"
+    || (data.handoffReady === true && data.handoffBlocker)) {
     throw new StageError("generation_completion_response_invalid", "Calls 1-7 completion response changed", false);
   }
   return data;

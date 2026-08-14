@@ -86,8 +86,11 @@ test("Calls 1-7 adapter claims only the exact frozen source contract", async () 
   assert.equal(result.requestId, claim.requestId);
   assert.deepEqual(result.engineContract, adapter.engineContract);
   assert.deepEqual(result.viewPlan.map((item) => item.sourceViewType), [
-    "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
+    "side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof",
   ]);
+  // The seventh slot must carry the hero3d role the revision contract accepts.
+  assert.equal(result.viewPlan.find((item) => item.sourceViewType === "hero-3d").consumerRole, "hero3d");
+  assert.equal(result.viewPlan.some((item) => item.consumerRole === "closeup"), false);
   assert.deepEqual(fake.calls, [{
     name: "claim_designpro_generation_request",
     payload: { p_worker_id: "calls17-worker", p_lease_seconds: 900 },
@@ -143,10 +146,19 @@ test("completion verifies all seven stored bytes before fenced persistence", asy
 });
 
 test("source close-up cannot be silently relabeled as hero3d", () => {
+  // hero3d now comes from its own generated hero-3d view. A close-up is a
+  // two-square-foot panel detail; presenting one in the hero3d slot must still
+  // be refused, which is why the seventh slot was regenerated rather than
+  // aliased.
   const { views } = calls17Views();
-  const closeup = views.find((item) => item.sourceViewType === "close-up");
-  closeup.consumerRole = "hero3d";
+  const hero = views.find((item) => item.sourceViewType === "hero-3d");
+  hero.sourceViewType = "close-up";
   assert.throws(() => claimant._test.normalizeCalls1To7Views(claim, views),
+    (error) => error.code === "generation_view_identity_invalid");
+
+  const { views: relabelled } = calls17Views();
+  relabelled.find((item) => item.sourceViewType === "hero-3d").consumerRole = "closeup";
+  assert.throws(() => claimant._test.normalizeCalls1To7Views(claim, relabelled),
     (error) => error.code === "generation_view_identity_invalid");
 });
 

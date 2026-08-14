@@ -198,7 +198,9 @@ export type GenerationRequestState = {
   // identified by its byte hash and role.
   views?: Array<{ sourceViewType: string; consumerRole: string; contentHash: string; byteSize: number; contentType: string; createdAt?: string }>;
   failureCode?: string | null;
-  handoffReady?: false;
+  // True once the seven persisted views cover exactly the planned roles with
+  // distinct bytes — including a real hero3d from its own generated view.
+  handoffReady?: boolean;
   handoffBlocker?: string | null;
 };
 
@@ -230,6 +232,9 @@ export async function createGenerationRequest(options: {
       recipientIdentityHash,
     },
     brief: options.brief.brief,
+    // Carried on the request so the production handoff can rebuild the frozen
+    // delivery block after a refresh. It is not stored with the recipient.
+    designName: options.delivery.designName,
   };
   if (options.brief.businessName) input.businessName = options.brief.businessName;
   if (options.brief.industry) input.industry = options.brief.industry;
@@ -245,6 +250,7 @@ export async function createGenerationRequest(options: {
 export const dpApi = {
   createGenerationRequest,
   getGenerationRequest: (requestId: string) => request<GenerationRequestState>(`/generation/requests/${encodeURIComponent(requestId)}`),
+  handoffGeneration: (requestId: string) => request<{ revisionId: string; generationId: string; runId: string | null; alreadyHandedOff: boolean }>(`/generation/requests/${encodeURIComponent(requestId)}/handoff`, { method: "POST" }),
   signup: (email: string, password: string) => request<{ ok: true; confirmationRequired: boolean }>("/auth/signup", { method: "POST", body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) => request<{ ok: true; user: { id: string; email: string } }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   session: () => request<{ user: { id: string; email: string | null } }>("/auth/session"),

@@ -107,11 +107,14 @@ test("the seven-view handoff is unchanged by this port", () => {
   // redefine them.
   const claimant = read("designpro-standalone-claimant.cjs");
   const angles = read("view-angles.cjs");
-  for (const view of ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]) {
+  // The six production surfaces are untouched. The seventh slot is a hero-3d
+  // view carrying the hero3d role, because 'closeup' is not a role the revision
+  // contract accepts and the handoff could never complete while it was.
+  for (const view of ["side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof"]) {
     assert.ok(claimant.includes(`"${view}"`), `claimant lost source slot ${view}`);
     assert.ok(angles.includes(`"${view}"`), `view contract lost slot ${view}`);
   }
-  for (const role of ["driver", "passenger", "hood", "front", "rear", "closeup", "roof"]) {
+  for (const role of ["driver", "passenger", "hood", "front", "rear", "hero3d", "roof"]) {
     assert.ok(claimant.includes(`"${role}"`), `claimant lost consumer role ${role}`);
   }
 });

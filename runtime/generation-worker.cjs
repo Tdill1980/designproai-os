@@ -23,10 +23,11 @@
  * request is reported to the database and left alone.
  */
 
+const { createHash } = require("node:crypto");
 const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
 const { createProvider } = require("./generation-provider.cjs");
-const { createGenerationStore } = require("./generation-store.cjs");
+const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
 
 const RECEIPT_CONTRACT = "designpro.calls-1-7-receipt.v1";
 const REQUEST_LEASE_SECONDS = 900;
@@ -75,6 +76,53 @@ function promptPartsFor(input, sourceViewType) {
   // the defect this whole view contract exists to prevent.
   angles.assertTextDirectionGuard(sourceViewType);
   return [{ text: `${designBrief(input)}\n\n${angles.cameraAngle(sourceViewType)}` }];
+}
+
+const MIME_EXTENSION = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" });
+
+/**
+ * The revision this generation hands over to, derived from the request.
+ *
+ * Deterministic on purpose: a worker that copies four of seven objects and dies
+ * resumes into the same revision and finishes, instead of stranding half a
+ * revision and starting another.
+ */
+function handoffRevisionId(requestId) {
+  const hash = createHash("sha256").update(`designpro.calls-1-7.handoff:${requestId}`).digest("hex");
+  return [
+    hash.slice(0, 8), hash.slice(8, 12),
+    `4${hash.slice(13, 16)}`,
+    ((parseInt(hash.slice(16, 17), 16) & 0x3) | 0x8).toString(16) + hash.slice(17, 20),
+    hash.slice(20, 32),
+  ].join("-");
+}
+
+/**
+ * Copy the accepted views into the revision input paths Calls 8+ reads.
+ *
+ * The bytes are identical, so the content hash is unchanged and the destination
+ * is exactly what validateAssetIdentity recomputes:
+ *   users/<ownerId>/revisions/<revisionId>/inputs/<role>/<hash>.<ext>
+ *
+ * A copy rather than a move: the generation path stays as the immutable record
+ * of what the engine produced, and re-running is idempotent.
+ */
+async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
+  const placed = {};
+  for (const view of views) {
+    const extension = MIME_EXTENSION[view.contentType];
+    if (!extension) throw new Error(`handoff_content_type_invalid: ${view.contentType}`);
+    const destination = `users/${ownerId}/revisions/${revisionId}/inputs/${view.consumerRole}/${view.contentHash}.${extension}`;
+    const { error } = await supabase.storage.from(BUCKET).copy(view.storagePath, destination);
+    if (error && !/exists|duplicate|conflict/i.test(String(error.message))) {
+      throw new Error(`handoff_copy_failed for ${view.consumerRole}: ${error.message}`);
+    }
+    placed[view.consumerRole] = {
+      storagePath: destination, contentHash: view.contentHash,
+      byteSize: view.byteSize, contentType: view.contentType,
+    };
+  }
+  return placed;
 }
 
 function slotsFrom(viewPlan, input) {
@@ -171,6 +219,7 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         return { requestId, state: "failed", reasons: "views_incomplete" };
       }
 
+      const revisionId = handoffRevisionId(requestId);
       const completion = await rpc("complete_designpro_generation_request", {
         p_request_id: requestId,
         p_claim_token: claimToken,
@@ -184,9 +233,18 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
           callsCompleted: "7",
           engineContract: engine.ENGINE_CONTRACT,
           providerCalls: result.providerCalls,
+          handoffRevisionId: revisionId,
         },
       });
-      return { requestId, state: "outputs_ready", completion };
+
+      // Place the bytes where Calls 8+ expects them. The revision itself is
+      // created by the authenticated owner, not here: save_designpro_revision_source
+      // requires an 'authenticated' JWT and refuses a service role outright.
+      if (completion?.handoffReady === true) {
+        const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
+        await placeRevisionSources({ supabase, ownerId, revisionId, views });
+      }
+      return { requestId, state: "outputs_ready", revisionId, completion };
     } catch (error) {
       // The lease may already be gone; a failed fail-report must not mask the
       // original error.

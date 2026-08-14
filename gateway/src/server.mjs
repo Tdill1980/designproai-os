@@ -579,7 +579,19 @@ const GENERATION_SERVER_CONTROL_KEYS = new Set([
 const GENERATION_VIEW_ROLE = new Map([
   ["side", "driver"], ["passenger-side", "passenger"],
   ["hood_detail", "hood"], ["front", "front"], ["rear", "rear"],
-  ["close-up", "closeup"], ["roof", "roof"],
+  // The seventh slot is a whole-vehicle hero view. close-up is retained so
+  // historical rows still validate, but it is no longer part of the plan and
+  // never maps to hero3d.
+  ["hero-3d", "hero3d"], ["close-up", "closeup"], ["roof", "roof"],
+]);
+
+// Every blocker calls_1_7_handoff_state can report. An unrecognised value means
+// the database and the gateway disagree, which is a 502, not a pass-through.
+const GENERATION_HANDOFF_BLOCKERS = new Set([
+  "seven_generation_views_required",
+  "generation_views_must_be_byte_distinct",
+  "generation_view_roles_do_not_match_plan",
+  "source_close_up_has_no_verified_hero3d_role_mapping",
 ]);
 
 function generationInputHasServerControls(value, path = []) {
@@ -654,9 +666,14 @@ function validatedGenerationStatus(value) {
     || !Number.isInteger(attempt) || attempt < 0 || attempt > 12
     || outputSetHash !== null && !SHA256_PATTERN.test(String(outputSetHash || ""))
     || failureCode !== null && !/^[a-z0-9][a-z0-9_:-]{0,79}$/.test(String(failureCode || ""))
-    || value.handoffReady !== false
-    || value.handoffBlocker !== null
-      && value.handoffBlocker !== "source_close_up_has_no_verified_hero3d_role_mapping"
+    // handoffReady was pinned false while the plan's seventh slot was a close-up,
+    // a role the revision contract does not accept. The seventh slot is now a
+    // real hero-3d view carrying the hero3d role, so the database decides this
+    // from the persisted views and the gateway carries the verdict. It is still
+    // a strict boolean, and a true verdict must not arrive with a blocker.
+    || typeof value.handoffReady !== "boolean"
+    || value.handoffBlocker !== null && !GENERATION_HANDOFF_BLOCKERS.has(String(value.handoffBlocker))
+    || value.handoffReady === true && value.handoffBlocker !== null
     || !Array.isArray(views) || views.length > 7) {
     throw Object.assign(new Error("generation_status_response_invalid"), { status: 502 });
   }
@@ -777,6 +794,29 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         );
         if (!request) return json(res, 404, { error: "generation_request_not_found" });
         return json(res, 200, request);
+      }
+
+      // Calls 1-7 -> Calls 8-12. The runtime worker has already copied the seven
+      // accepted views into this revision's input paths; this freezes them as a
+      // revision and starts the existing production workflow, as the
+      // authenticated owner because save_designpro_revision_source refuses a
+      // service role. Idempotent: a second call reports the same revision.
+      const handoffMatch = url.pathname.match(/^\/api\/generation\/requests\/([0-9a-f-]{36})\/handoff$/);
+      if (req.method === "POST" && handoffMatch) {
+        const requestId = handoffMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        const result = await rpc(fetchImpl, token, cfg, "handoff_designpro_generation_to_production", {
+          p_request_id: requestId,
+        });
+        if (!UUID_PATTERN.test(String(result?.revisionId || ""))) {
+          throw Object.assign(new Error("generation_handoff_response_invalid"), { status: 502 });
+        }
+        return json(res, 202, {
+          revisionId: result.revisionId,
+          generationId: result.generationId,
+          runId: result.workflowRunId || null,
+          alreadyHandedOff: result.alreadyHandedOff === true,
+        });
       }
 
       if (req.method === "GET" && url.pathname === "/api/genie/candidates") {
