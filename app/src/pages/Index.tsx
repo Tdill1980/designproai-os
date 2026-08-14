@@ -811,136 +811,84 @@ const Index = () => {
           </div>
         </section>
 
-        {/* ========== 6 TOOLS SECTION ========== */}
+        {/* ========== THE OPERATING PATH ========== */}
+        {/* This was a six-card grid for the RestylePro suite -- ColorPro,
+            DesignPanelPro, FadeWraps, PatternPro, ApprovePro, RestyleLibrary --
+            every card linking to a route this system does not serve. It now
+            describes what DesignProAI actually does, and each card opens a
+            surface that exists. */}
         <section className="relative py-12 sm:py-16 lg:py-20 border-t border-white/10 overflow-hidden">
           <div className="absolute inset-0 bg-black" />
           <div className="relative container mx-auto px-4 sm:px-6 lg:px-8">
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-center mb-3 sm:mb-4 text-foreground">
-              <span className="text-foreground">Design</span><span className="text-gradient-blue-subtle">ProAI™</span> Visualization Tools
+              <span className="text-foreground">Design</span><span className="text-gradient-blue-subtle">ProAI™</span> — brief to print-ready
             </h2>
             <p className="text-center text-muted-foreground text-lg mb-8 sm:mb-12 max-w-2xl mx-auto">
-              A complete suite of AI-powered design tools - from concept to client-ready render
+              One server-owned path from a written brief to verified production files
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <Link to="/colorpro" className="group bg-card border border-border rounded-xl p-6 shadow-lg hover:scale-[1.02] hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(96,165,250,0.15)] transition-all duration-300 cursor-pointer relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-fuchsia-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="relative">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-gradient-designpro text-white">
-                      <Palette className="w-6 h-6" />
+              {[
+                {
+                  to: "/designpro/generate",
+                  title: ["Seven photoreal ", "views"],
+                  body: "Describe the wrap and the vehicle. The server generates seven distinct views — the passenger side is generated, never mirrored, so lettering and logos stay readable.",
+                  icon: Sparkles,
+                },
+                {
+                  to: "/designpro/jobs",
+                  title: ["Revision ", "Studio"],
+                  body: "Regenerate any single angle with an instruction. The old view is superseded, never overwritten, so anything already hashed downstream stays trustworthy.",
+                  icon: Layers,
+                },
+                {
+                  to: "/designpro/jobs",
+                  title: ["2D Production ", "Proof"],
+                  body: "The customer-facing proof, built from the approved flat wrap layout with GENIE trim sizes and total square footage.",
+                  icon: Image,
+                },
+                {
+                  to: "/designpro/jobs",
+                  title: ["Six Production ", "Layers"],
+                  body: "Deterministic per-side crops of the approved layout — driver, passenger, hood, roof, front and rear — each at five inches of bleed on all four edges.",
+                  icon: Palette,
+                },
+                {
+                  to: "/designpro/genie-qc",
+                  title: ["PanelPro ", "QC"],
+                  body: "Two human release gates and exact six-surface vehicle geometry. Nothing reaches print until an operator confirms every check.",
+                  icon: Eye,
+                },
+                {
+                  to: "/designpro/wrapbox",
+                  title: ["Wrap", "Box™"],
+                  body: "Eighteen verified production files — six surfaces in PNG, TIFF and EPS — delivered as one ZIP with immutable manifest hashes.",
+                  icon: Package,
+                },
+              ].map((card) => {
+                const Icon = card.icon;
+                return (
+                  <Link
+                    key={card.title.join("")}
+                    to={card.to}
+                    className="group bg-card border border-border rounded-xl p-6 shadow-lg hover:scale-[1.02] hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(96,165,250,0.15)] transition-all duration-300 cursor-pointer relative overflow-hidden"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-fuchsia-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="relative">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 rounded-lg bg-gradient-designpro text-white">
+                          <Icon className="w-6 h-6" />
+                        </div>
+                        <h3 className="text-2xl font-bold">
+                          <span className="text-foreground">{card.title[0]}</span>
+                          <span className="text-gradient-blue-subtle">{card.title[1]}</span>
+                        </h3>
+                      </div>
+                      <p className="text-muted-foreground text-base leading-relaxed">{card.body}</p>
                     </div>
-                    <h3 className="text-2xl font-bold">
-                      <span className="text-foreground">Color</span><span className="text-gradient-blue-subtle">Pro™</span>
-                    </h3>
-                  </div>
-                  <p className="text-muted-foreground text-base leading-relaxed">
-                    Photorealistic color-change designer. Works with any major vinyl brand.
-                  </p>
-                </div>
-              </Link>
-
-              <Link to="/restylelibrary" className="group bg-card border border-border rounded-xl p-6 shadow-lg hover:scale-[1.02] hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(59,130,246,0.15)] transition-all duration-300 cursor-pointer relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="relative">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-blue-400 to-indigo-600 text-white">
-                      <Layers className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-2xl font-bold">
-                      <span className="text-foreground">DesignPanel</span><span className="bg-gradient-to-r from-blue-400 to-indigo-500 text-transparent bg-clip-text">Pro™</span>
-                    </h3>
-                  </div>
-                  <p className="text-muted-foreground text-base leading-relaxed">
-                    Upload printed panels and visualize them mapped instantly onto any vehicle.
-                  </p>
-                </div>
-              </Link>
-
-              <Link to="/restylelibrary?mode=fadewraps" className="group bg-card border border-border rounded-xl p-6 shadow-lg hover:scale-[1.02] hover:border-sky-500/40 hover:shadow-[0_0_20px_rgba(56,189,248,0.15)] transition-all duration-300 cursor-pointer relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-sky-500/5 via-transparent to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="relative">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-sky-400 to-blue-600 text-white">
-                      <Sparkles className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-2xl font-bold">
-                      <span className="text-foreground">Fade</span><span className="bg-gradient-to-r from-sky-400 to-blue-500 text-transparent bg-clip-text">Wraps™</span>
-                    </h3>
-                  </div>
-                  <p className="text-muted-foreground text-base leading-relaxed">
-                    Create stunning gradient wraps with customizable color transitions and panel coverage options.
-                  </p>
-                </div>
-              </Link>
-
-              <Link to="/wbty" className="group bg-card border border-border rounded-xl p-6 shadow-lg hover:scale-[1.02] hover:border-blue-500/40 hover:shadow-[0_0_20px_rgba(96,165,250,0.15)] transition-all duration-300 cursor-pointer relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-fuchsia-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="relative">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-gradient-designpro text-white">
-                      <Image className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-2xl font-bold">
-                      <span className="text-foreground">Pattern</span><span className="text-gradient-blue-subtle">Pro™</span>
-                    </h3>
-                  </div>
-                  <p className="text-muted-foreground text-base leading-relaxed">
-                    Upload any pattern design and visualize it wrapped on your vehicle.
-                  </p>
-                </div>
-              </Link>
-
-              <Link to="/approvemode" className="group bg-card border border-border rounded-xl p-6 shadow-lg hover:scale-[1.02] hover:border-orange-500/40 hover:shadow-[0_0_20px_rgba(249,115,22,0.15)] transition-all duration-300 cursor-pointer relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-amber-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="relative">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-orange-400 to-amber-600 text-white">
-                      <Eye className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-2xl font-bold">
-                      <span className="text-foreground">Approve</span><span className="bg-gradient-to-r from-orange-400 to-amber-500 text-transparent bg-clip-text">Pro™</span>
-                    </h3>
-                  </div>
-                  <p className="text-muted-foreground text-base leading-relaxed">
-                    Fleet expansion made easy. Upload <span className="text-orange-400 font-semibold">ONE</span> existing design → Visualize on <span className="text-orange-400 font-semibold">ANY</span> new vehicle.
-                  </p>
-                </div>
-              </Link>
-
-              <Link to="/revision-studio" className="group bg-card border border-border rounded-xl p-6 shadow-lg hover:scale-[1.02] hover:border-blue-400/40 hover:shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all duration-300 cursor-pointer relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-fuchsia-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="relative">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-gradient-designpro text-white">
-                      <GitBranch className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-2xl font-bold">
-                      Revision<span className="text-gradient-blue-subtle">StudioIQ™</span>
-                    </h3>
-                  </div>
-                  <p className="text-muted-foreground text-base leading-relaxed">
-                    Version timeline, Clone & Revise, Design Equity gallery - manage every design iteration.
-                  </p>
-                </div>
-              </Link>
-
-              <Link to="/quotetool" className="group bg-card border border-border rounded-xl p-6 shadow-lg hover:scale-[1.02] hover:border-cyan-500/40 hover:shadow-[0_0_20px_rgba(6,182,212,0.2)] transition-all duration-300 cursor-pointer relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-fuchsia-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="relative">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-400 to-fuchsia-500 text-white">
-                      <Calculator className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-2xl font-bold">
-                      Quick<span className="bg-gradient-to-r from-cyan-400 to-fuchsia-500 text-transparent bg-clip-text">Quote™</span>
-                    </h3>
-                  </div>
-                  <p className="text-muted-foreground text-base leading-relaxed">
-                    Branded customer quotes in 90 seconds. Real-time pricing math, quote→order auto-matching, profit per job built-in.
-                  </p>
-                </div>
-              </Link>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         </section>

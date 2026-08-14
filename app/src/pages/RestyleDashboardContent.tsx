@@ -22,20 +22,8 @@ import { HeroRow } from "@/components/dashboard/HeroRow";
 import { BusinessMetricsCard } from "@/components/dashboard/BusinessMetricsCard";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { PillarHeroCard } from "@/components/dashboard/PillarHeroCard";
-import { QuickQuoteCard } from "@/components/dashboard/QuickQuoteCard";
-import { LatestQuotesCard } from "@/components/dashboard/LatestQuotesCard";
-import { ShopPricingCard } from "@/components/dashboard/ShopPricingCard";
-import { MightyMailCard } from "@/components/dashboard/MightyMailCard";
-import { QuickTextCard } from "@/components/dashboard/QuickTextCard";
-import { BookingProCard } from "@/components/dashboard/BookingProCard";
-import { CreatorMarketSpotlight } from "@/components/dashboard/CreatorMarketSpotlight";
 import { GallerySliderCard } from "@/components/dashboard/GallerySliderCard";
 import { RecentRendersStrip } from "@/components/dashboard/RecentRendersStrip";
-import { CustomerProofStatusCard } from "@/components/dashboard/CustomerProofStatusCard";
-import { BookingCalendarCard } from "@/components/dashboard/BookingCalendarCard";
-import { WpwRewardsCard } from "@/components/dashboard/WpwRewardsCard";
-import { WpwOrderStatusCard } from "@/components/dashboard/WpwOrderStatusCard";
-import { PastOrdersCard } from "@/components/dashboard/PastOrdersCard";
 import { RpDesignTeamCard } from "@/components/dashboard/RpDesignTeamCard";
 import { MyProductionPacksCard } from "@/components/dashboard/MyProductionPacksCard";
 import { JobsListTabs } from "@/components/dashboard/JobsListTabs";
@@ -206,68 +194,19 @@ export default function RestyleDashboardContent() {
           product the operator cannot open, and queried tables this project
           does not have. */}
 
-      {/* Customer-facing proof status — only renders for users who are the
-          customer on a design job (matched by email). Invisible to everyone
-          else, so it sits safely in the shared dashboard. Constrained width
-          so it reads as a compact status card, not a full-page banner. */}
-      <div className="w-full sm:max-w-md">
-        <CustomerProofStatusCard />
-      </div>
 
       <GallerySliderCard />
       <RecentRendersStrip />
 
-      <section aria-label="Shop pricing setup">
-        <ShopPricingCard />
-      </section>
-
-      <section aria-label="Quick quote" className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <QuickQuoteCard />
-        <LatestQuotesCard />
-      </section>
-
-      <section aria-label="Lead Engine — QuickText + BookingPro" className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-        <QuickTextCard />
-        <BookingProCard />
-      </section>
-
-      <section aria-label="Booking Calendar" className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-        <BookingCalendarCard className="lg:col-span-1" />
-        <div className="lg:col-span-2 rounded-2xl border border-[#48484a] bg-rp-surface p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Zap className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-semibold">Share Your Booking & Quote Tools</h3>
-          </div>
-          <p className="text-xs text-white/50 mb-4">
-            Give your customers a direct link to book appointments or get instant quotes — embed on your website or share via text/email.
-          </p>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <a href="/bookingpro" className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 block hover:bg-emerald-500/10 transition-colors">
-              <div className="text-xs text-emerald-400 font-semibold">BookingPro</div>
-              <div className="text-[11px] text-white/50 mt-0.5">Calendar + self-booking for customers</div>
-            </a>
-            <a href="/quick-quote" className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 block hover:bg-cyan-500/10 transition-colors">
-              <div className="text-xs text-[#00C7FF] font-semibold">QuickQuote</div>
-              <div className="text-[11px] text-white/50 mt-0.5">Instant wrap estimates on your site</div>
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <section aria-label="Club WPW Membership">
-        <WpwRewardsCard />
-      </section>
-
+      {/* Everything between the render strip and the production packs was the
+          RestylePro/WPW commerce stack: shop pricing, the quote tools, the
+          QuickText + BookingPro lead engine, the booking calendar, Club WPW
+          membership, WPW order status and past orders. None of it is part of
+          this product, and several of its cards linked to /bookingpro and
+          /quick-quote, which this router does not serve. The render KPI stays
+          -- it counts this system's own renders. */}
       <section>
         <KpiCard {...renderKpi} />
-      </section>
-
-      <section aria-label="WPW Order Status">
-        <WpwOrderStatusCard />
-      </section>
-
-      <section aria-label="Past Orders">
-        <PastOrdersCard />
       </section>
 
       <section aria-label="My Production Packs">
@@ -275,14 +214,6 @@ export default function RestyleDashboardContent() {
       </section>
 
       <JobsListTabs />
-
-      <section>
-        <CreatorMarketSpotlight />
-      </section>
-
-      <section>
-        <MightyMailCard />
-      </section>
 
       <div className="h-4" />
     </div>
