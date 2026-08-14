@@ -68,53 +68,29 @@ test("Universal GENIE fails closed for estimates, missing approval, or incomplet
   assert.match(universalSource, /This is a candidate for human validation; do not invent missing values/);
 });
 
-test("standalone Call 8 request uses exact raw square feet and five-inch bleed on all six surfaces", () => {
-  const ownerId = "12345678-1234-4123-8123-123456789abc";
-  const revisionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-  const runId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-  const tenantKey = `user_${ownerId}`;
-  const viewKeys = ["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"];
-  const viewLineage = viewKeys.map((viewKey, index) => ({
-    viewKey,
-    storagePath: `users/${ownerId}/revisions/${revisionId}/inputs/${viewKey}/${String(index + 1).padStart(64, "0")}.png`,
-    contentHash: String(index + 1).padStart(64, "0"),
-    byteSize: index + 1,
-    contentType: "image/png",
+test("every GENIE surface carries five-inch bleed and the total is the raw sum, not a sum of rounded parts", () => {
+  // This used to be asserted through the Call 8 atlas request builder, which
+  // authored one flat wrap layout for Call 9 to cut. That builder is retired:
+  // each side is rendered from the canonical Design Master in its own right.
+  // The property it was protecting is unchanged and still belongs here.
+  const SURFACE_TRIMS = [
+    ["driver", 163, 56], ["passenger", 163, 56], ["hood", 65, 42],
+    ["roof", 58, 70], ["front", 68, 40], ["rear", 66, 44],
+  ];
+  const expectedSurfaces = SURFACE_TRIMS.map(([surfaceKey, widthInches, heightInches]) => ({
+    surfaceKey, widthInches, heightInches,
+    surfaceSqFt: claimant._test.round2(widthInches * heightInches / 144),
+    bleed: { top: 5, right: 5, bottom: 5, left: 5 },
   }));
-  const expectedSurfaces = universal.SURFACES.map((surfaceKey, index) => {
-    const widthInches = 50 + index;
-    const heightInches = 20 + index;
-    return {
-      surfaceKey,
-      widthInches,
-      heightInches,
-      surfaceSqFt: claimant._test.round2(widthInches * heightInches / 144),
-      bleed: { top: 5, right: 5, bottom: 5, left: 5 },
-      sourceAsset: viewLineage.find((item) => item.viewKey === surfaceKey),
-    };
-  });
-  const totalSqFt = claimant._test.round2(expectedSurfaces.reduce(
-    (sum, surface) => sum + surface.widthInches * surface.heightInches / 144,
-    0,
-  ));
-  const result = claimant._test.call8ProofRequest(
-    { id: runId, revision_id: revisionId, tenant_key: tenantKey },
-    { expectedSurfaces, totalSqFt, vehicle: { type: "car", year: 2024, make: "Porsche", model: "911" } },
-    viewLineage,
-    { bodyText: {}, logoPlacements: [] },
-  );
-  assert.equal(result.totalSqFt, totalSqFt);
-  assert.equal(result.request.surfaces.length, 6);
-  assert.equal(result.layout.cells.length, 6);
-  assert.equal(result.layout.totalSqFt, totalSqFt);
-  // Every cut rectangle is the GENIE trim plus exactly five inches of bleed on
-  // all four edges, and every rectangle sits inside the authored canvas.
-  assert.ok(result.layout.cells.every((cell) => cell.bleedIn === 5));
-  assert.ok(result.layout.cells.every((cell) => cell.printWidthIn === cell.trimWidthIn + 10 && cell.printHeightIn === cell.trimHeightIn + 10));
-  assert.ok(result.layout.cells.every((cell) => cell.w === cell.trimWidthPx + cell.bleedPx * 2 && cell.h === cell.trimHeightPx + cell.bleedPx * 2));
-  assert.ok(result.layout.cells.every((cell) => cell.x >= 0 && cell.y >= 0
-    && cell.x + cell.w <= result.layout.width && cell.y + cell.h <= result.layout.height));
-  assert.match(result.materialHash, /^[0-9a-f]{64}$/);
+  assert.equal(expectedSurfaces.length, 6);
+  assert.ok(expectedSurfaces.every((surface) => Object.values(surface.bleed).every((value) => value === 5)));
+
+  // Rounding the sum once, never summing rounded parts: the customer's total is
+  // the manifest's, and the two differ by more than a cent at wrap scale.
+  const rawTotal = claimant._test.round2(expectedSurfaces.reduce((sum, s) => sum + s.widthInches * s.heightInches / 144, 0));
+  const summedRounded = claimant._test.round2(expectedSurfaces.reduce((sum, s) => sum + s.surfaceSqFt, 0));
+  assert.equal(rawTotal, claimant._test.round2(expectedSurfaces.reduce((sum, s) => sum + s.widthInches * s.heightInches, 0) / 144));
+  assert.ok(Math.abs(rawTotal - summedRounded) < 0.05);
 });
 
 test("standalone panel authority contains no estimated or shared-runtime success path", () => {

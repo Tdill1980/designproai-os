@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -30,29 +32,16 @@ test("missing or reused required view refuses the chain", () => {
   assert.throws(() => _test.exactSevenViews({ renderAssets: reused }, tenantKey, revisionId), /distinct paths and byte identities/);
 });
 
-test("Call 8 proof carries deterministic dimensions, five-inch bleed and square feet", () => {
-  const expectedSurfaces = [
-    ["driver", 163, 56], ["passenger", 163, 56], ["hood", 65, 42],
-    ["roof", 58, 70], ["front", 68, 40], ["rear", 66, 44],
-  ].map(([surfaceKey, widthInches, heightInches]) => ({ surfaceKey, widthInches, heightInches, bleed: { top: 5, right: 5, bottom: 5, left: 5 }, surfaceSqFt: _test.round2(widthInches * heightInches / 144), sourceAsset: views[surfaceKey] }));
-  const totalSqFt = _test.round2(expectedSurfaces.reduce((sum, item) => sum + item.widthInches * item.heightInches / 144, 0));
-  const viewLineage = Object.entries(views).map(([viewKey, item]) => ({ viewKey, ...item }));
-  const textLock = { bodyText: { phone: "555-0142" }, logoPlacements: [{ identityKey: "primary", displayName: "Example Wraps", targetSurfaceKey: "driver", contentHash: "f".repeat(64) }] };
-  const built = _test.call8ProofRequest({ tenant_key: tenantKey, id: runId, revision_id: revisionId }, { expectedSurfaces, totalSqFt, vehicle: { type: "car", year: 2024, make: "Porsche", model: "911" } }, viewLineage, textLock);
-  assert.equal(built.totalSqFt, totalSqFt);
-  assert.equal(built.request.surfaces.length, 6);
-  assert.equal(built.request.sourceAssets.length, 7);
-  assert.match(built.request.flatMaterialHash, /^[0-9a-f]{64}$/);
-  // Call 8 sends the cut map, not six per-surface generation targets.
-  assert.equal(built.layout.contract, "designpro.flat-wrap-layout.v1");
-  assert.deepEqual(built.layout.cells.map((cell) => cell.surfaceKey).sort(), ["driver", "front", "hood", "passenger", "rear", "roof"]);
-  assert.ok(built.layout.cells.every((cell) => cell.bleedIn === 5 && cell.trimWidthIn > 0 && cell.trimHeightIn > 0));
-  assert.equal(built.layout.totalSqFt, totalSqFt);
-  // The same manifest must always produce the same rectangles, or Call 9 could
-  // not reproduce a cut it made earlier.
-  const rebuilt = _test.call8ProofRequest({ tenant_key: tenantKey, id: runId, revision_id: revisionId }, { expectedSurfaces, totalSqFt, vehicle: { type: "car", year: 2024, make: "Porsche", model: "911" } }, viewLineage, textLock);
-  assert.deepEqual(rebuilt.layout.cells, built.layout.cells);
-  assert.equal(rebuilt.materialHash, built.materialHash);
+test("Call 8 runs the canonical Design Master producer, and the atlas request builder is gone", async () => {
+  // The retired model built ONE flat wrap layout per run and had Call 9 cut six
+  // panels out of it, so a panel was only ever as correct as that layout's
+  // regions. Call 8 now authors the canonical master and renders each side in
+  // its own right.
+  assert.equal(_test.call8ProofRequest, undefined, "the atlas request builder must not come back");
+  const source = await readFile(fileURLToPath(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url)), "utf8");
+  assert.match(source, /buildMasterCycle\(/);
+  assert.doesNotMatch(source, /flatWrapLayout/);
+  assert.doesNotMatch(source, /cutAllPanels/);
 });
 
 test("pack activation and periodic reconciliation create production without a browser", async () => {

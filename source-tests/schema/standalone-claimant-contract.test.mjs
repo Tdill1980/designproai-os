@@ -32,9 +32,15 @@ for(const exactField of ["viewreceipts","viewlineage","dimensionmanifestid","man
   assert.ok(lower.includes(exactField),`claimant is not aligned to schema field ${exactField}`);
 for(const edge of ["top: 5","right: 5","bottom: 5","left: 5"])
   assert.ok(lower.includes(edge),`claimant does not bind exact ${edge} bleed`);
-assert.match(lower,/sourcerule: "deterministic-cut-of-approved-call8-flat-wrap-layout"[\s\S]{0,900}sourceregionhash:[\s\S]{0,900}sourcelayouthash:[\s\S]{0,900}cutrect:[\s\S]{0,900}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
-  'panel artifact metadata must bind the approved flat wrap layout, the exact cut rectangle, and four-edge bleed');
-for(const cutGuard of ["call9_cut_hash_mismatch","call9_layout_changed","call9_cut_map_drift"])
-  assert.ok(lower.includes(cutGuard.toLowerCase()),`Call 9 must fail closed on ${cutGuard}`);
-assert.ok(!lower.includes("own-call8-bound-surface-master"),"Call 9 must cut the approved layout, never promote a separate per-surface generation");
+// Each panel binds the canonical surface it IS, not a region of a shared atlas.
+// The rule string is the one the database enforces on the Call 9 receipt.
+assert.match(lower,/sourcerule: panel_source_rule[\s\S]{0,900}sourceregionhash:[\s\S]{0,900}sourcesurfacehash:[\s\S]{0,900}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
+  'panel artifact metadata must bind the canonical surface it was rendered from and four-edge bleed');
+assert.ok(lower.includes('panel_source_rule = "one-own-surface-region-per-output-side"'),
+  'Call 9 must declare the one-own-surface-per-output-side rule the database requires');
+for(const guard of ["call9_surface_changed","call9_geometry_drift","call9_bleed_drift","call9_surface_reuse"])
+  assert.ok(lower.includes(guard.toLowerCase()),`Call 9 must fail closed on ${guard}`);
+// The atlas is gone and may not return: no shared layout, no cut, no crop.
+for(const atlas of ["cutallpanels","flatwraplayout","cutrect","deterministic-cut-of-approved-call8-flat-wrap-layout"])
+  assert.ok(!lower.includes(atlas),`Call 9 must not reintroduce the shared atlas (${atlas})`);
 console.log("standalone claimant matches all schema lease, receipt, artifact and human-gate contracts");
