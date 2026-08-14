@@ -8,8 +8,16 @@ policy="$root/ops/release-files.txt"
 
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "Exact lowercase 40-character Git SHA required" >&2; exit 2; }
 [[ -f $policy && ! -L $policy ]] || { echo "Canonical release policy is missing or unsafe" >&2; exit 2; }
-[[ -d $root/runtime && -d $root/gateway && -d $root/web/dist ]] || {
-  echo "Runtime, gateway, and built web tree are required" >&2
+# The served application is the branded operator shell. `web/dist` remains the
+# archive's name for the web build -- the Caddy root, the deploy pointer and
+# the acceptance check all read that path -- but the bytes come from app/dist.
+web_build="$root/app/dist"
+[[ -d $root/runtime && -d $root/gateway && -d $web_build ]] || {
+  echo "Runtime, gateway, and the built operator shell (app/dist) are required" >&2
+  exit 2
+}
+[[ -f $web_build/index.html && ! -L $web_build/index.html ]] || {
+  echo "The operator shell build is missing its entry page" >&2
   exit 2
 }
 
@@ -22,19 +30,24 @@ trap cleanup EXIT
 while IFS= read -r entry; do
   [[ -n $entry && $entry != \#* ]] || continue
   [[ $entry == *'*'* ]] && continue
+  # The whole web tree is staged from the shell build below, so a fixed web
+  # entry is satisfied there rather than read from this repository path.
+  [[ $entry == web/dist/* ]] && continue
   source="$root/$entry"
   [[ -f $source && ! -L $source ]] || { echo "Required release file missing or unsafe: $entry" >&2; exit 3; }
   install -D -m 0644 -- "$source" "$stage/$entry"
 done < "$policy"
 
-if [[ -e $root/web/dist/assets ]]; then
-  [[ -d $root/web/dist/assets && ! -L $root/web/dist/assets ]] || { echo "Web assets path must be a regular directory" >&2; exit 3; }
-  while IFS= read -r -d '' source; do
-    [[ -f $source && ! -L $source ]] || { echo "Web assets cannot contain links or special files" >&2; exit 3; }
-    relative=${source#"$root/"}
-    install -D -m 0644 -- "$source" "$stage/$relative"
-  done < <(find "$root/web/dist/assets" -type f -print0 | LC_ALL=C sort -z)
-fi
+# Stage the built shell as web/dist. Every file is copied; the validators then
+# refuse anything the extension allowlist does not cover, so an unexpected file
+# type fails the release rather than shipping.
+while IFS= read -r -d '' source; do
+  [[ -f $source && ! -L $source ]] || { echo "The web build cannot contain links or special files" >&2; exit 3; }
+  relative=${source#"$web_build/"}
+  install -D -m 0644 -- "$source" "$stage/web/dist/$relative"
+done < <(find "$web_build" -type f -print0 | LC_ALL=C sort -z)
+
+[[ -f $stage/web/dist/index.html ]] || { echo "Staged web build is missing index.html" >&2; exit 3; }
 
 python3 "$root/ops/build-release-manifest.py" "$stage" "$sha" >/dev/null
 mkdir -p -- "$out"

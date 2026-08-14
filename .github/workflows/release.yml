@@ -97,8 +97,11 @@ jobs:
           node-version: 22
       - run: npm ci --prefix runtime
       - run: npm ci --prefix gateway
-      - run: npm ci --prefix web
-      - run: npm run build --prefix web
+      # The archive's web/dist is the branded operator shell, built from app/.
+      # The minimal control panel under web/ is no longer the served
+      # application, so it is not built here.
+      - run: npm ci --prefix app
+      - run: npm run build --prefix app
       - name: Build twice and prove byte-for-byte archive reproducibility
         run: |
           bash scripts/build-release.sh "$EXACT_SHA" dist-release-a

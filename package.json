@@ -10,6 +10,7 @@
     "test:gateway": "npm test --prefix gateway",
     "test:web": "npm test --prefix web",
     "test:ops": "bash ops/validate-package.sh",
+    "build:app": "npm run build --prefix app",
     "build:web": "npm run build --prefix web",
     "test:shadow": "bash scripts/test-supabase-shadow.sh"
   },

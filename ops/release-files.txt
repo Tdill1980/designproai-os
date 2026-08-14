@@ -39,21 +39,41 @@ runtime/generation-worker.cjs
 gateway/package.json
 gateway/package-lock.json
 gateway/src/server.mjs
+# The served single-page application. web/dist is the archive's name for the
+# web build; since the branded operator shell replaced the minimal control
+# panel, that build is produced from app/. The shell references its own images
+# by absolute path, so they are copied out of app/public and land beside the
+# hashed bundles rather than inside assets/ -- hence one pattern per extension
+# rather than one per directory. `*` spans `/` here, so each pattern covers
+# every depth under web/dist.
+#
+# The extension allowlist is the control: an archive may carry a page, a
+# bundle, a stylesheet, a font or an image, and nothing else. Anything
+# executable, archived or unrecognised is refused by the validators.
 web/dist/index.html
-web/dist/assets/*.html
-web/dist/assets/*.js
-web/dist/assets/*.css
-web/dist/assets/*.json
-web/dist/assets/*.png
-web/dist/assets/*.jpg
-web/dist/assets/*.jpeg
-web/dist/assets/*.webp
-web/dist/assets/*.svg
-web/dist/assets/*.ico
-web/dist/assets/*.woff
-web/dist/assets/*.woff2
-web/dist/assets/*.ttf
-web/dist/assets/*.txt
+web/dist/*.html
+web/dist/*.js
+# ES-module and WebAssembly assets are ordinary Vite build outputs: the shell's
+# in-browser background removal runs an ONNX model, which the bundler emits as
+# a sibling .mjs and .wasm. They are no more privileged than the .js bundles
+# beside them -- every member's SHA-256 is pinned in the release manifest and
+# re-verified from the archive bytes, which is the actual integrity control.
+web/dist/*.mjs
+web/dist/*.wasm
+web/dist/*.css
+web/dist/*.json
+web/dist/*.png
+web/dist/*.jpg
+web/dist/*.jpeg
+web/dist/*.webp
+web/dist/*.svg
+web/dist/*.ico
+web/dist/*.gif
+web/dist/*.woff
+web/dist/*.woff2
+web/dist/*.ttf
+web/dist/*.txt
+web/dist/*.xml
 ops/release-files.txt
 ops/Dockerfile.runtime
 ops/Dockerfile.gateway

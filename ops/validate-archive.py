@@ -52,9 +52,17 @@ def allowed_file(name: str) -> bool:
 
 
 def allowed_directory(name: str) -> bool:
-    if name in {"runtime", "gateway", "gateway/src", "web", "web/dist", "web/dist/assets", "ops"}:
+    if name in {"runtime", "gateway", "gateway/src", "web", "web/dist", "ops"}:
         return True
-    return name.startswith("web/dist/assets/")
+    # The served application is the branded operator shell, which references
+    # its images by absolute path, so its public tree lands beside the hashed
+    # bundles instead of inside assets/. Directory names are already
+    # constrained by safe_name(); what a directory may *contain* stays governed
+    # by the extension allowlist in release-files.txt, which is the real
+    # control. Depth is bounded so a deep tree cannot be smuggled in.
+    if name.startswith("web/dist/"):
+        return len(PurePosixPath(name).parts) <= 4
+    return False
 
 
 def member_digest(archive: tarfile.TarFile, member: tarfile.TarInfo) -> str:

@@ -72,8 +72,13 @@ test("actual builder emits reproducible bytes with every fixed file manifest-bou
       if (name === "ops/release-files.txt") cpSync(join(track, name), path);
       else writeFileSync(path, name.endsWith(".json") ? "{}\n" : `fixture:${name}\n`);
     }
-    mkdirSync(join(root, "web/dist/assets"), { recursive: true });
-    writeFileSync(join(root, "web/dist/assets/app.js"), "console.log('dp');\n");
+    // The served application is the branded operator shell, so the builder
+    // stages web/dist from app/dist. web/dist/index.html is still a fixed
+    // policy entry; it is satisfied by the shell build rather than read from
+    // a repository path, which is what this fixture proves.
+    mkdirSync(join(root, "app/dist/assets"), { recursive: true });
+    writeFileSync(join(root, "app/dist/index.html"), "<!doctype html><title>dp</title>\n");
+    writeFileSync(join(root, "app/dist/assets/app.js"), "console.log('dp');\n");
     const sha = "a".repeat(40);
     execFileSync("bash", [join(root, "scripts/build-release.sh"), sha, join(root, "one")]);
     execFileSync("bash", [join(root, "scripts/build-release.sh"), sha, join(root, "two")]);

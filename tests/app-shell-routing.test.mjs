@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -148,6 +148,56 @@ test("no redirect points at a path the router does not serve", () => {
   assert.deepEqual(dead, [], `redirects to nowhere: ${dead.join(", ")}`);
 });
 
+test("every public asset the shell ships is one it references", () => {
+  // The shell was pruned from 176 MB to 88 MB of public assets by deleting
+  // what no reachable code names. This is the other half of that contract: a
+  // file left in public/ that nothing references is dead weight in every
+  // release archive and every deploy.
+  //
+  // Reachability is judged against the built bundles when they exist, because
+  // src/ still holds hundreds of pages the router no longer mounts. Without a
+  // build to compare against there is nothing to prove, so the check is
+  // skipped rather than guessed at.
+  const dist = resolve(root, "app/dist/assets");
+  if (!existsSync(dist)) return;
+
+  const distRoot = resolve(root, "app/dist");
+  const walkFiles = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? walkFiles(resolve(dir, entry.name))
+        : [resolve(dir, entry.name)],
+    );
+
+  // The bundles, plus every standalone page: those are copied out of public/
+  // and served straight off the filesystem, so the SPA never names them or the
+  // images they use.
+  const hay = walkFiles(distRoot)
+    .filter((path) => /\.(js|css|html)$/.test(path))
+    .map((path) => readFileSync(path, "utf8"))
+    .join("\n");
+
+  // Files the browser fetches by convention, which no bundle has to name.
+  const byConvention =
+    /^(favicon\.[^/]+|robots\.txt|sitemap[^/]*\.xml|site\.webmanifest|manifest\.json|_deploy-marker\.txt|placeholder\.svg|_redirects)$/;
+
+  const publicRoot = resolve(root, "app/public");
+  const walk = (dir, prefix = "") =>
+    readdirSync(resolve(publicRoot, dir), { withFileTypes: true }).flatMap((entry) => {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      return entry.isDirectory() ? walk(rel, rel) : [rel];
+    });
+
+  const orphans = walk("").filter((rel) => {
+    if (byConvention.test(rel) || rel.endsWith(".html")) return false;
+    const name = rel.split("/").pop();
+    const stem = name.replace(/\.[^.]+$/, "");
+    return !hay.includes(`/${rel}`) && !hay.includes(name) && !hay.includes(stem);
+  });
+
+  assert.deepEqual(orphans, [], `public assets nothing references: ${orphans.join(", ")}`);
+});
+
 test("the browser never drives the orchestration the runtime owns", () => {
   // These edge functions belong to the source suite. The runtime owns proof,
   // panel, revision and logo work now, so a surface calling them would be a
@@ -204,6 +254,26 @@ test("the seven view roles and their cameras stay in lockstep", () => {
     !stripComments(API).includes("close-up"),
     "close-up is not part of the seven-view plan",
   );
+});
+
+test("the release ships the operator shell as the served application", () => {
+  // web/dist is the archive's name for the web build, and the Caddy root, the
+  // deploy pointer and the acceptance probe all read that path. What changed
+  // is where those bytes come from. If the builder ever went back to sourcing
+  // web/, the archive would still validate and the deploy would still go
+  // green -- it would just serve the minimal control panel, and none of the
+  // branded operating surfaces would exist in the browser.
+  const builder = read("scripts/build-release.sh");
+  assert.match(builder, /web_build="\$root\/app\/dist"/);
+  assert.match(builder, /"\$stage\/web\/dist\/\$relative"/);
+
+  // Whatever else moves, the served root must not.
+  assert.match(read("ops/Caddyfile.fragment"), /root \* \/opt\/designproai-os\/public\/web\/dist/);
+  assert.match(read("ops/acceptance.sh"), /current\/web\/dist\/index\.html/);
+
+  // CI has to build the shell, or build-release.sh refuses for want of
+  // app/dist and the release never gets made at all.
+  assert.match(read(".github/workflows/release.yml"), /npm run build --prefix app/);
 });
 
 test("the shell authenticates the gateway with its own supabase session", () => {
