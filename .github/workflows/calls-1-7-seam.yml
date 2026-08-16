@@ -133,11 +133,19 @@ jobs:
           # Calls 1-7 code never becomes part of it. It borrows the release's
           # installed dependencies and its environment, so the run is still in
           # the production environment, and the directory is removed afterwards.
+          # The seam must stage every module whose behaviour it claims to prove.
+          # It previously shipped the camera contract but not the DESIGN
+          # contract, and built its own bare prompt instead — so a green seam
+          # said nothing about the wording a customer actually receives.
+          # design-prompt-os owns that wording; generation-worker owns the
+          # hero->reproduction ordering the passenger gate depends on.
           seam_payload=$(tar -cz \
             runtime/view-angles.cjs \
+            runtime/design-prompt-os.cjs \
             runtime/generation-provider.cjs \
             runtime/generation-engine.cjs \
             runtime/generation-store.cjs \
+            runtime/generation-worker.cjs \
             scripts/calls-1-7-seam.mjs | base64 -w0)
 
           set +e
@@ -162,10 +170,14 @@ jobs:
           # The claimant is read by the seam to prove Calls 8 resolves the slots
           # unmodified, so it comes from the DEPLOYED release, not the checkout.
           ln -s "$release/runtime/designpro-standalone-claimant.cjs" "$work/runtime/designpro-standalone-claimant.cjs"
+          # generation-worker.cjs requires creative-authoring.cjs and
+          # genie-universal-resolver.cjs at load time; both come from the
+          # DEPLOYED release so the seam borrows production code for everything
+          # it is not itself testing.
           for module in runtime-contract.cjs genie-universal-resolver.cjs gemini-flat-surface.cjs \
                         flat-wrap-layout.cjs gemini-flat-wrap.cjs proof-sheet.cjs output-qc.cjs \
                         wrapbox-delivery.cjs zip-spool.cjs topaz-upscale.cjs resend-transport.cjs \
-                        runtime-readiness.cjs; do
+                        runtime-readiness.cjs creative-authoring.cjs; do
             [ -f "$release/runtime/$module" ] && ln -s "$release/runtime/$module" "$work/runtime/$module"
           done
 

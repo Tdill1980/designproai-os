@@ -30,6 +30,8 @@ const { createProvider } = require("../runtime/generation-provider.cjs");
 const { createGenerationStore } = require("../runtime/generation-store.cjs");
 const engine = require("../runtime/generation-engine.cjs");
 const angles = require("../runtime/view-angles.cjs");
+const prompts = require("../runtime/design-prompt-os.cjs");
+const worker = require("../runtime/generation-worker.cjs");
 
 function arg(name, fallback = null) {
   const index = process.argv.indexOf(`--${name}`);
@@ -67,37 +69,92 @@ function countingProvider() {
   return { calls: 0, models: inner.models, async generateImage(options) { this.calls += 1; return inner.generateImage(options); } };
 }
 
-function promptParts(viewType) {
-  angles.assertTextDirectionGuard(viewType);
-  return [{ text: `${PROMPT}\n\nVehicle: ${VEHICLE}\n\n${angles.cameraAngle(viewType)}` }];
+/**
+ * The seam drives the REAL prompt contract, not a stand-in.
+ *
+ * It used to build its own four-line brief plus a camera angle, which is
+ * exactly the un-studioed, un-briefed prompt the design contract replaced — so
+ * a green seam said nothing about what the customer would actually receive.
+ * Both slots now assemble through worker.slotsFrom, so this run exercises the
+ * shipped wording, the studio kernel, the hero->passenger reproduction and the
+ * design anchor.
+ */
+const INPUT = {
+  vehicle: { year: "", make: VEHICLE, model: "", type: "" },
+  brief: PROMPT,
+  finish: arg("finish", "gloss"),
+};
+
+async function runOneSlot(provider, sourceViewType, consumerRole, reproduction = {}) {
+  const [slot] = worker.slotsFrom([{ sourceViewType, consumerRole }], INPUT, {}, reproduction);
+  return engine.runSlot({
+    requestId: REQUEST_ID, tenantKey: TENANT, ...slot, provider, store,
+  });
 }
 
-async function runOneSlot(provider, sourceViewType, consumerRole) {
-  return engine.runSlot({
-    requestId: REQUEST_ID, tenantKey: TENANT, sourceViewType, consumerRole,
-    provider, store,
-    promptParts: promptParts(sourceViewType),
-    aspectRatio: angles.aspectRatio(sourceViewType),
-    imageSize: angles.resolutionTier(sourceViewType),
-  });
+/** The accepted winner's real bytes — what a reproduction view is conditioned on. */
+async function winnerBytes(result) {
+  const { data, error } = await supabase.storage.from("wrap-files").download(result.winner?.storage_path);
+  if (error || !data) throw new Error(`could not read ${result.winner?.storage_path}: ${error?.message || "empty"}`);
+  return Buffer.from(await data.arrayBuffer());
 }
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
   process.stdout.write(`\nCalls 1-7 live seam — request ${REQUEST_ID}\n${VEHICLE} · ${PROMPT}\n\n`);
 
-  // ---- Pass 1: driver, then passenger, each its own generation -------------
+  // ---- Pass 1: the hero originates, then the passenger reproduces it -------
   const first = countingProvider();
   const driver = await runOneSlot(first, "side", "driver");
-  const passenger = await runOneSlot(first, "passenger-side", "passenger");
-
   gate("driver slot accepted", driver.state === "accepted", `${driver.providerCalls} provider call(s)`);
+  if (driver.state !== "accepted") {
+    gate("hero landed before the passenger was attempted", false, "no design to reproduce — stopping");
+    writeFileSync(`${OUT}/gates.json`, JSON.stringify(gates, null, 2));
+    process.exit(1);
+  }
+
+  // The passenger is conditioned on the hero's own full-resolution bytes plus
+  // the design anchor, exactly as the worker does it. Generating it from the
+  // brief alone is how one design became two.
+  const heroBytes = await winnerBytes(driver);
+  const designAnchorText = await prompts.buildDesignAnchor({
+    provider: createProvider({}),
+    heroBytes,
+    contentType: driver.winner?.content_type || "image/png",
+    logger: (line) => process.stdout.write(`        ${line}\n`),
+  });
+  gate("design anchor described the hero", Boolean(designAnchorText), `${designAnchorText.length} chars`);
+
+  const passenger = await runOneSlot(first, "passenger-side", "passenger", {
+    heroReference: { bytes: heroBytes, contentType: driver.winner?.content_type || "image/png" },
+    designAnchorText,
+  });
+
   gate("passenger slot accepted", passenger.state === "accepted", `${passenger.providerCalls} provider call(s)`);
   gate("lease taken once per slot", driver.providerCalls <= engine.MAX_PROVIDER_ATTEMPTS_PER_SLOT
     && passenger.providerCalls <= engine.MAX_PROVIDER_ATTEMPTS_PER_SLOT);
-  gate("passenger generated independently of driver",
+  // Distinct pixels, same design. A matching hash would mean the passenger was
+  // copied or flipped rather than rendered for its own side.
+  gate("passenger is its own render, not a copy of the driver",
     driver.winner?.content_hash !== passenger.winner?.content_hash,
     "distinct winners");
+
+  // ---- The prompts that actually went out, on disk for inspection ----------
+  const heroPrompt = prompts.buildHeroPrompt({ input: INPUT, sourceViewType: "side" });
+  const passengerPrompt = prompts.buildReproductionPrompt({ input: INPUT, sourceViewType: "passenger-side", designAnchorText });
+  writeFileSync(`${OUT}/prompt-driver.txt`, heroPrompt);
+  writeFileSync(`${OUT}/prompt-passenger.txt`, passengerPrompt);
+  gate("hero prompt carries the studio kernel and the frozen angle",
+    heroPrompt.includes("HIGH-END WRAP SHOP ENVIRONMENT") && heroPrompt.includes(angles.cameraAngle("side").trim()));
+  gate("hero prompt stays inside the length ceiling",
+    heroPrompt.length <= prompts.HERO_PROMPT_CHAR_CEILING, `${heroPrompt.length} chars`);
+  gate("passenger prompt reproduces the hero rather than inventing",
+    /The attached reference image shows this EXACT wrap design/.test(passengerPrompt)
+    && !/DESIGN AMPLIFICATION/.test(passengerPrompt));
+  gate("passenger prompt keeps the text-direction guard",
+    /NEVER mirrored or backwards/i.test(passengerPrompt));
+  gate("passenger prompt stays inside the length ceiling",
+    passengerPrompt.length <= prompts.REPRODUCTION_PROMPT_CHAR_CEILING, `${passengerPrompt.length} chars`);
 
   // ---- Attempt rows exist on both sides of every call ----------------------
   const { data: attemptRows } = await supabase.from("designpro_generation_attempts")
@@ -150,7 +207,13 @@ async function main() {
   // ---- THE COST GATE: replay the completed request ------------------------
   const replay = countingProvider();
   const driverAgain = await runOneSlot(replay, "side", "driver");
-  const passengerAgain = await runOneSlot(replay, "passenger-side", "passenger");
+  // The reproduction context is rebuilt for the replay because assembling a
+  // passenger slot without it is refused outright. An accepted winner short-
+  // circuits before the prompt is ever used, so this costs nothing.
+  const passengerAgain = await runOneSlot(replay, "passenger-side", "passenger", {
+    heroReference: { bytes: heroBytes, contentType: driver.winner?.content_type || "image/png" },
+    designAnchorText,
+  });
   gate("replay makes ZERO provider calls", replay.calls === 0, `provider.calls = ${replay.calls}`);
   gate("replay returns the same winners",
     driverAgain.winner?.content_hash === driver.winner?.content_hash
@@ -167,6 +230,19 @@ async function main() {
     vehicle: VEHICLE,
     prompt: PROMPT,
     promptVersion: angles.VIEW_ORDER.length === 7 ? "view-angles-os.v4.1" : "unknown",
+    // WHICH DESIGN CONTRACT PRODUCED THESE. Recorded so a later reader can tell
+    // a hero-anchored pair from two independent inventions without opening the
+    // images.
+    designContract: {
+      contract: prompts.PROMPT_CONTRACT,
+      mode: prompts.designMode(INPUT),
+      heroView: angles.HERO_VIEW,
+      passengerReproducesHero: angles.reproducesHero("passenger-side"),
+      designAnchored: Boolean(designAnchorText),
+      designAnchorChars: designAnchorText.length,
+      heroPromptChars: heroPrompt.length,
+      passengerPromptChars: passengerPrompt.length,
+    },
     slots: {
       driver: {
         state: driver.state, attempts: driver.providerCalls,
@@ -198,6 +274,9 @@ async function main() {
       passengerTextReadsCorrectly: null,
       passengerIsNotMirrored: null,
       passengerIsADifferentComposition: null,
+      // The point of the reproduction contract: a different composition of the
+      // SAME wrap. Two unrelated designs pass every other check here.
+      passengerIsTheSameWrapAsTheDriver: null,
       noVehicleAngleCorruption: null,
     },
   };
@@ -213,7 +292,10 @@ async function main() {
   process.stdout.write(`\nEvidence in ${OUT}. Open driver.png and passenger.png before calling this passed:\n`);
   process.stdout.write(`  - driver reads correctly and matches the brief\n`);
   process.stdout.write(`  - passenger reads LEFT TO RIGHT, is not a mirror, and is its own composition\n`);
-  process.stdout.write(`\nOnly then move to hood, front, rear, close-up and roof.\n`);
+  process.stdout.write(`  - passenger is the SAME WRAP as the driver — same colours, graphics and lockup,\n`);
+  process.stdout.write(`    seen from the other side. Two good-looking but unrelated designs is a FAIL.\n`);
+  process.stdout.write(`  - prompt-driver.txt and prompt-passenger.txt are what actually went out\n`);
+  process.stdout.write(`\nOnly then move to hood, front, rear, hero-3d and roof.\n`);
 }
 
 main().catch((error) => { console.error(`\nseam test failed: ${error.message}`); process.exit(1); });
