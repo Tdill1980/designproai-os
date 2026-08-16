@@ -32,6 +32,10 @@ runtime/mesh-warp.cjs
 runtime/opentype-outline.cjs
 runtime/designpro-master-cycle.cjs
 runtime/view-angles.cjs
+# The design contract that sits around the frozen camera contract: studio,
+# coverage, logo, photo gate, and the hero->views reproduction prompts. The
+# generation worker requires it to assemble any prompt at all.
+runtime/design-prompt-os.cjs
 runtime/generation-provider.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs

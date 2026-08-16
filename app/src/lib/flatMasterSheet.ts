@@ -106,9 +106,10 @@ export interface MasterSheet {
 const SHEET_SIDES_STANDARD = ["DRIVER SIDE", "PASSENGER SIDE", "HOOD", "ROOF", "FRONT", "REAR"] as const;
 const SHEET_SIDES_TRAILER = ["DRIVER SIDE", "PASSENGER SIDE", "FRONT", "REAR"] as const;
 
-// panel-pro-extract sideKey hints — the structural prompt locates this side on
-// the all-sides proof by name.
-const SIDE_KEY: Record<string, string> = {
+// The side an extraction is FOR — a label on an already-cropped tile, never a
+// search key. See extractSideFromProof: the extractor is handed one side's
+// deterministic crop, so it has nothing to locate.
+const SIDE_LABEL: Record<string, string> = {
   "DRIVER SIDE": "driver side",
   "PASSENGER SIDE": "passenger side",
   HOOD: "hood",
@@ -249,31 +250,47 @@ export async function buildFlatMasterSheet(params: {
     return null;
   };
 
-  // THE extractor — panel-pro-extract mode:"single" fed the 2D PROOF (the
-  // July-23 sanctioned engine): temperature-0 edit, structural prompt that
-  // locates the NAMED side on the all-sides proof, GENIE dims injected.
+  // THE extractor — panel-pro-extract mode:"single" fed ONE SIDE'S OWN
+  // deterministically cropped proof tile.
+  //
+  // SIDE IDENTITY IS ADDRESSED, NEVER SEARCHED FOR. The extractor used to be
+  // handed the whole all-sides proof with a `sideKey` name and asked to find
+  // that side on it. Two things follow from that, and both have shipped:
+  //   • a whole-sheet feed grabs neighbouring tiles and the header (live 07-27
+  //     Bright Smile Dental: the "rear panel" was a crop of the proof sheet,
+  //     upside-down title included), and
+  //   • when the search is ambiguous the largest, most legible tile wins, which
+  //     on every proof sheet is the DRIVER SIDE — the exact class of defect
+  //     MASTER_SHEET_VERSION 6 exists to record (v4 treated one driver field as
+  //     an all-sides master and put a giant driver lockup on FRONT).
+  // A model cannot be asked to locate a side and also be forbidden from picking
+  // the wrong one. So the whole-proof feed is gone: without this side's own
+  // code-cropped tile there is no extraction rung at all, and the ladder falls
+  // to an honest gap. A driver fallback is now impossible by construction
+  // rather than by judgement.
   const extractSideFromProof = async (
     side: string,
     w: number,
     h: number,
     candidate: number,
   ): Promise<string | null> => {
-    // The side's own code-cropped proof tile when the detector found it (the
-    // reliable path), else the whole proof sheet. Both are the APPROVED PROOF —
-    // the tile is just a deterministic crop of it.
-    const proofUrlForSide = tileCropBySide.get(side) || proofUrl;
+    const tileUrl = tileCropBySide.get(side);
+    if (!tileUrl) return null;
     for (let transportAttempt = 1; transportAttempt <= 2; transportAttempt++) {
       try {
         const { data: px } = await supabase.functions.invoke("panel-pro-extract", {
           body: {
-            mode: "single", imageUrl: proofUrlForSide, sourceIsProof: true,
+            mode: "single", imageUrl: tileUrl, sourceIsProof: true,
             // The cropped tile is the surface/layout anchor; the complete
             // customer-approved proof is the authoritative design/text
             // context. A vehicle view or driver-only artboard must never
             // overrule it.
             sourceProofUrl: proofUrl,
-            proofTile: tileCropBySide.has(side),
-            sideKey: SIDE_KEY[side] || side.toLowerCase(),
+            // Always true on this path now — the tile IS the input.
+            proofTile: true,
+            // Which side this tile IS, for labelling and dimension checks. Not
+            // a locator: there is one side in the image.
+            sideKey: SIDE_LABEL[side] || side.toLowerCase(),
             widthInches: w, heightInches: h,
             vehicleMake: make, vehicleModel: model,
             // The only available branded artboard is a DRIVER-SIDE field. It may

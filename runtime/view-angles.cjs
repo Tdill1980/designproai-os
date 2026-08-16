@@ -159,13 +159,56 @@ function viewLabel(viewType) {
 }
 
 /**
- * Every view is generated. There is no mirror path, and there must not be one:
- * a horizontal flip reverses logos, phone numbers and URLs, and asserts a
- * left-right symmetry that vehicles do not have.
+ * THE HERO. Slot one originates the design; the other six reproduce it.
+ *
+ * This is the source's two-producer architecture, which the port was missing:
+ * design-panel-ai-generate invents the wrap on the driver side, and
+ * generate-color-render clones that hero onto every other angle. Without the
+ * distinction each slot invented independently and a "design" was seven
+ * different wraps that happened to share a vehicle.
+ */
+const HERO_VIEW = "side";
+
+function assertKnownView(viewType) {
+  if (!VIEW_ORDER.includes(viewType)) throw new Error(`unknown view ${viewType}`);
+  return viewType;
+}
+
+/**
+ * Every view is its own generation. There is no mirror path, and there must not
+ * be one: a horizontal flip reverses logos, phone numbers and URLs, and asserts
+ * a left-right symmetry that vehicles do not have.
+ *
+ * This stays true for all seven and is deliberately NOT the reproduction
+ * contract. "Reproduces the hero" and "is not generated" are different claims,
+ * and the last time they were conflated the passenger side shipped mirrored
+ * text. Ask originatesDesign/reproducesHero for the design question; this
+ * function answers only whether pixels are generated.
  */
 function requiresOwnGeneration(viewType) {
-  if (!VIEW_ORDER.includes(viewType)) throw new Error(`unknown view ${viewType}`);
+  assertKnownView(viewType);
   return true;
+}
+
+/** True for the one slot that reads the customer's brief and invents. */
+function originatesDesign(viewType) {
+  return assertKnownView(viewType) === HERO_VIEW;
+}
+
+/** True for the six slots conditioned on the accepted hero. */
+function reproducesHero(viewType) {
+  return assertKnownView(viewType) !== HERO_VIEW;
+}
+
+/**
+ * The locked order with the hero guaranteed first. runRequest executes slots in
+ * order, so a plan that put a reproduction view ahead of the hero would ask for
+ * a clone of an image that does not exist yet.
+ */
+function heroFirstOrder(viewTypes) {
+  const plan = (Array.isArray(viewTypes) && viewTypes.length ? viewTypes : VIEW_ORDER).map(assertKnownView);
+  if (!plan.includes(HERO_VIEW)) return [...plan];
+  return [HERO_VIEW, ...plan.filter((view) => view !== HERO_VIEW)];
 }
 
 /**
@@ -182,7 +225,8 @@ function assertTextDirectionGuard(viewType) {
 }
 
 module.exports = {
-  CAMERA_ANGLES, VIEW_ASPECT_RATIOS, VIEW_LABELS, VIEW_ORDER, VIEW_RESOLUTION,
-  aspectRatio, assertTextDirectionGuard, cameraAngle, requiresOwnGeneration,
+  CAMERA_ANGLES, HERO_VIEW, VIEW_ASPECT_RATIOS, VIEW_LABELS, VIEW_ORDER, VIEW_RESOLUTION,
+  aspectRatio, assertTextDirectionGuard, cameraAngle, heroFirstOrder,
+  originatesDesign, reproducesHero, requiresOwnGeneration,
   resolutionTier, viewLabel, viewOrder,
 };

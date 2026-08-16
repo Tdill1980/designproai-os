@@ -28,6 +28,12 @@ test("the seven immutable slots keep the locked production order", () => {
 test("every view is generated — there is no mirror path", () => {
   for (const view of angles.viewOrder()) assert.equal(angles.requiresOwnGeneration(view), true);
   assert.throws(() => angles.requiresOwnGeneration("spoiler"), /unknown view/);
+  // This stays true for all seven even though six of them REPRODUCE the hero
+  // (see design-prompt-os.test.mjs). "Reproduces the hero" and "is not
+  // generated" are different claims: the second one is a flip, and a flip
+  // reverses lettering. Conflating them is how the passenger side broke before.
+  assert.equal(angles.reproducesHero("passenger-side"), true);
+  assert.equal(angles.requiresOwnGeneration("passenger-side"), true);
   // The source disabled INSTANT_MIRROR because mirroring produced backwards
   // text on wraps carrying lettering and URLs, then left dead branches behind.
   // None of that is carried forward: no mirror helper, no flip.

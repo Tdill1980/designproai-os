@@ -26,6 +26,7 @@
 const { createHash } = require("node:crypto");
 const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
+const prompts = require("./design-prompt-os.cjs");
 const { createProvider } = require("./generation-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
 const { authorCreativeInput } = require("./creative-authoring.cjs");
@@ -37,57 +38,30 @@ const HEARTBEAT_MS = 120_000;
 const POLL_MS = 5_000;
 
 /**
- * The design brief the customer typed, plus the vehicle it goes on.
+ * Prompt parts for one slot.
  *
  * The gateway forbids the client from sending prompt, model, seed or camera
- * angle -- those are server-owned. So the brief is assembled here from the
- * descriptive fields the contract does allow, and the camera angle is appended
- * from the frozen view contract, never from the request.
- */
-function designBrief(input) {
-  const vehicle = input?.vehicle || {};
-  const descriptor = [vehicle.year, vehicle.make, vehicle.model]
-    .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
-  const lines = [];
-
-  const brief = String(input?.brief || input?.designBrief || input?.description || "").trim();
-  if (brief) lines.push(brief);
-
-  const business = String(input?.businessName || input?.business || "").trim();
-  if (business) lines.push(`Business: ${business}`);
-  const industry = String(input?.industry || "").trim();
-  if (industry) lines.push(`Industry: ${industry}`);
-
-  const colors = Array.isArray(input?.colors)
-    ? input.colors.map((value) => String(value || "").trim()).filter(Boolean)
-    : String(input?.colors || "").trim() ? [String(input.colors).trim()] : [];
-  if (colors.length) lines.push(`Colors: ${colors.join(", ")}`);
-
-  const style = String(input?.style || "").trim();
-  if (style) lines.push(`Style: ${style}`);
-
-  if (!lines.length) lines.push("Professional commercial vehicle wrap design.");
-
-  lines.push(`Vehicle: ${descriptor || "commercial vehicle"}${vehicle.type ? ` (${vehicle.type})` : ""}`);
-  return lines.join("\n");
-}
-
-/**
- * Prompt parts for one slot: the brief, the operator's regeneration instruction
- * if this slot is being redone, then the frozen camera angle.
+ * angle -- those are server-owned -- so the whole prompt is assembled here from
+ * the descriptive fields the contract does allow, plus the frozen camera and
+ * design contracts. design-prompt-os owns the wording; this function owns only
+ * which contract a slot gets.
  *
  * The instruction is what "generate this angle again, but bolder" becomes once
  * that capability is server-owned. regenerate_designpro_generation_slot stores
  * it on the slot; the browser never sends it, so the prompt stays server-owned
  * while the operator keeps the control.
  */
-function promptPartsFor(input, sourceViewType, instruction = "") {
+function promptPartsFor(input, sourceViewType, instruction = "", reproduction = {}) {
   // Throws if the passenger angle ever loses its text-direction guard, which is
   // the defect this whole view contract exists to prevent.
   angles.assertTextDirectionGuard(sourceViewType);
-  const note = String(instruction || "").trim();
-  const revision = note ? `\n\nRevision requested for this view: ${note}` : "";
-  return [{ text: `${designBrief(input)}${revision}\n\n${angles.cameraAngle(sourceViewType)}` }];
+  return prompts.promptPartsFor({
+    input,
+    sourceViewType,
+    instruction,
+    heroReference: reproduction.heroReference || null,
+    designAnchorText: reproduction.designAnchorText || "",
+  });
 }
 
 const MIME_EXTENSION = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" });
@@ -137,18 +111,122 @@ async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
   return placed;
 }
 
-function slotsFrom(viewPlan, input, instructions = {}) {
-  const plan = Array.isArray(viewPlan) && viewPlan.length ? viewPlan : angles.viewOrder().map((sourceViewType) => ({ sourceViewType }));
-  return plan.map((entry) => {
-    const sourceViewType = entry.sourceViewType;
-    return {
-      sourceViewType,
-      consumerRole: entry.consumerRole,
-      promptParts: promptPartsFor(input, sourceViewType, instructions[sourceViewType]),
-      aspectRatio: angles.aspectRatio(sourceViewType),
-      imageSize: angles.resolutionTier(sourceViewType),
-    };
+/**
+ * The view plan, hero first — identities only, no prompts.
+ *
+ * Deliberately separate from slot assembly. runRequest executes slots in order
+ * and the six reproduction slots need the accepted hero as a prompt part, so
+ * the whole plan cannot be assembled up front; only its ORDER can. The hero is
+ * hoisted to the front of whatever plan the claim carried rather than trusted
+ * to arrive there.
+ */
+function planFrom(viewPlan) {
+  const entries = Array.isArray(viewPlan) && viewPlan.length
+    ? viewPlan
+    : angles.viewOrder().map((sourceViewType) => ({ sourceViewType }));
+  const byView = new Map(entries.map((entry) => [entry.sourceViewType, entry]));
+  return angles.heroFirstOrder(entries.map((entry) => entry.sourceViewType)).map((sourceViewType) => ({
+    sourceViewType,
+    consumerRole: byView.get(sourceViewType)?.consumerRole,
+  }));
+}
+
+/**
+ * Assemble runnable slots for one phase of the plan.
+ *
+ * A reproduction view assembled without `reproduction.heroReference` throws
+ * rather than degrading to a text-only prompt — a silent degrade there is a
+ * seventh independent invention wearing the right camera angle.
+ */
+function slotsFrom(viewPlan, input, instructions = {}, reproduction = {}) {
+  return planFrom(viewPlan).map((entry) => ({
+    sourceViewType: entry.sourceViewType,
+    consumerRole: entry.consumerRole,
+    promptParts: promptPartsFor(input, entry.sourceViewType, instructions[entry.sourceViewType], reproduction),
+    aspectRatio: angles.aspectRatio(entry.sourceViewType),
+    imageSize: angles.resolutionTier(entry.sourceViewType),
+  }));
+}
+
+/**
+ * Run the hero, then reproduce it onto the other six.
+ *
+ * TWO PHASES, NOT ONE LOOP, and the split is load-bearing: the six reproduction
+ * prompts cannot be assembled until the hero exists, because the hero image
+ * itself is one of their prompt parts. Running all seven from one pre-built
+ * plan is exactly what made every view an independent invention.
+ *
+ * The engine is untouched. Each phase is its own bounded runRequest, so the
+ * per-slot attempt ceiling, the leases and the crash-resume path all behave as
+ * before; a resumed worker whose hero is already accepted pays for one storage
+ * read instead of a regeneration.
+ *
+ * Module-level and dependency-injected rather than closed over the worker, so
+ * the ordering guarantee this function exists to provide is testable without a
+ * live Supabase project.
+ */
+async function runSevenSlots({ claim, instructions = {}, provider, store, readBytes, runner = engine.runRequest, log = () => {} }) {
+  const base = {
+    requestId: claim.requestId,
+    generationId: claim.generationId,
+    tenantKey: claim.tenantKey,
+    provider,
+    store,
+  };
+  const plan = planFrom(claim.viewPlan);
+  const heroView = plan.find((entry) => angles.originatesDesign(entry.sourceViewType));
+  const reproductionViews = plan.filter((entry) => angles.reproducesHero(entry.sourceViewType));
+
+  // A plan without the hero cannot reproduce anything. Say so rather than
+  // quietly letting six slots invent six wraps.
+  if (!heroView) {
+    throw Object.assign(new Error("the slot plan carries no hero view to originate the design"), {
+      code: "generation_hero_slot_missing",
+    });
+  }
+
+  log(`hero ${heroView.sourceViewType} originating the design`);
+  const heroRun = await runner({ ...base, slots: slotsFrom([heroView], claim.input, instructions) });
+  // A hero that did not land is a design that does not exist. The six views
+  // stop here rather than each inventing a replacement for it.
+  if (heroRun.state !== "outputs_ready") return { ...heroRun, results: [...heroRun.results] };
+
+  // The accepted hero's own bytes -- not a resized copy. This runtime has real
+  // memory, so the reference the model reads is the full-resolution render.
+  const heroWinner = heroRun.results[0]?.winner;
+  const heroBytes = await readBytes(heroWinner.storage_path || heroWinner.storagePath);
+  const heroReference = {
+    bytes: heroBytes,
+    contentType: heroWinner.content_type || heroWinner.contentType || "image/png",
+  };
+
+  // One analysis of the hero, reused by all six. Non-fatal: a missing anchor
+  // weakens continuity, a failed request produces nothing.
+  const designAnchorText = await prompts.buildDesignAnchor({
+    provider,
+    heroBytes,
+    contentType: heroReference.contentType,
+    logger: log,
   });
+
+  const reproductionRun = reproductionViews.length
+    ? await runner({
+      ...base,
+      slots: slotsFrom(reproductionViews, claim.input, instructions, { heroReference, designAnchorText }),
+    })
+    : { state: "outputs_ready", providerCalls: 0, results: [] };
+
+  const results = [...heroRun.results, ...reproductionRun.results];
+  const failed = results.filter((item) => item.state === "failed");
+  return {
+    contract: engine.ENGINE_CONTRACT,
+    state: failed.length ? "failed" : "outputs_ready",
+    providerCalls: heroRun.providerCalls + reproductionRun.providerCalls,
+    results,
+    requiresExplicitResume: failed.length > 0,
+    designAnchored: Boolean(designAnchorText),
+    heroContentHash: heroWinner.content_hash || heroWinner.contentHash || null,
+  };
 }
 
 function createGenerationWorker({ supabase, workerId, provider, intervalMs = POLL_MS }) {
@@ -166,6 +244,13 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
     const { data, error } = await supabase.rpc(name, args);
     if (error) throw new Error(`${name} failed: ${error.message}`);
     return data;
+  }
+
+  /** The exact bytes behind an accepted slot, read back from the bucket. */
+  async function storageBytes(storagePath) {
+    const { data, error } = await supabase.storage.from(BUCKET).download(storagePath);
+    if (error || !data) throw new Error(`hero reference download failed: ${error?.message || "empty"}`);
+    return Buffer.from(await data.arrayBuffer());
   }
 
   /** The seven persisted rows, in the exact shape completion validates. */
@@ -207,13 +292,13 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         (slotRows || []).filter((row) => row.instruction).map((row) => [row.source_view_type, row.instruction]),
       );
 
-      const result = await engine.runRequest({
-        requestId,
-        generationId: claim.generationId,
-        tenantKey: claim.tenantKey,
+      const result = await runSevenSlots({
+        claim,
+        instructions,
         provider: imageProvider,
         store,
-        slots: slotsFrom(claim.viewPlan, claim.input, instructions),
+        readBytes: storageBytes,
+        log: (line) => console.log(`[DESIGNPRO-OS] calls 1-7 ${requestId}: ${line}`),
       });
 
       if (result.state !== "outputs_ready") {
@@ -278,6 +363,14 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
           engineContract: engine.ENGINE_CONTRACT,
           providerCalls: result.providerCalls,
           handoffRevisionId: revisionId,
+          // WHICH DESIGN CONTRACT PRODUCED THESE SEVEN. Recorded so "did the
+          // views clone the hero or invent independently" is a receipt lookup
+          // rather than an eyeball comparison of seven renders.
+          promptContract: prompts.PROMPT_CONTRACT,
+          designMode: prompts.designMode(claim.input),
+          heroView: angles.HERO_VIEW,
+          heroContentHash: result.heroContentHash,
+          designAnchored: result.designAnchored === true,
           // Carried on the receipt because the worker cannot write the revision
           // itself: save_designpro_revision_source requires an authenticated
           // JWT and refuses a service role. The owner freezes this exact object
@@ -348,7 +441,8 @@ module.exports = {
   RECEIPT_CONTRACT,
   REQUEST_LEASE_SECONDS,
   createGenerationWorker,
-  designBrief,
+  planFrom,
   promptPartsFor,
+  runSevenSlots,
   slotsFrom,
 };
