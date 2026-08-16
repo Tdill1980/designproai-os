@@ -26,6 +26,10 @@ const arg = (name, fallback = null) => {
   return i > -1 ? process.argv[i + 1] : fallback;
 };
 
+// Retained to validate the supplied views file and to seed the GENIE record.
+// The renders themselves are NOT ingested any more: the canary authors a new
+// design through Calls 1-7, and a master built from these would be
+// reconstruction from approval output.
 const SOURCE_TO_ROLE = Object.freeze({
   side: "driver",
   "passenger-side": "passenger",
@@ -294,34 +298,6 @@ async function ensureValidatedGenie(operatorId, evidenceUrl) {
   return { id, validatedSurfaces, totalSqFt, validationHash };
 }
 
-async function ingestView(ownerId, revisionId, sourceKey, url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${sourceKey}: source render fetch failed (HTTP ${response.status})`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (!bytes.length) throw new Error(`${sourceKey}: source render is empty`);
-
-  const contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-  const extension = EXTENSION[contentType];
-  if (!extension) throw new Error(`${sourceKey}: ${contentType || "unknown"} is unsupported`);
-  const role = SOURCE_TO_ROLE[sourceKey];
-  const contentHash = sha256(bytes);
-  const storagePath = `users/${ownerId}/revisions/${revisionId}/inputs/${role}/${contentHash}.${extension}`;
-
-  const { error } = await service.storage.from(BUCKET).upload(storagePath, bytes, {
-    contentType,
-    upsert: false,
-  });
-  if (error && !/exists|duplicate|conflict/i.test(error.message)) {
-    throw new Error(`${sourceKey}: upload failed: ${error.message}`);
-  }
-
-  step(`${sourceKey.padEnd(15)} -> ${role.padEnd(9)} ${(bytes.length / 1024).toFixed(0).padStart(5)} KB ${contentHash.slice(0, 12)}`);
-  return {
-    role,
-    asset: { storagePath, contentHash, byteSize: bytes.length, contentType },
-  };
-}
-
 async function registerRecipient(operatorId) {
   step("registering WrapBox recipient through the runtime");
   const verificationRefHash = sha256(Buffer.from(`canary-verification:${ORDER_NUMBER}`));
@@ -539,6 +515,95 @@ function assertOutputSet() {
   if (!pass) throw new Error(`production artifact set incomplete: ${JSON.stringify(checks)}`);
 }
 
+
+/**
+ * Run Calls 1-7 for real and return what they authored.
+ *
+ * The request is created by the authenticated operator, the running runtime
+ * workers claim it, and the worker's engine receipt carries the canonical
+ * design master. The receipt is read with the service client because
+ * get_designpro_generation_request deliberately does not return it -- that is a
+ * read; the revision itself is still saved by the operator's own JWT.
+ */
+async function runCallsOneToSeven({ operator, operatorId, generationId, delivery }) {
+  const input = {
+    vehicle: VEHICLE,
+    brief: DESIGN_NAME,
+    industry: "HVAC and climate control",
+    colors: ["deep blue", "sunrise orange"],
+    style: "modern commercial",
+    orderNumber: ORDER_NUMBER,
+    delivery,
+  };
+  // The exact key the adapter recomputes; anything else is rejected outright.
+  const idempotencyKey = `calls17:${generationId}:${delivery.recipientIdentityHash}:${sha256(Buffer.from(ORDER_NUMBER))}`;
+
+  step("creating a new Calls 1-7 generation request");
+  const created = await rpc(operator, "create_designpro_generation_request", {
+    p_generation_id: generationId,
+    p_input: input,
+    p_idempotency_key: idempotencyKey,
+  });
+  const requestId = String(created?.requestId || created?.id || "");
+  if (!requestId) throw new Error(`generation request was not created: ${JSON.stringify(created).slice(0, 300)}`);
+  evidence.generationRequestId = requestId;
+  step(`request ${requestId}`);
+
+  let state = "";
+  let seen = "";
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    const status = await rpc(operator, "get_designpro_generation_request", { p_request_id: requestId });
+    state = String(status?.state || "");
+    if (state !== seen) { step(`  calls 1-7 ${state}`); seen = state; }
+    if (state === "outputs_ready") break;
+    if (state === "failed" || state === "retryable") {
+      throw new Error(`Calls 1-7 failed (${state}): ${String(status?.failureCode || "unknown")}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+  if (state !== "outputs_ready") throw new Error(`Calls 1-7 did not finish; last state ${state || "none"}`);
+
+  const { data: row, error } = await service
+    .from("designpro_generation_requests")
+    .select("engine_receipt")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (error || !row) throw new Error(`engine receipt read failed: ${error?.message || "no row"}`);
+  const receipt = row.engine_receipt || {};
+  const revisionId = String(receipt.handoffRevisionId || "");
+  const designMaster = receipt.designMaster;
+  if (!revisionId) throw new Error("the engine receipt carries no handoff revision id");
+  if (!designMaster?.creativeAssets?.length || !designMaster?.composition?.layers?.length) {
+    throw new Error(`Calls 1-7 recorded no design master: ${JSON.stringify(designMaster || null).slice(0, 300)}`);
+  }
+  step(`authored master: ${designMaster.creativeAssets.length} creative assets, ${designMaster.composition.layers.length} layers`);
+
+  // The worker copied the accepted views to the revision input paths; rebuild
+  // the same addresses it wrote, since the status RPC withholds storage paths.
+  const { data: viewRows, error: viewError } = await service
+    .from("designpro_generation_views")
+    .select("consumer_role,content_hash,byte_size,content_type")
+    .eq("request_id", requestId)
+    .is("superseded_at", null);
+  if (viewError) throw new Error(`generation view read failed: ${viewError.message}`);
+  const renderAssets = {};
+  for (const view of viewRows || []) {
+    const extension = EXTENSION[view.content_type];
+    if (!extension) throw new Error(`view ${view.consumer_role}: ${view.content_type} is unsupported`);
+    renderAssets[view.consumer_role] = {
+      storagePath: `users/${operatorId}/revisions/${revisionId}/inputs/${view.consumer_role}/${view.content_hash}.${extension}`,
+      contentHash: view.content_hash,
+      byteSize: Number(view.byte_size),
+      contentType: view.content_type,
+    };
+  }
+  if (Object.keys(renderAssets).length !== 7) {
+    throw new Error(`expected seven placed views, found ${Object.keys(renderAssets).length}`);
+  }
+  step(`revision ${revisionId} carries seven placed views`);
+  return { revisionId, renderAssets, designMaster };
+}
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
   writeEvidence();
@@ -550,29 +615,38 @@ async function main() {
   const { operator, operatorId } = await ensureOperatorAndCustomer();
   await ensureValidatedGenie(operatorId, views.side);
 
-  const revisionId = randomUUID();
   const generationId = randomUUID();
   const visualizationId = randomUUID();
   const designId = `DID-${generationId.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
-  evidence.revisionId = revisionId;
   evidence.generationId = generationId;
   evidence.visualizationId = visualizationId;
 
-  process.stdout.write(`\nProduction canary — revision ${revisionId}\norder ${ORDER_NUMBER}\ndesign ${designId}\n\n`);
-
-  step("ingesting seven existing July 24 renders");
-  const renderAssets = {};
-  for (const sourceKey of Object.keys(SOURCE_TO_ROLE)) {
-    const { role, asset } = await ingestView(operatorId, revisionId, sourceKey, views[sourceKey]);
-    renderAssets[role] = asset;
-  }
-  if (new Set(Object.values(renderAssets).map((asset) => asset.contentHash)).size !== 7) {
-    throw new Error("seven renders are not byte-distinct");
-  }
-  evidence.renderAssets = renderAssets;
-
+  // The recipient is bound BEFORE the request, not after: create_designpro_
+  // generation_request keys its idempotency on the recipient identity hash and
+  // the order number, so neither can be decided later.
   const delivery = await registerRecipient(operatorId);
   step(`recipient bound ${delivery.customerId}`);
+
+  process.stdout.write(`\nProduction canary — order ${ORDER_NUMBER}\ndesign ${designId}\n\n`);
+
+  // A NEW CURRENT-SYSTEM DESIGN. The canary no longer replays the July 24
+  // renders: those are approval output from the retired architecture, and a
+  // production master authored from them would be reconstruction. Calls 1-7 run
+  // for real here, and the authoring boundary records the canonical design as
+  // they do it.
+  const { revisionId, renderAssets, designMaster } = await runCallsOneToSeven({
+    operator, operatorId, generationId, delivery,
+  });
+  evidence.revisionId = revisionId;
+  evidence.renderAssets = renderAssets;
+  evidence.designMaster = {
+    contractVersion: designMaster.contractVersion,
+    creativeAssets: designMaster.creativeAssets.map(({ assetId, role, contentHash, storagePath, intrinsic, minPxPerInch, generatedBy }) => ({
+      assetId, role, contentHash, storagePath, intrinsic, minPxPerInch, generatedBy,
+    })),
+    layers: designMaster.composition.layers.map(({ layerId, assetId, space, extent, zOrder }) => ({ layerId, assetId, space, extent, zOrder })),
+    provenance: designMaster.provenance,
+  };
 
   const snapshot = {
     contractVersion: "designpro.revision-snapshot.v1",
@@ -596,6 +670,9 @@ async function main() {
     visualizationId,
     renderAssets,
     designId,
+    // The canonical authored state. Frozen with the rest of the snapshot, so
+    // Call 8 consumes this exact object and nothing can substitute it later.
+    designMaster,
   };
 
   step("saving revision through authenticated operator JWT");
