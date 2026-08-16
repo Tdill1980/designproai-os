@@ -982,6 +982,34 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           typeof snapshot.logoInventoryAttestation !== "object" || snapshot.logoInventoryAttestation?.attested !== true ||
           !validFrozenDelivery(snapshot.delivery);
         if (missing.length || snapshotMissing.length || invalidSnapshot) return json(res, 400, { error: "revision_contract_incomplete", missing, snapshotMissing });
+
+        // The canonical authoring input, when Calls 1-7 recorded one. It is not
+        // required here -- Call 8 is the stage that refuses a run without a
+        // master, and it already says so precisely -- but a MALFORMED one must
+        // never be frozen: the snapshot is immutable, so an unusable master
+        // becomes an unusable revision that has to be regenerated rather than
+        // repaired. Shape only; design-master.cjs owns the real validation.
+        const designMaster = snapshot.designMaster;
+        if (designMaster !== undefined) {
+          const assets = Array.isArray(designMaster?.creativeAssets) ? designMaster.creativeAssets : null;
+          const layers = Array.isArray(designMaster?.composition?.layers) ? designMaster.composition.layers : null;
+          const assetIds = new Set((assets || []).map((asset) => String(asset?.assetId || "")));
+          const badAsset = (assets || []).find((asset) => !String(asset?.assetId || "").trim()
+            || !/^[0-9a-f]{64}$/.test(String(asset?.contentHash || ""))
+            || !String(asset?.storagePath || "").trim()
+            || String(asset?.assetId || "").startsWith("logo-"));
+          const unplaced = (layers || []).find((layer) => !assetIds.has(String(layer?.assetId || "")));
+          if (!designMaster || typeof designMaster !== "object" || Array.isArray(designMaster)
+            || !assets?.length || !layers?.length || badAsset || unplaced) {
+            return json(res, 400, {
+              error: "revision_design_master_invalid",
+              detail: !assets?.length ? "creativeAssets is empty"
+                : !layers?.length ? "composition.layers is empty"
+                : badAsset ? `creative asset ${badAsset.assetId || "(unnamed)"} is not a hashed, stored, non-logo asset`
+                : `composition places ${unplaced.assetId}, which is not a declared creative asset`,
+            });
+          }
+        }
         await validateRevisionAssets(fetchImpl, token, cfg, user.id, body);
         const frozenSnapshot = {
           ...snapshot,

@@ -28,6 +28,8 @@ const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
 const { createProvider } = require("./generation-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
+const { authorCreativeInput } = require("./creative-authoring.cjs");
+const { expectedSurfacesFromRow, resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
 
 const RECEIPT_CONTRACT = "designpro.calls-1-7-receipt.v1";
 const REQUEST_LEASE_SECONDS = 900;
@@ -240,6 +242,28 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       }
 
       const revisionId = handoffRevisionId(requestId);
+      const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
+
+      // THE AUTHORING BOUNDARY. Calls 1-7 have decided this design; here that
+      // decision is recorded as the canonical authoring input Call 8 consumes,
+      // instead of being left inside the image model as pixels.
+      //
+      // It is authored against the SAME validated GENIE row manifest.resolve
+      // will bind to the run, so the extents computed here are the extents the
+      // design space admits. A vehicle still awaiting six-surface validation
+      // therefore cannot be authored, and says so rather than guessing.
+      const dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null);
+      const designMaster = await authorCreativeInput({
+        provider: imageProvider,
+        store,
+        manifest: { expectedSurfaces: expectedSurfacesFromRow(dimensionRow) },
+        input: claim.input,
+        bodyText: claim.input?.bodyText,
+        ownerId,
+        revisionId,
+        logger: (line) => console.log(`[DESIGNPRO-OS] authoring ${requestId}: ${line}`),
+      });
+
       const completion = await rpc("complete_designpro_generation_request", {
         p_request_id: requestId,
         p_claim_token: claimToken,
@@ -254,6 +278,11 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
           engineContract: engine.ENGINE_CONTRACT,
           providerCalls: result.providerCalls,
           handoffRevisionId: revisionId,
+          // Carried on the receipt because the worker cannot write the revision
+          // itself: save_designpro_revision_source requires an authenticated
+          // JWT and refuses a service role. The owner freezes this exact object
+          // into the snapshot; nothing here bypasses that.
+          designMaster,
         },
       });
 
@@ -261,10 +290,9 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       // created by the authenticated owner, not here: save_designpro_revision_source
       // requires an 'authenticated' JWT and refuses a service role outright.
       if (completion?.handoffReady === true) {
-        const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
         await placeRevisionSources({ supabase, ownerId, revisionId, views });
       }
-      return { requestId, state: "outputs_ready", revisionId, completion };
+      return { requestId, state: "outputs_ready", revisionId, completion, designMaster };
     } catch (error) {
       // The lease may already be gone; a failed fail-report must not mask the
       // original error.
