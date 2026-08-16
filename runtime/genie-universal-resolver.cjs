@@ -180,4 +180,42 @@ async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId) {
   throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${inserted.id} created; exact six-surface validation is required`, false, true);
 }
 
-module.exports = { SURFACES, UniversalDimensionError, resolveOrQueueUniversalDimensions, _test: { normalizedVehicle, assertGroundedCandidate, validatedSurfaces } };
+
+/**
+ * The six production surfaces as the validated dimension row states them.
+ *
+ * This mirrors, field for field, the mapping designpro-standalone-claimant.cjs
+ * performs in manifest.resolve (its `dim(...)` calls). It exists so the
+ * authoring producer can be handed the SAME surfaces at Calls 1-7 time that
+ * manifest.resolve will bind to the run later: a creative layer's extent is
+ * capped at its surface's bleed box, so authoring against different numbers
+ * than the run binds would fail Call 8 on every job.
+ *
+ * Locked by tests/genie-surface-mapping.test.ts against the claimant's mapping.
+ */
+function expectedSurfacesFromRow(row) {
+  const dim = (width, height, surfaceKey) => {
+    const widthInches = Number(width);
+    const heightInches = Number(height);
+    if (!(widthInches > 0 && heightInches > 0)) {
+      throw new UniversalDimensionError("genie_surface_dimensions_missing", `GENIE dimensions missing for ${surfaceKey}`);
+    }
+    return {
+      surfaceKey,
+      widthInches,
+      heightInches,
+      surfaceSqFt: Math.round((widthInches * heightInches / 144) * 100) / 100,
+      bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+    };
+  };
+  return [
+    dim(row.side_width, row.side_height, "driver"),
+    dim(row.passenger_width || row.side_width, row.passenger_height || row.side_height, "passenger"),
+    dim(row.hood_width, row.hood_length, "hood"),
+    dim(row.roof_width, row.roof_length, "roof"),
+    dim(row.front_width, row.front_height, "front"),
+    dim(row.rear_width, row.rear_height, "rear"),
+  ];
+}
+
+module.exports = { SURFACES, UniversalDimensionError, expectedSurfacesFromRow, resolveOrQueueUniversalDimensions, _test: { normalizedVehicle, assertGroundedCandidate, validatedSurfaces } };

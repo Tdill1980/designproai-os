@@ -22,6 +22,12 @@ const PROVIDER_CONTRACT = "designpro.generation-provider.v1";
 // Ported from the frozen source's model chain: pro image first, flash image as
 // the fallback when pro is unavailable or over capacity.
 const DEFAULT_IMAGE_MODELS = Object.freeze(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]);
+const DEFAULT_SPEC_MODELS = Object.freeze(["gemini-2.5-flash"]);
+// A thinking model charges its deliberation against the same budget as its
+// answer. genie-universal-resolver lost whole responses at 2048 and settled on
+// 8192; a composition is a longer answer than a dimension lookup, so it starts
+// from that proven floor rather than below it.
+const SPEC_MAX_OUTPUT_TOKENS = 8192;
 const COOLDOWN_MS = 60_000;
 const ALLOWED_RESPONSE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
@@ -60,10 +66,31 @@ function imageModels(env = process.env) {
   return models;
 }
 
+/**
+ * The models allowed to author a creative SPECIFICATION rather than a picture.
+ *
+ * Kept separate from the image chain on purpose: an image model answers with
+ * pixels, and the authoring boundary needs structured JSON. gemini-2.5-flash is
+ * the text model this runtime already trusts for a grounded JSON answer
+ * (genie-universal-resolver), so the specification call uses the same one
+ * rather than introducing an unproven id.
+ */
+function specificationModels(env = process.env) {
+  const raw = String(env.DESIGNPRO_SPEC_MODELS || "").trim();
+  const models = raw ? raw.split(",").map((value) => value.trim()).filter(Boolean) : [...DEFAULT_SPEC_MODELS];
+  for (const model of models) {
+    if (!/^gemini-[a-z0-9.-]+$/.test(model) || /image/.test(model)) {
+      throw new ProviderError("provider_spec_model_invalid", `${model} is not an explicit Gemini text model`);
+    }
+  }
+  return models;
+}
+
 function createProvider(options = {}) {
   const env = options.env || process.env;
   const keys = options.keys || readKeyPool(env);
   const models = options.models || imageModels(env);
+  const specModels = options.specModels || specificationModels(env);
   const fetchImpl = options.fetchImpl || fetch;
   const now = options.now || (() => Date.now());
   const cooldownMs = options.cooldownMs == null ? COOLDOWN_MS : Number(options.cooldownMs);
@@ -143,20 +170,101 @@ function createProvider(options = {}) {
     );
   }
 
+  /**
+   * One creative decision, returned as data instead of pixels.
+   *
+   * This is the same creative brain the image call uses — same key pool, same
+   * health and cooldown — asked to state what it decided rather than to paint
+   * it. Nothing here interprets the answer: the caller owns every guard about
+   * what a specification is allowed to contain, because those guards are
+   * production authority and this module is transport.
+   */
+  async function generateSpecification({ parts, signal, timeoutMs = 120_000, temperature = 0.4, label = "specification" }) {
+    const attempts = [];
+    for (const model of specModels) {
+      for (const key of availableKeys()) {
+        const fingerprint = keyFingerprint(key);
+        try {
+          const response = await fetchImpl(`${ENDPOINT_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts }],
+              generationConfig: {
+                temperature,
+                maxOutputTokens: SPEC_MAX_OUTPUT_TOKENS,
+                responseMimeType: "application/json",
+              },
+            }),
+            signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
+          });
+          if (!response.ok) {
+            const detail = await response.text().catch(() => "");
+            if (response.status === 429 || response.status >= 500) rest(key, cooldownMs);
+            attempts.push({ model, key: fingerprint, status: response.status, detail: detail.slice(0, 160) });
+            continue;
+          }
+          const payload = await response.json();
+          const candidate = payload?.candidates?.[0];
+          const text = (candidate?.content?.parts || []).map((part) => part.text || "").join("").trim();
+          if (!text) {
+            // Truncation, a safety block and an empty answer are indistinguishable
+            // downstream unless the reason is carried here.
+            const finish = String(candidate?.finishReason || payload?.promptFeedback?.blockReason || "none");
+            attempts.push({ model, key: fingerprint, status: 200, detail: `empty specification (${finish})` });
+            continue;
+          }
+          let specification;
+          try {
+            specification = JSON.parse(text);
+          } catch {
+            attempts.push({ model, key: fingerprint, status: 200, detail: `unparseable JSON: ${text.slice(0, 120).replace(/\s+/g, " ")}` });
+            continue;
+          }
+          if (!specification || typeof specification !== "object" || Array.isArray(specification)) {
+            attempts.push({ model, key: fingerprint, status: 200, detail: "specification is not a JSON object" });
+            continue;
+          }
+          recover(key);
+          return { specification, model, keyFingerprint: fingerprint, attempts, contract: PROVIDER_CONTRACT };
+        } catch (error) {
+          rest(key, cooldownMs);
+          attempts.push({ model, key: fingerprint, status: 0, detail: String(error?.message || error).slice(0, 160) });
+        }
+      }
+    }
+    throw new ProviderError(
+      "provider_specification_exhausted",
+      `${label} failed on every model and key: ${attempts.map((a) => `${a.model}/${a.key}:${a.status} ${a.detail}`).join(" | ")}`,
+      true,
+    );
+  }
+
   function state() {
     return keys.map((key) => ({ key: keyFingerprint(key), ...health.get(key) }));
   }
 
-  return { generateImage, state, models: [...models], keyCount: keys.length, contract: PROVIDER_CONTRACT };
+  return {
+    generateImage,
+    generateSpecification,
+    state,
+    models: [...models],
+    specModels: [...specModels],
+    keyCount: keys.length,
+    contract: PROVIDER_CONTRACT,
+  };
 }
 
 module.exports = {
   COOLDOWN_MS,
   DEFAULT_IMAGE_MODELS,
+  DEFAULT_SPEC_MODELS,
   PROVIDER_CONTRACT,
+  SPEC_MAX_OUTPUT_TOKENS,
   ProviderError,
   createProvider,
   imageModels,
   keyFingerprint,
   readKeyPool,
+  specificationModels,
 };

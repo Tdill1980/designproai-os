@@ -14,7 +14,7 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 33);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 34);
   for (const name of [
     "runtime/resend-transport.cjs", "runtime/wrapbox-delivery.cjs", "runtime/zip-spool.cjs",
     "runtime/gemini-flat-wrap.cjs", "runtime/flat-wrap-layout.cjs", "runtime/proof-sheet.cjs", "runtime/topaz-upscale.cjs",
@@ -22,6 +22,9 @@ test("one canonical policy includes every required runtime file and five deploy 
     // no release ever shipped them and the generation queue had no executor.
     "runtime/view-angles.cjs", "runtime/generation-provider.cjs", "runtime/generation-store.cjs",
     "runtime/generation-engine.cjs", "runtime/generation-worker.cjs",
+    // The authoring boundary the worker requires to record the canonical
+    // design master while Calls 1-7 run.
+    "runtime/creative-authoring.cjs",
     "ops/Dockerfile.runtime", "ops/Dockerfile.gateway", "ops/runtime-healthcheck.js",
     "ops/gateway-healthcheck.mjs", "ops/compose.yaml",
   ]) assert.ok(fixed.includes(name), name);
