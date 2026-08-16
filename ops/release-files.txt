@@ -36,6 +36,10 @@ runtime/generation-provider.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs
 runtime/generation-worker.cjs
+# The authoring boundary. The generation worker requires it to record the
+# canonical design master while Calls 1-7 run, so a release without it dies at
+# require time exactly as the kernel modules above would.
+runtime/creative-authoring.cjs
 gateway/package.json
 gateway/package-lock.json
 gateway/src/server.mjs
