@@ -284,6 +284,76 @@ function authorizedArtifactPath(storagePath, userId, runId) {
   return storagePath.startsWith(derivedPrefix) || storagePath.startsWith(deliveryPrefix) && storagePath.includes(`/${runId}/`);
 }
 
+// The approved Calls 1-7 renders are read in place from
+// designpro_generation_views. They are never copied into designpro_artifacts:
+// that table is the manufacturing record, and an approved customer render is
+// not a manufacturing artifact. consumer_role is the locked Calls 1-7 side
+// identity and already matches surface_key for the six production surfaces;
+// "closeup" is not one, so it never reaches a panel row.
+function authorizedGenerationViewPath(storagePath, userId, generationId) {
+  if (!storagePath || storagePath.includes("..") || !/^[A-Za-z0-9._/-]+$/.test(storagePath)) return false;
+  return storagePath.startsWith(`designpro/user_${userId}/${generationId}/calls-1-7/`);
+}
+
+// Ownership is enforced three times over, because a render from another
+// DesignID beside this panel is the failure this endpoint exists to prevent:
+// the generation id comes from THIS run's own immutable revision snapshot, the
+// request row must be owned by the caller, and the storage path must sit
+// inside that same owner/generation prefix.
+async function approvedViewsForRun(fetchImpl, token, cfg, run, userId) {
+  const revisionId = String(run?.revision_id || "").toLowerCase();
+  const snapshotHash = String(run?.revision_snapshot_hash || "").toLowerCase();
+  if (!UUID_PATTERN.test(revisionId) || !SHA256_PATTERN.test(snapshotHash)) {
+    throw Object.assign(new Error("run_revision_identity_missing"), { status: 409 });
+  }
+  const revisionResponse = await upstream(fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_revision_sources?select=${encodeURIComponent("generation_id")}&revision_id=eq.${encodeURIComponent(revisionId)}&snapshot_hash=eq.${snapshotHash}&limit=1`,
+    { method: "GET" }, token, cfg);
+  if (!revisionResponse.ok) throw Object.assign(new Error(`revision_identity_query_${revisionResponse.status}`), { status: revisionResponse.status });
+  const revisionRows = await revisionResponse.json();
+  if (!Array.isArray(revisionRows) || revisionRows.length !== 1) {
+    throw Object.assign(new Error("immutable_revision_identity_missing"), { status: 409 });
+  }
+  const generation = String(revisionRows[0].generation_id || "").toLowerCase();
+  if (!UUID_PATTERN.test(generation)) throw Object.assign(new Error("immutable_revision_identity_missing"), { status: 409 });
+
+  const requestResponse = await upstream(fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${encodeURIComponent("id")}&generation_id=eq.${encodeURIComponent(generation)}&owner_id=eq.${encodeURIComponent(userId)}&limit=1`,
+    { method: "GET" }, token, cfg);
+  if (!requestResponse.ok) throw Object.assign(new Error(`generation_request_query_${requestResponse.status}`), { status: requestResponse.status });
+  const requestRows = await requestResponse.json();
+  if (!Array.isArray(requestRows) || requestRows.length !== 1) return [];
+
+  const fields = encodeURIComponent("id,consumer_role,source_view_type,storage_path,content_hash,byte_size,content_type");
+  const viewResponse = await upstream(fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_generation_views?select=${fields}&request_id=eq.${encodeURIComponent(String(requestRows[0].id))}&order=consumer_role.asc`,
+    { method: "GET" }, token, cfg);
+  if (!viewResponse.ok) throw Object.assign(new Error(`generation_views_query_${viewResponse.status}`), { status: viewResponse.status });
+  const rows = await viewResponse.json();
+  if (!Array.isArray(rows)) return [];
+
+  const views = [];
+  for (const row of rows) {
+    const surfaceKey = String(row.consumer_role || "");
+    if (!PRODUCTION_SURFACES.includes(surfaceKey)) continue;
+    const storagePath = String(row.storage_path || "");
+    if (!authorizedGenerationViewPath(storagePath, userId, generation)) continue;
+    views.push({
+      id: String(row.id),
+      generationId: generation,
+      surfaceKey,
+      sourceViewType: String(row.source_view_type || ""),
+      storagePath,
+      contentHash: String(row.content_hash),
+      byteSize: row.byte_size == null ? null : Number(row.byte_size),
+      contentType: String(row.content_type || ""),
+      signedUrl: await signedArtifactUrl(fetchImpl, token, cfg, storagePath),
+      expiresIn: 300,
+    });
+  }
+  return views;
+}
+
 async function resolveRun(fetchImpl, token, cfg, requestedGenerationId) {
   const runs = await listRuns(fetchImpl, token, cfg);
   return requestedRun(runs, requestedGenerationId);
@@ -1049,6 +1119,14 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           p_input: { orderRequestId: body.orderRequestId || null },
         });
         return json(res, 202, { runId: result.workflowRunId, accepted: true });
+      }
+
+      const approvedViewMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/approved-views$/);
+      if (req.method === "GET" && approvedViewMatch) {
+        const runs = await listRuns(fetchImpl, token, cfg);
+        const run = requestedRun(runs, decodeURIComponent(approvedViewMatch[1]));
+        if (!run) return json(res, 404, { error: "job_not_found" });
+        return json(res, 200, await approvedViewsForRun(fetchImpl, token, cfg, run, user.id));
       }
 
       const artifactMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/artifacts$/);

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
   ApiError,
+  ApprovedView,
   AssetIdentity,
   dpApi,
   FinalQc,
@@ -367,24 +368,20 @@ function SaveLink({ url, name }: { url: string; name: string }) {
  * rectangle and hash the panel came from, so a panel that is not a cut of the
  * approved design cannot look like one here.
  */
-function RevisionStudio({ artifacts, loading }: { artifacts: WorkflowArtifact[]; loading: boolean }) {
+function RevisionStudio({ artifacts, approvedViews, loading }: { artifacts: WorkflowArtifact[]; approvedViews: ApprovedView[]; loading: boolean }) {
   const proof = artifacts.find((item) => item.kind === "flat-proof" && !item.surfaceKey);
   const layout = artifacts.find((item) => item.kind === "flat-proof" && item.surfaceKey === "flat-wrap-layout");
   const panels = panelOrder
     .map((key) => artifacts.find((item) => item.kind === "panel" && item.surfaceKey === key))
     .filter((item): item is WorkflowArtifact => Boolean(item));
-  // RIGHT SLOT = the approved Calls 1-7 3D/on-vehicle render for this same
-  // surface_key. Those rows live in designpro_generation_views and the gateway
-  // does not expose them: artifactsForRun reads designpro_artifacts only, and
-  // no stage registers an approved-render artifact. So there is no source for
-  // this slot yet.
+  // RIGHT SLOT = the approved Calls 1-7 on-vehicle render for this same
+  // surface_key, read from designpro_generation_views.
   //
-  // Do NOT fill it with the per-side flat-proof (role
-  // "canonical-production-surface"). That is an internal flat manufacturing
-  // surface, not an approved render, and substituting it silently shows the
-  // operator manufacturing artwork labelled as the customer's approved design.
-  // The slot stays honestly empty until the binding exists.
-  const approvedRenders = new Map<string, WorkflowArtifact>();
+  // Never fill this from a flat-proof. The per-side flat-proof carries role
+  // "canonical-production-surface" and is internal manufacturing artwork;
+  // showing it here would label manufacturing output as the customer's
+  // approved design. A side with no approved render stays empty.
+  const approvedRenders = new Map(approvedViews.map((view) => [view.surfaceKey, view] as const));
   if (loading && !proof && panels.length === 0) return <section className="panel"><div className="notice">Loading Revision Studio…</div></section>;
   if (!proof && panels.length === 0) return null;
   const totalSqFt = num(proof?.metadata?.totalSqFt);
@@ -439,7 +436,7 @@ function RevisionStudio({ artifacts, loading }: { artifacts: WorkflowArtifact[];
               ? <a className="studio-thumb" href={approvedRender.signedUrl} target="_blank" rel="noreferrer">
                   <img src={approvedRender.signedUrl} alt={`${panel.surfaceKey} approved design render`} />
                 </a>
-              : <div className="studio-thumb studio-thumb-empty">Approved {panel.surfaceKey} render not exposed by the gateway</div>}
+              : <div className="studio-thumb studio-thumb-empty">No approved {panel.surfaceKey} render</div>}
           </div>
         </div>
         <div className="studio-meta">
@@ -460,21 +457,30 @@ function Workflow() {
   const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
   const [artifactsLoading, setArtifactsLoading] = useState(true);
   const [artifactsError, setArtifactsError] = useState("");
+  const [approvedViews, setApprovedViews] = useState<ApprovedView[]>([]);
   const [error, setError] = useState("");
   const load = () => dpApi.getStatus(generationId).then((status) => { setJob(status); setError(""); }).catch((cause) => { redirectIfUnauthenticated(cause); setError("Status unavailable."); });
   const loadArtifacts = () => {
     setArtifactsLoading(true);
     return dpApi.listArtifacts(generationId).then((result) => { setArtifacts(result); setArtifactsError(""); }).catch((cause) => { redirectIfUnauthenticated(cause); setArtifactsError("Verified artifacts could not be loaded."); }).finally(() => setArtifactsLoading(false));
   };
+  // Approved renders are a separate read: they live in
+  // designpro_generation_views, not in the manufacturing artifact record. A
+  // failure here must not blank the panels, so it resolves to an empty set and
+  // each side shows its own honest empty slot.
+  const loadApprovedViews = () => dpApi.listApprovedViews(generationId)
+    .then(setApprovedViews)
+    .catch((cause) => { redirectIfUnauthenticated(cause); setApprovedViews([]); });
   useEffect(() => { load(); const id = window.setInterval(load, 5000); return () => clearInterval(id); }, [generationId]);
   useEffect(() => { loadArtifacts(); const id = window.setInterval(loadArtifacts, 240000); return () => clearInterval(id); }, [generationId]);
+  useEffect(() => { loadApprovedViews(); const id = window.setInterval(loadApprovedViews, 240000); return () => clearInterval(id); }, [generationId]);
   const completeCount = useMemo(() => job?.stages.filter((stage) => stage.state === "complete").length || 0, [job]);
   if (!job) return <Shell><div className="notice">{error || "Loading server status…"}</div></Shell>;
   return <Shell>
     <div className="page-head"><div><Link className="back" to="/app">← Jobs</Link><h1>{job.designId}</h1><p>Order # {job.orderNumber} · Revision {job.revision} · {completeCount} of {job.stages.length} stages verified</p></div><span className={`state ${job.state}`}>{job.state.replaceAll("_", " ")}</span></div>
     {job.failure && <div className="notice error"><strong>{job.failure.stage}</strong><span>{job.failure.message}</span>{job.failure.retryable && <button className="secondary" onClick={() => dpApi.requestResume(generationId).then(load)}>Request server resume</button>}</div>}
     <section className="panel"><h2>Automatic workflow</h2><div className="timeline">{job.stages.map((stage) => <div className={`stage ${stage.state}`} key={stage.key}><i/><div><strong>{stageLabel[stage.key] || stage.label}</strong><small>{stage.state}</small>{stage.artifactPath && <code>{stage.artifactPath}</code>}</div></div>)}</div></section>
-    <RevisionStudio artifacts={artifacts} loading={artifactsLoading} />
+    <RevisionStudio artifacts={artifacts} approvedViews={approvedViews} loading={artifactsLoading} />
     <ArtifactReview artifacts={artifacts} loading={artifactsLoading} error={artifactsError} onRefresh={loadArtifacts} />
     {job.state === "waiting_for_preflight" && <QcGate gate="preflight" onApprove={async (qc, notes) => { await dpApi.approvePreflight(generationId, qc as PreflightQc, notes); await load(); }} />}
     {job.state === "waiting_for_final_qc" && <QcGate gate="final" onApprove={async (qc, notes) => { await dpApi.approveFinalQc(generationId, qc as FinalQc, notes); await load(); }} />}
