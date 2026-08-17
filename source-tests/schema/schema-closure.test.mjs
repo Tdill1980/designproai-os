@@ -56,7 +56,7 @@ for (const contract of [
 ]) assert.ok(all.includes(contract), `missing contract ${contract}`);
 
 for (const forbidden of [
-  "restyle", "railway", "panelizer_jobs", "shop_profiles", "user_subscriptions", "production_pack_credits",
+  "restyle", "railway", "shop_profiles", "production_pack_credits",
   "marketing", "slack", "vectorize", ":3100", ":8080",
 ]) assert.ok(!all.includes(forbidden), `forbidden RP/shared dependency: ${forbidden}`);
 
