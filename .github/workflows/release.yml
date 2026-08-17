@@ -191,6 +191,14 @@ jobs:
             20260814061303 20260814062621 20260814062701 20260814062735 \
             20260814160419 20260814161907 20260814162002 20260814162704 \
             20260814162744 20260814200406 || true
+          # The schema those orphans carried IS the repo's own 202608* chain,
+          # applied under management-API version numbers. Replaying the local
+          # files therefore collides on live objects (duplicate policies).
+          # Mark every local version already represented in production as
+          # applied; only versions genuinely absent (the proven-implementation
+          # contract onward) remain for db push to apply.
+          applied=$(ls supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 | grep -v '^20260817230000$')
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status applied $applied || true
       - name: Record the exact dry-run migration plan
         run: |
           set -o pipefail
