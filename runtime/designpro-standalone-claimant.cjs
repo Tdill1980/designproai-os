@@ -20,6 +20,34 @@ const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-deliver
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
+const { readFileSync } = require("node:fs");
+
+// The face the 2D proof sheet is typeset from.
+//
+// Calls 1-7 author imagery-only creative assets and pin no font, so the design
+// carries none for Call 8 to typeset the proof header and dimension callouts
+// from. buildMasterCycle exposes proofFont for exactly this, and live canary
+// 32043212220 failed proof.build as call8_proof_font_missing without it.
+//
+// This reads a FILE, which is the whole point: opentype-outline.cjs converts
+// glyphs from the exact bytes, and a family name would resolve through
+// fontconfig and substitute silently. The file ships in the runtime image, so
+// the same image renders the same letterforms every time.
+const PROOF_FONT_PATH = process.env.DESIGNPRO_PROOF_FONT_PATH
+  || "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+let proofFontCache;
+function proofTypesettingFace() {
+  if (proofFontCache !== undefined) return proofFontCache;
+  try {
+    const bytes = readFileSync(PROOF_FONT_PATH);
+    proofFontCache = bytes.length ? bytes : null;
+  } catch {
+    // Left null so Call 8 raises its own call8_proof_font_missing rather than
+    // this throwing an unrelated ENOENT from a different layer.
+    proofFontCache = null;
+  }
+  return proofFontCache;
+}
 
 const CLAIM_SECONDS = 900;
 const HEARTBEAT_MS = 30_000;
@@ -448,6 +476,7 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         run: rebound, manifest, snapshot,
         download: (storagePath) => storageBytes(sb, storagePath),
         pxPerInch: SURFACE_PX_PER_INCH, bleedInches: 5,
+        proofFont: proofTypesettingFace(),
         vehicle: manifest.vehicle,
         designName: snapshot.designName || snapshot.delivery?.designName || "",
         finish: snapshot.finish || "",
