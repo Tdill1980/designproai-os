@@ -26,6 +26,7 @@
 const { createHash } = require("node:crypto");
 const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
+const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 const { createProvider } = require("./generation-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
 const { authorCreativeInput } = require("./creative-authoring.cjs");
@@ -87,7 +88,31 @@ function promptPartsFor(input, sourceViewType, instruction = "") {
   angles.assertTextDirectionGuard(sourceViewType);
   const note = String(instruction || "").trim();
   const revision = note ? `\n\nRevision requested for this view: ${note}` : "";
-  return [{ text: `${designBrief(input)}${revision}\n\n${angles.cameraAngle(sourceViewType)}` }];
+  const vehicle = input?.vehicle || {};
+  // A.C.E. builds the design prompt now. designBrief() used to: a key:value
+  // list plus a camera angle, with none of the creative stack the proven
+  // product runs on. buildDesignIQPrompt reads the camera angle itself and
+  // locks it first, so it is not appended again here.
+  const design = buildDesignIQPrompt({
+    prompt: designBrief(input),
+    finish: input?.finish,
+    companyName: input?.businessName || input?.business,
+    mascot: input?.mascot,
+    bulletPoints: Array.isArray(input?.bulletPoints) ? input.bulletPoints : [],
+    industryType: input?.industry,
+    phone: input?.phone,
+    brandColors: Array.isArray(input?.colors) ? input.colors.join(", ") : input?.colors,
+    fontStyle: input?.fontStyle,
+    qrEnabled: input?.qrEnabled === true,
+    vehicleYear: vehicle.year,
+    vehicleMake: vehicle.make,
+    vehicleModel: vehicle.model,
+    visionBoardImages: Array.isArray(input?.visionBoardImages) ? input.visionBoardImages : [],
+    visionboardIntent: input?.visionboardIntent,
+    styleDescriptors: input?.styleDescriptors,
+    viewType: sourceViewType,
+  });
+  return [{ text: `${design}${revision}` }];
 }
 
 const MIME_EXTENSION = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" });
