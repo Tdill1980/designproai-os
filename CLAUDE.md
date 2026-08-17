@@ -42,6 +42,7 @@ post-approval stage.**
 
 | | |
 |---|---|
+| What the working system produced (acceptance target) | `docs/LAST-WORKING-STATE-2026-07-24.md` |
 | Post-approval stage dispatch | `runtime/designpro-standalone-claimant.cjs` |
 | Calls 1–7 port scope and the passenger-mirror exception | `docs/CALLS-1-7-PORT-SCOPE.md` |
 | What ships first and what is unproven | `docs/GO-LIVE-READINESS.md` |

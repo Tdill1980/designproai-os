@@ -32,6 +32,18 @@ invented again.**
    thing that licenses new design, and it should be rare in the post-approval
    half.
 
+## The acceptance target
+
+`docs/LAST-WORKING-STATE-2026-07-24.md` records what the running RestylePro
+system actually produced, from owner captures: the paired
+REAL DESIGN PROOF / PRINT PANEL card, the versioned dimension-stamped
+Production Layers rows, the honest `Not uploaded` empty slot, and measured
+GENIE dimensions that hold across two different designs on the same vehicle.
+
+Read it alongside the code. The map below tells you what to port; that document
+tells you what the result has to look like when it works — and which two
+defects are visible in the same frames and must not come across.
+
 ## Frozen — port, do not redesign
 
 These are manufacturing semantics. They were derived from live print failures,
