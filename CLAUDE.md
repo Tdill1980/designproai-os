@@ -48,16 +48,95 @@ manufacturing artwork. No reinterpreting the brief downstream.**
 Design cycle: Calls 1–7 create the design and all locked-angle customer views
 under one DesignIQ identity → Call 8 completes the 2D Production Proof for that
 accepted DesignID/revision using the same approved state and GENIE geometry.
-**At that point design work is complete.** Then manufacturing: Call 9 six
-per-side panels → Call 10 duplicate the exact extracted set → Call 11
-logo/lettering separation + branded/clean panel state → Order Production Pack →
-PanelProStudio/QC → Topaz upscale → output files → ZIP → WrapBox.
+**At that point design work is complete.** Then manufacturing:
 
-⚠️ **The runtime's call numbering does not currently match this contract, and
-the difference is not cosmetic.** It emits no Call 11, has no duplicate step,
-and produces no clean/blank panel. See the measured delta in
-`docs/BEHAVIORAL-SPEC.md` — it is an open owner decision, not something a
-session may reconcile on its own.
+| Call | Produces |
+|---|---|
+| **9** | the six extracted **branded** production panels, at GENIE geometry + 5" bleed, independent immutable hashes — this is the original production artwork, and it is never mutated again |
+| **10** | logo/lettering registration/separation assets for that accepted design |
+| **11** | **duplicate** the six branded panels, remove the logo/lettering from the **duplicates only**, and push those six de-logoed panels to PanelProStudio for human sizing/template QC |
+
+**The hard order: Design → Extract → Separate/Register logos → Duplicate +
+de-logo → PanelPro QC → Topaz → Final outputs → ZIP → WrapBox.** Topaz upscales
+the *approved* panels after human/template QC passes on the de-logoed
+duplicates. **No Topaz before PanelPro. No mutation of the Call 9 branded
+panels, ever.**
+
+The runtime's frozen `STAGES` list already puts `await_panelpro_preflight_qc`
+before `enhance.upscale`, so that constraint holds today — do not reorder it.
+Call 11 inserts between `logos.extract` and `await_panelpro_preflight_qc`.
+
+**Two sets exist on purpose:** the branded extracted panels are the untouched
+production artwork; the de-logoed duplicates are the working QC/template
+validation set. **Call 11 may never overwrite or replace the branded production
+panel set.**
+
+### CALL 11 — DE-LOGO DUPLICATE SET (owner contract, verbatim)
+
+> Input: the six immutable branded panels from Call 9.
+>
+> For each canonical side:
+>
+> 1. duplicate the exact branded panel;
+> 2. remove the known logo/lettering regions from the duplicate only;
+> 3. preserve the original branded panel byte-for-byte;
+> 4. output six de-logoed QC panels;
+> 5. bind each de-logoed panel to its source branded panel hash and surface_key;
+> 6. push the six de-logoed panels to PanelProStudio for human sizing/template QC.
+>
+> Call 11 may never overwrite or replace the branded production panel set.
+
+The runtime today emits no Call 11 and no duplicate stage, so **this is a real
+gap against the intended product behaviour, not a numbering quibble.**
+
+**OWNER DECISIONS — BLOCKERS CLOSED (2026-08-17). No further architecture
+decision is required; implement by matching the proven RestylePro behavior.**
+
+1. **Do not add Generation-side placement geometry** merely to implement Call
+   11 — that is another seam redesign. Recover the proven RestylePro
+   logo-removal/detection behavior and apply it to **Call 11 QC duplicates
+   only**. Its constrained AI/logo detection **is allowed here**, because the
+   output is a non-authoritative QC instrument, never production artwork.
+2. **Call 11 removes logos.** A.C.E.-authored company name / contact / type
+   treatment **may remain** — a phone number on a QC duplicate does not defeat
+   a sizing check. **Do not expand Call 11 into general lettering/text
+   removal.**
+3. **`qc-panel` artifact kind approved.** Preserve the exactly-six panel
+   invariant **unchanged** — never relax that assertion to make room.
+4. Call 11 sits between Call 10 and `await_panelpro_preflight_qc`.
+5. Topaz stays after PanelPro preflight and runs on the **authoritative branded
+   production path**, never the QC derivatives.
+
+Each `qc-panel` keeps its canonical `surface_key` and its source Call 9 hash,
+and may never enter Topaz/output/ZIP as production artwork. The exact functions
+to port (`locateBrandingElements`, `collapseContainedBrandingElements`,
+`strictGeminiBox2d` in `restylepro-os` `worker/index.js`) and the dilation /
+clamp / honest-no-op pattern that goes with them: `docs/BEHAVIORAL-SPEC.md`.
+
+### 6A — do not fabricate separability that does not exist
+
+Before implementing `cleanPanel`, **prove from the accepted DesignID/revision
+data** that the base design/background and the frozen branding/lettering
+overlays exist as authoritative separate sources. If branding or lettering is
+baked into the creative raster and is not represented in
+`expectedLogoInventory`, **STOP and report the generation→manufacturing
+contract gap to the owner.** Do not erase, inpaint, regenerate, pixel-lift,
+approximate a clean background, or silently reclassify it as an overlay after
+the fact. That is a frozen-seam issue, not a Manufacturing workaround.
+
+⚠️ **Scope, after the 2026-08-17 correction.** 6A forbids inventing a
+**pre-branding base** and presenting it as authoritative artwork. Calls 1–8 do
+not emit one — each surface is a single composited raster (`proof.build:455`,
+`role: canonical-production-surface`) and Call 9 consumes those exact bytes
+(`panels.build:513`, *"Consume, never cut"*), with no base-artwork field
+anywhere in the revision snapshot. **No session may synthesize that base.**
+
+Call 11's de-logoed duplicate is **not** that base. It is a downstream QC
+instrument derived from the branded panel, bound to its source hash, never
+printed and never authoritative. It does not violate 6A — but it must never be
+relabelled as production artwork, promoted into the output set, or allowed to
+overwrite Call 9. Full reasoning and the two measured blockers:
+`docs/BEHAVIORAL-SPEC.md`.
 
 ## 🧊 RULE 0.5 — THE GENERATION ↔ MANUFACTURING SEAM IS FROZEN (Trish 2026-08-17)
 
