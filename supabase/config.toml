@@ -82,3 +82,60 @@ otp_expiry = 3600
 
 [analytics]
 enabled = false
+
+# ── DesignPro Edge Functions (migrated from restylepro-os) ──────────────────
+# Every function must be listed with verify_jwt = false: unlisted functions
+# deploy with verify_jwt = true and the API gateway then rejects slightly
+# stale JWTs before function code runs (the recurring-401 root cause in the
+# predecessor). Auth happens inside each handler.
+
+[functions.design-panel-ai-generate]
+verify_jwt = false
+
+[functions.generate-color-render]
+verify_jwt = false
+
+[functions.generate-2d-proof]
+verify_jwt = false
+
+[functions.panelizer-step-proof]
+verify_jwt = false
+
+[functions.panel-artboard-generator]
+verify_jwt = false
+
+[functions.save-production-panels]
+verify_jwt = false
+
+[functions.panelizer-step-validate]
+verify_jwt = false
+
+[functions.panelizer-step-package]
+verify_jwt = false
+
+[functions.panel-pro-extract]
+verify_jwt = false
+
+[functions.designpro-file-output-api]
+verify_jwt = false
+
+[functions.designpro-orchestrate]
+verify_jwt = false
+
+[functions.designpro-parse-brief]
+verify_jwt = false
+
+[functions.designpro-persist-assets]
+verify_jwt = false
+
+[functions.designpro-ensure-qc-job]
+verify_jwt = false
+
+[functions.designpro-artboard]
+verify_jwt = false
+
+[functions.designpro-separate]
+verify_jwt = false
+
+[functions.designpro-text-layer-generate]
+verify_jwt = false
