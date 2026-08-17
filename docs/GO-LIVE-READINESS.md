@@ -14,6 +14,26 @@ The kernel is the production back half. It is not the customer-facing product.
 A shop that already has seven renders can be served end to end today. A
 customer who wants to *ask for a wrap* cannot, and that is the launch blocker.
 
+## Deploying: the `[dark-deploy]` marker is not optional
+
+A merge to `main` runs the release gate, and the gate's success chains into
+`deploy-production.yml` via `workflow_run`. That chain then **stops** unless the
+main commit message contains the literal marker:
+
+```
+git log -1 --format=%B | grep -Fq '[dark-deploy]'   # deploy-production.yml:94
+```
+
+So a squash-merge title without `[dark-deploy]` produces a green release gate
+and a **failed deploy**, and the failure looks like an SSH error — the guard
+exits before `KEY_FILE` and `KNOWN_HOSTS` are ever set, so the diagnostic step
+reports `Identity file not accessible` and `no argument after keyword
+"userknownhostsfile"`. Those messages are a symptom of the missing marker, not
+a credentials problem. Confirmed live on PRs #61 and #62.
+
+**Put `[dark-deploy]` in the squash-merge title of any PR that should reach the
+droplet.** A PR that should merge without deploying simply omits it.
+
 ## Finish line 1 — prove the kernel, then freeze it
 
 1. **Configure the droplet environment.** Put the Topaz key in the
