@@ -104,3 +104,10 @@ re-deriving what a side is.
 
 Both sessions still follow `CLAUDE.md` Rule 1: recover the proven RestylePro
 implementation before creating anything new.
+
+**The boundary between them is frozen.** The approved per-side artifact
+contract is exactly where parallel work can create a new incompatibility, so
+neither session may change its shape, naming, identity, storage contract or
+semantics — including "helpfully," to make the other side's job easier. If
+either concludes it must change, stop and report to the owner rather than
+coordinating a silent change. See `docs/SEAM-FREEZE.md`.

@@ -21,6 +21,33 @@ mirror is an explicit operator action, never pipeline default.
 Full spec, acceptance criteria, measured starting position, and the A/B session
 split: **`docs/BEHAVIORAL-SPEC.md`.**
 
+## 🧊 RULE 0.5 — THE GENERATION ↔ MANUFACTURING SEAM IS FROZEN (Trish 2026-08-17)
+
+Generation owns producing the approved per-side artifacts. Manufacturing/UI
+owns consuming them and binding them to the production board and the
+downstream deterministic flow.
+
+**Neither session may unilaterally change the shape, naming, identity, storage
+contract, or semantics of the approved side-render interface.** Manufacturing
+adapts to the existing contract instead of reshaping generation output;
+Generation preserves it instead of changing it for UI convenience.
+
+**If you conclude the seam must change: STOP and report the proposed contract
+change to the owner.** Do not coordinate a silent change with the other
+session. Any seam change is an owner-level decision.
+
+Frozen, by real name: `SURFACE_KEYS` / `surface_key` · content-addressed
+`storagePath` in private `wrap-files` (never a URL) · sha256 `contentHash` ·
+`revisionId` embedded in the path · receipt kind + `receipt_hash` ·
+`source.verify`'s exactly-two-proofs / exactly-six-distinct-panels check, which
+is what makes implicit mirroring impossible.
+
+**Geometry is NOT on this seam** — dimensions resolve from the vehicle at
+`manifest.resolve` via the GENIE manifest. Generation must not emit dimensions.
+
+Enforcement points, the full frozen list, and what counts as a breaking change:
+**`docs/SEAM-FREEZE.md`.**
+
 ## ⛔ RULE 1 — RESTYLEPRO IS THE REFERENCE IMPLEMENTATION. RECOVER BEFORE YOU INVENT.
 
 **Applies to every session in this repository.** If a capability worked in
@@ -64,6 +91,7 @@ post-approval stage.**
 | | |
 |---|---|
 | Required behaviour + acceptance criteria + session split | `docs/BEHAVIORAL-SPEC.md` |
+| The frozen cross-session seam | `docs/SEAM-FREEZE.md` |
 | What the working system produced (the spec, in screenshots) | `docs/LAST-WORKING-STATE-2026-07-24.md` |
 | Post-approval stage dispatch | `runtime/designpro-standalone-claimant.cjs` |
 | Calls 1–7 port scope and the passenger-mirror exception | `docs/CALLS-1-7-PORT-SCOPE.md` |
