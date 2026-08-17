@@ -53,8 +53,8 @@ accepted DesignID/revision using the same approved state and GENIE geometry.
 | Call | Produces |
 |---|---|
 | **9** | the six extracted **branded** production panels, at GENIE geometry + 5" bleed, independent immutable hashes — this is the original production artwork, and it is never mutated again |
-| **10** | logo/lettering registration/separation assets for that accepted design |
-| **11** | **duplicate** the six branded panels, remove the logo/lettering from the **duplicates only**, and push those six de-logoed panels to PanelProStudio for human sizing/template QC |
+| **10** | logo asset registration/separation for that accepted design |
+| **11** | **duplicate** the six branded panels, remove the **logos** from the **duplicates only**, and push those six `qc-panel` duplicates to PanelProStudio for human sizing/template QC |
 
 **The hard order: Design → Extract → Separate/Register logos → Duplicate +
 de-logo → PanelPro QC → Topaz → Final outputs → ZIP → WrapBox.** Topaz upscales
@@ -78,7 +78,7 @@ panel set.**
 > For each canonical side:
 >
 > 1. duplicate the exact branded panel;
-> 2. remove the known logo/lettering regions from the duplicate only;
+> 2. remove the known logo regions from the duplicate only;
 > 3. preserve the original branded panel byte-for-byte;
 > 4. output six de-logoed QC panels;
 > 5. bind each de-logoed panel to its source branded panel hash and surface_key;
@@ -115,28 +115,20 @@ clamp / honest-no-op pattern that goes with them: `docs/BEHAVIORAL-SPEC.md`.
 
 ### 6A — do not fabricate separability that does not exist
 
-Before implementing `cleanPanel`, **prove from the accepted DesignID/revision
-data** that the base design/background and the frozen branding/lettering
-overlays exist as authoritative separate sources. If branding or lettering is
-baked into the creative raster and is not represented in
-`expectedLogoInventory`, **STOP and report the generation→manufacturing
-contract gap to the owner.** Do not erase, inpaint, regenerate, pixel-lift,
-approximate a clean background, or silently reclassify it as an overlay after
-the fact. That is a frozen-seam issue, not a Manufacturing workaround.
+**There is no authoritative pre-branding base artwork, and no session may
+synthesize one.** Calls 1–8 emit a single composited raster per surface
+(`proof.build:455`, `role: canonical-production-surface`), Call 9 consumes
+those exact bytes (`panels.build:513`, *"Consume, never cut"*), and the
+revision snapshot carries no base-artwork field. Do not erase, inpaint,
+regenerate, pixel-lift, approximate a clean background, or reclassify baked-in
+artwork as an overlay after the fact. That is a frozen-seam violation, not a
+Manufacturing workaround.
 
-⚠️ **Scope, after the 2026-08-17 correction.** 6A forbids inventing a
-**pre-branding base** and presenting it as authoritative artwork. Calls 1–8 do
-not emit one — each surface is a single composited raster (`proof.build:455`,
-`role: canonical-production-surface`) and Call 9 consumes those exact bytes
-(`panels.build:513`, *"Consume, never cut"*), with no base-artwork field
-anywhere in the revision snapshot. **No session may synthesize that base.**
-
-Call 11's de-logoed duplicate is **not** that base. It is a downstream QC
-instrument derived from the branded panel, bound to its source hash, never
-printed and never authoritative. It does not violate 6A — but it must never be
-relabelled as production artwork, promoted into the output set, or allowed to
-overwrite Call 9. Full reasoning and the two measured blockers:
-`docs/BEHAVIORAL-SPEC.md`.
+This is a standing prohibition, not an open question. **Call 11's `qc-panel`
+duplicates are not that base** — they are derived downstream from the immutable
+branded Call 9 panels, are non-authoritative, are never printed, and are never
+Topaz/output/ZIP inputs. They must never be relabelled as production artwork,
+promoted into the output set, or allowed to overwrite Call 9.
 
 ## 🧊 RULE 0.5 — THE GENERATION ↔ MANUFACTURING SEAM IS FROZEN (Trish 2026-08-17)
 

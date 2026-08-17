@@ -24,30 +24,19 @@ question is *"how does the app behave like the working product again?"*
 6. **No cross-side reuse.** Driver artwork must never appear as rear, front, or
    passenger.
 
-**6A. Do not fabricate separability that does not exist.** (Owner, verbatim.)
+**6A. Do not fabricate separability that does not exist.**
 
-> Before implementing cleanPanel, prove from the accepted DesignID/revision
-> data that the underlying design/background and the frozen branding/lettering
-> overlays exist as authoritative separate sources.
->
-> If the accepted design contains branding or lettering baked into the creative
-> raster that is not represented in expectedLogoInventory / the frozen overlay
-> inventory, STOP and report the exact generation→manufacturing contract gap to
-> the owner.
->
-> Do not:
->
-> * erase it;
-> * inpaint it;
-> * regenerate it;
-> * pixel-lift it;
-> * approximate a clean background;
-> * silently classify it as an overlay after the fact.
->
-> That is a frozen-seam issue, not a Manufacturing workaround.
+**There is no authoritative pre-branding base artwork, and no session may
+synthesize one.** Calls 1–8 emit a single composited raster per surface; there
+is no layer beneath it to recover. To manufacture one — by erasing, inpainting,
+regenerating, pixel-lifting, approximating a clean background, or reclassifying
+baked-in artwork as an overlay after the fact — is a frozen-seam violation, not
+a Manufacturing workaround.
 
-**This precondition currently fails. See "Reported seam gap" below — a session
-must not implement `cleanPanel` until the owner resolves it.**
+This is a standing prohibition, not an open question. The six `qc-panel`
+de-logoed duplicates that Call 11 produces are **not** such a base: they are
+derived downstream from the immutable branded Call 9 panels, are
+non-authoritative, are never printed, and are never Topaz/output/ZIP inputs.
 7. **Passenger mirror is an explicit UI action only** ("Mirror from driver"),
    never the default truth of the pipeline.
 8. The UI supports the operations in the screenshots: **Pull panel**, **Upload
@@ -87,27 +76,24 @@ brief downstream.
 |---|---|---|
 | Design | 1–7 | the design and all required locked-angle customer views, under one DesignIQ identity |
 | Design | 8 | the 2D Production Proof for that accepted DesignID/revision, from the same approved state and GENIE geometry — **design work complete here** |
-| Manufacturing | 9 | six correct per-side production panels |
-| Manufacturing | 10 | duplicate of the exact extracted set |
-| Manufacturing | 11 | logo/lettering separation + branded/clean panel state |
+| Manufacturing | 9 | six immutable branded production panels |
+| Manufacturing | 10 | logo asset registration/separation |
+| Manufacturing | 11 | duplicate the Call 9 panels; remove **logos only** from the duplicates |
 | Delivery | — | Order Production Pack → PanelProStudio/QC → Topaz upscale → output files → ZIP → WrapBox |
 
-### The approved artifact contract (owner, 2026-08-17, corrected same day)
-
-An earlier version of this section recorded "no Call 11, no duplicate stage."
-**That was withdrawn by the owner.** It came from reading `cleanPanel` as a
-*pre-branding base artifact*, which is not the contract. The de-logoed set is
-produced **from** the branded panels, downstream, not from a base beneath them.
+### The approved artifact contract
 
 **Call 11 is real and required.** The runtime's missing Call 11 is a genuine
-gap against intended product behaviour, not a numbering quibble.
+gap against intended product behaviour, not a numbering quibble. (An
+intermediate "no Call 11, no duplicate stage" note was withdrawn the same day
+and must not be re-applied.)
 
 | Stage | Produces |
 |---|---|
 | **Calls 1–8 — DesignID** | approved/frozen design state · authoritative frozen overlay inventory · approved side renders · 2D Production Proof |
 | **Call 9** | the six extracted **branded** production panels · GENIE geometry + 5" bleed · independent immutable hashes · **original production artwork, untouched from here on** |
-| **Call 10** | logo/lettering registration/separation assets for that accepted design |
-| **Call 11** | **duplicate** the six branded panels → remove logos/lettering **from the duplicates only** → six de-logoed QC panels → PanelProStudio |
+| **Call 10** | logo asset registration/separation for that accepted design |
+| **Call 11** | **duplicate** the six branded panels → remove **logos only** **from the duplicates only** → six `qc-panel` de-logoed duplicates → PanelProStudio |
 | **Then** | PanelProStudio validates the de-logoed duplicates against templates/geometry → Topaz/output → ZIP → WrapBox |
 
 Two sets exist **on purpose**:
@@ -123,7 +109,7 @@ Two sets exist **on purpose**:
 > For each canonical side:
 >
 > 1. duplicate the exact branded panel;
-> 2. remove the known logo/lettering regions from the duplicate only;
+> 2. remove the known logo regions from the duplicate only;
 > 3. preserve the original branded panel byte-for-byte;
 > 4. output six de-logoed QC panels;
 > 5. bind each de-logoed panel to its source branded panel hash and surface_key;
@@ -252,7 +238,7 @@ destructive edit.
 Recorded for context. **These are closed; do not re-litigate them.**
 
 **Blocker 1 — Call 10 carries no placement geometry.** Step 2 of the Call 11
-contract says "remove the known logo/lettering regions." There are no regions.
+contract says "remove the known logo regions." There are no regions.
 `normalizeLogoAsset` (`runtime-contract.cjs:77`) returns exactly
 `{bucket, storagePath, contentHash, byteSize, contentType}` — no x/y, no width,
 no height, no bounding box. The Call 10 metadata adds `placementKey`,
@@ -271,15 +257,15 @@ acceptable precisely because its output is a QC instrument, not artwork.
 `expectedLogoInventory` holds **customer-supplied logo files**, normalized
 through `normalizeLogoAsset` from the revision snapshot. The lettering A.C.E.
 designs into the wrap — company name, contact bar, original typeface — is baked
-into the composited raster and appears nowhere in that inventory. So "remove
-the known logo/lettering regions" will, by construction, leave the designed
-lettering in place even once geometry exists.
+into the composited raster and appears nowhere in that inventory, so logo
+removal leaves the designed lettering in place.
 
-**Decided (owner decision 2): this is not a blocker — it is correct.** Call 11
-removes **logos**. A.C.E.-authored lettering staying on a QC duplicate does not
-defeat a sizing/template check, so it may remain. "Remove logos" was never meant
-as "remove every piece of branding," and Call 11 must not become a general
-text-removal system.
+**Decided (owner decision 2): this is not a blocker — it is the intended
+behavior.** Call 11 removes **logos**. A.C.E.-authored company name, phone and
+contact text, and designed lettering **may remain** — none of it defeats a
+sizing/template check. "Remove logos" was never "remove every piece of
+branding," and Call 11 must not become a general text/lettering-removal
+system.
 
 **Blocker 3 — the de-logoed set collides with the frozen exactly-six check.**
 `source.verify` requires `sourcePanels.length === SURFACE_KEYS.length` and six
@@ -312,8 +298,9 @@ by relaxing the exactly-six assertion.**
 
 ### Supporting evidence — no separable base exists in Calls 1–8
 
-This is what the earlier `cleanPanel`-as-base reading ran into. It no longer
-blocks Call 11, but it remains true, and it is why 6A stands:
+This is the measurement behind rule 6A. It does not block Call 11 — Call 11
+works downstream from the branded panel, not underneath it — but it is why no
+pre-branding base may ever be synthesized:
 
 **1. The revision snapshot carries no base artwork.** Every field
 `designpro-standalone-claimant.cjs` reads off the accepted revision snapshot:
@@ -349,62 +336,33 @@ session may synthesize one.** That is 6A, and it still holds. It is not,
 however, what Call 11 needs — Call 11 works downstream from the branded panel,
 not underneath it.
 
-### Measured delta — the runtime does not match this numbering
+### What is built, and what is missing
 
-Checked 2026-08-17 against `runtime/`. The receipt kinds the runtime actually
-emits are, in full:
+Checked 2026-08-17 against `runtime/`. The receipt kinds emitted, in full:
 
 ```
 views.seven-source · call8.flat-proof · call9.surface-panels
 call10.logo-inventory · call12.topaz-upscale
 ```
 
-Against the contract above:
-
 | Contract | Runtime | Status |
 |---|---|---|
-| 9 — six per-side panels | `call9.surface-panels` | agrees |
-| 10 — duplicate the extracted set | *(nothing)* | **absent** |
-| 11 — logo separation + branded/clean state | `call10.logo-inventory` | **different model, and renumbered** |
-| 12 — upscale | `call12.topaz-upscale` | agrees |
+| 9 — six immutable branded panels | `call9.surface-panels` | **correct as built** |
+| 10 — logo asset registration/separation | `call10.logo-inventory` | **correct as built** |
+| 11 — duplicate + remove logos from duplicates | *(nothing)* | **missing — build this** |
+| 12 — Topaz upscale, after PanelPro preflight | `call12.topaz-upscale` | **correct as built** |
 
-Three substantive differences, not just a numbering slip:
+**Call 11 is the only missing stage.** Calls 9, 10 and 12 match the contract
+and are not to be reworked.
 
-1. **The runtime implements no Call 11 and no duplicate step.** Under the
-   corrected contract, Call 9 (branded panels) and Call 10 (logo/lettering
-   registration) are right as built; it is **Call 11 — duplicate and de-logo —
-   that is missing entirely.**
-2. **Logos are not separated — they are registered.** `logos.extract`
-   (`designpro-standalone-claimant.cjs:576`) reads a frozen
-   `expectedLogoInventory` from the revision snapshot, requires an explicit
-   `none`/`listed` attestation, and stores each customer-supplied logo asset
-   keyed to its `targetSurfaceKey` with a `sourceRegionHash` proving which
-   panel region it targets — `separationContract:
-   "designpro.deterministic-stored-overlay.v1"`. That is a stored overlay, not
-   a pixel lift off the branded panel.
-3. **No clean/blank panel state exists.** Nothing in `runtime/` produces a
-   branded/clean pair — no `cleanMaster`, no `background_url` equivalent, no
-   blank panel artifact of any kind.
-
-Point 3 is the one with a downstream consequence. In RestylePro the blank
-panels are load-bearing: the design team lays logo-free panels on vehicle
-templates to validate sizing during human QC, and they are part of what the
-PanelPro board receives. A manufacturing chain with no clean panel cannot serve
-that step.
-
-Point 2 is arguably the better model — a stored overlay is deterministic and
-carries none of the smear risk that made RestylePro's lift path fragile — but
-it is a different model, and whether it satisfies "logo/lettering separation +
-branded/clean panel state" is the owner's call, not a session's.
-
-**Owner ruling, 2026-08-17.** The runtime's numbering is **incomplete**, not
-merely different. Call 9 (branded panels) and Call 10 (logo/lettering
-registration) match the intended contract and are correct as built. **Call 11
-and the duplicate step are genuinely missing** and must be built — see the
-Call 11 contract above and the two blockers under "Reported gap."
-
-An intermediate version of this document recorded "no Call 11, no duplicate
-stage." That was withdrawn the same day and must not be re-applied.
+For reference when implementing Call 11: Call 10 registers rather than lifts.
+`logos.extract` (`designpro-standalone-claimant.cjs:576`) reads a frozen
+`expectedLogoInventory` from the revision snapshot, requires an explicit
+`none`/`listed` attestation, and stores each customer-supplied logo asset
+keyed to its `targetSurfaceKey` with a `sourceRegionHash` —
+`separationContract: "designpro.deterministic-stored-overlay.v1"`. That is the
+approved model for Call 10 and stays as it is; Call 11 does its own logo
+location on the duplicates, per owner decision 1.
 
 No session may renumber the calls or add a de-logo producer on its own reading
 of this table.
