@@ -1,5 +1,38 @@
 # CLAUDE.md — designproai-os
 
+## 🎯 RULE 0.1 — TWO SEPARATE GOLD STANDARDS. DO NOT MIX THEM. (Trish 2026-08-17)
+
+Design quality and output-pipeline correctness are judged against **different
+references**. Conflating them is how a good hero render got read as "the
+pipeline works", and how a working July-24 pipeline got read as "the designs
+are fine".
+
+| Layer | Gold standard | Judge |
+|---|---|---|
+| **Design quality / generation behaviour** | the recent **distressed Martini Porsche** job | is the design language, studio consistency and creative quality acceptable |
+| **Output / production pipeline** | the **July 24** working state, `docs/LAST-WORKING-STATE-2026-07-24.md` | does the chain still produce the artifacts it produced then |
+
+**Do not use the Porsche to infer whether the output pipeline works. Do not use
+July 24 to judge current design-generation quality.**
+
+The July-24 flow is a **regression target**, not a redesign brief:
+
+> design approved → automatic 2D Production Proof → six correct production
+> sides → RevisionStudio paired 3D render + 2D production panel per side →
+> Production Layers → production pack / output path.
+
+**If July 24 proves the architecture already worked, do not redesign it.**
+Identify the smallest wiring/contract difference between then and now, and
+replace only components proven defective.
+
+**Where the Porsche's quality came from.** It was produced by the live
+RestylePro stack — `design-panel-ai-generate` with `_shared/studio-os.ts` and
+`_shared/view-angles-os.ts`. That is exactly the stack ported into
+`runtime/designiq-prompt.cjs`, `runtime/studio-os.cjs` and
+`runtime/view-angles.cjs`. So the design-quality baseline and the port target
+are the same thing; a design that does not reach Porsche quality means the
+port is incomplete, not that a new creative approach is needed.
+
 ## ⛔ RULE 0 — OPTIMIZE FOR BEHAVIORAL PARITY, NOT ARCHITECTURE (Trish 2026-08-17)
 
 **The screenshots in `docs/LAST-WORKING-STATE-2026-07-24.md` are the spec.**
