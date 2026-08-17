@@ -69,6 +69,13 @@ test("gateway immutable object prefix exactly satisfies the runtime contract", (
   assert.throws(() => contract.normalizeSourceAsset(sourceIdentity({ signedUrl: "https://example.test/expiring" }), tenant, revisionId), /must not contain.*URL/);
   assert.throws(() => contract.normalizeSourceAsset(sourceIdentity(), `user:${ownerId}`, revisionId), /canonical user_/);
   assert.throws(() => contract.safeStoragePath(`designpro/${tenant}/${runId}/../escape.png`), /unsafe path/);
+  // Calls 1-7 authored creative assets live here; proof.build's verified
+  // loader must be able to fetch them (bytes are still hash-verified).
+  assert.equal(
+    contract.safeStoragePath(`users/${ownerId}/revisions/${revisionId}/authoring/asset-01.png`),
+    `users/${ownerId}/revisions/${revisionId}/authoring/asset-01.png`,
+  );
+  assert.throws(() => contract.safeStoragePath(`users/${ownerId}/revisions/${revisionId}/authoring/nested/asset.png`), /outside DesignPro-owned/);
   const logoHash = "a".repeat(64);
   const logo = contract.normalizeLogoAsset({ storagePath: `users/${ownerId}/revisions/${revisionId}/inputs/logo/${logoHash}.pdf`, contentHash: logoHash, byteSize: 40, contentType: "application/pdf" }, tenant, revisionId);
   assert.equal(logo.contentType, "application/pdf");
