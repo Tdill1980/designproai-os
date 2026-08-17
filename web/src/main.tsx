@@ -373,15 +373,18 @@ function RevisionStudio({ artifacts, loading }: { artifacts: WorkflowArtifact[];
   const panels = panelOrder
     .map((key) => artifacts.find((item) => item.kind === "panel" && item.surfaceKey === key))
     .filter((item): item is WorkflowArtifact => Boolean(item));
-  // The approved side surface Call 8 rendered — the same bytes Call 9 cut this
-  // panel from. Shown beside the panel so a wrong panel is visible here rather
-  // than at print. The customer proof carries no surfaceKey and the approved
-  // layout carries "flat-wrap-layout"; neither is a side.
-  const sideProofs = new Map(
-    artifacts
-      .filter((item) => item.kind === "flat-proof" && item.surfaceKey && item.surfaceKey !== "flat-wrap-layout")
-      .map((item) => [item.surfaceKey, item] as const),
-  );
+  // RIGHT SLOT = the approved Calls 1-7 3D/on-vehicle render for this same
+  // surface_key. Those rows live in designpro_generation_views and the gateway
+  // does not expose them: artifactsForRun reads designpro_artifacts only, and
+  // no stage registers an approved-render artifact. So there is no source for
+  // this slot yet.
+  //
+  // Do NOT fill it with the per-side flat-proof (role
+  // "canonical-production-surface"). That is an internal flat manufacturing
+  // surface, not an approved render, and substituting it silently shows the
+  // operator manufacturing artwork labelled as the customer's approved design.
+  // The slot stays honestly empty until the binding exists.
+  const approvedRenders = new Map<string, WorkflowArtifact>();
   if (loading && !proof && panels.length === 0) return <section className="panel"><div className="notice">Loading Revision Studio…</div></section>;
   if (!proof && panels.length === 0) return null;
   const totalSqFt = num(proof?.metadata?.totalSqFt);
@@ -417,7 +420,7 @@ function RevisionStudio({ artifacts, loading }: { artifacts: WorkflowArtifact[];
       const printHeight = inchLabel(panel.metadata.printHeightInches);
       const sqFt = num(panel.metadata.surfaceSqFt);
       const rect = panel.metadata.cutRect as { x: number; y: number; w: number; h: number } | undefined;
-      const sideProof = sideProofs.get(panel.surfaceKey);
+      const approvedRender = approvedRenders.get(panel.surfaceKey);
       return <article className="studio-row" key={panel.id}>
         <header>
           <strong>{panelLabel[panel.surfaceKey] || panel.surfaceKey.toUpperCase()}</strong>
@@ -425,18 +428,18 @@ function RevisionStudio({ artifacts, loading }: { artifacts: WorkflowArtifact[];
         </header>
         <div className="studio-pair">
           <div className="studio-slot">
-            <span className="studio-slot-label">REAL DESIGN PROOF</span>
-            {sideProof
-              ? <a className="studio-thumb" href={sideProof.signedUrl} target="_blank" rel="noreferrer">
-                  <img src={sideProof.signedUrl} alt={`${panel.surfaceKey} approved design proof`} />
-                </a>
-              : <div className="studio-thumb studio-thumb-empty">Not published</div>}
-          </div>
-          <div className="studio-slot">
-            <span className="studio-slot-label">PRINT PANEL</span>
+            <span className="studio-slot-label">PRINT-READY PANEL</span>
             <a className="studio-thumb" href={panel.signedUrl} target="_blank" rel="noreferrer">
               <img src={panel.signedUrl} alt={`${panel.surfaceKey} print-ready panel`} />
             </a>
+          </div>
+          <div className="studio-slot">
+            <span className="studio-slot-label">YOUR APPROVED DESIGN</span>
+            {approvedRender
+              ? <a className="studio-thumb" href={approvedRender.signedUrl} target="_blank" rel="noreferrer">
+                  <img src={approvedRender.signedUrl} alt={`${panel.surfaceKey} approved design render`} />
+                </a>
+              : <div className="studio-thumb studio-thumb-empty">Approved {panel.surfaceKey} render not exposed by the gateway</div>}
           </div>
         </div>
         <div className="studio-meta">
