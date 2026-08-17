@@ -25,6 +25,32 @@ The July-24 flow is a **regression target**, not a redesign brief:
 Identify the smallest wiring/contract difference between then and now, and
 replace only components proven defective.
 
+### Judge the seven-view run at the artifact level, not "looks good"
+
+A visual impression cannot tell you whether a weak design means the port is
+incomplete or the inputs were empty. Record, for all seven views:
+
+`prompt hash · prompt length · model · studio contract version ·
+view-angle contract version · structured inputs actually populated ·
+whether branding/phone/logo fields were present · retries · image hash`
+
+Then the diagnosis is mechanical rather than aesthetic:
+
+- **Quality below the Porsche baseline** → parity-diff against that exact
+  stack before changing any creative logic. A short prompt or unpopulated
+  structured inputs means the port or the caller is incomplete; it never
+  means A.C.E. needs new creative direction.
+- **Individual quality passes but cross-view identity drifts** → port
+  `generate-color-render` only. Nothing else.
+
+**Do not touch Calls 8+ during that determination.**
+
+Once the seven-view layer is proven, switch models back to July-24 regression
+for output. The question there is not "how should the pipeline work" — it is
+**"what exact wiring or state difference stops today's system behaving like
+July 24?"** Keeping the front-half and back-half investigations separate is
+what stops the output path being treated as greenfield again.
+
 **Where the Porsche's quality came from.** It was produced by the live
 RestylePro stack — `design-panel-ai-generate` with `_shared/studio-os.ts` and
 `_shared/view-angles-os.ts`. That is exactly the stack ported into
