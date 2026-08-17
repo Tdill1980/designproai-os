@@ -43,6 +43,10 @@ const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
 // The Call 9 rule the database enforces. Each output side is its own rendered
 // surface from the canonical master -- not a region cut out of a shared atlas.
 const PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side";
+// The per-side registrar contract Call 8 freezes and Call 9 accepts: side ->
+// brandedMaster -> digest -> GENIE geometry -> proofRegion -> transform receipt.
+// Call 9 remains a byte registrar under it; it performs no pixel operation.
+const SURFACE_REGISTRAR_CONTRACT = "designpro.proof-region-surface.v1";
 // Working resolution for the canonical surfaces. Print resolution is reached by
 // the Topaz enhance stage, exactly as it was before; rendering at print size
 // here would blow the surface byte budget for no gain.
@@ -127,6 +131,29 @@ function uuidFromHash(hash) {
 }
 
 function round2(value) { return Math.round((Number(value) + Number.EPSILON) * 100) / 100; }
+
+/**
+ * One digest over the whole frozen per-side registry.
+ *
+ * Ordered by side rather than by however the render happened to emit them, so
+ * the digest is a statement about the SET. Call 9 recomputes it from what it
+ * reads and refuses a mismatch, which is what stops a single side being
+ * substituted between the two stages while every individual hash still checks.
+ */
+function surfaceMastersHash(surfacePanels) {
+  return hashJson([...surfacePanels]
+    .sort((left, right) => String(left.key).localeCompare(String(right.key)))
+    .map((panel) => ({
+      side: panel.key,
+      brandedMasterHash: String(panel.brandedMaster?.contentHash || "").toLowerCase(),
+      storagePath: panel.brandedMaster?.storagePath || null,
+      trimWidthInches: panel.trimWidthInches, trimHeightInches: panel.trimHeightInches,
+      bleedInches: panel.bleedInches,
+      proofRegionBox: panel.proofRegion?.box || null,
+      transformContract: panel.transformReceipt?.contract || null,
+      transformMode: panel.transformReceipt?.mode || null,
+    })));
+}
 
 async function fingerprintSevenViews(views, sb, tenantValue, revisionId) {
   const tenant = tenantKey(tenantValue);
@@ -456,6 +483,22 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     // Each surface is persisted in its own right. Call 9 consumes these exact
     // bytes, so there is no layout, no atlas and no region for a panel to be
     // cut from incorrectly.
+    // The sibling contract, made checkable at the seam. Call 8 freezes, per
+    // side: the branded master (the artwork that will print) and the region that
+    // master occupies on the customer's proof. Call 9 promotes the master's
+    // bytes; the region only ever proves the two are the same design. The
+    // registrar contract is modelled on the predecessor system's, without its
+    // mirror-fill transform and without any of its infrastructure.
+    const regionTransform = requiredObject(built.proof2d.regionTransform, "Call 8 proof region transform");
+    if (regionTransform.sourcePreserving !== true) {
+      throw new StageError("call8_region_transform_not_source_preserving",
+        `${regionTransform.contract} mode ${regionTransform.mode} writes pixels the master does not carry`, false);
+    }
+    const regionBySurface = new Map((built.proof2d.surfaceRegions || []).map((item) => [String(item.surfaceKey), item]));
+    if (regionBySurface.size !== SURFACE_KEYS.length) {
+      throw new StageError("call8_proof_regions_incomplete", "The 2D proof did not record a region for all six surfaces", false);
+    }
+
     const spools = [];
     const surfacePanels = [];
     const surfaceArtifacts = [];
@@ -465,10 +508,34 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/surfaces/${surface.surfaceKey}-${String(surface.contentHash).slice(0, 24)}.png`;
       const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, surface.bytes, "image/png");
       if (stored.spool) spools.push(stored.spool);
+      const region = regionBySurface.get(surface.surfaceKey);
+      if (!region) throw new StageError("call8_proof_region_missing", `${surface.surfaceKey} has no recorded region on the 2D proof`, false);
+      if (String(region.sourceContentHash).toLowerCase() !== String(stored.hash).toLowerCase()) {
+        throw new StageError("call8_proof_region_source_drift",
+          `the ${surface.surfaceKey} region on the proof was scaled from different bytes than the master that was stored`, false);
+      }
       surfacePanels.push({
         key: surface.surfaceKey, storagePath: stored.storagePath, contentHash: stored.hash, byteSize: stored.bytes,
         pixelWidth: surface.pixelWidth, pixelHeight: surface.pixelHeight,
         trimWidthInches: surface.trimWidthIn, trimHeightInches: surface.trimHeightIn, bleedInches: surface.bleedIn,
+        // The artwork that prints. Named separately from the surface row so a
+        // reader never has to infer which field manufacturing consumes.
+        brandedMaster: {
+          side: surface.surfaceKey, storagePath: stored.storagePath,
+          contentHash: stored.hash, byteSize: stored.bytes,
+          trimWidthInches: surface.trimWidthIn, trimHeightInches: surface.trimHeightIn, bleedInches: surface.bleedIn,
+        },
+        // Where that master is displayed on the proof. Provenance only.
+        proofRegion: {
+          box: region.box, pixelRect: region.pixelRect,
+          sourceContentHash: region.sourceContentHash,
+          sourcePixelWidth: region.sourcePixelWidth, sourcePixelHeight: region.sourcePixelHeight,
+        },
+        transformReceipt: {
+          contract: regionTransform.contract, mode: regionTransform.mode,
+          sourcePreserving: true, fit: regionTransform.fit, fill: regionTransform.fill,
+          sourceContentHash: stored.hash,
+        },
       });
       surfaceArtifacts.push(artifact("flat-proof", stored.storagePath, stored.hash, stored.bytes, surface.surfaceKey, {
         role: "canonical-production-surface", contract: built.cycle.render.contract,
@@ -505,6 +572,11 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       textIdentities: built.proof2d.textIdentities, logoIdentities: built.proof2d.logoIdentities,
       // Presentation state, recorded and never gating.
       presentation3d: built.presentation3d, presentationFailure: built.presentationFailure,
+      // The frozen per-side registry Call 9 accepts, and one digest over the
+      // whole set so a single side cannot be swapped after the fact.
+      surfaceContract: SURFACE_REGISTRAR_CONTRACT,
+      surfaceMastersHash: surfaceMastersHash(surfacePanels),
+      regionTransform,
       surfacePanels,
     }, null, [proofArtifact, ...surfaceArtifacts]);
     for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 8 spool cleanup failed: ${error.message}`));
@@ -517,6 +589,26 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const recorded = Array.isArray(proof.surfacePanels) ? proof.surfacePanels : [];
     if (recorded.length !== SURFACE_KEYS.length) {
       throw new StageError("call9_surface_set_invalid", "Call 8 did not record all six canonical production surfaces", false);
+    }
+    // ACCEPT THE FROZEN REGISTRY, OR NOTHING. Call 9 is a byte registrar: it
+    // re-fingerprints and promotes what Call 8 froze. It does not crop, locate,
+    // resize, mirror or heal, so the only thing it can get wrong is accepting a
+    // registry that has moved -- which is exactly what these checks refuse.
+    if (String(proof.surfaceContract || "") !== SURFACE_REGISTRAR_CONTRACT) {
+      throw new StageError("call9_surface_contract_invalid", `Call 9 accepts only ${SURFACE_REGISTRAR_CONTRACT}`, false);
+    }
+    if (proof.regionTransform?.sourcePreserving !== true) {
+      throw new StageError("call9_region_transform_not_source_preserving",
+        "the Call 8 proof region transform is not source preserving; its masters cannot be promoted", false);
+    }
+    const observedRegistryHash = surfaceMastersHash(recorded);
+    if (observedRegistryHash !== String(proof.surfaceMastersHash || "").toLowerCase()) {
+      throw new StageError("call9_surface_registry_drift",
+        "the frozen per-side registry differs from the digest Call 8 recorded over it", false);
+    }
+    if (new Set(recorded.map((item) => String(item.key))).size !== SURFACE_KEYS.length
+      || recorded.some((item) => !SURFACE_KEYS.includes(String(item.key)))) {
+      throw new StageError("call9_surface_identity_invalid", "every promoted panel must name one distinct canonical surface", false);
     }
 
     // Consume, never cut. Each panel IS the surface Call 8 rendered from the
@@ -533,21 +625,64 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       if (round2(surface.trimWidthInches) !== round2(dims.widthInches) || round2(surface.trimHeightInches) !== round2(dims.heightInches)) {
         throw new StageError("call9_geometry_drift", `${key} was rendered at dimensions the bound manifest does not declare`, false);
       }
+      // THE SIDE'S OWN BRANDED MASTER IS THE ONLY SOURCE. Read by the branded
+      // master's own path so this stage cannot be pointed at the proof, at
+      // another side, or at a display copy: side identity is structural here,
+      // never located.
+      const master = requiredObject(surface.brandedMaster, `${key} branded master`);
+      if (String(master.side) !== key) {
+        throw new StageError("call9_branded_master_side_mismatch", `${key} carries a branded master labelled ${master.side}`, false);
+      }
+      if (safePath(master.storagePath, `${key} branded master path`) !== safePath(surface.storagePath, `${key} surface path`)
+        || String(master.contentHash).toLowerCase() !== String(surface.contentHash).toLowerCase()) {
+        throw new StageError("call9_branded_master_unbound", `${key}'s branded master is not the surface Call 8 froze`, false);
+      }
+      // The region is checked for BINDING, never read for pixels. A region that
+      // points at other bytes means the proof and the master are two designs.
+      const region = requiredObject(surface.proofRegion, `${key} proof region`);
+      if (!Array.isArray(region.box) || region.box.length !== 4
+        || !region.box.every((value) => Number.isInteger(value) && value >= 0 && value <= 1000)
+        || region.box[2] <= region.box[0] || region.box[3] <= region.box[1]) {
+        throw new StageError("call9_proof_region_invalid", `${key} has no well-formed region on the Call 8 proof`, false);
+      }
+      if (String(region.sourceContentHash).toLowerCase() !== String(master.contentHash).toLowerCase()
+        || String(surface.transformReceipt?.sourceContentHash || "").toLowerCase() !== String(master.contentHash).toLowerCase()
+        || String(surface.transformReceipt?.contract || "") !== String(proof.regionTransform.contract)
+        || surface.transformReceipt?.sourcePreserving !== true) {
+        throw new StageError("call9_proof_region_unbound",
+          `${key}'s proof region is not a source-preserving transform of its branded master`, false);
+      }
+
       // The bytes are re-hashed against what Call 8 recorded. A surface that
       // moved between the two stages fails closed rather than printing.
-      const bytes = await storageBytes(sb, surface.storagePath);
+      const bytes = await storageBytes(sb, master.storagePath);
       const observed = hashBytes(bytes);
-      if (observed !== String(surface.contentHash).toLowerCase()) {
+      if (observed !== String(master.contentHash).toLowerCase()) {
         throw new StageError("call9_surface_changed", `${key} changed after Call 8 rendered it`, false);
       }
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/panels/${key}.png`;
       const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, bytes, "image/png");
       if (stored.spool) spools.push(stored.spool);
+      // Promotion is a copy. If the stored panel does not hash to the master it
+      // came from, something in this stage touched pixels, and this stage is not
+      // allowed to touch pixels.
+      if (String(stored.hash).toLowerCase() !== String(master.contentHash).toLowerCase()) {
+        throw new StageError("call9_promotion_altered_bytes",
+          `${key} was altered on promotion; Call 9 copies the branded master byte for byte`, false);
+      }
       sourceRegionHashes[key] = observed;
       produced.push(artifact("panel", stored.storagePath, stored.hash, stored.bytes, key, {
         call: 9, sourceRule: PANEL_SOURCE_RULE,
+        surfaceContract: SURFACE_REGISTRAR_CONTRACT,
         sourceRegionHash: observed,
-        sourceSurfacePath: surface.storagePath, sourceSurfaceHash: observed,
+        sourceSurfacePath: master.storagePath, sourceSurfaceHash: observed,
+        // Promoted, not produced: this panel IS the branded master's bytes.
+        brandedMasterHash: master.contentHash, brandedMasterPath: master.storagePath,
+        proofRegionBox: region.box,
+        proofRegionTransform: proof.regionTransform.contract,
+        proofRegionTransformMode: proof.regionTransform.mode,
+        sourceProofHash: proof.sourceProofHash || null,
+        promotedWithoutTransform: true, pixelOperations: 0,
         masterHash: proof.masterHash || null, renderHash: proof.renderHash || null,
         trimWidthInches: dims.widthInches, trimHeightInches: dims.heightInches,
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
@@ -564,6 +699,14 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const completed = await complete(sb, stage, run, {
       verified: true, receiptKind: "call9.surface-panels", call: 9,
       sourceRule: PANEL_SOURCE_RULE, regenerated: false,
+      // What this stage accepted and what it did: the frozen registry, promoted
+      // byte for byte, with each side's proof region carried as provenance.
+      surfaceContract: SURFACE_REGISTRAR_CONTRACT,
+      surfaceMastersHash: observedRegistryHash,
+      regionTransform: proof.regionTransform,
+      promotedWithoutTransform: true, pixelOperations: 0,
+      brandedMasterHashes: Object.fromEntries(recorded.map((item) => [String(item.key), String(item.brandedMaster.contentHash).toLowerCase()])),
+      proofRegions: Object.fromEntries(recorded.map((item) => [String(item.key), item.proofRegion.box])),
       sides: produced.map((item) => item.surfaceKey), panelHashes, sourceRegionHashes,
       masterHash: proof.masterHash || null, renderHash: proof.renderHash || null, pxPerInch: proof.pxPerInch || null,
       dimensionsAuthority: "genie-universal-panelizer", bleedInches: 5, dpi: 1500, outputScale: 0.1,
@@ -1404,4 +1547,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views, surfaceMastersHash, SURFACE_REGISTRAR_CONTRACT } };

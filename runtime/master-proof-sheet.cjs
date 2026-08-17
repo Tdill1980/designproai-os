@@ -35,6 +35,39 @@ const { outlineString } = require("./opentype-outline.cjs");
 
 const MASTER_PROOF_CONTRACT = "designpro.master-derived-2d-proof.v1";
 const SURFACE_ORDER = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
+
+/**
+ * WHERE EACH SURFACE APPEARS ON THIS PAGE — provenance, never a source.
+ *
+ * The proof and the six production surfaces are siblings of one master. This
+ * receipt records that sibling relationship as data so it is checkable: for
+ * each surface, the rectangle its artwork occupies on the proof, and the digest
+ * of the master those pixels were scaled down from. Manufacturing consumes the
+ * master. Nothing downstream may read the region and cut it out of this page —
+ * that is how a customer-facing drawing's rules, captions and white ground end
+ * up in a print file.
+ *
+ * The transform is `containedPlacement`: aspect-preserving contain-fit, centred
+ * in the cell, and NOTHING is written into the leftover space. The predecessor
+ * system this receipt is modelled on filled that gutter by mirroring the
+ * artwork outward, which is a fabricated pixel wearing the master's digest. The
+ * fit is kept; the fill is deliberately not.
+ */
+const REGION_TRANSFORM_CONTRACT = "designpro.proof-region-transform.v1";
+const REGION_TRANSFORM_MODE = "contain-fit-no-fill";
+
+/**
+ * The region as 0-1000 [ymin, xmin, ymax, xmax], normalised against the FINAL
+ * page. Resolution-independent by construction, so a change to the sheet's
+ * pixel size can never silently move a recorded region.
+ */
+function normalizedRegionBox(placement) {
+  const clamp = (value, total) => Math.max(0, Math.min(1000, Math.round((value / total) * 1000)));
+  return Object.freeze([
+    clamp(placement.y, SHEET_HEIGHT), clamp(placement.x, SHEET_WIDTH),
+    clamp(placement.y + placement.h, SHEET_HEIGHT), clamp(placement.x + placement.w, SHEET_WIDTH),
+  ]);
+}
 const PNG_OPTIONS = Object.freeze({ compressionLevel: 6, adaptiveFiltering: false, palette: false, force: true });
 const INK = "#111827";
 const MUTED = "#6b7280";
@@ -288,6 +321,7 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     totalSqFt,
   })];
 
+  const surfaceRegions = [];
   for (const surfaceKey of SURFACE_ORDER) {
     const cell = layout.cells[surfaceKey];
     const surface = surfaceByKey.get(surfaceKey);
@@ -299,6 +333,16 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
       .png(PNG_OPTIONS).toBuffer();
     composites.push({ input: resized, left: placement.x, top: placement.y });
     markup.push(cellMarkup(fonts, cell, dimensionByKey.get(surfaceKey), placement));
+    // Recorded from the placement that was actually composited — not recomputed
+    // afterwards, which would be a second implementation free to disagree.
+    surfaceRegions.push(Object.freeze({
+      surfaceKey,
+      box: normalizedRegionBox(placement),
+      pixelRect: Object.freeze({ x: placement.x, y: placement.y, w: placement.w, h: placement.h }),
+      sourceContentHash: surface.contentHash,
+      sourcePixelWidth: surface.pixelWidth,
+      sourcePixelHeight: surface.pixelHeight,
+    }));
   }
 
   markup.push(identityMarkup(fonts, layout.cells.hero3d, identities, render));
@@ -335,6 +379,19 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     dimensionManifestId: render.dimensionManifestId,
     manifestHash: render.manifestHash,
     surfaceHashes: SURFACE_ORDER.map((key) => ({ surfaceKey: key, contentHash: surfaceByKey.get(key).contentHash })),
+    // The sibling contract, stated: each surface's region on this page, bound to
+    // the digest of the master it was scaled from. Provenance for the proof;
+    // never an extraction source for manufacturing.
+    regionTransform: Object.freeze({
+      contract: REGION_TRANSFORM_CONTRACT,
+      mode: REGION_TRANSFORM_MODE,
+      sourcePreserving: true,
+      fit: "contain",
+      fill: "none",
+      sheetWidth: SHEET_WIDTH,
+      sheetHeight: SHEET_HEIGHT,
+    }),
+    surfaceRegions: Object.freeze(surfaceRegions),
     textIdentities: identities.text.map(({ textId, string }) => ({ textId, string })),
     logoIdentities: identities.logos.map(({ identityKey, contentHash }) => ({ identityKey, contentHash })),
     perSurfaceDimensions: dimensions,
@@ -344,6 +401,8 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
 
 module.exports = {
   MASTER_PROOF_CONTRACT,
+  REGION_TRANSFORM_CONTRACT,
+  REGION_TRANSFORM_MODE,
   SURFACE_ORDER,
   MasterProofError,
   renderMasterProof,
