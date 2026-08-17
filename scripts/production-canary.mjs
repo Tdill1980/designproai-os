@@ -527,13 +527,27 @@ function assertOutputSet() {
  */
 async function runCallsOneToSeven({ operator, operatorId, generationId, delivery }) {
   const input = {
+    // create_designpro_generation_request rejects any input without this exact
+    // literal. Live canary 32002655505 died here as generation_request_invalid.
+    contractVersion: "designpro.calls-1-7-input.v1",
     vehicle: VEHICLE,
     brief: DESIGN_NAME,
     industry: "HVAC and climate control",
     colors: ["deep blue", "sunrise orange"],
     style: "modern commercial",
     orderNumber: ORDER_NUMBER,
-    delivery,
+    // The adapter allows EXACTLY these three delivery keys and rejects the
+    // object outright if anything else is present:
+    //   (p_input->'delivery') - ARRAY[...] <> '{}'::jsonb
+    // The registered recipient also carries customerId, customerEmail and
+    // designName, which the revision snapshot needs and this contract forbids,
+    // so the full object stays intact for the snapshot and only this call site
+    // narrows it.
+    delivery: {
+      contractVersion: delivery.contractVersion,
+      recipientIdentityHash: delivery.recipientIdentityHash,
+      orderNumber: delivery.orderNumber,
+    },
   };
   // The exact key the adapter recomputes; anything else is rejected outright.
   const idempotencyKey = `calls17:${generationId}:${delivery.recipientIdentityHash}:${sha256(Buffer.from(ORDER_NUMBER))}`;
