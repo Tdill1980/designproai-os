@@ -23,6 +23,15 @@ os.designproai.com {
     respond 404
   }
 
+  # Server-to-server only: the migrated DesignPro edge functions call the
+  # proven worker's compositor endpoints (/compose-proof-sheet,
+  # /call7-sanity-check, /clean-artboard, /passenger-mirror, /panel-qccheck,
+  # /lift-overlays, ...) with the shared worker secret. The worker rejects
+  # every unauthenticated request itself; browsers still have no worker path.
+  handle_path /designpro-worker/* {
+    reverse_proxy 127.0.0.1:3005
+  }
+
   handle /api/* {
     reverse_proxy 127.0.0.1:8787
   }
