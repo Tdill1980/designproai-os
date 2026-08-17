@@ -122,6 +122,13 @@ written:
 - relaxing the exactly-two-proofs / exactly-six-distinct-panels requirement
 - letting a side be satisfied by another side's artifact, mirrored or otherwise
 - adding dimensions to the generation output
+- **manufacturing a "clean" source that Generation did not emit** — erasing,
+  inpainting, regenerating, pixel-lifting, approximating a clean background, or
+  reclassifying baked-in branding as an overlay after the fact. If the accepted
+  design has branding baked into the creative raster that is not in
+  `expectedLogoInventory`, that is a contract gap to report, not a gap for
+  Manufacturing to fill. See `docs/BEHAVIORAL-SPEC.md` rule 6A and the reported
+  gap under it — the precondition currently fails.
 
 `scripts/calls-1-7-seam.mjs` is the executable gate. Its existing assertions —
 content-addressed path, stored hash verifies, "Calls 8 resolves driver and

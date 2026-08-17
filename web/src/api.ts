@@ -21,6 +21,21 @@ export type WorkflowArtifact = {
   expiresIn: 300;
 };
 
+// The approved Calls 1-7 on-vehicle render for one canonical side. Read in
+// place from designpro_generation_views — never a manufacturing artifact.
+export type ApprovedView = {
+  id: string;
+  generationId: string;
+  surfaceKey: string;
+  sourceViewType: string;
+  storagePath: string;
+  contentHash: string;
+  byteSize: number | null;
+  contentType: string;
+  signedUrl: string;
+  expiresIn: 300;
+};
+
 export type AssetIdentity = {
   storagePath: string;
   contentHash: string;
@@ -263,6 +278,7 @@ export const dpApi = {
   listJobs: () => request<WorkflowStatus[]>("/jobs"),
   getStatus: (generationId: string) => request<WorkflowStatus>(`/jobs/${encodeURIComponent(generationId)}`),
   listArtifacts: (generationId: string) => request<WorkflowArtifact[]>(`/jobs/${encodeURIComponent(generationId)}/artifacts`),
+  listApprovedViews: (generationId: string) => request<ApprovedView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
   submitRevision: (submission: RevisionSubmission) => request<{ runId: string; accepted: true }>("/revisions", { method: "POST", body: JSON.stringify(submission) }),
   requestResume: (generationId: string) => request<{ accepted: true }>(`/jobs/${encodeURIComponent(generationId)}/resume`, { method: "POST" }),
   approvePreflight: (generationId: string, qc: PreflightQc, notes: string) => request<{ accepted: true }>(`/jobs/${encodeURIComponent(generationId)}/approvals/preflight`, { method: "POST", body: JSON.stringify({ qc, notes }) }),

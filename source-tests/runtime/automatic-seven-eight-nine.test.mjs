@@ -19,7 +19,10 @@ const views = Object.fromEntries(roles.map((role, index) => {
 }));
 
 test("seven distinct views automatically precede flat proof, panels and logos", () => {
-  assert.deepEqual(STAGES.slice(0, 7), ["revision.freeze", "manifest.resolve", "proof.build", "panels.build", "logos.extract", "pack.verify", "pack.activate"]);
+  // Call 11 (panels.delogo) sits between Call 10 and pack.verify so its
+  // de-logoed duplicates exist before the pack is sealed and handed to the
+  // PanelPro preflight gate.
+  assert.deepEqual(STAGES.slice(0, 8), ["revision.freeze", "manifest.resolve", "proof.build", "panels.build", "logos.extract", "panels.delogo", "pack.verify", "pack.activate"]);
   assert.deepEqual(RECEIPTS.slice(0, 4), ["views.seven-source", "call8.flat-proof", "call9.surface-panels", "call10.logo-inventory"]);
   assert.ok(RECEIPTS.includes("final.human-qc"));
   assert.equal(new Set(Object.values(_test.exactSevenViews({ renderAssets: views }, tenantKey, revisionId)).map((asset) => asset.contentHash)).size, 7);
