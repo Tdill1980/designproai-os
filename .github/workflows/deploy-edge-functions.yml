@@ -1,0 +1,123 @@
+name: Deploy DesignPro Edge Functions
+
+# Deploys the migrated, sanctioned DesignPro edge functions to the standalone
+# DesignProAI Supabase project. Dispatch-only: function rollout is an explicit
+# operator action, and config.toml is the single JWT-policy authority
+# (verify_jwt = false per function; auth happens inside each handler).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Protected action — deploys edge functions to the production DesignProAI Supabase project"
+        required: true
+        type: choice
+        default: DO_NOT_DEPLOY
+        options:
+          - DO_NOT_DEPLOY
+          - DEPLOY_DESIGNPRO_FUNCTIONS
+      functions:
+        description: "Comma-separated function names (empty = every function directory)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-edge-function-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: wozyamlnygaddievzuwn
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'DEPLOY_DESIGNPRO_FUNCTIONS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: designproai-production
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Resolve function list
+        id: fns
+        env:
+          INPUT_FUNCTIONS: ${{ inputs.functions }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_FUNCTIONS// /}" ]]; then
+            list=$(printf '%s' "$INPUT_FUNCTIONS" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$')
+          else
+            list=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name '_shared' -printf '%f\n' | sort)
+          fi
+          while IFS= read -r fn; do
+            [[ "$fn" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "::error::invalid function name: $fn"; exit 1; }
+            test -f "supabase/functions/$fn/index.ts" || { echo "::error::missing entrypoint for $fn"; exit 1; }
+            grep -Fq "[functions.$fn]" supabase/config.toml || { echo "::error::$fn is not registered in supabase/config.toml"; exit 1; }
+          done <<< "$list"
+          echo "list<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$list" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "Deploying:"; echo "$list"
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Set function secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+          GOOGLE_AI_API_KEY: ${{ secrets.DESIGNPRO_GOOGLE_AI_API_KEY }}
+        run: |
+          set -euo pipefail
+          : "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN secret is required}"
+          if [[ -n "${GOOGLE_AI_API_KEY:-}" ]]; then
+            supabase secrets set --project-ref "$PROJECT_REF" \
+              "GOOGLE_AI_API_KEY=$GOOGLE_AI_API_KEY" \
+              "GEMINI_API_KEY=$GOOGLE_AI_API_KEY"
+          else
+            echo "::warning::GOOGLE_AI_API_KEY secret not available; Gemini-backed functions will fail until it is set"
+          fi
+
+      - name: Deploy functions
+        env:
+          FUNCTIONS: ${{ steps.fns.outputs.list }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN secret is required}"
+          failed=()
+          while IFS= read -r fn; do
+            [[ -n "$fn" ]] || continue
+            echo "::group::Deploying $fn"
+            if supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --use-api; then
+              echo "Deployed $fn"
+            else
+              echo "::error::Deploy failed for $fn"
+              failed+=("$fn")
+            fi
+            echo "::endgroup::"
+          done <<< "$FUNCTIONS"
+          if (( ${#failed[@]} )); then
+            printf 'FAILED: %s\n' "${failed[@]}"
+            exit 1
+          fi
+
+      - name: Verify deployed functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+          FUNCTIONS: ${{ steps.fns.outputs.list }}
+        run: |
+          set -euo pipefail
+          deployed=$(supabase functions list --project-ref "$PROJECT_REF")
+          echo "$deployed"
+          while IFS= read -r fn; do
+            [[ -n "$fn" ]] || continue
+            grep -q "$fn" <<< "$deployed" || { echo "::error::$fn not present after deploy"; exit 1; }
+          done <<< "$FUNCTIONS"
