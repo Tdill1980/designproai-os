@@ -18,6 +18,22 @@
 const FUNCTIONS_ROOT = new URL("./functions/", import.meta.url);
 const PORT = Number(Deno.env.get("PORT") ?? "3003");
 
+/**
+ * The routing allowlist. The migrated frontend carries every RestylePro product,
+ * so "what the app can invoke" is far wider than the DesignPro chain; routing all
+ * of it would put unrelated marketing, video and storefront functions on this
+ * droplet with nothing in DesignPro calling them. Only names proven reachable
+ * from the DesignPro chain are served - the proof lives beside each name in
+ * ops/designpro-functions.txt and is recomputed by ops/designpro-function-graph.mjs.
+ */
+const ALLOWED = new Set(
+  (await Deno.readTextFile(new URL("./designpro-functions.txt", import.meta.url)))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#")),
+);
+if (ALLOWED.size === 0) throw new Error("designpro_functions_allowlist_empty");
+
 // A function's handler, captured the moment it registers itself. Deno's
 // std/http serve() starts listening, so each module is loaded with a shim in
 // place that records the handler instead of binding a second port.
@@ -61,12 +77,18 @@ Deno.serve({ port: PORT, hostname: "0.0.0.0" }, async (request) => {
   const url = new URL(request.url);
 
   if (url.pathname === "/health") {
-    return Response.json({ ok: true, loaded: handlers.size });
+    return Response.json({ ok: true, routable: ALLOWED.size, loaded: handlers.size });
   }
 
   const name = functionName(url.pathname);
   if (!name || !isRoutableName(name)) {
     return Response.json({ error: "function_not_found" }, { status: 404 });
+  }
+  if (!ALLOWED.has(name)) {
+    // Distinct from function_not_found on purpose: the function may well exist
+    // on disk. It is simply not part of the DesignPro chain, so a call to it
+    // from this droplet is a wiring mistake worth naming rather than a 404.
+    return Response.json({ error: `function_not_in_designpro_allowlist:${name}` }, { status: 404 });
   }
 
   if (!handlers.has(name)) {

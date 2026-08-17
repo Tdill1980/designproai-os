@@ -115,6 +115,34 @@ the one screen that makes DesignProAI magical still absent from the new system.
 It also framed the suite as something to wait for. That is wrong too. The suite
 is not required to sell. The DesignPro vertical slice is.
 
+## The edge functions the droplet routes — 59, not 470
+
+The migration copied all of `restylepro-os`'s edge functions into
+`supabase/functions/` so nothing would be missing mid-port. Production does not
+run all of them. `ops/designpro-functions.txt` is the routed set: **59
+functions**, each listed with the caller that reaches it, computed from the
+DesignPro chain by `ops/designpro-function-graph.mjs`.
+
+The number matters because the migrated frontend carries every RestylePro
+product. "What the app can invoke" is 212 functions across WallPro, GraphicsPro,
+ColorPro, the marketing tools and the video pipeline. Routing that set would put
+the cost and the attack surface of products this droplet does not host onto this
+droplet. The DesignPro closure is 59.
+
+Four places enforce it and `ops/tests/ops-hardening.test.mjs` fails if they
+disagree: the server refuses an unlisted name
+(`function_not_in_designpro_allowlist`), the image build deletes unlisted
+directories, the release policy names each routed function individually rather
+than globbing the directory, and `--check` re-derives the graph so a function
+whose last caller is deleted cannot stay routed.
+
+Three routed functions conflict with standing owner direction and are routed
+only because migrated UI still calls them — `designpro-parse-brief`
+(`DesignPanelProPremium.tsx`), `designpro-persist-assets`
+(`DesignPanelProPremium.tsx`, `RevisionStudioIQ.tsx`) and `elevate-prompt`
+(`DesignGenie.tsx`, a manual button, not the auto-render path). Dropping them
+changes migrated behaviour, so they stay until the owner says otherwise.
+
 ## Unproven, stated plainly
 
 Nothing in the kernel has run against live Gemini, Topaz or Supabase. The two

@@ -1,0 +1,188 @@
+# The edge functions the droplet routes in production.
+#
+# Every name here is reachable from the DesignPro chain, and the caller that
+# reaches it is recorded beside it. Nothing else is routed: the functions server
+# refuses an unlisted name, the image build drops it, and the release validators
+# reject it as an unapproved archive member. The other 410 functions
+# copied from restylepro-os stay on disk for reference and migration work, and
+# never start.
+#
+# Regenerate and verify with:  node ops/designpro-function-graph.mjs --check
+# A name added here without a caller in the DesignPro chain fails that check.
+
+# declared in app/src/integrations/supabase/client.ts BUSY_FNS
+activate-print-worker
+
+# components/designpanelpro/PanelUploader.tsx
+analyze-panel-design
+
+# pages/RevisionStudioIQ.tsx
+approvepro-versions
+
+# declared in app/src/integrations/supabase/client.ts BUSY_FNS
+auto-generate-artboard
+
+# pages/AdminGeminiCompareStudio.tsx
+classify-vehicle-views
+
+# components/revisioniq/ProductionFlowLayersCard.tsx, pages/DesignPanelProPremium.tsx
+create-single-use-checkout
+
+# called by cutpath-element-extract
+crop-region
+
+# components/revisioniq/ProductionFlowLayersCard.tsx
+cutpath-element-extract
+
+# components/production/ProductionPackQCCard.tsx
+deploy-to-wrapbox
+
+# hooks/useDesignPanelProLogic.ts, pages/AdminGeminiCompareStudio.tsx, pages/ProductionFlow.tsx
+design-panel-ai-generate
+
+# components/designpanelpro/ArtboardTestPanel.tsx
+designpro-artboard
+
+# pages/DesignPanelProPremium.tsx
+designpro-clean-views
+
+# lib/designpro-file-output.ts
+designpro-file-output-api
+
+# components/designpanelpro/ArtboardTestPanel.tsx
+designpro-flat-art
+
+# pages/DesignPanelProPremium.tsx
+designpro-parse-brief
+
+# pages/DesignPanelProPremium.tsx, pages/RevisionStudioIQ.tsx
+designpro-persist-assets
+
+# components/designpanelpro/ArtboardTestPanel.tsx
+designpro-recreate-3d
+
+# hooks/useDesignPanelProLogic.ts
+designpro-separate
+
+# pages/DesignPanelProPremium.tsx
+designpro-text-layer-generate
+
+# components/designpanelpro/DesignGenie.tsx
+elevate-prompt
+
+# components/productionflow/ExtractElementsModal.tsx
+extract-elements
+
+# pages/RevisionStudioIQ.tsx
+extract-logo-elements
+
+# components/designpanelpro/AiPanelGenerator.tsx
+film-grounding
+
+# called by generate-color-render
+find-reference-renders
+
+# components/revisioniq/SidePanelBoxes.tsx
+flat-panel-openai
+
+# components/designpanelpro/PanelLibrary.tsx, lib/generateDisplaySafe2DProof.ts, pages/ProductionFlow.tsx
+generate-2d-proof
+
+# called by panel-artboard-generator
+generate-artboard-flat
+
+# called by panel-artboard-generator
+generate-clean-artboard
+
+# hooks/useDesignPanelProLogic.ts
+generate-color-render
+
+# components/production/SizeRecommendation.tsx
+get-vehicle-recommendation
+
+# pages/AdminGeminiCompareStudio.tsx
+golden-job-regression
+
+# called by panel-artboard-generator
+layerlift-engine
+
+# components/revisioniq/ProductionFlowLayersCard.tsx, lib/enticePanelsFromProof.ts, lib/flatMasterSheet.ts
+panel-artboard-generator
+
+# pages/AdminGeminiCompareStudio.tsx
+panel-pro-color-match
+
+# lib/flatMasterSheet.ts, pages/AdminGeminiCompareStudio.tsx
+panel-pro-extract
+
+# pages/AdminGeminiCompareStudio.tsx
+panel-pro-flatten-side
+
+# pages/AdminGeminiCompareStudio.tsx
+panel-pro-separate
+
+# pages/AdminGeminiCompareStudio.tsx
+panel-pro-validate
+
+# lib/flatMasterSheet.ts
+panelize-artboard
+
+# components/designpanelpro/ProductionPackDialog.tsx, lib/enticePanelsFromProof.ts, pages/AdminGeminiCompareStudio.tsx, pages/RevisionStudioIQ.tsx
+panelizer-step-validate
+
+# pages/ProductionFlow.tsx
+productionflow-customer-input
+
+# pages/AdminGeminiCompareStudio.tsx, pages/RevisionStudioIQ.tsx
+proof-save-version
+
+# pages/ProductionFlow.tsx
+render-verify-correct
+
+# pages/ProductionFlow.tsx, pages/RevisionStudioIQ.tsx
+revise-render
+
+# components/revisioniq/PreciseEditCanvas.tsx
+revise-render-masked
+
+# components/production/ProductionPackQCCard.tsx, pages/ProductionFlow.tsx
+run-production-flow
+
+# lib/enticePanelsFromProof.ts
+save-production-panels
+
+# called by generate-color-render
+search-vinyl-color-intelligence
+
+# called by find-reference-renders, generate-color-render
+search-vinyl-product-images
+
+# components/revisioniq/PreciseEditCanvas.tsx
+segment-click
+
+# called by deploy-to-wrapbox
+send-design-pack-email
+
+# pages/DesignPanelProPremium.tsx
+send-estimate-email
+
+# called by send-design-pack-email
+send-templated-email
+
+# called by panel-artboard-generator
+storage-file-tools
+
+# pages/AdminGeminiCompareStudio.tsx
+studioboard-build-print
+
+# components/designpanelpro/DesignProPanelizer.tsx
+universal-panelizer
+
+# components/productionflow/PanelPrintReadyButton.tsx
+upscale-panel-to-print
+
+# components/revisioniq/LayerStrip.tsx
+upscale-production-panel
+
+# called by generate-color-render
+validate-vinyl-color-from-images

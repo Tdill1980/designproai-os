@@ -62,6 +62,14 @@ def allowed_directory(name: str) -> bool:
     # control. Depth is bounded so a deep tree cannot be smuggled in.
     if name.startswith("web/dist/"):
         return len(PurePosixPath(name).parts) <= 4
+    # The edge functions the droplet routes. Which functions may appear is fixed
+    # by the per-function patterns in release-files.txt, so this only bounds the
+    # shape: a function is a directory of modules, occasionally with one level of
+    # helpers beneath it, and never deeper.
+    if name == "supabase" or name == "supabase/functions":
+        return True
+    if name.startswith("supabase/functions/"):
+        return len(PurePosixPath(name).parts) <= 4
     return False
 
 

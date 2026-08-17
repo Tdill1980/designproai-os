@@ -16,6 +16,23 @@ WORKDIR /app
 
 COPY supabase/functions ./functions
 COPY ops/functions-server.ts ./functions-server.ts
+COPY ops/designpro-functions.txt ./designpro-functions.txt
+
+# Drop everything the DesignPro chain does not reach. The migration copied all
+# of restylepro-os so nothing would be missing mid-port, but the image that runs
+# on the droplet carries only the proven set plus the shared modules they import.
+# The server refuses an unlisted name anyway; this keeps it off the disk too.
+RUN set -eu; \
+    grep -vE '^\s*(#|$)' designpro-functions.txt | tr -d '\r' | sort -u > /tmp/keep; \
+    test -s /tmp/keep; \
+    for dir in functions/*/; do \
+      name=$(basename "$dir"); \
+      case "$name" in _*) continue;; esac; \
+      grep -qxF "$name" /tmp/keep || rm -rf "$dir"; \
+    done; \
+    while read -r name; do \
+      test -f "functions/$name/index.ts" || { echo "allowlisted function missing: $name" >&2; exit 1; }; \
+    done < /tmp/keep
 
 # Warm the module cache at build time so a cold container does not fetch
 # dependencies on its first request, and so a network blip at runtime cannot

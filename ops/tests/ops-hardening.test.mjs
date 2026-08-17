@@ -73,8 +73,20 @@ test("actual builder emits reproducible bytes with every fixed file manifest-bou
     for (const name of fixed) {
       const path = join(root, name);
       mkdirSync(dirname(path), { recursive: true });
-      if (name === "ops/release-files.txt") cpSync(join(track, name), path);
+      // The two policy files are read by the builder rather than merely copied,
+      // so the fixture uses the real ones; everything else is stand-in bytes.
+      if (name === "ops/release-files.txt" || name === "ops/designpro-functions.txt") cpSync(join(track, name), path);
       else writeFileSync(path, name.endsWith(".json") ? "{}\n" : `fixture:${name}\n`);
+    }
+    // One module per routed function plus the shared tree they import. This is
+    // what proves the builder stages the allowlist and binds each function's
+    // bytes into the manifest, rather than shipping an archive with none.
+    const routedFixture = readFileSync(join(ops, "designpro-functions.txt"), "utf8")
+      .split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+    const functionFiles = ["_shared", ...routedFixture].map((name) => `supabase/functions/${name}/index.ts`);
+    for (const name of functionFiles) {
+      mkdirSync(dirname(join(root, name)), { recursive: true });
+      writeFileSync(join(root, name), `fixture:${name}\n`);
     }
     // The served application is the branded operator shell, so the builder
     // stages web/dist from app/dist. web/dist/index.html is still a fixed
@@ -90,7 +102,7 @@ test("actual builder emits reproducible bytes with every fixed file manifest-bou
     const second = readFileSync(join(root, "two", `designproai-release-${sha}.tgz`));
     assert.deepEqual(first, second);
     const manifest = JSON.parse(execFileSync("tar", ["-xOzf", join(root, "one", `designproai-release-${sha}.tgz`), ".designpro-release.json"], { encoding: "utf8" }));
-    assert.deepEqual(Object.keys(manifest.files).sort(), [...fixed, "web/dist/assets/app.js"].sort());
+    assert.deepEqual(Object.keys(manifest.files).sort(), [...fixed, ...functionFiles, "web/dist/assets/app.js"].sort());
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -192,3 +204,69 @@ test("production migration is manual, exact-main, environment protected, and sec
   assert.doesNotMatch(workflow, /db reset/);
 });
 
+
+// ---------------------------------------------------------------------------
+// The routed edge-function set.
+//
+// The migration copied all of restylepro-os so nothing would be missing
+// mid-port, but production must run the DesignPro chain and nothing else - a
+// droplet serving the marketing, video and storefront functions is carrying
+// cost and attack surface for products it does not host. Four places enforce
+// that: the routing allowlist, the running server, the image build and the
+// release policy. They are only a control if they cannot disagree, so the
+// disagreement is what these tests look for.
+
+const routed = readFileSync(join(ops, "designpro-functions.txt"), "utf8")
+  .split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+
+test("every routed function is reachable from the DesignPro chain, and nothing else is", () => {
+  assert.ok(routed.length > 0 && new Set(routed).size === routed.length);
+  // The graph is recomputed from the frontend rather than compared to a stored
+  // copy: a function whose last caller is deleted stops being reachable, and
+  // this fails until it leaves the allowlist.
+  execFileSync(process.execPath, [join(ops, "designpro-function-graph.mjs"), "--check"], {
+    cwd: track,
+    stdio: "pipe",
+  });
+});
+
+test("the release policy names exactly the routed functions", () => {
+  const patterned = policy
+    .filter((line) => line.startsWith("supabase/functions/"))
+    .map((line) => line.replace(/^supabase\/functions\//, "").replace(/\/\*$/, ""));
+  // _shared is not a function and is never routed; the routed functions import
+  // from it, so it ships with them.
+  assert.ok(patterned.includes("_shared"));
+  assert.deepEqual(patterned.filter((name) => name !== "_shared").sort(), [...routed].sort());
+  // A directory-wide pattern would readmit all 470 without changing this list,
+  // which is exactly the failure the per-function patterns exist to prevent.
+  assert.ok(!policy.includes("supabase/functions/**"));
+  for (const name of ["ops/designpro-functions.txt", "ops/designpro-function-graph.mjs", "ops/functions-server.ts"]) {
+    assert.ok(fixed.includes(name), name);
+  }
+});
+
+test("the server and the image both refuse a function that is not routed", () => {
+  const server = read("functions-server.ts");
+  assert.match(server, /designpro-functions\.txt/);
+  assert.match(server, /function_not_in_designpro_allowlist/);
+  // An empty or unreadable allowlist must stop the server, not silently route
+  // nothing - or a bad mount would present as every function 404ing.
+  assert.match(server, /designpro_functions_allowlist_empty/);
+
+  const image = read("Dockerfile.functions");
+  assert.match(image, /COPY ops\/designpro-functions\.txt/);
+  assert.match(image, /rm -rf/);
+  // The build fails if an allowlisted function is missing from the context,
+  // so a partial copy cannot ship as a working image.
+  assert.match(image, /allowlisted function missing/);
+});
+
+test("the release stages the routed functions from the same allowlist", () => {
+  const build = readFileSync(join(track, "scripts/build-release.sh"), "utf8");
+  assert.match(build, /ops\/designpro-functions\.txt/);
+  assert.match(build, /stage_function_dir _shared/);
+  assert.match(build, /supabase$/m);
+  const validator = read("validate-archive.py");
+  assert.match(validator, /supabase\/functions\//);
+});
