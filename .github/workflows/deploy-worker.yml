@@ -69,15 +69,17 @@ jobs:
         run: |
           set -Eeuo pipefail
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
-          payload=$(tar -cz worker | base64 -w0)
+          # The tarball is too large for an argument/env assignment (ssh:
+          # Argument list too long, run 32081902567) — stream it over stdin.
+          tar -cz worker | ssh "${ssh_args[@]}" "root@$TARGET_HOST" 'cat > /tmp/designpro-worker.tgz'
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' PAYLOAD='$payload' GIT_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' GIT_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           test "$(hostname)" = "$EXPECTED_HOSTNAME"
           test -f /opt/designproai-os/shared/runtime.env
           stage=$(mktemp -d /tmp/designpro-worker.XXXXXX)
-          trap 'rm -rf "$stage"' EXIT
-          printf '%s' "$PAYLOAD" | base64 -d | tar -C "$stage" -xz
+          trap 'rm -rf "$stage" /tmp/designpro-worker.tgz' EXIT
+          tar -C "$stage" -xzf /tmp/designpro-worker.tgz
           docker build -t "designpro-worker:$GIT_SHA" "$stage/worker"
           docker rm -f designpro-worker 2>/dev/null || true
           docker run -d --name designpro-worker --restart unless-stopped \
