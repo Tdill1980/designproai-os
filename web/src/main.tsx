@@ -373,6 +373,15 @@ function RevisionStudio({ artifacts, loading }: { artifacts: WorkflowArtifact[];
   const panels = panelOrder
     .map((key) => artifacts.find((item) => item.kind === "panel" && item.surfaceKey === key))
     .filter((item): item is WorkflowArtifact => Boolean(item));
+  // The approved side surface Call 8 rendered — the same bytes Call 9 cut this
+  // panel from. Shown beside the panel so a wrong panel is visible here rather
+  // than at print. The customer proof carries no surfaceKey and the approved
+  // layout carries "flat-wrap-layout"; neither is a side.
+  const sideProofs = new Map(
+    artifacts
+      .filter((item) => item.kind === "flat-proof" && item.surfaceKey && item.surfaceKey !== "flat-wrap-layout")
+      .map((item) => [item.surfaceKey, item] as const),
+  );
   if (loading && !proof && panels.length === 0) return <section className="panel"><div className="notice">Loading Revision Studio…</div></section>;
   if (!proof && panels.length === 0) return null;
   const totalSqFt = num(proof?.metadata?.totalSqFt);
@@ -408,14 +417,28 @@ function RevisionStudio({ artifacts, loading }: { artifacts: WorkflowArtifact[];
       const printHeight = inchLabel(panel.metadata.printHeightInches);
       const sqFt = num(panel.metadata.surfaceSqFt);
       const rect = panel.metadata.cutRect as { x: number; y: number; w: number; h: number } | undefined;
+      const sideProof = sideProofs.get(panel.surfaceKey);
       return <article className="studio-row" key={panel.id}>
         <header>
           <strong>{panelLabel[panel.surfaceKey] || panel.surfaceKey.toUpperCase()}</strong>
           {width && height && <span>{width}" × {height}"</span>}
         </header>
-        <a className="studio-thumb" href={panel.signedUrl} target="_blank" rel="noreferrer">
-          <img src={panel.signedUrl} alt={`${panel.surfaceKey} print-ready panel`} />
-        </a>
+        <div className="studio-pair">
+          <div className="studio-slot">
+            <span className="studio-slot-label">REAL DESIGN PROOF</span>
+            {sideProof
+              ? <a className="studio-thumb" href={sideProof.signedUrl} target="_blank" rel="noreferrer">
+                  <img src={sideProof.signedUrl} alt={`${panel.surfaceKey} approved design proof`} />
+                </a>
+              : <div className="studio-thumb studio-thumb-empty">Not published</div>}
+          </div>
+          <div className="studio-slot">
+            <span className="studio-slot-label">PRINT PANEL</span>
+            <a className="studio-thumb" href={panel.signedUrl} target="_blank" rel="noreferrer">
+              <img src={panel.signedUrl} alt={`${panel.surfaceKey} print-ready panel`} />
+            </a>
+          </div>
+        </div>
         <div className="studio-meta">
           <div className="studio-line"><span>Print-ready panel</span><SaveLink url={panel.signedUrl} name={`${panel.surfaceKey}-print-panel.png`} /></div>
           {printWidth && printHeight && <small>{printWidth}" × {printHeight}" printed · 5" bleed on all four edges{sqFt != null ? ` · ${sqFt.toFixed(2)} sq ft` : ""}</small>}
