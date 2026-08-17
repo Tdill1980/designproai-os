@@ -84,6 +84,9 @@ web/dist/*.xml
 ops/release-files.txt
 ops/Dockerfile.runtime
 ops/Dockerfile.gateway
+ops/Dockerfile.functions
+ops/functions-server.ts
+supabase/functions/**
 ops/runtime-healthcheck.js
 ops/gateway-healthcheck.mjs
 ops/compose.yaml

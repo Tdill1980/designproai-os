@@ -66,6 +66,36 @@ services:
     ports:
       - "127.0.0.1:3002:3001"
 
+  # The DesignPro edge functions, on this host instead of Supabase. Same files,
+  # same /functions/v1/<name> paths, so the migrated frontend and the runtime
+  # call exactly what they always did. This is what stops the standalone system
+  # needing a second, hand-written implementation of the product.
+  functions:
+    image: "designproai-functions:${DESIGNPRO_SHA:?missing DESIGNPRO_SHA}"
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /opt/designproai-os/shared/runtime.env
+    environment:
+      PORT: "3003"
+      DESIGNPRO_RELEASE_SHA: "${DESIGNPRO_SHA}"
+    networks:
+      - designpro_internal
+    healthcheck:
+      test: ["CMD", "deno", "eval", "const r = await fetch('http://127.0.0.1:3003/health'); if (!r.ok) Deno.exit(1);"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 4g
+    mem_reservation: 512m
+    cpus: "2.0"
+
   gateway:
     image: "designproai-gateway:${DESIGNPRO_SHA:?missing DESIGNPRO_SHA}"
     pull_policy: never

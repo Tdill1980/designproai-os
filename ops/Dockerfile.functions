@@ -1,0 +1,26 @@
+# The DesignPro edge functions, served from the droplet instead of Supabase.
+#
+# These are the SAME files that ran as Supabase Edge Functions - plain Deno HTTP
+# servers using serve() from deno.land/std, with URL imports and no
+# platform-specific runtime. So they move to this host unchanged: no rewrite, no
+# hand-port, no second implementation to keep in sync.
+#
+# That last point is the whole reason this exists. Re-deriving 470 functions as
+# .cjs modules one at a time is how the standalone system ended up with a
+# frontend calling functions that were never migrated, and a separate kernel
+# behaving differently from the product it replaced.
+FROM denoland/deno:2.1.4
+
+ENV DENO_DIR=/deno-dir
+WORKDIR /app
+
+COPY supabase/functions ./functions
+COPY ops/functions-server.ts ./functions-server.ts
+
+# Warm the module cache at build time so a cold container does not fetch
+# dependencies on its first request, and so a network blip at runtime cannot
+# turn into a failed generation.
+RUN deno cache --allow-import functions-server.ts || true
+
+EXPOSE 3003
+CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "--allow-import", "functions-server.ts"]
