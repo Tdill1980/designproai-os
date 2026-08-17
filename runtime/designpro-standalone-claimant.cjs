@@ -15,6 +15,32 @@ const { canonicalTenantKey, immutableStorageUpload, normalizeLogoAsset, normaliz
 const { resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
 const { SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
 const { buildMasterCycle } = require("./designpro-master-cycle.cjs");
+
+// THE PROOF SHEET'S OWN LETTERING -- not the design's typeface.
+//
+// Call 8 draws a shop drawing: surface labels, dimension callouts, the design
+// id, the approval line. Drawing text needs glyph outlines, and libvips
+// resolves a family name through fontconfig and substitutes silently, so the
+// renderer has to be handed real bytes.
+//
+// Those bytes belong to the RENDERER, not to the customer's design. A design
+// master pins a font when the DESIGN places canonical text -- and then it pins
+// the face that text is set in, which is exactly where pinning matters. A
+// design that places no text should not have to carry a typeface so the system
+// can label its own drawing, and buildMasterCycle has always taken a proofFont
+// for this; nothing ever passed one.
+//
+// Read once from the exact file the image ships, so the sheet's lettering is
+// reproducible for a given release.
+let proofLabelFontBytes = null;
+function proofLabelFont() {
+  if (!proofLabelFontBytes) {
+    proofLabelFontBytes = require("node:fs").readFileSync(
+      require("node:path").join(__dirname, "node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf"),
+    );
+  }
+  return proofLabelFontBytes;
+}
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
@@ -440,6 +466,7 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         run: rebound, manifest, snapshot,
         download: (storagePath) => storageBytes(sb, storagePath),
         pxPerInch: SURFACE_PX_PER_INCH, bleedInches: 5,
+        proofFont: proofLabelFont(),
         vehicle: manifest.vehicle,
         designName: snapshot.designName || snapshot.delivery?.designName || "",
         finish: snapshot.finish || "",

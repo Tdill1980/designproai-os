@@ -526,14 +526,23 @@ function assertOutputSet() {
  * read; the revision itself is still saved by the operator's own JWT.
  */
 async function runCallsOneToSeven({ operator, operatorId, generationId, delivery }) {
+  // The adapter admits EXACTLY three delivery keys and rejects any extra one
+  // outright: the request carries the recipient's identity, not their profile.
+  // The full recipient record still goes into the revision snapshot, which is a
+  // different contract with a different validator.
   const input = {
+    contractVersion: "designpro.calls-1-7-input.v1",
     vehicle: VEHICLE,
     brief: DESIGN_NAME,
     industry: "HVAC and climate control",
     colors: ["deep blue", "sunrise orange"],
     style: "modern commercial",
     orderNumber: ORDER_NUMBER,
-    delivery,
+    delivery: {
+      contractVersion: delivery.contractVersion,
+      recipientIdentityHash: delivery.recipientIdentityHash,
+      orderNumber: delivery.orderNumber,
+    },
   };
   // The exact key the adapter recomputes; anything else is rejected outright.
   const idempotencyKey = `calls17:${generationId}:${delivery.recipientIdentityHash}:${sha256(Buffer.from(ORDER_NUMBER))}`;
@@ -556,8 +565,13 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
     state = String(status?.state || "");
     if (state !== seen) { step(`  calls 1-7 ${state}`); seen = state; }
     if (state === "outputs_ready") break;
-    if (state === "failed" || state === "retryable") {
-      throw new Error(`Calls 1-7 failed (${state}): ${String(status?.failureCode || "unknown")}`);
+    // `retryable` is the worker parking a recoverable attempt, not a verdict:
+    // the request is re-claimed and runs again. Live run 31931296696 aborted
+    // here on attempt 1 and the request went on to reach outputs_ready on
+    // attempt 3, so treating it as terminal threw away a generation that had
+    // already been paid for. Only `failed` is terminal.
+    if (state === "failed") {
+      throw new Error(`Calls 1-7 failed: ${String(status?.failureCode || "unknown")}`);
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }

@@ -60,7 +60,13 @@ const ASPECT_RATIOS = Object.freeze([
   { label: "16:9", value: 16 / 9 },
   { label: "9:16", value: 9 / 16 },
 ]);
-const MAX_ASSETS = 8;
+// The budget is DERIVED, not a constant. Every surface must carry a background,
+// so a six-surface wrap already spends six assets before a single accent; a
+// fixed ceiling of 8 left room for two and rejected ordinary plans. Live run
+// 31931296696 failed exactly that way on its first attempt. The floor and the
+// ceiling now come from the same number.
+const ACCENT_ALLOWANCE = 2;
+const assetCeiling = (surfaceCount) => surfaceCount + ACCENT_ALLOWANCE;
 const SRGB_RE = /^#[0-9a-f]{6}$/i;
 const TOKEN_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -189,7 +195,8 @@ function specificationPrompt({ creativeBrief, surfaces }) {
     "  number, a domain or any readable text. Type and marks are placed later by the production system,",
     "  not painted into artwork.",
     "- Do not invent a company name and do not describe one.",
-    "- 2 to 8 assets in total. Lower zOrder paints first.",
+    `- EXACTLY one background asset per surface (${surfaces.length} of them), plus AT MOST ${ACCENT_ALLOWANCE} extra accent assets.`,
+    `- Never return more than ${surfaces.length + ACCENT_ALLOWANCE} objects in "assets". Lower zOrder paints first.`,
     "- Return JSON only.",
   ].join("\n");
 }
@@ -239,7 +246,8 @@ function validateSpecification(raw, { surfaces, canonicalStrings }) {
   const surfaceByKey = new Map(surfaces.map((surface) => [surface.surfaceKey, surface]));
   const assets = Array.isArray(raw.assets) ? raw.assets : [];
   if (!assets.length) fail("creative_assets_empty", "the specification plans no creative assets");
-  if (assets.length > MAX_ASSETS) fail("creative_assets_excessive", `the specification plans ${assets.length} assets; the ceiling is ${MAX_ASSETS}`);
+  const ceiling = assetCeiling(surfaces.length);
+  if (assets.length > ceiling) fail("creative_assets_excessive", `the specification plans ${assets.length} assets; the ceiling is ${ceiling} (one background per surface plus ${ACCENT_ALLOWANCE} accents)`);
 
   const ids = new Set();
   const covered = new Set();
@@ -426,7 +434,8 @@ async function imageDimensions(bytes) {
 
 module.exports = {
   CREATIVE_AUTHORING_CONTRACT,
-  MAX_ASSETS,
+  ACCENT_ALLOWANCE,
+  assetCeiling,
   CreativeAuthoringError,
   authorCreativeInput,
   briefProse,
