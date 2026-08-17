@@ -112,6 +112,12 @@ function authorRunMaster({ run, manifest, snapshot }) {
     return [surface.surfaceKey, { mappingId: uuidFromHash(material), mappingHash: material }];
   }));
   try {
+    // authorDesignMaster returns { master, assetSources }; the master alone is
+    // the canonical object every downstream consumer validates against
+    // DESIGN_MASTER_CONTRACT, and its asset table already carries the
+    // storagePath + contentHash the verified loaders fetch by. Returning the
+    // wrapper undetected was live failure render_master_invalid (canary
+    // 32070044230).
     return authorDesignMaster({
       identity: {
         masterId: uuidFromHash(sha256(Buffer.from(`master:${run.revision_id}:${manifestHash}`))),
@@ -131,7 +137,7 @@ function authorRunMaster({ run, manifest, snapshot }) {
       logoPlacements: input.logoPlacements,
       palette: input.palette,
       fonts: input.fonts,
-    });
+    }).master;
   } catch (error) {
     fail(String(error?.code || "call8_design_master_author_failed"), String(error?.message || error));
   }
