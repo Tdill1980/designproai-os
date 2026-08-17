@@ -31,6 +31,94 @@ question is *"how does the app behave like the working product again?"*
    are the **production artifact**. Both stay bound to the same side/source.
 10. Do not redesign the product. Match this behavior.
 
+## DesignID completion contract
+
+Owner text, verbatim:
+
+> **DESIGNID COMPLETION CONTRACT**
+>
+> Calls 1–8 constitute the complete DesignPro design workflow for one DesignID.
+>
+> Calls 1–7 produce the original design and required approved views.
+>
+> Call 8 automatically produces the 2D Production Proof for that same
+> DesignID/revision.
+>
+> After Call 8, the design is complete and frozen.
+>
+> Calls 9+ are manufacturing only and may not creatively regenerate or
+> reinterpret the design.
+>
+> The frozen DesignID/revision is the authority for every downstream panel,
+> logo asset, production file, ZIP and WrapBox delivery.
+
+The critical invariant: **one DesignID owns Calls 1–8.** The customer-approved
+DesignID/revision is frozen after Call 8, and everything after it is
+deterministic manufacturing of that exact design. No second design generation
+after approval. No independent manufacturing artwork. No reinterpreting the
+brief downstream.
+
+| Phase | Calls | Produces |
+|---|---|---|
+| Design | 1–7 | the design and all required locked-angle customer views, under one DesignIQ identity |
+| Design | 8 | the 2D Production Proof for that accepted DesignID/revision, from the same approved state and GENIE geometry — **design work complete here** |
+| Manufacturing | 9 | six correct per-side production panels |
+| Manufacturing | 10 | duplicate of the exact extracted set |
+| Manufacturing | 11 | logo/lettering separation + branded/clean panel state |
+| Delivery | — | Order Production Pack → PanelProStudio/QC → Topaz upscale → output files → ZIP → WrapBox |
+
+### Measured delta — the runtime does not match this numbering
+
+Checked 2026-08-17 against `runtime/`. The receipt kinds the runtime actually
+emits are, in full:
+
+```
+views.seven-source · call8.flat-proof · call9.surface-panels
+call10.logo-inventory · call12.topaz-upscale
+```
+
+Against the contract above:
+
+| Contract | Runtime | Status |
+|---|---|---|
+| 9 — six per-side panels | `call9.surface-panels` | agrees |
+| 10 — duplicate the extracted set | *(nothing)* | **absent** |
+| 11 — logo separation + branded/clean state | `call10.logo-inventory` | **different model, and renumbered** |
+| 12 — upscale | `call12.topaz-upscale` | agrees |
+
+Three substantive differences, not just a numbering slip:
+
+1. **There is no Call 11 and no duplicate step.** The contract's Call 10
+   (duplicate the exact extracted set) has no implementation, and logo work
+   sits at 10 rather than 11.
+2. **Logos are not separated — they are registered.** `logos.extract`
+   (`designpro-standalone-claimant.cjs:576`) reads a frozen
+   `expectedLogoInventory` from the revision snapshot, requires an explicit
+   `none`/`listed` attestation, and stores each customer-supplied logo asset
+   keyed to its `targetSurfaceKey` with a `sourceRegionHash` proving which
+   panel region it targets — `separationContract:
+   "designpro.deterministic-stored-overlay.v1"`. That is a stored overlay, not
+   a pixel lift off the branded panel.
+3. **No clean/blank panel state exists.** Nothing in `runtime/` produces a
+   branded/clean pair — no `cleanMaster`, no `background_url` equivalent, no
+   blank panel artifact of any kind.
+
+Point 3 is the one with a downstream consequence. In RestylePro the blank
+panels are load-bearing: the design team lays logo-free panels on vehicle
+templates to validate sizing during human QC, and they are part of what the
+PanelPro board receives. A manufacturing chain with no clean panel cannot serve
+that step.
+
+Point 2 is arguably the better model — a stored overlay is deterministic and
+carries none of the smear risk that made RestylePro's lift path fragile — but
+it is a different model, and whether it satisfies "logo/lettering separation +
+branded/clean panel state" is the owner's call, not a session's.
+
+**This is an owner decision, recorded not resolved.** Per `docs/SEAM-FREEZE.md`,
+a session that concludes the contract or the runtime must change stops and
+reports. No session may renumber the calls, invent a duplicate stage, or add a
+clean-panel producer on its own reading of this table.
+
 ## The operating invariant
 
 For each surface the system must produce, and show:

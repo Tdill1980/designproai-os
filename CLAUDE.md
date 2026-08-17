@@ -21,6 +21,44 @@ mirror is an explicit operator action, never pipeline default.
 Full spec, acceptance criteria, measured starting position, and the A/B session
 split: **`docs/BEHAVIORAL-SPEC.md`.**
 
+## 🔒 RULE 0.25 — DESIGNID COMPLETION CONTRACT (Trish 2026-08-17, verbatim)
+
+> **DESIGNID COMPLETION CONTRACT**
+>
+> Calls 1–8 constitute the complete DesignPro design workflow for one DesignID.
+>
+> Calls 1–7 produce the original design and required approved views.
+>
+> Call 8 automatically produces the 2D Production Proof for that same
+> DesignID/revision.
+>
+> After Call 8, the design is complete and frozen.
+>
+> Calls 9+ are manufacturing only and may not creatively regenerate or
+> reinterpret the design.
+>
+> The frozen DesignID/revision is the authority for every downstream panel,
+> logo asset, production file, ZIP and WrapBox delivery.
+
+**One DesignID owns Calls 1–8.** The customer-approved DesignID/revision is
+frozen after Call 8; everything after it is deterministic manufacturing of that
+exact design. **No second design generation after approval. No independent
+manufacturing artwork. No reinterpreting the brief downstream.**
+
+Design cycle: Calls 1–7 create the design and all locked-angle customer views
+under one DesignIQ identity → Call 8 completes the 2D Production Proof for that
+accepted DesignID/revision using the same approved state and GENIE geometry.
+**At that point design work is complete.** Then manufacturing: Call 9 six
+per-side panels → Call 10 duplicate the exact extracted set → Call 11
+logo/lettering separation + branded/clean panel state → Order Production Pack →
+PanelProStudio/QC → Topaz upscale → output files → ZIP → WrapBox.
+
+⚠️ **The runtime's call numbering does not currently match this contract, and
+the difference is not cosmetic.** It emits no Call 11, has no duplicate step,
+and produces no clean/blank panel. See the measured delta in
+`docs/BEHAVIORAL-SPEC.md` — it is an open owner decision, not something a
+session may reconcile on its own.
+
 ## 🧊 RULE 0.5 — THE GENERATION ↔ MANUFACTURING SEAM IS FROZEN (Trish 2026-08-17)
 
 Generation owns producing the approved per-side artifacts. Manufacturing/UI
