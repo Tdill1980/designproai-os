@@ -175,6 +175,22 @@ jobs:
           set +x
           npx --yes "supabase@${SUPABASE_CLI_VERSION}" link --project-ref "$EXPECTED_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
           test "$(cat supabase/.temp/project-ref)" = "$EXPECTED_PROJECT_REF"
+      - name: Repair MCP-era orphan history entries
+        run: |
+          set +x
+          # These 22 versions were applied straight to production through the
+          # management API on 2026-08-14, so they exist in the remote history
+          # with no local file and db push refuses to plan. Their schema is
+          # live and untouched; marking them reverted is bookkeeping only, so
+          # the push below applies exactly the local migrations the remote
+          # history is missing.
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status reverted \
+            20260814031135 20260814031155 20260814031413 20260814032058 \
+            20260814043013 20260814043106 20260814043415 20260814051500 \
+            20260814051533 20260814052016 20260814052253 20260814052343 \
+            20260814061303 20260814062621 20260814062701 20260814062735 \
+            20260814160419 20260814161907 20260814162002 20260814162704 \
+            20260814162744 20260814200406 || true
       - name: Record the exact dry-run migration plan
         run: |
           set -o pipefail
