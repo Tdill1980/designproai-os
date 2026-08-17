@@ -43,6 +43,37 @@ const SEED_FILES = [
   "app/src/pages/RevisionStudioIQ.tsx",
 ];
 
+/**
+ * Ingress the browser cannot show. The back half of the chain is entered by
+ * Stripe, by the Railway worker calling back, by a resume of a durable workflow
+ * and by the delivery leg - none of which appear as a call expression in a page.
+ * Recovering `activate-print-worker` from the application's own BUSY_FNS was
+ * never proof that the rest were captured, so every server-side entry point the
+ * chain has is named here and closed over like any other seed.
+ */
+const SERVER_SEEDS = [
+  // Payment. The production-pack webhook only -- restylepro-os's shared
+  // stripe-webhook also settles affiliates, marketplace orders, tokens and
+  // subscriptions, and seeding it drags four unrelated products and their
+  // schemas into a droplet that hosts none of them.
+  "productionflow-stripe-webhook",
+  // Orchestration and the durable workflow's own resume path.
+  "designpro-file-output-api",
+  "run-production-flow",
+  "production-flow-engine",
+  // The print worker leg: kick, per-panel upscale, QC job, panel validation.
+  "activate-print-worker",
+  "upscale-production-pack",
+  "designpro-ensure-qc-job",
+  "qa-check-production-panel",
+  "qa-validate-panels",
+  // Packaging and delivery: ZIP, WrapBox push, and the customer's download.
+  "package-production-files",
+  "deploy-to-wrapbox",
+  "get-public-pack",
+  "get-signed-urls",
+];
+
 const SEED_DIRS = [
   "app/src/components/designpanelpro",
   "app/src/components/designpro",
@@ -113,7 +144,12 @@ export function computeGraph() {
   }
   for (const name of declaredPipelineFunctions()) {
     if (!isFunction(name)) continue;
-    record(name).declared = true;
+    record(name).declared = "client.ts BUSY_FNS";
+    queue.push(name);
+  }
+  for (const name of SERVER_SEEDS) {
+    if (!isFunction(name)) throw new Error(`server ingress seed is missing: ${name}`);
+    record(name).declared = record(name).declared || "server ingress";
     queue.push(name);
   }
 
@@ -172,7 +208,7 @@ function main() {
     const via = row.ui.length
       ? row.ui.map((p) => p.replace("app/src/", "")).join(" ")
       : row.declared
-        ? "declared in client.ts BUSY_FNS"
+        ? row.declared
         : `called by ${row.fn.join(" ")}`;
     console.log(`${row.name.padEnd(33)} ${via}`);
   }

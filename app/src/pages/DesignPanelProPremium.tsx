@@ -1448,11 +1448,6 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     // ── EXISTING PIPELINE ─────────────────────────────────────
     // V1 direct render: AI generates the Layer-1 background render in one step.
     //
-    // PARALLEL PARSE: the AI brief parse (designpro-parse-brief) only needs the
-    // customer's text — never the render — so we kick it off NOW and let it run
-    // CONCURRENTLY with the background render. We await it after the render
-    // returns (once we have the generation_id to save the overlays against), so
-    // the parse latency is hidden behind the render instead of stacked after it.
     // BACK-OF-HOUSE: the customer types ONE brief — we never make them sort text
     // into a separate box. The Layer-2 source is built from the STRUCTURED brand
     // fields (company name first → logo piece, then phone, then explicit Layer-2
@@ -1477,31 +1472,17 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     // upload, so phone/website/text never separated → overlay_pngs stayed empty.)
     // The uploaded logo is ALSO seeded as its own node below, so you get both.
     const shouldParse = !!(params.prompt?.trim() || layer2Source);
-    const piecesPromise: Promise<any[]> = shouldParse
-      ? (async () => {
-          let pieces = layer2Source ? parseTextBriefToPieces(layer2Source) : [];
-          try {
-            const { data: parsed } = await renderClient.functions.invoke(
-              "designpro-parse-brief",
-              {
-                body: {
-                  prompt: params.prompt,
-                  // LOGO-WINS: when the customer uploaded their own logo, that logo is
-                  // the brand mark. Don't hand the company name to the brief parser —
-                  // otherwise it can re-emit a company-name text/logo piece that
-                  // competes with the uploaded logo. (Phone/website still parse.)
-                  companyName: hasUpload ? undefined : params.companyName,
-                  phone: params.phone,
-                  textLayerPrompt: params.textLayerPrompt,
-                  industry: params.industryType,
-                },
-              },
-            );
-            if (Array.isArray(parsed?.pieces) && parsed.pieces.length) pieces = parsed.pieces;
-          } catch (_) { /* keep the line-split fallback */ }
-          return pieces;
-        })()
-      : Promise.resolve([]);
+    // The Layer-2 pieces are split from the STRUCTURED brand fields by
+    // parseTextBriefToPieces — pure code, no model call. The AI brief parser
+    // that used to override it (designpro-parse-brief) also received the scene
+    // paragraph, which is how design direction leaked onto the vehicle as
+    // lettering; the BRIEF_NOISE filter below exists to catch that leak. The
+    // deterministic split was already the fallback on every failure, so it is
+    // simply the producer now, and nothing stands between the customer's words
+    // and A.C.E.
+    const piecesPromise: Promise<any[]> = Promise.resolve(
+      shouldParse && layer2Source ? parseTextBriefToPieces(layer2Source) : [],
+    );
 
     // ── Layer 2 (logo + lettering) generated IN PARALLEL with the background ──
     // Kick the transparent-PNG logo/text image generation NOW so it runs
