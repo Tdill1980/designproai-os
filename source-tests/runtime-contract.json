@@ -67,6 +67,9 @@
     "save_and_enqueue_designpro_revision",
     "verify_designpro_entice_pack"
   ],
-  "reason": "The deployed claimant consumes only standalone DesignPro workflow, immutable source, human-validated Universal GENIE geometry, receipt, artifact, bounded heavy-output, and canonical WrapBox delivery objects. All shared legacy application and dispatch objects remain prohibited."
+  "chainMigrations": [
+    "20260817200000_designpro_chain_tables.sql"
+  ],
+  "reason": "The deployed claimant consumes only standalone DesignPro workflow, immutable source, human-validated Universal GENIE geometry, receipt, artifact, bounded heavy-output, and canonical WrapBox delivery objects. All shared legacy application and dispatch objects remain prohibited to the runtime. chainMigrations is the one declared exception surface: it hosts, in DesignProAI's own project, the schema the byte-copied DesignPro edge-function chain reads and writes. It is audited separately (additive-only, RLS on, none of the runtime's own tables) instead of through the runtime closure, and the runtime itself still may not reference anything in it."
 }
 

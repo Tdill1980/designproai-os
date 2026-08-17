@@ -6,14 +6,26 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const migrationDir = path.join(root, 'supabase', 'migrations');
-const migrationNames = (await readdir(migrationDir)).filter((name) => name.endsWith('.sql')).sort();
+// The declared chain migrations (source-tests/runtime-contract.json) carry the
+// legacy schema the byte-copied edge-function chain talks to. They replay after
+// the runtime chain and are audited by schema-closure.test.mjs, not by this
+// file's runtime-schema locks.
+const chainMigrations = JSON.parse(
+  await readFile(path.join(root, 'source-tests', 'runtime-contract.json'), 'utf8'),
+).chainMigrations ?? [];
+const onDiskNames = (await readdir(migrationDir)).filter((name) => name.endsWith('.sql')).sort();
+const migrationNames = onDiskNames.filter((name) => !chainMigrations.includes(name));
 const migrations = await Promise.all(
   migrationNames.map((name) => readFile(path.join(migrationDir, name), 'utf8')),
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-six-migration chain', () => {
+test('fresh bootstrap contains one ordered twenty-six-migration chain, then the declared chain-schema migrations', () => {
   assert.equal(migrationNames.length, 26);
+  for (const name of chainMigrations) {
+    assert.ok(onDiskNames.includes(name), `declared chain migration missing on disk: ${name}`);
+    assert.ok(name > migrationNames[migrationNames.length - 1], `chain migration ${name} must replay after the runtime chain`);
+  }
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [

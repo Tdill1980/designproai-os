@@ -3,7 +3,7 @@
 # Every name here is reachable from the DesignPro chain, and the caller that
 # reaches it is recorded beside it. Nothing else is routed: the functions server
 # refuses an unlisted name, the image build drops it, and the release validators
-# reject it as an unapproved archive member. The other 410 functions
+# reject it as an unapproved archive member. The other 403 functions
 # copied from restylepro-os stay on disk for reference and migration work, and
 # never start.
 #
@@ -46,14 +46,14 @@ designpro-artboard
 # pages/DesignPanelProPremium.tsx
 designpro-clean-views
 
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+designpro-ensure-qc-job
+
 # lib/designpro-file-output.ts
 designpro-file-output-api
 
 # components/designpanelpro/ArtboardTestPanel.tsx
 designpro-flat-art
-
-# pages/DesignPanelProPremium.tsx
-designpro-parse-brief
 
 # pages/DesignPanelProPremium.tsx, pages/RevisionStudioIQ.tsx
 designpro-persist-assets
@@ -66,9 +66,6 @@ designpro-separate
 
 # pages/DesignPanelProPremium.tsx
 designpro-text-layer-generate
-
-# components/designpanelpro/DesignGenie.tsx
-elevate-prompt
 
 # components/productionflow/ExtractElementsModal.tsx
 extract-elements
@@ -97,6 +94,12 @@ generate-clean-artboard
 # hooks/useDesignPanelProLogic.ts
 generate-color-render
 
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+get-public-pack
+
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+get-signed-urls
+
 # components/production/SizeRecommendation.tsx
 get-vehicle-recommendation
 
@@ -105,6 +108,9 @@ golden-job-regression
 
 # called by panel-artboard-generator
 layerlift-engine
+
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+package-production-files
 
 # components/revisioniq/ProductionFlowLayersCard.tsx, lib/enticePanelsFromProof.ts, lib/flatMasterSheet.ts
 panel-artboard-generator
@@ -130,11 +136,23 @@ panelize-artboard
 # components/designpanelpro/ProductionPackDialog.tsx, lib/enticePanelsFromProof.ts, pages/AdminGeminiCompareStudio.tsx, pages/RevisionStudioIQ.tsx
 panelizer-step-validate
 
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+production-flow-engine
+
 # pages/ProductionFlow.tsx
 productionflow-customer-input
 
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+productionflow-stripe-webhook
+
 # pages/AdminGeminiCompareStudio.tsx, pages/RevisionStudioIQ.tsx
 proof-save-version
+
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+qa-check-production-panel
+
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+qa-validate-panels
 
 # pages/ProductionFlow.tsx
 render-verify-correct
@@ -180,6 +198,9 @@ universal-panelizer
 
 # components/productionflow/PanelPrintReadyButton.tsx
 upscale-panel-to-print
+
+# server ingress (seeded in ops/designpro-function-graph.mjs SERVER_SEEDS)
+upscale-production-pack
 
 # components/revisioniq/LayerStrip.tsx
 upscale-production-panel

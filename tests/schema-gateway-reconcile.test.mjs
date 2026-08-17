@@ -5,8 +5,15 @@ import test from "node:test";
 
 const root = new URL("..", import.meta.url);
 const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+// The declared chain migrations (source-tests/runtime-contract.json) carry the
+// legacy schema the byte-copied edge-function chain talks to, so they name
+// RestylePro objects on purpose. They are excluded from this file's standalone
+// closure scans and audited by source-tests/schema/schema-closure.test.mjs.
+const chainMigrations = JSON.parse(
+  readFileSync(new URL("../source-tests/runtime-contract.json", import.meta.url), "utf8"),
+).chainMigrations ?? [];
 const migrations = readdirSync(migrationsDir)
-  .filter((name) => name.endsWith(".sql"))
+  .filter((name) => name.endsWith(".sql") && !chainMigrations.includes(name))
   .sort()
   .map((name) => readFileSync(new URL(name, migrationsDir), "utf8"))
   .join("\n");
@@ -17,7 +24,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-15), [
+  assert.deepEqual(names.slice(-16), [
     "20260806181100_designpro_wrapbox_delivery_closure.sql",
     "20260806181200_designpro_schema_gateway_reconcile.sql",
     "20260808024500_designpro_calls_1_7_adapter.sql",
@@ -38,6 +45,11 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // that understands panels.delogo, so the database never schedules a stage
     // the live runner has not learned.
     "20260817060000_designpro_call11_qc_panels.sql",
+    // The legacy schema the byte-copied DesignPro edge-function chain reads and
+    // writes, created in DesignProAI's own project. Declared as a chain
+    // migration in source-tests/runtime-contract.json and excluded from the
+    // standalone closure scans above.
+    "20260817200000_designpro_chain_tables.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
