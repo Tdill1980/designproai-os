@@ -1,0 +1,230 @@
+DESIGNPROAI EDGE FUNCTION MIGRATION REPORT
+
+=== REQUIRED CORE ===
+FOUND: design-panel-ai-generate (1 files)
+FOUND: generate-color-render (1 files)
+FOUND: generate-2d-proof (5 files)
+FOUND: panelizer-step-proof (1 files)
+FOUND: panel-artboard-generator (1 files)
+FOUND: save-production-panels (1 files)
+FOUND: panelizer-step-validate (1 files)
+FOUND: panelizer-step-package (1 files)
+FOUND: panel-pro-extract (1 files)
+FOUND: designpro-file-output-api (1 files)
+
+=== DESIGNPRO CANDIDATES ===
+FOUND: designpro-orchestrate (1 files)
+FOUND: designpro-parse-brief (1 files)
+FOUND: designpro-persist-assets (1 files)
+FOUND: designpro-ensure-qc-job (1 files)
+FOUND: designpro-artboard (1 files)
+FOUND: designpro-separate (1 files)
+FOUND: designpro-text-layer-generate (1 files)
+
+Recursive file dependency count: 56
+
+=== REQUIRED FILES REQUIRING ADAPTATION ===
+ADAPT, DO NOT COPY AS-IS:
+  supabase/functions/generate-2d-proof/index.ts
+  Reason: contains forbidden historical infrastructure: \bWORKER_URL\b, \bWORKER_SECRET\b
+ADAPT, DO NOT COPY AS-IS:
+  supabase/functions/generate-2d-proof/proof-sheet.ts
+  Reason: contains forbidden historical infrastructure: \bWORKER_URL\b, \bWORKER_SECRET\b, \brailway\b
+ADAPT, DO NOT COPY AS-IS:
+  supabase/functions/panel-artboard-generator/index.ts
+  Reason: contains forbidden historical infrastructure: \bWORKER_URL\b, \bWORKER_SECRET\b, \brailway\b
+ADAPT, DO NOT COPY AS-IS:
+  supabase/functions/save-production-panels/index.ts
+  Reason: contains forbidden historical infrastructure: \bWORKER_SECRET\b
+
+=== COPIED FILES: 52 ===
+supabase/functions/_shared/approvemode-prompt-builder.ts
+supabase/functions/_shared/approvepro-runtime.ts
+supabase/functions/_shared/artboard-template-os.ts
+supabase/functions/_shared/aspect-ratio-requirement.ts
+supabase/functions/_shared/colorpro-enhanced-preprocessor.ts
+supabase/functions/_shared/colorpro-prompt-builder.ts
+supabase/functions/_shared/cors.ts
+supabase/functions/_shared/design-dna-capture.ts
+supabase/functions/_shared/external-db.ts
+supabase/functions/_shared/fade-reference-images.ts
+supabase/functions/_shared/fadewraps-prompt-builder.ts
+supabase/functions/_shared/finish-specifications.ts
+supabase/functions/_shared/flat-master-prompt.ts
+supabase/functions/_shared/forbidden-text-instructions.ts
+supabase/functions/_shared/gemini-key-pool.ts
+supabase/functions/_shared/graphic-and-zone-interpreter.ts
+supabase/functions/_shared/graphicspro-prompt-builder.ts
+supabase/functions/_shared/hard-enforcement-blocks.ts
+supabase/functions/_shared/layer1-clean-prompt.ts
+supabase/functions/_shared/material-calculator.ts
+supabase/functions/_shared/panelizer-os/constants.ts
+supabase/functions/_shared/panelizer-os/storage.ts
+supabase/functions/_shared/panelizer-os/vehicle-database.ts
+supabase/functions/_shared/photorealism-prompt.ts
+supabase/functions/_shared/render-events.ts
+supabase/functions/_shared/render-prompt-builder.ts
+supabase/functions/_shared/revision-prompt-engine.ts
+supabase/functions/_shared/spin-view-angles.ts
+supabase/functions/_shared/studio-environments.ts
+supabase/functions/_shared/studio-os.ts
+supabase/functions/_shared/token-gate.ts
+supabase/functions/_shared/topaz-upscale.ts
+supabase/functions/_shared/vehicle-specs-lookup.ts
+supabase/functions/_shared/vehicle-specs.json
+supabase/functions/_shared/view-angles-os.ts
+supabase/functions/design-panel-ai-generate/index.ts
+supabase/functions/designpro-artboard/index.ts
+supabase/functions/designpro-ensure-qc-job/index.ts
+supabase/functions/designpro-file-output-api/index.ts
+supabase/functions/designpro-orchestrate/index.ts
+supabase/functions/designpro-parse-brief/index.ts
+supabase/functions/designpro-persist-assets/index.ts
+supabase/functions/designpro-separate/index.ts
+supabase/functions/designpro-text-layer-generate/index.ts
+supabase/functions/generate-2d-proof/proof-band-fit.ts
+supabase/functions/generate-2d-proof/proof-text-lock.ts
+supabase/functions/generate-2d-proof/vehicle-proof-template.ts
+supabase/functions/generate-color-render/index.ts
+supabase/functions/panel-pro-extract/index.ts
+supabase/functions/panelizer-step-package/index.ts
+supabase/functions/panelizer-step-proof/index.ts
+supabase/functions/panelizer-step-validate/index.ts
+
+=== REFUSED / REQUIRES ADAPTATION: 4 ===
+supabase/functions/generate-2d-proof/index.ts
+  -> contains forbidden historical infrastructure: \bWORKER_URL\b, \bWORKER_SECRET\b
+supabase/functions/generate-2d-proof/proof-sheet.ts
+  -> contains forbidden historical infrastructure: \bWORKER_URL\b, \bWORKER_SECRET\b, \brailway\b
+supabase/functions/panel-artboard-generator/index.ts
+  -> contains forbidden historical infrastructure: \bWORKER_URL\b, \bWORKER_SECRET\b, \brailway\b
+supabase/functions/save-production-panels/index.ts
+  -> contains forbidden historical infrastructure: \bWORKER_SECRET\b
+
+=== BROKEN/LEGACY TARGET PATHS TO REVIEW ===
+
+=== TARGET RAILWAY / WORKER REFERENCE AUDIT ===
+README.md
+  -> \brailway\b
+runtime/index.js
+  -> \bWORKER_SECRET\b
+runtime/topaz-upscale.cjs
+  -> \brailway\b
+ops/configure-env.sh
+  -> \bWORKER_SECRET\b
+ops/README.md
+  -> \bWORKER_SECRET\b, \brailway\b
+ops/tests/server-cutover.test.mjs
+  -> \bWORKER_SECRET\b
+ops/tests/ops-hardening.test.mjs
+  -> \bWORKER_SECRET\b
+gateway/src/server.mjs
+  -> \bWORKER_SECRET\b
+gateway/tests/gateway.test.mjs
+  -> \bWORKER_SECRET\b
+supabase/functions/save-production-panels/index.ts
+  -> \bWORKER_SECRET\b
+supabase/functions/panel-artboard-generator/index.ts
+  -> \bWORKER_SECRET\b
+supabase/functions/generate-2d-proof/index.ts
+  -> \bWORKER_SECRET\b
+supabase/functions/generate-2d-proof/proof-sheet.ts
+  -> \bWORKER_SECRET\b
+web/tests/boundary.test.mjs
+  -> \bWORKER_SECRET\b
+.github/workflows/bootstrap-restylepro-worker-access.yml
+  -> \bWORKER_SECRET\b, \brailway\b
+app/src/components/admin/PipelineHealthCard.tsx
+  -> \brailway\b
+app/src/components/production/GenieUniversalPanelizerCard.tsx
+  -> \brailway\b
+app/src/components/production/ProductionAgentReportsCard.tsx
+  -> \brailway\b
+app/src/lib/flatMasterSheet.ts
+  -> \brailway\b
+app/src/lib/wrapboxElements.ts
+  -> \brailway\b
+app/src/lib/enticePanelsFromProof.ts
+  -> \brailway\b
+app/src/lib/storage-image.ts
+  -> \brailway\b
+app/src/lib/creatorMarketAutoBuild.ts
+  -> \brailway\b
+app/src/lib/miniWrapKit.ts
+  -> \brailway\b
+app/src/pages/ProductionFlow.tsx
+  -> \brailway\b
+app/src/pages/AdminScriptStudio.tsx
+  -> \brailway\b
+app/src/pages/WrapBox.tsx
+  -> \brailway\b
+app/src/pages/ApproveProPage.tsx
+  -> \brailway\b
+app/src/pages/AdminGeminiCompareStudio.tsx
+  -> \brailway\b
+worker/designpro-entice-workflow.cjs
+  -> \bWORKER_SECRET\b
+worker/index.js
+  -> \bWORKER_SECRET\b
+worker/designpro-workflow.cjs
+  -> \bWORKER_SECRET\b
+scripts/production-canary.mjs
+  -> \bWORKER_SECRET\b
+tests/suite-source-provenance.test.mjs
+  -> \brailway\b
+tests/schema-gateway-reconcile.test.mjs
+  -> \bWORKER_SECRET\b, \brailway\b
+source-tests/schema/schema-closure.test.mjs
+  -> \brailway\b
+source-tests/schema/standalone-claimant-contract.test.mjs
+  -> \brailway\b
+source-tests/schema/progressive-identity.test.mjs
+  -> \brailway\b
+source-tests/schema/design-master-revisions.test.mjs
+  -> \brailway\b
+source-tests/schema/revision-source-ingest.test.mjs
+  -> \brailway\b
+source-tests/schema/calls-1-7-adapter.test.mjs
+  -> \brailway\b
+source-tests/runtime/runtime-closure.test.mjs
+  -> \bWORKER_SECRET\b, \brailway\b
+source-tests/runtime/gateway-ingestion-contract.test.mjs
+  -> \bWORKER_SECRET\b
+source-tests/runtime/runtime-smoke.test.mjs
+  -> \bWORKER_SECRET\b
+docs/DESIGNPROAI_DETERMINISTIC_END_TO_END_WORKFLOW_2026-08-08.md
+  -> \brailway\b
+docs/migration/2026-08-12-suite-migration-inventory.md
+  -> \brailway\b
+docs/migration/2026-08-08-suite-source-provenance.json
+  -> \brailway\b
+
+=== CONFIG.TOML AUDIT ===
+CONFIG OK: design-panel-ai-generate
+CONFIG OK: generate-color-render
+CONFIG OK: generate-2d-proof
+CONFIG OK: panelizer-step-proof
+CONFIG OK: panel-artboard-generator
+CONFIG OK: save-production-panels
+CONFIG OK: panelizer-step-validate
+CONFIG OK: panelizer-step-package
+CONFIG OK: panel-pro-extract
+CONFIG OK: designpro-file-output-api
+CONFIG OK: designpro-orchestrate
+CONFIG OK: designpro-parse-brief
+CONFIG OK: designpro-persist-assets
+CONFIG OK: designpro-ensure-qc-job
+CONFIG OK: designpro-artboard
+CONFIG OK: designpro-separate
+CONFIG OK: designpro-text-layer-generate
+
+=== DESIGNIQ BRAIN CHECK ===
+OK: _shared/token-gate.ts
+OK: _shared/design-dna-capture.ts
+OK: _shared/studio-os.ts
+OK: _shared/view-angles-os.ts
+OK: _shared/gemini-key-pool.ts
+OK: _shared/render-events.ts
+
+=== RENDER CONTRACT CHECK ===
+MODEL LOCK FOUND: gemini-3-pro-image-preview
