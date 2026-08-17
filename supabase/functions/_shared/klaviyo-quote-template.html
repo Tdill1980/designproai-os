@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#000;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#000;">
+    <tr><td align="center" style="padding:24px 16px;">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#0d0d0d;border:1px solid #1a1a1a;border-radius:12px;overflow:hidden;">
+
+        <!-- Brand header -->
+        <tr><td style="padding:24px 32px;background:linear-gradient(135deg,#2563eb,#a855f7);border-bottom:1px solid #1a1a1a;text-align:center;">
+          {% if event.shop_logo_url %}
+            <img src="{{ event.shop_logo_url }}" alt="{{ event.shop_name|default:'WePrintWraps' }}" style="max-height:48px;max-width:200px;" />
+          {% else %}
+            <h2 style="margin:0;font-size:20px;color:#fff;font-weight:700;letter-spacing:0.5px;">{{ event.shop_name|default:'WePrintWraps' }}</h2>
+          {% endif %}
+          {% if event.vehicle %}
+            <p style="margin:8px 0 0;font-size:12px;color:#e0e7ff;font-weight:600;">{{ event.vehicle }}</p>
+          {% endif %}
+        </td></tr>
+
+        <!-- Greeting -->
+        <tr><td style="padding:24px 32px 0;">
+          <p style="margin:0 0 4px;font-size:14px;color:#fff;font-weight:600;">Hi {{ event.customer_name|default:'there' }},</p>
+          <p style="margin:8px 0 0;font-size:14px;color:#ccc;line-height:1.6;">
+            Here's the estimate we put together for your {{ event.vehicle|default:'vehicle' }}.
+            {% if event.color_name %}Color: <span style="color:#fff;">{{ event.color_name }}</span>{% if event.finish %} &middot; {{ event.finish }}{% endif %}.{% endif %}
+          </p>
+        </td></tr>
+
+        <!-- Hero render -->
+        {% if event.hero_render_url %}
+          <tr><td style="padding:24px 32px 0;">
+            <img src="{{ event.hero_render_url }}" alt="Your wrap" style="width:100%;border-radius:12px;display:block;" />
+          </td></tr>
+        {% endif %}
+
+        <!-- Design story strip -->
+        {% if event.base_render_url or event.precision_mod_renders %}
+          <tr><td style="padding:18px 32px 0;">
+            <p style="margin:0 0 8px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:600;">How your wrap was built</p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;">
+              <tr>
+                {% if event.base_render_url %}
+                  <td style="width:25%;padding:4px;vertical-align:top;">
+                    <img src="{{ event.base_render_url }}" alt="Base" style="width:100%;border-radius:6px;display:block;" />
+                    <p style="margin:6px 0 0;font-size:10px;color:#888;text-align:center;">Base</p>
+                  </td>
+                {% endif %}
+                {% for mod in event.precision_mod_renders %}
+                  <td style="width:25%;padding:4px;vertical-align:top;">
+                    <img src="{{ mod.render_url }}" alt="{{ mod.label }}" style="width:100%;border-radius:6px;display:block;" />
+                    <p style="margin:6px 0 0;font-size:10px;color:#888;text-align:center;">+ {{ mod.label }}</p>
+                  </td>
+                {% endfor %}
+              </tr>
+            </table>
+          </td></tr>
+        {% endif %}
+
+        <!-- Quote / line items -->
+        <tr><td style="padding:24px 32px 0;">
+          <p style="margin:0 0 4px;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:600;">Estimate</p>
+          {% if event.quote_number %}<p style="margin:0 0 12px;font-size:10px;color:#666;">Quote #{{ event.quote_number }}</p>{% endif %}
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+            <tr>
+              <td style="padding:8px 0;font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #333;">Item</td>
+              <td style="padding:8px 0;font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;text-align:right;border-bottom:1px solid #333;">Amount</td>
+            </tr>
+            {% for item in event.line_items %}
+              <tr>
+                <td style="padding:8px 0;font-size:13px;color:#e0e0e0;border-bottom:1px solid #222;">
+                  {{ item.label }}{% if item.detail %}<br/><span style="font-size:11px;color:#888;">{{ item.detail }}</span>{% endif %}
+                </td>
+                <td style="padding:8px 0;font-size:13px;color:#fff;text-align:right;font-weight:600;border-bottom:1px solid #222;">
+                  {{ item.amount_formatted }}
+                </td>
+              </tr>
+            {% endfor %}
+            <tr>
+              <td style="padding:14px 0 0;font-size:15px;color:#00C7FF;font-weight:700;">Total</td>
+              <td style="padding:14px 0 0;font-size:15px;color:#00C7FF;font-weight:700;text-align:right;">{{ event.quote_total }}</td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <!-- CTAs -->
+        {% if event.share_url or event.pay_url %}
+          <tr><td style="padding:28px 32px 0;text-align:center;">
+            {% if event.pay_url %}
+              <a href="{{ event.pay_url }}" style="display:inline-block;background:linear-gradient(135deg,#22c55e,#10b981);color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;margin-right:8px;">
+                Pay Now &rarr; Cart Loaded
+              </a>
+            {% endif %}
+            {% if event.share_url %}
+              <a href="{{ event.share_url }}" style="display:inline-block;background:linear-gradient(135deg,#2563eb,#a855f7);color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 24px;border-radius:8px;">
+                View your estimate online
+              </a>
+            {% endif %}
+            {% if event.pay_url %}<p style="margin:10px 0 0;font-size:10px;color:#888;">One-click checkout &mdash; your items are pre-loaded in the WePrintWraps cart.</p>{% endif %}
+            {% if event.share_url %}<p style="margin:10px 0 0;font-size:10px;color:#666;">{{ event.share_url }}</p>{% endif %}
+          </td></tr>
+        {% endif %}
+
+        <!-- DesignPro pitch (WPW only) -->
+        {% if event.is_wpw_shop %}
+          <tr><td style="padding:24px 32px 0;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#111;border:1px solid #1f2937;border-radius:12px;">
+              <tr><td style="padding:22px 24px;text-align:center;">
+                <p style="margin:0 0 8px;font-size:11px;color:#06b6d4;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Need the design done? Read this first.</p>
+                <p style="margin:0 0 12px;font-size:14px;color:#ccc;line-height:1.6;">Our custom wrap design fee is <strong style="color:#fff;">$975</strong> per design.</p>
+                <p style="margin:0 0 14px;font-size:14px;color:#ccc;line-height:1.6;">Or &mdash; for <span style="color:#fff;font-weight:600;">less than that</span> &mdash; subscribe to <strong style="color:#fff;">RestylePro DesignPro Studio at $699/mo</strong> and get unlimited photoreal AI mockups, our real human designer producing Production Packs, all the design tools, and print-ready files included.</p>
+                <p style="margin:0 0 18px;font-size:13px;color:#a3a3a3;line-height:1.55;font-style:italic;">One subscription month &lt; one custom design. And you keep designing &mdash; forever.</p>
+                <a href="https://www.restyleproai.com/pricing" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#a855f7);color:#fff;text-decoration:none;font-weight:700;font-size:13px;padding:12px 24px;border-radius:8px;">Subscribe to DesignPro Studio &rarr;</a>
+                <p style="margin:12px 0 0;font-size:11px;color:#aaa;">WPW Family rate: <strong style="color:#fff;">$649/mo</strong> &middot; $50 off for life</p>
+              </td></tr>
+            </table>
+          </td></tr>
+        {% endif %}
+
+        <!-- Footer -->
+        <tr><td style="padding:32px;border-top:1px solid #1a1a1a;text-align:center;">
+          <p style="margin:0 0 8px;font-size:11px;color:#888;">
+            Questions? Reply to this email{% if event.shop_email %} or write to <a href="mailto:{{ event.shop_email }}" style="color:#00C7FF;text-decoration:none;">{{ event.shop_email }}</a>{% endif %}.
+          </p>
+          <p style="margin:0 0 8px;font-size:9px;color:#444;">{% unsubscribe 'Unsubscribe' %}</p>
+          <p style="margin:0;font-size:9px;color:#333;">Powered by RestylePro &middot; Professional Vehicle Wrap Visualization</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body></html>
