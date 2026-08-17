@@ -19,6 +19,7 @@ const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProdu
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
+const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
 
 const CLAIM_SECONDS = 900;
 const HEARTBEAT_MS = 30_000;
@@ -28,16 +29,23 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const stageLeaseContext = new AsyncLocalStorage();
 const STAGES = Object.freeze([
   "revision.freeze", "manifest.resolve", "proof.build", "panels.build",
-  "logos.extract", "pack.verify", "pack.activate", "source.verify",
+  // Call 11 sits between Call 10 and the PanelPro gate: its de-logoed
+  // duplicates are what that gate validates against vehicle templates.
+  "logos.extract", "panels.delogo", "pack.verify", "pack.activate", "source.verify",
   "await_panelpro_preflight_qc", "enhance.upscale", "output.build", "output.verify",
   "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver",
 ]);
 const RECEIPTS = Object.freeze([
   "views.seven-source", "call8.flat-proof", "call9.surface-panels", "call10.logo-inventory",
+  "call11.qc-panels",
   "call12.topaz-upscale", "output.verified", "final.human-qc", "stamp", "zip", "wrapbox.delivery",
 ]);
 const ARTIFACT_KINDS = Object.freeze([
-  "flat-proof", "panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
+  // "qc-panel" is the Call 11 de-logoed duplicate. It is deliberately NOT
+  // "panel": the branded six stay the only "panel" artifacts, so source.verify's
+  // exactly-six-distinct-surface_key assertion keeps working untouched, and no
+  // downstream consumer can mistake a QC instrument for production artwork.
+  "flat-proof", "panel", "qc-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
 // The Call 9 rule the database enforces. Each output side is its own rendered
@@ -601,6 +609,135 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const inventory = expected.map((item, index) => ({ placementKey: produced[index]?.metadata?.placementKey, identityKey: item.identityKey, targetSurfaceKey: item.surfaceKey, contentHash: produced[index]?.contentHash || null }));
     const inventoryHash = hashJson(inventory);
     return complete(sb, stage, run, { verified: true, receiptKind: "call10.logo-inventory", call: 10, inventoryContract: "designpro.expected-logo-inventory.v1", exactSetVerified: true, inventoryHash, inventory }, null, produced);
+  }
+  // Vision bridge for Call 11. The ported detector takes an injected geminiJson
+// so its re-ask loop and box parsing are provable without a provider; this is
+// the live implementation it is given in production.
+const LOGO_LOCATE_MODEL = "gemini-2.5-flash";
+
+async function locateLogosForPanel(panelBytes, surfaceKey) {
+  const apiKey = String(process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "").trim();
+  if (!apiKey) throw new StageError("call11_logo_locate_key_missing", "Call 11 logo location requires GOOGLE_AI_API_KEY", true);
+  // The detector is fed a bounded copy: a 1280px long edge is ample for locating
+  // a mark, and it keeps a 4K production panel from being base64'd whole.
+  const locateB64 = (await sharp(panelBytes, { limitInputPixels: false })
+    .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
+    .png().toBuffer()).toString("base64");
+  const geminiJson = async (parts) => {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${LOGO_LOCATE_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts }],
+        generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 8192 },
+      }),
+    });
+    if (!response.ok) throw new Error(`logo_locate_http_${response.status}`);
+    const payload = await response.json();
+    const text = (payload?.candidates?.[0]?.content?.parts || []).map((part) => part?.text || "").join("").trim();
+    if (!text) throw new Error("logo locate returned no text");
+    return JSON.parse(text);
+  };
+  try {
+    return await locateLogoElements(locateB64, { geminiJson, log: (message) => console.warn(`${message} (${surfaceKey})`) });
+  } catch (error) {
+    // Detection failure is retryable: a QC duplicate built from an unverified
+    // detection would claim to be de-logoed without being so.
+    throw new StageError("call11_logo_locate_failed", `${surfaceKey}: ${error?.message || error}`, true);
+  }
+}
+
+// CALL 11 — DE-LOGO DUPLICATE SET.
+  //
+  // Duplicate the six immutable Call 9 branded panels, remove logos from the
+  // duplicates ONLY, and emit six qc-panel artifacts for PanelPro sizing and
+  // template QC. The branded set is production artwork and is never touched:
+  // every source panel's bytes are re-hashed after the edit and the stage fails
+  // closed if any moved.
+  //
+  // These derivatives are non-authoritative. They are never printed and never
+  // enter Topaz, the output set or the ZIP.
+  if (stage.stage_key === "panels.delogo") {
+    const call9 = await stageOutput(sb, run.id, "panels.build");
+    const brandedPanels = await artifacts(sb, run.id, ["panel"]);
+    if (brandedPanels.length !== SURFACE_KEYS.length || new Set(brandedPanels.map((row) => row.surface_key)).size !== SURFACE_KEYS.length) {
+      throw new StageError("call11_branded_set_incomplete", "Call 11 requires the exact six branded Call 9 panels", false);
+    }
+    const spools = [];
+    const produced = [];
+    const removals = {};
+    for (const surface of SURFACE_KEYS) {
+      const row = brandedPanels.find((item) => item.surface_key === surface);
+      if (!row) throw new StageError("call11_branded_panel_missing", surface, false);
+      const expectedHash = String(call9.panelHashes?.[surface] || "").toLowerCase();
+      if (!HASH_RE.test(expectedHash) || String(row.content_hash).toLowerCase() !== expectedHash) {
+        throw new StageError("call11_branded_receipt_mismatch", `${surface} branded panel does not match the Call 9 receipt`, false);
+      }
+      const branded = await storageBytes(sb, row.storage_path);
+      if (hashBytes(branded) !== expectedHash) {
+        throw new StageError("call11_branded_panel_changed", `${surface} branded panel changed before duplication`, false);
+      }
+
+      // The duplicate is an independent buffer. The branded bytes are only ever
+      // read, so there is no path by which this stage can write over Call 9.
+      const duplicate = Buffer.from(branded);
+      const image = sharp(duplicate, { limitInputPixels: false });
+      const { width, height } = await image.metadata();
+      if (!width || !height) throw new StageError("call11_panel_not_decodable", surface, false);
+
+      const located = await locateLogosForPanel(duplicate, surface);
+      const rects = logoBoxesToPixelRects(located, width, height);
+      // HONEST NO-OP: a panel with no logo mark still produces its duplicate so
+      // the side is present for template QC, and records removedCount 0 so "no
+      // logos found" is never read as "removal succeeded".
+      const edited = isHonestNoOp(rects)
+        ? await sharp(duplicate, { limitInputPixels: false }).png().toBuffer()
+        : await sharp(duplicate, { limitInputPixels: false })
+            .composite(rects.map((rect) => ({
+              input: { create: { width: rect.w, height: rect.h, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } },
+              left: rect.x, top: rect.y,
+            })))
+            .png().toBuffer();
+
+      const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-panels/${surface}.png`;
+      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, edited, "image/png");
+      if (stored.spool) spools.push(stored.spool);
+      removals[surface] = rects.length;
+      produced.push(artifact("qc-panel", stored.storagePath, stored.hash, stored.bytes, surface, {
+        call: 11, role: "panelpro-qc-duplicate", authoritative: false, printable: false,
+        // Step 5 of the contract: every duplicate binds to the branded panel it
+        // came from, by hash and by surface_key.
+        sourcePanelHash: expectedHash, sourcePanelPath: row.storage_path, surfaceKey: surface,
+        removedLogoCount: rects.length, removedLabels: rects.map((rect) => rect.label),
+        removalContract: "designpro.call11-delogo-duplicate.v1",
+        trimWidthInches: row.metadata?.trimWidthInches ?? null,
+        trimHeightInches: row.metadata?.trimHeightInches ?? null,
+        bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+      }));
+    }
+
+    // Step 3, proven rather than asserted: re-read every branded panel and
+    // confirm it is byte-for-byte what Call 9 published.
+    for (const surface of SURFACE_KEYS) {
+      const row = brandedPanels.find((item) => item.surface_key === surface);
+      const after = hashBytes(await storageBytes(sb, row.storage_path));
+      if (after !== String(call9.panelHashes?.[surface] || "").toLowerCase()) {
+        throw new StageError("call11_branded_panel_mutated", `${surface} branded panel was modified by Call 11`, false);
+      }
+    }
+    const qcHashes = Object.fromEntries(produced.map((item) => [item.surfaceKey, item.contentHash]));
+    if (new Set(Object.values(qcHashes)).size !== produced.length) {
+      throw new StageError("call11_qc_panel_reuse", "Every QC duplicate must be its own image", false);
+    }
+    const completed = await complete(sb, stage, run, {
+      verified: true, receiptKind: "call11.qc-panels", call: 11,
+      role: "panelpro-qc-duplicate", authoritative: false,
+      sides: produced.map((item) => item.surfaceKey),
+      qcPanelHashes: qcHashes, sourcePanelHashes: call9.panelHashes || {},
+      removedLogoCounts: removals, brandedSetPreserved: true,
+      removalContract: "designpro.call11-delogo-duplicate.v1",
+    }, null, produced);
+    for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 11 QC panel spool cleanup failed: ${error.message}`));
+    return completed;
   }
   if (stage.stage_key === "pack.verify") {
     const views = await receipt(sb, run.id, "views.seven-source");
