@@ -719,35 +719,65 @@ CREATE TABLE IF NOT EXISTS public.workforce_runs (
   PRIMARY KEY (id)
 );
 
-ALTER TABLE public.blocked_users ADD CONSTRAINT blocked_users_email_key UNIQUE (email);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.blocked_users ADD CONSTRAINT blocked_users_email_key UNIQUE (email);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.design_generation_assets ADD CONSTRAINT design_generation_assets_gen_iter_uniq UNIQUE (generation_id, iteration_index);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.design_generation_assets ADD CONSTRAINT design_generation_assets_gen_iter_uniq UNIQUE (generation_id, iteration_index);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.design_version_commits ADD CONSTRAINT design_version_commits_job_version_unique UNIQUE (job_id, version_number);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.design_version_commits ADD CONSTRAINT design_version_commits_job_version_unique UNIQUE (job_id, version_number);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.designpro_entice_packs ADD CONSTRAINT designpro_entice_packs_idempotency_unique UNIQUE (tenant_key, idempotency_key);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.designpro_entice_packs ADD CONSTRAINT designpro_entice_packs_idempotency_unique UNIQUE (tenant_key, idempotency_key);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.designpro_entice_packs ADD CONSTRAINT designpro_entice_packs_revision_definition_unique UNIQUE (revision_id, definition_version);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.designpro_entice_packs ADD CONSTRAINT designpro_entice_packs_revision_definition_unique UNIQUE (revision_id, definition_version);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.designpro_entice_packs ADD CONSTRAINT designpro_entice_packs_workflow_run_id_key UNIQUE (workflow_run_id);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.designpro_entice_packs ADD CONSTRAINT designpro_entice_packs_workflow_run_id_key UNIQUE (workflow_run_id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.designpro_production_jobs ADD CONSTRAINT designpro_production_jobs_user_id_idempotency_key_key UNIQUE (user_id, idempotency_key);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.designpro_production_jobs ADD CONSTRAINT designpro_production_jobs_user_id_idempotency_key_key UNIQUE (user_id, idempotency_key);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.manufacturer_colors ADD CONSTRAINT manufacturer_colors_manufacturer_product_code_key UNIQUE (manufacturer, product_code);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.manufacturer_colors ADD CONSTRAINT manufacturer_colors_manufacturer_product_code_key UNIQUE (manufacturer, product_code);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.manufacturer_colors ADD CONSTRAINT manufacturer_colors_product_code_unique UNIQUE (product_code);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.manufacturer_colors ADD CONSTRAINT manufacturer_colors_product_code_unique UNIQUE (product_code);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.production_panel_dispatches ADD CONSTRAINT production_panel_dispatches_production_job_id_source_hash_p_key UNIQUE (production_job_id, source_hash, pack_version, run_key, panel_key);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.production_panel_dispatches ADD CONSTRAINT production_panel_dispatches_production_job_id_source_hash_p_key UNIQUE (production_job_id, source_hash, pack_version, run_key, panel_key);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.user_roles ADD CONSTRAINT user_roles_user_id_role_key UNIQUE (user_id, role);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.user_roles ADD CONSTRAINT user_roles_user_id_role_key UNIQUE (user_id, role);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.vehicle_specs_cache ADD CONSTRAINT vehicle_specs_cache_make_model_year_range_key UNIQUE (make, model, year_range);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.vehicle_specs_cache ADD CONSTRAINT vehicle_specs_cache_make_model_year_range_key UNIQUE (make, model, year_range);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.vinyl_reference_images ADD CONSTRAINT vinyl_reference_images_swatch_id_image_url_key UNIQUE (swatch_id, image_url);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.vinyl_reference_images ADD CONSTRAINT vinyl_reference_images_swatch_id_image_url_key UNIQUE (swatch_id, image_url);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.workflow_stage_runs ADD CONSTRAINT workflow_stage_runs_idempotency UNIQUE (run_id, idempotency_key);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.workflow_stage_runs ADD CONSTRAINT workflow_stage_runs_idempotency UNIQUE (run_id, idempotency_key);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
-ALTER TABLE public.workflow_stage_runs ADD CONSTRAINT workflow_stage_runs_logical_key UNIQUE (run_id, stage_key, scope_key);
+DO $ADDC$ BEGIN
+  ALTER TABLE public.workflow_stage_runs ADD CONSTRAINT workflow_stage_runs_logical_key UNIQUE (run_id, stage_key, scope_key);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $ADDC$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_render_templates_signature ON public.render_templates USING btree (prompt_signature, vehicle_signature);
 
