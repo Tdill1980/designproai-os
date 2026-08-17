@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-five-migration chain', () => {
-  assert.equal(migrationNames.length, 25);
+test('fresh bootstrap contains one ordered twenty-six-migration chain', () => {
+  assert.equal(migrationNames.length, 26);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -38,6 +38,10 @@ test('fresh bootstrap contains one ordered twenty-five-migration chain', () => {
       // Storage RLS never covered the calls-1-7 subtree, so an operator could
       // not see the seven views their own generation had just produced.
       '20260814160000',
+      // Call 11 schedules panels.delogo, the de-logo duplicate set that
+      // PanelPro validates against vehicle templates. It lands after the
+      // runner that already understands the stage.
+      '20260817060000',
     ],
   );
 });
