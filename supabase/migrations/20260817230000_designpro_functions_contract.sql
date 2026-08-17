@@ -1,11 +1,11 @@
 -- Minimum schema/data contract required by the 17 migrated DesignPro edge
 -- functions and the ported worker. Every table and function body below is
--- extracted verbatim from the proven RestylePro production database via
+-- extracted verbatim from the proven predecessor production database via
 -- pg_catalog -- nothing is guessed. Scope is the exact .from()/.rpc()
 -- surface of the migrated code plus the helpers those RPC bodies call
 -- (sync_workflow_run_status, get_tier_limit) and the tables those helpers
 -- touch (render_usage, token_transactions, workflow_resource_leases).
--- Unrelated RestylePro product schema is NOT migrated. Non-unique indexes,
+-- Unrelated predecessor product schema is NOT migrated. Non-unique indexes,
 -- triggers, and RLS policies are deliberately deferred: the chain runs
 -- service-role.
 
@@ -2261,3 +2261,33 @@ BEGIN
 END
 $function$
 ;
+
+
+-- SECURITY DEFINER functions must not be executable by PUBLIC or anon
+-- (designpro_bootstrap.test.sql assertion 20). The chain runs service-role;
+-- client-facing grants are a deliberate later step with the UI wiring.
+DO $$
+DECLARE f record;
+BEGIN
+  FOR f IN
+    SELECT p.oid::regprocedure AS sig
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prosecdef
+      AND p.proname IN (
+        'add_user_tokens','heartbeat_workflow_stage','kick_print_worker',
+        'kick_production_slicer','can_generate_render',
+        'activate_designpro_entice_pack','claim_workflow_stage',
+        'complete_workflow_stage','defer_workflow_stage','fail_workflow_stage',
+        'verify_designpro_entice_pack','begin_production_panel_dispatch',
+        'complete_production_panel_dispatch','fail_production_panel_dispatch',
+        'heartbeat_production_panel_dispatch','claim_production_package_dispatch',
+        'claim_workflow_resource_lease','heartbeat_workflow_resource_lease',
+        'release_workflow_resource_lease','has_role',
+        'sync_workflow_run_status','get_tier_limit')
+  LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f.sig);
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM anon', f.sig);
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM authenticated', f.sig);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f.sig);
+  END LOOP;
+END $$;

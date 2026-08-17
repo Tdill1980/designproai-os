@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-six-migration chain', () => {
-  assert.equal(migrationNames.length, 26);
+test('fresh bootstrap contains one ordered twenty-seven-migration chain', () => {
+  assert.equal(migrationNames.length, 27);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -42,6 +42,9 @@ test('fresh bootstrap contains one ordered twenty-six-migration chain', () => {
       // PanelPro validates against vehicle templates. It lands after the
       // runner that already understands the stage.
       '20260817060000',
+      // The proven-implementation schema/data contract for the migrated
+      // DesignPro edge functions and worker (owner decision, PR #73).
+      '20260817230000',
     ],
   );
 });
