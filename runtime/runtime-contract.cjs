@@ -10,6 +10,13 @@ const MAX_SOURCE_BYTES = 512 * 1024 * 1024;
 const UUID_PART = "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const STORAGE_NAMESPACE_RES = Object.freeze([
   new RegExp(`^users/${UUID_PART}/revisions/${UUID_PART}/inputs/[A-Za-z0-9_-]+/[0-9a-f]{64}\\.[A-Za-z0-9]+$`),
+  // Calls 1-7 authored creative assets (creative-authoring.cjs writes
+  // users/<owner>/revisions/<revision>/authoring/<assetId>.<ext>). The proof
+  // stage's verified loader re-hashes every downloaded byte against the
+  // master's pinned contentHash, so recognising the namespace does not trust
+  // the path. Missing here was live failure unsafe_storage_path (canary
+  // 32072921253).
+  new RegExp(`^users/${UUID_PART}/revisions/${UUID_PART}/authoring/[A-Za-z0-9._-]+\\.[A-Za-z0-9]+$`),
   new RegExp(`^designpro/user_${UUID_PART}/${UUID_PART}/[A-Za-z0-9._/-]+$`),
   new RegExp(`^wrapbox/user_${UUID_PART}/${UUID_PART}/${UUID_PART}/[A-Za-z0-9._/-]+$`),
 ]);
