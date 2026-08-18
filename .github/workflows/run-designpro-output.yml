@@ -19,7 +19,7 @@ on:
           - DO_NOT_RUN
           - RUN_DESIGNPRO_OUTPUT
       payload:
-        description: "Job payload JSON: {jobId,userId,orderNumber,panels:[{panelKey,panelLabel,widthInches,heightInches,inputPath}]}"
+        description: "Job payload JSON: {jobId,userId,orderNumber,panels:[{panelKey,panelLabel,widthInches,heightInches,inputPath,sourceUrl?,sha256?}]}"
         required: true
         type: string
 
@@ -76,19 +76,48 @@ jobs:
           test "$(hostname)" = "$EXPECTED_HOSTNAME"
           trap 'rm -f /tmp/designpro-output-payload.json /tmp/designpro-panel-*.json' EXIT
           command -v jq >/dev/null || { apt-get update -qq && apt-get install -y -qq jq; }
-          # The fleet behind worker.designproai.com holds the authoritative
-          # WORKER_SECRET; read it from the running container (runtime.env is
-          # the fallback) and use it only on loopback.
-          WS=$(docker inspect designproai-worker-a-1 --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^WORKER_SECRET=' | head -1 | cut -d= -f2- || true)
-          if [ -z "$WS" ]; then WS=$(grep '^WORKER_SECRET=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-); fi
-          test -n "$WS"
-          PORT=3101
+          # The legacy fleet on 3101/3102 runs with the PREDECESSOR project's
+          # Supabase env (proven 2026-08-18: Call 8's masters landed in the
+          # predecessor's storage). The ported designpro-worker on loopback
+          # 3005 runs with the STANDALONE runtime.env, so the print files land
+          # on the DesignProAI project. Target that one; its secret and the
+          # standalone service key both come from runtime.env.
+          WS=$(grep '^WORKER_SECRET=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-)
+          SB_URL=$(grep '^SUPABASE_URL=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-)
+          SB_KEY=$(grep -E '^(SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SERVICE_KEY)=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-)
+          test -n "$WS" && test -n "$SB_URL" && test -n "$SB_KEY"
+          echo "standalone Supabase host: $(echo "$SB_URL" | sed 's|https://||;s|/.*||')"
+          PORT=3005
           curl -fsS -m 10 "http://127.0.0.1:$PORT/health" >/dev/null
+
+          # ── Stage the frozen Call-8 masters into the standalone project ──
+          # A panel whose payload carries sourceUrl is fetched from there,
+          # byte-verified against its Call-8 sha256 receipt, and uploaded to
+          # the standalone wrap-files bucket at inputPath — a pure copy of the
+          # frozen bytes, never a transformation.
+          count=$(jq '.panels | length' /tmp/designpro-output-payload.json)
+          for i in $(seq 0 $((count - 1))); do
+            src=$(jq -r --argjson i "$i" '.panels[$i].sourceUrl // empty' /tmp/designpro-output-payload.json)
+            [ -n "$src" ] || continue
+            dst=$(jq -r --argjson i "$i" '.panels[$i].inputPath' /tmp/designpro-output-payload.json)
+            want=$(jq -r --argjson i "$i" '.panels[$i].sha256 // empty' /tmp/designpro-output-payload.json)
+            tmp=/tmp/designpro-stage-master.png
+            curl -fsS -m 120 -o "$tmp" "$src"
+            got=$(sha256sum "$tmp" | awk '{print $1}')
+            if [ -n "$want" ] && [ "$got" != "$want" ]; then
+              echo "sha mismatch for $dst: want $want got $got" >&2; exit 1
+            fi
+            code=$(curl -sS -m 120 -o /tmp/designpro-stage-up.json -w '%{http_code}' \
+              -X POST "$SB_URL/storage/v1/object/wrap-files/$dst" \
+              -H "Authorization: Bearer $SB_KEY" -H "Content-Type: image/png" -H "x-upsert: true" \
+              --data-binary @"$tmp")
+            rm -f "$tmp"
+            case "$code" in 200|201) echo "staged $dst ($got)";; *) echo "stage upload $dst failed HTTP $code"; cat /tmp/designpro-stage-up.json; exit 1;; esac
+          done
 
           jobId=$(jq -r .jobId /tmp/designpro-output-payload.json)
           userId=$(jq -r .userId /tmp/designpro-output-payload.json)
           orderNumber=$(jq -r .orderNumber /tmp/designpro-output-payload.json)
-          count=$(jq '.panels | length' /tmp/designpro-output-payload.json)
           test -n "$jobId" && test -n "$userId" && test -n "$orderNumber" && test "$count" -gt 0
           echo "Job $jobId order $orderNumber — $count panels"
 
