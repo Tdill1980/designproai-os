@@ -1,0 +1,218 @@
+name: Diagnose the stalled DesignPro runtime claimant
+
+# READ-ONLY EVIDENCE CAPTURE. Nothing here restarts, removes, redeploys or
+# reconfigures anything, and it calls neither claim RPC.
+#
+# WHY IT EXISTS. Both runtime replicas stopped polling at 2026-08-18 01:06 UTC
+# (claim_designpro_generation_request 01:06:24, claim_designpro_stage 01:06:29)
+# while their containers stayed "Up ... (unhealthy)" with unchanged docker-proxy
+# PIDs across two inventories 16 minutes apart. So the process did not exit and
+# compose never restarted it -- the loops stopped inside a living process. The
+# inventories cannot say WHY, because the only remote diagnostic the deploy
+# workflow carries (docker logs --tail 40) runs solely when its inventory step
+# REFUSES, and the inventory passed. This workflow captures that missing
+# evidence once, deliberately, instead of guessing at a repair.
+#
+# The question it has to settle, from evidence rather than hypothesis:
+#   A -- the Node/runtime process exited or crashed
+#   B -- the container and process stayed alive but both claim loops stopped
+#   C -- a concurrent container or process interfered
+# More than one may hold; the capture shows its work either way.
+#
+# SECRETS. Environment variable NAMES are captured, never values: every
+# `docker inspect` here uses a targeted --format template, and the env list is
+# piped through `cut -d= -f1`. No `docker inspect <container>` full-JSON dump
+# appears anywhere, because that would print every value.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Read-only diagnostic against the production droplet"
+        required: true
+        type: choice
+        default: DO_NOT_RUN
+        options:
+          - DO_NOT_RUN
+          - RUN_READ_ONLY_DIAGNOSTIC
+      logs_since:
+        description: "Start of the runtime log window (RFC3339 UTC)"
+        required: true
+        type: string
+        default: "2026-08-18T00:50:00Z"
+      logs_until:
+        description: "End of the runtime log window (RFC3339 UTC)"
+        required: true
+        type: string
+        default: "2026-08-18T01:15:00Z"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-runtime-diagnostic
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  TARGET_HOSTNAME: designproai-prod-sfo3
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+
+jobs:
+  diagnose:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'RUN_READ_ONLY_DIAGNOSTIC'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+      LOGS_SINCE: ${{ inputs.logs_since }}
+      LOGS_UNTIL: ${{ inputs.logs_until }}
+    steps:
+      - name: Fail closed if the production environment withheld the SSH secret
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          # Distinct exit code so "branch protection withheld the secret" is
+          # never mistaken for "the droplet is unreachable". If this fires, the
+          # answer is to run the workflow from a ref the environment allows --
+          # not to find another way onto the host.
+          if [[ -z ${SSH_PRIVATE_KEY:-} ]]; then
+            printf '::error title=Environment secret withheld::DESIGNPROAI_SSH_PRIVATE_KEY is empty for ref %s. The designproai-production environment did not release it to this branch.\n' "$GITHUB_REF" >&2
+            exit 39
+          fi
+          [[ $LOGS_SINCE =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
+          [[ $LOGS_UNTIL =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
+
+      - name: Pin the droplet SSH identity
+        id: ssh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          public_key="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          fail() { local code="$1"; shift; printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$code"; }
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$public_key" 2>/dev/null || fail 31 "automation private key could not be parsed"
+          observed=$(ssh-keygen -lf "$public_key" -E sha256 2>/dev/null | awk 'NR == 1 {print $2}')
+          [[ $observed == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || fail 38 "automation key fingerprint does not match the protected pin"
+
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts" || fail 33 "host-key scan failed"
+          [[ -s $known_hosts ]] || fail 34 "host-key scan returned nothing"
+          mapfile -t host_fingerprints < <(ssh-keygen -lf "$known_hosts" -E sha256 2>/dev/null | awk '{print $2}' | sort -u)
+          [[ ${#host_fingerprints[@]} -eq 1 ]] || fail 36 "ambiguous host key"
+          [[ ${host_fingerprints[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || fail 37 "host fingerprint does not match the protected pin"
+
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Capture the read-only runtime diagnostic
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+                    -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "LOGS_SINCE='$LOGS_SINCE' LOGS_UNTIL='$LOGS_UNTIL' bash -s" \
+            > "$RUNNER_TEMP/runtime-diagnostic.txt" 2>&1 <<'REMOTE' || true
+          set -uo pipefail
+          # No `set -e`: a container that has already been removed must leave a
+          # recorded gap and let the rest of the capture continue, exactly like
+          # an absent artifact elsewhere in this system. Silence is not evidence.
+          OFFICIAL=(designproai-os-runtime-1-1 designproai-os-runtime-2-1)
+          SUSPECT=(condescending_hellman)
+
+          echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "hostname=$(hostname)"
+          echo "log_window=${LOGS_SINCE} .. ${LOGS_UNTIL}"
+          echo "current_release=$(readlink -f /opt/designproai-os/current 2>/dev/null || echo '(none)')"
+
+          echo
+          echo "=== docker ps --no-trunc (running) ==="
+          docker ps --no-trunc 2>&1 || echo "(docker ps failed)"
+          echo
+          echo "=== docker ps -a --no-trunc (includes exited) ==="
+          docker ps -a --no-trunc 2>&1 || echo "(docker ps -a failed)"
+
+          for c in "${OFFICIAL[@]}" "${SUSPECT[@]}"; do
+            echo
+            echo "############ container: $c ############"
+            if ! docker inspect "$c" >/dev/null 2>&1; then
+              echo "ABSENT — no container by this name (removed, or never existed)"
+              continue
+            fi
+            # Targeted templates only. A full `docker inspect` would print every
+            # environment VALUE, which this capture must never do.
+            echo "-- identity --"
+            docker inspect -f 'id={{.Id}}' "$c" 2>&1
+            docker inspect -f 'image_ref={{.Config.Image}}' "$c" 2>&1
+            docker inspect -f 'image_sha={{.Image}}' "$c" 2>&1
+            echo "-- command --"
+            docker inspect -f 'entrypoint={{json .Config.Entrypoint}}' "$c" 2>&1
+            docker inspect -f 'cmd={{json .Config.Cmd}}' "$c" 2>&1
+            echo "-- lifecycle --"
+            docker inspect -f 'created={{.Created}}' "$c" 2>&1
+            docker inspect -f 'started={{.State.StartedAt}}' "$c" 2>&1
+            docker inspect -f 'finished={{.State.FinishedAt}}' "$c" 2>&1
+            docker inspect -f 'status={{.State.Status}} running={{.State.Running}} pid={{.State.Pid}}' "$c" 2>&1
+            docker inspect -f 'exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{.State.Error}}' "$c" 2>&1
+            docker inspect -f 'restart_count={{.RestartCount}} restart_policy={{json .HostConfig.RestartPolicy}}' "$c" 2>&1
+            echo "-- health --"
+            docker inspect -f 'health={{json .State.Health}}' "$c" 2>&1
+            echo "-- mounts --"
+            docker inspect -f 'mounts={{json .Mounts}}' "$c" 2>&1
+            echo "-- network --"
+            docker inspect -f 'network_mode={{.HostConfig.NetworkMode}}' "$c" 2>&1
+            docker inspect -f 'networks={{json .NetworkSettings.Networks}}' "$c" 2>&1
+            echo "-- labels --"
+            docker inspect -f 'labels={{json .Config.Labels}}' "$c" 2>&1
+            echo "-- environment variable NAMES only (values never printed) --"
+            docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" 2>/dev/null | cut -d= -f1 | sort -u
+            echo "-- process table (docker top: host-side, no exec into the container) --"
+            docker top "$c" -eo pid,ppid,etime,stat,wchan:20,cmd 2>&1 || echo "(docker top unavailable — container not running)"
+          done
+
+          for c in "${OFFICIAL[@]}"; do
+            echo
+            echo "############ logs: $c — window ${LOGS_SINCE}..${LOGS_UNTIL} ############"
+            docker logs --timestamps --since "$LOGS_SINCE" --until "$LOGS_UNTIL" "$c" 2>&1 || echo "(logs unavailable)"
+            echo
+            echo "############ logs: $c — latest 100 lines ############"
+            docker logs --timestamps --tail 100 "$c" 2>&1 || echo "(logs unavailable)"
+          done
+
+          echo
+          echo "=== systemd unit history (restarts would show here) ==="
+          systemctl is-active designproai-os.service 2>&1 || true
+          journalctl -u designproai-os.service --since "$LOGS_SINCE" --until "$LOGS_UNTIL" --no-pager 2>&1 | tail -80 || true
+          echo
+          echo "=== host resources now ==="
+          free -h 2>&1 || true
+          df -h / 2>&1 || true
+          echo
+          echo "=== kernel OOM kills, if any ==="
+          dmesg -T 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process' | tail -20 || echo "(none found or dmesg restricted)"
+          REMOTE
+
+          echo "---- diagnostic capture ----"
+          cat "$RUNNER_TEMP/runtime-diagnostic.txt"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: designproai-runtime-diagnostic-${{ github.run_id }}
+          path: ${{ runner.temp }}/runtime-diagnostic.txt
+          if-no-files-found: warn
+          retention-days: 90
