@@ -57,3 +57,30 @@ test("each panel is paired with its own approved 3D view", () => {
   assert.match(adapter, /designViews\[viewType\] = view\.signedUrl/);
   assert.match(adapter, /view\.sourceViewType \|\| SOURCE_VIEW_TYPE_FOR_ROLE/);
 });
+
+/**
+ * One resolver, two surfaces. The card renders the same product wherever it is
+ * mounted, so where its rows come from is decided once -- otherwise the job
+ * page and RevisionStudio can disagree about what a run published.
+ */
+test("both surfaces resolve the standalone source through one hook", () => {
+  const hook = readFileSync(new URL("../app/src/hooks/useStandaloneProductionLayers.ts", import.meta.url), "utf8");
+  const jobPage = readFileSync(new URL("../app/src/pages/designpro/ProductionWorkflow.tsx", import.meta.url), "utf8");
+  const studio = readFileSync(new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url), "utf8");
+
+  assert.match(hook, /export function useStandaloneProductionLayers/);
+  assert.match(hook, /loadProductionLayers\(id\)/);
+  // Null is the fallback signal: a design that is not a standalone run leaves
+  // the card resolving for itself, exactly as it does today.
+  assert.match(hook, /\.catch\(\(\) => \{ if \(live\) setLayers\(null\); \}\)/);
+  assert.match(hook, /if \(!layers \|\| !id\) return null/);
+
+  for (const [name, page] of [["the job page", jobPage], ["RevisionStudio", studio]]) {
+    assert.match(page, /useStandaloneProductionLayers/, `${name} must use the shared resolver`);
+  }
+  assert.match(studio, /source=\{standaloneProductionLayers\}/);
+  assert.match(jobPage, /source=\{layersSource\}/);
+  // The two products stay two checkouts.
+  assert.match(hook, /checkout\("print_pack_entitlement"\)/);
+  assert.match(hook, /checkout\("logo_pack"\)/);
+});

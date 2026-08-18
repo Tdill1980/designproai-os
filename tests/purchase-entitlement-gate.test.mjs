@@ -114,7 +114,7 @@ test("case: both — both asset sets, one run, two entitlement identities", () =
 test("expensive stages read the manifest, not storage", () => {
   assert.match(claimant, /const mayUpscale = new Set\(authorized\.upscale \|\| \[\]\)/);
   assert.match(claimant, /if \(!\(authorized\.output \|\| \[\]\)\.length\)/);
-  assert.match(claimant, /stageOutput\(sb, run\.id, "await_purchase"\)/);
+  assert.match(claimant, /stageOutput\(sb, runId, "await_purchase"\)/);
   assert.match(claimant, /contract: "designpro\.authorized-assets\.v1"/);
 });
 
@@ -135,4 +135,85 @@ test("the customer reaches checkout through dpApi, not a legacy function", () =>
   assert.match(card, /await injected\.onOrderProductionPack!\(\)/);
   const logoHandler = card.slice(card.indexOf("const handleOrderLogoPack"));
   assert.ok(logoHandler.indexOf("if (injected)") < logoHandler.indexOf("create-single-use-checkout"));
+});
+
+
+/* ── the manifest governs the ENTIRE back half ─────────────────────── */
+
+test("every downstream stage consumes the one frozen manifest", () => {
+  // Seven readers: upscale, output.build, output.verify, both QC gates, stamp,
+  // zip, delivery. One authority, not seven product checks.
+  assert.ok(claimant.includes("async function readAuthorizedAssets(sb, runId)"));
+  assert.ok(claimant.match(/readAuthorizedAssets\(sb, run\.id\)/g).length >= 7,
+    "each paid stage must read the manifest rather than re-deriving what was bought");
+  for (const stage of ["enhance.upscale", "output.build", "output.verify", "stamp.build", "zip.build", "wrapbox.deliver"]) {
+    assert.ok(claimant.includes(`stage.stage_key === "${stage}"`), `${stage} must still exist`);
+  }
+});
+
+test("QC is product-aware, so a logo-only purchase cannot deadlock a panel gate", () => {
+  const gate = claimant.slice(claimant.indexOf('stage.stage_key === "await_panelpro_preflight_qc"'));
+  const body = gate.slice(0, gate.indexOf('stage.stage_key === "enhance.upscale"'));
+  assert.match(body, /qcScope: authorized\.qcScope/);
+  assert.match(body, /productionPackAuthorized: authorized\.productionPackAuthorized/);
+  assert.match(body, /logoPackAuthorized: authorized\.logoPackAuthorized/);
+  // One gate, scoped -- not a second QC pipeline.
+  assert.equal(claimant.match(/request_designpro_human_gate/g).length, 1);
+});
+
+test("QC scope per purchase state", () => {
+  assert.deepEqual(manifestFor([]).qcScope, []);
+  assert.deepEqual(manifestFor(["logo_pack"]).qcScope, ["logo-assets"]);
+  assert.deepEqual(manifestFor(["print_pack_entitlement"]).qcScope, ["production-panels"]);
+  assert.deepEqual(manifestFor(["logo_pack", "print_pack_entitlement"]).qcScope,
+    ["production-panels", "logo-assets"]);
+});
+
+test("output.verify proves the purchased set and only that", () => {
+  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 18);
+  assert.equal(manifestFor(["logo_pack"]).requiredOutputFiles, 0);
+  assert.match(claimant, /if \(!authorized\.requiredOutputFiles\) \{/);
+  assert.match(claimant, /output_unpurchased_present/,
+    "outputs on a run that did not buy them is a fault, not something to verify");
+  assert.match(claimant, /exactSurfaceFormatCount: authorized\.requiredOutputFiles/);
+});
+
+test("the certificate names what was actually approved", () => {
+  assert.match(claimant, /approvedProducts: authorized\.products/);
+  assert.match(claimant, /approvedDeliverables: authorized\.deliverables/);
+});
+
+test("the ZIP carries the purchased deliverable and not the other one", () => {
+  const pack = manifestFor(["print_pack_entitlement"]);
+  const logo = manifestFor(["logo_pack"]);
+  assert.deepEqual(pack.zipKinds, ["flat-proof", "panel", "output", "stamp"]);
+  assert.ok(!pack.zipKinds.includes("logo"), "a Production Pack ZIP must not give away the $29 product");
+  assert.deepEqual(logo.zipKinds, ["logo", "stamp"]);
+  assert.ok(!logo.zipKinds.includes("output"), "a Logo Pack ZIP must not give away the $299 product");
+  // The seven approved renders are the Production Pack's design proofs.
+  assert.equal(pack.zipIncludesSourceViews, true);
+  assert.equal(logo.zipIncludesSourceViews, false);
+  assert.match(claimant, /const rows = await artifacts\(sb, run\.id, zipKinds\)/);
+  assert.match(claimant, /authorized\.logoPackAuthorized && !counts\.logo/);
+});
+
+test("delivery ships only authorized artifacts and keeps the products distinct", () => {
+  assert.match(claimant, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/,
+    "Call 10 logos exist for the preview; a Production-Pack-only run must not deliver them");
+  assert.match(claimant, /const expectedSourceViews = authorized\.zipIncludesSourceViews \? 7 : 0/);
+  assert.match(claimant, /products: authorized\.products, deliverables: authorized\.deliverables/);
+  const both = manifestFor(["logo_pack", "print_pack_entitlement"]);
+  assert.deepEqual(both.deliverables.map((item) => item.product),
+    ["print_pack_entitlement", "logo_pack"],
+    "$328 of purchases must not collapse into one ambiguous entitlement");
+  assert.equal(manifestFor(["print_pack_entitlement"]).deliverables.length, 1);
+});
+
+test("case 7: wrong product or amount fails closed", () => {
+  assert.match(runtime, /\["print_pack_entitlement", "logo_pack"\]\.includes\(String\(body\.productType\)\)/);
+  assert.match(runtime, /unknown_product_type/);
+  assert.match(runtime, /!Number\.isInteger\(body\.amountCents\) \|\| body\.amountCents <= 0/);
+  assert.match(gateway, /skipped: "not_a_designpro_product"/);
+  assert.match(migration, /prepared_pack_not_found/,
+    "a payment naming a design with no prepared pack records nothing");
 });

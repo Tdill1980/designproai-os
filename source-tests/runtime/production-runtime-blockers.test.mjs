@@ -133,7 +133,12 @@ test("production artifact metadata matches the exact output and repeated-logo SQ
 
 test("production preserves Call 10 logos through source verify, ZIP, and WrapBox manifest", () => {
   assert.match(claimantSource, /stage\.stage_key === "source\.verify"[\s\S]*?sourceProofs[\s\S]*?sourcePanels[\s\S]*?sourceLogos[\s\S]*?copyPinnedSourceArtifact/);
-  assert.match(claimantSource, /artifacts\(sb, run\.id, \["flat-proof", "panel", "logo", "output", "stamp"\]\)/);
+  // The ZIP's kinds now come from the purchase manifest rather than a fixed
+  // list, because a Production Pack archive must not give away the $29 Logo
+  // Pack. Call 10's logos still flow -- when the customer bought them.
+  assert.match(claimantSource, /const rows = await artifacts\(sb, run\.id, zipKinds\)/);
+  assert.match(claimantSource, /zipKinds: Object\.freeze\(\[[\s\S]{0,200}logos \? \["logo"\] : \[\]/);
+  assert.match(claimantSource, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/);
   assert.match(claimantSource, /contract: MANIFEST_CONTRACT[\s\S]*?logos,[\s\S]*?files/);
   assert.match(claimantSource, /publicationPending: true/);
   assert.doesNotMatch(claimantSource, /deliver_designpro_wrapbox_pack/);
@@ -142,7 +147,11 @@ test("production preserves Call 10 logos through source verify, ZIP, and WrapBox
 test("the final deterministic pack includes the seven source views and GENIE dimension manifest", () => {
   assert.match(claimantSource, /sourceViewZipEntries\(sb, sourceViews\)/);
   assert.match(claimantSource, /dimension-manifest\/designpro-genie-dimension-manifest\.json/);
-  assert.match(claimantSource, /"source-view": 7, "dimension-manifest": 1/);
+  // Seven for the Production Pack, whose design proofs they are; none for a
+  // Logo Pack, which buys separated assets rather than the design's proof set.
+  assert.match(claimantSource, /"source-view": viewEntries\.length, "dimension-manifest": 1/);
+  assert.match(claimantSource, /zipIncludesSourceViews: production/);
+  assert.match(claimantSource, /const expectedSourceViews = authorized\.zipIncludesSourceViews \? 7 : 0/);
   assert.match(claimantSource, /sourceViews: zipReceipt\.receipt\.sourceViews, dimensionManifest: zipReceipt\.receipt\.dimensionManifest/);
 });
 
@@ -193,7 +202,11 @@ test("heavy output, lease-loss abort, structural output QC, deterministic stamp 
   assert.doesNotMatch(claimantSource, /p_ttl_seconds/);
   assert.doesNotMatch(claimantSource, /sb\.rpc\("release_designpro_heavy_lease"/);
   assert.match(claimantSource, /database stage transition releases the exact slot atomically/);
-  assert.match(claimantSource, /exactSurfaceFormatCount: 18/);
+  // Eighteen is the Production Pack's set: six sides x three formats. A run
+  // that did not buy it must not be asked to prove it, and one that did still
+  // fails closed without the complete set.
+  assert.match(claimantSource, /exactSurfaceFormatCount: authorized\.requiredOutputFiles/);
+  assert.match(claimantSource, /requiredOutputFiles: production \? 18 : 0/);
   assert.match(claimantSource, /createDeterministicZip64Stream/);
   assert.match(claimantSource, /uploadSpoolWithTus/);
   assert.match(claimantSource, /stamped-call8-proof\.png/);

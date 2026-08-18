@@ -424,17 +424,55 @@ function authorizedAssetManifest(paidProducts) {
   return Object.freeze({
     contract: "designpro.authorized-assets.v1",
     products,
-    // Artifact kinds each stage may read. Absent means unauthorized, not
-    // "missing" -- the difference matters when a stage decides to fail or skip.
+    productionPackAuthorized: production,
+    logoPackAuthorized: logos,
+    // Artifact kinds each stage may read. Absent means UNAUTHORIZED, which is
+    // not the same as missing -- the difference decides whether a stage fails
+    // or completes as inapplicable.
     upscale: Object.freeze([...(production ? ["panel", "qc-panel"] : []), ...(logos ? ["logo"] : [])]),
     output: Object.freeze(production ? ["upscaled-panel"] : []),
+    // The complete production output set is six sides x three formats. A run
+    // that did not buy it must not be asked to prove it; a run that did must
+    // fail closed without it.
+    requiredOutputFiles: production ? 18 : 0,
+    // What the humans are asked to check. QC validates the purchased asset
+    // classes and is never handed a class the customer did not buy.
+    qcScope: Object.freeze([
+      ...(production ? ["production-panels"] : []),
+      ...(logos ? ["logo-assets"] : []),
+    ]),
+    // What the archive carries. The stamp is in both: it is the QC evidence for
+    // whatever was approved, and each product needs its own.
+    zipKinds: Object.freeze([
+      ...(production ? ["flat-proof", "panel", "output"] : []),
+      ...(logos ? ["logo"] : []),
+      "stamp",
+    ]),
+    // The seven approved renders are the Production Pack's design proofs. A
+    // Logo Pack buys separated assets, not the design's proof set.
+    zipIncludesSourceViews: production,
     delivery: Object.freeze([
       ...(production ? ["output", "stamp", "flat-proof"] : []),
       ...(logos ? ["logo"] : []),
     ]),
-    productionPackAuthorized: production,
-    logoPackAuthorized: logos,
+    // What the customer bought, named so WrapBox can tell one from the other
+    // rather than showing an ambiguous single pack.
+    deliverables: Object.freeze([
+      ...(production ? [{ product: "print_pack_entitlement", label: "Production Pack" }] : []),
+      ...(logos ? [{ product: "logo_pack", label: "Logo Pack" }] : []),
+    ]),
   });
+}
+
+/**
+ * The frozen manifest for this run, read once from the gate that created it.
+ *
+ * Every downstream stage asks this rather than asking what was bought. A rule
+ * repeated in six stages is six rules, and the sixth is the one that drifts.
+ */
+async function readAuthorizedAssets(sb, runId) {
+  const gate = await stageOutput(sb, runId, "await_purchase");
+  return requiredObject(gate.authorizedAssetManifest, "authorized asset manifest");
 }
 
 async function ensureAutomaticProduction(sb, enticeRunId) {
@@ -1263,7 +1301,22 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     });
   }
   if (stage.stage_key === "await_panelpro_preflight_qc" || stage.stage_key === "await_final_human_qc") {
-    const { error } = await sb.rpc("request_designpro_human_gate", { p_run_id: run.id, p_stage_key: stage.stage_key, p_details: { requestedBy: "designpro-standalone-claimant", requestedAt: new Date().toISOString() } });
+    // QC RECEIVES EXACTLY WHAT WAS PURCHASED.
+    //
+    // A $29 Logo Pack contains no production panels, so a gate that assumes six
+    // of them would deadlock a purchase that is complete. The gate is one gate;
+    // its SCOPE is what changes. Handing a reviewer a class the customer never
+    // bought is asking them to approve something that does not exist.
+    const authorized = await readAuthorizedAssets(sb, run.id);
+    const { error } = await sb.rpc("request_designpro_human_gate", {
+      p_run_id: run.id, p_stage_key: stage.stage_key,
+      p_details: {
+        requestedBy: "designpro-standalone-claimant", requestedAt: new Date().toISOString(),
+        qcScope: authorized.qcScope, products: authorized.products,
+        productionPackAuthorized: authorized.productionPackAuthorized,
+        logoPackAuthorized: authorized.logoPackAuthorized,
+      },
+    });
     if (error) throw new StageError("human_gate_request_failed", error.message, false);
     return;
   }
@@ -1277,10 +1330,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     // WHAT THIS RUN MAY ENHANCE. Read from the frozen gate receipt rather than
     // from storage: a preview asset exists for everything, so "it is there" has
     // never been the same question as "it was paid for".
-    const authorized = requiredObject(
-      (await stageOutput(sb, run.id, "await_purchase")).authorizedAssetManifest,
-      "authorized asset manifest",
-    );
+    const authorized = await readAuthorizedAssets(sb, run.id);
     const mayUpscale = new Set(authorized.upscale || []);
     if (!mayUpscale.size) {
       throw new StageError("enhance_nothing_authorized", "No purchased asset class authorizes enhancement on this run", false);
@@ -1374,10 +1424,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     // PNG/TIFF/EPS are the Production Pack's deliverable. A run that bought only
     // the Logo Pack builds none of them -- and says so, rather than producing an
     // empty set that reads as a failure.
-    const authorized = requiredObject(
-      (await stageOutput(sb, run.id, "await_purchase")).authorizedAssetManifest,
-      "authorized asset manifest",
-    );
+    const authorized = await readAuthorizedAssets(sb, run.id);
     if (!(authorized.output || []).length) {
       return complete(sb, stage, run, {
         verified: true, outputCount: 0, outputSetHash: null,
@@ -1390,7 +1437,18 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     return completed;
   }
   if (stage.stage_key === "output.verify") {
+    // Prove the purchased output set and no other. A Production Pack still
+    // fails closed without its complete eighteen; a Logo Pack is never asked
+    // for panel outputs it did not buy.
+    const authorized = await readAuthorizedAssets(sb, run.id);
     const rows = await artifacts(sb, run.id, ["output"]);
+    if (!authorized.requiredOutputFiles) {
+      if (rows.length) throw new StageError("output_unpurchased_present", "Production outputs exist on a run that did not buy them", false);
+      return complete(sb, stage, run, {
+        verified: true, receiptKind: "output.verified", exactSurfaceFormatCount: 0,
+        authorizedAssetManifest: authorized, notApplicable: ["output"],
+      }, null, []);
+    }
     const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
     let verified;
     try {
@@ -1406,11 +1464,16 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       ...verified,
       verified: true,
       receiptKind: "output.verified",
-      exactSurfaceFormatCount: 18,
+      exactSurfaceFormatCount: authorized.requiredOutputFiles,
+      authorizedAssetManifest: authorized,
       structuralVerification: verified.files,
     }, null, []);
   }
   if (stage.stage_key === "stamp.build") {
+    // The certificate states what was approved. Stamping "Production Pack
+    // approved" on a run that only bought the $29 Logo Pack would be a claim
+    // about work nobody paid for or reviewed.
+    const authorized = await readAuthorizedAssets(sb, run.id);
     const finalQc = await receipt(sb, run.id, "final.human-qc");
     const verifiedBy = requiredString(finalQc.receipt?.verifiedBy, "final QC verifiedBy");
     const approvalRef = requiredString(finalQc.receipt?.approvalRef, "final QC approvalRef");
@@ -1436,9 +1499,9 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const sealOverlay = await sharp(png).resize(sealSize, sealSize).png().toBuffer();
     const stampedProof = await sharp(proofBytes).composite([{ input: sealOverlay, gravity: "southeast" }]).png().toBuffer();
     const stampedStored = await uploadProducedBytes(sb, run, stage, runtimeConfig, `designpro/${tenantKey(run.tenant_key)}/${run.id}/stamped-call8-proof.png`, stampedProof, "image/png");
-    const seal = artifact("stamp", sealStored.storagePath, sealStored.hash, sealStored.bytes, "seal", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), source: "server-svg-port-of-frozen-canvas-stamp" });
+    const seal = artifact("stamp", sealStored.storagePath, sealStored.hash, sealStored.bytes, "seal", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), source: "server-svg-port-of-frozen-canvas-stamp", approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables });
     const stamped = artifact("stamp", stampedStored.storagePath, stampedStored.hash, stampedStored.bytes, "stamped-proof", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), sourceProofHash: proofRows[0].content_hash, sealHash: sealStored.hash, composition: "deterministic-southeast-overlay.v1" });
-    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash }, stampedStored.hash, [seal, stamped]);
+    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables }, stampedStored.hash, [seal, stamped]);
     if (stampedStored.spool) await removeCommittedSpool(stampedStored.spool).catch((error) => console.error(`[DESIGNPRO-OS] committed stamped-proof spool cleanup failed: ${error.message}`));
     return completed;
   }
@@ -1446,12 +1509,30 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const stampReceipt = await receipt(sb, run.id, "stamp");
     const designId = requiredString(stampReceipt.receipt?.designId, "stamp DesignID");
     const orderNumber = requiredString(stampReceipt.receipt?.orderNumber, "stamp Order #");
-    const rows = await artifacts(sb, run.id, ["flat-proof", "panel", "logo", "output", "stamp"]);
-    const counts = Object.fromEntries(["flat-proof", "panel", "logo", "output", "stamp"].map((kind) => [kind, rows.filter((item) => item.artifact_kind === kind).length]));
-    if (counts["flat-proof"] !== 1 || counts.panel !== 6 || counts.output !== 18 || counts.stamp !== 2) throw new StageError("zip_artifacts_incomplete", "ZIP requires Call 8 proof, six Call 9 masters, Call 10 logos, 18 outputs, seal, and stamped proof", false);
-    const sourceViewsReceipt = await receipt(sb, sourceRunId, "views.seven-source");
-    const sourceViews = sourceViewsReceipt.receipt?.viewReceipts;
-    const viewEntries = sourceViewZipEntries(sb, sourceViews);
+    // THE ARCHIVE CARRIES WHAT WAS BOUGHT.
+    //
+    // Both products can be fulfilled in one run, so the ZIP cannot simply take
+    // everything that exists: a Production Pack archive containing separated
+    // logos would give away the $29 product, and a Logo Pack archive containing
+    // the panel output set would give away the $299 one.
+    const authorized = await readAuthorizedAssets(sb, run.id);
+    const zipKinds = [...new Set(authorized.zipKinds || [])];
+    const rows = await artifacts(sb, run.id, zipKinds);
+    const counts = Object.fromEntries(zipKinds.map((kind) => [kind, rows.filter((item) => item.artifact_kind === kind).length]));
+    if (counts.stamp !== 2) throw new StageError("zip_artifacts_incomplete", "Every delivered pack carries its seal and stamped proof", false);
+    if (authorized.productionPackAuthorized
+      && (counts["flat-proof"] !== 1 || counts.panel !== SURFACE_KEYS.length || counts.output !== authorized.requiredOutputFiles)) {
+      throw new StageError("zip_artifacts_incomplete", "The Production Pack ZIP requires the Call 8 proof, six Call 9 masters and the complete output set", false);
+    }
+    if (authorized.logoPackAuthorized && !counts.logo) {
+      throw new StageError("zip_artifacts_incomplete", "The Logo Pack ZIP requires the separated logo assets that were purchased", false);
+    }
+    // The seven approved renders are the Production Pack's design proofs; a
+    // Logo Pack buys separated assets, not the design's proof set.
+    const sourceViews = authorized.zipIncludesSourceViews
+      ? (await receipt(sb, sourceRunId, "views.seven-source")).receipt?.viewReceipts
+      : [];
+    const viewEntries = authorized.zipIncludesSourceViews ? sourceViewZipEntries(sb, sourceViews) : [];
     const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
     const dimensionManifestBytes = Buffer.from(JSON.stringify(canonical(dimensionManifest)));
     const dimensionManifestHash = hashBytes(dimensionManifestBytes);
@@ -1479,7 +1560,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },
       businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
     });
-    const includedKinds = { ...counts, "source-view": 7, "dimension-manifest": 1, "design-order-identity": 1 };
+    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1 };
     const signal = stageLeaseContext.getStore()?.controller?.signal;
     let spool;
     try {
@@ -1492,6 +1573,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       const result = await complete(sb, stage, run, {
         verified: true, receiptKind: "zip", zipHash: stored.contentHash, zipByteSize: stored.byteSize,
         materialHash, entryCount: entries.length, includedKinds,
+        authorizedAssetManifest: authorized, deliverables: authorized.deliverables,
         sourceViews: archivedSourceViews,
         dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },
         businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
@@ -1505,6 +1587,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     }
   }
   if (stage.stage_key === "wrapbox.deliver") {
+    // Delivery carries only what was authorized, and says which product each
+    // part belongs to. An artifact reaching the customer because it happened to
+    // be in storage is the same defect as an unpaid upscale, one step later.
+    const authorized = await readAuthorizedAssets(sb, run.id);
     const zipReceipt = await receipt(sb, run.id, "zip");
     const finalQc = await receipt(sb, run.id, "final.human-qc");
     const approvedAt = requiredString(finalQc.receipt?.approvedAt, "final QC approvedAt");
@@ -1524,16 +1610,26 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       || zipReceipt.receipt?.businessIdentity?.designId !== businessIdentity.designId || zipReceipt.receipt?.businessIdentity?.orderNumber !== businessIdentity.orderNumber) {
       throw new StageError("delivery_business_identity_drift", "ZIP DesignID or Order # no longer matches the immutable revision", false);
     }
-    const logoRows = await artifacts(sb, run.id, ["logo"]);
+    // Separated logos are the Logo Pack's deliverable. On a Production-Pack-only
+    // run they exist -- Call 10 produced them for the entice preview -- and must
+    // not be delivered.
+    const logoRows = authorized.logoPackAuthorized ? await artifacts(sb, run.id, ["logo"]) : [];
     const logos = logoRows.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, displayName: row.metadata?.displayName, targetSurfaceKey: row.metadata?.targetSurfaceKey, storagePath: safePath(row.storage_path, "logo storagePath"), contentHash: row.content_hash, byteSize: row.byte_size, contentType: row.metadata?.contentType || null })).sort((left, right) => String(left.placementKey).localeCompare(String(right.placementKey)));
-    const packRows = await artifacts(sb, run.id, ["flat-proof", "panel", "logo", "output", "stamp", "zip"]);
+    const packRows = await artifacts(sb, run.id, [...new Set([...(authorized.delivery || []), ...(authorized.zipKinds || []), "zip"])]);
     const files = packRows.map((row) => ({ kind: row.artifact_kind, surfaceKey: row.surface_key, storagePath: safePath(row.storage_path, "pack storagePath"), contentHash: row.content_hash, byteSize: row.byte_size })).sort((left, right) => `${left.kind}/${left.surfaceKey}/${left.storagePath}`.localeCompare(`${right.kind}/${right.surfaceKey}/${right.storagePath}`));
-    if (!Array.isArray(zipReceipt.receipt?.sourceViews) || zipReceipt.receipt.sourceViews.length !== 7 || !zipReceipt.receipt?.dimensionManifest || !zipReceipt.receipt?.businessIdentity) throw new StageError("delivery_source_package_evidence_missing", "WrapBox delivery requires seven archived source views, the GENIE dimension manifest, and business identity", false);
-    const manifest = { contract: MANIFEST_CONTRACT, workflowRunId: run.id, operatorId: run.owner_id, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, tenantKey: run.tenant_key, enticePackId: run.entice_pack_id, revisionId: run.revision_id, sourceEnticeRunId, designId: zipReceipt.receipt.designId, orderNumber: zipReceipt.receipt.orderNumber, approvedAt, deliveredAt: approvedAt, zip: { storagePath: deliveredZip.storagePath, contentHash: deliveredZip.contentHash, byteSize: deliveredZip.byteSize }, sourceViews: zipReceipt.receipt.sourceViews, dimensionManifest: zipReceipt.receipt.dimensionManifest, businessIdentity: zipReceipt.receipt.businessIdentity, logos, files };
+    // The Production Pack's evidence is its seven archived design proofs. A Logo
+    // Pack has no such set to prove, so requiring one would fail a delivery that
+    // is complete.
+    const expectedSourceViews = authorized.zipIncludesSourceViews ? 7 : 0;
+    if (!Array.isArray(zipReceipt.receipt?.sourceViews) || zipReceipt.receipt.sourceViews.length !== expectedSourceViews
+      || !zipReceipt.receipt?.dimensionManifest || !zipReceipt.receipt?.businessIdentity) {
+      throw new StageError("delivery_source_package_evidence_missing", "WrapBox delivery requires the purchased pack's archived evidence, the GENIE dimension manifest, and business identity", false);
+    }
+    const manifest = { contract: MANIFEST_CONTRACT, workflowRunId: run.id, operatorId: run.owner_id, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, tenantKey: run.tenant_key, enticePackId: run.entice_pack_id, revisionId: run.revision_id, sourceEnticeRunId, designId: zipReceipt.receipt.designId, orderNumber: zipReceipt.receipt.orderNumber, approvedAt, deliveredAt: approvedAt, zip: { storagePath: deliveredZip.storagePath, contentHash: deliveredZip.contentHash, byteSize: deliveredZip.byteSize }, sourceViews: zipReceipt.receipt.sourceViews, dimensionManifest: zipReceipt.receipt.dimensionManifest, businessIdentity: zipReceipt.receipt.businessIdentity, logos, files, products: authorized.products, deliverables: authorized.deliverables };
     const manifestBytes = Buffer.from(JSON.stringify(canonical(manifest)));
     const stored = await upload(sb, `wrapbox/${tenant}/${run.entice_pack_id}/${run.id}/manifest.json`, manifestBytes, "application/json");
-    const manifestArtifact = artifact("wrapbox-manifest", stored.storagePath, stored.hash, stored.bytes, "", { zipHash: deliveredZip.contentHash, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, designId: businessIdentity.designId, orderNumber: businessIdentity.orderNumber });
-    return complete(sb, stage, run, { verified: true, receiptKind: "wrapbox.delivery", contract: MANIFEST_CONTRACT, zipHash: zipReceipt.receipt_hash, manifestPath: stored.storagePath, manifestHash: stored.hash, deliveredZipPath: deliveredZip.storagePath, deliveredAt: approvedAt, designId: businessIdentity.designId, orderNumber: businessIdentity.orderNumber, publicationPending: true }, stored.hash, [manifestArtifact]);
+    const manifestArtifact = artifact("wrapbox-manifest", stored.storagePath, stored.hash, stored.bytes, "", { zipHash: deliveredZip.contentHash, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, designId: businessIdentity.designId, orderNumber: businessIdentity.orderNumber, products: authorized.products, deliverables: authorized.deliverables });
+    return complete(sb, stage, run, { verified: true, receiptKind: "wrapbox.delivery", contract: MANIFEST_CONTRACT, products: authorized.products, deliverables: authorized.deliverables, zipHash: zipReceipt.receipt_hash, manifestPath: stored.storagePath, manifestHash: stored.hash, deliveredZipPath: deliveredZip.storagePath, deliveredAt: approvedAt, designId: businessIdentity.designId, orderNumber: businessIdentity.orderNumber, publicationPending: true }, stored.hash, [manifestArtifact]);
   }
   throw new StageError("unsupported_production_stage", stage.stage_key, false);
 }
