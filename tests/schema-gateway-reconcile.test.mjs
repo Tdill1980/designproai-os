@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-15), [
+  assert.deepEqual(names.slice(-16), [
     "20260806181200_designpro_schema_gateway_reconcile.sql",
     "20260808024500_designpro_calls_1_7_adapter.sql",
     "20260812120000_designpro_retire_legacy_2d_proof.sql",
@@ -40,6 +40,12 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // The proven-implementation schema/data contract for the migrated
     // DesignPro edge functions and worker (owner decision, PR #73).
     "20260817230000_designpro_functions_contract.sql",
+    // The Commercial identity carrier: companyName/phone/website and the
+    // verified logo upload reach the frozen snapshot as structured fields
+    // instead of being reduced to request_input.brief, and the logo
+    // attestation states what is true rather than asserting mode:"none" on
+    // every job.
+    "20260818173000_designpro_carry_commercial_identity.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

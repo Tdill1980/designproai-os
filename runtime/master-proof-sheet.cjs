@@ -34,6 +34,10 @@ const {
 const { outlineString } = require("./opentype-outline.cjs");
 
 const MASTER_PROOF_CONTRACT = "designpro.master-derived-2d-proof.v1";
+// Versioned separately from the proof: a consumer that extracts against regions
+// needs to know the region contract it is reading, and the sheet layout can
+// change without the proof contract changing.
+const PROOF_REGION_CONTRACT = "designpro.proof-region.v1";
 const SURFACE_ORDER = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 const PNG_OPTIONS = Object.freeze({ compressionLevel: 6, adaptiveFiltering: false, palette: false, force: true });
 const INK = "#111827";
@@ -288,6 +292,22 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     totalSqFt,
   })];
 
+  // EVERY SIDE GETS AN EXPLICIT REGION IN THE APPROVED PROOF.
+  //
+  // The rect each surface occupies was always computed here and then thrown
+  // away: `placement` went into the SVG and never into the return value, so the
+  // proof shipped with surfaceHashes and perSurfaceDimensions but no statement
+  // of WHERE each side sits on the sheet. Downstream had no per-side anchor to
+  // extract against, which is the side-binding defect -- the same shape as the
+  // proofTileRects that were computed on every RestylePro proof run and dropped
+  // by the return, leaving extraction to locate each side by other means.
+  //
+  // Recording it makes the region a first-class part of the approved artifact:
+  // one named region per side, in sheet pixel space, bound to the exact surface
+  // content hash that was placed there. A panel can then be tied to its own
+  // region of the proof the customer signed rather than to a side label.
+  const proofRegions = [];
+
   for (const surfaceKey of SURFACE_ORDER) {
     const cell = layout.cells[surfaceKey];
     const surface = surfaceByKey.get(surfaceKey);
@@ -299,6 +319,26 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
       .png(PNG_OPTIONS).toBuffer();
     composites.push({ input: resized, left: placement.x, top: placement.y });
     markup.push(cellMarkup(fonts, cell, dimensionByKey.get(surfaceKey), placement));
+    proofRegions.push({
+      surfaceKey,
+      // Sheet pixel space, top-left origin -- the coordinates the region
+      // occupies on the proof raster this call is producing.
+      x: placement.x, y: placement.y, w: placement.w, h: placement.h,
+      // Stated so a consumer never has to assume the sheet size it was measured
+      // against; a region without its frame is not a location.
+      sheetWidth: SHEET_WIDTH, sheetHeight: SHEET_HEIGHT,
+      // What was actually drawn into this region. This is the binding that
+      // makes the region checkable rather than declarative: the bytes at this
+      // rect are a lanczos3 reduction of exactly this surface.
+      surfaceContentHash: surface.contentHash,
+      surfacePixelWidth: surface.pixelWidth,
+      surfacePixelHeight: surface.pixelHeight,
+      // The region is a REDUCTION of the surface, never the other way round.
+      // Anything reading pixels back out of it recovers less than the surface
+      // already holds, so the region is the anchor and the surface is the
+      // artwork.
+      scale: round2(placement.w / surface.pixelWidth),
+    });
   }
 
   markup.push(identityMarkup(fonts, layout.cells.hero3d, identities, render));
@@ -335,6 +375,10 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     dimensionManifestId: render.dimensionManifestId,
     manifestHash: render.manifestHash,
     surfaceHashes: SURFACE_ORDER.map((key) => ({ surfaceKey: key, contentHash: surfaceByKey.get(key).contentHash })),
+    // The per-side anchor on the approved sheet: one region per surface, in
+    // sheet pixel space, each bound to the surface hash drawn into it.
+    proofRegionContract: PROOF_REGION_CONTRACT,
+    proofRegions,
     textIdentities: identities.text.map(({ textId, string }) => ({ textId, string })),
     logoIdentities: identities.logos.map(({ identityKey, contentHash }) => ({ identityKey, contentHash })),
     perSurfaceDimensions: dimensions,
@@ -344,6 +388,7 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
 
 module.exports = {
   MASTER_PROOF_CONTRACT,
+  PROOF_REGION_CONTRACT,
   SURFACE_ORDER,
   MasterProofError,
   renderMasterProof,

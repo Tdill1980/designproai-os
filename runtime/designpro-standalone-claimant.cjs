@@ -535,6 +535,14 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       totalSqFt: manifest.totalSqFt,
       dimensionManifestId: rebound.dimension_manifest_id, manifestHash: rebound.manifest_hash,
       perSurfaceDimensions: manifest.expectedSurfaces.map(({ sourceAsset, ...surface }) => surface),
+      // THE PER-SIDE ANCHOR ON THE APPROVED PROOF. One named region per surface,
+      // in sheet pixel space, each bound to the surface hash drawn into it. The
+      // proof composer always computed these and never returned them, so a panel
+      // could only be tied to the proof by its side LABEL -- which is a name,
+      // not a location. Recorded here so Call 9 can bind each panel to its own
+      // region of the sheet the customer approved.
+      proofRegionContract: built.proof2d.proofRegionContract,
+      proofRegions: built.proof2d.proofRegions,
       viewLineage: frozenViews.viewReceipts, requiresPanelProTextReview: true,
       // The canonical identity this proof and these surfaces belong to.
       masterHash: built.master.masterHash, renderHash: built.cycle.render.renderHash,
@@ -562,10 +570,25 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const spools = [];
     const produced = [];
     const sourceRegionHashes = {};
+    // The proof's per-side regions, keyed for binding. Call 8 records one region
+    // per surface; a panel that cannot name its own region is a panel bound to
+    // the proof by label alone, which is exactly the side-anchor defect this
+    // exists to close.
+    const proofRegionByKey = new Map(
+      (Array.isArray(proof.proofRegions) ? proof.proofRegions : []).map((region) => [String(region.surfaceKey), region]),
+    );
     for (const surface of recorded) {
       const key = String(surface.key);
       const dims = expected.get(key);
       if (!dims) throw new StageError("call9_genie_identity_missing", key, false);
+      const proofRegion = proofRegionByKey.get(key) || null;
+      // A region whose bound surface hash is not the surface being cut means the
+      // proof shows one artwork and the panel carries another. Fail closed
+      // rather than ship a panel the approved sheet does not depict.
+      if (proofRegion && String(proofRegion.surfaceContentHash).toLowerCase() !== String(surface.contentHash).toLowerCase()) {
+        throw new StageError("call9_proof_region_surface_mismatch",
+          `${key}'s proof region depicts ${String(proofRegion.surfaceContentHash).slice(0, 12)} but the panel cuts ${String(surface.contentHash).slice(0, 12)}`, false);
+      }
       if (Number(surface.bleedInches) !== 5) throw new StageError("call9_bleed_drift", `${key} does not carry the 5in production bleed`, false);
       if (round2(surface.trimWidthInches) !== round2(dims.widthInches) || round2(surface.trimHeightInches) !== round2(dims.heightInches)) {
         throw new StageError("call9_geometry_drift", `${key} was rendered at dimensions the bound manifest does not declare`, false);
@@ -585,6 +608,22 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         call: 9, sourceRule: PANEL_SOURCE_RULE,
         sourceRegionHash: observed,
         sourceSurfacePath: surface.storagePath, sourceSurfaceHash: observed,
+        // WHERE ON THE APPROVED PROOF THIS PANEL COMES FROM. The region is the
+        // anchor; the bytes above are the artwork. They are the same artwork by
+        // construction -- the region is a lanczos3 reduction of this exact
+        // surface, which is why surfaceContentHash matches above -- so binding
+        // the region costs no resolution while making the panel's place on the
+        // signed sheet explicit and checkable.
+        proofRegionContract: proof.proofRegionContract || null,
+        proofRegion: proofRegion
+          ? {
+              surfaceKey: proofRegion.surfaceKey,
+              x: proofRegion.x, y: proofRegion.y, w: proofRegion.w, h: proofRegion.h,
+              sheetWidth: proofRegion.sheetWidth, sheetHeight: proofRegion.sheetHeight,
+              scale: proofRegion.scale,
+              proofContentHash: proof.sourceProofHash || null,
+            }
+          : null,
         masterHash: proof.masterHash || null, renderHash: proof.renderHash || null,
         trimWidthInches: dims.widthInches, trimHeightInches: dims.heightInches,
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
