@@ -85,6 +85,12 @@ jobs:
           # functions hold (runtime.env) is the one the live worker checks.
           # Find the loopback port Caddy proxies for that hostname and take it
           # over; never touch the runtime/gateway ports.
+          echo "--- caddy worker block ---"
+          grep -rB2 -A12 'worker.designproai.com' /etc/caddy 2>/dev/null || true
+          echo "--- containers ---"
+          docker ps --format '{{.Names}} | {{.Image}} | {{.Ports}}'
+          echo "--- listeners ---"
+          ss -lntp | grep -E '127.0.0.1|0.0.0.0' | head -20
           wport=$(grep -rA6 'worker.designproai.com' /etc/caddy 2>/dev/null | grep -oE '127\.0\.0\.1:[0-9]+' | head -1 | cut -d: -f2)
           case "$wport" in ''|3001|3002|8787) wport=3005 ;; esac
           echo "worker hostname backend port: $wport"
