@@ -30,7 +30,7 @@ import {
   proofTextLiterals,
   findFabricatedText,
   readTileText,
-  renderFlatTile,
+  sidefieldFlatten,
   composeProofSheet,
   proofTileBoxes,
 } from "./proof-sheet.ts";
@@ -2429,16 +2429,13 @@ Lay out ${requiredPanelNames} views on a clean white background in technical-dra
         if (lt.includes("rear") || lt.includes("back")) return "rear";
         return "side";
       };
-      const approvedAnchorView =
-        views.find((view) => String(view.type) === String(designAnchorViewKey || "")) ||
-        views.find((view) => bucketOf(String(view.type)) === "side") ||
-        views[0];
-      const approvedDesignAnchor = approvedAnchorView?.img?.b64
-        ? {
-            b64: String(approvedAnchorView.img.b64),
-            mime: String(approvedAnchorView.img.mime || "image/png"),
-          }
-        : undefined;
+      // NO "design anchor" image is resolved here on purpose. renderFlatTile
+      // used to feed a second reference render (the driver hero) alongside
+      // each side's own view and ask Gemini to compose a new elevation from
+      // both — that is precisely what let tiles drift into their own layout
+      // (badge repositioned, background swapped, driver/passenger
+      // disagreeing). sidefieldFlatten (below) flattens ONLY each side's own
+      // approved view. Do not resurrect an anchor image here.
 
       // RELEASE THE ENCODED VIEWS BEFORE GENERATING.
       // imageParts fed the old shared-sheet call and is dead once the material
@@ -2461,7 +2458,14 @@ Lay out ${requiredPanelNames} views on a clean white background in technical-dra
       // failed) passes the candidate with known:false so an outage can never
       // block Call 7 — but a real negative verdict regenerates the candidate.
       const SANITY_GATE_CONTRACT = "call7-sanity-gate.v1";
-      const TILE_CANDIDATES = 3;
+      // sidefieldFlatten's own worker call already runs a GENERATE→QC→RETRY
+      // loop (up to 3 full 4K generations, qcCleanField checked against that
+      // side's OWN source view) before it ever returns — see proof-sheet.ts.
+      // Looping again out here would compound that retry budget for no gain
+      // (a second call has no different source to converge toward) and risks
+      // the edge function's own wall-clock ceiling. One shipped candidate,
+      // same as RestylePro's own sidefield caller.
+      const TILE_CANDIDATES = 1;
       const sanityRefusals: Array<{ label: string; key: string; reasons: Array<{ code: string; label?: string; detail?: string }> }> = [];
       call7SanityBySide = {};
       const sanityGateScope = String(trustedArtifactAttempt || packArtifactScope || Date.now());
@@ -2545,16 +2549,25 @@ Lay out ${requiredPanelNames} views on a clean white background in technical-dra
               if (!dimPair) {
                 throw new Error(`GENIE dimensions missing for ${label}`);
               }
-              const draw = () => renderFlatTile({
+              const ownViewUrl = urls[v.type] || "";
+              if (!ownViewUrl) {
+                throw new Error(`No source view URL for ${label} — cannot flatten`);
+              }
+              // DETERMINISTIC PANEL SOURCE (RestylePro RUNG-0 "cut only"):
+              // flatten THIS side's OWN approved view — never a second
+              // "design anchor" image reinterpreted into a new composition.
+              // See sidefieldFlatten's doc comment in proof-sheet.ts.
+              const draw = () => sidefieldFlatten({
                 label,
-                vehicleName,
-                view: v.img!,
-                anchor: v === approvedAnchorView ? undefined : approvedDesignAnchor,
-                textLock,
-                stripBranding: !!stripBranding,
+                side: key,
+                viewUrl: ownViewUrl,
                 widthIn: dimPair[0],
                 heightIn: dimPair[1],
-                apiKey: nextGeminiKey,
+                stripBranding: !!stripBranding,
+                uid,
+                jobScope: sanityGateScope,
+                workerHost: Deno.env.get("DESIGNPRO_WORKER_URL") || "",
+                workerSecret: Deno.env.get("WORKER_SECRET") || "",
               });
               // ── 3-CANDIDATE QC RETRY ─────────────────────────────────────
               // Every candidate faces two gates before it can freeze into a

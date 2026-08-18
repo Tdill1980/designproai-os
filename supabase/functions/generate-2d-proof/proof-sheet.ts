@@ -327,6 +327,91 @@ This returned rectangle becomes the approved Call 7 production source. Nothing a
 }
 
 /**
+ * DETERMINISTIC PANEL SOURCE — the RestylePro RUNG-0 "cut only" primary
+ * (worker/index.js generateCleanField, reached via panel-artboard-generator
+ * step:"sidefield" → worker /clean-artboard). Reference: restylepro-os
+ * worker/index.js:1213-1287, ported byte-identical into this project's
+ * worker (only the WORKER_HOST env name differs — see finish_designpro_
+ * migration.py). This function is the edge-side caller of that same worker
+ * endpoint, called directly (the same pattern generate-2d-proof already uses
+ * for the Call-7 sanity gate below).
+ *
+ * This REPLACES renderFlatTile as the panel/tile producer. The two differ in
+ * exactly the way that matters:
+ *   - renderFlatTile fed a SEPARATE "design anchor" image (the driver hero)
+ *     alongside each side's own view and asked Gemini to compose a NEW flat
+ *     elevation "using the attached 3D render only as the design reference" —
+ *     i.e. paint from a reference, not extract. That is what let each tile
+ *     drift into its own layout (badge repositioned, background swapped,
+ *     driver/passenger disagreeing) even though every approved view already
+ *     carries the correct design.
+ *   - sidefieldFlatten feeds ONLY that side's OWN approved view and asks the
+ *     worker to "flatten THIS exact wrap side ... into ONE continuous flat
+ *     field" — an edit of the one image, not a composition from two. The
+ *     worker's own generateCleanField runs a GENERATE→QC→RETRY loop
+ *     (qcCleanField) that checks the flattened field against that SAME source
+ *     image before accepting it, at full 4K resolution and worker memory.
+ *
+ * No anchor image is passed, and none should be added back — reintroducing a
+ * second reference image reintroduces the drift.
+ */
+export async function sidefieldFlatten(opts: {
+  label: string;
+  side: string;
+  viewUrl: string;
+  widthIn: number;
+  heightIn: number;
+  stripBranding: boolean;
+  uid: string;
+  jobScope: string;
+  workerHost: string;
+  workerSecret: string;
+}): Promise<Uint8Array | null> {
+  try {
+    const resp = await fetch(`${opts.workerHost.replace(/\/+$/, "")}/clean-artboard`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(opts.workerSecret ? { Authorization: `Bearer ${opts.workerSecret}` } : {}),
+      },
+      body: JSON.stringify({
+        uid: opts.uid,
+        jobId: opts.jobScope,
+        sides: [{
+          side: opts.side,
+          viewUrl: opts.viewUrl,
+          widthInches: opts.widthIn,
+          heightInches: opts.heightIn,
+        }],
+        // keepBranding:true = preserve every logo/line of text (the normal
+        // branded tile); false = the stripBranding pass, background only.
+        keepBranding: !opts.stripBranding,
+      }),
+      // The worker's own GENERATE→QC→RETRY loop can run up to 3 full 4K
+      // generations; panel-artboard-generator's existing sidefield proxy
+      // budgets 480s for the identical call for the identical reason.
+      signal: AbortSignal.timeout(480_000),
+    });
+    const out = await resp.json().catch(() => ({}));
+    if (!resp.ok || out?.success !== true) {
+      console.warn(`[2D-PROOF] sidefield "${opts.label}" failed: ${JSON.stringify(out).slice(0, 300)}`);
+      return null;
+    }
+    const result = out.sides?.[opts.side];
+    if (!result?.url) {
+      console.warn(`[2D-PROOF] sidefield "${opts.label}" returned no url: ${JSON.stringify(result).slice(0, 200)}`);
+      return null;
+    }
+    const r = await fetch(result.url, { signal: AbortSignal.timeout(60_000) });
+    if (!r.ok) return null;
+    return new Uint8Array(await r.arrayBuffer());
+  } catch (e) {
+    console.warn(`[2D-PROOF] sidefield "${opts.label}" threw: ${String(e)}`);
+    return null;
+  }
+}
+
+/**
  * Assemble the proof sheet from finished tiles. ZERO AI — every pixel here is
  * placed by code, so the header, footer, labels and per-tile dimension callouts
  * can never be hallucinated the way the shared-sheet pass hallucinated them.
