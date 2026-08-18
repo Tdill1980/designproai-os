@@ -27,6 +27,7 @@
 
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
+const { vehicleProofTemplate, vehicleProofSvg } = require("./vehicle-proof-template.cjs");
 const {
   BLEED_INCHES, SHEET_WIDTH, SHEET_HEIGHT, proofSheetLayout,
   _test: proofInternals,
@@ -37,6 +38,16 @@ const MASTER_PROOF_CONTRACT = "designpro.master-derived-2d-proof.v1";
 // Versioned separately from the proof: a consumer that extracts against regions
 // needs to know the region contract it is reading, and the sheet layout can
 // change without the proof contract changing.
+// The proof shows the design ON THE VEHICLE. These outlines are a DISPLAY MASK
+// applied while composing the sheet -- the same approved surface pixels, shown
+// through the shape of the vehicle. They never touch the surface itself, which
+// is why Call 9 can still manufacture from full-resolution artwork: the proof
+// and the panels are the same bytes rendered twice, once masked and once not.
+const PROOF_VIEW_LABEL = Object.freeze({
+  driver: "DRIVER SIDE", passenger: "PASSENGER SIDE",
+  hood: "HOOD", roof: "ROOF", front: "FRONT", rear: "REAR",
+});
+
 const PROOF_REGION_CONTRACT = "designpro.proof-region.v1";
 const SURFACE_ORDER = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 const PNG_OPTIONS = Object.freeze({ compressionLevel: 6, adaptiveFiltering: false, palette: false, force: true });
@@ -209,7 +220,6 @@ function cellMarkup(fonts, cell, dimension, placement) {
   const captionY = cell.frame.y + cell.frame.h - 74;
   return `<g>
     <rect x="${cell.frame.x + 8}" y="${cell.frame.y + 8}" width="${cell.frame.w - 16}" height="${cell.frame.h - 16}" fill="none" stroke="${RULE}" stroke-width="2"/>
-    <rect x="${placement.x}" y="${placement.y}" width="${placement.w}" height="${placement.h}" fill="none" stroke="${RULE}" stroke-width="2"/>
     ${label(fonts, cell.label, { x: cell.frame.x + 26, y: captionY, size: 26, fill: INK, bold: true })}
     ${label(fonts, `TRIM ${inches(dimension.widthInches)}" \u00d7 ${inches(dimension.heightInches)}" \u00b7 PRINT ${inches(dimension.printWidthInches)}" \u00d7 ${inches(dimension.printHeightInches)}" at ${inches(BLEED_INCHES)}" bleed`, { x: cell.frame.x + 26, y: captionY + 34, size: 22, fill: MUTED })}
     ${label(fonts, `${inches(dimension.surfaceSqFt)} sq ft`, { x: cell.frame.x + cell.frame.w - 26, y: captionY, size: 26, fill: ACCENT, anchor: "end", bold: true })}
@@ -317,8 +327,29 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     const resized = await sharp(surface.bytes, { limitInputPixels: false })
       .resize(placement.w, placement.h, { fit: "fill", kernel: "lanczos3" })
       .png(PNG_OPTIONS).toBuffer();
-    composites.push({ input: resized, left: placement.x, top: placement.y });
+    // THE DISPLAY MASK. The silhouette is drawn in the tile's own space and
+    // composited as alpha, so the artwork reads as applied to the vehicle
+    // rather than as a rectangle on a page. A rectangular family (trailers,
+    // flat products) masks to itself, which costs a no-op rather than
+    // inventing a cab the customer is not buying.
+    const template = vehicleProofTemplate(vehicle?.type ?? vehicle?.vehicleType, PROOF_VIEW_LABEL[surfaceKey]);
+    const local = vehicleProofSvg(template, 0, 0, placement.w, placement.h);
+    const placed = local.rectangular ? resized : await sharp(resized, { limitInputPixels: false })
+      .ensureAlpha()
+      .composite([{
+        input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${placement.w}" height="${placement.h}"><path d="${local.silhouette}" fill="#ffffff"/></svg>`),
+        blend: "dest-in",
+      }])
+      .png(PNG_OPTIONS).toBuffer();
+    composites.push({ input: placed, left: placement.x, top: placement.y });
     markup.push(cellMarkup(fonts, cell, dimensionByKey.get(surfaceKey), placement));
+    // Outline and detail strokes go OVER the masked artwork, in sheet space, so
+    // glass, arches and seams read as part of a drawn elevation. No model draws
+    // any of this: they are fixed paths, and a fixed path cannot hallucinate.
+    if (!local.rectangular) {
+      const sheetSpace = vehicleProofSvg(template, placement.x, placement.y, placement.w, placement.h);
+      markup.push(`<g>${sheetSpace.overlay.join("")}</g>`);
+    }
     proofRegions.push({
       surfaceKey,
       // Sheet pixel space, top-left origin -- the coordinates the region
@@ -338,6 +369,10 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
       // already holds, so the region is the anchor and the surface is the
       // artwork.
       scale: round2(placement.w / surface.pixelWidth),
+      // The vehicle outline the artwork is shown through. Presentation only --
+      // recorded so a reader can tell the proof's masked appearance from the
+      // unmasked surface Call 9 actually manufactures.
+      displayMask: { view: PROOF_VIEW_LABEL[surfaceKey], bodyFamily: template.bodyFamily || null, rectangular: local.rectangular, mirrored: template.mirrored },
     });
   }
 

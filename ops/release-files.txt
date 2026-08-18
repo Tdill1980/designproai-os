@@ -28,6 +28,7 @@ runtime/design-master-author.cjs
 runtime/design-master-revision.cjs
 runtime/design-revision-cycle.cjs
 runtime/master-proof-sheet.cjs
+runtime/vehicle-proof-template.cjs
 runtime/master-derived-3d-proof.cjs
 runtime/vehicle-view-plate.cjs
 runtime/procedural-view-plates.cjs

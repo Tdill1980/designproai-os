@@ -6,11 +6,16 @@ const claimant = readFileSync(new URL("../runtime/designpro-standalone-claimant.
 const proofSheet = readFileSync(new URL("../runtime/master-proof-sheet.cjs", import.meta.url), "utf8");
 const SIDES = ["driver", "passenger", "hood", "roof", "front", "rear"];
 
+const panelsBuild = (() => {
+  const stage = claimant.slice(claimant.indexOf('stage.stage_key === "panels.build"'));
+  return stage.slice(0, stage.indexOf('stage.stage_key === "logos.extract"'));
+})();
+
 /**
  * The proof composer always computed each side's rectangle and never returned
  * it, so a panel could only be tied to the approved sheet by side LABEL. A name
- * is not a location, and cutting a shared sheet without one is how a side ends
- * up carrying another side's artwork.
+ * is not a location, and a panel bound by label alone cannot prove the customer
+ * approved the artwork it carries.
  */
 test("the approved proof states an explicit region for every side", () => {
   assert.match(proofSheet, /proofRegions\.push\(\{/, "the composer must record the rect it draws each surface into");
@@ -23,35 +28,69 @@ test("the approved proof states an explicit region for every side", () => {
   }
 });
 
-test("every panel is cut from its own region of the approved proof", () => {
-  assert.match(claimant, /\.extract\(\{ left: proofRegion\.x, top: proofRegion\.y, width: proofRegion\.w, height: proofRegion\.h \}\)/,
-    "the crop must use this side's own recorded rectangle");
-  assert.match(claimant, /sourceRegionHashes\[key\] = regionHash;/,
-    "the recorded region hash must be the pixels taken off the proof");
-  assert.match(claimant, /extractedFromProof: true/);
-  // Hashing before the resize is what makes two sides cutting the same rect
-  // collide, which is the check the database is performing from its side.
-  assert.ok(claimant.indexOf("const regionHash = hashBytes(regionBytes);") <
-    claimant.indexOf(".resize(Number(surface.pixelWidth)"),
-    "the region must be hashed before it is resized, or a collision hides behind the scale");
+/**
+ * The region is where the customer saw this side. The artwork is the
+ * full-resolution surface Call 8 rendered. Cutting the panel back out of the
+ * proof raster would manufacture from a masked, downsampled composite -- the
+ * vehicle silhouette baked in and the side reduced to its share of one sheet.
+ */
+test("panels manufacture from the approved surface, never from the proof raster", () => {
+  assert.match(panelsBuild, /const bytes = await storageBytes\(sb, surface\.storagePath\);/,
+    "the panel's pixels must be the full-resolution approved surface");
+  assert.match(panelsBuild, /extractedFromProofRaster: false/);
+  assert.doesNotMatch(panelsBuild, /\.extract\(\{ left: proofRegion/,
+    "no panel may be cropped out of the vehicle-shaped proof sheet");
+  assert.doesNotMatch(panelsBuild, /\.resize\(/,
+    "the approved surface is already at its GENIE geometry; resampling it is not manufacturing");
 });
 
-test("panels.build refuses a proof it cannot cut per side", () => {
-  for (const code of [
-    "call9_proof_regions_missing",        // no anchors at all -> would be guessing
-    "call9_proof_region_out_of_bounds",   // rect off the sheet -> short crop or a neighbour's pixels
-    "call9_proof_region_surface_mismatch",// region depicts artwork the panel does not carry
-    "call9_proof_changed",                // the signed sheet is not the sheet being cut
-  ]) {
-    assert.match(claimant, new RegExp(code), `panels.build must fail closed on ${code}`);
+/** The identity chain that makes a shared sheet safe to bind against. */
+test("region, approved surface and produced panel must be one artwork", () => {
+  assert.match(panelsBuild, /String\(proofRegion\.surfaceContentHash \|\| ""\)\.toLowerCase\(\) !== observed/,
+    "the region's depicted hash must equal the surface hash the panel carries");
+  assert.match(panelsBuild, /sourceContentHash: observed/);
+  assert.match(panelsBuild, /sourceRegionHashes\[key\] = observed;/);
+});
+
+test("side selection is an exact canonical key lookup and nothing else", () => {
+  // Comments stripped: the prose here names the forbidden matches in order to
+  // forbid them, and a rule must not fail on its own statement.
+  const code = panelsBuild.replace(/\/\/[^\n]*/g, "");
+  assert.match(panelsBuild, /proofRegionByKey\.get\(key\)/);
+  assert.match(panelsBuild, /SURFACE_KEYS\.includes\(String\(region\.surfaceKey\)\)/,
+    "only canonical surface keys may address a region");
+  for (const inferred of [/\.includes\("side"\)/, /startsWith\(/, /indexOf\(key\)/, /proofRegions\[\s*\d/, /alias/i, /nearest/i, /similar/i]) {
+    assert.doesNotMatch(code, inferred, "no substring, alias, positional, nearest or similarity match may pick a side");
   }
 });
 
-test("no model call may run in the stage that cuts panels", () => {
-  const stage = claimant.slice(claimant.indexOf('stage.stage_key === "panels.build"'));
-  const body = stage.slice(0, stage.indexOf('stage.stage_key === "logos.extract"'));
+test("panels.build fails closed on every broken binding", () => {
+  for (const code of [
+    "call9_proof_regions_missing",              // no anchors at all -> would be guessing
+    "call9_proof_region_missing",               // this side has no anchor
+    "call9_proof_region_out_of_bounds",         // rect off the sheet -> the anchor does not describe this side
+    "call9_proof_region_surface_mismatch",      // region depicts artwork the panel does not carry
+    "call9_proof_region_proof_mismatch",        // anchor belongs to a sheet the customer did not approve
+    "call9_proof_region_revision_mismatch",     // stale revision's anchors -> new views, old panels
+    "call9_proof_region_manifest_mismatch",     // measured against different GENIE geometry
+    "call9_proof_identity_missing",             // nothing to bind to
+    "call9_proof_changed",                      // the signed sheet is not the sheet bound
+    "call9_surface_changed",                    // the artwork moved between Call 8 and Call 9
+  ]) {
+    assert.match(panelsBuild, new RegExp(code), `panels.build must fail closed on ${code}`);
+  }
+});
+
+test("each region carries the proof, revision and GENIE identity it was measured under", () => {
+  const proofBuild = claimant.slice(claimant.indexOf('proofRegionContract: built.proof2d.proofRegionContract'));
+  for (const field of ["proofContentHash", "revisionId", "dimensionManifestId", "manifestHash"]) {
+    assert.match(proofBuild.slice(0, 1200), new RegExp(`${field}:`), `regions must carry ${field}`);
+  }
+});
+
+test("no model call may run in the stage that builds panels", () => {
   for (const forbidden of [/generativelanguage/, /generateContent/i, /renderFlatTile/, /sidefieldFlatten/, /clean-artboard/]) {
-    assert.doesNotMatch(body, forbidden, "extraction is arithmetic; nothing here may call a model");
+    assert.doesNotMatch(panelsBuild, forbidden, "Call 9 is arithmetic and binding; nothing here may call a model");
   }
 });
 

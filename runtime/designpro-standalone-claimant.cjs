@@ -76,12 +76,13 @@ const ARTIFACT_KINDS = Object.freeze([
   "flat-proof", "panel", "qc-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
-// The Call 9 rule the database enforces. Each output side is cut from ITS OWN
-// named region of the approved 2D proof -- never a shared rectangle, never a
-// neighbouring tile, never the driver's crop reused for the passenger. The
-// database checks the same thing from its side: sourceRegionHashes must be one
-// per side and all distinct, and it rejects a receipt whose driver and
-// passenger regions hash alike.
+// The Call 9 rule the database enforces. Each output side manufactures from ITS
+// OWN full-resolution approved surface, anchored to its OWN named region of the
+// approved 2D proof -- never a shared rectangle, never a neighbouring tile,
+// never the driver's artwork reused for the passenger, and never a crop lifted
+// back out of the vehicle-shaped proof raster. The database checks the same
+// thing from its side: sourceRegionHashes must be one per side and all
+// distinct, and it rejects a receipt whose driver and passenger hash alike.
 const PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side";
 // Working resolution for the canonical surfaces. Print resolution is reached by
 // the Topaz enhance stage, exactly as it was before; rendering at print size
@@ -546,7 +547,19 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       // not a location. Recorded here so Call 9 can bind each panel to its own
       // region of the sheet the customer approved.
       proofRegionContract: built.proof2d.proofRegionContract,
-      proofRegions: built.proof2d.proofRegions,
+      // Every region carries the identity of the sheet it was measured on, the
+      // revision it belongs to, and the GENIE manifest that set the geometry.
+      // Without those an anchor is just four numbers, and four numbers survive
+      // a revision that invalidates them.
+      proofRegions: (built.proof2d.proofRegions || []).map((region) => ({
+        ...region,
+        proofStoragePath: proofArtifact.storagePath,
+        proofContentHash: proofArtifact.contentHash,
+        revisionId: run.revision_id,
+        revisionSnapshotHash: run.revision_snapshot_hash || null,
+        dimensionManifestId: rebound.dimension_manifest_id,
+        manifestHash: rebound.manifest_hash,
+      })),
       viewLineage: frozenViews.viewReceipts, requiresPanelProTextReview: true,
       // The canonical identity this proof and these surfaces belong to.
       masterHash: built.master.masterHash, renderHash: built.cycle.render.renderHash,
@@ -568,124 +581,145 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       throw new StageError("call9_surface_set_invalid", "Call 8 did not record all six canonical production surfaces", false);
     }
 
-    // CUT FROM THE APPROVED PROOF, AT THIS SIDE'S OWN REGION.
+    // THE PROOF REGION IS THE ANCHOR. THE APPROVED SURFACE IS THE ARTWORK.
     //
-    // The proof the customer signed is the production source, so each panel is a
-    // pure geometric crop of that sheet at the rectangle Call 8 recorded for
-    // that side, resized to the side's GENIE trim + 5in bleed. Every step is
-    // sharp arithmetic: extract, resize, hash. No model runs in this stage, and
-    // none may -- after the proof is approved the artwork is settled.
+    // Call 8 draws each side onto the proof sheet through a vehicle-shaped
+    // display mask and records where it landed. That rectangle is what binds a
+    // panel to the sheet the customer approved -- it proves WHICH side this is
+    // and that the customer saw exactly this artwork in exactly that place.
     //
-    // The side anchor is what makes this safe. Cutting a shared sheet without
-    // one is how a side ends up carrying another side's artwork: the driver
-    // rectangle reused, a neighbouring tile caught in the crop, or a label
-    // matched to the wrong cell. Each region here is named, bound to the
-    // content hash of the surface drawn into it, and verified against that hash
-    // before a pixel is read.
+    // It is not the pixel source. Cutting the panel back out of the proof
+    // raster would manufacture from a masked, downsampled composite: the
+    // silhouette edges bake in, the tile is a fraction of the side's true
+    // resolution, and every panel inherits the sheet's scale reduction. The
+    // full-resolution approved surface Call 8 rendered is the production
+    // artwork, and the region says which one it is.
+    //
+    // So: region = approval and identity, surface = manufacturing pixels, and
+    // the two are tied together by hash. Nothing generative runs here; after
+    // the proof is approved the artwork is settled.
     const spools = [];
     const produced = [];
     const sourceRegionHashes = {};
+    // Keyed by exact canonical surface_key. Side selection is this lookup and
+    // nothing else -- never a substring match on "side", never an alias table,
+    // never array position, never the nearest or most similar-looking region.
+    // A side that cannot name its own region fails closed below.
     const proofRegionByKey = new Map(
-      (Array.isArray(proof.proofRegions) ? proof.proofRegions : []).map((region) => [String(region.surfaceKey), region]),
+      (Array.isArray(proof.proofRegions) ? proof.proofRegions : [])
+        .filter((region) => SURFACE_KEYS.includes(String(region.surfaceKey)))
+        .map((region) => [String(region.surfaceKey), region]),
     );
-    // A proof without regions cannot be cut per side. Refusing is the whole
-    // point: the alternative is guessing where each side sits, which is the
-    // defect this closes. Runs whose Call 8 predates the region manifest need
-    // their proof rebuilt, not their panels guessed.
+    // A proof with no anchors cannot bind panels per side. Refusing is the
+    // point: the alternative is inferring where each side sits, which is how a
+    // panel ends up carrying a neighbour's artwork. Runs whose Call 8 predates
+    // the region manifest need their proof rebuilt, not their panels guessed.
     if (proofRegionByKey.size !== SURFACE_KEYS.length) {
       throw new StageError("call9_proof_regions_missing",
-        `the approved proof carries ${proofRegionByKey.size} side regions; all ${SURFACE_KEYS.length} are required to cut panels from it`, false);
+        `the approved proof carries ${proofRegionByKey.size} of ${SURFACE_KEYS.length} required side regions`, false);
     }
+    // The signed sheet's own identity, re-checked before anything binds to it.
+    // Hash only -- the proof is never decoded here, because nothing is cut from
+    // it.
     const proofStoragePath = requiredString(proof.storagePath, "approved 2D proof storagePath");
-    const proofBytes = await storageBytes(sb, proofStoragePath);
-    if (proof.sourceProofHash && hashBytes(proofBytes) !== String(proof.sourceProofHash).toLowerCase()) {
+    const approvedProofHash = String(proof.sourceProofHash || "").toLowerCase();
+    if (!approvedProofHash) throw new StageError("call9_proof_identity_missing", "Call 8 recorded no proof content hash to bind panels to", false);
+    if (hashBytes(await storageBytes(sb, proofStoragePath)) !== approvedProofHash) {
       throw new StageError("call9_proof_changed",
-        "the approved 2D proof changed after Call 8 recorded it; panels must be cut from the sheet that was approved", false);
+        "the approved 2D proof changed after Call 8 recorded it; panels must be bound to the sheet that was approved", false);
     }
-    const proofMeta = await sharp(proofBytes, { limitInputPixels: false }).metadata();
     for (const surface of recorded) {
       const key = String(surface.key);
       const dims = expected.get(key);
       if (!dims) throw new StageError("call9_genie_identity_missing", key, false);
-      const proofRegion = proofRegionByKey.get(key) || null;
-      // A region whose bound surface hash is not the surface being cut means the
-      // proof shows one artwork and the panel carries another. Fail closed
-      // rather than ship a panel the approved sheet does not depict.
-      if (proofRegion && String(proofRegion.surfaceContentHash).toLowerCase() !== String(surface.contentHash).toLowerCase()) {
-        throw new StageError("call9_proof_region_surface_mismatch",
-          `${key}'s proof region depicts ${String(proofRegion.surfaceContentHash).slice(0, 12)} but the panel cuts ${String(surface.contentHash).slice(0, 12)}`, false);
+      const proofRegion = proofRegionByKey.get(key);
+      if (!proofRegion) throw new StageError("call9_proof_region_missing", `${key} has no named region on the approved proof`, false);
+
+      // The rectangle must lie inside the sheet frame it was measured against.
+      // One running off the edge means the region manifest and the sheet
+      // disagree, so the anchor is not describing where this side actually sits.
+      const withinSheet = proofRegion.x >= 0 && proofRegion.y >= 0
+        && proofRegion.w > 0 && proofRegion.h > 0
+        && proofRegion.x + proofRegion.w <= Number(proofRegion.sheetWidth)
+        && proofRegion.y + proofRegion.h <= Number(proofRegion.sheetHeight);
+      if (!withinSheet) {
+        throw new StageError("call9_proof_region_out_of_bounds",
+          `${key}'s region ${proofRegion.x},${proofRegion.y} ${proofRegion.w}x${proofRegion.h} does not fit the ${proofRegion.sheetWidth}x${proofRegion.sheetHeight} proof sheet`, false);
       }
+      // The region must be anchored to the same proof the panel is being bound
+      // to. A region carried over from an earlier sheet would anchor this panel
+      // to artwork the customer never approved.
+      if (String(proofRegion.proofContentHash || "").toLowerCase() !== approvedProofHash) {
+        throw new StageError("call9_proof_region_proof_mismatch",
+          `${key}'s region is anchored to a different proof than the one Call 8 approved`, false);
+      }
+      // The region must belong to this revision and this GENIE manifest. Panels
+      // bound to a stale revision's anchors are how revised 3D views end up
+      // paired with old panels.
+      if (String(proofRegion.revisionId || "") !== String(run.revision_id)) {
+        throw new StageError("call9_proof_region_revision_mismatch", `${key}'s region belongs to a different revision`, false);
+      }
+      if (String(proofRegion.dimensionManifestId || "") !== String(run.dimension_manifest_id)
+        || String(proofRegion.manifestHash || "").toLowerCase() !== String(run.manifest_hash || "").toLowerCase()) {
+        throw new StageError("call9_proof_region_manifest_mismatch", `${key}'s region was measured against different GENIE geometry`, false);
+      }
+
       if (Number(surface.bleedInches) !== 5) throw new StageError("call9_bleed_drift", `${key} does not carry the 5in production bleed`, false);
       if (round2(surface.trimWidthInches) !== round2(dims.widthInches) || round2(surface.trimHeightInches) !== round2(dims.heightInches)) {
         throw new StageError("call9_geometry_drift", `${key} was rendered at dimensions the bound manifest does not declare`, false);
       }
-      // The surface is still re-hashed against what Call 8 recorded. It is no
-      // longer the panel's pixel source, but it is what the region claims to
-      // depict, so a surface that moved between the stages still fails closed.
-      const surfaceBytes = await storageBytes(sb, surface.storagePath);
-      const observed = hashBytes(surfaceBytes);
+
+      // THE ARTWORK. The full-resolution surface Call 8 rendered, consumed
+      // byte-for-byte. Re-hashed first: a surface that moved between the two
+      // stages fails closed rather than printing.
+      const bytes = await storageBytes(sb, surface.storagePath);
+      const observed = hashBytes(bytes);
       if (observed !== String(surface.contentHash).toLowerCase()) {
         throw new StageError("call9_surface_changed", `${key} changed after Call 8 rendered it`, false);
       }
-
-      // The region must lie inside the sheet it was measured against. A rect
-      // that runs off the proof would silently crop short or pull a neighbour's
-      // pixels in, which is the wrong-tile failure in its quietest form.
-      if (!proofRegion) throw new StageError("call9_proof_region_missing", `${key} has no region on the approved proof`, false);
-      const withinSheet = proofRegion.x >= 0 && proofRegion.y >= 0
-        && proofRegion.w > 0 && proofRegion.h > 0
-        && proofRegion.x + proofRegion.w <= Number(proofMeta.width)
-        && proofRegion.y + proofRegion.h <= Number(proofMeta.height);
-      if (!withinSheet) {
-        throw new StageError("call9_proof_region_out_of_bounds",
-          `${key}'s region ${proofRegion.x},${proofRegion.y} ${proofRegion.w}x${proofRegion.h} does not fit the ${proofMeta.width}x${proofMeta.height} approved proof`, false);
+      // THE THREE-WAY IDENTITY. What the proof region depicts, what Call 8
+      // approved, and what this panel manufactures must all be one artwork.
+      // Anything else means the sheet shows one design and the panel prints
+      // another.
+      if (String(proofRegion.surfaceContentHash || "").toLowerCase() !== observed) {
+        throw new StageError("call9_proof_region_surface_mismatch",
+          `${key}'s proof region depicts ${String(proofRegion.surfaceContentHash).slice(0, 12)} but the panel carries ${observed.slice(0, 12)}`, false);
       }
-
-      // THE CUT. Extract this side's own rectangle, then scale it to the side's
-      // GENIE trim + 5in bleed. Pure arithmetic -- sharp's lanczos3 resampler,
-      // nothing else touches the pixels.
-      const regionBytes = await sharp(proofBytes, { limitInputPixels: false })
-        .extract({ left: proofRegion.x, top: proofRegion.y, width: proofRegion.w, height: proofRegion.h })
-        .png({ compressionLevel: 6, adaptiveFiltering: false, palette: false, force: true })
-        .toBuffer();
-      // Hashed BEFORE the resize, so the recorded region hash identifies the
-      // pixels actually taken off the proof rather than the scaled result. Two
-      // sides that somehow cut the same rectangle collide here, which is what
-      // the database's all-distinct sourceRegionHashes check is looking for.
-      const regionHash = hashBytes(regionBytes);
-      const bytes = await sharp(regionBytes, { limitInputPixels: false })
-        .resize(Number(surface.pixelWidth), Number(surface.pixelHeight), { fit: "fill", kernel: "lanczos3" })
-        .png({ compressionLevel: 6, adaptiveFiltering: false, palette: false, force: true })
-        .toBuffer();
 
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/panels/${key}.png`;
       const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, bytes, "image/png");
       if (stored.spool) spools.push(stored.spool);
-      sourceRegionHashes[key] = regionHash;
+      sourceRegionHashes[key] = observed;
       produced.push(artifact("panel", stored.storagePath, stored.hash, stored.bytes, key, {
         call: 9, sourceRule: PANEL_SOURCE_RULE,
-        sourceRegionHash: regionHash,
-        // The surface this side's region depicts, kept as lineage. It is no
-        // longer the pixel source, so it is named as what it is rather than as
-        // where the bytes came from.
-        depictedSurfacePath: surface.storagePath, depictedSurfaceHash: observed,
-        // WHERE ON THE APPROVED PROOF THIS PANEL WAS CUT FROM. The panel is a
-        // geometric crop of the signed sheet at exactly this rectangle, scaled
-        // to the side's GENIE trim plus 5in bleed.
-        extractedFromProof: true,
+        sourceRegionHash: observed,
+        // The artwork this panel is made of, at the resolution Call 8 rendered
+        // it. Named as the pixel source because that is what it is.
+        sourceSurfacePath: surface.storagePath, sourceSurfaceHash: observed,
+        sourceContentHash: observed,
+        // Manufactured from the approved full-resolution surface, NOT cut out of
+        // the proof raster. Stated on the artifact so no later stage has to
+        // infer which one it was.
+        extractedFromProofRaster: false,
+        // WHERE ON THE APPROVED PROOF THIS SIDE SITS. The approval and identity
+        // anchor: this panel is the artwork the customer saw at exactly this
+        // rectangle of exactly this sheet, for exactly this revision and GENIE
+        // manifest.
         proofRegionContract: proof.proofRegionContract || null,
-        proofStoragePath: proofStoragePath,
-        proofContentHash: proof.sourceProofHash || null,
+        proofStoragePath, proofContentHash: approvedProofHash,
         proofRegion: {
           surfaceKey: proofRegion.surfaceKey,
           x: proofRegion.x, y: proofRegion.y, w: proofRegion.w, h: proofRegion.h,
           sheetWidth: proofRegion.sheetWidth, sheetHeight: proofRegion.sheetHeight,
+          scale: proofRegion.scale,
+          surfaceContentHash: proofRegion.surfaceContentHash,
+          proofContentHash: approvedProofHash,
+          revisionId: proofRegion.revisionId,
+          dimensionManifestId: proofRegion.dimensionManifestId,
+          manifestHash: proofRegion.manifestHash,
         },
-        // Stated plainly so nobody has to infer it: the cut region is smaller
-        // than the panel it becomes, so the resize is an upscale and the panel
-        // carries the proof's detail, not the surface's.
-        regionPixelWidth: proofRegion.w, regionPixelHeight: proofRegion.h,
-        resampleRatio: round2(Number(surface.pixelWidth) / proofRegion.w),
+        revisionId: run.revision_id, revisionSnapshotHash: run.revision_snapshot_hash || null,
+        dimensionManifestId: run.dimension_manifest_id, manifestHash: run.manifest_hash,
         masterHash: proof.masterHash || null, renderHash: proof.renderHash || null,
         trimWidthInches: dims.widthInches, trimHeightInches: dims.heightInches,
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
