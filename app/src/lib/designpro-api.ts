@@ -129,6 +129,20 @@ export type WorkflowStatus = {
   failure?: { stage: string; message: string; retryable: boolean };
 };
 
+/** One frozen, owner-scoped 3D view of the revision a run was built from. */
+export type ApprovedGenerationView = {
+  id: string;
+  generationId: string;
+  surfaceKey: string;
+  sourceViewType: string;
+  storagePath: string;
+  contentHash: string;
+  byteSize: number | null;
+  contentType: string;
+  signedUrl: string;
+  expiresIn: 300;
+};
+
 export type WorkflowArtifact = {
   id: string;
   runId?: string;
@@ -221,12 +235,47 @@ export type RevisionSubmission = {
 
 /* ── Calls 1-7 generation ────────────────────────────────────────── */
 
+/**
+ * The Commercial intake's own fields, carried whole.
+ *
+ * DesignPanelProPremium collects mode/companyName/phone/website and the customer
+ * uploads a logo, and every one of those was being dropped here: the builder
+ * below forwarded `brief` and four optional strings, so a commercial job reached
+ * the server as prose. The revision snapshot then froze `bodyText` as that prose
+ * string, design-master-author coerced the non-array to [], and the frozen master
+ * carried textIdentities:[] and logoIdentities:[] with no error anywhere. The
+ * panels came out as unbranded imagery because nothing branded ever arrived.
+ *
+ * IDENTITY IS NOT CREATIVE INPUT. companyName/phone/website are the customer's
+ * own strings and the logo is the customer's own file. They travel as structured
+ * fields so the master can render them deterministically -- vector type for the
+ * strings, the uploaded bytes for the logo. A.C.E. still decides how the design
+ * looks; it never decides what the company is called.
+ *
+ * Both gates already allow these: neither validatedGenerationRequest nor
+ * create_designpro_generation_request closes the top-level `input` key set, and
+ * none of these names appear in generation_input_has_server_controls. So this
+ * needs no contract-version bump and no input-validator migration.
+ */
 export type GenerationBrief = {
   brief: string;
   businessName?: string;
   industry?: string;
   colors?: string[];
   style?: string;
+  /** "commercial" once a company name exists, matching the intake's own rule. */
+  mode?: "restyle" | "commercial";
+  /** The customer's own strings. Authoritative; never model-authored. */
+  companyName?: string;
+  phone?: string;
+  website?: string;
+  /**
+   * The customer's uploaded logo, already through /assets/upload-intents ->
+   * signed PUT -> /assets/verify, so it arrives with its storage path and
+   * content hash. This is the only logo source: logos.extract runs later and
+   * cannot be the origin of the file the customer supplied.
+   */
+  logoAsset?: AssetIdentity;
 };
 
 export type GenerationVehicle = {
@@ -390,6 +439,27 @@ export async function createGenerationRequest(options: {
   if (options.brief.colors?.length) input.colors = options.brief.colors;
   if (options.brief.style) input.style = options.brief.style;
 
+  // THE COMMERCIAL IDENTITY, CARRIED STRUCTURED. Sent as discrete fields rather
+  // than folded into the brief prose, because the snapshot has to freeze the
+  // exact strings the customer typed and the handoff cannot recover them from a
+  // sentence. Parsing prose back into fields would put a guess where an
+  // authoritative value already exists.
+  if (options.brief.mode) input.mode = options.brief.mode;
+  if (options.brief.companyName) input.companyName = options.brief.companyName;
+  if (options.brief.phone) input.phone = options.brief.phone;
+  if (options.brief.website) input.website = options.brief.website;
+  // Identity only -- storage path plus content hash. The bytes stay in the
+  // private bucket and are fetched by the runtime against this hash, so a logo
+  // that changed after verification fails closed instead of printing.
+  if (options.brief.logoAsset) {
+    input.logoAsset = {
+      storagePath: options.brief.logoAsset.storagePath,
+      contentHash: options.brief.logoAsset.contentHash,
+      byteSize: options.brief.logoAsset.byteSize,
+      contentType: options.brief.logoAsset.contentType,
+    };
+  }
+
   return request<GenerationRequestState>("/generation/requests", {
     method: "POST",
     body: JSON.stringify({ generationId, idempotencyKey, input }),
@@ -399,6 +469,13 @@ export async function createGenerationRequest(options: {
 export const dpApi = {
   /* Calls 1-7 */
   createGenerationRequest,
+  /**
+   * Upload-and-verify for a customer-supplied file. Exposed here because intake
+   * needs it for the logo before the generation request is queued: the request
+   * must carry a storage path and content hash that already exist, not a file
+   * still on its way.
+   */
+  uploadRevisionAsset,
   getGenerationRequest: (requestId: string) =>
     request<GenerationRequestState>(`/generation/requests/${encodeURIComponent(requestId)}`),
   listGenerationViews: (requestId: string) =>
@@ -459,6 +536,15 @@ export const dpApi = {
     request<WorkflowStatus>(`/jobs/${encodeURIComponent(generationId)}`),
   listArtifacts: (generationId: string) =>
     request<WorkflowArtifact[]>(`/jobs/${encodeURIComponent(generationId)}/artifacts`),
+  /**
+   * The approved per-side 3D views this run was frozen against. The gateway has
+   * served these since the run identity work; nothing consumed them, so the
+   * customer saw six print panels with nothing to compare them to. Production
+   * Layers pairs each panel with its own view, which is the whole point of the
+   * surface -- a panel is only checkable next to the design it came from.
+   */
+  listApprovedViews: (generationId: string) =>
+    request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
   submitRevision: (submission: RevisionSubmission) =>
     request<{ runId: string; accepted: true }>("/revisions", {
       method: "POST",
@@ -473,6 +559,24 @@ export const dpApi = {
       method: "POST",
       body: JSON.stringify({ qc, notes }),
     }),
+  /**
+   * Open a purchase and get the Stripe checkout URL.
+   *
+   * The price lives on the server: this sends WHICH product, never how much.
+   * The two products stay separate all the way through -- buying the Logo Pack
+   * authorizes logo fulfillment and nothing else, and the Production Pack the
+   * same, because the entitlement the webhook confirms is per product.
+   */
+  createCheckoutSession: (input: {
+    generationId: string;
+    product: "print_pack_entitlement" | "logo_pack";
+    returnPath?: string;
+  }) =>
+    request<{ url: string; productType: string; amountCents: number }>("/checkout/sessions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
   approveFinalQc: (generationId: string, qc: FinalQc, notes: string) =>
     request<{ accepted: true }>(`/jobs/${encodeURIComponent(generationId)}/approvals/final`, {
       method: "POST",

@@ -33,8 +33,11 @@ for(const exactField of ["viewreceipts","viewlineage","dimensionmanifestid","man
 for(const edge of ["top: 5","right: 5","bottom: 5","left: 5"])
   assert.ok(lower.includes(edge),`claimant does not bind exact ${edge} bleed`);
 // Each panel binds the canonical surface it IS, not a region of a shared atlas.
-// The rule string is the one the database enforces on the Call 9 receipt.
-assert.match(lower,/sourcerule: panel_source_rule[\s\S]{0,900}sourceregionhash:[\s\S]{0,900}sourcesurfacehash:[\s\S]{0,900}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
+// The rule string is the one the database enforces on the Call 9 receipt. The
+// window is generous because the panel also carries its proof, revision and
+// GENIE identities now; what is being asserted is the ORDER and PRESENCE of the
+// source binding, not how tightly packed the metadata happens to be.
+assert.match(lower,/sourcerule: panel_source_rule[\s\S]{0,900}sourceregionhash:[\s\S]{0,900}sourcesurfacehash:[\s\S]{0,2500}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
   'panel artifact metadata must bind the canonical surface it was rendered from and four-edge bleed');
 assert.ok(lower.includes('panel_source_rule = "one-own-surface-region-per-output-side"'),
   'Call 9 must declare the one-own-surface-per-output-side rule the database requires');

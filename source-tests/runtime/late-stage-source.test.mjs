@@ -30,7 +30,9 @@ test("released claimant deterministically composites and archives seal plus stam
   assert.match(claimantSource, /composition: "deterministic-southeast-overlay\.v1"/);
   assert.match(claimantSource, /counts\.stamp !== 2/);
   assert.match(claimantSource, /identity\/design-order\.json/);
-  assert.match(claimantSource, /"source-view": 7/);
+  // Seven when the Production Pack was bought -- they are its design proofs.
+  assert.match(claimantSource, /"source-view": viewEntries\.length/);
+  assert.match(claimantSource, /zipIncludesSourceViews: production/);
   assert.match(claimantSource, /"dimension-manifest": 1/);
 });
 

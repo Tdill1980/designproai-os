@@ -25,6 +25,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import {
   ApiError,
+  AssetIdentity,
   dpApi,
   GenerationRequestState,
   GenerationVehicle,
@@ -291,6 +292,24 @@ export default function GenerateDesign() {
         orderNumber: String(form.get("orderNumber") || "").trim(),
         designName: String(form.get("designName") || "").trim(),
       });
+      const companyName = String(form.get("companyName") || "").trim();
+      const phone = String(form.get("phone") || "").trim();
+      const website = String(form.get("website") || "").trim();
+
+      // The logo is uploaded and VERIFIED before the request is queued, so the
+      // generation request carries a real storage path and content hash rather
+      // than a promise of a file. The upload namespace is keyed by a revision id
+      // and the production revision does not exist yet -- Calls 1-7 mint it --
+      // so an intake id is minted here. Provenance is the content hash, which is
+      // what the runtime re-checks before compositing, so the folder the bytes
+      // were staged under does not confer authority.
+      const logoFile = form.get("logo");
+      let logoAsset: AssetIdentity | undefined;
+      if (logoFile instanceof File && logoFile.size > 0) {
+        setProgress("Uploading and verifying the logo…");
+        logoAsset = await dpApi.uploadRevisionAsset(crypto.randomUUID().toLowerCase(), "logo", logoFile);
+      }
+
       setProgress("Queueing the seven-view generation…");
       setRequest(
         await dpApi.createGenerationRequest({
@@ -310,6 +329,13 @@ export default function GenerateDesign() {
               .split(",")
               .map((value) => value.trim())
               .filter(Boolean),
+            // A company name means commercial, whatever else was selected --
+            // the same rule the proven intake applies.
+            mode: companyName ? "commercial" : "restyle",
+            companyName: companyName || undefined,
+            phone: phone || undefined,
+            website: website || undefined,
+            logoAsset,
           },
         }),
       );
@@ -368,6 +394,43 @@ export default function GenerateDesign() {
               <Field label="Industry" name="industry" maxLength={160} placeholder="HVAC services" />
               <Field label="Colors" name="colors" maxLength={240} placeholder="dark blue, ice blue, white" />
               <Field label="Style" name="style" maxLength={160} placeholder="bold modern commercial" />
+            </div>
+          </Panel>
+
+          {/*
+            THE COMMERCIAL IDENTITY. Separate from the brief on purpose: the
+            brief is creative direction A.C.E. interprets, while these are the
+            customer's own strings and the customer's own file. They are frozen
+            into the revision snapshot verbatim and rendered deterministically --
+            vector type for the strings, the uploaded bytes for the logo -- so no
+            image model ever spells the company name or redraws the mark.
+          */}
+          <Panel eyebrow="Commercial identity">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Company name"
+                name="companyName"
+                maxLength={160}
+                placeholder="Precision Climate Solutions"
+                hint="Typed exactly as it should print. Never re-spelled by the design model."
+              />
+              <Field label="Phone" name="phone" maxLength={40} placeholder="(520) 555-0192" />
+              <Field label="Website" name="website" maxLength={200} placeholder="precisionclimate.com" />
+              <div>
+                <Label htmlFor="logo" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Logo file
+                </Label>
+                <Input
+                  id="logo"
+                  name="logo"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml,application/pdf"
+                  className="mt-1.5"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Optional. Uploaded as-is and placed as its own layer — never generated or traced.
+                </p>
+              </div>
             </div>
           </Panel>
 

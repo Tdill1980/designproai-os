@@ -439,6 +439,20 @@ function authorDesignMaster({
   if (!snapshot || snapshot.contractVersion !== "designpro.revision-snapshot.v1") {
     fail("author_revision_snapshot_invalid", "the author requires the frozen designpro.revision-snapshot.v1");
   }
+  // FAIL LOUDLY ON A MALFORMED bodyText. This used to read
+  //   Array.isArray(snapshot.bodyText) ? snapshot.bodyText : []
+  // and that ternary hid the whole branding defect. The handoff froze bodyText
+  // as a STRING (the brief prose) and the canary as an OBJECT
+  // ({designName}); both are non-arrays, both silently became zero text
+  // layers, and the master went on to report textIdentities:[] as though the
+  // design genuinely carried no type. Six unbranded panels shipped with no
+  // error raised at any stage. An absent bodyText is a real state -- a design
+  // may carry no type -- but a bodyText of the WRONG SHAPE is a broken
+  // producer, and the two must never look identical again.
+  if (snapshot.bodyText !== undefined && snapshot.bodyText !== null && !Array.isArray(snapshot.bodyText)) {
+    fail("author_body_text_malformed",
+      `the revision snapshot froze bodyText as ${Array.isArray(snapshot.bodyText) ? "an array" : typeof snapshot.bodyText}; it must be an array of text-layer specs, and a non-array is a producer defect rather than a design without type`);
+  }
   const bodyText = Array.isArray(snapshot.bodyText) ? snapshot.bodyText : [];
   const inventory = Array.isArray(snapshot.expectedLogoInventory) ? snapshot.expectedLogoInventory : null;
   if (!inventory) fail("author_logo_inventory_missing", "the revision snapshot must freeze expectedLogoInventory");

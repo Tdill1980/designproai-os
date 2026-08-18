@@ -55,8 +55,12 @@ for (const contract of [
   "designpro.expected-logo-inventory.v1", "fiveinchbleed", "ziphash",
 ]) assert.ok(all.includes(contract), `missing contract ${contract}`);
 
+// "restyle" alone is NOT forbidden: it is one of the two DesignPro creative
+// modes (commercial vs restyle), named in the product contract and carried in
+// the revision snapshot. What is forbidden is a dependency on the RestylePro
+// system -- its name, its tables, its runners.
 for (const forbidden of [
-  "restyle", "railway", "shop_profiles", "production_pack_credits",
+  "restylepro", "restyle_pro", "railway", "shop_profiles", "production_pack_credits",
   "marketing", "slack", "vectorize", ":3100", ":8080",
 ]) assert.ok(!all.includes(forbidden), `forbidden RP/shared dependency: ${forbidden}`);
 

@@ -48,6 +48,7 @@ import {
   type RenderElementSeparatorHandle,
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
+import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
 import {
   getEnticeRevisionStatus,
   resumeEnticeRevision,
@@ -3417,6 +3418,27 @@ export default function RevisionStudioIQ() {
     try { return JSON.parse(row.admin_notes || "{}").designiq_generation_id || null; }
     catch { return null; }
   }, []);
+
+  /**
+   * The id Production Layers is about. A panelizer-sourced row's own `id` is a
+   * job id, which no resolver can match, so the linked design id is handed over
+   * instead -- exactly the id class both the legacy resolver and the standalone
+   * gateway understand.
+   */
+  const productionLayersId = useMemo(() => (
+    ((selectedRender as any)?.__source === "panelizer_jobs"
+      ? (selectedRender as any)?._generationId
+      : null)
+    || selectedRender?.id
+    || genIdOf(selectedRender)
+    || null
+  ), [selectedRender, genIdOf]);
+
+  // Null unless this design is a standalone run, which is what lets the card
+  // keep its existing behaviour for every design that is not.
+  const standaloneProductionLayers = useStandaloneProductionLayers(productionLayersId, {
+    returnPath: typeof window !== "undefined" ? window.location.pathname : undefined,
+  });
 
   const submitSavedRevision = useCallback(async ({
     render,
@@ -8200,14 +8222,11 @@ export default function RevisionStudioIQ() {
                   // resolver THAT, which is exactly the id class it resolves.
                   // Orphaned jobs (null _generationId) fall through to today's
                   // behavior and the guard still fails closed — honestly.
-                  generationId={
-                    ((selectedRender as any)?.__source === "panelizer_jobs"
-                      ? (selectedRender as any)?._generationId
-                      : null)
-                    || selectedRender?.id
-                    || genIdOf(selectedRender)
-                    || null
-                  }
+                  generationId={productionLayersId}
+                  // The standalone runtime's rows when this design is one of its
+                  // runs, null otherwise -- and null is what makes the card fall
+                  // back to its own resolution, so a legacy design is untouched.
+                  source={standaloneProductionLayers}
                   onAddOverlayLayer={(url, name) =>
                     addLogoLayerToCurrentView({
                       id: `pfa_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,

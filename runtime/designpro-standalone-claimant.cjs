@@ -59,7 +59,10 @@ const STAGES = Object.freeze([
   "revision.freeze", "manifest.resolve", "proof.build", "panels.build",
   // Call 11 sits between Call 10 and the PanelPro gate: its de-logoed
   // duplicates are what that gate validates against vehicle templates.
-  "logos.extract", "panels.delogo", "pack.verify", "pack.activate", "source.verify",
+  "logos.extract", "panels.delogo", "pack.verify", "pack.activate",
+  // The purchase gate leads production. Everything after it is paid work, so
+  // nothing expensive sits ahead of it.
+  "await_purchase", "source.verify",
   "await_panelpro_preflight_qc", "enhance.upscale", "output.build", "output.verify",
   "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver",
 ]);
@@ -76,8 +79,13 @@ const ARTIFACT_KINDS = Object.freeze([
   "flat-proof", "panel", "qc-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
-// The Call 9 rule the database enforces. Each output side is its own rendered
-// surface from the canonical master -- not a region cut out of a shared atlas.
+// The Call 9 rule the database enforces. Each output side manufactures from ITS
+// OWN full-resolution approved surface, anchored to its OWN named region of the
+// approved 2D proof -- never a shared rectangle, never a neighbouring tile,
+// never the driver's artwork reused for the passenger, and never a crop lifted
+// back out of the vehicle-shaped proof raster. The database checks the same
+// thing from its side: sourceRegionHashes must be one per side and all
+// distinct, and it rejects a receipt whose driver and passenger hash alike.
 const PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side";
 // Working resolution for the canonical surfaces. Print resolution is reached by
 // the Topaz enhance stage, exactly as it was before; rendering at print size
@@ -375,6 +383,98 @@ async function complete(sb, stage, run, receiptValue, receiptHash = null, produc
   if (data !== true) throw new StageError("stage_lease_lost", `Lease lost for ${stage.stage_key}`);
 }
 
+/**
+ * Open the production workflow for a prepared pack.
+ *
+ * KEPT, DELIBERATELY. This is the working downstream conductor and it is still
+ * the only one -- rebuilding it would be the second fulfillment chain nobody
+ * wants. What changed is who calls it. It is no longer invoked by pack.activate
+ * merely because preparation finished; the same call now lives in
+ * confirm_designpro_purchase, so production opens when a customer pays for this
+ * exact prepared pack. The reconciler below still repairs a crash between the
+ * payment and the run, which is why both stay.
+ */
+// The two products, by the proven identifiers. print_production_pack is
+// deliberately absent: its own source calls it the path that kicks the old
+// re-slice pipeline.
+const PURCHASABLE_PRODUCTS = Object.freeze(["print_pack_entitlement", "logo_pack"]);
+
+/**
+ * WHAT A PURCHASE AUTHORIZES, enumerated once.
+ *
+ * Written here rather than scattered as product checks through every stage,
+ * because a rule repeated in six places is six rules. Each stage asks this
+ * manifest what it may touch; none of them asks what was bought.
+ *
+ *   print_pack_entitlement  the six branded panels and the clean duplicates
+ *                           PanelPro validates against, their upscale, the
+ *                           production outputs, the QC certificate, the ZIP and
+ *                           the WrapBox production delivery.
+ *   logo_pack               the separated logo and lettering assets, their
+ *                           upscale, their QC, and their own delivery.
+ *
+ * Neither implies the other. A customer who paid $29 for logos has not bought
+ * $299 of production files, and the reverse is equally wrong -- so buying both
+ * is two entitlements sharing one run, not one bigger purchase.
+ */
+function authorizedAssetManifest(paidProducts) {
+  const products = [...new Set((paidProducts || []).map(String))].sort();
+  const production = products.includes("print_pack_entitlement");
+  const logos = products.includes("logo_pack");
+  return Object.freeze({
+    contract: "designpro.authorized-assets.v1",
+    products,
+    productionPackAuthorized: production,
+    logoPackAuthorized: logos,
+    // Artifact kinds each stage may read. Absent means UNAUTHORIZED, which is
+    // not the same as missing -- the difference decides whether a stage fails
+    // or completes as inapplicable.
+    upscale: Object.freeze([...(production ? ["panel", "qc-panel"] : []), ...(logos ? ["logo"] : [])]),
+    output: Object.freeze(production ? ["upscaled-panel"] : []),
+    // The complete production output set is six sides x three formats. A run
+    // that did not buy it must not be asked to prove it; a run that did must
+    // fail closed without it.
+    requiredOutputFiles: production ? 18 : 0,
+    // What the humans are asked to check. QC validates the purchased asset
+    // classes and is never handed a class the customer did not buy.
+    qcScope: Object.freeze([
+      ...(production ? ["production-panels"] : []),
+      ...(logos ? ["logo-assets"] : []),
+    ]),
+    // What the archive carries. The stamp is in both: it is the QC evidence for
+    // whatever was approved, and each product needs its own.
+    zipKinds: Object.freeze([
+      ...(production ? ["flat-proof", "panel", "output"] : []),
+      ...(logos ? ["logo"] : []),
+      "stamp",
+    ]),
+    // The seven approved renders are the Production Pack's design proofs. A
+    // Logo Pack buys separated assets, not the design's proof set.
+    zipIncludesSourceViews: production,
+    delivery: Object.freeze([
+      ...(production ? ["output", "stamp", "flat-proof"] : []),
+      ...(logos ? ["logo"] : []),
+    ]),
+    // What the customer bought, named so WrapBox can tell one from the other
+    // rather than showing an ambiguous single pack.
+    deliverables: Object.freeze([
+      ...(production ? [{ product: "print_pack_entitlement", label: "Production Pack" }] : []),
+      ...(logos ? [{ product: "logo_pack", label: "Logo Pack" }] : []),
+    ]),
+  });
+}
+
+/**
+ * The frozen manifest for this run, read once from the gate that created it.
+ *
+ * Every downstream stage asks this rather than asking what was bought. A rule
+ * repeated in six stages is six rules, and the sixth is the one that drifts.
+ */
+async function readAuthorizedAssets(sb, runId) {
+  const gate = await stageOutput(sb, runId, "await_purchase");
+  return requiredObject(gate.authorizedAssetManifest, "authorized asset manifest");
+}
+
 async function ensureAutomaticProduction(sb, enticeRunId) {
   const { data, error } = await sb.rpc("create_designpro_production_workflow", {
     p_entice_run_id: enticeRunId,
@@ -382,6 +482,12 @@ async function ensureAutomaticProduction(sb, enticeRunId) {
     p_input: { trigger: "designpro.os.auto" },
   });
   if (error) throw new StageError("automatic_production_enqueue_failed", error.message, true);
+  return data;
+}
+
+async function reconcilePurchaseGates(sb) {
+  const { data, error } = await sb.rpc("reconcile_designpro_purchase_gates");
+  if (error) throw new StageError("purchase_gate_reconciliation_failed", error.message, true);
   return data;
 }
 
@@ -535,6 +641,26 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       totalSqFt: manifest.totalSqFt,
       dimensionManifestId: rebound.dimension_manifest_id, manifestHash: rebound.manifest_hash,
       perSurfaceDimensions: manifest.expectedSurfaces.map(({ sourceAsset, ...surface }) => surface),
+      // THE PER-SIDE ANCHOR ON THE APPROVED PROOF. One named region per surface,
+      // in sheet pixel space, each bound to the surface hash drawn into it. The
+      // proof composer always computed these and never returned them, so a panel
+      // could only be tied to the proof by its side LABEL -- which is a name,
+      // not a location. Recorded here so Call 9 can bind each panel to its own
+      // region of the sheet the customer approved.
+      proofRegionContract: built.proof2d.proofRegionContract,
+      // Every region carries the identity of the sheet it was measured on, the
+      // revision it belongs to, and the GENIE manifest that set the geometry.
+      // Without those an anchor is just four numbers, and four numbers survive
+      // a revision that invalidates them.
+      proofRegions: (built.proof2d.proofRegions || []).map((region) => ({
+        ...region,
+        proofStoragePath: proofArtifact.storagePath,
+        proofContentHash: proofArtifact.contentHash,
+        revisionId: run.revision_id,
+        revisionSnapshotHash: run.revision_snapshot_hash || null,
+        dimensionManifestId: rebound.dimension_manifest_id,
+        manifestHash: rebound.manifest_hash,
+      })),
       viewLineage: frozenViews.viewReceipts, requiresPanelProTextReview: true,
       // The canonical identity this proof and these surfaces belong to.
       masterHash: built.master.masterHash, renderHash: built.cycle.render.renderHash,
@@ -556,27 +682,111 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       throw new StageError("call9_surface_set_invalid", "Call 8 did not record all six canonical production surfaces", false);
     }
 
-    // Consume, never cut. Each panel IS the surface Call 8 rendered from the
-    // canonical master -- one own surface per output side. There is no atlas to
-    // crop, no region to locate, and no generative pass anywhere in this stage.
+    // THE PROOF REGION IS THE ANCHOR. THE APPROVED SURFACE IS THE ARTWORK.
+    //
+    // Call 8 draws each side onto the proof sheet through a vehicle-shaped
+    // display mask and records where it landed. That rectangle is what binds a
+    // panel to the sheet the customer approved -- it proves WHICH side this is
+    // and that the customer saw exactly this artwork in exactly that place.
+    //
+    // It is not the pixel source. Cutting the panel back out of the proof
+    // raster would manufacture from a masked, downsampled composite: the
+    // silhouette edges bake in, the tile is a fraction of the side's true
+    // resolution, and every panel inherits the sheet's scale reduction. The
+    // full-resolution approved surface Call 8 rendered is the production
+    // artwork, and the region says which one it is.
+    //
+    // So: region = approval and identity, surface = manufacturing pixels, and
+    // the two are tied together by hash. Nothing generative runs here; after
+    // the proof is approved the artwork is settled.
     const spools = [];
     const produced = [];
     const sourceRegionHashes = {};
+    // Keyed by exact canonical surface_key. Side selection is this lookup and
+    // nothing else -- never a substring match on "side", never an alias table,
+    // never array position, never the nearest or most similar-looking region.
+    // A side that cannot name its own region fails closed below.
+    const proofRegionByKey = new Map(
+      (Array.isArray(proof.proofRegions) ? proof.proofRegions : [])
+        .filter((region) => SURFACE_KEYS.includes(String(region.surfaceKey)))
+        .map((region) => [String(region.surfaceKey), region]),
+    );
+    // A proof with no anchors cannot bind panels per side. Refusing is the
+    // point: the alternative is inferring where each side sits, which is how a
+    // panel ends up carrying a neighbour's artwork. Runs whose Call 8 predates
+    // the region manifest need their proof rebuilt, not their panels guessed.
+    if (proofRegionByKey.size !== SURFACE_KEYS.length) {
+      throw new StageError("call9_proof_regions_missing",
+        `the approved proof carries ${proofRegionByKey.size} of ${SURFACE_KEYS.length} required side regions`, false);
+    }
+    // The signed sheet's own identity, re-checked before anything binds to it.
+    // Hash only -- the proof is never decoded here, because nothing is cut from
+    // it.
+    const proofStoragePath = requiredString(proof.storagePath, "approved 2D proof storagePath");
+    const approvedProofHash = String(proof.sourceProofHash || "").toLowerCase();
+    if (!approvedProofHash) throw new StageError("call9_proof_identity_missing", "Call 8 recorded no proof content hash to bind panels to", false);
+    if (hashBytes(await storageBytes(sb, proofStoragePath)) !== approvedProofHash) {
+      throw new StageError("call9_proof_changed",
+        "the approved 2D proof changed after Call 8 recorded it; panels must be bound to the sheet that was approved", false);
+    }
     for (const surface of recorded) {
       const key = String(surface.key);
       const dims = expected.get(key);
       if (!dims) throw new StageError("call9_genie_identity_missing", key, false);
+      const proofRegion = proofRegionByKey.get(key);
+      if (!proofRegion) throw new StageError("call9_proof_region_missing", `${key} has no named region on the approved proof`, false);
+
+      // The rectangle must lie inside the sheet frame it was measured against.
+      // One running off the edge means the region manifest and the sheet
+      // disagree, so the anchor is not describing where this side actually sits.
+      const withinSheet = proofRegion.x >= 0 && proofRegion.y >= 0
+        && proofRegion.w > 0 && proofRegion.h > 0
+        && proofRegion.x + proofRegion.w <= Number(proofRegion.sheetWidth)
+        && proofRegion.y + proofRegion.h <= Number(proofRegion.sheetHeight);
+      if (!withinSheet) {
+        throw new StageError("call9_proof_region_out_of_bounds",
+          `${key}'s region ${proofRegion.x},${proofRegion.y} ${proofRegion.w}x${proofRegion.h} does not fit the ${proofRegion.sheetWidth}x${proofRegion.sheetHeight} proof sheet`, false);
+      }
+      // The region must be anchored to the same proof the panel is being bound
+      // to. A region carried over from an earlier sheet would anchor this panel
+      // to artwork the customer never approved.
+      if (String(proofRegion.proofContentHash || "").toLowerCase() !== approvedProofHash) {
+        throw new StageError("call9_proof_region_proof_mismatch",
+          `${key}'s region is anchored to a different proof than the one Call 8 approved`, false);
+      }
+      // The region must belong to this revision and this GENIE manifest. Panels
+      // bound to a stale revision's anchors are how revised 3D views end up
+      // paired with old panels.
+      if (String(proofRegion.revisionId || "") !== String(run.revision_id)) {
+        throw new StageError("call9_proof_region_revision_mismatch", `${key}'s region belongs to a different revision`, false);
+      }
+      if (String(proofRegion.dimensionManifestId || "") !== String(run.dimension_manifest_id)
+        || String(proofRegion.manifestHash || "").toLowerCase() !== String(run.manifest_hash || "").toLowerCase()) {
+        throw new StageError("call9_proof_region_manifest_mismatch", `${key}'s region was measured against different GENIE geometry`, false);
+      }
+
       if (Number(surface.bleedInches) !== 5) throw new StageError("call9_bleed_drift", `${key} does not carry the 5in production bleed`, false);
       if (round2(surface.trimWidthInches) !== round2(dims.widthInches) || round2(surface.trimHeightInches) !== round2(dims.heightInches)) {
         throw new StageError("call9_geometry_drift", `${key} was rendered at dimensions the bound manifest does not declare`, false);
       }
-      // The bytes are re-hashed against what Call 8 recorded. A surface that
-      // moved between the two stages fails closed rather than printing.
+
+      // THE ARTWORK. The full-resolution surface Call 8 rendered, consumed
+      // byte-for-byte. Re-hashed first: a surface that moved between the two
+      // stages fails closed rather than printing.
       const bytes = await storageBytes(sb, surface.storagePath);
       const observed = hashBytes(bytes);
       if (observed !== String(surface.contentHash).toLowerCase()) {
         throw new StageError("call9_surface_changed", `${key} changed after Call 8 rendered it`, false);
       }
+      // THE THREE-WAY IDENTITY. What the proof region depicts, what Call 8
+      // approved, and what this panel manufactures must all be one artwork.
+      // Anything else means the sheet shows one design and the panel prints
+      // another.
+      if (String(proofRegion.surfaceContentHash || "").toLowerCase() !== observed) {
+        throw new StageError("call9_proof_region_surface_mismatch",
+          `${key}'s proof region depicts ${String(proofRegion.surfaceContentHash).slice(0, 12)} but the panel carries ${observed.slice(0, 12)}`, false);
+      }
+
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/panels/${key}.png`;
       const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, bytes, "image/png");
       if (stored.spool) spools.push(stored.spool);
@@ -584,7 +794,33 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       produced.push(artifact("panel", stored.storagePath, stored.hash, stored.bytes, key, {
         call: 9, sourceRule: PANEL_SOURCE_RULE,
         sourceRegionHash: observed,
+        // The artwork this panel is made of, at the resolution Call 8 rendered
+        // it. Named as the pixel source because that is what it is.
         sourceSurfacePath: surface.storagePath, sourceSurfaceHash: observed,
+        sourceContentHash: observed,
+        // Manufactured from the approved full-resolution surface, NOT cut out of
+        // the proof raster. Stated on the artifact so no later stage has to
+        // infer which one it was.
+        extractedFromProofRaster: false,
+        // WHERE ON THE APPROVED PROOF THIS SIDE SITS. The approval and identity
+        // anchor: this panel is the artwork the customer saw at exactly this
+        // rectangle of exactly this sheet, for exactly this revision and GENIE
+        // manifest.
+        proofRegionContract: proof.proofRegionContract || null,
+        proofStoragePath, proofContentHash: approvedProofHash,
+        proofRegion: {
+          surfaceKey: proofRegion.surfaceKey,
+          x: proofRegion.x, y: proofRegion.y, w: proofRegion.w, h: proofRegion.h,
+          sheetWidth: proofRegion.sheetWidth, sheetHeight: proofRegion.sheetHeight,
+          scale: proofRegion.scale,
+          surfaceContentHash: proofRegion.surfaceContentHash,
+          proofContentHash: approvedProofHash,
+          revisionId: proofRegion.revisionId,
+          dimensionManifestId: proofRegion.dimensionManifestId,
+          manifestHash: proofRegion.manifestHash,
+        },
+        revisionId: run.revision_id, revisionSnapshotHash: run.revision_snapshot_hash || null,
+        dimensionManifestId: run.dimension_manifest_id, manifestHash: run.manifest_hash,
         masterHash: proof.masterHash || null, renderHash: proof.renderHash || null,
         trimWidthInches: dims.widthInches, trimHeightInches: dims.heightInches,
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
@@ -781,7 +1017,26 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
   }
   if (stage.stage_key === "pack.activate") {
     await stageOutput(sb, run.id, "pack.verify");
-    await complete(sb, stage, run, { verified: true, active: true, activatedAt: new Date().toISOString() });
+    // PREPARATION ENDS HERE. THE CUSTOMER HAS NOT PAID YET.
+    //
+    // Calls 1-11 run automatically and are cheap on purpose: they exist so the
+    // customer can see the six branded panels, their clean duplicates and the
+    // separated logos before deciding. Everything after this stage -- Topaz,
+    // the output build, the ZIP, delivery -- is expensive, and the existence of
+    // a preview does not authorize any of it.
+    //
+    // The production workflow IS created here, and it is still the only one --
+    // rebuilding it elsewhere would be the second conductor. What changed is
+    // that its first stage is await_purchase, so it exists, reaches the gate,
+    // and stops. Preparation no longer flows into Topaz; a customer who never
+    // buys leaves a run parked at a gate, which costs nothing.
+    await complete(sb, stage, run, {
+      verified: true, active: true, activatedAt: new Date().toISOString(),
+      // Stated on the receipt so no later reader has to infer why production
+      // has not started: it is waiting on a purchase, not stalled.
+      awaitingPurchase: true,
+      purchasableProducts: ["print_pack_entitlement", "logo_pack"],
+    });
     return ensureAutomaticProduction(sb, run.id);
   }
   throw new StageError("unsupported_entice_stage", stage.stage_key, false);
@@ -1020,8 +1275,48 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       sourceArtifactCount: produced.length, logoPlacements: receiptPlacements,
     }, null, produced);
   }
+  if (stage.stage_key === "await_purchase") {
+    // THE PURCHASE GATE. Nothing here spends anything; it reads what was paid
+    // for and either parks or authorizes.
+    const sourceRunId = requiredString(run.results?.sourceEnticeRunId || input.sourceEnticeRunId, "sourceEnticeRunId");
+    const { data: paid, error } = await sb.rpc("designpro_paid_products", { p_entice_run_id: sourceRunId });
+    if (error) throw new StageError("purchase_entitlement_read_failed", error.message, true);
+    const products = Array.isArray(paid) ? paid.map(String) : [];
+    if (!products.length) {
+      // Park. The reconciler releases this the moment an entitlement lands, so
+      // a paid run never waits on a button this product does not have.
+      const { error: waitError } = await sb.rpc("request_designpro_purchase_gate", {
+        p_run_id: run.id, p_details: { requestedAt: new Date().toISOString(), awaiting: PURCHASABLE_PRODUCTS },
+      });
+      if (waitError) throw new StageError("purchase_gate_request_failed", waitError.message, false);
+      return;
+    }
+    // AUTHORIZED ASSETS, FROZEN HERE. Every stage after this consumes this
+    // manifest instead of whatever happens to be in storage, so an unpaid
+    // product's preview assets can never be upscaled, packaged or delivered.
+    const manifest = authorizedAssetManifest(products);
+    return complete(sb, stage, run, {
+      verified: true, receiptKind: "purchase.authorized",
+      paidProducts: products, authorizedAssetManifest: manifest,
+    });
+  }
   if (stage.stage_key === "await_panelpro_preflight_qc" || stage.stage_key === "await_final_human_qc") {
-    const { error } = await sb.rpc("request_designpro_human_gate", { p_run_id: run.id, p_stage_key: stage.stage_key, p_details: { requestedBy: "designpro-standalone-claimant", requestedAt: new Date().toISOString() } });
+    // QC RECEIVES EXACTLY WHAT WAS PURCHASED.
+    //
+    // A $29 Logo Pack contains no production panels, so a gate that assumes six
+    // of them would deadlock a purchase that is complete. The gate is one gate;
+    // its SCOPE is what changes. Handing a reviewer a class the customer never
+    // bought is asking them to approve something that does not exist.
+    const authorized = await readAuthorizedAssets(sb, run.id);
+    const { error } = await sb.rpc("request_designpro_human_gate", {
+      p_run_id: run.id, p_stage_key: stage.stage_key,
+      p_details: {
+        requestedBy: "designpro-standalone-claimant", requestedAt: new Date().toISOString(),
+        qcScope: authorized.qcScope, products: authorized.products,
+        productionPackAuthorized: authorized.productionPackAuthorized,
+        logoPackAuthorized: authorized.logoPackAuthorized,
+      },
+    });
     if (error) throw new StageError("human_gate_request_failed", error.message, false);
     return;
   }
@@ -1032,6 +1327,23 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const readiness = topazReadiness(process.env);
     if (!readiness.configurationValid) throw new StageError("topaz_configuration_invalid", readiness.detail, false);
     if (!readiness.enabled) throw new StageError("topaz_disabled", "Call 12 is disabled; a production pack cannot be built without the approved enhancement", false);
+    // WHAT THIS RUN MAY ENHANCE. Read from the frozen gate receipt rather than
+    // from storage: a preview asset exists for everything, so "it is there" has
+    // never been the same question as "it was paid for".
+    const authorized = await readAuthorizedAssets(sb, run.id);
+    const mayUpscale = new Set(authorized.upscale || []);
+    if (!mayUpscale.size) {
+      throw new StageError("enhance_nothing_authorized", "No purchased asset class authorizes enhancement on this run", false);
+    }
+    // The Logo Pack alone buys the separated assets, not the panel set. Skipping
+    // the panels here is the entitlement working, not a missing input.
+    if (!mayUpscale.has("panel")) {
+      return complete(sb, stage, run, {
+        verified: true, receiptKind: "call12.topaz-upscale", call: 12,
+        authorizedAssetManifest: authorized, enhancedSurfaces: [],
+        skippedUnpurchased: ["panel"],
+      });
+    }
     const panels = await artifacts(sb, run.id, ["panel"]);
     if (panels.length !== SURFACE_KEYS.length || new Set(panels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
       throw new StageError("enhance_source_panels_missing", "Exact six approved source panels are required", false);
@@ -1109,13 +1421,34 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     return completed;
   }
   if (stage.stage_key === "output.build") {
+    // PNG/TIFF/EPS are the Production Pack's deliverable. A run that bought only
+    // the Logo Pack builds none of them -- and says so, rather than producing an
+    // empty set that reads as a failure.
+    const authorized = await readAuthorizedAssets(sb, run.id);
+    if (!(authorized.output || []).length) {
+      return complete(sb, stage, run, {
+        verified: true, outputCount: 0, outputSetHash: null,
+        authorizedAssetManifest: authorized, skippedUnpurchased: ["output"],
+      });
+    }
     const built = await withHeavyOutputLease(sb, stage, () => buildPrintOutputs(sb, run, input, stage, runtimeConfig));
     const completed = await complete(sb, stage, run, { verified: true, outputCount: built.produced.length, outputSetHash: hashJson(built.produced.map((item) => ({ path: item.storagePath, hash: item.contentHash }))) }, null, built.produced);
     for (const spool of built.spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed output spool cleanup failed: ${error.message}`));
     return completed;
   }
   if (stage.stage_key === "output.verify") {
+    // Prove the purchased output set and no other. A Production Pack still
+    // fails closed without its complete eighteen; a Logo Pack is never asked
+    // for panel outputs it did not buy.
+    const authorized = await readAuthorizedAssets(sb, run.id);
     const rows = await artifacts(sb, run.id, ["output"]);
+    if (!authorized.requiredOutputFiles) {
+      if (rows.length) throw new StageError("output_unpurchased_present", "Production outputs exist on a run that did not buy them", false);
+      return complete(sb, stage, run, {
+        verified: true, receiptKind: "output.verified", exactSurfaceFormatCount: 0,
+        authorizedAssetManifest: authorized, notApplicable: ["output"],
+      }, null, []);
+    }
     const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
     let verified;
     try {
@@ -1131,11 +1464,16 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       ...verified,
       verified: true,
       receiptKind: "output.verified",
-      exactSurfaceFormatCount: 18,
+      exactSurfaceFormatCount: authorized.requiredOutputFiles,
+      authorizedAssetManifest: authorized,
       structuralVerification: verified.files,
     }, null, []);
   }
   if (stage.stage_key === "stamp.build") {
+    // The certificate states what was approved. Stamping "Production Pack
+    // approved" on a run that only bought the $29 Logo Pack would be a claim
+    // about work nobody paid for or reviewed.
+    const authorized = await readAuthorizedAssets(sb, run.id);
     const finalQc = await receipt(sb, run.id, "final.human-qc");
     const verifiedBy = requiredString(finalQc.receipt?.verifiedBy, "final QC verifiedBy");
     const approvalRef = requiredString(finalQc.receipt?.approvalRef, "final QC approvalRef");
@@ -1161,9 +1499,9 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const sealOverlay = await sharp(png).resize(sealSize, sealSize).png().toBuffer();
     const stampedProof = await sharp(proofBytes).composite([{ input: sealOverlay, gravity: "southeast" }]).png().toBuffer();
     const stampedStored = await uploadProducedBytes(sb, run, stage, runtimeConfig, `designpro/${tenantKey(run.tenant_key)}/${run.id}/stamped-call8-proof.png`, stampedProof, "image/png");
-    const seal = artifact("stamp", sealStored.storagePath, sealStored.hash, sealStored.bytes, "seal", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), source: "server-svg-port-of-frozen-canvas-stamp" });
+    const seal = artifact("stamp", sealStored.storagePath, sealStored.hash, sealStored.bytes, "seal", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), source: "server-svg-port-of-frozen-canvas-stamp", approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables });
     const stamped = artifact("stamp", stampedStored.storagePath, stampedStored.hash, stampedStored.bytes, "stamped-proof", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), sourceProofHash: proofRows[0].content_hash, sealHash: sealStored.hash, composition: "deterministic-southeast-overlay.v1" });
-    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash }, stampedStored.hash, [seal, stamped]);
+    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables }, stampedStored.hash, [seal, stamped]);
     if (stampedStored.spool) await removeCommittedSpool(stampedStored.spool).catch((error) => console.error(`[DESIGNPRO-OS] committed stamped-proof spool cleanup failed: ${error.message}`));
     return completed;
   }
@@ -1171,12 +1509,30 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const stampReceipt = await receipt(sb, run.id, "stamp");
     const designId = requiredString(stampReceipt.receipt?.designId, "stamp DesignID");
     const orderNumber = requiredString(stampReceipt.receipt?.orderNumber, "stamp Order #");
-    const rows = await artifacts(sb, run.id, ["flat-proof", "panel", "logo", "output", "stamp"]);
-    const counts = Object.fromEntries(["flat-proof", "panel", "logo", "output", "stamp"].map((kind) => [kind, rows.filter((item) => item.artifact_kind === kind).length]));
-    if (counts["flat-proof"] !== 1 || counts.panel !== 6 || counts.output !== 18 || counts.stamp !== 2) throw new StageError("zip_artifacts_incomplete", "ZIP requires Call 8 proof, six Call 9 masters, Call 10 logos, 18 outputs, seal, and stamped proof", false);
-    const sourceViewsReceipt = await receipt(sb, sourceRunId, "views.seven-source");
-    const sourceViews = sourceViewsReceipt.receipt?.viewReceipts;
-    const viewEntries = sourceViewZipEntries(sb, sourceViews);
+    // THE ARCHIVE CARRIES WHAT WAS BOUGHT.
+    //
+    // Both products can be fulfilled in one run, so the ZIP cannot simply take
+    // everything that exists: a Production Pack archive containing separated
+    // logos would give away the $29 product, and a Logo Pack archive containing
+    // the panel output set would give away the $299 one.
+    const authorized = await readAuthorizedAssets(sb, run.id);
+    const zipKinds = [...new Set(authorized.zipKinds || [])];
+    const rows = await artifacts(sb, run.id, zipKinds);
+    const counts = Object.fromEntries(zipKinds.map((kind) => [kind, rows.filter((item) => item.artifact_kind === kind).length]));
+    if (counts.stamp !== 2) throw new StageError("zip_artifacts_incomplete", "Every delivered pack carries its seal and stamped proof", false);
+    if (authorized.productionPackAuthorized
+      && (counts["flat-proof"] !== 1 || counts.panel !== SURFACE_KEYS.length || counts.output !== authorized.requiredOutputFiles)) {
+      throw new StageError("zip_artifacts_incomplete", "The Production Pack ZIP requires the Call 8 proof, six Call 9 masters and the complete output set", false);
+    }
+    if (authorized.logoPackAuthorized && !counts.logo) {
+      throw new StageError("zip_artifacts_incomplete", "The Logo Pack ZIP requires the separated logo assets that were purchased", false);
+    }
+    // The seven approved renders are the Production Pack's design proofs; a
+    // Logo Pack buys separated assets, not the design's proof set.
+    const sourceViews = authorized.zipIncludesSourceViews
+      ? (await receipt(sb, sourceRunId, "views.seven-source")).receipt?.viewReceipts
+      : [];
+    const viewEntries = authorized.zipIncludesSourceViews ? sourceViewZipEntries(sb, sourceViews) : [];
     const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
     const dimensionManifestBytes = Buffer.from(JSON.stringify(canonical(dimensionManifest)));
     const dimensionManifestHash = hashBytes(dimensionManifestBytes);
@@ -1204,7 +1560,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },
       businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
     });
-    const includedKinds = { ...counts, "source-view": 7, "dimension-manifest": 1, "design-order-identity": 1 };
+    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1 };
     const signal = stageLeaseContext.getStore()?.controller?.signal;
     let spool;
     try {
@@ -1217,6 +1573,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       const result = await complete(sb, stage, run, {
         verified: true, receiptKind: "zip", zipHash: stored.contentHash, zipByteSize: stored.byteSize,
         materialHash, entryCount: entries.length, includedKinds,
+        authorizedAssetManifest: authorized, deliverables: authorized.deliverables,
         sourceViews: archivedSourceViews,
         dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },
         businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
@@ -1230,6 +1587,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     }
   }
   if (stage.stage_key === "wrapbox.deliver") {
+    // Delivery carries only what was authorized, and says which product each
+    // part belongs to. An artifact reaching the customer because it happened to
+    // be in storage is the same defect as an unpaid upscale, one step later.
+    const authorized = await readAuthorizedAssets(sb, run.id);
     const zipReceipt = await receipt(sb, run.id, "zip");
     const finalQc = await receipt(sb, run.id, "final.human-qc");
     const approvedAt = requiredString(finalQc.receipt?.approvedAt, "final QC approvedAt");
@@ -1249,16 +1610,26 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       || zipReceipt.receipt?.businessIdentity?.designId !== businessIdentity.designId || zipReceipt.receipt?.businessIdentity?.orderNumber !== businessIdentity.orderNumber) {
       throw new StageError("delivery_business_identity_drift", "ZIP DesignID or Order # no longer matches the immutable revision", false);
     }
-    const logoRows = await artifacts(sb, run.id, ["logo"]);
+    // Separated logos are the Logo Pack's deliverable. On a Production-Pack-only
+    // run they exist -- Call 10 produced them for the entice preview -- and must
+    // not be delivered.
+    const logoRows = authorized.logoPackAuthorized ? await artifacts(sb, run.id, ["logo"]) : [];
     const logos = logoRows.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, displayName: row.metadata?.displayName, targetSurfaceKey: row.metadata?.targetSurfaceKey, storagePath: safePath(row.storage_path, "logo storagePath"), contentHash: row.content_hash, byteSize: row.byte_size, contentType: row.metadata?.contentType || null })).sort((left, right) => String(left.placementKey).localeCompare(String(right.placementKey)));
-    const packRows = await artifacts(sb, run.id, ["flat-proof", "panel", "logo", "output", "stamp", "zip"]);
+    const packRows = await artifacts(sb, run.id, [...new Set([...(authorized.delivery || []), ...(authorized.zipKinds || []), "zip"])]);
     const files = packRows.map((row) => ({ kind: row.artifact_kind, surfaceKey: row.surface_key, storagePath: safePath(row.storage_path, "pack storagePath"), contentHash: row.content_hash, byteSize: row.byte_size })).sort((left, right) => `${left.kind}/${left.surfaceKey}/${left.storagePath}`.localeCompare(`${right.kind}/${right.surfaceKey}/${right.storagePath}`));
-    if (!Array.isArray(zipReceipt.receipt?.sourceViews) || zipReceipt.receipt.sourceViews.length !== 7 || !zipReceipt.receipt?.dimensionManifest || !zipReceipt.receipt?.businessIdentity) throw new StageError("delivery_source_package_evidence_missing", "WrapBox delivery requires seven archived source views, the GENIE dimension manifest, and business identity", false);
-    const manifest = { contract: MANIFEST_CONTRACT, workflowRunId: run.id, operatorId: run.owner_id, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, tenantKey: run.tenant_key, enticePackId: run.entice_pack_id, revisionId: run.revision_id, sourceEnticeRunId, designId: zipReceipt.receipt.designId, orderNumber: zipReceipt.receipt.orderNumber, approvedAt, deliveredAt: approvedAt, zip: { storagePath: deliveredZip.storagePath, contentHash: deliveredZip.contentHash, byteSize: deliveredZip.byteSize }, sourceViews: zipReceipt.receipt.sourceViews, dimensionManifest: zipReceipt.receipt.dimensionManifest, businessIdentity: zipReceipt.receipt.businessIdentity, logos, files };
+    // The Production Pack's evidence is its seven archived design proofs. A Logo
+    // Pack has no such set to prove, so requiring one would fail a delivery that
+    // is complete.
+    const expectedSourceViews = authorized.zipIncludesSourceViews ? 7 : 0;
+    if (!Array.isArray(zipReceipt.receipt?.sourceViews) || zipReceipt.receipt.sourceViews.length !== expectedSourceViews
+      || !zipReceipt.receipt?.dimensionManifest || !zipReceipt.receipt?.businessIdentity) {
+      throw new StageError("delivery_source_package_evidence_missing", "WrapBox delivery requires the purchased pack's archived evidence, the GENIE dimension manifest, and business identity", false);
+    }
+    const manifest = { contract: MANIFEST_CONTRACT, workflowRunId: run.id, operatorId: run.owner_id, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, tenantKey: run.tenant_key, enticePackId: run.entice_pack_id, revisionId: run.revision_id, sourceEnticeRunId, designId: zipReceipt.receipt.designId, orderNumber: zipReceipt.receipt.orderNumber, approvedAt, deliveredAt: approvedAt, zip: { storagePath: deliveredZip.storagePath, contentHash: deliveredZip.contentHash, byteSize: deliveredZip.byteSize }, sourceViews: zipReceipt.receipt.sourceViews, dimensionManifest: zipReceipt.receipt.dimensionManifest, businessIdentity: zipReceipt.receipt.businessIdentity, logos, files, products: authorized.products, deliverables: authorized.deliverables };
     const manifestBytes = Buffer.from(JSON.stringify(canonical(manifest)));
     const stored = await upload(sb, `wrapbox/${tenant}/${run.entice_pack_id}/${run.id}/manifest.json`, manifestBytes, "application/json");
-    const manifestArtifact = artifact("wrapbox-manifest", stored.storagePath, stored.hash, stored.bytes, "", { zipHash: deliveredZip.contentHash, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, designId: businessIdentity.designId, orderNumber: businessIdentity.orderNumber });
-    return complete(sb, stage, run, { verified: true, receiptKind: "wrapbox.delivery", contract: MANIFEST_CONTRACT, zipHash: zipReceipt.receipt_hash, manifestPath: stored.storagePath, manifestHash: stored.hash, deliveredZipPath: deliveredZip.storagePath, deliveredAt: approvedAt, designId: businessIdentity.designId, orderNumber: businessIdentity.orderNumber, publicationPending: true }, stored.hash, [manifestArtifact]);
+    const manifestArtifact = artifact("wrapbox-manifest", stored.storagePath, stored.hash, stored.bytes, "", { zipHash: deliveredZip.contentHash, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, designId: businessIdentity.designId, orderNumber: businessIdentity.orderNumber, products: authorized.products, deliverables: authorized.deliverables });
+    return complete(sb, stage, run, { verified: true, receiptKind: "wrapbox.delivery", contract: MANIFEST_CONTRACT, products: authorized.products, deliverables: authorized.deliverables, zipHash: zipReceipt.receipt_hash, manifestPath: stored.storagePath, manifestHash: stored.hash, deliveredZipPath: deliveredZip.storagePath, deliveredAt: approvedAt, designId: businessIdentity.designId, orderNumber: businessIdentity.orderNumber, publicationPending: true }, stored.hash, [manifestArtifact]);
   }
   throw new StageError("unsupported_production_stage", stage.stage_key, false);
 }
@@ -1520,6 +1891,11 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
         lastReconcileAt = Date.now();
         try { await reconcileAutomaticProduction(supabase); }
         catch (error) { console.error(`[DESIGNPRO-OS] automatic production reconciliation failed: ${error.message}`); }
+        // The worker's half of the purchase: an entitlement recorded while this
+        // process was down, or delivered twice, is noticed here rather than
+        // needing to be caught as it happens.
+        try { await reconcilePurchaseGates(supabase); }
+        catch (error) { console.error(`[DESIGNPRO-OS] purchase gate reconciliation failed: ${error.message}`); }
       }
       const { data, error } = await supabase.rpc("claim_designpro_stage", { p_worker: id, p_lease_seconds: CLAIM_SECONDS });
       if (error) throw error;
@@ -1570,4 +1946,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };

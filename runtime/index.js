@@ -183,6 +183,51 @@ async function refreshReadiness() {
 }
 app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(readiness));
 
+/**
+ * PURCHASE WRITES. Privileged, so they live here rather than in the gateway.
+ *
+ * The gateway is browser-facing and holds no service role; it talks to Stripe
+ * and proves a webhook delivery was signed, then forwards the decision over the
+ * WORKER_SECRET channel. These two endpoints are what may actually write an
+ * entitlement -- which is the difference between a payment and a claim.
+ *
+ * There is one endpoint, and it records a verified payment. It does not run
+ * Topaz, build files, or construct a workflow: the production run already
+ * exists, parked at its purchase gate, and the worker's reconciler is what
+ * advances it. Payment changes authorization; the worker changes workflow state.
+ */
+app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["amountCents", "checkoutSessionId", "generationId", "paymentIntentId", "productType", "userEmail"])) {
+      return res.status(400).json({ error: "purchase_confirm_request_invalid" });
+    }
+    // The two products the system sells. Anything else is refused rather than
+    // recorded, so a stray webhook cannot mint an entitlement for a product
+    // nothing fulfills.
+    if (!["print_pack_entitlement", "logo_pack"].includes(String(body.productType))) {
+      return res.status(400).json({ error: "unknown_product_type" });
+    }
+    if (!Number.isInteger(body.amountCents) || body.amountCents <= 0) {
+      return res.status(400).json({ error: "purchase_amount_invalid" });
+    }
+    const { data, error } = await supabase.rpc("confirm_designpro_purchase", {
+      p_checkout_session_id: String(body.checkoutSessionId || ""),
+      p_payment_intent_id: body.paymentIntentId == null ? null : String(body.paymentIntentId),
+      p_product_type: String(body.productType),
+      p_generation_id: canonicalUuid(body.generationId, "generationId"),
+      p_amount_cents: Number(body.amountCents),
+      p_user_email: body.userEmail ? String(body.userEmail) : null,
+    });
+    if (error) return res.status(400).json({ error: error.message });
+    // Recording the entitlement is the whole of it. The worker's reconciler
+    // releases the waiting production run; Stripe never runs the pipeline.
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(400).json({ error: String(error.message || error) });
+  }
+});
+
 app.post("/internal/wrapbox/recipient", authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
