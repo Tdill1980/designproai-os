@@ -126,8 +126,13 @@ jobs:
           set +x
           : "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN secret is required}"
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          # worker.designproai.com load-balances the managed designproai-worker
+          # pair (a-1/b-1 on loopback 3101/3102). The functions must hold THAT
+          # fleet's secret; runtime.env is only the fallback.
           worker_secret=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "grep '^WORKER_SECRET=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-")
+            "docker inspect designproai-worker-a-1 --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^WORKER_SECRET=' | head -1 | cut -d= -f2-")
+          if [ -z "$worker_secret" ]; then worker_secret=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "grep '^WORKER_SECRET=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-"); fi
           test -n "$worker_secret"
           echo "::add-mask::$worker_secret"
           npx --yes supabase@2.111.0 secrets set --project-ref "$PROJECT_REF" \
