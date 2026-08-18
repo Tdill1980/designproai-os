@@ -80,7 +80,7 @@ jobs:
           stage=$(mktemp -d /tmp/designpro-worker.XXXXXX)
           trap 'rm -rf "$stage" /tmp/designpro-worker.tgz' EXIT
           tar -C "$stage" -xzf /tmp/designpro-worker.tgz
-          docker build -t "designpro-worker:$GIT_SHA" "$stage/worker"
+          docker build -t "designpro-worker:$GIT_SHA" -f "$stage/worker/Dockerfile" "$stage"
           docker rm -f designpro-worker 2>/dev/null || true
           docker run -d --name designpro-worker --restart unless-stopped \
             -p 127.0.0.1:3005:3001 \
