@@ -1,9 +1,10 @@
 /**
  * VEHICLE PROOF TEMPLATES -- ported verbatim from the proven RestylePro
  * implementation at supabase/functions/generate-2d-proof/vehicle-proof-template.ts.
- * Only the TypeScript annotations were removed and vehicleProofSvg now returns
- * the mapped silhouette path instead of a <clipPath> element, because sharp
- * masks with a composited alpha rather than an SVG clip reference.
+ * Only the TypeScript annotations were removed. vehicleProofSvg keeps its
+ * original signature and clipPath return, and additionally exposes the mapped
+ * silhouette path, because sharp masks with a composited alpha rather than
+ * resolving an SVG clip-path reference.
  *
  * VEHICLE PROOF TEMPLATES — the flattened silhouettes the 2D proof draws on.
  *
@@ -216,7 +217,7 @@ function vehicleProofTemplate(vehicleType, view) {
  * space. Returns SVG fragments the proof sheet appends; the artwork itself is
  * clipped by the worker using `clipId`.
  */
-function vehicleProofSvg(template, x, y, w, h) {
+function vehicleProofSvg(template, clipId, x, y, w, h) {
   const map = (path) =>
     path.replace(
       /([ML])\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)|A\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s+(\d+)\s+(\d)\s+(\d)\s+(-?[\d.]+)\s*,\s*(-?[\d.]+)/g,
@@ -245,6 +246,11 @@ function vehicleProofSvg(template, x, y, w, h) {
     );
 
   const silhouette = `${map(template.silhouette)} Z`;
+  // The original returned an SVG <clipPath> element for a renderer that clipped
+  // by reference. It is kept so this stays a faithful port; the sharp seam
+  // masks with `silhouette` directly, because sharp composites alpha rather
+  // than resolving clip-path ids.
+  const clipPath = `<clipPath id="${clipId}"><path d="${silhouette}"/></clipPath>`;
   const overlay = [
     // The outline itself, so the elevation reads as a drawn vehicle.
     `<path d="${map(template.silhouette)} Z" fill="none" stroke="#111111" stroke-width="2.5"/>`,
@@ -253,7 +259,7 @@ function vehicleProofSvg(template, x, y, w, h) {
         `<path d="${map(d)}" fill="none" stroke="#111111" stroke-width="1.6" stroke-opacity="0.75"/>`,
     ),
   ];
-  return { silhouette, overlay, rectangular: Boolean(template.rectangular) };
+  return { clipPath, silhouette, overlay, rectangular: Boolean(template.rectangular) };
 }
 
 module.exports = { bodyFamilyFor, vehicleProofTemplate, vehicleProofSvg };

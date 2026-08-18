@@ -28,10 +28,11 @@
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
 const { vehicleProofTemplate, vehicleProofSvg } = require("./vehicle-proof-template.cjs");
-const {
-  BLEED_INCHES, SHEET_WIDTH, SHEET_HEIGHT, proofSheetLayout,
-  _test: proofInternals,
-} = require("./proof-sheet.cjs");
+const { BLEED_INCHES, _test: proofInternals } = require("./proof-sheet.cjs");
+const { BAND_LINE_GAP, BAND_MIN_FONT, bandHeight, fitBandFontSize } = require("./proof-band-fit.cjs");
+// The sheet width the original composer laid out against. Every constant below
+// is measured in this frame, so it is the frame, not a preference.
+const PROOF_SHEET_W = 1800;
 const { outlineString } = require("./opentype-outline.cjs");
 
 const MASTER_PROOF_CONTRACT = "designpro.master-derived-2d-proof.v1";
@@ -56,7 +57,7 @@ const MUTED = "#6b7280";
 const RULE = "#d1d5db";
 const ACCENT = "#059669";
 
-const { containedPlacement, round2, inches } = proofInternals;
+const { round2, inches } = proofInternals;
 
 /**
  * Every label on this page is outlined from a pinned font file.
@@ -66,12 +67,40 @@ const { containedPlacement, round2, inches } = proofInternals;
  * outlined. A proof whose captions silently change face between hosts is not
  * reproducible, and the numbers beside those captions are what a customer signs.
  */
-function label(fonts, string, { x, y, size, fill, anchor = "start", bold = false }) {
+function label(fonts, string, { x, y, size, fill, anchor = "start", bold = false, rotate = 0 }) {
   const fontBytes = bold && fonts.bold ? fonts.bold : fonts.regular;
   const outlined = outlineString({ fontBytes, string: String(string), sizeIn: size, pxPerInch: 1 });
-  const left = anchor === "end" ? x - outlined.advancePx : x;
-  return `<g transform="translate(${round2(left)} ${round2(y - outlined.baselinePx)})"><path d="${outlined.path}" fill="${fill}"/></g>`;
+  const left = anchor === "end"
+    ? x - outlined.advancePx
+    : anchor === "middle" ? x - outlined.advancePx / 2 : x;
+  const glyphs = `<g transform="translate(${round2(left)} ${round2(y - outlined.baselinePx)})"><path d="${outlined.path}" fill="${fill}"/></g>`;
+  return rotate ? `<g transform="rotate(${rotate} ${round2(x)} ${round2(y)})">${glyphs}</g>` : glyphs;
 }
+
+/** Advance width of a string at a size, for the fitted captions below. */
+function advanceOf(fonts, string, size, bold) {
+  const fontBytes = bold && fonts.bold ? fonts.bold : fonts.regular;
+  return outlineString({ fontBytes, string: String(string), sizeIn: size, pxPerInch: 1 }).advancePx;
+}
+
+/**
+ * `fittedText` from the original composer. It shrank a caption by estimating
+ * an average glyph advance; outlined text can measure the real advance, so the
+ * fit is exact instead of estimated. Same clamp, same call sites.
+ */
+function fittedLabel(fonts, string, { x, y, maxWidth, maxSize, minSize, fill, bold = false }) {
+  const value = String(string || "").trim();
+  if (!value) return "";
+  const at = advanceOf(fonts, value, maxSize, bold);
+  const size = at <= maxWidth ? maxSize : Math.max(minSize, Math.floor(maxSize * maxWidth / at));
+  return label(fonts, value, { x, y, size, fill, anchor: "middle", bold });
+}
+
+const line = (x1, y1, x2, y2, w = 2, stroke = INK) =>
+  `<line x1="${round2(x1)}" y1="${round2(y1)}" x2="${round2(x2)}" y2="${round2(y2)}" stroke="${stroke}" stroke-width="${w}"/>`;
+/** Dimension-rule arrowhead. Ported shape, unchanged. */
+const arrow = (x, y, dx, dy) =>
+  `<path d="M${round2(x)},${round2(y)} l${dx},${-5 - dy} l0,${10 + dy * 2} z" fill="${INK}"/>`;
 
 class MasterProofError extends Error {
   constructor(code, message) {
@@ -206,80 +235,41 @@ function canonicalIdentities(surfaces) {
   };
 }
 
-function headerMarkup(fonts, { vehicleName, designName, finish, totalSqFt }) {
-  return `<g>
-    ${label(fonts, "DesignProAI 2D Production Proof", { x: 96, y: 150, size: 58, fill: INK, bold: true })}
-    ${label(fonts, `${vehicleName} \u00b7 ${designName} \u00b7 ${finish} finish`, { x: 96, y: 205, size: 27, fill: MUTED })}
-    ${label(fonts, `${inches(totalSqFt)} SQ FT`, { x: SHEET_WIDTH - 96, y: 150, size: 42, fill: ACCENT, anchor: "end", bold: true })}
-    ${label(fonts, "rendered from the canonical Design Master", { x: SHEET_WIDTH - 96, y: 196, size: 23, fill: MUTED, anchor: "end" })}
-    <line x1="96" y1="238" x2="${SHEET_WIDTH - 96}" y2="238" stroke="${RULE}" stroke-width="3"/>
-  </g>`;
-}
-
-function cellMarkup(fonts, cell, dimension, placement) {
-  const captionY = cell.frame.y + cell.frame.h - 74;
-  return `<g>
-    <rect x="${cell.frame.x + 8}" y="${cell.frame.y + 8}" width="${cell.frame.w - 16}" height="${cell.frame.h - 16}" fill="none" stroke="${RULE}" stroke-width="2"/>
-    ${label(fonts, cell.label, { x: cell.frame.x + 26, y: captionY, size: 26, fill: INK, bold: true })}
-    ${label(fonts, `TRIM ${inches(dimension.widthInches)}" \u00d7 ${inches(dimension.heightInches)}" \u00b7 PRINT ${inches(dimension.printWidthInches)}" \u00d7 ${inches(dimension.printHeightInches)}" at ${inches(BLEED_INCHES)}" bleed`, { x: cell.frame.x + 26, y: captionY + 34, size: 22, fill: MUTED })}
-    ${label(fonts, `${inches(dimension.surfaceSqFt)} sq ft`, { x: cell.frame.x + cell.frame.w - 26, y: captionY, size: 26, fill: ACCENT, anchor: "end", bold: true })}
-  </g>`;
-}
-
-/** The cell the retired sheet gave to the 3D hero now carries identity. */
-function identityMarkup(fonts, cell, identities, render) {
-  const lines = [];
-  let y = cell.frame.y + 62;
-  lines.push(label(fonts, "CANONICAL IDENTITIES", { x: cell.frame.x + 26, y, size: 26, fill: INK, bold: true }));
-  y += 44;
-  for (const item of identities.text) {
-    lines.push(label(fonts, `\u201c${item.string}\u201d`, { x: cell.frame.x + 26, y, size: 22, fill: INK }));
-    y += 30;
-  }
-  for (const item of identities.logos) {
-    lines.push(label(fonts, `${item.identityKey} \u00b7 ${item.contentHash.slice(0, 16)}`, { x: cell.frame.x + 26, y, size: 22, fill: INK }));
-    y += 30;
-  }
-  y += 14;
-  lines.push(label(fonts, `master ${render.masterHash.slice(0, 24)}`, { x: cell.frame.x + 26, y, size: 19, fill: MUTED }));
-  lines.push(label(fonts, `render ${render.renderHash.slice(0, 24)}`, { x: cell.frame.x + 26, y: y + 28, size: 19, fill: MUTED }));
-  lines.push(label(fonts, `${render.pxPerInch} px/in \u00b7 no image generation`, { x: cell.frame.x + 26, y: y + 56, size: 19, fill: MUTED }));
-  return `<g>
-    <rect x="${cell.frame.x + 8}" y="${cell.frame.y + 8}" width="${cell.frame.w - 16}" height="${cell.frame.h - 16}" fill="none" stroke="${RULE}" stroke-width="2"/>
-    ${lines.join("")}
-  </g>`;
-}
-
-function footerMarkup(fonts, dimensions, totalSqFt, { designId, orderNumber, render }) {
-  const top = SHEET_HEIGHT - 486;
-  const columns = dimensions.map((dimension, index) => {
-    const x = 96 + index * Math.floor((SHEET_WIDTH - 192) / 6);
-    return label(fonts, dimension.surfaceKey.toUpperCase(), { x, y: top + 96, size: 21, fill: INK, bold: true })
-      + label(fonts, `${inches(dimension.surfaceSqFt)} sq ft`, { x, y: top + 126, size: 19, fill: MUTED })
-      + label(fonts, `${inches(dimension.printWidthInches)}" \u00d7 ${inches(dimension.printHeightInches)}"`, { x, y: top + 152, size: 19, fill: MUTED });
-  }).join("");
-  return `<g>
-    <line x1="96" y1="${top + 40}" x2="${SHEET_WIDTH - 96}" y2="${top + 40}" stroke="${RULE}" stroke-width="3"/>
-    ${label(fonts, `PRODUCTION COVERAGE \u00b7 ${inches(totalSqFt)} SQ FT TOTAL`, { x: 96, y: top + 32, size: 24, fill: INK, bold: true })}
-    ${columns}
-    ${label(fonts, `DesignID ${designId} \u00b7 Order ${orderNumber} \u00b7 revision ${render.revisionId}`, { x: 96, y: top + 240, size: 21, fill: MUTED })}
-    ${label(fonts, `Dimensions from the bound GENIE manifest ${String(render.dimensionManifestId)}. Artwork is the manufactured surface, not a visualisation of it.`, { x: 96, y: top + 274, size: 21, fill: MUTED })}
-    <line x1="96" y1="${top + 356}" x2="1500" y2="${top + 356}" stroke="${INK}" stroke-width="2"/>
-    ${label(fonts, "Customer approval", { x: 96, y: top + 392, size: 21, fill: MUTED })}
-    <line x1="1700" y1="${top + 356}" x2="${SHEET_WIDTH - 96}" y2="${top + 356}" stroke="${INK}" stroke-width="2"/>
-    ${label(fonts, "Date", { x: 1700, y: top + 392, size: 21, fill: MUTED })}
-  </g>`;
-}
-
 /**
- * Build the customer proof from a completed production render.
+ * THE 2D PRODUCTION PROOF — a port of restylepro-os
+ * `supabase/functions/generate-2d-proof/proof-sheet.ts` `composeProofSheet`
+ * (layout, L420-700), the implementation that drew the July-24 proofs.
+ *
+ * Ported as-is: the 1800px sheet, the driver/passenger stack beside the
+ * two-column small grid, the dimension gutters, per-tile sizing from GENIE trim
+ * plus real bleed (never a 16:9 presentation box), the dimension rules with
+ * arrowheads, dashed TRIM against solid PRINT EDGE, the bleed caption, the
+ * per-tile TRIM/BLEED/PRINT line, the coverage line, the footer approval line
+ * and the GENIE size band.
+ *
+ * Adapted at the infrastructure seam only:
+ *   - imagescript over a Deno URL, plus the Railway worker hop that composited
+ *     tiles as base64, becomes an in-process `sharp` composite. The original
+ *     moved pixel work off the edge function for a CPU budget this runtime does
+ *     not have.
+ *   - `<text font-family="DejaVu Sans">` and the CDN `getFont()` fetch become
+ *     the runtime's pinned outlined-font labeller. Same strings, same
+ *     positions, same sizes; a family name resolves through fontconfig and
+ *     substitutes, and the numbers beside these captions are what a customer
+ *     signs.
+ *   - the vehicle silhouette is applied as a sharp alpha mask rather than an
+ *     SVG <clipPath> reference, because the composite happens in sharp. Same
+ *     path, from the same `vehicleProofTemplate`.
+ *
+ * NOT ported: `renderFlatTile` and `readTileText`. Those are the per-view
+ * Gemini redraw the edge function needed because it started from 3D views.
+ * This runtime's Call 8 already holds the approved per-surface artwork, and no
+ * model may run in Calls 8-11.
  */
 async function renderMasterProof({ render, manifest, proofFonts, vehicle, designName, finish, designId, orderNumber, bleedInches = BLEED_INCHES }) {
   if (!render || render.contract !== "designpro.production-surface-render.v1") {
     fail("proof_render_invalid", "the 2D proof must be derived from a completed production render");
   }
-  // The proof page is typeset from a pinned file for the same reason production
-  // artwork is: a family name resolves through fontconfig and substitutes.
   const fonts = { regular: proofFonts?.regular, bold: proofFonts?.bold };
   if (!Buffer.isBuffer(fonts.regular) || !fonts.regular.length) {
     fail("proof_font_required", "the 2D proof must be typeset from a pinned font file, not a system family name");
@@ -291,76 +281,156 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
   const dimensionByKey = new Map(dimensions.map((item) => [item.surfaceKey, item]));
   const identities = canonicalIdentities(surfaces);
   const totalSqFt = totalSqFtFromManifest(manifest, dimensions);
-
-  const layout = proofSheetLayout();
   const vehicleName = [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ") || "Vehicle";
-  const composites = [];
-  const markup = [headerMarkup(fonts, {
-    vehicleName,
-    designName: designName || "Approved design",
-    finish: finish || "standard",
-    totalSqFt,
-  })];
 
-  // EVERY SIDE GETS AN EXPLICIT REGION IN THE APPROVED PROOF.
-  //
-  // The rect each surface occupies was always computed here and then thrown
-  // away: `placement` went into the SVG and never into the return value, so the
-  // proof shipped with surfaceHashes and perSurfaceDimensions but no statement
-  // of WHERE each side sits on the sheet. Downstream had no per-side anchor to
-  // extract against, which is the side-binding defect -- the same shape as the
-  // proofTileRects that were computed on every RestylePro proof run and dropped
-  // by the return, leaving extraction to locate each side by other means.
-  //
-  // Recording it makes the region a first-class part of the approved artifact:
-  // one named region per side, in sheet pixel space, bound to the exact surface
-  // content hash that was placed there. A panel can then be tied to its own
-  // region of the proof the customer signed rather than to a side label.
+  // ── LAYOUT (ported constants and arithmetic) ──────────────────────────────
+  const W = PROOF_SHEET_W;
+  const MARGIN = 40;
+  const GAP = 18;
+  const HEADER_H = 118;
+  const FOOTER_H = 78;
+  const LABEL_H = 108;
+  const DIM_GUTTER = 74;
+
+  const bigKeys = SURFACE_ORDER.filter((key) => key === "driver" || key === "passenger");
+  const smallKeys = SURFACE_ORDER.filter((key) => key !== "driver" && key !== "passenger");
+  const contentW = W - MARGIN * 2;
+  const COL_GAP = GAP * 2;
+
+  const gutters = (bigKeys.length ? DIM_GUTTER : 0) + (smallKeys.length ? DIM_GUTTER : 0);
+  const drawableW = contentW - gutters;
+  const bigW = bigKeys.length ? (smallKeys.length ? Math.floor((drawableW - COL_GAP) / 2) : drawableW) : 0;
+  const rightW = smallKeys.length ? (bigKeys.length ? drawableW - COL_GAP - bigW : drawableW) : 0;
+  const smallCols = smallKeys.length ? (bigKeys.length ? Math.min(2, smallKeys.length) : Math.min(4, smallKeys.length)) : 1;
+  const smallW = smallKeys.length ? Math.floor((rightW - GAP * (smallCols - 1)) / smallCols) : 0;
+  const smallRows = smallKeys.length ? Math.ceil(smallKeys.length / smallCols) : 0;
+
+  // Every region is sized from GENIE trim + the real bleed, so the compositor
+  // never stretches a side, face, hood or roof to fit a presentation box.
+  const tileHeight = (surfaceKey, widthPx) => {
+    const dimension = dimensionByKey.get(surfaceKey);
+    const trimW = Number(dimension.widthInches);
+    const trimH = Number(dimension.heightInches);
+    if (!(trimW > 0 && trimH > 0)) fail("proof_tile_dimensions_missing", `${surfaceKey} has no GENIE trim dimensions`);
+    return Math.max(1, Math.round(widthPx * (trimH + bleedInches * 2) / (trimW + bleedInches * 2)));
+  };
+  const bigHeights = bigKeys.map((key) => tileHeight(key, bigW));
+  const smallHeights = smallKeys.map((key) => tileHeight(key, smallW));
+  const smallRowHeights = Array.from({ length: smallRows }, (_, row) => {
+    const begin = row * smallCols;
+    return Math.max(...smallHeights.slice(begin, begin + smallCols), 0);
+  });
+
+  const coverageLine = `TOTAL COVERAGE: ${totalSqFt.toFixed(2)} SQ FT`;
+  const COVERAGE_H = 52;
+  // The GENIE size band, the two lines the July proof carried under the sheet.
+  const bandLines = [
+    `TRIM SIZE   ${dimensions.map((d) => `${d.surfaceKey.toUpperCase()} ${inches(d.widthInches)}" x ${inches(d.heightInches)}"`).join("   |   ")}`,
+    `PRINT SIZE (+${inches(bleedInches)}" BLEED ALL AROUND)   ${dimensions.map((d) => `${d.surfaceKey.toUpperCase()} ${inches(d.printWidthInches)}" x ${inches(d.printHeightInches)}"`).join("   |   ")}`,
+  ].filter((entry) => String(entry || "").trim());
+  const bandFontSize = fitBandFontSize(bandLines, W - MARGIN * 2);
+  const BAND_H = bandHeight(bandLines, bandFontSize);
+
+  const bodyH = Math.max(
+    bigHeights.reduce((sum, height) => sum + height + LABEL_H + GAP, 0),
+    smallRowHeights.reduce((sum, height) => sum + height + LABEL_H + GAP, 0),
+  );
+  const H = HEADER_H + bodyH + COVERAGE_H + FOOTER_H + MARGIN + BAND_H;
+
+  const markup = [];
+  const composites = [];
   const proofRegions = [];
 
-  for (const surfaceKey of SURFACE_ORDER) {
-    const cell = layout.cells[surfaceKey];
+  // Header.
+  markup.push(label(fonts, "DesignProAI™ — 2D Production Proof", { x: MARGIN, y: 26 + 34, size: 34, fill: INK, bold: true }));
+  markup.push(label(fonts, `${vehicleName}  ·  ${designName || "Approved design"}  ·  ${finish || "Gloss"} finish  ·  ${totalSqFt.toFixed(2)} sq ft`, { x: MARGIN, y: 80 + 17, size: 17, fill: MUTED }));
+  markup.push(line(MARGIN, HEADER_H, W - MARGIN, HEADER_H));
+
+  const bodyTop = HEADER_H + GAP;
+
+  /** One tile: the masked artwork, its elevation strokes, its dimension rules. */
+  const place = async (surfaceKey, x, y, w, h) => {
     const surface = surfaceByKey.get(surfaceKey);
+    const dimension = dimensionByKey.get(surfaceKey);
+
     // Placed from the surface's own declared pixel geometry, not by reading the
     // raster back. The renderer already stated what it produced.
-    const placement = containedPlacement(cell.image, surface.pixelWidth, surface.pixelHeight);
     const resized = await sharp(surface.bytes, { limitInputPixels: false })
-      .resize(placement.w, placement.h, { fit: "fill", kernel: "lanczos3" })
+      .resize(w, h, { fit: "fill", kernel: "lanczos3" })
       .png(PNG_OPTIONS).toBuffer();
-    // THE DISPLAY MASK. The silhouette is drawn in the tile's own space and
-    // composited as alpha, so the artwork reads as applied to the vehicle
-    // rather than as a rectangle on a page. A rectangular family (trailers,
-    // flat products) masks to itself, which costs a no-op rather than
-    // inventing a cab the customer is not buying.
+
+    // The vehicle elevation. Drawn twice from one template: tile-local for the
+    // clip mask, sheet-space for the outline and detail strokes that ride over
+    // the artwork so the wrap reads as applied to a vehicle rather than as a
+    // sticker in a vehicle-shaped hole.
     const template = vehicleProofTemplate(vehicle?.type ?? vehicle?.vehicleType, PROOF_VIEW_LABEL[surfaceKey]);
-    const local = vehicleProofSvg(template, 0, 0, placement.w, placement.h);
-    const placed = local.rectangular ? resized : await sharp(resized, { limitInputPixels: false })
-      .ensureAlpha()
-      .composite([{
-        input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${placement.w}" height="${placement.h}"><path d="${local.silhouette}" fill="#ffffff"/></svg>`),
-        blend: "dest-in",
-      }])
-      .png(PNG_OPTIONS).toBuffer();
-    composites.push({ input: placed, left: placement.x, top: placement.y });
-    markup.push(cellMarkup(fonts, cell, dimensionByKey.get(surfaceKey), placement));
-    // Outline and detail strokes go OVER the masked artwork, in sheet space, so
-    // glass, arches and seams read as part of a drawn elevation. No model draws
-    // any of this: they are fixed paths, and a fixed path cannot hallucinate.
+    const local = vehicleProofSvg(template, `clip-${surfaceKey}`, 0, 0, w, h);
+    let placed = resized;
     if (!local.rectangular) {
-      const sheetSpace = vehicleProofSvg(template, placement.x, placement.y, placement.w, placement.h);
-      markup.push(`<g>${sheetSpace.overlay.join("")}</g>`);
+      placed = await sharp(resized, { limitInputPixels: false })
+        .ensureAlpha()
+        .composite([{
+          input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><path d="${local.silhouette}" fill="#ffffff"/></svg>`),
+          blend: "dest-in",
+        }])
+        .png(PNG_OPTIONS).toBuffer();
+      const onSheet = vehicleProofSvg(template, `sheet-${surfaceKey}`, x, y, w, h);
+      markup.push(...onSheet.overlay);
     }
+    composites.push({ input: placed, left: x, top: y });
+
+    const wIn = Number(dimension.widthInches);
+    const hIn = Number(dimension.heightInches);
+    const bleedX = w * bleedInches / (wIn + bleedInches * 2);
+    const bleedY = h * bleedInches / (hIn + bleedInches * 2);
+    const trimLeft = x + bleedX;
+    const trimRight = x + w - bleedX;
+    const trimTop = y + bleedY;
+    const trimBottom = y + h - bleedY;
+
+    // Solid outer rectangle = full print edge. Dashed inner rectangle = trim.
+    // Their proportional separation is exactly the bleed on all four edges,
+    // because the tile itself is sized from trim + twice the bleed.
+    markup.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${INK}" stroke-width="2"/>`);
+    markup.push(`<rect x="${round2(trimLeft)}" y="${round2(trimTop)}" width="${round2(trimRight - trimLeft)}" height="${round2(trimBottom - trimTop)}" fill="none" stroke="${INK}" stroke-width="2" stroke-dasharray="10 7"/>`);
+    markup.push(fittedLabel(fonts, `DASHED = TRIM  ·  SOLID = PRINT EDGE  ·  ${inches(bleedInches)}" BLEED EACH EDGE`, {
+      x: x + w / 2, y: y + Math.max(16, bleedY - 6), maxWidth: w - 8, maxSize: 13, minSize: 8, fill: INK, bold: true,
+    }));
+
+    // Width rule. It names TRIM width, so its endpoints are the dashed trim
+    // line, not the outer print rectangle that includes the bleed.
+    const ruleY = y + h + 20;
+    markup.push(line(trimLeft, ruleY, trimRight, ruleY));
+    markup.push(arrow(trimLeft, ruleY, 9, 0));
+    markup.push(arrow(trimRight, ruleY, -9, 0));
+    markup.push(line(trimLeft, ruleY - 7, trimLeft, ruleY + 7));
+    markup.push(line(trimRight, ruleY - 7, trimRight, ruleY + 7));
+    markup.push(label(fonts, `${inches(wIn)}" W`, { x: x + w / 2, y: ruleY + 26, size: 16, fill: INK, anchor: "middle" }));
+
+    // Height rule, same truth: the figure spans only the trim boundary.
+    const ruleX = x - Math.round(DIM_GUTTER / 2);
+    markup.push(line(ruleX, trimTop, ruleX, trimBottom));
+    markup.push(line(ruleX - 7, trimTop, ruleX + 7, trimTop));
+    markup.push(line(ruleX - 7, trimBottom, ruleX + 7, trimBottom));
+    const cy = (trimTop + trimBottom) / 2;
+    const verticalAxis = surfaceKey === "hood" || surfaceKey === "roof" ? "L" : "H";
+    markup.push(label(fonts, `${inches(hIn)}" ${verticalAxis}`, { x: ruleX - 10, y: cy, size: 16, fill: INK, anchor: "middle", rotate: -90 }));
+
+    const labelY = y + h + 46;
+    markup.push(label(fonts, PROOF_VIEW_LABEL[surfaceKey], { x: x + w / 2, y: labelY + 17, size: 17, fill: INK, anchor: "middle", bold: true }));
+    markup.push(fittedLabel(fonts, `TRIM ${inches(wIn)}" x ${inches(hIn)}"  ·  BLEED ${inches(bleedInches)}" EACH EDGE  ·  PRINT ${inches(dimension.printWidthInches)}" x ${inches(dimension.printHeightInches)}"`, {
+      x: x + w / 2, y: labelY + 42, maxWidth: w - 8, maxSize: 14, minSize: 9, fill: MUTED,
+    }));
+
+    // THE PER-SIDE ANCHOR. One named region per surface, in sheet pixel space,
+    // bound to the content hash of the surface drawn into it. This is the
+    // `rects` the original returned and `proofTileBoxes` normalized -- computed
+    // on every run and dropped by the return, which is what left extraction
+    // with no per-side anchor to bind against.
     proofRegions.push({
       surfaceKey,
-      // Sheet pixel space, top-left origin -- the coordinates the region
-      // occupies on the proof raster this call is producing.
-      x: placement.x, y: placement.y, w: placement.w, h: placement.h,
-      // Stated so a consumer never has to assume the sheet size it was measured
-      // against; a region without its frame is not a location.
-      sheetWidth: SHEET_WIDTH, sheetHeight: SHEET_HEIGHT,
-      // What was actually drawn into this region. This is the binding that
-      // makes the region checkable rather than declarative: the bytes at this
-      // rect are a lanczos3 reduction of exactly this surface.
+      x, y, w, h,
+      sheetWidth: W, sheetHeight: H,
       surfaceContentHash: surface.contentHash,
       surfacePixelWidth: surface.pixelWidth,
       surfacePixelHeight: surface.pixelHeight,
@@ -368,23 +438,54 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
       // Anything reading pixels back out of it recovers less than the surface
       // already holds, so the region is the anchor and the surface is the
       // artwork.
-      scale: round2(placement.w / surface.pixelWidth),
-      // The vehicle outline the artwork is shown through. Presentation only --
-      // recorded so a reader can tell the proof's masked appearance from the
-      // unmasked surface Call 9 actually manufactures.
+      scale: round2(w / surface.pixelWidth),
+      // Presentation only, recorded so a reader can tell the proof's masked
+      // appearance from the unmasked surface Call 9 manufactures.
       displayMask: { view: PROOF_VIEW_LABEL[surfaceKey], bodyFamily: template.bodyFamily || null, rectangular: local.rectangular, mirrored: template.mirrored },
     });
+  };
+
+  let leftY = bodyTop;
+  for (let index = 0; index < bigKeys.length; index++) {
+    await place(bigKeys[index], MARGIN + DIM_GUTTER, leftY, bigW, bigHeights[index]);
+    leftY += bigHeights[index] + LABEL_H + GAP;
+  }
+  if (smallKeys.length) {
+    const rightX = (bigKeys.length ? MARGIN + DIM_GUTTER + bigW + COL_GAP : MARGIN) + DIM_GUTTER;
+    for (let index = 0; index < smallKeys.length; index++) {
+      const col = index % smallCols;
+      const row = Math.floor(index / smallCols);
+      await place(
+        smallKeys[index],
+        rightX + col * (smallW + GAP),
+        bodyTop + smallRowHeights.slice(0, row).reduce((sum, height) => sum + height + LABEL_H + GAP, 0),
+        smallW,
+        smallHeights[index],
+      );
+    }
   }
 
-  markup.push(identityMarkup(fonts, layout.cells.hero3d, identities, render));
-  markup.push(footerMarkup(fonts, dimensions, totalSqFt, {
-    designId: designId || "DesignID pending",
-    orderNumber: orderNumber || "pending",
-    render,
-  }));
+  markup.push(label(fonts, coverageLine, { x: W / 2, y: bodyTop + bodyH + 8 + 22, size: 22, fill: ACCENT, anchor: "middle", bold: true }));
+  const footerY = bodyTop + bodyH + COVERAGE_H;
+  markup.push(line(MARGIN, footerY, W - MARGIN, footerY));
+  markup.push(label(fonts, `Approved By: ______________________    Signature: ______________________    Date: ____________`, { x: MARGIN, y: footerY + 20 + 17, size: 17, fill: INK }));
+  markup.push(label(fonts, `${designId || "DesignID pending"}  ·  Order # ${orderNumber || "pending"}  ·  revision ${render.revisionId}`, { x: MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED }));
+  markup.push(label(fonts, `master ${String(render.masterHash).slice(0, 16)}  ·  render ${String(render.renderHash).slice(0, 16)}  ·  GENIE ${String(render.dimensionManifestId)}  ·  no image generation`, { x: W - MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED, anchor: "end" }));
 
-  const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${SHEET_WIDTH}" height="${SHEET_HEIGHT}">${markup.join("")}</svg>`);
-  const bytes = await sharp({ create: { width: SHEET_WIDTH, height: SHEET_HEIGHT, channels: 3, background: "#ffffff" } })
+  if (BAND_H) {
+    const bandTop = H - BAND_H;
+    markup.push(line(0, bandTop + 1, W, bandTop + 1));
+    const step = Math.round(bandFontSize * BAND_LINE_GAP);
+    const firstBaseline = bandTop + Math.round(bandFontSize * 1.35);
+    for (let index = 0; index < bandLines.length; index++) {
+      markup.push(fittedLabel(fonts, bandLines[index], {
+        x: W / 2, y: firstBaseline + index * step, maxWidth: W - MARGIN * 2, maxSize: bandFontSize, minSize: BAND_MIN_FONT, fill: INK, bold: true,
+      }));
+    }
+  }
+
+  const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${markup.join("")}</svg>`);
+  const bytes = await sharp({ create: { width: W, height: H, channels: 3, background: "#ffffff" } })
     .composite([...composites, { input: overlay, left: 0, top: 0 }])
     .removeAlpha()
     .png(PNG_OPTIONS)
@@ -397,8 +498,8 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     bytes,
     contentHash: sha256(bytes),
     byteSize: bytes.length,
-    width: SHEET_WIDTH,
-    height: SHEET_HEIGHT,
+    width: W,
+    height: H,
     totalSqFt,
     bleedInches,
     dimensionsAuthority: "genie-universal-panelizer",
