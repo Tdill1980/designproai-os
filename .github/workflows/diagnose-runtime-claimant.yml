@@ -180,6 +180,8 @@ jobs:
             docker inspect -f 'labels={{json .Config.Labels}}' "$c" 2>&1
             echo "-- environment variable NAMES only (values never printed) --"
             docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$c" 2>/dev/null | cut -d= -f1 | sort -u
+            echo "-- healthcheck definition --"
+            docker inspect -f 'healthcheck={{json .Config.Healthcheck}}' "$c" 2>&1
             echo "-- process table (docker top: host-side, no exec into the container) --"
             docker top "$c" -eo pid,ppid,etime,stat,wchan:20,cmd 2>&1 || echo "(docker top unavailable — container not running)"
           done
@@ -191,6 +193,17 @@ jobs:
             echo
             echo "############ logs: $c — latest 100 lines ############"
             docker logs --timestamps --tail 100 "$c" 2>&1 || echo "(logs unavailable)"
+          done
+
+          echo
+          echo "=== /health bodies, read WITHOUT fail-on-error ==="
+          # Every probe so far used a fail-on-error fetch, so a 503 discarded the
+          # body and reported "empty /health response". The body is where
+          # readiness.error lives -- the one field that names WHICH dependency
+          # probe is failing. Read it plainly, status code and body both.
+          for port in 3001 3002; do
+            echo "--- 127.0.0.1:${port}/health ---"
+            curl -sS --max-time 10 -w '\nhttp_status=%{http_code}\n' "http://127.0.0.1:${port}/health" 2>&1 || echo "(curl failed)"
           done
 
           echo
