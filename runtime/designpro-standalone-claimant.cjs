@@ -380,6 +380,17 @@ async function complete(sb, stage, run, receiptValue, receiptHash = null, produc
   if (data !== true) throw new StageError("stage_lease_lost", `Lease lost for ${stage.stage_key}`);
 }
 
+/**
+ * Open the production workflow for a prepared pack.
+ *
+ * KEPT, DELIBERATELY. This is the working downstream conductor and it is still
+ * the only one -- rebuilding it would be the second fulfillment chain nobody
+ * wants. What changed is who calls it. It is no longer invoked by pack.activate
+ * merely because preparation finished; the same call now lives in
+ * confirm_designpro_purchase, so production opens when a customer pays for this
+ * exact prepared pack. The reconciler below still repairs a crash between the
+ * payment and the run, which is why both stay.
+ */
 async function ensureAutomaticProduction(sb, enticeRunId) {
   const { data, error } = await sb.rpc("create_designpro_production_workflow", {
     p_entice_run_id: enticeRunId,
@@ -916,8 +927,25 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
   }
   if (stage.stage_key === "pack.activate") {
     await stageOutput(sb, run.id, "pack.verify");
-    await complete(sb, stage, run, { verified: true, active: true, activatedAt: new Date().toISOString() });
-    return ensureAutomaticProduction(sb, run.id);
+    // PREPARATION ENDS HERE. THE CUSTOMER HAS NOT PAID YET.
+    //
+    // Calls 1-11 run automatically and are cheap on purpose: they exist so the
+    // customer can see the six branded panels, their clean duplicates and the
+    // separated logos before deciding. Everything after this stage -- Topaz,
+    // the output build, the ZIP, delivery -- is expensive, and the existence of
+    // a preview does not authorize any of it.
+    //
+    // This stage used to end by calling ensureAutomaticProduction, so finishing
+    // preparation started paid fulfillment. That conductor is unchanged and is
+    // still the only one; what moved is WHEN it is invoked. It now runs from
+    // confirm_designpro_purchase, once a payment for this exact prepared pack
+    // is confirmed.
+    return complete(sb, stage, run, {
+      verified: true, active: true, activatedAt: new Date().toISOString(),
+      // Stated on the receipt so no later reader has to infer why production
+      // has not started: it is waiting on a purchase, not stalled.
+      awaitingPurchase: true, purchasableProducts: ["production_pack", "logo_pack"],
+    });
   }
   throw new StageError("unsupported_entice_stage", stage.stage_key, false);
 }

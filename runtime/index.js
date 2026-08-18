@@ -183,6 +183,63 @@ async function refreshReadiness() {
 }
 app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(readiness));
 
+/**
+ * PURCHASE WRITES. Privileged, so they live here rather than in the gateway.
+ *
+ * The gateway is browser-facing and holds no service role; it talks to Stripe
+ * and proves a webhook delivery was signed, then forwards the decision over the
+ * WORKER_SECRET channel. These two endpoints are what may actually write an
+ * entitlement -- which is the difference between a payment and a claim.
+ *
+ * "open" records an intent before the customer is sent to pay. "confirm" is
+ * what authorizes fulfillment, and it is the only path that opens a production
+ * run: pack.activate stopped doing that, because finishing a free preview is
+ * not a purchase.
+ */
+app.post("/internal/purchases/open", authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["amountCents", "checkoutSessionId", "enticeRunId", "product"])) {
+      return res.status(400).json({ error: "purchase_open_request_invalid" });
+    }
+    // The two products are the whole product set. Anything else is refused
+    // rather than defaulted, so a typo cannot open a purchase nothing fulfills.
+    if (!["production_pack", "logo_pack"].includes(String(body.product))) {
+      return res.status(400).json({ error: "unknown_product" });
+    }
+    if (!Number.isInteger(body.amountCents) || body.amountCents <= 0) {
+      return res.status(400).json({ error: "purchase_amount_invalid" });
+    }
+    const { data, error } = await supabase.rpc("open_designpro_purchase", {
+      p_entice_run_id: canonicalUuid(body.enticeRunId, "enticeRunId"),
+      p_product: String(body.product),
+      p_amount_cents: Number(body.amountCents),
+      p_checkout_session_id: String(body.checkoutSessionId || ""),
+    });
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(400).json({ error: String(error.message || error) });
+  }
+});
+
+app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["checkoutSessionId", "paymentIntentId"])) {
+      return res.status(400).json({ error: "purchase_confirm_request_invalid" });
+    }
+    const { data, error } = await supabase.rpc("confirm_designpro_purchase", {
+      p_checkout_session_id: String(body.checkoutSessionId || ""),
+      p_payment_intent_id: body.paymentIntentId == null ? null : String(body.paymentIntentId),
+    });
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(400).json({ error: String(error.message || error) });
+  }
+});
+
 app.post("/internal/wrapbox/recipient", authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};

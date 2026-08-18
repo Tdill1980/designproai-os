@@ -35,6 +35,7 @@ import {
   getProductionPanelPackState,
   type ProductionFlowAssetRow,
 } from "@/lib/productionFlowAssetState";
+import type { ProductionLayersSource } from "@/lib/designpro-production-layers";
 
 // ── GRAPHICS PACK LIFT — DISABLED (Trish, 2026-07-22) ───────────────────────
 // The per-side "Lift branding" button (panel-artboard-generator step:"liftoverlays")
@@ -66,6 +67,19 @@ interface Props {
    * LayerLift canvas as an editable layer. When omitted, only download is shown.
    */
   onAddOverlayLayer?: (url: string, name: string) => void;
+  /**
+   * WHERE THE LAYERS COME FROM.
+   *
+   * Omitted, the card resolves everything itself against the tables it was
+   * written for -- unchanged behaviour, so nothing that mounts it today moves.
+   *
+   * Supplied, it consumes what the standalone runtime published through dpApi
+   * instead: the same rows, the same pack identity, the same approved views.
+   * That is the whole seam. The presentation below -- six branded panels beside
+   * their own 3D views, the clean set, the separated logos, the two purchase
+   * actions -- is identical either way, because the rows are.
+   */
+  source?: ProductionLayersSource | null;
   className?: string;
 }
 
@@ -207,7 +221,10 @@ function PreviewModal({ url, label, onClose, onOrder }: { url: string; label: st
   );
 }
 
-export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, className }: Props) {
+export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, source, className }: Props) {
+  // An injected source answers for itself; the resolvers below stay switched
+  // off rather than racing it for the same four answers.
+  const injected = source || null;
   const queryClient = useQueryClient();
   const [building, setBuilding] = useState(false);
   const [ordering, setOrdering] = useState(false);
@@ -217,9 +234,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
   // Resolve both immutable identities. Revision Studio normally passes the
   // color_visualizations id; callers that still pass the canonical DesignIQ id
   // are recovered through the latest server-authored Entice Pack.
-  const { data: resolved, isLoading: resolving } = useQuery({
+  const { data: resolvedQuery, isLoading: resolvingQuery } = useQuery({
     queryKey: ["production_flow_assets_canonical_id", generationId],
-    enabled: !!generationId,
+    enabled: !!generationId && !injected,
     queryFn: async () => {
       const { data: direct, error: directError } = await (supabase as any)
         .from("color_visualizations")
@@ -317,12 +334,20 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
     },
   });
 
+  // An injected source already knows which design this is, so there is nothing
+  // to recover. visualizationId stays empty deliberately: it addresses a table
+  // this path does not read, and the status query below is gated on it.
+  const resolved = injected
+    ? { canonical: injected.canonicalId, visualizationId: "", expectedUpdatedAt: "" }
+    : resolvedQuery;
+  const resolving = injected ? false : resolvingQuery;
+
   // Status is read through the public workflow facade, not reconstructed from
   // mutable browser state. visualizationId lookup lets a reload rediscover the
   // durable run without sessionStorage.
   const { data: enticeStatus = null, isLoading: enticeStatusLoading } = useQuery({
     queryKey: ["designpro_entice_status", resolved?.visualizationId],
-    enabled: !!resolved?.visualizationId,
+    enabled: !!resolved?.visualizationId && !injected,
     queryFn: async () => {
       try {
         return await getEnticeRevisionStatus({
@@ -356,7 +381,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
 
   // The active pointer is the only pack displayed. A newer building/failed
   // revision never leaks half-updated proof, panel, or logo assets into this card.
-  const activePack = (enticeStatus as any)?.activeEnticePack || null;
+  const activePack = injected ? injected.activePack : ((enticeStatus as any)?.activeEnticePack || null);
   const activePackLoading = enticeStatusLoading;
 
   const activeProofUrl = String((activePack as any)?.proof_artifact?.url || "");
@@ -380,9 +405,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
   // incomplete side sets on the row data itself. So the pack identity is applied
   // BELOW as a label (verified vs preview) and as the gate on the paid order
   // button — which stays exactly as strict as it was.
-  const { data: rows = [], isLoading: rowsLoading } = useQuery({
+  const { data: rowsQuery = [], isLoading: rowsLoadingQuery } = useQuery({
     queryKey: ["production_flow_assets", "by-design", resolved?.canonical],
-    enabled: !!resolved?.canonical,
+    enabled: !!resolved?.canonical && !injected,
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("production_flow_assets")
@@ -399,6 +424,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
         ? 3_000
         : false,
   });
+
+  const rows = injected ? (injected.rows as PFARow[]) : rowsQuery;
+  const rowsLoading = injected ? false : rowsLoadingQuery;
 
   // Prefer the pack built from the CURRENT proof. If there isn't one yet, fall
   // back to the newest complete pack for this design and show it as a preview —
@@ -438,9 +466,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
   const displayRevisionId = String(
     latestBySide[0]?.revision_id || (activePack as any)?.revision_id || "",
   );
-  const { data: designViews = {} } = useQuery({
+  const { data: designViewsQuery = {} } = useQuery({
     queryKey: ["production_flow_design_views", displayRevisionId],
-    enabled: !!displayRevisionId,
+    enabled: !!displayRevisionId && !injected,
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("design_version_commits")
@@ -458,6 +486,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
     },
   });
 
+  const designViews = injected ? injected.designViews : designViewsQuery;
 
   // LOGO PACK — read only from the ONE selected atomic pack. Never union
   // admin_notes across order-family revisions: that was able to attach stale
@@ -615,7 +644,29 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
 
   // Paid promotion pins the exact active Entice Pack. The card will not create a
   // browser-side order/job identity or rerun Entice generation as a side effect.
-  const orderProductionPack = activePack && isVerifiedPack && packState.productionEligible
+  //
+  // An injected source brings its own checkout. Same gate, same eligibility --
+  // only the action behind the button changes, from the legacy job promotion to
+  // the standalone purchase the entitlement is recorded against.
+  const orderProductionPack = injected
+    ? (injected.onOrderProductionPack && isVerifiedPack && packState.productionEligible
+      ? async () => {
+        if (ordering) return;
+        setOrdering(true);
+        try {
+          await injected.onOrderProductionPack!();
+        } catch (error: any) {
+          toast({
+            title: "Production Pack checkout could not start",
+            description: String(error?.message || error).slice(0, 220),
+            variant: "destructive",
+          });
+        } finally {
+          setOrdering(false);
+        }
+      }
+      : undefined)
+    : activePack && isVerifiedPack && packState.productionEligible
     ? async () => {
       if (ordering) return;
       setOrdering(true);
@@ -781,6 +832,24 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, clas
     const canonical = resolved?.canonical;
     if (!canonical || orderingLogoPack) return;
     setOrderingLogoPack(true);
+    // The standalone path never reaches the RestylePro edge function; its
+    // checkout is the gateway route, and the entitlement it records is the
+    // Logo Pack's own -- separate from the Production Pack, so buying one can
+    // never authorize the other's fulfillment.
+    if (injected) {
+      try {
+        if (!injected.onOrderLogoPack) throw new Error("Logo Pack checkout is not available");
+        await injected.onOrderLogoPack();
+      } catch (e) {
+        toast({
+          title: "Logo Pack checkout failed",
+          description: e instanceof Error ? e.message : String(e),
+          variant: "destructive",
+        });
+        setOrderingLogoPack(false);
+      }
+      return;
+    }
     try {
       const { data, error } = await supabase.functions.invoke("create-single-use-checkout", {
         body: {

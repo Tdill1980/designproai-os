@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 
@@ -53,6 +53,16 @@ const readBody = async (req) => {
   }
 };
 
+/** The exact bytes Stripe signed. JSON.parse first would change them. */
+const readRawBody = async (req) => {
+  let text = "";
+  for await (const chunk of req) {
+    text += chunk;
+    if (text.length > 1_000_000) throw Object.assign(new Error("request_too_large"), { status: 413 });
+  }
+  return text;
+};
+
 function cookies(req) {
   const result = {};
   for (const item of String(req.headers.cookie || "").split(";")) {
@@ -79,6 +89,16 @@ function config(env) {
   const allowedOrigins = [...new Set([appOrigin, ...additionalOrigins].filter(Boolean))];
   const internalRuntimeUrl = String(env.DESIGNPRO_RUNTIME_INTERNAL_URL || "").replace(/\/$/, "");
   const workerSecret = String(env.WORKER_SECRET || "");
+  // Checkout. Absent, the two purchase routes answer 503 and the buttons stay
+  // dark -- the honest state for a deployment with no payment configured, and
+  // far better than a button that opens a session nobody can pay.
+  //
+  // This process holds NO service role and must not: recording an entitlement
+  // is privileged work, so it is forwarded to the runtime over the same
+  // WORKER_SECRET channel the recipient binding already uses. The gateway's
+  // whole job here is to talk to Stripe and to prove a delivery was signed.
+  const stripeSecretKey = String(env.STRIPE_SECRET_KEY || "");
+  const stripeWebhookSecret = String(env.STRIPE_WEBHOOK_SECRET || "");
   const production = env.NODE_ENV === "production";
   if (!supabaseUrl || !publishableKey || (production && (!appOrigin || !internalRuntimeUrl || workerSecret.length < 32))) throw new Error("gateway_config_missing");
   if (internalRuntimeUrl) {
@@ -87,7 +107,7 @@ function config(env) {
       throw new Error("gateway_internal_runtime_url_invalid");
     }
   }
-  return { supabaseUrl, publishableKey, appOrigin, allowedOrigins, internalRuntimeUrl, workerSecret, production };
+  return { supabaseUrl, publishableKey, appOrigin, allowedOrigins, internalRuntimeUrl, workerSecret, production, stripeSecretKey, stripeWebhookSecret };
 }
 
 function encodeStoragePath(path) {
@@ -366,6 +386,80 @@ async function rpc(fetchImpl, token, cfg, name, body) {
   return payload;
 }
 
+
+/**
+ * THE TWO PRODUCTS, PRICED AS THE WORKING SYSTEM PRICED THEM.
+ *
+ * Ported from the proven `create-single-use-checkout` behaviour: the Production
+ * Pack at $299 and the Logo Pack at $29, each its own product with its own
+ * fulfillment. Nothing here calls that function -- the behaviour moved inside
+ * this boundary, which is the point.
+ * They are listed here rather than passed in because a price that arrives from
+ * a browser is a price the customer chose.
+ */
+const PURCHASE_PRODUCTS = Object.freeze({
+  production_pack: Object.freeze({
+    product: "production_pack",
+    name: "Print-Ready Production Pack",
+    description: "Six print-ready production panels, upscaled, QC'd by the design team, and delivered as a production ZIP.",
+    amountCents: 29900,
+  }),
+  logo_pack: Object.freeze({
+    product: "logo_pack",
+    name: "Logo Pack — separated logo & lettering assets",
+    description: "Every logo and lettering element lifted clean off your approved design, upscaled and QC'd.",
+    amountCents: 2900,
+  }),
+});
+
+/** Stripe wants form encoding, and this is the whole of what we send it. */
+function stripeForm(fields) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined && value !== null && value !== "") params.append(key, String(value));
+  }
+  return params;
+}
+
+async function stripeCall(fetchImpl, cfg, path, form) {
+  const response = await fetchImpl(`https://api.stripe.com/v1/${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${cfg.stripeSecretKey}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: form,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(payload?.error?.message || `stripe_${response.status}`), { status: 502 });
+  }
+  return payload;
+}
+
+/**
+ * A webhook is only trusted when it is signed. Stripe's scheme is an HMAC over
+ * "timestamp.rawBody" with the endpoint secret, compared in constant time, and
+ * with the timestamp checked so a captured delivery cannot be replayed later.
+ * An unsigned or stale delivery confirms nothing -- it would otherwise be a way
+ * to grant a paid entitlement for free.
+ */
+function verifiedStripeEvent(rawBody, signatureHeader, secret, nowSeconds) {
+  const parts = String(signatureHeader || "").split(",").map((piece) => piece.trim());
+  const timestamp = parts.find((piece) => piece.startsWith("t="))?.slice(2) || "";
+  const signatures = parts.filter((piece) => piece.startsWith("v1=")).map((piece) => piece.slice(3));
+  if (!/^\d{1,12}$/.test(timestamp) || !signatures.length) return null;
+  if (Math.abs(nowSeconds - Number(timestamp)) > 300) return null;
+  const expected = createHmac("sha256", secret).update(`${timestamp}.${rawBody}`).digest("hex");
+  const expectedBytes = Buffer.from(expected, "utf8");
+  const matched = signatures.some((candidate) => {
+    const candidateBytes = Buffer.from(candidate, "utf8");
+    return candidateBytes.length === expectedBytes.length && timingSafeEqual(candidateBytes, expectedBytes);
+  });
+  if (!matched) return null;
+  try { return JSON.parse(rawBody); } catch { return null; }
+}
+
 function validatedRecipientRequest(body) {
   const exactKeys = ["customerEmail", "customerReference", "designName", "orderNumber", "verificationReference"];
   if (!body || typeof body !== "object" || Array.isArray(body) ||
@@ -389,6 +483,30 @@ function validatedRecipientRequest(body) {
   // forwarded in raw form, or persisted by any DesignPro service.
   const verificationRefHash = createHash("sha256").update(verificationReference, "utf8").digest("hex");
   return { customerEmail, customerReference, verificationRefHash, orderNumber, designName };
+}
+
+/**
+ * Privileged purchase writes go to the runtime, never from here.
+ *
+ * Same channel and same reasoning as the recipient binding below: this process
+ * is browser-facing, so it holds no service role. It proves the Stripe delivery
+ * was signed and forwards the decision; the runtime is what may write it.
+ */
+async function purchaseThroughRuntime(fetchImpl, cfg, action, payload) {
+  if (!cfg.internalRuntimeUrl || cfg.workerSecret.length < 32) {
+    throw Object.assign(new Error("purchase_service_unavailable"), { status: 503 });
+  }
+  const response = await fetchImpl(`${cfg.internalRuntimeUrl}/internal/purchases/${action}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${cfg.workerSecret}` },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(body.error || "purchase_write_failed"),
+      { status: response.status >= 400 && response.status < 500 ? 400 : 503 });
+  }
+  return body;
 }
 
 async function registerRecipientThroughRuntime(fetchImpl, cfg, operatorId, body) {
@@ -845,6 +963,27 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 200, { ok: true, user: { id: payload.user?.id, email: payload.user?.email } }, { "set-cookie": sessionCookies(payload, cfg) });
       }
 
+      // STRIPE WEBHOOK — before the session gate, because Stripe carries no
+      // session. Its authentication is the signature, checked below; an
+      // unsigned delivery is refused and confirms nothing.
+      if (req.method === "POST" && url.pathname === "/api/webhooks/stripe") {
+        if (!cfg.stripeWebhookSecret) return json(res, 503, { error: "checkout_not_configured" });
+        const raw = await readRawBody(req);
+        const event = verifiedStripeEvent(raw, req.headers["stripe-signature"], cfg.stripeWebhookSecret, Math.floor(Date.now() / 1000));
+        if (!event) return json(res, 400, { error: "stripe_signature_invalid" });
+        // Only a completed, actually-paid session authorizes anything. An
+        // expired or unpaid session is acknowledged so Stripe stops retrying,
+        // and grants nothing.
+        if (event.type !== "checkout.session.completed") return json(res, 200, { received: true, ignored: event.type });
+        const object = event.data?.object || {};
+        if (String(object.payment_status || "") !== "paid") return json(res, 200, { received: true, unpaid: true });
+        const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
+          checkoutSessionId: String(object.id || ""),
+          paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
+        });
+        return json(res, 200, { received: true, ...confirmed });
+      }
+
       const session = await authenticate(req, res, fetchImpl, cfg);
       if (!session) {
         res.setHeader("set-cookie", clearSessionCookies(cfg));
@@ -1119,6 +1258,48 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           p_input: { orderRequestId: body.orderRequestId || null },
         });
         return json(res, 202, { runId: result.workflowRunId, accepted: true });
+      }
+
+      // OPEN A PURCHASE. The proven `create-single-use-checkout` behaviour,
+      // moved inside this boundary: the customer UI calls dpApi, dpApi calls
+      // here, and only this process talks to Stripe.
+      if (req.method === "POST" && url.pathname === "/api/checkout/sessions") {
+        if (!cfg.stripeSecretKey) return json(res, 503, { error: "checkout_not_configured" });
+        const body = await readBody(req);
+        const spec = PURCHASE_PRODUCTS[String(body.product || "")];
+        // The price is ours, never the caller's. A product the server does not
+        // sell is refused rather than defaulted to the cheaper one.
+        if (!spec) return json(res, 400, { error: "unknown_product" });
+        const runs = await listRuns(fetchImpl, token, cfg);
+        const run = requestedRun(runs, String(body.generationId || ""));
+        if (!run) return json(res, 404, { error: "job_not_found" });
+        const returnPath = typeof body.returnPath === "string" && body.returnPath.startsWith("/")
+          ? body.returnPath : "/designpro/jobs";
+        const stripeSession = await stripeCall(fetchImpl, cfg, "checkout/sessions", stripeForm({
+          mode: "payment",
+          "line_items[0][quantity]": 1,
+          "line_items[0][price_data][currency]": "usd",
+          "line_items[0][price_data][unit_amount]": spec.amountCents,
+          "line_items[0][price_data][product_data][name]": spec.name,
+          "line_items[0][price_data][product_data][description]": spec.description,
+          customer_email: user.email || undefined,
+          success_url: `${cfg.appOrigin}${returnPath}?purchase=${spec.product}`,
+          cancel_url: `${cfg.appOrigin}${returnPath}?purchase=cancelled`,
+          "metadata[product]": spec.product,
+          "metadata[entice_run_id]": run.id,
+          "metadata[generation_id]": String(run.generation_id || ""),
+          "metadata[owner_id]": user.id,
+        }));
+        // Recorded pending BEFORE the customer is sent to pay, so the webhook
+        // has a row to confirm against and a payment can never arrive for a
+        // purchase this system has no record of opening.
+        await purchaseThroughRuntime(fetchImpl, cfg, "open", {
+          enticeRunId: run.id,
+          product: spec.product,
+          amountCents: spec.amountCents,
+          checkoutSessionId: String(stripeSession.id),
+        });
+        return json(res, 200, { url: String(stripeSession.url), product: spec.product, amountCents: spec.amountCents });
       }
 
       const approvedViewMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/approved-views$/);

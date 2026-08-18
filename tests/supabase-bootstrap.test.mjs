@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-eight-migration chain', () => {
-  assert.equal(migrationNames.length, 28);
+test('fresh bootstrap contains one ordered twenty-nine-migration chain', () => {
+  assert.equal(migrationNames.length, 29);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -48,6 +48,9 @@ test('fresh bootstrap contains one ordered twenty-eight-migration chain', () => 
       // The Commercial identity carrier: the structured intake reaches the
       // frozen snapshot instead of being reduced to a brief string.
       '20260818173000',
+      // The purchase gate: Calls 8-11 prepare for free, and the two
+      // entitlements decide what fulfillment may spend.
+      '20260818210000',
     ],
   );
 });

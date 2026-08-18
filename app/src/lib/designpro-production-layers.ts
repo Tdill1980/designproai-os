@@ -89,6 +89,36 @@ export function proofBinding(proofContentHash: string | null | undefined): strin
   return HEX64.test(hash) ? `designpro://proof/${hash}` : "";
 }
 
+/**
+ * What the card needs in place of its four direct-Supabase reads. Supplying
+ * this is what lets the original component render here unchanged: it stops
+ * resolving canonical ids, entice packs, rows and views for itself and consumes
+ * what the runtime already published.
+ */
+export type ProductionLayersSource = {
+  canonicalId: string;
+  rows: ProductionFlowAssetRow[];
+  designViews: Record<string, string>;
+  /**
+   * The activated pack, in the shape the card checks against. `id` and
+   * `pack_version` are the pack identity every row carries, so the card's
+   * "is this the pack the server activated" test resolves true for a real pack
+   * and false for anything assembled from mismatched parts.
+   */
+  activePack: {
+    id: string;
+    pack_version: string;
+    revision_id: string;
+    proof_artifact: { url: string } | null;
+    surface_manifest: { surfaces: Array<{ surfaceKey: string }> };
+  } | null;
+  /** Purchase actions, injected so the customer path calls no legacy function. */
+  onOrderProductionPack?: () => void | Promise<void>;
+  onOrderLogoPack?: () => void | Promise<void>;
+  /** What the customer has actually paid for. Preview assets never imply this. */
+  entitlements?: { productionPack: boolean; logoPack: boolean };
+};
+
 export type ProductionLayers = {
   rows: ProductionFlowAssetRow[];
   /** The approved 3D view per side, so each panel shows beside its own render. */
@@ -96,6 +126,7 @@ export type ProductionLayers = {
   proofUrl: string | null;
   proofBinding: string;
   logoPack: ProductionFlowLogoAsset[];
+  activePack: ProductionLayersSource["activePack"];
 };
 
 /**
@@ -143,6 +174,7 @@ export function toProductionLayers(input: {
     if (bound && bound !== identity.sourceHash) return null;
   }
   const expectedSides = SURFACE_ORDER.map((surface) => SIDE_LABEL_FOR_SURFACE[surface]);
+  const revisionId = String(branded.get("driver")!.metadata?.revisionId || "");
 
   const logoPack: ProductionFlowLogoAsset[] = input.artifacts
     .filter((artifact) => artifact.kind === "logo")
@@ -173,6 +205,11 @@ export function toProductionLayers(input: {
 
     return {
       id: panel.id,
+      // The pack identity, repeated on every row exactly as the atomic saver
+      // wrote it. The card compares these against the activated pack, and a row
+      // that cannot state them is a row it cannot vouch for.
+      entice_pack_id: identity.sourceHash,
+      revision_id: revisionId,
       side: SIDE_LABEL_FOR_SURFACE[surface],
       version: identity.version,
       dimensions_inches: {
@@ -205,7 +242,20 @@ export function toProductionLayers(input: {
     } satisfies ProductionFlowAssetRow;
   });
 
-  return { rows, designViews, proofUrl: proof?.signedUrl || null, proofBinding: binding, logoPack };
+  return {
+    rows,
+    designViews,
+    proofUrl: proof?.signedUrl || null,
+    proofBinding: binding,
+    logoPack,
+    activePack: {
+      id: identity.sourceHash,
+      pack_version: identity.version,
+      revision_id: revisionId,
+      proof_artifact: proof ? { url: binding } : null,
+      surface_manifest: { surfaces: SURFACE_ORDER.map((surfaceKey) => ({ surfaceKey })) },
+    },
+  };
 }
 
 /** Fetch one run's production layers through the gateway. */

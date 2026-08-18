@@ -559,6 +559,24 @@ export const dpApi = {
       method: "POST",
       body: JSON.stringify({ qc, notes }),
     }),
+  /**
+   * Open a purchase and get the Stripe checkout URL.
+   *
+   * The price lives on the server: this sends WHICH product, never how much.
+   * The two products stay separate all the way through -- buying the Logo Pack
+   * authorizes logo fulfillment and nothing else, and the Production Pack the
+   * same, because the entitlement the webhook confirms is per product.
+   */
+  createCheckoutSession: (input: {
+    generationId: string;
+    product: "production_pack" | "logo_pack";
+    returnPath?: string;
+  }) =>
+    request<{ url: string; product: string; amountCents: number }>("/checkout/sessions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
   approveFinalQc: (generationId: string, qc: FinalQc, notes: string) =>
     request<{ accepted: true }>(`/jobs/${encodeURIComponent(generationId)}/approvals/final`, {
       method: "POST",
