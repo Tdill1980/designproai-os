@@ -484,6 +484,19 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     }
   }
 
+  // Ported from restylepro-os worker/designpro-proof-extract-v3.cjs
+  // canonicalTileBoxes: exactly one region per expected side, and no two sides
+  // pointing at the same rectangle. Two sides sharing a rect is how every panel
+  // ends up carrying the driver's artwork -- the extractor is handed one
+  // location under six names and cannot tell.
+  if (proofRegions.length !== SURFACE_ORDER.length
+    || new Set(proofRegions.map((region) => region.surfaceKey)).size !== SURFACE_ORDER.length) {
+    fail("proof_required_surface_missing", "the proof must state one region for each of the six production surfaces");
+  }
+  if (new Set(proofRegions.map((region) => `${region.x}:${region.y}:${region.w}:${region.h}`)).size !== SURFACE_ORDER.length) {
+    fail("proof_region_duplicate", "two production surfaces point at the same region of the proof");
+  }
+
   const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${markup.join("")}</svg>`);
   const bytes = await sharp({ create: { width: W, height: H, channels: 3, background: "#ffffff" } })
     .composite([...composites, { input: overlay, left: 0, top: 0 }])

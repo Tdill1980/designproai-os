@@ -98,3 +98,15 @@ test("the six sides are the six sides, and the database agrees", () => {
   assert.match(claimant, /PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side"/);
   for (const side of SIDES) assert.match(proofSheet, new RegExp(`"${side}"`), `${side} must be an addressable region`);
 });
+
+/**
+ * Ported from restylepro-os worker/designpro-proof-extract-v3.cjs
+ * `canonicalTileBoxes`. Two sides pointing at one rectangle is the exact defect
+ * that sent the driver's artwork to every side: the extractor gets one location
+ * under six names and has no way to tell them apart.
+ */
+test("no two sides may point at the same region of the proof", () => {
+  assert.match(proofSheet, /proof_region_duplicate/);
+  assert.match(proofSheet, /proof_required_surface_missing/);
+  assert.match(proofSheet, /new Set\(proofRegions\.map\(\(region\) => `\$\{region\.x\}:\$\{region\.y\}:\$\{region\.w\}:\$\{region\.h\}`\)\)/);
+});
