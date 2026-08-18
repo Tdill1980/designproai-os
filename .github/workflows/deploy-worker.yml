@@ -110,8 +110,14 @@ jobs:
           set +x
           : "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN secret is required}"
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
+          # worker.designproai.com is served by the long-running proven worker
+          # container, whose WORKER_SECRET predates runtime.env — read the
+          # secret from that container's own environment so the functions hold
+          # the value the live worker actually checks.
           worker_secret=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "grep '^WORKER_SECRET=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-")
+            "docker ps --format '{{.Names}}' | while read -r c; do docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"\$c\" | grep '^WORKER_SECRET=' | head -1; done | head -1 | cut -d= -f2-")
+          if [ -z "$worker_secret" ]; then worker_secret=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "grep '^WORKER_SECRET=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-"); fi
           test -n "$worker_secret"
           echo "::add-mask::$worker_secret"
           npx --yes supabase@2.111.0 secrets set --project-ref "$PROJECT_REF" \
