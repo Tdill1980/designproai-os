@@ -118,11 +118,14 @@ jobs:
           jobId=$(jq -r .jobId /tmp/designpro-output-payload.json)
           userId=$(jq -r .userId /tmp/designpro-output-payload.json)
           orderNumber=$(jq -r .orderNumber /tmp/designpro-output-payload.json)
-          test -n "$jobId" && test -n "$userId" && test -n "$orderNumber" && test "$count" -gt 0
+          test -n "$jobId" && test -n "$userId" && test -n "$orderNumber"
           echo "Job $jobId order $orderNumber — $count panels"
 
+          # An empty panel list is a package-only rerun: the sides already
+          # carry their print_worker stamps, only the ZIP leg re-fires.
           fail=0
           for i in $(seq 0 $((count - 1))); do
+            [ "$count" -gt 0 ] || break
             body=$(jq -c --argjson i "$i" '{
               jobId, userId, orderNumber,
               panelKey: .panels[$i].panelKey,
@@ -149,8 +152,10 @@ jobs:
           code=$(curl -sS -m 900 -o /tmp/designpro-pack.json -w '%{http_code}' \
             -X POST "http://127.0.0.1:$PORT/package-pack" \
             -H "Authorization: Bearer $WS" -H "Content-Type: application/json" \
-            --data-binary "$(jq -c '{jobId, userId, orderNumber}' /tmp/designpro-output-payload.json)")
+            --data-binary "$(jq -c '{jobId, userId, orderNumber, force: true}' /tmp/designpro-output-payload.json)")
           echo "HTTP $code"
           cat /tmp/designpro-pack.json | head -c 3000; echo
+          echo "── worker log tail ──"
+          docker logs --tail 60 designpro-worker 2>&1 | tail -60 || true
           test "$code" = "200"
           REMOTE
