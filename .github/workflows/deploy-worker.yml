@@ -71,7 +71,7 @@ jobs:
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           # The tarball is too large for an argument/env assignment (ssh:
           # Argument list too long, run 32081902567) — stream it over stdin.
-          tar -cz worker | ssh "${ssh_args[@]}" "root@$TARGET_HOST" 'cat > /tmp/designpro-worker.tgz'
+          tar -cz worker shared | ssh "${ssh_args[@]}" "root@$TARGET_HOST" 'cat > /tmp/designpro-worker.tgz'
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' GIT_SHA='$GITHUB_SHA' bash -s" <<'REMOTE'
           set -Eeuo pipefail
