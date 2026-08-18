@@ -81,17 +81,27 @@ jobs:
           trap 'rm -rf "$stage" /tmp/designpro-worker.tgz' EXIT
           tar -C "$stage" -xzf /tmp/designpro-worker.tgz
           docker build -t "designpro-worker:$GIT_SHA" -f "$stage/worker/Dockerfile" "$stage"
+          # worker.designproai.com must serve THIS container so the secret the
+          # functions hold (runtime.env) is the one the live worker checks.
+          # Find the loopback port Caddy proxies for that hostname and take it
+          # over; never touch the runtime/gateway ports.
+          wport=$(grep -rA6 'worker.designproai.com' /etc/caddy 2>/dev/null | grep -oE '127\.0\.0\.1:[0-9]+' | head -1 | cut -d: -f2)
+          case "$wport" in ''|3001|3002|8787) wport=3005 ;; esac
+          echo "worker hostname backend port: $wport"
+          docker ps --format '{{.ID}} {{.Names}} {{.Ports}}' | grep ":$wport->" | awk '{print $1}' | while read -r cid; do
+            docker rm -f "$cid"
+          done
           docker rm -f designpro-worker 2>/dev/null || true
           docker run -d --name designpro-worker --restart unless-stopped \
-            -p 127.0.0.1:3005:3001 \
+            -p "127.0.0.1:$wport:3001" \
             --env-file /opt/designproai-os/shared/runtime.env \
             -e GIT_SHA="$GIT_SHA" \
             -e DESIGNPRO_WORKER_ID="designpro-worker-1" \
             "designpro-worker:$GIT_SHA"
           for i in $(seq 1 30); do
-            if curl -fsS -m 5 http://127.0.0.1:3005/health >/dev/null 2>&1; then
+            if curl -fsS -m 5 "http://127.0.0.1:$wport/health" >/dev/null 2>&1; then
               echo "worker healthy"
-              curl -fsS -m 5 http://127.0.0.1:3005/health | head -c 400; echo
+              curl -fsS -m 5 "http://127.0.0.1:$wport/health" | head -c 400; echo
               exit 0
             fi
             sleep 2
@@ -110,14 +120,8 @@ jobs:
           set +x
           : "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN secret is required}"
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
-          # worker.designproai.com is served by the long-running proven worker
-          # container, whose WORKER_SECRET predates runtime.env — read the
-          # secret from that container's own environment so the functions hold
-          # the value the live worker actually checks.
           worker_secret=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "docker ps --format '{{.Names}}' | while read -r c; do docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"\$c\" | grep '^WORKER_SECRET=' | head -1; done | head -1 | cut -d= -f2-")
-          if [ -z "$worker_secret" ]; then worker_secret=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "grep '^WORKER_SECRET=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-"); fi
+            "grep '^WORKER_SECRET=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-")
           test -n "$worker_secret"
           echo "::add-mask::$worker_secret"
           npx --yes supabase@2.111.0 secrets set --project-ref "$PROJECT_REF" \
