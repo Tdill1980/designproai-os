@@ -38,6 +38,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
+import {
+  toProductionLayers,
+  type ProductionLayersSource,
+} from "@/lib/designpro-production-layers";
+import type { ApprovedGenerationView } from "@/lib/designpro-api";
 import {
   ContentHash,
   Loading,
@@ -549,6 +555,7 @@ export default function ProductionWorkflow() {
   const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
   const [artifactsLoading, setArtifactsLoading] = useState(true);
   const [artifactsError, setArtifactsError] = useState("");
+  const [approvedViews, setApprovedViews] = useState<ApprovedGenerationView[]>([]);
   const [error, setError] = useState("");
 
   const load = useCallback(
@@ -575,6 +582,14 @@ export default function ProductionWorkflow() {
       .finally(() => setArtifactsLoading(false));
   }, [generationId]);
 
+  // The approved 3D views this run was frozen against. Fetched beside the
+  // artifacts because a print panel is only checkable next to the design it
+  // came from; a failure here costs the pairing, never the panels.
+  const loadApprovedViews = useCallback(
+    () => dpApi.listApprovedViews(generationId).then(setApprovedViews).catch(() => setApprovedViews([])),
+    [generationId],
+  );
+
   useEffect(() => {
     void load();
     const timer = window.setInterval(load, 5000);
@@ -584,9 +599,53 @@ export default function ProductionWorkflow() {
   // Signed links last five minutes; refresh them well inside that window.
   useEffect(() => {
     void loadArtifacts();
-    const timer = window.setInterval(loadArtifacts, 240000);
+    void loadApprovedViews();
+    const timer = window.setInterval(() => {
+      void loadArtifacts();
+      void loadApprovedViews();
+    }, 240000);
     return () => window.clearInterval(timer);
-  }, [loadArtifacts]);
+  }, [loadArtifacts, loadApprovedViews]);
+
+  /**
+   * PRODUCTION LAYERS — the original customer surface, fed from this run.
+   *
+   * The card is unchanged; what it consumes is the adapter's rows rather than
+   * the tables it was written against. Built from the artifacts already loaded
+   * above, so mounting it costs no extra request and its links expire on the
+   * same refresh cycle as everything else on the page.
+   *
+   * Null until Call 9 has published all six panels. A partial pack has nothing
+   * honest to show, and the card's own emptiness rule says the same.
+   */
+  const layers = useMemo(
+    () => toProductionLayers({ artifacts, approvedViews, createdAt: new Date().toISOString() }),
+    [artifacts, approvedViews],
+  );
+
+  const layersSource: ProductionLayersSource | null = useMemo(() => {
+    if (!layers) return null;
+    return {
+      canonicalId: generationId,
+      rows: layers.rows,
+      designViews: layers.designViews,
+      activePack: layers.activePack,
+      // The two purchases, each opening its own checkout. Neither authorizes
+      // the other: the entitlement the webhook confirms is per product.
+      onOrderProductionPack: async () => {
+        const session = await dpApi.createCheckoutSession({
+          generationId, product: "print_pack_entitlement", returnPath: `/designpro/jobs/${generationId}`,
+        });
+        window.location.href = session.url;
+      },
+      onOrderLogoPack: async () => {
+        const session = await dpApi.createCheckoutSession({
+          generationId, product: "logo_pack", returnPath: `/designpro/jobs/${generationId}`,
+        });
+        window.location.href = session.url;
+      },
+    };
+  }, [layers, generationId]);
 
   const completeCount = useMemo(
     () => job?.stages.filter((stage) => stage.state === "complete").length || 0,
@@ -656,6 +715,17 @@ export default function ProductionWorkflow() {
       {artifactsError && <Notice tone="error">{artifactsError}</Notice>}
 
       <RevisionStudio artifacts={artifacts} loading={artifactsLoading} />
+
+      {/* The original Production Layers surface: six branded panels beside their
+          own approved views, the clean set, the separated logos, and the two
+          purchase actions. Same component the product has always used. */}
+      {layersSource && (
+        <ProductionFlowLayersCard
+          generationId={generationId}
+          source={layersSource}
+          className="border-border"
+        />
+      )}
       <TopazEnhancement artifacts={artifacts} />
       <VerifiedOutputFiles artifacts={artifacts} />
       <DeliveryArtifacts artifacts={artifacts} />

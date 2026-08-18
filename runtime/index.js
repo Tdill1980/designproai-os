@@ -191,49 +191,37 @@ app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(r
  * WORKER_SECRET channel. These two endpoints are what may actually write an
  * entitlement -- which is the difference between a payment and a claim.
  *
- * "open" records an intent before the customer is sent to pay. "confirm" is
- * what authorizes fulfillment, and it is the only path that opens a production
- * run: pack.activate stopped doing that, because finishing a free preview is
- * not a purchase.
+ * There is one endpoint, and it records a verified payment. It does not run
+ * Topaz, build files, or construct a workflow: the production run already
+ * exists, parked at its purchase gate, and the worker's reconciler is what
+ * advances it. Payment changes authorization; the worker changes workflow state.
  */
-app.post("/internal/purchases/open", authMiddleware, async (req, res) => {
+app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
-    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["amountCents", "checkoutSessionId", "enticeRunId", "product"])) {
-      return res.status(400).json({ error: "purchase_open_request_invalid" });
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["amountCents", "checkoutSessionId", "generationId", "paymentIntentId", "productType", "userEmail"])) {
+      return res.status(400).json({ error: "purchase_confirm_request_invalid" });
     }
-    // The two products are the whole product set. Anything else is refused
-    // rather than defaulted, so a typo cannot open a purchase nothing fulfills.
-    if (!["production_pack", "logo_pack"].includes(String(body.product))) {
-      return res.status(400).json({ error: "unknown_product" });
+    // The two products the system sells. Anything else is refused rather than
+    // recorded, so a stray webhook cannot mint an entitlement for a product
+    // nothing fulfills.
+    if (!["print_pack_entitlement", "logo_pack"].includes(String(body.productType))) {
+      return res.status(400).json({ error: "unknown_product_type" });
     }
     if (!Number.isInteger(body.amountCents) || body.amountCents <= 0) {
       return res.status(400).json({ error: "purchase_amount_invalid" });
     }
-    const { data, error } = await supabase.rpc("open_designpro_purchase", {
-      p_entice_run_id: canonicalUuid(body.enticeRunId, "enticeRunId"),
-      p_product: String(body.product),
-      p_amount_cents: Number(body.amountCents),
-      p_checkout_session_id: String(body.checkoutSessionId || ""),
-    });
-    if (error) return res.status(400).json({ error: error.message });
-    return res.status(200).json(data);
-  } catch (error) {
-    return res.status(400).json({ error: String(error.message || error) });
-  }
-});
-
-app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
-  try {
-    const body = req.body || {};
-    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["checkoutSessionId", "paymentIntentId"])) {
-      return res.status(400).json({ error: "purchase_confirm_request_invalid" });
-    }
     const { data, error } = await supabase.rpc("confirm_designpro_purchase", {
       p_checkout_session_id: String(body.checkoutSessionId || ""),
       p_payment_intent_id: body.paymentIntentId == null ? null : String(body.paymentIntentId),
+      p_product_type: String(body.productType),
+      p_generation_id: canonicalUuid(body.generationId, "generationId"),
+      p_amount_cents: Number(body.amountCents),
+      p_user_email: body.userEmail ? String(body.userEmail) : null,
     });
     if (error) return res.status(400).json({ error: error.message });
+    // Recording the entitlement is the whole of it. The worker's reconciler
+    // releases the waiting production run; Stripe never runs the pipeline.
     return res.status(200).json(data);
   } catch (error) {
     return res.status(400).json({ error: String(error.message || error) });

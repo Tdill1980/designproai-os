@@ -59,7 +59,10 @@ const STAGES = Object.freeze([
   "revision.freeze", "manifest.resolve", "proof.build", "panels.build",
   // Call 11 sits between Call 10 and the PanelPro gate: its de-logoed
   // duplicates are what that gate validates against vehicle templates.
-  "logos.extract", "panels.delogo", "pack.verify", "pack.activate", "source.verify",
+  "logos.extract", "panels.delogo", "pack.verify", "pack.activate",
+  // The purchase gate leads production. Everything after it is paid work, so
+  // nothing expensive sits ahead of it.
+  "await_purchase", "source.verify",
   "await_panelpro_preflight_qc", "enhance.upscale", "output.build", "output.verify",
   "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver",
 ]);
@@ -391,6 +394,49 @@ async function complete(sb, stage, run, receiptValue, receiptHash = null, produc
  * exact prepared pack. The reconciler below still repairs a crash between the
  * payment and the run, which is why both stay.
  */
+// The two products, by the proven identifiers. print_production_pack is
+// deliberately absent: its own source calls it the path that kicks the old
+// re-slice pipeline.
+const PURCHASABLE_PRODUCTS = Object.freeze(["print_pack_entitlement", "logo_pack"]);
+
+/**
+ * WHAT A PURCHASE AUTHORIZES, enumerated once.
+ *
+ * Written here rather than scattered as product checks through every stage,
+ * because a rule repeated in six places is six rules. Each stage asks this
+ * manifest what it may touch; none of them asks what was bought.
+ *
+ *   print_pack_entitlement  the six branded panels and the clean duplicates
+ *                           PanelPro validates against, their upscale, the
+ *                           production outputs, the QC certificate, the ZIP and
+ *                           the WrapBox production delivery.
+ *   logo_pack               the separated logo and lettering assets, their
+ *                           upscale, their QC, and their own delivery.
+ *
+ * Neither implies the other. A customer who paid $29 for logos has not bought
+ * $299 of production files, and the reverse is equally wrong -- so buying both
+ * is two entitlements sharing one run, not one bigger purchase.
+ */
+function authorizedAssetManifest(paidProducts) {
+  const products = [...new Set((paidProducts || []).map(String))].sort();
+  const production = products.includes("print_pack_entitlement");
+  const logos = products.includes("logo_pack");
+  return Object.freeze({
+    contract: "designpro.authorized-assets.v1",
+    products,
+    // Artifact kinds each stage may read. Absent means unauthorized, not
+    // "missing" -- the difference matters when a stage decides to fail or skip.
+    upscale: Object.freeze([...(production ? ["panel", "qc-panel"] : []), ...(logos ? ["logo"] : [])]),
+    output: Object.freeze(production ? ["upscaled-panel"] : []),
+    delivery: Object.freeze([
+      ...(production ? ["output", "stamp", "flat-proof"] : []),
+      ...(logos ? ["logo"] : []),
+    ]),
+    productionPackAuthorized: production,
+    logoPackAuthorized: logos,
+  });
+}
+
 async function ensureAutomaticProduction(sb, enticeRunId) {
   const { data, error } = await sb.rpc("create_designpro_production_workflow", {
     p_entice_run_id: enticeRunId,
@@ -398,6 +444,12 @@ async function ensureAutomaticProduction(sb, enticeRunId) {
     p_input: { trigger: "designpro.os.auto" },
   });
   if (error) throw new StageError("automatic_production_enqueue_failed", error.message, true);
+  return data;
+}
+
+async function reconcilePurchaseGates(sb) {
+  const { data, error } = await sb.rpc("reconcile_designpro_purchase_gates");
+  if (error) throw new StageError("purchase_gate_reconciliation_failed", error.message, true);
   return data;
 }
 
@@ -935,17 +987,19 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
     // the output build, the ZIP, delivery -- is expensive, and the existence of
     // a preview does not authorize any of it.
     //
-    // This stage used to end by calling ensureAutomaticProduction, so finishing
-    // preparation started paid fulfillment. That conductor is unchanged and is
-    // still the only one; what moved is WHEN it is invoked. It now runs from
-    // confirm_designpro_purchase, once a payment for this exact prepared pack
-    // is confirmed.
-    return complete(sb, stage, run, {
+    // The production workflow IS created here, and it is still the only one --
+    // rebuilding it elsewhere would be the second conductor. What changed is
+    // that its first stage is await_purchase, so it exists, reaches the gate,
+    // and stops. Preparation no longer flows into Topaz; a customer who never
+    // buys leaves a run parked at a gate, which costs nothing.
+    await complete(sb, stage, run, {
       verified: true, active: true, activatedAt: new Date().toISOString(),
       // Stated on the receipt so no later reader has to infer why production
       // has not started: it is waiting on a purchase, not stalled.
-      awaitingPurchase: true, purchasableProducts: ["production_pack", "logo_pack"],
+      awaitingPurchase: true,
+      purchasableProducts: ["print_pack_entitlement", "logo_pack"],
     });
+    return ensureAutomaticProduction(sb, run.id);
   }
   throw new StageError("unsupported_entice_stage", stage.stage_key, false);
 }
@@ -1183,6 +1237,31 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       sourceArtifactCount: produced.length, logoPlacements: receiptPlacements,
     }, null, produced);
   }
+  if (stage.stage_key === "await_purchase") {
+    // THE PURCHASE GATE. Nothing here spends anything; it reads what was paid
+    // for and either parks or authorizes.
+    const sourceRunId = requiredString(run.results?.sourceEnticeRunId || input.sourceEnticeRunId, "sourceEnticeRunId");
+    const { data: paid, error } = await sb.rpc("designpro_paid_products", { p_entice_run_id: sourceRunId });
+    if (error) throw new StageError("purchase_entitlement_read_failed", error.message, true);
+    const products = Array.isArray(paid) ? paid.map(String) : [];
+    if (!products.length) {
+      // Park. The reconciler releases this the moment an entitlement lands, so
+      // a paid run never waits on a button this product does not have.
+      const { error: waitError } = await sb.rpc("request_designpro_purchase_gate", {
+        p_run_id: run.id, p_details: { requestedAt: new Date().toISOString(), awaiting: PURCHASABLE_PRODUCTS },
+      });
+      if (waitError) throw new StageError("purchase_gate_request_failed", waitError.message, false);
+      return;
+    }
+    // AUTHORIZED ASSETS, FROZEN HERE. Every stage after this consumes this
+    // manifest instead of whatever happens to be in storage, so an unpaid
+    // product's preview assets can never be upscaled, packaged or delivered.
+    const manifest = authorizedAssetManifest(products);
+    return complete(sb, stage, run, {
+      verified: true, receiptKind: "purchase.authorized",
+      paidProducts: products, authorizedAssetManifest: manifest,
+    });
+  }
   if (stage.stage_key === "await_panelpro_preflight_qc" || stage.stage_key === "await_final_human_qc") {
     const { error } = await sb.rpc("request_designpro_human_gate", { p_run_id: run.id, p_stage_key: stage.stage_key, p_details: { requestedBy: "designpro-standalone-claimant", requestedAt: new Date().toISOString() } });
     if (error) throw new StageError("human_gate_request_failed", error.message, false);
@@ -1195,6 +1274,26 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const readiness = topazReadiness(process.env);
     if (!readiness.configurationValid) throw new StageError("topaz_configuration_invalid", readiness.detail, false);
     if (!readiness.enabled) throw new StageError("topaz_disabled", "Call 12 is disabled; a production pack cannot be built without the approved enhancement", false);
+    // WHAT THIS RUN MAY ENHANCE. Read from the frozen gate receipt rather than
+    // from storage: a preview asset exists for everything, so "it is there" has
+    // never been the same question as "it was paid for".
+    const authorized = requiredObject(
+      (await stageOutput(sb, run.id, "await_purchase")).authorizedAssetManifest,
+      "authorized asset manifest",
+    );
+    const mayUpscale = new Set(authorized.upscale || []);
+    if (!mayUpscale.size) {
+      throw new StageError("enhance_nothing_authorized", "No purchased asset class authorizes enhancement on this run", false);
+    }
+    // The Logo Pack alone buys the separated assets, not the panel set. Skipping
+    // the panels here is the entitlement working, not a missing input.
+    if (!mayUpscale.has("panel")) {
+      return complete(sb, stage, run, {
+        verified: true, receiptKind: "call12.topaz-upscale", call: 12,
+        authorizedAssetManifest: authorized, enhancedSurfaces: [],
+        skippedUnpurchased: ["panel"],
+      });
+    }
     const panels = await artifacts(sb, run.id, ["panel"]);
     if (panels.length !== SURFACE_KEYS.length || new Set(panels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
       throw new StageError("enhance_source_panels_missing", "Exact six approved source panels are required", false);
@@ -1272,6 +1371,19 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     return completed;
   }
   if (stage.stage_key === "output.build") {
+    // PNG/TIFF/EPS are the Production Pack's deliverable. A run that bought only
+    // the Logo Pack builds none of them -- and says so, rather than producing an
+    // empty set that reads as a failure.
+    const authorized = requiredObject(
+      (await stageOutput(sb, run.id, "await_purchase")).authorizedAssetManifest,
+      "authorized asset manifest",
+    );
+    if (!(authorized.output || []).length) {
+      return complete(sb, stage, run, {
+        verified: true, outputCount: 0, outputSetHash: null,
+        authorizedAssetManifest: authorized, skippedUnpurchased: ["output"],
+      });
+    }
     const built = await withHeavyOutputLease(sb, stage, () => buildPrintOutputs(sb, run, input, stage, runtimeConfig));
     const completed = await complete(sb, stage, run, { verified: true, outputCount: built.produced.length, outputSetHash: hashJson(built.produced.map((item) => ({ path: item.storagePath, hash: item.contentHash }))) }, null, built.produced);
     for (const spool of built.spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed output spool cleanup failed: ${error.message}`));
@@ -1683,6 +1795,11 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
         lastReconcileAt = Date.now();
         try { await reconcileAutomaticProduction(supabase); }
         catch (error) { console.error(`[DESIGNPRO-OS] automatic production reconciliation failed: ${error.message}`); }
+        // The worker's half of the purchase: an entitlement recorded while this
+        // process was down, or delivered twice, is noticed here rather than
+        // needing to be caught as it happens.
+        try { await reconcilePurchaseGates(supabase); }
+        catch (error) { console.error(`[DESIGNPRO-OS] purchase gate reconciliation failed: ${error.message}`); }
       }
       const { data, error } = await supabase.rpc("claim_designpro_stage", { p_worker: id, p_lease_seconds: CLAIM_SECONDS });
       if (error) throw error;
@@ -1733,4 +1850,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };

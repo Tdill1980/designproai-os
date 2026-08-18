@@ -390,22 +390,26 @@ async function rpc(fetchImpl, token, cfg, name, body) {
 /**
  * THE TWO PRODUCTS, PRICED AS THE WORKING SYSTEM PRICED THEM.
  *
- * Ported from the proven `create-single-use-checkout` behaviour: the Production
- * Pack at $299 and the Logo Pack at $29, each its own product with its own
- * fulfillment. Nothing here calls that function -- the behaviour moved inside
- * this boundary, which is the point.
+ * The identifiers, prices and metadata are the proven ones:
+ * `create-print-pack-checkout`'s clean `print_pack_entitlement` at $299, and
+ * `create-single-use-checkout`'s `logo_pack` at $29. The obsolete
+ * `print_production_pack` is deliberately absent -- its own source describes it
+ * as the path that kicks the old re-slice pipeline.
+ *
+ * Listed here rather than accepted from the caller, because a price that
+ * arrives from a browser is a price the customer chose.
  * They are listed here rather than passed in because a price that arrives from
  * a browser is a price the customer chose.
  */
 const PURCHASE_PRODUCTS = Object.freeze({
-  production_pack: Object.freeze({
-    product: "production_pack",
+  print_pack_entitlement: Object.freeze({
+    productType: "print_pack_entitlement",
     name: "Print-Ready Production Pack",
     description: "Six print-ready production panels, upscaled, QC'd by the design team, and delivered as a production ZIP.",
     amountCents: 29900,
   }),
   logo_pack: Object.freeze({
-    product: "logo_pack",
+    productType: "logo_pack",
     name: "Logo Pack — separated logo & lettering assets",
     description: "Every logo and lettering element lifted clean off your approved design, upscaled and QC'd.",
     amountCents: 2900,
@@ -977,9 +981,19 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         if (event.type !== "checkout.session.completed") return json(res, 200, { received: true, ignored: event.type });
         const object = event.data?.object || {};
         if (String(object.payment_status || "") !== "paid") return json(res, 200, { received: true, unpaid: true });
+        // The metadata is what the checkout put there; the amount is what
+        // Stripe says was actually charged, not what the session asked for.
+        const metadata = object.metadata || {};
+        if (!PURCHASE_PRODUCTS[String(metadata.product_type || "")]) {
+          return json(res, 200, { received: true, skipped: "not_a_designpro_product" });
+        }
         const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
           checkoutSessionId: String(object.id || ""),
           paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
+          productType: String(metadata.product_type),
+          generationId: String(metadata.generation_id || ""),
+          amountCents: Number(object.amount_total || metadata.amount_cents || 0),
+          userEmail: String(metadata.user_email || object.customer_email || ""),
         });
         return json(res, 200, { received: true, ...confirmed });
       }
@@ -1285,21 +1299,18 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           customer_email: user.email || undefined,
           success_url: `${cfg.appOrigin}${returnPath}?purchase=${spec.product}`,
           cancel_url: `${cfg.appOrigin}${returnPath}?purchase=cancelled`,
-          "metadata[product]": spec.product,
-          "metadata[entice_run_id]": run.id,
+          // The proven metadata, unchanged. This is what reconnects a payment
+          // to the design it was made for.
+          "metadata[product_type]": spec.productType,
           "metadata[generation_id]": String(run.generation_id || ""),
-          "metadata[owner_id]": user.id,
+          "metadata[user_id]": user.id,
+          "metadata[user_email]": user.email || "",
+          "metadata[amount_cents]": String(spec.amountCents),
         }));
-        // Recorded pending BEFORE the customer is sent to pay, so the webhook
-        // has a row to confirm against and a payment can never arrive for a
-        // purchase this system has no record of opening.
-        await purchaseThroughRuntime(fetchImpl, cfg, "open", {
-          enticeRunId: run.id,
-          product: spec.product,
-          amountCents: spec.amountCents,
-          checkoutSessionId: String(stripeSession.id),
-        });
-        return json(res, 200, { url: String(stripeSession.url), product: spec.product, amountCents: spec.amountCents });
+        // Nothing is recorded here. The proven flow records on the verified
+        // webhook and the session id is the transaction identity, so a pending
+        // row would only be a second place for the truth to live.
+        return json(res, 200, { url: String(stripeSession.url), productType: spec.productType, amountCents: spec.amountCents });
       }
 
       const approvedViewMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/approved-views$/);

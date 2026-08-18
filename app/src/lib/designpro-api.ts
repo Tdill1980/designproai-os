@@ -569,10 +569,10 @@ export const dpApi = {
    */
   createCheckoutSession: (input: {
     generationId: string;
-    product: "production_pack" | "logo_pack";
+    product: "print_pack_entitlement" | "logo_pack";
     returnPath?: string;
   }) =>
-    request<{ url: string; product: string; amountCents: number }>("/checkout/sessions", {
+    request<{ url: string; productType: string; amountCents: number }>("/checkout/sessions", {
       method: "POST",
       body: JSON.stringify(input),
     }),
