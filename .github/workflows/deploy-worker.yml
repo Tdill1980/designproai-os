@@ -31,7 +31,7 @@ env:
   EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
   EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
   PROJECT_REF: wozyamlnygaddievzuwn
-  WORKER_PUBLIC_URL: https://os.designproai.com/designpro-worker
+  WORKER_PUBLIC_URL: https://worker.designproai.com
 
 jobs:
   deploy:
@@ -99,29 +99,6 @@ jobs:
           echo "worker failed to become healthy; last logs:" >&2
           docker logs --tail 60 designpro-worker >&2 || true
           exit 1
-          REMOTE
-
-      - name: Reload Caddy with the designpro-worker route
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
-          fragment=$(base64 -w0 ops/Caddyfile.fragment)
-          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' FRAGMENT='$fragment' bash -s" <<'REMOTE'
-          set -Eeuo pipefail
-          test "$(hostname)" = "$EXPECTED_HOSTNAME"
-          site=/etc/caddy/sites/designproai-os.caddy
-          test -f "$site"
-          cp -a "$site" "$site.before-worker"
-          printf '%s' "$FRAGMENT" | base64 -d > "$site"
-          if caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
-            systemctl reload caddy
-            echo "caddy reloaded"
-          else
-            cp -a "$site.before-worker" "$site"
-            echo "caddy validation failed; restored previous site" >&2
-            exit 1
-          fi
           REMOTE
 
       - name: Point the edge functions at the worker
