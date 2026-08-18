@@ -129,6 +129,20 @@ export type WorkflowStatus = {
   failure?: { stage: string; message: string; retryable: boolean };
 };
 
+/** One frozen, owner-scoped 3D view of the revision a run was built from. */
+export type ApprovedGenerationView = {
+  id: string;
+  generationId: string;
+  surfaceKey: string;
+  sourceViewType: string;
+  storagePath: string;
+  contentHash: string;
+  byteSize: number | null;
+  contentType: string;
+  signedUrl: string;
+  expiresIn: 300;
+};
+
 export type WorkflowArtifact = {
   id: string;
   runId?: string;
@@ -522,6 +536,15 @@ export const dpApi = {
     request<WorkflowStatus>(`/jobs/${encodeURIComponent(generationId)}`),
   listArtifacts: (generationId: string) =>
     request<WorkflowArtifact[]>(`/jobs/${encodeURIComponent(generationId)}/artifacts`),
+  /**
+   * The approved per-side 3D views this run was frozen against. The gateway has
+   * served these since the run identity work; nothing consumed them, so the
+   * customer saw six print panels with nothing to compare them to. Production
+   * Layers pairs each panel with its own view, which is the whole point of the
+   * surface -- a panel is only checkable next to the design it came from.
+   */
+  listApprovedViews: (generationId: string) =>
+    request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
   submitRevision: (submission: RevisionSubmission) =>
     request<{ runId: string; accepted: true }>("/revisions", {
       method: "POST",
