@@ -172,7 +172,7 @@ test("dark deployment requires only its existing provider secrets and explicitly
   assert.match(source, /::add-mask::\$service_key/);
   assert.match(configure, /DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false/);
   assert.doesNotMatch(configure, /RESEND_API_KEY|RESEND_FROM|RP_|WPW_/);
-  assert.match(workflow, /printf '%s\\n%s\\n%s\\n'/);
+  assert.match(workflow, /printf '(?:%s\\n){5}'/);
   assert.doesNotMatch(source, /supabase\s+(?:db|migration)|db\s+(?:push|reset)|APPLY_DESIGNPRO_PRODUCTION/);
   assert.match(remote, /runtime-1/);
   assert.match(remote, /runtime-2/);
@@ -187,25 +187,40 @@ test("dark deployment requires only its existing provider secrets and explicitly
  */
 function runSecretChannel(stdin) {
   const start = configure.indexOf("read_secret() {");
-  const lastCall = configure.indexOf('"the Topaz Labs API key for Call 12"');
+  const lastCall = configure.indexOf('"the Stripe webhook signing secret"');
   assert.ok(start >= 0 && lastCall > start, "the secret-reading section moved");
   const section = configure.slice(start, configure.indexOf("\n", lastCall));
-  return spawnSync("bash", ["-c", `set -Eeuo pipefail\n${section}\nprintf 'supabase=%s google=%s topaz=%s\\n' "$service_key" "$google_key" "$topaz_key"`], {
+  return spawnSync("bash", ["-c", `set -Eeuo pipefail\n${section}\nprintf 'supabase=%s google=%s topaz=%s stripe=%s hook=%s\\n' "$service_key" "$google_key" "$topaz_key" "$stripe_secret" "$stripe_webhook"`], {
     encoding: "utf8",
     input: stdin,
   });
 }
 
-test("the secret channel consumes exactly the three lines the deploy sends, in order", () => {
-  const result = runSecretChannel("SUPABASE-KEY\nGOOGLE-KEY\nTOPAZ-KEY\n");
+test("the secret channel consumes exactly the lines the deploy sends, in order", () => {
+  const result = runSecretChannel("SUPABASE-KEY\nGOOGLE-KEY\nTOPAZ-KEY\nSTRIPE-KEY\nHOOK-SECRET\n");
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /supabase=SUPABASE-KEY google=GOOGLE-KEY topaz=TOPAZ-KEY/);
+  assert.match(
+    result.stdout,
+    /supabase=SUPABASE-KEY google=GOOGLE-KEY topaz=TOPAZ-KEY stripe=STRIPE-KEY hook=HOOK-SECRET/,
+  );
 });
 
-test("an empty third line is a decision to leave Call 12 disabled, and is accepted", () => {
-  const result = runSecretChannel("SUPABASE-KEY\nGOOGLE-KEY\n\n");
+test("an empty optional line is a decision to leave that feature disabled, and is accepted", () => {
+  const result = runSecretChannel("SUPABASE-KEY\nGOOGLE-KEY\n\n\n\n");
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /supabase=SUPABASE-KEY google=GOOGLE-KEY topaz=$/m);
+  assert.match(result.stdout, /supabase=SUPABASE-KEY google=GOOGLE-KEY topaz= stripe= hook=$/m);
+});
+
+test("a pipe that stops after Call 12 fails loudly rather than silently disabling checkout", () => {
+  // The same reasoning as the Topaz line one test down, and the reason the
+  // checkout lines were added to BOTH callers' pipes rather than only to the
+  // configuration workflow: a deploy that sent three lines would have written a
+  // gateway with no Stripe configuration at all, turning checkout off on the
+  // next release with nothing in the log to say so.
+  const result = runSecretChannel("SUPABASE-KEY\nGOOGLE-KEY\nTOPAZ-KEY\n");
+  assert.equal(result.status, 5);
+  assert.match(result.stderr, /Secret input ended early: expected the Stripe secret key/);
+  assert.doesNotMatch(result.stdout, /stripe=/);
 });
 
 test("a truncated pipe fails loudly instead of silently disabling Call 12", () => {
@@ -221,7 +236,11 @@ test("a truncated pipe fails loudly instead of silently disabling Call 12", () =
 
 test("the deploy pipe sends exactly as many secrets as configure-env.sh reads", () => {
   const reads = configure.match(/^read_secret \w+/gm) || [];
-  assert.equal(reads.length, 3);
+  // Supabase service role, Google AI, Topaz (Call 12), Stripe secret key,
+  // Stripe webhook secret. The literal is here so that adding a read is a
+  // deliberate act that also updates both pipes, which is exactly the failure
+  // this test caught when the checkout secrets were added to the reader alone.
+  assert.equal(reads.length, 5);
   for (const source of [workflow, readFileSync(resolve(root, ".github/workflows/configure-droplet-env.yml"), "utf8")]) {
     const pipe = source.match(/printf '((?:%s\\n)+)' \\\n((?:[^\n]*\\\n)*[^\n]*\| \\\n)/);
     assert.ok(pipe, "the secret pipe is not in the expected printf form");

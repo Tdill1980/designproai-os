@@ -32,6 +32,12 @@ GATEWAY_KEYS = {
     "SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "DESIGNPRO_APP_ORIGIN",
     "DESIGNPRO_RUNTIME_INTERNAL_URL", "WORKER_SECRET",
 }
+# Checkout, and only ever as a pair. A secret key without a webhook secret can
+# take a customer's money and never hear that it arrived; a webhook secret
+# without a secret key cannot open a session at all. Either half alone is a
+# worse state than having neither, which is why the gateway answers 503 rather
+# than starting a purchase it cannot finish.
+STRIPE_PROVIDER_KEYS = {"STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"}
 PLACEHOLDER = re.compile(r"replace|example|your[_-]|change[_-]?me|todo", re.I)
 EMAIL_RE = re.compile(r"^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$")
 
@@ -100,8 +106,17 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
     # DESIGNPRO_ADDITIONAL_ORIGINS is optional: present only when a second
     # browser entry point (the apex, www) serves the same SPA against this
     # gateway and must be allowed to write.
-    exact_keys("gateway", gateway, GATEWAY_KEYS | (
+    stripe_present = STRIPE_PROVIDER_KEYS & set(gateway)
+    if stripe_present and stripe_present != STRIPE_PROVIDER_KEYS:
+        missing = ", ".join(sorted(STRIPE_PROVIDER_KEYS - stripe_present))
+        raise ValidationError(
+            f"checkout is half configured: {missing} is absent. Configure both keys or neither."
+        )
+    exact_keys("gateway", gateway, GATEWAY_KEYS | stripe_present | (
         {"DESIGNPRO_ADDITIONAL_ORIGINS"} if "DESIGNPRO_ADDITIONAL_ORIGINS" in gateway else set()))
+    for key in sorted(stripe_present):
+        if len(gateway[key]) < 20:
+            raise ValidationError(f"{key} is too short to be a real Stripe credential")
 
     if runtime["SUPABASE_URL"] != PROJECT_URL or gateway["SUPABASE_URL"] != PROJECT_URL:
         raise ValidationError("both roles must use the isolated DesignProAI Supabase project")

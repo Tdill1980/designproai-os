@@ -58,6 +58,11 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
       GOOGLE_AI_API_KEY: ${{ secrets.DESIGNPRO_GOOGLE_AI_API_KEY }}
       TOPAZ_API_KEY: ${{ secrets.DESIGNPRO_TOPAZ_API_KEY }}
+      # Checkout. Optional, and only meaningful as a pair -- validate-env.py
+      # refuses a half-configured gateway, because a secret key with no webhook
+      # secret can take a payment and never hear that it arrived.
+      STRIPE_SECRET_KEY: ${{ secrets.DESIGNPRO_STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.DESIGNPRO_STRIPE_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -87,9 +92,19 @@ jobs:
           set +x
           test "${#SUPABASE_ACCESS_TOKEN}" -ge 20
           test "${#GOOGLE_AI_API_KEY}" -ge 20
-          for value in "$SUPABASE_ACCESS_TOKEN" "$GOOGLE_AI_API_KEY" "$TOPAZ_API_KEY"; do
+          for value in "$SUPABASE_ACCESS_TOKEN" "$GOOGLE_AI_API_KEY" "$TOPAZ_API_KEY" "$STRIPE_SECRET_KEY" "$STRIPE_WEBHOOK_SECRET"; do
             [[ $value != *$'\n'* && $value != *$'\r'* ]]
           done
+          # Checkout is optional, but half of it is worse than none: a secret
+          # key with no webhook secret can take a customer's payment and never
+          # hear that it arrived. Fail here, where the diagnosis is one line,
+          # rather than at the validator on the far side.
+          if [[ ( -n $STRIPE_SECRET_KEY && -z $STRIPE_WEBHOOK_SECRET ) || ( -z $STRIPE_SECRET_KEY && -n $STRIPE_WEBHOOK_SECRET ) ]]; then
+            printf '::error title=Checkout::Configure BOTH DESIGNPRO_STRIPE_SECRET_KEY and DESIGNPRO_STRIPE_WEBHOOK_SECRET, or neither.\n' >&2
+            exit 1
+          fi
+          [[ -z $STRIPE_SECRET_KEY || ${#STRIPE_SECRET_KEY} -ge 20 ]]
+          [[ -z $STRIPE_WEBHOOK_SECRET || ${#STRIPE_WEBHOOK_SECRET} -ge 20 ]]
           # An absent Topaz key here is almost always a misplaced secret rather
           # than a decision to run without Call 12 — the value resolves to an
           # empty string with no error, and the run would go on to write a
@@ -232,18 +247,21 @@ jobs:
           remote_stage="/tmp/designproai-env-$GITHUB_RUN_ID"
           test -f "$RUNTIME_KEY_FILE" && test ! -L "$RUNTIME_KEY_FILE"
 
-          # Three lines, in the order configure-env.sh consumes them. The third
-          # is always sent — empty when no Topaz key is configured — because a
-          # short pipe is a truncated channel, not a decision about Call 12.
+          # Five lines, in the order configure-env.sh consumes them. Every
+          # optional line is still sent — empty when that feature is not
+          # configured — because a short pipe is a truncated channel, not a
+          # decision about the feature.
           #
           # The remote half is a staged script invoked by path, NOT a heredoc.
           # A heredoc would claim this ssh's stdin and silently discard the
           # pipe, leaving the reader on the far side to consume the tail of the
           # script where it expected a key.
-          printf '%s\n%s\n%s\n' \
+          printf '%s\n%s\n%s\n%s\n%s\n' \
             "$(<"$RUNTIME_KEY_FILE")" \
             "$GOOGLE_AI_API_KEY" \
-            "$TOPAZ_API_KEY" | \
+            "$TOPAZ_API_KEY" \
+            "$STRIPE_SECRET_KEY" \
+            "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "REMOTE_STAGE='$remote_stage' '$remote_stage/ops/ci-configure-env.sh'"
 
