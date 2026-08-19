@@ -932,7 +932,23 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
     try {
       const url = new URL(req.url || "/", "http://gateway");
       if (req.method === "GET" && url.pathname === "/healthz") return json(res, 200, { status: "ok", service: "designpro-api-gateway" });
-      assertSameOrigin(req, cfg);
+      // The Stripe webhook is exempt, and only the Stripe webhook. The
+      // same-origin rule is CSRF defence: it stops a page the customer did not
+      // open from spending their cookie. Stripe carries no cookie and is not a
+      // browser, so it sends no Origin header at all -- which the rule reads as
+      // a mismatch and refuses with 403 before the handler runs. Live-verified
+      // on os.designproai.com: an Origin-less POST got origin_rejected while
+      // the identical POST with an Origin reached stripe_signature_invalid.
+      // Left in place it takes the customer's money and grants nothing: Stripe
+      // marks the session paid, the delivery 403s, no entitlement row is
+      // written, and await_purchase never releases.
+      //
+      // Exempting it removes no protection. This route's authentication is the
+      // HMAC signature checked immediately below, which an attacker cannot
+      // forge; an Origin header is self-declared and any non-browser client can
+      // set it to anything. The signature is strictly the stronger check, so
+      // the origin rule was never what was guarding this path.
+      if (!(req.method === "POST" && url.pathname === "/api/webhooks/stripe")) assertSameOrigin(req, cfg);
 
       if (req.method === "POST" && url.pathname === "/api/auth/signup") {
         const body = await readBody(req);
