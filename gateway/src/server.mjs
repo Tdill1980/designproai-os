@@ -964,7 +964,29 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           body: JSON.stringify({ email, password }),
         });
         const payload = await signup.json().catch(() => ({}));
-        if (!signup.ok || !payload.user?.id) return json(res, Number(signup.status || 400), { error: payload.msg || payload.message || "signup_failed" });
+        // GoTrue returns the created user in one of TWO shapes, and this read
+        // only ever handled one of them. When it also mints a session -- which
+        // it does only where email confirmation is off -- the user is nested
+        // under `user` alongside the tokens. When confirmation IS required
+        // there is no session to return, so it answers 200 with the user
+        // object BARE at the top level: {id, aud, email, confirmation_sent_at}.
+        //
+        // Reading `payload.user?.id` alone therefore failed every real signup
+        // on this project, which has confirmation on. The failure was silent
+        // and inverted: the account WAS created and the confirmation email WAS
+        // sent, and the customer was told signup_failed -- so they never went
+        // looking for the email, and a retry hit "user already registered".
+        // Live-verified: trish+dpcanary@weprintwraps.com exists in auth.users,
+        // created by the very request that answered signup_failed.
+        const created = payload.user?.id ? payload.user : (payload.id && payload.aud ? payload : null);
+        // A failure that reports 200 is worse than the failure. The old code
+        // passed the UPSTREAM status through, so this case answered HTTP 200
+        // with an error body -- which no client can treat as a failure. An
+        // upstream refusal keeps its own status; an upstream success we could
+        // not read is ours, and is a 502.
+        if (!signup.ok || !created) {
+          return json(res, signup.ok ? 502 : Number(signup.status || 400), { error: payload.msg || payload.message || "signup_failed" });
+        }
         if (payload.access_token && payload.refresh_token) {
           return json(res, 201, { ok: true, confirmationRequired: false }, { "set-cookie": sessionCookies(payload, cfg) });
         }
