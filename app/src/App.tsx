@@ -97,6 +97,15 @@ import Gallery from "./pages/Gallery";
 // ── Lazy imports - DesignProAI operating surfaces ────────────────
 // These are the server-owned surfaces: the browser reports state and asks for
 // the two human release gates, and never orchestrates the pipeline itself.
+// THE CUSTOMER-FACING DESIGNPRO PRODUCT. These two pages are the DesignPro the
+// customer knows -- A.C.E., MyVehiclePro, Restyle vs Business & Fleet, the
+// VisionBoardIQ reference upload, the DesignIQ prompt, logo behaviour, finish,
+// LayerLift and the seven generated views. They were carried into this repo
+// intact and then routed away from, which is why the customer landed in the
+// server-owned intake instead of the product. The intake pages below remain,
+// as operating surfaces.
+const DesignProAIHome = lazyWithRetry(() => import("./pages/DesignProAIHome"));
+const DesignPanelProPremium = lazyWithRetry(() => import("./pages/DesignPanelProPremium"));
 const DesignProGenerate = lazyWithRetry(() => import("./pages/designpro/GenerateDesign"));
 const DesignProJobs = lazyWithRetry(() => import("./pages/designpro/ProductionJobs"));
 const DesignProWorkflow = lazyWithRetry(() => import("./pages/designpro/ProductionWorkflow"));
@@ -247,7 +256,7 @@ const App = () => {
               orchestration pages below redirect in here rather than 404,
               because the edge functions they drove are not part of this
               standalone system. */}
-          <Route path="/designpro" element={<Navigate to="/designpro/jobs" replace />} />
+          <Route path="/designpro" element={<RequireAuth><DesignProAIHome /></RequireAuth>} />
           <Route path="/designpro/jobs" element={<RequireAuth><DesignProJobs /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId" element={<RequireAuth><DesignProWorkflow /></RequireAuth>} />
           <Route path="/designpro/generate" element={<RequireAuth><DesignProGenerate /></RequireAuth>} />
@@ -260,15 +269,15 @@ const App = () => {
           {/* DesignPro v2 object-graph engine — isolated experimental module, admin test bench only */}
           <Route path="/admin/designpro-v2-test" element={<RequireAdmin><AdminDesignProV2Test /></RequireAdmin>} />
           <Route path="/designpro/panel-sizer" element={<RequireAuth><PanelSizer /></RequireAuth>} />
-          <Route path="/designpro/create" element={<Navigate to="/designpro" replace />} />
+          <Route path="/designpro/create" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
-          <Route path="/designpro/premium" element={<Navigate to="/designpro" replace />} />
+          <Route path="/designpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/raster" element={<RequireAuth><DesignStudio /></RequireAuth>} />
           {/* FadeWrap generator hidden — use DesignProAI for fade wraps via prompt */}
           {/* /restylelibrary is a RestylePro surface this system does not
               serve, so this redirect used to land on the 404 page. */}
-          <Route path="/designpanelpro" element={<Navigate to="/designpro/jobs" replace />} />
-          <Route path="/designpanelpro/premium" element={<Navigate to="/designpro" replace />} />
+          <Route path="/designpanelpro" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
+          <Route path="/designpanelpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/approvemode" element={<ApproveProUnavailable />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/designpanelpro-manager" element={<AdminDesignPanelProManager />} />
