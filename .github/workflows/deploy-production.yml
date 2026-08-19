@@ -69,6 +69,14 @@ jobs:
       # Call 12 enhancement. Optional: absent leaves Call 12 disabled and
       # production packs fail closed rather than shipping un-enhanced artwork.
       TOPAZ_API_KEY: ${{ secrets.DESIGNPRO_TOPAZ_API_KEY }}
+      # Checkout. Optional, and only meaningful as a pair: validate-env.py
+      # refuses a half-configured gateway, because a secret key with no webhook
+      # secret can take a payment and never hear that it arrived. They are
+      # carried here as well as in configure-droplet-env.yml because every
+      # deploy rewrites gateway.env through the same one canonical writer, so a
+      # deploy that did not carry them would silently switch checkout off.
+      STRIPE_SECRET_KEY: ${{ secrets.DESIGNPRO_STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.DESIGNPRO_STRIPE_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -130,13 +138,26 @@ jobs:
           keys_json="$RUNNER_TEMP/supabase-api-keys.json"
           google_json="$RUNNER_TEMP/google-models.json"
           auth_header="Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
+          # NAME THE CREDENTIAL THAT FAILED.
+          #
+          # These three calls carry two different secrets and every one of them
+          # reports the same "curl: (22) ... 403" on refusal, with set +x hiding
+          # which ran. A dead token therefore costs a round of guessing before
+          # anyone can rotate the right one. The label says which; it never
+          # prints a value.
+          fail_credential() {
+            echo "::error::$1 was rejected (HTTP $2). Rotate that credential and re-run; no other secret is implicated." >&2
+            exit 22
+          }
           curl --fail --silent --show-error \
             -H "$auth_header" \
-            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF" > "$project_json"
+            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF" > "$project_json" \
+            || fail_credential "SUPABASE_ACCESS_TOKEN (project lookup)" "$?"
           jq -e --arg ref "$EXPECTED_PROJECT_REF" '.id == $ref' "$project_json" >/dev/null
           curl --fail --silent --show-error \
             -H "$auth_header" \
-            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/api-keys" > "$keys_json"
+            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/api-keys" > "$keys_json" \
+            || fail_credential "SUPABASE_ACCESS_TOKEN (api-keys lookup)" "$?"
           service_key=$(jq -er '
             [.[] | select(.name == "service_role" and (.api_key | type == "string"))]
             | if length == 1 then .[0].api_key else error("expected exactly one service_role key") end
@@ -150,7 +171,8 @@ jobs:
 
           curl --fail --silent --show-error \
             -H "x-goog-api-key: $GOOGLE_AI_API_KEY" \
-            "https://generativelanguage.googleapis.com/v1beta/models" > "$google_json"
+            "https://generativelanguage.googleapis.com/v1beta/models" > "$google_json" \
+            || fail_credential "GOOGLE_AI_API_KEY (model list)" "$?"
           jq -e '.models | type == "array" and length > 0' "$google_json" >/dev/null
           rm -f -- "$project_json" "$keys_json" "$google_json"
           echo "runtime_key_file=$runtime_key_file" >> "$GITHUB_OUTPUT"
@@ -464,14 +486,16 @@ jobs:
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           remote_stage=$(<"$RUNNER_TEMP/remote-stage")
           test -f "$RUNTIME_KEY_FILE" && test ! -L "$RUNTIME_KEY_FILE"
-          # Three lines, in the order configure-env.sh consumes them. The third
-          # is always sent, empty when no Topaz key is configured, because that
-          # script treats a short pipe as a truncated channel rather than as a
-          # decision to leave Call 12 off.
-          printf '%s\n%s\n%s\n' \
+          # Five lines, in the order configure-env.sh consumes them. Every
+          # optional line is still sent, empty when that feature is not
+          # configured, because that script treats a short pipe as a truncated
+          # channel rather than as a decision to leave a feature off.
+          printf '%s\n%s\n%s\n%s\n%s\n' \
             "$(<"$RUNTIME_KEY_FILE")" \
             "$GOOGLE_AI_API_KEY" \
-            "$TOPAZ_API_KEY" | \
+            "$TOPAZ_API_KEY" \
+            "$STRIPE_SECRET_KEY" \
+            "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 

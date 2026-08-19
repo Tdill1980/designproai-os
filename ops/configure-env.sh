@@ -18,14 +18,16 @@ umask 077
 #   1. DesignProAI Supabase secret key (project wozyamlnygaddievzuwn)
 #   2. DesignProAI Google AI API key
 #   3. Topaz Labs API key for Call 12 — an EMPTY line leaves Call 12 disabled
+#   4. Stripe secret key — an EMPTY line leaves checkout disabled
+#   5. Stripe webhook signing secret — an EMPTY line leaves checkout disabled
 #
 # One channel serves both callers. A human at a terminal gets the hidden
-# prompts below; a workflow pipes three lines and bash suppresses the prompts
+# prompts below; a workflow pipes five lines and bash suppresses the prompts
 # because stdin is not a tty. Nothing else changes between the two.
 #
 # Every line is mandatory, including the third. `read` returns non-zero only at
-# end of input, so a caller that sends two lines and stops is a truncated pipe,
-# not a decision to disable Call 12 — and being told that is far better than
+# end of input, so a caller that stops short is a truncated pipe, not a decision
+# to disable a feature — and being told that is far better than
 # silently shipping a droplet whose production packs will fail closed later.
 read_secret() {
   local -n destination=$1
@@ -49,11 +51,28 @@ read_secret google_key \
 read_secret topaz_key \
   "Topaz Labs API key for Call 12 (blank to leave Call 12 disabled)" \
   "the Topaz Labs API key for Call 12"
+# Checkout. Both lines are always sent -- empty when checkout is not configured
+# -- for the same reason the Topaz line is: a short pipe is a truncated channel,
+# and the reader would consume whatever followed as a credential.
+read_secret stripe_secret \
+  "Stripe secret key (blank to leave checkout disabled)" \
+  "the Stripe secret key"
+read_secret stripe_webhook \
+  "Stripe webhook signing secret (blank to leave checkout disabled)" \
+  "the Stripe webhook signing secret"
 
 [[ ${#service_key} -ge 32 ]] || { echo "Supabase secret key is too short" >&2; exit 4; }
 [[ ${#google_key} -ge 20 ]] || { echo "Google AI API key is too short" >&2; exit 4; }
 [[ -z $topaz_key || ${#topaz_key} -ge 20 ]] || { echo "Topaz API key is too short" >&2; exit 4; }
-for secret in "$service_key" "$google_key" "${topaz_key:-x}"; do
+# Either both halves of checkout or neither. Half a payment configuration is
+# worse than none: it can charge a customer and never record the entitlement.
+if [[ ( -n $stripe_secret && -z $stripe_webhook ) || ( -z $stripe_secret && -n $stripe_webhook ) ]]; then
+  echo "Checkout needs BOTH the Stripe secret key and the webhook signing secret, or neither" >&2
+  exit 4
+fi
+[[ -z $stripe_secret || ${#stripe_secret} -ge 20 ]] || { echo "Stripe secret key is too short" >&2; exit 4; }
+[[ -z $stripe_webhook || ${#stripe_webhook} -ge 20 ]] || { echo "Stripe webhook secret is too short" >&2; exit 4; }
+for secret in "$service_key" "$google_key" "${topaz_key:-x}" "${stripe_secret:-x}" "${stripe_webhook:-x}"; do
   [[ $secret != *$'\n'* && $secret != *$'\r'* ]] || { echo "A secret contains an invalid newline" >&2; exit 4; }
 done
 
@@ -81,7 +100,7 @@ unset existing_worker_secret
 runtime_tmp=$(mktemp "$ROOT/shared/runtime.env.new.XXXXXX")
 gateway_tmp=$(mktemp "$ROOT/shared/gateway.env.new.XXXXXX")
 cleanup() {
-  unset service_key google_key topaz_key worker_secret
+  unset service_key google_key topaz_key stripe_secret stripe_webhook worker_secret
   [[ ! -e ${runtime_tmp:-} ]] || rm -f -- "$runtime_tmp"
   [[ ! -e ${gateway_tmp:-} ]] || rm -f -- "$gateway_tmp"
 }
@@ -111,6 +130,14 @@ trap cleanup EXIT
   printf 'DESIGNPRO_APP_ORIGIN=https://os.designproai.com\n'
   printf 'DESIGNPRO_RUNTIME_INTERNAL_URL=http://runtime-1:3001\n'
   printf 'WORKER_SECRET=%s\n' "$worker_secret"
+  # Checkout, written only when BOTH halves arrived. A secret key with no
+  # webhook secret can take a payment and never hear that it arrived, so the
+  # gateway is left answering 503 on the purchase routes rather than opening a
+  # session it cannot finish.
+  if [[ -n $stripe_secret && -n $stripe_webhook ]]; then
+    printf 'STRIPE_SECRET_KEY=%s\n' "$stripe_secret"
+    printf 'STRIPE_WEBHOOK_SECRET=%s\n' "$stripe_webhook"
+  fi
 } > "$gateway_tmp"
 
 chown root:root "$runtime_tmp" "$gateway_tmp"
@@ -126,7 +153,12 @@ if [[ -n $topaz_key ]]; then
 else
   echo "Call 12 upscaling is DISABLED: production packs fail closed until a Topaz key is configured."
 fi
-unset service_key google_key topaz_key worker_secret
+if [[ -n $stripe_secret ]]; then
+  echo "Checkout is ENABLED: the Production Pack and Logo Pack routes can open a Stripe session."
+else
+  echo "Checkout is DISABLED: the purchase routes answer 503 until both Stripe secrets are configured."
+fi
+unset service_key google_key topaz_key stripe_secret stripe_webhook worker_secret
 # These files are read into the container environment at start. A release that
 # is already running still holds the previous values until it is redeployed.
 if docker ps --filter label=com.docker.compose.project=designproai-os --format '{{.ID}}' 2>/dev/null | grep -q .; then
