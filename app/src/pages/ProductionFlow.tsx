@@ -14,7 +14,6 @@ import { stampAndUploadGenieOverlay } from "@/lib/genie-panel-stamper";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import ExtractElementsModal from "@/components/productionflow/ExtractElementsModal";
 import PanelPrintReadyButton from "@/components/productionflow/PanelPrintReadyButton";
-import { QCProductionFlowContainer } from "@/components/qc/QCProductionFlowContainer";
 import { VehicleTypeSelector, isNonStandardVehicle, getDesignProFunctionForType, type VehicleType } from "@/components/tools/VehicleTypeSelector";
 import { downloadAllWithOverlay } from "@/lib/download-with-overlay";
 import { saveProofUrlToViz } from "@/lib/save-proof-url";
@@ -4126,17 +4125,15 @@ export default function ProductionFlow() {
               </div>
             )}
 
-            {/* ── Track-2 separated production layers (background/branding/depth) ── */}
-            <div style={{ marginTop: 24 }}>
-              <QCProductionFlowContainer
-                jobId={job.id}
-                vehicle={{ year: job.vehicle_year, make: job.vehicle_make, model: job.vehicle_model }}
-                designPrompt={[job.concept_json?.design_name || job.design_file_name, job.concept_json?.finish || job.finish_type]
-                  .filter(Boolean)
-                  .join(" ")
-                  .trim() || undefined}
-              />
-            </div>
+            {/* TRACK-2 LAYER SEPARATION IS GONE, NOT RELOCATED. Its card modelled
+                a background/branding/depth split this system does not produce,
+                read it from production_flow_assets, and offered a "regenerate
+                this track" button that invoked production-flow-engine -- a
+                second design generation AFTER approval, which the completion
+                contract forbids outright. Production Layers is the surface that
+                replaces it: Call 9's branded panels beside Call 11's de-logoed
+                duplicates and Call 10's logo assets, all consumed, none
+                regenerated. */}
 
             {/* ── Upsell / Enhancement Layer ────────────────── */}
             {/* Visible once pipeline has passed QA (not blocked by status=ready) */}
@@ -5460,7 +5457,7 @@ export default function ProductionFlow() {
                       {/* PanelPro Extract — the SAME output path DesignPro uses
                           (Trish 2026-07-23: "we will use the same output path as
                           DesignPro … it should be PanelPro Extract"). Replaces the old
-                          QCProductionFlowContainer "Production Layers" card (separated
+                          retired Track-2 layers card (separated
                           bg/branding/depth, UNDEFINED dims — the wrong path).
                           DesignAssetsPanel is the same component DesignPro renders on
                           /design-assets + ApprovePro: it resolves the canonical DesignIQ

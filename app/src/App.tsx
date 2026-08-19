@@ -291,7 +291,8 @@ const App = () => {
               consolidated onto /quotes (working action icons + MightyMail
               + inbound). This route just redirects so external links keep
               working. Pricing/branding lives at /admin/quote-pricing. */}
-          {/* Legacy QC page retired — superseded by QC ProductionFlow, which now lives inside /productionflow (QCProductionFlowContainer). */}
+          {/* Legacy QC pages retired. Production Layers on the job page is the
+              one QC surface: it consumes Calls 9-11 and regenerates nothing. */}
           {/* The Content OS status screen. Admin-guarded rather than RequireAuth
               because it reports queue depth, spend and failure counts across
               every brand — operator information, not customer information. */}
