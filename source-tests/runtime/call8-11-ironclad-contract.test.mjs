@@ -29,25 +29,46 @@ test("Call 8 customer proof is selected by semantic role, never by missing surfa
   );
 });
 
-test("Call 9 freezes the one-own-surface-region-per-output-side rule", () => {
-  assert.match(claimantSource, /PANEL_SOURCE_RULE\s*=\s*["']one-own-surface-region-per-output-side["']/);
-  assert.match(claimantSource, /sourceRegionHashes/,
-    "Call 9 must carry proof-region hash evidence");
-  assert.match(claimantSource, /sourceMasterHash|sourceMasterSha256|sourceContentHash/,
-    "Call 9 must carry full-resolution source hash evidence");
+test("Call 9 manufacturing authority is the flattened Call 8 proof raster", () => {
+  assert.match(claimantSource, /PANEL_SOURCE_RULE\s*=\s*["']one-exact-proof-region-per-output-side["']/,
+    "Call 9 must declare one exact proof region per output side");
+  assert.match(claimantSource, /proofRegionByKey/,
+    "Call 9 must resolve regions by exact canonical surface key");
+  assert.match(claimantSource, /approvedProofHash/,
+    "Call 9 must hash-verify the approved Call 8 proof before extraction");
   assert.ok(
-    !/passengerDerivedFromDriver\s*:\s*true/.test(claimantSource),
-    "passenger may never be manufactured from driver",
+    !claimantSource.includes("the proof is never decoded here, because nothing is cut from it"),
+    "the old display-only proof path must not return",
+  );
+  assert.ok(
+    !/extractedFromProofRaster\s*:\s*false/.test(claimantSource),
+    "Call 9 panels must not claim they came from some other manufacturing source",
+  );
+  assert.match(claimantSource, /extractedFromProofRaster\s*:\s*true/,
+    "Call 9 panel evidence must state that its pixels were deterministically extracted from Call 8",
   );
 });
 
-test("all six production surfaces are explicit and distinct", () => {
+test("all six canonical proof regions are explicit and missing regions fail closed", () => {
   for (const surface of SURFACES) {
     assert.ok(claimantSource.includes(`"${surface}"`) || claimantSource.includes(`'${surface}'`),
       `${surface} must be explicitly represented`);
   }
-  assert.match(claimantSource, /sourcePanels\.length\s*!==\s*SURFACE_KEYS\.length/,
-    "source verification must require exactly the canonical surface count");
+  assert.match(claimantSource, /call9_proof_regions_missing/,
+    "Call 9 must fail when the approved proof lacks a complete six-region manifest");
+  assert.match(claimantSource, /call9_proof_region_missing/,
+    "Call 9 must fail when an individual requested surface region is absent");
+});
+
+test("Call 9 forbids driver substitution and any cross-side manufacturing fallback", () => {
+  assert.ok(
+    !/passengerDerivedFromDriver\s*:\s*true/.test(claimantSource),
+    "passenger may never be manufactured from driver",
+  );
+  assert.match(claimantSource, /call9_driver_passenger_reuse/,
+    "driver/passenger byte reuse must fail closed");
+  assert.match(claimantSource, /new Map\([\s\S]*proof\.proofRegions/,
+    "proof regions must be keyed explicitly rather than selected by array position");
 });
 
 test("Call 9 -> Call 10 -> Call 11 ordering is impossible to invert", () => {
@@ -56,7 +77,7 @@ test("Call 9 -> Call 10 -> Call 11 ordering is impossible to invert", () => {
   const delogo = stageIndex("panels.delogo");
   const panelPro = stageIndex("await_panelpro_preflight_qc");
 
-  assert.ok(panels < inventory, "Call 9 branded panels must exist before Call 10 inventory/duplication work");
+  assert.ok(panels < inventory, "Call 9 branded panels must exist before Call 10 work");
   assert.ok(inventory < delogo, "Call 10 must complete before Call 11 de-logo work");
   assert.ok(delogo < panelPro, "Call 11 must complete before PanelPro preflight");
 });
