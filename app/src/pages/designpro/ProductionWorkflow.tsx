@@ -6,7 +6,16 @@
  * approval. It never builds, cuts, enhances or packages anything.
  *
  * The sections mirror the pipeline:
- *   RevisionStudio  — the customer-facing 2D Production Proof
+ *   RevisionStudio  — the customer-facing 2D Production Proof, the approved
+ *                      view paired with each side's production panel, the
+ *                      revision path and the Production Pack / Logo Pack route.
+ *                      RevisionStudio is a REQUIRED stage of the production
+ *                      flow, not optional UI: the operating invariant runs
+ *                      design approved -> 2D Production Proof -> six production
+ *                      sides -> RevisionStudio paired render + panel per side
+ *                      -> Production Layers -> production pack. It lives here
+ *                      rather than at its own route; the URL is incidental, the
+ *                      responsibilities are not. Nothing about it is retired.
  *   Production Layers — the six print-ready panels cut from the approved layout
  *   Topaz            — Call 12 enhancement of each panel to print resolution
  *   Verified output  — the eighteen files (six surfaces x PNG/TIFF/EPS)
@@ -25,6 +34,7 @@ import {
   WorkflowArtifact,
   WorkflowStatus,
 } from "@/lib/designpro-api";
+import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
 import {
   EXPECTED_OUTPUT_FILES,
   FINAL_CHECKS,
@@ -110,7 +120,28 @@ function RevisionStudio({
   artifacts: WorkflowArtifact[];
   loading: boolean;
 }) {
-  const proof = artifacts.find((item) => item.kind === "flat-proof" && !item.surfaceKey);
+  // THE PROOF IS CHOSEN BY ROLE. This is the sheet the customer approves and
+  // the sheet Call 9 cuts from, so choosing it by anything else is choosing it
+  // by accident.
+  //
+  // It used to be `kind === "flat-proof" && !item.surfaceKey`, which worked
+  // only because the six canonical surfaces happen to carry a surfaceKey and
+  // the customer proof happens not to. The line directly below already proves
+  // that family is wider than two -- flat-wrap-layout is a third flat-proof --
+  // so one more surfaceKey-less variant, a draft or a superseded sheet, and the
+  // customer approves the wrong document with nothing on screen to say so.
+  //
+  // A run carrying two customer proofs is a contradiction in Call 8's output,
+  // not a preference. selectCustomerProof throws rather than pick; caught here
+  // so the page reports it instead of blanking, because a render that dies
+  // tells the customer nothing.
+  let proof: WorkflowArtifact | null = null;
+  let proofConflict: string | null = null;
+  try {
+    proof = selectCustomerProof(artifacts);
+  } catch (error) {
+    proofConflict = error instanceof Error ? error.message : String(error);
+  }
   const layout = artifacts.find(
     (item) => item.kind === "flat-proof" && item.surfaceKey === "flat-wrap-layout",
   );
@@ -125,7 +156,7 @@ function RevisionStudio({
       </Panel>
     );
   }
-  if (!proof && panels.length === 0) return null;
+  if (!proof && !proofConflict && panels.length === 0) return null;
 
   const totalSqFt = num(proof?.metadata?.totalSqFt);
 
@@ -148,6 +179,13 @@ function RevisionStudio({
             <SaveLink url={proof.signedUrl} name="2d-production-proof.png" />
           </figcaption>
         </figure>
+      ) : proofConflict ? (
+        <Notice tone="error">
+          This run publishes more than one customer 2D Production Proof
+          ({proofConflict}). Nothing is shown rather than guess which one you
+          approved — Call 8 emitted a contradiction and it needs resolving
+          before this design goes to production.
+        </Notice>
       ) : (
         <Notice>The 2D production proof has not been published for this job yet.</Notice>
       )}

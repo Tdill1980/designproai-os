@@ -319,3 +319,47 @@ test("no navigation surface sends a customer to the operator generate form", () 
     `Customer navigation still points at the operator form:\n  ${offenders.join("\n  ")}`,
   );
 });
+
+/**
+ * EVERY SURFACE THAT SHOWS THE CUSTOMER A PROOF CHOOSES IT BY ROLE.
+ *
+ * Call 8 emits several artifacts of kind "flat-proof": one per canonical
+ * production surface, a flat wrap layout, and the single 2D Production Proof
+ * the customer approves and Call 9 cuts from. Only metadata.role separates
+ * them, and every one of them is a real image of the right design -- so a
+ * surface that picks by array order, by a missing surfaceKey, or by kind alone
+ * shows the wrong document with nothing on screen to say so.
+ *
+ * This was fixed once in designpro-production-layers.ts and left in place on
+ * ProductionWorkflow, which is the surface the customer actually approves from.
+ * Fixing one call site of a rule is not fixing the rule.
+ */
+const PROOF_CONSUMERS = [
+  "pages/designpro/ProductionWorkflow.tsx",
+  "lib/designpro-production-layers.ts",
+];
+
+test("every customer proof surface selects by role, never by shape or order", () => {
+  for (const relative of PROOF_CONSUMERS) {
+    const file = join(ROOT, relative);
+    assert.ok(existsSync(file), `proof consumer is missing: ${relative}`);
+    const code = executableCode(readFileSync(file, "utf8"));
+
+    assert.match(
+      code,
+      /selectCustomerProof\s*\(/,
+      `${relative} must resolve the customer proof through selectCustomerProof`,
+    );
+
+    // The specific heuristics that have each stood in for the role at least
+    // once. A surfaceKey-less flat-proof is not "the customer's"; it is merely
+    // one that has not been assigned a side yet.
+    const heuristics = [
+      [/kind\s*===\s*"flat-proof"\s*&&\s*!\s*\w+\.surfaceKey/, "picks the proof by a missing surfaceKey"],
+      [/\.find\(\s*\([^)]*\)\s*=>[^)]*kind\s*===\s*"flat-proof"\s*\)/, "takes the first flat-proof of any role"],
+    ];
+    for (const [pattern, description] of heuristics) {
+      assert.doesNotMatch(code, pattern, `${relative} ${description}`);
+    }
+  }
+});
