@@ -22,6 +22,7 @@ import {
   SOURCE_VIEW_TYPE_FOR_ROLE,
   type AssetIdentity,
   type GenerationBrief,
+  type GenerationPipelineMode,
   type GenerationRequestState,
   type GenerationVehicle,
   type GenerationView,
@@ -44,6 +45,7 @@ export type StandaloneGenerationInput = {
   website?: string;
   logoAsset?: AssetIdentity;
   generationId?: string;
+  pipelineMode?: GenerationPipelineMode;
 };
 
 /**
@@ -72,6 +74,7 @@ export async function startStandaloneGeneration(
     designName: input.designName,
     vehicle: input.vehicle,
     brief,
+    pipelineMode: input.pipelineMode,
   });
 }
 
@@ -104,6 +107,10 @@ export async function waitForGeneration(
 
 export async function listDesignPanelViews(requestId: string): Promise<GenerationView[]> {
   return dpApi.listGenerationViews(requestId);
+}
+
+export async function listFlatAtlasRevisions(requestId: string) {
+  return dpApi.listFlatAtlasRevisions(requestId);
 }
 
 export async function regenerateDesignPanelView(input: {

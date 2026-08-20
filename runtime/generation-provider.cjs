@@ -19,9 +19,9 @@ const { createHash } = require("node:crypto");
 
 const ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const PROVIDER_CONTRACT = "designpro.generation-provider.v1";
-// Ported from the frozen source's model chain: pro image first, flash image as
-// the fallback when pro is unavailable or over capacity.
-const DEFAULT_IMAGE_MODELS = Object.freeze(["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"]);
+// Stable image chain: Pro first, Flash Image as the explicit fallback when Pro
+// is unavailable or over capacity. A deployment may pin/override this below.
+const DEFAULT_IMAGE_MODELS = Object.freeze(["gemini-3-pro-image", "gemini-3.1-flash-image"]);
 const DEFAULT_SPEC_MODELS = Object.freeze(["gemini-2.5-flash"]);
 // A thinking model charges its deliberation against the same budget as its
 // answer. genie-universal-resolver lost whole responses at 2048 and settled on
@@ -56,7 +56,11 @@ function readKeyPool(env = process.env) {
 }
 
 function imageModels(env = process.env) {
-  const raw = String(env.DESIGNPRO_IMAGE_MODELS || "").trim();
+  // The droplet already carries GOOGLE_IMAGE_MODEL. Honour that configured,
+  // approved model instead of silently ignoring it and falling back to a stale
+  // preview identifier. DESIGNPRO_IMAGE_MODELS remains the explicit multi-model
+  // override; GOOGLE_IMAGE_MODEL may also contain a comma-separated fallback.
+  const raw = String(env.DESIGNPRO_IMAGE_MODELS || env.GOOGLE_IMAGE_MODEL || "").trim();
   const models = raw ? raw.split(",").map((value) => value.trim()).filter(Boolean) : [...DEFAULT_IMAGE_MODELS];
   for (const model of models) {
     if (!/^gemini-[a-z0-9.-]*image[a-z0-9.-]*$/.test(model)) {

@@ -137,10 +137,16 @@ async function groundedCandidate(vehicle) {
 }
 
 async function queueValidationRequest(sb, stage, runId, candidateId) {
+  // Calls 1-7 (including A.T.L.A.S.) can resolve geometry before a production
+  // workflow stage exists. In that context there is nothing legitimate to
+  // lease or auto-resume, so report validation-required without dereferencing
+  // a fabricated stage. Production callers still park their real stage below.
+  if (!stage?.id || !stage?.lease_token || !runId) return false;
   const { error } = await sb.rpc("request_designpro_universal_dimension_validation", {
     p_run_id: runId, p_candidate_id: candidateId, p_stage_id: stage.id, p_lease_token: stage.lease_token,
   });
   if (error) throw new UniversalDimensionError("genie_validation_request_failed", error.message, true);
+  return true;
 }
 
 async function findCandidates(sb, vehicle) {
@@ -156,8 +162,8 @@ async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId) {
   if (rows?.length === 1) {
     const validated = validatedSurfaces(rows[0]);
     if (validated) return validated;
-    await queueValidationRequest(sb, stage, runId, rows[0].id);
-    throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${rows[0].id} requires exact six-surface validation`, false, true);
+    const queued = await queueValidationRequest(sb, stage, runId, rows[0].id);
+    throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${rows[0].id} requires exact six-surface validation`, false, queued);
   }
 
   const candidate = await groundedCandidate(vehicle);
@@ -172,12 +178,12 @@ async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId) {
   if (insertError?.code === "23505") {
     const { data: racedRows, error: racedError } = await findCandidates(sb, vehicle);
     if (racedError || racedRows?.length !== 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", racedError?.message || "Concurrent GENIE candidate identity is ambiguous", true);
-    await queueValidationRequest(sb, stage, runId, racedRows[0].id);
-    throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${racedRows[0].id} requires exact six-surface validation`, false, true);
+    const queued = await queueValidationRequest(sb, stage, runId, racedRows[0].id);
+    throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${racedRows[0].id} requires exact six-surface validation`, false, queued);
   }
   if (insertError) throw new UniversalDimensionError("genie_universal_cache_insert_failed", insertError.message, true);
-  await queueValidationRequest(sb, stage, runId, inserted.id);
-  throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${inserted.id} created; exact six-surface validation is required`, false, true);
+  const queued = await queueValidationRequest(sb, stage, runId, inserted.id);
+  throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${inserted.id} created; exact six-surface validation is required`, false, queued);
 }
 
 

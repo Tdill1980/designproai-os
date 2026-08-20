@@ -31,6 +31,12 @@ const { createProvider } = require("./generation-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
 const { authorCreativeInput } = require("./creative-authoring.cjs");
 const { expectedSurfacesFromRow, resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
+const {
+  atlasProjectionParts,
+  atlasReceipt,
+  flatFirstRequested,
+  generateOrReuseFlatAtlas,
+} = require("./flat-first-atlas.cjs");
 
 const RECEIPT_CONTRACT = "designpro.calls-1-7-receipt.v1";
 const REQUEST_LEASE_SECONDS = 900;
@@ -115,6 +121,41 @@ function promptPartsFor(input, sourceViewType, instruction = "") {
   return [{ text: `${design}${revision}` }];
 }
 
+/**
+ * The v3 proof contract. Every slot receives the same immutable atlas bytes and
+ * manifest identity before its ordinary vehicle/camera prompt. Keeping this as
+ * a named export also gives the later surgical-revision loop one safe entrance:
+ * it can load a parent atlas revision and reuse this exact conditioning without
+ * teaching another code path how the installer map is oriented.
+ */
+function projectionOnlyPromptFor(input, sourceViewType, instruction = "") {
+  angles.assertTextDirectionGuard(sourceViewType);
+  const vehicle = input?.vehicle || {};
+  const target = [vehicle.year, vehicle.make, vehicle.model, vehicle.type]
+    .map((value) => String(value || "").trim()).filter(Boolean).join(" ") || "the exact requested vehicle";
+  const note = String(instruction || "").trim();
+  const correction = note
+    ? `\nVIEW-PROJECTION CORRECTION ONLY: ${note}\nApply this only to camera/projection fidelity. It is not permission to edit the atlas artwork.`
+    : "";
+  return {
+    text: `Render one photorealistic customer proof of this exact target vehicle: ${target}.
+
+CAMERA AND FRAMING ARE LOCKED:
+${angles.cameraAngle(sourceViewType)}
+
+The attached canonical flat atlas is the SOLE appearance authority. Project its exact surface zones onto the corresponding painted body panels of this vehicle. This is texture projection, not a new design pass. Never create, redraw, recompose, simplify, beautify, restyle, recolor, mirror, move, resize, correct, autocomplete or substitute any artwork, logo, photograph, pattern, gradient or text from the atlas. Preserve every visible customer string verbatim and forward-reading; never invent another string.
+
+Use a neutral professional automotive studio, physically realistic printed vinyl, factory glass/lights/wheels/trim, and no added props or graphics. Output one 16:9 vehicle proof only. Do not output an installer map, dieline, panel sheet, labels, dimensions or annotations.${correction}`,
+  };
+}
+
+function conditionedPromptPartsFor(input, sourceViewType, instruction, flatAtlas) {
+  return [
+    ...atlasProjectionParts(flatAtlas, sourceViewType),
+    projectionOnlyPromptFor(input, sourceViewType, instruction),
+  ];
+}
+
 const MIME_EXTENSION = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" });
 
 /**
@@ -162,16 +203,30 @@ async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
   return placed;
 }
 
-function slotsFrom(viewPlan, input, instructions = {}) {
+function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null) {
   const plan = Array.isArray(viewPlan) && viewPlan.length ? viewPlan : angles.viewOrder().map((sourceViewType) => ({ sourceViewType }));
   return plan.map((entry) => {
     const sourceViewType = entry.sourceViewType;
     return {
       sourceViewType,
       consumerRole: entry.consumerRole,
-      promptParts: promptPartsFor(input, sourceViewType, instructions[sourceViewType]),
+      promptParts: flatAtlas
+        ? conditionedPromptPartsFor(input, sourceViewType, instructions[sourceViewType], flatAtlas)
+        : promptPartsFor(input, sourceViewType, instructions[sourceViewType]),
       aspectRatio: angles.aspectRatio(sourceViewType),
       imageSize: angles.resolutionTier(sourceViewType),
+      ...(flatAtlas ? {
+        authorityMetadata: {
+          contract: flatAtlas.contract,
+          revisionId: flatAtlas.revisionId,
+          revisionSequence: flatAtlas.revisionSequence,
+          masterContentHash: flatAtlas.master.contentHash,
+          projectionContentHash: flatAtlas.projection.contentHash,
+          projectionSourceMasterHash: flatAtlas.projection.sourceMasterHash,
+          manifestContentHash: flatAtlas.manifestAsset.contentHash,
+          topology: flatAtlas.manifest.topology,
+        },
+      } : {}),
     };
   });
 }
@@ -232,13 +287,41 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         (slotRows || []).filter((row) => row.instruction).map((row) => [row.source_view_type, row.instruction]),
       );
 
+      const isFlatFirst = flatFirstRequested(claim.input);
+      let flatAtlas = null;
+      let dimensionRow = null;
+      const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
+
+      if (isFlatFirst) {
+        // The exact v3 contract + pipelineMode pair is the server-side feature
+        // gate. v1/v2 never reach this branch, so the UI can roll back by
+        // ceasing to issue v3 without requiring a deployment-wide env change.
+        dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null);
+        flatAtlas = await generateOrReuseFlatAtlas({
+          supabase,
+          store,
+          provider: imageProvider,
+          requestId,
+          generationId: claim.generationId,
+          tenantKey: claim.tenantKey,
+          ownerId,
+          input: claim.input,
+          surfaces: expectedSurfacesFromRow(dimensionRow),
+          logger: (line) => console.log(`[DESIGNPRO-OS] flat-first ${requestId}: ${line}`),
+        });
+      }
+
       const result = await engine.runRequest({
         requestId,
         generationId: claim.generationId,
         tenantKey: claim.tenantKey,
         provider: imageProvider,
         store,
-        slots: slotsFrom(claim.viewPlan, claim.input, instructions),
+        slots: slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas),
+        // Seven simultaneous proof projections are safe only after they all
+        // share one frozen design. Legacy requests retain their exact
+        // sequential behaviour and provider-pressure profile.
+        parallel: isFlatFirst,
       });
 
       if (result.state !== "outputs_ready") {
@@ -267,7 +350,6 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       }
 
       const revisionId = handoffRevisionId(requestId);
-      const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
 
       // THE AUTHORING BOUNDARY. Calls 1-7 have decided this design; here that
       // decision is recorded as the canonical authoring input Call 8 consumes,
@@ -277,17 +359,24 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       // will bind to the run, so the extents computed here are the extents the
       // design space admits. A vehicle still awaiting six-surface validation
       // therefore cannot be authored, and says so rather than guessing.
-      const dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null);
-      const designMaster = await authorCreativeInput({
-        provider: imageProvider,
-        store,
-        manifest: { expectedSurfaces: expectedSurfacesFromRow(dimensionRow) },
-        input: claim.input,
-        bodyText: claim.input?.bodyText,
-        ownerId,
-        revisionId,
-        logger: (line) => console.log(`[DESIGNPRO-OS] authoring ${requestId}: ${line}`),
-      });
+      let designMaster = null;
+      if (!isFlatFirst) {
+        dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null);
+        designMaster = await authorCreativeInput({
+          provider: imageProvider,
+          store,
+          manifest: { expectedSurfaces: expectedSurfacesFromRow(dimensionRow) },
+          input: claim.input,
+          bodyText: claim.input?.bodyText,
+          ownerId,
+          revisionId,
+          logger: (line) => console.log(`[DESIGNPRO-OS] authoring ${requestId}: ${line}`),
+        });
+      }
+
+      const authoringReceipt = isFlatFirst
+        ? { flatAtlas: atlasReceipt(flatAtlas) }
+        : { designMaster };
 
       const completion = await rpc("complete_designpro_generation_request", {
         p_request_id: requestId,
@@ -307,7 +396,7 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
           // itself: save_designpro_revision_source requires an authenticated
           // JWT and refuses a service role. The owner freezes this exact object
           // into the snapshot; nothing here bypasses that.
-          designMaster,
+          ...authoringReceipt,
         },
       });
 
@@ -317,7 +406,13 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       if (completion?.handoffReady === true) {
         await placeRevisionSources({ supabase, ownerId, revisionId, views });
       }
-      return { requestId, state: "outputs_ready", revisionId, completion, designMaster };
+      return {
+        requestId,
+        state: "outputs_ready",
+        revisionId,
+        completion,
+        ...(isFlatFirst ? { flatAtlas: atlasReceipt(flatAtlas) } : { designMaster }),
+      };
     } catch (error) {
       // The lease may already be gone; a failed fail-report must not mask the
       // original error.
@@ -373,7 +468,9 @@ module.exports = {
   RECEIPT_CONTRACT,
   REQUEST_LEASE_SECONDS,
   createGenerationWorker,
+  conditionedPromptPartsFor,
   designBrief,
   promptPartsFor,
+  projectionOnlyPromptFor,
   slotsFrom,
 };

@@ -37,7 +37,11 @@ import type { DesignIQParams, VisionBoardImage } from "@/lib/designiq-engine";
 import { setLayer2Handoff, parseTextBriefToPieces } from "@/lib/designLayer2Handoff";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { VehicleTypeSelector, isNonStandardVehicle } from "@/components/tools/VehicleTypeSelector";
+import {
+  VehicleTypeSelector,
+  isNonStandardVehicle,
+  type VehicleType,
+} from "@/components/tools/VehicleTypeSelector";
 import { PrintProCTAButton } from "@/components/PrintProCTAButton";
 import { SendForApprovalDialog } from "@/components/proof/SendForApprovalDialog";
 import { ClipboardSignature as ClipboardSignatureIcon } from "lucide-react";
@@ -84,6 +88,18 @@ import { useStarredRenders } from "@/hooks/useStarredRenders";
 import { DesignIQShowcase, GenerationWizard, DESIGNPANELPRO_TIPS } from "@/components/tools/GenerationWizard";
 import { formatDid } from "@/lib/designId";
 import { BuildTag } from "@/components/BuildTag";
+import { FlatAtlasPanelSchedule } from "@/components/designpro/FlatAtlasPanelSchedule";
+import {
+  FLAT_FIRST_ATLAS_PIPELINE_MODE,
+  type GenerationPipelineMode,
+} from "@/lib/designpro-api";
+import {
+  FLAT_FIRST_ATLAS_UI_ENABLED,
+  initialDesignProPipelineMode,
+  inlineRevisionEnabledForPipeline,
+  myVehiclePhotoFlowEnabledForPipeline,
+  normalizeDesignProVehicleType,
+} from "@/lib/designpro-flat-first";
 
 /* ── Sprocket wrap design facts for the wizard during view generation ── */
 const SPROCKET_DESIGN_FACTS = [
@@ -173,6 +189,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // When rendered inline on the DesignProAI home (no navigation), the brief comes
   // in as a prop instead of router location.state — so designing stays on one page.
   const briefState: any = embeddedBrief || (location.state as any) || null;
+  const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>(() =>
+    initialDesignProPipelineMode(briefState?.pipelineMode),
+  );
   const pushedRenderFromState = briefState?.previewRender || null;
   // Capture pushed render in a ref so it survives history.replaceState clearing location.state
   const pushedRenderRef = useRef<any>(null);
@@ -191,10 +210,24 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const acePrompt = acePromptRef.current;
   // Vehicle from the home "Start Your Design" brief — captured so the auto-generate
   // uses the vehicle the user already picked (no re-entry). Survives state clearing.
-  const briefVehicleRef = useRef<{ make?: string; model?: string; year?: string } | null>(null);
-  if (!briefVehicleRef.current && (briefState?.make || acePromptFromState)) {
+  const briefVehicleRef = useRef<{
+    make?: string;
+    model?: string;
+    year?: string;
+    vehicleType?: VehicleType;
+  } | null>(null);
+  if (!briefVehicleRef.current && (
+    briefState?.make || briefState?.model || briefState?.year || briefState?.vehicleType || acePromptFromState
+  )) {
     const st = briefState;
-    briefVehicleRef.current = { make: st?.make, model: st?.model, year: st?.year };
+    briefVehicleRef.current = {
+      make: st?.make,
+      model: st?.model,
+      year: st?.year,
+      vehicleType: st?.vehicleType
+        ? normalizeDesignProVehicleType(st.vehicleType)
+        : undefined,
+    };
   }
   // VisionBoard reference images from the home brief → seed the studio's VisionBoard.
   // Background examples → Layer 1; logo/overlay examples → Layer 2 (text/logo).
@@ -275,7 +308,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     generationError,
     clearGenerationError,
     flatProofUrl,
-  } = useDesignPanelProLogic();
+    activePipelineMode,
+    flatAtlasRevisions,
+    flatAtlasLoadError,
+  } = useDesignPanelProLogic(briefVehicleRef.current?.vehicleType);
 
   // PAST JOBS — the live `flatProofUrl` is only populated during a fresh
   // generation run. When a previously-generated design is opened (pushed from
@@ -293,6 +329,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // to say which one it is. `flatProofUrl` is the Call 8 artifact selected by
   // role; absent it, the honest state is that the proof is still building.
   const proofToShow = flatProofUrl || null;
+  const isFlatFirstDiagnostic = activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  const latestFlatAtlas = flatAtlasRevisions[flatAtlasRevisions.length - 1];
+  const inlineRevisionEnabled = inlineRevisionEnabledForPipeline(activePipelineMode);
+  const showFlatFirstDiagnostic = isFlatFirstDiagnostic ||
+    (!generatedImageUrl && pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE);
 
   // --- Feature flag: persona pipeline ---
   const [searchParams] = useSearchParams();
@@ -303,18 +344,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const lastDesignBriefRef = useRef<string>("");
 
   // --- Vehicle state ---
-  const [year, setYear] = useState("");
-  const [make, setMake] = useState("");
-  const [model, setModel] = useState("");
+  const [year, setYear] = useState(() => briefVehicleRef.current?.year || "");
+  const [make, setMake] = useState(() => briefVehicleRef.current?.make || "");
+  const [model, setModel] = useState(() => briefVehicleRef.current?.model || "");
   const [yearError, setYearError] = useState(false);
-  // Prefill the vehicle from the home "Start Your Design" brief (once on mount).
-  useEffect(() => {
-    const b = briefVehicleRef.current;
-    if (!b) return;
-    if (b.make) setMake(b.make);
-    if (b.model) setModel(b.model);
-    if (b.year) setYear(b.year);
-  }, []);
   // QuickQuote × DesignPro side panel — branded sidebar consistent
   // with ColorPro / GraphicsPro. Hosts the dashboard QuickQuoteCard
   // pre-seeded with the active vehicle + render so the rep can build
@@ -1025,6 +1058,18 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // Pipeline entry point - called when user clicks "Create with DesignIQ"
   const handlePipelineStart = async (params: DesignIQParams) => {
     if (params.prompt?.trim()) lastDesignBriefRef.current = params.prompt.trim();
+    if (
+      mvp.isMyVehicleMode &&
+      mvp.hasPhotos &&
+      !myVehiclePhotoFlowEnabledForPipeline(pipelineMode)
+    ) {
+      toast({
+        title: "A.T.L.A.S. requires the canonical flat master",
+        description: "MyVehicle photo generation is not enabled for this diagnostic. Turn off MyVehicle or choose Legacy before starting.",
+        variant: "destructive",
+      });
+      return;
+    }
     // Validate vehicle BEFORE starting the pipeline
     if (mvp.isMyVehicleMode && mvp.hasPhotos) {
       // MyVehiclePro mode - photos replace year/make/model
@@ -1261,7 +1306,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       if (subscription) await incrementRenderCount();
       setPipelineStage("rendering");
       scrollToPreview();
-      await runPersonaPipeline(enrichedParams, { year: effectiveYear, make: effectiveMake, model: effectiveModel });
+      await runPersonaPipeline(
+        enrichedParams,
+        { year: effectiveYear, make: effectiveMake, model: effectiveModel },
+        pipelineMode,
+      );
       setPipelineActive(false);
       return;
     }
@@ -1344,7 +1393,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     // of the browser pasting it on afterwards.
     setPipelineStage("rendering");
     scrollToPreview();
-    const result = await generateFromPrompt(enrichedParams, { year: effectiveYear, make: effectiveMake, model: effectiveModel });
+    const result = await generateFromPrompt(
+      enrichedParams,
+      { year: effectiveYear, make: effectiveMake, model: effectiveModel },
+      pipelineMode,
+    );
     generationIdRef.current = result?.generationId || null;
     if (result && !result.error) setPipelineStage("finishing");
 
@@ -1491,6 +1544,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // Revision handler - triggers a new render with the revision text
   const handleRevisionSubmit = async (request: RevisionRequest) => {
     if (!request.revisionText.trim()) return;
+    if (!inlineRevisionEnabledForPipeline(activePipelineMode)) {
+      toast({
+        title: "A.T.L.A.S. revision editing is not enabled in this diagnostic",
+        description: "The original A.T.L.A.S. master and proofs remain saved. No unrelated design run was started.",
+        variant: "destructive",
+      });
+      return;
+    }
     // Re-trigger the pipeline with revision context appended to the original prompt
     // For now, we feed the revision text as a new prompt variation
     // Future: link to Design DNA via revision_parent_id
@@ -1524,7 +1585,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       year: effectiveYear,
       make: effectiveMake,
       model: effectiveModel,
-    });
+    }, pipelineMode);
     generationIdRef.current = result?.generationId || null;
 
     if (result?.directRender) {
@@ -1587,10 +1648,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // Sort/filter against the vehicle-class contract. Trailers have five
   // validation views; standard vehicles retain the locked seven-view order.
   const effectiveAllViews = allViews.length > 0 ? allViews : pushedAllViews;
-  const STANDARD_VIEW_ORDER = ['side', 'passenger-side', 'hood_detail', 'front', 'rear', 'close-up', 'roof'] as const;
+  const STANDARD_VIEW_ORDER = ['side', 'passenger-side', 'hood_detail', 'front', 'rear', 'hero-3d', 'roof'] as const;
   const TRAILER_VIEW_ORDER = ['side', 'passenger-side', 'front', 'rear', 'close-up'] as const;
   const requiredViewTypes: readonly string[] =
-    vehicleType === 'trailer' ? TRAILER_VIEW_ORDER : STANDARD_VIEW_ORDER;
+    isFlatFirstDiagnostic
+      ? STANDARD_VIEW_ORDER
+      : vehicleType === 'trailer' ? TRAILER_VIEW_ORDER : STANDARD_VIEW_ORDER;
   const requiredViewCount = requiredViewTypes.length;
   const findViewByType = (type: string) => {
     const direct = effectiveAllViews.find(v => v.type === type);
@@ -1599,6 +1662,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (type === 'side') return effectiveAllViews.find(v => v.type === 'driver-side' || v.type === 'driver_side');
     if (type === 'hood_detail') return effectiveAllViews.find(v => v.type === 'hood');
     if (type === 'close-up') return effectiveAllViews.find(v => v.type === 'closeup' || v.type === 'detail');
+    if (type === 'hero-3d') return effectiveAllViews.find(v => v.type === 'hero3d');
     return undefined;
   };
   const sortedAllViews = requiredViewTypes
@@ -1612,6 +1676,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     rear: 'Rear',
     roof: 'Roof Plan',
     'close-up': 'Close-Up',
+    'hero-3d': '3D Hero', hero3d: '3D Hero',
   };
 
   // Active view for arrow navigation in main preview
@@ -1704,6 +1769,46 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <ChevronLeft className="h-4 w-4" />
                         </button>
                       </div>
+                      {FLAT_FIRST_ATLAS_UI_ENABLED && (
+                        <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                            Pipeline test
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              aria-pressed={pipelineMode === "legacy"}
+                              disabled={isBusy || !!mainDisplayUrl}
+                              onClick={() => setPipelineMode("legacy")}
+                              className={cn(
+                                "rounded-lg border px-2 py-2 text-[10px] font-bold transition disabled:opacity-50",
+                                pipelineMode === "legacy"
+                                  ? "border-white/30 bg-white/10 text-white"
+                                  : "border-white/10 text-white/50 hover:bg-white/5",
+                              )}
+                            >
+                              Legacy production
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE}
+                              disabled={isBusy || !!mainDisplayUrl}
+                              onClick={() => setPipelineMode(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
+                              className={cn(
+                                "rounded-lg border px-2 py-2 text-[10px] font-bold transition disabled:opacity-50",
+                                pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+                                  ? "border-cyan-400 bg-cyan-400/15 text-cyan-200"
+                                  : "border-white/10 text-white/50 hover:bg-white/5",
+                              )}
+                            >
+                              A.T.L.A.S. (flat-first test)
+                            </button>
+                          </div>
+                          <p className="mt-2 text-[10px] leading-4 text-white/55">
+                            The test stores a guide and painted master, then renders seven proofs. Calls 8–12 stay off.
+                          </p>
+                        </div>
+                      )}
                       {/* Input area */}
                       <div className="space-y-4">
                     {/* ACE Character Header — typewriter intro (spans full width) */}
@@ -1874,6 +1979,20 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                   <div id="render-area" className="min-w-0 flex-1 space-y-4 w-full lg:w-auto">
                     {/* Progress now lives INSIDE the Konva window (GeneratingFloor)
                         — the old DesignIQProgressBar was a duplicate second bar. */}
+
+                    {showFlatFirstDiagnostic && (
+                      <Card className="border-cyan-400/35 bg-cyan-400/5 p-3 text-sm text-cyan-50">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                          <div>
+                            <p className="font-semibold">A.T.L.A.S. diagnostic</p>
+                            <p className="mt-1 text-xs leading-5 text-cyan-100/70">
+                              Gemini paints one canonical A.T.L.A.S. master first; the seven vehicle views are proofs derived from it. This test run stops before Calls 8–12, so it cannot publish production panels or a WrapBox pack.
+                            </p>
+                          </div>
+                        </div>
+                      </Card>
+                    )}
 
                     {/* Persona Pipeline Progress */}
                     {isPersonaMode && isPersonaPipelineActive && (
@@ -2289,7 +2408,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
                     {/* MyVehiclePro Inline — for users who rendered with year/make/model,
                         lets them apply the generated design to a customer photo after the fact. */}
-                    {!mvp.isMyVehicleMode && generatedImageUrl && (
+                    {!mvp.isMyVehicleMode && generatedImageUrl && !isFlatFirstDiagnostic && (
                       <MyVehicleProInline
                         modeType="designpro"
                         vehicleYear={year}
@@ -2303,7 +2422,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     )}
 
                     {/* Inline Revision Prompt - one quick revision after first driver view */}
-                    {mainDisplayUrl && !pipelineActive && revisionCount < 1 && (
+                    {mainDisplayUrl && !pipelineActive && inlineRevisionEnabled && revisionCount < 1 && (
                       <PremiumRevisionPrompt
                         onRevisionSubmit={handleRevisionSubmit}
                         isGenerating={isBusy}
@@ -2316,7 +2435,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         no modal trigger needed. */}
 
                     {/* After first inline revision, direct to RevisionStudioIQ for precision edits */}
-                    {mainDisplayUrl && !pipelineActive && revisionCount >= 1 && (
+                    {mainDisplayUrl && !pipelineActive && inlineRevisionEnabled && revisionCount >= 1 && (
                       <Card className="p-4 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border-cyan-500/30 space-y-3">
                         <div className="flex items-center gap-3">
                           <img
@@ -2347,7 +2466,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     )}
 
                     {/* Advanced Revision Studio link (shown before first revision) */}
-                    {mainDisplayUrl && !pipelineActive && revisionCount < 1 && (
+                    {mainDisplayUrl && !pipelineActive && inlineRevisionEnabled && revisionCount < 1 && (
                       <Button
                         onClick={() => {
                           const id = generationIdRef.current;
@@ -2362,11 +2481,20 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       </Button>
                     )}
 
+                    {mainDisplayUrl && !pipelineActive && isFlatFirstDiagnostic && (
+                      <Card className="border-amber-400/30 bg-amber-400/10 p-4">
+                        <p className="text-sm font-semibold text-amber-100">A.T.L.A.S. revision editing is not enabled in this diagnostic.</p>
+                        <p className="mt-1 text-xs leading-5 text-amber-100/70">
+                          This run is preserved exactly as generated. A revision button will only be enabled after the backend can create a parent-linked immutable A.T.L.A.S. revision and regenerate its affected proof views.
+                        </p>
+                      </Card>
+                    )}
+
                     {/* Post-Render Action Buttons */}
                     {mainDisplayUrl && !pipelineActive && (
                       <div className="space-y-3">
                         {/* Action row: All Views + Proof */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className={cn("grid grid-cols-1 gap-2", !isFlatFirstDiagnostic && "sm:grid-cols-2")}>
                           <Button
                             onClick={handleGenerateAllViews}
                             disabled={isGeneratingAdditional || isPersonaPipelineActive || isBusy}
@@ -2381,16 +2509,23 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             {(isGeneratingAdditional || isPersonaPipelineActive) ? "Generating..." : "All Views"}
                           </Button>
 
-                          <Button
-                            onClick={() => setShowProofSheet(true)}
-                            className="gap-2"
-                          >
-                            <ClipboardSignature className="w-4 h-4" />
-                            PDF Proof Sheet
-                          </Button>
+                          {!isFlatFirstDiagnostic && (
+                            <Button
+                              onClick={() => setShowProofSheet(true)}
+                              className="gap-2"
+                            >
+                              <ClipboardSignature className="w-4 h-4" />
+                              PDF Proof Sheet
+                            </Button>
+                          )}
                         </div>
 
                         {/* Order CTAs */}
+                        {isFlatFirstDiagnostic ? (
+                          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-xs leading-5 text-amber-100/80">
+                            This diagnostic deliberately disables the 2D proof, production order, and WrapBox actions. Switch the feature flag off to return to the unchanged legacy production path.
+                          </div>
+                        ) : (
                         <div className="p-4 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-lg space-y-3">
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-semibold">Ready to bring this to life?</p>
@@ -2433,12 +2568,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             Send for Client Approval
                           </Button>
                         </div>
+                        )}
                       </div>
                     )}
 
 
                     {/* Cut Contour Logo Pack */}
-                    {mainDisplayUrl && (
+                    {mainDisplayUrl && !isFlatFirstDiagnostic && (
                       <Button
                         className="w-full bg-purple-600 hover:bg-purple-700 text-white h-11"
                         onClick={() => handleGenerateCutFiles({
@@ -2532,6 +2668,76 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       </div>
                     )}
 
+                    {isFlatFirstDiagnostic && (
+                      <Card className="overflow-hidden border-cyan-400/35 bg-cyan-400/5">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-400/20 px-4 py-3">
+                          <div>
+                            <p className="text-sm font-bold text-cyan-100">Canonical A.T.L.A.S. master</p>
+                            <p className="mt-0.5 text-[11px] text-cyan-100/60">
+                              Immutable guide → Gemini master → seven 3D approval proofs
+                            </p>
+                          </div>
+                          <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200">
+                            Proofs only · no production handoff
+                          </Badge>
+                        </div>
+
+                        {flatAtlasLoadError ? (
+                          <div className="p-4 text-xs text-red-300">
+                            The A.T.L.A.S. record could not be loaded from the gateway. The seven-view run remains isolated from production.
+                          </div>
+                        ) : latestFlatAtlas ? (
+                          <div className="grid gap-3 p-4 sm:grid-cols-2">
+                            {[
+                              { label: "Before · deterministic guide", asset: latestFlatAtlas.guide, signedUrl: latestFlatAtlas.guideUrl },
+                              { label: "After · painted master", asset: latestFlatAtlas.master, signedUrl: latestFlatAtlas.masterUrl },
+                            ].map(({ label, asset, signedUrl }) => (
+                              <div key={label} className="overflow-hidden rounded-lg border border-white/10 bg-black/40">
+                                <div className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold text-white/75">
+                                  {label}
+                                </div>
+                                {signedUrl ? (
+                                  <button
+                                    type="button"
+                                    className="block w-full"
+                                    onClick={() => setExpandedImage({ url: signedUrl, title: label })}
+                                  >
+                                    <img src={signedUrl} alt={label} className="aspect-[4/3] w-full bg-white object-contain" />
+                                  </button>
+                                ) : (
+                                  <div className="flex aspect-[4/3] items-center justify-center px-4 text-center text-xs text-white/40">
+                                    Stored and hash-locked; preview is not signed yet.
+                                  </div>
+                                )}
+                                <div className="space-y-1 px-3 py-2 text-[10px] text-white/50">
+                                  <p>{asset.widthPx} × {asset.heightPx}px · {(asset.byteSize / 1_048_576).toFixed(2)} MiB</p>
+                                  <p className="font-mono">sha256 {asset.contentHash.slice(0, 20)}…</p>
+                                </div>
+                              </div>
+                            ))}
+                            <div className="sm:col-span-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/10 pt-3 text-[10px] text-white/55">
+                              <span>Revision {latestFlatAtlas.revisionSequence}</span>
+                              <span>{flatAtlasRevisions.length} immutable version{flatAtlasRevisions.length === 1 ? "" : "s"} saved</span>
+                              <span>{latestFlatAtlas.model}</span>
+                              <span>{latestFlatAtlas.promptVersion}</span>
+                              <span>{latestFlatAtlas.affectedSurfaces.length} production surfaces mapped</span>
+                              <span>Gemini example conditioning: {latestFlatAtlas.exampleUsed ? "locked" : "not used"}</span>
+                              <span>Manifest sha256 {latestFlatAtlas.manifest.contentHash.slice(0, 12)}…</span>
+                            </div>
+                            <FlatAtlasPanelSchedule
+                              panels={latestFlatAtlas.panelMap}
+                              className="sm:col-span-2 border-white/10 bg-black/20"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 p-4 text-xs text-cyan-100/65">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Waiting for the server to store and sign the guide and canonical master…
+                          </div>
+                        )}
+                      </Card>
+                    )}
+
                     {/* ── 2D PRODUCTION PROOF (the "8th call") ──
                         Composited from the 7 locked views by the DesignIQ pipeline
                         (Phase 4a → designiq_generations.flat_proof_url). Surfaced
@@ -2610,7 +2816,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           If the required vehicle-class views aren't done yet, clicking PROMPTS the user
                           to finish the remaining views first (and kicks off the
                           all-views generation). Highlighted once it's truly ready. */}
-                      {mainDisplayUrl && (
+                      {mainDisplayUrl && !isFlatFirstDiagnostic && (
                         <>
                           <button
                             type="button"
@@ -2659,6 +2865,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             </p>
                           )}
                         </>
+                      )}
+                      {mainDisplayUrl && isFlatFirstDiagnostic && (
+                        <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100/75">
+                          Production ordering is disabled for this A.T.L.A.S. diagnostic. The stored A.T.L.A.S. master and proof views remain available for visual validation.
+                        </div>
                       )}
                     </div>
                   ) : (
@@ -2756,8 +2967,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
             />
           ) : (
             <div className="p-10 text-center text-sm text-gray-500">
-              The 2D Production Proof is still building. It appears here as soon
-              as Call 8 finishes it for this design.
+              {isFlatFirstDiagnostic
+                ? "This A.T.L.A.S. test is master + 3D proofs only. It does not run Call 8 or publish a production proof."
+                : "The 2D Production Proof is still building. It appears here as soon as Call 8 finishes it for this design."}
             </div>
           )}
         </DialogContent>

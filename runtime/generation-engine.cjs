@@ -100,7 +100,7 @@ async function runSlot(options) {
   const {
     requestId, tenantKey, generationId, sourceViewType, consumerRole,
     provider, store, promptParts, aspectRatio, imageSize,
-    validate, signal, now = () => Date.now(),
+    validate, signal, authorityMetadata = null, now = () => Date.now(),
     maxProviderAttempts = MAX_PROVIDER_ATTEMPTS_PER_SLOT,
     maxRegenerations = MAX_SLOT_REGENERATIONS,
     timeoutMs = PROVIDER_TIMEOUT_MS,
@@ -136,7 +136,13 @@ async function runSlot(options) {
         requestId, sourceViewType, consumerRole,
         storagePath: orphan.storagePath, contentHash: orphan.contentHash,
         byteSize: orphan.bytes.length, contentType: orphan.contentType,
-        metadata: { contract: ENGINE_CONTRACT, reconciledFromStorage: true },
+        metadata: {
+          contract: ENGINE_CONTRACT,
+          reconciledFromStorage: true,
+          ...(authorityMetadata && typeof authorityMetadata === "object"
+            ? { authority: authorityMetadata }
+            : {}),
+        },
       });
       return { requestId, sourceViewType, consumerRole, state: "accepted", reused: true, reconciled: true, winner, providerCalls: 0, attempts };
     }
@@ -207,6 +213,9 @@ async function runSlot(options) {
         metadata: {
           contract: ENGINE_CONTRACT, model: result.model, keyFingerprint: result.keyFingerprint,
           attempt, durationMs, providerAttempts: result.attempts?.length || 1,
+          ...(authorityMetadata && typeof authorityMetadata === "object"
+            ? { authority: authorityMetadata }
+            : {}),
         },
       });
       const record = {
@@ -244,15 +253,21 @@ async function runSlot(options) {
  * never left pending, and it does not restart itself.
  */
 async function runRequest(options) {
-  const { slots, ...slotOptions } = options;
+  const { slots, parallel = false, ...slotOptions } = options;
   if (!Array.isArray(slots) || !slots.length) throw new EngineError("slot_set_empty", "At least one slot is required");
-  const results = [];
-  let providerCalls = 0;
-  for (const slot of slots) {
-    const result = await runSlot({ ...slotOptions, ...slot });
-    providerCalls += result.providerCalls;
-    results.push(result);
+  let results;
+  if (parallel === true) {
+    // Flat-first v3 freezes one atlas before this function is called, so all
+    // seven camera projections may run together without becoming seven
+    // independent design decisions. Promise.all preserves slot order in the
+    // returned receipt even though provider work overlaps.
+    results = await Promise.all(slots.map((slot) => runSlot({ ...slotOptions, ...slot })));
+  } else {
+    // Legacy v1/v2 keeps its exact sequential pressure and timing profile.
+    results = [];
+    for (const slot of slots) results.push(await runSlot({ ...slotOptions, ...slot }));
   }
+  const providerCalls = results.reduce((total, result) => total + result.providerCalls, 0);
   const budget = slots.length * MAX_PROVIDER_ATTEMPTS_PER_SLOT;
   if (providerCalls > budget) throw new EngineError("request_budget_exceeded", `${providerCalls} provider calls exceeded the ${budget} budget`);
   const failed = results.filter((item) => item.state === "failed");
