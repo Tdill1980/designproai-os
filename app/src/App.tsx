@@ -97,6 +97,15 @@ import Gallery from "./pages/Gallery";
 // ── Lazy imports - DesignProAI operating surfaces ────────────────
 // These are the server-owned surfaces: the browser reports state and asks for
 // the two human release gates, and never orchestrates the pipeline itself.
+// THE CUSTOMER-FACING DESIGNPRO PRODUCT. These two pages are the DesignPro the
+// customer knows -- A.C.E., MyVehiclePro, Restyle vs Business & Fleet, the
+// VisionBoardIQ reference upload, the DesignIQ prompt, logo behaviour, finish,
+// LayerLift and the seven generated views. They were carried into this repo
+// intact and then routed away from, which is why the customer landed in the
+// server-owned intake instead of the product. The intake pages below remain,
+// as operating surfaces.
+const DesignProAIHome = lazyWithRetry(() => import("./pages/DesignProAIHome"));
+const DesignPanelProPremium = lazyWithRetry(() => import("./pages/DesignPanelProPremium"));
 const DesignProGenerate = lazyWithRetry(() => import("./pages/designpro/GenerateDesign"));
 const DesignProJobs = lazyWithRetry(() => import("./pages/designpro/ProductionJobs"));
 const DesignProWorkflow = lazyWithRetry(() => import("./pages/designpro/ProductionWorkflow"));
@@ -110,12 +119,10 @@ const DesignProWrapBoxPack = lazyWithRetry(() =>
 );
 
 // ── Lazy imports - Core tools ────────────────────────────────────
-const ArtboardFirstDesignPro = lazyWithRetry(() => import("./pages/ArtboardFirstDesignPro"));
 const AdminDesignProV2Test = lazyWithRetry(() => import("./pages/AdminDesignProV2Test"));
 const PanelSizer = lazyWithRetry(() => import("./pages/PanelSizer"));
 const DesignStudio = lazyWithRetry(() => import("./pages/DesignStudio"));
 const DesignProStudio = lazyWithRetry(() => import("./pages/DesignProStudio"));
-const DesignPanelProWorkspace = lazyWithRetry(() => import("./pages/DesignPanelProWorkspace"));
 const ProductionProof = lazyWithRetry(() => import("./pages/ProductionProof"));
 
 // ── Lazy imports - User pages ────────────────────────────────────
@@ -247,7 +254,7 @@ const App = () => {
               orchestration pages below redirect in here rather than 404,
               because the edge functions they drove are not part of this
               standalone system. */}
-          <Route path="/designpro" element={<Navigate to="/designpro/jobs" replace />} />
+          <Route path="/designpro" element={<RequireAuth><DesignProAIHome /></RequireAuth>} />
           <Route path="/designpro/jobs" element={<RequireAuth><DesignProJobs /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId" element={<RequireAuth><DesignProWorkflow /></RequireAuth>} />
           <Route path="/designpro/generate" element={<RequireAuth><DesignProGenerate /></RequireAuth>} />
@@ -255,20 +262,24 @@ const App = () => {
           <Route path="/designpro/genie-qc" element={<RequireAuth><DesignProGenieQc /></RequireAuth>} />
           <Route path="/designpro/wrapbox" element={<RequireAuth><DesignProWrapBox /></RequireAuth>} />
           <Route path="/designpro/wrapbox/:packId" element={<RequireAuth><DesignProWrapBoxPack /></RequireAuth>} />
-          <Route path="/designpro/artboard-first" element={<RequireAuth><ArtboardFirstDesignPro /></RequireAuth>} />
+          {/* Artboard-first drove designpro-flat-art / designpro-recreate-3d from
+              the browser -- a second design producer beside Calls 1-7, and the
+              flat-first projection the design path was deliberately taken off.
+              The runtime owns generation, so this redirects rather than 404s. */}
+          <Route path="/designpro/artboard-first" element={<Navigate to="/designpro" replace />} />
           {/* CarWrapPro™ — public SEO/AEO product page + the Design Assets admin production page */}
           {/* DesignPro v2 object-graph engine — isolated experimental module, admin test bench only */}
           <Route path="/admin/designpro-v2-test" element={<RequireAdmin><AdminDesignProV2Test /></RequireAdmin>} />
           <Route path="/designpro/panel-sizer" element={<RequireAuth><PanelSizer /></RequireAuth>} />
-          <Route path="/designpro/create" element={<Navigate to="/designpro" replace />} />
+          <Route path="/designpro/create" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
-          <Route path="/designpro/premium" element={<Navigate to="/designpro" replace />} />
+          <Route path="/designpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/raster" element={<RequireAuth><DesignStudio /></RequireAuth>} />
           {/* FadeWrap generator hidden — use DesignProAI for fade wraps via prompt */}
           {/* /restylelibrary is a RestylePro surface this system does not
               serve, so this redirect used to land on the 404 page. */}
-          <Route path="/designpanelpro" element={<Navigate to="/designpro/jobs" replace />} />
-          <Route path="/designpanelpro/premium" element={<Navigate to="/designpro" replace />} />
+          <Route path="/designpanelpro" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
+          <Route path="/designpanelpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/approvemode" element={<ApproveProUnavailable />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/designpanelpro-manager" element={<AdminDesignPanelProManager />} />
@@ -282,7 +293,8 @@ const App = () => {
               consolidated onto /quotes (working action icons + MightyMail
               + inbound). This route just redirects so external links keep
               working. Pricing/branding lives at /admin/quote-pricing. */}
-          {/* Legacy QC page retired — superseded by QC ProductionFlow, which now lives inside /productionflow (QCProductionFlowContainer). */}
+          {/* Legacy QC pages retired. Production Layers on the job page is the
+              one QC surface: it consumes Calls 9-11 and regenerates nothing. */}
           {/* The Content OS status screen. Admin-guarded rather than RequireAuth
               because it reports queue depth, spend and failure counts across
               every brand — operator information, not customer information. */}
@@ -335,7 +347,11 @@ const App = () => {
               keeps old links/bookmarks working. */}
           {/* ApprovePro — shop workbench (split pane: orders list + detail) */}
           <Route path="/approvepro" element={<ApproveProUnavailable />} />
-          <Route path="/designpanelpro-workspace" element={<RequireAuth><DesignPanelProWorkspace /></RequireAuth>} />
+          {/* The workspace listed designs out of color_visualizations and their
+              built panels out of production_flow_assets. Both are RestylePro
+              tables; the jobs list is the standalone equivalent and is keyed by
+              the generationId everything downstream already uses. */}
+          <Route path="/designpanelpro-workspace" element={<Navigate to="/designpro/jobs" replace />} />
           <Route path="/production-proof" element={<RequireAdmin><ProductionProof /></RequireAdmin>} />
           {/* Multi-window render queue */}
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

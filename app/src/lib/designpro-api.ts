@@ -351,11 +351,6 @@ export type RegenerateResult = {
   state: string;
 };
 
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 async function sha256File(file: File): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -403,36 +398,34 @@ export async function uploadRevisionAsset(
 }
 
 /**
- * The idempotency key is not free-form: the gateway recomputes
- * `calls17:<generationId>:<recipientIdentityHash>:<sha256(orderNumber)>` and
- * refuses anything else, so it is derived here rather than invented. prompt,
- * model, seed and camera angle are server-owned and rejected if sent — the
- * operator supplies the brief and the vehicle, the frozen view contract in the
- * runtime supplies the angles.
+ * DESIGN FIRST. A customer designing a wrap does not have an order yet, and
+ * until v2 this call demanded one: an orderNumber, a WrapBox recipient hash,
+ * and — in the database — an already-confirmed operator/customer/order binding.
+ * That is fulfillment identity, and it does not exist while somebody is still
+ * deciding what their wrap should look like. It binds when they buy.
+ *
+ * No idempotency key is sent. The database derives it from the canonical hash
+ * of the stored jsonb, and this process cannot reproduce that: Postgres orders
+ * jsonb keys, JavaScript preserves insertion order. A key computed here would
+ * be a guess, and the only thing a guess adds is a way to be wrong.
+ *
+ * prompt, model, seed and camera angle remain server-owned and are rejected if
+ * sent — the customer supplies the brief and the vehicle, the frozen view
+ * contract in the runtime supplies the angles.
  */
 export async function createGenerationRequest(options: {
-  delivery: FrozenDeliveryRecipient;
   vehicle: GenerationVehicle;
   brief: GenerationBrief;
+  designName: string;
   generationId?: string;
 }): Promise<GenerationRequestState> {
   const generationId = (options.generationId || crypto.randomUUID()).toLowerCase();
-  const { orderNumber, recipientIdentityHash, designName } = options.delivery;
-  const idempotencyKey = `calls17:${generationId}:${recipientIdentityHash}:${await sha256Hex(orderNumber)}`;
 
   const input: Record<string, unknown> = {
-    contractVersion: "designpro.calls-1-7-input.v1",
-    orderNumber,
+    contractVersion: "designpro.calls-1-7-input.v2",
     vehicle: options.vehicle,
-    // Exactly the three keys the delivery contract allows; anything else is a
-    // hard 400 at the gateway and again in the database.
-    delivery: {
-      contractVersion: "designpro.wrapbox-recipient.v1",
-      orderNumber,
-      recipientIdentityHash,
-    },
     brief: options.brief.brief,
-    designName,
+    designName: options.designName,
   };
   if (options.brief.businessName) input.businessName = options.brief.businessName;
   if (options.brief.industry) input.industry = options.brief.industry;
@@ -462,7 +455,7 @@ export async function createGenerationRequest(options: {
 
   return request<GenerationRequestState>("/generation/requests", {
     method: "POST",
-    body: JSON.stringify({ generationId, idempotencyKey, input }),
+    body: JSON.stringify({ generationId, input }),
   });
 }
 

@@ -108,30 +108,21 @@ export const supabase = createClient<Database>(
 
 const _originalInvoke = supabase.functions.invoke.bind(supabase.functions);
 
-const RENDER_FN_TO_TOOL: Record<string, string> = {
-  'generate-color-render': 'colorpro',
-  'design-panel-ai-generate': 'designpro',
-};
+// THE RENDER-QUEUE AND BUSY-FLAG TABLES ARE EMPTY ON PURPOSE.
+//
+// They listed the RestylePro production functions -- design-panel-ai-generate,
+// generate-2d-proof, panelize-artboard, activate-print-worker and the rest --
+// so the interceptor could hold a busy flag across a browser-conducted render
+// and write render_queue rows for it. Nothing on the customer path invokes any
+// of them any more: the runtime owns generation, and progress is reported from
+// the request's own state rather than inferred from an in-flight fetch.
+//
+// Kept as empty tables rather than deleted so the interceptor's shape is
+// unchanged and a tool that still queues its own renders can register itself
+// here without the wiring having to be rebuilt.
+const RENDER_FN_TO_TOOL: Record<string, string> = {};
 
-// BACK-HALF pipeline functions that must ALSO hold the app-busy flag (but are
-// NOT render-queue functions). Root cause of "kicked me out mid proof/panels"
-// (Trish 2026-07-24): DeployVersionWatcher reloads on a new deploy whenever the
-// app looks idle — and the busy flag only covered the two hero-render functions,
-// so the entire multi-minute 2D-proof + panel-build phase was reload-bait. Any
-// in-flight call from this set now defers the reload just like a render does.
-const BUSY_FNS = new Set([
-  'generate-2d-proof',
-  'panelizer-step-validate',
-  'panel-artboard-generator',
-  'panelize-artboard',
-  'panel-pro-extract',
-  'save-production-panels',
-  'auto-generate-artboard',
-  'designpro-persist-assets',
-  'extract-logo-elements',
-  'revise-render',
-  'activate-print-worker',
-]);
+const BUSY_FNS = new Set<string>();
 
 const QUEUE_WINDOW_KEY = 'restylepro_window_id';
 function getQueueWindowId(): string {
@@ -151,7 +142,7 @@ function getQueueWindowId(): string {
 
 function inferTool(fnName: string, body: any): string {
   const base = RENDER_FN_TO_TOOL[fnName] ?? fnName;
-  if (fnName !== 'design-panel-ai-generate') return base;
+  if (!(fnName in RENDER_FN_TO_TOOL)) return base;
   // design-panel-ai-generate is shared by DesignPro and FadeWraps; sniff body
   const mode = (body?.modeType || body?.mode || body?.tool || '').toString().toLowerCase();
   if (mode.includes('fade')) return 'fadewraps';

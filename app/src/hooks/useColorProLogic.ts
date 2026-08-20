@@ -9,7 +9,8 @@ import { loadAllVinylSwatches, convertVinylSwatchToInkFusionColor, type VinylSwa
 import { toast } from "@/hooks/use-toast";
 import { withTimeout, VIEW_RENDER_TIMEOUT_MS } from "@/lib/invokeWithTimeout";
 import { generatePassengerMirror, designLikelyHasText, uploadMirrorToStorage, fixMirrorText } from "@/utils/passenger-mirror";
-import { type VehicleType, getRenderFunctionForType, isNonStandardVehicle } from "@/components/tools/VehicleTypeSelector";
+import { type VehicleType, isNonStandardVehicle } from "@/components/tools/VehicleTypeSelector";
+import { getRenderFunctionForType } from "@/components/tools/legacyRenderFunctions";
 import type { VehicleSpecsPreview } from "@/components/tools/NonStandardVehicleWarning";
 
 const STORAGE_KEY = "colorpro-generations";

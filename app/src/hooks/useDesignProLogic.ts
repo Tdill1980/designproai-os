@@ -9,7 +9,8 @@ import { saveArtboardUrlToViz } from "@/lib/save-artboard-url";
 import { FadeStyleId } from "@/lib/fadeStyles";
 import { withTimeout, VIEW_RENDER_TIMEOUT_MS } from "@/lib/invokeWithTimeout";
 import type { CoverageType } from "@/components/tools/CoverageSelector";
-import { type VehicleType, getRenderFunctionForType } from "@/components/tools/VehicleTypeSelector";
+import { type VehicleType } from "@/components/tools/VehicleTypeSelector";
+import { getRenderFunctionForType } from "@/components/tools/legacyRenderFunctions";
 import type { VehicleSpecsPreview } from "@/components/tools/NonStandardVehicleWarning";
 // INSTANT_MIRROR disabled — passenger side now always uses AI render
 

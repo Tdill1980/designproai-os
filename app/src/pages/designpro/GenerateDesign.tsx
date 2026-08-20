@@ -313,7 +313,11 @@ export default function GenerateDesign() {
       setProgress("Queueing the seven-view generation…");
       setRequest(
         await dpApi.createGenerationRequest({
-          delivery,
+          // The recipient registered above binds fulfillment, not generation.
+          // Calls 1-7 no longer take it: a design is created before anyone
+          // knows where it ships. This operator page still registers it up
+          // front because an operator working an order already has it.
+          designName: delivery.designName,
           vehicle: {
             year: String(form.get("year") || "").trim(),
             make: String(form.get("make") || "").trim(),

@@ -29,52 +29,6 @@ export function isNonStandardVehicle(type: VehicleType): boolean {
   return NON_STANDARD_TYPES.includes(type);
 }
 
-/**
- * Maps a vehicle type to the edge function that should handle its renders.
- * Cars/trucks/SUVs/vans go to the locked golden pipeline. Everything else
- * routes to a dedicated render-<type> function that does spec lookup +
- * class-aware rendering + validation flagging.
- */
-export function getRenderFunctionForType(type: VehicleType): string {
-  switch (type) {
-    case "motorcycle":
-      return "render-motorcycle";
-    case "boat":
-      return "render-boat";
-    case "bus":
-      return "render-bus";
-    case "rv":
-      return "render-rv";
-    case "trailer":
-      return "render-trailer";
-    default:
-      return "generate-color-render";
-  }
-}
-
-/**
- * Maps a vehicle type to the DesignPro (DesignIQ) edge function.
- * Cars/trucks/SUVs/vans stay on design-panel-ai-generate.
- * Non-standard vehicles route to designpro-<type> which builds
- * vehicle-class-aware prompts (e.g. knows about hulls, fairings, etc.).
- */
-export function getDesignProFunctionForType(type: VehicleType): string {
-  switch (type) {
-    case "motorcycle":
-      return "designpro-motorcycle";
-    case "boat":
-      return "designpro-boat";
-    case "bus":
-      return "designpro-bus";
-    case "rv":
-      return "designpro-rv";
-    case "trailer":
-      return "designpro-trailer";
-    default:
-      return "design-panel-ai-generate";
-  }
-}
-
 interface VehicleTypeOption {
   id: VehicleType;
   label: string;
@@ -130,3 +84,13 @@ export const VehicleTypeSelector = ({ value, onChange, className }: VehicleTypeS
     </div>
   );
 };
+
+/**
+ * The per-type render-function resolvers moved to legacyRenderFunctions.ts.
+ *
+ * They return the names of RestylePro edge functions for a browser to invoke.
+ * Calls 1-7 are one server-owned request now -- the vehicle type travels in it
+ * as data, and which engine renders which class is the runtime's decision -- so
+ * the DesignPro path must not be able to reach those names at all. The legacy
+ * tools that still conduct their own renders import them from their own module.
+ */

@@ -15,7 +15,6 @@ import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { useFreemiumLimits } from "@/hooks/useFreemiumLimits";
 import { useDesignPanelProLogic } from "@/hooks/useDesignPanelProLogic";
 import { MobileZoomImageModal } from "@/components/visualize/MobileZoomImageModal";
-import { ProfessionalProofSheet } from "@/components/tools/ProfessionalProofSheet";
 import { RenderOverlay } from "@/components/tools/RenderOverlay";
 import { DesignIDBadge } from "@/components/DesignIDBadge";
 import { RenderQualityRating } from "@/components/RenderQualityRating";
@@ -78,7 +77,6 @@ import {
   Plus,
 } from "lucide-react";
 import { useCutFiles } from "@/hooks/useCutFiles";
-import { ProductionPackDialog } from "@/components/designpanelpro/ProductionPackDialog";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { PersonaPipelineProgress } from "@/components/designpanelpro/PersonaPipelineProgress";
 import { DesignPipelineProgress, type PipelineStage } from "@/components/designpanelpro/DesignPipelineProgress";
@@ -286,33 +284,15 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // color_visualizations.admin_notes.flat_proof_url → the linked
   // designiq_generations.flat_proof_url. The inline card renders
   // `flatProofUrl || storedProofUrl`, so the proof shows for past jobs too.
-  const proofLookupId = pushedRender?.visualizationId || null;
-  const { data: storedProofUrl } = useQuery({
-    queryKey: ["designpro-stored-2dproof", proofLookupId],
-    enabled: !!proofLookupId,
-    queryFn: async () => {
-      const { data: cv } = await (supabase as any)
-        .from("color_visualizations")
-        .select("admin_notes")
-        .eq("id", proofLookupId)
-        .maybeSingle();
-      let notes: any = {};
-      try {
-        notes = cv?.admin_notes
-          ? (typeof cv.admin_notes === "string" ? JSON.parse(cv.admin_notes) : cv.admin_notes)
-          : {};
-      } catch { /* not JSON */ }
-      if (notes?.flat_proof_url) return notes.flat_proof_url as string;
-      const genId = notes?.designiq_generation_id || proofLookupId;
-      const { data: g } = await (supabase as any)
-        .from("designiq_generations")
-        .select("flat_proof_url")
-        .eq("id", genId)
-        .maybeSingle();
-      return (g?.flat_proof_url as string) || null;
-    },
-  });
-  const proofToShow = flatProofUrl || storedProofUrl || null;
+  // THE 2D PROOF COMES FROM CALL 8, OR IT IS NOT SHOWN.
+  //
+  // This used to fall back to a stored URL recovered from
+  // color_visualizations.admin_notes and then designiq_generations. Two
+  // producers for one proof means the customer can be shown a sheet the
+  // standalone runtime never made and cannot re-issue, with nothing on screen
+  // to say which one it is. `flatProofUrl` is the Call 8 artifact selected by
+  // role; absent it, the honest state is that the proof is still building.
+  const proofToShow = flatProofUrl || null;
 
   // --- Feature flag: persona pipeline ---
   const [searchParams] = useSearchParams();
@@ -371,7 +351,6 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const [socialModalOpen, setSocialModalOpen] = useState(false);
   const [paywallModalOpen, setPaywallModalOpen] = useState(false);
   const [isSavingDesign, setIsSavingDesign] = useState(false);
-  const [productionPackOpen, setProductionPackOpen] = useState(false);
   const [sendForApprovalOpen, setSendForApprovalOpen] = useState(false);
 
   // --- Try-for-$25 modal state ---
@@ -910,53 +889,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     }
   }, [pushedRender]);
 
-  // --- Demo preload: ?demo=<visualization_id> loads existing render instantly ---
+  // THE ?demo= PRELOAD IS GONE.
+  //
+  // It hydrated the whole page from a color_visualizations row -- hero, views,
+  // vehicle, design name -- so a link could put a design on screen that the
+  // standalone runtime has no record of. Everything downstream then keyed off
+  // an id Calls 8-12 cannot resolve. A design is opened by its generationId
+  // from the jobs list, which is the only id that means anything here.
   const demoInitialized = useRef(false);
-  useEffect(() => {
-    if (demoInitialized.current || pushedRender) return;
-    const demoId = searchParams.get("demo");
-    if (!demoId) return;
-    demoInitialized.current = true;
-
-    (async () => {
-      try {
-        const { data: viz, error } = await supabase
-          .from("color_visualizations")
-          .select("*")
-          .eq("id", demoId)
-          .maybeSingle();
-
-        if (error || !viz) {
-          console.error("[Demo] Failed to load demo render:", error?.message || "not found");
-          toast({ title: "Demo render not found", variant: "destructive" });
-          return;
-        }
-
-        const renderUrls = (viz.render_urls || {}) as Record<string, string>;
-        const heroUrl = renderUrls["side"] || renderUrls["driver-side"] || Object.values(renderUrls)[0] || "";
-
-        // Pre-populate vehicle fields
-        if (viz.vehicle_year) setYear(String(viz.vehicle_year));
-        if (viz.vehicle_make) setMake(viz.vehicle_make);
-        if (viz.vehicle_model) setModel(viz.vehicle_model);
-        setVehicleInputOpen(false);
-
-        // Set hero render
-        setPushedImageUrl(heroUrl);
-
-        // Build all views
-        const views = Object.entries(renderUrls)
-          .filter(([, url]) => url && typeof url === "string")
-          .map(([type, url]) => ({ type, url }));
-        setPushedAllViews(views);
-
-        toast({ title: "Demo render loaded", description: `${viz.vehicle_year} ${viz.vehicle_make} ${viz.vehicle_model}` });
-        console.log(`[Demo] Loaded visualization ${demoId} with ${views.length} views`);
-      } catch (err: any) {
-        console.error("[Demo] Error:", err);
-      }
-    })();
-  }, [searchParams]);
 
   // --- ACE welcome modal ---
   const [aceWelcomeOpen, setAceWelcomeOpen] = useState(() => {
@@ -1060,81 +1000,15 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     prevPanelRef.current = selectedPanel;
   }, [selectedPanel, isGeneratingPanel]);
 
-  // Update tracking record when render completes - persists hero_render_url
-  useEffect(() => {
-    if (!generatedImageUrl || !generationIdRef.current || isGenerating) return;
-    const genId = generationIdRef.current;
+  // NO CLIENT-SIDE TRACKING WRITES.
+  //
+  // Two effects here mirrored the hero and then the whole view set into
+  // designiq_generations and color_visualizations as the browser produced them.
+  // The runtime persists views when it produces them, under the generationId
+  // that names the design everywhere downstream. A browser writing the same
+  // facts into different tables gives one design two records that can disagree
+  // -- and the one the customer is looking at is not the one Calls 8-12 read.
 
-    (async () => {
-      try {
-        const { error: updateError } = await supabase
-          .from("designiq_generations")
-          .update({
-            hero_render_url: generatedImageUrl,
-            generation_status: "render_complete",
-            render_completed_at: new Date().toISOString(),
-          })
-          .eq("id", genId);
-
-        if (updateError) {
-          console.error("[DesignIQ Tracking] Failed to update hero_render_url:", updateError.message);
-        }
-      } catch (err) {
-        console.error("[DesignIQ Tracking] Error updating designiq_generations:", err);
-      }
-    })();
-  }, [generatedImageUrl, isGenerating]);
-
-  // Sync all-views render_urls back to designiq_generations AND color_visualizations
-  useEffect(() => {
-    if (!allViews || allViews.length < 2 || !generationIdRef.current || isGeneratingAdditional) return;
-    const genId = generationIdRef.current;
-    const vizId = visualizationId;
-
-    (async () => {
-      try {
-        // Build render_urls map from allViews array: [{type, url}] → {type: url}
-        const renderUrlsMap: Record<string, string> = {};
-        for (const view of allViews) {
-          if (view.type && view.url) renderUrlsMap[view.type] = view.url;
-        }
-
-        const { error } = await supabase
-          .from("designiq_generations")
-          .update({
-            render_urls: renderUrlsMap,
-            generation_status: "all_views",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", genId);
-
-        if (error) {
-          console.error("[DesignIQ Tracking] Failed to sync render_urls:", error.message);
-        } else {
-          console.log(`[DesignIQ Tracking] Synced ${Object.keys(renderUrlsMap).length} views to designiq_generations`);
-        }
-
-        // Also sync render_urls to the linked color_visualizations record
-        if (vizId) {
-          const { error: vizError } = await supabase
-            .from("color_visualizations")
-            .update({
-              render_urls: renderUrlsMap,
-              generation_status: "completed",
-            })
-            .eq("id", vizId);
-
-          if (vizError) {
-            console.error("[DesignIQ Tracking] Failed to sync render_urls to color_visualizations:", vizError.message);
-          } else {
-            console.log(`[DesignIQ Tracking] Synced ${Object.keys(renderUrlsMap).length} views to color_visualizations`);
-          }
-        }
-      } catch (err) {
-        console.error("[DesignIQ Tracking] Error syncing render_urls:", err);
-      }
-    })();
-  }, [allViews, isGeneratingAdditional]);
 
   const validateYear = useCallback(() => {
     if (!year || year.trim() === "") {
@@ -1445,300 +1319,34 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       return;
     }
 
-    // ── EXISTING PIPELINE ─────────────────────────────────────
-    // V1 direct render: AI generates the Layer-1 background render in one step.
+    // ── CALLS 1-7 ─────────────────────────────────────────────
     //
-    // PARALLEL PARSE: the AI brief parse (designpro-parse-brief) only needs the
-    // customer's text — never the render — so we kick it off NOW and let it run
-    // CONCURRENTLY with the background render. We await it after the render
-    // returns (once we have the generation_id to save the overlays against), so
-    // the parse latency is hidden behind the render instead of stacked after it.
-    // BACK-OF-HOUSE: the customer types ONE brief — we never make them sort text
-    // into a separate box. The Layer-2 source is built from the STRUCTURED brand
-    // fields (company name first → logo piece, then phone, then explicit Layer-2
-    // callouts); we deliberately do NOT feed the scene paragraph to the
-    // line-parser, which would turn the first scene sentence into a bogus logo.
-    const uploadedLogos = params.textLayerVisionBoardImages
-      ?.filter((v) => v.storageUrl)
-      .map((v) => ({ url: v.storageUrl as string, name: v.slotLabel }));
-    const hasUpload = !!uploadedLogos?.length;
-    const layer2Source = [
-      // line 0 → logo lockup — SKIP when the customer uploaded a real logo, so the
-      // AI never invents a competing logo from the company name (the "Srain Bros"
-      // hallucination). Phone/callouts still separate as transparent text.
-      hasUpload ? "" : params.companyName?.trim(),
-      params.phone?.trim(),             // → phone text
-      params.textLayerPrompt?.trim(),   // any explicit callouts (owner/license/badge)
-    ].filter(Boolean).join("\n");
-    // Fires whenever there's a brief and no uploaded logo set. AI parse, with a
-    // deterministic line-split as the fallback.
-    // Run the Layer-2 text-layer pass whenever there's a brief — EVEN if a logo
-    // was uploaded. (Previously `&& !hasUpload` skipped parse entirely on any
-    // upload, so phone/website/text never separated → overlay_pngs stayed empty.)
-    // The uploaded logo is ALSO seeded as its own node below, so you get both.
-    const shouldParse = !!(params.prompt?.trim() || layer2Source);
-    const piecesPromise: Promise<any[]> = shouldParse
-      ? (async () => {
-          let pieces = layer2Source ? parseTextBriefToPieces(layer2Source) : [];
-          try {
-            const { data: parsed } = await renderClient.functions.invoke(
-              "designpro-parse-brief",
-              {
-                body: {
-                  prompt: params.prompt,
-                  // LOGO-WINS: when the customer uploaded their own logo, that logo is
-                  // the brand mark. Don't hand the company name to the brief parser —
-                  // otherwise it can re-emit a company-name text/logo piece that
-                  // competes with the uploaded logo. (Phone/website still parse.)
-                  companyName: hasUpload ? undefined : params.companyName,
-                  phone: params.phone,
-                  textLayerPrompt: params.textLayerPrompt,
-                  industry: params.industryType,
-                },
-              },
-            );
-            if (Array.isArray(parsed?.pieces) && parsed.pieces.length) pieces = parsed.pieces;
-          } catch (_) { /* keep the line-split fallback */ }
-          return pieces;
-        })()
-      : Promise.resolve([]);
-
-    // ── Layer 2 (logo + lettering) generated IN PARALLEL with the background ──
-    // Kick the transparent-PNG logo/text image generation NOW so it runs
-    // concurrently with the render below and adds NO time to the design. It needs
-    // only the parsed pieces + brief + colors (not the generation id) — seeding
-    // and the SEPARATE Layer-2 persistence happen after the render resolves
-    // genId. brief themes the logo to the business (courier → motion/delivery);
-    // colors prefer strict hex, but free-text ("blue, red, green") rides along as
-    // colorBrief so the logo still uses the chosen colors.
-    const hexColors = (params.brandColors ? [params.brandColors].flat() : [])
-      .flatMap((c) => (typeof c === "string" ? c.split(/[,\s]+/) : []))
-      .filter((c) => /^#[0-9a-fA-F]{6}$/.test(c))
-      .slice(0, 3);
-    const colorBrief = !hexColors.length
-      ? (params.brandColors ? [params.brandColors].flat() : [])
-          .filter((c) => typeof c === "string" && c.trim())
-          .join(", ")
-          .slice(0, 200)
-      : "";
-    const overlaysPromise: Promise<any[] | null> = shouldParse
-      ? (async () => {
-          const rawPieces = await piecesPromise;
-          // FINAL on-vehicle-text guard (defense in depth, regardless of source).
-          // The design brief was leaking into a rendered text layer ("I want
-          // something eye catching for my pet grooming van…"). Real on-vehicle copy
-          // is SHORT (≤45 chars) and never contains design-direction language — so
-          // drop anything that looks like the brief before it becomes a PNG. Catches
-          // leaks from parse-brief OR the client-side line-split fallback.
-          const BRIEF_NOISE = /\b(i want|make it|give it|pro look|full wrap|commercial for|eye[- ]?catching|cartoons?|paw prints|real big|so people|cute|have it say|wrap that|something)\b/i;
-          const filtered = (rawPieces || []).filter(
-            (p: any) =>
-              p && typeof p.text === "string" &&
-              p.text.trim().length > 0 &&
-              p.text.trim().length <= 45 &&
-              !BRIEF_NOISE.test(p.text),
-          );
-          // RESTYLE: add the split-out hero subject as a movable Layer-2 graphic
-          // overlay (text-layer-generate designs it as a transparent mascot/graphic).
-          const pieces = restyleFocalText
-            ? [...filtered, { id: "focal", kind: "logo", text: restyleFocalText, role: "graphic" }]
-            : filtered;
-          if (!pieces.length) return null; // purely artistic brief → no Layer-2 overlays
-          // RESTORED: generate the transparent high-res PNG logo/text layers. These
-          // are the editable Layer-2 overlays. (The earlier "kill" left customers
-          // with NO logo because Lift-and-Float — its intended replacement — never
-          // reliably fired. Keep the generator until lift is proven on production;
-          // they can coexist, and lift can supersede it when it lands.)
-          const { data, error } = await renderClient.functions.invoke(
-            "designpro-text-layer-generate",
-            {
-              body: {
-                // LOGO-WINS: an uploaded logo is the brand mark — never regenerate a
-                // company-name logo/text layer to compete with it. companyName is
-                // still saved for records; it's just not turned into wrap artwork.
-                companyName: hasUpload ? undefined : params.companyName,
-                industry: params.industryType,
-                brief: params.prompt,
-                ...(hexColors.length ? { brandColors: hexColors } : {}),
-                ...(colorBrief ? { colorBrief } : {}),
-                pieces,
-              },
-            },
-          );
-          if (error || !data?.objects?.length) return null;
-          return data.objects;
-        })().catch((e) => {
-          console.warn("[DesignIQ] Layer 2 parallel generation failed (non-fatal):", e);
-          return null;
-        })
-      : Promise.resolve(null);
-
+    // One request. The runtime renders the seven views and hands off to Call 8.
+    //
+    // WHAT USED TO RUN HERE, AND WHY IT DOES NOT. A LayerLiftIQ pass ran
+    // alongside the render: designpro-parse-brief split the customer's brief
+    // into logo and text pieces, designpro-text-layer-generate drew each one on
+    // transparent RGBA, designpro-clean-views produced logo-free views, and
+    // designpro-persist-assets wrote all of it into design_generation_assets as
+    // overlay_pngs for the Konva canvas to seed from.
+    //
+    // Every one of those is the RestylePro production backend, invoked from the
+    // customer's browser, writing a design's assets into a table the standalone
+    // runtime neither owns nor reads. That alone ends it. But the shape is also
+    // the thing the frozen seam forbids: Calls 1-8 emit one composited raster
+    // per surface and there is no pre-branding base artwork, so a separately
+    // authored overlay set is separability that does not exist -- and once it is
+    // on screen beside the panels, somebody downstream treats it as the layer
+    // the design can be rebuilt from.
+    //
+    // The uploaded logo is not lost. It goes into the generation request as a
+    // verified asset, so A.C.E. composes the real logo into the design instead
+    // of the browser pasting it on afterwards.
     setPipelineStage("rendering");
     scrollToPreview();
     const result = await generateFromPrompt(enrichedParams, { year: effectiveYear, make: effectiveMake, model: effectiveModel });
     generationIdRef.current = result?.generationId || null;
-    // Hero is back — the remaining work (layer separation, asset persist) is the
-    // "finishing" stage. Only advance the indicator when the render actually
-    // succeeded; a failed render falls through to the error state below.
     if (result && !result.error) setPipelineStage("finishing");
-
-    // Two-layer flow: stash Layer 2 (text & logo) so RevisionStudio can seed
-    // it as editable, auto-placed objects once this design opens there.
-    if (generationIdRef.current) {
-      const genId = generationIdRef.current;
-
-      // Seed immediately with whatever we have so the handoff exists even if
-      // AI text generation is slow or fails.
-      setLayer2Handoff(genId, { textPrompt: params.textLayerPrompt, logos: uploadedLogos });
-
-      // Persist the BASE row FIRST (creates the iteration-0 row + background) and
-      // keep the promise so EVERY other save for this generation CHAINS off it.
-      // Previously the base + overlay saves raced as two concurrent INSERTs of the
-      // same generation row → row-lock contention → a 160s hang → 504 → the logo/
-      // text overlays never persisted. Serializing lands the base INSERT first,
-      // then overlays MERGE via UPDATE on the existing row.
-      const basePersistPromise: Promise<void> = (async () => {
-        try {
-          const { data: { user: authedUser } } = await supabase.auth.getUser();
-          await renderClient.functions.invoke("designpro-persist-assets", {
-            body: {
-              generation_id: genId,
-              background_url: result?.renderUrl || null,
-              user_id: authedUser?.id || null,
-              source: "designpro",
-              // Save the customer's original prompt with the generation so it can
-              // be shown in Revision Studio + the Admin page for QC validation.
-              source_prompt: params.textLayerPrompt
-                ? `${params.prompt || ""}\n[Layer 2] ${params.textLayerPrompt}`
-                : (params.prompt || null),
-            },
-          });
-        } catch (e) {
-          console.warn("[DesignIQ] persist assets (base) failed (non-fatal):", e);
-        }
-      })();
-
-      // BACK-OF-HOUSE STRIP: once the base row lands, strip the baked branding off
-      // the hero with the PROVEN ClipDrop engine — server-side via designpro-
-      // clean-views (service-role), the reliable way (NOT the flaky frontend
-      // effect). It detects the baked logo, heals it off → clean V1 background +
-      // view_urls.side. The loader polls view_urls and floors the canvas on the
-      // clean base; the golden-config PNG logos remain the editable branding on
-      // top. Deterministic trigger (genId is known here) — no useEffect race.
-      // FAITHFUL-PIPELINE FIX (RP-100974, overlay_pngs=0): the back-of-house strip is
-      // DISABLED. designpro-clean-views plaid-inpaints the area where it erases baked
-      // text — that plaid band IS the smear. Keep the design baked into the render, no
-      // scrub, no lifted layers — the last-week pipeline the good job proves.
-      const heroUrlForStrip = result?.renderUrl || null;
-      if (false && heroUrlForStrip) {
-        void (async () => {
-          try {
-            await basePersistPromise; // iteration-0 row must exist first
-            const { data: { user: au } } = await supabase.auth.getUser();
-            await renderClient.functions.invoke("designpro-clean-views", {
-              body: {
-                generation_id: genId,
-                view_urls: { side: heroUrlForStrip },
-                user_id: au?.id || null,
-                persist: true,
-              },
-            });
-          } catch (e) {
-            console.warn("[DesignIQ] back-of-house strip failed (non-fatal):", e);
-          }
-        })();
-      }
-
-      // FAITHFUL UPLOAD: the customer's OWN uploaded logo(s) → seed them as
-      // draggable Layer-2 nodes on the canvas AND persist them, so the uploaded
-      // logo actually appears and is movable (no AI re-inventing the branding).
-      if (hasUpload && uploadedLogos?.length) {
-        setLayerLiftElements(
-          uploadedLogos.map((lg, i): OverlayElement => ({
-            id: `upload-${i}`,
-            url: lg.url,
-            x: 280,
-            y: 220 + i * 150,
-            text: lg.name,
-            isLogo: true,
-          })),
-        );
-        // Chain off the base row so this MERGES (UPDATE) instead of racing it.
-        basePersistPromise
-          .then(() =>
-            renderClient.functions.invoke("designpro-persist-assets", {
-              body: {
-                generation_id: genId,
-                overlay_pngs: uploadedLogos.map((lg, i) => ({ id: `upload-${i}`, kind: "logo", role: lg.name, url: lg.url })),
-              },
-            }),
-          )
-          .catch((e) => console.warn("[DesignIQ] persist uploaded logos failed (non-fatal):", e));
-      }
-
-      // LAYER 2 OVERLAYS — the logo/text image generation has been running IN
-      // PARALLEL with the background render (overlaysPromise, kicked above), so it
-      // adds no time. Consume it now that genId exists: seed the canvas and
-      // persist Layer 2 SEPARATELY from Layer 1 on the same generation row.
-      // Fire-and-forget: never blocks the render.
-      if (shouldParse) {
-        (async () => {
-          try {
-            const objects = await overlaysPromise;
-            if (!objects?.length) return; // purely artistic brief or gen failed
-            setLayer2Handoff(genId, {
-              textPrompt: params.textLayerPrompt,
-              logos: objects.map((o: any) => ({ url: o.imageUrl, name: o.role || o.text })),
-            });
-            // Seed the LayerLiftIQ canvas: the customer's uploaded logo FIRST (so it
-            // is never dropped by the AI text pass), then AI transparent text nodes.
-            const uploadedNodes: OverlayElement[] = (uploadedLogos || []).map((lg, i): OverlayElement => ({
-              id: `upload-${i}`, url: lg.url, x: 280, y: 220 + i * 150, text: lg.name, isLogo: true,
-            }));
-            setLayerLiftElements([
-              ...uploadedNodes,
-              ...objects.map((o: any, i: number): OverlayElement => ({
-                id: o.id || `l2-${i}`,
-                url: o.imageUrl,
-                x: 280,
-                y: 220 + (uploadedNodes.length + i) * 150,
-                text: o.text || o.role,
-                isLogo: o.kind === "logo",
-              })),
-            ]);
-            // Phase 5: persist the separated transparent overlay PNGs onto the
-            // generation's asset row (Layer 2, kept apart from Layer 1). Wait for
-            // the base row to exist first so this MERGES rather than racing it.
-            await basePersistPromise;
-            renderClient.functions
-              .invoke("designpro-persist-assets", {
-                body: {
-                  generation_id: genId,
-                  // ONE FAITHFUL SET: the customer's uploaded logo + the AI
-                  // transparent text — persisted TOGETHER. persist sets overlay_pngs
-                  // wholesale, so we include the uploaded logo here or the AI text
-                  // pass would REPLACE it (losing the real logo).
-                  overlay_pngs: [
-                    ...((uploadedLogos || []).map((lg, i) => ({
-                      id: `upload-${i}`, kind: "logo", role: lg.name, text: lg.name, url: lg.url,
-                    }))),
-                    ...objects.map((o: any) => ({
-                      id: o.id,
-                      kind: o.kind,
-                      role: o.role,
-                      text: o.text,
-                      url: o.imageUrl,
-                    })),
-                  ],
-                },
-              })
-              .catch((e) => console.warn("[DesignIQ] persist assets (overlays) failed (non-fatal):", e));
-          } catch (e) {
-            console.warn("[DesignIQ] Layer 2 AI text generation failed (non-fatal):", e);
-          }
-        })();
-      }
-    }
 
     // generateFromPrompt always resolves. When the edge function throws, the
     // hook sets generationError and returns { error }. Without this check the
@@ -3008,16 +2616,23 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             type="button"
                             onClick={() => {
                               if (allViewsDone) {
-                                // BRIDGE (was a dead scroll): open the canonical
-                                // ProductionPackDialog — the SAME in-app orchestrator
-                                // every other tool page uses (validate → production-
-                                // flow-engine → qc-generate-flat-artboard → slicer →
-                                // production_packs → deploy-to-wrapbox). Previously
-                                // this button only scrolled, so a rendered design on
-                                // /designpro could never reach the Build Production
-                                // Pack sequence.
-                                setProductionPackOpen(true);
-                                document.getElementById("preview-section")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                // THE PACK IS ORDERED ON THE JOB, NOT HERE.
+                                //
+                                // This used to open ProductionPackDialog, which
+                                // sized the vehicle through panelizer-step-validate,
+                                // wrote a panelizer_jobs row and submitted the pack
+                                // through designpro-file-output-api -- the whole
+                                // legacy purchase path, started from the design
+                                // screen. Production Layers on the job page is where
+                                // the pack is bought now: it can only offer the
+                                // button once Calls 9-11 have actually produced a
+                                // verified, production-eligible set, so a customer
+                                // cannot pay for a pack that does not exist.
+                                navigate(
+                                  generationIdRef.current
+                                    ? `/designpro/jobs/${generationIdRef.current}`
+                                    : "/designpro/jobs",
+                                );
                               } else {
                                 toast({
                                   title: `Finish all ${requiredViewCount} design views first`,
@@ -3098,28 +2713,6 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
         promo={tryPromo}
       />
 
-      <ProductionPackDialog
-        open={productionPackOpen}
-        onOpenChange={setProductionPackOpen}
-        render={generatedImageUrl ? {
-          id: generationIdRef.current || "",
-          render_urls: allViews.reduce((acc, v) => ({ ...acc, [v.type]: v.url }), {} as Record<string, string>),
-          vehicle_year: year,
-          vehicle_make: make,
-          vehicle_model: model,
-          vehicle_type: vehicleType,
-          body_text: [
-            lastDesignBriefRef.current,
-            pushedRender?.originalPrompt,
-            designName,
-            selectedPanel?.ai_generated_name,
-            selectedPanel?.name,
-          ].filter(Boolean).join(" "),
-          design_file_name: selectedPanel?.ai_generated_name || selectedPanel?.name,
-          finish_type: selectedFinish,
-        } : null}
-      />
-
       <LoginRequiredModal
         open={showLoginModal}
         onClose={() => setShowLoginModal(false)}
@@ -3146,24 +2739,27 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
         }}
       />
 
+      {/* THE 2D PRODUCTION PROOF IS CALL 8's ARTIFACT, SHOWN FULL SIZE.
+          It used to be ProfessionalProofSheet, which composed a proof sheet in
+          the browser out of the view images -- a second producer of the one
+          document the customer approves and manufacturing is cut from. Two
+          proofs for one design is the failure the whole frozen seam exists to
+          prevent: the sheet on screen would not be the sheet Call 9 read, and
+          nothing would say so. */}
       <Dialog open={showProofSheet} onOpenChange={setShowProofSheet}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-y-auto p-0">
-          <ProfessionalProofSheet
-            views={(() => {
-              const viewLabels: Record<string, string> = { side: 'Driver Side', 'passenger-side': 'Passenger Side', hood_detail: 'Hood', front: 'Front', rear: 'Rear', 'close-up': 'Close-Up', roof: 'Roof' };
-              const order = requiredViewTypes;
-              return order
-                .map(t => allViews.find(v => v.type === t))
-                .filter((v): v is typeof allViews[number] => !!v && !!v.url)
-                .map(v => ({ type: v.type, url: v.url, label: viewLabels[v.type] || v.type }));
-            })()}
-            vehicleYear={year}
-            vehicleMake={make}
-            vehicleModel={model}
-            toolKey="designpanelpro"
-            designName={selectedPanel?.ai_generated_name || selectedPanel?.name}
-            finish={selectedFinish}
-          />
+        <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-y-auto p-0 bg-white">
+          {proofToShow ? (
+            <img
+              src={proofToShow}
+              alt="DesignProAI 2D Production Proof"
+              className="w-full h-auto"
+            />
+          ) : (
+            <div className="p-10 text-center text-sm text-gray-500">
+              The 2D Production Proof is still building. It appears here as soon
+              as Call 8 finishes it for this design.
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -33,6 +33,7 @@ import {
   type WorkflowArtifact,
   type WorkflowStatus,
 } from "@/lib/designpro-api";
+import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
 import type {
   ProductionFlowAssetRow,
   ProductionFlowLogoAsset,
@@ -160,7 +161,13 @@ export function toProductionLayers(input: {
   // at print time.
   if (SURFACE_ORDER.some((surface) => !branded.has(surface))) return null;
 
-  const proof = input.artifacts.find((artifact) => artifact.kind === "flat-proof") || null;
+  // BY ROLE, NOT BY KIND. Call 8 emits seven artifacts of kind "flat-proof":
+  // the six canonical production surfaces and the one customer proof. Taking
+  // the first match made this pack's identity, and the sheet shown to the
+  // customer, depend on the order the gateway happened to return rows in -- and
+  // a manufacturing surface is a real image of the right design, so the wrong
+  // one would have looked entirely correct.
+  const proof = selectCustomerProof(input.artifacts);
   // The proof is what every panel is anchored to, so a pack without one has no
   // identity to publish under and no way to be told apart from a stale set.
   const identity = packIdentity(String(proof?.contentHash || ""));

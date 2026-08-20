@@ -77,9 +77,10 @@ run("white control panel production build", "npm", ["run", "build", "--prefix", 
 // gate rather than failing on a missing directory -- but CI installs it, so
 // the shell cannot regress there unnoticed.
 if (existsSync(resolve(root, "app/node_modules"))) {
+  run("operator shell unit tests", "npm", ["test", "--prefix", "app"]);
   run("operator shell production build", "npm", ["run", "build", "--prefix", "app"]);
 } else {
-  process.stdout.write("\n== operator shell production build (skipped: app/node_modules absent) ==\n");
+  process.stdout.write("\n== operator shell unit tests + production build (skipped: app/node_modules absent) ==\n");
 }
 run("server and archive boundary", "bash", ["ops/validate-package.sh"]);
 

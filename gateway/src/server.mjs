@@ -814,15 +814,59 @@ function generationInputHasServerControls(value, path = []) {
   });
 }
 
+// The design-first Calls 1-7 input. It is the SAME allow-list the database
+// enforces, kept deliberately duplicated rather than inferred: a caller that
+// still sends an order or a recipient is speaking v1, and letting v2 silently
+// ignore those keys is how the design path would quietly reacquire the
+// fulfillment dependency that stopped customers designing anything.
+const CALLS_1_7_V2_KEYS = [
+  "brief", "businessName", "colors", "companyName", "contractVersion",
+  "designName", "industry", "logoAsset", "mode", "phone", "style", "vehicle",
+  "website",
+];
+
+function validatedGenerationRequestV2(body, generationIdValue) {
+  const input = body.input;
+  const extraKeys = Object.keys(input).filter((key) => !CALLS_1_7_V2_KEYS.includes(key));
+  const vehicle = input.vehicle;
+  if (extraKeys.length
+    // Refused, not ignored. This is the whole point of the version bump.
+    || input.orderNumber !== undefined || input.delivery !== undefined
+    || !String(input.brief || "").trim() || String(input.brief).length > 8000
+    || !String(input.designName || "").trim() || String(input.designName).length > 240
+    || (input.mode !== undefined && !["restyle", "commercial"].includes(input.mode))
+    || !vehicle || typeof vehicle !== "object" || Array.isArray(vehicle)
+    || [vehicle.year, vehicle.make, vehicle.model].some((item) => !String(item || "").trim())
+    || !VEHICLE_CLASSES.includes(String(vehicle.type || ""))
+    || generationInputHasServerControls(input)
+    || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
+    throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
+  }
+  // No idempotency key is computed here. The database derives it from the
+  // canonical hash of the stored jsonb, which this process cannot reproduce
+  // byte-for-byte -- Node's key order is insertion order, Postgres's is sorted.
+  // Sending a guess would only create a way to be wrong.
+  return { generationId: generationIdValue, idempotencyKey: null, input };
+}
+
 function validatedGenerationRequest(body) {
-  const exactKeys = ["generationId", "idempotencyKey", "input"];
-  if (!body || typeof body !== "object" || Array.isArray(body)
-    || JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(exactKeys)) {
+  const withKey = ["generationId", "idempotencyKey", "input"];
+  const withoutKey = ["generationId", "input"];
+  const bodyKeys = body && typeof body === "object" && !Array.isArray(body)
+    ? JSON.stringify(Object.keys(body).sort()) : "";
+  if (bodyKeys !== JSON.stringify(withKey) && bodyKeys !== JSON.stringify(withoutKey)) {
     throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
   }
   const generationIdValue = String(body.generationId || "").trim().toLowerCase();
   const idempotencyKey = String(body.idempotencyKey || "");
   const input = body.input;
+  if (!UUID_PATTERN.test(generationIdValue)
+    || !input || typeof input !== "object" || Array.isArray(input)) {
+    throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
+  }
+  if (input.contractVersion === "designpro.calls-1-7-input.v2") {
+    return validatedGenerationRequestV2(body, generationIdValue);
+  }
   const vehicle = input?.vehicle;
   const delivery = input?.delivery;
   const orderNumber = String(input?.orderNumber || "");
@@ -1058,10 +1102,21 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/generation/requests") {
         const request = validatedGenerationRequest(await readBody(req));
+        // A generationId already carrying a different brief is not a bad
+        // request, it is a COLLISION: two designs competing for one name that
+        // every downstream Call 8 proof region and Call 9 panel points back at.
+        // PostgREST reports a raised exception as 400, which reads as "you
+        // typed something wrong" and invites a retry of the same call. 409 says
+        // the truth -- the id is taken, mint a new one.
         const result = await rpc(fetchImpl, token, cfg, "create_designpro_generation_request", {
           p_generation_id: request.generationId,
           p_input: request.input,
           p_idempotency_key: request.idempotencyKey,
+        }).catch((error) => {
+          if (/generation_input_conflict/.test(String(error?.message || ""))) {
+            throw Object.assign(new Error("generation_input_conflict"), { status: 409 });
+          }
+          throw error;
         });
         if (!UUID_PATTERN.test(String(result?.requestId || ""))
           || result?.generationId !== request.generationId

@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered twenty-nine-migration chain', () => {
-  assert.equal(migrationNames.length, 29);
+test('fresh bootstrap contains one ordered thirty-migration chain', () => {
+  assert.equal(migrationNames.length, 30);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -50,7 +50,7 @@ test('fresh bootstrap contains one ordered twenty-nine-migration chain', () => {
       '20260818173000',
       // The purchase gate: Calls 8-11 prepare for free, and the two
       // entitlements decide what fulfillment may spend.
-      '20260818210000',
+      '20260818210000', '20260819180000',
     ],
   );
 });
