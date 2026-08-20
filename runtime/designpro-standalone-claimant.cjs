@@ -3,7 +3,7 @@
 /**
  * Standalone DesignProAI OS claimant.
  *
- * This is the only queue conductor.  Browser code may enqueue work and approve
+ * This is the only queue conductor. Browser code may enqueue work and approve
  * the two explicit human gates, but it cannot execute or complete a stage.
  * Every durable completion is fenced by the database lease and contains
  * byte-hashed evidence persisted in designpro_artifacts.
@@ -22,17 +22,6 @@ const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscal
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
 const { readFileSync } = require("node:fs");
 
-// The face the 2D proof sheet is typeset from.
-//
-// Calls 1-7 author imagery-only creative assets and pin no font, so the design
-// carries none for Call 8 to typeset the proof header and dimension callouts
-// from. buildMasterCycle exposes proofFont for exactly this, and live canary
-// 32043212220 failed proof.build as call8_proof_font_missing without it.
-//
-// This reads a FILE, which is the whole point: opentype-outline.cjs converts
-// glyphs from the exact bytes, and a family name would resolve through
-// fontconfig and substitute silently. The file ships in the runtime image, so
-// the same image renders the same letterforms every time.
 const PROOF_FONT_PATH = process.env.DESIGNPRO_PROOF_FONT_PATH
   || "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 let proofFontCache;
@@ -42,8 +31,6 @@ function proofTypesettingFace() {
     const bytes = readFileSync(PROOF_FONT_PATH);
     proofFontCache = bytes.length ? bytes : null;
   } catch {
-    // Left null so Call 8 raises its own call8_proof_font_missing rather than
-    // this throwing an unrelated ENOENT from a different layer.
     proofFontCache = null;
   }
   return proofFontCache;
@@ -57,11 +44,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const stageLeaseContext = new AsyncLocalStorage();
 const STAGES = Object.freeze([
   "revision.freeze", "manifest.resolve", "proof.build", "panels.build",
-  // Call 11 sits between Call 10 and the PanelPro gate: its de-logoed
-  // duplicates are what that gate validates against vehicle templates.
   "logos.extract", "panels.delogo", "pack.verify", "pack.activate",
-  // The purchase gate leads production. Everything after it is paid work, so
-  // nothing expensive sits ahead of it.
   "await_purchase", "source.verify",
   "await_panelpro_preflight_qc", "enhance.upscale", "output.build", "output.verify",
   "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver",
@@ -72,24 +55,13 @@ const RECEIPTS = Object.freeze([
   "call12.topaz-upscale", "output.verified", "final.human-qc", "stamp", "zip", "wrapbox.delivery",
 ]);
 const ARTIFACT_KINDS = Object.freeze([
-  // "qc-panel" is the Call 11 de-logoed duplicate. It is deliberately NOT
-  // "panel": the branded six stay the only "panel" artifacts, so source.verify's
-  // exactly-six-distinct-surface_key assertion keeps working untouched, and no
-  // downstream consumer can mistake a QC instrument for production artwork.
-  "flat-proof", "panel", "qc-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
+  "flat-proof", "panel", "panel-duplicate", "qc-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
-// The Call 9 rule the database enforces. Each output side manufactures from ITS
-// OWN full-resolution approved surface, anchored to its OWN named region of the
-// approved 2D proof -- never a shared rectangle, never a neighbouring tile,
-// never the driver's artwork reused for the passenger, and never a crop lifted
-// back out of the vehicle-shaped proof raster. The database checks the same
-// thing from its side: sourceRegionHashes must be one per side and all
-// distinct, and it rejects a receipt whose driver and passenger hash alike.
+// Keep the existing database contract literal. Its implementation is now the
+// actual product rule: each output side is extracted from its own exact named
+// region of the approved flattened Call 8 proof. There is no cross-side fallback.
 const PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side";
-// Working resolution for the canonical surfaces. Print resolution is reached by
-// the Topaz enhance stage, exactly as it was before; rendering at print size
-// here would blow the surface byte budget for no gain.
 const SURFACE_PX_PER_INCH = Number(process.env.DESIGNPRO_SURFACE_PPI || 8);
 
 class StageError extends Error {
@@ -186,22 +158,12 @@ async function fingerprintSevenViews(views, sb, tenantValue, revisionId) {
   return identities;
 }
 
-// The Call 8 atlas request builder and its text lock lived here. They authored
-// ONE flat wrap layout that Call 9 then cut six panels out of. That model is
-// retired: each side is now rendered from the canonical Design Master in its
-// own right (designpro-master-cycle.cjs), which is the rule the database has
-// always required of Call 9 -- one-own-surface-region-per-output-side. Nothing
-// may reintroduce a shared atlas as a panel source.
-
 async function resolveGenieManifest(sb, run, stage) {
   const { data: source, error: sourceError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
   if (sourceError || !source || source.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("revision_source_drift", "Immutable revision source is missing or changed", false);
   const views = exactSevenViews(source.snapshot, run.tenant_key, run.revision_id);
   const vehicle = requiredObject(source.snapshot.vehicle, "revision vehicle");
   const make = requiredString(vehicle.make, "vehicle make"); const model = requiredString(vehicle.model, "vehicle model"); const year = Number(vehicle.year);
-  // Legacy designpro_vehicle_dimensions rows do not carry validator identity or
-  // exact six-surface evidence. They are never print authority. Every vehicle,
-  // known or unknown, resolves through the validated Universal GENIE gate.
   const row = await resolveOrQueueUniversalDimensions(sb, vehicle, stage, run.id);
   const dim = (width, height, surfaceKey, sourceAssetValue) => {
     const widthInches = Number(width); const heightInches = Number(height);
@@ -383,40 +345,49 @@ async function complete(sb, stage, run, receiptValue, receiptHash = null, produc
   if (data !== true) throw new StageError("stage_lease_lost", `Lease lost for ${stage.stage_key}`);
 }
 
-/**
- * Open the production workflow for a prepared pack.
- *
- * KEPT, DELIBERATELY. This is the working downstream conductor and it is still
- * the only one -- rebuilding it would be the second fulfillment chain nobody
- * wants. What changed is who calls it. It is no longer invoked by pack.activate
- * merely because preparation finished; the same call now lives in
- * confirm_designpro_purchase, so production opens when a customer pays for this
- * exact prepared pack. The reconciler below still repairs a crash between the
- * payment and the run, which is why both stay.
- */
-// The two products, by the proven identifiers. print_production_pack is
-// deliberately absent: its own source calls it the path that kicks the old
-// re-slice pipeline.
+async function mirrorBleedPanelFromProofRegion(proofBytes, proofRegion, dims) {
+  const x = Math.round(Number(proofRegion.x));
+  const y = Math.round(Number(proofRegion.y));
+  const width = Math.round(Number(proofRegion.w));
+  const height = Math.round(Number(proofRegion.h));
+  if (![x, y, width, height].every(Number.isFinite) || x < 0 || y < 0 || width < 1 || height < 1) {
+    throw new StageError("call9_proof_region_invalid", `${proofRegion.surfaceKey || "surface"} has invalid proof-region geometry`, false);
+  }
+
+  const sourceRegion = await sharp(proofBytes, { limitInputPixels: false })
+    .extract({ left: x, top: y, width, height })
+    .png()
+    .toBuffer();
+  const sourceRegionHash = hashBytes(sourceRegion);
+
+  const trimWidthPx = Math.max(1, Math.round(Number(dims.widthInches) * SURFACE_PX_PER_INCH));
+  const trimHeightPx = Math.max(1, Math.round(Number(dims.heightInches) * SURFACE_PX_PER_INCH));
+  const expectedRatio = trimWidthPx / trimHeightPx;
+  const regionRatio = width / height;
+  const ratioDrift = Math.abs(regionRatio - expectedRatio) / expectedRatio;
+  if (!Number.isFinite(ratioDrift) || ratioDrift > 0.035) {
+    throw new StageError("call9_proof_region_geometry_mismatch",
+      `${proofRegion.surfaceKey || "surface"} proof region aspect ${regionRatio.toFixed(4)} does not match GENIE ${expectedRatio.toFixed(4)}`, false);
+  }
+
+  const trim = await sharp(sourceRegion, { limitInputPixels: false })
+    .resize(trimWidthPx, trimHeightPx, { fit: "fill", kernel: "lanczos3" })
+    .png()
+    .toBuffer();
+  const bleedPx = Math.max(1, Math.round(5 * SURFACE_PX_PER_INCH));
+  const panel = await sharp(trim, { limitInputPixels: false })
+    .extend({ top: bleedPx, right: bleedPx, bottom: bleedPx, left: bleedPx, extendWith: "mirror" })
+    .png()
+    .toBuffer();
+  const meta = await sharp(panel, { limitInputPixels: false }).metadata();
+  if (meta.width !== trimWidthPx + bleedPx * 2 || meta.height !== trimHeightPx + bleedPx * 2) {
+    throw new StageError("call9_panel_geometry_invalid", `${proofRegion.surfaceKey || "surface"} deterministic panel geometry is invalid`, false);
+  }
+  return { panel, sourceRegionHash, pixelWidth: meta.width, pixelHeight: meta.height, trimWidthPx, trimHeightPx, bleedPx };
+}
+
 const PURCHASABLE_PRODUCTS = Object.freeze(["print_pack_entitlement", "logo_pack"]);
 
-/**
- * WHAT A PURCHASE AUTHORIZES, enumerated once.
- *
- * Written here rather than scattered as product checks through every stage,
- * because a rule repeated in six places is six rules. Each stage asks this
- * manifest what it may touch; none of them asks what was bought.
- *
- *   print_pack_entitlement  the six branded panels and the clean duplicates
- *                           PanelPro validates against, their upscale, the
- *                           production outputs, the QC certificate, the ZIP and
- *                           the WrapBox production delivery.
- *   logo_pack               the separated logo and lettering assets, their
- *                           upscale, their QC, and their own delivery.
- *
- * Neither implies the other. A customer who paid $29 for logos has not bought
- * $299 of production files, and the reverse is equally wrong -- so buying both
- * is two entitlements sharing one run, not one bigger purchase.
- */
 function authorizedAssetManifest(paidProducts) {
   const products = [...new Set((paidProducts || []).map(String))].sort();
   const production = products.includes("print_pack_entitlement");
@@ -426,37 +397,23 @@ function authorizedAssetManifest(paidProducts) {
     products,
     productionPackAuthorized: production,
     logoPackAuthorized: logos,
-    // Artifact kinds each stage may read. Absent means UNAUTHORIZED, which is
-    // not the same as missing -- the difference decides whether a stage fails
-    // or completes as inapplicable.
     upscale: Object.freeze([...(production ? ["panel", "qc-panel"] : []), ...(logos ? ["logo"] : [])]),
     output: Object.freeze(production ? ["upscaled-panel"] : []),
-    // The complete production output set is six sides x three formats. A run
-    // that did not buy it must not be asked to prove it; a run that did must
-    // fail closed without it.
     requiredOutputFiles: production ? 18 : 0,
-    // What the humans are asked to check. QC validates the purchased asset
-    // classes and is never handed a class the customer did not buy.
     qcScope: Object.freeze([
       ...(production ? ["production-panels"] : []),
       ...(logos ? ["logo-assets"] : []),
     ]),
-    // What the archive carries. The stamp is in both: it is the QC evidence for
-    // whatever was approved, and each product needs its own.
     zipKinds: Object.freeze([
       ...(production ? ["flat-proof", "panel", "output"] : []),
       ...(logos ? ["logo"] : []),
       "stamp",
     ]),
-    // The seven approved renders are the Production Pack's design proofs. A
-    // Logo Pack buys separated assets, not the design's proof set.
     zipIncludesSourceViews: production,
     delivery: Object.freeze([
       ...(production ? ["output", "stamp", "flat-proof"] : []),
       ...(logos ? ["logo"] : []),
     ]),
-    // What the customer bought, named so WrapBox can tell one from the other
-    // rather than showing an ambiguous single pack.
     deliverables: Object.freeze([
       ...(production ? [{ product: "print_pack_entitlement", label: "Production Pack" }] : []),
       ...(logos ? [{ product: "logo_pack", label: "Logo Pack" }] : []),
@@ -464,12 +421,6 @@ function authorizedAssetManifest(paidProducts) {
   });
 }
 
-/**
- * The frozen manifest for this run, read once from the gate that created it.
- *
- * Every downstream stage asks this rather than asking what was bought. A rule
- * repeated in six stages is six rules, and the sixth is the one that drifts.
- */
 async function readAuthorizedAssets(sb, runId) {
   const gate = await stageOutput(sb, runId, "await_purchase");
   return requiredObject(gate.authorizedAssetManifest, "authorized asset manifest");
@@ -523,9 +474,6 @@ async function withHeavyOutputLease(sb, stage, work) {
     return await work();
   } finally {
     clearInterval(renew);
-    // Do not release here: the caller must still durably complete or fail the
-    // stage. The database stage transition releases the exact slot atomically,
-    // so there is no gap in which a heartbeat can lose the heavy-work fence.
   }
 }
 
@@ -559,11 +507,6 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const { data: revisionSource, error: revisionError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
     if (revisionError || !revisionSource || revisionSource.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("call8_revision_source_drift", "Frozen Call 8 text source changed", false);
     const snapshot = revisionSource.snapshot || {};
-
-    // The customer's total is the manifest's, and it must be the raw sum rounded
-    // once -- never a sum of per-surface figures that have each been rounded
-    // already. At wrap scale those differ, and this is the number that prints on
-    // the signature line of the proof the customer signs.
     const surfaces = manifest.expectedSurfaces || [];
     if (surfaces.length !== SURFACE_KEYS.length) throw new StageError("call8_surface_set_invalid", "Exactly six production surfaces are required", false);
     const rawTotalSqFt = round2(surfaces.reduce((total, item) => total + Number(item.widthInches) * Number(item.heightInches), 0) / 144);
@@ -571,11 +514,6 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       throw new StageError("genie_total_square_feet_mismatch", "GENIE total square footage does not match raw per-surface dimensions", false);
     }
 
-    // THE CANONICAL CHAIN. The Design Master is authored from the frozen
-    // snapshot and the bound manifest, six surfaces are rendered from it, and
-    // the 2D production proof is built from those surfaces. Every one of those
-    // steps already existed and is used here as-is; this stage is their caller,
-    // not a second implementation of any of them.
     let built;
     try {
       built = await buildMasterCycle({
@@ -596,15 +534,10 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       throw new StageError("call8_surface_set_invalid", "The canonical render did not produce all six production surfaces", false);
     }
 
-    // Each surface is persisted in its own right. Call 9 consumes these exact
-    // bytes, so there is no layout, no atlas and no region for a panel to be
-    // cut from incorrectly.
     const spools = [];
     const surfacePanels = [];
     const surfaceArtifacts = [];
     for (const surface of built.surfaces) {
-      // Content addressed, like every other size-routed producer path: the
-      // immutable upload refuses different bytes at a path it already holds.
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/surfaces/${surface.surfaceKey}-${String(surface.contentHash).slice(0, 24)}.png`;
       const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, surface.bytes, "image/png");
       if (stored.spool) spools.push(stored.spool);
@@ -632,26 +565,13 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     });
 
     const completed = await complete(sb, stage, await getRun(sb, run.id), {
-      // proofKind is a frozen literal in complete_designpro_stage's Call 8
-      // contract, not a label. It must read exactly "flattened-2d-proof" or the
-      // RPC rejects the completed stage with call8_flat_proof_contract_failed.
       verified: true, receiptKind: "call8.flat-proof", call: 8, proofKind: "flattened-2d-proof",
       dimensionsAuthority: "genie-universal-panelizer", bleedInches: 5,
       sourceProofHash: proofArtifact.contentHash, storagePath: proofArtifact.storagePath,
       totalSqFt: manifest.totalSqFt,
       dimensionManifestId: rebound.dimension_manifest_id, manifestHash: rebound.manifest_hash,
       perSurfaceDimensions: manifest.expectedSurfaces.map(({ sourceAsset, ...surface }) => surface),
-      // THE PER-SIDE ANCHOR ON THE APPROVED PROOF. One named region per surface,
-      // in sheet pixel space, each bound to the surface hash drawn into it. The
-      // proof composer always computed these and never returned them, so a panel
-      // could only be tied to the proof by its side LABEL -- which is a name,
-      // not a location. Recorded here so Call 9 can bind each panel to its own
-      // region of the sheet the customer approved.
       proofRegionContract: built.proof2d.proofRegionContract,
-      // Every region carries the identity of the sheet it was measured on, the
-      // revision it belongs to, and the GENIE manifest that set the geometry.
-      // Without those an anchor is just four numbers, and four numbers survive
-      // a revision that invalidates them.
       proofRegions: (built.proof2d.proofRegions || []).map((region) => ({
         ...region,
         proofStoragePath: proofArtifact.storagePath,
@@ -662,11 +582,9 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         manifestHash: rebound.manifest_hash,
       })),
       viewLineage: frozenViews.viewReceipts, requiresPanelProTextReview: true,
-      // The canonical identity this proof and these surfaces belong to.
       masterHash: built.master.masterHash, renderHash: built.cycle.render.renderHash,
       bundleIdentity: built.cycle.identity.bundleIdentity, pxPerInch: built.cycle.render.pxPerInch,
       textIdentities: built.proof2d.textIdentities, logoIdentities: built.proof2d.logoIdentities,
-      // Presentation state, recorded and never gating.
       presentation3d: built.presentation3d, presentationFailure: built.presentationFailure,
       surfacePanels,
     }, null, [proofArtifact, ...surfaceArtifacts]);
@@ -677,86 +595,52 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const proof = await stageOutput(sb, run.id, "proof.build");
     const manifest = requiredObject(run.results?.dimensionManifest, "bound GENIE dimension manifest");
     const expected = new Map((manifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
-    const recorded = Array.isArray(proof.surfacePanels) ? proof.surfacePanels : [];
-    if (recorded.length !== SURFACE_KEYS.length) {
-      throw new StageError("call9_surface_set_invalid", "Call 8 did not record all six canonical production surfaces", false);
-    }
-
-    // THE PROOF REGION IS THE ANCHOR. THE APPROVED SURFACE IS THE ARTWORK.
-    //
-    // Call 8 draws each side onto the proof sheet through a vehicle-shaped
-    // display mask and records where it landed. That rectangle is what binds a
-    // panel to the sheet the customer approved -- it proves WHICH side this is
-    // and that the customer saw exactly this artwork in exactly that place.
-    //
-    // It is not the pixel source. Cutting the panel back out of the proof
-    // raster would manufacture from a masked, downsampled composite: the
-    // silhouette edges bake in, the tile is a fraction of the side's true
-    // resolution, and every panel inherits the sheet's scale reduction. The
-    // full-resolution approved surface Call 8 rendered is the production
-    // artwork, and the region says which one it is.
-    //
-    // So: region = approval and identity, surface = manufacturing pixels, and
-    // the two are tied together by hash. Nothing generative runs here; after
-    // the proof is approved the artwork is settled.
-    const spools = [];
-    const produced = [];
-    const sourceRegionHashes = {};
-    // Keyed by exact canonical surface_key. Side selection is this lookup and
-    // nothing else -- never a substring match on "side", never an alias table,
-    // never array position, never the nearest or most similar-looking region.
-    // A side that cannot name its own region fails closed below.
     const proofRegionByKey = new Map(
       (Array.isArray(proof.proofRegions) ? proof.proofRegions : [])
         .filter((region) => SURFACE_KEYS.includes(String(region.surfaceKey)))
         .map((region) => [String(region.surfaceKey), region]),
     );
-    // A proof with no anchors cannot bind panels per side. Refusing is the
-    // point: the alternative is inferring where each side sits, which is how a
-    // panel ends up carrying a neighbour's artwork. Runs whose Call 8 predates
-    // the region manifest need their proof rebuilt, not their panels guessed.
     if (proofRegionByKey.size !== SURFACE_KEYS.length) {
       throw new StageError("call9_proof_regions_missing",
         `the approved proof carries ${proofRegionByKey.size} of ${SURFACE_KEYS.length} required side regions`, false);
     }
-    // The signed sheet's own identity, re-checked before anything binds to it.
-    // Hash only -- the proof is never decoded here, because nothing is cut from
-    // it.
+
     const proofStoragePath = requiredString(proof.storagePath, "approved 2D proof storagePath");
     const approvedProofHash = String(proof.sourceProofHash || "").toLowerCase();
-    if (!approvedProofHash) throw new StageError("call9_proof_identity_missing", "Call 8 recorded no proof content hash to bind panels to", false);
-    if (hashBytes(await storageBytes(sb, proofStoragePath)) !== approvedProofHash) {
+    if (!HASH_RE.test(approvedProofHash)) throw new StageError("call9_proof_identity_missing", "Call 8 recorded no valid proof content hash", false);
+    const proofBytes = await storageBytes(sb, proofStoragePath);
+    if (hashBytes(proofBytes) !== approvedProofHash) {
       throw new StageError("call9_proof_changed",
-        "the approved 2D proof changed after Call 8 recorded it; panels must be bound to the sheet that was approved", false);
+        "the approved 2D proof changed after Call 8 recorded it", false);
     }
-    for (const surface of recorded) {
-      const key = String(surface.key);
+    const proofMeta = await sharp(proofBytes, { limitInputPixels: false }).metadata();
+    if (!proofMeta.width || !proofMeta.height) throw new StageError("call9_proof_not_decodable", "The approved 2D proof has no pixel geometry", false);
+
+    const spools = [];
+    const produced = [];
+    const sourceRegionHashes = {};
+    for (const key of SURFACE_KEYS) {
       const dims = expected.get(key);
       if (!dims) throw new StageError("call9_genie_identity_missing", key, false);
       const proofRegion = proofRegionByKey.get(key);
       if (!proofRegion) throw new StageError("call9_proof_region_missing", `${key} has no named region on the approved proof`, false);
 
-      // The rectangle must lie inside the sheet frame it was measured against.
-      // One running off the edge means the region manifest and the sheet
-      // disagree, so the anchor is not describing where this side actually sits.
-      const withinSheet = proofRegion.x >= 0 && proofRegion.y >= 0
-        && proofRegion.w > 0 && proofRegion.h > 0
-        && proofRegion.x + proofRegion.w <= Number(proofRegion.sheetWidth)
-        && proofRegion.y + proofRegion.h <= Number(proofRegion.sheetHeight);
+      const x = Math.round(Number(proofRegion.x));
+      const y = Math.round(Number(proofRegion.y));
+      const w = Math.round(Number(proofRegion.w));
+      const h = Math.round(Number(proofRegion.h));
+      const declaredSheetWidth = Math.round(Number(proofRegion.sheetWidth));
+      const declaredSheetHeight = Math.round(Number(proofRegion.sheetHeight));
+      const withinSheet = x >= 0 && y >= 0 && w > 0 && h > 0
+        && x + w <= proofMeta.width && y + h <= proofMeta.height
+        && declaredSheetWidth === proofMeta.width && declaredSheetHeight === proofMeta.height;
       if (!withinSheet) {
         throw new StageError("call9_proof_region_out_of_bounds",
-          `${key}'s region ${proofRegion.x},${proofRegion.y} ${proofRegion.w}x${proofRegion.h} does not fit the ${proofRegion.sheetWidth}x${proofRegion.sheetHeight} proof sheet`, false);
+          `${key}'s exact region does not fit the approved ${proofMeta.width}x${proofMeta.height} proof`, false);
       }
-      // The region must be anchored to the same proof the panel is being bound
-      // to. A region carried over from an earlier sheet would anchor this panel
-      // to artwork the customer never approved.
       if (String(proofRegion.proofContentHash || "").toLowerCase() !== approvedProofHash) {
-        throw new StageError("call9_proof_region_proof_mismatch",
-          `${key}'s region is anchored to a different proof than the one Call 8 approved`, false);
+        throw new StageError("call9_proof_region_proof_mismatch", `${key}'s region belongs to a different Call 8 proof`, false);
       }
-      // The region must belong to this revision and this GENIE manifest. Panels
-      // bound to a stale revision's anchors are how revised 3D views end up
-      // paired with old panels.
       if (String(proofRegion.revisionId || "") !== String(run.revision_id)) {
         throw new StageError("call9_proof_region_revision_mismatch", `${key}'s region belongs to a different revision`, false);
       }
@@ -765,55 +649,26 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         throw new StageError("call9_proof_region_manifest_mismatch", `${key}'s region was measured against different GENIE geometry`, false);
       }
 
-      if (Number(surface.bleedInches) !== 5) throw new StageError("call9_bleed_drift", `${key} does not carry the 5in production bleed`, false);
-      if (round2(surface.trimWidthInches) !== round2(dims.widthInches) || round2(surface.trimHeightInches) !== round2(dims.heightInches)) {
-        throw new StageError("call9_geometry_drift", `${key} was rendered at dimensions the bound manifest does not declare`, false);
-      }
-
-      // THE ARTWORK. The full-resolution surface Call 8 rendered, consumed
-      // byte-for-byte. Re-hashed first: a surface that moved between the two
-      // stages fails closed rather than printing.
-      const bytes = await storageBytes(sb, surface.storagePath);
-      const observed = hashBytes(bytes);
-      if (observed !== String(surface.contentHash).toLowerCase()) {
-        throw new StageError("call9_surface_changed", `${key} changed after Call 8 rendered it`, false);
-      }
-      // THE THREE-WAY IDENTITY. What the proof region depicts, what Call 8
-      // approved, and what this panel manufactures must all be one artwork.
-      // Anything else means the sheet shows one design and the panel prints
-      // another.
-      if (String(proofRegion.surfaceContentHash || "").toLowerCase() !== observed) {
-        throw new StageError("call9_proof_region_surface_mismatch",
-          `${key}'s proof region depicts ${String(proofRegion.surfaceContentHash).slice(0, 12)} but the panel carries ${observed.slice(0, 12)}`, false);
-      }
-
+      const extracted = await mirrorBleedPanelFromProofRegion(proofBytes, { ...proofRegion, surfaceKey: key, x, y, w, h }, dims);
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/panels/${key}.png`;
-      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, bytes, "image/png");
+      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, extracted.panel, "image/png");
       if (stored.spool) spools.push(stored.spool);
-      sourceRegionHashes[key] = observed;
+      sourceRegionHashes[key] = extracted.sourceRegionHash;
       produced.push(artifact("panel", stored.storagePath, stored.hash, stored.bytes, key, {
-        call: 9, sourceRule: PANEL_SOURCE_RULE,
-        sourceRegionHash: observed,
-        // The artwork this panel is made of, at the resolution Call 8 rendered
-        // it. Named as the pixel source because that is what it is.
-        sourceSurfacePath: surface.storagePath, sourceSurfaceHash: observed,
-        sourceContentHash: observed,
-        // Manufactured from the approved full-resolution surface, NOT cut out of
-        // the proof raster. Stated on the artifact so no later stage has to
-        // infer which one it was.
-        extractedFromProofRaster: false,
-        // WHERE ON THE APPROVED PROOF THIS SIDE SITS. The approval and identity
-        // anchor: this panel is the artwork the customer saw at exactly this
-        // rectangle of exactly this sheet, for exactly this revision and GENIE
-        // manifest.
+        call: 9,
+        sourceRule: PANEL_SOURCE_RULE,
+        sourceRegionHash: extracted.sourceRegionHash,
+        sourceContentHash: extracted.sourceRegionHash,
+        extractedFromProofRaster: true,
+        deterministicPixelOperationsOnly: true,
+        generativeModelCalls: 0,
         proofRegionContract: proof.proofRegionContract || null,
-        proofStoragePath, proofContentHash: approvedProofHash,
+        proofStoragePath,
+        proofContentHash: approvedProofHash,
         proofRegion: {
-          surfaceKey: proofRegion.surfaceKey,
-          x: proofRegion.x, y: proofRegion.y, w: proofRegion.w, h: proofRegion.h,
-          sheetWidth: proofRegion.sheetWidth, sheetHeight: proofRegion.sheetHeight,
+          surfaceKey: key, x, y, w, h,
+          sheetWidth: proofMeta.width, sheetHeight: proofMeta.height,
           scale: proofRegion.scale,
-          surfaceContentHash: proofRegion.surfaceContentHash,
           proofContentHash: approvedProofHash,
           revisionId: proofRegion.revisionId,
           dimensionManifestId: proofRegion.dimensionManifestId,
@@ -824,21 +679,25 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         masterHash: proof.masterHash || null, renderHash: proof.renderHash || null,
         trimWidthInches: dims.widthInches, trimHeightInches: dims.heightInches,
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
-        surfaceSqFt: dims.surfaceSqFt, pxPerInch: proof.pxPerInch || null,
-        pixelWidth: surface.pixelWidth, pixelHeight: surface.pixelHeight,
+        surfaceSqFt: dims.surfaceSqFt, pxPerInch: SURFACE_PX_PER_INCH,
+        pixelWidth: extracted.pixelWidth, pixelHeight: extracted.pixelHeight,
         dpi: 1500, outputScale: 0.1, regenerated: false,
       }));
     }
 
+    if (Object.keys(sourceRegionHashes).length !== SURFACE_KEYS.length
+      || new Set(Object.values(sourceRegionHashes)).size !== SURFACE_KEYS.length) {
+      throw new StageError("call9_proof_region_reuse", "Every output side must come from its own distinct Call 8 proof region", false);
+    }
     const panelHashes = Object.fromEntries(produced.map((item) => [item.surfaceKey, item.contentHash]));
-    if (new Set(Object.values(panelHashes)).size !== produced.length) throw new StageError("call9_surface_reuse", "Every panel must be its own rendered surface", false);
+    if (new Set(Object.values(panelHashes)).size !== produced.length) throw new StageError("call9_surface_reuse", "Every panel must be its own deterministic proof extraction", false);
     if (panelHashes.driver === panelHashes.passenger) throw new StageError("call9_driver_passenger_reuse", "Driver artwork cannot be reused for passenger", false);
     const trimDimensions = Object.fromEntries(manifest.expectedSurfaces.map((item) => [item.surfaceKey, { widthInches: item.widthInches, heightInches: item.heightInches, surfaceSqFt: item.surfaceSqFt }]));
     const completed = await complete(sb, stage, run, {
       verified: true, receiptKind: "call9.surface-panels", call: 9,
-      sourceRule: PANEL_SOURCE_RULE, regenerated: false,
+      sourceRule: PANEL_SOURCE_RULE, extractedFromProofRaster: true, deterministicPixelOperationsOnly: true,
       sides: produced.map((item) => item.surfaceKey), panelHashes, sourceRegionHashes,
-      masterHash: proof.masterHash || null, renderHash: proof.renderHash || null, pxPerInch: proof.pxPerInch || null,
+      masterHash: proof.masterHash || null, renderHash: proof.renderHash || null, pxPerInch: SURFACE_PX_PER_INCH,
       dimensionsAuthority: "genie-universal-panelizer", bleedInches: 5, dpi: 1500, outputScale: 0.1,
       dimensionManifestId: run.dimension_manifest_id, manifestHash: run.manifest_hash,
       totalSqFt: manifest.totalSqFt, trimDimensions,
@@ -847,44 +706,81 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     return completed;
   }
   if (stage.stage_key === "logos.extract") {
+    const call9 = await stageOutput(sb, run.id, "panels.build");
+    const brandedPanels = await artifacts(sb, run.id, ["panel"]);
+    if (brandedPanels.length !== SURFACE_KEYS.length || new Set(brandedPanels.map((row) => row.surface_key)).size !== SURFACE_KEYS.length) {
+      throw new StageError("call10_branded_set_incomplete", "Call 10 requires the exact six saved branded Call 9 panels", false);
+    }
+
+    const duplicateArtifacts = [];
+    const duplicatePanelHashes = {};
+    const duplicateSourcePanelHashes = {};
+    const duplicateSpools = [];
+    for (const surface of SURFACE_KEYS) {
+      const row = brandedPanels.find((item) => item.surface_key === surface);
+      const sourceHash = String(call9.panelHashes?.[surface] || "").toLowerCase();
+      if (!row || !HASH_RE.test(sourceHash) || String(row.content_hash).toLowerCase() !== sourceHash) {
+        throw new StageError("call10_branded_receipt_mismatch", `${surface} does not match the Call 9 receipt`, false);
+      }
+      const branded = await storageBytes(sb, row.storage_path);
+      if (hashBytes(branded) !== sourceHash) throw new StageError("call10_branded_panel_changed", `${surface} changed before duplication`, false);
+      const duplicateBytes = Buffer.from(branded);
+      if (hashBytes(duplicateBytes) !== sourceHash) throw new StageError("call10_duplicate_identity_failed", `${surface} duplicate is not byte-identical`, false);
+      const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/panel-duplicates/${surface}.png`;
+      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, duplicateBytes, "image/png");
+      if (stored.spool) duplicateSpools.push(stored.spool);
+      if (stored.hash !== sourceHash) throw new StageError("call10_duplicate_identity_failed", `${surface} persisted duplicate changed bytes`, false);
+      duplicatePanelHashes[surface] = stored.hash;
+      duplicateSourcePanelHashes[surface] = sourceHash;
+      duplicateArtifacts.push(artifact("panel-duplicate", stored.storagePath, stored.hash, stored.bytes, surface, {
+        call: 10, role: "call11-working-duplicate", authoritative: false, printable: false,
+        sourcePanelHash: sourceHash, sourcePanelPath: row.storage_path,
+        byteIdenticalAtCall10: true,
+      }));
+    }
+
     const { data: revisionSource, error: revisionError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
     if (revisionError || !revisionSource || revisionSource.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("call10_revision_source_drift", "Immutable logo inventory source changed", false);
     if (!Array.isArray(revisionSource.snapshot?.expectedLogoInventory)) throw new StageError("call10_inventory_not_frozen", "Revision snapshot must freeze expectedLogoInventory", false);
-    const expected = revisionSource.snapshot.expectedLogoInventory;
+    const expectedInventory = revisionSource.snapshot.expectedLogoInventory;
     const attestation = revisionSource.snapshot.logoInventoryAttestation;
     if (!attestation || attestation.attested !== true || !["none", "listed"].includes(attestation.mode)
-      || (attestation.mode === "none" && expected.length !== 0) || (attestation.mode === "listed" && expected.length === 0)) {
+      || (attestation.mode === "none" && expectedInventory.length !== 0) || (attestation.mode === "listed" && expectedInventory.length === 0)) {
       throw new StageError("call10_inventory_attestation_invalid", "Logo inventory must be explicitly attested as none or listed", false);
     }
-    const call9 = await stageOutput(sb, run.id, "panels.build");
     const regionHashes = call9.sourceRegionHashes || {};
-    const produced = [];
-    for (let index = 0; index < expected.length; index++) {
-      const identityKey = requiredString(expected[index]?.identityKey, `expectedInventory[${index}].identityKey`);
-      const displayName = requiredString(expected[index]?.displayName, `${identityKey}.displayName`);
-      const targetSurfaceKey = requiredString(expected[index]?.surfaceKey, `${identityKey}.surfaceKey`);
+    const logoArtifacts = [];
+    for (let index = 0; index < expectedInventory.length; index++) {
+      const identityKey = requiredString(expectedInventory[index]?.identityKey, `expectedInventory[${index}].identityKey`);
+      const displayName = requiredString(expectedInventory[index]?.displayName, `${identityKey}.displayName`);
+      const targetSurfaceKey = requiredString(expectedInventory[index]?.surfaceKey, `${identityKey}.surfaceKey`);
       if (!SURFACE_KEYS.includes(targetSurfaceKey)) throw new StageError("call10_logo_surface_invalid", `${identityKey}: ${targetSurfaceKey}`, false);
       const sourceRegionHash = requiredString(regionHashes[targetSurfaceKey], `${identityKey} verified source region`).toLowerCase();
       const placementKey = `${targetSurfaceKey}:${identityKey}:${index}`;
       let logoAsset;
-      try { logoAsset = normalizeLogoAsset(expected[index], run.tenant_key, run.revision_id); }
+      try { logoAsset = normalizeLogoAsset(expectedInventory[index], run.tenant_key, run.revision_id); }
       catch (error) { throw new StageError("call10_logo_asset_invalid", `${identityKey}: ${error.message}`, false); }
-      produced.push(await exactStoredArtifact(sb, { ...logoAsset, surfaceKey: placementKey, metadata: { placementKey, identityKey, displayName, targetSurfaceKey, contentType: logoAsset.contentType, sourceRegionHash, separationContract: "designpro.deterministic-stored-overlay.v1" } }, "logo"));
+      logoArtifacts.push(await exactStoredArtifact(sb, { ...logoAsset, surfaceKey: placementKey, metadata: { placementKey, identityKey, displayName, targetSurfaceKey, contentType: logoAsset.contentType, sourceRegionHash, separationContract: "designpro.deterministic-stored-overlay.v1" } }, "logo"));
     }
-    const inventory = expected.map((item, index) => ({ placementKey: produced[index]?.metadata?.placementKey, identityKey: item.identityKey, targetSurfaceKey: item.surfaceKey, contentHash: produced[index]?.contentHash || null }));
+    const inventory = expectedInventory.map((item, index) => ({ placementKey: logoArtifacts[index]?.metadata?.placementKey, identityKey: item.identityKey, targetSurfaceKey: item.surfaceKey, contentHash: logoArtifacts[index]?.contentHash || null }));
     const inventoryHash = hashJson(inventory);
-    return complete(sb, stage, run, { verified: true, receiptKind: "call10.logo-inventory", call: 10, inventoryContract: "designpro.expected-logo-inventory.v1", exactSetVerified: true, inventoryHash, inventory }, null, produced);
+    const completed = await complete(sb, stage, run, {
+      verified: true, receiptKind: "call10.logo-inventory", call: 10,
+      duplicateSetVerified: true,
+      duplicatePanelHashes,
+      duplicateSourcePanelHashes,
+      duplicateSides: SURFACE_KEYS,
+      inventoryContract: "designpro.expected-logo-inventory.v1", exactSetVerified: true, inventoryHash, inventory,
+    }, null, [...duplicateArtifacts, ...logoArtifacts]);
+    for (const spool of duplicateSpools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 10 duplicate spool cleanup failed: ${error.message}`));
+    return completed;
   }
-  // Vision bridge for Call 11. The ported detector takes an injected geminiJson
-// so its re-ask loop and box parsing are provable without a provider; this is
-// the live implementation it is given in production.
+
 const LOGO_LOCATE_MODEL = "gemini-2.5-flash";
 
 async function locateLogosForPanel(panelBytes, surfaceKey) {
   const apiKey = String(process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "").trim();
   if (!apiKey) throw new StageError("call11_logo_locate_key_missing", "Call 11 logo location requires GOOGLE_AI_API_KEY", true);
-  // The detector is fed a bounded copy: a 1280px long edge is ample for locating
-  // a mark, and it keeps a 4K production panel from being base64'd whole.
   const locateB64 = (await sharp(panelBytes, { limitInputPixels: false })
     .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
     .png().toBuffer()).toString("base64");
@@ -905,55 +801,47 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
   try {
     return await locateLogoElements(locateB64, { geminiJson, log: (message) => console.warn(`${message} (${surfaceKey})`) });
   } catch (error) {
-    // Detection failure is retryable: a QC duplicate built from an unverified
-    // detection would claim to be de-logoed without being so.
     throw new StageError("call11_logo_locate_failed", `${surfaceKey}: ${error?.message || error}`, true);
   }
 }
 
-// CALL 11 — DE-LOGO DUPLICATE SET.
-  //
-  // Duplicate the six immutable Call 9 branded panels, remove logos from the
-  // duplicates ONLY, and emit six qc-panel artifacts for PanelPro sizing and
-  // template QC. The branded set is production artwork and is never touched:
-  // every source panel's bytes are re-hashed after the edit and the stage fails
-  // closed if any moved.
-  //
-  // These derivatives are non-authoritative. They are never printed and never
-  // enter Topaz, the output set or the ZIP.
   if (stage.stage_key === "panels.delogo") {
     const call9 = await stageOutput(sb, run.id, "panels.build");
+    const call10 = await stageOutput(sb, run.id, "logos.extract");
+    if (call10.duplicateSetVerified !== true) throw new StageError("call11_duplicate_set_unverified", "Call 11 requires the verified persisted Call 10 duplicate set", false);
     const brandedPanels = await artifacts(sb, run.id, ["panel"]);
-    if (brandedPanels.length !== SURFACE_KEYS.length || new Set(brandedPanels.map((row) => row.surface_key)).size !== SURFACE_KEYS.length) {
-      throw new StageError("call11_branded_set_incomplete", "Call 11 requires the exact six branded Call 9 panels", false);
+    const duplicatePanels = await artifacts(sb, run.id, ["panel-duplicate"]);
+    if (brandedPanels.length !== SURFACE_KEYS.length || duplicatePanels.length !== SURFACE_KEYS.length
+      || new Set(brandedPanels.map((row) => row.surface_key)).size !== SURFACE_KEYS.length
+      || new Set(duplicatePanels.map((row) => row.surface_key)).size !== SURFACE_KEYS.length) {
+      throw new StageError("call11_duplicate_set_incomplete", "Call 11 requires six branded Call 9 panels and six persisted Call 10 duplicates", false);
     }
     const spools = [];
     const produced = [];
     const removals = {};
     for (const surface of SURFACE_KEYS) {
-      const row = brandedPanels.find((item) => item.surface_key === surface);
-      if (!row) throw new StageError("call11_branded_panel_missing", surface, false);
-      const expectedHash = String(call9.panelHashes?.[surface] || "").toLowerCase();
-      if (!HASH_RE.test(expectedHash) || String(row.content_hash).toLowerCase() !== expectedHash) {
-        throw new StageError("call11_branded_receipt_mismatch", `${surface} branded panel does not match the Call 9 receipt`, false);
-      }
-      const branded = await storageBytes(sb, row.storage_path);
-      if (hashBytes(branded) !== expectedHash) {
-        throw new StageError("call11_branded_panel_changed", `${surface} branded panel changed before duplication`, false);
+      const brandedRow = brandedPanels.find((item) => item.surface_key === surface);
+      const duplicateRow = duplicatePanels.find((item) => item.surface_key === surface);
+      const expectedBrandedHash = String(call9.panelHashes?.[surface] || "").toLowerCase();
+      const expectedDuplicateHash = String(call10.duplicatePanelHashes?.[surface] || "").toLowerCase();
+      if (!brandedRow || !duplicateRow || !HASH_RE.test(expectedBrandedHash) || !HASH_RE.test(expectedDuplicateHash)
+        || String(brandedRow.content_hash).toLowerCase() !== expectedBrandedHash
+        || String(duplicateRow.content_hash).toLowerCase() !== expectedDuplicateHash
+        || expectedDuplicateHash !== expectedBrandedHash
+        || String(duplicateRow.metadata?.sourcePanelHash || "").toLowerCase() !== expectedBrandedHash) {
+        throw new StageError("call11_branded_receipt_mismatch", `${surface} Call 9/Call 10 lineage is not byte-identical`, false);
       }
 
-      // The duplicate is an independent buffer. The branded bytes are only ever
-      // read, so there is no path by which this stage can write over Call 9.
-      const duplicate = Buffer.from(branded);
+      const duplicate = await storageBytes(sb, duplicateRow.storage_path);
+      if (hashBytes(duplicate) !== expectedDuplicateHash) {
+        throw new StageError("call11_duplicate_changed", `${surface} persisted Call 10 duplicate changed before de-logo`, false);
+      }
       const image = sharp(duplicate, { limitInputPixels: false });
       const { width, height } = await image.metadata();
       if (!width || !height) throw new StageError("call11_panel_not_decodable", surface, false);
 
       const located = await locateLogosForPanel(duplicate, surface);
       const rects = logoBoxesToPixelRects(located, width, height);
-      // HONEST NO-OP: a panel with no logo mark still produces its duplicate so
-      // the side is present for template QC, and records removedCount 0 so "no
-      // logos found" is never read as "removal succeeded".
       const edited = isHonestNoOp(rects)
         ? await sharp(duplicate, { limitInputPixels: false }).png().toBuffer()
         : await sharp(duplicate, { limitInputPixels: false })
@@ -969,24 +857,27 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
       removals[surface] = rects.length;
       produced.push(artifact("qc-panel", stored.storagePath, stored.hash, stored.bytes, surface, {
         call: 11, role: "panelpro-qc-duplicate", authoritative: false, printable: false,
-        // Step 5 of the contract: every duplicate binds to the branded panel it
-        // came from, by hash and by surface_key.
-        sourcePanelHash: expectedHash, sourcePanelPath: row.storage_path, surfaceKey: surface,
+        sourceDuplicateHash: expectedDuplicateHash, sourceDuplicatePath: duplicateRow.storage_path,
+        sourcePanelHash: expectedBrandedHash, sourcePanelPath: brandedRow.storage_path,
+        surfaceKey: surface,
         removedLogoCount: rects.length, removedLabels: rects.map((rect) => rect.label),
-        removalContract: "designpro.call11-delogo-duplicate.v1",
-        trimWidthInches: row.metadata?.trimWidthInches ?? null,
-        trimHeightInches: row.metadata?.trimHeightInches ?? null,
+        removalContract: "designpro.call11-delogo-duplicate.v2",
+        trimWidthInches: brandedRow.metadata?.trimWidthInches ?? null,
+        trimHeightInches: brandedRow.metadata?.trimHeightInches ?? null,
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
       }));
     }
 
-    // Step 3, proven rather than asserted: re-read every branded panel and
-    // confirm it is byte-for-byte what Call 9 published.
     for (const surface of SURFACE_KEYS) {
-      const row = brandedPanels.find((item) => item.surface_key === surface);
-      const after = hashBytes(await storageBytes(sb, row.storage_path));
-      if (after !== String(call9.panelHashes?.[surface] || "").toLowerCase()) {
+      const brandedRow = brandedPanels.find((item) => item.surface_key === surface);
+      const duplicateRow = duplicatePanels.find((item) => item.surface_key === surface);
+      const brandedAfter = hashBytes(await storageBytes(sb, brandedRow.storage_path));
+      const duplicateAfter = hashBytes(await storageBytes(sb, duplicateRow.storage_path));
+      if (brandedAfter !== String(call9.panelHashes?.[surface] || "").toLowerCase()) {
         throw new StageError("call11_branded_panel_mutated", `${surface} branded panel was modified by Call 11`, false);
+      }
+      if (duplicateAfter !== String(call10.duplicatePanelHashes?.[surface] || "").toLowerCase()) {
+        throw new StageError("call11_call10_duplicate_mutated", `${surface} saved Call 10 duplicate was modified by Call 11`, false);
       }
     }
     const qcHashes = Object.fromEntries(produced.map((item) => [item.surfaceKey, item.contentHash]));
@@ -997,9 +888,9 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
       verified: true, receiptKind: "call11.qc-panels", call: 11,
       role: "panelpro-qc-duplicate", authoritative: false,
       sides: produced.map((item) => item.surfaceKey),
-      qcPanelHashes: qcHashes, sourcePanelHashes: call9.panelHashes || {},
-      removedLogoCounts: removals, brandedSetPreserved: true,
-      removalContract: "designpro.call11-delogo-duplicate.v1",
+      qcPanelHashes: qcHashes, sourcePanelHashes: call9.panelHashes || {}, sourceDuplicateHashes: call10.duplicatePanelHashes || {},
+      removedLogoCounts: removals, brandedSetPreserved: true, call10DuplicateSetPreserved: true,
+      removalContract: "designpro.call11-delogo-duplicate.v2",
     }, null, produced);
     for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 11 QC panel spool cleanup failed: ${error.message}`));
     return completed;
@@ -1017,23 +908,8 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
   }
   if (stage.stage_key === "pack.activate") {
     await stageOutput(sb, run.id, "pack.verify");
-    // PREPARATION ENDS HERE. THE CUSTOMER HAS NOT PAID YET.
-    //
-    // Calls 1-11 run automatically and are cheap on purpose: they exist so the
-    // customer can see the six branded panels, their clean duplicates and the
-    // separated logos before deciding. Everything after this stage -- Topaz,
-    // the output build, the ZIP, delivery -- is expensive, and the existence of
-    // a preview does not authorize any of it.
-    //
-    // The production workflow IS created here, and it is still the only one --
-    // rebuilding it elsewhere would be the second conductor. What changed is
-    // that its first stage is await_purchase, so it exists, reaches the gate,
-    // and stops. Preparation no longer flows into Topaz; a customer who never
-    // buys leaves a run parked at a gate, which costs nothing.
     await complete(sb, stage, run, {
       verified: true, active: true, activatedAt: new Date().toISOString(),
-      // Stated on the receipt so no later reader has to infer why production
-      // has not started: it is waiting on a purchase, not stalled.
       awaitingPurchase: true,
       purchasableProducts: ["print_pack_entitlement", "logo_pack"],
     });
@@ -1044,10 +920,6 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
 
 async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
   const sourceRunId = requiredString(run.results?.sourceEnticeRunId || input.sourceEnticeRunId, "sourceEnticeRunId");
-  // Production files are rendered from the Call 12 enhanced masters, which are
-  // already at full print geometry. The Call 9 panels stay bound as lineage but
-  // are never the raster source here: stretching them would discard the
-  // enhancement the customer is paying for.
   const call12 = await receipt(sb, run.id, "call12.topaz-upscale");
   const panels = await artifacts(sb, run.id, ["upscaled-panel"]);
   if (panels.length !== SURFACE_KEYS.length || new Set(panels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) throw new StageError("enhanced_panels_missing", "Exact six Call 12 enhanced panels are required", false);
@@ -1241,12 +1113,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const sourcePanels = await artifacts(sb, sourceRunId, ["panel"]);
     const sourceLogos = await artifacts(sb, sourceRunId, ["logo"]);
     const customerProof = sourceProofs.find((item) => String(item.surface_key || "") === "");
-    const wrapLayout = sourceProofs.find((item) => String(item.surface_key || "") === "flat-wrap-layout");
-    if (!customerProof || !wrapLayout || sourceProofs.length !== 2 || sourcePanels.length !== SURFACE_KEYS.length || new Set(sourcePanels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
-      throw new StageError("production_source_set_incomplete", "The 2D production proof, the approved flat wrap layout and the exact six Call 9 cuts are required", false);
+    if (!customerProof || sourcePanels.length !== SURFACE_KEYS.length || new Set(sourcePanels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
+      throw new StageError("production_source_set_incomplete", "The 2D production proof and the exact six Call 9 panels are required", false);
     }
     if (customerProof.content_hash !== call8.receipt?.sourceProofHash) throw new StageError("production_call8_receipt_mismatch", "Call 8 receipt and 2D production proof differ", false);
-    if (wrapLayout.content_hash !== call8.receipt?.flatLayout?.contentHash) throw new StageError("production_call8_layout_mismatch", "Call 8 receipt and approved flat wrap layout differ", false);
     for (const surface of SURFACE_KEYS) {
       const row = sourcePanels.find((item) => item.surface_key === surface);
       if (!row || row.content_hash !== call9.receipt?.panelHashes?.[surface]) throw new StageError("production_call9_receipt_mismatch", `Call 9 ${surface} receipt differs`, false);
@@ -1257,7 +1127,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
 
     const produced = [];
     produced.push(await copyPinnedSourceArtifact(sb, run, customerProof, "flat-proof", "call8-2d-production-proof.png", "image/png", { sourceReceiptHash: call8.receipt_hash }));
-    produced.push(await copyPinnedSourceArtifact(sb, run, wrapLayout, "flat-proof", "call8-flat-wrap-layout.png", "image/png", { sourceReceiptHash: call8.receipt_hash }));
     for (const row of [...sourcePanels].sort((a, b) => a.surface_key.localeCompare(b.surface_key))) {
       produced.push(await copyPinnedSourceArtifact(sb, run, row, "panel", `panels/${row.surface_key}.png`, "image/png", { sourceReceiptHash: call9.receipt_hash }));
     }
@@ -1276,24 +1145,17 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     }, null, produced);
   }
   if (stage.stage_key === "await_purchase") {
-    // THE PURCHASE GATE. Nothing here spends anything; it reads what was paid
-    // for and either parks or authorizes.
     const sourceRunId = requiredString(run.results?.sourceEnticeRunId || input.sourceEnticeRunId, "sourceEnticeRunId");
     const { data: paid, error } = await sb.rpc("designpro_paid_products", { p_entice_run_id: sourceRunId });
     if (error) throw new StageError("purchase_entitlement_read_failed", error.message, true);
     const products = Array.isArray(paid) ? paid.map(String) : [];
     if (!products.length) {
-      // Park. The reconciler releases this the moment an entitlement lands, so
-      // a paid run never waits on a button this product does not have.
       const { error: waitError } = await sb.rpc("request_designpro_purchase_gate", {
         p_run_id: run.id, p_details: { requestedAt: new Date().toISOString(), awaiting: PURCHASABLE_PRODUCTS },
       });
       if (waitError) throw new StageError("purchase_gate_request_failed", waitError.message, false);
       return;
     }
-    // AUTHORIZED ASSETS, FROZEN HERE. Every stage after this consumes this
-    // manifest instead of whatever happens to be in storage, so an unpaid
-    // product's preview assets can never be upscaled, packaged or delivered.
     const manifest = authorizedAssetManifest(products);
     return complete(sb, stage, run, {
       verified: true, receiptKind: "purchase.authorized",
@@ -1301,12 +1163,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     });
   }
   if (stage.stage_key === "await_panelpro_preflight_qc" || stage.stage_key === "await_final_human_qc") {
-    // QC RECEIVES EXACTLY WHAT WAS PURCHASED.
-    //
-    // A $29 Logo Pack contains no production panels, so a gate that assumes six
-    // of them would deadlock a purchase that is complete. The gate is one gate;
-    // its SCOPE is what changes. Handing a reviewer a class the customer never
-    // bought is asking them to approve something that does not exist.
     const authorized = await readAuthorizedAssets(sb, run.id);
     const { error } = await sb.rpc("request_designpro_human_gate", {
       p_run_id: run.id, p_stage_key: stage.stage_key,
@@ -1321,22 +1177,12 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     return;
   }
   if (stage.stage_key === "enhance.upscale") {
-    // Call 12. Every approved panel is enhanced to full print geometry before a
-    // single production file is rendered, so the PNG/TIFF/EPS are built FROM
-    // the enhanced master rather than from an interpolated stretch.
     const readiness = topazReadiness(process.env);
     if (!readiness.configurationValid) throw new StageError("topaz_configuration_invalid", readiness.detail, false);
     if (!readiness.enabled) throw new StageError("topaz_disabled", "Call 12 is disabled; a production pack cannot be built without the approved enhancement", false);
-    // WHAT THIS RUN MAY ENHANCE. Read from the frozen gate receipt rather than
-    // from storage: a preview asset exists for everything, so "it is there" has
-    // never been the same question as "it was paid for".
     const authorized = await readAuthorizedAssets(sb, run.id);
     const mayUpscale = new Set(authorized.upscale || []);
-    if (!mayUpscale.size) {
-      throw new StageError("enhance_nothing_authorized", "No purchased asset class authorizes enhancement on this run", false);
-    }
-    // The Logo Pack alone buys the separated assets, not the panel set. Skipping
-    // the panels here is the entitlement working, not a missing input.
+    if (!mayUpscale.size) throw new StageError("enhance_nothing_authorized", "No purchased asset class authorizes enhancement on this run", false);
     if (!mayUpscale.has("panel")) {
       return complete(sb, stage, run, {
         verified: true, receiptKind: "call12.topaz-upscale", call: 12,
@@ -1365,9 +1211,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         if (hashBytes(source) !== panel.content_hash) throw new StageError("enhance_source_panel_changed", key, false);
         const targetWidthPx = Math.round((Number(dims.widthInches) + 10) * 150);
         const targetHeightPx = Math.round((Number(dims.heightInches) + 10) * 150);
-        // An immutable winner at a material-addressed path. Topaz is not
-        // reproducible, so a retry reuses the approved bytes instead of
-        // authoring a second, different enhancement.
         const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/enhanced/${key}-${String(panel.content_hash).slice(0, 24)}.png`;
         const existing = await storageBytes(sb, storagePath).catch(() => null);
         if (existing && existing.length) {
@@ -1421,9 +1264,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     return completed;
   }
   if (stage.stage_key === "output.build") {
-    // PNG/TIFF/EPS are the Production Pack's deliverable. A run that bought only
-    // the Logo Pack builds none of them -- and says so, rather than producing an
-    // empty set that reads as a failure.
     const authorized = await readAuthorizedAssets(sb, run.id);
     if (!(authorized.output || []).length) {
       return complete(sb, stage, run, {
@@ -1437,9 +1277,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     return completed;
   }
   if (stage.stage_key === "output.verify") {
-    // Prove the purchased output set and no other. A Production Pack still
-    // fails closed without its complete eighteen; a Logo Pack is never asked
-    // for panel outputs it did not buy.
     const authorized = await readAuthorizedAssets(sb, run.id);
     const rows = await artifacts(sb, run.id, ["output"]);
     if (!authorized.requiredOutputFiles) {
@@ -1470,9 +1307,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     }, null, []);
   }
   if (stage.stage_key === "stamp.build") {
-    // The certificate states what was approved. Stamping "Production Pack
-    // approved" on a run that only bought the $29 Logo Pack would be a claim
-    // about work nobody paid for or reviewed.
     const authorized = await readAuthorizedAssets(sb, run.id);
     const finalQc = await receipt(sb, run.id, "final.human-qc");
     const verifiedBy = requiredString(finalQc.receipt?.verifiedBy, "final QC verifiedBy");
@@ -1509,12 +1343,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const stampReceipt = await receipt(sb, run.id, "stamp");
     const designId = requiredString(stampReceipt.receipt?.designId, "stamp DesignID");
     const orderNumber = requiredString(stampReceipt.receipt?.orderNumber, "stamp Order #");
-    // THE ARCHIVE CARRIES WHAT WAS BOUGHT.
-    //
-    // Both products can be fulfilled in one run, so the ZIP cannot simply take
-    // everything that exists: a Production Pack archive containing separated
-    // logos would give away the $29 product, and a Logo Pack archive containing
-    // the panel output set would give away the $299 one.
     const authorized = await readAuthorizedAssets(sb, run.id);
     const zipKinds = [...new Set(authorized.zipKinds || [])];
     const rows = await artifacts(sb, run.id, zipKinds);
@@ -1527,8 +1355,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     if (authorized.logoPackAuthorized && !counts.logo) {
       throw new StageError("zip_artifacts_incomplete", "The Logo Pack ZIP requires the separated logo assets that were purchased", false);
     }
-    // The seven approved renders are the Production Pack's design proofs; a
-    // Logo Pack buys separated assets, not the design's proof set.
     const sourceViews = authorized.zipIncludesSourceViews
       ? (await receipt(sb, sourceRunId, "views.seven-source")).receipt?.viewReceipts
       : [];
@@ -1587,9 +1413,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     }
   }
   if (stage.stage_key === "wrapbox.deliver") {
-    // Delivery carries only what was authorized, and says which product each
-    // part belongs to. An artifact reaching the customer because it happened to
-    // be in storage is the same defect as an unpaid upscale, one step later.
     const authorized = await readAuthorizedAssets(sb, run.id);
     const zipReceipt = await receipt(sb, run.id, "zip");
     const finalQc = await receipt(sb, run.id, "final.human-qc");
@@ -1610,16 +1433,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       || zipReceipt.receipt?.businessIdentity?.designId !== businessIdentity.designId || zipReceipt.receipt?.businessIdentity?.orderNumber !== businessIdentity.orderNumber) {
       throw new StageError("delivery_business_identity_drift", "ZIP DesignID or Order # no longer matches the immutable revision", false);
     }
-    // Separated logos are the Logo Pack's deliverable. On a Production-Pack-only
-    // run they exist -- Call 10 produced them for the entice preview -- and must
-    // not be delivered.
     const logoRows = authorized.logoPackAuthorized ? await artifacts(sb, run.id, ["logo"]) : [];
     const logos = logoRows.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, displayName: row.metadata?.displayName, targetSurfaceKey: row.metadata?.targetSurfaceKey, storagePath: safePath(row.storage_path, "logo storagePath"), contentHash: row.content_hash, byteSize: row.byte_size, contentType: row.metadata?.contentType || null })).sort((left, right) => String(left.placementKey).localeCompare(String(right.placementKey)));
     const packRows = await artifacts(sb, run.id, [...new Set([...(authorized.delivery || []), ...(authorized.zipKinds || []), "zip"])]);
     const files = packRows.map((row) => ({ kind: row.artifact_kind, surfaceKey: row.surface_key, storagePath: safePath(row.storage_path, "pack storagePath"), contentHash: row.content_hash, byteSize: row.byte_size })).sort((left, right) => `${left.kind}/${left.surfaceKey}/${left.storagePath}`.localeCompare(`${right.kind}/${right.surfaceKey}/${right.storagePath}`));
-    // The Production Pack's evidence is its seven archived design proofs. A Logo
-    // Pack has no such set to prove, so requiring one would fail a delivery that
-    // is complete.
     const expectedSourceViews = authorized.zipIncludesSourceViews ? 7 : 0;
     if (!Array.isArray(zipReceipt.receipt?.sourceViews) || zipReceipt.receipt.sourceViews.length !== expectedSourceViews
       || !zipReceipt.receipt?.dimensionManifest || !zipReceipt.receipt?.businessIdentity) {
@@ -1634,9 +1451,6 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
   throw new StageError("unsupported_production_stage", stage.stage_key, false);
 }
 
-// Retained as a recognised historical value. The seventh slot is now a real
-// hero-3d view carrying the hero3d role, so the handoff is decided from the
-// persisted views by calls_1_7_handoff_state rather than pinned shut.
 const CALLS_1_7_HANDOFF_BLOCKER = "source_close_up_has_no_verified_hero3d_role_mapping";
 const CALLS_1_7_VIEW_PLAN = Object.freeze([
   Object.freeze({ sourceViewType: "side", consumerRole: "driver" }),
@@ -1647,13 +1461,6 @@ const CALLS_1_7_VIEW_PLAN = Object.freeze([
   Object.freeze({ sourceViewType: "hero-3d", consumerRole: "hero3d" }),
   Object.freeze({ sourceViewType: "roof", consumerRole: "roof" }),
 ]);
-// Calls 1-7 produce the seven immutable source renders and nothing else. The
-// 2D production proof is Call 8 and this system authors it. 'generate-2d-proof'
-// was sanctioned here from the period when the historical pipeline owned the
-// proof; while it stayed in this contract a legacy runner carrying that
-// function could present a valid claim and consume generation attempts. It is
-// retired, and the version bump makes a stale runner fail with a legible
-// mismatch rather than an opaque hash difference.
 const CALLS_1_7_ENGINE_CONTRACT = Object.freeze({
   contractVersion: "designpro.calls-1-7-engine.v2",
   sourceCommit: "bdb26365904e91be446894e84b01b4a24f64aac0",
@@ -1848,9 +1655,6 @@ async function completeCalls1To7Generation(sb, rawClaim, rawViews) {
     p_engine_receipt: receipt,
   });
   if (error) throw new StageError("generation_completion_failed", error.message || "Generation completion failed", true);
-  // handoffReady is now evidence, not a constant: true once the seven persisted
-  // views cover exactly the planned roles with distinct bytes. A blocker may
-  // still arrive, but a ready handoff must never carry one.
   if (!data || data.state !== "outputs_ready" || typeof data.handoffReady !== "boolean"
     || (data.handoffReady === true && data.handoffBlocker)) {
     throw new StageError("generation_completion_response_invalid", "Calls 1-7 completion response changed", false);
@@ -1891,9 +1695,6 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
         lastReconcileAt = Date.now();
         try { await reconcileAutomaticProduction(supabase); }
         catch (error) { console.error(`[DESIGNPRO-OS] automatic production reconciliation failed: ${error.message}`); }
-        // The worker's half of the purchase: an entitlement recorded while this
-        // process was down, or delivered twice, is noticed here rather than
-        // needing to be caught as it happens.
         try { await reconcilePurchaseGates(supabase); }
         catch (error) { console.error(`[DESIGNPRO-OS] purchase gate reconciliation failed: ${error.message}`); }
       }
@@ -1946,4 +1747,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views, mirrorBleedPanelFromProofRegion } };
