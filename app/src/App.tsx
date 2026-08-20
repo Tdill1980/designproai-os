@@ -119,12 +119,10 @@ const DesignProWrapBoxPack = lazyWithRetry(() =>
 );
 
 // ── Lazy imports - Core tools ────────────────────────────────────
-const ArtboardFirstDesignPro = lazyWithRetry(() => import("./pages/ArtboardFirstDesignPro"));
 const AdminDesignProV2Test = lazyWithRetry(() => import("./pages/AdminDesignProV2Test"));
 const PanelSizer = lazyWithRetry(() => import("./pages/PanelSizer"));
 const DesignStudio = lazyWithRetry(() => import("./pages/DesignStudio"));
 const DesignProStudio = lazyWithRetry(() => import("./pages/DesignProStudio"));
-const DesignPanelProWorkspace = lazyWithRetry(() => import("./pages/DesignPanelProWorkspace"));
 const ProductionProof = lazyWithRetry(() => import("./pages/ProductionProof"));
 
 // ── Lazy imports - User pages ────────────────────────────────────
@@ -264,7 +262,11 @@ const App = () => {
           <Route path="/designpro/genie-qc" element={<RequireAuth><DesignProGenieQc /></RequireAuth>} />
           <Route path="/designpro/wrapbox" element={<RequireAuth><DesignProWrapBox /></RequireAuth>} />
           <Route path="/designpro/wrapbox/:packId" element={<RequireAuth><DesignProWrapBoxPack /></RequireAuth>} />
-          <Route path="/designpro/artboard-first" element={<RequireAuth><ArtboardFirstDesignPro /></RequireAuth>} />
+          {/* Artboard-first drove designpro-flat-art / designpro-recreate-3d from
+              the browser -- a second design producer beside Calls 1-7, and the
+              flat-first projection the design path was deliberately taken off.
+              The runtime owns generation, so this redirects rather than 404s. */}
+          <Route path="/designpro/artboard-first" element={<Navigate to="/designpro" replace />} />
           {/* CarWrapPro™ — public SEO/AEO product page + the Design Assets admin production page */}
           {/* DesignPro v2 object-graph engine — isolated experimental module, admin test bench only */}
           <Route path="/admin/designpro-v2-test" element={<RequireAdmin><AdminDesignProV2Test /></RequireAdmin>} />
@@ -345,7 +347,11 @@ const App = () => {
               keeps old links/bookmarks working. */}
           {/* ApprovePro — shop workbench (split pane: orders list + detail) */}
           <Route path="/approvepro" element={<ApproveProUnavailable />} />
-          <Route path="/designpanelpro-workspace" element={<RequireAuth><DesignPanelProWorkspace /></RequireAuth>} />
+          {/* The workspace listed designs out of color_visualizations and their
+              built panels out of production_flow_assets. Both are RestylePro
+              tables; the jobs list is the standalone equivalent and is keyed by
+              the generationId everything downstream already uses. */}
+          <Route path="/designpanelpro-workspace" element={<Navigate to="/designpro/jobs" replace />} />
           <Route path="/production-proof" element={<RequireAdmin><ProductionProof /></RequireAdmin>} />
           {/* Multi-window render queue */}
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

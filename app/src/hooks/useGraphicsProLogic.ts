@@ -9,7 +9,8 @@ import { parseGraphicsProLabel, detectFinishFromPrompt, detectManufacturerFromPr
 import { withTimeout, VIEW_RENDER_TIMEOUT_MS } from "@/lib/invokeWithTimeout";
 import { buildProductionPanels } from "@/lib/buildProductionPanels";
 import { producePassengerView, uploadMirrorToStorage } from "@/utils/passenger-mirror";
-import { type VehicleType, getRenderFunctionForType } from "@/components/tools/VehicleTypeSelector";
+import { type VehicleType } from "@/components/tools/VehicleTypeSelector";
+import { getRenderFunctionForType } from "@/components/tools/legacyRenderFunctions";
 import type { VehicleSpecsPreview } from "@/components/tools/NonStandardVehicleWarning";
 
 const STORAGE_KEY = "graphicspro-generations";

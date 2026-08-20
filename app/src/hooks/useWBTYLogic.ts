@@ -8,7 +8,8 @@ import { useSubscriptionLimits } from "./useSubscriptionLimits";
 import { saveProofUrlToViz } from "@/lib/save-proof-url";
 import { withTimeout, VIEW_RENDER_TIMEOUT_MS } from "@/lib/invokeWithTimeout";
 import { STATIC_PATTERNS } from "@/data/patternpro-patterns";
-import { type VehicleType, getRenderFunctionForType } from "@/components/tools/VehicleTypeSelector";
+import { type VehicleType } from "@/components/tools/VehicleTypeSelector";
+import { getRenderFunctionForType } from "@/components/tools/legacyRenderFunctions";
 
 const STORAGE_KEY = "wbty-generations";
 const FREE_LIMIT = 2;

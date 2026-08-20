@@ -1,66 +1,47 @@
 /**
- * ProductionFlowLayersCard — RevisionStudio (dark UI) surface for the SEPARATED
- * production layers that `production-flow-engine` already authored per side into
- * `production_flow_assets`:
- *   • background_url   — the clean/blank print background (logos + text removed)
- *   • branding_url     — the complete branded panel composite
- *   • depth_mask_url   — a transparent depth/shadow map
- *   • final_pack_url   — the flattened print pack
+ * PRODUCTION LAYERS — what the customer sees after Calls 8-11.
  *
- * Surfacing them HERE lets the design team make FAST edits: instead of
- * regenerating the whole render, they grab the transparent branding/design-element
- * overlay and drop it straight onto the LayerLift canvas as an editable layer
- * (onAddOverlayLayer), or download any separated element.
+ * Per side: the branded production panel from Call 9, the de-logoed QC
+ * duplicate from Call 11 beside it, and the approved 3D view that panel was cut
+ * against. Underneath, the logo assets Call 10 separated. The two purchases --
+ * Production Pack and Logo Pack -- sit at the bottom, each authorizing only its
+ * own fulfillment.
  *
- * Read-only on production_flow_assets (SELECT allowed to authenticated by the
- * table's RLS policy). Renders nothing when a generation has no rows yet, so it
- * is always additive and never blocks the page.
+ * The presentation is the original product component and has not changed. What
+ * changed is that it no longer resolves any of this for itself.
  *
- * Dark theme to match RevisionStudioIQ (zinc surfaces, blue accent).
+ * It used to. It walked color_visualizations for a canonical id, asked
+ * designpro-file-output-api for the active Entice pack, read
+ * production_flow_assets, and offered buttons that submitted, resumed and
+ * lifted -- all of it the RestylePro production backend, reached from a
+ * customer's own screen. That is removed rather than gated, because a gated
+ * fallback is still a door, and a second authority for the same design is the
+ * exact failure the standalone runtime exists to prevent. Every value now comes
+ * from `source`, which designpro-production-layers builds out of what the
+ * runtime already published.
+ *
+ * Nothing here starts work. Calls 8-12 run because Call 7 handed off; a
+ * customer-side control that could kick or retry production would be a second
+ * conductor of a pipeline that must have exactly one.
+ *
+ * Dark theme to match the surfaces it mounts on (zinc, blue accent).
  */
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { Layers, Download, MousePointerClick, Loader2, Hammer, X, Check, ShoppingBag, Wand2, FileText, Scissors } from "lucide-react";
+import { Layers, Download, MousePointerClick, Loader2, X, Check, ShoppingBag, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-import {
-  getEnticeRevisionStatus,
-  resumeEnticeRevision,
-  submitEnticeRevision,
-  submitProductionPack,
-} from "@/lib/designpro-file-output";
 import {
   getProductionPanelPackState,
   type ProductionFlowAssetRow,
 } from "@/lib/productionFlowAssetState";
 import type { ProductionLayersSource } from "@/lib/designpro-production-layers";
 
-// ── GRAPHICS PACK LIFT — DISABLED (Trish, 2026-07-22) ───────────────────────
-// The per-side "Lift branding" button (panel-artboard-generator step:"liftoverlays")
-// AI-erases baked-in branding to derive a "clean" panel and OVERWRITES the good
-// panel at production_flow_assets.background_url. Its gates verify the design
-// OUTSIDE the branding boxes and the round-trip WITH overlays layered back — but
-// NOT whether the clean panel is smear-free UNDERNEATH the logo. Moving/removing
-// the logo then exposes a permanent smear (observed live on the 3D proof in
-// RevisionStudio). It must never be able to corrupt a good vault panel.
-// The worker /lift-overlays + edge step stay in place; only this operator trigger
-// is gated off. The Graphics/Font Pack will be rebuilt from CLEAN sources
-// (LogoPro vector + cut path / uploads / never-baked separate layers), not this
-// destructive lift. Flip to true only after that clean-source rebuild replaces it.
-const GRAPHICS_PACK_LIFT_ENABLED = false;
 
 type PFARow = ProductionFlowAssetRow;
 
 interface Props {
-  /**
-   * The id of the design on screen — usually the `color_visualizations` RENDER
-   * id (which holds the views), but a DesignIQ generation id is also accepted.
-   * The card resolves the CANONICAL id internally (PR #2768 pattern) and queries
-   * production_flow_assets for BOTH ids, so it finds the separated layers whether
-   * the build keyed them to the render id or the linked generation id.
-   */
+  /** The design on screen. Identity only -- nothing is resolved from it. */
   generationId?: string | null;
   /**
    * Fast-edit hook: drop the transparent branding/design overlay onto the
@@ -68,16 +49,10 @@ interface Props {
    */
   onAddOverlayLayer?: (url: string, name: string) => void;
   /**
-   * WHERE THE LAYERS COME FROM.
-   *
-   * Omitted, the card resolves everything itself against the tables it was
-   * written for -- unchanged behaviour, so nothing that mounts it today moves.
-   *
-   * Supplied, it consumes what the standalone runtime published through dpApi
-   * instead: the same rows, the same pack identity, the same approved views.
-   * That is the whole seam. The presentation below -- six branded panels beside
-   * their own 3D views, the clean set, the separated logos, the two purchase
-   * actions -- is identical either way, because the rows are.
+   * WHERE THE LAYERS COME FROM. Required: the rows, the pack identity, the
+   * approved views and both checkouts, already resolved from what the runtime
+   * published. Without it the card renders nothing, which is the honest state
+   * for a design whose panels do not exist yet.
    */
   source?: ProductionLayersSource | null;
   className?: string;
@@ -222,211 +197,39 @@ function PreviewModal({ url, label, onClose, onOrder }: { url: string; label: st
 }
 
 export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, source, className }: Props) {
-  // An injected source answers for itself; the resolvers below stay switched
-  // off rather than racing it for the same four answers.
-  const injected = source || null;
-  const queryClient = useQueryClient();
-  const [building, setBuilding] = useState(false);
+  // Required, not preferred. There is no other way to fill this card, which is
+  // the whole point: a fallback resolver would be a second authority for the
+  // same design, reachable from the customer's screen.
+  const injected = source;
   const [ordering, setOrdering] = useState(false);
   // Fit-to-screen preview lightbox target ({url,label}) or null when closed.
   const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
 
-  // Resolve both immutable identities. Revision Studio normally passes the
-  // color_visualizations id; callers that still pass the canonical DesignIQ id
-  // are recovered through the latest server-authored Entice Pack.
-  const { data: resolvedQuery, isLoading: resolvingQuery } = useQuery({
-    queryKey: ["production_flow_assets_canonical_id", generationId],
-    enabled: !!generationId && !injected,
-    queryFn: async () => {
-      const { data: direct, error: directError } = await (supabase as any)
-        .from("color_visualizations")
-        .select("id, admin_notes, updated_at")
-        .eq("id", generationId)
-        .maybeSingle();
-      if (directError) throw directError;
-
-      let canonical = generationId as string;
-      let visualizationId = direct?.id ? String(direct.id) : "";
-      let expectedUpdatedAt = direct?.updated_at ? String(direct.updated_at) : "";
-      let notesSource = direct?.admin_notes;
-
-      try {
-        const notes = notesSource
-          ? (typeof notesSource === "string" ? JSON.parse(notesSource) : notesSource)
-          : {};
-        if (notes?.designiq_generation_id) canonical = String(notes.designiq_generation_id);
-      } catch { /* not linked */ }
-
-      // FIRST-BUILD RECOVERY — resolve through the design's OWN back-link
-      // before falling back to its Entice Pack.
-      //
-      // When this card is handed a canonical DesignIQ generation id, the direct
-      // lookup above misses (that id is not a color_visualizations row) and the
-      // ONLY other recovery path was the pack lookup below — which by
-      // definition does not exist yet on a design's FIRST build. So
-      // `visualizationId` stayed "", the status query (its `enabled` flag) never
-      // ran, the button rendered its "Build production previews" label, and
-      // handleBuild's identity guard refused the click before any request left
-      // the browser. Chicken-and-egg: you could not create the first pack
-      // because resolving needed a pack.
-      //
-      // Live 2026-08-02: after the pack.verify fix deployed, a rerun on the Urus
-      // produced ZERO `designpro-file-output-api` requests in a 49-minute edge
-      // log window — no submit, and no status call either, which is the
-      // fingerprint of an empty visualizationId. That job carries SEVEN
-      // designiq_generations rows and only one of them (`4fa058c2`) had a pack;
-      // the other six dead-ended here.
-      //
-      // `admin_notes` is TEXT, not jsonb, so PostgREST cannot filter it with
-      // `->>`. Narrow with a plain text match on the id, then CONFIRM the parsed
-      // back-link equals it — the filter finds the row, the parse is what makes
-      // the match exact. A near-miss (the id appearing elsewhere in the notes)
-      // is rejected rather than trusted.
-      if (!visualizationId) {
-        const { data: linkedRenders, error: linkedRenderError } = await (supabase as any)
-          .from("color_visualizations")
-          .select("id, admin_notes, updated_at")
-          .ilike("admin_notes", `%${generationId}%`)
-          .order("created_at", { ascending: false })
-          .limit(5);
-        if (linkedRenderError) throw linkedRenderError;
-        for (const row of (linkedRenders || [])) {
-          let linkedId = "";
-          try {
-            const notes = typeof row?.admin_notes === "string"
-              ? JSON.parse(row.admin_notes)
-              : row?.admin_notes || {};
-            linkedId = typeof notes?.designiq_generation_id === "string"
-              ? notes.designiq_generation_id
-              : "";
-          } catch { /* unparseable notes are not a link */ }
-          if (linkedId === generationId && row?.id && row?.updated_at) {
-            visualizationId = String(row.id);
-            expectedUpdatedAt = String(row.updated_at);
-            break;
-          }
-        }
-      }
-
-      if (!visualizationId) {
-        const { data: linkedPack, error: linkedPackError } = await (supabase as any)
-          .from("designpro_entice_packs")
-          .select("designiq_generation_id, source_visualization_id")
-          .eq("designiq_generation_id", generationId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (linkedPackError) throw linkedPackError;
-        if (linkedPack) {
-          canonical = String(linkedPack.designiq_generation_id);
-          visualizationId = String(linkedPack.source_visualization_id);
-          const { data: source, error: sourceError } = await (supabase as any)
-            .from("color_visualizations")
-            .select("updated_at")
-            .eq("id", visualizationId)
-            .maybeSingle();
-          if (sourceError) throw sourceError;
-          expectedUpdatedAt = source?.updated_at ? String(source.updated_at) : "";
-        }
-      }
-
-      return { canonical, visualizationId, expectedUpdatedAt };
-    },
-  });
-
-  // An injected source already knows which design this is, so there is nothing
-  // to recover. visualizationId stays empty deliberately: it addresses a table
-  // this path does not read, and the status query below is gated on it.
-  const resolved = injected
-    ? { canonical: injected.canonicalId, visualizationId: "", expectedUpdatedAt: "" }
-    : resolvedQuery;
-  const resolving = injected ? false : resolvingQuery;
-
-  // Status is read through the public workflow facade, not reconstructed from
-  // mutable browser state. visualizationId lookup lets a reload rediscover the
-  // durable run without sessionStorage.
-  const { data: enticeStatus = null, isLoading: enticeStatusLoading } = useQuery({
-    queryKey: ["designpro_entice_status", resolved?.visualizationId],
-    enabled: !!resolved?.visualizationId && !injected,
-    queryFn: async () => {
-      try {
-        return await getEnticeRevisionStatus({
-          visualizationId: resolved!.visualizationId,
-        });
-      } catch (error: any) {
-        if (/not found/i.test(String(error?.message || ""))) return null;
-        throw error;
-      }
-    },
-    refetchOnMount: "always",
-    retry: false,
-    refetchInterval: (query) => {
-      const status: any = query.state.data;
-      const workflowStatus = String(status?.workflowRun?.workflow_status || "");
-      return status?.enticePack?.status === "building"
-        || ["queued", "running"].includes(workflowStatus)
-        ? 3_000
-        : false;
-    },
-  });
-
-  const latestWorkflowStatus = String((enticeStatus as any)?.workflowRun?.workflow_status || "");
-  const latestPackStatus = String((enticeStatus as any)?.enticePack?.status || "");
-  const isEnticeUpdating =
-    latestPackStatus === "building"
-    || ["queued", "running"].includes(latestWorkflowStatus);
-  const failedStage = Array.isArray((enticeStatus as any)?.stages)
-    ? [...(enticeStatus as any).stages].reverse().find((stage: any) => stage?.status === "failed")
-    : null;
-
-  // The active pointer is the only pack displayed. A newer building/failed
-  // revision never leaks half-updated proof, panel, or logo assets into this card.
-  const activePack = injected ? injected.activePack : ((enticeStatus as any)?.activeEnticePack || null);
-  const activePackLoading = enticeStatusLoading;
+  // EVERYTHING THIS CARD SHOWS COMES FROM THE INJECTED SOURCE.
+  //
+  // It used to resolve all of this itself: walk color_visualizations for a
+  // canonical id, ask designpro-file-output-api for the active Entice pack,
+  // then read production_flow_assets. That was the RestylePro production
+  // backend, reached from the customer's own screen, and it is gone -- not
+  // switched off behind a flag, not kept as a fallback. A fallback is a door,
+  // and a door into a second authority for the same design is the failure this
+  // system exists to make impossible.
+  //
+  // The runtime publishes the same four answers through dpApi, and
+  // designpro-production-layers maps them into the rows below. The presentation
+  // is unchanged, because the rows are.
+  const resolved = { canonical: injected.canonicalId, visualizationId: "", expectedUpdatedAt: "" };
+  const resolving = false;
+  const activePack = injected.activePack;
+  const activePackLoading = false;
 
   const activeProofUrl = String((activePack as any)?.proof_artifact?.url || "");
   const expectedSurfaceCount = Array.isArray((activePack as any)?.surface_manifest?.surfaces)
     ? (activePack as any).surface_manifest.surfaces.length
     : 0;
-  // PANELS ARE READ BY DESIGN ID. The pack pointer LABELS them; it does not
-  // decide whether they exist.
-  //
-  // This query used to be `enabled: !!activePack?.id` plus four exact-match
-  // filters against that pack. `pack.activate` is the LAST of eight stages, so
-  // until it succeeded there was no pointer, the query never ran, and the card
-  // rendered "No verified active Entice Pack… legacy and incomplete panels
-  // remain hidden" — while finished panels sat in the vault. Panel output fell
-  // to ~0/day the same day that gate landed. Six correct panels the customer
-  // cannot see are worth exactly as much as no panels.
-  //
-  // `getProductionPanelPackState` was already the real safety mechanism and it
-  // needs no pack id: it selects ONE complete source-hashed pack out of whatever
-  // rows it is given, rejecting mixed revisions, mixed source hashes and
-  // incomplete side sets on the row data itself. So the pack identity is applied
-  // BELOW as a label (verified vs preview) and as the gate on the paid order
-  // button — which stays exactly as strict as it was.
-  const { data: rowsQuery = [], isLoading: rowsLoadingQuery } = useQuery({
-    queryKey: ["production_flow_assets", "by-design", resolved?.canonical],
-    enabled: !!resolved?.canonical && !injected,
-    queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("production_flow_assets")
-        .select("id, job_id, side, version, revision_id, entice_pack_id, designiq_generation_id, dimension_manifest_id, manifest_hash, source_contract_hash, artifact_hash, dimensions_inches, background_url, branding_url, depth_mask_url, final_pack_url, meta_metrics, created_at")
-        .eq("designiq_generation_id", resolved!.canonical)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return (data || []) as PFARow[];
-    },
-    refetchOnMount: "always",
-    refetchInterval: (query) =>
-      expectedSurfaceCount > 0
-      && ((query.state.data || []) as PFARow[]).length < expectedSurfaceCount
-        ? 3_000
-        : false,
-  });
 
-  const rows = injected ? (injected.rows as PFARow[]) : rowsQuery;
-  const rowsLoading = injected ? false : rowsLoadingQuery;
+  const rows = injected.rows as PFARow[];
+  const rowsLoading = false;
 
   // Prefer the pack built from the CURRENT proof. If there isn't one yet, fall
   // back to the newest complete pack for this design and show it as a preview —
@@ -466,27 +269,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   const displayRevisionId = String(
     latestBySide[0]?.revision_id || (activePack as any)?.revision_id || "",
   );
-  const { data: designViewsQuery = {} } = useQuery({
-    queryKey: ["production_flow_design_views", displayRevisionId],
-    enabled: !!displayRevisionId && !injected,
-    queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("design_version_commits")
-        .select("revision_snapshot")
-        .eq("id", displayRevisionId)
-        .maybeSingle();
-      if (error) throw error;
-      const snapshot = data?.revision_snapshot && typeof data.revision_snapshot === "object"
-        ? data.revision_snapshot
-        : {};
-      const views = snapshot.renderUrls && typeof snapshot.renderUrls === "object"
-        ? snapshot.renderUrls
-        : {};
-      return views as Record<string, string>;
-    },
-  });
-
-  const designViews = injected ? injected.designViews : designViewsQuery;
+  const designViews = injected.designViews;
 
   // LOGO PACK — read only from the ONE selected atomic pack. Never union
   // admin_notes across order-family revisions: that was able to attach stale
@@ -547,109 +330,22 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
     return { sides, detail: Array.from(reasons).join(" · ") };
   })();
 
-  // Manual build/retry only submits or resumes the durable server workflow.
-  // There is intentionally no mount effect and no browser proof/panel producer.
-  const handleBuild = async () => {
-    if (
-      !resolved?.visualizationId
-      || !resolved?.canonical
-      || !resolved?.expectedUpdatedAt
-      || building
-    ) {
-      if (!building) {
-        toast({
-          title: "Revision identity unavailable",
-          description: "Save the design once, then retry the server build.",
-          variant: "destructive",
-        });
-      }
-      return;
-    }
-    setBuilding(true);
-    try {
-      // OPTIMISTIC-CONCURRENCY FIX (2026-07-30). `resolved.expectedUpdatedAt`
-      // comes from a cached useQuery result. Generating a design writes to this
-      // same color_visualizations row many times (a live Urus run produced 16
-      // designiq rows and rewrote render_urls), so by the time the user clicks
-      // Build the cached timestamp is stale. save_and_enqueue_designpro_revision
-      // compares it with FOR UPDATE and raises revision_source_changed, so no
-      // entice pack is ever created — while the UI polls status for that
-      // never-created pack and 404s indefinitely behind the "Building
-      // Production Proof on Server" spinner. Live 2026-07-30: ~20x 404, then
-      // 503, then 409, zero designpro_entice_packs rows, zero
-      // workflow_stage_runs rows, and generate-2d-proof never invoked.
-      //
-      // Read the row's CURRENT updated_at immediately before submitting. This
-      // does not weaken the concurrency guard — the RPC still takes the row
-      // FOR UPDATE and re-checks — it just stops us sending a value we already
-      // know is out of date.
-      const { data: fresh, error: freshError } = await (supabase as any)
-        .from("color_visualizations")
-        .select("updated_at")
-        .eq("id", resolved.visualizationId)
-        .maybeSingle();
-      if (freshError) throw freshError;
-      const expectedUpdatedAt = fresh?.updated_at
-        ? String(fresh.updated_at)
-        : resolved.expectedUpdatedAt;
-
-      const accepted = await submitEnticeRevision({
-        visualizationId: resolved.visualizationId,
-        expectedUpdatedAt,
-        generationId: resolved.canonical,
-        trigger: (enticeStatus as any)?.workflowRun
-          ? "revision_saved"
-          : "initial_generation",
-        change: {
-          type: (enticeStatus as any)?.workflowRun ? "revision" : "generate",
-        },
-        idempotencyKey:
-          `layers-card:${resolved.visualizationId}:${expectedUpdatedAt}`,
-      });
-      const acceptedStatus = String((accepted.workflowRun as any)?.workflow_status || "");
-      if (acceptedStatus === "failed") {
-        await resumeEnticeRevision(accepted.workflowRun.id, true);
-      }
-      toast({
-        title: accepted.idempotent
-          ? "Server workflow already recorded"
-          : "Production previews accepted",
-        description: acceptedStatus === "failed"
-          ? "The failed workflow was safely reopened from its last verified stage."
-          : "GENIE is building the proof, panels, and logo pack on the server.",
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["designpro_entice_status", resolved.visualizationId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: [
-            "designpro_active_entice_pack",
-            resolved.canonical,
-            resolved.visualizationId,
-          ],
-        }),
-        queryClient.invalidateQueries({ queryKey: ["production_flow_assets"] }),
-      ]);
-    } catch (error: any) {
-      toast({
-        title: "Server build could not start",
-        description: String(error?.message || error).slice(0, 220),
-        variant: "destructive",
-      });
-    } finally {
-      setBuilding(false);
-    }
-  };
-
-  // Paid promotion pins the exact active Entice Pack. The card will not create a
-  // browser-side order/job identity or rerun Entice generation as a side effect.
-  //
-  // An injected source brings its own checkout. Same gate, same eligibility --
-  // only the action behind the button changes, from the legacy job promotion to
-  // the standalone purchase the entitlement is recorded against.
-  const orderProductionPack = injected
-    ? (injected.onOrderProductionPack && isVerifiedPack && packState.productionEligible
+  /**
+   * ORDER THE PRODUCTION PACK.
+   *
+   * The gate is unchanged -- a verified pack, production-eligible, or no button
+   * at all. What is gone is the second implementation behind it: promoting a
+   * panelizer_jobs row through designpro-file-output-api. The purchase is the
+   * gateway's checkout, and the entitlement it records is the Production Pack's
+   * own, so buying one product can never authorize the other's fulfillment.
+   *
+   * There is no Build or Retry control any more, and that is the point. Those
+   * submitted and resumed the Entice workflow from the browser. Calls 8-12 run
+   * because Call 7 handed off, not because someone clicked; a customer-side
+   * button that can start or restart production work is a second conductor.
+   */
+  const orderProductionPack =
+    injected.onOrderProductionPack && isVerifiedPack && packState.productionEligible
       ? async () => {
         if (ordering) return;
         setOrdering(true);
@@ -665,162 +361,17 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           setOrdering(false);
         }
       }
-      : undefined)
-    : activePack && isVerifiedPack && packState.productionEligible
-    ? async () => {
-      if (ordering) return;
-      setOrdering(true);
-      try {
-        const { data: panelizerJob, error: panelizerError } = await (supabase as any)
-          .from("panelizer_jobs")
-          .select("id, generation_id")
-          .eq("generation_id", (activePack as any).designiq_generation_id)
-          .eq("job_type", "production_pack")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (panelizerError) throw panelizerError;
-        if (!panelizerJob?.id) {
-          throw new Error(
-            "No tenant-owned Production Pack request is attached to this design. Complete Production Pack checkout, then retry.",
-          );
-        }
-        const accepted = await submitProductionPack({
-          jobId: String(panelizerJob.id),
-          generationId: String((activePack as any).designiq_generation_id),
-          enticePackId: String((activePack as any).id),
-          idempotencyKey:
-            `layers-order:${panelizerJob.id}:${(activePack as any).id}`,
-        });
-        toast({
-          title: accepted.idempotent
-            ? "Production Pack already queued"
-            : "Production Pack accepted",
-          description: "The exact active revision is continuing on the server.",
-        });
-      } catch (error: any) {
-        const needsCheckout = error?.code === "pack_required";
-        toast({
-          title: needsCheckout
-            ? "Production Pack checkout required"
-            : "Production Pack could not start",
-          description: String(error?.message || error).slice(0, 220),
-          variant: "destructive",
-        });
-      } finally {
-        setOrdering(false);
-      }
-    }
-    : undefined;
+      : undefined;
 
-  const handleRetryServerBuild = async () => {
-    if (latestWorkflowStatus === "completed" && activePack) {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["designpro_entice_status", resolved?.visualizationId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["production_flow_assets", "active-entice-pack", (activePack as any).id],
-        }),
-      ]);
-      toast({
-        title: "Server pack is current",
-        description: "The active verified revision was refreshed without regenerating it.",
-      });
-      return;
-    }
-    if (!latestWorkflowStatus) {
-      await handleBuild();
-      return;
-    }
-    if (!["failed", "cancelled"].includes(latestWorkflowStatus)) return;
-    const runId = String((enticeStatus as any)?.workflowRun?.id || "");
-    const failedRevisionId = String((enticeStatus as any)?.enticePack?.revision_id || "");
-    if (
-      !runId
-      || !failedRevisionId
-      || !resolved?.expectedUpdatedAt
-      || latestWorkflowStatus === "cancelled"
-    ) {
-      toast({
-        title: "Workflow cannot be resumed",
-        description: latestWorkflowStatus === "cancelled"
-          ? "Save a new revision to create a new server workflow."
-          : "The durable workflow identity is missing.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (failedRevisionId && resolved?.expectedUpdatedAt) {
-      const { data: failedRevision, error: failedRevisionError } = await (supabase as any)
-        .from("design_version_commits")
-        .select("revision_snapshot")
-        .eq("id", failedRevisionId)
-        .maybeSingle();
-      if (failedRevisionError) {
-        toast({
-          title: "Retry identity could not be verified",
-          description: failedRevisionError.message,
-          variant: "destructive",
-        });
-        return;
-      }
-      const frozenSavedAt = String(
-        failedRevision?.revision_snapshot?.savedAt
-        || failedRevision?.revision_snapshot?.saved_at
-        || "",
-      );
-      if (!frozenSavedAt || !Number.isFinite(Date.parse(frozenSavedAt))) {
-        toast({
-          title: "Retry identity is incomplete",
-          description: "Save the revision again so the server can freeze its exact pixels.",
-          variant: "destructive",
-        });
-        return;
-      }
-      if (
-        Date.parse(frozenSavedAt) !== Date.parse(resolved.expectedUpdatedAt)
-      ) {
-        // The canvas changed after the failed run. Freeze a new immutable
-        // revision instead of resuming and activating stale pixels.
-        await handleBuild();
-        return;
-      }
-    }
-    setBuilding(true);
-    try {
-      await resumeEnticeRevision(runId, true);
-      toast({
-        title: "Server workflow resumed",
-        description: "Processing continues from the last verified stage.",
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["designpro_entice_status", resolved?.visualizationId],
-      });
-    } catch (error: any) {
-      toast({
-        title: "Retry failed",
-        description: String(error?.message || error).slice(0, 220),
-        variant: "destructive",
-      });
-    } finally {
-      setBuilding(false);
-    }
-  };
+  // THE GRAPHICS-PACK LIFT IS REMOVED, NOT DISABLED.
+  //
+  // It invoked panel-artboard-generator step:"liftoverlays" to AI-erase baked-in
+  // branding and overwrite a good vault panel with the result -- a smear the
+  // customer only discovers when they move the logo. It had been flag-gated off
+  // for a month, which meant the wiring survived every review that read the
+  // flag and stopped. Call 11's de-logoed duplicates are the answer to what it
+  // was for, and they never touch the branded panel.
 
-  // GRAPHICS PACK — DesignPro-only surface (docs/SCOPE_DETERMINISTIC_OVERLAY_LIFT.md).
-  // The lift button shows ONLY when the design has a designiq_generations row,
-  // which structurally excludes RecreatePro and GraphicsPro jobs (viz-keyed only).
-  const { data: isDesignProJob = false } = useQuery({
-    queryKey: ["designiq_exists", resolved?.canonical],
-    enabled: !!resolved?.canonical,
-    queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from("designiq_generations").select("id").eq("id", resolved!.canonical).maybeSingle();
-      return !!data;
-    },
-  });
-  const [lifting, setLifting] = useState<string | null>(null);
   // Why the Logo Pack add-on is unavailable, revealed on request rather than
   // shown as a standing warning beside print-ready files.
   const [logoPackNotice, setLogoPackNotice] = useState(false);
@@ -829,37 +380,11 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   // fulfills by the canonical DesignIQ generation id, so that exact id — never
   // a render id — goes into the session metadata.
   const handleOrderLogoPack = async () => {
-    const canonical = resolved?.canonical;
-    if (!canonical || orderingLogoPack) return;
+    if (orderingLogoPack) return;
     setOrderingLogoPack(true);
-    // The standalone path never reaches the RestylePro edge function; its
-    // checkout is the gateway route, and the entitlement it records is the
-    // Logo Pack's own -- separate from the Production Pack, so buying one can
-    // never authorize the other's fulfillment.
-    if (injected) {
-      try {
-        if (!injected.onOrderLogoPack) throw new Error("Logo Pack checkout is not available");
-        await injected.onOrderLogoPack();
-      } catch (e) {
-        toast({
-          title: "Logo Pack checkout failed",
-          description: e instanceof Error ? e.message : String(e),
-          variant: "destructive",
-        });
-        setOrderingLogoPack(false);
-      }
-      return;
-    }
     try {
-      const { data, error } = await supabase.functions.invoke("create-single-use-checkout", {
-        body: {
-          tool: "logo_pack",
-          generation_id: canonical,
-          return_path: window.location.pathname,
-        },
-      });
-      if (error || !data?.url) throw new Error(error?.message || "Checkout could not be created");
-      window.location.href = String(data.url);
+      if (!injected.onOrderLogoPack) throw new Error("Logo Pack checkout is not available");
+      await injected.onOrderLogoPack();
     } catch (e) {
       toast({
         title: "Logo Pack checkout failed",
@@ -870,117 +395,27 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
     }
   };
 
-  // CUT-READY LOGO FILES — the lifted logos in the Logo Pack are transparent
-  // raster PNGs, not cut contours. cutpath-element-extract (VTracer WASM →
-  // Bézier SVG + EPS) is the sanctioned producer; this reads any pack already
-  // built for this design so a reload can re-offer the download.
-  const [cutting, setCutting] = useState(false);
-  const { data: cutFiles = null } = useQuery({
-    queryKey: ["logo_pack_cutfiles", resolved?.visualizationId],
-    enabled: !!resolved?.visualizationId,
-    queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from("color_visualizations")
-        .select("admin_notes")
-        .eq("id", resolved!.visualizationId)
-        .maybeSingle();
-      let notes: Record<string, any> = {};
-      try {
-        notes = typeof data?.admin_notes === "string" ? JSON.parse(data.admin_notes) : (data?.admin_notes || {});
-      } catch { notes = {}; }
-      const cf = notes?.logo_pack_cutfiles;
-      return cf && typeof cf.zip_url === "string" ? (cf as { zip_url: string; count?: number; generated_at?: string }) : null;
-    },
-  });
-
-  const handleLift = async (side: string) => {
-    if (!GRAPHICS_PACK_LIFT_ENABLED) return; // disabled — see rationale at top of file
-    const gid = (resolved?.canonical || generationId) as string;
-    if (!gid || lifting) return;
-    setLifting(side);
-    try {
-      const { data } = await (supabase as any).functions.invoke("panel-artboard-generator", {
-        body: { step: "liftoverlays", generationId: gid, side },
-      });
-      if (data?.success && Number(data?.lifted) > 0) {
-        toast({
-          title: `${side}: ${data.lifted} branding layer${data.lifted === 1 ? "" : "s"} lifted`,
-          description: `Clean panel + editable layers saved (round-trip diff ${data.qc?.roundTripDiff ?? "—"}).`,
-        });
-        await queryClient.invalidateQueries({ queryKey: ["production_flow_assets"] });
-      } else if (data?.success) {
-        toast({ title: `${side}: nothing to lift`, description: data?.reason || "no branding elements detected" });
-      } else {
-        // HONEST FLAG — a failed gate persists nothing; show exactly why.
-        toast({ title: `${side}: lift failed`, description: data?.error || "unknown error", variant: "destructive" });
-      }
-    } catch (e: any) {
-      toast({ title: `${side}: lift failed`, description: String(e?.message || e).slice(0, 160), variant: "destructive" });
-    } finally {
-      setLifting(null);
-    }
-  };
-
-  // Route the Logo Pack through cutpath-element-extract to produce REAL cut
-  // files: a VTracer Bézier SVG + PostScript EPS contour per logo, plus the
-  // alpha-preserved raster, all zipped. The lifted PNGs alone are not cut
-  // contours — this is the producer that makes them plotter-ready. The result
-  // is persisted onto this render row's admin_notes (a direct client write, per
-  // the edge-function-cap pattern already used for logo_pack itself).
-  const handleCutLogoPack = async () => {
-    if (cutting) return;
-    if (!logoPack.length) return;
-    const vizId = resolved?.visualizationId;
-    setCutting(true);
-    try {
-      const { data, error } = await (supabase as any).functions.invoke("cutpath-element-extract", {
-        body: {
-          owner_id: vizId || undefined,
-          elements: logoPack.map((l) => ({ url: l.url, label: l.label })),
-        },
-      });
-      if (error) throw error;
-      if (!data?.success || !data?.zip_url) {
-        throw new Error(data?.error || "no cut files produced");
-      }
-      const record = {
-        zip_url: String(data.zip_url),
-        count: Number(data.vector_ok || 0),
-        generated_at: new Date().toISOString(),
-      };
-      // Persist onto the render row so a reload re-offers the download.
-      if (vizId) {
-        try {
-          const { data: cur } = await (supabase as any)
-            .from("color_visualizations").select("admin_notes").eq("id", vizId).maybeSingle();
-          let notes: Record<string, any> = {};
-          try { notes = typeof cur?.admin_notes === "string" ? JSON.parse(cur.admin_notes) : (cur?.admin_notes || {}); } catch { notes = {}; }
-          notes.logo_pack_cutfiles = record;
-          await (supabase as any).from("color_visualizations").update({ admin_notes: JSON.stringify(notes) }).eq("id", vizId);
-        } catch { /* non-fatal — the zip still downloads below */ }
-      }
-      await queryClient.invalidateQueries({ queryKey: ["logo_pack_cutfiles", vizId] });
-      toast({
-        title: `${record.count} cut file${record.count === 1 ? "" : "s"} ready`,
-        description: "Vector SVG + EPS contour and raster per logo — downloading now.",
-      });
-      window.open(record.zip_url, "_blank", "noopener");
-    } catch (e: any) {
-      toast({ title: "Cut files failed", description: String(e?.message || e).slice(0, 160), variant: "destructive" });
-    } finally {
-      setCutting(false);
-    }
-  };
+  // CUT-READY LOGO FILES ARE NOT AVAILABLE ON THIS PATH YET.
+  //
+  // The old surface invoked cutpath-element-extract and then cached the result
+  // by hand into color_visualizations.admin_notes. That is a legacy table this
+  // system does not own, and writing a paid deliverable's location into it puts
+  // the artifact outside the identity every other output is keyed by. Cut files
+  // belong in the runtime's artifact store like every other deliverable; until
+  // a stage produces them there, offering the button would promise a file no
+  // one can reissue.
 
   if (
-    !generationId
+    !injected
+    || !generationId
     || resolving
     || activePackLoading
     || rowsLoading
   ) return null;
 
-  // Empty state — legacy/incomplete rows stay quarantined. The only action here
-  // submits/resumes the server workflow; opening the card never starts work.
+  // Empty state. There is deliberately no action here: the panels arrive when
+  // Calls 9-11 finish, and a button that could start or restart that work from
+  // the customer's browser is the second conductor this card just stopped being.
   if (latestBySide.length === 0) {
     return (
       <div className={cn("rounded-lg border border-zinc-800 bg-zinc-900 p-4 space-y-3", className)}>
@@ -989,24 +424,10 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           <span className="text-sm font-bold text-zinc-200">Production Layers</span>
         </div>
         <p className="text-[11px] text-amber-300 leading-snug">
-          {isEnticeUpdating
-            ? "Updating production previews on the server. The active pack will switch only after the proof, every required panel, and the logo pack verify together."
-            : latestWorkflowStatus === "failed"
-              ? `The server build stopped at ${failedStage?.stage_key || "an unknown stage"}: ${failedStage?.error_message || "structured failure recorded"}.`
-              : "No complete panel set exists for this design yet. Panels appear here as soon as the server finishes building them — they no longer wait on final pack activation."}
+          No complete panel set exists for this design yet. The six branded
+          panels appear here as soon as the server finishes cutting them from
+          the approved proof.
         </p>
-        <button
-          type="button"
-          onClick={handleRetryServerBuild}
-          disabled={building || isEnticeUpdating}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-fuchsia-600 px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {building || isEnticeUpdating
-            ? <><Loader2 className="w-4 h-4 animate-spin" /> Server workflow running…</>
-            : latestWorkflowStatus === "failed"
-              ? <><Hammer className="w-4 h-4" /> Retry from verified stage</>
-              : <><Hammer className="w-4 h-4" /> Build production previews</>}
-        </button>
       </div>
     );
   }
@@ -1018,20 +439,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
         <span className="text-sm font-bold text-zinc-200">
           {printReady ? "Print Ready Files" : isVerifiedPack ? "Panel previews — production blocked" : "Panel previews — awaiting verification"}
         </span>
-        <button
-          type="button"
-          onClick={handleRetryServerBuild}
-          disabled={building || isEnticeUpdating}
-          className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold text-blue-400 hover:text-blue-300 disabled:opacity-60"
-          title="Submit or retry the server-owned Entice Pack workflow"
-        >
-          {building || isEnticeUpdating
-            ? <><Loader2 className="w-3 h-3 animate-spin" /> Updating…</>
-            : latestWorkflowStatus === "failed"
-              ? <><Hammer className="w-3 h-3" /> Retry</>
-              : <><Hammer className="w-3 h-3" /> Check server pack</>}
-        </button>
-        <span className="text-[10px] text-zinc-500">{latestBySide.length} side{latestBySide.length === 1 ? "" : "s"}</span>
+        <span className="ml-auto text-[10px] text-zinc-500">{latestBySide.length} side{latestBySide.length === 1 ? "" : "s"}</span>
       </div>
       {printReady ? (
         <p className="text-[11px] text-zinc-300 leading-snug">
@@ -1043,18 +451,8 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
         </p>
       ) : null}
       <p className="text-[11px] text-zinc-500 leading-snug">
-        Active revision only — every side, proof, and logo is pinned to Entice Pack {(activePack as any).id.slice(0, 8)}.
+        Active revision only — every side, proof, and logo is pinned to pack {String((activePack as any)?.id || "").slice(0, 8)}.
       </p>
-      {isEnticeUpdating && (
-        <p className="rounded-md border border-blue-500/30 bg-blue-500/10 px-2.5 py-2 text-[11px] font-semibold text-blue-200">
-          Updating production previews… This verified revision remains available until the new pack passes and the active pointer switches atomically.
-        </p>
-      )}
-      {latestWorkflowStatus === "failed" && (
-        <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-[11px] font-semibold text-rose-200">
-          New revision failed at {failedStage?.stage_key || "an unknown stage"}: {failedStage?.error_message || "structured failure recorded"}. The verified pack shown below was not replaced.
-        </p>
-      )}
       {!printReady && (
         <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] font-semibold text-amber-300">
           Preview only — the panels themselves are not production eligible. Downloads and paid production are blocked.
@@ -1120,19 +518,6 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-bold capitalize text-zinc-300">{p.side}</span>
                 <span className="inline-flex items-center gap-2">
-                  {GRAPHICS_PACK_LIFT_ENABLED && isDesignProJob && (
-                    <button
-                      type="button"
-                      onClick={() => handleLift(p.side)}
-                      disabled={!!lifting}
-                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-fuchsia-400 hover:text-fuchsia-300 disabled:opacity-50"
-                      title="Graphics Pack: lift the branding off this panel into editable layers over a clean background"
-                    >
-                      {lifting === p.side
-                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Lifting…</>
-                        : <><Wand2 className="w-3 h-3" /> Lift branding</>}
-                    </button>
-                  )}
                   <span className="text-[10px] text-zinc-500">
                     {p.version}
                     {w && h ? ` · ${w}″ × ${h}″` : ""}
@@ -1178,31 +563,6 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           <p className="text-[10px] text-zinc-400 leading-snug">
             The logos &amp; lettering lifted clean off your design — resize and place them anywhere. Available as a separate $29 add-on.
           </p>
-          <div className="flex items-center gap-2">
-            {cutFiles?.zip_url ? (
-              <a
-                href={cutFiles.zip_url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md border border-fuchsia-500/40 bg-fuchsia-500/10 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-200 hover:bg-fuchsia-500/20"
-                title="Vector SVG + EPS contour and raster per logo, ready for the plotter"
-              >
-                <Download className="w-3 h-3" /> Download cut files (SVG · EPS)
-              </a>
-            ) : (
-              <button
-                type="button"
-                onClick={handleCutLogoPack}
-                disabled={cutting}
-                className="inline-flex items-center gap-1.5 rounded-md border border-fuchsia-500/40 bg-fuchsia-500/10 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-200 hover:bg-fuchsia-500/20 disabled:opacity-50"
-                title="Trace each logo into a plotter-ready Bézier cut path (SVG + EPS)"
-              >
-                {cutting
-                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Tracing cut paths…</>
-                  : <><Scissors className="w-3 h-3" /> Make cut-ready files</>}
-              </button>
-            )}
-          </div>
           <div className="flex flex-wrap gap-2">
             {logoPack.map((l, i) => (
               <div key={l.url + i} className="w-20">
