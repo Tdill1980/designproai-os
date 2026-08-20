@@ -819,11 +819,36 @@ function generationInputHasServerControls(value, path = []) {
 // still sends an order or a recipient is speaking v1, and letting v2 silently
 // ignore those keys is how the design path would quietly reacquire the
 // fulfillment dependency that stopped customers designing anything.
+// The contract must admit exactly what the worker reads. These eight were
+// absent, and the allowlist is closed -- so a brief carrying a finish, a mascot
+// or a VisionBoardIQ reference was not "ignored", it was refused with a 400.
+// generation-worker.cjs promptPartsFor() is the other half of this list;
+// source-tests/runtime/calls-1-7-contract-parity.test.mjs holds the two together.
 const CALLS_1_7_V2_KEYS = [
-  "brief", "businessName", "colors", "companyName", "contractVersion",
-  "designName", "industry", "logoAsset", "mode", "phone", "style", "vehicle",
+  "brief", "bulletPoints", "businessName", "colors", "companyName",
+  "contractVersion", "designName", "finish", "fontStyle", "industry",
+  "logoAsset", "mascot", "mode", "phone", "qrEnabled", "style",
+  "styleDescriptors", "vehicle", "visionBoardImages", "visionboardIntent",
   "website",
 ];
+
+const VISIONBOARD_INTENTS = ["exact_reference", "style_inspiration", "artboard_projection"];
+const ASSET_URL_KEYS = ["url", "signedUrl", "publicUrl", "downloadUrl"];
+
+/**
+ * A reference image identity, at the edge. The runtime re-verifies the bytes
+ * against this identity before they reach the model; this only refuses shapes
+ * that could never verify, and refuses any expiring or public URL outright --
+ * the same rule normalizeSourceAsset enforces deeper in.
+ */
+function referenceAssetIsInvalid(asset) {
+  return !asset || typeof asset !== "object" || Array.isArray(asset)
+    || ASSET_URL_KEYS.some((key) => asset[key] != null)
+    || !String(asset.storagePath || "").trim()
+    || !/^[0-9a-f]{64}$/.test(String(asset.contentHash || "").toLowerCase())
+    || !Number.isSafeInteger(asset.byteSize) || asset.byteSize <= 0
+    || !String(asset.contentType || "").trim();
+}
 
 function validatedGenerationRequestV2(body, generationIdValue) {
   const input = body.input;
@@ -839,6 +864,18 @@ function validatedGenerationRequestV2(body, generationIdValue) {
     || [vehicle.year, vehicle.make, vehicle.model].some((item) => !String(item || "").trim())
     || !VEHICLE_CLASSES.includes(String(vehicle.type || ""))
     || generationInputHasServerControls(input)
+    // The eight fields the worker reads. Bounded here so a widened allowlist
+    // cannot become an unbounded one.
+    || (input.finish !== undefined && (typeof input.finish !== "string" || input.finish.length > 40))
+    || (input.mascot !== undefined && (typeof input.mascot !== "string" || input.mascot.length > 400))
+    || (input.fontStyle !== undefined && (typeof input.fontStyle !== "string" || input.fontStyle.length > 200))
+    || (input.styleDescriptors !== undefined && (typeof input.styleDescriptors !== "string" || input.styleDescriptors.length > 2000))
+    || (input.qrEnabled !== undefined && typeof input.qrEnabled !== "boolean")
+    || (input.bulletPoints !== undefined && (!Array.isArray(input.bulletPoints) || input.bulletPoints.length > 12
+      || input.bulletPoints.some((item) => typeof item !== "string" || item.length > 240)))
+    || (input.visionboardIntent !== undefined && !VISIONBOARD_INTENTS.includes(input.visionboardIntent))
+    || (input.visionBoardImages !== undefined && (!Array.isArray(input.visionBoardImages)
+      || input.visionBoardImages.length > 6 || input.visionBoardImages.some(referenceAssetIsInvalid)))
     || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
     throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
   }

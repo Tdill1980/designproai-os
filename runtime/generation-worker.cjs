@@ -29,6 +29,7 @@ const angles = require("./view-angles.cjs");
 const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 const { createProvider } = require("./generation-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
+const { verifySourceBytes } = require("./runtime-contract.cjs");
 const { authorCreativeInput } = require("./creative-authoring.cjs");
 const { expectedSurfacesFromRow, resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
 
@@ -74,6 +75,58 @@ function designBrief(input) {
 }
 
 /**
+ * The customer's own reference images, as Gemini inlineData parts.
+ *
+ * PORTED BEHAVIOUR. restylepro-os design-panel-ai-generate builds its request as
+ * `[{ text: aiPrompt }, ...artboardExampleParts, ...studioAnchorParts,
+ * ...originalRenderParts, ...visionBoardParts]` (index.ts:1300). This runtime
+ * sent `[{ text }]` and nothing else, so the uploaded logo and the VisionBoardIQ
+ * references were verified, hashed, stored — and never shown to A.C.E. The
+ * prompt still said "the provided reference images" while none were provided,
+ * which is why briefs that named a real logo came back with an invented one.
+ *
+ * TWO OF THE FOUR SOURCE ARRAYS ARE DELIBERATELY NOT PORTED:
+ *   studioAnchorParts   — the cross-vehicle hero anchor. It put driver artwork
+ *                         on every panel and was deleted here on purpose;
+ *                         standalone-claimant-contract.test.mjs asserts it stays
+ *                         deleted. Porting it would reintroduce a known defect.
+ *   artboardExampleParts / originalRenderParts
+ *                       — artboard mode and the RecreatePro original-render path.
+ *                         Neither exists in this runtime's request contract, so
+ *                         there is no input to carry across.
+ *
+ * Bytes are re-verified against the identity the intake registered before they
+ * are sent. A reference whose bytes moved is dropped, not silently substituted:
+ * a design built on unverifiable pixels is worse than one built on none.
+ */
+async function referenceImageParts(supabase, input) {
+  const assets = [];
+  if (input?.logoAsset) assets.push({ label: "logo", asset: input.logoAsset });
+  for (const image of Array.isArray(input?.visionBoardImages) ? input.visionBoardImages : []) {
+    if (image) assets.push({ label: "visionboard", asset: image });
+  }
+
+  const parts = [];
+  for (const { label, asset } of assets) {
+    const storagePath = String(asset?.storagePath || "");
+    const contentType = String(asset?.contentType || "").toLowerCase();
+    if (!storagePath || !contentType) continue;
+    const { data, error } = await supabase.storage.from(asset.bucket || BUCKET).download(storagePath);
+    if (error || !data) {
+      console.warn(`[calls-1-7] ${label} reference unreadable at ${storagePath}; continuing without it`);
+      continue;
+    }
+    try {
+      const bytes = verifySourceBytes(asset, Buffer.from(await data.arrayBuffer()));
+      parts.push({ inlineData: { mimeType: contentType, data: bytes.toString("base64") } });
+    } catch (cause) {
+      console.warn(`[calls-1-7] ${label} reference failed verification: ${cause.message}`);
+    }
+  }
+  return parts;
+}
+
+/**
  * Prompt parts for one slot: the brief, the operator's regeneration instruction
  * if this slot is being redone, then the frozen camera angle.
  *
@@ -82,7 +135,7 @@ function designBrief(input) {
  * it on the slot; the browser never sends it, so the prompt stays server-owned
  * while the operator keeps the control.
  */
-function promptPartsFor(input, sourceViewType, instruction = "") {
+function promptPartsFor(input, sourceViewType, instruction = "", imageParts = []) {
   // Throws if the passenger angle ever loses its text-direction guard, which is
   // the defect this whole view contract exists to prevent.
   angles.assertTextDirectionGuard(sourceViewType);
@@ -111,8 +164,14 @@ function promptPartsFor(input, sourceViewType, instruction = "") {
     visionboardIntent: input?.visionboardIntent,
     styleDescriptors: input?.styleDescriptors,
     viewType: sourceViewType,
+    // The mode the design was created under picks the persona. Without it every
+    // brief — a Martini livery included — got the commercial trade-wrap prompt,
+    // because the restyle half of A.C.E. had never been ported.
+    mode: input?.mode,
   });
-  return [{ text: `${design}${revision}` }];
+  // The references ride with the prompt, in restylepro's order: text first,
+  // image parts after.
+  return [{ text: `${design}${revision}` }, ...imageParts];
 }
 
 const MIME_EXTENSION = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" });
@@ -162,14 +221,14 @@ async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
   return placed;
 }
 
-function slotsFrom(viewPlan, input, instructions = {}) {
+function slotsFrom(viewPlan, input, instructions = {}, imageParts = []) {
   const plan = Array.isArray(viewPlan) && viewPlan.length ? viewPlan : angles.viewOrder().map((sourceViewType) => ({ sourceViewType }));
   return plan.map((entry) => {
     const sourceViewType = entry.sourceViewType;
     return {
       sourceViewType,
       consumerRole: entry.consumerRole,
-      promptParts: promptPartsFor(input, sourceViewType, instructions[sourceViewType]),
+      promptParts: promptPartsFor(input, sourceViewType, instructions[sourceViewType], imageParts),
       aspectRatio: angles.aspectRatio(sourceViewType),
       imageSize: angles.resolutionTier(sourceViewType),
     };
@@ -232,13 +291,17 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         (slotRows || []).filter((row) => row.instruction).map((row) => [row.source_view_type, row.instruction]),
       );
 
+      // Fetched once per request: all seven slots share the same references, so
+      // seven downloads of the same logo would be six too many.
+      const imageParts = await referenceImageParts(supabase, claim.input);
+
       const result = await engine.runRequest({
         requestId,
         generationId: claim.generationId,
         tenantKey: claim.tenantKey,
         provider: imageProvider,
         store,
-        slots: slotsFrom(claim.viewPlan, claim.input, instructions),
+        slots: slotsFrom(claim.viewPlan, claim.input, instructions, imageParts),
       });
 
       if (result.state !== "outputs_ready") {
@@ -375,5 +438,6 @@ module.exports = {
   createGenerationWorker,
   designBrief,
   promptPartsFor,
+  referenceImageParts,
   slotsFrom,
 };
