@@ -420,7 +420,11 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         p_request_id: requestId, p_claim_token: claimToken,
         p_error_code: error.code || "generation_worker_failed",
         p_error_message: String(error.message || error).slice(0, 1000),
-        p_retryable: true,
+        // Preserve the error's retry contract. In particular, an unvalidated
+        // GENIE six-surface record is a fail-closed operator action, not a
+        // transient provider failure. Retrying it only repeats the same lookup
+        // and leaves the customer watching a run that cannot advance.
+        p_retryable: error?.retryable !== false,
       }).catch(() => {});
       throw error;
     } finally {

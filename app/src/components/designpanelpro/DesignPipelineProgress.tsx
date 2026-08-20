@@ -2,24 +2,20 @@ import { useEffect, useState } from "react";
 import { Check, Loader2, Sparkles, Image as ImageIcon, Layers, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import type { GenerationRequestState } from "@/lib/designpro-api";
 
 /**
  * DesignPipelineProgress — live, granular status for the DesignProAI generate run
  * so the customer is NEVER left blind (or thinks it's frozen) while the edge
- * functions execute. Reflects the real ordered stages of the generate handler:
+ * functions execute. Reflects the durable server-owned generation stages:
  *   analyzing  → parsing the brief / vehicle
- *   rendering  → the hero design render (Gemini)
- *   finishing  → additional views / layers / proof persist
+ *   rendering  → canonical design / flat master
+ *   finishing  → seven conditioned 3D proof views
  *
- * Progress is a REAL, always-moving percentage: an asymptotic curve keyed to the
- * live `elapsed` seconds (never sits frozen — the old bar capped at ~55% during
- * the long render and read as "stuck"), floored per stage so it jumps forward as
- * the pipeline advances. Copy is DesignProAI-branded, and after a threshold it
- * honestly says "taking a little longer than usual" instead of pretending.
+ * Status comes from the durable server request. Elapsed time remains visible,
+ * but it is never presented as percent-complete because time is not progress.
  *
- * Purely presentational + additive. It does NOT touch the render pipeline, the
- * flat-first viewport, or any LayerLift code — it just visualizes `pipelineStage`
- * and `pipelineElapsed` that already flow in.
+ * Purely presentational + additive. It does not conduct the render pipeline.
  */
 export type PipelineStage = "analyzing" | "rendering" | "finishing";
 
@@ -28,14 +24,12 @@ const STEPS: {
   label: string;
   sub: string[];
   icon: typeof Sparkles;
-  floor: number; // % the bar jumps to when this stage becomes active
 }[] = [
   {
     key: "analyzing",
     label: "Reading your brief",
     sub: ["Studying your brief", "Locking your vehicle", "Setting the creative direction"],
     icon: Sparkles,
-    floor: 6,
   },
   {
     key: "rendering",
@@ -49,14 +43,12 @@ const STEPS: {
       "Sharpening every detail to pro-grade",
     ],
     icon: ImageIcon,
-    floor: 32,
   },
   {
     key: "finishing",
-    label: "Prepping your production proof",
-    sub: ["Separating editable layers", "Composing your 2D proof", "Packaging print-ready files"],
+    label: "Rendering your 3D proof views",
+    sub: ["Projecting the canonical design", "Checking side consistency", "Finishing all seven angles"],
     icon: Layers,
-    floor: 90,
   },
 ];
 
@@ -77,13 +69,18 @@ const marketImg = (d: MarketDesign) => d?.thumbnail_url || d?.render_urls?.[0] |
 export function DesignPipelineProgress({
   stage,
   elapsed,
+  requestState,
 }: {
   stage: PipelineStage | null;
   elapsed: number;
+  requestState?: GenerationRequestState | null;
 }) {
   // Default to "rendering" if the pipeline is active but no explicit stage was set
   // (defensive — the customer always sees a live step, never a bare spinner).
-  const activeKey: PipelineStage = stage ?? "rendering";
+  const activeKey: PipelineStage =
+    requestState?.phase === "photographer" || requestState?.phase === "complete"
+      ? "finishing"
+      : stage ?? "rendering";
   const activeIndex = Math.max(0, STEPS.findIndex((s) => s.key === activeKey));
   const activeStep = STEPS[activeIndex];
 
@@ -127,13 +124,21 @@ export function DesignPipelineProgress({
   }, [designs.length]);
   const curDesign = designs.length ? designs[((designIdx % designs.length) + designs.length) % designs.length] : null;
 
-  // REAL, always-moving progress: an asymptotic ease keyed to live elapsed time,
-  // floored by the current stage. Monotonic in `elapsed`, so it never freezes;
-  // approaches — but never reaches — 100% until the pipeline swaps this component
-  // out for the finished render.
-  const eased = 96 * (1 - Math.exp(-Math.max(0, elapsed) / 42));
-  const pct = Math.min(97, Math.max(activeStep.floor, eased));
-  const pctLabel = Math.round(pct);
+  const shotsComplete = requestState?.shotsComplete ?? 0;
+  const shotsTotal = requestState?.shotsTotal ?? 7;
+  const hasProofProgress = requestState?.phase === "photographer" && shotsTotal > 0;
+  const proofPct = hasProofProgress ? Math.min(100, (shotsComplete / shotsTotal) * 100) : 0;
+  const serverStatus = !requestState
+    ? "Submitting to server"
+    : requestState.state === "queued"
+      ? "Queued on server"
+      : requestState.state === "retryable"
+        ? `Server retry ${requestState.attempt ?? ""}`.trim()
+        : requestState.phase === "photographer"
+          ? `${shotsComplete} of ${shotsTotal} proof views complete`
+          : requestState.phase === "complete" || requestState.state === "outputs_ready"
+            ? "Proof views complete"
+            : "Creating the approved design on server";
 
   // Honest long-wait signal instead of a frozen-looking bar.
   const longWait = elapsed >= 75 && activeKey !== "finishing";
@@ -167,16 +172,19 @@ export function DesignPipelineProgress({
         <span className="text-[11px] font-semibold uppercase tracking-wider text-white/40">Elapsed</span>
       </div>
 
-      {/* Progress bar + stage % */}
+      {/* Server-owned status. Only proof-view counts are determinate. */}
       <div className="w-full">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs font-medium text-white/60">{activeStep.label}</span>
-          <span className="text-xs font-bold tabular-nums text-pink-300">{pctLabel}%</span>
+          <span className="text-xs font-bold tabular-nums text-pink-300">{serverStatus}</span>
         </div>
         <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-pink-500 transition-all duration-700 ease-out"
-            style={{ width: `${pct}%` }}
+            className={cn(
+              "h-full rounded-full bg-gradient-to-r from-blue-500 to-pink-500 transition-all duration-700 ease-out",
+              !hasProofProgress && "w-1/3 animate-pulse",
+            )}
+            style={hasProofProgress ? { width: `${proofPct}%` } : undefined}
           />
         </div>
       </div>
@@ -292,8 +300,8 @@ export function DesignPipelineProgress({
       </p>
       {longWait && (
         <p className="text-[11px] text-cyan-300/70 text-center -mt-3">
-          Taking a little longer than usual — still designing. Detailed scenes take
-          more time. Keep this tab open (it renders here in your browser) and hang tight.
+          The server is still processing this run. You may safely leave this tab and
+          return later; avoid starting a duplicate generation.
         </p>
       )}
     </div>

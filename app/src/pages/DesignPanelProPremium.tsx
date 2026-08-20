@@ -306,6 +306,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     vehicleType,
     setVehicleType,
     generationError,
+    generationRequestState,
     clearGenerationError,
     flatProofUrl,
     activePipelineMode,
@@ -2203,7 +2204,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               // Live pipeline progress — the customer sees each real
                               // stage (analyze → GENIE enhance → render → finish) and
                               // is never left staring at a bare spinner.
-                              <DesignPipelineProgress stage={pipelineStage} elapsed={pipelineElapsed} />
+                              <DesignPipelineProgress
+                                stage={pipelineStage}
+                                elapsed={pipelineElapsed}
+                                requestState={generationRequestState}
+                              />
                             ) : (
                               <div className="flex flex-col items-center gap-3 text-white/70">
                                 <RefreshCw className="h-8 w-8" />
