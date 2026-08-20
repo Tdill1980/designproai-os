@@ -193,7 +193,59 @@ BEGIN
     -- bind to yet, and requiring one is precisely what stopped a customer
     -- designing anything.
   ELSE
+    -- V1'S CONTRACT VALIDATION, REPRODUCED VERBATIM.
+    --
+    -- Copied clause for clause out of 20260808024500_designpro_calls_1_7_adapter.sql
+    -- and only re-indented. The first version of this migration replaced the
+    -- whole block with a contractVersion check, on the reading that the table's
+    -- CHECK constraint would still catch a malformed v1 input. It does not
+    -- catch it HERE: the request reached the active-request-limit and
+    -- operator-binding checks first and failed with those, so a caller sending
+    -- an out-of-allowlist vehicle class or a delivery/order mismatch was told
+    -- it had too many requests running, or no confirmed order binding -- two
+    -- answers that send someone to fix the wrong thing. Worse, the deep checks
+    -- (payload size, server-controlled keys, delivery/order equality) were no
+    -- longer enforced at the RPC boundary at all.
+    --
+    -- v2 is the only new behaviour in this migration. v1 must raise the same
+    -- error, for the same reason, in the same order it always did.
     IF p_input->>'contractVersion'<>'designpro.calls-1-7-input.v1'
+      OR NULLIF(pg_catalog.btrim(p_input->>'orderNumber'),'') IS NULL
+      OR p_input->>'orderNumber'<>pg_catalog.btrim(p_input->>'orderNumber')
+      OR p_input->>'orderNumber' !~
+        '^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$'
+      OR pg_catalog.jsonb_typeof(p_input->'delivery')<>'object'
+      OR NOT ((p_input->'delivery') ?& ARRAY[
+        'contractVersion','recipientIdentityHash','orderNumber'
+      ])
+      OR (p_input->'delivery') - ARRAY[
+        'contractVersion','recipientIdentityHash','orderNumber'
+      ] <> '{}'::jsonb
+      OR NULLIF(pg_catalog.btrim(
+        p_input#>>'{delivery,contractVersion}'
+      ),'') IS NULL
+      OR p_input#>>'{delivery,contractVersion}'<>
+        'designpro.wrapbox-recipient.v1'
+      OR NULLIF(pg_catalog.btrim(
+        p_input#>>'{delivery,recipientIdentityHash}'
+      ),'') IS NULL
+      OR p_input#>>'{delivery,recipientIdentityHash}' !~ '^[0-9a-f]{64}$'
+      OR NULLIF(pg_catalog.btrim(p_input#>>'{delivery,orderNumber}'),'') IS NULL
+      OR p_input#>>'{delivery,orderNumber}'<>p_input->>'orderNumber'
+      OR pg_catalog.jsonb_typeof(p_input->'vehicle')<>'object'
+      OR NULLIF(pg_catalog.btrim(p_input#>>'{vehicle,year}'),'') IS NULL
+      OR NULLIF(pg_catalog.btrim(p_input#>>'{vehicle,make}'),'') IS NULL
+      OR NULLIF(pg_catalog.btrim(p_input#>>'{vehicle,model}'),'') IS NULL
+      OR NULLIF(pg_catalog.btrim(p_input#>>'{vehicle,type}'),'') IS NULL
+      OR p_input#>>'{vehicle,type}' <> ALL(ARRAY[
+        'car','truck','suv','van','motorcycle','boat','bus','rv','trailer',
+        'aircraft','heavy_equipment'
+      ])
+      OR pg_catalog.octet_length(p_input::text)>262144
+      OR designpro_private.generation_input_has_server_controls(p_input)
+      OR p_idempotency_key IS NULL
+      OR pg_catalog.length(pg_catalog.btrim(p_idempotency_key)) NOT BETWEEN 1 AND 200
+      OR p_idempotency_key<>pg_catalog.btrim(p_idempotency_key)
     THEN RAISE EXCEPTION 'generation_request_invalid'; END IF;
     v_recipient_identity_hash:=p_input#>>'{delivery,recipientIdentityHash}';
     v_order_number:=p_input->>'orderNumber';
