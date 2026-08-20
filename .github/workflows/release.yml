@@ -193,11 +193,29 @@ jobs:
             20260814162744 20260814200406 || true
           # The schema those orphans carried IS the repo's own 202608* chain,
           # applied under management-API version numbers. Replaying the local
-          # files therefore collides on live objects (duplicate policies).
-          # Mark every local version already represented in production as
-          # applied; only versions genuinely absent (the proven-implementation
-          # contract onward) remain for db push to apply.
-          applied=$(ls supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 | grep -v '^20260817230000$')
+          # files therefore collides on live objects (duplicate policies), so
+          # every version that was ALREADY LIVE when this reconciliation was
+          # written is marked applied as bookkeeping.
+          #
+          # THE FLOOR IS THE WHOLE SAFETY PROPERTY. Everything below it is
+          # historical and really is in production; everything at or above it
+          # must be applied by db push for real.
+          #
+          # This used to exclude a single hardcoded version instead of using a
+          # floor -- `grep -v '^20260817230000$'` -- which meant every migration
+          # authored after that date was stamped applied without ever running.
+          # Three were: 20260818173000, 20260818210000 and 20260819180000. The
+          # job reported success, `supabase_migrations.schema_migrations` listed
+          # them, and `db push` printed "Remote database is up to date" while
+          # designpro_purchase_entitlements and calls_1_7_input_v2_valid did not
+          # exist in the database. A migration marked applied but never executed
+          # is worse than one that fails, because nothing looks wrong.
+          #
+          # Never raise this floor. Raising it re-arms the same silent swallow
+          # for every migration underneath the new value.
+          ALREADY_LIVE_BELOW=20260817230000
+          applied=$(ls supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 \
+            | awk -v floor="$ALREADY_LIVE_BELOW" '$1 < floor')
           npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status applied $applied || true
       - name: Record the exact dry-run migration plan
         run: |
@@ -221,3 +239,11 @@ jobs:
           set +x
           test "$(cat supabase/.temp/project-ref)" = "$EXPECTED_PROJECT_REF"
           npx --yes "supabase@${SUPABASE_CLI_VERSION}" db push --linked --include-all --yes
+          # THE HISTORY IS NOT THE SCHEMA. `db push` reports success both when
+          # it applied everything and when it believed there was nothing to
+          # apply, so the run above cannot tell those apart on its own. Every
+          # local migration must now be in the remote history AND the objects
+          # the newest ones create must actually exist.
+          missing=$(npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration list --linked \
+            | awk 'NR>2 && $1 != "" && $3 == "" {print $1}')
+          test -z "$missing" || { echo "::error::local migrations absent from the remote history: $missing"; exit 1; }
