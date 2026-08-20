@@ -11,6 +11,12 @@ import { useStarredRenders } from "@/hooks/useStarredRenders";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import DesignPanelProPremium from "./DesignPanelProPremium";
+import {
+  FLAT_FIRST_ATLAS_PIPELINE_MODE,
+  type GenerationPipelineMode,
+} from "@/lib/designpro-api";
+import { FLAT_FIRST_ATLAS_UI_ENABLED } from "@/lib/designpro-flat-first";
+import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
 
 /**
  * DesignProAIHome — the /designpro front door (matches the DesignProAI mockup).
@@ -28,15 +34,69 @@ const TABS = ["DesignProAI™", "RevisionStudioIQ™", "ProductionPack™", "Pro
 const MODES = ["Commercial", "Restyle"];
 
 const VEHICLE_TYPES = [
-  { icon: Car, label: "Car" },
-  { icon: Car, label: "SUV" },
-  { icon: Truck, label: "Truck" },
-  { icon: CarFront, label: "Van" },
-  { icon: Bike, label: "Motorcycle" },
-  { icon: Caravan, label: "Trailer" },
-  { icon: Bus, label: "Bus" },
-  { icon: Caravan, label: "RV" },
-];
+  { icon: Car, label: "Car", value: "car" },
+  { icon: Car, label: "SUV", value: "suv" },
+  { icon: Truck, label: "Truck", value: "truck" },
+  { icon: CarFront, label: "Van", value: "van" },
+  { icon: Bike, label: "Motorcycle", value: "motorcycle" },
+  { icon: Caravan, label: "Trailer", value: "trailer" },
+  { icon: Bus, label: "Bus", value: "bus" },
+  { icon: Caravan, label: "RV", value: "rv" },
+] as const;
+
+function PipelineModeSelector({
+  value,
+  onChange,
+  disabled = false,
+  className,
+}: {
+  value: GenerationPipelineMode;
+  onChange: (mode: GenerationPipelineMode) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  if (!FLAT_FIRST_ATLAS_UI_ENABLED) return null;
+  return (
+    <div className={cn("rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-2.5", className)}>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Pipeline test</div>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          disabled={disabled}
+          aria-pressed={value === "legacy"}
+          onClick={() => onChange("legacy")}
+          className={cn(
+            "rounded-lg border px-2 py-1.5 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-70",
+            value === "legacy"
+              ? "border-white/30 bg-white/10 text-white"
+              : "border-white/10 text-white/50 hover:bg-white/5",
+          )}
+        >
+          Legacy
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-pressed={value === FLAT_FIRST_ATLAS_PIPELINE_MODE}
+          onClick={() => onChange(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
+          className={cn(
+            "rounded-lg border px-2 py-1.5 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-70",
+            value === FLAT_FIRST_ATLAS_PIPELINE_MODE
+              ? "border-cyan-400 bg-cyan-400/15 text-cyan-200"
+              : "border-white/10 text-white/50 hover:bg-white/5",
+          )}
+        >
+          A.T.L.A.S. (flat-first test)
+        </button>
+      </div>
+      <p className="mt-2 text-[10px] leading-4 text-white/55">
+        {disabled
+          ? "Pipeline is locked for this run. Start a new run to change it."
+          : "Opt-in diagnostic: stores the flat guide + master, then renders seven proofs. It stops before production handoff."}
+      </p>
+    </div>
+  );
+}
 
 const CAPABILITIES = [
   { icon: Sparkles, label: "Professional Designs" },
@@ -124,10 +184,12 @@ export default function DesignProAIHome() {
   // When set, the design studio renders INLINE on this same page (no navigation,
   // no new window) — brief on the left, Konva canvas in the center.
   const [studioBrief, setStudioBrief] = useState<any | null>(null);
+  const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>("legacy");
   const [showPromptHelp, setShowPromptHelp] = useState(false);
   // Left-rail "Start Your Design" state
   const [mode, setMode] = useState("Commercial");
-  const [vehicleType, setVehicleType] = useState("");
+  const [vehicleType, setVehicleType] = useState<VehicleType>("car");
+  const [year, setYear] = useState("");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   // Commercial brief (Business & Fleet) — drives the studio's Layer-2 text extraction.
@@ -177,13 +239,22 @@ export default function DesignProAIHome() {
 
   const heroUrl = showcase[heroIdx % Math.max(showcase.length, 1)] || "";
   const dots = Math.min(Math.max(showcase.length, 1), 5);
+  const displayedPipelineMode = studioBrief?.pipelineMode ?? pipelineMode;
 
   // Open the studio INLINE on this page (no navigation, no new window).
-  const startNewDesign = () => setStudioBrief({});
+  const startNewDesign = () => setStudioBrief({
+    pipelineMode,
+    vehicleType,
+    year: year.trim() || undefined,
+    make: make.trim() || undefined,
+    model: model.trim() || undefined,
+  });
   const startDesign = () =>
     setStudioBrief({
       acePrompt: prompt.trim() || undefined,
       mode, vehicleType,
+      pipelineMode,
+      year: year.trim() || undefined,
       make: make.trim() || undefined,
       model: model.trim() || undefined,
       // Commercial (Business & Fleet) text → studio Layer-2 extraction.
@@ -212,6 +283,13 @@ export default function DesignProAIHome() {
             </div>
             <p className="text-[11px] text-white/70">Pick a vehicle, add make & model, describe it.</p>
 
+            <PipelineModeSelector
+              className="mt-3"
+              value={displayedPipelineMode}
+              onChange={setPipelineMode}
+              disabled={!!studioBrief}
+            />
+
             {/* Primary CTA at the top so it's always visible — fill the info below, then Create. */}
             <button onClick={startDesign} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-pink-500 py-2.5 text-sm font-bold text-white shadow transition hover:opacity-90">
               <Wand2 className="h-4 w-4" /> Create Design
@@ -228,15 +306,16 @@ export default function DesignProAIHome() {
             <div className="mt-3 text-[10px] font-bold uppercase tracking-wider text-white/60">Vehicle Type</div>
             <div className="mt-2 grid grid-cols-4 gap-1.5">
               {VEHICLE_TYPES.map((v) => (
-                <button key={v.label} onClick={() => setVehicleType(v.label)} className={cn("flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition", vehicleType === v.label ? "border-blue-500 bg-blue-500/15 text-white" : "border-white/10 text-white/70 hover:bg-white/5")}>
+                <button key={v.value} onClick={() => setVehicleType(v.value)} className={cn("flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition", vehicleType === v.value ? "border-blue-500 bg-blue-500/15 text-white" : "border-white/10 text-white/70 hover:bg-white/5")}>
                   <v.icon className="h-4 w-4" />
                   <span className="text-[9px] leading-none">{v.label}</span>
                 </button>
               ))}
             </div>
 
-            {/* Make / Model */}
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            {/* Exact vehicle snapshot for the embedded studio. */}
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <input value={year} onChange={(e) => setYear(e.target.value)} inputMode="numeric" placeholder="Year" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
               <input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
               <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
             </div>
@@ -317,6 +396,12 @@ export default function DesignProAIHome() {
 
         {/* CENTER */}
         <main className="min-w-0 flex-1 space-y-5">
+          <PipelineModeSelector
+            className="lg:hidden"
+            value={displayedPipelineMode}
+            onChange={setPipelineMode}
+            disabled={!!studioBrief}
+          />
           {studioBrief ? (
             /* ONE unified page: the canvas renders right here in the center — the
                left brief stays put, no swap to a separate studio, no re-entry. */

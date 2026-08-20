@@ -116,6 +116,26 @@ test("orphaned bytes whose hash does not verify are not adopted", async () => {
   assert.equal(provider.calls, 1);
 });
 
+test("an atlas-conditioned proof persists the exact immutable authority identity", async () => {
+  const provider = okProvider(Buffer.from("atlas-conditioned-view"));
+  const store = makeStore();
+  const authorityMetadata = {
+    contract: "designpro.flat-first-atlas.v1",
+    revisionId: "44444444-4444-4444-8444-444444444444",
+    revisionSequence: 1,
+    masterContentHash: "a".repeat(64),
+    projectionContentHash: "c".repeat(64),
+    projectionSourceMasterHash: "a".repeat(64),
+    manifestContentHash: "b".repeat(64),
+    topology: "rectangular-preview-v1",
+  };
+  const result = await engine.runSlot({
+    ...base, provider, store, authorityMetadata,
+  });
+  assert.equal(result.state, "accepted");
+  assert.deepEqual(store.state.accepted.get("side").metadata.authority, authorityMetadata);
+});
+
 test("semantic rejection is bounded at two regenerations, not retried forever", async () => {
   const provider = okProvider();
   const store = makeStore();
@@ -177,6 +197,79 @@ test("a whole request is budget-capped and never left pending", async () => {
   assert.equal(result.state, "failed", "a request whose slots failed is failed, not pending");
   assert.equal(result.requiresExplicitResume, true, "nothing auto-restarts it");
   assert.equal(store.state.failures.length, 2);
+});
+
+test("flat-first may run proof slots concurrently while preserving receipt order", async () => {
+  let active = 0;
+  let maximumActive = 0;
+  let releaseGate;
+  const gate = new Promise((resolve) => { releaseGate = resolve; });
+  const provider = {
+    calls: 0,
+    async generateImage() {
+      this.calls += 1;
+      const call = this.calls;
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      if (active === 2) releaseGate();
+      await gate;
+      active -= 1;
+      return {
+        bytes: Buffer.from(`parallel-render-${call}`),
+        contentType: "image/png",
+        model: "gemini-3-pro-image",
+        keyFingerprint: "0123456789ab",
+        attempts: [],
+      };
+    },
+  };
+  const store = makeStore();
+  const result = await engine.runRequest({
+    ...base,
+    provider,
+    store,
+    parallel: true,
+    slots: [
+      { sourceViewType: "side", consumerRole: "driver" },
+      { sourceViewType: "passenger-side", consumerRole: "passenger" },
+    ],
+  });
+  assert.equal(maximumActive, 2, "the flat-first projections actually overlap");
+  assert.deepEqual(result.results.map((item) => item.sourceViewType), ["side", "passenger-side"],
+    "Promise completion timing cannot reorder the durable seven-view receipt");
+  assert.equal(result.state, "outputs_ready");
+});
+
+test("legacy requests remain sequential when the parallel opt-in is absent", async () => {
+  let active = 0;
+  let maximumActive = 0;
+  const provider = {
+    calls: 0,
+    async generateImage() {
+      this.calls += 1;
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await Promise.resolve();
+      active -= 1;
+      return {
+        bytes: Buffer.from(`legacy-render-${this.calls}`),
+        contentType: "image/png",
+        model: "gemini-3-pro-image",
+        keyFingerprint: "0123456789ab",
+        attempts: [],
+      };
+    },
+  };
+  await engine.runRequest({
+    ...base,
+    provider,
+    store: makeStore(),
+    slots: [
+      { sourceViewType: "side", consumerRole: "driver" },
+      { sourceViewType: "passenger-side", consumerRole: "passenger" },
+    ],
+  });
+  assert.equal(maximumActive, 1);
 });
 
 test("the engine contains no unbounded loop and no recursion", () => {

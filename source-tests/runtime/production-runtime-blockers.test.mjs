@@ -277,3 +277,28 @@ test("an unvalidated Universal GENIE candidate parks the stage without invoking 
     p_run_id: runId, p_candidate_id: candidateId, p_stage_id: runId, p_lease_token: revisionId,
   } }]);
 });
+
+test("Calls 1-7 reports unvalidated GENIE geometry without inventing a workflow stage", async () => {
+  const candidateId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const calls = [];
+  const query = {
+    select() { return this; }, eq() { return this; }, ilike() { return this; },
+    limit() { return Promise.resolve({ data: [{ id: candidateId, requires_validation: true }], error: null }); },
+  };
+  const sb = {
+    from(table) { assert.equal(table, "designpro_vehicle_specs_universal"); return query; },
+    async rpc(name, payload) { calls.push({ name, payload }); return { error: null }; },
+  };
+  await assert.rejects(
+    universal.resolveOrQueueUniversalDimensions(
+      sb,
+      { type: "truck", year: 2024, make: "Ford", model: "F-250" },
+      null,
+      null,
+    ),
+    (error) => error.code === "genie_dimension_validation_required"
+      && error.stageHandled === false
+      && error.retryable === false,
+  );
+  assert.deepEqual(calls, [], "pre-production geometry lookup cannot queue against a fabricated stage");
+});

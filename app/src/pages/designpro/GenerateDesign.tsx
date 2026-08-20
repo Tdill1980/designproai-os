@@ -27,6 +27,9 @@ import {
   ApiError,
   AssetIdentity,
   dpApi,
+  FLAT_FIRST_ATLAS_PIPELINE_MODE,
+  type FlatAtlasRevision,
+  type GenerationPipelineMode,
   GenerationRequestState,
   GenerationVehicle,
   GenerationView,
@@ -36,11 +39,13 @@ import {
   SOURCE_VIEW_TYPE_FOR_ROLE,
   SURFACE_LABEL,
 } from "@/lib/designpro-api";
+import { FLAT_FIRST_ATLAS_UI_ENABLED } from "@/lib/designpro-flat-first";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { FlatAtlasPanelSchedule } from "@/components/designpro/FlatAtlasPanelSchedule";
 import {
   ContentHash,
   Loading,
@@ -96,6 +101,7 @@ function ViewCard({
   failure,
   busy,
   onRegenerate,
+  regenerationDisabledReason,
 }: {
   role: string;
   view?: GenerationView;
@@ -103,6 +109,7 @@ function ViewCard({
   failure?: { reason: string | null };
   busy: boolean;
   onRegenerate: (instruction: string) => void;
+  regenerationDisabledReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState("");
@@ -144,7 +151,11 @@ function ViewCard({
         {view && <ContentHash value={view.contentHash} chars={20} />}
         {failure?.reason && <p className="text-xs text-destructive">{failure.reason}</p>}
 
-        {open ? (
+        {regenerationDisabledReason ? (
+          <p className="mt-auto rounded-lg border border-amber-400/30 bg-amber-400/10 p-2 text-xs leading-5 text-amber-700 dark:text-amber-200">
+            {regenerationDisabledReason}
+          </p>
+        ) : open ? (
           <div className="flex flex-col gap-2">
             <Textarea
               rows={2}
@@ -201,6 +212,10 @@ export default function GenerateDesign() {
   const navigate = useNavigate();
   const [request, setRequest] = useState<GenerationRequestState>();
   const [views, setViews] = useState<GenerationView[]>([]);
+  const [atlasRevisions, setAtlasRevisions] = useState<FlatAtlasRevision[]>([]);
+  const [atlasLoadError, setAtlasLoadError] = useState("");
+  const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>("legacy");
+  const [requestPipelineMode, setRequestPipelineMode] = useState<GenerationPipelineMode>("legacy");
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -208,6 +223,8 @@ export default function GenerateDesign() {
 
   const requestId = request?.requestId;
   const state = request?.state;
+  const isFlatFirstDiagnostic = requestPipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  const latestAtlas = atlasRevisions[atlasRevisions.length - 1];
 
   const loadViews = useCallback(() => {
     if (!requestId) return;
@@ -216,6 +233,23 @@ export default function GenerateDesign() {
       .then(setViews)
       .catch(() => undefined);
   }, [requestId]);
+
+  const loadAtlas = useCallback(() => {
+    if (!requestId || !isFlatFirstDiagnostic) return;
+    dpApi
+      .listFlatAtlasRevisions(requestId)
+      .then((items) => {
+        setAtlasRevisions(items);
+        setAtlasLoadError("");
+      })
+      .catch((cause) => {
+        setAtlasLoadError(
+          cause instanceof ApiError
+            ? `The A.T.L.A.S. record could not be loaded (${cause.code}).`
+            : "The A.T.L.A.S. record could not be loaded.",
+        );
+      });
+  }, [requestId, isFlatFirstDiagnostic]);
 
   // Poll while the worker runs. The request is durable, so a browser refresh
   // resumes reporting rather than losing the job.
@@ -238,10 +272,18 @@ export default function GenerateDesign() {
     return () => window.clearInterval(timer);
   }, [requestId, state, request?.views?.length, loadViews]);
 
+  useEffect(() => {
+    if (!requestId || !isFlatFirstDiagnostic) return;
+    loadAtlas();
+    const timer = window.setInterval(loadAtlas, atlasRevisions.length ? 240000 : 5000);
+    return () => window.clearInterval(timer);
+  }, [requestId, isFlatFirstDiagnostic, atlasRevisions.length, loadAtlas]);
+
   // The seven views are only half the job. As soon as the database confirms the
   // handoff is valid, advance into the existing Calls 8–12 workflow — the
   // operator should not have to re-enter anything to get a production pack.
   useEffect(() => {
+    if (isFlatFirstDiagnostic) return;
     if (!request || request.state !== "outputs_ready" || request.handoffReady !== true) return;
     if (handingOff) return;
     setHandingOff(true);
@@ -256,12 +298,16 @@ export default function GenerateDesign() {
             : "The production handoff failed.",
         );
       });
-  }, [request, handingOff, navigate]);
+  }, [request, handingOff, navigate, isFlatFirstDiagnostic]);
 
   // The regenerate route is keyed by the camera the frozen view contract names,
   // not by the role that consumes it.
   async function regenerate(role: RenderRole, instruction: string) {
     if (!requestId) return;
+    if (isFlatFirstDiagnostic) {
+      setError("An A.T.L.A.S. proof cannot be regenerated independently. Edit the canonical master first.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -284,14 +330,19 @@ export default function GenerateDesign() {
     setError("");
     const form = new FormData(event.currentTarget);
     try {
-      setProgress("Registering the confirmed WrapBox recipient…");
-      const { delivery } = await dpApi.registerDeliveryRecipient({
-        customerEmail: String(form.get("customerEmail") || "").trim().toLowerCase(),
-        customerReference: String(form.get("customerReference") || "").trim(),
-        verificationReference: String(form.get("verificationReference") || "").trim(),
-        orderNumber: String(form.get("orderNumber") || "").trim(),
-        designName: String(form.get("designName") || "").trim(),
-      });
+      setRequestPipelineMode(pipelineMode);
+      let resolvedDesignName = String(form.get("designName") || "").trim();
+      if (pipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE) {
+        setProgress("Registering the confirmed WrapBox recipient…");
+        const { delivery } = await dpApi.registerDeliveryRecipient({
+          customerEmail: String(form.get("customerEmail") || "").trim().toLowerCase(),
+          customerReference: String(form.get("customerReference") || "").trim(),
+          verificationReference: String(form.get("verificationReference") || "").trim(),
+          orderNumber: String(form.get("orderNumber") || "").trim(),
+          designName: resolvedDesignName,
+        });
+        resolvedDesignName = delivery.designName;
+      }
       const companyName = String(form.get("companyName") || "").trim();
       const phone = String(form.get("phone") || "").trim();
       const website = String(form.get("website") || "").trim();
@@ -310,14 +361,18 @@ export default function GenerateDesign() {
         logoAsset = await dpApi.uploadRevisionAsset(crypto.randomUUID().toLowerCase(), "logo", logoFile);
       }
 
-      setProgress("Queueing the seven-view generation…");
+      setProgress(
+        pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+          ? "Queueing the canonical A.T.L.A.S. master and seven proof views…"
+          : "Queueing the seven-view generation…",
+      );
       setRequest(
         await dpApi.createGenerationRequest({
           // The recipient registered above binds fulfillment, not generation.
           // Calls 1-7 no longer take it: a design is created before anyone
           // knows where it ships. This operator page still registers it up
           // front because an operator working an order already has it.
-          designName: delivery.designName,
+          designName: resolvedDesignName,
           vehicle: {
             year: String(form.get("year") || "").trim(),
             make: String(form.get("make") || "").trim(),
@@ -341,6 +396,7 @@ export default function GenerateDesign() {
             website: website || undefined,
             logoAsset,
           },
+          pipelineMode,
         }),
       );
     } catch (cause) {
@@ -378,6 +434,47 @@ export default function GenerateDesign() {
 
       {!request && (
         <form className="flex flex-col gap-5" onSubmit={submit}>
+          {FLAT_FIRST_ATLAS_UI_ENABLED && (
+            <Panel
+              eyebrow="Pipeline test"
+              title="Choose how this run starts"
+              description="Legacy remains the default. A.T.L.A.S. creates an immutable guide + canonical master before it renders the seven vehicle proofs."
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  aria-pressed={pipelineMode === "legacy"}
+                  onClick={() => setPipelineMode("legacy")}
+                  className={`rounded-xl border p-4 text-left transition ${
+                    pipelineMode === "legacy"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-card hover:border-primary/40"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">Legacy production</span>
+                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                    Existing v2 path, including the automatic Calls 8–12 handoff.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE}
+                  onClick={() => setPipelineMode(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
+                  className={`rounded-xl border p-4 text-left transition ${
+                    pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+                      ? "border-cyan-400 bg-cyan-400/10"
+                      : "border-border bg-card hover:border-cyan-400/40"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">A.T.L.A.S. (flat-first test)</span>
+                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                    Stores the before/after A.T.L.A.S. artifacts and seven proofs only. Production handoff is disabled for this diagnostic.
+                  </span>
+                </button>
+              </div>
+            </Panel>
+          )}
+
           <Panel eyebrow="The design">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
@@ -464,47 +561,60 @@ export default function GenerateDesign() {
             </div>
           </Panel>
 
-          <Panel
-            eyebrow="Immutable order + WrapBox recipient"
-            description="Enter normal business information — never database IDs or hashes. The order or payment reference is hashed at the gateway and never stored in its original form."
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                label="Order #"
-                name="orderNumber"
-                pattern="[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}"
-                maxLength={120}
-                required
-              />
-              <Field
-                label="Confirmed customer email"
-                name="customerEmail"
-                type="email"
-                autoComplete="email"
-                maxLength={320}
-                required
-              />
-              <Field label="Customer reference / name" name="customerReference" minLength={1} maxLength={160} required />
-              <Field
-                label="Order or payment verification reference"
-                name="verificationReference"
-                minLength={3}
-                maxLength={256}
-                autoComplete="off"
-                spellCheck={false}
-                required
-                wide
-              />
+          {pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE ? (
+            <Panel
+              eyebrow="Diagnostic identity"
+              description="This name labels the saved A.T.L.A.S. master and proofs. The test does not register a WrapBox recipient or bind an order."
+            >
               <Field label="Design name" name="designName" maxLength={240} required wide />
-            </div>
-          </Panel>
+            </Panel>
+          ) : (
+            <Panel
+              eyebrow="Immutable order + WrapBox recipient"
+              description="Enter normal business information — never database IDs or hashes. The order or payment reference is hashed at the gateway and never stored in its original form."
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Order #"
+                  name="orderNumber"
+                  pattern="[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}"
+                  maxLength={120}
+                  required
+                />
+                <Field
+                  label="Confirmed customer email"
+                  name="customerEmail"
+                  type="email"
+                  autoComplete="email"
+                  maxLength={320}
+                  required
+                />
+                <Field label="Customer reference / name" name="customerReference" minLength={1} maxLength={160} required />
+                <Field
+                  label="Order or payment verification reference"
+                  name="verificationReference"
+                  minLength={3}
+                  maxLength={256}
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                  wide
+                />
+                <Field label="Design name" name="designName" maxLength={240} required wide />
+              </div>
+            </Panel>
+          )}
 
           {error && <Notice tone="error">{error}</Notice>}
           {progress && <Notice>{progress}</Notice>}
 
           <div>
             <Button type="submit" size="lg" disabled={busy}>
-              {busy ? "Working…" : "Generate seven views"}
+              {busy
+                ? "Working…"
+                : pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+                  ? "Generate A.T.L.A.S. + seven proofs"
+                  : "Generate seven views"}
             </Button>
           </div>
         </form>
@@ -536,6 +646,11 @@ export default function GenerateDesign() {
               {request.state === "outputs_ready" && !handingOff && (
                 <p className="text-emerald-300">All seven views are generated and byte-verified.</p>
               )}
+              {isFlatFirstDiagnostic && (
+                <p className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-3 text-cyan-100">
+                  Diagnostic isolation is active: the A.T.L.A.S. master and seven proofs are saved, but this request will not enter Calls 8–12 or publish production panels.
+                </p>
+              )}
               {handingOff && <Loading label="Freezing the revision and starting the production workflow…" />}
             </div>
             {request.designAnchor && (
@@ -546,7 +661,7 @@ export default function GenerateDesign() {
               </p>
             )}
             {request.state === "failed" && <div className="mt-4"><Notice tone="error">{request.failureCode || "Generation failed."}</Notice></div>}
-            {request.state === "outputs_ready" && request.handoffReady === false && (
+            {request.state === "outputs_ready" && request.handoffReady === false && !isFlatFirstDiagnostic && (
               <div className="mt-4">
                 <Notice tone="error">
                   Production handoff blocked: {request.handoffBlocker || "unknown"}
@@ -554,6 +669,54 @@ export default function GenerateDesign() {
               </div>
             )}
           </Panel>
+
+          {isFlatFirstDiagnostic && (
+            <Panel
+              eyebrow="A.T.L.A.S. · immutable lineage"
+              title={latestAtlas ? `Revision ${latestAtlas.revisionSequence}` : "Building the canonical master"}
+              description="The guide is the deterministic before state. The master is Gemini's single painted A.T.L.A.S. and the only visual source passed into the seven proof calls."
+              aside={
+                <StatePill state={latestAtlas ? "ready" : request.state === "failed" ? "failed" : "running"} />
+              }
+            >
+              {atlasLoadError ? (
+                <Notice tone="error">{atlasLoadError} Nothing was handed to production.</Notice>
+              ) : latestAtlas ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {[
+                    { label: "Before · deterministic guide", asset: latestAtlas.guide, signedUrl: latestAtlas.guideUrl },
+                    { label: "After · canonical master", asset: latestAtlas.master, signedUrl: latestAtlas.masterUrl },
+                  ].map(({ label, asset, signedUrl }) => (
+                    <article key={label} className="overflow-hidden rounded-xl border border-border bg-card">
+                      <div className="border-b border-border px-4 py-3 text-sm font-semibold">{label}</div>
+                      {signedUrl ? (
+                        <a href={signedUrl} target="_blank" rel="noreferrer" className="block aspect-[4/3] bg-white">
+                          <img src={signedUrl} alt={label} className="h-full w-full object-contain" />
+                        </a>
+                      ) : (
+                        <div className="flex aspect-[4/3] items-center justify-center px-6 text-center text-xs text-muted-foreground">
+                          Stored and hash-locked; preview is not signed yet.
+                        </div>
+                      )}
+                      <div className="space-y-1 p-4 text-xs text-muted-foreground">
+                        <p>{asset.widthPx} × {asset.heightPx}px · {(asset.byteSize / 1_048_576).toFixed(2)} MiB</p>
+                        <ContentHash value={asset.contentHash} chars={20} />
+                      </div>
+                    </article>
+                  ))}
+                  <div className="sm:col-span-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">Proofs-only test.</span>{" "}
+                    {atlasRevisions.length} immutable version{atlasRevisions.length === 1 ? "" : "s"} saved. Model {latestAtlas.model}; prompt {latestAtlas.promptVersion}; Gemini example conditioning {latestAtlas.exampleUsed ? "locked" : "not used"}; manifest sha256 {latestAtlas.manifest.contentHash.slice(0, 16)}…. Production eligibility: {latestAtlas.productionEligible ? "passed" : "not promoted"}.
+                  </div>
+                  <FlatAtlasPanelSchedule panels={latestAtlas.panelMap} className="sm:col-span-2" />
+                </div>
+              ) : request.state === "failed" ? (
+                <Notice tone="error">No A.T.L.A.S. master was promoted. Nothing was handed to production.</Notice>
+              ) : (
+                <Loading label="Waiting for the runtime to store and sign the guide and canonical master…" />
+              )}
+            </Panel>
+          )}
 
           {error && <Notice tone="error">{error}</Notice>}
 
@@ -572,6 +735,11 @@ export default function GenerateDesign() {
                   failure={failedByRole.get(role)}
                   busy={busy}
                   onRegenerate={(instruction) => regenerate(role, instruction)}
+                  regenerationDisabledReason={
+                    isFlatFirstDiagnostic
+                      ? "A.T.L.A.S. authority is locked. Proof revisions must edit the flat master first; independent 3D regeneration is disabled."
+                      : undefined
+                  }
                 />
               ))}
             </div>

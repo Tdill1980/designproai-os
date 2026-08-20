@@ -13,9 +13,11 @@ import {
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
 import {
   dpApi,
+  FLAT_FIRST_ATLAS_PIPELINE_MODE,
   RENDER_ROLES,
   ROLE_FOR_SOURCE_VIEW_TYPE,
   type AssetIdentity,
+  type GenerationPipelineMode,
   type GenerationRequestState,
   type RenderRole,
 } from "@/lib/designpro-api";
@@ -42,14 +44,14 @@ type RoofSize = "none" | "small" | "medium" | "large";
 
 type GenerationError = 'auth_required' | 'limit_reached' | 'generation_failed';
 
-export const useDesignPanelProLogic = () => {
+export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") => {
   const { toast } = useToast();
   const { checkCanGenerate, incrementRenderCount } = useSubscriptionLimits();
   const { currentShop } = useOrganization();
 
   // Vehicle type routing — cars stay on locked generate-color-render;
   // motorcycle/boat/bus/rv route to dedicated render-<type> edge functions
-  const [vehicleType, setVehicleType] = useState<VehicleType>('car');
+  const [vehicleType, setVehicleType] = useState<VehicleType>(initialVehicleType);
   const [nonStandardSpecs, setNonStandardSpecs] = useState<VehicleSpecsPreview | null>(null);
 
   const [selectedPanel, setSelectedPanel] = useState<any>(null);
@@ -78,6 +80,9 @@ export const useDesignPanelProLogic = () => {
   const [renderDid, setRenderDid] = useState<string | null>(null);
   const [renderPt, setRenderPt] = useState<string | null>(null);
   const [flatProofUrl, setFlatProofUrl] = useState<string | null>(null);
+  const [activePipelineMode, setActivePipelineMode] = useState<GenerationPipelineMode>("legacy");
+  /** The standalone request behind the design on screen. */
+  const [standaloneRequestId, setStandaloneRequestId] = useState<string | null>(null);
   // Tracks whether the current hero render came from DesignIQ (AI prompt + VisionBoard)
   // vs a library panel. When true, 360-views must clone view 1 via the
   // design-panel-ai-generate originalRenderUrl path — NOT re-feed VisionBoard refs
@@ -162,7 +167,7 @@ export const useDesignPanelProLogic = () => {
   // silently expired into a broken image, which reads as "the design is gone".
   const { data: customerProofUrl } = useQuery({
     queryKey: ["designpro-customer-proof", visualizationId],
-    enabled: !!visualizationId,
+    enabled: !!visualizationId && activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE,
     retry: false,
     queryFn: async () => {
       const artifacts = await dpApi.listArtifacts(String(visualizationId)).catch(() => []);
@@ -174,6 +179,23 @@ export const useDesignPanelProLogic = () => {
   useEffect(() => {
     if (customerProofUrl) setFlatProofUrl(customerProofUrl);
   }, [customerProofUrl]);
+
+  // The atlas diagnostic intentionally stops before the production handoff.
+  // Its visible output is the immutable before/after pair owned by the gateway:
+  // the deterministic guide and Gemini-painted canonical master. Signed image
+  // URLs are refreshed before their five-minute expiry just like proof URLs.
+  const {
+    data: flatAtlasRevisions = [],
+    error: flatAtlasLoadError,
+  } = useQuery({
+    queryKey: ["designpro-flat-atlas-revisions", standaloneRequestId],
+    enabled:
+      activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE &&
+      !!standaloneRequestId,
+    retry: false,
+    queryFn: () => dpApi.listFlatAtlasRevisions(String(standaloneRequestId)),
+    refetchInterval: (query) => (query.state.data?.length ? 240_000 : 5_000),
+  });
 
   // FadeWraps pricing (exact copy)
   const kitPrices = {
@@ -247,9 +269,6 @@ export const useDesignPanelProLogic = () => {
    * production layers, the pack and WrapBox are all keyed by. There is nothing
    * left here to get out of step with them.
    */
-
-  /** The standalone request behind the design on screen. */
-  const [standaloneRequestId, setStandaloneRequestId] = useState<string | null>(null);
 
   /**
    * The customer's uploaded logo, carried into the runtime as identity.
@@ -329,8 +348,10 @@ export const useDesignPanelProLogic = () => {
   const runStandaloneGeneration = async (
     params: DesignIQParams,
     vehicleInfo?: { year: string; make: string; model: string },
+    pipelineMode: GenerationPipelineMode = "legacy",
   ): Promise<{ generationId: string | null; directRender: boolean; renderUrl?: string; error?: string }> => {
     clearLastRender();
+    setActivePipelineMode(pipelineMode);
     setAllViews([]);
     setFailedViews([]);
     setGenerationError(null);
@@ -373,6 +394,7 @@ export const useDesignPanelProLogic = () => {
           .map((value) => value.trim())
           .filter(Boolean),
         logoAsset,
+        pipelineMode,
       });
 
       setStandaloneRequestId(request.requestId);
@@ -398,14 +420,19 @@ export const useDesignPanelProLogic = () => {
         ),
       );
 
-      // Call 8 follows the approved view set automatically, exactly as the
-      // completion contract requires -- the 2D Production Proof belongs to this
-      // DesignID, and nothing downstream regenerates the design again.
-      await handoffGeneration(request.requestId);
+      // The diagnostic proves the new canonical atlas + downstream 3D views
+      // without allowing experimental bytes into Calls 8-12. Turning the flag
+      // off therefore returns to the exact legacy handoff path immediately.
+      if (pipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE) {
+        await handoffGeneration(request.requestId);
+      }
 
       toast({
         title: finished.designName || "Design Rendered",
-        description: "Your DesignProAI™ views are ready — the 2D Production Proof is building.",
+        description:
+          pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+            ? "A.T.L.A.S. master and seven proof views are ready. This test run was not sent to production."
+            : "Your DesignProAI™ views are ready — the 2D Production Proof is building.",
       });
       return { generationId: request.generationId, directRender: true, renderUrl: hero?.signedUrl };
     } catch (error: any) {
@@ -519,10 +546,11 @@ export const useDesignPanelProLogic = () => {
   const generateFromPrompt = async (
     params: DesignIQParams,
     vehicleInfo?: { year: string; make: string; model: string },
+    pipelineMode: GenerationPipelineMode = "legacy",
   ) => {
     setIsGeneratingPanel(true);
     try {
-      return await runStandaloneGeneration(params, vehicleInfo);
+      return await runStandaloneGeneration(params, vehicleInfo, pipelineMode);
     } finally {
       setIsGeneratingPanel(false);
     }
@@ -548,6 +576,7 @@ export const useDesignPanelProLogic = () => {
     params: DesignIQParams,
     vehicleInfo?: { year: string; make: string; model: string },
     modeOverride?: string,
+    pipelineMode: GenerationPipelineMode = "legacy",
   ): Promise<boolean> => {
     setIsPersonaPipelineActive(true);
     setPersonaPhase("designer");
@@ -558,6 +587,7 @@ export const useDesignPanelProLogic = () => {
       const result = await runStandaloneGeneration(
         modeOverride === "commercial" ? { ...params, mode: "commercial" } : params,
         vehicleInfo,
+        pipelineMode,
       );
       return !!result.generationId;
     } finally {
@@ -597,11 +627,12 @@ export const useDesignPanelProLogic = () => {
   const runPersonaPipeline = async (
     params: DesignIQParams,
     vehicleInfo?: { year: string; make: string; model: string },
+    pipelineMode: GenerationPipelineMode = "legacy",
   ) => {
     // A company name means commercial whatever the toggle says.
     const effectiveMode =
       params.mode !== "commercial" && params.companyName ? "commercial" : params.mode;
-    await runPersonaDesigner(params.prompt, params, vehicleInfo, effectiveMode);
+    await runPersonaDesigner(params.prompt, params, vehicleInfo, effectiveMode, pipelineMode);
   };
 
   return {
@@ -639,6 +670,9 @@ export const useDesignPanelProLogic = () => {
     setShowLoginModal,
     clearLastRender,
     flatProofUrl,
+    activePipelineMode,
+    flatAtlasRevisions,
+    flatAtlasLoadError,
     coverageType,
     setCoverageType,
     generationError,

@@ -41,6 +41,10 @@ runtime/generation-provider.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs
 runtime/generation-worker.cjs
+# Opt-in v3 canonical flat atlas authoring. It is required at module load even
+# when the release is serving legacy v1/v2 requests, so omitting it would make
+# rollback fail at startup rather than merely disable the experiment.
+runtime/flat-first-atlas.cjs
 # The authoring boundary. The generation worker requires it to record the
 # canonical design master while Calls 1-7 run, so a release without it dies at
 # require time exactly as the kernel modules above would.

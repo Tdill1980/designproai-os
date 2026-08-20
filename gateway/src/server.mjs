@@ -315,6 +315,226 @@ function authorizedGenerationViewPath(storagePath, userId, generationId) {
   return storagePath.startsWith(`designpro/user_${userId}/${generationId}/calls-1-7/`);
 }
 
+function authorizedFlatAtlasPath(storagePath, userId, generationId) {
+  if (!storagePath || storagePath.includes("..") || !/^[A-Za-z0-9._/-]+$/.test(storagePath)) return false;
+  return storagePath.startsWith(
+    `designpro/user_${userId}/${generationId}/flat-first/v1/`,
+  );
+}
+
+function validatedFlatAtlasPanelMap(value, widthPx, heightPx, atlasEffectivePpi) {
+  if (!Array.isArray(value) || value.length !== PRODUCTION_SURFACES.length) {
+    throw Object.assign(new Error("flat_atlas_panel_map_invalid"), { status: 502 });
+  }
+  const seen = new Set();
+  const bySurface = new Map();
+  for (const panel of value) {
+    const surfaceKey = String(panel?.surfaceKey || "");
+    const trimWidthIn = panel?.trimWidthIn;
+    const trimHeightIn = panel?.trimHeightIn;
+    const printWidthIn = panel?.printWidthIn;
+    const printHeightIn = panel?.printHeightIn;
+    const surfaceSqFt = panel?.surfaceSqFt;
+    const effectivePpi = panel?.effectivePpi;
+    const rotationDegrees = panel?.rotationDegrees;
+    const bleedIn = panel?.bleedIn;
+    const pixelValues = [panel?.x, panel?.y, panel?.w, panel?.h];
+    const hasAnyPixels = pixelValues.some((item) => item !== undefined);
+    const hasAllPixels = pixelValues.every((item) => item !== undefined);
+    const exactBleedKeys = bleedIn && typeof bleedIn === "object" && !Array.isArray(bleedIn)
+      && JSON.stringify(Object.keys(bleedIn).sort())
+        === JSON.stringify(["bottom", "left", "right", "top"]);
+    const finitePhysicalValues = [
+      trimWidthIn, trimHeightIn, printWidthIn, printHeightIn, surfaceSqFt,
+      effectivePpi, rotationDegrees,
+    ].every((item) => typeof item === "number" && Number.isFinite(item));
+    if (!PRODUCTION_SURFACES.includes(surfaceKey) || seen.has(surfaceKey)
+      || !finitePhysicalValues
+      || !(trimWidthIn > 0 && trimWidthIn <= 1000)
+      || !(trimHeightIn > 0 && trimHeightIn <= 1000)
+      || !(printWidthIn > 0 && printWidthIn <= 1010)
+      || !(printHeightIn > 0 && printHeightIn <= 1010)
+      || Math.abs(printWidthIn - (trimWidthIn + 10)) > 0.001
+      || Math.abs(printHeightIn - (trimHeightIn + 10)) > 0.001
+      || !(surfaceSqFt > 0 && surfaceSqFt <= 7000)
+      || Math.abs(surfaceSqFt - trimWidthIn * trimHeightIn / 144) > 0.011
+      || !(effectivePpi > 0 && effectivePpi <= 32768)
+      || ![-90, 0, 90].includes(rotationDegrees)
+      || !exactBleedKeys
+      || [bleedIn.top, bleedIn.right, bleedIn.bottom, bleedIn.left]
+        .some((item) => typeof item !== "number" || item !== 5)
+      || hasAnyPixels !== hasAllPixels
+      || hasAllPixels && (
+        !pixelValues.every(Number.isInteger)
+        || panel.x < 0 || panel.y < 0 || panel.w < 1 || panel.h < 1
+        || panel.x + panel.w > widthPx || panel.y + panel.h > heightPx
+      )) {
+      throw Object.assign(new Error("flat_atlas_panel_map_invalid"), { status: 502 });
+    }
+    seen.add(surfaceKey);
+    bySurface.set(surfaceKey, {
+      surfaceKey,
+      trimWidthIn,
+      trimHeightIn,
+      printWidthIn,
+      printHeightIn,
+      bleedIn: { top: 5, right: 5, bottom: 5, left: 5 },
+      surfaceSqFt,
+      effectivePpi,
+      rotationDegrees,
+      ...(hasAllPixels ? { x: panel.x, y: panel.y, w: panel.w, h: panel.h } : {}),
+    });
+  }
+  if (seen.size !== PRODUCTION_SURFACES.length
+    || PRODUCTION_SURFACES.some((surface) => !seen.has(surface))) {
+    throw Object.assign(new Error("flat_atlas_panel_map_invalid"), { status: 502 });
+  }
+  const panels = PRODUCTION_SURFACES.map((surface) => bySurface.get(surface));
+  const minimumPpi = Math.min(...panels.map((panel) => panel.effectivePpi));
+  if (Math.abs(minimumPpi - atlasEffectivePpi) > 0.011) {
+    throw Object.assign(new Error("flat_atlas_panel_map_invalid"), { status: 502 });
+  }
+  return panels;
+}
+
+function validatedFlatFirstGate(value) {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || typeof value.flatFirst !== "boolean"
+    || typeof value.productionEligible !== "boolean"
+    || value.revisionId !== null
+      && !UUID_PATTERN.test(String(value.revisionId || ""))) {
+    throw Object.assign(new Error("flat_first_gate_invalid"), { status: 502 });
+  }
+  return {
+    flatFirst: value.flatFirst,
+    productionEligible: value.productionEligible,
+    revisionId: value.revisionId === null ? null : String(value.revisionId),
+  };
+}
+
+function validatedFlatAtlasRevisions(value, requestId, userId) {
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.length > 100) {
+    throw Object.assign(new Error("flat_atlas_response_invalid"), { status: 502 });
+  }
+  const surfaceAllowlist = new Set(["driver", "passenger", "hood", "roof", "front", "rear"]);
+  let previousSequence = 0;
+  return value.map((row) => {
+    const id = String(row?.id || "");
+    const rowRequestId = String(row?.requestId || "");
+    const generationId = String(row?.generationId || "");
+    const parentRevisionId = row?.parentRevisionId == null ? null : String(row.parentRevisionId);
+    const revisionSequence = Number(row?.revisionSequence);
+    const widthPx = Number(row?.widthPx);
+    const heightPx = Number(row?.heightPx);
+    const effectivePpi = Number(row?.effectivePpi);
+    const guideStoragePath = String(row?.guideStoragePath || "");
+    const masterStoragePath = String(row?.masterStoragePath || "");
+    const projectionStoragePath = String(row?.projectionStoragePath || "");
+    const projectionContentHash = String(row?.projectionContentHash || "");
+    const guideContentHash = String(row?.guideContentHash || "");
+    const masterContentHash = String(row?.masterContentHash || "");
+    const masterExtension = new Map([
+      ["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"],
+    ]).get(row?.masterContentType);
+    const atlasPrefix = `designpro/user_${userId}/${generationId}/flat-first/v1`;
+    const affectedSurfaces = row?.affectedSurfaces;
+    const exampleGuideHash = row?.exampleGuideHash == null ? null : String(row.exampleGuideHash);
+    const exampleMasterHash = row?.exampleMasterHash == null ? null : String(row.exampleMasterHash);
+    if (!UUID_PATTERN.test(id) || rowRequestId !== requestId
+      || !UUID_PATTERN.test(generationId)
+      || parentRevisionId !== null && !UUID_PATTERN.test(parentRevisionId)
+      || !Number.isInteger(revisionSequence) || revisionSequence !== previousSequence + 1
+      || revisionSequence === 1 && parentRevisionId !== null
+      || revisionSequence > 1 && parentRevisionId === null
+      || !Number.isInteger(widthPx) || widthPx < 256 || widthPx > 32768
+      || !Number.isInteger(heightPx) || heightPx < 256 || heightPx > 32768
+      || !Number.isFinite(effectivePpi) || effectivePpi <= 0
+      || !SHA256_PATTERN.test(guideContentHash)
+      || !SHA256_PATTERN.test(String(row?.manifestContentHash || ""))
+      || !SHA256_PATTERN.test(masterContentHash)
+      || !SHA256_PATTERN.test(projectionContentHash)
+      || row?.guideContentType !== "image/png"
+      || row?.manifestContentType !== "application/json"
+      || !["image/png", "image/jpeg", "image/webp"].includes(row?.masterContentType)
+      || row?.projectionContentType !== "image/jpeg"
+      || !Number.isSafeInteger(Number(row?.guideByteSize)) || Number(row.guideByteSize) < 1
+      || !Number.isSafeInteger(Number(row?.manifestByteSize)) || Number(row.manifestByteSize) < 1
+      || !Number.isSafeInteger(Number(row?.masterByteSize)) || Number(row.masterByteSize) < 1
+      || !Number.isSafeInteger(Number(row?.projectionByteSize))
+      || Number(row.projectionByteSize) < 1 || Number(row.projectionByteSize) > 12 * 1024 * 1024
+      || !authorizedFlatAtlasPath(guideStoragePath, userId, generationId)
+      || !authorizedFlatAtlasPath(masterStoragePath, userId, generationId)
+      || !authorizedFlatAtlasPath(projectionStoragePath, userId, generationId)
+      || guideStoragePath !== `${atlasPrefix}/guide/${guideContentHash}.png`
+      || masterStoragePath !== `${atlasPrefix}/revisions/${revisionSequence}`
+        + `/master/${masterContentHash}.${masterExtension || "invalid"}`
+      || projectionStoragePath !== `designpro/user_${userId}/${generationId}`
+        + `/flat-first/v1/revisions/${revisionSequence}/projection/${projectionContentHash}.jpg`
+      || !Array.isArray(affectedSurfaces) || affectedSurfaces.length < 1
+      || affectedSurfaces.length > 6
+      || affectedSurfaces.some((surface) => !surfaceAllowlist.has(String(surface)))
+      || !String(row?.model || "").trim()
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(String(row?.promptVersion || ""))
+      || typeof row?.productionEligible !== "boolean"
+      || typeof row?.exampleUsed !== "boolean"
+      || row.exampleUsed !== (exampleGuideHash !== null && exampleMasterHash !== null)
+      || exampleGuideHash !== null && !SHA256_PATTERN.test(exampleGuideHash)
+      || exampleMasterHash !== null && !SHA256_PATTERN.test(exampleMasterHash)) {
+      throw Object.assign(new Error("flat_atlas_response_invalid"), { status: 502 });
+    }
+    const panelMap = validatedFlatAtlasPanelMap(
+      row.panelMap, widthPx, heightPx, effectivePpi,
+    );
+    previousSequence = revisionSequence;
+    return {
+      id,
+      revisionSequence,
+      parentRevisionId,
+      generationId,
+      guideStoragePath,
+      masterStoragePath,
+      projectionStoragePath,
+      guide: {
+        contentHash: guideContentHash,
+        contentType: String(row.guideContentType),
+        byteSize: Number(row.guideByteSize),
+        widthPx,
+        heightPx,
+      },
+      manifest: {
+        contentHash: String(row.manifestContentHash),
+        contentType: String(row.manifestContentType),
+        byteSize: Number(row.manifestByteSize),
+      },
+      master: {
+        contentHash: masterContentHash,
+        contentType: String(row.masterContentType),
+        byteSize: Number(row.masterByteSize),
+        widthPx,
+        heightPx,
+        effectivePpi,
+      },
+      projection: {
+        contentHash: projectionContentHash,
+        contentType: "image/jpeg",
+        byteSize: Number(row.projectionByteSize),
+      },
+      model: String(row.model),
+      promptVersion: String(row.promptVersion),
+      affectedSurfaces: affectedSurfaces.map(String),
+      panelMap,
+      instruction: row.instruction == null ? null : String(row.instruction).slice(0, 4000),
+      productionEligible: row.productionEligible,
+      exampleUsed: row.exampleUsed,
+      exampleGuideHash,
+      exampleMasterHash,
+      createdAt: row.createdAt,
+    };
+  });
+}
+
 // Ownership is enforced three times over, because a render from another
 // DesignID beside this panel is the failure this endpoint exists to prevent:
 // the generation id comes from THIS run's own immutable revision snapshot, the
@@ -825,6 +1045,8 @@ const CALLS_1_7_V2_KEYS = [
   "website",
 ];
 
+const CALLS_1_7_V3_KEYS = [...CALLS_1_7_V2_KEYS, "pipelineMode"];
+
 function validatedGenerationRequestV2(body, generationIdValue) {
   const input = body.input;
   const extraKeys = Object.keys(input).filter((key) => !CALLS_1_7_V2_KEYS.includes(key));
@@ -849,6 +1071,27 @@ function validatedGenerationRequestV2(body, generationIdValue) {
   return { generationId: generationIdValue, idempotencyKey: null, input };
 }
 
+function validatedGenerationRequestV3(body, generationIdValue) {
+  const input = body.input;
+  const extraKeys = Object.keys(input).filter((key) => !CALLS_1_7_V3_KEYS.includes(key));
+  const vehicle = input.vehicle;
+  if (extraKeys.length
+    || input.contractVersion !== "designpro.calls-1-7-input.v3"
+    || input.pipelineMode !== "flat-first-atlas-v1"
+    || input.orderNumber !== undefined || input.delivery !== undefined
+    || !String(input.brief || "").trim() || String(input.brief).length > 8000
+    || !String(input.designName || "").trim() || String(input.designName).length > 240
+    || (input.mode !== undefined && !["restyle", "commercial"].includes(input.mode))
+    || !vehicle || typeof vehicle !== "object" || Array.isArray(vehicle)
+    || [vehicle.year, vehicle.make, vehicle.model].some((item) => !String(item || "").trim())
+    || !VEHICLE_CLASSES.includes(String(vehicle.type || ""))
+    || generationInputHasServerControls(input)
+    || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
+    throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
+  }
+  return { generationId: generationIdValue, idempotencyKey: null, input };
+}
+
 function validatedGenerationRequest(body) {
   const withKey = ["generationId", "idempotencyKey", "input"];
   const withoutKey = ["generationId", "input"];
@@ -866,6 +1109,9 @@ function validatedGenerationRequest(body) {
   }
   if (input.contractVersion === "designpro.calls-1-7-input.v2") {
     return validatedGenerationRequestV2(body, generationIdValue);
+  }
+  if (input.contractVersion === "designpro.calls-1-7-input.v3") {
+    return validatedGenerationRequestV3(body, generationIdValue);
   }
   const vehicle = input?.vehicle;
   const delivery = input?.delivery;
@@ -1108,7 +1354,10 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // PostgREST reports a raised exception as 400, which reads as "you
         // typed something wrong" and invites a retry of the same call. 409 says
         // the truth -- the id is taken, mint a new one.
-        const result = await rpc(fetchImpl, token, cfg, "create_designpro_generation_request", {
+        const intakeRpc = request.input.contractVersion === "designpro.calls-1-7-input.v3"
+          ? "create_designpro_flat_first_generation_request"
+          : "create_designpro_generation_request";
+        const result = await rpc(fetchImpl, token, cfg, intakeRpc, {
           p_generation_id: request.generationId,
           p_input: request.input,
           p_idempotency_key: request.idempotencyKey,
@@ -1148,6 +1397,37 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 200, request);
       }
 
+      // The canonical flat-first lineage. The database returns private paths
+      // only after proving request ownership; this route validates that both
+      // objects remain under that owner's generation namespace, signs a
+      // five-minute preview, and strips the paths from the public response.
+      const generationAtlasMatch = url.pathname.match(/^\/api\/generation\/requests\/([0-9a-f-]{36})\/atlas$/);
+      if (req.method === "GET" && generationAtlasMatch) {
+        const requestId = generationAtlasMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        const located = await rpc(fetchImpl, token, cfg, "designpro_flat_atlas_revision_paths", {
+          p_request_id: requestId,
+        });
+        const revisions = validatedFlatAtlasRevisions(located, requestId, user.id);
+        if (revisions === null) return json(res, 404, { error: "generation_request_not_found" });
+        const publicRevisions = await Promise.all(revisions.map(async (revision) => {
+          const {
+            guideStoragePath, masterStoragePath, projectionStoragePath, ...base
+          } = revision;
+          const [guideUrl, masterUrl] = await Promise.all([
+            signedArtifactUrl(fetchImpl, token, cfg, guideStoragePath).catch(() => null),
+            signedArtifactUrl(fetchImpl, token, cfg, masterStoragePath).catch(() => null),
+          ]);
+          return {
+            ...base,
+            ...(guideUrl ? { guideUrl } : {}),
+            ...(masterUrl ? { masterUrl } : {}),
+            ...((guideUrl || masterUrl) ? { expiresIn: 300 } : {}),
+          };
+        }));
+        return json(res, 200, publicRevisions);
+      }
+
       // "Generate this angle again" — the per-view regenerate and failed-shot
       // retry the DesignPro UI has always had, now executed by a fenced worker
       // instead of the browser. The instruction is stored on the slot and the
@@ -1161,6 +1441,21 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         if (!GENERATION_VIEW_ROLE.has(sourceViewType)) return json(res, 400, { error: "generation_view_not_in_plan" });
         const body = await readBody(req).catch(() => ({}));
         const instruction = body?.instruction == null ? null : String(body.instruction).slice(0, 2000);
+        const flatFirstGate = validatedFlatFirstGate(await rpc(
+          fetchImpl, token, cfg, "designpro_flat_first_handoff_gate", {
+            p_request_id: requestId,
+          },
+        ));
+        if (flatFirstGate === null) {
+          return json(res, 404, { error: "generation_request_not_found" });
+        }
+        // A flat-first visual edit belongs on a new immutable atlas revision.
+        // Sending it to one camera slot would make that 3D proof disagree with
+        // the production authority. An instructionless retry is safe: it reuses
+        // the same atlas and only retries the failed projection.
+        if (flatFirstGate.flatFirst && String(instruction || "").trim()) {
+          return json(res, 409, { error: "flat_first_atlas_revision_required" });
+        }
         const result = await rpc(fetchImpl, token, cfg, "regenerate_designpro_generation_slot", {
           p_request_id: requestId,
           p_source_view_type: sourceViewType,
@@ -1220,6 +1515,17 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       if (req.method === "POST" && handoffMatch) {
         const requestId = handoffMatch[1].toLowerCase();
         if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        const flatFirstGate = validatedFlatFirstGate(await rpc(
+          fetchImpl, token, cfg, "designpro_flat_first_handoff_gate", {
+            p_request_id: requestId,
+          },
+        ));
+        if (flatFirstGate === null) {
+          return json(res, 404, { error: "generation_request_not_found" });
+        }
+        if (flatFirstGate.flatFirst && !flatFirstGate.productionEligible) {
+          return json(res, 409, { error: "flat_first_production_gate_required" });
+        }
         const result = await rpc(fetchImpl, token, cfg, "handoff_designpro_generation_to_production", {
           p_request_id: requestId,
         });

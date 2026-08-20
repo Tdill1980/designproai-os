@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirty-migration chain', () => {
-  assert.equal(migrationNames.length, 30);
+test('fresh bootstrap contains one ordered thirty-one-migration chain', () => {
+  assert.equal(migrationNames.length, 31);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -51,6 +51,9 @@ test('fresh bootstrap contains one ordered thirty-migration chain', () => {
       // The purchase gate: Calls 8-11 prepare for free, and the two
       // entitlements decide what fulfillment may spend.
       '20260818210000', '20260819180000',
+      // Opt-in flat-first v3 storage and owner preview contract. v1/v2 remain
+      // accepted unchanged and the legacy intake RPC is not replaced.
+      '20260820100000',
     ],
   );
 });
@@ -172,4 +175,3 @@ test('GENIE import schema parses and does not claim verified geometry', async ()
   assert.equal(contract.$defs.candidate.properties.estimatedPanels.type, 'object');
   assert.equal(contract.$defs.candidate.properties.validatedSurfaces, undefined);
 });
-

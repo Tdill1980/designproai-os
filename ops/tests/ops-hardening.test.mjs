@@ -14,7 +14,7 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 39);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 40);
   for (const name of [
     "runtime/resend-transport.cjs", "runtime/wrapbox-delivery.cjs", "runtime/zip-spool.cjs",
     "runtime/gemini-flat-wrap.cjs", "runtime/flat-wrap-layout.cjs", "runtime/proof-sheet.cjs", "runtime/topaz-upscale.cjs",
@@ -27,6 +27,7 @@ test("one canonical policy includes every required runtime file and five deploy 
     // the 2D Production Proof the customer approves.
     "runtime/vehicle-proof-template.cjs", "runtime/proof-band-fit.cjs",
     "runtime/generation-engine.cjs", "runtime/generation-worker.cjs",
+    "runtime/flat-first-atlas.cjs",
     // The authoring boundary the worker requires to record the canonical
     // design master while Calls 1-7 run.
     "runtime/creative-authoring.cjs",
@@ -195,4 +196,3 @@ test("production migration is manual, exact-main, environment protected, and sec
   assert.match(workflow, /db push --linked --include-all --yes/);
   assert.doesNotMatch(workflow, /db reset/);
 });
-

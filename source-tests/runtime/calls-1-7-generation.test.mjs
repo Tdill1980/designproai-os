@@ -59,7 +59,7 @@ test("the provider falls back across models and rests an unhealthy key", async (
   const calls = [];
   const pool = provider.createProvider({
     keys: ["key-a", "key-b"],
-    models: ["gemini-3-pro-image-preview", "gemini-3.1-flash-image-preview"],
+    models: ["gemini-3-pro-image", "gemini-3.1-flash-image"],
     fetchImpl: async (url) => {
       calls.push(url.includes("3-pro") ? "pro" : "flash");
       // Pro is over capacity on every key; flash answers.
@@ -68,7 +68,7 @@ test("the provider falls back across models and rests an unhealthy key", async (
     },
   });
   const result = await pool.generateImage({ parts: [{ text: "x" }], aspectRatio: "16:9", imageSize: "4K" });
-  assert.equal(result.model, "gemini-3.1-flash-image-preview");
+  assert.equal(result.model, "gemini-3.1-flash-image");
   assert.equal(calls.filter((c) => c === "pro").length, 2, "both keys tried on the primary model first");
   assert.ok(result.attempts.length >= 2, "the failed attempts are reported, not swallowed");
   assert.match(result.keyFingerprint, /^[0-9a-f]{12}$/);
@@ -78,7 +78,7 @@ test("a rested key is skipped while it cools down, then returns", async () => {
   let clock = 0;
   const used = [];
   const pool = provider.createProvider({
-    keys: ["key-a", "key-b"], models: ["gemini-3-pro-image-preview"],
+    keys: ["key-a", "key-b"], models: ["gemini-3-pro-image"],
     now: () => clock, cooldownMs: 1000,
     fetchImpl: async (url) => {
       const key = new URL(url).searchParams.get("key");
@@ -99,7 +99,7 @@ test("a rested key is skipped while it cools down, then returns", async () => {
 
 test("exhausting every model and key fails loudly rather than degrading", async () => {
   const pool = provider.createProvider({
-    keys: ["key-a"], models: ["gemini-3-pro-image-preview"],
+    keys: ["key-a"], models: ["gemini-3-pro-image"],
     fetchImpl: async () => new Response("nope", { status: 500 }),
   });
   await assert.rejects(() => pool.generateImage({ parts: [], aspectRatio: "16:9", imageSize: "4K", label: "driver" }),
@@ -108,7 +108,7 @@ test("exhausting every model and key fails loudly rather than degrading", async 
 
 test("a response that is not exactly one supported image is refused", async () => {
   const make = (payload) => provider.createProvider({
-    keys: ["key-a"], models: ["gemini-3-pro-image-preview"], fetchImpl: async () => json(payload),
+    keys: ["key-a"], models: ["gemini-3-pro-image"], fetchImpl: async () => json(payload),
   });
   await assert.rejects(() => make({ candidates: [{ content: { parts: [] }, finishReason: "SAFETY" }] })
     .generateImage({ parts: [], aspectRatio: "16:9", imageSize: "4K" }), /failed on every model/);
@@ -122,14 +122,20 @@ test("the key pool accepts one key or many, and never leaks a key", () => {
   assert.equal(provider.readKeyPool({ GOOGLE_AI_API_KEY: "solo" }).length, 1);
   assert.equal(provider.readKeyPool({ GOOGLE_AI_API_KEY_POOL: "a, b ,c,a" }).length, 3, "duplicates collapse");
   assert.throws(() => provider.readKeyPool({}), /No Google AI key/);
-  const pool = provider.createProvider({ keys: ["super-secret-key"], models: ["gemini-3-pro-image-preview"], fetchImpl: async () => json(okImage()) });
+  const pool = provider.createProvider({ keys: ["super-secret-key"], models: ["gemini-3-pro-image"], fetchImpl: async () => json(okImage()) });
   const reported = JSON.stringify(pool.state());
   assert.doesNotMatch(reported, /super-secret-key/, "health reporting must use fingerprints, never the key");
   assert.match(reported, /[0-9a-f]{12}/);
 });
 
 test("only explicit Gemini image models are accepted", () => {
-  assert.deepEqual(provider.imageModels({ DESIGNPRO_IMAGE_MODELS: "gemini-3-pro-image-preview" }), ["gemini-3-pro-image-preview"]);
+  assert.deepEqual(provider.imageModels({ DESIGNPRO_IMAGE_MODELS: "gemini-3-pro-image" }), ["gemini-3-pro-image"]);
+  assert.deepEqual(provider.imageModels({ GOOGLE_IMAGE_MODEL: "gemini-3-pro-image" }), ["gemini-3-pro-image"]);
+  assert.deepEqual(provider.imageModels({
+    DESIGNPRO_IMAGE_MODELS: "gemini-3.1-flash-image",
+    GOOGLE_IMAGE_MODEL: "gemini-3-pro-image",
+  }), ["gemini-3.1-flash-image"], "the DesignPro override wins over the deployment default");
   assert.throws(() => provider.imageModels({ DESIGNPRO_IMAGE_MODELS: "gemini-2.5-flash" }), /not an explicit Gemini image model/);
   assert.deepEqual(provider.imageModels({}), [...provider.DEFAULT_IMAGE_MODELS]);
+  assert.deepEqual(provider.DEFAULT_IMAGE_MODELS, ["gemini-3-pro-image", "gemini-3.1-flash-image"]);
 });

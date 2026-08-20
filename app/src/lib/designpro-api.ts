@@ -61,6 +61,84 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export type RenderRole = "driver" | "passenger" | "hood" | "roof" | "front" | "rear" | "hero3d";
 export type GenieSurfaceKey = "driver" | "passenger" | "hood" | "roof" | "front" | "rear";
 
+/**
+ * `legacy` deliberately serializes exactly the existing v2 request. The atlas
+ * mode is an opt-in v3 diagnostic and is the only client mode that sends a
+ * `pipelineMode` field to the gateway.
+ */
+export type GenerationPipelineMode = "legacy" | "flat-first-atlas-v1";
+
+export const FLAT_FIRST_ATLAS_PIPELINE_MODE: GenerationPipelineMode = "flat-first-atlas-v1";
+
+export type FlatAtlasPanelMapEntry = {
+  surfaceKey: GenieSurfaceKey;
+  trimWidthIn: number;
+  trimHeightIn: number;
+  printWidthIn: number;
+  printHeightIn: number;
+  bleedIn: { top: number; right: number; bottom: number; left: number };
+  surfaceSqFt: number;
+  effectivePpi: number;
+  rotationDegrees: number;
+  /** Optional atlas coordinates remain diagnostic; the browser never crops. */
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+};
+
+/**
+ * One immutable canonical-atlas revision. Storage paths remain server-private;
+ * the gateway returns short-lived signed URLs only for the two images the UI
+ * can inspect. The manifest is represented by identity because it is consumed
+ * by the server-side slicer, not interpreted in the browser.
+ */
+export type FlatAtlasRevision = {
+  id: string;
+  generationId: string;
+  revisionSequence: number;
+  parentRevisionId: string | null;
+  guide: {
+    contentHash: string;
+    contentType: string;
+    byteSize: number;
+    widthPx: number;
+    heightPx: number;
+  };
+  manifest: {
+    contentHash: string;
+    contentType: string;
+    byteSize: number;
+  };
+  master: {
+    contentHash: string;
+    contentType: string;
+    byteSize: number;
+    widthPx: number;
+    heightPx: number;
+    effectivePpi: number;
+  };
+  /** 4096px bounded transport derivative used only to condition Gemini proofs. */
+  projection: {
+    contentHash: string;
+    contentType: "image/jpeg";
+    byteSize: number;
+  };
+  guideUrl?: string;
+  masterUrl?: string;
+  expiresIn?: 300;
+  model: string;
+  promptVersion: string;
+  affectedSurfaces: GenieSurfaceKey[];
+  panelMap: FlatAtlasPanelMapEntry[];
+  instruction: string | null;
+  productionEligible: boolean;
+  exampleUsed: boolean;
+  exampleGuideHash: string | null;
+  exampleMasterHash: string | null;
+  createdAt: string;
+};
+
 /** The six printed surfaces, in the order the production layers are cut. */
 export const PRODUCTION_SURFACES: GenieSurfaceKey[] = [
   "driver",
@@ -413,20 +491,29 @@ export async function uploadRevisionAsset(
  * sent — the customer supplies the brief and the vehicle, the frozen view
  * contract in the runtime supplies the angles.
  */
-export async function createGenerationRequest(options: {
+export type CreateGenerationRequestOptions = {
   vehicle: GenerationVehicle;
   brief: GenerationBrief;
   designName: string;
   generationId?: string;
-}): Promise<GenerationRequestState> {
-  const generationId = (options.generationId || crypto.randomUUID()).toLowerCase();
+  pipelineMode?: GenerationPipelineMode;
+};
+
+/** Pure request encoder, kept exported so v2 rollback/v3 opt-in are testable. */
+export function buildGenerationInput(
+  options: CreateGenerationRequestOptions,
+): Record<string, unknown> {
+  const flatFirst = options.pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
 
   const input: Record<string, unknown> = {
-    contractVersion: "designpro.calls-1-7-input.v2",
+    contractVersion: flatFirst
+      ? "designpro.calls-1-7-input.v3"
+      : "designpro.calls-1-7-input.v2",
     vehicle: options.vehicle,
     brief: options.brief.brief,
     designName: options.designName,
   };
+  if (flatFirst) input.pipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE;
   if (options.brief.businessName) input.businessName = options.brief.businessName;
   if (options.brief.industry) input.industry = options.brief.industry;
   if (options.brief.colors?.length) input.colors = options.brief.colors;
@@ -453,6 +540,15 @@ export async function createGenerationRequest(options: {
     };
   }
 
+  return input;
+}
+
+export async function createGenerationRequest(
+  options: CreateGenerationRequestOptions,
+): Promise<GenerationRequestState> {
+  const generationId = (options.generationId || crypto.randomUUID()).toLowerCase();
+  const input = buildGenerationInput(options);
+
   return request<GenerationRequestState>("/generation/requests", {
     method: "POST",
     body: JSON.stringify({ generationId, input }),
@@ -473,6 +569,12 @@ export const dpApi = {
     request<GenerationRequestState>(`/generation/requests/${encodeURIComponent(requestId)}`),
   listGenerationViews: (requestId: string) =>
     request<GenerationView[]>(`/generation/requests/${encodeURIComponent(requestId)}/views`),
+  /**
+   * Immutable atlas lineage for the opt-in flat-first diagnostic. It is valid
+   * for this route to return [] while the designer phase is still running.
+   */
+  listFlatAtlasRevisions: (requestId: string) =>
+    request<FlatAtlasRevision[]>(`/generation/requests/${encodeURIComponent(requestId)}/atlas`),
   /**
    * "Generate this angle again." The old view is superseded, never mutated, so
    * anything Calls 8+ already hashed stays trustworthy.

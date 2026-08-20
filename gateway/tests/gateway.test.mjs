@@ -32,6 +32,71 @@ function calls17Idempotency(generationId, input) {
     + createHash("sha256").update(input.orderNumber, "utf8").digest("hex");
 }
 
+function flatFirstInput(extra = {}) {
+  return {
+    contractVersion: "designpro.calls-1-7-input.v3",
+    pipelineMode: "flat-first-atlas-v1",
+    vehicle: { year: "2025", make: "Ford", model: "F-250", type: "truck" },
+    brief: "High-contrast commercial pool-service wrap",
+    designName: "Flamingo Pools F-250",
+    mode: "commercial",
+    ...extra,
+  };
+}
+
+function flatFirstPanelMap() {
+  return [
+    { surfaceKey: "driver", trimWidthIn: 153, trimHeightIn: 56, printWidthIn: 163, printHeightIn: 66, bleedIn: { top: 5, right: 5, bottom: 5, left: 5 }, surfaceSqFt: 59.5, effectivePpi: 26.77, rotationDegrees: -90, x: 3000, y: 200, w: 800, h: 3600, internal: "never exposed" },
+    { surfaceKey: "passenger", trimWidthIn: 153, trimHeightIn: 56, printWidthIn: 163, printHeightIn: 66, bleedIn: { top: 5, right: 5, bottom: 5, left: 5 }, surfaceSqFt: 59.5, effectivePpi: 26.77, rotationDegrees: 90, x: 200, y: 200, w: 800, h: 3600 },
+    { surfaceKey: "hood", trimWidthIn: 70, trimHeightIn: 60, printWidthIn: 80, printHeightIn: 70, bleedIn: { top: 5, right: 5, bottom: 5, left: 5 }, surfaceSqFt: 29.17, effectivePpi: 30, rotationDegrees: 0, x: 1500, y: 2700, w: 700, h: 600 },
+    { surfaceKey: "roof", trimWidthIn: 90, trimHeightIn: 70, printWidthIn: 100, printHeightIn: 80, bleedIn: { top: 5, right: 5, bottom: 5, left: 5 }, surfaceSqFt: 43.75, effectivePpi: 30, rotationDegrees: 0, x: 1450, y: 1300, w: 800, h: 700 },
+    { surfaceKey: "front", trimWidthIn: 80, trimHeightIn: 30, printWidthIn: 90, printHeightIn: 40, bleedIn: { top: 5, right: 5, bottom: 5, left: 5 }, surfaceSqFt: 16.67, effectivePpi: 30, rotationDegrees: 0, x: 1500, y: 3400, w: 700, h: 300 },
+    { surfaceKey: "rear", trimWidthIn: 80, trimHeightIn: 30, printWidthIn: 90, printHeightIn: 40, bleedIn: { top: 5, right: 5, bottom: 5, left: 5 }, surfaceSqFt: 16.67, effectivePpi: 30, rotationDegrees: 0, x: 1500, y: 500, w: 700, h: 300 },
+  ];
+}
+
+function flatFirstAtlasRpcRow({ userId, requestId, generationId, panelMap = flatFirstPanelMap() }) {
+  const guideHash = "1".repeat(64);
+  const manifestHash = "2".repeat(64);
+  const masterHash = "3".repeat(64);
+  const projectionHash = "4".repeat(64);
+  return {
+    id: "40000000-0000-4000-8000-000000000001",
+    requestId,
+    generationId,
+    parentRevisionId: null,
+    revisionSequence: 1,
+    guideStoragePath: `designpro/user_${userId}/${generationId}/flat-first/v1/guide/${guideHash}.png`,
+    guideContentHash: guideHash,
+    guideByteSize: 900,
+    guideContentType: "image/png",
+    manifestContentHash: manifestHash,
+    manifestByteSize: 500,
+    manifestContentType: "application/json",
+    masterStoragePath: `designpro/user_${userId}/${generationId}/flat-first/v1/revisions/1/master/${masterHash}.png`,
+    masterContentHash: masterHash,
+    masterByteSize: 1500,
+    masterContentType: "image/png",
+    projectionStoragePath: `designpro/user_${userId}/${generationId}/flat-first/v1/revisions/1/projection/${projectionHash}.jpg`,
+    projectionContentHash: projectionHash,
+    projectionByteSize: 1100,
+    projectionContentType: "image/jpeg",
+    affectedSurfaces: ["driver", "passenger", "hood", "roof", "front", "rear"],
+    instruction: null,
+    productionEligible: false,
+    model: "gemini-3-pro-image-preview",
+    promptVersion: "flat-atlas-v1",
+    widthPx: 4096,
+    heightPx: 4096,
+    effectivePpi: 26.77,
+    panelMap,
+    exampleUsed: false,
+    exampleGuideHash: null,
+    exampleMasterHash: null,
+    createdAt: "2026-08-20T16:00:00Z",
+  };
+}
+
 async function listen(server) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -852,6 +917,83 @@ test("authenticated browser can enqueue Calls 1-7 without selecting engine contr
   });
 });
 
+test("flat-first v3 opts into the isolated intake RPC without changing v1", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-000000000010";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request")) {
+        return Response.json({
+          requestId: "10000000-0000-4000-8000-000000000010",
+          generationId,
+          state: "queued",
+          inputHash: "a".repeat(64),
+          engineContractHash: "b".repeat(64),
+          idempotent: false,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const input = flatFirstInput();
+  const response = await fetch(`${base}/api/generation/requests`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId, input }),
+  });
+  assert.equal(response.status, 202);
+  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request"));
+  assert.ok(rpcCall);
+  assert.deepEqual(JSON.parse(rpcCall.init.body), {
+    p_generation_id: generationId,
+    p_input: input,
+    p_idempotency_key: null,
+  });
+  assert.equal(calls.some((item) => item.url.endsWith("/rpc/create_designpro_generation_request")), false);
+});
+
+test("flat-first v3 refuses a misspelled mode, fulfillment identity, extras, and engine controls", async (t) => {
+  const invalidInputs = [
+    flatFirstInput({ pipelineMode: "flat_first_v1" }),
+    flatFirstInput({ orderNumber: "DP-1" }),
+    flatFirstInput({ experimental: true }),
+    flatFirstInput({ nested: { seed: 7 } }),
+  ];
+  for (const input of invalidInputs) {
+    const calls = [];
+    const server = createGateway({
+      env,
+      fetchImpl: async (url, init = {}) => {
+        calls.push({ url: String(url), init });
+        if (String(url).endsWith("/auth/v1/user")) {
+          return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/generation/requests`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        generationId: "90000000-0000-4000-8000-000000000010",
+        input,
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "generation_request_invalid" });
+    assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
+  }
+});
+
 test("Calls 1-7 enqueue rejects nested prompt, model, seed, and view controls before RPC", async (t) => {
   for (const forbidden of [
     { prompt: "override" }, { nested: { image_model: "override" } },
@@ -1008,6 +1150,370 @@ test("generation status returns private immutable identities without signing obj
   assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
 });
 
+test("flat atlas lineage signs before and after previews without returning storage paths", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const requestId = "10000000-0000-4000-8000-000000000010";
+  const generationId = "90000000-0000-4000-8000-000000000010";
+  const guideHash = "1".repeat(64);
+  const manifestHash = "2".repeat(64);
+  const masterHash = "3".repeat(64);
+  const projectionHash = "4".repeat(64);
+  const guidePath = `designpro/user_${userId}/${generationId}/flat-first/v1/guide/${guideHash}.png`;
+  const masterPath = `designpro/user_${userId}/${generationId}/flat-first/v1/revisions/1/master/${masterHash}.png`;
+  const projectionPath = `designpro/user_${userId}/${generationId}/flat-first/v1/revisions/1/projection/${projectionHash}.jpg`;
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_atlas_revision_paths")) {
+        return Response.json([{
+          id: "40000000-0000-4000-8000-000000000001",
+          requestId,
+          generationId,
+          parentRevisionId: null,
+          revisionSequence: 1,
+          guideStoragePath: guidePath,
+          guideContentHash: guideHash,
+          guideByteSize: 900,
+          guideContentType: "image/png",
+          manifestContentHash: manifestHash,
+          manifestByteSize: 500,
+          manifestContentType: "application/json",
+          masterStoragePath: masterPath,
+          masterContentHash: masterHash,
+          masterByteSize: 1500,
+          masterContentType: "image/png",
+          projectionStoragePath: projectionPath,
+          projectionContentHash: projectionHash,
+          projectionByteSize: 1100,
+          projectionContentType: "image/jpeg",
+          affectedSurfaces: ["driver", "passenger", "hood", "roof", "front", "rear"],
+          instruction: null,
+          productionEligible: false,
+          model: "gemini-3-pro-image-preview",
+          promptVersion: "flat-atlas-v1",
+          widthPx: 4096,
+          heightPx: 4096,
+          effectivePpi: 26.77,
+          panelMap: flatFirstPanelMap(),
+          exampleUsed: false,
+          exampleGuideHash: null,
+          exampleMasterHash: null,
+          createdAt: "2026-08-20T16:00:00Z",
+        }]);
+      }
+      if (value.includes("/storage/v1/object/sign/wrap-files/")) {
+        return Response.json({ signedURL: `/object/sign/wrap-files/preview?token=${value.includes("guide") ? "guide" : "master"}` });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/atlas`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 200);
+  const [revision] = await response.json();
+  assert.equal(revision.revisionSequence, 1);
+  assert.equal(revision.guide.contentHash, guideHash);
+  assert.equal(revision.master.contentHash, masterHash);
+  assert.deepEqual(revision.projection, {
+    contentHash: projectionHash,
+    contentType: "image/jpeg",
+    byteSize: 1100,
+  });
+  assert.deepEqual(revision.panelMap.map((panel) => panel.surfaceKey), [
+    "driver", "passenger", "hood", "roof", "front", "rear",
+  ]);
+  assert.deepEqual(revision.panelMap[0].bleedIn, {
+    top: 5, right: 5, bottom: 5, left: 5,
+  });
+  assert.equal(revision.panelMap[0].surfaceSqFt, 59.5);
+  assert.equal(revision.panelMap[0].x, 3000);
+  assert.equal("internal" in revision.panelMap[0], false);
+  assert.match(revision.guideUrl, /token=guide$/);
+  assert.match(revision.masterUrl, /token=master$/);
+  assert.equal(revision.expiresIn, 300);
+  assert.equal("guideStoragePath" in revision, false);
+  assert.equal("masterStoragePath" in revision, false);
+  assert.equal("projectionStoragePath" in revision, false);
+  assert.equal(JSON.stringify(revision).includes(guidePath), false);
+  assert.equal(JSON.stringify(revision).includes(masterPath), false);
+  assert.equal(JSON.stringify(revision).includes(projectionPath), false);
+});
+
+test("flat atlas lineage rejects invalid or cross-revision immutable artifacts before signing", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const requestId = "10000000-0000-4000-8000-000000000010";
+  const generationId = "90000000-0000-4000-8000-000000000010";
+  const invalidRows = [
+    { projectionContentType: "image/png" },
+    {
+      projectionStoragePath: `designpro/user_${userId}/${generationId}`
+        + `/flat-first/v1/revisions/2/projection/${"4".repeat(64)}.jpg`,
+    },
+    {
+      masterStoragePath: `designpro/user_${userId}/${generationId}`
+        + `/flat-first/v1/revisions/2/master/${"3".repeat(64)}.png`,
+    },
+  ];
+  for (const invalid of invalidRows) {
+    const calls = [];
+    const server = createGateway({
+      env,
+      fetchImpl: async (url, init = {}) => {
+        const value = String(url);
+        calls.push({ url: value, init });
+        if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+        if (value.endsWith("/rest/v1/rpc/designpro_flat_atlas_revision_paths")) {
+          return Response.json([{
+            ...flatFirstAtlasRpcRow({ userId, requestId, generationId }),
+            ...invalid,
+          }]);
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/generation/requests/${requestId}/atlas`, {
+      headers: { cookie: "dp_session=test-token" },
+    });
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), { error: "flat_atlas_response_invalid" });
+    assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
+  }
+});
+
+test("flat atlas panel schedule rejects incomplete, duplicate, non-five-inch, and invalid crop geometry", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const requestId = "10000000-0000-4000-8000-000000000010";
+  const generationId = "90000000-0000-4000-8000-000000000010";
+  const invalidMaps = [];
+  invalidMaps.push(flatFirstPanelMap().slice(0, 5));
+  {
+    const panels = flatFirstPanelMap();
+    panels[1].surfaceKey = "driver";
+    invalidMaps.push(panels);
+  }
+  {
+    const panels = flatFirstPanelMap();
+    panels[0].bleedIn.right = 4;
+    invalidMaps.push(panels);
+  }
+  {
+    const panels = flatFirstPanelMap();
+    panels[0].printWidthIn = 164;
+    invalidMaps.push(panels);
+  }
+  {
+    const panels = flatFirstPanelMap();
+    delete panels[0].h;
+    invalidMaps.push(panels);
+  }
+  {
+    const panels = flatFirstPanelMap();
+    panels[0].x = 4000;
+    invalidMaps.push(panels);
+  }
+
+  for (const panelMap of invalidMaps) {
+    const calls = [];
+    const server = createGateway({
+      env,
+      fetchImpl: async (url, init = {}) => {
+        const value = String(url);
+        calls.push({ url: value, init });
+        if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+        if (value.endsWith("/rest/v1/rpc/designpro_flat_atlas_revision_paths")) {
+          return Response.json([flatFirstAtlasRpcRow({
+            userId, requestId, generationId, panelMap,
+          })]);
+        }
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/generation/requests/${requestId}/atlas`, {
+      headers: { cookie: "dp_session=test-token" },
+    });
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), { error: "flat_atlas_panel_map_invalid" });
+    assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
+  }
+});
+
+test("flat atlas lineage returns the same 404 for an absent or other-owner request", async (t) => {
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_atlas_revision_paths")) {
+        return Response.json(null);
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/10000000-0000-4000-8000-000000000010/atlas`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: "generation_request_not_found" });
+});
+
+test("flat-first handoff fails closed until an immutable atlas revision is production eligible", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000010";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_first_handoff_gate")) {
+        return Response.json({
+          flatFirst: true,
+          productionEligible: false,
+          revisionId: "40000000-0000-4000-8000-000000000001",
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/handoff`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "flat_first_production_gate_required" });
+  assert.equal(calls.some((item) => item.url.endsWith("/rpc/handoff_designpro_generation_to_production")), false);
+});
+
+test("the flat-first gate does not change legacy handoff behavior", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000001";
+  const generationId = "90000000-0000-4000-8000-000000000009";
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_first_handoff_gate")) {
+        return Response.json({ flatFirst: false, productionEligible: true, revisionId: null });
+      }
+      if (value.endsWith("/rest/v1/rpc/handoff_designpro_generation_to_production")) {
+        return Response.json({
+          revisionId: "50000000-0000-4000-8000-000000000001",
+          generationId,
+          workflowRunId: "60000000-0000-4000-8000-000000000001",
+          alreadyHandedOff: false,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/handoff`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(response.status, 202);
+  assert.equal((await response.json()).generationId, generationId);
+});
+
+test("a flat-first view instruction is rejected because edits require a new atlas revision", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000010";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_first_handoff_gate")) {
+        return Response.json({
+          flatFirst: true,
+          productionEligible: false,
+          revisionId: "40000000-0000-4000-8000-000000000001",
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/views/side/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ instruction: "Make the driver logo larger" }),
+  });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "flat_first_atlas_revision_required" });
+  assert.equal(calls.some((item) => item.url.endsWith("/rpc/regenerate_designpro_generation_slot")), false);
+});
+
+test("an instructionless flat-first view retry reuses the same atlas", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000010";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_first_handoff_gate")) {
+        return Response.json({
+          flatFirst: true,
+          productionEligible: false,
+          revisionId: "40000000-0000-4000-8000-000000000001",
+        });
+      }
+      if (value.endsWith("/rest/v1/rpc/regenerate_designpro_generation_slot")) {
+        return Response.json({
+          requestId,
+          sourceViewType: "side",
+          consumerRole: "driver",
+          supersededViews: 1,
+          state: "queued",
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/views/side/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(response.status, 202);
+  const retry = calls.find((item) => item.url.endsWith("/rpc/regenerate_designpro_generation_slot"));
+  assert.equal(JSON.parse(retry.init.body).p_instruction, null);
+});
+
 test("a view can be regenerated without mutating the accepted one", async (t) => {
   const requestId = "10000000-0000-4000-8000-000000000002";
   const calls = [];
@@ -1017,6 +1523,9 @@ test("a view can be regenerated without mutating the accepted one", async (t) =>
       const value = String(url);
       calls.push({ url: value, init });
       if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_first_handoff_gate")) {
+        return Response.json({ flatFirst: false, productionEligible: true, revisionId: null });
+      }
       if (value.endsWith("/rest/v1/rpc/regenerate_designpro_generation_slot")) {
         return Response.json({
           requestId, sourceViewType: "hero-3d", consumerRole: "hero3d",
