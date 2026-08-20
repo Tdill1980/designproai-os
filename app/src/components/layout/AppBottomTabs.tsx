@@ -21,7 +21,7 @@ interface AppBottomTabsProps {
 const TABS = [
   { label: "Home", route: "/dashboard", icon: Home, match: ["/dashboard"], kind: "link" as const },
   { label: "Tools", icon: Grid3X3, match: [], kind: "drawer" as const },
-  { label: "Design", route: "/designpro/generate", icon: Brain, match: ["/designpro/generate"], kind: "link" as const },
+  { label: "Design", route: "/designpro/create", icon: Brain, match: ["/designpro/create", "/designpro/premium", "/designpanelpro", "/designpro/generate"], kind: "link" as const },
   { label: "Jobs", route: "/designpro/jobs", icon: Factory, match: ["/designpro/jobs"], kind: "link" as const },
   { label: "WrapBox", route: "/designpro/wrapbox", icon: Package, match: ["/designpro/wrapbox"], kind: "link" as const },
 ];

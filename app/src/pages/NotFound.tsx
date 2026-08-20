@@ -71,7 +71,7 @@ const NotFound = () => {
           </p>
           <ul className="space-y-2 text-sm">
             {[
-              ["/designpro/generate", "Generate a design — seven photoreal source views"],
+              ["/designpro/create", "Start a design — seven photoreal source views"],
               ["/designpro/revisions/new", "Upload seven views you already own"],
               ["/designpro/jobs", "Production jobs — proof, panels, QC and output"],
               ["/designpro/genie-qc", "GENIE exact geometry validation"],

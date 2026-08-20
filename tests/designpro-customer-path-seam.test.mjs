@@ -258,3 +258,64 @@ test("every DesignPro URL a customer can open renders a module the gate covers",
     `CUSTOMER_ROUTE_MODULES lists modules no DesignPro route renders: ${unreachable.join(", ")}`,
   );
 });
+
+/**
+ * THE RESTORED UI HAS TO BE REACHABLE BY TAPPING, NOT BY TYPING.
+ *
+ * The routes were repointed so /designpro/create renders DesignPanelProPremium,
+ * and every navigation surface in the app went on sending the customer to
+ * /designpro/generate -- the operator form, which asks for an order number and
+ * a WrapBox recipient. The restore compiled, the seam gate was clean, the
+ * routes were right, and a customer tapping "Design" in the bottom tab bar
+ * still could not get to it. Nothing failed; the product was simply absent.
+ *
+ * A route nothing links to is not a restored product, so the destinations are
+ * asserted here alongside the routes themselves.
+ */
+const CUSTOMER_DESIGN_ENTRY = "/designpro/create";
+
+/** Files whose job is to send a customer somewhere to start a design. */
+const NAVIGATION_SURFACES = [
+  "components/layout/AppBottomTabs.tsx",
+  "components/Header.tsx",
+  "components/MobileToolNav.tsx",
+  "components/DesktopToolNav.tsx",
+  "lib/dashboard-nav.ts",
+  "pages/designpro/ProductionJobs.tsx",
+];
+
+test("the customer design entry point renders the restored DesignPro UI", () => {
+  const routes = appRoutes();
+  // Lazy imports carry no extension, so compare the way the coverage test does.
+  const target = (renderedModule(routes, CUSTOMER_DESIGN_ENTRY) || "").replace(/\.tsx?$/, "");
+  assert.equal(
+    target,
+    "pages/DesignPanelProPremium",
+    `${CUSTOMER_DESIGN_ENTRY} renders ${target || "nothing"} instead of the restored customer UI`,
+  );
+});
+
+test("no navigation surface sends a customer to the operator generate form", () => {
+  // /designpro/generate binds an order and a confirmed WrapBox recipient up
+  // front. That is the operator's flow; a customer has neither when they are
+  // still deciding what their wrap should look like, which is the whole reason
+  // Calls 1-7 became design-first.
+  const offenders = [];
+  for (const relative of NAVIGATION_SURFACES) {
+    const file = join(ROOT, relative);
+    assert.ok(existsSync(file), `navigation surface is missing: ${relative}`);
+    executableCode(readFileSync(file, "utf8"))
+      .split("\n")
+      .forEach((line, index) => {
+        // `match:`/`isActive` lists name a route to highlight, not to travel to.
+        if (!/"\/designpro\/generate"/.test(line)) return;
+        if (/\bmatch\b\s*:/.test(line) || /isActive/.test(line)) return;
+        offenders.push(`${relative}:${index + 1} ${line.trim().slice(0, 90)}`);
+      });
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `Customer navigation still points at the operator form:\n  ${offenders.join("\n  ")}`,
+  );
+});

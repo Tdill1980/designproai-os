@@ -830,7 +830,7 @@ const Index = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[
                 {
-                  to: "/designpro/generate",
+                  to: "/designpro/create",
                   title: ["Seven photoreal ", "views"],
                   body: "Describe the wrap and the vehicle. The server generates seven distinct views — the passenger side is generated, never mirrored, so lettering and logos stay readable.",
                   icon: Sparkles,

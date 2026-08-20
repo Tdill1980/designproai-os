@@ -130,6 +130,21 @@ test("nothing statically imports a page the router does not mount", () => {
   // A 27 MB ColorPro hero shipped in a release with no ColorPro route this way,
   // and it looked "referenced" to every check that asked the bundler.
   const pageImport = /import\(\s*"(?:@|\.)\/pages\/([A-Za-z0-9/_-]+)"\s*\)/g;
+
+  // MOUNTED, not "lives in a particular folder".
+  //
+  // This used to allow anything under pages/designpro/ and reject the rest,
+  // which was accurate only while every live page happened to sit there. The
+  // customer design entry now prefetches DesignPanelProPremium -- mounted at
+  // three routes, so not retired by any meaning of the word -- and the folder
+  // proxy called it retired. Ask the router instead: a page App.tsx lazily
+  // declares is one it can mount, and prefetching it is the point.
+  const mounted = new Set(
+    [...APP.matchAll(/lazyWithRetry\(\s*\(\)\s*=>\s*\n?\s*import\("\.\/pages\/([A-Za-z0-9/_-]+)"\)/g)]
+      .map((match) => match[1]),
+  );
+  assert.ok(mounted.size > 5, "no lazily-mounted pages were parsed out of App.tsx");
+
   for (const path of [
     "app/src/components/DesktopToolNav.tsx",
     "app/src/components/MobileToolNav.tsx",
@@ -137,8 +152,8 @@ test("nothing statically imports a page the router does not mount", () => {
   ]) {
     const offenders = [...read(path).matchAll(pageImport)]
       .map((match) => match[1])
-      .filter((page) => !page.startsWith("designpro/"));
-    assert.deepEqual(offenders, [], `${path} pulls retired pages into the build: ${offenders.join(", ")}`);
+      .filter((page) => !mounted.has(page));
+    assert.deepEqual(offenders, [], `${path} pulls unmounted pages into the build: ${offenders.join(", ")}`);
   }
 });
 
