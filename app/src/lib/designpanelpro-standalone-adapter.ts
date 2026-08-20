@@ -31,6 +31,25 @@ import {
 
 export { CUSTOMER_PROOF_ROLE, selectCustomerProof } from "@/lib/designpro-artifact-selectors";
 
+/**
+ * Fail-closed conditions require an operator or input change. They must stop
+ * the browser watcher even if an older worker incorrectly stored the request
+ * as retryable; polling cannot make these conditions resolve by themselves.
+ */
+export const NON_RETRYABLE_GENERATION_CODES = new Set([
+  "genie_dimension_validation_required",
+]);
+
+export function terminalGenerationFailureCode(state: GenerationRequestState): string | null {
+  if (state.state === "outputs_ready") return null;
+  if (state.state === "failed" || state.state === "cancelled") {
+    return state.failureCode || `generation_${state.state}`;
+  }
+  return state.failureCode && NON_RETRYABLE_GENERATION_CODES.has(state.failureCode)
+    ? state.failureCode
+    : null;
+}
+
 export type StandaloneGenerationInput = {
   vehicle: GenerationVehicle;
   brief: string;
@@ -96,9 +115,8 @@ export async function waitForGeneration(
     options.onState?.(state);
 
     if (state.state === "outputs_ready") return state;
-    if (state.state === "failed" || state.state === "cancelled") {
-      throw new Error(state.failureCode || `generation_${state.state}`);
-    }
+    const terminalFailure = terminalGenerationFailureCode(state);
+    if (terminalFailure) throw new Error(terminalFailure);
     if (Date.now() - started > timeoutMs) throw new Error("generation_timeout");
 
     await new Promise((resolve) => setTimeout(resolve, 2000));

@@ -83,6 +83,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   const [activePipelineMode, setActivePipelineMode] = useState<GenerationPipelineMode>("legacy");
   /** The standalone request behind the design on screen. */
   const [standaloneRequestId, setStandaloneRequestId] = useState<string | null>(null);
+  /** Latest server state; used for honest status instead of elapsed-time guesses. */
+  const [generationRequestState, setGenerationRequestState] = useState<GenerationRequestState | null>(null);
   // Tracks whether the current hero render came from DesignIQ (AI prompt + VisionBoard)
   // vs a library panel. When true, 360-views must clone view 1 via the
   // design-panel-ai-generate originalRenderUrl path — NOT re-feed VisionBoard refs
@@ -99,6 +101,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     setRenderPt(null);
     setIsDesignIQRender(false);
     setFlatProofUrl(null);
+    setGenerationRequestState(null);
   };
 
   // Helper to get user email with robust retry
@@ -320,6 +323,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
 
   /** Server-reported progress, mirrored into the state the UI already renders. */
   const applyGenerationState = (state: GenerationRequestState) => {
+    setGenerationRequestState(state);
     setPersonaPhase(
       state.phase === "photographer" || state.phase === "complete" ? "photographer" : "designer",
     );
@@ -440,6 +444,10 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       const friendly =
         code === "generation_input_conflict"
           ? "That design id already holds a different brief. Start a new design rather than overwriting it."
+          : /genie_dimension_validation_required/.test(code)
+            ? pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+              ? "GENIE does not yet have an operator-validated six-surface record for this vehicle. For the A.T.L.A.S. diagnostic, use 2022 Ford F250 Crew Cab (truck), or validate this vehicle in GENIE QC first. No Gemini images were generated."
+              : "GENIE does not yet have an operator-validated six-surface record for this vehicle. Validate it in GENIE QC before continuing to production."
           : /generation_timeout/.test(code)
             ? "The design is taking longer than expected. It is still running on the server — reopen the job to pick it up."
             : error?.message || "Something went wrong — let's try again!";
@@ -676,6 +684,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     coverageType,
     setCoverageType,
     generationError,
+    generationRequestState,
     clearGenerationError: () => setGenerationError(null),
     saveDesignJob,
     isGeneratingPanel,
