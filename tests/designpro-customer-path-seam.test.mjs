@@ -78,6 +78,51 @@ const LEGACY_SYMBOLS = [
   "production_flow_assets", "designiq_generations", "color_visualizations",
 ];
 
+/**
+ * EVERY DESIGNPRO URL MUST LAND IN THE LIST ABOVE.
+ *
+ * CUSTOMER_ROUTE_MODULES is hand-written, and a hand-written list of entry
+ * points is the obvious way this gate goes stale: someone adds a route, the
+ * closure never grows to include it, and the seam reports clean while a new
+ * door stands open. So the list is checked against App.tsx rather than trusted.
+ *
+ * Redirects are followed, because a URL that redirects is still a URL a
+ * customer can type -- what matters is the module that ultimately renders.
+ */
+const ROUTE_PATTERN = /<Route\s+path="([^"]+)"\s+element=\{([\s\S]*?)\}\s*\/>/g;
+const DESIGNPRO_URL =
+  /^\/(designpro|designpanelpro|wrapbox|revision-studio|productionflow|production-flow)/;
+
+function appRoutes() {
+  const source = readFileSync(join(ROOT, "App.tsx"), "utf8");
+  const modules = new Map();
+  for (const match of source.matchAll(
+    /const\s+(\w+)\s*=\s*lazyWithRetry\(\s*\(\)\s*=>\s*\n?\s*import\("([^"]+)"\)/g,
+  )) modules.set(match[1], match[2]);
+  for (const match of source.matchAll(/import\s+(?:\{\s*)?(\w+)(?:\s*\})?\s+from\s+"(\.\/[^"]+)"/g))
+    if (!modules.has(match[1])) modules.set(match[1], match[2]);
+
+  const routes = new Map();
+  for (const match of source.matchAll(ROUTE_PATTERN)) {
+    const [, path, element] = match;
+    const redirect = element.match(/<Navigate\s+to="([^"]+)"/);
+    const rendered = element.match(/<(\w+)\s*\/>/g)?.map((tag) => tag.slice(1, -2).trim()).pop();
+    routes.set(path, {
+      redirect: redirect?.[1] ?? null,
+      module: redirect ? null : modules.get(rendered) ?? null,
+    });
+  }
+  return routes;
+}
+
+/** The module a URL ends up rendering, following redirects. */
+function renderedModule(routes, path, seen = new Set()) {
+  const route = routes.get(path);
+  if (!route || seen.has(path)) return null;
+  if (route.redirect) return renderedModule(routes, route.redirect, new Set([...seen, path]));
+  return route.module ? route.module.replace(/^\.\//, "") : null;
+}
+
 function resolveImport(specifier, fromFile) {
   let base;
   if (specifier.startsWith("@/")) base = join(ROOT, specifier.slice(2));
@@ -174,5 +219,42 @@ test("no customer-reachable module touches the RestylePro production backend", (
     found,
     [],
     `The customer path can still reach the old production backend:\n  ${found.join("\n  ")}`,
+  );
+});
+
+test("every DesignPro URL a customer can open renders a module the gate covers", () => {
+  const routes = appRoutes();
+  assert.ok(routes.size > 20, `only ${routes.size} routes parsed out of App.tsx`);
+
+  const covered = new Set(CUSTOMER_ROUTE_MODULES.map((relative) => relative.replace(/\.tsx?$/, "")));
+  const uncovered = [];
+  const reached = new Set();
+
+  for (const path of routes.keys()) {
+    if (!DESIGNPRO_URL.test(path)) continue;
+    const module = renderedModule(routes, path);
+    if (!module) {
+      uncovered.push(`${path} renders nothing this test could resolve`);
+      continue;
+    }
+    const key = module.replace(/\.tsx?$/, "");
+    reached.add(key);
+    if (!covered.has(key)) uncovered.push(`${path} renders ${module}, which is not in CUSTOMER_ROUTE_MODULES`);
+  }
+
+  assert.deepEqual(
+    uncovered,
+    [],
+    `A customer URL reaches a module the seam gate never walks:\n  ${uncovered.join("\n  ")}`,
+  );
+
+  // And the reverse: a listed module no route reaches is dead weight in the
+  // list, which quietly widens the closure and hides a real violation in a file
+  // nobody can actually open.
+  const unreachable = [...covered].filter((module) => !reached.has(module));
+  assert.deepEqual(
+    unreachable,
+    [],
+    `CUSTOMER_ROUTE_MODULES lists modules no DesignPro route renders: ${unreachable.join(", ")}`,
   );
 });
