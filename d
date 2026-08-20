@@ -210,6 +210,7 @@ systemd-run \
   --collect \
   --property=Type=oneshot \
   --property=TimeoutStartSec=infinity \
+  --property=TimeoutStopSec=infinity \
   /bin/bash "$runner" >/dev/null
 
 echo "STARTED: $unit"
