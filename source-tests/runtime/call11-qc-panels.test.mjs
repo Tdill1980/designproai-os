@@ -58,10 +58,22 @@ test("Call 11 duplicates, edits the copy, and proves the branded set unchanged",
     claimantSource.indexOf('stage.stage_key === "panels.delogo"'),
     claimantSource.indexOf('stage.stage_key === "pack.verify"'),
   );
-  assert.match(stage, /Buffer\.from\(branded\)/, "the edit works on an independent duplicate");
+  // The duplicate is persisted by Call 10, so Call 11 edits bytes it read back
+  // from that duplicate's own storage path. The branded panel's bytes are never
+  // loaded into the edit path at all -- a stronger independence guarantee than
+  // copying them in memory, and the reason the old Buffer.from(branded) copy is
+  // gone rather than merely renamed.
+  assert.match(stage, /const duplicate = await storageBytes\(sb, duplicateRow\.storage_path\)/,
+    "the edit works on the independently persisted Call 10 duplicate");
+  assert.ok(
+    !/storageBytes\(sb, brandedRow\.storage_path\)[\s\S]*?\.composite\(/.test(stage),
+    "the branded panel's bytes must never reach the de-logo edit",
+  );
   assert.match(stage, /call11_branded_receipt_mismatch/, "the source must match the Call 9 receipt");
   assert.match(stage, /call11_branded_panel_mutated/, "the branded set is re-hashed after the edit");
-  assert.match(stage, /sourcePanelHash: expectedHash/, "each duplicate binds to its source branded hash");
+  assert.match(stage, /call11_call10_duplicate_mutated/, "the Call 10 duplicate set is re-hashed after the edit");
+  assert.match(stage, /sourcePanelHash: expectedBrandedHash/, "each QC panel binds to its source branded hash");
+  assert.match(stage, /sourceDuplicateHash: expectedDuplicateHash/, "each QC panel binds to the duplicate it was cut from");
   assert.match(stage, /authoritative: false/);
   assert.match(stage, /printable: false/);
   assert.match(stage, /qc-panels\/\$\{surface\}\.png/, "duplicates land in their own directory");

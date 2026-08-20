@@ -23,8 +23,14 @@ function stageIndex(name) {
 test("Call 8 customer proof is selected by semantic role, never by missing surface key", () => {
   assert.match(workflowSource, /selectCustomerProof\s*\(/,
     "ProductionWorkflow must use the shared customer-proof selector");
+  // Strip comments first: the file deliberately documents the removed pattern in
+  // prose so the next session knows why it is gone. Matching that prose would
+  // make the guard fire on its own explanation instead of on live code.
+  const workflowCode = workflowSource
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
   assert.ok(
-    !/kind\s*===\s*["']flat-proof["']\s*&&\s*!.*surfaceKey/.test(workflowSource),
+    !/kind\s*===\s*["']flat-proof["']\s*&&\s*!.*surfaceKey/.test(workflowCode),
     "customer proof selection must never depend on missing surfaceKey",
   );
 });

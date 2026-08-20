@@ -126,11 +126,18 @@ Call 9 produces exactly six authoritative branded production panels.
 
 **The approved Call 8 flattened proof raster is the pixel source.**
 
-The source rule is frozen:
+The source rule is frozen. The wire literal is the one
+`complete_designpro_stage` validates on the Call 9 receipt
+(`supabase/migrations/20260806180100_designpro_workflow_rpcs.sql`), so it may
+not be renamed without a migration:
 
 ```text
-one-exact-proof-region-per-output-side
+one-own-surface-region-per-output-side
 ```
+
+Read it as *one exact proof region per output side* — the "own surface region"
+is the side's own named region on the approved Call 8 proof raster, never a
+region of another side and never a re-render.
 
 The extraction map is literal:
 

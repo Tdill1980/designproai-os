@@ -182,10 +182,24 @@ test("Call 8 authors one flat wrap design and Call 9 only cuts it", () => {
   assert.doesNotMatch(wrapSource, /DESIGN ANCHOR/);
   assert.doesNotMatch(entry, /authorFlatSurfaceMasters/);
   assert.equal(existsSync(new URL("../../runtime/deterministic-artboard.cjs", import.meta.url)), false);
-  // Call 9 consumes and verifies; it never cuts an atlas and never regenerates.
-  // The rule is the one the database enforces on the completion receipt.
+  // Call 9 extracts each side from its OWN named region of the approved Call 8
+  // proof raster, verifies it, and never regenerates. The rule literal is the
+  // one complete_designpro_stage enforces on the completion receipt.
   assert.match(claimantSource, /PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side"/);
-  assert.match(claimantSource, /call9_surface_changed/);
+  assert.match(claimantSource, /extractedFromProofRaster: true/);
+  assert.match(claimantSource, /generativeModelCalls: 0/);
+  // The proof identity the region was measured against must be re-checked at
+  // extraction time, or a stale region silently cuts the wrong pixels.
+  for (const guard of [
+    "call9_proof_changed",
+    "call9_proof_region_out_of_bounds",
+    "call9_proof_region_proof_mismatch",
+    "call9_proof_region_revision_mismatch",
+    "call9_proof_region_manifest_mismatch",
+    "call9_proof_region_geometry_mismatch",
+    "call9_panel_geometry_invalid",
+    "call9_proof_region_reuse",
+  ]) assert.match(claimantSource, new RegExp(guard), `Call 9 must fail closed on ${guard}`);
   assert.doesNotMatch(claimantSource, /cutAllPanels/);
   assert.doesNotMatch(claimantSource, /flatWrapLayout/);
   assert.doesNotMatch(claimantSource, /deterministic-cut-of-approved-call8-flat-wrap-layout/);

@@ -11,6 +11,17 @@ test("schema admits panel-duplicate without weakening authoritative panel identi
   assert.match(migration, /'panel-duplicate'/);
   assert.match(migration, /'panel'/);
   assert.match(migration, /'qc-panel'/);
-  assert.ok(!/DROP\s+CONSTRAINT[\s\S]*;\s*$/i.test(migration.trim()), "artifact-kind check must be recreated in the same migration");
-  assert.match(migration, /ADD CONSTRAINT designpro_artifacts_artifact_kind_check CHECK/);
+  // A DROP is only allowed when the SAME migration puts the check back. Assert
+  // the ORDER, not the mere presence of both: a trailing DROP would leave the
+  // artifact-kind column unconstrained in production.
+  const dropAt = migration.search(/DROP\s+CONSTRAINT\s+IF\s+EXISTS\s+designpro_artifacts_artifact_kind_check/i);
+  const addAt = migration.search(/ADD\s+CONSTRAINT\s+designpro_artifacts_artifact_kind_check\s+CHECK/i);
+  assert.ok(addAt >= 0, "artifact-kind check must be recreated in the same migration");
+  if (dropAt >= 0) {
+    assert.ok(addAt > dropAt, "artifact-kind check must be recreated AFTER the drop, not before it");
+    assert.ok(
+      !/DROP\s+CONSTRAINT\s+IF\s+EXISTS\s+designpro_artifacts_artifact_kind_check/i.test(migration.slice(addAt)),
+      "the artifact-kind check must not be dropped again after it is recreated",
+    );
+  }
 });

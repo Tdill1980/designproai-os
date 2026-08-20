@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirty-migration chain', () => {
-  assert.equal(migrationNames.length, 30);
+test('fresh bootstrap contains one ordered thirty-one-migration chain', () => {
+  assert.equal(migrationNames.length, 31);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -51,6 +51,9 @@ test('fresh bootstrap contains one ordered thirty-migration chain', () => {
       // The purchase gate: Calls 8-11 prepare for free, and the two
       // entitlements decide what fulfillment may spend.
       '20260818210000', '20260819180000',
+      // Call 10's persisted panel-duplicate artifact kind: the working copy
+      // Call 11 de-logos, so the branded Call 9 set stays untouched.
+      '20260820044500',
     ],
   );
 });

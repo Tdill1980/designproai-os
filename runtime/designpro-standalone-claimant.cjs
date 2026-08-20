@@ -164,6 +164,9 @@ async function resolveGenieManifest(sb, run, stage) {
   const views = exactSevenViews(source.snapshot, run.tenant_key, run.revision_id);
   const vehicle = requiredObject(source.snapshot.vehicle, "revision vehicle");
   const make = requiredString(vehicle.make, "vehicle make"); const model = requiredString(vehicle.model, "vehicle model"); const year = Number(vehicle.year);
+  // Legacy designpro_vehicle_dimensions rows do not carry validator identity or
+  // exact six-surface evidence. They are never print authority. Every vehicle,
+  // known or unknown, resolves through the validated Universal GENIE gate.
   const row = await resolveOrQueueUniversalDimensions(sb, vehicle, stage, run.id);
   const dim = (width, height, surfaceKey, sourceAssetValue) => {
     const widthInches = Number(width); const heightInches = Number(height);
@@ -474,6 +477,9 @@ async function withHeavyOutputLease(sb, stage, work) {
     return await work();
   } finally {
     clearInterval(renew);
+    // Do not release here: the caller must still durably complete or fail the
+    // stage. The database stage transition releases the exact slot atomically,
+    // so there is no gap in which a heartbeat can lose the heavy-work fence.
   }
 }
 
