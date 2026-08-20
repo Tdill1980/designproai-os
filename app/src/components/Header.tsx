@@ -424,9 +424,9 @@ const HeaderComponent = () => {
           {/* Desktop Right Side - lean set, everything else in sidebar + Menu */}
           <div className="hidden lg:flex items-center gap-3 ml-auto">
             <Link
-              to="/designpro/generate"
+              to="/designpro/create"
               className={`text-sm font-semibold transition-colors flex items-center gap-1 ${
-                isActive('/designpro/generate') ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                isActive('/designpro/create') ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <Sparkles className="h-3.5 w-3.5 text-cyan-400" />

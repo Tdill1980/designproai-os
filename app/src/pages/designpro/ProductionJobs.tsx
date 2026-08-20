@@ -33,7 +33,7 @@ export default function ProductionJobs() {
         aside={
           <div className="flex gap-2">
             <Button asChild>
-              <Link to="/designpro/generate">Generate a design</Link>
+              <Link to="/designpro/create">Start a design</Link>
             </Button>
             <Button asChild variant="outline">
               <Link to="/designpro/revisions/new">Upload seven views</Link>
@@ -51,7 +51,7 @@ export default function ProductionJobs() {
           description="Describe a wrap and let the server generate the seven views, or upload seven you already have."
         >
           <Button asChild>
-            <Link to="/designpro/generate">Generate a design</Link>
+            <Link to="/designpro/create">Start a design</Link>
           </Button>
           <Button asChild variant="outline">
             <Link to="/designpro/revisions/new">Upload seven views</Link>

@@ -16,7 +16,7 @@ import { useCallback } from "react";
 // 27 MB ColorPro hero shipped in a release that has no ColorPro route. Only
 // routes App.tsx declares belong in here.
 const prefetchMap: Record<string, () => Promise<any>> = {
-  "/designpro/generate": () => import("@/pages/designpro/GenerateDesign"),
+  "/designpro/create": () => import("@/pages/DesignPanelProPremium"),
   "/designpro/jobs": () => import("@/pages/designpro/ProductionJobs"),
   "/designpro/wrapbox": () => import("@/pages/designpro/WrapBoxDelivery"),
 };
@@ -24,10 +24,10 @@ const prefetched = new Set<string>();
 
 const tools = [
   {
-    path: "/designpro/generate",
+    path: "/designpro/create",
     icon: Sparkles,
     label: "DesignProAI™",
-    description: "Describe a wrap and a vehicle. The server generates seven distinct photoreal views.",
+    description: "Describe your wrap. Vehicle photos, brand colours, your logo — the server renders seven photoreal views.",
     highlight: false,
     featured: true
   },

@@ -11,11 +11,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 // copied with have no route in this system, so every tap reached the 404 page.
 const tools = [
   {
-    path: "/designpro/generate",
+    path: "/designpro/create",
     icon: Sparkles,
     label: "Design",
     fullLabel: "DesignProAI™",
-    description: "Describe a wrap and a vehicle. The server generates seven distinct photoreal views.",
+    description: "Describe your wrap. Vehicle photos, brand colours, your logo — the server renders seven photoreal views.",
     highlight: false,
     featured: true
   },
