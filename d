@@ -27,6 +27,7 @@ LOG=/var/log/designpro-mobile-4c07299b5598.log
 STATUS=/var/log/designpro-mobile-4c07299b5598.status
 cutover_started=false
 rollback_in_progress=false
+outcome="DEPLOYED $TARGET"
 
 exec > >(tee -a "$LOG") 2>&1
 printf 'RUNNING %s\n' "$(date -u +%FT%TZ)" >"$STATUS"
@@ -46,7 +47,7 @@ finish() {
     fi
   fi
   if [[ $code -eq 0 ]]; then
-    printf 'SUCCESS %s %s\n' "$TARGET" "$(date -u +%FT%TZ)" >"$STATUS"
+    printf 'SUCCESS %s %s\n' "$outcome" "$(date -u +%FT%TZ)" >"$STATUS"
   else
     printf 'FAILED exit=%s %s\n' "$code" "$(date -u +%FT%TZ)" >"$STATUS"
   fi
@@ -68,7 +69,10 @@ docker compose version >/dev/null
 current=$(readlink -f "$ROOT/current" 2>/dev/null || true)
 public=$(readlink -f "$ROOT/public" 2>/dev/null || true)
 case "$current|$public" in
-  "$ROOT/releases/$OLD|$ROOT/releases/$OLD"|"$ROOT/releases/$TARGET|$ROOT/releases/$TARGET") ;;
+  "$ROOT/releases/$OLD|$ROOT/releases/$OLD"|
+  "$ROOT/releases/$TARGET|$ROOT/releases/$TARGET"|
+  "$ROOT/releases/$TARGET|$ROOT/releases/$OLD"|
+  "$ROOT/releases/$OLD|$ROOT/releases/$TARGET") ;;
   *) echo "Unexpected DesignPro release pointers: current=$current public=$public" >&2; exit 20 ;;
 esac
 test -s "$ROOT/shared/runtime.env"
@@ -93,17 +97,7 @@ test "$(git -C "$OLD_SRC" rev-parse HEAD)" = "$OLD"
 # This release is application-only. Abort if infrastructure or Supabase changed.
 git -C "$SRC" diff --quiet "$OLD" "$TARGET" -- ops supabase
 
-if [[ $current == "$ROOT/releases/$TARGET" ]]; then
-  bash "$SRC/ops/acceptance.sh" "$TARGET" https://os.designproai.com
-  echo "ALREADY_DEPLOYED=$TARGET"
-  exit 0
-fi
-
-test "$current" = "$ROOT/releases/$OLD"
-test "$public" = "$ROOT/releases/$OLD"
 test -d "$ROOT/releases/$OLD"
-test ! -e "$ROOT/releases/$TARGET"
-test ! -L "$ROOT/releases/$TARGET"
 
 # Correct root-only recovery snapshot, created before Docker testing,
 # acceptance probes, image builds, or any production mutation. Do not call the
@@ -144,6 +138,32 @@ bash "$OLD_SRC/ops/inventory.sh" >"$BACKUP/inventory.before.txt"
 caddy_snapshot >"$BACKUP/caddy.before.sha256"
 other_containers >"$BACKUP/other-containers.before.txt"
 designpro_envs >"$BACKUP/environments.before.sha256"
+
+# Recover any interrupted prior cutover before attempting another deployment.
+# A fully-target release must pass exact acceptance; a split pair is always
+# restored to the pinned old release and left there for audit.
+if [[ $current == "$ROOT/releases/$TARGET" || $public == "$ROOT/releases/$TARGET" ]]; then
+  cutover_started=true
+  if [[ $current == "$ROOT/releases/$TARGET" && $public == "$ROOT/releases/$TARGET" ]]; then
+    bash "$SRC/ops/acceptance.sh" "$TARGET" https://os.designproai.com
+    cutover_started=false
+    outcome="ALREADY_DEPLOYED $TARGET"
+    echo "ALREADY_DEPLOYED=$TARGET"
+    exit 0
+  fi
+  rollback_old
+  cutover_started=false
+  test "$(readlink -f "$ROOT/current")" = "$ROOT/releases/$OLD"
+  test "$(readlink -f "$ROOT/public")" = "$ROOT/releases/$OLD"
+  outcome="RECOVERED_TO_OLD $OLD"
+  echo "RECOVERED_TO_OLD=$OLD"
+  exit 0
+fi
+
+test "$current" = "$ROOT/releases/$OLD"
+test "$public" = "$ROOT/releases/$OLD"
+test ! -e "$ROOT/releases/$TARGET"
+test ! -L "$ROOT/releases/$TARGET"
 
 # Build and test without adding Node packages to the production host.
 docker run --rm \
@@ -189,6 +209,7 @@ systemd-run \
   --unit="$unit" \
   --collect \
   --property=Type=oneshot \
+  --property=TimeoutStartSec=infinity \
   /bin/bash "$runner" >/dev/null
 
 echo "STARTED: $unit"
