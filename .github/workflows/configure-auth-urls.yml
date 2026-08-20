@@ -1,0 +1,106 @@
+name: Configure DesignProAI auth redirect URLs
+
+# WHY THIS IS ITS OWN WORKFLOW, AND WHY IT PATCHES TWO FIELDS.
+#
+# `supabase config push` would send the whole of config.toml at the live
+# project. That is a much larger blast radius than the problem justifies: any
+# drift between the file and production -- in providers, in token lifetimes, in
+# rate limits -- would be silently applied alongside the URL fix. The Management
+# API accepts a partial patch, so this changes exactly the two fields that are
+# wrong and leaves every other auth setting as production has it.
+#
+# It reads the config back afterwards and asserts the values, because the
+# request returning 200 only proves the API accepted it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Protected auth-URL change"
+        required: true
+        type: choice
+        default: DO_NOT_APPLY
+        options:
+          - DO_NOT_APPLY
+          - APPLY_DESIGNPRO_AUTH_URLS
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-auth-url-config
+  cancel-in-progress: false
+
+env:
+  EXPECTED_PROJECT_REF: wozyamlnygaddievzuwn
+  SITE_URL: https://os.designproai.com
+  URI_ALLOW_LIST: https://os.designproai.com/**
+
+jobs:
+  configure:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'APPLY_DESIGNPRO_AUTH_URLS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: designproai-production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Prove protected intent
+        run: |
+          set +x
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "${{ inputs.confirmation }}" = "APPLY_DESIGNPRO_AUTH_URLS"
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          # The values applied below must match what the repo declares, so the
+          # live project and config.toml cannot drift apart again.
+          grep -Fqx 'site_url = "https://os.designproai.com"' supabase/config.toml
+          grep -Fq  '"https://os.designproai.com/**"' supabase/config.toml
+
+      - name: Record the current auth URLs
+        run: |
+          set +x
+          curl -sS --fail-with-body \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/config/auth" \
+            | python3 -c 'import json,sys; c=json.load(sys.stdin); print("before site_url     :", c.get("site_url")); print("before uri_allow_list:", c.get("uri_allow_list"))'
+
+      - name: Point auth at the production origin
+        run: |
+          set +x
+          curl -sS --fail-with-body -X PATCH \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "content-type: application/json" \
+            -d "$(python3 -c 'import json,os; print(json.dumps({"site_url": os.environ["SITE_URL"], "uri_allow_list": os.environ["URI_ALLOW_LIST"]}))')" \
+            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/config/auth" > /dev/null
+
+      - name: Read it back and assert it, rather than trust the 200
+        run: |
+          set +x
+          curl -sS --fail-with-body \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$EXPECTED_PROJECT_REF/config/auth" \
+            > live-auth-config.json
+          python3 - <<'PY'
+          import json, os, sys
+          config = json.load(open("live-auth-config.json"))
+          site = config.get("site_url")
+          allow = config.get("uri_allow_list")
+          print("after site_url      :", site)
+          print("after uri_allow_list:", allow)
+          problems = []
+          if site != os.environ["SITE_URL"]:
+              problems.append(f"site_url is {site!r}, expected {os.environ['SITE_URL']!r}")
+          if os.environ["URI_ALLOW_LIST"] not in (allow or ""):
+              problems.append(f"uri_allow_list is {allow!r}, missing {os.environ['URI_ALLOW_LIST']!r}")
+          # A localhost redirect left in the allow list is the defect this fixes.
+          if "localhost" in (site or "") or "127.0.0.1" in (site or ""):
+              problems.append("site_url still points at a local address")
+          if problems:
+              sys.exit("auth config did not take:\n  " + "\n  ".join(problems))
+          print("OK - auth emails now land on the production origin")
+          PY

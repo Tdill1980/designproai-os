@@ -60,10 +60,25 @@ allowed_mime_types = [
 
 [auth]
 enabled = true
-site_url = "http://127.0.0.1:5173"
+# WHERE AUTH EMAILS SEND THE CUSTOMER.
+#
+# This was the local dev default, and the live project was on
+# http://localhost:3000 -- so every confirmation, magic link and recovery email
+# this project sent pointed the customer at an address that does not exist.
+#
+# Confirmation still succeeded and hid the problem: GoTrue verifies the token at
+# the Supabase URL and only THEN redirects, so the account really was confirmed
+# while the customer watched ERR_CONNECTION_REFUSED and concluded signup failed.
+# Magic links have no such luck -- the session tokens ride in the redirect
+# fragment, so a dead redirect means the sign-in is recorded server-side and the
+# browser never receives a session.
+#
+# The allow list is the production origin only. A wildcard back to localhost is
+# how a stolen link turns into a stolen session, and nothing that ships needs it;
+# add it locally if you are working on auth against this project.
+site_url = "https://os.designproai.com"
 additional_redirect_urls = [
-  "http://127.0.0.1:5173/auth/callback",
-  "https://os.designproai.com/auth/callback",
+  "https://os.designproai.com/**",
 ]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
