@@ -10,3 +10,15 @@ app/node_modules/
 app/dist/
 app/tsconfig.tsbuildinfo
 dist-release/
+
+# Supabase CLI local state. `supabase start` / `db reset` write these while
+# running the shadow apply; they record which machine is linked to what and
+# belong to that checkout, not to the branch.
+supabase/.branches/
+supabase/.temp/
+
+# Supabase CLI local state. `supabase start` / `db reset` write these while
+# running the shadow apply; they record which machine is linked to what and
+# belong to that checkout, not to the branch.
+supabase/.branches/
+supabase/.temp/
