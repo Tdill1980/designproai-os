@@ -244,6 +244,13 @@ jobs:
           # apply, so the run above cannot tell those apart on its own. Every
           # local migration must now be in the remote history AND the objects
           # the newest ones create must actually exist.
+          # `migration list` prints a three-column table. A row whose REMOTE
+          # column is blank is a local migration production does not have.
+          # Split on the column separator and require a 14-digit version, so
+          # neither the header nor the ---- rule can be read as one -- the
+          # first version of this check did exactly that and failed a run whose
+          # migrations had all applied correctly.
           missing=$(npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration list --linked \
-            | awk 'NR>2 && $1 != "" && $3 == "" {print $1}')
+            | awk -F'|' '{ gsub(/ /,"",$1); gsub(/ /,"",$2);
+                           if ($1 ~ /^[0-9]{14}$/ && $2 == "") print $1 }')
           test -z "$missing" || { echo "::error::local migrations absent from the remote history: $missing"; exit 1; }
