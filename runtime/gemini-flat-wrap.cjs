@@ -20,6 +20,7 @@ const { createHash } = require("node:crypto");
 const sharp = require("sharp");
 const { normalizeTextLock, selectedImageModel, VIEW_KEYS, _test: flatSurfaceInternals } = require("./gemini-flat-surface.cjs");
 const { layoutIdentity, normalizeGeneratedLayout } = require("./flat-wrap-layout.cjs");
+const { endpointFor } = require("./generation-provider.cjs");
 
 const FLAT_WRAP_CONTRACT = "designpro.gemini-flat-wrap.v1";
 const PROMPT_VERSION = "designproai-flat-wrap-20260812.v1";
@@ -135,7 +136,10 @@ async function compactReference(item) {
 }
 
 async function generateOneLayout({ apiKey, model, layout, references, sourceSetHash, textLock, vehicleName, fetchImpl = fetch, signal }) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  // Endpoint and credential come from the provider, which is the one place
+  // this runtime states where a model lives. The retry below stays local: it
+  // is a backoff on one key, not the provider's rotation across a pool.
+  const request = endpointFor(model, apiKey);
   const parts = [{ text: wrapPrompt(vehicleName, layout, sourceSetHash, textLock) }];
   for (const reference of references) {
     parts.push({ text: `APPROVED ${reference.viewKey.toUpperCase()} RENDER of this exact design — palette, imagery and graphic language reference:` });
@@ -144,9 +148,9 @@ async function generateOneLayout({ apiKey, model, layout, references, sourceSetH
   let lastError = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetchImpl(endpoint, {
+      const response = await fetchImpl(request.url, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: request.headers,
         body: JSON.stringify({
           contents: [{ parts }],
           generationConfig: {

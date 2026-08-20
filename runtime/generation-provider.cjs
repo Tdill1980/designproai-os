@@ -44,6 +44,22 @@ function keyFingerprint(key) {
 }
 
 /**
+ * The ONE place a model endpoint and its credential are assembled.
+ *
+ * Every call in this runtime resolves its URL and auth header here. That is
+ * deliberate: moving to Vertex AI changes the host, the path shape and the
+ * credential (OAuth bearer instead of a query-string key) all at once, and a
+ * provider switch that has to be repeated at five call sites is a provider
+ * switch that will be done at four of them. Callers never build a URL.
+ */
+function endpointFor(model, credential) {
+  return {
+    url: `${ENDPOINT_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(credential)}`,
+    headers: { "content-type": "application/json" },
+  };
+}
+
+/**
  * Reads the pool from the environment. Accepts either a single key or a
  * comma-separated set, so a single-key deployment keeps working unchanged while
  * a pooled one gains rotation.
@@ -122,9 +138,10 @@ function createProvider(options = {}) {
       for (const key of availableKeys()) {
         const fingerprint = keyFingerprint(key);
         try {
-          const response = await fetchImpl(`${ENDPOINT_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+          const request = endpointFor(model, key);
+          const response = await fetchImpl(request.url, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: request.headers,
             body: JSON.stringify({
               contents: [{ parts }],
               generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio, imageSize } },
@@ -185,9 +202,10 @@ function createProvider(options = {}) {
       for (const key of availableKeys()) {
         const fingerprint = keyFingerprint(key);
         try {
-          const response = await fetchImpl(`${ENDPOINT_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+          const request = endpointFor(model, key);
+          const response = await fetchImpl(request.url, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: request.headers,
             body: JSON.stringify({
               contents: [{ parts }],
               generationConfig: {
@@ -240,12 +258,62 @@ function createProvider(options = {}) {
     );
   }
 
+  /**
+   * One request to one named model, returned raw.
+   *
+   * This exists for the calls that are neither "paint me an image" nor "decide
+   * one thing as JSON" -- GENIE's grounded dimension lookup, the flat-wrap
+   * layout pass, the logo locator. Each of those had built its own fetch with
+   * its own inline endpoint and its own bare `process.env` key read, which is
+   * how three call sites ended up outside the key pool: no rotation, no
+   * cooldown, and one more URL to forget when the provider changes.
+   *
+   * The body is the caller's, verbatim. Nothing here inspects or rewrites it,
+   * because these callers own guards this module has no business knowing.
+   */
+  async function generateRaw({ model, body, signal, timeoutMs = 120_000, label = "model call" }) {
+    const target = String(model || "").trim();
+    if (!target) throw new ProviderError("provider_model_missing", "generateRaw requires an explicit model", false);
+    if (!body || typeof body !== "object") throw new ProviderError("provider_body_missing", "generateRaw requires a request body", false);
+    const attempts = [];
+    for (const key of availableKeys()) {
+      const fingerprint = keyFingerprint(key);
+      try {
+        const request = endpointFor(target, key);
+        const response = await fetchImpl(request.url, {
+          method: "POST",
+          headers: request.headers,
+          body: JSON.stringify(body),
+          signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
+        });
+        if (!response.ok) {
+          const detail = await response.text().catch(() => "");
+          if (response.status === 429 || response.status >= 500) rest(key, cooldownMs);
+          attempts.push({ model: target, key: fingerprint, status: response.status, detail: detail.slice(0, 160) });
+          continue;
+        }
+        const payload = await response.json();
+        recover(key);
+        return { payload, model: target, keyFingerprint: fingerprint, attempts, contract: PROVIDER_CONTRACT };
+      } catch (error) {
+        rest(key, cooldownMs);
+        attempts.push({ model: target, key: fingerprint, status: 0, detail: String(error?.message || error).slice(0, 160) });
+      }
+    }
+    throw new ProviderError(
+      "provider_request_exhausted",
+      `${label} failed on every key: ${attempts.map((a) => `${a.model}/${a.key}:${a.status} ${a.detail}`).join(" | ")}`,
+      true,
+    );
+  }
+
   function state() {
     return keys.map((key) => ({ key: keyFingerprint(key), ...health.get(key) }));
   }
 
   return {
     generateImage,
+    generateRaw,
     generateSpecification,
     state,
     models: [...models],
@@ -263,6 +331,7 @@ module.exports = {
   SPEC_MAX_OUTPUT_TOKENS,
   ProviderError,
   createProvider,
+  endpointFor,
   imageModels,
   keyFingerprint,
   readKeyPool,

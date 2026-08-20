@@ -7,6 +7,16 @@
  * geometry. Only a separately validated exact six-surface manifest is returned.
  */
 
+const { ProviderError, createProvider } = require("./generation-provider.cjs");
+
+// One provider for the process, not one per lookup: the key pool's health and
+// cooldown only mean anything if the same instance sees the next call.
+let groundingProvider = null;
+function provider() {
+  if (!groundingProvider) groundingProvider = createProvider();
+  return groundingProvider;
+}
+
 const ALLOWED_CLASSES = new Set(["car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv", "trailer", "aircraft", "heavy_equipment"]);
 const SURFACES = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 const SANITY_RANGES = Object.freeze({
@@ -87,32 +97,43 @@ function validatedSurfaces(row) {
 }
 
 async function groundedCandidate(vehicle) {
-  const apiKey = String(process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "").trim();
-  if (!apiKey) throw new UniversalDimensionError("genie_grounding_key_missing", "Universal GENIE grounding key is not configured");
   const prompt = `Find exact OEM exterior dimensions for ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.vehicleClass}). Use primary manufacturer spec pages or official PDFs. Return JSON only: {"overall_length_in":number,"overall_width_in":number,"overall_height_in":number,"wheelbase_in":number|null,"sub_type":string|null,"confidence":"high|medium|low","source_urls":["https://..."]}. This is a candidate for human validation; do not invent missing values.`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    // gemini-2.5-flash is a thinking model and thinking tokens are charged
-    // against maxOutputTokens, so at 2048 a grounded search could spend the
-    // whole budget before emitting a character -- returning empty text with
-    // finishReason MAX_TOKENS, which the parser below read as "no JSON here".
-    // Observed live on a 2021 Ford Transit 250.
-    //
-    // The ceiling is raised rather than the thinking suppressed. Turning
-    // thinking off did clear the truncation, but the model then answered with
-    // zeros for every dimension, which the range check rejected
-    // ("overall_length_in 0 is outside van range 160-290") -- reading OEM spec
-    // pages and reconciling trim variants is the part of this job that needs
-    // the reasoning. 8192 leaves room for both the deliberation and the answer.
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      tools: [{ googleSearch: {} }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
-    }),
-    signal: AbortSignal.timeout(45_000),
-  });
-  if (!response.ok) throw new UniversalDimensionError("genie_grounding_failed", `Gemini grounding HTTP ${response.status}`, response.status >= 500 || response.status === 429);
-  const raw = await response.json();
+  // The endpoint and the credential belong to generation-provider, which owns
+  // the key pool, its health and the one URL this runtime speaks to. This call
+  // used to build both itself, which put it outside rotation and outside any
+  // future provider move.
+  let raw;
+  try {
+    ({ payload: raw } = await provider().generateRaw({
+      model: "gemini-2.5-flash",
+      label: "GENIE grounded dimensions",
+      timeoutMs: 45_000,
+      body: {
+        // gemini-2.5-flash is a thinking model and thinking tokens are charged
+        // against maxOutputTokens, so at 2048 a grounded search could spend the
+        // whole budget before emitting a character -- returning empty text with
+        // finishReason MAX_TOKENS, which the parser below read as "no JSON here".
+        // Observed live on a 2021 Ford Transit 250.
+        //
+        // The ceiling is raised rather than the thinking suppressed. Turning
+        // thinking off did clear the truncation, but the model then answered with
+        // zeros for every dimension, which the range check rejected
+        // ("overall_length_in 0 is outside van range 160-290") -- reading OEM spec
+        // pages and reconciling trim variants is the part of this job that needs
+        // the reasoning. 8192 leaves room for both the deliberation and the answer.
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+      },
+    }));
+  } catch (error) {
+    // The provider's codes are transport truth; GENIE's callers key off these
+    // two, so the boundary is translated rather than widened.
+    if (error instanceof ProviderError && error.code === "provider_key_missing") {
+      throw new UniversalDimensionError("genie_grounding_key_missing", "Universal GENIE grounding key is not configured");
+    }
+    throw new UniversalDimensionError("genie_grounding_failed", `Gemini grounding failed: ${error?.message || error}`, true);
+  }
   const candidate = raw?.candidates?.[0];
   const text = candidate?.content?.parts?.map((part) => part.text || "").join("") || "";
   const match = text.match(/\{[\s\S]*\}/);

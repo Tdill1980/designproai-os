@@ -15,6 +15,7 @@ const { canonicalTenantKey, immutableStorageUpload, normalizeLogoAsset, normaliz
 const { resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
 const { SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
 const { buildMasterCycle } = require("./designpro-master-cycle.cjs");
+const { ProviderError, createProvider } = require("./generation-provider.cjs");
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
@@ -880,24 +881,41 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
 // the live implementation it is given in production.
 const LOGO_LOCATE_MODEL = "gemini-2.5-flash";
 
+// One provider for the process. Call 11 runs the detector six times per pack,
+// so the pool's health and cooldown only mean anything if the same instance
+// sees every one of those calls.
+let logoLocateProvider = null;
+function logoLocate() {
+  if (!logoLocateProvider) logoLocateProvider = createProvider();
+  return logoLocateProvider;
+}
+
 async function locateLogosForPanel(panelBytes, surfaceKey) {
-  const apiKey = String(process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "").trim();
-  if (!apiKey) throw new StageError("call11_logo_locate_key_missing", "Call 11 logo location requires GOOGLE_AI_API_KEY", true);
   // The detector is fed a bounded copy: a 1280px long edge is ample for locating
   // a mark, and it keeps a 4K production panel from being base64'd whole.
   const locateB64 = (await sharp(panelBytes, { limitInputPixels: false })
     .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
     .png().toBuffer()).toString("base64");
   const geminiJson = async (parts) => {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${LOGO_LOCATE_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 8192 },
-      }),
-    });
-    if (!response.ok) throw new Error(`logo_locate_http_${response.status}`);
-    const payload = await response.json();
+    // Endpoint, credential and key rotation all belong to the provider. This
+    // read process.env directly and built its own URL, which meant a rested key
+    // was still handed to Call 11 and a provider move would have missed it.
+    let payload;
+    try {
+      ({ payload } = await logoLocate().generateRaw({
+        model: LOGO_LOCATE_MODEL,
+        label: `Call 11 logo locate (${surfaceKey})`,
+        body: {
+          contents: [{ role: "user", parts }],
+          generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 8192 },
+        },
+      }));
+    } catch (error) {
+      if (error instanceof ProviderError && error.code === "provider_key_missing") {
+        throw new StageError("call11_logo_locate_key_missing", "Call 11 logo location requires GOOGLE_AI_API_KEY", true);
+      }
+      throw error;
+    }
     const text = (payload?.candidates?.[0]?.content?.parts || []).map((part) => part?.text || "").join("").trim();
     if (!text) throw new Error("logo locate returned no text");
     return JSON.parse(text);
