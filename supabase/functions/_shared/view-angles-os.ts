@@ -128,6 +128,15 @@ FRAME FILL: Wrap design fills 90%+ of the frame. The design itself is the subjec
 This is a DESIGN DETAIL shot — like a portfolio close-up showing craftsmanship. Vinyl texture grain and laminate sheen should be visible but the design artwork stays sharp and readable across the frame.
 `,
 
+  'hero-3d': `
+Camera: Three-quarter hero view from the front driver corner, 25-30 degrees off the vehicle's centreline and 20 degrees off the side, at roughly chest height. 35mm lens at 20-foot distance so the whole vehicle stays in frame without wide-angle distortion.
+Framing: The COMPLETE vehicle, bumper to bumper and roof to tyre contact patch. Both the driver side and the front fascia are visible in one image, which is what makes this the hero.
+FRAME FILL: Vehicle fills minimum 80% of frame width and 70% of frame height. This is a whole-vehicle presentation shot, NOT a panel detail and NOT a close-up of the wrap surface.
+Vehicle faces left-forward in frame. All four wheels on the ground, front wheels turned slightly toward camera.
+Lighting: Even studio key with a soft gradient background. The wrap design across the side and front reads clearly and continuously around the body corner.
+TEXT DIRECTION: All text, lettering, phone numbers and URLs on the wrap MUST read correctly left-to-right. Text is NEVER mirrored or backwards.
+`,
+
   roof: `
 Directly overhead top-down view, camera centered above the vehicle looking straight down.
 Show the full roof panel, A-pillars to trunk. The roof surface fills 90% of the frame.
@@ -157,6 +166,7 @@ export const VIEW_ASPECT_RATIOS: Record<string, string> = {
   'front':          '16:9',   // Consistent 360 presentation
   'rear':           '16:9',   // Consistent 360 presentation
   'close-up':       '16:9',   // Match standard views
+  'hero-3d':        '16:9',   // Whole-vehicle hero presentation
   'roof':           '16:9',   // Consistent 360 presentation
 };
 
@@ -177,6 +187,7 @@ export const VIEW_RESOLUTION: Record<string, string> = {
   'front':          '4K',     // GENIE front bumper extract
   'rear':           '4K',     // GENIE rear bumper extract
   'close-up':       '4K',     // Restored to 4K per Trish (was 2K for edge-function memory limit — watch for crashes)
+  'hero-3d':        '4K',     // Whole-vehicle hero presentation
   'roof':           '4K',     // Roof panel extract
 };
 

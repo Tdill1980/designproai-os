@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionLimits } from "./useSubscriptionLimits";
 import {
-  handoffGeneration,
   listDesignPanelViews,
   regenerateDesignPanelView,
   startStandaloneGeneration,
@@ -106,7 +105,7 @@ const normalizeLogoAsset = async (blob: Blob): Promise<File> => {
 
 export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") => {
   const { toast } = useToast();
-  const { checkCanGenerate, incrementRenderCount } = useSubscriptionLimits();
+  const { checkCanGenerate } = useSubscriptionLimits();
   const { currentShop } = useOrganization();
 
   // Vehicle type routing — cars stay on locked generate-color-render;
@@ -550,27 +549,23 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
 
       const finished = await waitForGeneration(request.requestId, {
         onState: applyGenerationState,
-        // A.T.L.A.S. commits the canonical master first, then runs seven
-        // master-conditioned projections in parallel. Reveal every immutable
-        // view as soon as its slot lands; this observer only performs signed
-        // GETs and cannot spend another Gemini call. Legacy keeps its exact
-        // all-at-once presentation and production handoff.
-        onViews: pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-          ? async (progressiveViews) => {
-              applyGeneratedViews(progressiveViews, true);
-              const progressiveHero =
-                progressiveViews.find((view) => view.consumerRole === "hero3d" && view.signedUrl) ||
-                progressiveViews.find((view) => view.sourceViewType === "side" && view.signedUrl) ||
-                progressiveViews.find((view) => view.signedUrl);
-              setPersonaHeroUrl(progressiveHero?.signedUrl || null);
-              setPersonaGenerationId(request.generationId);
-              setPersonaAllViews(Object.fromEntries(
-                progressiveViews
-                  .filter((view) => view.signedUrl)
-                  .map((view) => [view.sourceViewType, view.signedUrl!]),
-              ));
-            }
-          : undefined,
+        // Both modes reveal each immutable view as it lands. This observer only
+        // performs signed GETs; closing or sleeping the browser cannot start,
+        // cancel, repeat, or spend a generation call.
+        onViews: async (progressiveViews) => {
+          applyGeneratedViews(progressiveViews, true);
+          const progressiveHero =
+            progressiveViews.find((view) => view.consumerRole === "hero3d" && view.signedUrl) ||
+            progressiveViews.find((view) => view.sourceViewType === "side" && view.signedUrl) ||
+            progressiveViews.find((view) => view.signedUrl);
+          setPersonaHeroUrl(progressiveHero?.signedUrl || null);
+          setPersonaGenerationId(request.generationId);
+          setPersonaAllViews(Object.fromEntries(
+            progressiveViews
+              .filter((view) => view.signedUrl)
+              .map((view) => [view.sourceViewType, view.signedUrl!]),
+          ));
+        },
       });
       applyGenerationState(finished);
 
@@ -585,19 +580,12 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         ),
       );
 
-      // The diagnostic proves the new canonical atlas + downstream 3D views
-      // without allowing experimental bytes into Calls 8-12. Turning the flag
-      // off therefore returns to the exact legacy handoff path immediately.
-      if (pipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE) {
-        await handoffGeneration(request.requestId);
-      }
-
       toast({
         title: finished.designName || "Design Rendered",
         description:
           pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
             ? "Your A.T.L.A.S. design and seven vehicle views are ready and saved."
-            : "Your DesignProAI™ views are ready — the 2D Production Proof is building.",
+            : "Your seven DesignProAI™ views are ready and saved.",
       });
       return { generationId: request.generationId, directRender: true, renderUrl: hero?.signedUrl };
     } catch (error: any) {

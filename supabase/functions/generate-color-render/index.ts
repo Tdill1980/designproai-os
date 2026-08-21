@@ -18,6 +18,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { encode as encodeBase64, decode as decodeBase64 } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { tokenGate } from "../_shared/token-gate.ts";
 import { createExternalClient, getExternalSupabaseUrl, getExternalServiceRoleKey } from "../_shared/external-db.ts";
+import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
 import { SPIN_VIEW_ANGLES, getSpinViewAngle, isValidAngle } from "../_shared/spin-view-angles.ts";
 import { buildFadeWrapsPrompt } from "../_shared/fadewraps-prompt-builder.ts";
 import { buildApproveModePrompt } from "../_shared/approvemode-prompt-builder.ts";
@@ -261,7 +262,7 @@ function isValidImageUrl(url: string): boolean {
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-designpro-owner-id',
 };
 
 serve(async (req) => {
@@ -273,7 +274,14 @@ serve(async (req) => {
   // prompt-building code runs; the locked render pipeline below is
   // untouched. If the user has no quota, 402 returns before we spend
   // any Gemini cost.
-  const gate = await tokenGate(req, { reason: "generate_color_render" });
+  const internalCaller = await resolveDesignProInternalCaller(req);
+  if (internalCaller.rejection) return internalCaller.rejection;
+  const gate = await tokenGate(req, {
+    reason: "generate_color_render",
+    // The standalone request is already authenticated and admitted. The six
+    // photographer views are one server-owned job, not six browser purchases.
+    skip: internalCaller.internal,
+  });
   if (!gate.ok) return gate.response!;
 
   const RENDER_START_MS = Date.now();
@@ -548,11 +556,11 @@ serve(async (req) => {
     let validatedColorData: any = null;
 
     // Authenticated user ID — resolved from JWT token below, used for user-scoped storage paths
-    let authenticatedUserId: string | null = null;
+    let authenticatedUserId: string | null = internalCaller.userId;
 
     // ============= CHECK ADMIN/TESTER ROLE FIRST (BYPASS LIMITS) =============
-    let isPrivilegedUser = false;
-    if (userEmail) {
+    let isPrivilegedUser = internalCaller.internal;
+    if (!internalCaller.internal && userEmail) {
       try {
         console.log('🔍 Checking admin/tester role for email:', userEmail);
         
@@ -3675,6 +3683,11 @@ Output a single structured paragraph that another AI could use to recreate this 
     return new Response(
       JSON.stringify({
         renderUrl: publicUrl,
+        // The private path never crosses the browser boundary. It lets the
+        // standalone worker download and content-address the exact Edge output.
+        ...(internalCaller.internal
+          ? { storagePath: fileName, contentType: 'image/png' }
+          : {}),
         renderId: renderRecord?.id,
         visualizationId,
         cached: false,

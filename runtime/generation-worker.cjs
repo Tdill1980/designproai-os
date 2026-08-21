@@ -29,15 +29,14 @@ const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
 const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 const { createProvider } = require("./generation-provider.cjs");
+const { createDesignPanelEdgeProvider } = require("./designpanel-edge-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
 const { verifySourceBytes } = require("./runtime-contract.cjs");
 const { STUDIO_ENVIRONMENT, STUDIO_REINFORCEMENT } = require("./studio-os.cjs");
-const { authorCreativeInput } = require("./creative-authoring.cjs");
 const { loadActiveFlatAtlasTopologyExamples } = require("./flat-atlas-topology-examples.cjs");
 const {
   expectedSurfacesFromRow,
   resolveFlatAtlasPreviewDimensions,
-  resolveOrQueueUniversalDimensions,
 } = require("./genie-universal-resolver.cjs");
 const {
   atlasProjectionParts,
@@ -306,7 +305,13 @@ function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imagePa
   });
 }
 
-function createGenerationWorker({ supabase, workerId, provider, intervalMs = POLL_MS }) {
+function createGenerationWorker({
+  supabase,
+  workerId,
+  provider,
+  standardProviderFactory = createDesignPanelEdgeProvider,
+  intervalMs = POLL_MS,
+}) {
   if (!supabase) throw new Error("generation worker requires a Supabase client");
   const store = createGenerationStore({ supabase, workerId });
   // Constructed once so per-key health and cooldown persist across requests
@@ -368,6 +373,14 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       let flatAtlas = null;
       let dimensionRow = null;
       const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
+      const standardProvider = isFlatFirst ? null : standardProviderFactory({
+        supabase,
+        supabaseUrl: process.env.SUPABASE_URL,
+        serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        ownerId,
+        requestId,
+        input: claim.input,
+      });
 
       if (isFlatFirst) {
         // The exact v3 contract + pipelineMode pair is the server-side feature
@@ -395,24 +408,59 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         });
       }
 
-      // Legacy calls receive the customer's verified references on every
-      // creative generation. Flat-first consumes them only inside the one
-      // master-authoring call above; never append them to the seven projection
-      // prompts or they become competing appearance authorities.
-      const imageParts = isFlatFirst ? [] : await referenceImageParts(supabase, claim.input);
-
-      const result = await engine.runRequest({
-        requestId,
-        generationId: claim.generationId,
-        tenantKey: claim.tenantKey,
-        provider: imageProvider,
-        store,
-        slots: slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas, imageParts),
-        // Seven simultaneous proof projections are safe only after they all
-        // share one frozen design. Legacy requests retain their exact
-        // sequential behaviour and provider-pressure profile.
-        parallel: isFlatFirst,
-      });
+      // Standard DesignPanel generation is deliberately staged: the proven
+      // designer function creates View 1, then the proven photographer function
+      // receives that accepted hero for Views 2-7. The six reproductions may run
+      // together because they share one immutable hero; none may race the design.
+      // A.T.L.A.S. remains its separate, explicitly requested experiment.
+      const slots = slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas, []);
+      let result;
+      if (isFlatFirst) {
+        result = await engine.runRequest({
+          requestId,
+          generationId: claim.generationId,
+          tenantKey: claim.tenantKey,
+          provider: imageProvider,
+          store,
+          slots,
+          parallel: true,
+        });
+      } else {
+        await standardProvider.hydrateHero();
+        const designer = await engine.runRequest({
+          requestId,
+          generationId: claim.generationId,
+          tenantKey: claim.tenantKey,
+          provider: standardProvider,
+          store,
+          slots: slots.slice(0, 1),
+          parallel: false,
+          maxProviderAttempts: standardProvider.maxProviderAttempts,
+        });
+        if (designer.state !== "outputs_ready") {
+          result = designer;
+        } else {
+          await standardProvider.hydrateHero();
+          const photographer = await engine.runRequest({
+            requestId,
+            generationId: claim.generationId,
+            tenantKey: claim.tenantKey,
+            provider: standardProvider,
+            store,
+            slots: slots.slice(1),
+            parallel: true,
+            maxProviderAttempts: standardProvider.maxProviderAttempts,
+          });
+          result = {
+            ...photographer,
+            providerCalls: designer.providerCalls + photographer.providerCalls,
+            budget: designer.budget + photographer.budget,
+            results: [...designer.results, ...photographer.results],
+            requiresExplicitResume:
+              designer.requiresExplicitResume || photographer.requiresExplicitResume,
+          };
+        }
+      }
 
       if (result.state !== "outputs_ready") {
         const failed = result.results.filter((item) => item.state === "failed");
@@ -449,33 +497,13 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
 
       const revisionId = handoffRevisionId(requestId);
 
-      // THE AUTHORING BOUNDARY. Calls 1-7 have decided this design; here that
-      // decision is recorded as the canonical authoring input Call 8 consumes,
-      // instead of being left inside the image model as pixels.
-      //
-      // Legacy authoring is authored against the SAME validated GENIE row
-      // manifest.resolve will bind to the run. Flat-first authoring has already
-      // frozen its explicitly proof-only geometry authority into the immutable
-      // A.T.L.A.S. manifest above and can never hand that provisional authority
-      // to Calls 8+.
-      let designMaster = null;
-      if (!isFlatFirst) {
-        dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null);
-        designMaster = await authorCreativeInput({
-          provider: imageProvider,
-          store,
-          manifest: { expectedSurfaces: expectedSurfacesFromRow(dimensionRow) },
-          input: claim.input,
-          bodyText: claim.input?.bodyText,
-          ownerId,
-          revisionId,
-          logger: (line) => console.log(`[DESIGNPRO-OS] authoring ${requestId}: ${line}`),
-        });
-      }
-
       const authoringReceipt = isFlatFirst
         ? { flatAtlas: atlasReceipt(flatAtlas) }
-        : { designMaster };
+        : {
+            generationProducer: "design-panel-ai-generate",
+            reproductionProducer: "generate-color-render",
+            productionHandoffDeferred: true,
+          };
 
       const completion = await rpc("complete_designpro_generation_request", {
         p_request_id: requestId,
@@ -510,7 +538,7 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         state: "outputs_ready",
         revisionId,
         completion,
-        ...(isFlatFirst ? { flatAtlas: atlasReceipt(flatAtlas) } : { designMaster }),
+        ...(isFlatFirst ? { flatAtlas: atlasReceipt(flatAtlas) } : {}),
       };
     } catch (error) {
       // The lease may already be gone; a failed fail-report must not mask the

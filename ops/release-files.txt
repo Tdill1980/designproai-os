@@ -38,6 +38,7 @@ runtime/opentype-outline.cjs
 runtime/designpro-master-cycle.cjs
 runtime/view-angles.cjs
 runtime/generation-provider.cjs
+runtime/designpanel-edge-provider.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs
 runtime/generation-worker.cjs
