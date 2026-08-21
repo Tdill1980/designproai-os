@@ -341,6 +341,20 @@ export type GenerationBrief = {
   industry?: string;
   colors?: string[];
   style?: string;
+  /** Existing DesignIQ controls. Kept structured so A.C.E. receives exactly
+   * what the customer selected instead of trying to recover it from prose. */
+  finish?: string;
+  substrate?: string;
+  mascot?: string;
+  bulletPoints?: string[];
+  brandColors?: string;
+  fontStyle?: string;
+  qrEnabled?: boolean;
+  qrUrl?: string;
+  visionBoardImages?: AssetIdentity[];
+  visionboardIntent?: "exact_reference" | "style_inspiration" | "artboard_projection";
+  styleDescriptors?: string;
+  textLayerPrompt?: string;
   /** "commercial" once a company name exists, matching the intake's own rule. */
   mode?: "restyle" | "commercial";
   /** The customer's own strings. Authoritative; never model-authored. */
@@ -520,6 +534,25 @@ export function buildGenerationInput(
   if (options.brief.industry) input.industry = options.brief.industry;
   if (options.brief.colors?.length) input.colors = options.brief.colors;
   if (options.brief.style) input.style = options.brief.style;
+  if (options.brief.finish) input.finish = options.brief.finish;
+  if (options.brief.substrate) input.substrate = options.brief.substrate;
+  if (options.brief.mascot) input.mascot = options.brief.mascot;
+  if (options.brief.bulletPoints?.length) input.bulletPoints = options.brief.bulletPoints;
+  if (options.brief.brandColors) input.brandColors = options.brief.brandColors;
+  if (options.brief.fontStyle) input.fontStyle = options.brief.fontStyle;
+  if (options.brief.qrEnabled !== undefined) input.qrEnabled = options.brief.qrEnabled;
+  if (options.brief.qrUrl) input.qrUrl = options.brief.qrUrl;
+  if (options.brief.visionBoardImages?.length) {
+    input.visionBoardImages = options.brief.visionBoardImages.map((asset) => ({
+      storagePath: asset.storagePath,
+      contentHash: asset.contentHash,
+      byteSize: asset.byteSize,
+      contentType: asset.contentType,
+    }));
+  }
+  if (options.brief.visionboardIntent) input.visionboardIntent = options.brief.visionboardIntent;
+  if (options.brief.styleDescriptors) input.styleDescriptors = options.brief.styleDescriptors;
+  if (options.brief.textLayerPrompt) input.textLayerPrompt = options.brief.textLayerPrompt;
 
   // THE COMMERCIAL IDENTITY, CARRIED STRUCTURED. Sent as discrete fields rather
   // than folded into the brief prose, because the snapshot has to freeze the

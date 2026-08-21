@@ -23,6 +23,7 @@ import {
 } from "@/lib/designpro-api";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import type { DesignIQParams } from "@/lib/designiq-engine";
+import { classifyDesignIqCombinedContact } from "@/lib/designpro-input-normalization";
 
 import type { PersonaPipelinePhase } from "@/components/designpanelpro/PersonaPipelineProgress";
 import type { CoverageType } from "@/components/tools/CoverageSelector";
@@ -43,6 +44,65 @@ type RoofSize = "none" | "small" | "medium" | "large";
  */
 
 type GenerationError = 'auth_required' | 'limit_reached' | 'generation_failed';
+
+const RUNTIME_VISIONBOARD_IMAGE_TYPES = new Map([
+  ["image/jpeg", "jpg"],
+  ["image/png", "png"],
+  ["image/webp", "webp"],
+]);
+
+const RUNTIME_LOGO_TYPES = new Map([
+  ...RUNTIME_VISIONBOARD_IMAGE_TYPES,
+  ["image/svg+xml", "svg"],
+]);
+
+/** Convert browser-displayable image formats outside the runtime allowlist. */
+const normalizeVisionBoardImage = async (blob: Blob, label: string): Promise<File> => {
+  const contentType = String(blob.type || "").toLowerCase();
+  const allowedExtension = RUNTIME_VISIONBOARD_IMAGE_TYPES.get(contentType);
+  if (allowedExtension) {
+    return new File([blob], `${label}.${allowedExtension}`, { type: contentType });
+  }
+  if (!contentType.startsWith("image/")) {
+    throw new Error("A VisionBoard reference is not a supported image file.");
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const candidate = new Image();
+      candidate.onload = () => resolve(candidate);
+      candidate.onerror = () => reject(new Error("A VisionBoard reference could not be converted to PNG."));
+      candidate.src = objectUrl;
+    });
+    if (!image.naturalWidth || !image.naturalHeight) {
+      throw new Error("A VisionBoard reference has no readable image dimensions.");
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("A VisionBoard reference could not be converted to PNG.");
+    context.drawImage(image, 0, 0);
+    const png = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => result ? resolve(result) : reject(new Error("A VisionBoard reference could not be converted to PNG.")),
+        "image/png",
+      );
+    });
+    return new File([png], `${label}.png`, { type: "image/png" });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
+const normalizeLogoAsset = async (blob: Blob): Promise<File> => {
+  const contentType = String(blob.type || "").toLowerCase();
+  const allowedExtension = RUNTIME_LOGO_TYPES.get(contentType);
+  return allowedExtension
+    ? new File([blob], `logo.${allowedExtension}`, { type: contentType })
+    : normalizeVisionBoardImage(blob, "logo");
+};
 
 export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") => {
   const { toast } = useToast();
@@ -201,7 +261,14 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       !!standaloneRequestId,
     retry: false,
     queryFn: () => dpApi.listFlatAtlasRevisions(String(standaloneRequestId)),
-    refetchInterval: (query) => (query.state.data?.length ? 240_000 : 2_000),
+    refetchInterval: (query) => {
+      const revisions = query.state.data || [];
+      const latest = revisions[revisions.length - 1];
+      // A metadata row is not display-ready. Keep asking until the gateway can
+      // sign the canonical master, then refresh before the five-minute URL
+      // expires. This prevents a silent four-minute blank Atlas window.
+      return latest?.masterUrl ? 240_000 : 2_000;
+    },
   });
 
   // FadeWraps pricing (exact copy)
@@ -302,12 +369,56 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       throw new Error(`Your logo could not be read back for verification (${response.status}).`);
     }
     const blob = await response.blob();
-    const name = staged.storageUrl.split("/").pop() || "logo";
+    const uploadFile = await normalizeLogoAsset(blob);
     return dpApi.uploadRevisionAsset(
       generationId,
       "logo",
-      new File([blob], name, { type: blob.type || "image/png" }),
+      uploadFile,
     );
+  };
+
+  /**
+   * VisionBoardIQ images travel to the runtime as byte-verified identities,
+   * never as public or expiring URLs. Uploads run in parallel and are bounded
+   * by the same six-reference ceiling enforced at the gateway.
+   */
+  const verifyVisionBoardAssets = async (
+    params: DesignIQParams,
+    generationId: string,
+  ): Promise<AssetIdentity[]> => {
+    const unique = Array.from(
+      new Map(
+        (params.visionBoardImages || [])
+          .filter((image) => image?.storageUrl)
+          .map((image) => [image.storageUrl, image]),
+      ).values(),
+    ).slice(0, 6);
+
+    return Promise.all(unique.map(async (image, index) => {
+      const response = await fetch(image.storageUrl);
+      if (!response.ok) {
+        throw new Error(
+          `VisionBoard image ${index + 1} could not be read back for verification (${response.status}).`,
+        );
+      }
+      const blob = await response.blob();
+      const safeLabel = String(image.slotLabel || `visionboard-${index + 1}`)
+        .replace(/[^a-z0-9._-]+/gi, "-")
+        .replace(/^-+|-+$/g, "") || `visionboard-${index + 1}`;
+      const uploadFile = await normalizeVisionBoardImage(blob, safeLabel);
+      return dpApi.uploadRevisionAsset(
+        generationId,
+        "attachment",
+        uploadFile,
+      );
+    }));
+  };
+
+  const explicitWebsite = (params: DesignIQParams): string | undefined => {
+    const line = String(params.textLayerPrompt || "")
+      .split(/\r?\n/)
+      .find((value) => /^\s*(?:website|web|url)\s*:/i.test(value));
+    return line?.replace(/^\s*(?:website|web|url)\s*:\s*/i, "").trim() || undefined;
   };
 
   /** The seven views, as the UI has always shaped them. */
@@ -381,7 +492,11 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     let acceptedRequest: GenerationRequestState | null = null;
 
     try {
-      const logoAsset = await verifyLogoAsset(params, generationId);
+      const [logoAsset, visionBoardImages] = await Promise.all([
+        verifyLogoAsset(params, generationId),
+        verifyVisionBoardAssets(params, generationId),
+      ]);
+      const combinedContact = classifyDesignIqCombinedContact(params.phone);
       const request = await startStandaloneGeneration({
         generationId,
         // The customer's own words, unrewritten. No pre-pass stands between the
@@ -398,12 +513,24 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         // the proven intake has always applied.
         mode: params.companyName?.trim() ? "commercial" : params.mode,
         companyName: params.companyName?.trim() || undefined,
-        phone: params.phone?.trim() || undefined,
+        phone: combinedContact.phone,
         industry: params.industryType || undefined,
         colors: String(params.brandColors || "")
           .split(",")
           .map((value) => value.trim())
           .filter(Boolean),
+        finish: params.finish || selectedFinish,
+        substrate: params.substrate,
+        mascot: params.mascot?.trim() || undefined,
+        bulletPoints: (params.bulletPoints || []).map((value) => value.trim()).filter(Boolean),
+        brandColors: params.brandColors?.trim() || undefined,
+        fontStyle: params.fontStyle?.trim() || undefined,
+        qrEnabled: params.qrEnabled,
+        qrUrl: params.qrUrl?.trim() || undefined,
+        visionBoardImages,
+        visionboardIntent: params.visionboard_intent,
+        textLayerPrompt: params.textLayerPrompt?.trim() || undefined,
+        website: explicitWebsite(params) || combinedContact.website,
         logoAsset,
         pipelineMode,
       });

@@ -51,6 +51,60 @@ describe("flat-first generation input", () => {
     });
   });
 
+  it("carries every existing DesignIQ control and only verified reference identity", () => {
+    const identity = {
+      storagePath: "designpro/user_1/refs/board.png",
+      contentHash: "a".repeat(64),
+      byteSize: 2048,
+      contentType: "image/png",
+    };
+    expect(buildGenerationInput({
+      ...base,
+      brief: {
+        ...base.brief,
+        mode: "commercial",
+        companyName: "Flamingo Pools",
+        phone: "480-555-0182",
+        website: "flamingopools.example",
+        finish: "Satin",
+        substrate: "color_change_film",
+        mascot: "a confident flamingo",
+        bulletPoints: ["Custom pools", "Outdoor living"],
+        brandColors: "coral, aqua, charcoal",
+        fontStyle: "clean geometric sans",
+        qrEnabled: true,
+        qrUrl: "https://flamingopools.example/quote",
+        visionBoardImages: [identity],
+        visionboardIntent: "exact_reference",
+        textLayerPrompt: "Website: flamingopools.example",
+        logoAsset: identity,
+      },
+    })).toMatchObject({
+      mode: "commercial",
+      companyName: "Flamingo Pools",
+      phone: "480-555-0182",
+      website: "flamingopools.example",
+      finish: "Satin",
+      substrate: "color_change_film",
+      mascot: "a confident flamingo",
+      bulletPoints: ["Custom pools", "Outdoor living"],
+      brandColors: "coral, aqua, charcoal",
+      fontStyle: "clean geometric sans",
+      qrEnabled: true,
+      qrUrl: "https://flamingopools.example/quote",
+      visionBoardImages: [identity],
+      visionboardIntent: "exact_reference",
+      textLayerPrompt: "Website: flamingopools.example",
+      logoAsset: identity,
+    });
+    const encoded = buildGenerationInput({
+      ...base,
+      brief: { ...base.brief, visionBoardImages: [identity] },
+    });
+    expect(JSON.stringify(encoded)).not.toContain("signedUrl");
+    expect(JSON.stringify(encoded)).not.toContain("publicUrl");
+  });
+
   it("requires A.T.L.A.S. in the outer envelope so an old gateway fails before enqueue", () => {
     const generationId = "90000000-0000-4000-8000-000000000010";
     expect(buildGenerationRequestPayload({
