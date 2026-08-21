@@ -80,8 +80,9 @@ function createDesignPanelEdgeProvider(options = {}) {
     return email;
   }
 
-  async function signPath(storagePath, expiresIn = 900) {
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, expiresIn);
+  async function signPath(storagePath, expiresIn = 900, transform = null) {
+    const options = transform ? { transform } : undefined;
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, expiresIn, options);
     if (error || !data?.signedUrl) {
       throw new DesignPanelEdgeError(
         "designpanel_edge_sign_failed",
@@ -257,9 +258,13 @@ function createDesignPanelEdgeProvider(options = {}) {
       );
     }
     const vehicle = input.vehicle || {};
-    const heroReferenceUrl = await signPath(currentHero.storagePath);
+    const heroReferenceUrl = await signPath(currentHero.storagePath, 900, {
+      width: 1024,
+      height: 1024,
+      resize: "contain",
+    });
     const email = await resolveOwnerEmail();
-    const payload = await invoke("generate-color-render", {
+    const payload = await invoke("design-panel-color-render", {
       vehicleYear: vehicle.year,
       vehicleMake: vehicle.make,
       vehicleModel: vehicle.model,
@@ -280,14 +285,14 @@ function createDesignPanelEdgeProvider(options = {}) {
         customStylingPrompt: String(input.brief || "").trim(),
       },
     }, { signal, timeoutMs });
-    const result = await downloadResult(payload, "generate-color-render");
+    const result = await downloadResult(payload, "design-panel-color-render");
     return {
       ...result,
       model: "gemini-3-pro-image-preview",
       keyFingerprint,
-      attempts: [{ functionName: "generate-color-render", status: 200 }],
+      attempts: [{ functionName: "design-panel-color-render", status: 200 }],
       contract: EDGE_PROVIDER_CONTRACT,
-      metadata: { sourceFunction: "generate-color-render", heroStoragePath: currentHero.storagePath },
+      metadata: { sourceFunction: "design-panel-color-render", heroStoragePath: currentHero.storagePath },
     };
   }
 
@@ -305,7 +310,7 @@ function createDesignPanelEdgeProvider(options = {}) {
     hydrateHero,
     contract: EDGE_PROVIDER_CONTRACT,
     maxProviderAttempts: 1,
-    models: ["design-panel-ai-generate", "generate-color-render"],
+    models: ["design-panel-ai-generate", "design-panel-color-render"],
     keyCount: 0,
   };
 }
