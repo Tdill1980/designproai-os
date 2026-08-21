@@ -6,6 +6,10 @@ const sql = readFileSync(new URL(
   "../supabase/migrations/20260820100000_designpro_flat_first_atlas_v1.sql",
   import.meta.url,
 ), "utf8");
+const paritySql = readFileSync(new URL(
+  "../supabase/migrations/20260821120000_designpro_generation_input_parity_and_atlas_preview.sql",
+  import.meta.url,
+), "utf8");
 
 test("flat-first is an exact opt-in v3 contract with a separate intake RPC", () => {
   assert.match(sql, /calls_1_7_input_v3_valid/);
@@ -85,4 +89,69 @@ test("flat-first cannot enter production until the immutable latest revision is 
   assert.match(sql, /designpro_flat_first_handoff_gate/);
   assert.match(sql, /ORDER BY revision_sequence DESC LIMIT 1/);
   assert.match(sql, /'productionEligible',COALESCE\(v_atlas\.production_eligible,false\)/);
+});
+
+test("Atlas previews are owner-readable only through exact immutable guide/master rows", () => {
+  const policy = paritySql.match(
+    /CREATE POLICY designpro_owner_read_flat_atlas_previews[\s\S]*?\n  \);/,
+  )?.[0] || "";
+  assert.match(policy, /ON storage\.objects/);
+  assert.match(policy, /FOR SELECT\s+TO authenticated/);
+  assert.match(policy, /bucket_id='wrap-files'/);
+  assert.match(policy, /storage\.allow_only_operation\('object\.sign'\)/);
+  assert.match(policy, /FROM public\.designpro_flat_atlas_revisions revision/);
+  assert.match(policy, /revision\.owner_id=\(SELECT auth\.uid\(\)\)/);
+  assert.match(policy, /storage\.objects\.name=revision\.guide_storage_path/);
+  assert.match(policy, /storage\.objects\.name=revision\.master_storage_path/);
+  assert.doesNotMatch(policy, /manifest_storage_path|projection_storage_path/);
+  assert.doesNotMatch(policy, /object\.list|allow_any_operation|get_authenticated/);
+  assert.doesNotMatch(policy, /FOR (?:INSERT|UPDATE|DELETE)/);
+});
+
+test("Calls 1-7 v2/v3 keep a closed bounded DesignIQ input contract", () => {
+  for (const field of [
+    "finish", "substrate", "mascot", "bulletPoints", "brandColors",
+    "fontStyle", "qrEnabled", "qrUrl", "visionBoardImages",
+    "visionboardIntent", "styleDescriptors", "textLayerPrompt",
+  ]) assert.match(paritySql, new RegExp(`'${field}'`));
+  assert.match(paritySql, /calls_1_7_input_v2_valid[\s\S]*?p_input - ARRAY\[/);
+  assert.match(paritySql, /calls_1_7_input_v3_valid[\s\S]*?p_input - ARRAY\[/);
+  assert.match(paritySql, /pipelineMode'='flat-first-atlas-v1'/);
+  assert.match(paritySql, /NOT designpro_private\.generation_input_has_server_controls\(p_input\)/);
+  assert.match(paritySql, /'style_inspiration','exact_reference','artboard_projection'/);
+});
+
+test("VisionBoard identities are verified object identities, never raw reference URLs", () => {
+  const identityValidator = paritySql.match(
+    /CREATE OR REPLACE FUNCTION designpro_private\.calls_1_7_asset_identity_valid[\s\S]*?\$fn\$;/,
+  )?.[0] || "";
+  assert.match(identityValidator, /'storagePath','contentHash','byteSize','contentType'/);
+  assert.match(identityValidator, /p_asset - ARRAY\[/);
+  assert.match(identityValidator, /inputs\/\(logo\|attachment\)\//);
+  assert.match(
+    identityValidator,
+    /revisions\/\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\//,
+    "asset paths must accept a complete 8-4-4-4-12 generation UUID",
+  );
+  assert.match(identityValidator, /p_asset->>'contentHash' !~ '\^\[0-9a-f\]\{64\}\$'/);
+  assert.match(paritySql, /jsonb_array_length\(p_input->'visionBoardImages'\)>6/);
+  assert.match(paritySql, /identity\.value,'attachment'/);
+  assert.doesNotMatch(identityValidator, /\?'url'|\?'signedUrl'|->>'url'|->>'signedUrl'/);
+  assert.doesNotMatch(identityValidator, /application\/pdf/,
+    "Calls 1-7 must not accept a logo format the runtime image decoder cannot open");
+  assert.match(paritySql, /calls_1_7_asset_paths_bound\(jsonb,uuid,uuid\)/);
+  assert.match(paritySql, /NEW\.request_input,NEW\.owner_id,NEW\.generation_id/);
+  assert.match(paritySql, /generation_asset_owner_generation_mismatch/);
+});
+
+test("Atlas master authoring is fenced once by the current service lease", () => {
+  assert.match(paritySql, /CREATE TABLE designpro_private\.flat_atlas_authoring_fences/);
+  assert.match(paritySql, /request_id uuid PRIMARY KEY/);
+  assert.match(paritySql, /claim_designpro_flat_atlas_authoring/);
+  assert.match(paritySql, /v_request\.state<>'leased'/);
+  assert.match(paritySql, /v_request\.lease_token IS DISTINCT FROM p_claim_token/);
+  assert.match(paritySql, /ON CONFLICT\(request_id\) DO NOTHING/);
+  assert.match(paritySql, /RETURN v_inserted=1/);
+  assert.match(paritySql, /GRANT EXECUTE ON FUNCTION public\.claim_designpro_flat_atlas_authoring\(uuid,uuid\)[\s\S]*TO service_role/);
+  assert.doesNotMatch(paritySql, /GRANT EXECUTE ON FUNCTION public\.claim_designpro_flat_atlas_authoring\(uuid,uuid\)[\s\S]{0,80}TO authenticated/);
 });
