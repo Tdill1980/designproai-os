@@ -80,9 +80,8 @@ function createDesignPanelEdgeProvider(options = {}) {
     return email;
   }
 
-  async function signPath(storagePath, expiresIn = 900, transform = null) {
-    const options = transform ? { transform } : undefined;
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, expiresIn, options);
+  async function signPath(storagePath, expiresIn = 900) {
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, expiresIn);
     if (error || !data?.signedUrl) {
       throw new DesignPanelEdgeError(
         "designpanel_edge_sign_failed",
@@ -111,7 +110,7 @@ function createDesignPanelEdgeProvider(options = {}) {
     return references;
   }
 
-  async function invoke(functionName, body, { signal, timeoutMs = 180_000 } = {}) {
+  async function invoke(functionName, body, { signal, timeoutMs = 180_000, headers = {} } = {}) {
     let response;
     try {
       const timeout = AbortSignal.timeout(timeoutMs);
@@ -123,6 +122,7 @@ function createDesignPanelEdgeProvider(options = {}) {
           // admin privilege against this exact project before trusting ownerId.
           apikey: serviceRoleKey,
           "x-designpro-owner-id": ownerId,
+          ...headers,
         },
         body: JSON.stringify(body),
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
@@ -258,13 +258,9 @@ function createDesignPanelEdgeProvider(options = {}) {
       );
     }
     const vehicle = input.vehicle || {};
-    const heroReferenceUrl = await signPath(currentHero.storagePath, 900, {
-      width: 1024,
-      height: 1024,
-      resize: "contain",
-    });
+    const heroReferenceUrl = await signPath(currentHero.storagePath);
     const email = await resolveOwnerEmail();
-    const payload = await invoke("design-panel-color-render", {
+    const payload = await invoke("generate-color-render", {
       vehicleYear: vehicle.year,
       vehicleMake: vehicle.make,
       vehicleModel: vehicle.model,
@@ -284,15 +280,19 @@ function createDesignPanelEdgeProvider(options = {}) {
         designAnchorText: currentHero.designAnchorText,
         customStylingPrompt: String(input.brief || "").trim(),
       },
-    }, { signal, timeoutMs });
-    const result = await downloadResult(payload, "design-panel-color-render");
+    }, {
+      signal,
+      timeoutMs,
+      headers: { "x-designpro-mode": "designpanelpro" },
+    });
+    const result = await downloadResult(payload, "generate-color-render");
     return {
       ...result,
       model: "gemini-3-pro-image-preview",
       keyFingerprint,
-      attempts: [{ functionName: "design-panel-color-render", status: 200 }],
+      attempts: [{ functionName: "generate-color-render", status: 200 }],
       contract: EDGE_PROVIDER_CONTRACT,
-      metadata: { sourceFunction: "design-panel-color-render", heroStoragePath: currentHero.storagePath },
+      metadata: { sourceFunction: "generate-color-render", heroStoragePath: currentHero.storagePath },
     };
   }
 
@@ -310,7 +310,7 @@ function createDesignPanelEdgeProvider(options = {}) {
     hydrateHero,
     contract: EDGE_PROVIDER_CONTRACT,
     maxProviderAttempts: 1,
-    models: ["design-panel-ai-generate", "design-panel-color-render"],
+    models: ["design-panel-ai-generate", "generate-color-render"],
     keyCount: 0,
   };
 }
