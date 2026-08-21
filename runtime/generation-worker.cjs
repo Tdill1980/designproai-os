@@ -410,8 +410,9 @@ function createGenerationWorker({
 
       // Standard DesignPanel generation is deliberately staged: the proven
       // designer function creates View 1, then the proven photographer function
-      // receives that accepted hero for Views 2-7. The six reproductions may run
-      // together because they share one immutable hero; none may race the design.
+      // receives that accepted hero for Views 2-7. The photographer bundle is
+      // intentionally invoked one view at a time: six concurrent cold starts can
+      // exceed the Edge compute envelope and lose every reproduction at once.
       // A.T.L.A.S. remains its separate, explicitly requested experiment.
       const slots = slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas, []);
       let result;
@@ -448,7 +449,7 @@ function createGenerationWorker({
             provider: standardProvider,
             store,
             slots: slots.slice(1),
-            parallel: true,
+            parallel: false,
             maxProviderAttempts: standardProvider.maxProviderAttempts,
           });
           result = {
