@@ -446,7 +446,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
           ? "That design id already holds a different brief. Start a new design rather than overwriting it."
           : /genie_dimension_validation_required/.test(code)
             ? pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-              ? "GENIE does not yet have an operator-validated six-surface record for this vehicle. For the A.T.L.A.S. diagnostic, use 2022 Ford F250 Crew Cab (truck), or validate this vehicle in GENIE QC first. No Gemini images were generated."
+              ? "A.T.L.A.S. could not establish its automatic proof-layout geometry. No Gemini images were generated; start a new run or verify the vehicle year, make, model, and type."
               : "GENIE does not yet have an operator-validated six-surface record for this vehicle. Validate it in GENIE QC before continuing to production."
           : /generation_timeout/.test(code)
             ? "The design is taking longer than expected. It is still running on the server — reopen the job to pick it up."

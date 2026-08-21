@@ -5,9 +5,11 @@
  *
  * This is the opt-in v3 producer. It runs before the seven customer proof
  * views and creates the one image every proof is conditioned on. The six
- * production surfaces are laid out from the validated GENIE manifest only:
+ * proof surfaces are laid out from a GENIE geometry authority:
  * passenger on the left, driver on the right, and rear/roof/hood/front down
- * the centre. No proof render is inspected or measured to build this map.
+ * the centre. That authority may be operator-validated or a cited Google-
+ * grounded provisional estimator, but no proof render is ever inspected or
+ * measured to build this map.
  *
  * IMPORTANT PREPRESS LIMIT. GENIE currently supplies six rectangular surface
  * extents, not a licensed PVO contour/UV mesh. The atlas therefore declares
@@ -44,6 +46,7 @@ const COLUMN_GUTTER_PX = 72;
 const CENTER_GUTTER_PX = 36;
 const PNG_OPTIONS = Object.freeze({ compressionLevel: 6, adaptiveFiltering: false, palette: false, force: true });
 const HASH_RE = /^[0-9a-f]{64}$/;
+const GEOMETRY_AUTHORITY_CONTRACT = "designpro.genie-proof-geometry-authority.v1";
 
 // The guide must not become a hidden palette reference. Every surface uses the
 // same neutral value; its identity lives in the manifest and prompt, not color.
@@ -113,9 +116,59 @@ function flatFirstRequested(input) {
   return false;
 }
 
+function normalizedGeometryAuthority(authority) {
+  if (authority == null) {
+    return {
+      contract: GEOMETRY_AUTHORITY_CONTRACT,
+      status: "validated",
+      purpose: "calls-1-7-layout-only",
+      candidateId: null,
+      candidateHash: null,
+      source: "operator-validated",
+      sourceUrls: [],
+      confidence: "high",
+      operatorValidated: true,
+      validatedBy: null,
+      validatedAt: null,
+      productionEligible: false,
+    };
+  }
+  if (authority.contract !== GEOMETRY_AUTHORITY_CONTRACT) {
+    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "A.T.L.A.S. geometry authority contract is invalid");
+  }
+  const status = String(authority.status || "");
+  if (!["validated", "provisional"].includes(status)
+    || authority.productionEligible !== false
+    || (status === "validated" && authority.operatorValidated !== true)
+    || (status === "provisional" && (authority.operatorValidated !== false || !authority.estimatorContract))) {
+    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "A.T.L.A.S. geometry authority state is invalid");
+  }
+  const sourceUrls = Array.isArray(authority.sourceUrls)
+    ? [...new Set(authority.sourceUrls.map(String).filter((url) => /^https:\/\//.test(url)))]
+    : [];
+  if (status === "provisional" && (!authority.candidateId || !sourceUrls.length)) {
+    throw new FlatAtlasError("flat_atlas_provisional_authority_incomplete", "Provisional A.T.L.A.S. geometry requires a candidate identity and citations");
+  }
+  return {
+    contract: GEOMETRY_AUTHORITY_CONTRACT,
+    status,
+    purpose: "calls-1-7-layout-only",
+    candidateId: authority.candidateId || null,
+    candidateHash: authority.candidateHash || null,
+    source: String(authority.source || (status === "validated" ? "operator-validated" : "gemini_grounded")),
+    sourceUrls,
+    confidence: String(authority.confidence || (status === "validated" ? "high" : "low")),
+    ...(authority.estimatorContract ? { estimatorContract: String(authority.estimatorContract) } : {}),
+    operatorValidated: status === "validated",
+    validatedBy: status === "validated" ? authority.validatedBy || null : null,
+    validatedAt: status === "validated" ? authority.validatedAt || null : null,
+    productionEligible: false,
+  };
+}
+
 function normalizedSurfaces(surfaces) {
   if (!Array.isArray(surfaces) || surfaces.length !== SURFACE_KEYS.length) {
-    throw new FlatAtlasError("flat_atlas_surface_set_invalid", "The atlas requires exactly six validated GENIE surfaces");
+    throw new FlatAtlasError("flat_atlas_surface_set_invalid", "The atlas requires exactly six GENIE proof-layout surfaces");
   }
   const byKey = new Map();
   for (const entry of surfaces) {
@@ -129,7 +182,7 @@ function normalizedSurfaces(surfaces) {
       throw new FlatAtlasError("flat_atlas_surface_identity_invalid", `Invalid or duplicate surface ${surfaceKey || "?"}`);
     }
     if (!(trimWidthIn > 0 && trimHeightIn > 0) || trimWidthIn > 1000 || trimHeightIn > 1000) {
-      throw new FlatAtlasError("flat_atlas_surface_geometry_invalid", `${surfaceKey} is not validated GENIE rectangle geometry`);
+      throw new FlatAtlasError("flat_atlas_surface_geometry_invalid", `${surfaceKey} is not valid GENIE proof-layout rectangle geometry`);
     }
     if (declaredBleed.length && declaredBleed.some((value) => value !== BLEED_INCHES)) {
       throw new FlatAtlasError("flat_atlas_bleed_invalid", `${surfaceKey} must use five physical inches of bleed on every edge`);
@@ -217,10 +270,12 @@ function zoneEffectivePpi(zone, surface) {
 }
 
 /**
- * Pure function of the validated GENIE six-surface manifest. Extra caller data
- * is deliberately not accepted, so a proof image can never become geometry.
+ * Pure function of the six-surface GENIE proof-layout geometry. Extra caller
+ * data is deliberately not accepted, so a proof image can never become
+ * geometry.
  */
-function buildAtlasManifest(surfaces) {
+function buildAtlasManifest(surfaces, geometryAuthorityInput) {
+  const geometryAuthority = normalizedGeometryAuthority(geometryAuthorityInput);
   const byKey = normalizedSurfaces(surfaces);
   const availableTop = OUTER_PADDING_PX;
   const availableHeight = CANVAS.heightPx - OUTER_PADDING_PX * 2;
@@ -278,11 +333,17 @@ function buildAtlasManifest(surfaces) {
     topology: TOPOLOGY,
     productionEligible: false,
     productionBlockers: [
+      ...(geometryAuthority.status === "provisional"
+        ? ["operator-validated exact six-surface geometry is required before production"]
+        : []),
       "validated rectangular GENIE extents are not an exact PVO contour/UV topology",
       `minimum effective density is ${minimumEffectivePpi} PPI; print target is ${TARGET_PRINT_PPI} PPI`,
     ],
+    geometryAuthority,
     sourceAuthority: {
-      geometry: "validated-genie-six-surface-manifest-only",
+      geometry: geometryAuthority.status === "provisional"
+        ? "provisional-google-grounded-layout-only"
+        : "validated-genie-six-surface-manifest-only",
       visualProofsUsedForGeometry: false,
       customerStyleSource: "customer-brief-and-verified-customer-assets-only",
       examplePurpose: EXAMPLE_PURPOSE,
@@ -453,9 +514,12 @@ function atlasPrompt(input, manifest) {
   )).join("\n");
   const continuity = manifest.seamContinuity.relationships
     .map((relationship) => relationship.surfaces.join(" <-> ")).join(", ");
+  const geometryDescription = manifest.geometryAuthority.status === "provisional"
+    ? "cited Google-grounded, deterministic PROVISIONAL proof-layout rectangles"
+    : "operator-validated GENIE rectangles";
   return `You are DesignPro's flat vehicle-wrap atlas artist. Create ONE continuous unwrapped livery atlas, not a vehicle photograph and not six unrelated designs.
 
-The FIRST attached image is a neutral monochrome deterministic installer-map guide generated from validated GENIE rectangles. Treat its rectangles as masks and topology only. Its gray/black/white values have ZERO palette or style meaning. Paint the requested livery inside those exact rectangles. Return a square artwork canvas in exactly the same layout. Leave everything outside the rectangles blank/transparent.
+The FIRST attached image is a neutral monochrome deterministic installer-map guide generated from ${geometryDescription}. Treat its rectangles as masks and topology only. Its gray/black/white values have ZERO palette or style meaning. Paint the requested livery inside those exact rectangles. Return a square artwork canvas in exactly the same layout. Leave everything outside the rectangles blank/transparent. These rectangles establish Calls 1-7 proof topology only; they are never authorization for print production.
 
 TOPOLOGY LOCK:
 - passenger flank is the tall rotated rectangle on the LEFT (clockwise 90 degrees)
@@ -558,6 +622,11 @@ function rowIdentity(row, manifest, masterBytes, projectionBytes, { reused }) {
     heightPx: Number(row.height_px),
     effectivePpi: Number(row.effective_ppi),
     productionEligible: row.production_eligible === true,
+    topologyExample: row.example_id ? {
+      exampleId: row.example_id,
+      guideContentHash: row.example_guide_hash,
+      masterContentHash: row.example_master_hash,
+    } : null,
     guide: {
       storagePath: row.guide_storage_path,
       contentHash: row.guide_content_hash,
@@ -639,6 +708,8 @@ function atlasReceipt(atlas) {
     heightPx: atlas.heightPx,
     effectivePpi: atlas.effectivePpi,
     examplePurpose: EXAMPLE_PURPOSE,
+    geometryAuthority: atlas.manifest.geometryAuthority,
+    topologyExample: atlas.topologyExample,
     guide: atlas.guide,
     manifest: atlas.manifestAsset,
     master: {
@@ -660,22 +731,34 @@ function atlasReceipt(atlas) {
   };
 }
 
+function assertAtlasGeometryBasis(atlas, expectedManifestHash) {
+  if (atlas?.manifestAsset?.contentHash !== expectedManifestHash) {
+    throw new FlatAtlasError(
+      "flat_atlas_geometry_basis_changed",
+      "The immutable A.T.L.A.S. geometry basis changed; start a new design revision instead of reusing stale artwork",
+    );
+  }
+  return atlas;
+}
+
 async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
-    input, surfaces, topologyExamples = [], logger = () => {},
+    input, surfaces, geometryAuthority, topologyExamples = [], logger = () => {},
   } = options;
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
+  const manifest = buildAtlasManifest(surfaces, geometryAuthority);
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
+    const expectedManifestHash = sha256(canonicalBytes(manifest));
+    assertAtlasGeometryBasis(existing, expectedManifestHash);
     logger(`reused immutable atlas revision ${existing.revisionSequence} ${existing.master.contentHash}`);
     return existing;
   }
 
   const revisionSequence = 1;
-  const manifest = buildAtlasManifest(surfaces);
   const manifestBytes = canonicalBytes(manifest);
   const manifestHash = sha256(manifestBytes);
   const guideBytes = await renderAtlasGuide(manifest);
@@ -717,6 +800,8 @@ async function generateOrReuseFlatAtlas(options) {
     }),
   ]);
 
+  const topologyExample = topologyExamples[0] || null;
+
   const rowPayload = {
     request_id: requestId,
     generation_id: generationId,
@@ -749,13 +834,18 @@ async function generateOrReuseFlatAtlas(options) {
     width_px: CANVAS.widthPx,
     height_px: CANVAS.heightPx,
     effective_ppi: manifest.quality.minimumEffectivePpi,
+    example_id: topologyExample?.identity.exampleId || null,
+    example_guide_hash: topologyExample?.identity.guideContentHash || null,
+    example_master_hash: topologyExample?.identity.masterContentHash || null,
     metadata: {
       contract: ATLAS_CONTRACT,
       inputContract: INPUT_CONTRACT,
       pipelineMode: PIPELINE_MODE,
       topology: TOPOLOGY,
+      geometryAuthority: manifest.geometryAuthority,
       examplePurpose: EXAMPLE_PURPOSE,
       topologyExamplesApplied: topologyExamples.length,
+      topologyExampleIdentity: topologyExample?.identity || null,
       providerKeyFingerprint: generated.keyFingerprint || null,
       providerResponseContentType: generated.contentType,
       rawProviderResponseHash: sha256(generated.bytes),
@@ -777,7 +867,10 @@ async function generateOrReuseFlatAtlas(options) {
   if (error) {
     if (/duplicate|unique/i.test(String(error.message))) {
       const raced = await loadLatestAtlasRevision(supabase, requestId);
-      if (raced) return raced;
+      if (raced) {
+        assertAtlasGeometryBasis(raced, manifestHash);
+        return raced;
+      }
     }
     throw new FlatAtlasError("flat_atlas_revision_insert_failed", error.message, true);
   }
@@ -825,6 +918,7 @@ module.exports = {
   CANVAS,
   CENTER_ORDER,
   EXAMPLE_PURPOSE,
+  GEOMETRY_AUTHORITY_CONTRACT,
   INPUT_CONTRACT,
   MANIFEST_CONTRACT,
   PIPELINE_MODE,
@@ -851,6 +945,7 @@ module.exports = {
   renderAtlasGuide,
   _test: {
     activeZoneMaskSvg,
+    assertAtlasGeometryBasis,
     atlasPrompt,
     canonical,
     canonicalBytes,
@@ -858,6 +953,7 @@ module.exports = {
     fitCenterColumn,
     fitRotatedSide,
     guideSvg,
+    normalizedGeometryAuthority,
     normalizedSurfaces,
     round,
     sha256,

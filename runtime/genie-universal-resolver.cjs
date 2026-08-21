@@ -4,7 +4,9 @@
  * Standalone extraction of the DP-owned universal vehicle lookup.
  * The upstream resolver's panel values are estimates. This extraction may
  * create a grounded candidate, but it never promotes estimates into print
- * geometry. Only a separately validated exact six-surface manifest is returned.
+ * geometry. Production callers receive only a separately validated exact six-
+ * surface manifest. The A.T.L.A.S. Calls 1-7 preview has a separate resolver
+ * which may use cited, deterministic provisional rectangles for layout only.
  */
 
 const ALLOWED_CLASSES = new Set(["car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv", "trailer", "aircraft", "heavy_equipment"]);
@@ -22,6 +24,9 @@ const SANITY_RANGES = Object.freeze({
   suv: { length: [140, 240], width: [60, 90], height: [55, 85] },
   van: { length: [160, 290], width: [65, 90], height: [70, 120] },
 });
+const PROOF_GEOMETRY_CONTRACT = "designpro.genie-proof-geometry-authority.v1";
+const PROVISIONAL_ESTIMATOR_CONTRACT = "designpro.genie-provisional-atlas-geometry.v1";
+const FLAT_ATLAS_PREVIEW_CLASSES = new Set(["car", "truck", "suv", "van"]);
 
 class UniversalDimensionError extends Error {
   constructor(code, message, retryable = false, stageHandled = false) {
@@ -83,6 +88,108 @@ function validatedSurfaces(row) {
     front_width: parsed.front.widthInches, front_height: parsed.front.heightInches,
     rear_width: parsed.rear.widthInches, rear_height: parsed.rear.heightInches,
     universalValidation: { validatorId: row.validated_by, validatedAt: row.validated_at, sourceUrls: row.source_urls || [], candidateId: row.id },
+    proofGeometryAuthority: {
+      contract: PROOF_GEOMETRY_CONTRACT,
+      status: "validated",
+      purpose: "calls-1-7-layout-only",
+      candidateId: row.id,
+      candidateHash: row.candidate_hash || null,
+      source: row.source || "operator-validated",
+      sourceUrls: row.source_urls || [],
+      confidence: row.confidence || "high",
+      operatorValidated: true,
+      validatedBy: row.validated_by,
+      validatedAt: row.validated_at,
+      productionEligible: false,
+    },
+  };
+}
+
+function roundDimension(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+/**
+ * Deterministic proof-layout rectangles derived only from cited exterior
+ * dimensions. They establish A.T.L.A.S. proportions; they are never exact
+ * panel geometry and are never eligible for Calls 8+ or print output.
+ */
+function provisionalDimensionsFromCandidate(row, vehicleClass) {
+  if (!FLAT_ATLAS_PREVIEW_CLASSES.has(vehicleClass)) {
+    throw new UniversalDimensionError(
+      "genie_flat_atlas_topology_unsupported",
+      `A.T.L.A.S. rectangular vehicle topology does not support ${vehicleClass}`,
+    );
+  }
+  const candidate = assertGroundedCandidate({
+    overall_length_in: row.overall_length_in,
+    overall_width_in: row.overall_width_in,
+    overall_height_in: row.overall_height_in,
+    wheelbase_in: row.wheelbase_in,
+    source_urls: row.source_urls,
+    confidence: row.confidence,
+    sub_type: row.sub_type,
+  }, vehicleClass);
+  const length = candidate.dimensions.overall_length_in;
+  const width = candidate.dimensions.overall_width_in;
+  const height = candidate.dimensions.overall_height_in;
+  const wheelbase = candidate.dimensions.wheelbase_in;
+
+  // The side is nearly the whole body; the remaining rectangles follow the
+  // long-standing GENIE proof estimator. Bounds avoid degenerate shapes while
+  // preserving the grounded vehicle's proportions.
+  const sideHeightFactor = { car: 0.76, truck: 0.72, suv: 0.78, van: 0.82 }[vehicleClass];
+  const roofLengthFactor = { car: 0.6, truck: 0.45, suv: 0.55, van: 0.5 }[vehicleClass];
+  const frontHeight = { car: 27, truck: 34, suv: 32, van: 30 }[vehicleClass];
+  const sideWidth = clamp(length - 9, length * 0.82, length * 0.97);
+  const sideHeight = clamp(height * sideHeightFactor, height * 0.62, height * 0.9);
+  const hoodWidth = width * 0.85;
+  const estimatedOverhang = wheelbase && length > wheelbase
+    ? (length - wheelbase) * 0.55
+    : length * 0.19;
+  const hoodLength = clamp(estimatedOverhang, length * 0.12, length * 0.28);
+  const roofWidth = width * 0.8;
+  const roofLength = clamp((wheelbase || length * 0.58) * roofLengthFactor, length * 0.25, length * 0.58);
+  const faceWidth = width * 0.85;
+  const faceHeight = height * 0.45;
+
+  return {
+    id: row.id,
+    make: row.make,
+    model: row.model,
+    side_width: roundDimension(sideWidth),
+    side_height: roundDimension(sideHeight),
+    passenger_width: roundDimension(sideWidth),
+    passenger_height: roundDimension(sideHeight),
+    hood_width: roundDimension(hoodWidth),
+    hood_length: roundDimension(hoodLength),
+    roof_width: roundDimension(roofWidth),
+    roof_length: roundDimension(roofLength),
+    // Front bumper vinyl is an unfolded envelope and is intentionally wider
+    // than the straight-on rear face rectangle.
+    front_width: roundDimension(hoodWidth * 1.8),
+    front_height: roundDimension(frontHeight),
+    rear_width: roundDimension(faceWidth),
+    rear_height: roundDimension(faceHeight),
+    proofGeometryAuthority: {
+      contract: PROOF_GEOMETRY_CONTRACT,
+      status: "provisional",
+      purpose: "calls-1-7-layout-only",
+      candidateId: row.id,
+      candidateHash: row.candidate_hash || null,
+      source: row.source || "gemini_grounded",
+      sourceUrls: candidate.sourceUrls,
+      confidence: candidate.confidence,
+      estimatorContract: PROVISIONAL_ESTIMATOR_CONTRACT,
+      operatorValidated: false,
+      validatedBy: null,
+      validatedAt: null,
+      productionEligible: false,
+    },
   };
 }
 
@@ -154,6 +261,51 @@ async function findCandidates(sb, vehicle) {
     .eq("vehicle_class", vehicle.vehicleClass).ilike("make", vehicle.make).ilike("model", vehicle.model).eq("year", vehicle.year).limit(2);
 }
 
+function groundedInsertPayload(vehicle, candidate) {
+  return {
+    vehicle_class: vehicle.vehicleClass, make: vehicle.make, model: vehicle.model, year: vehicle.year,
+    sub_type: candidate.subType, overall_length_in: candidate.dimensions.overall_length_in,
+    overall_width_in: candidate.dimensions.overall_width_in, overall_height_in: candidate.dimensions.overall_height_in,
+    wheelbase_in: candidate.dimensions.wheelbase_in, source: "gemini_grounded",
+    source_urls: candidate.sourceUrls, confidence: candidate.confidence, requires_validation: true,
+    raw_response: candidate.raw,
+  };
+}
+
+async function insertOrReadGroundedCandidate(sb, vehicle, candidate) {
+  const { data: inserted, error: insertError } = await sb.from("designpro_vehicle_specs_universal")
+    .insert(groundedInsertPayload(vehicle, candidate)).select("*").single();
+  if (insertError?.code !== "23505") {
+    if (insertError) throw new UniversalDimensionError("genie_universal_cache_insert_failed", insertError.message, true);
+    return inserted;
+  }
+  const { data: racedRows, error: racedError } = await findCandidates(sb, vehicle);
+  if (racedError || racedRows?.length !== 1) {
+    throw new UniversalDimensionError("genie_universal_identity_ambiguous", racedError?.message || "Concurrent GENIE candidate identity is ambiguous", true);
+  }
+  return racedRows[0];
+}
+
+/**
+ * Calls 1-7 only. A sane, cited Google-grounded candidate may establish the
+ * proportions of the proof-only A.T.L.A.S. guide without operator work. This
+ * function never queues production and never returns universalValidation for
+ * provisional geometry.
+ */
+async function resolveFlatAtlasPreviewDimensions(sb, rawVehicle) {
+  const vehicle = normalizedVehicle(rawVehicle);
+  const { data: rows, error } = await findCandidates(sb, vehicle);
+  if (error) throw new UniversalDimensionError("genie_universal_cache_failed", error.message, true);
+  if ((rows || []).length > 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", "Multiple universal GENIE candidates matched");
+  if (rows?.length === 1) {
+    return validatedSurfaces(rows[0]) || provisionalDimensionsFromCandidate(rows[0], vehicle.vehicleClass);
+  }
+
+  const grounded = await groundedCandidate(vehicle);
+  const row = await insertOrReadGroundedCandidate(sb, vehicle, grounded);
+  return validatedSurfaces(row) || provisionalDimensionsFromCandidate(row, vehicle.vehicleClass);
+}
+
 async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId) {
   const vehicle = normalizedVehicle(rawVehicle);
   const { data: rows, error } = await findCandidates(sb, vehicle);
@@ -167,21 +319,9 @@ async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId) {
   }
 
   const candidate = await groundedCandidate(vehicle);
-  const { data: inserted, error: insertError } = await sb.from("designpro_vehicle_specs_universal").insert({
-    vehicle_class: vehicle.vehicleClass, make: vehicle.make, model: vehicle.model, year: vehicle.year,
-    sub_type: candidate.subType, overall_length_in: candidate.dimensions.overall_length_in,
-    overall_width_in: candidate.dimensions.overall_width_in, overall_height_in: candidate.dimensions.overall_height_in,
-    wheelbase_in: candidate.dimensions.wheelbase_in, source: "gemini_grounded",
-    source_urls: candidate.sourceUrls, confidence: candidate.confidence, requires_validation: true,
-    raw_response: candidate.raw,
-  }).select("id").single();
-  if (insertError?.code === "23505") {
-    const { data: racedRows, error: racedError } = await findCandidates(sb, vehicle);
-    if (racedError || racedRows?.length !== 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", racedError?.message || "Concurrent GENIE candidate identity is ambiguous", true);
-    const queued = await queueValidationRequest(sb, stage, runId, racedRows[0].id);
-    throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${racedRows[0].id} requires exact six-surface validation`, false, queued);
-  }
-  if (insertError) throw new UniversalDimensionError("genie_universal_cache_insert_failed", insertError.message, true);
+  const inserted = await insertOrReadGroundedCandidate(sb, vehicle, candidate);
+  const validated = validatedSurfaces(inserted);
+  if (validated) return validated;
   const queued = await queueValidationRequest(sb, stage, runId, inserted.id);
   throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${inserted.id} created; exact six-surface validation is required`, false, queued);
 }
@@ -224,4 +364,19 @@ function expectedSurfacesFromRow(row) {
   ];
 }
 
-module.exports = { SURFACES, UniversalDimensionError, expectedSurfacesFromRow, resolveOrQueueUniversalDimensions, _test: { normalizedVehicle, assertGroundedCandidate, validatedSurfaces } };
+module.exports = {
+  PROOF_GEOMETRY_CONTRACT,
+  PROVISIONAL_ESTIMATOR_CONTRACT,
+  SURFACES,
+  UniversalDimensionError,
+  expectedSurfacesFromRow,
+  resolveFlatAtlasPreviewDimensions,
+  resolveOrQueueUniversalDimensions,
+  _test: {
+    assertGroundedCandidate,
+    groundedInsertPayload,
+    normalizedVehicle,
+    provisionalDimensionsFromCandidate,
+    validatedSurfaces,
+  },
+};

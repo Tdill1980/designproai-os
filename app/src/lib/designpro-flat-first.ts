@@ -26,6 +26,22 @@ export function inlineRevisionEnabledForPipeline(mode: GenerationPipelineMode): 
   return mode !== FLAT_FIRST_ATLAS_PIPELINE_MODE;
 }
 
+const FLAT_FIRST_ATLAS_SUPPORTED_VEHICLE_TYPES = new Set([
+  "car",
+  "truck",
+  "suv",
+  "van",
+]);
+
+/**
+ * The current proof-only estimator has bounded body-class rules for these four
+ * vehicle families. Everything else stays on legacy until an explicit topology
+ * contract exists, so an unsupported selection cannot consume a Gemini call.
+ */
+export function flatFirstAtlasSupportedVehicleType(value: unknown): boolean {
+  return FLAT_FIRST_ATLAS_SUPPORTED_VEHICLE_TYPES.has(String(value || "").trim().toLowerCase());
+}
+
 const DESIGNPRO_VEHICLE_TYPES: VehicleType[] = [
   "car",
   "truck",

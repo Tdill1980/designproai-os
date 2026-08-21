@@ -15,7 +15,10 @@ import {
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type GenerationPipelineMode,
 } from "@/lib/designpro-api";
-import { FLAT_FIRST_ATLAS_UI_ENABLED } from "@/lib/designpro-flat-first";
+import {
+  FLAT_FIRST_ATLAS_UI_ENABLED,
+  flatFirstAtlasSupportedVehicleType,
+} from "@/lib/designpro-flat-first";
 import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
 
 /**
@@ -47,11 +50,13 @@ const VEHICLE_TYPES = [
 function PipelineModeSelector({
   value,
   onChange,
+  vehicleType,
   disabled = false,
   className,
 }: {
   value: GenerationPipelineMode;
   onChange: (mode: GenerationPipelineMode) => void;
+  vehicleType: VehicleType;
   disabled?: boolean;
   className?: string;
 }) {
@@ -76,7 +81,7 @@ function PipelineModeSelector({
         </button>
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || !flatFirstAtlasSupportedVehicleType(vehicleType)}
           aria-pressed={value === FLAT_FIRST_ATLAS_PIPELINE_MODE}
           onClick={() => onChange(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
           className={cn(
@@ -92,7 +97,9 @@ function PipelineModeSelector({
       <p className="mt-2 text-[10px] leading-4 text-white/55">
         {disabled
           ? "Pipeline is locked for this run. Start a new run to change it."
-          : "Opt-in diagnostic: stores the flat guide + master, then renders seven proofs. It stops before production handoff."}
+          : flatFirstAtlasSupportedVehicleType(vehicleType)
+            ? "Opt-in diagnostic: automatically grounds proof topology, stores the flat before guide + after master, then renders seven proofs. Production stays locked."
+            : "A.T.L.A.S. proof testing currently supports car, truck, SUV and van. This selection will use legacy."}
       </p>
     </div>
   );
@@ -287,6 +294,7 @@ export default function DesignProAIHome() {
               className="mt-3"
               value={displayedPipelineMode}
               onChange={setPipelineMode}
+              vehicleType={vehicleType}
               disabled={!!studioBrief}
             />
 
@@ -306,7 +314,10 @@ export default function DesignProAIHome() {
             <div className="mt-3 text-[10px] font-bold uppercase tracking-wider text-white/60">Vehicle Type</div>
             <div className="mt-2 grid grid-cols-4 gap-1.5">
               {VEHICLE_TYPES.map((v) => (
-                <button key={v.value} onClick={() => setVehicleType(v.value)} className={cn("flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition", vehicleType === v.value ? "border-blue-500 bg-blue-500/15 text-white" : "border-white/10 text-white/70 hover:bg-white/5")}>
+                <button key={v.value} onClick={() => {
+                  setVehicleType(v.value);
+                  if (!flatFirstAtlasSupportedVehicleType(v.value)) setPipelineMode("legacy");
+                }} className={cn("flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition", vehicleType === v.value ? "border-blue-500 bg-blue-500/15 text-white" : "border-white/10 text-white/70 hover:bg-white/5")}>
                   <v.icon className="h-4 w-4" />
                   <span className="text-[9px] leading-none">{v.label}</span>
                 </button>
@@ -400,6 +411,7 @@ export default function DesignProAIHome() {
             className="lg:hidden"
             value={displayedPipelineMode}
             onChange={setPipelineMode}
+            vehicleType={vehicleType}
             disabled={!!studioBrief}
           />
           {studioBrief ? (

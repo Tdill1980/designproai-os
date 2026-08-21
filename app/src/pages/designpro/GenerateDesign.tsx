@@ -39,7 +39,10 @@ import {
   SOURCE_VIEW_TYPE_FOR_ROLE,
   SURFACE_LABEL,
 } from "@/lib/designpro-api";
-import { FLAT_FIRST_ATLAS_UI_ENABLED } from "@/lib/designpro-flat-first";
+import {
+  FLAT_FIRST_ATLAS_UI_ENABLED,
+  flatFirstAtlasSupportedVehicleType,
+} from "@/lib/designpro-flat-first";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -215,6 +218,7 @@ export default function GenerateDesign() {
   const [atlasRevisions, setAtlasRevisions] = useState<FlatAtlasRevision[]>([]);
   const [atlasLoadError, setAtlasLoadError] = useState("");
   const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>("legacy");
+  const [vehicleType, setVehicleType] = useState<GenerationVehicle["type"]>("van");
   const [requestPipelineMode, setRequestPipelineMode] = useState<GenerationPipelineMode>("legacy");
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
@@ -458,9 +462,10 @@ export default function GenerateDesign() {
                 </button>
                 <button
                   type="button"
+                  disabled={!flatFirstAtlasSupportedVehicleType(vehicleType)}
                   aria-pressed={pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE}
                   onClick={() => setPipelineMode(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
-                  className={`rounded-xl border p-4 text-left transition ${
+                  className={`rounded-xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
                     pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
                       ? "border-cyan-400 bg-cyan-400/10"
                       : "border-border bg-card hover:border-cyan-400/40"
@@ -468,7 +473,7 @@ export default function GenerateDesign() {
                 >
                   <span className="text-sm font-semibold">A.T.L.A.S. (flat-first test)</span>
                   <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    Stores the before/after A.T.L.A.S. artifacts and seven proofs only. Production handoff is disabled for this diagnostic.
+                    Automatically grounds proof-layout proportions, stores the before guide and canonical after master, then projects that same design into seven proofs. Car, truck, SUV and van only; production stays locked.
                   </span>
                 </button>
               </div>
@@ -547,7 +552,12 @@ export default function GenerateDesign() {
                 <select
                   id="type"
                   name="type"
-                  defaultValue="van"
+                  value={vehicleType}
+                  onChange={(event) => {
+                    const next = event.target.value as GenerationVehicle["type"];
+                    setVehicleType(next);
+                    if (!flatFirstAtlasSupportedVehicleType(next)) setPipelineMode("legacy");
+                  }}
                   required
                   className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >

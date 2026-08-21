@@ -37,6 +37,22 @@ const v3Input = {
   vehicle: { year: "2024", make: "Ford", model: "F-250", type: "truck" },
 };
 
+const provisionalAuthority = {
+  contract: atlas.GEOMETRY_AUTHORITY_CONTRACT,
+  status: "provisional",
+  purpose: "calls-1-7-layout-only",
+  candidateId: "55555555-5555-4555-8555-555555555555",
+  candidateHash: "b".repeat(64),
+  source: "gemini_grounded",
+  sourceUrls: ["https://www.ford.com/support/vehicle-specifications"],
+  confidence: "high",
+  estimatorContract: "designpro.genie-provisional-atlas-geometry.v1",
+  operatorValidated: false,
+  validatedBy: null,
+  validatedAt: null,
+  productionEligible: false,
+};
+
 test("flat-first mode requires one exact v3 contract pair and leaves legacy inputs alone", () => {
   assert.equal(atlas.flatFirstRequested(v3Input), true);
   assert.equal(atlas.flatFirstRequested({ contractVersion: "designpro.calls-1-7-input.v2" }), false);
@@ -79,6 +95,32 @@ test("atlas geometry is derived only from GENIE rectangles, never a proof image"
   })));
   assert.deepEqual(noisy, baseline, "surface order and extraneous render data cannot move one atlas pixel");
   assert.equal(noisy.sourceAuthority.geometry, "validated-genie-six-surface-manifest-only");
+});
+
+test("provisional Google-grounded geometry is truthfully immutable and remains proof-only", () => {
+  const manifest = atlas.buildAtlasManifest(surfaces, provisionalAuthority);
+  assert.equal(manifest.geometryAuthority.status, "provisional");
+  assert.equal(manifest.geometryAuthority.operatorValidated, false);
+  assert.equal(manifest.geometryAuthority.productionEligible, false);
+  assert.equal(manifest.sourceAuthority.geometry, "provisional-google-grounded-layout-only");
+  assert.match(manifest.productionBlockers.join(" "), /operator-validated exact six-surface geometry/i);
+  assert.equal(manifest.productionEligible, false);
+  const prompt = atlas._test.atlasPrompt(v3Input, manifest);
+  assert.match(prompt, /Google-grounded.*PROVISIONAL proof-layout rectangles/i);
+  assert.match(prompt, /never authorization for print production/i);
+});
+
+test("a duplicate-insert race cannot reuse an atlas from a stale geometry basis", () => {
+  const expected = "a".repeat(64);
+  const raced = { manifestAsset: { contentHash: "b".repeat(64) } };
+  assert.throws(
+    () => atlas._test.assertAtlasGeometryBasis(raced, expected),
+    (error) => error.code === "flat_atlas_geometry_basis_changed" && error.retryable === false,
+  );
+  assert.equal(
+    atlas._test.assertAtlasGeometryBasis({ manifestAsset: { contentHash: expected } }, expected).manifestAsset.contentHash,
+    expected,
+  );
 });
 
 test("4K atlas reports effective PPI honestly and cannot masquerade as print ready", () => {
@@ -171,6 +213,7 @@ test("all seven proof prompts carry the exact same atlas bytes and view dependen
   assert.equal(slots.every((slot) => slot.authorityMetadata.masterContentHash === flatAtlas.master.contentHash), true);
   assert.equal(slots.every((slot) => slot.authorityMetadata.projectionContentHash === flatAtlas.projection.contentHash), true);
   assert.equal(slots.every((slot) => slot.authorityMetadata.revisionId === flatAtlas.revisionId), true);
+  assert.equal(slots.every((slot) => slot.authorityMetadata.geometryAuthority.status === "validated"), true);
   assert.match(slots.find((slot) => slot.sourceViewType === "passenger-side").promptParts[1].text, /passenger/);
   assert.equal(slots.every((slot) => slot.promptParts.length === 3), true, "atlas image + topology lock + projection-only camera prompt");
   const projection = slots.find((slot) => slot.sourceViewType === "side").promptParts[2].text;
@@ -325,7 +368,7 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   const result = await atlas.generateOrReuseFlatAtlas({
     supabase, store, provider,
     requestId: REQUEST, generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
-    input: v3Input, surfaces,
+    input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
   });
 
   assert.equal(events.filter((event) => event === "provider").length, 1);
@@ -337,6 +380,8 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(providerOptions.imageSize, "4K");
   assert.equal(providerOptions.parts[0].inlineData.mimeType, "image/png", "the deterministic guide is the first input image");
   assert.equal(inserted.production_eligible, false);
+  assert.equal(inserted.manifest.geometryAuthority.status, "provisional");
+  assert.equal(inserted.metadata.geometryAuthority.operatorValidated, false);
   assert.equal(inserted.metadata.examplePurpose, "topology-only");
   assert.equal(inserted.projection_content_type, "image/jpeg");
   assert.ok(inserted.projection_byte_size <= atlas.PROJECTION_MAX_BYTES);
@@ -345,6 +390,7 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(result.master.contentHash, inserted.master_content_hash);
   assert.equal(result.projection.contentHash, inserted.projection_content_hash);
   const receipt = atlas.atlasReceipt(result);
+  assert.equal(receipt.geometryAuthority.status, "provisional");
   assert.equal(receipt.projection.contentHash, result.projection.contentHash);
   assert.equal(receipt.projection.sourceMasterHash, receipt.master.contentHash);
   assert.equal(result.manifest.contract, atlas.MANIFEST_CONTRACT);

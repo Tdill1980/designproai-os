@@ -95,6 +95,7 @@ import {
 } from "@/lib/designpro-api";
 import {
   FLAT_FIRST_ATLAS_UI_ENABLED,
+  flatFirstAtlasSupportedVehicleType,
   initialDesignProPipelineMode,
   inlineRevisionEnabledForPipeline,
   myVehiclePhotoFlowEnabledForPipeline,
@@ -1793,7 +1794,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <button
                               type="button"
                               aria-pressed={pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE}
-                              disabled={isBusy || !!mainDisplayUrl}
+                              disabled={isBusy || !!mainDisplayUrl || !flatFirstAtlasSupportedVehicleType(vehicleType)}
                               onClick={() => setPipelineMode(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
                               className={cn(
                                 "rounded-lg border px-2 py-2 text-[10px] font-bold transition disabled:opacity-50",
@@ -1806,7 +1807,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             </button>
                           </div>
                           <p className="mt-2 text-[10px] leading-4 text-white/55">
-                            The test stores a guide and painted master, then renders seven proofs. Calls 8–12 stay off.
+                            {flatFirstAtlasSupportedVehicleType(vehicleType)
+                              ? "The test stores a guide and painted master, then renders seven proofs. Calls 8–12 stay off."
+                              : "A.T.L.A.S. testing currently supports car, truck, SUV and van. This vehicle stays on legacy."}
                           </p>
                         </div>
                       )}
@@ -1899,7 +1902,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <p className="text-sm text-muted-foreground mb-3">Select Your Vehicle</p>
                           {/* Vehicle type — push-button per class */}
                           <div className="mb-3">
-                            <VehicleTypeSelector value={vehicleType} onChange={setVehicleType} />
+                            <VehicleTypeSelector value={vehicleType} onChange={(next) => {
+                              setVehicleType(next);
+                              if (!flatFirstAtlasSupportedVehicleType(next)) setPipelineMode("legacy");
+                            }} />
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <div>
@@ -1988,7 +1994,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <div>
                             <p className="font-semibold">A.T.L.A.S. diagnostic</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
-                              Gemini paints one canonical A.T.L.A.S. master first; the seven vehicle views are proofs derived from it. This test run stops before Calls 8–12, so it cannot publish production panels or a WrapBox pack.
+                              Google-grounded vehicle proportions build the proof-only topology automatically. Gemini then paints one canonical flattened A.T.L.A.S. master and derives all seven vehicle views from that same design. The before guide and after master are stored; production remains locked.
                             </p>
                           </div>
                         </div>
@@ -2873,7 +2879,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       )}
                       {mainDisplayUrl && isFlatFirstDiagnostic && (
                         <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100/75">
-                          Production ordering is disabled for this A.T.L.A.S. diagnostic. The stored A.T.L.A.S. master and proof views remain available for visual validation.
+                          Production ordering is disabled for this A.T.L.A.S. diagnostic. The stored before guide, canonical flattened master, and seven proof views remain available for visual validation.
                         </div>
                       )}
                     </div>

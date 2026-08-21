@@ -8,6 +8,7 @@ import {
   type CreateGenerationRequestOptions,
 } from "./designpro-api";
 import {
+  flatFirstAtlasSupportedVehicleType,
   inlineRevisionEnabledForPipeline,
   myVehiclePhotoFlowEnabledForPipeline,
   normalizeDesignProVehicleType,
@@ -62,5 +63,14 @@ describe("flat-first generation input", () => {
   it("fails closed when MyVehicle photos would bypass the atlas master", () => {
     expect(myVehiclePhotoFlowEnabledForPipeline(FLAT_FIRST_ATLAS_PIPELINE_MODE)).toBe(false);
     expect(myVehiclePhotoFlowEnabledForPipeline("legacy")).toBe(true);
+  });
+
+  it("admits only vehicle classes with a bounded A.T.L.A.S. proof topology", () => {
+    for (const type of ["car", "truck", "suv", "van"]) {
+      expect(flatFirstAtlasSupportedVehicleType(type)).toBe(true);
+    }
+    for (const type of ["motorcycle", "boat", "bus", "rv", "trailer", "aircraft", "heavy_equipment"]) {
+      expect(flatFirstAtlasSupportedVehicleType(type)).toBe(false);
+    }
   });
 });
