@@ -30,7 +30,12 @@ const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 const { createProvider } = require("./generation-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
 const { authorCreativeInput } = require("./creative-authoring.cjs");
-const { expectedSurfacesFromRow, resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
+const { loadActiveFlatAtlasTopologyExamples } = require("./flat-atlas-topology-examples.cjs");
+const {
+  expectedSurfacesFromRow,
+  resolveFlatAtlasPreviewDimensions,
+  resolveOrQueueUniversalDimensions,
+} = require("./genie-universal-resolver.cjs");
 const {
   atlasProjectionParts,
   atlasReceipt,
@@ -225,6 +230,7 @@ function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null) {
           projectionSourceMasterHash: flatAtlas.projection.sourceMasterHash,
           manifestContentHash: flatAtlas.manifestAsset.contentHash,
           topology: flatAtlas.manifest.topology,
+          geometryAuthority: flatAtlas.manifest.geometryAuthority,
         },
       } : {}),
     };
@@ -269,6 +275,7 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
   async function processClaim(claim) {
     const requestId = claim.requestId;
     const claimToken = claim.claimToken;
+    let enteredFlatFirst = false;
     const heartbeat = setInterval(() => {
       void rpc("heartbeat_designpro_generation_request", {
         p_request_id: requestId, p_claim_token: claimToken, p_lease_seconds: REQUEST_LEASE_SECONDS,
@@ -288,6 +295,7 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       );
 
       const isFlatFirst = flatFirstRequested(claim.input);
+      enteredFlatFirst = isFlatFirst;
       let flatAtlas = null;
       let dimensionRow = null;
       const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
@@ -296,7 +304,11 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         // The exact v3 contract + pipelineMode pair is the server-side feature
         // gate. v1/v2 never reach this branch, so the UI can roll back by
         // ceasing to issue v3 without requiring a deployment-wide env change.
-        dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null);
+        let topologyExamples;
+        [dimensionRow, topologyExamples] = await Promise.all([
+          resolveFlatAtlasPreviewDimensions(supabase, claim.input?.vehicle),
+          loadActiveFlatAtlasTopologyExamples(supabase),
+        ]);
         flatAtlas = await generateOrReuseFlatAtlas({
           supabase,
           store,
@@ -307,6 +319,8 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
           ownerId,
           input: claim.input,
           surfaces: expectedSurfacesFromRow(dimensionRow),
+          geometryAuthority: dimensionRow.proofGeometryAuthority,
+          topologyExamples,
           logger: (line) => console.log(`[DESIGNPRO-OS] flat-first ${requestId}: ${line}`),
         });
       }
@@ -327,8 +341,13 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       if (result.state !== "outputs_ready") {
         const failed = result.results.filter((item) => item.state === "failed");
         const reasons = failed.map((item) => `${item.sourceViewType}:${item.reason}`).join(", ");
-        // Semantic rejection is a human question, not a machine retry.
-        const retryable = !failed.some((item) => item.reason === "semantic_review_required");
+        // runRequest has already spent its complete bounded slot budget and
+        // explicitly requires a human resume. Re-queueing the request here
+        // used to claim it again (up to the SQL attempt ceiling), repeating the
+        // same Gemini work while the UI sat at 96%. A failed run is terminal;
+        // the operator may explicitly start/retry a view from the UI.
+        const retryable = result.requiresExplicitResume !== true
+          && !failed.some((item) => item.reason === "semantic_review_required");
         await rpc("fail_designpro_generation_request", {
           p_request_id: requestId, p_claim_token: claimToken,
           p_error_code: "generation_slots_failed",
@@ -344,7 +363,10 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
           p_request_id: requestId, p_claim_token: claimToken,
           p_error_code: "generation_views_incomplete",
           p_error_message: `Expected seven persisted views, found ${views.length}`,
-          p_retryable: true,
+          // Seven successful provider outputs with an incomplete durable
+          // readback is an integrity incident. Never pay to regenerate them
+          // automatically; a human must inspect/resume.
+          p_retryable: false,
         });
         return { requestId, state: "failed", reasons: "views_incomplete" };
       }
@@ -355,10 +377,11 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       // decision is recorded as the canonical authoring input Call 8 consumes,
       // instead of being left inside the image model as pixels.
       //
-      // It is authored against the SAME validated GENIE row manifest.resolve
-      // will bind to the run, so the extents computed here are the extents the
-      // design space admits. A vehicle still awaiting six-surface validation
-      // therefore cannot be authored, and says so rather than guessing.
+      // Legacy authoring is authored against the SAME validated GENIE row
+      // manifest.resolve will bind to the run. Flat-first authoring has already
+      // frozen its explicitly proof-only geometry authority into the immutable
+      // A.T.L.A.S. manifest above and can never hand that provisional authority
+      // to Calls 8+.
       let designMaster = null;
       if (!isFlatFirst) {
         dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null);
@@ -420,11 +443,12 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         p_request_id: requestId, p_claim_token: claimToken,
         p_error_code: error.code || "generation_worker_failed",
         p_error_message: String(error.message || error).slice(0, 1000),
-        // Preserve the error's retry contract. In particular, an unvalidated
-        // GENIE six-surface record is a fail-closed operator action, not a
-        // transient provider failure. Retrying it only repeats the same lookup
-        // and leaves the customer watching a run that cannot advance.
-        p_retryable: error?.retryable !== false,
+        // A.T.L.A.S. performs its one canonical-authoring call before the
+        // bounded seven-view engine. Any error after entering flat-first is
+        // terminal for this run so the request cannot be auto-claimed and burn
+        // the provider pool again. Legacy errors retain their declared retry
+        // contract; slot-budget failures above are terminal in both modes.
+        p_retryable: enteredFlatFirst ? false : error?.retryable !== false,
       }).catch(() => {});
       throw error;
     } finally {

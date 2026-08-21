@@ -302,3 +302,148 @@ test("Calls 1-7 reports unvalidated GENIE geometry without inventing a workflow 
   );
   assert.deepEqual(calls, [], "pre-production geometry lookup cannot queue against a fabricated stage");
 });
+
+test("A.T.L.A.S. preview alone accepts cited provisional geometry while production stays locked", async () => {
+  const candidateId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const candidate = {
+    id: candidateId,
+    candidate_hash: "a".repeat(64),
+    vehicle_class: "truck",
+    make: "Ford",
+    model: "F-250",
+    year: "2024",
+    overall_length_in: 250,
+    overall_width_in: 80,
+    overall_height_in: 82,
+    wheelbase_in: 160,
+    source: "gemini_grounded",
+    source_urls: ["https://www.ford.com/support/vehicle-specifications"],
+    confidence: "high",
+    requires_validation: true,
+  };
+  const query = {
+    select() { return this; }, eq() { return this; }, ilike() { return this; },
+    limit() { return Promise.resolve({ data: [candidate], error: null }); },
+  };
+  const calls = [];
+  const sb = {
+    from(table) { assert.equal(table, "designpro_vehicle_specs_universal"); return query; },
+    async rpc(name, payload) { calls.push({ name, payload }); return { error: null }; },
+  };
+
+  const preview = await universal.resolveFlatAtlasPreviewDimensions(
+    sb,
+    { type: "truck", year: 2024, make: "Ford", model: "F-250" },
+  );
+  const surfaces = universal.expectedSurfacesFromRow(preview);
+  assert.deepEqual(surfaces.map((surface) => surface.surfaceKey), universal.SURFACES);
+  assert.equal(surfaces.every((surface) => surface.widthInches > 0 && surface.heightInches > 0), true);
+  assert.equal(preview.side_width, preview.passenger_width);
+  assert.notEqual(preview.front_width, preview.rear_width, "front bumper and rear face remain distinct provisional envelopes");
+  assert.equal(preview.proofGeometryAuthority.status, "provisional");
+  assert.equal(preview.proofGeometryAuthority.operatorValidated, false);
+  assert.equal(preview.proofGeometryAuthority.productionEligible, false);
+  assert.equal(preview.proofGeometryAuthority.candidateId, candidateId);
+  assert.equal(preview.universalValidation, undefined);
+  assert.deepEqual(calls, [], "preview geometry never creates or resumes a production stage");
+
+  await assert.rejects(
+    universal.resolveOrQueueUniversalDimensions(
+      sb,
+      { type: "truck", year: 2024, make: "Ford", model: "F-250" },
+      null,
+      null,
+    ),
+    (error) => error.code === "genie_dimension_validation_required" && error.retryable === false,
+  );
+});
+
+test("A.T.L.A.S. provisional geometry rejects uncited and unsupported candidates before image generation", () => {
+  const base = {
+    id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    overall_length_in: 190,
+    overall_width_in: 75,
+    overall_height_in: 60,
+    wheelbase_in: 112,
+    source_urls: ["https://example.com/oem-spec"],
+    source: "gemini_grounded",
+    confidence: "medium",
+  };
+  assert.throws(
+    () => universal._test.provisionalDimensionsFromCandidate({ ...base, source_urls: [] }, "car"),
+    (error) => error.code === "genie_grounding_sources_missing",
+  );
+  assert.throws(
+    () => universal._test.provisionalDimensionsFromCandidate(base, "trailer"),
+    (error) => error.code === "genie_flat_atlas_topology_unsupported",
+  );
+});
+
+test("cold-cache A.T.L.A.S. grounds once, stores the candidate as unvalidated, and continues", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousKey = process.env.GOOGLE_AI_API_KEY;
+  const insertedRows = [];
+  let fetchCalls = 0;
+  try {
+    process.env.GOOGLE_AI_API_KEY = "test-grounding-key";
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({
+        candidates: [{
+          finishReason: "STOP",
+          content: { parts: [{ text: JSON.stringify({
+            overall_length_in: 244,
+            overall_width_in: 80,
+            overall_height_in: 81,
+            wheelbase_in: 160,
+            sub_type: "crew cab pickup",
+            confidence: "high",
+            source_urls: ["https://www.ford.com/support/vehicle-specifications"],
+          }) }] },
+          groundingMetadata: { groundingChunks: [{ web: { uri: "https://media.ford.com/specifications.pdf" } }] },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const table = {
+      select() { return this; }, eq() { return this; }, ilike() { return this; },
+      limit() { return Promise.resolve({ data: [], error: null }); },
+      insert(payload) {
+        insertedRows.push(payload);
+        return {
+          select(selection) {
+            assert.equal(selection, "*");
+            return {
+              async single() {
+                return {
+                  data: {
+                    id: "99999999-9999-4999-8999-999999999999",
+                    candidate_hash: "c".repeat(64),
+                    ...payload,
+                  },
+                  error: null,
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+    const sb = { from(name) { assert.equal(name, "designpro_vehicle_specs_universal"); return table; } };
+
+    const preview = await universal.resolveFlatAtlasPreviewDimensions(
+      sb,
+      { type: "truck", year: 2024, make: "Ford", model: "F-250" },
+    );
+    assert.equal(fetchCalls, 1);
+    assert.equal(insertedRows.length, 1);
+    assert.equal(insertedRows[0].requires_validation, true);
+    assert.equal(insertedRows[0].source, "gemini_grounded");
+    assert.equal(preview.proofGeometryAuthority.status, "provisional");
+    assert.equal(preview.proofGeometryAuthority.sourceUrls.length, 2);
+    assert.equal(universal.expectedSurfacesFromRow(preview).length, 6);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey == null) delete process.env.GOOGLE_AI_API_KEY;
+    else process.env.GOOGLE_AI_API_KEY = previousKey;
+  }
+});
