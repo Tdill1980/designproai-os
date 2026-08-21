@@ -340,7 +340,14 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
       // will bind to the run, so the extents computed here are the extents the
       // design space admits. A vehicle still awaiting six-surface validation
       // therefore cannot be authored, and says so rather than guessing.
-      const dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null);
+      // allowDerived: a design is drawn, not printed. Grounded-derived surfaces
+      // are enough to author against, and blocking Calls 1-7 on a human
+      // measurement stopped work no measurement changes -- a Porsche 911 Turbo
+      // sat parked with its dimensions already grounded and cited. The
+      // production path (manifest.resolve) still admits operator-validated
+      // geometry only, so a derived number can reach a render and never a
+      // print panel.
+      const dimensionRow = await resolveOrQueueUniversalDimensions(supabase, claim.input?.vehicle, null, null, { allowDerived: true });
       const designMaster = await authorCreativeInput({
         provider: imageProvider,
         store,

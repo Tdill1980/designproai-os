@@ -203,7 +203,16 @@ async function resolveGenieManifest(sb, run, stage) {
   // Legacy designpro_vehicle_dimensions rows do not carry validator identity or
   // exact six-surface evidence. They are never print authority. Every vehicle,
   // known or unknown, resolves through the validated Universal GENIE gate.
+  //
+  // allowDerived is deliberately NOT passed. Calls 1-7 may author against
+  // grounded-derived surfaces so an unmeasured vehicle can still be designed;
+  // this is the manufacturing boundary, and a formula that puts a Ford F-250's
+  // rear at 70x36 when its measured panel is 76x54 is not something to print.
   const row = await resolveOrQueueUniversalDimensions(sb, vehicle, stage, run.id);
+  if (row.universalValidation?.provenance === "grounded-derived") {
+    throw new StageError("genie_dimension_validation_required",
+      `${make} ${model} has grounded-derived geometry only; exact six-surface operator validation is required before production`, false);
+  }
   const dim = (width, height, surfaceKey, sourceAssetValue) => {
     const widthInches = Number(width); const heightInches = Number(height);
     if (!(widthInches > 0 && heightInches > 0)) throw new StageError("genie_surface_dimensions_missing", `GENIE dimensions missing for ${surfaceKey}`, false);

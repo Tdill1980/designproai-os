@@ -53,6 +53,131 @@ function normalizedVehicle(vehicle) {
   return { vehicleClass, make, model, year };
 }
 
+const DERIVED_SURFACES_CONTRACT = "designpro.genie-derived-surfaces.v1";
+
+/**
+ * The six wrap surfaces, derived from a grounded candidate.
+ *
+ * Ported from restylepro-os supabase/functions/panelizer-step-validate/index.ts
+ * (:208-250 normalization, :344 cacheVehicleDims write-back). That fallback is
+ * what let an unknown vehicle be designed at all: ground the wheelbase and
+ * overall dimensions, calculate the panels, write them back so the next job for
+ * the same vehicle is a cache hit, and carry on. Only the derivation crossed
+ * over here originally -- the grounded overalls were stored and the run parked,
+ * which stopped a design on a vehicle nobody had validated yet.
+ *
+ * Every guard below is the source's, kept because each one is a live failure:
+ *
+ *  - THE LENGTH CLAMP. A side panel runs front-to-rear along the body, so it
+ *    can never exceed overall length. The original names the case in its own
+ *    comment: a Ram 2500 mega cab grounded to ~260" on a ~247" truck. Clamped
+ *    to 92% of real length.
+ *  - THE RANGE REJECT. Out-of-range numbers return null rather than a plausible
+ *    wrong panel, because a wrong panel prints.
+ *  - THE SWAP CORRECT. A side is always wider than it is tall; a transposed
+ *    pair is a transcription error, not a narrow tall vehicle.
+ *
+ * Returns null when the candidate cannot be derived honestly. Null parks the
+ * run for operator validation, which is the same answer as before this existed.
+ */
+function deriveSurfaces(candidate, dimensions) {
+  const number = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+  const overallLength = number(dimensions.overall_length_in);
+  const overallWidth = number(dimensions.overall_width_in);
+  const overallHeight = number(dimensions.overall_height_in);
+  const wheelbase = number(dimensions.wheelbase_in);
+
+  let sideWidth = number(candidate.sideWidth) || (overallLength ? overallLength - 9 : 0);
+  const sideHeightRaw = number(candidate.sideHeight) || (overallHeight ? overallHeight * 0.78 : 0);
+
+  // The clamp, before anything else reads sideWidth.
+  if (overallLength > 80 && sideWidth > overallLength * 0.97) sideWidth = overallLength * 0.92;
+
+  if (!sideWidth || !sideHeightRaw) return null;
+  if (sideWidth < 80 || sideWidth > 350 || sideHeightRaw < 25 || sideHeightRaw > 120) return null;
+  if (wheelbase && (wheelbase < 60 || wheelbase > 250)) return null;
+
+  const driverWidth = Math.round(Math.max(sideWidth, sideHeightRaw));
+  const driverHeight = Math.round(Math.min(sideWidth, sideHeightRaw));
+
+  const surfaces = {
+    driver: { widthInches: driverWidth, heightInches: driverHeight },
+    // The passenger side of a vehicle is the same panel as the driver side.
+    // It is stated rather than mirrored downstream because manufacturing owns
+    // mirroring as an explicit operator action, never a pipeline default.
+    passenger: { widthInches: driverWidth, heightInches: driverHeight },
+    hood: {
+      widthInches: Math.round(number(candidate.hoodWidth) || overallWidth * 0.85 || driverWidth * 0.37),
+      heightInches: Math.round(number(candidate.hoodLength) || 38),
+    },
+    roof: {
+      widthInches: Math.round(number(candidate.roofWidth) || overallWidth * 0.80 || driverWidth * 0.35),
+      heightInches: Math.round(number(candidate.roofLength) || wheelbase * 0.6 || 66),
+    },
+    front: {
+      widthInches: Math.round(number(candidate.frontWidth) || overallWidth * 0.85 || 66),
+      heightInches: Math.round(number(candidate.frontHeight) || overallHeight * 0.45 || 42),
+    },
+    rear: {
+      widthInches: Math.round(number(candidate.backWidth) || overallWidth * 0.85 || 66),
+      heightInches: Math.round(number(candidate.backHeight) || overallHeight * 0.45 || 42),
+    },
+  };
+  for (const key of SURFACES) {
+    const surface = surfaces[key];
+    if (!(surface.widthInches > 0 && surface.heightInches > 0)) return null;
+  }
+  return {
+    contractVersion: DERIVED_SURFACES_CONTRACT,
+    surfaces,
+    // Named so a reader can tell which numbers a human still owes us. `front`
+    // is the one with no restylepro precedent; the rest are ported formulas.
+    derivation: {
+      source: "panelizer-step-validate.google-grounded-formulas",
+      clampedToOverallLength: overallLength > 80 && number(candidate.sideWidth) > overallLength * 0.97,
+      withoutPrecedent: ["front"],
+    },
+  };
+}
+
+/**
+ * Derived surfaces as the row states them. The shape mirrors validatedSurfaces
+ * exactly so a caller consumes one or the other without branching, and the
+ * provenance says which it got.
+ */
+function derivedSurfaces(row) {
+  const manifest = row.panels;
+  if (!manifest || manifest.contractVersion !== DERIVED_SURFACES_CONTRACT
+    || !manifest.surfaces || typeof manifest.surfaces !== "object" || Array.isArray(manifest.surfaces)) return null;
+  const parsed = {};
+  for (const surfaceKey of SURFACES) {
+    const widthInches = Number(manifest.surfaces[surfaceKey]?.widthInches);
+    const heightInches = Number(manifest.surfaces[surfaceKey]?.heightInches);
+    if (!(widthInches > 0 && heightInches > 0)) return null;
+    parsed[surfaceKey] = { widthInches, heightInches };
+  }
+  return {
+    id: row.id, make: row.make, model: row.model,
+    side_width: parsed.driver.widthInches, side_height: parsed.driver.heightInches,
+    passenger_width: parsed.passenger.widthInches, passenger_height: parsed.passenger.heightInches,
+    hood_width: parsed.hood.widthInches, hood_length: parsed.hood.heightInches,
+    roof_width: parsed.roof.widthInches, roof_length: parsed.roof.heightInches,
+    front_width: parsed.front.widthInches, front_height: parsed.front.heightInches,
+    rear_width: parsed.rear.widthInches, rear_height: parsed.rear.heightInches,
+    universalValidation: {
+      provenance: "grounded-derived",
+      validatorId: null,
+      validatedAt: null,
+      sourceUrls: row.source_urls || [],
+      candidateId: row.id,
+      derivation: manifest.derivation || null,
+    },
+  };
+}
+
 function assertGroundedCandidate(candidate, vehicleClass) {
   const ranges = SANITY_RANGES[vehicleClass];
   const dimensions = {
@@ -69,7 +194,14 @@ function assertGroundedCandidate(candidate, vehicleClass) {
   }
   const sourceUrls = Array.isArray(candidate.source_urls) ? [...new Set(candidate.source_urls.filter((value) => /^https:\/\//.test(String(value))))] : [];
   if (!sourceUrls.length) throw new UniversalDimensionError("genie_grounding_sources_missing", "Grounded vehicle candidate has no HTTPS source citations");
-  return { dimensions, sourceUrls, confidence: ["high", "medium", "low"].includes(candidate.confidence) ? candidate.confidence : "low", subType: String(candidate.sub_type || "").trim() || null };
+  return {
+    dimensions, sourceUrls,
+    confidence: ["high", "medium", "low"].includes(candidate.confidence) ? candidate.confidence : "low",
+    subType: String(candidate.sub_type || "").trim() || null,
+    // The calculated panel numbers ride along unvalidated; deriveSurfaces owns
+    // every guard on them, so nothing here has to know the formulas.
+    panelCandidate: candidate,
+  };
 }
 
 function validatedSurfaces(row) {
@@ -97,7 +229,35 @@ function validatedSurfaces(row) {
 }
 
 async function groundedCandidate(vehicle) {
-  const prompt = `Find exact OEM exterior dimensions for ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.vehicleClass}). Use primary manufacturer spec pages or official PDFs. Return JSON only: {"overall_length_in":number,"overall_width_in":number,"overall_height_in":number,"wheelbase_in":number|null,"sub_type":string|null,"confidence":"high|medium|low","source_urls":["https://..."]}. This is a candidate for human validation; do not invent missing values.`;
+  // The formulas are ported verbatim from restylepro-os
+  // supabase/functions/panelizer-step-validate/index.ts:158-177, including the
+  // reason the wheelbase estimate was rejected. They are stated to the model
+  // rather than applied afterwards for the same reason the original did it that
+  // way: the model knows the rear overhang and the trim variant, and computing
+  // hoodLength here would mean guessing at both.
+  //
+  // `front` has NO counterpart in that source -- restylepro's GENIE derives
+  // side, hood, roof and back only. It is asked for symmetrically with back and
+  // recorded as the one derived value with no proven precedent.
+  const prompt = `Find exact OEM exterior dimensions for ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.vehicleClass}). Use primary manufacturer spec pages or official PDFs.
+
+If this exact model was not produced in that year, use the real dimensions of the generation that WAS produced. Do not invent numbers.
+
+Then CALCULATE the vinyl wrap panel dimensions using these formulas:
+- sideWidth = overall length minus 8 to 10 inches (a full-side wrap runs nearly the ENTIRE body length; do NOT use wheelbase x 1.45 -- that badly undersizes sedans)
+- sideHeight = overall height x 0.75 to 0.82 (the wrappable body side from rocker to roof-drip)
+- hoodWidth = overall width x 0.85
+- hoodLength = front overhang (overall length - wheelbase - rear overhang, typically 35-45 inches)
+- roofWidth = overall width x 0.80
+- roofLength = wheelbase x 0.60
+- frontWidth = overall width x 0.85
+- frontHeight = overall height x 0.45
+- backWidth = overall width x 0.85
+- backHeight = overall height x 0.45
+
+Return JSON only: {"overall_length_in":number,"overall_width_in":number,"overall_height_in":number,"wheelbase_in":number|null,"sub_type":string|null,"confidence":"high|medium|low","source_urls":["https://..."],"sideWidth":number,"sideHeight":number,"hoodWidth":number,"hoodLength":number,"roofWidth":number,"roofLength":number,"frontWidth":number,"frontHeight":number,"backWidth":number,"backHeight":number}
+
+This is a candidate for human validation; do not invent missing values. Omit any measurement you cannot source, and omit the calculated panel value that depends on it -- a formula applied to a guessed input is still a guess.`;
   // The endpoint and the credential belong to generation-provider, which owns
   // the key pool, its health and the one URL this runtime speaks to. This call
   // used to build both itself, which put it outside rotation and outside any
@@ -158,6 +318,10 @@ async function groundedCandidate(vehicle) {
 }
 
 async function queueValidationRequest(sb, stage, runId, candidateId) {
+  // Calls 1-7 resolve dimensions with no stage and no lease -- there is no run
+  // to park. Requesting validation for a run that does not exist would throw on
+  // stage.id, which is a crash where the caller expects an answer.
+  if (!stage || !runId) return;
   const { error } = await sb.rpc("request_designpro_universal_dimension_validation", {
     p_run_id: runId, p_candidate_id: candidateId, p_stage_id: stage.id, p_lease_token: stage.lease_token,
   });
@@ -169,19 +333,32 @@ async function findCandidates(sb, vehicle) {
     .eq("vehicle_class", vehicle.vehicleClass).ilike("make", vehicle.make).ilike("model", vehicle.model).eq("year", vehicle.year).limit(2);
 }
 
-async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId) {
+/**
+ * @param options.allowDerived  Accept grounded-derived surfaces instead of
+ *   parking. Calls 1-7 pass true: a design is drawn, not printed, and blocking
+ *   the drawing on a human measurement stops work that no measurement changes.
+ *   manifest.resolve leaves it false, so the production path still admits only
+ *   operator-validated geometry.
+ */
+async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId, options = {}) {
+  const allowDerived = options.allowDerived === true;
   const vehicle = normalizedVehicle(rawVehicle);
   const { data: rows, error } = await findCandidates(sb, vehicle);
   if (error) throw new UniversalDimensionError("genie_universal_cache_failed", error.message, true);
   if ((rows || []).length > 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", "Multiple universal GENIE candidates matched");
   if (rows?.length === 1) {
     const validated = validatedSurfaces(rows[0]);
-    if (validated) return validated;
+    if (validated) return { ...validated, universalValidation: { ...validated.universalValidation, provenance: "operator-validated" } };
+    if (allowDerived) {
+      const derived = derivedSurfaces(rows[0]);
+      if (derived) return derived;
+    }
     await queueValidationRequest(sb, stage, runId, rows[0].id);
     throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${rows[0].id} requires exact six-surface validation`, false, true);
   }
 
   const candidate = await groundedCandidate(vehicle);
+  const derived = deriveSurfaces(candidate.panelCandidate || {}, candidate.dimensions);
   const { data: inserted, error: insertError } = await sb.from("designpro_vehicle_specs_universal").insert({
     vehicle_class: vehicle.vehicleClass, make: vehicle.make, model: vehicle.model, year: vehicle.year,
     sub_type: candidate.subType, overall_length_in: candidate.dimensions.overall_length_in,
@@ -189,14 +366,29 @@ async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId) {
     wheelbase_in: candidate.dimensions.wheelbase_in, source: "gemini_grounded",
     source_urls: candidate.sourceUrls, confidence: candidate.confidence, requires_validation: true,
     raw_response: candidate.raw,
-  }).select("id").single();
+    // The write-back. restylepro's cacheVehicleDims existed so "the next job for
+    // the same vehicle is a DB hit"; the same numbers land here, in the row's
+    // own `panels` slot. requires_validation stays TRUE: these are derived, and
+    // saying otherwise would claim a human measured a vehicle nobody has seen.
+    panels: derived || {},
+  }).select("*").single();
   if (insertError?.code === "23505") {
     const { data: racedRows, error: racedError } = await findCandidates(sb, vehicle);
     if (racedError || racedRows?.length !== 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", racedError?.message || "Concurrent GENIE candidate identity is ambiguous", true);
+    const racedValidated = validatedSurfaces(racedRows[0]);
+    if (racedValidated) return { ...racedValidated, universalValidation: { ...racedValidated.universalValidation, provenance: "operator-validated" } };
+    if (allowDerived) {
+      const racedDerived = derivedSurfaces(racedRows[0]);
+      if (racedDerived) return racedDerived;
+    }
     await queueValidationRequest(sb, stage, runId, racedRows[0].id);
     throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${racedRows[0].id} requires exact six-surface validation`, false, true);
   }
   if (insertError) throw new UniversalDimensionError("genie_universal_cache_insert_failed", insertError.message, true);
+  if (allowDerived) {
+    const freshlyDerived = derivedSurfaces(inserted);
+    if (freshlyDerived) return freshlyDerived;
+  }
   await queueValidationRequest(sb, stage, runId, inserted.id);
   throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${inserted.id} created; exact six-surface validation is required`, false, true);
 }
@@ -239,4 +431,4 @@ function expectedSurfacesFromRow(row) {
   ];
 }
 
-module.exports = { SURFACES, UniversalDimensionError, expectedSurfacesFromRow, resolveOrQueueUniversalDimensions, _test: { normalizedVehicle, assertGroundedCandidate, validatedSurfaces } };
+module.exports = { DERIVED_SURFACES_CONTRACT, SURFACES, UniversalDimensionError, expectedSurfacesFromRow, resolveOrQueueUniversalDimensions, _test: { normalizedVehicle, assertGroundedCandidate, deriveSurfaces, derivedSurfaces, validatedSurfaces } };
