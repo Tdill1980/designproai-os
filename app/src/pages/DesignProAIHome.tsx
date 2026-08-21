@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Sparkles, Infinity as InfinityIcon, FileText, Clock, ChevronLeft, ChevronRight,
@@ -18,6 +18,7 @@ import {
 import {
   FLAT_FIRST_ATLAS_UI_ENABLED,
   flatFirstAtlasSupportedVehicleType,
+  initialDesignProPipelineMode,
 } from "@/lib/designpro-flat-first";
 import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
 
@@ -191,7 +192,12 @@ export default function DesignProAIHome() {
   // When set, the design studio renders INLINE on this same page (no navigation,
   // no new window) — brief on the left, Konva canvas in the center.
   const [studioBrief, setStudioBrief] = useState<any | null>(null);
-  const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>("legacy");
+  const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>(() =>
+    initialDesignProPipelineMode(
+      undefined,
+      typeof window === "undefined" ? "" : window.location.search,
+    ),
+  );
   const [showPromptHelp, setShowPromptHelp] = useState(false);
   // Left-rail "Start Your Design" state
   const [mode, setMode] = useState("Commercial");
@@ -207,6 +213,18 @@ export default function DesignProAIHome() {
   // "background" → Layer-1 style reference; "overlay" → Layer-2 logo/text example.
   const [visionRefs, setVisionRefs] = useState<{ url: string; kind: "background" | "overlay" }[]>([]);
   const [uploadingRef, setUploadingRef] = useState(false);
+
+  // A.T.L.A.S. currently has a bounded topology contract for four vehicle
+  // families. If the customer changes to an unsupported body class, visibly
+  // fall back before they can submit rather than sending an impossible v3 run.
+  useEffect(() => {
+    if (
+      pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE &&
+      !flatFirstAtlasSupportedVehicleType(vehicleType)
+    ) {
+      setPipelineMode("legacy");
+    }
+  }, [pipelineMode, vehicleType]);
 
   const uploadRef = async (file: File) => {
     setUploadingRef(true);

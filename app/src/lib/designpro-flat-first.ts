@@ -20,15 +20,34 @@ export function flatFirstAtlasRequestedBySearch(search: unknown): boolean {
   }
 }
 
+function legacyRequestedBySearch(search: unknown): boolean {
+  try {
+    return new URLSearchParams(String(search || "")).get("pipeline") === "legacy";
+  } catch {
+    return false;
+  }
+}
+
 export function initialDesignProPipelineMode(
   value: unknown,
   search = "",
 ): GenerationPipelineMode {
-  return FLAT_FIRST_ATLAS_UI_ENABLED && (
-    value === FLAT_FIRST_ATLAS_PIPELINE_MODE || flatFirstAtlasRequestedBySearch(search)
-  )
-    ? FLAT_FIRST_ATLAS_PIPELINE_MODE
-    : "legacy";
+  if (!FLAT_FIRST_ATLAS_UI_ENABLED) return "legacy";
+
+  // URL authority is explicit and makes both modes independently testable.
+  // `?pipeline=legacy` is the one-click rollback path; `?pipeline=atlas` is the
+  // immutable flat-first path and wins over stale navigation state.
+  if (legacyRequestedBySearch(search)) return "legacy";
+  if (flatFirstAtlasRequestedBySearch(search)) return FLAT_FIRST_ATLAS_PIPELINE_MODE;
+
+  // A mode deliberately carried by the Home brief remains authoritative.
+  if (value === "legacy") return "legacy";
+  if (value === FLAT_FIRST_ATLAS_PIPELINE_MODE) return FLAT_FIRST_ATLAS_PIPELINE_MODE;
+
+  // While the guarded feature flag is enabled, DesignPro's direct create page
+  // is the A.T.L.A.S. test surface by default. The visible Legacy selector and
+  // `?pipeline=legacy` keep rollback immediate without a deploy.
+  return FLAT_FIRST_ATLAS_PIPELINE_MODE;
 }
 
 /**

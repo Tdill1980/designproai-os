@@ -70,10 +70,14 @@ export function DesignPipelineProgress({
   stage,
   elapsed,
   requestState,
+  isAtlas = false,
+  atlasReady = false,
 }: {
   stage: PipelineStage | null;
   elapsed: number;
   requestState?: GenerationRequestState | null;
+  isAtlas?: boolean;
+  atlasReady?: boolean;
 }) {
   // Default to "rendering" if the pipeline is active but no explicit stage was set
   // (defensive — the customer always sees a live step, never a bare spinner).
@@ -91,7 +95,7 @@ export function DesignPipelineProgress({
     const id = setInterval(() => setSubIdx((i) => i + 1), 2200);
     return () => clearInterval(id);
   }, [activeKey]);
-  const subMsg = activeStep.sub[subIdx % activeStep.sub.length];
+  const legacySubMsg = activeStep.sub[subIdx % activeStep.sub.length];
 
   // Live Creator Market designs — ONLY real listed wraps (never app screenshots).
   // Fetched once; on any error the carousel simply hides. Independent of the render
@@ -128,7 +132,7 @@ export function DesignPipelineProgress({
   const shotsTotal = requestState?.shotsTotal ?? 7;
   const hasProofProgress = requestState?.phase === "photographer" && shotsTotal > 0;
   const proofPct = hasProofProgress ? Math.min(100, (shotsComplete / shotsTotal) * 100) : 0;
-  const serverStatus = !requestState
+  const legacyServerStatus = !requestState
     ? "Submitting to server"
     : requestState.state === "queued"
       ? "Queued on server"
@@ -139,6 +143,27 @@ export function DesignPipelineProgress({
           : requestState.phase === "complete" || requestState.state === "outputs_ready"
             ? "Proof views complete"
             : "Creating the approved design on server";
+  const atlasProofStatus = `${Math.min(shotsComplete, 7)} of 7 proof views ready`;
+  const headline = isAtlas
+    ? atlasReady
+      ? "Projecting 3D proofs from your A.T.L.A.S. master"
+      : "Painting your canonical flattened A.T.L.A.S. master"
+    : "Creating your custom wrap design";
+  const subMsg = isAtlas
+    ? atlasReady
+      ? atlasProofStatus
+      : "Gemini is painting the canonical flattened A.T.L.A.S. master"
+    : legacySubMsg;
+  const activeLabel = isAtlas
+    ? atlasReady
+      ? "Rendering your 3D proof views"
+      : "Painting canonical flattened A.T.L.A.S. master"
+    : activeStep.label;
+  const serverStatus = isAtlas
+    ? atlasReady
+      ? atlasProofStatus
+      : "Canonical flattened master is being painted"
+    : legacyServerStatus;
 
   // Honest long-wait signal instead of a frozen-looking bar.
   const longWait = elapsed >= 75 && activeKey !== "finishing";
@@ -159,7 +184,7 @@ export function DesignPipelineProgress({
         <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400/80">
           DesignProAI™ · A.C.E.
         </p>
-        <p className="text-lg font-bold text-white">Creating your custom wrap design</p>
+        <p className="text-lg font-bold text-white">{headline}</p>
         <p className="text-xs text-white/55 min-h-[16px] transition-opacity">{subMsg}…</p>
       </div>
 
@@ -175,7 +200,7 @@ export function DesignPipelineProgress({
       {/* Server-owned status. Only proof-view counts are determinate. */}
       <div className="w-full">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs font-medium text-white/60">{activeStep.label}</span>
+          <span className="text-xs font-medium text-white/60">{activeLabel}</span>
           <span className="text-xs font-bold tabular-nums text-pink-300">{serverStatus}</span>
         </div>
         <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
