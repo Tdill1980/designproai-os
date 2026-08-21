@@ -24,6 +24,7 @@
  */
 
 const { createHash } = require("node:crypto");
+const sharp = require("sharp");
 const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
 const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
@@ -115,8 +116,23 @@ async function referenceImageParts(supabase, input) {
       });
     }
     try {
-      const bytes = verifySourceBytes(asset, Buffer.from(await data.arrayBuffer()));
-      parts.push({ inlineData: { mimeType: contentType, data: bytes.toString("base64") } });
+      const sourceBytes = verifySourceBytes(asset, Buffer.from(await data.arrayBuffer()));
+      // Gemini image inputs do not accept SVG. Preserve the verified vector in
+      // Storage, but rasterize only the transient conditioning bytes to a
+      // bounded PNG so one otherwise-valid logo cannot fail all seven views.
+      const conditionedBytes = contentType === "image/svg+xml"
+        ? await sharp(sourceBytes, { limitInputPixels: 40_000_000, density: 300 })
+          .rotate()
+          .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+          .png({ compressionLevel: 9, adaptiveFiltering: false, palette: false })
+          .toBuffer()
+        : sourceBytes;
+      parts.push({
+        inlineData: {
+          mimeType: contentType === "image/svg+xml" ? "image/png" : contentType,
+          data: conditionedBytes.toString("base64"),
+        },
+      });
     } catch (cause) {
       throw Object.assign(new Error(`${label} reference failed verification: ${cause.message}`), {
         code: "generation_reference_hash_mismatch", retryable: false,
