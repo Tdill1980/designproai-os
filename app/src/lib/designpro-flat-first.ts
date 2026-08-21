@@ -44,10 +44,10 @@ export function initialDesignProPipelineMode(
   if (value === "legacy") return "legacy";
   if (value === FLAT_FIRST_ATLAS_PIPELINE_MODE) return FLAT_FIRST_ATLAS_PIPELINE_MODE;
 
-  // The customer route stays on the production-capable pipeline by default.
-  // A.T.L.A.S. is an explicit diagnostic (`?pipeline=atlas` or a carried Home
-  // selection) until it can satisfy the same Call 8/9 production contract.
-  return "legacy";
+  // When the release flag is on, the customer sees the flat-first experience
+  // without needing to edit a URL. `?pipeline=legacy` remains the immediate,
+  // reversible fallback and still wins above.
+  return FLAT_FIRST_ATLAS_PIPELINE_MODE;
 }
 
 /**

@@ -596,7 +596,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         title: finished.designName || "Design Rendered",
         description:
           pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-            ? "A.T.L.A.S. master and seven proof views are ready. This test run was not sent to production."
+            ? "Your A.T.L.A.S. design and seven vehicle views are ready and saved."
             : "Your DesignProAI™ views are ready — the 2D Production Proof is building.",
       });
       return { generationId: request.generationId, directRender: true, renderUrl: hero?.signedUrl };
@@ -631,15 +631,13 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       }
       const friendly =
         code === "generation_pipeline_mode_mismatch"
-          ? "The server did not accept the pipeline shown on screen, so this run was stopped. Start from the dedicated A.T.L.A.S. test link; production was not unlocked."
+          ? "This design mode is temporarily unavailable. No production order was created."
           : code === "generation_input_conflict"
           ? "That design id already holds a different brief. Start a new design rather than overwriting it."
           : /genie_dimension_validation_required/.test(code)
-            ? pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-              ? "A.T.L.A.S. could not establish its automatic proof-layout geometry. No Gemini images were generated; start a new run or verify the vehicle year, make, model, and type."
-              : "GENIE does not yet have an operator-validated six-surface record for this vehicle. Validate it in GENIE QC before continuing to production."
+            ? "We could not prepare this vehicle layout. Check the year, make, model, and vehicle type, then try again."
           : /generation_timeout/.test(code)
-            ? "The design is taking longer than expected. It is still running on the server — reopen the job to pick it up."
+            ? "The design is taking longer than expected. You can safely return to this page later."
             : error?.message || "Something went wrong — let's try again!";
       console.error("[DesignPro] standalone generation failed:", error);
       setGenerationError(friendly);

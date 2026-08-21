@@ -133,36 +133,36 @@ export function DesignPipelineProgress({
   const hasProofProgress = requestState?.phase === "photographer" && shotsTotal > 0;
   const proofPct = hasProofProgress ? Math.min(100, (shotsComplete / shotsTotal) * 100) : 0;
   const legacyServerStatus = !requestState
-    ? "Submitting to server"
+    ? "Preparing your design"
     : requestState.state === "queued"
-      ? "Queued on server"
+      ? "Preparing your design"
       : requestState.state === "retryable"
-        ? `Server retry ${requestState.attempt ?? ""}`.trim()
+        ? "Still working on your design"
         : requestState.phase === "photographer"
           ? `${shotsComplete} of ${shotsTotal} proof views complete`
           : requestState.phase === "complete" || requestState.state === "outputs_ready"
             ? "Proof views complete"
-            : "Creating the approved design on server";
+            : "Creating your design";
   const atlasProofStatus = `${Math.min(shotsComplete, 7)} of 7 proof views ready`;
   const headline = isAtlas
     ? atlasReady
-      ? "Projecting 3D proofs from your A.T.L.A.S. master"
-      : "Painting your canonical flattened A.T.L.A.S. master"
+      ? "Creating all seven vehicle views"
+      : "Creating your A.T.L.A.S. design"
     : "Creating your custom wrap design";
   const subMsg = isAtlas
     ? atlasReady
       ? atlasProofStatus
-      : "Gemini is painting the canonical flattened A.T.L.A.S. master"
+      : "Your master design will appear here first"
     : legacySubMsg;
   const activeLabel = isAtlas
     ? atlasReady
       ? "Rendering your 3D proof views"
-      : "Painting canonical flattened A.T.L.A.S. master"
+      : "Creating your A.T.L.A.S. design"
     : activeStep.label;
   const serverStatus = isAtlas
     ? atlasReady
       ? atlasProofStatus
-      : "Canonical flattened master is being painted"
+      : "Creating your master design"
     : legacyServerStatus;
 
   // Honest long-wait signal instead of a frozen-looking bar.
@@ -325,8 +325,7 @@ export function DesignPipelineProgress({
       </p>
       {longWait && (
         <p className="text-[11px] text-cyan-300/70 text-center -mt-3">
-          The server is still processing this run. You may safely leave this tab and
-          return later; avoid starting a duplicate generation.
+          Your design is still in progress. You can safely return to this page later.
         </p>
       )}
     </div>
