@@ -126,6 +126,23 @@ test("legacy reference bytes are hash-verified and sent as inlineData", async ()
   );
 });
 
+test("legacy SVG logos retain source identity but reach Gemini as bounded PNG", async () => {
+  const bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" fill="#f06"/></svg>');
+  const asset = {
+    storagePath: `users/11111111-1111-4111-8111-111111111111/revisions/22222222-2222-4222-8222-222222222222/inputs/logo/${createHash("sha256").update(bytes).digest("hex")}.svg`,
+    contentHash: createHash("sha256").update(bytes).digest("hex"),
+    byteSize: bytes.length,
+    contentType: "image/svg+xml",
+  };
+  const supabase = { storage: { from: () => ({ download: async () => ({ data: new Blob([bytes]), error: null }) }) } };
+  const parts = await worker.referenceImageParts(supabase, { logoAsset: asset });
+  assert.equal(parts.length, 1);
+  assert.equal(parts[0].inlineData.mimeType, "image/png");
+  const png = Buffer.from(parts[0].inlineData.data, "base64");
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.notEqual(createHash("sha256").update(png).digest("hex"), asset.contentHash);
+});
+
 test("A.T.L.A.S. master prompt honors rich controls and exact-reference intent", () => {
   const input = { ...RICH_INPUT, logoAsset: { storagePath: "x", contentHash: "a".repeat(64), byteSize: 1, contentType: "image/png" }, visionBoardImages: [{}] };
   const prompt = atlas._test.atlasPrompt(input, atlas.buildAtlasManifest(SURFACES));
