@@ -7,6 +7,7 @@ import test from "node:test";
 
 const root = resolve(import.meta.dirname, "../..");
 const workflow = readFileSync(resolve(root, ".github/workflows/deploy-production.yml"), "utf8");
+const diskMaintenance = readFileSync(resolve(root, ".github/workflows/disk-maintenance.yml"), "utf8");
 const release = readFileSync(resolve(root, ".github/workflows/release.yml"), "utf8");
 const remote = readFileSync(resolve(root, "ops/ci-dark-deploy.sh"), "utf8");
 const backup = readFileSync(resolve(root, "ops/backup.sh"), "utf8");
@@ -358,6 +359,21 @@ test("fresh host deploy has no obsolete VectorizIt guard or host Node prerequisi
   assert.equal(existsSync(resolve(root, "ops/vectorize-guard.sh")), false);
   assert.doesNotMatch(backup, /vectorize-guard|:3200/);
   assert.doesNotMatch(deploy, /^for command in .*\bnode\b/m);
+});
+
+test("the cutover backup archives DesignProAI OS, never the neighboring app", () => {
+  const tarLine = backup.split("\n").find((line) => line.includes("tar --one-file-system"));
+  assert.equal(
+    tarLine?.trim(),
+    "tar --one-file-system --exclude='designproai-os/shared/spool' -C /opt -czf \"$dest/designproai-os-before.tgz\" designproai-os",
+  );
+});
+
+test("disk reclamation cannot prune another app or let Caddy snapshots displace rollback backups", () => {
+  assert.doesNotMatch(diskMaintenance, /docker (?:image|builder) prune/);
+  assert.match(diskMaintenance, /\^\[0-9\]\{8\}T\[0-9\]\{6\}Z\$/);
+  assert.match(diskMaintenance, /test ! -L "\$backups\/\$stamp"/);
+  assert.doesNotMatch(diskMaintenance, /ls -1 "\$backups" \| sort \| head -n -3/);
 });
 
 test("inventory records every Docker state class before deployment without reading secrets", () => {
