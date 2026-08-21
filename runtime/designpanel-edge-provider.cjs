@@ -118,8 +118,9 @@ function createDesignPanelEdgeProvider(options = {}) {
         method: "POST",
         headers: {
           "content-type": "application/json",
+          // Supabase server keys belong in apikey. The Edge handler proves
+          // admin privilege against this exact project before trusting ownerId.
           apikey: serviceRoleKey,
-          authorization: `Bearer ${serviceRoleKey}`,
           "x-designpro-owner-id": ownerId,
         },
         body: JSON.stringify(body),
