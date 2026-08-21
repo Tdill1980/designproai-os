@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirty-one-migration chain', () => {
-  assert.equal(migrationNames.length, 31);
+test('fresh bootstrap contains one ordered thirty-two-migration chain', () => {
+  assert.equal(migrationNames.length, 32);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -54,6 +54,9 @@ test('fresh bootstrap contains one ordered thirty-one-migration chain', () => {
       // Opt-in flat-first v3 storage and owner preview contract. v1/v2 remain
       // accepted unchanged and the legacy intake RPC is not replaced.
       '20260820100000',
+      // Restore the bounded DesignIQ request fields and permit owners to read
+      // only their exact immutable Atlas guide/master preview objects.
+      '20260821120000',
     ],
   );
 });
@@ -75,6 +78,7 @@ test('tenant and Storage identities use the canonical three namespaces', () => {
 test('wrap-files is private, immutable for users, and owner-readable', () => {
   assert.match(sql, /VALUES\(\s*'wrap-files'[\s\S]*?false,\s*50000000000(?:\s|,)/);
   assert.match(sql, /CREATE POLICY designpro_owner_read_wrap_files/);
+  assert.match(sql, /CREATE POLICY designpro_owner_read_flat_atlas_previews/);
   assert.match(sql, /CREATE POLICY designpro_owner_insert_revision_inputs/);
   assert.match(sql, /REVOKE UPDATE, DELETE ON storage\.objects FROM authenticated/);
   assert.doesNotMatch(sql, /FOR (?:UPDATE|DELETE)\s+TO authenticated/i);
