@@ -43,12 +43,12 @@ test("the dedicated test URL and server acknowledgement keep the A.T.L.A.S. bann
   assert.match(gateway, /pipelineMode: acceptedPipelineMode/);
 });
 
-test("the guarded create page defaults to A.T.L.A.S. with an explicit legacy rollback", () => {
+test("the guarded create page defaults to production with explicit A.T.L.A.S. opt-in", () => {
   const selector = read("app/src/lib/designpro-flat-first.ts");
   const home = read("app/src/pages/DesignProAIHome.tsx");
   assert.match(selector, /if \(!FLAT_FIRST_ATLAS_UI_ENABLED\) return "legacy"/);
   assert.match(selector, /legacyRequestedBySearch\(search\)/);
-  assert.match(selector, /return FLAT_FIRST_ATLAS_PIPELINE_MODE;\s*\n}/);
+  assert.match(selector, /return "legacy";\s*\n}/);
   assert.match(home, /initialDesignProPipelineMode\(/);
   assert.match(home, /setPipelineMode\("legacy"\)/);
 });
