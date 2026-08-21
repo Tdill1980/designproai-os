@@ -1040,14 +1040,78 @@ function generationInputHasServerControls(value, path = []) {
 // ignore those keys is how the design path would quietly reacquire the
 // fulfillment dependency that stopped customers designing anything.
 const CALLS_1_7_V2_KEYS = [
-  "brief", "businessName", "colors", "companyName", "contractVersion",
-  "designName", "industry", "logoAsset", "mode", "phone", "style", "vehicle",
-  "website",
+  "brief", "brandColors", "bulletPoints", "businessName", "colors",
+  "companyName", "contractVersion", "designName", "finish", "fontStyle",
+  "industry", "logoAsset", "mascot", "mode", "phone", "qrEnabled", "qrUrl",
+  "style", "styleDescriptors", "substrate", "textLayerPrompt", "vehicle",
+  "visionBoardImages", "visionboardIntent", "website",
 ];
 
 const CALLS_1_7_V3_KEYS = [...CALLS_1_7_V2_KEYS, "pipelineMode"];
 
-function validatedGenerationRequestV2(body, generationIdValue) {
+const VISIONBOARD_INTENTS = new Set(["exact_reference", "style_inspiration", "artboard_projection"]);
+const DESIGNPRO_SUBSTRATES = new Set(["standard", "color_change_film", "chrome_film", "satin_film"]);
+const REFERENCE_ASSET_URL_KEYS = ["url", "signedUrl", "publicUrl", "downloadUrl"];
+const REFERENCE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const LOGO_REFERENCE_TYPES = new Set([...REFERENCE_IMAGE_TYPES, "image/svg+xml"]);
+
+function referenceAssetIsInvalid(asset, allowedTypes, expectedKind, ownerId, generationId) {
+  const contentType = String(asset?.contentType || "").trim().toLowerCase();
+  const contentHash = String(asset?.contentHash || "").toLowerCase();
+  const extension = MIME_EXTENSION.get(contentType);
+  const storagePath = String(asset?.storagePath || "").trim();
+  const exactKeys = ["byteSize", "contentHash", "contentType", "storagePath"];
+  const actualKeys = asset && typeof asset === "object" && !Array.isArray(asset)
+    ? Object.keys(asset).sort() : [];
+  const expectedPath = `users/${ownerId}/revisions/${generationId}/inputs/`
+    + `${expectedKind}/${contentHash}.${extension || "invalid"}`;
+  return !asset || typeof asset !== "object" || Array.isArray(asset)
+    || JSON.stringify(actualKeys) !== JSON.stringify(exactKeys)
+    || REFERENCE_ASSET_URL_KEYS.some((key) => asset[key] != null)
+    || asset.contentHash !== contentHash || asset.contentType !== contentType
+    || !/^[0-9a-f]{64}$/.test(contentHash)
+    || !Number.isSafeInteger(asset.byteSize) || asset.byteSize <= 0 || asset.byteSize > MAX_ASSET_BYTES
+    || !allowedTypes.has(contentType) || !extension || storagePath !== expectedPath;
+}
+
+function optionalDesignInputIsInvalid(input, ownerId, generationId) {
+  const boundedRequiredString = (value, max) => typeof value !== "string"
+    || !value.trim() || value.trim().length > max;
+  const boundedContactString = (value, max) => boundedRequiredString(value, max)
+    || /[\u0000-\u001f\u007f]/.test(value);
+  return (input.companyName !== undefined && boundedRequiredString(input.companyName, 240))
+    || (input.businessName !== undefined && boundedRequiredString(input.businessName, 240))
+    || (input.phone !== undefined && boundedContactString(input.phone, 80))
+    || (input.website !== undefined && boundedContactString(input.website, 2048))
+    || (input.industry !== undefined && boundedRequiredString(input.industry, 160))
+    || (input.style !== undefined && boundedRequiredString(input.style, 240))
+    || (input.colors !== undefined && (!Array.isArray(input.colors) || input.colors.length > 12
+      || input.colors.some((item) => boundedRequiredString(item, 80))))
+    || (input.finish !== undefined && (typeof input.finish !== "string" || input.finish.length > 40))
+    || (input.substrate !== undefined && !DESIGNPRO_SUBSTRATES.has(input.substrate))
+    || (input.mascot !== undefined && (typeof input.mascot !== "string" || input.mascot.length > 400))
+    || (input.brandColors !== undefined && (typeof input.brandColors !== "string" || input.brandColors.length > 500))
+    || (input.fontStyle !== undefined && (typeof input.fontStyle !== "string" || input.fontStyle.length > 200))
+    || (input.qrEnabled !== undefined && typeof input.qrEnabled !== "boolean")
+    || (input.qrUrl !== undefined && (typeof input.qrUrl !== "string" || input.qrUrl.length > 2048))
+    || (input.styleDescriptors !== undefined
+      && (typeof input.styleDescriptors !== "string" || input.styleDescriptors.length > 2000))
+    || (input.textLayerPrompt !== undefined
+      && (typeof input.textLayerPrompt !== "string" || input.textLayerPrompt.length > 2000))
+    || (input.bulletPoints !== undefined && (!Array.isArray(input.bulletPoints)
+      || input.bulletPoints.length > 12
+      || input.bulletPoints.some((item) => typeof item !== "string" || item.length > 240)))
+    || (input.visionboardIntent !== undefined && !VISIONBOARD_INTENTS.has(input.visionboardIntent))
+    || (input.visionBoardImages !== undefined && (!Array.isArray(input.visionBoardImages)
+      || input.visionBoardImages.length > 6
+      || input.visionBoardImages.some((asset) => referenceAssetIsInvalid(
+        asset, REFERENCE_IMAGE_TYPES, "attachment", ownerId, generationId,
+      ))))
+    || (input.logoAsset !== undefined
+      && referenceAssetIsInvalid(input.logoAsset, LOGO_REFERENCE_TYPES, "logo", ownerId, generationId));
+}
+
+function validatedGenerationRequestV2(body, generationIdValue, ownerId) {
   const input = body.input;
   const extraKeys = Object.keys(input).filter((key) => !CALLS_1_7_V2_KEYS.includes(key));
   const vehicle = input.vehicle;
@@ -1061,6 +1125,7 @@ function validatedGenerationRequestV2(body, generationIdValue) {
     || [vehicle.year, vehicle.make, vehicle.model].some((item) => !String(item || "").trim())
     || !VEHICLE_CLASSES.includes(String(vehicle.type || ""))
     || generationInputHasServerControls(input)
+    || optionalDesignInputIsInvalid(input, ownerId, generationIdValue)
     || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
     throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
   }
@@ -1071,7 +1136,7 @@ function validatedGenerationRequestV2(body, generationIdValue) {
   return { generationId: generationIdValue, idempotencyKey: null, input };
 }
 
-function validatedGenerationRequestV3(body, generationIdValue) {
+function validatedGenerationRequestV3(body, generationIdValue, ownerId) {
   const input = body.input;
   const extraKeys = Object.keys(input).filter((key) => !CALLS_1_7_V3_KEYS.includes(key));
   const vehicle = input.vehicle;
@@ -1086,13 +1151,14 @@ function validatedGenerationRequestV3(body, generationIdValue) {
     || [vehicle.year, vehicle.make, vehicle.model].some((item) => !String(item || "").trim())
     || !VEHICLE_CLASSES.includes(String(vehicle.type || ""))
     || generationInputHasServerControls(input)
+    || optionalDesignInputIsInvalid(input, ownerId, generationIdValue)
     || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
     throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
   }
   return { generationId: generationIdValue, idempotencyKey: null, input };
 }
 
-function validatedGenerationRequest(body) {
+function validatedGenerationRequest(body, ownerId) {
   const withKey = ["generationId", "idempotencyKey", "input"];
   const withoutKey = ["generationId", "input"];
   const flatFirstRequired = ["generationId", "input", "requiredPipelineMode"];
@@ -1115,10 +1181,10 @@ function validatedGenerationRequest(body) {
     throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
   }
   if (input.contractVersion === "designpro.calls-1-7-input.v2") {
-    return validatedGenerationRequestV2(body, generationIdValue);
+    return validatedGenerationRequestV2(body, generationIdValue, ownerId);
   }
   if (input.contractVersion === "designpro.calls-1-7-input.v3") {
-    return validatedGenerationRequestV3(body, generationIdValue);
+    return validatedGenerationRequestV3(body, generationIdValue, ownerId);
   }
   const vehicle = input?.vehicle;
   const delivery = input?.delivery;
@@ -1354,7 +1420,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       }
 
       if (req.method === "POST" && url.pathname === "/api/generation/requests") {
-        const request = validatedGenerationRequest(await readBody(req));
+        const request = validatedGenerationRequest(await readBody(req), user.id);
         // A generationId already carrying a different brief is not a bad
         // request, it is a COLLISION: two designs competing for one name that
         // every downstream Call 8 proof region and Call 9 panel points back at.

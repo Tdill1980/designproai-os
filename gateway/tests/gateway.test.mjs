@@ -965,6 +965,138 @@ test("flat-first v3 opts into the isolated intake RPC without changing v1", asyn
   assert.equal(calls.some((item) => item.url.endsWith("/rpc/create_designpro_generation_request")), false);
 });
 
+test("flat-first v3 admits the full DesignIQ contract and exact private reference identities", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-000000000010";
+  const logoHash = "a".repeat(64);
+  const referenceHash = "b".repeat(64);
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request")) {
+        return Response.json({
+          requestId: "10000000-0000-4000-8000-000000000010",
+          generationId, state: "queued", inputHash: "a".repeat(64),
+          engineContractHash: "b".repeat(64), idempotent: false,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const input = flatFirstInput({
+    companyName: "Flamingo Pools", businessName: "Flamingo Pools", phone: "(602) 555-0184",
+    website: "https://flamingopools.example", industry: "pool construction",
+    colors: ["turquoise", "coral"], style: "premium dimensional", finish: "satin",
+    substrate: "color_change_film", mascot: "pink flamingo", bulletPoints: ["luxury pools"],
+    brandColors: "turquoise, coral, white", fontStyle: "condensed sans",
+    qrEnabled: true, qrUrl: "https://flamingopools.example/quote",
+    visionboardIntent: "exact_reference", styleDescriptors: "editorial photography",
+    textLayerPrompt: "Exact tagline: Desert Luxury",
+    logoAsset: {
+      storagePath: `users/${userId}/revisions/${generationId}/inputs/logo/${logoHash}.png`,
+      contentHash: logoHash, byteSize: 100, contentType: "image/png",
+    },
+    visionBoardImages: [{
+      storagePath: `users/${userId}/revisions/${generationId}/inputs/attachment/${referenceHash}.webp`,
+      contentHash: referenceHash, byteSize: 200, contentType: "image/webp",
+    }],
+  });
+  const response = await fetch(`${base}/api/generation/requests`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId, input, requiredPipelineMode: "flat-first-atlas-v1" }),
+  });
+  assert.equal(response.status, 202);
+  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request"));
+  assert.deepEqual(JSON.parse(rpcCall.init.body).p_input, input);
+});
+
+test("flat-first v3 refuses reference URLs, extra identity keys, wrong owners and TIFF", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const otherUser = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const generationId = "90000000-0000-4000-8000-000000000010";
+  const otherRevision = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const hash = "a".repeat(64);
+  const baseAsset = {
+    storagePath: `users/${userId}/revisions/${generationId}/inputs/attachment/${hash}.png`,
+    contentHash: hash, byteSize: 100, contentType: "image/png",
+  };
+  const invalidAssets = [
+    { ...baseAsset, signedUrl: "https://example.invalid/temporary" },
+    { ...baseAsset, storagePath: baseAsset.storagePath.replace(userId, otherUser) },
+    { ...baseAsset, storagePath: baseAsset.storagePath.replace(generationId, otherRevision) },
+    { ...baseAsset, contentType: "image/tiff", storagePath: baseAsset.storagePath.replace(/\.png$/, ".tiff") },
+    { ...baseAsset, contentHash: hash.toUpperCase() },
+  ];
+  for (const asset of invalidAssets) {
+    const calls = [];
+    const server = createGateway({
+      env,
+      fetchImpl: async (url, init = {}) => {
+        calls.push({ url: String(url), init });
+        if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: userId });
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/generation/requests`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        generationId,
+        input: flatFirstInput({ visionBoardImages: [asset], visionboardIntent: "exact_reference" }),
+        requiredPipelineMode: "flat-first-atlas-v1",
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
+  }
+});
+
+test("Calls 1-7 rejects PDF logos and values the database contract rejects", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-000000000010";
+  const hash = "a".repeat(64);
+  const invalidInputs = [
+    flatFirstInput({ phone: "" }),
+    flatFirstInput({ website: "bad\nvalue.example" }),
+    flatFirstInput({ colors: [" "] }),
+    flatFirstInput({
+      logoAsset: {
+        storagePath: `users/${userId}/revisions/${generationId}/inputs/logo/${hash}.pdf`,
+        contentHash: hash, byteSize: 100, contentType: "application/pdf",
+      },
+    }),
+  ];
+  for (const input of invalidInputs) {
+    const calls = [];
+    const server = createGateway({
+      env,
+      fetchImpl: async (url, init = {}) => {
+        calls.push({ url: String(url), init });
+        if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: userId });
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/generation/requests`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({ generationId, input, requiredPipelineMode: "flat-first-atlas-v1" }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
+  }
+});
+
 test("flat-first v3 refuses a misspelled mode, fulfillment identity, extras, and engine controls", async (t) => {
   const invalidInputs = [
     flatFirstInput({ pipelineMode: "flat_first_v1" }),

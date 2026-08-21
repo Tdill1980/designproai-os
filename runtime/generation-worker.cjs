@@ -24,11 +24,14 @@
  */
 
 const { createHash } = require("node:crypto");
+const sharp = require("sharp");
 const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
 const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 const { createProvider } = require("./generation-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
+const { verifySourceBytes } = require("./runtime-contract.cjs");
+const { STUDIO_ENVIRONMENT, STUDIO_REINFORCEMENT } = require("./studio-os.cjs");
 const { authorCreativeInput } = require("./creative-authoring.cjs");
 const { loadActiveFlatAtlasTopologyExamples } = require("./flat-atlas-topology-examples.cjs");
 const {
@@ -65,7 +68,7 @@ function designBrief(input) {
   const brief = String(input?.brief || input?.designBrief || input?.description || "").trim();
   if (brief) lines.push(brief);
 
-  const business = String(input?.businessName || input?.business || "").trim();
+  const business = String(input?.companyName || input?.businessName || input?.business || "").trim();
   if (business) lines.push(`Business: ${business}`);
   const industry = String(input?.industry || "").trim();
   if (industry) lines.push(`Industry: ${industry}`);
@@ -85,6 +88,61 @@ function designBrief(input) {
 }
 
 /**
+ * Download customer-owned references once, then verify the exact bytes against
+ * the content-addressed identity admitted by the gateway. Legacy Calls 1-7
+ * share these parts across all seven prompts. A.T.L.A.S. loads the same
+ * identities only while authoring its master; projections never receive them.
+ */
+async function referenceImageParts(supabase, input) {
+  const assets = [];
+  if (input?.logoAsset) assets.push({ label: "logo", asset: input.logoAsset });
+  for (const image of Array.isArray(input?.visionBoardImages) ? input.visionBoardImages : []) {
+    if (image) assets.push({ label: "visionboard", asset: image });
+  }
+
+  const parts = [];
+  for (const { label, asset } of assets) {
+    const storagePath = String(asset?.storagePath || "");
+    const contentType = String(asset?.contentType || "").toLowerCase();
+    if (!storagePath || !contentType) {
+      throw Object.assign(new Error(`${label} reference identity is incomplete`), {
+        code: "generation_reference_identity_invalid", retryable: false,
+      });
+    }
+    const { data, error } = await supabase.storage.from(asset.bucket || BUCKET).download(storagePath);
+    if (error || !data) {
+      throw Object.assign(new Error(`${label} reference is unreadable at ${storagePath}: ${error?.message || "missing bytes"}`), {
+        code: "generation_reference_download_failed", retryable: true,
+      });
+    }
+    try {
+      const sourceBytes = verifySourceBytes(asset, Buffer.from(await data.arrayBuffer()));
+      // Gemini image inputs do not accept SVG. Preserve the verified vector in
+      // Storage, but rasterize only the transient conditioning bytes to a
+      // bounded PNG so one otherwise-valid logo cannot fail all seven views.
+      const conditionedBytes = contentType === "image/svg+xml"
+        ? await sharp(sourceBytes, { limitInputPixels: 40_000_000, density: 300 })
+          .rotate()
+          .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+          .png({ compressionLevel: 9, adaptiveFiltering: false, palette: false })
+          .toBuffer()
+        : sourceBytes;
+      parts.push({
+        inlineData: {
+          mimeType: contentType === "image/svg+xml" ? "image/png" : contentType,
+          data: conditionedBytes.toString("base64"),
+        },
+      });
+    } catch (cause) {
+      throw Object.assign(new Error(`${label} reference failed verification: ${cause.message}`), {
+        code: "generation_reference_hash_mismatch", retryable: false,
+      });
+    }
+  }
+  return parts;
+}
+
+/**
  * Prompt parts for one slot: the brief, the operator's regeneration instruction
  * if this slot is being redone, then the frozen camera angle.
  *
@@ -93,7 +151,7 @@ function designBrief(input) {
  * it on the slot; the browser never sends it, so the prompt stays server-owned
  * while the operator keeps the control.
  */
-function promptPartsFor(input, sourceViewType, instruction = "") {
+function promptPartsFor(input, sourceViewType, instruction = "", imageParts = []) {
   // Throws if the passenger angle ever loses its text-direction guard, which is
   // the defect this whole view contract exists to prevent.
   angles.assertTextDirectionGuard(sourceViewType);
@@ -107,14 +165,20 @@ function promptPartsFor(input, sourceViewType, instruction = "") {
   const design = buildDesignIQPrompt({
     prompt: designBrief(input),
     finish: input?.finish,
-    companyName: input?.businessName || input?.business,
+    substrate: input?.substrate,
+    companyName: input?.companyName || input?.businessName || input?.business,
     mascot: input?.mascot,
     bulletPoints: Array.isArray(input?.bulletPoints) ? input.bulletPoints : [],
     industryType: input?.industry,
     phone: input?.phone,
-    brandColors: Array.isArray(input?.colors) ? input.colors.join(", ") : input?.colors,
+    website: input?.website,
+    brandColors: input?.brandColors
+      || (Array.isArray(input?.colors) ? input.colors.join(", ") : input?.colors),
     fontStyle: input?.fontStyle,
     qrEnabled: input?.qrEnabled === true,
+    qrUrl: input?.qrUrl,
+    textLayerPrompt: input?.textLayerPrompt,
+    logoAsset: input?.logoAsset,
     vehicleYear: vehicle.year,
     vehicleMake: vehicle.make,
     vehicleModel: vehicle.model,
@@ -122,8 +186,9 @@ function promptPartsFor(input, sourceViewType, instruction = "") {
     visionboardIntent: input?.visionboardIntent,
     styleDescriptors: input?.styleDescriptors,
     viewType: sourceViewType,
+    mode: input?.mode,
   });
-  return [{ text: `${design}${revision}` }];
+  return [{ text: `${design}${revision}` }, ...imageParts];
 }
 
 /**
@@ -150,7 +215,11 @@ ${angles.cameraAngle(sourceViewType)}
 
 The attached canonical flat atlas is the SOLE appearance authority. Project its exact surface zones onto the corresponding painted body panels of this vehicle. This is texture projection, not a new design pass. Never create, redraw, recompose, simplify, beautify, restyle, recolor, mirror, move, resize, correct, autocomplete or substitute any artwork, logo, photograph, pattern, gradient or text from the atlas. Preserve every visible customer string verbatim and forward-reading; never invent another string.
 
-Use a neutral professional automotive studio, physically realistic printed vinyl, factory glass/lights/wheels/trim, and no added props or graphics. Output one 16:9 vehicle proof only. Do not output an installer map, dieline, panel sheet, labels, dimensions or annotations.${correction}`,
+${STUDIO_ENVIRONMENT}
+
+${STUDIO_REINFORCEMENT}
+
+Physically realistic printed vinyl; factory glass, lights, wheels and trim; no added props or graphics. Output one 16:9 vehicle proof only. Do not output an installer map, dieline, panel sheet, labels, dimensions or annotations.${correction}`,
   };
 }
 
@@ -208,7 +277,7 @@ async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
   return placed;
 }
 
-function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null) {
+function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imageParts = []) {
   const plan = Array.isArray(viewPlan) && viewPlan.length ? viewPlan : angles.viewOrder().map((sourceViewType) => ({ sourceViewType }));
   return plan.map((entry) => {
     const sourceViewType = entry.sourceViewType;
@@ -217,7 +286,7 @@ function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null) {
       consumerRole: entry.consumerRole,
       promptParts: flatAtlas
         ? conditionedPromptPartsFor(input, sourceViewType, instructions[sourceViewType], flatAtlas)
-        : promptPartsFor(input, sourceViewType, instructions[sourceViewType]),
+        : promptPartsFor(input, sourceViewType, instructions[sourceViewType], imageParts),
       aspectRatio: angles.aspectRatio(sourceViewType),
       imageSize: angles.resolutionTier(sourceViewType),
       ...(flatAtlas ? {
@@ -314,6 +383,7 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
           store,
           provider: imageProvider,
           requestId,
+          claimToken,
           generationId: claim.generationId,
           tenantKey: claim.tenantKey,
           ownerId,
@@ -325,13 +395,19 @@ function createGenerationWorker({ supabase, workerId, provider, intervalMs = POL
         });
       }
 
+      // Legacy calls receive the customer's verified references on every
+      // creative generation. Flat-first consumes them only inside the one
+      // master-authoring call above; never append them to the seven projection
+      // prompts or they become competing appearance authorities.
+      const imageParts = isFlatFirst ? [] : await referenceImageParts(supabase, claim.input);
+
       const result = await engine.runRequest({
         requestId,
         generationId: claim.generationId,
         tenantKey: claim.tenantKey,
         provider: imageProvider,
         store,
-        slots: slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas),
+        slots: slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas, imageParts),
         // Seven simultaneous proof projections are safe only after they all
         // share one frozen design. Legacy requests retain their exact
         // sequential behaviour and provider-pressure profile.
@@ -500,5 +576,6 @@ module.exports = {
   designBrief,
   promptPartsFor,
   projectionOnlyPromptFor,
+  referenceImageParts,
   slotsFrom,
 };

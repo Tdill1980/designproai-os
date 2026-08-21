@@ -1,5 +1,5 @@
 begin;
-select plan(48);
+select plan(59);
 
 select has_table('public','designpro_generation_requests',
   'isolated Calls 1-7 request queue exists');
@@ -17,6 +17,8 @@ select has_function('public','fail_designpro_generation_request',
   ARRAY['uuid','uuid','text','text','boolean'],'fenced failure RPC exists');
 select has_function('public','get_designpro_generation_request',
   ARRAY['uuid'],'owner-safe status RPC exists');
+select has_function('public','claim_designpro_flat_atlas_authoring',
+  ARRAY['uuid','uuid'],'service-only Atlas authoring fence RPC exists');
 
 select ok(has_function_privilege('authenticated',
   'public.create_designpro_generation_request(uuid,jsonb,text)','EXECUTE'),
@@ -30,6 +32,12 @@ select ok(not has_function_privilege('authenticated',
 select ok(not has_function_privilege('authenticated',
   'public.complete_designpro_generation_request(uuid,uuid,jsonb,jsonb)','EXECUTE'),
   'authenticated browsers cannot complete generation work');
+select ok(not has_function_privilege('authenticated',
+  'public.claim_designpro_flat_atlas_authoring(uuid,uuid)','EXECUTE'),
+  'authenticated browsers cannot claim an Atlas authoring fence');
+select ok(has_function_privilege('service_role',
+  'public.claim_designpro_flat_atlas_authoring(uuid,uuid)','EXECUTE'),
+  'only the service runtime may claim an Atlas authoring fence');
 select ok(not has_function_privilege('anon',
   'public.create_designpro_generation_request(uuid,jsonb,text)','EXECUTE'),
   'anonymous callers cannot enqueue generation work');
@@ -51,6 +59,93 @@ select policies_are('public','designpro_generation_requests',
 select policies_are('public','designpro_generation_views',
   ARRAY['designpro_owner_read_generation_views'],
   'view ledger retains its owner-only defense-in-depth policy');
+
+create temporary table calls17_designiq_fixture as
+select jsonb_build_object(
+  'contractVersion','designpro.calls-1-7-input.v2',
+  'vehicle',jsonb_build_object(
+    'year','2026','make','Ford','model','F-250','type','truck'
+  ),
+  'brief','Flamingo Pools infinity-edge pool, sunset and travertine; no gold',
+  'designName','Flamingo Pools',
+  'mode','commercial',
+  'companyName','Flamingo Pools',
+  'businessName','Flamingo Pools',
+  'phone','602-555-0199',
+  'website','https://flamingopools.example',
+  'industry','pool-construction',
+  'colors',jsonb_build_array('#ff4f8b','#25c7d9'),
+  'style','luxury resort',
+  'finish','Gloss',
+  'substrate','standard',
+  'mascot','an original premium flamingo emblem',
+  'bulletPoints',jsonb_build_array('Custom pools','Outdoor living'),
+  'brandColors','#ff4f8b, #25c7d9',
+  'fontStyle','bold geometric sans',
+  'qrEnabled',true,
+  'qrUrl','https://flamingopools.example/quote',
+  'logoAsset',jsonb_build_object(
+    'storagePath','users/10000000-0000-4000-8000-000000000001/revisions/90000000-0000-4000-8000-000000000009/inputs/logo/'||repeat('a',64)||'.svg',
+    'contentHash',repeat('a',64),'byteSize',4096,'contentType','image/svg+xml'
+  ),
+  'visionBoardImages',jsonb_build_array(jsonb_build_object(
+    'storagePath','users/10000000-0000-4000-8000-000000000001/revisions/90000000-0000-4000-8000-000000000009/inputs/attachment/'||repeat('b',64)||'.png',
+    'contentHash',repeat('b',64),'byteSize',8192,'contentType','image/png'
+  )),
+  'visionboardIntent','artboard_projection',
+  'styleDescriptors','high-contrast resort photography with clean aqua motion',
+  'textLayerPrompt','Flamingo Pools | 602-555-0199 | flamingopools.example'
+) payload;
+
+select ok(
+  designpro_private.calls_1_7_input_v2_valid(
+    (select payload from calls17_designiq_fixture)
+  ),
+  'v2 accepts the bounded customer-authored DesignIQ field set'
+);
+select ok(
+  designpro_private.calls_1_7_input_v3_valid(
+    (select payload from calls17_designiq_fixture)
+      || jsonb_build_object(
+        'contractVersion','designpro.calls-1-7-input.v3',
+        'pipelineMode','flat-first-atlas-v1'
+      )
+  ),
+  'v3 accepts the same DesignIQ fields with the exact flat-first opt-in'
+);
+select ok(
+  NOT designpro_private.calls_1_7_input_v2_valid(
+    (select payload from calls17_designiq_fixture)
+      || jsonb_build_object('unknownCustomerField',true)
+  ),
+  'the v2 closed allowlist rejects unknown top-level keys'
+);
+select ok(
+  NOT designpro_private.calls_1_7_input_v3_valid(
+    (select payload from calls17_designiq_fixture)
+      || jsonb_build_object(
+        'contractVersion','designpro.calls-1-7-input.v3',
+        'pipelineMode','flat-first-atlas-v1','temperature',0
+      )
+  ),
+  'the v3 contract rejects server-owned generation controls'
+);
+select ok(
+  NOT designpro_private.calls_1_7_input_v2_valid(jsonb_set(
+    (select payload from calls17_designiq_fixture),
+    '{visionBoardImages,0}',
+    jsonb_build_object('storageUrl','https://example.invalid/reference.png')
+  )),
+  'VisionBoard raw URLs cannot replace verified asset identities'
+);
+select ok(
+  NOT designpro_private.calls_1_7_input_v2_valid(jsonb_set(
+    (select payload from calls17_designiq_fixture),
+    '{visionBoardImages,0,signedUrl}',
+    '"https://example.invalid/signed"'::jsonb
+  )),
+  'caller-added signed URLs invalidate an otherwise verified asset identity'
+);
 
 insert into auth.users(
   instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
@@ -108,6 +203,30 @@ select jsonb_build_object(
     ||':9ec9104d205f79c98d26fe8cde8f17dd23afb4411caf2bfc209dafc5e54c8147'
     idempotency_key;
 grant select on calls17_fixture to authenticated;
+
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"10000000-0000-4000-8000-000000000001","is_anonymous":false}',
+  true);
+select throws_ok(
+  $$select public.create_designpro_generation_request(
+    '90000000-0000-4000-8000-000000000009',
+    jsonb_set(
+      (select payload from calls17_designiq_fixture),
+      '{logoAsset,storagePath}',
+      to_jsonb(replace(
+        (select payload#>>'{logoAsset,storagePath}' from calls17_designiq_fixture),
+        '10000000-0000-4000-8000-000000000001',
+        '20000000-0000-4000-8000-000000000002'
+      ))
+    ),NULL)$$,
+  'P0001','generation_asset_owner_generation_mismatch',
+  'a direct authenticated RPC cannot make the service runtime read another owner asset');
+select throws_ok(
+  $$select public.create_designpro_generation_request(
+    '90000000-0000-4000-8000-000000000008',
+    (select payload from calls17_designiq_fixture),NULL)$$,
+  'P0001','generation_asset_owner_generation_mismatch',
+  'a direct authenticated RPC must bind assets to its current generation ID');
 
 select set_config('request.jwt.claims',
   '{"role":"authenticated","sub":"10000000-0000-4000-8000-000000000001","is_anonymous":true}',

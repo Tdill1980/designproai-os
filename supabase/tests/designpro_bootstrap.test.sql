@@ -1,5 +1,5 @@
 begin;
-select plan(22);
+select plan(24);
 
 select has_table('public','designpro_workflow_runs','workflow runs exist');
 select has_table('public','designpro_vehicle_specs_universal','GENIE candidate catalog exists');
@@ -46,8 +46,19 @@ select ok(
 select policies_are(
   'storage','objects',
   ARRAY['designpro_customer_read_wrapbox_delivery','designpro_owner_insert_revision_inputs',
-        'designpro_owner_read_generation_views','designpro_owner_read_wrap_files'],
+        'designpro_owner_read_flat_atlas_previews','designpro_owner_read_generation_views',
+        'designpro_owner_read_wrap_files'],
   'only exact DesignPro Storage policies are installed by this bootstrap'
+);
+select set_config('storage.operation','object.sign',true);
+select ok(
+  storage.allow_only_operation('object.sign'),
+  'Atlas preview policy can authorize only the object signing operation'
+);
+select set_config('storage.operation','object.list',true);
+select ok(
+  NOT storage.allow_only_operation('object.sign'),
+  'Atlas preview policy cannot authorize object listing'
 );
 select ok(
   NOT has_function_privilege('anon',
