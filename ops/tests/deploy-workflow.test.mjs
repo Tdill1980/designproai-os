@@ -181,6 +181,22 @@ test("dark deployment requires only its existing provider secrets and explicitly
   assert.match(remote, /docker volume ls[\s\S]*-eq 0/);
 });
 
+test("a new dark release refreshes provider credentials instead of discarding the secret pipe", () => {
+  const start = remote.indexOf("runtime_env=/opt/designproai-os/shared/runtime.env");
+  const end = remote.indexOf('"$control/deploy.sh"', start);
+  assert.ok(start >= 0 && end > start, "dark-deploy environment block moved");
+  const environment = remote.slice(start, end);
+
+  assert.match(environment, /validate-env\.py/);
+  assert.match(environment, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY/);
+  assert.doesNotMatch(environment, /cat >\/dev\/null/);
+  assert.match(configure, /existing_worker_secret/);
+  assert.ok(
+    environment.indexOf("configure-env.sh") > environment.indexOf("validate-env.py"),
+    "the fresh provider keys must replace the validated stale files before deploy",
+  );
+});
+
 /**
  * Runs configure-env.sh's real secret-reading section against a given stdin,
  * so the channel is exercised rather than described. Everything after it needs
