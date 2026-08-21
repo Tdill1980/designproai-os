@@ -29,8 +29,10 @@ test("the two restored Edge functions accept only a service-authenticated standa
   const designer = read("supabase/functions/design-panel-ai-generate/index.ts");
   const photographer = read("supabase/functions/generate-color-render/index.ts");
 
-  assert.match(auth, /bearer !== serviceRole/);
+  assert.match(auth, /req\.headers\.get\("apikey"\)/);
+  assert.match(auth, /createClient\([\s\S]*?serverKey/);
   assert.match(auth, /auth\.admin\.getUserById\(ownerHeader\)/);
+  assert.doesNotMatch(auth, /SUPABASE_SERVICE_ROLE_KEY|bearer !==/);
   assert.match(designer, /skip:\s*internalCaller\.internal/);
   assert.match(photographer, /skip:\s*internalCaller\.internal/);
   assert.match(designer, /storagePath:\s*fileName/);
