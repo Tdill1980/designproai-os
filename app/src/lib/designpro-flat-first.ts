@@ -11,8 +11,22 @@ import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
 const flag = String(import.meta.env.VITE_DESIGNPRO_FLAT_FIRST_V1 || "").toLowerCase();
 export const FLAT_FIRST_ATLAS_UI_ENABLED = ["1", "true", "on", "enabled"].includes(flag);
 
-export function initialDesignProPipelineMode(value: unknown): GenerationPipelineMode {
-  return FLAT_FIRST_ATLAS_UI_ENABLED && value === FLAT_FIRST_ATLAS_PIPELINE_MODE
+export function flatFirstAtlasRequestedBySearch(search: unknown): boolean {
+  try {
+    const requested = new URLSearchParams(String(search || "")).get("pipeline");
+    return requested === "atlas" || requested === FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  } catch {
+    return false;
+  }
+}
+
+export function initialDesignProPipelineMode(
+  value: unknown,
+  search = "",
+): GenerationPipelineMode {
+  return FLAT_FIRST_ATLAS_UI_ENABLED && (
+    value === FLAT_FIRST_ATLAS_PIPELINE_MODE || flatFirstAtlasRequestedBySearch(search)
+  )
     ? FLAT_FIRST_ATLAS_PIPELINE_MODE
     : "legacy";
 }

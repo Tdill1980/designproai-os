@@ -377,6 +377,8 @@ export type GenerationVehicle = {
 export type GenerationRequestState = {
   requestId: string;
   generationId: string;
+  /** Server-accepted mode returned by request creation. */
+  pipelineMode?: GenerationPipelineMode;
   state: "queued" | "leased" | "retryable" | "outputs_ready" | "failed" | "cancelled";
   inputHash: string;
   engineContractHash: string;
@@ -543,15 +545,35 @@ export function buildGenerationInput(
   return input;
 }
 
+/**
+ * The v3 requirement is duplicated at the request envelope on purpose. An
+ * older gateway rejects the unknown envelope field before it can enqueue any
+ * work, so a newly deployed A.T.L.A.S. UI can never silently fall back during
+ * a rolling deployment. The gateway validates that this requirement and the
+ * inner v3 contract agree before choosing the intake RPC.
+ */
+export function buildGenerationRequestPayload(
+  options: CreateGenerationRequestOptions,
+  generationId: string,
+): Record<string, unknown> {
+  const input = buildGenerationInput(options);
+  return options.pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+    ? {
+        generationId,
+        input,
+        requiredPipelineMode: FLAT_FIRST_ATLAS_PIPELINE_MODE,
+      }
+    : { generationId, input };
+}
+
 export async function createGenerationRequest(
   options: CreateGenerationRequestOptions,
 ): Promise<GenerationRequestState> {
   const generationId = (options.generationId || crypto.randomUUID()).toLowerCase();
-  const input = buildGenerationInput(options);
 
   return request<GenerationRequestState>("/generation/requests", {
     method: "POST",
-    body: JSON.stringify({ generationId, input }),
+    body: JSON.stringify(buildGenerationRequestPayload(options, generationId)),
   });
 }
 

@@ -190,9 +190,21 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // When rendered inline on the DesignProAI home (no navigation), the brief comes
   // in as a prop instead of router location.state — so designing stays on one page.
   const briefState: any = embeddedBrief || (location.state as any) || null;
-  const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>(() =>
-    initialDesignProPipelineMode(briefState?.pipelineMode),
+  const [pipelineMode, setPipelineModeState] = useState<GenerationPipelineMode>(() =>
+    initialDesignProPipelineMode(briefState?.pipelineMode, location.search),
   );
+  // Keep the launch authority in a ref as well as React state. The selector and
+  // the nested DesignIQ submit button live in different components; a callback
+  // retained across their render boundary must never submit yesterday's
+  // `legacy` value while the page visibly says A.T.L.A.S. Updating the ref in
+  // the selector's click handler makes the chosen mode synchronous, and the
+  // server echoes it back before the UI accepts the request.
+  const pipelineModeRef = useRef<GenerationPipelineMode>(pipelineMode);
+  pipelineModeRef.current = pipelineMode;
+  const setPipelineMode = (next: GenerationPipelineMode) => {
+    pipelineModeRef.current = next;
+    setPipelineModeState(next);
+  };
   const pushedRenderFromState = briefState?.previewRender || null;
   // Capture pushed render in a ref so it survives history.replaceState clearing location.state
   const pushedRenderRef = useRef<any>(null);
@@ -335,7 +347,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const latestFlatAtlas = flatAtlasRevisions[flatAtlasRevisions.length - 1];
   const inlineRevisionEnabled = inlineRevisionEnabledForPipeline(activePipelineMode);
   const showFlatFirstDiagnostic = isFlatFirstDiagnostic ||
-    (!generatedImageUrl && pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE);
+    (!generationRequestState && !generatedImageUrl && pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE);
 
   // --- Feature flag: persona pipeline ---
   const [searchParams] = useSearchParams();
@@ -1059,11 +1071,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
   // Pipeline entry point - called when user clicks "Create with DesignIQ"
   const handlePipelineStart = async (params: DesignIQParams) => {
+    const requestedPipelineMode = pipelineModeRef.current;
     if (params.prompt?.trim()) lastDesignBriefRef.current = params.prompt.trim();
     if (
       mvp.isMyVehicleMode &&
       mvp.hasPhotos &&
-      !myVehiclePhotoFlowEnabledForPipeline(pipelineMode)
+      !myVehiclePhotoFlowEnabledForPipeline(requestedPipelineMode)
     ) {
       toast({
         title: "A.T.L.A.S. requires the canonical flat master",
@@ -1311,7 +1324,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       await runPersonaPipeline(
         enrichedParams,
         { year: effectiveYear, make: effectiveMake, model: effectiveModel },
-        pipelineMode,
+        requestedPipelineMode,
       );
       setPipelineActive(false);
       return;
@@ -1398,7 +1411,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     const result = await generateFromPrompt(
       enrichedParams,
       { year: effectiveYear, make: effectiveMake, model: effectiveModel },
-      pipelineMode,
+      requestedPipelineMode,
     );
     generationIdRef.current = result?.generationId || null;
     if (result && !result.error) setPipelineStage("finishing");
@@ -1587,7 +1600,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       year: effectiveYear,
       make: effectiveMake,
       model: effectiveModel,
-    }, pipelineMode);
+    }, pipelineModeRef.current);
     generationIdRef.current = result?.generationId || null;
 
     if (result?.directRender) {
@@ -1995,6 +2008,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <p className="font-semibold">A.T.L.A.S. diagnostic</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
                               Google-grounded vehicle proportions build the proof-only topology automatically. Gemini then paints one canonical flattened A.T.L.A.S. master and derives all seven vehicle views from that same design. The before guide and after master are stored; production remains locked.
+                            </p>
+                            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">
+                              {generationRequestState
+                                ? `Server accepted A.T.L.A.S. v3 · request ${generationRequestState.requestId.slice(0, 8)}`
+                                : "A.T.L.A.S. v3 selected · waiting to submit"}
                             </p>
                           </div>
                         </div>
