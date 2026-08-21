@@ -35,13 +35,19 @@ runtime_env=/opt/designproai-os/shared/runtime.env
 gateway_env=/opt/designproai-os/shared/gateway.env
 if [[ -s $runtime_env && -s $gateway_env ]]; then
   python3 "$control/validate-env.py" "$runtime_env" "$gateway_env"
-  cat >/dev/null
 elif [[ ! -s $runtime_env && ! -s $gateway_env ]]; then
-  "$control/configure-env.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY
+  :
 else
   echo "BLOCKED: only one DesignPro environment file is configured" >&2
   exit 30
 fi
+
+# The workflow deliberately resolves the current DesignProAI project keys on
+# every release. Always pass them through the one canonical environment writer:
+# configure-env.sh preserves the existing WORKER_SECRET, atomically replaces
+# both role-separated files, and prevents a rotated provider key from being
+# validated as merely "long enough" and then discarded.
+"$control/configure-env.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY
 
 "$control/deploy.sh" "$archive" "$EXACT_SHA" "$ARCHIVE_DIGEST" DEPLOY_DESIGNPRO_ONLY
 "$control/acceptance.sh" "$EXACT_SHA"
