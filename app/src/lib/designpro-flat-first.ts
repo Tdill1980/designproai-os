@@ -44,10 +44,10 @@ export function initialDesignProPipelineMode(
   if (value === "legacy") return "legacy";
   if (value === FLAT_FIRST_ATLAS_PIPELINE_MODE) return FLAT_FIRST_ATLAS_PIPELINE_MODE;
 
-  // While the guarded feature flag is enabled, DesignPro's direct create page
-  // is the A.T.L.A.S. test surface by default. The visible Legacy selector and
-  // `?pipeline=legacy` keep rollback immediate without a deploy.
-  return FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  // The customer route stays on the production-capable pipeline by default.
+  // A.T.L.A.S. is an explicit diagnostic (`?pipeline=atlas` or a carried Home
+  // selection) until it can satisfy the same Call 8/9 production contract.
+  return "legacy";
 }
 
 /**
