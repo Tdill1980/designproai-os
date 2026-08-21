@@ -2,7 +2,7 @@
  * Lean DesignPanel photographer.
  *
  * This endpoint is deliberately isolated from the multi-product
- * generate-color-render bundle. It accepts only server-authenticated
+ * legacy multi-product photographer bundle. It accepts only server-authenticated
  * DesignProAI calls, reproduces one accepted hero at one locked camera angle,
  * and writes one owner-scoped immutable result.
  */
