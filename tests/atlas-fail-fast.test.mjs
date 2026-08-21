@@ -14,13 +14,13 @@ test("the worker preserves legacy retry contracts but never auto-requeues A.T.L.
   assert.doesNotMatch(worker, /generation_slots_failed[\s\S]{0,500}?p_retryable:\s*true/);
 });
 
-test("only flat-first uses provisional geometry; legacy and production remain strict", () => {
+test("Calls 1-7 do not wait on production geometry; production remains strict", () => {
   const worker = read("runtime/generation-worker.cjs");
   const claimant = read("runtime/designpro-standalone-claimant.cjs");
   const flatFirstBranch = worker.match(/if \(isFlatFirst\) \{[\s\S]*?\n      \}/)?.[0] || "";
   assert.match(flatFirstBranch, /resolveFlatAtlasPreviewDimensions/);
   assert.doesNotMatch(flatFirstBranch, /resolveOrQueueUniversalDimensions/);
-  assert.match(worker, /if \(!isFlatFirst\) \{[\s\S]*?resolveOrQueueUniversalDimensions/);
+  assert.doesNotMatch(worker, /resolveOrQueueUniversalDimensions/);
   assert.match(claimant, /resolveOrQueueUniversalDimensions\(sb, vehicle, stage, run\.id\)/);
 });
 
@@ -47,12 +47,12 @@ test("the A.T.L.A.S. banner reports customer progress without implementation det
   assert.match(gateway, /pipelineMode: acceptedPipelineMode/);
 });
 
-test("the guarded create page defaults to A.T.L.A.S. when enabled with explicit production rollback", () => {
+test("the guarded create page defaults to DesignPanel and opens A.T.L.A.S. only explicitly", () => {
   const selector = read("app/src/lib/designpro-flat-first.ts");
   const home = read("app/src/pages/DesignProAIHome.tsx");
   assert.match(selector, /if \(!FLAT_FIRST_ATLAS_UI_ENABLED\) return "legacy"/);
-  assert.match(selector, /legacyRequestedBySearch\(search\)/);
-  assert.match(selector, /return FLAT_FIRST_ATLAS_PIPELINE_MODE;\s*\n}/);
+  assert.match(selector, /flatFirstAtlasRequestedBySearch\(search\)/);
+  assert.match(selector, /return "legacy";\s*\n}/);
   assert.match(home, /initialDesignProPipelineMode\(/);
   assert.match(home, /setPipelineMode\("legacy"\)/);
 });
@@ -66,7 +66,7 @@ test("A.T.L.A.S. reveals the immutable master and streams signed proof views wit
   assert.match(adapter, /dpApi\.listGenerationViews\(requestId\)/);
   assert.match(adapter, /signedUrlsNeedRefresh/);
   assert.match(adapter, /4 \* 60_000/);
-  assert.match(hook, /onViews: pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE/);
+  assert.match(hook, /onViews: async \(progressiveViews\)/);
   assert.match(hook, /applyGeneratedViews\(progressiveViews, true\)/);
   assert.match(premium, /const atlasMasterPreviewUrl/);
   assert.match(premium, /pipelineActive && !renderError && !baseDisplayUrl/);

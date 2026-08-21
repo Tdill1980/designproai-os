@@ -43,11 +43,12 @@ import { buildLayer1CleanPrompt } from "../_shared/layer1-clean-prompt.ts";
 // touches it. Must be render-tested before enabling.
 import { buildFlatMasterPrompt } from "../_shared/flat-master-prompt.ts";
 import { resolveArtboardPanels, loadArtboardExamples } from "../_shared/artboard-template-os.ts";
+import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-designpro-owner-id",
 };
 
 // ---------------------------------------------------------------------------
@@ -740,7 +741,14 @@ serve(async (req) => {
   // quota we 402 before spending any Gemini cost. Trish's tokens
   // decision (predates this file), gate-only insertion respects the
   // CLAUDE.md prompt lock.
-  const gate = await tokenGate(req, { reason: "design_panel_ai_generate" });
+  const internalCaller = await resolveDesignProInternalCaller(req);
+  if (internalCaller.rejection) return internalCaller.rejection;
+  const gate = await tokenGate(req, {
+    reason: "design_panel_ai_generate",
+    // The authenticated standalone request spends at request admission. Calls
+    // 1-7 must not hit the legacy browser token tables once per camera angle.
+    skip: internalCaller.internal,
+  });
   if (!gate.ok) return gate.response!;
 
   const WALL_CLOCK_START = Date.now();
@@ -814,10 +822,10 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    let userId: string | null = null;
-    let userEmailFromAuth: string | null = null;
+    let userId: string | null = internalCaller.userId;
+    let userEmailFromAuth: string | null = internalCaller.userEmail;
 
-    if (authHeader) {
+    if (!internalCaller.internal && authHeader) {
       const authClient = createClient(supabaseUrl, supabaseAnonKey, {
         global: { headers: { Authorization: authHeader } },
       });
@@ -1798,6 +1806,11 @@ Output a single structured paragraph that another AI could use to recreate this 
     return new Response(
       JSON.stringify({
         renderUrl: publicUrl,
+        // Private object identity is returned only to the authenticated
+        // standalone runtime. Browser callers retain the historical response.
+        ...(internalCaller.internal
+          ? { storagePath: fileName, contentType: imageMimeType }
+          : {}),
         panel: null,
         directRender: true,
         layer1Clean: layer1Clean === true,

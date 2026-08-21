@@ -20,34 +20,22 @@ export function flatFirstAtlasRequestedBySearch(search: unknown): boolean {
   }
 }
 
-function legacyRequestedBySearch(search: unknown): boolean {
-  try {
-    return new URLSearchParams(String(search || "")).get("pipeline") === "legacy";
-  } catch {
-    return false;
-  }
-}
-
 export function initialDesignProPipelineMode(
   value: unknown,
   search = "",
 ): GenerationPipelineMode {
   if (!FLAT_FIRST_ATLAS_UI_ENABLED) return "legacy";
 
-  // URL authority is explicit and makes both modes independently testable.
-  // `?pipeline=legacy` is the one-click rollback path; `?pipeline=atlas` is the
-  // immutable flat-first path and wins over stale navigation state.
-  if (legacyRequestedBySearch(search)) return "legacy";
+  // A.T.L.A.S. is an isolated diagnostic until its second pipeline test is
+  // product-proven. It may be opened explicitly, but an enabled feature flag
+  // never replaces the proven DesignPanel producer as the customer default.
   if (flatFirstAtlasRequestedBySearch(search)) return FLAT_FIRST_ATLAS_PIPELINE_MODE;
 
   // A mode deliberately carried by the Home brief remains authoritative.
   if (value === "legacy") return "legacy";
   if (value === FLAT_FIRST_ATLAS_PIPELINE_MODE) return FLAT_FIRST_ATLAS_PIPELINE_MODE;
 
-  // When the release flag is on, the customer sees the flat-first experience
-  // without needing to edit a URL. `?pipeline=legacy` remains the immediate,
-  // reversible fallback and still wins above.
-  return FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  return "legacy";
 }
 
 /**

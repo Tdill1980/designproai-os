@@ -165,6 +165,10 @@ async function runSlot(options) {
       try {
         result = await provider.generateImage({
           parts: promptParts, aspectRatio, imageSize, signal, timeoutMs,
+          // The direct Gemini transport ignores these identities. The restored
+          // DesignPanel transport needs them to choose the sanctioned Edge
+          // function and never infers a camera angle from prompt prose.
+          requestId, generationId, sourceViewType, consumerRole,
           label: `${sourceViewType} attempt ${attempt}`,
         });
       } catch (error) {
@@ -213,6 +217,9 @@ async function runSlot(options) {
         metadata: {
           contract: ENGINE_CONTRACT, model: result.model, keyFingerprint: result.keyFingerprint,
           attempt, durationMs, providerAttempts: result.attempts?.length || 1,
+          ...(result.metadata && typeof result.metadata === "object"
+            ? { provider: result.metadata }
+            : {}),
           ...(authorityMetadata && typeof authorityMetadata === "object"
             ? { authority: authorityMetadata }
             : {}),
