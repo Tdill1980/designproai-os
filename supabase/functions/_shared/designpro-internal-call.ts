@@ -28,9 +28,8 @@ function jsonError(status: number, error: string): Response {
  * check, and the server key never crosses the browser boundary.
  *
  * This supports both legacy service_role JWT keys and current sb_secret keys.
- * It deliberately does not compare against SUPABASE_SERVICE_ROLE_KEY: key
- * rotation and the new key system can make two valid server credentials differ
- * byte-for-byte even though both are scoped to the same project.
+ * It deliberately does not compare credentials byte-for-byte: key rotation and
+ * the new key system can issue multiple valid server credentials for one project.
  */
 export async function resolveDesignProInternalCaller(
   req: Request,
