@@ -12,6 +12,7 @@ const REQUEST = "11111111-1111-4111-8111-111111111111";
 const GENERATION = "22222222-2222-4222-8222-222222222222";
 const OWNER = "33333333-3333-4333-8333-333333333333";
 const TENANT = `user_${OWNER}`;
+const CLAIM_TOKEN = "44444444-4444-4444-8444-444444444444";
 
 const surfaces = [
   ["driver", 190, 66],
@@ -358,6 +359,12 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
     },
   };
   const supabase = {
+    async rpc(name, args) {
+      assert.equal(name, "claim_designpro_flat_atlas_authoring");
+      assert.deepEqual(args, { p_request_id: REQUEST, p_claim_token: CLAIM_TOKEN });
+      events.push("fence");
+      return { data: true, error: null };
+    },
     from(name) {
       assert.equal(name, "designpro_flat_atlas_revisions");
       return table;
@@ -367,7 +374,8 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
 
   const result = await atlas.generateOrReuseFlatAtlas({
     supabase, store, provider,
-    requestId: REQUEST, generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
+    requestId: REQUEST, claimToken: CLAIM_TOKEN,
+    generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
     input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
   });
 
@@ -394,4 +402,49 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(receipt.projection.contentHash, result.projection.contentHash);
   assert.equal(receipt.projection.sourceMasterHash, receipt.master.contentHash);
   assert.equal(result.manifest.contract, atlas.MANIFEST_CONTRACT);
+});
+
+test("an interrupted Atlas authoring fence prevents a duplicate provider call", async () => {
+  let providerCalls = 0;
+  let fenceCalls = 0;
+  const table = {
+    select() { return this; },
+    eq() { return this; },
+    order() { return this; },
+    limit() { return this; },
+    async maybeSingle() { return { data: null, error: null }; },
+  };
+  const supabase = {
+    from(name) {
+      assert.equal(name, "designpro_flat_atlas_revisions");
+      return table;
+    },
+    async rpc(name, args) {
+      assert.equal(name, "claim_designpro_flat_atlas_authoring");
+      assert.deepEqual(args, { p_request_id: REQUEST, p_claim_token: CLAIM_TOKEN });
+      fenceCalls += 1;
+      return { data: fenceCalls === 1, error: null };
+    },
+    storage: { from() { throw new Error("no customer assets are present"); } },
+  };
+  const store = { async putImmutableBytes() { return {}; } };
+  const provider = {
+    async generateImage() {
+      providerCalls += 1;
+      throw new Error("simulated worker interruption after the fence");
+    },
+  };
+  const options = {
+    supabase, store, provider, requestId: REQUEST, claimToken: CLAIM_TOKEN,
+    generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
+    input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
+  };
+
+  await assert.rejects(() => atlas.generateOrReuseFlatAtlas(options), /simulated worker interruption/);
+  assert.equal(providerCalls, 1);
+  await assert.rejects(
+    () => atlas.generateOrReuseFlatAtlas(options),
+    (error) => error.code === "flat_atlas_authoring_already_started" && error.retryable === false,
+  );
+  assert.equal(providerCalls, 1, "the duplicate attempt makes zero provider calls");
 });
