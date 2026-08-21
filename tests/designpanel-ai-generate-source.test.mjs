@@ -22,7 +22,9 @@ test("the standalone creative engine identifies design-panel-ai-generate as its 
   assert.match(provider, /invoke\("design-panel-ai-generate"/);
   assert.match(provider, /invoke\("generate-color-render"/);
   assert.doesNotMatch(provider, /design-panel-color-render/);
-  assert.doesNotMatch(provider, /width:\s*1024|resize:\s*"contain"/);
+  assert.match(provider, /width:\s*1024/);
+  assert.match(provider, /resize:\s*"contain"/);
+  assert.match(provider, /accepted hero stays immutable at full resolution/);
   assert.match(edgeDeploy, /functions delete design-panel-color-render/);
   assert.match(productionDeploy, /\[repair-designpanel-edge-chain\]/);
   assert.match(productionDeploy, /functions deploy generate-color-render/);

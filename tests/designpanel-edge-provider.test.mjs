@@ -12,7 +12,7 @@ const OWNER_ID = "11111111-1111-4111-8111-111111111111";
 const REQUEST_ID = "22222222-2222-4222-8222-222222222222";
 const SERVICE_KEY = "service-role-key-that-never-leaves-the-runtime";
 
-function mockSupabase() {
+function mockSupabase(signedUrlCalls = []) {
   const bytesByPath = new Map([
     [`renders/${OWNER_ID}/DesignPanelPro/ai-generated/hero.png`, Buffer.from("hero-bytes")],
     [`renders/${OWNER_ID}/designpanelpro/passenger.png`, Buffer.from("passenger-bytes")],
@@ -23,7 +23,10 @@ function mockSupabase() {
     }) } },
     storage: {
       from: () => ({
-        createSignedUrl: async (path) => ({ data: { signedUrl: `https://signed.invalid/${path}` }, error: null }),
+        createSignedUrl: async (path, expiresIn, options) => {
+          signedUrlCalls.push({ path, expiresIn, options });
+          return { data: { signedUrl: `https://signed.invalid/${path}` }, error: null };
+        },
         download: async (path) => ({ data: new Blob([bytesByPath.get(path) || Buffer.from("asset")], { type: "image/png" }), error: null }),
       }),
     },
@@ -41,6 +44,7 @@ function mockSupabase() {
 
 test("standard DesignPanel generation calls the restored designer, then the photographer", async () => {
   const calls = [];
+  const signedUrlCalls = [];
   const fetchImpl = async (url, init) => {
     const body = JSON.parse(init.body);
     calls.push({ url, body, headers: init.headers });
@@ -58,7 +62,7 @@ test("standard DesignPanel generation calls the restored designer, then the phot
   };
 
   const provider = createDesignPanelEdgeProvider({
-    supabase: mockSupabase(),
+    supabase: mockSupabase(signedUrlCalls),
     supabaseUrl: "https://example.supabase.co",
     serviceRoleKey: SERVICE_KEY,
     ownerId: OWNER_ID,
@@ -95,6 +99,11 @@ test("standard DesignPanel generation calls the restored designer, then the phot
   assert.equal(calls[1].headers["x-designpro-mode"], "designpanelpro");
   assert.equal(calls[1].body.colorData.designAnchorText, "blue wave, exact white lettering");
   assert.match(calls[1].body.colorData.heroReferenceUrl, /^https:\/\/signed\.invalid\//);
+  assert.deepEqual(signedUrlCalls, [{
+    path: `renders/${OWNER_ID}/DesignPanelPro/ai-generated/hero.png`,
+    expiresIn: 900,
+    options: { transform: { width: 1024, height: 1024, resize: "contain" } },
+  }]);
   assert.equal(calls[0].headers.apikey, SERVICE_KEY);
   assert.equal("x-designpro-mode" in calls[0].headers, false);
   assert.equal("authorization" in calls[0].headers, false);
