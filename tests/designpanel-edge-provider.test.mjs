@@ -84,12 +84,12 @@ test("standard DesignPanel generation calls the restored designer, then the phot
   assert.equal(hero.bytes.toString(), "hero-bytes");
   assert.equal(hero.metadata.sourceFunction, "design-panel-ai-generate");
   assert.equal(passenger.bytes.toString(), "passenger-bytes");
-  assert.equal(passenger.metadata.sourceFunction, "generate-color-render");
+  assert.equal(passenger.metadata.sourceFunction, "design-panel-color-render");
   assert.equal(calls.length, 2);
   assert.match(calls[0].url, /\/design-panel-ai-generate$/);
   assert.equal(calls[0].body.viewType, "side");
   assert.equal(calls[0].body.phone, "602-555-0100 | flamingopools.example");
-  assert.match(calls[1].url, /\/generate-color-render$/);
+  assert.match(calls[1].url, /\/design-panel-color-render$/);
   assert.equal(calls[1].body.viewType, "passenger-side");
   assert.equal(calls[1].body.modeType, "designpanelpro");
   assert.equal(calls[1].body.colorData.designAnchorText, "blue wave, exact white lettering");
