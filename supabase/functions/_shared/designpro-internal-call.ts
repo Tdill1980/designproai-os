@@ -18,15 +18,19 @@ function jsonError(status: number, error: string): Response {
 }
 
 /**
- * Authenticate the standalone DesignPro runtime without making a service-role
- * token impersonate an end-user JWT.
+ * Authenticate the standalone DesignPro runtime without making a server API
+ * key impersonate an end-user JWT.
  *
- * The runtime already owns the standalone project's service credential. It
- * sends that credential in Authorization and names the authenticated request
- * owner in a separate header. The Edge handler accepts the owner header only
- * when the bearer is byte-for-byte the project's service credential, then
- * resolves the owner through Auth Admin before doing any work. A browser cannot
- * select another owner because it never receives the service credential.
+ * The runtime sends its DesignProAI project key in the standard `apikey`
+ * header and names the authenticated request owner separately. The handler
+ * proves the key has Auth Admin privilege inside this exact project by resolving
+ * that owner before doing any work. A publishable/browser key cannot pass that
+ * check, and the server key never crosses the browser boundary.
+ *
+ * This supports both legacy service_role JWT keys and current sb_secret keys.
+ * It deliberately does not compare against SUPABASE_SERVICE_ROLE_KEY: key
+ * rotation and the new key system can make two valid server credentials differ
+ * byte-for-byte even though both are scoped to the same project.
  */
 export async function resolveDesignProInternalCaller(
   req: Request,
@@ -36,12 +40,8 @@ export async function resolveDesignProInternalCaller(
     return { internal: false, userId: null, userEmail: null };
   }
 
-  const serviceRole = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
-  const bearer = String(req.headers.get("authorization") || "")
-    .replace(/^Bearer\s+/i, "")
-    .trim();
-
-  if (!serviceRole || bearer !== serviceRole || !UUID_PATTERN.test(ownerHeader)) {
+  const serverKey = String(req.headers.get("apikey") || "").trim();
+  if (serverKey.length < 32 || !UUID_PATTERN.test(ownerHeader)) {
     return {
       internal: false,
       userId: null,
@@ -52,11 +52,19 @@ export async function resolveDesignProInternalCaller(
 
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    serviceRole,
+    serverKey,
     { auth: { autoRefreshToken: false, persistSession: false } },
   );
   const { data, error } = await admin.auth.admin.getUserById(ownerHeader);
-  if (error || !data.user || data.user.id.toLowerCase() !== ownerHeader) {
+  if (error) {
+    return {
+      internal: false,
+      userId: null,
+      userEmail: null,
+      rejection: jsonError(401, "designpro_internal_auth_invalid"),
+    };
+  }
+  if (!data.user || data.user.id.toLowerCase() !== ownerHeader) {
     return {
       internal: false,
       userId: null,
