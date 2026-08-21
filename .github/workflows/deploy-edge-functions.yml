@@ -109,6 +109,24 @@ jobs:
             exit 1
           fi
 
+      - name: Remove prohibited second DesignPanel producer
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN secret is required}"
+          if supabase functions delete design-panel-color-render \
+            --project-ref "$PROJECT_REF" --yes; then
+            echo "Removed unsanctioned design-panel-color-render"
+          else
+            deployed=$(supabase functions list --project-ref "$PROJECT_REF")
+            if grep -q 'design-panel-color-render' <<< "$deployed"; then
+              echo "::error::design-panel-color-render still exists after delete"
+              exit 1
+            fi
+            echo "design-panel-color-render was already absent"
+          fi
+
       - name: Verify deployed functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
