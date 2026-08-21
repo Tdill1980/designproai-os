@@ -20,7 +20,11 @@ test("the standalone creative engine identifies design-panel-ai-generate as its 
   assert.match(provider, /invoke\("generate-color-render"/);
   assert.match(provider, /maxProviderAttempts:\s*1/);
   assert.match(worker, /slots:\s*slots\.slice\(0, 1\)/);
-  assert.match(worker, /slots:\s*slots\.slice\(1\)[\s\S]*?parallel:\s*true/);
+  assert.match(
+    worker,
+    /slots:\s*slots\.slice\(1\)[\s\S]*?parallel:\s*false/,
+    "Views 2-7 must be serialized so the heavy photographer function stays within Edge compute capacity",
+  );
   assert.doesNotMatch(worker, /authorCreativeInput/);
 });
 
