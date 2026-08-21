@@ -94,7 +94,8 @@ test("standard DesignPanel generation calls the restored designer, then the phot
   assert.equal(calls[1].body.modeType, "designpanelpro");
   assert.equal(calls[1].body.colorData.designAnchorText, "blue wave, exact white lettering");
   assert.match(calls[1].body.colorData.heroReferenceUrl, /^https:\/\/signed\.invalid\//);
-  assert.equal(calls[0].headers.authorization, `Bearer ${SERVICE_KEY}`);
+  assert.equal(calls[0].headers.apikey, SERVICE_KEY);
+  assert.equal("authorization" in calls[0].headers, false);
   assert.equal(calls[0].headers["x-designpro-owner-id"], OWNER_ID);
 });
 
