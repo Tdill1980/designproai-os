@@ -111,13 +111,23 @@ jobs:
                 echo "removing image $image"
                 docker rmi "$image" >/dev/null || true
               done
-          docker image prune -f >/dev/null
-          docker builder prune -af >/dev/null 2>&1 || true
-
           backups=/var/backups/designpro-cutover
           if test -d "$backups" && test ! -L "$backups"; then
-            ls -1 "$backups" | sort | head -n -3 | while read -r stamp; do
+            # Only timestamp-named DesignProAI cutover snapshots participate in
+            # this retention rule. Caddy snapshots share the parent directory
+            # but are a separate backup family and must not crowd out the three
+            # deploy rollback snapshots this workflow promises to preserve.
+            {
+              for path in "$backups"/*; do
+                test -d "$path" || continue
+                test ! -L "$path" || continue
+                stamp=$(basename "$path")
+                [[ $stamp =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || continue
+                printf '%s\n' "$stamp"
+              done
+            } | sort | head -n -3 | while read -r stamp; do
               test -n "$stamp" || continue
+              [[ $stamp =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || exit 22
               test -d "$backups/$stamp" || continue
               test ! -L "$backups/$stamp" || continue
               echo "removing backup $stamp"
