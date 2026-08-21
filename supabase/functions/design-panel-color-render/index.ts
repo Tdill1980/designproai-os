@@ -181,7 +181,7 @@ Deno.serve(async (req: Request) => {
       headers: { "User-Agent": "DesignProAI/1.0" },
       signal: AbortSignal.timeout(30_000),
     });
-  } catch (error) {
+  } catch (error: any) {
     return json(400, { error: String(error?.message || error).slice(0, 200) });
   }
   if (!referenceResponse.ok) {
@@ -243,7 +243,7 @@ Deno.serve(async (req: Request) => {
         }),
         signal: AbortSignal.timeout(90_000),
       });
-    } catch (error) {
+    } catch (error: any) {
       lastError = String(error?.message || error).slice(0, 200);
       if (attempt < MAX_ATTEMPTS) continue;
       break;
