@@ -20,6 +20,7 @@
 
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
+const { buildFlatDesignIQDirection } = require("./designiq-prompt.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -40,6 +41,7 @@ const PROJECTION_CONTRACT = "designpro.flat-first-atlas-projection.v1";
 // binary JPEG becomes at most sixteen MiB after base64, leaving room for JSON,
 // prompts and request framing without shrinking the canonical 4096px master.
 const PROJECTION_MAX_BYTES = 12 * 1024 * 1024;
+const CUSTOMER_REFERENCE_MAX_PIXELS = 40_000_000;
 const PROJECTION_QUALITY_LADDER = Object.freeze([94, 90, 86, 82, 78, 74, 70, 66, 62, 58, 54, 50, 46, 42]);
 const OUTER_PADDING_PX = 192;
 const COLUMN_GUTTER_PX = 72;
@@ -499,13 +501,33 @@ function customerCreativeBrief(input) {
   const values = {
     creativeBrief: String(input?.brief || "").trim(),
     designName: String(input?.designName || "").trim(),
-    businessName: String(input?.businessName || input?.companyName || "").trim(),
+    mode: String(input?.mode || "commercial").trim(),
+    businessName: String(input?.companyName || input?.businessName || "").trim(),
     industry: String(input?.industry || "").trim(),
     colors: Array.isArray(input?.colors) ? input.colors.map(String) : [],
+    brandColors: String(input?.brandColors || "").trim(),
     style: String(input?.style || "").trim(),
+    finish: String(input?.finish || "Gloss").trim(),
+    substrate: String(input?.substrate || "standard").trim(),
+    mascot: String(input?.mascot || "").trim(),
+    brandKeywords: Array.isArray(input?.bulletPoints) ? input.bulletPoints.map(String) : [],
+    fontStyle: String(input?.fontStyle || "").trim(),
+    phone: String(input?.phone || "").trim(),
+    website: String(input?.website || "").trim(),
+    qrEnabled: input?.qrEnabled === true,
+    qrDestination: String(input?.qrUrl || "").trim(),
+    textLayerDirection: String(input?.textLayerPrompt || "").trim(),
+    referenceIntent: String(input?.visionboardIntent || "").trim(),
+    referenceStyleDescriptors: String(input?.styleDescriptors || "").trim(),
+    verifiedLogoAttached: Boolean(input?.logoAsset),
+    verifiedCustomerReferenceCount: Array.isArray(input?.visionBoardImages) ? input.visionBoardImages.length : 0,
     vehicle: [vehicle.year, vehicle.make, vehicle.model, vehicle.type].map((value) => String(value || "").trim()).filter(Boolean).join(" "),
   };
   return JSON.stringify(values);
+}
+
+function atlasCreativeRules(input) {
+  return buildFlatDesignIQDirection(input);
 }
 
 function atlasPrompt(input, manifest) {
@@ -539,13 +561,17 @@ REFERENCE FIREWALL: Any attached installer-map or Lamborghini-style examples are
 
 FIDELITY: This atlas will condition seven downstream 3D proofs. Do not invent unrelated graphics between zones. Preserve supplied customer identity faithfully. This v1 atlas is design-proof authority only; exact typography/logo overlays and true PVO contours remain deterministic prepress concerns.
 
-CUSTOMER CREATIVE SOURCE (authoritative for style):
-${customerCreativeBrief(input)}`;
+DESIGNIQ FLAT CREATIVE DIRECTION:
+${atlasCreativeRules(input)}
+`;
 }
 
 async function verifiedCustomerLogoPart(supabase, input) {
   const asset = input?.logoAsset;
   if (!asset) return [];
+  if (["url", "signedUrl", "publicUrl", "downloadUrl"].some((key) => asset?.[key] != null)) {
+    throw new FlatAtlasError("flat_atlas_logo_identity_invalid", "The customer logo must use immutable Storage identity, never a URL");
+  }
   const storagePath = String(asset.storagePath || "").trim();
   const contentHash = String(asset.contentHash || "").trim().toLowerCase();
   const byteSize = Number(asset.byteSize);
@@ -558,13 +584,50 @@ async function verifiedCustomerLogoPart(supabase, input) {
   if (bytes.length !== byteSize || sha256(bytes) !== contentHash) {
     throw new FlatAtlasError("flat_atlas_logo_hash_mismatch", "Customer logo bytes do not match the verified request identity");
   }
-  const conditioned = await sharp(bytes, { limitInputPixels: false, density: 300 })
+  const conditioned = await sharp(bytes, { limitInputPixels: CUSTOMER_REFERENCE_MAX_PIXELS, density: 300 })
     .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
     .png(PNG_OPTIONS).toBuffer();
   return [
     { text: "VERIFIED CUSTOMER-OWNED LOGO. This is a customer style/identity source, not a topology example." },
     { inlineData: { mimeType: "image/png", data: conditioned.toString("base64") } },
   ];
+}
+
+async function verifiedCustomerReferenceParts(supabase, input) {
+  const assets = Array.isArray(input?.visionBoardImages) ? input.visionBoardImages : [];
+  const intent = String(input?.visionboardIntent || "style_inspiration");
+  const label = intent === "exact_reference" || intent === "artboard_projection"
+    ? "VERIFIED CUSTOMER-OWNED EXACT DESIGN REFERENCE. This is customer artwork authority, not an installer-map topology example."
+    : "VERIFIED CUSTOMER-OWNED STYLE REFERENCE. Use its style only; this is not an installer-map topology example.";
+  const parts = [];
+  for (let index = 0; index < assets.length; index += 1) {
+    const asset = assets[index];
+    if (["url", "signedUrl", "publicUrl", "downloadUrl"].some((key) => asset?.[key] != null)) {
+      throw new FlatAtlasError("flat_atlas_reference_identity_invalid", `Customer reference ${index + 1} contains a URL instead of immutable identity`);
+    }
+    const storagePath = String(asset?.storagePath || "").trim();
+    const contentHash = String(asset?.contentHash || "").trim().toLowerCase();
+    const byteSize = Number(asset?.byteSize);
+    if (!storagePath || !HASH_RE.test(contentHash) || !Number.isSafeInteger(byteSize) || byteSize < 1) {
+      throw new FlatAtlasError("flat_atlas_reference_identity_invalid", `Customer reference ${index + 1} identity is incomplete`);
+    }
+    const { data, error } = await supabase.storage.from(asset.bucket || BUCKET).download(storagePath);
+    if (error || !data) {
+      throw new FlatAtlasError("flat_atlas_reference_download_failed", error?.message || `Customer reference ${index + 1} bytes are missing`, true);
+    }
+    const bytes = Buffer.from(await data.arrayBuffer());
+    if (bytes.length !== byteSize || sha256(bytes) !== contentHash) {
+      throw new FlatAtlasError("flat_atlas_reference_hash_mismatch", `Customer reference ${index + 1} bytes do not match its verified identity`);
+    }
+    const conditioned = await sharp(bytes, { limitInputPixels: CUSTOMER_REFERENCE_MAX_PIXELS, density: 300 })
+      .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+      .png(PNG_OPTIONS).toBuffer();
+    parts.push(
+      { text: `${label} Reference ${index + 1} of ${assets.length}.` },
+      { inlineData: { mimeType: "image/png", data: conditioned.toString("base64") } },
+    );
+  }
+  return parts;
 }
 
 async function topologyExampleParts(examples = []) {
@@ -744,7 +807,7 @@ function assertAtlasGeometryBasis(atlas, expectedManifestHash) {
 async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
-    input, surfaces, geometryAuthority, topologyExamples = [], logger = () => {},
+    claimToken, input, surfaces, geometryAuthority, topologyExamples = [], logger = () => {},
   } = options;
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
@@ -756,6 +819,27 @@ async function generateOrReuseFlatAtlas(options) {
     assertAtlasGeometryBasis(existing, expectedManifestHash);
     logger(`reused immutable atlas revision ${existing.revisionSequence} ${existing.master.contentHash}`);
     return existing;
+  }
+
+  // A request lease can expire while an image call is in flight. Claim a
+  // durable, append-only authoring fence before spending the single Atlas
+  // master call so a replacement worker cannot create a second master.
+  const { data: authoringClaimed, error: authoringClaimError } = await supabase.rpc(
+    "claim_designpro_flat_atlas_authoring",
+    { p_request_id: requestId, p_claim_token: claimToken },
+  );
+  if (authoringClaimError) {
+    throw new FlatAtlasError(
+      "flat_atlas_authoring_fence_failed",
+      authoringClaimError.message || "The Atlas authoring fence could not be acquired",
+      true,
+    );
+  }
+  if (authoringClaimed !== true) {
+    throw new FlatAtlasError(
+      "flat_atlas_authoring_already_started",
+      "This request already spent its one Atlas master-authoring attempt",
+    );
   }
 
   const revisionSequence = 1;
@@ -776,6 +860,7 @@ async function generateOrReuseFlatAtlas(options) {
     { text: atlasPrompt(input, manifest) },
     ...(await topologyExampleParts(topologyExamples)),
     ...(await verifiedCustomerLogoPart(supabase, input)),
+    ...(await verifiedCustomerReferenceParts(supabase, input)),
   ];
   const generated = await provider.generateImage({
     parts,
@@ -917,6 +1002,7 @@ module.exports = {
   BLEED_INCHES,
   CANVAS,
   CENTER_ORDER,
+  CUSTOMER_REFERENCE_MAX_PIXELS,
   EXAMPLE_PURPOSE,
   GEOMETRY_AUTHORITY_CONTRACT,
   INPUT_CONTRACT,
@@ -950,6 +1036,7 @@ module.exports = {
     canonical,
     canonicalBytes,
     customerCreativeBrief,
+    atlasCreativeRules,
     fitCenterColumn,
     fitRotatedSide,
     guideSvg,
@@ -958,6 +1045,7 @@ module.exports = {
     round,
     sha256,
     topologyExampleParts,
+    verifiedCustomerReferenceParts,
     trimRectangle,
     zoneEffectivePpi,
   },
