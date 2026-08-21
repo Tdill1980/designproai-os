@@ -17,7 +17,8 @@ test("the standalone creative engine identifies design-panel-ai-generate as its 
   assert.match(worker, /buildDesignIQPrompt/);
   assert.match(worker, /createDesignPanelEdgeProvider/);
   assert.match(provider, /invoke\("design-panel-ai-generate"/);
-  assert.match(provider, /invoke\("generate-color-render"/);
+  assert.match(provider, /invoke\("design-panel-color-render"/);
+  assert.doesNotMatch(provider, /invoke\("generate-color-render"/);
   assert.match(provider, /maxProviderAttempts:\s*1/);
   assert.match(worker, /slots:\s*slots\.slice\(0, 1\)/);
   assert.match(
@@ -31,16 +32,21 @@ test("the standalone creative engine identifies design-panel-ai-generate as its 
 test("the two restored Edge functions accept only a service-authenticated standalone owner", () => {
   const auth = read("supabase/functions/_shared/designpro-internal-call.ts");
   const designer = read("supabase/functions/design-panel-ai-generate/index.ts");
-  const photographer = read("supabase/functions/generate-color-render/index.ts");
+  const photographer = read("supabase/functions/design-panel-color-render/index.ts");
 
   assert.match(auth, /req\.headers\.get\("apikey"\)/);
   assert.match(auth, /createClient\([\s\S]*?serverKey/);
   assert.match(auth, /auth\.admin\.getUserById\(ownerHeader\)/);
   assert.doesNotMatch(auth, /SUPABASE_SERVICE_ROLE_KEY|bearer !==/);
   assert.match(designer, /skip:\s*internalCaller\.internal/);
-  assert.match(photographer, /skip:\s*internalCaller\.internal/);
+  assert.match(photographer, /resolveDesignProInternalCaller\(req\)/);
+  assert.match(photographer, /!caller\.internal/);
+  assert.doesNotMatch(
+    photographer,
+    /tokenGate|vehicle-specs-lookup|graphicspro-prompt-builder|generate-color-render/,
+  );
   assert.match(designer, /storagePath:\s*fileName/);
-  assert.match(photographer, /storagePath:\s*fileName/);
+  assert.match(photographer, /const storagePath =/);
 });
 
 test("A.T.L.A.S. never reintroduces the legacy browser Edge invocation or token gate", () => {
