@@ -59,6 +59,18 @@ export type StandaloneGenerationInput = {
   industry?: string;
   colors?: string[];
   style?: string;
+  finish?: string;
+  substrate?: string;
+  mascot?: string;
+  bulletPoints?: string[];
+  brandColors?: string;
+  fontStyle?: string;
+  qrEnabled?: boolean;
+  qrUrl?: string;
+  visionBoardImages?: AssetIdentity[];
+  visionboardIntent?: "exact_reference" | "style_inspiration" | "artboard_projection";
+  styleDescriptors?: string;
+  textLayerPrompt?: string;
   companyName?: string;
   phone?: string;
   website?: string;
@@ -82,6 +94,18 @@ export async function startStandaloneGeneration(
     industry: input.industry,
     colors: input.colors,
     style: input.style,
+    finish: input.finish,
+    substrate: input.substrate,
+    mascot: input.mascot,
+    bulletPoints: input.bulletPoints,
+    brandColors: input.brandColors,
+    fontStyle: input.fontStyle,
+    qrEnabled: input.qrEnabled,
+    qrUrl: input.qrUrl,
+    visionBoardImages: input.visionBoardImages,
+    visionboardIntent: input.visionboardIntent,
+    styleDescriptors: input.styleDescriptors,
+    textLayerPrompt: input.textLayerPrompt,
     companyName: input.companyName,
     phone: input.phone,
     website: input.website,
