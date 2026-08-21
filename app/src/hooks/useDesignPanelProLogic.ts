@@ -201,7 +201,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       !!standaloneRequestId,
     retry: false,
     queryFn: () => dpApi.listFlatAtlasRevisions(String(standaloneRequestId)),
-    refetchInterval: (query) => (query.state.data?.length ? 240_000 : 5_000),
+    refetchInterval: (query) => (query.state.data?.length ? 240_000 : 2_000),
   });
 
   // FadeWraps pricing (exact copy)
@@ -313,12 +313,14 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   /** The seven views, as the UI has always shaped them. */
   const applyGeneratedViews = (
     views: Array<{ sourceViewType: string; consumerRole: string; signedUrl?: string }>,
+    firstAvailableAsHero = false,
   ) => {
     const rendered = views.filter((view) => view.signedUrl);
     setAllViews(rendered.map((view) => ({ type: view.sourceViewType, url: view.signedUrl! })));
     const hero =
       rendered.find((view) => view.consumerRole === "hero3d") ||
-      rendered.find((view) => view.sourceViewType === "side");
+      rendered.find((view) => view.sourceViewType === "side") ||
+      (firstAvailableAsHero ? rendered[0] : undefined);
     if (hero?.signedUrl) setGeneratedImageUrl(hero.signedUrl);
     setFailedViews(
       views.filter((view) => !view.signedUrl).map((view) => view.sourceViewType),
@@ -421,6 +423,27 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
 
       const finished = await waitForGeneration(request.requestId, {
         onState: applyGenerationState,
+        // A.T.L.A.S. commits the canonical master first, then runs seven
+        // master-conditioned projections in parallel. Reveal every immutable
+        // view as soon as its slot lands; this observer only performs signed
+        // GETs and cannot spend another Gemini call. Legacy keeps its exact
+        // all-at-once presentation and production handoff.
+        onViews: pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+          ? async (progressiveViews) => {
+              applyGeneratedViews(progressiveViews, true);
+              const progressiveHero =
+                progressiveViews.find((view) => view.consumerRole === "hero3d" && view.signedUrl) ||
+                progressiveViews.find((view) => view.sourceViewType === "side" && view.signedUrl) ||
+                progressiveViews.find((view) => view.signedUrl);
+              setPersonaHeroUrl(progressiveHero?.signedUrl || null);
+              setPersonaGenerationId(request.generationId);
+              setPersonaAllViews(Object.fromEntries(
+                progressiveViews
+                  .filter((view) => view.signedUrl)
+                  .map((view) => [view.sourceViewType, view.signedUrl!]),
+              ));
+            }
+          : undefined,
       });
       applyGenerationState(finished);
 

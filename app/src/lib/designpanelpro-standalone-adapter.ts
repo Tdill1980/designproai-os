@@ -104,15 +104,49 @@ export async function startStandaloneGeneration(
  */
 export async function waitForGeneration(
   requestId: string,
-  options: { timeoutMs?: number; signal?: AbortSignal; onState?: (state: GenerationRequestState) => void } = {},
+  options: {
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onState?: (state: GenerationRequestState) => void;
+    /**
+     * Optional progressive observer. The status route exposes immutable view
+     * identities as each slot lands; only when that count grows do we ask the
+     * signed-view route for display URLs. This is read-only polling and cannot
+     * start or repeat a Gemini call.
+     */
+    onViews?: (views: GenerationView[]) => void | Promise<void>;
+  } = {},
 ): Promise<GenerationRequestState> {
   const timeoutMs = options.timeoutMs ?? 15 * 60_000;
   const started = Date.now();
+  let observedViewCount = 0;
+  let lastViewRefreshAt = 0;
+  let nextViewRetryAt = 0;
 
   for (;;) {
     if (options.signal?.aborted) throw new Error("generation_watch_aborted");
     const state = await dpApi.getGenerationRequest(requestId);
     options.onState?.(state);
+
+    const viewCount = state.views?.length ?? state.shotsComplete ?? 0;
+    const now = Date.now();
+    const viewCountGrew = viewCount > observedViewCount;
+    const signedUrlsNeedRefresh = viewCount > 0 && now - lastViewRefreshAt >= 4 * 60_000;
+    const signingAttemptAllowed = now >= nextViewRetryAt;
+    if (options.onViews && signingAttemptAllowed && (signedUrlsNeedRefresh || viewCountGrew)) {
+      // A signed-view read cannot start generation. Retry a transient signing
+      // failure after ten seconds and refresh successful URLs before their
+      // five-minute lifetime expires, even if the next proof is still pending.
+      try {
+        await options.onViews(await dpApi.listGenerationViews(requestId));
+        observedViewCount = Math.max(observedViewCount, viewCount);
+        lastViewRefreshAt = Date.now();
+        nextViewRetryAt = 0;
+      } catch {
+        // Progressive display is best-effort; generation itself is server-owned.
+        nextViewRetryAt = Date.now() + 10_000;
+      }
+    }
 
     if (state.state === "outputs_ready") return state;
     const terminalFailure = terminalGenerationFailureCode(state);

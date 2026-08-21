@@ -43,11 +43,42 @@ test("the dedicated test URL and server acknowledgement keep the A.T.L.A.S. bann
   assert.match(gateway, /pipelineMode: acceptedPipelineMode/);
 });
 
+test("the guarded create page defaults to A.T.L.A.S. with an explicit legacy rollback", () => {
+  const selector = read("app/src/lib/designpro-flat-first.ts");
+  const home = read("app/src/pages/DesignProAIHome.tsx");
+  assert.match(selector, /if \(!FLAT_FIRST_ATLAS_UI_ENABLED\) return "legacy"/);
+  assert.match(selector, /legacyRequestedBySearch\(search\)/);
+  assert.match(selector, /return FLAT_FIRST_ATLAS_PIPELINE_MODE;\s*\n}/);
+  assert.match(home, /initialDesignProPipelineMode\(/);
+  assert.match(home, /setPipelineMode\("legacy"\)/);
+});
+
+test("A.T.L.A.S. reveals the immutable master and streams signed proof views without new generation calls", () => {
+  const adapter = read("app/src/lib/designpanelpro-standalone-adapter.ts");
+  const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
+  const premium = read("app/src/pages/DesignPanelProPremium.tsx");
+  assert.match(adapter, /onViews\?: \(views: GenerationView\[\]\)/);
+  assert.match(adapter, /viewCount > observedViewCount/);
+  assert.match(adapter, /dpApi\.listGenerationViews\(requestId\)/);
+  assert.match(adapter, /signedUrlsNeedRefresh/);
+  assert.match(adapter, /4 \* 60_000/);
+  assert.match(hook, /onViews: pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE/);
+  assert.match(hook, /applyGeneratedViews\(progressiveViews, true\)/);
+  assert.match(premium, /const atlasMasterPreviewUrl/);
+  assert.match(premium, /pipelineActive && !renderError && !baseDisplayUrl/);
+  assert.match(premium, /Canonical A\.T\.L\.A\.S\. master locked/);
+  assert.match(premium, /previewDisplayUrl = mainDisplayUrl \|\| atlasMasterPreviewUrl/);
+  assert.match(premium, /atlasReady=\{Boolean\(latestFlatAtlas\)\}/);
+  assert.match(premium, /paid ProductionPack slicing stays locked/);
+});
+
 test("the progress surface reports server state instead of a fake elapsed percentage", () => {
   const progress = read("app/src/components/designpanelpro/DesignPipelineProgress.tsx");
   assert.doesNotMatch(progress, /96 \* \(1 - Math\.exp/);
   assert.match(progress, /requestState\?: GenerationRequestState/);
   assert.match(progress, /proof views complete/);
   assert.match(progress, /safely leave this tab/);
+  assert.match(progress, /Painting your canonical flattened A\.T\.L\.A\.S\. master/);
+  assert.match(progress, /atlasProofStatus/);
   assert.doesNotMatch(progress, /renders here in your browser/);
 });

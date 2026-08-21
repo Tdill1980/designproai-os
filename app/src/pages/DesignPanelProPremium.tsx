@@ -1705,10 +1705,19 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     : (sortedAllViews.length > 1 && sortedAllViews[clampedViewIndex]
         ? sortedAllViews[clampedViewIndex].url
         : baseDisplayUrl);
+  // The canonical flat master is the first visual result in A.T.L.A.S. mode.
+  // It may occupy the customer viewport while the seven downstream projection
+  // slots run, but it is deliberately kept separate from `mainDisplayUrl` so a
+  // proof image, revision source, order gate, or production identity can never
+  // mistake the atlas sheet for a 3D vehicle view.
+  const atlasMasterPreviewUrl = isFlatFirstDiagnostic && pipelineActive && !renderError && !baseDisplayUrl
+    ? latestFlatAtlas?.masterUrl || null
+    : null;
+  const previewDisplayUrl = mainDisplayUrl || atlasMasterPreviewUrl;
   // When a precision modification has been stacked on the render,
   // show the modified image instead. Other workflows (PDF proof,
   // All Views, etc.) keep using mainDisplayUrl as the unmodified base.
-  const effectiveDisplayUrl = precisionRenderUrl ?? mainDisplayUrl;
+  const effectiveDisplayUrl = precisionRenderUrl ?? previewDisplayUrl;
   // Gate by exact required identities, not only count (duplicates cannot pass).
   const allViewsDone =
     !!mainDisplayUrl &&
@@ -2007,7 +2016,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <div>
                             <p className="font-semibold">A.T.L.A.S. diagnostic</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
-                              Google-grounded vehicle proportions build the proof-only topology automatically. Gemini then paints one canonical flattened A.T.L.A.S. master and derives all seven vehicle views from that same design. The before guide and after master are stored; production remains locked.
+                              Google-grounded vehicle proportions build the proof-only topology automatically. Gemini paints one canonical flattened A.T.L.A.S. master first, then derives all seven vehicle views from that exact design. The master is shown immediately. This test cannot publish panels; paid ProductionPack slicing stays locked until exact prepress geometry and resolution pass.
                             </p>
                             <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">
                               {generationRequestState
@@ -2040,7 +2049,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           // cover-cropped the render (vehicle top/bottom cut off).
                           // max-w in vh keeps the box true 16:9 and never taller than
                           // the old height cap (78vh*16/9≈138vh, 55vh*16/9≈97vh).
-                          (mainDisplayUrl || pipelineActive || embedded)
+                          (previewDisplayUrl || pipelineActive || embedded)
                             ? "max-w-[138vh]"
                             : "max-w-[97vh]"
                         )}
@@ -2055,7 +2064,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         )}
 
                         {/* Error state */}
-                        {renderError && !mainDisplayUrl && !pipelineActive ? (
+                        {renderError && !previewDisplayUrl && !pipelineActive ? (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-red-500/5 via-background to-red-500/10 px-6">
                             <img src="/characters/ace-v2.png" alt="ACE" className="w-20 h-20 rounded-full border-2 border-red-400/50 object-cover" />
                             <p className="text-white text-base font-semibold text-center">
@@ -2076,7 +2085,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               Relaunch
                             </Button>
                           </div>
-                        ) : mainDisplayUrl ? (
+                        ) : previewDisplayUrl ? (
                           <div className="absolute inset-0 flex flex-col">
                             <div className="relative flex-1 min-h-0 group">
                               {/* LayerLiftIQ Konva canvas IS the center workspace viewport.
@@ -2141,6 +2150,19 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   />
                                 );
                               })()}
+                              {atlasMasterPreviewUrl && !mainDisplayUrl && (
+                                <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 rounded-xl border border-cyan-300/35 bg-black/80 px-3 py-2.5 shadow-[0_0_24px_rgba(34,211,238,0.2)] backdrop-blur-sm">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <p className="text-xs font-bold text-cyan-100">Canonical A.T.L.A.S. master locked</p>
+                                      <p className="mt-0.5 text-[10px] text-cyan-100/65">This flattened master is now driving every 3D proof angle.</p>
+                                    </div>
+                                    <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-1 text-[10px] font-bold text-cyan-200">
+                                      {generationRequestState?.shotsComplete ?? 0} of {generationRequestState?.shotsTotal ?? 7} 3D proofs ready
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                               {/* Arrow navigation for cycling through views */}
                               {sortedAllViews.length > 1 && (
                                 <>
@@ -2232,6 +2254,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 stage={pipelineStage}
                                 elapsed={pipelineElapsed}
                                 requestState={generationRequestState}
+                                isAtlas={isFlatFirstDiagnostic}
+                                atlasReady={Boolean(latestFlatAtlas)}
                               />
                             ) : (
                               <div className="flex flex-col items-center gap-3 text-white/70">
