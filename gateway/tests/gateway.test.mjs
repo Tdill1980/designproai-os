@@ -908,6 +908,7 @@ test("authenticated browser can enqueue Calls 1-7 without selecting engine contr
   assert.equal(response.status, 202);
   const payload = await response.json();
   assert.equal(payload.state, "queued");
+  assert.equal(payload.pipelineMode, "legacy");
   const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_generation_request"));
   assert.ok(rpcCall);
   assert.deepEqual(JSON.parse(rpcCall.init.body), {
@@ -946,9 +947,14 @@ test("flat-first v3 opts into the isolated intake RPC without changing v1", asyn
   const response = await fetch(`${base}/api/generation/requests`, {
     method: "POST",
     headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
-    body: JSON.stringify({ generationId, input }),
+    body: JSON.stringify({
+      generationId,
+      input,
+      requiredPipelineMode: "flat-first-atlas-v1",
+    }),
   });
   assert.equal(response.status, 202);
+  assert.equal((await response.json()).pipelineMode, "flat-first-atlas-v1");
   const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request"));
   assert.ok(rpcCall);
   assert.deepEqual(JSON.parse(rpcCall.init.body), {
@@ -986,12 +992,46 @@ test("flat-first v3 refuses a misspelled mode, fulfillment identity, extras, and
       body: JSON.stringify({
         generationId: "90000000-0000-4000-8000-000000000010",
         input,
+        requiredPipelineMode: "flat-first-atlas-v1",
       }),
     });
     assert.equal(response.status, 400);
     assert.deepEqual(await response.json(), { error: "generation_request_invalid" });
     assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
   }
+});
+
+test("flat-first v3 fails before intake when its required envelope is missing or mismatched", async (t) => {
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  for (const body of [
+    { generationId: crypto.randomUUID(), input: flatFirstInput() },
+    {
+      generationId: crypto.randomUUID(),
+      input: flatFirstInput(),
+      requiredPipelineMode: "legacy",
+    },
+  ]) {
+    const response = await fetch(`${base}/api/generation/requests`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 400);
+  }
+  assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
 });
 
 test("Calls 1-7 enqueue rejects nested prompt, model, seed, and view controls before RPC", async (t) => {

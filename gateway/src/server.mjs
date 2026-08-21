@@ -1095,14 +1095,21 @@ function validatedGenerationRequestV3(body, generationIdValue) {
 function validatedGenerationRequest(body) {
   const withKey = ["generationId", "idempotencyKey", "input"];
   const withoutKey = ["generationId", "input"];
+  const flatFirstRequired = ["generationId", "input", "requiredPipelineMode"];
+  const input = body?.input;
+  const expectsFlatFirst = input?.contractVersion === "designpro.calls-1-7-input.v3";
   const bodyKeys = body && typeof body === "object" && !Array.isArray(body)
     ? JSON.stringify(Object.keys(body).sort()) : "";
-  if (bodyKeys !== JSON.stringify(withKey) && bodyKeys !== JSON.stringify(withoutKey)) {
+  if (
+    expectsFlatFirst
+      ? bodyKeys !== JSON.stringify(flatFirstRequired)
+        || body.requiredPipelineMode !== "flat-first-atlas-v1"
+      : bodyKeys !== JSON.stringify(withKey) && bodyKeys !== JSON.stringify(withoutKey)
+  ) {
     throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
   }
   const generationIdValue = String(body.generationId || "").trim().toLowerCase();
   const idempotencyKey = String(body.idempotencyKey || "");
-  const input = body.input;
   if (!UUID_PATTERN.test(generationIdValue)
     || !input || typeof input !== "object" || Array.isArray(input)) {
     throw Object.assign(new Error("generation_request_invalid"), { status: 400 });
@@ -1357,6 +1364,9 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const intakeRpc = request.input.contractVersion === "designpro.calls-1-7-input.v3"
           ? "create_designpro_flat_first_generation_request"
           : "create_designpro_generation_request";
+        const acceptedPipelineMode = intakeRpc === "create_designpro_flat_first_generation_request"
+          ? "flat-first-atlas-v1"
+          : "legacy";
         const result = await rpc(fetchImpl, token, cfg, intakeRpc, {
           p_generation_id: request.generationId,
           p_input: request.input,
@@ -1378,6 +1388,12 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           requestId: result.requestId,
           generationId: result.generationId,
           state: result.state,
+          // Echo the server-accepted contract mode. The browser must not infer
+          // this from a toggle after the request has been queued: an A.T.L.A.S.
+          // banner attached to a legacy v2 request is both misleading and
+          // expensive. This value is derived from the validated input that
+          // selected the intake RPC above.
+          pipelineMode: acceptedPipelineMode,
           inputHash: result.inputHash,
           engineContractHash: result.engineContractHash,
           idempotent: result.idempotent === true,

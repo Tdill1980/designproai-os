@@ -4,10 +4,12 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {} }));
 
 import {
   buildGenerationInput,
+  buildGenerationRequestPayload,
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type CreateGenerationRequestOptions,
 } from "./designpro-api";
 import {
+  flatFirstAtlasRequestedBySearch,
   flatFirstAtlasSupportedVehicleType,
   inlineRevisionEnabledForPipeline,
   myVehiclePhotoFlowEnabledForPipeline,
@@ -47,6 +49,29 @@ describe("flat-first generation input", () => {
       brief: base.brief.brief,
       designName: base.designName,
     });
+  });
+
+  it("requires A.T.L.A.S. in the outer envelope so an old gateway fails before enqueue", () => {
+    const generationId = "90000000-0000-4000-8000-000000000010";
+    expect(buildGenerationRequestPayload({
+      ...base,
+      pipelineMode: FLAT_FIRST_ATLAS_PIPELINE_MODE,
+    }, generationId)).toMatchObject({
+      generationId,
+      requiredPipelineMode: FLAT_FIRST_ATLAS_PIPELINE_MODE,
+      input: {
+        contractVersion: "designpro.calls-1-7-input.v3",
+        pipelineMode: FLAT_FIRST_ATLAS_PIPELINE_MODE,
+      },
+    });
+    expect(buildGenerationRequestPayload(base, generationId)).not.toHaveProperty("requiredPipelineMode");
+  });
+
+  it("recognizes the dedicated A.T.L.A.S. test URL without treating cache keys as mode", () => {
+    expect(flatFirstAtlasRequestedBySearch("?pipeline=atlas&release=abc1234")).toBe(true);
+    expect(flatFirstAtlasRequestedBySearch("?pipeline=flat-first-atlas-v1")).toBe(true);
+    expect(flatFirstAtlasRequestedBySearch("?release=abc1234")).toBe(false);
+    expect(flatFirstAtlasRequestedBySearch("?pipeline=legacy")).toBe(false);
   });
 
   it("fails closed instead of sending a flat-first edit through the legacy revision handler", () => {

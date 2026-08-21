@@ -31,6 +31,18 @@ test("the browser stops an old retrying request on fail-closed geometry", () => 
   assert.match(adapter, /terminalGenerationFailureCode\(state/);
 });
 
+test("the dedicated test URL and server acknowledgement keep the A.T.L.A.S. banner honest", () => {
+  const premium = read("app/src/pages/DesignPanelProPremium.tsx");
+  const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
+  const gateway = read("gateway/src/server.mjs");
+  assert.match(premium, /initialDesignProPipelineMode\(briefState\?\.pipelineMode, location\.search\)/);
+  assert.match(premium, /Server accepted A\.T\.L\.A\.S\. v3/);
+  assert.match(hook, /generation_pipeline_mode_mismatch/);
+  assert.match(hook, /setStandaloneRequestId\(null\)/);
+  assert.match(gateway, /requiredPipelineMode !== "flat-first-atlas-v1"/);
+  assert.match(gateway, /pipelineMode: acceptedPipelineMode/);
+});
+
 test("the progress surface reports server state instead of a fake elapsed percentage", () => {
   const progress = read("app/src/components/designpanelpro/DesignPipelineProgress.tsx");
   assert.doesNotMatch(progress, /96 \* \(1 - Math\.exp/);

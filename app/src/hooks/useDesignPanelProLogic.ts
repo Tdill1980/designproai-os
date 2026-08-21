@@ -101,6 +101,10 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     setRenderPt(null);
     setIsDesignIQRender(false);
     setFlatProofUrl(null);
+    // The A.T.L.A.S. before/after query is keyed by the accepted request.
+    // Clearing it before a new launch prevents the previous canonical master
+    // from being displayed while the next request is still in preflight.
+    setStandaloneRequestId(null);
     setGenerationRequestState(null);
   };
 
@@ -372,6 +376,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     // points back at it.
     const generationId = crypto.randomUUID().toLowerCase();
     const promptPrefix = (params.prompt || "").trim().split(/\s+/).slice(0, 6).join(" ");
+    let acceptedRequest: GenerationRequestState | null = null;
 
     try {
       const logoAsset = await verifyLogoAsset(params, generationId);
@@ -400,6 +405,12 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         logoAsset,
         pipelineMode,
       });
+      acceptedRequest = request;
+      const acceptedPipelineMode = request.pipelineMode || "legacy";
+      setActivePipelineMode(acceptedPipelineMode);
+      if (acceptedPipelineMode !== pipelineMode) {
+        throw new Error("generation_pipeline_mode_mismatch");
+      }
 
       setStandaloneRequestId(request.requestId);
       // The design's id everywhere downstream: production layers, the pack, the
@@ -441,8 +452,37 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       return { generationId: request.generationId, directRender: true, renderUrl: hero?.signedUrl };
     } catch (error: any) {
       const code = String(error?.code || error?.message || "");
+      // A terminal request can still own byte-verified views. The legacy
+      // worker used to discover a missing production manifest only after all
+      // seven calls; hiding those saved images behind the error screen made a
+      // paid proof set look deleted. Recover owner-scoped signed views before
+      // reporting the failure. They remain explicitly legacy and are never
+      // represented as an A.T.L.A.S. master.
+      let recoveredViews: Awaited<ReturnType<typeof listDesignPanelViews>> = [];
+      if (acceptedRequest) {
+        try {
+          recoveredViews = await listDesignPanelViews(acceptedRequest.requestId);
+          if (recoveredViews.some((view) => view.signedUrl)) {
+            applyGeneratedViews(recoveredViews);
+            const hero = recoveredViews.find(
+              (view) => view.consumerRole === "hero3d" && view.signedUrl,
+            );
+            setPersonaHeroUrl(hero?.signedUrl || null);
+            setPersonaGenerationId(acceptedRequest.generationId);
+            setPersonaAllViews(Object.fromEntries(
+              recoveredViews
+                .filter((view) => view.signedUrl)
+                .map((view) => [view.sourceViewType, view.signedUrl!]),
+            ));
+          }
+        } catch {
+          recoveredViews = [];
+        }
+      }
       const friendly =
-        code === "generation_input_conflict"
+        code === "generation_pipeline_mode_mismatch"
+          ? "The server did not accept the pipeline shown on screen, so this run was stopped. Start from the dedicated A.T.L.A.S. test link; production was not unlocked."
+          : code === "generation_input_conflict"
           ? "That design id already holds a different brief. Start a new design rather than overwriting it."
           : /genie_dimension_validation_required/.test(code)
             ? pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
@@ -453,7 +493,15 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
             : error?.message || "Something went wrong — let's try again!";
       console.error("[DesignPro] standalone generation failed:", error);
       setGenerationError(friendly);
-      return { generationId: null, directRender: false, error: friendly };
+      const recoveredHero = recoveredViews.find(
+        (view) => view.consumerRole === "hero3d" && view.signedUrl,
+      );
+      return {
+        generationId: acceptedRequest?.generationId || null,
+        directRender: Boolean(recoveredHero?.signedUrl),
+        renderUrl: recoveredHero?.signedUrl,
+        error: friendly,
+      };
     }
   };
 
