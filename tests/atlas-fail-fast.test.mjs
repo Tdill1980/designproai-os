@@ -31,24 +31,28 @@ test("the browser stops an old retrying request on fail-closed geometry", () => 
   assert.match(adapter, /terminalGenerationFailureCode\(state/);
 });
 
-test("the dedicated test URL and server acknowledgement keep the A.T.L.A.S. banner honest", () => {
+test("the A.T.L.A.S. banner reports customer progress without implementation details", () => {
   const premium = read("app/src/pages/DesignPanelProPremium.tsx");
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
   const gateway = read("gateway/src/server.mjs");
   assert.match(premium, /initialDesignProPipelineMode\(briefState\?\.pipelineMode, location\.search\)/);
-  assert.match(premium, /Server accepted A\.T\.L\.A\.S\. v3/);
+  assert.match(premium, /A\.T\.L\.A\.S\. Preview/);
+  assert.match(premium, /Preview started/);
+  assert.doesNotMatch(premium, /Server accepted A\.T\.L\.A\.S\. v3/);
+  assert.doesNotMatch(premium, /Google-grounded vehicle proportions/);
+  assert.doesNotMatch(premium, /Gemini paints one canonical/);
   assert.match(hook, /generation_pipeline_mode_mismatch/);
   assert.match(hook, /setStandaloneRequestId\(null\)/);
   assert.match(gateway, /requiredPipelineMode !== "flat-first-atlas-v1"/);
   assert.match(gateway, /pipelineMode: acceptedPipelineMode/);
 });
 
-test("the guarded create page defaults to production with explicit A.T.L.A.S. opt-in", () => {
+test("the guarded create page defaults to A.T.L.A.S. when enabled with explicit production rollback", () => {
   const selector = read("app/src/lib/designpro-flat-first.ts");
   const home = read("app/src/pages/DesignProAIHome.tsx");
   assert.match(selector, /if \(!FLAT_FIRST_ATLAS_UI_ENABLED\) return "legacy"/);
   assert.match(selector, /legacyRequestedBySearch\(search\)/);
-  assert.match(selector, /return "legacy";\s*\n}/);
+  assert.match(selector, /return FLAT_FIRST_ATLAS_PIPELINE_MODE;\s*\n}/);
   assert.match(home, /initialDesignProPipelineMode\(/);
   assert.match(home, /setPipelineMode\("legacy"\)/);
 });
@@ -66,10 +70,11 @@ test("A.T.L.A.S. reveals the immutable master and streams signed proof views wit
   assert.match(hook, /applyGeneratedViews\(progressiveViews, true\)/);
   assert.match(premium, /const atlasMasterPreviewUrl/);
   assert.match(premium, /pipelineActive && !renderError && !baseDisplayUrl/);
-  assert.match(premium, /Canonical A\.T\.L\.A\.S\. master locked/);
+  assert.match(premium, /Your A\.T\.L\.A\.S\. design is ready/);
   assert.match(premium, /previewDisplayUrl = mainDisplayUrl \|\| atlasMasterPreviewUrl/);
   assert.match(premium, /atlasReady=\{Boolean\(latestFlatAtlas\)\}/);
-  assert.match(premium, /paid ProductionPack slicing stays locked/);
+  assert.match(premium, /Production ordering is unavailable in Preview mode/);
+  assert.doesNotMatch(premium, /paid ProductionPack slicing stays locked/);
 });
 
 test("the progress surface reports server state instead of a fake elapsed percentage", () => {
@@ -77,8 +82,10 @@ test("the progress surface reports server state instead of a fake elapsed percen
   assert.doesNotMatch(progress, /96 \* \(1 - Math\.exp/);
   assert.match(progress, /requestState\?: GenerationRequestState/);
   assert.match(progress, /proof views complete/);
-  assert.match(progress, /safely leave this tab/);
-  assert.match(progress, /Painting your canonical flattened A\.T\.L\.A\.S\. master/);
+  assert.match(progress, /safely return to this page later/);
+  assert.match(progress, /Creating your A\.T\.L\.A\.S\. design/);
+  assert.doesNotMatch(progress, /Gemini is painting/);
+  assert.doesNotMatch(progress, /canonical flattened A\.T\.L\.A\.S\. master/);
   assert.match(progress, /atlasProofStatus/);
   assert.doesNotMatch(progress, /renders here in your browser/);
 });

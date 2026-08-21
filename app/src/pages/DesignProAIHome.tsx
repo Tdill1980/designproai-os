@@ -64,7 +64,7 @@ function PipelineModeSelector({
   if (!FLAT_FIRST_ATLAS_UI_ENABLED) return null;
   return (
     <div className={cn("rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-2.5", className)}>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Pipeline test</div>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Design mode</div>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
         <button
           type="button"
@@ -78,7 +78,7 @@ function PipelineModeSelector({
               : "border-white/10 text-white/50 hover:bg-white/5",
           )}
         >
-          Legacy
+          Production
         </button>
         <button
           type="button"
@@ -92,15 +92,15 @@ function PipelineModeSelector({
               : "border-white/10 text-white/50 hover:bg-white/5",
           )}
         >
-          A.T.L.A.S. (flat-first test)
+          A.T.L.A.S. Preview
         </button>
       </div>
       <p className="mt-2 text-[10px] leading-4 text-white/55">
         {disabled
-          ? "Pipeline is locked for this run. Start a new run to change it."
+          ? "Design mode is locked for this run. Start a new design to change it."
           : flatFirstAtlasSupportedVehicleType(vehicleType)
-            ? "Opt-in diagnostic: automatically grounds proof topology, stores the flat before guide + after master, then renders seven proofs. Production stays locked."
-            : "A.T.L.A.S. proof testing currently supports car, truck, SUV and van. This selection will use legacy."}
+            ? "Creates the master design first, then shows all seven vehicle views as they finish. Production ordering is unavailable in Preview mode."
+            : "Preview mode is available for car, truck, SUV and van. Production mode will be used for this vehicle."}
       </p>
     </div>
   );

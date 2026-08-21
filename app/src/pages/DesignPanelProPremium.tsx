@@ -88,7 +88,6 @@ import { useStarredRenders } from "@/hooks/useStarredRenders";
 import { DesignIQShowcase, GenerationWizard, DESIGNPANELPRO_TIPS } from "@/components/tools/GenerationWizard";
 import { formatDid } from "@/lib/designId";
 import { BuildTag } from "@/components/BuildTag";
-import { FlatAtlasPanelSchedule } from "@/components/designpro/FlatAtlasPanelSchedule";
 import {
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type GenerationPipelineMode,
@@ -1079,8 +1078,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       !myVehiclePhotoFlowEnabledForPipeline(requestedPipelineMode)
     ) {
       toast({
-        title: "A.T.L.A.S. requires the canonical flat master",
-        description: "MyVehicle photo generation is not enabled for this diagnostic. Turn off MyVehicle or choose Legacy before starting.",
+        title: "MyVehicle is unavailable in A.T.L.A.S. Preview",
+        description: "Turn off MyVehicle or choose Production mode before starting.",
         variant: "destructive",
       });
       return;
@@ -1561,8 +1560,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (!request.revisionText.trim()) return;
     if (!inlineRevisionEnabledForPipeline(activePipelineMode)) {
       toast({
-        title: "A.T.L.A.S. revision editing is not enabled in this diagnostic",
-        description: "The original A.T.L.A.S. master and proofs remain saved. No unrelated design run was started.",
+        title: "Revisions are unavailable in A.T.L.A.S. Preview",
+        description: "Your design and vehicle views remain saved. Start a new design to explore another direction.",
         variant: "destructive",
       });
       return;
@@ -1796,7 +1795,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       {FLAT_FIRST_ATLAS_UI_ENABLED && (
                         <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3">
                           <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-                            Pipeline test
+                            Design mode
                           </div>
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             <button
@@ -1811,7 +1810,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   : "border-white/10 text-white/50 hover:bg-white/5",
                               )}
                             >
-                              Legacy production
+                              Production
                             </button>
                             <button
                               type="button"
@@ -1825,13 +1824,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   : "border-white/10 text-white/50 hover:bg-white/5",
                               )}
                             >
-                              A.T.L.A.S. (flat-first test)
+                              A.T.L.A.S. Preview
                             </button>
                           </div>
                           <p className="mt-2 text-[10px] leading-4 text-white/55">
                             {flatFirstAtlasSupportedVehicleType(vehicleType)
-                              ? "The test stores a guide and painted master, then renders seven proofs. Calls 8–12 stay off."
-                              : "A.T.L.A.S. testing currently supports car, truck, SUV and van. This vehicle stays on legacy."}
+                              ? "Creates the master design first, then shows all seven vehicle views as they finish. Production ordering is unavailable in Preview mode."
+                              : "Preview mode is available for car, truck, SUV and van. Production mode will be used for this vehicle."}
                           </p>
                         </div>
                       )}
@@ -2014,14 +2013,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         <div className="flex items-start gap-2">
                           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
                           <div>
-                            <p className="font-semibold">A.T.L.A.S. diagnostic</p>
+                            <p className="font-semibold">A.T.L.A.S. Preview</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
-                              Google-grounded vehicle proportions build the proof-only topology automatically. Gemini paints one canonical flattened A.T.L.A.S. master first, then derives all seven vehicle views from that exact design. The master is shown immediately. This test cannot publish panels; paid ProductionPack slicing stays locked until exact prepress geometry and resolution pass.
+                              Your A.T.L.A.S. master appears first. Each of the seven vehicle views appears as soon as it is ready, using the same design.
                             </p>
                             <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">
                               {generationRequestState
-                                ? `Server accepted A.T.L.A.S. v3 · request ${generationRequestState.requestId.slice(0, 8)}`
-                                : "A.T.L.A.S. v3 selected · waiting to submit"}
+                                ? "Preview started"
+                                : "Ready to start"}
                             </p>
                           </div>
                         </div>
@@ -2154,8 +2153,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 rounded-xl border border-cyan-300/35 bg-black/80 px-3 py-2.5 shadow-[0_0_24px_rgba(34,211,238,0.2)] backdrop-blur-sm">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
-                                      <p className="text-xs font-bold text-cyan-100">Canonical A.T.L.A.S. master locked</p>
-                                      <p className="mt-0.5 text-[10px] text-cyan-100/65">This flattened master is now driving every 3D proof angle.</p>
+                                      <p className="text-xs font-bold text-cyan-100">Your A.T.L.A.S. design is ready</p>
+                                      <p className="mt-0.5 text-[10px] text-cyan-100/65">Creating the remaining vehicle views.</p>
                                     </div>
                                     <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-1 text-[10px] font-bold text-cyan-200">
                                       {generationRequestState?.shotsComplete ?? 0} of {generationRequestState?.shotsTotal ?? 7} 3D proofs ready
@@ -2536,9 +2535,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
                     {mainDisplayUrl && !pipelineActive && isFlatFirstDiagnostic && (
                       <Card className="border-amber-400/30 bg-amber-400/10 p-4">
-                        <p className="text-sm font-semibold text-amber-100">A.T.L.A.S. revision editing is not enabled in this diagnostic.</p>
+                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable in A.T.L.A.S. Preview.</p>
                         <p className="mt-1 text-xs leading-5 text-amber-100/70">
-                          This run is preserved exactly as generated. A revision button will only be enabled after the backend can create a parent-linked immutable A.T.L.A.S. revision and regenerate its affected proof views.
+                          Your design and vehicle views remain saved. Start a new design to explore another direction.
                         </p>
                       </Card>
                     )}
@@ -2576,7 +2575,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         {/* Order CTAs */}
                         {isFlatFirstDiagnostic ? (
                           <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-xs leading-5 text-amber-100/80">
-                            This diagnostic deliberately disables the 2D proof, production order, and WrapBox actions. Switch the feature flag off to return to the unchanged legacy production path.
+                            Production ordering is unavailable in Preview mode. Choose Production mode when you need production files.
                           </div>
                         ) : (
                         <div className="p-4 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-lg space-y-3">
@@ -2725,26 +2724,26 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       <Card className="overflow-hidden border-cyan-400/35 bg-cyan-400/5">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-400/20 px-4 py-3">
                           <div>
-                            <p className="text-sm font-bold text-cyan-100">Canonical A.T.L.A.S. master</p>
+                            <p className="text-sm font-bold text-cyan-100">A.T.L.A.S. design master</p>
                             <p className="mt-0.5 text-[11px] text-cyan-100/60">
-                              Immutable guide → Gemini master → seven 3D approval proofs
+                              Master design and seven vehicle views
                             </p>
                           </div>
                           <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200">
-                            Proofs only · no production handoff
+                            Preview mode
                           </Badge>
                         </div>
 
                         {flatAtlasLoadError ? (
                           <div className="p-4 text-xs text-red-300">
-                            The A.T.L.A.S. record could not be loaded from the gateway. The seven-view run remains isolated from production.
+                            Your saved A.T.L.A.S. design could not be loaded. Please refresh this page.
                           </div>
                         ) : latestFlatAtlas ? (
                           <div className="grid gap-3 p-4 sm:grid-cols-2">
                             {[
-                              { label: "Before · deterministic guide", asset: latestFlatAtlas.guide, signedUrl: latestFlatAtlas.guideUrl },
-                              { label: "After · painted master", asset: latestFlatAtlas.master, signedUrl: latestFlatAtlas.masterUrl },
-                            ].map(({ label, asset, signedUrl }) => (
+                              { label: "Vehicle layout", signedUrl: latestFlatAtlas.guideUrl },
+                              { label: "A.T.L.A.S. design", signedUrl: latestFlatAtlas.masterUrl },
+                            ].map(({ label, signedUrl }) => (
                               <div key={label} className="overflow-hidden rounded-lg border border-white/10 bg-black/40">
                                 <div className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold text-white/75">
                                   {label}
@@ -2759,33 +2758,20 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   </button>
                                 ) : (
                                   <div className="flex aspect-[4/3] items-center justify-center px-4 text-center text-xs text-white/40">
-                                    Stored and hash-locked; preview is not signed yet.
+                                    Preparing preview…
                                   </div>
                                 )}
-                                <div className="space-y-1 px-3 py-2 text-[10px] text-white/50">
-                                  <p>{asset.widthPx} × {asset.heightPx}px · {(asset.byteSize / 1_048_576).toFixed(2)} MiB</p>
-                                  <p className="font-mono">sha256 {asset.contentHash.slice(0, 20)}…</p>
-                                </div>
                               </div>
                             ))}
                             <div className="sm:col-span-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/10 pt-3 text-[10px] text-white/55">
                               <span>Revision {latestFlatAtlas.revisionSequence}</span>
-                              <span>{flatAtlasRevisions.length} immutable version{flatAtlasRevisions.length === 1 ? "" : "s"} saved</span>
-                              <span>{latestFlatAtlas.model}</span>
-                              <span>{latestFlatAtlas.promptVersion}</span>
-                              <span>{latestFlatAtlas.affectedSurfaces.length} production surfaces mapped</span>
-                              <span>Gemini example conditioning: {latestFlatAtlas.exampleUsed ? "locked" : "not used"}</span>
-                              <span>Manifest sha256 {latestFlatAtlas.manifest.contentHash.slice(0, 12)}…</span>
+                              <span>{flatAtlasRevisions.length} saved version{flatAtlasRevisions.length === 1 ? "" : "s"}</span>
                             </div>
-                            <FlatAtlasPanelSchedule
-                              panels={latestFlatAtlas.panelMap}
-                              className="sm:col-span-2 border-white/10 bg-black/20"
-                            />
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 p-4 text-xs text-cyan-100/65">
                             <Loader2 className="h-4 w-4 animate-spin" />
-                            Waiting for the server to store and sign the guide and canonical master…
+                            Preparing your saved A.T.L.A.S. design…
                           </div>
                         )}
                       </Card>
@@ -2921,7 +2907,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       )}
                       {mainDisplayUrl && isFlatFirstDiagnostic && (
                         <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100/75">
-                          Production ordering is disabled for this A.T.L.A.S. diagnostic. The stored before guide, canonical flattened master, and seven proof views remain available for visual validation.
+                          Production ordering is unavailable in A.T.L.A.S. Preview. Your design and seven vehicle views remain saved.
                         </div>
                       )}
                     </div>
@@ -3021,8 +3007,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
           ) : (
             <div className="p-10 text-center text-sm text-gray-500">
               {isFlatFirstDiagnostic
-                ? "This A.T.L.A.S. test is master + 3D proofs only. It does not run Call 8 or publish a production proof."
-                : "The 2D Production Proof is still building. It appears here as soon as Call 8 finishes it for this design."}
+                ? "The production proof is unavailable in A.T.L.A.S. Preview."
+                : "The 2D Production Proof is still building and will appear here when it is ready."}
             </div>
           )}
         </DialogContent>
