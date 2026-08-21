@@ -61,6 +61,14 @@ export const useDesignPanelProLogic = () => {
   const [roofSize, setRoofSize] = useState<RoofSize>("none");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  /**
+   * Some stops are not failures. A vehicle GENIE has never had validated ends
+   * Calls 1-7 with a named next step and nothing broken, and rendering that as
+   * "Something went wrong -- Relaunch" tells the operator to repeat the one
+   * action guaranteed to stop again. When this is set the surface owes the user
+   * a route, not a retry.
+   */
+  const [generationBlock, setGenerationBlock] = useState<{ message: string; actionLabel: string; actionHref: string } | null>(null);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [visualizationId, setVisualizationId] = useState<string | null>(null);
   const [allViews, setAllViews] = useState<any[]>([]);
@@ -334,6 +342,7 @@ export const useDesignPanelProLogic = () => {
     setAllViews([]);
     setFailedViews([]);
     setGenerationError(null);
+    setGenerationBlock(null);
 
     const canGenerate = await checkCanGenerate();
     if (!canGenerate) {
@@ -410,6 +419,14 @@ export const useDesignPanelProLogic = () => {
       return { generationId: request.generationId, directRender: true, renderUrl: hero?.signedUrl };
     } catch (error: any) {
       const code = String(error?.code || error?.message || "");
+      if (/genie_dimension_validation_required|genie_universal_identity_ambiguous/.test(code)) {
+        const message = /ambiguous/.test(code)
+          ? "GENIE holds more than one record for this vehicle, so it cannot tell which geometry is yours. Resolve the duplicate in GENIE QC."
+          : "GENIE needs this vehicle's six panel sizes before it can build. Its measurements are ready for you to confirm.";
+        console.warn("[DesignPro] generation parked on GENIE validation:", code);
+        setGenerationBlock({ message, actionLabel: "Open GENIE QC", actionHref: "/designpro/genie-qc" });
+        return { generationId: null, directRender: false, error: message };
+      }
       const friendly =
         code === "generation_input_conflict"
           ? "That design id already holds a different brief. Start a new design rather than overwriting it."
@@ -642,7 +659,8 @@ export const useDesignPanelProLogic = () => {
     coverageType,
     setCoverageType,
     generationError,
-    clearGenerationError: () => setGenerationError(null),
+    generationBlock,
+    clearGenerationError: () => { setGenerationError(null); setGenerationBlock(null); },
     saveDesignJob,
     isGeneratingPanel,
     generateFromPrompt,

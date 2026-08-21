@@ -273,6 +273,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     vehicleType,
     setVehicleType,
     generationError,
+    generationBlock,
     clearGenerationError,
     flatProofUrl,
   } = useDesignPanelProLogic();
@@ -1911,7 +1912,33 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         )}
 
                         {/* Error state */}
-                        {renderError && !mainDisplayUrl && !pipelineActive ? (
+                        {renderError && !mainDisplayUrl && !pipelineActive && generationBlock ? (
+                          /* A stop with a named next step is not a failure. Relaunch
+                             would repeat the one action guaranteed to stop again, so
+                             this state offers the route instead of the retry. */
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-amber-500/5 via-background to-amber-500/10 px-6">
+                            <img src="/characters/ace-v2.png" alt="ACE" className="w-20 h-20 rounded-full border-2 border-amber-400/50 object-cover" />
+                            <p className="text-white text-base font-semibold text-center">
+                              One thing first.
+                            </p>
+                            <p className="text-sm text-amber-100/80 text-center max-w-md">
+                              {generationBlock.message}
+                            </p>
+                            <Button
+                              onClick={() => navigate(generationBlock.actionHref)}
+                              size="sm"
+                              className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white gap-2"
+                            >
+                              {generationBlock.actionLabel}
+                            </Button>
+                            <button
+                              onClick={() => { setRenderError(false); clearGenerationError(); }}
+                              className="text-xs text-gray-400 underline underline-offset-4 hover:text-gray-200"
+                            >
+                              Back to the brief
+                            </button>
+                          </div>
+                        ) : renderError && !mainDisplayUrl && !pipelineActive ? (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-red-500/5 via-background to-red-500/10 px-6">
                             <img src="/characters/ace-v2.png" alt="ACE" className="w-20 h-20 rounded-full border-2 border-red-400/50 object-cover" />
                             <p className="text-white text-base font-semibold text-center">
