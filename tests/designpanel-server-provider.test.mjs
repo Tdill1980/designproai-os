@@ -4,7 +4,11 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const sharp = require("sharp");
+// CI installs Sharp under runtime/, where production resolves it. Resolve the
+// fixture builder from that exact dependency tree instead of depending on an
+// incidental root-level install.
+const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
+const sharp = runtimeRequire("sharp");
 const {
   SERVER_PROVIDER_CONTRACT,
   createDesignPanelServerProvider,
