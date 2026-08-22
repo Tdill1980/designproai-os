@@ -199,7 +199,7 @@ select is(
 
 with roles(role_name,ordinal) as (
   values ('driver',1),('passenger',2),('hood',3),('roof',4),
-         ('front',5),('rear',6),('hero3d',7)
+         ('front',5),('rear',6),('closeup',7)
 ), assets as (
   select jsonb_object_agg(role_name,jsonb_build_object(
     'storagePath','users/10000000-0000-4000-8000-000000000001/revisions/90000000-0000-4000-8000-000000000009/inputs/'
