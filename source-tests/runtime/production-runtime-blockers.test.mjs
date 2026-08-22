@@ -528,3 +528,136 @@ test("cold-cache A.T.L.A.S. grounds once, stores the candidate as unvalidated, a
     else process.env.GOOGLE_AI_API_KEY = previousKey;
   }
 });
+
+test("GENIE parses one fenced balanced object and refuses multiple vehicle alternatives", () => {
+  const fenced = `OEM result:\n\`\`\`json\n${JSON.stringify({
+    vehicle_class: "truck",
+    overall_length_in: 244,
+    note: "brace text { stays quoted }",
+  })}\n\`\`\``;
+  assert.equal(universal._test.parseGroundedJson(fenced).overall_length_in, 244);
+  assert.throws(
+    () => universal._test.parseGroundedJson('{"overall_length_in":244}\n{"overall_length_in":260}'),
+    (error) => error.code === "genie_grounding_ambiguous" && error.retryable === false,
+  );
+});
+
+test("cold-cache A.T.L.A.S. retries one malformed grounding response and corrects Ford F-250 class", async () => {
+  const insertedRows = [];
+  const filters = [];
+  let groundingCalls = 0;
+  const provider = {
+    async generateRaw() {
+      groundingCalls += 1;
+      if (groundingCalls === 1) {
+        return {
+          payload: {
+            candidates: [{
+              finishReason: "MAX_TOKENS",
+              content: { parts: [{ text: '{"overall_length_in":244,' }] },
+            }],
+          },
+        };
+      }
+      return {
+        payload: {
+          candidates: [{
+            finishReason: "STOP",
+            content: { parts: [{ text: JSON.stringify({
+              vehicle_class: "truck",
+              overall_length_in: 250,
+              overall_width_in: 80,
+              overall_height_in: 81,
+              wheelbase_in: 176,
+              sub_type: "Crew Cab short bed SRW",
+              confidence: "high",
+              source_urls: ["https://www.ford.com/support/vehicle-specifications"],
+            }) }] },
+            groundingMetadata: { groundingChunks: [{ web: { uri: "https://media.ford.com/f250-specifications.pdf" } }] },
+          }],
+        },
+      };
+    },
+  };
+  const table = {
+    select() { return this; },
+    eq(column, value) { filters.push([column, value]); return this; },
+    ilike(column, value) { filters.push([column, value]); return this; },
+    limit() { return Promise.resolve({ data: [], error: null }); },
+    insert(payload) {
+      insertedRows.push(payload);
+      return {
+        select() {
+          return {
+            async single() {
+              return {
+                data: {
+                  id: "88888888-8888-4888-8888-888888888888",
+                  candidate_hash: "d".repeat(64),
+                  ...payload,
+                },
+                error: null,
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  const sb = { from(name) { assert.equal(name, "designpro_vehicle_specs_universal"); return table; } };
+
+  const preview = await universal.resolveFlatAtlasPreviewDimensions(
+    sb,
+    { type: "car", year: 2019, make: "Ford", model: "F 250 Crew Cab" },
+    provider,
+  );
+
+  assert.equal(groundingCalls, 2, "one malformed HTTP-success response receives one local retry");
+  assert.equal(insertedRows.length, 1);
+  assert.equal(insertedRows[0].vehicle_class, "truck");
+  assert.ok(filters.some(([column, value]) => column === "vehicle_class" && value === "truck"));
+  assert.deepEqual(preview.vehicleClassResolution, {
+    declared: "car",
+    resolved: "truck",
+    corrected: true,
+    authority: "canonical-model-identity",
+  });
+  assert.equal(preview.proofGeometryAuthority.status, "provisional");
+});
+
+test("two malformed GENIE responses fail closed with no cache insert", async () => {
+  let groundingCalls = 0;
+  let insertCalls = 0;
+  const provider = {
+    async generateRaw() {
+      groundingCalls += 1;
+      return {
+        payload: {
+          candidates: [{
+            finishReason: "STOP",
+            content: { parts: [{ text: '{"overall_length_in":244,' }] },
+          }],
+        },
+      };
+    },
+  };
+  const table = {
+    select() { return this; }, eq() { return this; }, ilike() { return this; },
+    limit() { return Promise.resolve({ data: [], error: null }); },
+    insert() { insertCalls += 1; throw new Error("must not insert malformed grounding"); },
+  };
+  const sb = { from() { return table; } };
+
+  await assert.rejects(
+    () => universal.resolveFlatAtlasPreviewDimensions(
+      sb,
+      { type: "truck", year: 2019, make: "Ford", model: "F-250 Crew Cab" },
+      provider,
+    ),
+    (error) => error.code === "genie_grounding_parse_failed"
+      && error.retryable === true
+      && /two bounded grounding attempts/.test(error.message),
+  );
+  assert.equal(groundingCalls, 2);
+  assert.equal(insertCalls, 0);
+});

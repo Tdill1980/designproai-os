@@ -9,6 +9,8 @@
  * which may use cited, deterministic provisional rectangles for layout only.
  */
 
+const { createProvider, ProviderError } = require("./generation-provider.cjs");
+
 const ALLOWED_CLASSES = new Set(["car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv", "trailer", "aircraft", "heavy_equipment"]);
 const SURFACES = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 const SANITY_RANGES = Object.freeze({
@@ -38,17 +40,40 @@ class UniversalDimensionError extends Error {
 }
 
 function normalizedVehicle(vehicle) {
-  const vehicleClass = String(vehicle.type || vehicle.vehicleClass || "").trim().toLowerCase().replace(/[ -]+/g, "_");
+  const declaredVehicleClass = String(vehicle.type || vehicle.vehicleClass || "").trim().toLowerCase().replace(/[ -]+/g, "_");
   const make = String(vehicle.make || "").trim();
   const model = String(vehicle.model || "").trim();
   const year = String(vehicle.year || "").trim();
-  if (!ALLOWED_CLASSES.has(vehicleClass) || !make || !model || !/^\d{4}$/.test(year)) {
+  if (!ALLOWED_CLASSES.has(declaredVehicleClass) || !make || !model || !/^\d{4}$/.test(year)) {
     throw new UniversalDimensionError("genie_vehicle_identity_invalid", "Universal GENIE requires class, four-digit year, make and model");
   }
-  return { vehicleClass, make, model, year };
+  // F-Series pickup identity is unambiguous even when an older saved form has
+  // retained its historical default of `car`. Resolve that known identity
+  // before cache lookup, grounding, topology and proof prompts. This is not a
+  // dimensional guess: it only corrects the body class for Ford's named pickup
+  // line, and the original declaration remains on the audit metadata below.
+  const vehicleClass = /^ford$/i.test(make)
+    && /\bf[\s-]?(?:150|250|350|450|550)\b/i.test(model)
+    ? "truck"
+    : declaredVehicleClass;
+  return {
+    vehicleClass,
+    declaredVehicleClass,
+    vehicleClassCorrected: vehicleClass !== declaredVehicleClass,
+    make,
+    model,
+    year,
+  };
 }
 
 function assertGroundedCandidate(candidate, vehicleClass) {
+  const groundedVehicleClass = String(candidate.vehicle_class || "").trim().toLowerCase().replace(/[ -]+/g, "_");
+  if (groundedVehicleClass && groundedVehicleClass !== vehicleClass) {
+    throw new UniversalDimensionError(
+      "genie_vehicle_class_mismatch",
+      `Grounded vehicle class ${groundedVehicleClass} does not match resolved class ${vehicleClass}`,
+    );
+  }
   const ranges = SANITY_RANGES[vehicleClass];
   const dimensions = {
     overall_length_in: Number(candidate.overall_length_in),
@@ -64,7 +89,13 @@ function assertGroundedCandidate(candidate, vehicleClass) {
   }
   const sourceUrls = Array.isArray(candidate.source_urls) ? [...new Set(candidate.source_urls.filter((value) => /^https:\/\//.test(String(value))))] : [];
   if (!sourceUrls.length) throw new UniversalDimensionError("genie_grounding_sources_missing", "Grounded vehicle candidate has no HTTPS source citations");
-  return { dimensions, sourceUrls, confidence: ["high", "medium", "low"].includes(candidate.confidence) ? candidate.confidence : "low", subType: String(candidate.sub_type || "").trim() || null };
+  return {
+    dimensions,
+    sourceUrls,
+    confidence: ["high", "medium", "low"].includes(candidate.confidence) ? candidate.confidence : "low",
+    subType: String(candidate.sub_type || "").trim() || null,
+    resolvedVehicleClass: vehicleClass,
+  };
 }
 
 function validatedSurfaces(row) {
@@ -193,54 +224,153 @@ function provisionalDimensionsFromCandidate(row, vehicleClass) {
   };
 }
 
-async function groundedCandidate(vehicle) {
-  const apiKey = String(process.env.GOOGLE_AI_API_KEY || process.env.GEMINI_API_KEY || "").trim();
-  if (!apiKey) throw new UniversalDimensionError("genie_grounding_key_missing", "Universal GENIE grounding key is not configured");
-  const prompt = `Find exact OEM exterior dimensions for ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.vehicleClass}). Use primary manufacturer spec pages or official PDFs. Return JSON only: {"overall_length_in":number,"overall_width_in":number,"overall_height_in":number,"wheelbase_in":number|null,"sub_type":string|null,"confidence":"high|medium|low","source_urls":["https://..."]}. This is a candidate for human validation; do not invent missing values.`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    // gemini-2.5-flash is a thinking model and thinking tokens are charged
-    // against maxOutputTokens, so at 2048 a grounded search could spend the
-    // whole budget before emitting a character -- returning empty text with
-    // finishReason MAX_TOKENS, which the parser below read as "no JSON here".
-    // Observed live on a 2021 Ford Transit 250.
-    //
-    // The ceiling is raised rather than the thinking suppressed. Turning
-    // thinking off did clear the truncation, but the model then answered with
-    // zeros for every dimension, which the range check rejected
-    // ("overall_length_in 0 is outside van range 160-290") -- reading OEM spec
-    // pages and reconciling trim variants is the part of this job that needs
-    // the reasoning. 8192 leaves room for both the deliberation and the answer.
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      tools: [{ googleSearch: {} }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
-    }),
-    signal: AbortSignal.timeout(45_000),
-  });
-  if (!response.ok) throw new UniversalDimensionError("genie_grounding_failed", `Gemini grounding HTTP ${response.status}`, response.status >= 500 || response.status === 429);
-  const raw = await response.json();
-  const candidate = raw?.candidates?.[0];
-  const text = candidate?.content?.parts?.map((part) => part.text || "").join("") || "";
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) {
-    // Say which of the several silent shapes this was, or the next failure is
-    // as opaque as this one: a truncated answer, a safety block and an empty
-    // response all arrive here looking identical.
-    const finish = String(candidate?.finishReason || raw?.promptFeedback?.blockReason || "none");
-    const excerpt = text.trim().slice(0, 160).replace(/\s+/g, " ");
+/**
+ * Extract one complete JSON object without the old greedy `{...}` match. The
+ * scanner respects quoted braces and escapes, accepts ordinary fenced output,
+ * and refuses multiple independently valid objects instead of silently picking
+ * one trim/bed alternative.
+ */
+function parseGroundedJson(text, raw = {}) {
+  const source = String(text || "").trim();
+  if (source) {
+    try {
+      const direct = JSON.parse(source);
+      if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct;
+    } catch {
+      // Fenced/prose-wrapped JSON is handled by the balanced scanner below.
+    }
+  }
+
+  const slices = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  let sawObjectStart = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"' && depth > 0) {
+      inString = true;
+      continue;
+    }
+    if (character === "{") {
+      sawObjectStart = true;
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (character === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        slices.push(source.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  const objects = [];
+  for (const slice of slices) {
+    try {
+      const value = JSON.parse(slice);
+      if (value && typeof value === "object" && !Array.isArray(value)) objects.push(value);
+    } catch {
+      // Invalid balanced candidates are reported below; never repair them.
+    }
+  }
+  if (objects.length === 1) return objects[0];
+  if (objects.length > 1) {
     throw new UniversalDimensionError(
-      "genie_grounding_parse_failed",
-      `Grounding response contained no JSON candidate (finishReason=${finish}, textLength=${text.length}${excerpt ? `, excerpt=${JSON.stringify(excerpt)}` : ""})`,
-      finish === "MAX_TOKENS",
+      "genie_grounding_ambiguous",
+      `Grounding returned ${objects.length} vehicle candidates; one exact OEM configuration is required`,
     );
   }
-  let parsed;
-  try { parsed = JSON.parse(match[0]); }
-  catch { throw new UniversalDimensionError("genie_grounding_parse_failed", "Grounding response JSON was invalid"); }
-  const groundingUrls = raw?.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((chunk) => chunk.web?.uri).filter(Boolean) || [];
-  parsed.source_urls = [...(Array.isArray(parsed.source_urls) ? parsed.source_urls : []), ...groundingUrls];
-  return { ...assertGroundedCandidate(parsed, vehicle.vehicleClass), raw };
+
+  const candidate = raw?.candidates?.[0];
+  const finish = String(candidate?.finishReason || raw?.promptFeedback?.blockReason || "none");
+  const excerpt = source.slice(0, 160).replace(/\s+/g, " ");
+  throw new UniversalDimensionError(
+    "genie_grounding_parse_failed",
+    `Grounding response ${sawObjectStart ? "contained invalid JSON" : "contained no JSON candidate"} (finishReason=${finish}, textLength=${source.length}${excerpt ? `, excerpt=${JSON.stringify(excerpt)}` : ""})`,
+    true,
+  );
+}
+
+function groundingPrompt(vehicle, strictRetry = false) {
+  const retryInstruction = strictRetry
+    ? " Your prior answer could not be parsed. Return exactly ONE complete JSON object, with no Markdown fence, prose, comments, trailing text, or alternative objects."
+    : "";
+  return `Find exact OEM exterior dimensions for ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.vehicleClass}). Use primary manufacturer spec pages or official PDFs. Where the named cab has multiple bed lengths, use the standard single-rear-wheel short-bed configuration and name that exact configuration in sub_type; never return alternative objects. Return JSON only: {"vehicle_class":"${vehicle.vehicleClass}","overall_length_in":number,"overall_width_in":number,"overall_height_in":number,"wheelbase_in":number|null,"sub_type":string|null,"confidence":"high|medium|low","source_urls":["https://..."]}. This is a candidate for human validation; do not invent missing values.${retryInstruction}`;
+}
+
+async function groundedCandidate(vehicle, provider) {
+  let transport = provider;
+  if (!transport) {
+    try { transport = createProvider({}); }
+    catch (error) {
+      if (error instanceof ProviderError && error.code === "provider_key_missing") {
+        throw new UniversalDimensionError("genie_grounding_key_missing", "Universal GENIE grounding key is not configured");
+      }
+      throw error;
+    }
+  }
+  if (typeof transport.generateRaw !== "function") {
+    throw new UniversalDimensionError("genie_grounding_provider_invalid", "Universal GENIE requires the server generation provider", true);
+  }
+
+  let lastParseError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let rawResult;
+    try {
+      rawResult = await transport.generateRaw({
+        model: "gemini-2.5-flash",
+        body: {
+          contents: [{ parts: [{ text: groundingPrompt(vehicle, attempt === 1) }] }],
+          tools: [{ googleSearch: {} }],
+          // Do not add responseMimeType here: the deployed model combines
+          // Gemini 2.5 Flash with Google Search, while structured output plus
+          // built-in tools is a Gemini 3 contract. Parsing remains fail-closed.
+          generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
+        },
+        timeoutMs: 45_000,
+        label: `GENIE grounding attempt ${attempt + 1}`,
+      });
+    } catch (error) {
+      if (error instanceof ProviderError) {
+        throw new UniversalDimensionError("genie_grounding_failed", error.message, error.retryable !== false);
+      }
+      throw error;
+    }
+
+    const raw = rawResult.payload;
+    const candidate = raw?.candidates?.[0];
+    const text = candidate?.content?.parts?.map((part) => part.text || "").join("") || "";
+    let parsed;
+    try {
+      parsed = parseGroundedJson(text, raw);
+    } catch (error) {
+      if (error?.code !== "genie_grounding_parse_failed" || attempt === 1) {
+        if (error?.code === "genie_grounding_parse_failed" && attempt === 1) {
+          throw new UniversalDimensionError(
+            error.code,
+            `${error.message}; two bounded grounding attempts were exhausted`,
+            true,
+          );
+        }
+        throw error;
+      }
+      lastParseError = error;
+      continue;
+    }
+    const groundingUrls = candidate?.groundingMetadata?.groundingChunks
+      ?.map((chunk) => chunk.web?.uri).filter(Boolean) || [];
+    parsed.source_urls = [...(Array.isArray(parsed.source_urls) ? parsed.source_urls : []), ...groundingUrls];
+    return { ...assertGroundedCandidate(parsed, vehicle.vehicleClass), raw };
+  }
+  throw lastParseError || new UniversalDimensionError("genie_grounding_parse_failed", "Grounding response JSON was invalid", true);
 }
 
 async function queueValidationRequest(sb, stage, runId, candidateId) {
@@ -272,6 +402,19 @@ function groundedInsertPayload(vehicle, candidate) {
   };
 }
 
+function attachVehicleClassResolution(dimensions, vehicle) {
+  return {
+    ...dimensions,
+    resolvedVehicleClass: vehicle.vehicleClass,
+    vehicleClassResolution: {
+      declared: vehicle.declaredVehicleClass,
+      resolved: vehicle.vehicleClass,
+      corrected: vehicle.vehicleClassCorrected,
+      authority: vehicle.vehicleClassCorrected ? "canonical-model-identity" : "request",
+    },
+  };
+}
+
 async function insertOrReadGroundedCandidate(sb, vehicle, candidate) {
   const { data: inserted, error: insertError } = await sb.from("designpro_vehicle_specs_universal")
     .insert(groundedInsertPayload(vehicle, candidate)).select("*").single();
@@ -292,36 +435,42 @@ async function insertOrReadGroundedCandidate(sb, vehicle, candidate) {
  * function never queues production and never returns universalValidation for
  * provisional geometry.
  */
-async function resolveFlatAtlasPreviewDimensions(sb, rawVehicle) {
+async function resolveFlatAtlasPreviewDimensions(sb, rawVehicle, provider) {
   const vehicle = normalizedVehicle(rawVehicle);
   const { data: rows, error } = await findCandidates(sb, vehicle);
   if (error) throw new UniversalDimensionError("genie_universal_cache_failed", error.message, true);
   if ((rows || []).length > 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", "Multiple universal GENIE candidates matched");
   if (rows?.length === 1) {
-    return validatedSurfaces(rows[0]) || provisionalDimensionsFromCandidate(rows[0], vehicle.vehicleClass);
+    return attachVehicleClassResolution(
+      validatedSurfaces(rows[0]) || provisionalDimensionsFromCandidate(rows[0], vehicle.vehicleClass),
+      vehicle,
+    );
   }
 
-  const grounded = await groundedCandidate(vehicle);
+  const grounded = await groundedCandidate(vehicle, provider);
   const row = await insertOrReadGroundedCandidate(sb, vehicle, grounded);
-  return validatedSurfaces(row) || provisionalDimensionsFromCandidate(row, vehicle.vehicleClass);
+  return attachVehicleClassResolution(
+    validatedSurfaces(row) || provisionalDimensionsFromCandidate(row, vehicle.vehicleClass),
+    vehicle,
+  );
 }
 
-async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId) {
+async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId, provider) {
   const vehicle = normalizedVehicle(rawVehicle);
   const { data: rows, error } = await findCandidates(sb, vehicle);
   if (error) throw new UniversalDimensionError("genie_universal_cache_failed", error.message, true);
   if ((rows || []).length > 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", "Multiple universal GENIE candidates matched");
   if (rows?.length === 1) {
     const validated = validatedSurfaces(rows[0]);
-    if (validated) return validated;
+    if (validated) return attachVehicleClassResolution(validated, vehicle);
     const queued = await queueValidationRequest(sb, stage, runId, rows[0].id);
     throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${rows[0].id} requires exact six-surface validation`, false, queued);
   }
 
-  const candidate = await groundedCandidate(vehicle);
+  const candidate = await groundedCandidate(vehicle, provider);
   const inserted = await insertOrReadGroundedCandidate(sb, vehicle, candidate);
   const validated = validatedSurfaces(inserted);
-  if (validated) return validated;
+  if (validated) return attachVehicleClassResolution(validated, vehicle);
   const queued = await queueValidationRequest(sb, stage, runId, inserted.id);
   throw new UniversalDimensionError("genie_dimension_validation_required", `GENIE candidate ${inserted.id} created; exact six-surface validation is required`, false, queued);
 }
@@ -374,8 +523,10 @@ module.exports = {
   resolveOrQueueUniversalDimensions,
   _test: {
     assertGroundedCandidate,
+    attachVehicleClassResolution,
     groundedInsertPayload,
     normalizedVehicle,
+    parseGroundedJson,
     provisionalDimensionsFromCandidate,
     validatedSurfaces,
   },
