@@ -90,7 +90,16 @@ jobs:
             echo "host fingerprint mismatch: observed ${observed[0]}" >&2; exit 37; }
           echo "key_file=$key_file" >> "$GITHUB_ENV"
           echo "known_hosts=$known_hosts" >> "$GITHUB_ENV"
-          echo "script_sha256=$(sha256sum ops/install-caddy.sh | awk '{print $1}')" >> "$GITHUB_ENV"
+          controls=(
+            install-caddy.sh
+            Caddyfile.fragment
+            acceptance.sh
+            validate-archive.py
+            validate-release-tree.py
+            validate-env.py
+            release-files.txt
+          )
+          (cd ops && sha256sum "${controls[@]}") > "$RUNNER_TEMP/caddy-controls.sha256"
 
       - name: Install the Caddy package, if that mode was requested
         if: inputs.confirmation == 'BOOTSTRAP_CADDY_PACKAGE_AND_SITE'
@@ -150,10 +159,19 @@ jobs:
           }
           trap cleanup EXIT
 
-          scp "${ssh_args[@]}" ops/install-caddy.sh "root@$TARGET_HOST:$remote_dir/install-caddy.sh"
+          scp "${ssh_args[@]}" \
+            ops/install-caddy.sh \
+            ops/Caddyfile.fragment \
+            ops/acceptance.sh \
+            ops/validate-archive.py \
+            ops/validate-release-tree.py \
+            ops/validate-env.py \
+            ops/release-files.txt \
+            "$RUNNER_TEMP/caddy-controls.sha256" \
+            "root@$TARGET_HOST:$remote_dir/"
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXACT_SHA='$EXACT_SHA' MODE='$MODE' REMOTE_DIR='$remote_dir' EXPECTED_SCRIPT_SHA256='$script_sha256' bash -s" <<'REMOTE'
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' EXACT_SHA='$EXACT_SHA' MODE='$MODE' REMOTE_DIR='$remote_dir' bash -s" <<'REMOTE'
           set -Eeuo pipefail
 
           host=$(hostname)
@@ -164,20 +182,30 @@ jobs:
           [[ $current == "/opt/designproai-os/releases/$EXACT_SHA" ]] || {
             echo "refusing: requested SHA is not the live release" >&2; exit 11; }
 
-          script="$REMOTE_DIR/install-caddy.sh"
-          [[ -f $script && ! -L $script ]] || { echo "shipped script missing at $script" >&2; exit 12; }
+          cd "$REMOTE_DIR"
+          controls=(
+            install-caddy.sh
+            Caddyfile.fragment
+            acceptance.sh
+            validate-archive.py
+            validate-release-tree.py
+            validate-env.py
+            release-files.txt
+          )
+          for control in "${controls[@]}" caddy-controls.sha256; do
+            [[ -f $control && ! -L $control ]] || {
+              echo "shipped control missing or unsafe: $REMOTE_DIR/$control" >&2; exit 12; }
+          done
 
-          # The bytes that run are the bytes from the pinned checkout.
-          observed=$(sha256sum "$script" | awk '{print $1}')
-          [[ $observed == "$EXPECTED_SCRIPT_SHA256" ]] || {
-            echo "shipped script digest mismatch: observed $observed" >&2; exit 13; }
+          # Every byte used by the installer belongs to the pinned checkout.
+          sha256sum -c caddy-controls.sha256 || {
+            echo "shipped Caddy control digest mismatch" >&2; exit 13; }
 
           if [[ $MODE == INSPECT_ONLY ]]; then
             echo "INSPECT_ONLY — script shipped and verified, not installing."
             exit 0
           fi
 
-          cd "$REMOTE_DIR"
           bash install-caddy.sh "$EXACT_SHA" INSTALL_DESIGNPRO_CADDY_ONLY
           REMOTE
 
