@@ -499,57 +499,6 @@ jobs:
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
-      # The edge-function workflow remains dispatch-only. This narrowly-scoped
-      # repair path runs only for an exact, release-gated main commit carrying
-      # both the normal [dark-deploy] approval and this repair's explicit
-      # [repair-designpanel-edge-chain] marker. Keeping it after the dark deploy
-      # avoids deleting the bad slug before the corrected runtime is live.
-      - name: Detect the explicit DesignPanel Edge-chain repair marker
-        id: designpanel-edge-repair
-        if: env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          if git log -1 --format=%B | grep -Fq '[repair-designpanel-edge-chain]'; then
-            echo "apply=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "apply=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Setup pinned Supabase CLI for the sanctioned-chain repair
-        if: steps.designpanel-edge-repair.outputs.apply == 'true'
-        uses: supabase/setup-cli@v1
-        with:
-          version: 2.111.0
-
-      - name: Restore the sanctioned DesignPanel Edge chain
-        if: steps.designpanel-edge-repair.outputs.apply == 'true'
-        env:
-          PROJECT_REF: ${{ env.EXPECTED_PROJECT_REF }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          : "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN secret is required}"
-
-          supabase functions deploy generate-color-render \
-            --project-ref "$PROJECT_REF" --use-api
-
-          if supabase functions delete design-panel-color-render \
-            --project-ref "$PROJECT_REF" --yes; then
-            echo "Removed unsanctioned design-panel-color-render"
-          else
-            deployed=$(supabase functions list --project-ref "$PROJECT_REF")
-            if grep -q 'design-panel-color-render' <<< "$deployed"; then
-              echo "::error::design-panel-color-render still exists after delete"
-              exit 1
-            fi
-            echo "design-panel-color-render was already absent"
-          fi
-
-          deployed=$(supabase functions list --project-ref "$PROJECT_REF")
-          grep -q 'generate-color-render' <<< "$deployed"
-          ! grep -q 'design-panel-color-render' <<< "$deployed"
-
       - name: Remove only this run's temporary remote staging directory
         if: always() && env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3' && steps.ssh.outputs.key_file != ''
         env:

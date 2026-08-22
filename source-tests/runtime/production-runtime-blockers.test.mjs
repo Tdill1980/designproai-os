@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const contract = require("../../runtime/runtime-contract.cjs");
 const readiness = require("../../runtime/runtime-readiness.cjs");
 const universal = require("../../runtime/genie-universal-resolver.cjs");
+const claimant = require("../../runtime/designpro-standalone-claimant.cjs");
 const claimantSource = readFileSync(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");
 const runtimeEntrySource = readFileSync(new URL("../../runtime/index.js", import.meta.url), "utf8");
 const workflowSql = readFileSync(new URL("../../supabase/migrations/20260806180100_designpro_workflow_rpcs.sql", import.meta.url), "utf8").toLowerCase();
@@ -26,6 +27,17 @@ const runId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const tenant = `user_${ownerId}`;
 const bytes = Buffer.from("immutable-view");
 const hash = createHash("sha256").update(bytes).digest("hex");
+
+function deliverySnapshot(orderNumber = "DP-2026-1001", designName = "Exact Design") {
+  return {
+    contractVersion: "designpro.wrapbox-recipient.v1",
+    customerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    customerEmail: "customer@example.test",
+    recipientIdentityHash: "d".repeat(64),
+    orderNumber,
+    designName,
+  };
+}
 
 function sourceIdentity(overrides = {}) {
   return {
@@ -168,30 +180,99 @@ test("visible stamp, ZIP identity file, and WrapBox bind immutable DesignID plus
   assert.doesNotMatch(claimantSource, /DesignID:.*run\.id|Order #:.*run\.id/);
 });
 
-test("Call 8 authors one flat wrap design and Call 9 only cuts it", () => {
+test("paid production resolves either the historical bound snapshot or one frozen late binding", () => {
+  const generationId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const sourceBase = {
+    generation_id: generationId,
+    snapshot_hash: "f".repeat(64),
+    owner_id: ownerId,
+    tenant_key: tenant,
+  };
+  const runBase = {
+    revision_id: revisionId,
+    revision_snapshot_hash: sourceBase.snapshot_hash,
+    owner_id: ownerId,
+    tenant_key: tenant,
+  };
+  const boundDelivery = deliverySnapshot();
+  const boundSource = {
+    ...sourceBase,
+    snapshot: {
+      generationId,
+      designId: "DID-EEEEEEEE",
+      orderNumber: boundDelivery.orderNumber,
+      delivery: boundDelivery,
+    },
+  };
+  assert.deepEqual(
+    claimant._test.immutableBusinessIdentity(boundSource, { ...runBase, input: {} }),
+    { designId: "DID-EEEEEEEE", orderNumber: "DP-2026-1001" },
+  );
+
+  const lateDelivery = deliverySnapshot("DP-2026-2002", "Late-Bound Design");
+  const unboundSource = {
+    ...sourceBase,
+    snapshot: {
+      generationId,
+      designId: "DID-EEEEEEEE",
+      sourceInputContract: "designpro.calls-1-7-input.v2",
+      designName: "Late-Bound Design",
+      fulfillment: { contractVersion: "designpro.fulfillment-state.v1", state: "unbound" },
+    },
+  };
+  const lateRun = {
+    ...runBase,
+    input: {
+      fulfillment: {
+        contractVersion: "designpro.fulfillment-binding.v1",
+        revisionId,
+        bindingHash: "a".repeat(64),
+        orderNumber: lateDelivery.orderNumber,
+        delivery: lateDelivery,
+      },
+    },
+  };
+  assert.deepEqual(
+    claimant._test.immutableBusinessIdentity(unboundSource, lateRun),
+    { designId: "DID-EEEEEEEE", orderNumber: "DP-2026-2002" },
+  );
+  assert.throws(
+    () => claimant._test.immutableBusinessIdentity(unboundSource, { ...lateRun, input: {} }),
+    (error) => error.code === "production_fulfillment_binding_missing",
+  );
+  assert.throws(
+    () => claimant._test.immutableBusinessIdentity(unboundSource, {
+      ...lateRun,
+      input: { fulfillment: { ...lateRun.input.fulfillment, delivery: { ...lateDelivery, designName: "Drift" } } },
+    }),
+    (error) => error.code === "production_fulfillment_binding_drift",
+  );
+});
+
+test("Call 8 authors six isolated surface fields and Call 9 only gridslices them", () => {
   const entry = readFileSync(new URL("../../runtime/index.js", import.meta.url), "utf8");
-  const wrapSource = readFileSync(new URL("../../runtime/gemini-flat-wrap.cjs", import.meta.url), "utf8");
-  const layoutSource = readFileSync(new URL("../../runtime/flat-wrap-layout.cjs", import.meta.url), "utf8");
-  assert.match(entry, /authorFlatWrapLayout/);
-  assert.match(wrapSource, /gemini-3-pro-image|selectedImageModel/);
-  assert.match(wrapSource, /imageSize: "4K"/);
-  assert.match(wrapSource, /OUTPUT ONLY THE ARTWORK CANVAS/);
-  // The hero anchor put driver artwork on every panel. It must stay deleted,
-  // along with the per-surface generation calls that carried it.
-  assert.doesNotMatch(wrapSource, /cross-vehicle design anchor/i);
-  assert.doesNotMatch(wrapSource, /DESIGN ANCHOR/);
-  assert.doesNotMatch(entry, /authorFlatSurfaceMasters/);
+  const surfaceSource = readFileSync(new URL("../../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8");
+  const gridSource = readFileSync(new URL("../../runtime/server-grid-slice.cjs", import.meta.url), "utf8");
+  assert.match(entry, /authorFlatSurfaceFields/);
+  assert.match(surfaceSource, /gemini-3-pro-image|selectedImageModel/);
+  assert.match(surfaceSource, /imageSize: "4K"/);
+  assert.match(surfaceSource, /Output only one opaque, edge-to-edge flat artwork rectangle/);
+  assert.match(surfaceSource, /ownReference/);
+  assert.match(surfaceSource, /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/);
+  assert.match(surfaceSource, /QC_HARD_ISSUES/);
+  assert.match(surfaceSource, /judgeSurface/);
+  assert.doesNotMatch(surfaceSource, /cross-vehicle design anchor/i);
+  assert.doesNotMatch(surfaceSource, /DESIGN ANCHOR/);
+  assert.doesNotMatch(entry, /authorFlatWrapLayout/);
   assert.equal(existsSync(new URL("../../runtime/deterministic-artboard.cjs", import.meta.url)), false);
-  // Call 9 consumes and verifies; it never cuts an atlas and never regenerates.
-  // The rule is the one the database enforces on the completion receipt.
   assert.match(claimantSource, /PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side"/);
-  assert.match(claimantSource, /call9_surface_changed/);
+  assert.match(claimantSource, /call9_surface_field_changed/);
+  assert.match(claimantSource, /gridSliceAll\(fieldSources, manifest\.expectedSurfaces/);
+  assert.match(gridSource, /extendWith: "mirror"/);
   assert.doesNotMatch(claimantSource, /cutAllPanels/);
   assert.doesNotMatch(claimantSource, /flatWrapLayout/);
   assert.doesNotMatch(claimantSource, /deterministic-cut-of-approved-call8-flat-wrap-layout/);
-  // Call 8 runs the canonical producer, not an atlas author.
-  assert.match(claimantSource, /buildMasterCycle/);
-  assert.match(layoutSource, /layout_surface_artwork_reused/);
+  assert.doesNotMatch(claimantSource, /buildMasterCycle/);
 });
 
 test("heavy output, lease-loss abort, structural output QC, deterministic stamp and delivery are wired", () => {
@@ -219,7 +300,7 @@ test("every server-produced artifact above 6 MiB uses persistent create-only res
   assert.match(claimantSource, /outputs\/\$\{slug\}[\s\S]*?uploadProducedBytes/);
   assert.match(claimantSource, /stamped-call8-proof\.png[\s\S]*?stampedStored\.spool/);
   assert.match(runtimeEntrySource, /body\.length <= MAX_STANDARD_UPLOAD_BYTES[\s\S]*?spoolImmutableBuffer[\s\S]*?uploadSpoolWithTus/);
-  assert.match(runtimeEntrySource, /persist: \(bytes\) => uploadBuffer/);
+  assert.match(runtimeEntrySource, /persist: \(surface, bytes\) => uploadBuffer/);
 });
 
 test("recipient registration remains worker-authenticated and strips service authority", () => {

@@ -35,14 +35,13 @@ test("missing or reused required view refuses the chain", () => {
   assert.throws(() => _test.exactSevenViews({ renderAssets: reused }, tenantKey, revisionId), /distinct paths and byte identities/);
 });
 
-test("Call 8 runs the canonical Design Master producer, and the atlas request builder is gone", async () => {
-  // The retired model built ONE flat wrap layout per run and had Call 9 cut six
-  // panels out of it, so a panel was only ever as correct as that layout's
-  // regions. Call 8 now authors the canonical master and renders each side in
-  // its own right.
-  assert.equal(_test.call8ProofRequest, undefined, "the atlas request builder must not come back");
+test("Call 8 composes the proof from seven views and Call 9 gridslices six own-surface fields", async () => {
+  assert.equal(typeof _test.call8ProofRequest, "function");
   const source = await readFile(fileURLToPath(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url)), "utf8");
-  assert.match(source, /buildMasterCycle\(/);
+  assert.match(source, /"\/compose-proof-sheet"/);
+  assert.match(source, /gridSliceAll\(fieldSources, manifest\.expectedSurfaces/);
+  assert.match(source, /sourceFieldHashes/);
+  assert.doesNotMatch(source, /buildMasterCycle\(/);
   assert.doesNotMatch(source, /flatWrapLayout/);
   assert.doesNotMatch(source, /cutAllPanels/);
 });
@@ -93,7 +92,17 @@ test("visible approval seal binds canonical immutable DesignID and Order #, neve
   const source = {
     generation_id: generationId, snapshot_hash: run.revision_snapshot_hash,
     owner_id: ownerId, tenant_key: tenantKey,
-    snapshot: { generationId, designId: "DID-EEEEEEEE", orderNumber: "ORD-2026-0042", delivery: { orderNumber: "ORD-2026-0042" } },
+    snapshot: {
+      generationId, designId: "DID-EEEEEEEE", orderNumber: "ORD-2026-0042",
+      delivery: {
+        contractVersion: "designpro.wrapbox-recipient.v1",
+        customerId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        customerEmail: "customer@example.test",
+        recipientIdentityHash: "d".repeat(64),
+        orderNumber: "ORD-2026-0042",
+        designName: "Exact Design",
+      },
+    },
   };
   assert.deepEqual(_test.immutableBusinessIdentity(source, run), { designId: "DID-EEEEEEEE", orderNumber: "ORD-2026-0042" });
   const svg = _test.stampSvg("Trish", "DID-EEEEEEEE", "ORD-2026-0042", "2026-08-06").toString("utf8");
@@ -104,7 +113,7 @@ test("visible approval seal binds canonical immutable DesignID and Order #, neve
   assert.match(svg, /<circle[^>]+fill="none"/);
   assert.doesNotMatch(svg, new RegExp(runId, "i"));
   assert.throws(() => _test.immutableBusinessIdentity({ ...source, snapshot: { ...source.snapshot, designId: `DID-${runId.slice(0, 8).toUpperCase()}` } }, run), /immutable revision/i);
-  assert.throws(() => _test.immutableBusinessIdentity({ ...source, snapshot: { ...source.snapshot, delivery: { orderNumber: "DIFFERENT-ORDER" } } }, run), /immutable revision/i);
+  assert.throws(() => _test.immutableBusinessIdentity({ ...source, snapshot: { ...source.snapshot, delivery: { ...source.snapshot.delivery, orderNumber: "DIFFERENT-ORDER" } } }, run), /immutable revision/i);
 });
 
 test("a copied Call 9 panel larger than 6 MiB uses exact server-side Storage copy, not standard upload", async () => {

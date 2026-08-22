@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionLimits } from "./useSubscriptionLimits";
 import {
+  handoffGeneration,
   listDesignPanelViews,
   regenerateDesignPanelView,
   startStandaloneGeneration,
@@ -579,6 +580,27 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
           views.filter((view) => view.signedUrl).map((view) => [view.sourceViewType, view.signedUrl!]),
         ),
       );
+
+      // The customer-facing DesignPanel page is the front door to the ONE
+      // production chain, not a seven-image dead end. Once the server proves
+      // the standard view set is complete, freeze those exact immutable views
+      // into the existing Calls 8+ workflow. The endpoint is idempotent, owns
+      // the Call 8 proof/panel sequence, and cannot create a second producer.
+      //
+      // A.T.L.A.S. remains the explicitly selected proof-only experiment. Its
+      // canonical master and seven projections must never enter production
+      // until Trish promotes the winning pipeline deliberately.
+      if (acceptedPipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE) {
+        if (finished.handoffReady !== true) {
+          throw new Error(
+            `generation_handoff_blocked:${finished.handoffBlocker || "unknown"}`,
+          );
+        }
+        const handoff = await handoffGeneration(request.requestId);
+        if (handoff.generationId !== request.generationId) {
+          throw new Error("generation_handoff_identity_mismatch");
+        }
+      }
 
       toast({
         title: finished.designName || "Design Rendered",

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const claimant = readFileSync(new URL("../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");
-const proofSheet = readFileSync(new URL("../runtime/master-proof-sheet.cjs", import.meta.url), "utf8");
+const surfaceAuthor = readFileSync(new URL("../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8");
+const gridSlice = readFileSync(new URL("../runtime/server-grid-slice.cjs", import.meta.url), "utf8");
 const SIDES = ["driver", "passenger", "hood", "roof", "front", "rear"];
 
 const panelsBuild = (() => {
@@ -11,102 +12,56 @@ const panelsBuild = (() => {
   return stage.slice(0, stage.indexOf('stage.stage_key === "logos.extract"'));
 })();
 
-/**
- * The proof composer always computed each side's rectangle and never returned
- * it, so a panel could only be tied to the approved sheet by side LABEL. A name
- * is not a location, and a panel bound by label alone cannot prove the customer
- * approved the artwork it carries.
- */
-test("the approved proof states an explicit region for every side", () => {
-  assert.match(proofSheet, /proofRegions\.push\(\{/, "the composer must record the rect it draws each surface into");
-  assert.match(proofSheet, /proofRegions,/, "renderMasterProof must return the regions, not just compute them");
-  assert.match(proofSheet, /PROOF_REGION_CONTRACT = "designpro\.proof-region\.v1"/);
-  // A region without the frame it was measured against is not a location, and
-  // one without its surface hash is a declaration rather than a binding.
-  for (const field of ["sheetWidth", "sheetHeight", "surfaceContentHash"]) {
-    assert.match(proofSheet, new RegExp(`${field}[,:]`), `each region must carry ${field}`);
+test("Call 8 freezes one flat field from each surface's own DesignPanel render", () => {
+  assert.match(surfaceAuthor, /const ownReference = await verifiedReference\(sources\.get\(surfaceKey\)\)/);
+  assert.match(surfaceAuthor, /ownSourceViewKey: surfaceKey/);
+  assert.match(surfaceAuthor, /ownSourceViewSha256: sources\.get\(surfaceKey\)\.contentHash/);
+  assert.match(surfaceAuthor, /Do not import, recall, mirror, or continue artwork from the driver side/);
+  assert.match(surfaceAuthor, /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/);
+  assert.match(surfaceAuthor, /const verdict = await judge/);
+  assert.doesNotMatch(surfaceAuthor, /cross-vehicle design anchor/i);
+});
+
+test("Call 9 gridslices each immutable field at GENIE trim plus five-inch mirror bleed", () => {
+  assert.match(panelsBuild, /gridSliceAll\(fieldSources, manifest\.expectedSurfaces, \{ bleedInches: 5, maxCanvas: 4000 \}\)/);
+  assert.match(gridSlice, /const ppi = Math\.min\(MAX_PPI, maxCanvas \/ Math\.max\(printWidthIn, printHeightIn\)\)/);
+  assert.match(gridSlice, /\.extract\(\{ left: crop\.left, top: crop\.top, width: crop\.width, height: crop\.height \}\)/);
+  assert.match(gridSlice, /extendWith: "mirror"/);
+  assert.match(gridSlice, /production gridslice requires exactly \$\{BLEED_INCHES\} inches of bleed/);
+});
+
+test("side selection is exact and cannot fall back to another field", () => {
+  assert.match(panelsBuild, /fieldSources\.set\(key, \{ bytes \}\)/);
+  assert.match(panelsBuild, /field\.ownSourceViewKey !== key/);
+  assert.match(panelsBuild, /recordedByKey\.get\(key\)/);
+  assert.match(gridSlice, /sourceBytesFor\(surfaceSources, surfaceKey\)/);
+  for (const inferred of [/\.includes\("side"\)/, /nearest/i, /similar/i, /alias/i]) {
+    assert.doesNotMatch(panelsBuild.replace(/\/\/[^\n]*/g, ""), inferred);
   }
 });
 
-/**
- * The region is where the customer saw this side. The artwork is the
- * full-resolution surface Call 8 rendered. Cutting the panel back out of the
- * proof raster would manufacture from a masked, downsampled composite -- the
- * vehicle silhouette baked in and the side reduced to its share of one sheet.
- */
-test("panels manufacture from the approved surface, never from the proof raster", () => {
-  assert.match(panelsBuild, /const bytes = await storageBytes\(sb, surface\.storagePath\);/,
-    "the panel's pixels must be the full-resolution approved surface");
-  assert.match(panelsBuild, /extractedFromProofRaster: false/);
-  assert.doesNotMatch(panelsBuild, /\.extract\(\{ left: proofRegion/,
-    "no panel may be cropped out of the vehicle-shaped proof sheet");
-  assert.doesNotMatch(panelsBuild, /\.resize\(/,
-    "the approved surface is already at its GENIE geometry; resampling it is not manufacturing");
-});
-
-/** The identity chain that makes a shared sheet safe to bind against. */
-test("region, approved surface and produced panel must be one artwork", () => {
-  assert.match(panelsBuild, /String\(proofRegion\.surfaceContentHash \|\| ""\)\.toLowerCase\(\) !== observed/,
-    "the region's depicted hash must equal the surface hash the panel carries");
-  assert.match(panelsBuild, /sourceContentHash: observed/);
-  assert.match(panelsBuild, /sourceRegionHashes\[key\] = observed;/);
-});
-
-test("side selection is an exact canonical key lookup and nothing else", () => {
-  // Comments stripped: the prose here names the forbidden matches in order to
-  // forbid them, and a rule must not fail on its own statement.
-  const code = panelsBuild.replace(/\/\/[^\n]*/g, "");
-  assert.match(panelsBuild, /proofRegionByKey\.get\(key\)/);
-  assert.match(panelsBuild, /SURFACE_KEYS\.includes\(String\(region\.surfaceKey\)\)/,
-    "only canonical surface keys may address a region");
-  for (const inferred of [/\.includes\("side"\)/, /startsWith\(/, /indexOf\(key\)/, /proofRegions\[\s*\d/, /alias/i, /nearest/i, /similar/i]) {
-    assert.doesNotMatch(code, inferred, "no substring, alias, positional, nearest or similarity match may pick a side");
-  }
-});
-
-test("panels.build fails closed on every broken binding", () => {
+test("Call 9 fails closed on field, geometry, receipt and reuse drift", () => {
   for (const code of [
-    "call9_proof_regions_missing",              // no anchors at all -> would be guessing
-    "call9_proof_region_missing",               // this side has no anchor
-    "call9_proof_region_out_of_bounds",         // rect off the sheet -> the anchor does not describe this side
-    "call9_proof_region_surface_mismatch",      // region depicts artwork the panel does not carry
-    "call9_proof_region_proof_mismatch",        // anchor belongs to a sheet the customer did not approve
-    "call9_proof_region_revision_mismatch",     // stale revision's anchors -> new views, old panels
-    "call9_proof_region_manifest_mismatch",     // measured against different GENIE geometry
-    "call9_proof_identity_missing",             // nothing to bind to
-    "call9_proof_changed",                      // the signed sheet is not the sheet bound
-    "call9_surface_changed",                    // the artwork moved between Call 8 and Call 9
-  ]) {
-    assert.match(panelsBuild, new RegExp(code), `panels.build must fail closed on ${code}`);
+    "call9_surface_set_invalid",
+    "call9_surface_fields_missing",
+    "call9_surface_field_binding_drift",
+    "call9_surface_field_changed",
+    "call9_gridslice_failed",
+    "call9_genie_identity_missing",
+    "call9_gridslice_receipt_mismatch",
+    "call9_surface_reuse",
+    "call9_driver_passenger_reuse",
+  ]) assert.match(panelsBuild, new RegExp(code));
+});
+
+test("the gridslice stage contains no model or external-function call", () => {
+  for (const forbidden of [/generativelanguage/, /generateContent/i, /callTool\(/, /functions\.invoke/, /fetch\(/]) {
+    assert.doesNotMatch(panelsBuild, forbidden);
+    assert.doesNotMatch(gridSlice, forbidden);
   }
 });
 
-test("each region carries the proof, revision and GENIE identity it was measured under", () => {
-  const proofBuild = claimant.slice(claimant.indexOf('proofRegionContract: built.proof2d.proofRegionContract'));
-  for (const field of ["proofContentHash", "revisionId", "dimensionManifestId", "manifestHash"]) {
-    assert.match(proofBuild.slice(0, 1200), new RegExp(`${field}:`), `regions must carry ${field}`);
-  }
-});
-
-test("no model call may run in the stage that builds panels", () => {
-  for (const forbidden of [/generativelanguage/, /generateContent/i, /renderFlatTile/, /sidefieldFlatten/, /clean-artboard/]) {
-    assert.doesNotMatch(panelsBuild, forbidden, "Call 9 is arithmetic and binding; nothing here may call a model");
-  }
-});
-
-test("the six sides are the six sides, and the database agrees", () => {
+test("the exact six production sides remain canonical", () => {
   assert.match(claimant, /PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side"/);
-  for (const side of SIDES) assert.match(proofSheet, new RegExp(`"${side}"`), `${side} must be an addressable region`);
-});
-
-/**
- * Ported from restylepro-os worker/designpro-proof-extract-v3.cjs
- * `canonicalTileBoxes`. Two sides pointing at one rectangle is the exact defect
- * that sent the driver's artwork to every side: the extractor gets one location
- * under six names and has no way to tell them apart.
- */
-test("no two sides may point at the same region of the proof", () => {
-  assert.match(proofSheet, /proof_region_duplicate/);
-  assert.match(proofSheet, /proof_required_surface_missing/);
-  assert.match(proofSheet, /new Set\(proofRegions\.map\(\(region\) => `\$\{region\.x\}:\$\{region\.y\}:\$\{region\.w\}:\$\{region\.h\}`\)\)/);
+  for (const side of SIDES) assert.match(surfaceAuthor, new RegExp(`"${side}"`));
 });

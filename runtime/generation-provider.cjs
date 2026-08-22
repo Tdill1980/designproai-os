@@ -120,7 +120,10 @@ function createProvider(options = {}) {
     state.restUntil = 0;
   }
 
-  async function generateImage({ parts, aspectRatio, imageSize, signal, timeoutMs = 180_000, label = "render" }) {
+  async function generateImage({
+    parts, aspectRatio, imageSize, signal, timeoutMs = 180_000, label = "render",
+    responseModalities = ["TEXT", "IMAGE"], temperature,
+  }) {
     const attempts = [];
     for (const model of models) {
       for (const key of availableKeys()) {
@@ -131,7 +134,11 @@ function createProvider(options = {}) {
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               contents: [{ parts }],
-              generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio, imageSize } },
+              generationConfig: {
+                responseModalities,
+                ...(temperature === undefined ? {} : { temperature }),
+                imageConfig: { aspectRatio, imageSize },
+              },
             }),
             signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
           });

@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirty-two-migration chain', () => {
-  assert.equal(migrationNames.length, 32);
+test('fresh bootstrap contains one ordered thirty-three-migration chain', () => {
+  assert.equal(migrationNames.length, 33);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -57,6 +57,9 @@ test('fresh bootstrap contains one ordered thirty-two-migration chain', () => {
       // Restore the bounded DesignIQ request fields and permit owners to read
       // only their exact immutable Atlas guide/master preview objects.
       '20260821120000',
+      // Normal design-first v2 enters the existing Calls 8-11 workflow without
+      // inventing an order; paid work stays closed until exact late binding.
+      '20260821200000',
     ],
   );
 });

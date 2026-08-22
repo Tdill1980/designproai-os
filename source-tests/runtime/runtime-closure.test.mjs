@@ -24,7 +24,11 @@ test("all local CommonJS imports are closed", () => {
 
 test("contains Calls 7/8/9 and all paid late-stage gates", () => {
   for (const stage of ["revision.freeze", "proof.build", "panels.build", "logos.extract", "pack.verify", "pack.activate", "source.verify", "await_panelpro_preflight_qc", "output.build", "output.verify", "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver"]) assert.ok(claimant.includes(stage), `missing stage ${stage}`);
-  assert.match(entry, /2D Production Proof/); assert.match(entry, /authorFlatWrapLayout/); assert.match(entry, /cutAllPanels/); assert.match(claimant, /call8\.flat-proof/); assert.match(claimant, /call9\.surface-panels/); assert.match(claimant, /call10\.logo-inventory/);
+  assert.match(entry, /renderProofSheet/);
+  assert.match(entry, /authorFlatSurfaceFields/);
+  assert.match(entry, /gridSliceAll/);
+  assert.doesNotMatch(entry, /authorFlatWrapLayout|cutAllPanels/);
+  assert.match(claimant, /call8\.flat-proof/); assert.match(claimant, /call9\.surface-panels/); assert.match(claimant, /call10\.logo-inventory/);
 });
 
 test("two-worker safety is durable and the legacy poller defaults off", () => {
@@ -89,4 +93,3 @@ test("container uses the real runtime entrypoint and fail-closed health", () => 
   assert.match(dockerfile, /USER (?:node|[1-9][0-9]*:[1-9][0-9]*)/);
   assert.doesNotMatch(dockerfile, /worker\.mjs|Railway|restyle|designpro-workflow\.cjs|designpro-entice-workflow\.cjs/i);
 });
-

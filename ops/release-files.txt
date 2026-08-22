@@ -10,6 +10,7 @@ runtime/genie-universal-resolver.cjs
 runtime/gemini-flat-surface.cjs
 runtime/gemini-flat-wrap.cjs
 runtime/flat-wrap-layout.cjs
+runtime/server-grid-slice.cjs
 runtime/proof-sheet.cjs
 runtime/topaz-upscale.cjs
 runtime/logo-removal.cjs
@@ -38,7 +39,7 @@ runtime/opentype-outline.cjs
 runtime/designpro-master-cycle.cjs
 runtime/view-angles.cjs
 runtime/generation-provider.cjs
-runtime/designpanel-edge-provider.cjs
+runtime/designpanel-server-provider.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs
 runtime/generation-worker.cjs
