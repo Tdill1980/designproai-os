@@ -33,11 +33,11 @@ BEGIN
     OR v_atlas.metadata->'masterQcPassed' IS DISTINCT FROM 'true'::jsonb
     OR v_atlas.metadata->>'masterQcContract' IS DISTINCT FROM
       'designpro.atlas-master-semantic-qc.v1'
-    OR NOT CASE
+    OR NOT (CASE
       WHEN pg_catalog.jsonb_typeof(v_atlas.metadata->'masterQcConfidence')='number'
       THEN (v_atlas.metadata->>'masterQcConfidence')::numeric>=0.92
       ELSE false
-    END
+    END)
     OR COALESCE(v_atlas.metadata->>'masterPromptHash','') !~ '^[0-9a-f]{64}$'
     OR v_atlas.metadata->>'masterProviderContract' IS DISTINCT FROM
       'designpro.flat-first-master-provider.v1'

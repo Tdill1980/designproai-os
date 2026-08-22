@@ -49,6 +49,11 @@ test("the owner-callable regeneration RPC refuses exact Atlas v3 before any muta
 
 test("terminal Atlas owner reads require exact seven current roles and one audited lineage", () => {
   assert.match(ownerReadGuardSql, /flat_first_atlas_view_set_valid/);
+  assert.match(
+    ownerReadGuardSql,
+    /OR NOT \(CASE[\s\S]*masterQcConfidence[\s\S]*END\)/,
+    "master QC confidence CASE stays parenthesized for PL/pgSQL IF parsing",
+  );
   assert.match(ownerReadGuardSql, /v_count=7[\s\S]*v_source_count=7[\s\S]*v_role_count=7[\s\S]*v_hash_count=7[\s\S]*v_valid_count=7/);
   for (const identity of [
     "'side','passenger-side','hood_detail','front','rear','close-up','roof'",
