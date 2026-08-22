@@ -58,8 +58,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 /* ── Identity and workflow contracts ─────────────────────────────── */
 
-export type RenderRole = "driver" | "passenger" | "hood" | "roof" | "front" | "rear" | "hero3d";
 export type GenieSurfaceKey = "driver" | "passenger" | "hood" | "roof" | "front" | "rear";
+export type ActiveRenderRole = GenieSurfaceKey | "hero3d";
+export type RenderRole = GenieSurfaceKey | "closeup" | "hero3d";
+export type RevisionRenderAssets = Record<GenieSurfaceKey, AssetIdentity> & (
+  | { closeup: AssetIdentity; hero3d?: never }
+  | { closeup?: never; hero3d: AssetIdentity }
+);
 
 /**
  * `legacy` deliberately serializes exactly the existing v2 request. The atlas
@@ -149,8 +154,20 @@ export const PRODUCTION_SURFACES: GenieSurfaceKey[] = [
   "rear",
 ];
 
-/** The seven immutable source views. hero3d is generated, never mirrored. */
-export const RENDER_ROLES: RenderRole[] = [...PRODUCTION_SURFACES, "hero3d"];
+/**
+ * The pre-migration authoring plan. Reads and revision handoff also accept a
+ * real Close-Up slot, but this rollback bridge must keep writing the live
+ * database's historical Hero plan until the schema switch happens.
+ */
+export const RENDER_ROLES: ActiveRenderRole[] = [
+  "driver",
+  "passenger",
+  "hood",
+  "roof",
+  "front",
+  "rear",
+  "hero3d",
+];
 
 /**
  * The frozen view contract names a slot by its camera (`sourceViewType`); the
@@ -158,8 +175,8 @@ export const RENDER_ROLES: RenderRole[] = [...PRODUCTION_SURFACES, "hero3d"];
  * not interchangeable: the regenerate route is keyed by the camera, while every
  * display surface is keyed by the role, so the translation lives here once.
  *
- * The legacy `close-up` camera is deliberately absent — it is retained by the
- * server only so historical rows still validate, and it never maps to hero3d.
+ * Close-Up and historical Hero are distinct seventh-slot identities. Neither
+ * is relabelled as the other; a valid seven-view set contains exactly one.
  */
 export const SOURCE_VIEW_TYPE_FOR_ROLE: Record<RenderRole, string> = {
   driver: "side",
@@ -168,12 +185,59 @@ export const SOURCE_VIEW_TYPE_FOR_ROLE: Record<RenderRole, string> = {
   roof: "roof",
   front: "front",
   rear: "rear",
+  closeup: "close-up",
   hero3d: "hero-3d",
 };
 
 export const ROLE_FOR_SOURCE_VIEW_TYPE: Record<string, RenderRole> = Object.fromEntries(
   Object.entries(SOURCE_VIEW_TYPE_FOR_ROLE).map(([role, type]) => [type, role as RenderRole]),
 );
+
+type GenerationViewIdentity = {
+  sourceViewType: string;
+  consumerRole: string;
+};
+
+/**
+ * Choose the cards that describe an existing generation without changing the
+ * identity of its seventh slot. Before the schema switch a newly-authored run
+ * has no returned slots yet, so the historical Hero plan remains the default.
+ * A rollback reading final-schema rows switches to Close-Up only when the
+ * server returns the exact close-up -> closeup pair. Invalid mixed identities
+ * are ignored rather than relabelled.
+ *
+ * The gateway rejects a response containing both compatible seventh slots. If
+ * one nevertheless reaches an emergency rollback UI, expose both conflicting
+ * identities instead of silently hiding or renaming either one.
+ */
+export function displayRenderRoles(
+  identities: readonly GenerationViewIdentity[],
+  regeneratingSourceViewTypes: readonly string[] = [],
+): RenderRole[] {
+  const observedSeventhRoles = new Set<RenderRole>();
+  for (const identity of identities) {
+    const mappedRole = ROLE_FOR_SOURCE_VIEW_TYPE[identity.sourceViewType];
+    if (mappedRole !== identity.consumerRole) continue;
+    if (mappedRole === "closeup" || mappedRole === "hero3d") {
+      observedSeventhRoles.add(mappedRole);
+    }
+  }
+  for (const sourceViewType of regeneratingSourceViewTypes) {
+    const mappedRole = ROLE_FOR_SOURCE_VIEW_TYPE[sourceViewType];
+    if (mappedRole === "closeup" || mappedRole === "hero3d") {
+      observedSeventhRoles.add(mappedRole);
+    }
+  }
+
+  const closeupRoles: RenderRole[] = [
+    "driver", "passenger", "hood", "front", "rear", "closeup", "roof",
+  ];
+  if (observedSeventhRoles.has("closeup") && observedSeventhRoles.has("hero3d")) {
+    return [...closeupRoles, "hero3d"];
+  }
+  if (observedSeventhRoles.has("closeup")) return closeupRoles;
+  return RENDER_ROLES;
+}
 
 export const SURFACE_LABEL: Record<string, string> = {
   driver: "Driver side",
@@ -182,6 +246,7 @@ export const SURFACE_LABEL: Record<string, string> = {
   roof: "Roof",
   front: "Front",
   rear: "Rear",
+  closeup: "Close-Up",
   hero3d: "3D hero view",
 };
 
@@ -303,7 +368,7 @@ export type RevisionSubmission = {
   generationId: string;
   visualizationId: string;
   expectedUpdatedAt: string;
-  renderAssets: Record<RenderRole, AssetIdentity>;
+  renderAssets: RevisionRenderAssets;
   view: string;
   instruction: string;
   attachmentIds?: string[];

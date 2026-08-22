@@ -18,7 +18,13 @@
 
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
-const { normalizeTextLock, selectedImageModel, VIEW_KEYS, _test: flatSurfaceInternals } = require("./gemini-flat-surface.cjs");
+const {
+  normalizeTextLock,
+  selectedImageModel,
+  sourceViewKeys,
+  VIEW_KEYS,
+  _test: flatSurfaceInternals,
+} = require("./gemini-flat-surface.cjs");
 const { layoutIdentity, normalizeGeneratedLayout } = require("./flat-wrap-layout.cjs");
 
 const FLAT_WRAP_CONTRACT = "designpro.gemini-flat-wrap.v1";
@@ -45,6 +51,7 @@ function normalizeSourceSet(sourceViews) {
   if (!Array.isArray(sourceViews) || sourceViews.length !== VIEW_KEYS.length) {
     throw new Error("exactly seven immutable source views are required");
   }
+  const requiredKeys = sourceViewKeys(sourceViews);
   const byKey = new Map();
   for (const item of sourceViews) {
     const viewKey = String(item?.viewKey || "").trim().toLowerCase();
@@ -52,16 +59,17 @@ function normalizeSourceSet(sourceViews) {
     const storagePath = String(item?.storagePath || "").trim();
     const contentType = String(item?.contentType || "").trim().toLowerCase();
     const byteSize = Number(item?.byteSize);
-    if (!VIEW_KEYS.includes(viewKey) || byKey.has(viewKey) || !HASH_RE.test(contentHash) || !storagePath
+    if (!requiredKeys.includes(viewKey) || byKey.has(viewKey) || !HASH_RE.test(contentHash) || !storagePath
       || !Number.isSafeInteger(byteSize) || byteSize <= 0 || !contentType.startsWith("image/")) {
       throw new Error(`invalid immutable source identity for ${viewKey || "unknown view"}`);
     }
     byKey.set(viewKey, Object.freeze({ viewKey, storagePath, contentHash, byteSize, contentType, bytes: item.bytes }));
   }
-  if (VIEW_KEYS.some((key) => !byKey.has(key))) throw new Error("the seven-view source set is incomplete");
+  if (requiredKeys.some((key) => !byKey.has(key))) throw new Error("the seven-view source set is incomplete");
   if (new Set([...byKey.values()].map((item) => item.contentHash)).size !== VIEW_KEYS.length) {
     throw new Error("the seven immutable source views must have distinct byte hashes");
   }
+  Object.defineProperty(byKey, "viewKeys", { value: requiredKeys, enumerable: false });
   return byKey;
 }
 
@@ -72,6 +80,7 @@ function normalizeSourceSet(sourceViews) {
  */
 function flatWrapInputHash({ sourceViews, layout, revisionId, textLock, model = selectedImageModel() }) {
   const sources = normalizeSourceSet(sourceViews);
+  const viewKeys = sources.viewKeys;
   const frozenText = normalizeTextLock(textLock);
   return sha256(Buffer.from(JSON.stringify(canonical({
     contract: FLAT_WRAP_CONTRACT,
@@ -81,7 +90,7 @@ function flatWrapInputHash({ sourceViews, layout, revisionId, textLock, model = 
     textLock: frozenText,
     layout: layoutIdentity(layout),
     canvas: { width: layout.width, height: layout.height, scalePxPerInch: layout.scalePxPerInch },
-    sources: VIEW_KEYS.map((viewKey) => {
+    sources: viewKeys.map((viewKey) => {
       const item = sources.get(viewKey);
       return { viewKey, storagePath: item.storagePath, contentHash: item.contentHash, byteSize: item.byteSize, contentType: item.contentType };
     }),
@@ -190,7 +199,7 @@ async function authorFlatWrapLayout(options) {
   }
 
   const references = [];
-  for (const viewKey of VIEW_KEYS) references.push({ viewKey, inline: await compactReference(sources.get(viewKey)) });
+  for (const viewKey of sources.viewKeys) references.push({ viewKey, inline: await compactReference(sources.get(viewKey)) });
   const generate = options.generateLayout || generateOneLayout;
   const generated = await generate({
     apiKey, model, layout, references, sourceSetHash: inputHash, textLock,

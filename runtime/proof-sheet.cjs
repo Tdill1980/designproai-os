@@ -31,6 +31,7 @@ const RULE = "#d1d5db";
 const ACCENT = "#059669";
 
 const VIEW_ORDER = Object.freeze(["driver", "roof", "passenger", "hood", "front", "rear", "hero3d"]);
+const CLOSEUP_VIEW_ORDER = Object.freeze(["driver", "roof", "passenger", "hood", "front", "rear", "closeup"]);
 const VIEW_LABELS = Object.freeze({
   driver: "DRIVER SIDE",
   passenger: "PASSENGER SIDE",
@@ -38,6 +39,7 @@ const VIEW_LABELS = Object.freeze({
   roof: "ROOF",
   front: "FRONT",
   rear: "REAR",
+  closeup: "CLOSE-UP DETAIL",
   hero3d: "APPROVED 3D HERO",
 });
 // Column span, column index and row index for each view. Fixed, never derived
@@ -49,6 +51,7 @@ const VIEW_CELLS = Object.freeze({
   hood: { column: 2, row: 1, span: 1 },
   front: { column: 0, row: 2, span: 1 },
   rear: { column: 1, row: 2, span: 1 },
+  closeup: { column: 2, row: 2, span: 1 },
   hero3d: { column: 2, row: 2, span: 1 },
 });
 
@@ -78,14 +81,14 @@ function inches(value) {
  * Deterministic page geometry. Pure function of nothing but the constants
  * above, so the claimant can assert it independently.
  */
-function proofSheetLayout() {
+function proofSheetLayout(viewOrder = VIEW_ORDER) {
   const bodyTop = MARGIN + HEADER_HEIGHT;
   const bodyHeight = SHEET_HEIGHT - MARGIN - FOOTER_HEIGHT - bodyTop;
   const bodyWidth = SHEET_WIDTH - MARGIN * 2;
   const columnWidth = Math.floor(bodyWidth / 3);
   const rowHeight = Math.floor(bodyHeight / 3);
   const cells = {};
-  for (const viewKey of VIEW_ORDER) {
+  for (const viewKey of viewOrder) {
     const position = VIEW_CELLS[viewKey];
     const x = MARGIN + position.column * columnWidth;
     const y = bodyTop + position.row * rowHeight;
@@ -114,7 +117,7 @@ function normalizedSurfaces(surfaces) {
     const surfaceKey = String(surface?.surfaceKey || surface?.key || "").trim().toLowerCase();
     const widthInches = Number(surface?.widthInches ?? surface?.trimWidthIn);
     const heightInches = Number(surface?.heightInches ?? surface?.trimHeightIn);
-    if (!VIEW_LABELS[surfaceKey] || surfaceKey === "hero3d" || !(widthInches > 0 && heightInches > 0)) continue;
+    if (!VIEW_LABELS[surfaceKey] || ["closeup", "hero3d"].includes(surfaceKey) || !(widthInches > 0 && heightInches > 0)) continue;
     byKey.set(surfaceKey, {
       surfaceKey, widthInches, heightInches,
       printWidthInches: widthInches + BLEED_INCHES * 2,
@@ -226,7 +229,16 @@ function containedPlacement(area, imageWidth, imageHeight) {
  */
 async function renderProofSheet({ views, surfaces, vehicle, designName, finish, designId, orderNumber, proofBinding }) {
   const ordered = normalizedSurfaces(surfaces);
-  const layout = proofSheetLayout();
+  const hasCloseup = Buffer.isBuffer(views?.closeup);
+  const hasHero = Buffer.isBuffer(views?.hero3d);
+  if (hasCloseup === hasHero) {
+    throw new ProofSheetError(
+      "proof_sheet_seventh_view_invalid",
+      "The 2D production proof requires exactly one Close-Up or immutable historical Hero proof",
+    );
+  }
+  const viewOrder = hasCloseup ? CLOSEUP_VIEW_ORDER : VIEW_ORDER;
+  const layout = proofSheetLayout(viewOrder);
   const surfaceByKey = new Map(ordered.map((surface) => [surface.surfaceKey, surface]));
   const totalSqFt = round2(ordered.reduce((total, surface) => total + surface.widthInches * surface.heightInches / 144, 0));
   const vehicleName = [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ") || "Vehicle";
@@ -238,7 +250,7 @@ async function renderProofSheet({ views, surfaces, vehicle, designName, finish, 
     totalSqFt,
   })];
 
-  for (const viewKey of VIEW_ORDER) {
+  for (const viewKey of viewOrder) {
     const cell = layout.cells[viewKey];
     const bytes = views?.[viewKey];
     if (!bytes) throw new ProofSheetError("proof_sheet_view_missing", `The 2D production proof requires the approved ${viewKey} view`);
@@ -277,6 +289,7 @@ module.exports = {
   SHEET_HEIGHT,
   SHEET_WIDTH,
   VIEW_ORDER,
+  CLOSEUP_VIEW_ORDER,
   ProofSheetError,
   proofSheetLayout,
   renderProofSheet,

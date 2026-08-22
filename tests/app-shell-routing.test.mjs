@@ -32,6 +32,9 @@ const NAV = read("app/src/lib/dashboard-nav.ts");
 const TABS = read("app/src/components/layout/AppBottomTabs.tsx");
 const API = read("app/src/lib/designpro-api.ts");
 const IS_APP_ROUTE = read("app/src/hooks/useIsAppRoute.ts");
+const DESIGN_PANEL_LOGIC = read("app/src/hooks/useDesignPanelProLogic.ts");
+const DESIGN_PANEL_UI = read("app/src/pages/DesignPanelProPremium.tsx");
+const GENERATE_DESIGN_UI = read("app/src/pages/designpro/GenerateDesign.tsx");
 
 /** Every path the router declares, including the catch-all. */
 function declaredRoutes() {
@@ -330,7 +333,7 @@ test("the gateway client never sends a server-owned generation control", () => {
   }
 });
 
-test("the seven view roles and their cameras stay in lockstep", () => {
+test("the compatible seventh view roles keep exact identities without relabelling", () => {
   // sourceViewType and consumerRole are not interchangeable: the regenerate
   // route is keyed by the camera, every display surface by the role. A missing
   // pair silently disables regeneration for that angle.
@@ -341,6 +344,7 @@ test("the seven view roles and their cameras stay in lockstep", () => {
     ["roof", "roof"],
     ["front", "front"],
     ["rear", "rear"],
+    ["closeup", "close-up"],
     ["hero3d", "hero-3d"],
   ]) {
     assert.match(
@@ -349,12 +353,46 @@ test("the seven view roles and their cameras stay in lockstep", () => {
       `${role} must map to the "${camera}" camera`,
     );
   }
-  // close-up is retained by the server for historical rows only; it is not in
-  // the plan and must never be presented as the hero view.
-  assert.ok(
-    !stripComments(API).includes("close-up"),
-    "close-up is not part of the seven-view plan",
+  const revisionType = API.slice(
+    API.indexOf("export type RevisionRenderAssets"),
+    API.indexOf("export type GenerationPipelineMode"),
   );
+  assert.match(revisionType, /closeup:\s*AssetIdentity;\s*hero3d\?:\s*never/);
+  assert.match(revisionType, /closeup\?:\s*never;\s*hero3d:\s*AssetIdentity/);
+  const authoringPlan = API.slice(
+    API.indexOf("export const RENDER_ROLES"),
+    API.indexOf("export const SOURCE_VIEW_TYPE_FOR_ROLE"),
+  );
+  assert.match(authoringPlan, /"hero3d"/,
+    "the pre-migration bridge must keep DB-driven Hero authoring");
+  assert.doesNotMatch(authoringPlan, /"closeup"/,
+    "the pre-migration bridge must not author Close-Up before the schema switch");
+  assert.doesNotMatch(stripComments(API), /closeup:\s*"hero-3d"|hero3d:\s*"close-up"/,
+    "Close-Up and Hero must never be relabelled as each other");
+});
+
+test("Close-Up responses display in their own slot while Driver remains primary", () => {
+  const primarySelector = DESIGN_PANEL_LOGIC.slice(
+    DESIGN_PANEL_LOGIC.indexOf("export function pickPrimaryProofView"),
+    DESIGN_PANEL_LOGIC.indexOf("const normalizeVisionBoardImage"),
+  );
+  assert.match(primarySelector, /consumerRole === "driver"/);
+  assert.match(primarySelector, /sourceViewType === "side"/);
+  assert.doesNotMatch(primarySelector, /\|\|\s*rendered\.find/,
+    "an inexact or relabelled view must not impersonate Driver");
+  assert.doesNotMatch(primarySelector, /hero3d|closeup|close-up/,
+    "a seventh-slot proof must never become the primary customer proof");
+
+  assert.match(DESIGN_PANEL_UI, /const CLOSEUP_VIEW_ORDER = \[[^\]]*'close-up'[^\]]*\]/);
+  assert.match(DESIGN_PANEL_UI, /hasCloseupSeventh && !hasHistoricalHeroSeventh\s*\? CLOSEUP_VIEW_ORDER/);
+  assert.match(DESIGN_PANEL_UI, /!hasConflictingSeventh[\s\S]{0,180}requiredViewTypes\.every/);
+
+  assert.match(GENERATE_DESIGN_UI, /const displayRoles = displayRenderRoles\(/,
+    "the operator generation page must derive its cards from returned identities");
+  assert.match(GENERATE_DESIGN_UI, /displayRoles\.map\(\(role\)/,
+    "the operator generation page must render the compatible returned slot");
+  assert.doesNotMatch(GENERATE_DESIGN_UI, /RENDER_ROLES\.map\(\(role\)/,
+    "the pre-migration authoring default must not hide a returned Close-Up");
 });
 
 test("the release ships the operator shell as the served application", () => {

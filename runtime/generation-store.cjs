@@ -20,8 +20,7 @@ const STORE_CONTRACT = "designpro.calls-1-7-store.v1";
 const VIEW_TO_ROLE = Object.freeze({
   side: "driver", "passenger-side": "passenger", hood_detail: "hood",
   front: "front", rear: "rear", "hero-3d": "hero3d", roof: "roof",
-  // Retained so historical close-up rows still resolve a role. It is not part
-  // of the seven-view plan and must never stand in for hero3d.
+  // Close-Up and historical Hero are separate compatibility identities.
   "close-up": "closeup",
 });
 
@@ -178,13 +177,23 @@ function createGenerationStore({ supabase, workerId }) {
       if (error) throw new Error(`revision source projection failed: ${error.message}`);
       const renderAssets = {};
       for (const row of data || []) {
-        // No role aliasing. hero3d comes from a generated hero-3d view; a
-        // close-up is a panel detail and is not a substitute for it.
-        if (row.consumer_role === "closeup") continue;
-        renderAssets[row.consumer_role] = {
+        const sourceViewType = String(row.source_view_type || "");
+        const consumerRole = String(row.consumer_role || "");
+        if (VIEW_TO_ROLE[sourceViewType] !== consumerRole || renderAssets[consumerRole]) {
+          throw new Error("revision source projection contains an unknown or duplicate role");
+        }
+        renderAssets[consumerRole] = {
           bucket: BUCKET, storagePath: row.storage_path, contentHash: row.content_hash,
           byteSize: Number(row.byte_size), contentType: row.content_type,
         };
+      }
+      const core = ["driver", "passenger", "hood", "roof", "front", "rear"];
+      const hasCloseup = Boolean(renderAssets.closeup);
+      const hasHero = Boolean(renderAssets.hero3d);
+      if (Object.keys(renderAssets).length !== 7
+        || core.some((role) => !renderAssets[role])
+        || hasCloseup === hasHero) {
+        throw new Error("revision source projection requires exactly one Close-Up or immutable historical Hero proof");
       }
       return renderAssets;
     },

@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 import {
   ApiError,
+  ActiveRenderRole,
   AssetIdentity,
   dpApi,
   GenieSurfaceKey,
@@ -82,7 +83,12 @@ export default function NewRevisionSource() {
     const revisionId = crypto.randomUUID();
     const generationId = crypto.randomUUID();
     const visualizationId = crypto.randomUUID();
-    const renderAssets = {} as Record<RenderRole, AssetIdentity>;
+    // This manual form remains the pre-migration historical-Hero authoring
+    // surface. During an emergency rollback after the Close-Up schema switch,
+    // the database's forward-only revision trigger is authoritative: it rejects
+    // this snapshot before a workflow can start. The compatible rollback path
+    // is the DB-driven DesignPanel generation/read/handoff flow.
+    const renderAssets = {} as Record<ActiveRenderRole, AssetIdentity>;
     try {
       setProgress("Registering the confirmed WrapBox recipient…");
       const { delivery } = await dpApi.registerDeliveryRecipient({

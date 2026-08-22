@@ -15,7 +15,11 @@ const FLAT_SURFACE_CONTRACT = "designpro.gemini-flat-surface.server.v4";
 const PROMPT_VERSION = "designproai-sidefield-generate-qc-retry-server-20260821.v1";
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
+// The bridge keeps the currently-live Hero contract as its authoring default,
+// but can consume the forward Close-Up contract after the database switch.
+// These are two distinct proof identities: exactly one may occupy slot seven.
 const VIEW_KEYS = Object.freeze([...SURFACE_KEYS, "hero3d"]);
+const CLOSEUP_VIEW_KEYS = Object.freeze([...SURFACE_KEYS, "closeup"]);
 const HASH_RE = /^[0-9a-f]{64}$/;
 const ALLOWED_RESPONSE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const QC_HARD_ISSUES = new Set(["wrong_design", "tiled_or_repeated"]);
@@ -96,10 +100,24 @@ function selectedImageModel(value = process.env.GOOGLE_IMAGE_MODEL) {
   return model;
 }
 
+function sourceViewKeys(sourceViews) {
+  if (!Array.isArray(sourceViews) || sourceViews.length !== VIEW_KEYS.length) {
+    throw new Error("exactly seven immutable source views are required");
+  }
+  const keys = new Set(sourceViews.map((item) => String(item?.viewKey || "").trim().toLowerCase()));
+  const hasHeroSet = VIEW_KEYS.every((key) => keys.has(key));
+  const hasCloseupSet = CLOSEUP_VIEW_KEYS.every((key) => keys.has(key));
+  if (hasHeroSet === hasCloseupSet) {
+    throw new Error("the seven-view source set requires exactly one Close-Up or immutable historical Hero proof");
+  }
+  return hasCloseupSet ? CLOSEUP_VIEW_KEYS : VIEW_KEYS;
+}
+
 function normalizeSourceSet(sourceViews) {
   if (!Array.isArray(sourceViews) || sourceViews.length !== VIEW_KEYS.length) {
     throw new Error("exactly seven immutable source views are required");
   }
+  const requiredKeys = sourceViewKeys(sourceViews);
   const byKey = new Map();
   for (const item of sourceViews) {
     const viewKey = String(item?.viewKey || "").trim().toLowerCase();
@@ -107,16 +125,17 @@ function normalizeSourceSet(sourceViews) {
     const storagePath = String(item?.storagePath || "").trim();
     const contentType = String(item?.contentType || "").trim().toLowerCase();
     const byteSize = Number(item?.byteSize);
-    if (!VIEW_KEYS.includes(viewKey) || byKey.has(viewKey) || !HASH_RE.test(contentHash)
+    if (!requiredKeys.includes(viewKey) || byKey.has(viewKey) || !HASH_RE.test(contentHash)
       || !storagePath || !Number.isSafeInteger(byteSize) || byteSize <= 0 || !contentType.startsWith("image/")) {
       throw new Error(`invalid immutable source identity for ${viewKey || "unknown view"}`);
     }
     byKey.set(viewKey, Object.freeze({ viewKey, storagePath, contentHash, byteSize, contentType, bytes: item.bytes }));
   }
-  if (VIEW_KEYS.some((key) => !byKey.has(key))) throw new Error("the seven-view source set is incomplete");
+  if (requiredKeys.some((key) => !byKey.has(key))) throw new Error("the seven-view source set is incomplete");
   if (new Set([...byKey.values()].map((item) => item.contentHash)).size !== VIEW_KEYS.length) {
     throw new Error("the seven immutable source views must have distinct byte hashes");
   }
+  Object.defineProperty(byKey, "viewKeys", { value: requiredKeys, enumerable: false });
   return byKey;
 }
 
@@ -140,6 +159,7 @@ function normalizeSurfaces(surfaces) {
 
 function flatSurfaceInputHash({ sourceViews, surfaces, revisionId, textLock, model = selectedImageModel() }) {
   const sources = normalizeSourceSet(sourceViews);
+  const viewKeys = sources.viewKeys;
   const geometry = normalizeSurfaces(surfaces);
   const frozenText = normalizeTextLock(textLock);
   return hashJson({
@@ -148,7 +168,7 @@ function flatSurfaceInputHash({ sourceViews, surfaces, revisionId, textLock, mod
     model: selectedImageModel(model),
     revisionId: String(revisionId || "").trim().toLowerCase(),
     textLock: frozenText,
-    sources: VIEW_KEYS.map((viewKey) => {
+    sources: viewKeys.map((viewKey) => {
       const item = sources.get(viewKey);
       return { viewKey, storagePath: item.storagePath, contentHash: item.contentHash, byteSize: item.byteSize, contentType: item.contentType };
     }),
@@ -385,9 +405,11 @@ module.exports = {
   PROMPT_VERSION,
   SURFACE_KEYS,
   VIEW_KEYS,
+  CLOSEUP_VIEW_KEYS,
   authorFlatSurfaceFields,
   flatSurfaceInputHash,
   normalizeTextLock,
   selectedImageModel,
+  sourceViewKeys,
   _test: { assertOpaqueImage, cleanTiers, closestAspect, extractOneImageResponse, flatPrompt, judgeSurface, normalizeSourceSet, normalizeSurfaces, verifiedReference },
 };

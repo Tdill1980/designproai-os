@@ -1672,12 +1672,24 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // Sort/filter against the vehicle-class contract. Trailers have five
   // validation views; standard vehicles retain the locked seven-view order.
   const effectiveAllViews = allViews.length > 0 ? allViews : pushedAllViews;
-  const STANDARD_VIEW_ORDER = ['side', 'passenger-side', 'hood_detail', 'front', 'rear', 'hero-3d', 'roof'] as const;
+  const HISTORICAL_HERO_VIEW_ORDER = ['side', 'passenger-side', 'hood_detail', 'front', 'rear', 'hero-3d', 'roof'] as const;
+  const CLOSEUP_VIEW_ORDER = ['side', 'passenger-side', 'hood_detail', 'front', 'rear', 'close-up', 'roof'] as const;
   const TRAILER_VIEW_ORDER = ['side', 'passenger-side', 'front', 'rear', 'close-up'] as const;
+  const hasCloseupSeventh = effectiveAllViews.some((view) =>
+    view.type === 'close-up' || view.type === 'closeup' || view.type === 'detail');
+  const hasHistoricalHeroSeventh = effectiveAllViews.some((view) =>
+    view.type === 'hero-3d' || view.type === 'hero3d');
+  const hasConflictingSeventh = hasCloseupSeventh && hasHistoricalHeroSeventh;
+  // The bridge keeps Hero as the empty/progressive pre-migration default, but
+  // switches to the real Close-Up identity as soon as that DB-authored plan is
+  // observed. It never relabels one as the other.
+  const standardViewOrder = hasCloseupSeventh && !hasHistoricalHeroSeventh
+    ? CLOSEUP_VIEW_ORDER
+    : HISTORICAL_HERO_VIEW_ORDER;
   const requiredViewTypes: readonly string[] =
     isFlatFirstDiagnostic
-      ? STANDARD_VIEW_ORDER
-      : vehicleType === 'trailer' ? TRAILER_VIEW_ORDER : STANDARD_VIEW_ORDER;
+      ? standardViewOrder
+      : vehicleType === 'trailer' ? TRAILER_VIEW_ORDER : standardViewOrder;
   const requiredViewCount = requiredViewTypes.length;
   const findViewByType = (type: string) => {
     const direct = effectiveAllViews.find(v => v.type === type);
@@ -1733,6 +1745,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // Gate by exact required identities, not only count (duplicates cannot pass).
   const allViewsDone =
     !!mainDisplayUrl &&
+    !hasConflictingSeventh &&
     !isViewsStillGenerating &&
     requiredViewTypes.every((type) => Boolean(findViewByType(type)));
   const activeViewLabel = displayedAllViews.length > 1 && displayedAllViews[clampedViewIndex]

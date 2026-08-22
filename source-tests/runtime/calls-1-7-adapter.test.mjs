@@ -31,9 +31,9 @@ const claim = {
   viewPlan: adapter.viewPlan,
 };
 
-function calls17Views() {
+function calls17Views(plan = adapter.viewPlan) {
   const bytes = new Map();
-  const views = adapter.viewPlan.map((item, index) => {
+  const views = plan.map((item, index) => {
     const body = Buffer.from(`frozen-view-${index + 1}`);
     const contentHash = createHash("sha256").update(body).digest("hex");
     const storagePath = `designpro/${claim.tenantKey}/${claim.generationId}/calls-1-7/`
@@ -91,10 +91,53 @@ test("Calls 1-7 adapter claims only the exact frozen source contract", async () 
   // The seventh slot must carry the hero3d role the revision contract accepts.
   assert.equal(result.viewPlan.find((item) => item.sourceViewType === "hero-3d").consumerRole, "hero3d");
   assert.equal(result.viewPlan.some((item) => item.consumerRole === "closeup"), false);
+  // The database froze this source-blob fingerprint before the temporary Hero
+  // authoring plan. A rollback bridge must present that immutable Close-Up
+  // order while still accepting the DB-authored plan beside the claim.
+  assert.deepEqual(result.engineContract.sourceViewOrder, [
+    "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
+  ]);
   assert.deepEqual(fake.calls, [{
     name: "claim_designpro_generation_request",
     payload: { p_worker_id: "calls17-worker", p_lease_seconds: 900 },
   }]);
+});
+
+test("claim and completion accept exact Close-Up or historical Hero plans without relabelling", async () => {
+  const closeupClaim = { ...claim, viewPlan: adapter.closeupViewPlan };
+  const normalizedClaim = claimant._test.assertCalls1To7Claim(closeupClaim);
+  assert.deepEqual(normalizedClaim.viewPlan, adapter.closeupViewPlan);
+
+  const { bytes, views } = calls17Views(adapter.closeupViewPlan);
+  assert.deepEqual(
+    claimant._test.normalizeCalls1To7Views(normalizedClaim, views)
+      .map((view) => [view.sourceViewType, view.consumerRole]),
+    adapter.closeupViewPlan.map((view) => [view.sourceViewType, view.consumerRole]),
+  );
+  const fake = supabaseDouble({ bytes, claimResult: closeupClaim });
+  await adapter.complete(fake.client, normalizedClaim, views);
+  assert.deepEqual(
+    fake.calls.find((item) => item.name === "complete_designpro_generation_request")
+      .payload.p_views.map((view) => view.sourceViewType),
+    adapter.closeupViewPlan.map((view) => view.sourceViewType),
+  );
+
+  const both = [
+    ...adapter.viewPlan.filter((view) => view.sourceViewType !== "roof"),
+    adapter.closeupViewPlan.find((view) => view.sourceViewType === "close-up"),
+  ];
+  for (const viewPlan of [
+    adapter.viewPlan.filter((view) => view.sourceViewType !== "hero-3d"),
+    both,
+    adapter.closeupViewPlan.map((view) => view.sourceViewType === "close-up"
+      ? { ...view, consumerRole: "hero3d" }
+      : view),
+  ]) {
+    assert.throws(
+      () => claimant._test.assertCalls1To7Claim({ ...claim, viewPlan }),
+      (error) => error.code === "generation_contract_drift",
+    );
+  }
 });
 
 test("browser prompt, model, seed, and angle controls are rejected recursively", () => {

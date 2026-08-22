@@ -82,7 +82,8 @@ test("A.T.L.A.S. reveals the immutable master and streams signed proof views wit
   assert.match(adapter, /signedUrlsNeedRefresh/);
   assert.match(adapter, /4 \* 60_000/);
   assert.match(hook, /onViews: async \(progressiveViews\)/);
-  assert.match(hook, /applyGeneratedViews\(progressiveViews, true\)/);
+  assert.match(hook, /applyGeneratedViews\(progressiveViews\)/);
+  assert.match(hook, /pickPrimaryProofView\(progressiveViews\)/);
   assert.match(premium, /const atlasMasterPreviewUrl/);
   assert.match(premium, /pipelineActive && !renderError && !savedDriverDisplayUrl/);
   assert.match(premium, /savedDriverDisplayUrl \|\| \(!isFlatFirstDiagnostic \? baseDisplayUrl : null\)/);
