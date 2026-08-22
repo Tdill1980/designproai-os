@@ -165,10 +165,10 @@ async function runSlot(options) {
       try {
         result = await provider.generateImage({
           parts: promptParts, aspectRatio, imageSize, signal, timeoutMs,
-          // The direct Gemini transport ignores these identities. The restored
-          // DesignPanel transport needs them to choose the sanctioned Edge
-          // function and never infers a camera angle from prompt prose.
-          requestId, generationId, sourceViewType, consumerRole,
+          // The direct transport ignores these identities. The Standard
+          // DesignPanel server adapter uses the view identity and bounded
+          // attempt number to select its designer/reproduction contract.
+          requestId, generationId, sourceViewType, consumerRole, attempt,
           label: `${sourceViewType} attempt ${attempt}`,
         });
       } catch (error) {

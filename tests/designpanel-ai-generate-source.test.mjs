@@ -10,46 +10,40 @@ test("the standalone creative engine identifies design-panel-ai-generate as its 
   const prompt = read("runtime/designiq-prompt.cjs");
   const atlas = read("runtime/flat-first-atlas.cjs");
   const worker = read("runtime/generation-worker.cjs");
-  const provider = read("runtime/designpanel-edge-provider.cjs");
-  const edgeDeploy = read(".github/workflows/deploy-edge-functions.yml");
+  const provider = read("runtime/designpanel-server-provider.cjs");
   const productionDeploy = read(".github/workflows/deploy-production.yml");
 
   assert.match(edge, /\* design-panel-ai-generate/);
   assert.match(prompt, /supabase\/functions\/design-panel-ai-generate\/index\.ts/);
   assert.match(atlas, /buildFlatDesignIQDirection/);
   assert.match(worker, /buildDesignIQPrompt/);
-  assert.match(worker, /createDesignPanelEdgeProvider/);
-  assert.match(provider, /invoke\("design-panel-ai-generate"/);
-  assert.match(provider, /invoke\("generate-color-render"/);
-  assert.doesNotMatch(provider, /design-panel-color-render/);
-  assert.match(provider, /width:\s*1024/);
-  assert.match(provider, /resize:\s*"contain"/);
-  assert.match(provider, /accepted hero stays immutable at full resolution/);
-  assert.match(edgeDeploy, /functions delete design-panel-color-render/);
-  assert.match(productionDeploy, /\[repair-designpanel-edge-chain\]/);
-  assert.match(productionDeploy, /functions deploy generate-color-render/);
-  assert.match(productionDeploy, /functions delete design-panel-color-render/);
-  assert.ok(
-    productionDeploy.lastIndexOf("ci-dark-deploy.sh") <
-      productionDeploy.indexOf("Restore the sanctioned DesignPanel Edge chain"),
-    "the corrected runtime must be live before the forbidden Edge slug is deleted",
-  );
-  assert.match(provider, /maxProviderAttempts:\s*1/);
+  assert.match(worker, /createDesignPanelServerProvider/);
+  assert.match(provider, /stage: "design-panel-ai-generate"/);
+  assert.match(provider, /stage: "generate-color-render"/);
+  assert.match(provider, /execution: "server-native"/);
+  assert.match(provider, /resize\(1024, 1024/);
+  assert.match(provider, /View 1 bytes do not match the immutable database identity/);
+  assert.doesNotMatch(provider, /\/functions\/v1|supabase\.functions|createSignedUrl/);
+  assert.doesNotMatch(productionDeploy, /repair-designpanel-edge-chain/);
+  assert.doesNotMatch(productionDeploy, /functions deploy generate-color-render/);
+  assert.match(provider, /maxProviderAttempts:\s*4/);
   assert.match(worker, /slots:\s*slots\.slice\(0, 1\)/);
   assert.match(
     worker,
     /slots:\s*slots\.slice\(1\)[\s\S]*?parallel:\s*false/,
-    "Views 2-7 must be serialized so the heavy photographer function stays within Edge compute capacity",
+    "Views 2-7 must be serialized against the one frozen View 1 anchor",
   );
   assert.doesNotMatch(worker, /authorCreativeInput/);
 });
 
-test("the sanctioned DesignPanel Edge functions accept only a service-authenticated standalone owner", () => {
+test("the retired Edge implementation remains a reference and is unreachable from the server release", () => {
   const auth = read("supabase/functions/_shared/designpro-internal-call.ts");
   const designer = read("supabase/functions/design-panel-ai-generate/index.ts");
   const router = read("supabase/functions/generate-color-render/index.ts");
   const photographer = read("supabase/functions/generate-color-render/designpanel-handler.ts");
   const legacy = read("supabase/functions/generate-color-render/legacy.ts");
+  const releaseFiles = read("ops/release-files.txt");
+  const worker = read("runtime/generation-worker.cjs");
 
   assert.match(auth, /req\.headers\.get\("apikey"\)/);
   assert.match(auth, /createClient\([\s\S]*?serverKey/);
@@ -73,6 +67,8 @@ test("the sanctioned DesignPanel Edge functions accept only a service-authentica
   assert.match(photographer, /safeSegment\(viewType\)\}\.png/);
   assert.match(photographer, /contentType:\s*"image\/png"/);
   assert.doesNotMatch(`${router}\n${photographer}`, /design-panel-color-render/);
+  assert.doesNotMatch(releaseFiles, /designpanel-edge-provider\.cjs/);
+  assert.doesNotMatch(worker, /designpanel-edge-provider|createDesignPanelEdgeProvider/);
   assert.equal(
     createHash("sha256").update(legacy).digest("hex"),
     "46022e2f487e785256e76d6b3ee1c68b35f127138ea2b1117f687e9bba0fec47",

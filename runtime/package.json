@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js && node --check designpro-standalone-claimant.cjs && node --check runtime-contract.cjs && node --check runtime-readiness.cjs && node --check genie-universal-resolver.cjs && node --check gemini-flat-surface.cjs && node --check generation-provider.cjs && node --check designpanel-edge-provider.cjs && node --check generation-engine.cjs && node --check flat-atlas-topology-examples.cjs && node --check flat-first-atlas.cjs && node --check generation-worker.cjs && node --check output-qc.cjs && node --check zip-spool.cjs && node --check wrapbox-delivery.cjs && node --check resend-transport.cjs"
+    "check": "node --check index.js && node --check designpro-standalone-claimant.cjs && node --check runtime-contract.cjs && node --check runtime-readiness.cjs && node --check genie-universal-resolver.cjs && node --check gemini-flat-surface.cjs && node --check server-grid-slice.cjs && node --check generation-provider.cjs && node --check designpanel-server-provider.cjs && node --check generation-engine.cjs && node --check flat-atlas-topology-examples.cjs && node --check flat-first-atlas.cjs && node --check generation-worker.cjs && node --check output-qc.cjs && node --check zip-spool.cjs && node --check wrapbox-delivery.cjs && node --check resend-transport.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.55.0",

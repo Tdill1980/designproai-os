@@ -29,7 +29,7 @@ const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
 const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 const { createProvider } = require("./generation-provider.cjs");
-const { createDesignPanelEdgeProvider } = require("./designpanel-edge-provider.cjs");
+const { createDesignPanelServerProvider } = require("./designpanel-server-provider.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
 const { verifySourceBytes } = require("./runtime-contract.cjs");
 const { STUDIO_ENVIRONMENT, STUDIO_REINFORCEMENT } = require("./studio-os.cjs");
@@ -309,7 +309,7 @@ function createGenerationWorker({
   supabase,
   workerId,
   provider,
-  standardProviderFactory = createDesignPanelEdgeProvider,
+  standardProviderFactory = createDesignPanelServerProvider,
   intervalMs = POLL_MS,
 }) {
   if (!supabase) throw new Error("generation worker requires a Supabase client");
@@ -375,9 +375,9 @@ function createGenerationWorker({
       const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
       const standardProvider = isFlatFirst ? null : standardProviderFactory({
         supabase,
-        supabaseUrl: process.env.SUPABASE_URL,
-        serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-        ownerId,
+        provider: imageProvider,
+        tenantKey: claim.tenantKey,
+        generationId: claim.generationId,
         requestId,
         input: claim.input,
       });
@@ -408,13 +408,13 @@ function createGenerationWorker({
         });
       }
 
-      // Standard DesignPanel generation is deliberately staged: the proven
-      // designer function creates View 1, then the proven photographer function
-      // receives that accepted hero for Views 2-7. The photographer bundle is
-      // intentionally invoked one view at a time: six concurrent cold starts can
-      // exceed the Edge compute envelope and lose every reproduction at once.
+      // Standard DesignPanel generation is deliberately staged on this server:
+      // design-panel-ai-generate creates View 1, then generate-color-render
+      // receives that byte-verified accepted winner for Views 2-7. Reproductions
+      // remain sequential so one frozen anchor yields one deterministic order.
       // A.T.L.A.S. remains its separate, explicitly requested experiment.
-      const slots = slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas, []);
+      const standardReferenceParts = isFlatFirst ? [] : await referenceImageParts(supabase, claim.input);
+      const slots = slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas, standardReferenceParts);
       let result;
       if (isFlatFirst) {
         result = await engine.runRequest({

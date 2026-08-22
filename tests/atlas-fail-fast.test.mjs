@@ -57,6 +57,21 @@ test("the guarded create page defaults to DesignPanel and opens A.T.L.A.S. only 
   assert.match(home, /setPipelineMode\("legacy"\)/);
 });
 
+test("the customer DesignPanel page enters the one production chain but A.T.L.A.S. stays isolated", () => {
+  const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
+  const standardHandoff = hook.match(
+    /if \(acceptedPipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE\) \{[\s\S]*?\n      \}/,
+  )?.[0] || "";
+
+  assert.match(standardHandoff, /finished\.handoffReady !== true/);
+  assert.match(standardHandoff, /await handoffGeneration\(request\.requestId\)/);
+  assert.match(standardHandoff, /handoff\.generationId !== request\.generationId/);
+  assert.doesNotMatch(
+    hook.match(/if \(acceptedPipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE\) \{[\s\S]*?\n      \}/)?.[0] || "",
+    /handoffGeneration/,
+  );
+});
+
 test("A.T.L.A.S. reveals the immutable master and streams signed proof views without new generation calls", () => {
   const adapter = read("app/src/lib/designpanelpro-standalone-adapter.ts");
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");

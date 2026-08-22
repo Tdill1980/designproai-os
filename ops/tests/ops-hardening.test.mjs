@@ -14,15 +14,15 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 42);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 43);
   for (const name of [
     "runtime/resend-transport.cjs", "runtime/wrapbox-delivery.cjs", "runtime/zip-spool.cjs",
-    "runtime/gemini-flat-wrap.cjs", "runtime/flat-wrap-layout.cjs", "runtime/proof-sheet.cjs", "runtime/topaz-upscale.cjs",
+    "runtime/gemini-flat-wrap.cjs", "runtime/flat-wrap-layout.cjs", "runtime/proof-sheet.cjs", "runtime/server-grid-slice.cjs", "runtime/topaz-upscale.cjs",
     "runtime/logo-removal.cjs", "runtime/studio-os.cjs", "runtime/designiq-prompt.cjs",
     // Calls 1-7. These existed in the tree but were absent from the policy, so
     // no release ever shipped them and the generation queue had no executor.
     "runtime/view-angles.cjs", "runtime/generation-provider.cjs",
-    "runtime/designpanel-edge-provider.cjs", "runtime/generation-store.cjs",
+    "runtime/designpanel-server-provider.cjs", "runtime/generation-store.cjs",
     // The vehicle silhouettes Call 8 shows the approved artwork through. A
     // release without them composes the proof as bare rectangles, which is not
     // the 2D Production Proof the customer approves.

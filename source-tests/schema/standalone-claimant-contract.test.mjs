@@ -37,11 +37,11 @@ for(const edge of ["top: 5","right: 5","bottom: 5","left: 5"])
 // window is generous because the panel also carries its proof, revision and
 // GENIE identities now; what is being asserted is the ORDER and PRESENCE of the
 // source binding, not how tightly packed the metadata happens to be.
-assert.match(lower,/sourcerule: panel_source_rule[\s\S]{0,900}sourceregionhash:[\s\S]{0,900}sourcesurfacehash:[\s\S]{0,2500}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
-  'panel artifact metadata must bind the canonical surface it was rendered from and four-edge bleed');
+assert.match(lower,/sourcerule: panel_source_rule[\s\S]{0,900}sourceregionhash:[\s\S]{0,900}sourcefieldhash:[\s\S]{0,2500}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
+  'panel artifact metadata must bind its own immutable surface field and four-edge bleed');
 assert.ok(lower.includes('panel_source_rule = "one-own-surface-region-per-output-side"'),
   'Call 9 must declare the one-own-surface-per-output-side rule the database requires');
-for(const guard of ["call9_surface_changed","call9_geometry_drift","call9_bleed_drift","call9_surface_reuse"])
+for(const guard of ["call9_surface_field_changed","call9_surface_field_binding_drift","call9_gridslice_receipt_mismatch","call9_surface_reuse"])
   assert.ok(lower.includes(guard.toLowerCase()),`Call 9 must fail closed on ${guard}`);
 // The atlas is gone and may not return: no shared layout, no cut, no crop.
 for(const atlas of ["cutallpanels","flatwraplayout","cutrect","deterministic-cut-of-approved-call8-flat-wrap-layout"])
