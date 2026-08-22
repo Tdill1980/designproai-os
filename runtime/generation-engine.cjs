@@ -101,6 +101,7 @@ async function runSlot(options) {
     requestId, tenantKey, generationId, sourceViewType, consumerRole,
     provider, store, promptParts, aspectRatio, imageSize,
     validate, signal, authorityMetadata = null, now = () => Date.now(),
+    allowOrphanReconciliation = true,
     maxProviderAttempts = MAX_PROVIDER_ATTEMPTS_PER_SLOT,
     maxRegenerations = MAX_SLOT_REGENERATIONS,
     timeoutMs = PROVIDER_TIMEOUT_MS,
@@ -130,7 +131,9 @@ async function runSlot(options) {
   try {
     // 3. Storage-first reconciliation. A crash between upload and row commit
     //    leaves real bytes behind; finish that work instead of buying it twice.
-    const orphan = await store.findReconcilableBytes?.({ requestId, tenantKey, generationId, sourceViewType });
+    const orphan = allowOrphanReconciliation === false
+      ? null
+      : await store.findReconcilableBytes?.({ requestId, tenantKey, generationId, sourceViewType });
     if (orphan && sha256(orphan.bytes) === orphan.contentHash) {
       const winner = await store.persistAcceptedSlot({
         requestId, sourceViewType, consumerRole,
@@ -194,7 +197,13 @@ async function runSlot(options) {
       // read forwards, and no hash comparison can tell you that.
       let verdict = { accepted: true };
       if (typeof validate === "function") {
-        verdict = await validate({ bytes: result.bytes, contentType: result.contentType, sourceViewType, consumerRole });
+        verdict = await validate({
+          bytes: result.bytes,
+          contentType: result.contentType,
+          sourceViewType,
+          consumerRole,
+          signal,
+        });
       }
       if (!verdict?.accepted) {
         rejections += 1;
@@ -217,8 +226,12 @@ async function runSlot(options) {
         metadata: {
           contract: ENGINE_CONTRACT, model: result.model, keyFingerprint: result.keyFingerprint,
           attempt, durationMs, providerAttempts: result.attempts?.length || 1,
+          ...(result.contract ? { providerContract: String(result.contract) } : {}),
           ...(result.metadata && typeof result.metadata === "object"
             ? { provider: result.metadata }
+            : {}),
+          ...(verdict?.metadata && typeof verdict.metadata === "object"
+            ? { validation: verdict.metadata }
             : {}),
           ...(authorityMetadata && typeof authorityMetadata === "object"
             ? { authority: authorityMetadata }
@@ -256,8 +269,10 @@ async function runSlot(options) {
 /**
  * Runs the requested slots once. The whole-request budget is the per-slot
  * ceiling times the number of slots, and it cannot be exceeded because each
- * slot enforces its own. A request whose slots all fail becomes failed; it is
- * never left pending, and it does not restart itself.
+ * slot enforces its own. Any failed slot makes the request failed. A slot held
+ * by another worker is deliberately pending: this runner cannot claim the
+ * output is ready, and it must not convert another worker's active lease into a
+ * terminal failure. Only an all-accepted result may become outputs_ready.
  */
 async function runRequest(options) {
   const { slots, parallel = false, ...slotOptions } = options;
@@ -278,9 +293,10 @@ async function runRequest(options) {
   const budget = slots.length * MAX_PROVIDER_ATTEMPTS_PER_SLOT;
   if (providerCalls > budget) throw new EngineError("request_budget_exceeded", `${providerCalls} provider calls exceeded the ${budget} budget`);
   const failed = results.filter((item) => item.state === "failed");
+  const allAccepted = results.every((item) => item.state === "accepted");
   return {
     contract: ENGINE_CONTRACT,
-    state: failed.length ? "failed" : "outputs_ready",
+    state: failed.length ? "failed" : allAccepted ? "outputs_ready" : "pending",
     providerCalls, budget, results,
     // Nothing auto-restarts a failed request. Resuming is an explicit act.
     requiresExplicitResume: failed.length > 0,

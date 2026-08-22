@@ -57,8 +57,8 @@ function supabaseDouble({ bytes = new Map(), claimResult = claim } = {}) {
         if (name === "claim_designpro_generation_request") return { data: claimResult, error: null };
         if (name === "complete_designpro_generation_request") return {
           data: {
-            state: "outputs_ready", handoffReady: false,
-            handoffBlocker: "source_close_up_has_no_verified_hero3d_role_mapping",
+            state: "outputs_ready", handoffReady: true,
+            handoffBlocker: null,
           },
           error: null,
         };
@@ -86,50 +86,42 @@ test("Calls 1-7 adapter claims only the exact frozen source contract", async () 
   assert.equal(result.requestId, claim.requestId);
   assert.deepEqual(result.engineContract, adapter.engineContract);
   assert.deepEqual(result.viewPlan.map((item) => item.sourceViewType), [
-    "side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof",
-  ]);
-  // The seventh slot must carry the hero3d role the revision contract accepts.
-  assert.equal(result.viewPlan.find((item) => item.sourceViewType === "hero-3d").consumerRole, "hero3d");
-  assert.equal(result.viewPlan.some((item) => item.consumerRole === "closeup"), false);
-  // The database froze this source-blob fingerprint before the temporary Hero
-  // authoring plan. A rollback bridge must present that immutable Close-Up
-  // order while still accepting the DB-authored plan beside the claim.
-  assert.deepEqual(result.engineContract.sourceViewOrder, [
     "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
   ]);
+  assert.equal(result.viewPlan.find((item) => item.sourceViewType === "close-up").consumerRole, "closeup");
+  assert.equal(result.viewPlan.some((item) => item.sourceViewType === "hero-3d" || item.consumerRole === "hero3d"), false);
   assert.deepEqual(fake.calls, [{
     name: "claim_designpro_generation_request",
     payload: { p_worker_id: "calls17-worker", p_lease_seconds: 900 },
   }]);
 });
 
-test("claim and completion accept exact Close-Up or historical Hero plans without relabelling", async () => {
-  const closeupClaim = { ...claim, viewPlan: adapter.closeupViewPlan };
-  const normalizedClaim = claimant._test.assertCalls1To7Claim(closeupClaim);
-  assert.deepEqual(normalizedClaim.viewPlan, adapter.closeupViewPlan);
+test("claim and completion author only the active Close-Up plan", async () => {
+  const normalizedClaim = claimant._test.assertCalls1To7Claim(claim);
+  assert.deepEqual(normalizedClaim.viewPlan, adapter.viewPlan);
 
-  const { bytes, views } = calls17Views(adapter.closeupViewPlan);
+  const { bytes, views } = calls17Views(adapter.viewPlan);
   assert.deepEqual(
     claimant._test.normalizeCalls1To7Views(normalizedClaim, views)
       .map((view) => [view.sourceViewType, view.consumerRole]),
-    adapter.closeupViewPlan.map((view) => [view.sourceViewType, view.consumerRole]),
+    adapter.viewPlan.map((view) => [view.sourceViewType, view.consumerRole]),
   );
-  const fake = supabaseDouble({ bytes, claimResult: closeupClaim });
+  const fake = supabaseDouble({ bytes, claimResult: claim });
   await adapter.complete(fake.client, normalizedClaim, views);
   assert.deepEqual(
     fake.calls.find((item) => item.name === "complete_designpro_generation_request")
       .payload.p_views.map((view) => view.sourceViewType),
-    adapter.closeupViewPlan.map((view) => view.sourceViewType),
+    adapter.viewPlan.map((view) => view.sourceViewType),
   );
 
-  const both = [
-    ...adapter.viewPlan.filter((view) => view.sourceViewType !== "roof"),
-    adapter.closeupViewPlan.find((view) => view.sourceViewType === "close-up"),
-  ];
+  const historicalHeroPlan = adapter.viewPlan.map((view) => view.sourceViewType === "close-up"
+    ? { sourceViewType: "hero-3d", consumerRole: "hero3d" }
+    : view);
   for (const viewPlan of [
-    adapter.viewPlan.filter((view) => view.sourceViewType !== "hero-3d"),
-    both,
-    adapter.closeupViewPlan.map((view) => view.sourceViewType === "close-up"
+    adapter.viewPlan.filter((view) => view.sourceViewType !== "close-up"),
+    historicalHeroPlan,
+    [...adapter.viewPlan, { sourceViewType: "hero-3d", consumerRole: "hero3d" }],
+    adapter.viewPlan.map((view) => view.sourceViewType === "close-up"
       ? { ...view, consumerRole: "hero3d" }
       : view),
   ]) {
@@ -173,7 +165,8 @@ test("completion verifies all seven stored bytes before fenced persistence", asy
   const fake = supabaseDouble({ bytes });
   const result = await adapter.complete(fake.client, claim, views);
   assert.equal(result.state, "outputs_ready");
-  assert.equal(result.handoffReady, false);
+  assert.equal(result.handoffReady, true);
+  assert.equal(result.handoffBlocker, null);
   const completion = fake.calls.find((item) => item.name === "complete_designpro_generation_request");
   assert.ok(completion);
   assert.deepEqual(completion.payload.p_views.map((item) => item.sourceViewType),
@@ -188,19 +181,15 @@ test("completion verifies all seven stored bytes before fenced persistence", asy
   });
 });
 
-test("source close-up cannot be silently relabeled as hero3d", () => {
-  // hero3d now comes from its own generated hero-3d view. A close-up is a
-  // two-square-foot panel detail; presenting one in the hero3d slot must still
-  // be refused, which is why the seventh slot was regenerated rather than
-  // aliased.
+test("active Close-Up cannot be silently relabeled as historical hero3d", () => {
   const { views } = calls17Views();
-  const hero = views.find((item) => item.sourceViewType === "hero-3d");
-  hero.sourceViewType = "close-up";
+  const closeUp = views.find((item) => item.sourceViewType === "close-up");
+  closeUp.sourceViewType = "hero-3d";
   assert.throws(() => claimant._test.normalizeCalls1To7Views(claim, views),
     (error) => error.code === "generation_view_identity_invalid");
 
   const { views: relabelled } = calls17Views();
-  relabelled.find((item) => item.sourceViewType === "hero-3d").consumerRole = "closeup";
+  relabelled.find((item) => item.sourceViewType === "close-up").consumerRole = "hero3d";
   assert.throws(() => claimant._test.normalizeCalls1To7Views(claim, relabelled),
     (error) => error.code === "generation_view_identity_invalid");
 });

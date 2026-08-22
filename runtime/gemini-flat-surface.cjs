@@ -15,11 +15,11 @@ const FLAT_SURFACE_CONTRACT = "designpro.gemini-flat-surface.server.v4";
 const PROMPT_VERSION = "designproai-sidefield-generate-qc-retry-server-20260821.v1";
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
-// The bridge keeps the currently-live Hero contract as its authoring default,
-// but can consume the forward Close-Up contract after the database switch.
-// These are two distinct proof identities: exactly one may occupy slot seven.
-const VIEW_KEYS = Object.freeze([...SURFACE_KEYS, "hero3d"]);
-const CLOSEUP_VIEW_KEYS = Object.freeze([...SURFACE_KEYS, "closeup"]);
+// The seventh immutable proof is the locked Close-Up view. It is evidence and
+// proof-sheet content, not a production surface; the six SURFACE_KEYS remain
+// the only inputs flattened into print fields.
+const VIEW_KEYS = Object.freeze([...SURFACE_KEYS, "closeup"]);
+const LEGACY_VIEW_KEYS = Object.freeze([...SURFACE_KEYS, "hero3d"]);
 const HASH_RE = /^[0-9a-f]{64}$/;
 const ALLOWED_RESPONSE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const QC_HARD_ISSUES = new Set(["wrong_design", "tiled_or_repeated"]);
@@ -105,12 +105,9 @@ function sourceViewKeys(sourceViews) {
     throw new Error("exactly seven immutable source views are required");
   }
   const keys = new Set(sourceViews.map((item) => String(item?.viewKey || "").trim().toLowerCase()));
-  const hasHeroSet = VIEW_KEYS.every((key) => keys.has(key));
-  const hasCloseupSet = CLOSEUP_VIEW_KEYS.every((key) => keys.has(key));
-  if (hasHeroSet === hasCloseupSet) {
-    throw new Error("the seven-view source set requires exactly one Close-Up or immutable historical Hero proof");
-  }
-  return hasCloseupSet ? CLOSEUP_VIEW_KEYS : VIEW_KEYS;
+  if (VIEW_KEYS.every((key) => keys.has(key))) return VIEW_KEYS;
+  if (LEGACY_VIEW_KEYS.every((key) => keys.has(key))) return LEGACY_VIEW_KEYS;
+  throw new Error("the seven-view source set requires exactly one Close-Up or immutable historical Hero proof");
 }
 
 function normalizeSourceSet(sourceViews) {
@@ -405,7 +402,7 @@ module.exports = {
   PROMPT_VERSION,
   SURFACE_KEYS,
   VIEW_KEYS,
-  CLOSEUP_VIEW_KEYS,
+  LEGACY_VIEW_KEYS,
   authorFlatSurfaceFields,
   flatSurfaceInputHash,
   normalizeTextLock,

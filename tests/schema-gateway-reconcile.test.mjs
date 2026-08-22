@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-21), [
+  assert.deepEqual(names.slice(-25), [
     "20260806181200_designpro_schema_gateway_reconcile.sql",
     "20260808024500_designpro_calls_1_7_adapter.sql",
     "20260812120000_designpro_retire_legacy_2d_proof.sql",
@@ -58,6 +58,18 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // existing Calls 8-11 workflow. Fulfillment stays append-only and cannot
     // release paid production until an exact recipient/order binding exists.
     "20260821200000_designpro_design_first_production_handoff.sql",
+    // Close-Up is restored as the active seventh proof. Historical hero3d
+    // revisions remain readable and handoff-compatible without relabelling.
+    "20260822060000_designpro_restore_closeup_seventh_view.sql",
+    // Per-view replacement cannot preserve an immutable Atlas proof graph, so
+    // the owner-callable RPC now fails closed before mutating any Atlas slot.
+    "20260822070000_designpro_refuse_atlas_view_regeneration.sql",
+    // Terminal Atlas proof sets are owner-readable only when the exact current
+    // seven roles prove one master/Driver lineage plus audit and semantic QC.
+    "20260822080000_designpro_guard_atlas_owner_reads.sql",
+    // Every revision/Storage/freeze boundary accepts active Close-Up or one
+    // immutable historical Hero set, and legacy Atlas master preview is fenced.
+    "20260822090000_designpro_closeup_schema_boundaries.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

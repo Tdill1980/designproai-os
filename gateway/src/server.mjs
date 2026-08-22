@@ -4,11 +4,7 @@ import { pathToFileURL } from "node:url";
 
 const BUCKET = "wrap-files";
 const MAX_ASSET_BYTES = 25 * 1024 * 1024;
-const CORE_VIEW_KEYS = ["driver", "passenger", "hood", "roof", "front", "rear"];
-// Keep Hero as this pre-migration bridge's authoring default. Read/upload and
-// revision handoff also accept the forward Close-Up identity, never an alias.
-const VIEW_KEYS = [...CORE_VIEW_KEYS, "hero3d"];
-const COMPATIBLE_VIEW_KEYS = new Set([...VIEW_KEYS, "closeup"]);
+const VIEW_KEYS = ["driver", "passenger", "hood", "front", "rear", "closeup", "roof"];
 const PREFLIGHT_CHECKS = [
   "dimensionsVerified",
   "sourceRegionsVerified",
@@ -868,7 +864,7 @@ function validateUploadIntent(body) {
   const contentHash = String(body.contentHash || "").toLowerCase();
   const contentType = String(body.contentType || "").toLowerCase();
   const byteSize = Number(body.byteSize);
-  const viewKind = COMPATIBLE_VIEW_KEYS.has(kind);
+  const viewKind = VIEW_KEYS.includes(kind);
   const kindAllowed = viewKind || kind === "logo" || kind === "attachment";
   const typeAllowed = MIME_EXTENSION.has(contentType) && (!viewKind || contentType.startsWith("image/") && contentType !== "image/svg+xml");
   if (!/^[0-9a-f-]{36}$/.test(revisionId) || !kindAllowed || !typeAllowed || !/^[0-9a-f]{64}$/.test(contentHash) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_ASSET_BYTES) {
@@ -968,32 +964,20 @@ async function verifyStoredAsset(fetchImpl, token, cfg, userId, asset) {
   return { ...asset, verified: true };
 }
 
-function compatibleRevisionViewKeys(assets) {
-  if (!assets || typeof assets !== "object" || Array.isArray(assets)) return null;
-  const keys = Object.keys(assets);
-  if (keys.length !== 7 || keys.some((key) => !COMPATIBLE_VIEW_KEYS.has(key))
-    || CORE_VIEW_KEYS.some((key) => !Object.prototype.hasOwnProperty.call(assets, key))) {
-    return null;
-  }
-  const hasCloseup = Object.prototype.hasOwnProperty.call(assets, "closeup");
-  const hasHero = Object.prototype.hasOwnProperty.call(assets, "hero3d");
-  if (hasCloseup === hasHero) return null;
-  return [...CORE_VIEW_KEYS, hasCloseup ? "closeup" : "hero3d"];
-}
-
 async function validateRevisionAssets(fetchImpl, token, cfg, userId, body) {
   const assets = body.renderAssets;
-  const viewKeys = compatibleRevisionViewKeys(assets);
-  if (!viewKeys) {
+  if (!assets || typeof assets !== "object" || Array.isArray(assets) || Object.keys(assets).length !== VIEW_KEYS.length) {
     throw Object.assign(new Error("seven_render_assets_required"), { status: 400 });
   }
+  const requiredViewKeys = VIEW_KEYS.every((key) => assets[key]) ? VIEW_KEYS : null;
+  if (!requiredViewKeys) throw Object.assign(new Error("seven_render_assets_required"), { status: 400 });
   const hashes = new Set();
-  for (const key of viewKeys) {
+  for (const key of requiredViewKeys) {
     if (!validateAssetIdentity(assets[key], userId, body.revisionId, key)) throw Object.assign(new Error(`render_asset_invalid:${key}`), { status: 400 });
     await verifyStoredAsset(fetchImpl, token, cfg, userId, assets[key]);
     hashes.add(assets[key].contentHash);
   }
-  if (hashes.size !== viewKeys.length) throw Object.assign(new Error("seven_render_assets_must_be_distinct"), { status: 409 });
+  if (hashes.size !== requiredViewKeys.length) throw Object.assign(new Error("seven_render_assets_must_be_distinct"), { status: 409 });
   const logos = body.revisionSnapshot?.expectedLogoInventory;
   const attestation = body.revisionSnapshot?.logoInventoryAttestation;
   if (!Array.isArray(logos) || !attestation || attestation.attested !== true || !["none", "listed"].includes(attestation.mode)) {
@@ -1022,12 +1006,18 @@ const GENERATION_SERVER_CONTROL_KEYS = new Set([
   "temperature", "topk", "topp", "viewangle", "viewangles", "cameraangle",
   "cameraangles", "enginecontract", "sourcecommit", "sourceblobs",
 ]);
-const GENERATION_VIEW_ROLE = new Map([
+const ACTIVE_GENERATION_VIEW_ROLE = new Map([
   ["side", "driver"], ["passenger-side", "passenger"],
   ["hood_detail", "hood"], ["front", "front"], ["rear", "rear"],
-  // Close-Up and historical Hero remain distinct seventh-slot identities.
-  ["hero-3d", "hero3d"], ["close-up", "closeup"], ["roof", "roof"],
+  ["close-up", "closeup"], ["roof", "roof"],
 ]);
+const GENERATION_VIEW_ROLE = new Map([
+  ...ACTIVE_GENERATION_VIEW_ROLE,
+  // Historical hero rows remain readable for immutable handoff/history only.
+  // They are not an active proof slot and cannot be regenerated.
+  ["hero-3d", "hero3d"],
+]);
+const ATLAS_NEW_RUN_REQUIRED = "flat_first_atlas_new_run_required";
 const CORE_GENERATION_VIEW_TYPES = ["side", "passenger-side", "hood_detail", "front", "rear", "roof"];
 
 function compatibleGenerationViewSet(views, requireComplete = false) {
@@ -1050,6 +1040,7 @@ const GENERATION_HANDOFF_BLOCKERS = new Set([
   "generation_views_must_be_byte_distinct",
   "generation_view_roles_do_not_match_plan",
   "source_close_up_has_no_verified_hero3d_role_mapping",
+  ATLAS_NEW_RUN_REQUIRED,
 ]);
 
 function generationInputHasServerControls(value, path = []) {
@@ -1268,7 +1259,7 @@ function validatedGenerationStatus(value) {
     || outputSetHash !== null && !SHA256_PATTERN.test(String(outputSetHash || ""))
     || failureCode !== null && !/^[a-z0-9][a-z0-9_:-]{0,79}$/.test(String(failureCode || ""))
     // The database decides handoff readiness from the persisted exact view
-    // identities. This compatibility bridge carries either Close-Up or the
+    // identities. The final runtime carries either active Close-Up or the
     // immutable historical Hero verdict without changing either role. It is a
     // strict boolean, and a true verdict must not arrive with a blocker.
     || typeof value.handoffReady !== "boolean"
@@ -1509,6 +1500,9 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           await generationRequestFor(fetchImpl, token, cfg, requestId)
         );
         if (!request) return json(res, 404, { error: "generation_request_not_found" });
+        if (request.failureCode === ATLAS_NEW_RUN_REQUIRED) {
+          return json(res, 409, { error: ATLAS_NEW_RUN_REQUIRED });
+        }
         // Identity only. This route deliberately never returns a storage path or
         // a signed URL; viewing the images is a separate, explicit surface
         // (/views below), the same way artifacts are separate from job status.
@@ -1525,6 +1519,11 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
         const located = await rpc(fetchImpl, token, cfg, "designpro_flat_atlas_revision_paths", {
           p_request_id: requestId,
+        }).catch((error) => {
+          if (String(error?.message || "").includes(ATLAS_NEW_RUN_REQUIRED)) {
+            throw Object.assign(new Error(ATLAS_NEW_RUN_REQUIRED), { status: 409 });
+          }
+          throw error;
         });
         const revisions = validatedFlatAtlasRevisions(located, requestId, user.id);
         if (revisions === null) return json(res, 404, { error: "generation_request_not_found" });
@@ -1556,7 +1555,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const requestId = regenerateMatch[1].toLowerCase();
         const sourceViewType = regenerateMatch[2];
         if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
-        if (!GENERATION_VIEW_ROLE.has(sourceViewType)) return json(res, 400, { error: "generation_view_not_in_plan" });
+        if (!ACTIVE_GENERATION_VIEW_ROLE.has(sourceViewType)) return json(res, 400, { error: "generation_view_not_in_plan" });
         const body = await readBody(req).catch(() => ({}));
         const instruction = body?.instruction == null ? null : String(body.instruction).slice(0, 2000);
         const flatFirstGate = validatedFlatFirstGate(await rpc(
@@ -1567,12 +1566,12 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         if (flatFirstGate === null) {
           return json(res, 404, { error: "generation_request_not_found" });
         }
-        // A flat-first visual edit belongs on a new immutable atlas revision.
-        // Sending it to one camera slot would make that 3D proof disagree with
-        // the production authority. An instructionless retry is safe: it reuses
-        // the same atlas and only retries the failed projection.
-        if (flatFirstGate.flatFirst && String(instruction || "").trim()) {
-          return json(res, 409, { error: "flat_first_atlas_revision_required" });
+        // An A.T.L.A.S. proof set is one immutable master plus seven dependent
+        // projections. Replacing even an instructionless camera slot could
+        // leave accepted views anchored to a different Driver/master lineage.
+        // The database enforces the same boundary for direct RPC callers.
+        if (flatFirstGate.flatFirst) {
+          return json(res, 409, { error: ATLAS_NEW_RUN_REQUIRED });
         }
         const result = await rpc(fetchImpl, token, cfg, "regenerate_designpro_generation_slot", {
           p_request_id: requestId,
@@ -1585,7 +1584,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 202, {
           requestId: result.requestId,
           sourceViewType: String(result.sourceViewType || sourceViewType),
-          consumerRole: String(result.consumerRole || GENERATION_VIEW_ROLE.get(sourceViewType)),
+          consumerRole: String(result.consumerRole || ACTIVE_GENERATION_VIEW_ROLE.get(sourceViewType)),
           supersededViews: Number(result.supersededViews || 0),
           state: String(result.state || "queued"),
         });
@@ -1600,7 +1599,14 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       if (req.method === "GET" && generationViewsMatch) {
         const requestId = generationViewsMatch[1].toLowerCase();
         if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
-        const located = await rpc(fetchImpl, token, cfg, "designpro_generation_view_paths", { p_request_id: requestId });
+        const located = await rpc(
+          fetchImpl, token, cfg, "designpro_generation_view_paths", { p_request_id: requestId },
+        ).catch((error) => {
+          if (String(error?.message || "").includes(ATLAS_NEW_RUN_REQUIRED)) {
+            throw Object.assign(new Error(ATLAS_NEW_RUN_REQUIRED), { status: 409 });
+          }
+          throw error;
+        });
         if (!Array.isArray(located)) return json(res, 404, { error: "generation_request_not_found" });
         const identities = located.map((view) => {
           const identity = {

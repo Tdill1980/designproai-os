@@ -107,6 +107,25 @@ test("a crash between upload and commit reconciles from storage, not from the pr
   assert.equal(store.state.accepted.get("side").contentHash, contentHash);
 });
 
+test("Atlas can disable anonymous orphan reconciliation and regenerate from its authority", async () => {
+  const bytes = Buffer.from("anonymous-old-render");
+  const contentHash = engine._test.sha256(bytes);
+  const provider = okProvider(Buffer.from("atlas-authorized-render"));
+  const store = makeStore({
+    orphan: { bytes, contentHash, storagePath: `designpro/x/side/${contentHash}.png`, contentType: "image/png" },
+  });
+  const result = await engine.runSlot({
+    ...base,
+    provider,
+    store,
+    allowOrphanReconciliation: false,
+  });
+  assert.equal(result.state, "accepted");
+  assert.equal(result.reconciled, undefined);
+  assert.equal(provider.calls, 1, "anonymous bytes must not bypass Atlas projection");
+  assert.notEqual(store.state.accepted.get("side").contentHash, contentHash);
+});
+
 test("orphaned bytes whose hash does not verify are not adopted", async () => {
   const provider = okProvider();
   const store = makeStore({ orphan: { bytes: Buffer.from("tampered"), contentHash: "f".repeat(64), storagePath: "designpro/x/side/f.png", contentType: "image/png" } });
@@ -136,6 +155,37 @@ test("an atlas-conditioned proof persists the exact immutable authority identity
   assert.deepEqual(store.state.accepted.get("side").metadata.authority, authorityMetadata);
 });
 
+test("an accepted semantic review is persisted with the proof identity", async () => {
+  const provider = okProvider(Buffer.from("semantically-reviewed-view"));
+  provider.generateImage = async function generateImage() {
+    this.calls += 1;
+    return {
+      bytes: Buffer.from("semantically-reviewed-view"),
+      contentType: "image/png",
+      model: "gemini-3-pro-image",
+      keyFingerprint: "0123456789ab",
+      attempts: [],
+      contract: "designpro.atlas-designpanel-server-provider.v1",
+    };
+  };
+  const store = makeStore();
+  const validation = {
+    contract: "designpro.atlas-proof-semantic-qc.v1",
+    expectedView: "Driver",
+    proofHash: engine._test.sha256(Buffer.from("semantically-reviewed-view")),
+    confidence: 0.98,
+  };
+  await engine.runSlot({
+    ...base,
+    provider,
+    store,
+    validate: async () => ({ accepted: true, metadata: validation }),
+  });
+  const metadata = store.state.accepted.get("side").metadata;
+  assert.equal(metadata.providerContract, "designpro.atlas-designpanel-server-provider.v1");
+  assert.deepEqual(metadata.validation, validation);
+});
+
 test("semantic rejection is bounded at two regenerations, not retried forever", async () => {
   const provider = okProvider();
   const store = makeStore();
@@ -158,6 +208,54 @@ test("a slot already leased by another worker is left alone", async () => {
   const result = await engine.runSlot({ ...base, provider, store });
   assert.equal(result.state, "leased_elsewhere");
   assert.equal(provider.calls, 0, "two workers must not generate the same driver at once");
+});
+
+test("runRequest is pending, never outputs_ready, until every slot is accepted", async () => {
+  const provider = okProvider();
+  const acceptedDriver = {
+    contentHash: "a".repeat(64),
+    storagePath: "designpro/x/side/a.png",
+  };
+  const store = makeStore({
+    accepted: [["side", acceptedDriver]],
+    leaseBusy: true,
+  });
+  const result = await engine.runRequest({
+    ...base,
+    provider,
+    store,
+    slots: [
+      { sourceViewType: "side", consumerRole: "driver" },
+      { sourceViewType: "passenger-side", consumerRole: "passenger" },
+    ],
+  });
+
+  assert.equal(result.state, "pending");
+  assert.equal(result.requiresExplicitResume, false);
+  assert.deepEqual(result.results.map((slot) => slot.state), ["accepted", "leased_elsewhere"]);
+  assert.equal(result.providerCalls, 0);
+});
+
+test("a failed slot keeps runRequest failed even when another slot is leased elsewhere", async () => {
+  const provider = deadProvider();
+  const store = makeStore();
+  const acquire = store.acquireSlotLease;
+  store.acquireSlotLease = async (options) => (
+    options.sourceViewType === "passenger-side" ? null : acquire(options)
+  );
+  const result = await engine.runRequest({
+    ...base,
+    provider,
+    store,
+    slots: [
+      { sourceViewType: "side", consumerRole: "driver" },
+      { sourceViewType: "passenger-side", consumerRole: "passenger" },
+    ],
+  });
+
+  assert.equal(result.state, "failed");
+  assert.equal(result.requiresExplicitResume, true);
+  assert.deepEqual(result.results.map((slot) => slot.state), ["failed", "leased_elsewhere"]);
 });
 
 test("the lease is released even when the store throws mid-slot", async () => {

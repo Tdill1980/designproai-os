@@ -102,19 +102,18 @@ test("provider attempt history is recorded, and never records a key", () => {
   assert.doesNotMatch(migration, /GRANT[^\n]*TO (anon|authenticated)/);
 });
 
-test("the seven-view handoff is unchanged by this port", () => {
-  // Calls 8+ read these exact slots. The port targets them; it does not
-  // redefine them.
+test("the seven-view handoff keeps the source-locked Close-Up contract", () => {
   const claimant = read("designpro-standalone-claimant.cjs");
   const angles = read("view-angles.cjs");
-  // The six production surfaces are untouched. The seventh slot is a hero-3d
-  // view carrying the hero3d role, because 'closeup' is not a role the revision
-  // contract accepts and the handoff could never complete while it was.
-  for (const view of ["side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof"]) {
+  for (const view of ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]) {
     assert.ok(claimant.includes(`"${view}"`), `claimant lost source slot ${view}`);
     assert.ok(angles.includes(`"${view}"`), `view contract lost slot ${view}`);
   }
-  for (const role of ["driver", "passenger", "hood", "front", "rear", "hero3d", "roof"]) {
+  for (const role of ["driver", "passenger", "hood", "front", "rear", "closeup", "roof"]) {
     assert.ok(claimant.includes(`"${role}"`), `claimant lost consumer role ${role}`);
   }
+  assert.match(angles, /const VIEW_ORDER = Object\.freeze\(\["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"\]\)/);
+  assert.doesNotMatch(angles, /const VIEW_ORDER = Object\.freeze\([^\n]*hero-3d/);
+  assert.match(claimant, /sourceViewType: "close-up", consumerRole: "closeup"/);
+  assert.doesNotMatch(claimant, /CALLS_1_7_VIEW_PLAN[\s\S]{0,800}sourceViewType: "hero-3d"/);
 });

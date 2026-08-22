@@ -14,6 +14,7 @@ const {
   createDesignPanelServerProvider,
   generatePassengerMirror,
   orientationVerdict,
+  passengerFramingVerdict,
   producePassengerView,
 } = require("../runtime/designpanel-server-provider.cjs");
 
@@ -21,6 +22,28 @@ const OWNER_ID = "11111111-1111-4111-8111-111111111111";
 const REQUEST_ID = "22222222-2222-4222-8222-222222222222";
 const GENERATION_ID = "33333333-3333-4333-8333-333333333333";
 const TENANT_KEY = `user_${OWNER_ID}`;
+
+async function asymmetricDriverFixture() {
+  const left = await sharp({ create: { width: 320, height: 360, channels: 3, background: "#f39c12" } }).png().toBuffer();
+  const right = await sharp({ create: { width: 320, height: 360, channels: 3, background: "#204a87" } }).png().toBuffer();
+  return sharp({ create: { width: 640, height: 360, channels: 3, background: "#111111" } })
+    .composite([{ input: left, left: 0, top: 0 }, { input: right, left: 320, top: 0 }])
+    .png()
+    .toBuffer();
+}
+
+function textRepairProvider(bytes, overrides = {}) {
+  return {
+    generateImage: async () => ({
+      bytes,
+      contentType: "image/jpeg",
+      model: "gemini-text-repair",
+      keyFingerprint: "0123456789ab",
+      attempts: [],
+      ...overrides,
+    }),
+  };
+}
 
 async function fixture(overrides = {}) {
   const heroBytes = await sharp({ create: { width: 1600, height: 900, channels: 3, background: "#1565c0" } }).png().toBuffer();
@@ -231,4 +254,95 @@ test("passenger text-repair failure keeps the canonical raw mirror", async () =>
   assert.deepEqual(result.bytes, expected);
   assert.equal(result.contentType, "image/jpeg");
   assert.equal(result.metadata.textRepair, "failed-raw-mirror-kept");
+});
+
+test("passenger accepts repaired bytes only for explicit opposite-facing orientation with matching pixels and framing", async () => {
+  const driver = await asymmetricDriverFixture();
+  const rawMirror = await generatePassengerMirror(driver);
+  const result = await producePassengerView({
+    driverBytes: driver,
+    prompt: "Acme company logo",
+    call: { sourceViewType: "passenger-side", attempt: 1 },
+    provider: textRepairProvider(rawMirror),
+  });
+
+  assert.equal(result.model, "gemini-text-repair");
+  assert.deepEqual(result.bytes, rawMirror);
+  assert.equal(result.metadata.textRepair, "accepted-opposite-facing");
+  assert.equal(result.metadata.framingVerified, true);
+  assert.deepEqual(result.metadata.pixelDimensions, { width: 640, height: 360 });
+  assert.equal(result.metadata.framingMae, 0);
+});
+
+test("passenger keeps the raw mirror when orientation is ambiguous", async () => {
+  const driver = await sharp({ create: { width: 640, height: 360, channels: 3, background: "#1565c0" } }).png().toBuffer();
+  const rawMirror = await generatePassengerMirror(driver);
+  const result = await producePassengerView({
+    driverBytes: driver,
+    prompt: "Acme company logo",
+    call: { sourceViewType: "passenger-side", attempt: 1 },
+    provider: textRepairProvider(rawMirror),
+  });
+
+  assert.equal(result.model, "sharp-deterministic-mirror");
+  assert.deepEqual(result.bytes, rawMirror);
+  assert.equal(result.metadata.textRepair, "ambiguous-orientation-raw-mirror-kept");
+});
+
+test("passenger keeps the raw mirror when repaired bytes cannot be orientation-verified", async () => {
+  const driver = await asymmetricDriverFixture();
+  const rawMirror = await generatePassengerMirror(driver);
+  const result = await producePassengerView({
+    driverBytes: driver,
+    prompt: "Acme company logo",
+    call: { sourceViewType: "passenger-side", attempt: 1 },
+    provider: textRepairProvider(Buffer.from("not-an-image")),
+  });
+
+  assert.equal(result.model, "sharp-deterministic-mirror");
+  assert.deepEqual(result.bytes, rawMirror);
+  assert.equal(result.metadata.textRepair, "ambiguous-orientation-raw-mirror-kept");
+});
+
+test("passenger rejects opposite-facing repaired bytes when pixel dimensions changed", async () => {
+  const driver = await asymmetricDriverFixture();
+  const rawMirror = await generatePassengerMirror(driver);
+  const resized = await sharp(rawMirror).resize(320, 180, { fit: "fill" }).jpeg({ quality: 92 }).toBuffer();
+  const framing = await passengerFramingVerdict(rawMirror, resized);
+  assert.equal(framing.matches, false);
+  assert.equal(framing.reason, "pixel-dimensions-mismatch");
+
+  const result = await producePassengerView({
+    driverBytes: driver,
+    prompt: "Acme company logo",
+    call: { sourceViewType: "passenger-side", attempt: 1 },
+    provider: textRepairProvider(resized),
+  });
+  assert.equal(result.model, "sharp-deterministic-mirror");
+  assert.deepEqual(result.bytes, rawMirror);
+  assert.equal(result.metadata.textRepair, "pixel-dimensions-mismatch-raw-mirror-kept");
+});
+
+test("passenger rejects opposite-facing repaired bytes when framing changed at the same dimensions", async () => {
+  const driver = await asymmetricDriverFixture();
+  const rawMirror = await generatePassengerMirror(driver);
+  const inset = await sharp(rawMirror).resize(384, 216, { fit: "fill" }).jpeg({ quality: 92 }).toBuffer();
+  const reframed = await sharp({ create: { width: 640, height: 360, channels: 3, background: "#000000" } })
+    .composite([{ input: inset, left: 128, top: 72 }])
+    .jpeg({ quality: 92 })
+    .toBuffer();
+  const framing = await passengerFramingVerdict(rawMirror, reframed);
+  assert.equal(framing.matches, false);
+  assert.equal(framing.reason, "framing-mismatch");
+
+  const result = await producePassengerView({
+    driverBytes: driver,
+    prompt: "Acme company logo",
+    call: { sourceViewType: "passenger-side", attempt: 1 },
+    provider: textRepairProvider(reframed),
+  });
+  assert.equal(result.model, "sharp-deterministic-mirror");
+  assert.deepEqual(result.bytes, rawMirror);
+  assert.equal(result.metadata.textRepair, "framing-mismatch-raw-mirror-kept");
+  assert.match(result.metadata.textRepairDetail, /^normalized-mae=/);
 });

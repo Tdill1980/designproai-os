@@ -10,6 +10,18 @@ const paritySql = readFileSync(new URL(
   "../supabase/migrations/20260821120000_designpro_generation_input_parity_and_atlas_preview.sql",
   import.meta.url,
 ), "utf8");
+const regenerationSql = readFileSync(new URL(
+  "../supabase/migrations/20260822070000_designpro_refuse_atlas_view_regeneration.sql",
+  import.meta.url,
+), "utf8");
+const ownerReadGuardSql = readFileSync(new URL(
+  "../supabase/migrations/20260822080000_designpro_guard_atlas_owner_reads.sql",
+  import.meta.url,
+), "utf8");
+const closeupBoundarySql = readFileSync(new URL(
+  "../supabase/migrations/20260822090000_designpro_closeup_schema_boundaries.sql",
+  import.meta.url,
+), "utf8");
 
 test("flat-first is an exact opt-in v3 contract with a separate intake RPC", () => {
   assert.match(sql, /calls_1_7_input_v3_valid/);
@@ -19,6 +31,104 @@ test("flat-first is an exact opt-in v3 contract with a separate intake RPC", () 
   assert.match(sql, /contractVersion'='designpro\.calls-1-7-input\.v1'/);
   assert.match(sql, /create_designpro_flat_first_generation_request/);
   assert.doesNotMatch(sql, /CREATE OR REPLACE FUNCTION public\.create_designpro_generation_request/);
+});
+
+test("the owner-callable regeneration RPC refuses exact Atlas v3 before any mutation", () => {
+  assert.match(
+    regenerationSql,
+    /request_input->>'contractVersion'='designpro\.calls-1-7-input\.v3'[\s\S]*request_input->>'pipelineMode'='flat-first-atlas-v1'[\s\S]*RAISE EXCEPTION 'flat_first_atlas_new_run_required'/,
+  );
+  const guard = regenerationSql.indexOf("RAISE EXCEPTION 'flat_first_atlas_new_run_required'");
+  const firstViewMutation = regenerationSql.indexOf("UPDATE public.designpro_generation_views");
+  assert.ok(guard > 0 && firstViewMutation > guard, "Atlas guard must run before superseding a view");
+  assert.match(
+    regenerationSql,
+    /GRANT EXECUTE ON FUNCTION public\.regenerate_designpro_generation_slot\(uuid,text,text\)[\s\S]*TO authenticated, service_role/,
+  );
+});
+
+test("terminal Atlas owner reads require exact seven current roles and one audited lineage", () => {
+  assert.match(ownerReadGuardSql, /flat_first_atlas_view_set_valid/);
+  assert.match(ownerReadGuardSql, /v_count=7[\s\S]*v_source_count=7[\s\S]*v_role_count=7[\s\S]*v_hash_count=7[\s\S]*v_valid_count=7/);
+  for (const identity of [
+    "'side','passenger-side','hood_detail','front','rear','close-up','roof'",
+    "designpro.atlas-designpanel-server-provider.v1",
+    "designpro.generation-artifact-audit.v1",
+    "designpro.studio-os.port-ab0f0638.v1",
+    "designpro.view-angles-os.port-ab0f0638.v1",
+    "designpro.photorealism-prompt.port.v1",
+    "designpro.atlas-proof-semantic-qc.v1",
+    "designpro.flat-first-atlas.v1",
+    "producePassengerView",
+    "deterministicMirror",
+    "driverContentHash",
+    "designpro-flat-first-atlas-20260822.v4",
+    "designpro.atlas-master-semantic-qc.v1",
+    "designpro.flat-first-master-provider.v1",
+    "designpanel-ai-generate.artboard.20260822.v1",
+    "masterQcPassed",
+    "masterQcConfidence",
+    "masterPromptHash",
+    "masterExampleSetHash",
+    "designpro.flat-first-atlas-view-authority.v1",
+    "atlasZoneContentHash",
+    "atlasZoneSurfaceKey",
+    "authorityHash",
+    "zoneHash",
+    "zoneSurfaceKey",
+    "zoneContentHash",
+    "atlasZonePassedToPassengerRepair",
+  ]) assert.match(ownerReadGuardSql, new RegExp(identity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.doesNotMatch(
+    ownerReadGuardSql.match(/v\.source_view_type IN \([\s\S]*?\)/)?.[0] || "",
+    /hero-3d/,
+  );
+});
+
+test("invalid terminal Atlas status and signed-view reads fail with one typed new-run code", () => {
+  assert.match(
+    ownerReadGuardSql,
+    /state IN \('outputs_ready','failed','cancelled'\)[\s\S]*flat_first_atlas_view_set_valid/,
+  );
+  assert.match(
+    ownerReadGuardSql,
+    /CREATE OR REPLACE FUNCTION public\.get_designpro_generation_request[\s\S]*'failureCode',CASE WHEN v_new_run[\s\S]*'flat_first_atlas_new_run_required'[\s\S]*'views',v_views/,
+  );
+  assert.match(
+    ownerReadGuardSql,
+    /CREATE OR REPLACE FUNCTION public\.designpro_generation_view_paths[\s\S]*flat_first_atlas_requires_new_run[\s\S]*RAISE EXCEPTION 'flat_first_atlas_new_run_required'[\s\S]*SELECT COALESCE/,
+  );
+  assert.match(ownerReadGuardSql, /v_views:='\[\]'::jsonb/);
+  assert.match(
+    closeupBoundarySql,
+    /CREATE OR REPLACE FUNCTION public\.designpro_flat_atlas_revision_paths[\s\S]*flat_first_atlas_requires_new_run[\s\S]*RAISE EXCEPTION 'flat_first_atlas_new_run_required'[\s\S]*'guideStoragePath'/,
+  );
+});
+
+test("new revision writes require Close-Up while immutable Hero remains read/retry provenance", () => {
+  const trigger = closeupBoundarySql.match(
+    /CREATE OR REPLACE FUNCTION designpro_private\.verify_revision_render_assets\(\)[\s\S]*?\n\$fn\$;/,
+  )?.[0] || "";
+  assert.match(trigger, /'driver','passenger','hood','roof','front','rear','closeup'/);
+  assert.doesNotMatch(trigger, /hero3d/);
+
+  assert.match(closeupBoundarySql, /complete_designpro_stage/);
+  assert.match(closeupBoundarySql, /FROM public\.designpro_revision_sources frozen/);
+  assert.match(closeupBoundarySql, /frozen\.revision_id=v_run\.revision_id/);
+  assert.match(closeupBoundarySql, /frozen\.owner_id=v_run\.owner_id/);
+  assert.match(closeupBoundarySql, /frozen\.snapshot_hash=v_run\.revision_snapshot_hash/);
+  assert.match(closeupBoundarySql, /frozen\.snapshot->'renderAssets' \? 'hero3d'/);
+  assert.match(closeupBoundarySql, /NOT frozen\.snapshot->'renderAssets' \? 'closeup'/);
+
+  const readPolicy = closeupBoundarySql.match(
+    /CREATE POLICY designpro_owner_read_wrap_files[\s\S]*?\n\);/,
+  )?.[0] || "";
+  const insertPolicy = closeupBoundarySql.match(
+    /CREATE POLICY designpro_owner_insert_revision_inputs[\s\S]*?\n\);/,
+  )?.[0] || "";
+  assert.match(readPolicy, /'closeup','hero3d','logo'/);
+  assert.match(insertPolicy, /'closeup','logo'/);
+  assert.doesNotMatch(insertPolicy, /hero3d/);
 });
 
 test("one immutable atlas row binds before guide, manifest, after master and lineage", () => {

@@ -30,8 +30,9 @@ const MUTED = "#6b7280";
 const RULE = "#d1d5db";
 const ACCENT = "#059669";
 
-const VIEW_ORDER = Object.freeze(["driver", "roof", "passenger", "hood", "front", "rear", "hero3d"]);
-const CLOSEUP_VIEW_ORDER = Object.freeze(["driver", "roof", "passenger", "hood", "front", "rear", "closeup"]);
+const VIEW_ORDER = Object.freeze(["driver", "roof", "passenger", "hood", "front", "rear", "closeup"]);
+const LEGACY_VIEW_ORDER = Object.freeze(["driver", "roof", "passenger", "hood", "front", "rear", "hero3d"]);
+const CLOSEUP_VIEW_ORDER = VIEW_ORDER;
 const VIEW_LABELS = Object.freeze({
   driver: "DRIVER SIDE",
   passenger: "PASSENGER SIDE",
@@ -40,7 +41,7 @@ const VIEW_LABELS = Object.freeze({
   front: "FRONT",
   rear: "REAR",
   closeup: "CLOSE-UP DETAIL",
-  hero3d: "APPROVED 3D HERO",
+  hero3d: "APPROVED 3D HERO (HISTORICAL)",
 });
 // Column span, column index and row index for each view. Fixed, never derived
 // from data, so two runs of the same vehicle produce the same page.
@@ -237,7 +238,7 @@ async function renderProofSheet({ views, surfaces, vehicle, designName, finish, 
       "The 2D production proof requires exactly one Close-Up or immutable historical Hero proof",
     );
   }
-  const viewOrder = hasCloseup ? CLOSEUP_VIEW_ORDER : VIEW_ORDER;
+  const viewOrder = hasCloseup ? VIEW_ORDER : LEGACY_VIEW_ORDER;
   const layout = proofSheetLayout(viewOrder);
   const surfaceByKey = new Map(ordered.map((surface) => [surface.surfaceKey, surface]));
   const totalSqFt = round2(ordered.reduce((total, surface) => total + surface.widthInches * surface.heightInches / 144, 0));
@@ -290,6 +291,7 @@ module.exports = {
   SHEET_WIDTH,
   VIEW_ORDER,
   CLOSEUP_VIEW_ORDER,
+  LEGACY_VIEW_ORDER,
   ProofSheetError,
   proofSheetLayout,
   renderProofSheet,

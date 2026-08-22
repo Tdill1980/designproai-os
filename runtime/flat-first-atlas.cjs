@@ -20,27 +20,47 @@
 
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
-const { buildFlatDesignIQDirection } = require("./designiq-prompt.cjs");
+const {
+  DESIGNPANEL_ARTBOARD_PORT_VERSION,
+  buildAtlasArtboardDesignIQDirection,
+} = require("./designiq-prompt.cjs");
+const {
+  MASTER_QC_CONTRACT,
+  createAtlasMasterValidator,
+} = require("./atlas-master-qc.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
 const INPUT_CONTRACT = "designpro.calls-1-7-input.v3";
 const PIPELINE_MODE = "flat-first-atlas-v1";
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260822.v2";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260822.v4";
+const MASTER_PROVIDER_CONTRACT = "designpro.flat-first-master-provider.v1";
 const TOPOLOGY = "rectangular-preview-v1";
 const EXAMPLE_PURPOSE = "topology-only";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 const CENTER_ORDER = Object.freeze(["rear", "roof", "hood", "front"]);
-const PROOF_VIEWS = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof"]);
+const PROOF_VIEWS = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
 const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 const BLEED_INCHES = 5;
 const TARGET_PRINT_PPI = 150;
 const PROJECTION_CONTRACT = "designpro.flat-first-atlas-projection.v1";
+const VIEW_AUTHORITY_CONTRACT = "designpro.flat-first-atlas-view-authority.v1";
+const VIEW_AUTHORITY_MAX_BYTES = 4 * 1024 * 1024;
+const VIEW_SURFACE = Object.freeze({
+  side: "driver",
+  "passenger-side": "passenger",
+  hood_detail: "hood",
+  front: "front",
+  rear: "rear",
+  "close-up": "driver",
+  roof: "roof",
+});
 // Google generateContent requests must remain below 20 MiB. Twelve MiB of
 // binary JPEG becomes at most sixteen MiB after base64, leaving room for JSON,
 // prompts and request framing without shrinking the canonical 4096px master.
 const PROJECTION_MAX_BYTES = 12 * 1024 * 1024;
+const MASTER_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 const CUSTOMER_REFERENCE_MAX_PIXELS = 40_000_000;
 const PROJECTION_QUALITY_LADDER = Object.freeze([94, 90, 86, 82, 78, 74, 70, 66, 62, 58, 54, 50, 46, 42]);
 const OUTER_PADDING_PX = 192;
@@ -55,12 +75,12 @@ const GEOMETRY_AUTHORITY_CONTRACT = "designpro.genie-proof-geometry-authority.v1
 const GUIDE_FILL = "#e5e5e5";
 
 const PROOF_DEPENDENCIES = Object.freeze({
-  driver: Object.freeze(["side", "front", "rear", "hero-3d"]),
-  passenger: Object.freeze(["passenger-side", "front", "rear", "hero-3d"]),
-  hood: Object.freeze(["hood_detail", "side", "passenger-side", "front", "hero-3d"]),
-  roof: Object.freeze(["roof", "side", "passenger-side", "hero-3d"]),
-  front: Object.freeze(["front", "side", "passenger-side", "hero-3d"]),
-  rear: Object.freeze(["rear", "side", "passenger-side", "hero-3d"]),
+  driver: Object.freeze(["side", "front", "rear", "close-up"]),
+  passenger: Object.freeze(["passenger-side", "front", "rear", "close-up"]),
+  hood: Object.freeze(["hood_detail", "side", "passenger-side", "front", "close-up"]),
+  roof: Object.freeze(["roof", "side", "passenger-side", "close-up"]),
+  front: Object.freeze(["front", "side", "passenger-side", "close-up"]),
+  rear: Object.freeze(["rear", "side", "passenger-side", "close-up"]),
 });
 
 const SEMANTIC_CONTINUITY = Object.freeze([
@@ -375,7 +395,7 @@ function buildAtlasManifest(surfaces, geometryAuthorityInput) {
     bleedInches: BLEED_INCHES,
     zones,
     proofViews: [...PROOF_VIEWS],
-    proofOnlyViews: ["hero-3d"],
+    proofOnlyViews: ["close-up"],
     quality: {
       requestedMasterSize: "4K",
       targetPrintPpi: TARGET_PRINT_PPI,
@@ -496,6 +516,119 @@ async function projectionDerivative(masterBytes) {
   );
 }
 
+function surfaceForProofView(sourceViewType) {
+  if (!PROOF_VIEWS.includes(sourceViewType) || !VIEW_SURFACE[sourceViewType]) {
+    throw new FlatAtlasError(
+      "flat_atlas_proof_view_invalid",
+      `${sourceViewType || "missing"} is not one of Driver, Passenger, Hood, Front, Rear, Close-Up, Roof`,
+    );
+  }
+  return VIEW_SURFACE[sourceViewType];
+}
+
+async function viewAuthorityDerivative(masterBytes, manifest, sourceViewType) {
+  const surfaceKey = surfaceForProofView(sourceViewType);
+  const zone = manifest?.zones?.find((candidate) => candidate.surfaceKey === surfaceKey);
+  if (!zone?.extraction) {
+    throw new FlatAtlasError(
+      "flat_atlas_view_authority_zone_missing",
+      `${sourceViewType}: ${surfaceKey} master zone is missing`,
+    );
+  }
+  const extract = {
+    left: Number(zone.extraction.x),
+    top: Number(zone.extraction.y),
+    width: Number(zone.extraction.w),
+    height: Number(zone.extraction.h),
+  };
+  if (!Object.values(extract).every(Number.isSafeInteger)
+    || extract.left < 0 || extract.top < 0 || extract.width < 1 || extract.height < 1
+    || extract.left + extract.width > CANVAS.widthPx
+    || extract.top + extract.height > CANVAS.heightPx) {
+    throw new FlatAtlasError(
+      "flat_atlas_view_authority_zone_invalid",
+      `${sourceViewType}: ${surfaceKey} extraction is outside the canonical master`,
+    );
+  }
+  const rotationDegrees = Number(zone.extraction.outputRotationDegrees || 0);
+  for (const quality of PROJECTION_QUALITY_LADDER) {
+    const bytes = await sharp(masterBytes, { limitInputPixels: false })
+      .extract(extract)
+      .rotate(rotationDegrees)
+      .flatten({ background: "#ffffff" })
+      .removeAlpha()
+      .toColourspace("srgb")
+      .jpeg({
+        quality,
+        chromaSubsampling: "4:4:4",
+        progressive: false,
+        optimiseCoding: false,
+        trellisQuantisation: false,
+        overshootDeringing: false,
+        optimiseScans: false,
+        mozjpeg: false,
+        force: true,
+      })
+      .toBuffer();
+    if (bytes.length <= VIEW_AUTHORITY_MAX_BYTES) {
+      const metadata = await sharp(bytes, { failOn: "error" }).metadata();
+      return Object.freeze({
+        contract: VIEW_AUTHORITY_CONTRACT,
+        sourceViewType,
+        surfaceKey,
+        bytes,
+        contentHash: sha256(bytes),
+        byteSize: bytes.length,
+        contentType: "image/jpeg",
+        widthPx: Number(metadata.width),
+        heightPx: Number(metadata.height),
+        quality,
+        chromaSubsampling: "4:4:4",
+        sourceMasterHash: sha256(masterBytes),
+        sourceZone: Object.freeze({
+          x: extract.left,
+          y: extract.top,
+          w: extract.width,
+          h: extract.height,
+          outputRotationDegrees: rotationDegrees,
+        }),
+      });
+    }
+  }
+  throw new FlatAtlasError(
+    "flat_atlas_view_authority_budget_exhausted",
+    `${sourceViewType}: exact ${surfaceKey} crop cannot fit ${VIEW_AUTHORITY_MAX_BYTES} bytes without resizing`,
+  );
+}
+
+async function buildViewAuthorities(masterBytes, manifest) {
+  const entries = await Promise.all(PROOF_VIEWS.map(async (sourceViewType) => [
+    sourceViewType,
+    await viewAuthorityDerivative(masterBytes, manifest, sourceViewType),
+  ]));
+  return Object.freeze(Object.fromEntries(entries));
+}
+
+function viewAuthorityFor(atlas, sourceViewType) {
+  const authority = atlas?.viewAuthorities?.[sourceViewType];
+  const expectedSurface = surfaceForProofView(sourceViewType);
+  if (!authority || authority.contract !== VIEW_AUTHORITY_CONTRACT
+    || authority.sourceViewType !== sourceViewType
+    || authority.surfaceKey !== expectedSurface
+    || authority.contentType !== "image/jpeg"
+    || !Buffer.isBuffer(authority.bytes)
+    || authority.bytes.length !== Number(authority.byteSize)
+    || authority.bytes.length > VIEW_AUTHORITY_MAX_BYTES
+    || sha256(authority.bytes) !== authority.contentHash
+    || authority.sourceMasterHash !== atlas?.master?.contentHash) {
+    throw new FlatAtlasError(
+      "flat_atlas_view_authority_identity_mismatch",
+      `${sourceViewType}: exact ${expectedSurface} authority is not bound to the immutable master`,
+    );
+  }
+  return authority;
+}
+
 function customerCreativeBrief(input) {
   const vehicle = input?.vehicle || {};
   const values = {
@@ -527,7 +660,7 @@ function customerCreativeBrief(input) {
 }
 
 function atlasCreativeRules(input) {
-  return buildFlatDesignIQDirection(input);
+  return buildAtlasArtboardDesignIQDirection(input);
 }
 
 function atlasPrompt(input, manifest) {
@@ -549,13 +682,14 @@ TOPOLOGY LOCK:
 - center column is REAR, ROOF, HOOD, FRONT from top to bottom (vehicle rear to front)
 - maintain one coherent design language and intentional graphic continuity across related panel edges
 - do not swap driver and passenger
+- make PASSENGER the opposite-facing, mirror-compatible twin of DRIVER: same motif, scene, hierarchy, scale, landmarks and flow, reversed for the opposite flank, while every word/logo/URL/number remains forward-reading on both zones
 - semantic continuity pairs are: ${continuity}
 - these are design-intent joins only; do not invent contour lines or claim exact PVO seam geometry
 
 ZONE MAP:
 ${map}
 
-OUTPUT CLEANLINESS: The guide's colors, labels, outlines, legend, dimensions, grid, background and template marks are instructions, never artwork. Do not copy any of them. Output artwork only inside the zones. Do not draw a vehicle, wheels, windows, lights, camera scene, shadows, or a second installer map.
+OUTPUT CLEANLINESS: The guide's colors, labels, outlines, legend, dimensions, grid, background and template marks are instructions, never artwork. Do not copy any of them. Output artwork only inside the zones and fill every zone completely through every edge. Do not draw or punch out vehicle windows/glass, wheel arches, pickup-bed openings, lights or trim: this full-bleed master continues behind those future installer cut lines. Do not draw a vehicle, camera scene, shadows, or a second installer map.
 
 PAIRED FLAT-TO-FINISHED LESSON: The attached flattened top-view example and its corresponding finished 3D vehicle proof teach the direction of this first call. The FLATTENED TOP-VIEW image is the output-format example. The finished vehicle is shown only so you understand how one coherent flat design later wraps across hood, roof, driver, passenger, front and rear surfaces. For this call, output the new flattened top-view design first; never output a vehicle photograph.
 
@@ -670,6 +804,71 @@ async function topologyExampleParts(examples = []) {
   return parts;
 }
 
+async function boundedQualityExample(bytes) {
+  for (const width of [1400, 1200, 1024]) {
+    for (const quality of [86, 80, 74, 68, 62]) {
+      const candidate = await sharp(bytes, { limitInputPixels: CUSTOMER_REFERENCE_MAX_PIXELS })
+        .rotate()
+        .flatten({ background: "#ffffff" })
+        .resize({ width, height: width, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+        .jpeg({ quality, chromaSubsampling: "4:4:4", mozjpeg: true })
+        .toBuffer();
+      if (candidate.length <= 1_250_000) return candidate;
+    }
+  }
+  throw new FlatAtlasError(
+    "flat_atlas_artboard_quality_example_too_large",
+    "A DesignPanel gold-standard artboard example could not fit the bounded master request",
+  );
+}
+
+async function artboardQualityExampleParts(examples = []) {
+  const parts = [];
+  for (let index = 0; index < examples.length; index += 1) {
+    const example = examples[index];
+    if (example?.kind !== "designpanel-artboard-quality" || !Buffer.isBuffer(example?.bytes)) {
+      throw new FlatAtlasError(
+        "flat_atlas_artboard_quality_example_invalid",
+        "DesignPanel quality examples must be the server-native loadArtboardExamples result",
+      );
+    }
+    const conditioned = await boundedQualityExample(example.bytes);
+    parts.push(
+      {
+        text: `DESIGNPANEL GOLD-STANDARD ARTBOARD ${index + 1} — PRODUCTION-QUALITY REFERENCE ONLY. Match its professional depth, finish, hierarchy, connected-wrap coherence and gallery-grade execution. Copy none of its artwork, palette, wording, logo, brand, panel geometry or topology; the FIRST deterministic A.T.L.A.S. guide alone controls topology.`,
+      },
+      { inlineData: { mimeType: "image/jpeg", data: conditioned.toString("base64") } },
+    );
+  }
+  return parts;
+}
+
+function estimatedMasterRequestBytes(parts) {
+  return Buffer.byteLength(JSON.stringify({
+    contents: [{ parts }],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: { aspectRatio: "1:1", imageSize: "4K" },
+    },
+  }));
+}
+
+function assertMasterRequestWithinLimit(parts, maxBytes = MASTER_REQUEST_MAX_BYTES) {
+  const configured = Number(maxBytes);
+  const boundedMax = Math.min(
+    MASTER_REQUEST_MAX_BYTES,
+    Number.isFinite(configured) && configured > 0 ? configured : MASTER_REQUEST_MAX_BYTES,
+  );
+  const byteSize = estimatedMasterRequestBytes(parts);
+  if (byteSize > boundedMax) {
+    throw new FlatAtlasError(
+      "flat_atlas_master_request_too_large",
+      `The one A.T.L.A.S. design request is ${byteSize} bytes, above the bounded ${boundedMax}-byte Gemini request budget`,
+    );
+  }
+  return byteSize;
+}
+
 function safePathPart(value, label) {
   const text = String(value || "").trim();
   if (!/^[a-zA-Z0-9_-]+$/.test(text)) throw new FlatAtlasError("flat_atlas_path_identity_invalid", `${label} is not storage-safe`);
@@ -698,7 +897,8 @@ async function downloadVerified(supabase, storagePath, expectedHash, expectedByt
   return bytes;
 }
 
-function rowIdentity(row, manifest, masterBytes, projectionBytes, { reused }) {
+async function rowIdentity(row, manifest, masterBytes, projectionBytes, { reused }) {
+  const viewAuthorities = await buildViewAuthorities(masterBytes, manifest);
   return {
     contract: ATLAS_CONTRACT,
     revisionId: row.id,
@@ -747,6 +947,17 @@ function rowIdentity(row, manifest, masterBytes, projectionBytes, { reused }) {
       widthPx: Number(row.width_px),
       heightPx: Number(row.height_px),
     },
+    viewAuthorities,
+    masterAcceptance: {
+      contract: row.metadata?.masterQcContract || null,
+      confidence: Number(row.metadata?.masterQcConfidence),
+      model: row.metadata?.masterQcModel || null,
+      promptHash: row.metadata?.masterPromptHash || null,
+      providerContract: row.metadata?.masterProviderContract || null,
+      artboardPortVersion: row.metadata?.designPanelArtboardPortVersion || null,
+      passed: row.metadata?.masterQcPassed === true,
+    },
+    metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {},
     manifest,
     reused,
   };
@@ -798,6 +1009,7 @@ function atlasReceipt(atlas) {
     examplePurpose: EXAMPLE_PURPOSE,
     geometryAuthority: atlas.manifest.geometryAuthority,
     topologyExample: atlas.topologyExample,
+    masterAcceptance: atlas.masterAcceptance,
     guide: atlas.guide,
     manifest: atlas.manifestAsset,
     master: {
@@ -816,6 +1028,21 @@ function atlasReceipt(atlas) {
       quality: atlas.projection.quality,
       chromaSubsampling: "4:4:4",
     },
+    viewAuthorities: Object.fromEntries(PROOF_VIEWS.map((sourceViewType) => {
+      const authority = viewAuthorityFor(atlas, sourceViewType);
+      return [sourceViewType, {
+        contract: authority.contract,
+        sourceViewType,
+        surfaceKey: authority.surfaceKey,
+        contentHash: authority.contentHash,
+        byteSize: authority.byteSize,
+        contentType: authority.contentType,
+        widthPx: authority.widthPx,
+        heightPx: authority.heightPx,
+        sourceMasterHash: authority.sourceMasterHash,
+        sourceZone: authority.sourceZone,
+      }];
+    })),
   };
 }
 
@@ -829,19 +1056,60 @@ function assertAtlasGeometryBasis(atlas, expectedManifestHash) {
   return atlas;
 }
 
+function exampleSetHash(topologyExamples = [], artboardQualityExamples = []) {
+  return sha256(canonicalBytes({
+    topology: topologyExamples.map((example) => example?.identity || null),
+    designPanelArtboardQuality: artboardQualityExamples.map((example) => example?.identity || null),
+  }));
+}
+
+function assertAtlasReuseContract(atlas, {
+  expectedManifestHash,
+  expectedPromptHash,
+  expectedExampleSetHash,
+}) {
+  assertAtlasGeometryBasis(atlas, expectedManifestHash);
+  const acceptance = atlas?.masterAcceptance || {};
+  const metadata = atlas?.metadata || {};
+  const current = atlas?.promptVersion === PROMPT_VERSION
+    && acceptance.passed === true
+    && acceptance.contract === MASTER_QC_CONTRACT
+    && acceptance.providerContract === MASTER_PROVIDER_CONTRACT
+    && acceptance.artboardPortVersion === DESIGNPANEL_ARTBOARD_PORT_VERSION
+    && acceptance.promptHash === expectedPromptHash
+    && metadata.masterExampleSetHash === expectedExampleSetHash;
+  if (!current) {
+    throw new FlatAtlasError(
+      "flat_atlas_master_contract_stale",
+      "The saved A.T.L.A.S. master predates the current DesignPanel prompt/provider/master-QC contract; start a new design request instead of reusing it",
+    );
+  }
+  return atlas;
+}
+
 async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
-    claimToken, input, surfaces, geometryAuthority, topologyExamples = [], logger = () => {},
+    claimToken, input, surfaces, geometryAuthority, topologyExamples = [],
+    artboardQualityExamples = [], masterValidatorFactory = createAtlasMasterValidator,
+    masterRequestMaxBytes = MASTER_REQUEST_MAX_BYTES,
+    logger = () => {},
   } = options;
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
   const manifest = buildAtlasManifest(surfaces, geometryAuthority);
+  const prompt = atlasPrompt(input, manifest);
+  const promptHash = sha256(Buffer.from(prompt, "utf8"));
+  const currentExampleSetHash = exampleSetHash(topologyExamples, artboardQualityExamples);
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
     const expectedManifestHash = sha256(canonicalBytes(manifest));
-    assertAtlasGeometryBasis(existing, expectedManifestHash);
+    assertAtlasReuseContract(existing, {
+      expectedManifestHash,
+      expectedPromptHash: promptHash,
+      expectedExampleSetHash: currentExampleSetHash,
+    });
     logger(`reused immutable atlas revision ${existing.revisionSequence} ${existing.master.contentHash}`);
     return existing;
   }
@@ -874,19 +1142,17 @@ async function generateOrReuseFlatAtlas(options) {
   const guideHash = sha256(guideBytes);
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
-  await Promise.all([
-    store.putImmutableBytes({ storagePath: guideStoragePath, bytes: guideBytes, contentType: "image/png" }),
-    store.putImmutableBytes({ storagePath: manifestStoragePath, bytes: manifestBytes, contentType: "application/json" }),
-  ]);
 
   const parts = [
     // The deterministic guide is deliberately the first IMAGE in the request.
     { inlineData: { mimeType: "image/png", data: guideBytes.toString("base64") } },
-    { text: atlasPrompt(input, manifest) },
+    { text: prompt },
     ...(await topologyExampleParts(topologyExamples)),
+    ...(await artboardQualityExampleParts(artboardQualityExamples)),
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...(await verifiedCustomerReferenceParts(supabase, input)),
   ];
+  const masterRequestByteSize = assertMasterRequestWithinLimit(parts, masterRequestMaxBytes);
   const generated = await provider.generateImage({
     parts,
     aspectRatio: "1:1",
@@ -895,15 +1161,40 @@ async function generateOrReuseFlatAtlas(options) {
   });
   const masterBytes = await normalizeAtlasMaster(generated.bytes, manifest);
   const masterHash = sha256(masterBytes);
+  if (typeof masterValidatorFactory !== "function") {
+    throw new FlatAtlasError(
+      "flat_atlas_master_qc_runtime_invalid",
+      "The fail-closed A.T.L.A.S. master validator factory is required",
+    );
+  }
+  const validateMaster = masterValidatorFactory({ provider });
+  if (typeof validateMaster !== "function") {
+    throw new FlatAtlasError(
+      "flat_atlas_master_qc_runtime_invalid",
+      "The fail-closed A.T.L.A.S. master validator is unavailable",
+    );
+  }
+  const masterQc = await validateMaster({ masterBytes, guideBytes, manifest, input });
+  if (masterQc?.accepted !== true
+    || masterQc?.metadata?.contract !== MASTER_QC_CONTRACT
+    || masterQc.metadata.masterHash !== masterHash
+    || masterQc.metadata.guideHash !== guideHash) {
+    throw new FlatAtlasError(
+      "flat_atlas_master_qc_failed",
+      `The one flattened A.T.L.A.S. design call failed acceptance (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
+    );
+  }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
   const projection = await projectionDerivative(masterBytes);
   const projectionStoragePath = atlasStoragePath({
     tenantKey, generationId, revisionSequence, kind: "projection", contentHash: projection.contentHash,
   });
-  // Derive first, then persist both immutable after-artifacts together. If the
-  // request-safe 4096px derivative cannot meet its hard byte ceiling, no
-  // unreferenced master is left behind and the run fails before proof calls.
+  // The guide, manifest, master and derivative enter durable storage only after
+  // the canonical master passes deterministic + semantic acceptance. A blank,
+  // cut-out, incoherent or side-mismatched authority can never receive a row.
   await Promise.all([
+    store.putImmutableBytes({ storagePath: guideStoragePath, bytes: guideBytes, contentType: "image/png" }),
+    store.putImmutableBytes({ storagePath: manifestStoragePath, bytes: manifestBytes, contentType: "application/json" }),
     store.putImmutableBytes({ storagePath: masterStoragePath, bytes: masterBytes, contentType: "image/png" }),
     store.putImmutableBytes({
       storagePath: projectionStoragePath, bytes: projection.bytes, contentType: projection.contentType,
@@ -958,6 +1249,21 @@ async function generateOrReuseFlatAtlas(options) {
       topologyExamplesApplied: topologyExamples.length,
       topologyExampleIdentity: primaryTopologyExample?.identity || null,
       topologyExampleIdentities: topologyExamples.map((example) => example?.identity).filter(Boolean),
+      designPanelArtboardQualityExamplesApplied: artboardQualityExamples.length,
+      designPanelArtboardQualityExampleIdentities: artboardQualityExamples
+        .map((example) => example?.identity).filter(Boolean),
+      designPanelArtboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
+      masterProviderContract: MASTER_PROVIDER_CONTRACT,
+      masterPromptHash: promptHash,
+      masterExampleSetHash: currentExampleSetHash,
+      masterQcPassed: true,
+      masterQcContract: MASTER_QC_CONTRACT,
+      masterQcConfidence: masterQc.metadata.confidence,
+      masterQcModel: masterQc.metadata.model,
+      masterQcKeyFingerprint: masterQc.metadata.keyFingerprint,
+      masterQcRequestByteSize: masterQc.metadata.requestByteSize,
+      masterQcDeterministic: masterQc.deterministic,
+      masterQcReview: masterQc.review,
       providerKeyFingerprint: generated.keyFingerprint || null,
       providerResponseContentType: generated.contentType,
       rawProviderResponseHash: sha256(generated.bytes),
@@ -971,7 +1277,9 @@ async function generateOrReuseFlatAtlas(options) {
       projectionMaxBinaryBytes: PROJECTION_MAX_BYTES,
       projectionDimensions: `${CANVAS.widthPx}x${CANVAS.heightPx}`,
       requestedImageSize: "4K",
-      proofExecution: "seven-parallel-calls",
+      masterRequestByteSize,
+      masterRequestMaxBytes: MASTER_REQUEST_MAX_BYTES,
+      proofExecution: "driver-first-sequential-generate-color-render",
     },
   };
   const { data: row, error } = await supabase.from("designpro_flat_atlas_revisions")
@@ -980,7 +1288,11 @@ async function generateOrReuseFlatAtlas(options) {
     if (/duplicate|unique/i.test(String(error.message))) {
       const raced = await loadLatestAtlasRevision(supabase, requestId);
       if (raced) {
-        assertAtlasGeometryBasis(raced, manifestHash);
+        assertAtlasReuseContract(raced, {
+          expectedManifestHash: manifestHash,
+          expectedPromptHash: promptHash,
+          expectedExampleSetHash: currentExampleSetHash,
+        });
         return raced;
       }
     }
@@ -991,35 +1303,25 @@ async function generateOrReuseFlatAtlas(options) {
 }
 
 function atlasProjectionParts(atlas, sourceViewType) {
-  if (!atlas?.master?.bytes || !atlas?.projection?.bytes || atlas.manifest?.contract !== MANIFEST_CONTRACT) {
-    throw new FlatAtlasError("flat_atlas_conditioning_invalid", "A verified atlas master, projection derivative and manifest are required for every proof view");
+  if (!atlas?.master?.bytes || atlas.manifest?.contract !== MANIFEST_CONTRACT) {
+    throw new FlatAtlasError(
+      "flat_atlas_conditioning_invalid",
+      "A verified master, manifest and exact per-view authority are required for every proof",
+    );
   }
-  if (atlas.projection.contentType !== "image/jpeg"
-    || atlas.projection.bytes.length !== Number(atlas.projection.byteSize)
-    || atlas.projection.bytes.length > PROJECTION_MAX_BYTES
-    || sha256(atlas.projection.bytes) !== atlas.projection.contentHash
-    || atlas.projection.sourceMasterHash !== atlas.master.contentHash) {
-    throw new FlatAtlasError("flat_atlas_projection_identity_mismatch", "Proof conditioning bytes do not match the immutable master-bound projection identity");
-  }
-  if (!PROOF_VIEWS.includes(sourceViewType)) throw new FlatAtlasError("flat_atlas_proof_view_invalid", `${sourceViewType} is not one of the seven proof views`);
-  const visibleZones = atlas.manifest.zones
-    .filter((zone) => zone.proofDependencies.includes(sourceViewType))
-    .map((zone) => zone.surfaceKey);
-  const topology = atlas.manifest.installerMap;
+  const authority = viewAuthorityFor(atlas, sourceViewType);
   return [
     {
       inlineData: {
-        mimeType: atlas.projection.contentType,
-        data: atlas.projection.bytes.toString("base64"),
+        mimeType: authority.contentType,
+        data: authority.bytes.toString("base64"),
       },
     },
     {
-      text: `CANONICAL FLAT WRAP ATLAS — revision ${atlas.revisionSequence}, canonical PNG sha256 ${atlas.master.contentHash}, proof-conditioning JPEG sha256 ${atlas.projection.contentHash}.
-This JPEG is a white-flattened, no-resize transport derivative of the complete immutable PNG atlas, not a new design authority, mood board or second creative prompt. Project its exact artwork onto the requested photoreal vehicle view. Do not redesign, simplify, restyle, replace, mirror, recolor, invent, or borrow artwork from another zone.
+      text: `EXACT A.T.L.A.S. VIEW AUTHORITY — revision ${atlas.revisionSequence}; view ${sourceViewType}; surface ${authority.surfaceKey}; canonical master PNG sha256 ${atlas.master.contentHash}; exact native-zone JPEG sha256 ${authority.contentHash}.
+This image is a deterministic no-redesign crop of ONLY the ${authority.surfaceKey.toUpperCase()} zone from the accepted flattened master, restored to native print orientation. It is the sole artwork authority for this proof. Project these exact pixels onto the corresponding painted surface. Never borrow from another zone; never redesign, simplify, beautify, restyle, replace, mirror, recolor, move, resize, autocomplete or invent artwork. Keep every readable string forward-reading.
 
-Atlas topology: passenger=${topology.passenger}; driver=${topology.driver}; center top-to-bottom=${topology.centerOrderTopToBottom.join(" -> ")} (${topology.longitudinalOrder}). For ${sourceViewType}, the relevant production zones are ${visibleZones.join(", ") || "the complete atlas"}. Keep lettering forward-reading. Preserve zone identity even where a camera reveals more than one surface.
-
-The atlas contains no guide lines: white gaps in this transport JPEG correspond to transparent non-printing gaps in the canonical PNG, not artwork to fill. Return one photoreal 3D proof only.`,
+This crop is full-bleed print artwork: it intentionally continues behind windows/glass, wheel arches, pickup-bed openings, lights and trim that installers cut around later. On the 3D proof, mask it to real painted panels; do not erase or relocate master artwork because a physical cut line crosses it. Return one photoreal 3D proof only.`,
     },
   ];
 }
@@ -1034,6 +1336,8 @@ module.exports = {
   GEOMETRY_AUTHORITY_CONTRACT,
   INPUT_CONTRACT,
   MANIFEST_CONTRACT,
+  MASTER_REQUEST_MAX_BYTES,
+  MASTER_PROVIDER_CONTRACT,
   PIPELINE_MODE,
   PROMPT_VERSION,
   PROOF_DEPENDENCIES,
@@ -1045,6 +1349,9 @@ module.exports = {
   SURFACE_KEYS,
   TARGET_PRINT_PPI,
   TOPOLOGY,
+  VIEW_AUTHORITY_CONTRACT,
+  VIEW_AUTHORITY_MAX_BYTES,
+  VIEW_SURFACE,
   FlatAtlasError,
   atlasProjectionParts,
   atlasReceipt,
@@ -1056,13 +1363,20 @@ module.exports = {
   normalizeAtlasMaster,
   projectionDerivative,
   renderAtlasGuide,
+  viewAuthorityFor,
   _test: {
     activeZoneMaskSvg,
+    artboardQualityExampleParts,
+    assertMasterRequestWithinLimit,
     assertAtlasGeometryBasis,
+    assertAtlasReuseContract,
     atlasPrompt,
+    buildViewAuthorities,
     canonical,
     canonicalBytes,
     customerCreativeBrief,
+    exampleSetHash,
+    estimatedMasterRequestBytes,
     atlasCreativeRules,
     fitCenterColumn,
     fitRotatedSide,
@@ -1071,8 +1385,10 @@ module.exports = {
     normalizedSurfaces,
     round,
     sha256,
+    surfaceForProofView,
     topologyExampleParts,
     verifiedCustomerReferenceParts,
+    viewAuthorityDerivative,
     trimRectangle,
     zoneEffectivePpi,
   },

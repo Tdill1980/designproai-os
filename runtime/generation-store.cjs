@@ -19,9 +19,9 @@ const BUCKET = "wrap-files";
 const STORE_CONTRACT = "designpro.calls-1-7-store.v1";
 const VIEW_TO_ROLE = Object.freeze({
   side: "driver", "passenger-side": "passenger", hood_detail: "hood",
-  front: "front", rear: "rear", "hero-3d": "hero3d", roof: "roof",
-  // Close-Up and historical Hero are separate compatibility identities.
-  "close-up": "closeup",
+  front: "front", rear: "rear", "close-up": "closeup", roof: "roof",
+  // Historical rows remain readable, but hero-3d is not in the active plan.
+  "hero-3d": "hero3d",
 });
 
 function sha256(bytes) {

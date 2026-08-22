@@ -29,11 +29,31 @@ const engine = require("./generation-engine.cjs");
 const angles = require("./view-angles.cjs");
 const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 const { createProvider } = require("./generation-provider.cjs");
-const { createDesignPanelServerProvider } = require("./designpanel-server-provider.cjs");
+const {
+  ARTIFACT_AUDIT_CONTRACT,
+  ATLAS_SERVER_PROVIDER_CONTRACT,
+  createAtlasDesignPanelProvider,
+  createDesignPanelServerProvider,
+} = require("./designpanel-server-provider.cjs");
+const {
+  QC_CONTRACT: ATLAS_PROOF_QC_CONTRACT,
+  VIEW_CONTRACTS: ATLAS_QC_VIEW_CONTRACTS,
+  createAtlasProofValidator,
+} = require("./atlas-proof-qc.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
 const { verifySourceBytes } = require("./runtime-contract.cjs");
-const { STUDIO_ENVIRONMENT, STUDIO_REINFORCEMENT } = require("./studio-os.cjs");
-const { loadActiveFlatAtlasTopologyExamples } = require("./flat-atlas-topology-examples.cjs");
+const {
+  STUDIO_CONTRACT_VERSION,
+  STUDIO_ENVIRONMENT,
+  STUDIO_REINFORCEMENT,
+} = require("./studio-os.cjs");
+const { PHOTOREALISM_CONTRACT_VERSION } = require("./photorealism-prompt.cjs");
+const { DESIGNPANEL_ARTBOARD_PORT_VERSION } = require("./designiq-prompt.cjs");
+const { MASTER_QC_CONTRACT } = require("./atlas-master-qc.cjs");
+const {
+  loadActiveFlatAtlasTopologyExamples,
+  loadDesignPanelArtboardExamples,
+} = require("./flat-atlas-topology-examples.cjs");
 const {
   expectedSurfacesFromRow,
   resolveFlatAtlasPreviewDimensions,
@@ -43,6 +63,9 @@ const {
   atlasReceipt,
   flatFirstRequested,
   generateOrReuseFlatAtlas,
+  MASTER_PROVIDER_CONTRACT,
+  PROMPT_VERSION: ATLAS_PROMPT_VERSION,
+  viewAuthorityFor,
 } = require("./flat-first-atlas.cjs");
 
 const RECEIPT_CONTRACT = "designpro.calls-1-7-receipt.v1";
@@ -289,20 +312,241 @@ function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imagePa
       aspectRatio: angles.aspectRatio(sourceViewType),
       imageSize: angles.resolutionTier(sourceViewType),
       ...(flatAtlas ? {
-        authorityMetadata: {
-          contract: flatAtlas.contract,
-          revisionId: flatAtlas.revisionId,
-          revisionSequence: flatAtlas.revisionSequence,
-          masterContentHash: flatAtlas.master.contentHash,
-          projectionContentHash: flatAtlas.projection.contentHash,
-          projectionSourceMasterHash: flatAtlas.projection.sourceMasterHash,
-          manifestContentHash: flatAtlas.manifestAsset.contentHash,
-          topology: flatAtlas.manifest.topology,
-          geometryAuthority: flatAtlas.manifest.geometryAuthority,
-        },
+        authorityMetadata: (() => {
+          const viewAuthority = viewAuthorityFor(flatAtlas, sourceViewType);
+          return {
+            contract: flatAtlas.contract,
+            revisionId: flatAtlas.revisionId,
+            revisionSequence: flatAtlas.revisionSequence,
+            masterContentHash: flatAtlas.master.contentHash,
+            projectionContentHash: flatAtlas.projection.contentHash,
+            projectionSourceMasterHash: flatAtlas.projection.sourceMasterHash,
+            manifestContentHash: flatAtlas.manifestAsset.contentHash,
+            topology: flatAtlas.manifest.topology,
+            geometryAuthority: flatAtlas.manifest.geometryAuthority,
+            zoneContract: viewAuthority.contract,
+            zoneContentHash: viewAuthority.contentHash,
+            zoneSurfaceKey: viewAuthority.surfaceKey,
+          };
+        })(),
       } : {}),
     };
   });
+}
+
+const ATLAS_VIEW_ROLES = Object.freeze({
+  side: "driver",
+  "passenger-side": "passenger",
+  hood_detail: "hood",
+  front: "front",
+  rear: "rear",
+  "close-up": "closeup",
+  roof: "roof",
+});
+
+function atlasLineageError(reason) {
+  return Object.assign(new Error(`A.T.L.A.S. proof lineage is invalid: ${reason}`), {
+    code: "generation_atlas_lineage_invalid",
+    retryable: false,
+  });
+}
+
+/**
+ * Refuse accepted rows from the retired generic renderer, anonymous storage
+ * reconciliation, or a previous Driver revision. A.T.L.A.S. is resumable only
+ * when every active proof proves the same immutable master and Driver anchor.
+ */
+function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
+  if (!Array.isArray(views)) throw atlasLineageError("active views are not an array");
+  if (!flatAtlas?.master?.contentHash || !flatAtlas?.projection?.contentHash
+    || !flatAtlas?.manifestAsset?.contentHash || !flatAtlas?.revisionId) {
+    throw atlasLineageError("immutable flat-master identity is incomplete");
+  }
+  const masterAcceptance = flatAtlas.masterAcceptance || {};
+  if (flatAtlas.promptVersion !== ATLAS_PROMPT_VERSION
+    || masterAcceptance.passed !== true
+    || masterAcceptance.contract !== MASTER_QC_CONTRACT
+    || !Number.isFinite(masterAcceptance.confidence)
+    || masterAcceptance.confidence < 0.92
+    || !/^[0-9a-f]{64}$/.test(String(masterAcceptance.promptHash || ""))
+    || masterAcceptance.providerContract !== MASTER_PROVIDER_CONTRACT
+    || masterAcceptance.artboardPortVersion !== DESIGNPANEL_ARTBOARD_PORT_VERSION) {
+    throw atlasLineageError("flattened master did not pass the current DesignPanel authoring/QC contract");
+  }
+  if (views.length > 7 || (requireComplete && views.length !== 7)) {
+    throw atlasLineageError(`expected ${requireComplete ? "exactly" : "at most"} seven active proofs, found ${views.length}`);
+  }
+
+  const byView = new Map();
+  for (const view of views) {
+    const sourceViewType = String(view?.sourceViewType || "");
+    const expectedRole = ATLAS_VIEW_ROLES[sourceViewType];
+    if (!expectedRole) throw atlasLineageError(`unrecognized active view ${sourceViewType || "<empty>"}`);
+    if (view.consumerRole !== expectedRole) {
+      throw atlasLineageError(`${sourceViewType} has role ${view.consumerRole || "<empty>"}; expected ${expectedRole}`);
+    }
+    if (byView.has(sourceViewType)) throw atlasLineageError(`duplicate active view ${sourceViewType}`);
+    if (!/^[0-9a-f]{64}$/.test(String(view.contentHash || ""))) {
+      throw atlasLineageError(`${sourceViewType} has no immutable content hash`);
+    }
+
+    const metadata = view.metadata && typeof view.metadata === "object" ? view.metadata : {};
+    const providerMetadata = metadata.provider && typeof metadata.provider === "object"
+      ? metadata.provider : {};
+    const validation = metadata.validation && typeof metadata.validation === "object"
+      ? metadata.validation : {};
+    const authority = metadata.authority && typeof metadata.authority === "object"
+      ? metadata.authority : {};
+    const viewAuthority = viewAuthorityFor(flatAtlas, sourceViewType);
+    if (metadata.providerContract !== ATLAS_SERVER_PROVIDER_CONTRACT
+      || providerMetadata.stage !== "generate-color-render"
+      || providerMetadata.execution !== "server-native"
+      || providerMetadata.anchoredToFlatAtlas !== true
+      || providerMetadata.atlasConditioningVerified !== true) {
+      throw atlasLineageError(`${sourceViewType} was not produced by the server Atlas projection contract`);
+    }
+    if (providerMetadata.contract !== ARTIFACT_AUDIT_CONTRACT
+      || providerMetadata.sourceViewType !== sourceViewType
+      || !/^[0-9a-f]{64}$/.test(String(providerMetadata.promptHash || ""))
+      || !Number.isSafeInteger(providerMetadata.promptLength)
+      || providerMetadata.promptLength < 1
+      || providerMetadata.studioContractVersion !== STUDIO_CONTRACT_VERSION
+      || providerMetadata.viewAngleContractVersion !== angles.VIEW_ANGLE_CONTRACT_VERSION
+      || providerMetadata.photographyContractVersion !== PHOTOREALISM_CONTRACT_VERSION) {
+      throw atlasLineageError(`${sourceViewType} is missing the locked angle/photography/lighting audit`);
+    }
+    if (validation.contract !== ATLAS_PROOF_QC_CONTRACT
+      || validation.expectedView !== ATLAS_QC_VIEW_CONTRACTS[sourceViewType]?.label
+      || validation.proofHash !== view.contentHash
+      || validation.atlasHash !== flatAtlas.projection.contentHash
+      || validation.zoneHash !== viewAuthority.contentHash
+      || validation.authorityHash !== viewAuthority.contentHash
+      || validation.zoneSurfaceKey !== viewAuthority.surfaceKey
+      || !Number.isFinite(validation.confidence)
+      || validation.confidence < 0.9) {
+      throw atlasLineageError(`${sourceViewType} did not pass fail-closed Atlas visual QC`);
+    }
+    if (providerMetadata.atlasMasterContentHash !== flatAtlas.master.contentHash
+      || providerMetadata.atlasProjectionContentHash !== flatAtlas.projection.contentHash
+      || providerMetadata.atlasManifestContentHash !== flatAtlas.manifestAsset.contentHash
+      || providerMetadata.atlasRevisionId !== flatAtlas.revisionId
+      || Number(providerMetadata.atlasRevisionSequence) !== Number(flatAtlas.revisionSequence)
+      || providerMetadata.atlasZoneContract !== viewAuthority.contract
+      || providerMetadata.atlasZoneContentHash !== viewAuthority.contentHash
+      || providerMetadata.atlasZoneSurfaceKey !== viewAuthority.surfaceKey) {
+      throw atlasLineageError(`${sourceViewType} points at a different Atlas revision`);
+    }
+    if (authority.contract !== flatAtlas.contract
+      || authority.masterContentHash !== flatAtlas.master.contentHash
+      || authority.projectionContentHash !== flatAtlas.projection.contentHash
+      || authority.projectionSourceMasterHash !== flatAtlas.master.contentHash
+      || authority.manifestContentHash !== flatAtlas.manifestAsset.contentHash
+      || authority.revisionId !== flatAtlas.revisionId
+      || Number(authority.revisionSequence) !== Number(flatAtlas.revisionSequence)
+      || authority.zoneContract !== viewAuthority.contract
+      || authority.zoneContentHash !== viewAuthority.contentHash
+      || authority.zoneSurfaceKey !== viewAuthority.surfaceKey) {
+      throw atlasLineageError(`${sourceViewType} authority metadata does not match the flat master`);
+    }
+    byView.set(sourceViewType, view);
+  }
+
+  const driver = byView.get("side");
+  if (views.length && !driver) throw atlasLineageError("dependent proofs exist without an active Driver proof");
+  if (driver) {
+    const driverProvider = driver.metadata.provider;
+    if (driverProvider.anchoredToView1 !== false || driverProvider.driverContentHash) {
+      throw atlasLineageError("Driver must be projected directly from the flat master");
+    }
+    for (const [sourceViewType, view] of byView) {
+      if (sourceViewType === "side") continue;
+      const providerMetadata = view.metadata.provider;
+      if (providerMetadata.anchoredToView1 !== true
+        || providerMetadata.driverContentHash !== driver.contentHash) {
+        throw atlasLineageError(`${sourceViewType} is not anchored to the active Driver proof`);
+      }
+      if (sourceViewType === "passenger-side"
+        && (providerMetadata.passengerProducer !== "producePassengerView"
+          || providerMetadata.deterministicMirror !== true
+          || providerMetadata.atlasZonePassedToPassengerRepair !== true)) {
+        throw atlasLineageError("Passenger was not produced by the deterministic passenger-side code");
+      }
+    }
+  }
+
+  if (requireComplete) {
+    for (const sourceViewType of Object.keys(ATLAS_VIEW_ROLES)) {
+      if (!byView.has(sourceViewType)) throw atlasLineageError(`missing ${sourceViewType}`);
+    }
+  }
+  return true;
+}
+
+/**
+ * A.T.L.A.S. proof photography has one legal execution order:
+ *
+ *   Driver -> persist/hash-verify Driver -> Passenger and five remaining views
+ *
+ * Keeping the staging in one exported helper makes the no-parallel contract
+ * executable in tests instead of relying on comments or prompt wording.
+ */
+async function runAtlasProofStages({
+  runRequest = engine.runRequest,
+  requestId,
+  generationId,
+  tenantKey,
+  provider,
+  store,
+  slots,
+}) {
+  if (!provider?.generateImage || typeof provider.hydrateDriver !== "function") {
+    throw new Error("A.T.L.A.S. requires the DesignPanel projection provider");
+  }
+  if (!Array.isArray(slots) || slots.length !== 7 || slots[0]?.sourceViewType !== "side") {
+    throw new Error("A.T.L.A.S. requires Driver first and exactly seven proof slots");
+  }
+
+  const driver = await runRequest({
+    requestId,
+    generationId,
+    tenantKey,
+    provider,
+    store,
+    slots: slots.slice(0, 1),
+    parallel: false,
+    // An orphan image has no persisted Atlas/provider lineage. It may have
+    // been produced by the retired generic renderer, so Atlas must regenerate
+    // it from the immutable master instead of adopting anonymous bytes.
+    allowOrphanReconciliation: false,
+    maxProviderAttempts: provider.maxProviderAttempts,
+  });
+  if (driver.state !== "outputs_ready") return driver;
+
+  // runRequest returns outputs_ready only after the store accepted the Driver
+  // bytes. hydrateDriver then re-reads and hash-verifies that immutable row
+  // before any later camera is allowed to start.
+  const acceptedDriver = await provider.hydrateDriver();
+  if (!acceptedDriver) throw new Error("A.T.L.A.S. accepted Driver is missing after the Driver stage");
+
+  const photographer = await runRequest({
+    requestId,
+    generationId,
+    tenantKey,
+    provider,
+    store,
+    slots: slots.slice(1),
+    parallel: false,
+    allowOrphanReconciliation: false,
+    maxProviderAttempts: provider.maxProviderAttempts,
+  });
+  return {
+    ...photographer,
+    providerCalls: driver.providerCalls + photographer.providerCalls,
+    budget: driver.budget + photographer.budget,
+    results: [...driver.results, ...photographer.results],
+    requiresExplicitResume:
+      driver.requiresExplicitResume || photographer.requiresExplicitResume,
+  };
 }
 
 function createGenerationWorker({
@@ -310,6 +554,8 @@ function createGenerationWorker({
   workerId,
   provider,
   standardProviderFactory = createDesignPanelServerProvider,
+  atlasProviderFactory = createAtlasDesignPanelProvider,
+  atlasProofValidatorFactory = createAtlasProofValidator,
   intervalMs = POLL_MS,
 }) {
   if (!supabase) throw new Error("generation worker requires a Supabase client");
@@ -388,9 +634,11 @@ function createGenerationWorker({
         // gate. v1/v2 never reach this branch, so the UI can roll back by
         // ceasing to issue v3 without requiring a deployment-wide env change.
         let topologyExamples;
-        [dimensionRow, topologyExamples] = await Promise.all([
+        let artboardQualityExamples;
+        [dimensionRow, topologyExamples, artboardQualityExamples] = await Promise.all([
           resolveFlatAtlasPreviewDimensions(supabase, claim.input?.vehicle, imageProvider),
           loadActiveFlatAtlasTopologyExamples(supabase),
+          loadDesignPanelArtboardExamples(supabase),
         ]);
         if (dimensionRow.resolvedVehicleClass
           && dimensionRow.resolvedVehicleClass !== claim.input?.vehicle?.type) {
@@ -412,27 +660,73 @@ function createGenerationWorker({
           surfaces: expectedSurfacesFromRow(dimensionRow),
           geometryAuthority: dimensionRow.proofGeometryAuthority,
           topologyExamples,
+          artboardQualityExamples,
           logger: (line) => console.log(`[DESIGNPRO-OS] flat-first ${requestId}: ${line}`),
         });
+        // A resumed Atlas request may already contain accepted rows. Admit
+        // them only when they prove this exact master/provider/Driver lineage;
+        // old generic rows must never short-circuit the corrected pipeline.
+        assertAtlasViewLineage({
+          views: await viewsPayload(requestId),
+          flatAtlas,
+          requireComplete: false,
+        });
       }
+
+      const atlasProvider = isFlatFirst ? atlasProviderFactory({
+        supabase,
+        provider: imageProvider,
+        tenantKey: claim.tenantKey,
+        generationId: claim.generationId,
+        requestId,
+        input: executionInput,
+        atlas: {
+          conditioningPartsFor: (sourceViewType) => atlasProjectionParts(flatAtlas, sourceViewType),
+          conditioningIdentityFor: (sourceViewType) => viewAuthorityFor(flatAtlas, sourceViewType),
+          authorityMetadata: {
+            masterContentHash: flatAtlas.master.contentHash,
+            projectionContentHash: flatAtlas.projection.contentHash,
+            manifestContentHash: flatAtlas.manifestAsset.contentHash,
+            revisionId: flatAtlas.revisionId,
+            revisionSequence: flatAtlas.revisionSequence,
+          },
+        },
+      }) : null;
 
       // Standard DesignPanel generation is deliberately staged on this server:
       // design-panel-ai-generate creates View 1, then generate-color-render
       // receives that byte-verified accepted winner for Views 2-7. Reproductions
       // remain sequential so one frozen anchor yields one deterministic order.
-      // A.T.L.A.S. remains its separate, explicitly requested experiment.
+      // A.T.L.A.S. remains explicitly requested, but its proof photography now
+      // uses the same server-side generate-color-render behavior: the immutable
+      // flat DesignPanel master projects Driver first, the verified Driver is
+      // persisted, and Passenger plus the remaining views follow sequentially.
       const standardReferenceParts = isFlatFirst ? [] : await referenceImageParts(supabase, claim.input);
-      const slots = slotsFrom(claim.viewPlan, executionInput, instructions, flatAtlas, standardReferenceParts);
+      const atlasProofValidator = isFlatFirst ? atlasProofValidatorFactory({
+        // The direct server provider owns generateRaw. The Atlas projection
+        // adapter owns image generation only and intentionally cannot perform
+        // an independent analysis transport.
+        provider: imageProvider,
+        atlas: flatAtlas,
+        input: executionInput,
+      }) : null;
+      const slots = slotsFrom(
+        claim.viewPlan,
+        executionInput,
+        instructions,
+        flatAtlas,
+        standardReferenceParts,
+      ).map((slot) => (atlasProofValidator ? { ...slot, validate: atlasProofValidator } : slot));
       let result;
       if (isFlatFirst) {
-        result = await engine.runRequest({
+        result = await runAtlasProofStages({
+          runRequest: engine.runRequest,
           requestId,
           generationId: claim.generationId,
           tenantKey: claim.tenantKey,
-          provider: imageProvider,
+          provider: atlasProvider,
           store,
           slots,
-          parallel: true,
         });
       } else {
         await standardProvider.hydrateHero();
@@ -491,6 +785,9 @@ function createGenerationWorker({
       }
 
       const views = await viewsPayload(requestId);
+      if (isFlatFirst) {
+        assertAtlasViewLineage({ views, flatAtlas, requireComplete: true });
+      }
       if (views.length !== 7) {
         await rpc("fail_designpro_generation_request", {
           p_request_id: requestId, p_claim_token: claimToken,
@@ -510,6 +807,9 @@ function createGenerationWorker({
         ? {
             flatAtlas: atlasReceipt(flatAtlas),
             vehicleClassResolution: dimensionRow.vehicleClassResolution,
+            generationProducer: "design-panel-ai-generate",
+            reproductionProducer: "generate-color-render",
+            proofExecution: "driver-first-sequential",
           }
         : {
             generationProducer: "design-panel-ai-generate",
@@ -611,11 +911,13 @@ module.exports = {
   POLL_MS,
   RECEIPT_CONTRACT,
   REQUEST_LEASE_SECONDS,
+  assertAtlasViewLineage,
   createGenerationWorker,
   conditionedPromptPartsFor,
   designBrief,
   promptPartsFor,
   projectionOnlyPromptFor,
   referenceImageParts,
+  runAtlasProofStages,
   slotsFrom,
 };

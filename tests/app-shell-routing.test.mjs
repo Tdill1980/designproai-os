@@ -31,8 +31,9 @@ const APP = read("app/src/App.tsx");
 const NAV = read("app/src/lib/dashboard-nav.ts");
 const TABS = read("app/src/components/layout/AppBottomTabs.tsx");
 const API = read("app/src/lib/designpro-api.ts");
-const IS_APP_ROUTE = read("app/src/hooks/useIsAppRoute.ts");
+const PREMIUM = read("app/src/pages/DesignPanelProPremium.tsx");
 const DESIGN_PANEL_LOGIC = read("app/src/hooks/useDesignPanelProLogic.ts");
+const IS_APP_ROUTE = read("app/src/hooks/useIsAppRoute.ts");
 const DESIGN_PANEL_UI = read("app/src/pages/DesignPanelProPremium.tsx");
 const GENERATE_DESIGN_UI = read("app/src/pages/designpro/GenerateDesign.tsx");
 
@@ -341,11 +342,11 @@ test("the compatible seventh view roles keep exact identities without relabellin
     ["driver", "side"],
     ["passenger", "passenger-side"],
     ["hood", "hood_detail"],
-    ["roof", "roof"],
     ["front", "front"],
     ["rear", "rear"],
     ["closeup", "close-up"],
     ["hero3d", "hero-3d"],
+    ["roof", "roof"],
   ]) {
     assert.match(
       API,
@@ -357,16 +358,43 @@ test("the compatible seventh view roles keep exact identities without relabellin
     API.indexOf("export type RevisionRenderAssets"),
     API.indexOf("export type GenerationPipelineMode"),
   );
-  assert.match(revisionType, /closeup:\s*AssetIdentity;\s*hero3d\?:\s*never/);
-  assert.match(revisionType, /closeup\?:\s*never;\s*hero3d:\s*AssetIdentity/);
+  assert.match(revisionType, /Record<ActiveRenderRole,\s*AssetIdentity>/);
+  assert.match(revisionType, /hero3d\?:\s*never/);
+  assert.doesNotMatch(revisionType, /hero3d:\s*AssetIdentity/,
+    "historical Hero must not be admitted by the new-revision submission type");
+
+  const roles = API.match(/export const RENDER_ROLES[^=]*=\s*\[([\s\S]*?)\];/)?.[1]
+    ?.match(/"[^"]+"/g)
+    ?.map((role) => JSON.parse(role));
+  assert.deepEqual(
+    roles,
+    ["driver", "passenger", "hood", "front", "rear", "closeup", "roof"],
+    "the browser's active seven must retain the frozen Driver-to-Roof order",
+  );
+
+  const uiOrder = PREMIUM.match(/const CLOSEUP_VIEW_ORDER\s*=\s*\[([^\]]+)\]/)?.[1]
+    ?.match(/'[^']+'/g)
+    ?.map((view) => view.slice(1, -1));
+  assert.deepEqual(
+    uiOrder,
+    ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"],
+    "See All Views must reveal Close-Up in the exact active seven-view order",
+  );
+  assert.match(PREMIUM, />\s*See All Views\s*</);
+  assert.match(PREMIUM, /if \(type === 'close-up'\)[^\n]+v\.type === 'closeup'[^\n]+v\.type === 'detail'/);
+  assert.match(DESIGN_PANEL_LOGIC, /view\.sourceViewType === "side" && view\.signedUrl/);
+  assert.ok(
+    !stripComments(DESIGN_PANEL_LOGIC).includes('consumerRole === "hero3d"'),
+    "the browser must never select a Hero role as the primary active proof",
+  );
   const authoringPlan = API.slice(
     API.indexOf("export const RENDER_ROLES"),
     API.indexOf("export const SOURCE_VIEW_TYPE_FOR_ROLE"),
   );
-  assert.match(authoringPlan, /"hero3d"/,
-    "the pre-migration bridge must keep DB-driven Hero authoring");
-  assert.doesNotMatch(authoringPlan, /"closeup"/,
-    "the pre-migration bridge must not author Close-Up before the schema switch");
+  assert.match(authoringPlan, /"closeup"/,
+    "new authoring must use the active Close-Up slot");
+  assert.doesNotMatch(authoringPlan, /"hero3d"/,
+    "historical Hero must never enter the active authoring plan");
   assert.doesNotMatch(stripComments(API), /closeup:\s*"hero-3d"|hero3d:\s*"close-up"/,
     "Close-Up and Hero must never be relabelled as each other");
 });
@@ -384,7 +412,7 @@ test("Close-Up responses display in their own slot while Driver remains primary"
     "a seventh-slot proof must never become the primary customer proof");
 
   assert.match(DESIGN_PANEL_UI, /const CLOSEUP_VIEW_ORDER = \[[^\]]*'close-up'[^\]]*\]/);
-  assert.match(DESIGN_PANEL_UI, /hasCloseupSeventh && !hasHistoricalHeroSeventh\s*\? CLOSEUP_VIEW_ORDER/);
+  assert.match(DESIGN_PANEL_UI, /hasHistoricalHeroSeventh && !hasCloseupSeventh\s*\? HISTORICAL_HERO_VIEW_ORDER/);
   assert.match(DESIGN_PANEL_UI, /!hasConflictingSeventh[\s\S]{0,180}requiredViewTypes\.every/);
 
   assert.match(GENERATE_DESIGN_UI, /const displayRoles = displayRenderRoles\(/,
@@ -392,7 +420,12 @@ test("Close-Up responses display in their own slot while Driver remains primary"
   assert.match(GENERATE_DESIGN_UI, /displayRoles\.map\(\(role\)/,
     "the operator generation page must render the compatible returned slot");
   assert.doesNotMatch(GENERATE_DESIGN_UI, /RENDER_ROLES\.map\(\(role\)/,
-    "the pre-migration authoring default must not hide a returned Close-Up");
+    "a historical read must not be relabelled into the active Close-Up slot");
+  assert.match(
+    GENERATE_DESIGN_UI,
+    /role === "hero3d"[\s\S]{0,180}immutable historical Hero proof is read-only and cannot be regenerated/,
+    "an immutable historical Hero card must never expose an active regeneration action",
+  );
 });
 
 test("the release ships the operator shell as the served application", () => {

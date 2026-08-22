@@ -9,7 +9,11 @@ const layoutModule = require("../../runtime/flat-wrap-layout.cjs");
 const wrap = require("../../runtime/gemini-flat-wrap.cjs");
 
 const revisionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const viewKeys = ["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"];
+// New authoring is bound to the exact active proof set. Historical Hero input
+// compatibility is exercised separately by automatic-seven-eight-nine.test;
+// every material-hash and immutable-retry assertion in this file must cover
+// the production Close-Up path.
+const viewKeys = ["driver", "passenger", "hood", "roof", "front", "rear", "closeup"];
 const textLock = {
   bodyText: { phone: "555-0142" },
   logoPlacements: [{ identityKey: "primary", displayName: "Flamingo Pools", targetSurfaceKey: "driver", contentHash: "f".repeat(64) }],
@@ -134,6 +138,14 @@ test("the authored design binds every source, the cut map, the text lock and the
 
   const swapped = views.map((item) => (item.viewKey === "roof" ? { ...item, contentHash: "a".repeat(64) } : item));
   assert.notEqual(wrap.flatWrapInputHash({ sourceViews: swapped, layout, revisionId, textLock }), base);
+  const changedCloseUp = views.map((item) => (item.viewKey === "closeup"
+    ? { ...item, contentHash: "b".repeat(64) }
+    : item));
+  assert.notEqual(
+    wrap.flatWrapInputHash({ sourceViews: changedCloseUp, layout, revisionId, textLock }),
+    base,
+    "the active Close-Up proof is part of the immutable material identity",
+  );
   const widerLayout = layoutModule.flatWrapLayout(surfaces.map((item) => (item.surfaceKey === "hood" ? { ...item, widthInches: 80 } : item)));
   assert.notEqual(wrap.flatWrapInputHash({ sourceViews: views, layout: widerLayout, revisionId, textLock }), base);
   assert.notEqual(wrap.flatWrapInputHash({ sourceViews: views, layout, revisionId, textLock: { ...textLock, bodyText: { phone: "555-0143" } } }), base);
@@ -146,14 +158,25 @@ test("Call 8 material accepts exact Close-Up or historical Hero source sets", as
   const closeupViews = await sourceViews(["driver", "passenger", "hood", "roof", "front", "rear", "closeup"]);
   assert.match(wrap.flatWrapInputHash({ sourceViews: closeupViews, layout, revisionId, textLock }), /^[0-9a-f]{64}$/);
 
-  const hero = (await sourceViews()).find((view) => view.viewKey === "hero3d");
+  const historicalHeroViews = await sourceViews(["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"]);
+  assert.match(
+    wrap.flatWrapInputHash({ sourceViews: historicalHeroViews, layout, revisionId, textLock }),
+    /^[0-9a-f]{64}$/,
+  );
+  const hero = historicalHeroViews.find((view) => view.viewKey === "hero3d");
+  assert.ok(hero, "the historical compatibility fixture must contain a real Hero source");
   const both = [...closeupViews.filter((view) => view.viewKey !== "roof"), hero];
   assert.throws(
     () => wrap.flatWrapInputHash({ sourceViews: both, layout, revisionId, textLock }),
     /exactly one Close-Up or immutable historical Hero proof/,
   );
   assert.throws(
-    () => wrap.flatWrapInputHash({ sourceViews: closeupViews.filter((view) => view.viewKey !== "closeup"), layout, revisionId, textLock }),
+    () => wrap.flatWrapInputHash({
+      sourceViews: historicalHeroViews.filter((view) => view.viewKey !== "hero3d"),
+      layout,
+      revisionId,
+      textLock,
+    }),
     /exactly seven immutable source views/,
   );
 });

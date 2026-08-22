@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirty-three-migration chain', () => {
-  assert.equal(migrationNames.length, 33);
+test('fresh bootstrap contains one ordered thirty-seven-migration chain', () => {
+  assert.equal(migrationNames.length, 37);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -25,7 +25,8 @@ test('fresh bootstrap contains one ordered thirty-three-migration chain', () => 
       // The slot-lease layer generation-store.cjs calls, and the completion RPC
       // rewritten to validate the engine's rows in place instead of deleting them.
       '20260814050000', '20260814050100',
-      // hero-3d seventh slot and the production handoff it unblocks.
+      // Historical hero-3d substitution; the final forward migration restores
+      // Close-Up without rewriting already-frozen hero revisions.
       '20260814060000',
       // Per-view regeneration: one active view per slot, history preserved.
       '20260814070000',
@@ -60,6 +61,18 @@ test('fresh bootstrap contains one ordered thirty-three-migration chain', () => 
       // Normal design-first v2 enters the existing Calls 8-11 workflow without
       // inventing an order; paid work stays closed until exact late binding.
       '20260821200000',
+      // Restore the locked Close-Up seventh proof while preserving explicit
+      // read/handoff compatibility for immutable historical hero3d rows.
+      '20260822060000',
+      // Atlas is one immutable master plus a dependent seven-view proof set;
+      // per-view regeneration is refused before the owner-callable RPC mutates.
+      '20260822070000',
+      // Completed legacy/broken Atlas proof sets cannot cross the owner status
+      // or signed-view boundary without the current lineage/audit/QC evidence.
+      '20260822080000',
+      // Complete the Close-Up port at revision, Storage, freeze and Atlas master
+      // preview boundaries while keeping historical Hero rows immutable.
+      '20260822090000',
     ],
   );
 });
@@ -87,12 +100,19 @@ test('wrap-files is private, immutable for users, and owner-readable', () => {
   assert.doesNotMatch(sql, /FOR (?:UPDATE|DELETE)\s+TO authenticated/i);
 });
 
-test('revision snapshot requires seven immutable asset identities, not URLs', () => {
+test('revision snapshot requires the active Close-Up seven or an explicit historical hero set, not URLs', async () => {
+  const restore = await readFile(
+    path.join(migrationDir, '20260822060000_designpro_restore_closeup_seventh_view.sql'),
+    'utf8',
+  );
   assert.match(sql, /snapshot->'renderAssets'/);
   assert.match(sql, /NOT snapshot \? 'renderUrls'/);
-  for (const role of ['driver', 'passenger', 'hood', 'roof', 'front', 'rear', 'hero3d']) {
-    assert.match(sql, new RegExp(`'${role}'`));
+  for (const role of ['driver', 'passenger', 'hood', 'front', 'rear', 'closeup', 'roof']) {
+    assert.match(restore, new RegExp(`'${role}'`));
   }
+  assert.match(restore, /'sourceViewType','close-up','consumerRole','closeup'/);
+  assert.match(restore, /v_legacy text\[\]:=ARRAY\[[\s\S]*'hero3d'/);
+  assert.match(restore, /\(snapshot->'renderAssets' \? 'closeup'\) <>[\s\S]*\(snapshot->'renderAssets' \? 'hero3d'\)/);
   assert.match(sql, /seven_distinct_render_asset_hashes_required/);
 });
 

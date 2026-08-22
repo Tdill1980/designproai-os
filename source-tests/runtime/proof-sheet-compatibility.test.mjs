@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const sharp = require("../../runtime/node_modules/sharp");
 const {
   CLOSEUP_VIEW_ORDER,
+  LEGACY_VIEW_ORDER,
   VIEW_ORDER,
   renderProofSheet,
 } = require("../../runtime/proof-sheet.cjs");
@@ -46,7 +47,7 @@ test("Call 8 renders Close-Up and historical Hero under their exact identities",
   assert.equal(closeup.layout.cells.hero3d, undefined);
 
   const historicalHero = await renderProofSheet(proofInput(await proofViews("hero3d")));
-  assert.deepEqual(Object.keys(historicalHero.layout.cells), VIEW_ORDER);
+  assert.deepEqual(Object.keys(historicalHero.layout.cells), LEGACY_VIEW_ORDER);
   assert.ok(historicalHero.layout.cells.hero3d);
   assert.equal(historicalHero.layout.cells.closeup, undefined);
 });

@@ -14,11 +14,8 @@ const okImage = (mimeType = "image/png") => ({
 const json = (payload, status = 200) => new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
 
 test("the seven immutable slots keep the locked production order", () => {
-  // The seventh slot is a true hero-3d view. It was a close-up, which carried
-  // the role 'closeup' — a role the revision contract does not accept — so the
-  // handoff could never complete. Substituting a panel detail for a whole
-  // vehicle was rejected rather than aliased.
-  assert.deepEqual(angles.viewOrder(), ["side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof"]);
+  assert.deepEqual(angles.viewOrder(), ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
+  assert.equal(angles.viewOrder().includes("hero-3d"), false);
   // Calls 8+ consume these exact slots. Changing this order or these names
   // changes the handoff, which this port is not allowed to do.
   const claimant = readFileSync(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");

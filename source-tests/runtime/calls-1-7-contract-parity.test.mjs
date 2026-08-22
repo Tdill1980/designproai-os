@@ -152,7 +152,9 @@ test("A.T.L.A.S. master prompt honors rich controls and exact-reference intent",
     "confident pink flamingo wearing safety glasses", "bold condensed sans serif",
     "Desert Luxury, Built to Last", "EXACT CUSTOMER REFERENCE",
   ]) assert.match(prompt, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
-  assert.match(prompt, /vehicle-wrap REPRODUCTION specialist/);
+  assert.match(prompt, /Custom Vehicle Wrap Designer at WePrintWraps\.com/);
+  assert.match(prompt, /verified approved artwork faithfully in one continuous FLAT unwrapped artboard/);
+  assert.match(prompt, /FIRST attached deterministic A\.T\.L\.A\.S\. guide is the sole authority/);
   assert.match(prompt, /Do not redesign, restyle, recolor, simplify, correct, or invent/);
 });
 
@@ -160,25 +162,47 @@ test("customer image conditioning retains a finite decompression pixel ceiling",
   const source = readFileSync(join(root, "runtime", "flat-first-atlas.cjs"), "utf8");
   assert.ok(Number.isInteger(atlas.CUSTOMER_REFERENCE_MAX_PIXELS));
   assert.ok(atlas.CUSTOMER_REFERENCE_MAX_PIXELS > 0);
-  assert.equal((source.match(/limitInputPixels: CUSTOMER_REFERENCE_MAX_PIXELS/g) || []).length, 2,
-    "both customer logo and VisionBoard decoding paths use the finite cap");
+  for (const [name, nextName] of [
+    ["verifiedCustomerLogoPart", "verifiedCustomerReferenceParts"],
+    ["verifiedCustomerReferenceParts", "topologyExampleParts"],
+  ]) {
+    const block = source.match(new RegExp(
+      `async function ${name}\\([\\s\\S]*?(?=async function ${nextName}\\()`,
+    ));
+    assert.ok(block, `${name} must remain a readable server-native conditioning path`);
+    assert.match(
+      block[0],
+      /limitInputPixels: CUSTOMER_REFERENCE_MAX_PIXELS/,
+      `${name} must retain the finite decompression pixel cap`,
+    );
+  }
 });
 
-test("flat DesignIQ carries the creative quality floor without camera or studio language", () => {
-  const direction = ace.buildFlatDesignIQDirection({
+test("flat DesignIQ carries the Edge artboard-mode quality contract without camera or studio language", () => {
+  const direction = ace.buildAtlasArtboardDesignIQDirection({
     ...RICH_INPUT, visionBoardImages: undefined, visionboardIntent: undefined,
   });
-  assert.match(direction, /senior graphic designer at a sign and wrap company/);
+  assert.match(direction, /Custom Vehicle Wrap Designer at WePrintWraps\.com/);
+  assert.match(direction, /Design ONE flat vehicle-wrap ARTBOARD/);
+  assert.match(direction, /Fill every supplied exterior-panel zone edge-to-edge/);
+  assert.match(direction, /SAME cohesive design flowing across every zone/);
   assert.match(direction, /built from layered elements/);
   assert.match(direction, /Translate anything the brief names/);
   assert.match(direction, /rich photographic realism/);
-  assert.doesNotMatch(direction, /CAMERA ANGLE|HIGH-END WRAP SHOP ENVIRONMENT|Canon EOS/);
+  assert.match(direction, /master stays FULL-BLEED/);
+  assert.match(direction, /Gallery-grade custom artwork with real depth, movement, and a wow factor/);
+  assert.match(direction, /No camera, studio, vehicle photograph, mockup/);
+  assert.doesNotMatch(
+    direction,
+    /CAMERA ANGLE|CAMERA SPECIFICATION|HIGH-END WRAP SHOP ENVIRONMENT|DARK EPOXY|Canon EOS/,
+  );
 });
 
-test("A.T.L.A.S. projections carry exact studio constants but no customer reference bytes", () => {
+test("A.T.L.A.S. projections carry exact studio constants but no customer reference bytes", async () => {
   const manifest = atlas.buildAtlasManifest(SURFACES);
-  const masterBytes = Buffer.from("canonical-atlas");
-  const projectionBytes = Buffer.from("projection-transport");
+  const guide = await atlas.renderAtlasGuide(manifest);
+  const masterBytes = await atlas.normalizeAtlasMaster(guide, manifest);
+  const projection = await atlas.projectionDerivative(masterBytes);
   const masterHash = atlas._test.sha256(masterBytes);
   const flatAtlas = {
     contract: atlas.ATLAS_CONTRACT,
@@ -187,10 +211,8 @@ test("A.T.L.A.S. projections carry exact studio constants but no customer refere
     manifest,
     manifestAsset: { contentHash: atlas._test.sha256(Buffer.from("manifest")) },
     master: { bytes: masterBytes, contentType: "image/png", contentHash: masterHash },
-    projection: {
-      bytes: projectionBytes, byteSize: projectionBytes.length, contentType: "image/jpeg",
-      contentHash: atlas._test.sha256(projectionBytes), sourceMasterHash: masterHash,
-    },
+    projection,
+    viewAuthorities: await atlas._test.buildViewAuthorities(masterBytes, manifest),
   };
   const forbiddenReference = { inlineData: { mimeType: "image/png", data: "customer-reference-must-not-project" } };
   const slots = worker.slotsFrom(undefined, RICH_INPUT, {}, flatAtlas, [forbiddenReference]);

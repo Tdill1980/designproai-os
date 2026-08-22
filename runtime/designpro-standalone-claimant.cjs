@@ -106,7 +106,7 @@ const REQUIRED_REVISION_VIEWS = Object.freeze({
   rear: ["rear", "back"],
 });
 const SEVENTH_REVISION_VIEWS = Object.freeze({
-  closeup: ["closeup"],
+  closeup: ["closeup", "close-up", "detail"],
   hero3d: ["hero3d", "hero_3d", "hero", "angle", "three_quarter"],
 });
 
@@ -1684,20 +1684,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
   throw new StageError("unsupported_production_stage", stage.stage_key, false);
 }
 
-// Retained as a recognised historical value. The seventh slot is now a real
-// hero-3d view carrying the hero3d role, so the handoff is decided from the
-// persisted views by calls_1_7_handoff_state rather than pinned shut.
+// Retained as a recognised historical blocker value. The active seventh slot
+// is the source-locked close-up proof and is never relabelled as a hero view.
 const CALLS_1_7_HANDOFF_BLOCKER = "source_close_up_has_no_verified_hero3d_role_mapping";
 const CALLS_1_7_VIEW_PLAN = Object.freeze([
-  Object.freeze({ sourceViewType: "side", consumerRole: "driver" }),
-  Object.freeze({ sourceViewType: "passenger-side", consumerRole: "passenger" }),
-  Object.freeze({ sourceViewType: "hood_detail", consumerRole: "hood" }),
-  Object.freeze({ sourceViewType: "front", consumerRole: "front" }),
-  Object.freeze({ sourceViewType: "rear", consumerRole: "rear" }),
-  Object.freeze({ sourceViewType: "hero-3d", consumerRole: "hero3d" }),
-  Object.freeze({ sourceViewType: "roof", consumerRole: "roof" }),
-]);
-const CLOSEUP_CALLS_1_7_VIEW_PLAN = Object.freeze([
   Object.freeze({ sourceViewType: "side", consumerRole: "driver" }),
   Object.freeze({ sourceViewType: "passenger-side", consumerRole: "passenger" }),
   Object.freeze({ sourceViewType: "hood_detail", consumerRole: "hood" }),
@@ -1710,10 +1700,9 @@ const CLOSEUP_CALLS_1_7_VIEW_PLAN = Object.freeze([
 function acceptedCalls1To7ViewPlan(value) {
   const serialized = JSON.stringify(canonical(value));
   if (serialized === JSON.stringify(canonical(CALLS_1_7_VIEW_PLAN))) return CALLS_1_7_VIEW_PLAN;
-  if (serialized === JSON.stringify(canonical(CLOSEUP_CALLS_1_7_VIEW_PLAN))) return CLOSEUP_CALLS_1_7_VIEW_PLAN;
   throw new StageError(
     "generation_contract_drift",
-    "Calls 1-7 requires exactly one Close-Up or immutable historical Hero plan",
+    "Calls 1-7 requires the active Close-Up seven-view plan",
     false,
   );
 }
@@ -1738,7 +1727,7 @@ const CALLS_1_7_ENGINE_CONTRACT = Object.freeze({
   }),
   // This is the immutable source-blob contract stored by the database. The
   // later Hero-era database changed only its view plan, not this fingerprint.
-  sourceViewOrder: Object.freeze(CLOSEUP_CALLS_1_7_VIEW_PLAN.map((item) => item.sourceViewType)),
+  sourceViewOrder: Object.freeze(CALLS_1_7_VIEW_PLAN.map((item) => item.sourceViewType)),
   freezePolicy: "exact-source-blob-behavior",
   retiredBlobs: Object.freeze(["generate-2d-proof"]),
   proofAuthority: "designpro-os-call8",
@@ -2019,4 +2008,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CLOSEUP_CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };

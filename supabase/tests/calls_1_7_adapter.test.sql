@@ -343,17 +343,13 @@ select is(
   'claim carries exactly seven frozen source view roles');
 
 create temporary table calls17_complete as
--- The seventh slot is a generated whole-vehicle hero view. This fixture used to
--- submit close-up, which is what the plan carried before
--- 20260814060000_designpro_generation_hero3d_and_handoff replaced it: a
--- close-up is not a hero shot, and aliasing one onto hero3d would satisfy the
--- type checker while handing Calls 8 a view it cannot use. close-up stays a
--- legal source_view_type so historical rows keep validating, but it is no
--- longer in the plan, so completing with it is now correctly refused.
+-- The locked source contract's seventh proof is Close-Up. Historical hero3d
+-- rows remain readable, but a new completion must use close-up/closeup without
+-- relabelling it as a whole-vehicle Hero proof.
 with plan(source_view_type,consumer_role,ordinal) as (
   values ('side','driver',1),('passenger-side','passenger',2),
     ('hood_detail','hood',3),('front','front',4),('rear','rear',5),
-    ('hero-3d','hero3d',6),('roof','roof',7)
+    ('close-up','closeup',6),('roof','roof',7)
 ), identities as (
   select source_view_type,consumer_role,ordinal,
     lpad(to_hex(ordinal),64,'0') content_hash
@@ -389,23 +385,22 @@ from output cross join receipt;
 select is((select payload->>'state' from calls17_complete),'outputs_ready',
   'seven byte identities complete only to outputs_ready');
 select ok((select payload->>'handoffBlocker' from calls17_complete) is null,
-  'a real hero3d view clears the automatic Calls 8 handoff');
+  'the exact Close-Up seven clears the automatic Calls 8 handoff');
 select cmp_ok((select count(*) from public.designpro_generation_views),'=',7::bigint,
   'completion stores exactly seven distinct view identities');
 select is(
   (select consumer_role from public.designpro_generation_views
-   where source_view_type='hero-3d'),'hero3d',
-  'the hero-3d source carries the hero3d role');
+   where source_view_type='close-up'),'closeup',
+  'the close-up source carries the closeup role');
 select cmp_ok(
   (select count(*) from public.designpro_generation_views
-   where consumer_role='hero3d'),'=',1::bigint,
-  'exactly one view holds the hero3d role');
--- The relabeling this guards against is the one the plan change removed: a
--- close-up must never arrive wearing the hero3d role.
+   where consumer_role='closeup'),'=',1::bigint,
+  'exactly one view holds the closeup role');
+-- The historical identity stays explicit and is not emitted by a new run.
 select cmp_ok(
   (select count(*) from public.designpro_generation_views
-   where source_view_type='close-up'),'=',0::bigint,
-  'no close-up is silently relabeled hero3d');
+   where source_view_type='hero-3d'),'=',0::bigint,
+  'no active Close-Up is silently replaced by historical hero3d');
 select throws_ok(
   $$select public.complete_designpro_generation_request(
     (select (payload->>'requestId')::uuid from calls17_claim),

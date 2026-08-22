@@ -13,23 +13,89 @@
 
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
-const { canonicalizeVehicle, briefWantsPhoto } = require("./designiq-prompt.cjs");
+const { canonicalizeVehicle, briefWantsPhoto, truckBedClause } = require("./designiq-prompt.cjs");
 const angles = require("./view-angles.cjs");
-const { STUDIO_ENVIRONMENT } = require("./studio-os.cjs");
+const {
+  PHOTOREALISM_CONTRACT_VERSION,
+  PHOTOREALISM_REQUIREMENT,
+} = require("./photorealism-prompt.cjs");
+const {
+  STUDIO_CONTRACT_VERSION,
+  STUDIO_ENVIRONMENT,
+  STUDIO_REINFORCEMENT,
+} = require("./studio-os.cjs");
 
 const BUCKET = "wrap-files";
 const SERVER_PROVIDER_CONTRACT = "designpro.designpanel-server-provider.v1";
+const ATLAS_SERVER_PROVIDER_CONTRACT = "designpro.atlas-designpanel-server-provider.v1";
+const ARTIFACT_AUDIT_CONTRACT = "designpro.generation-artifact-audit.v1";
 const HERO_VIEW = "side";
+const DRIVER_VIEW = "side";
 const PASSENGER_VIEW = "passenger-side";
+const ATLAS_VIEW_SURFACES = Object.freeze({
+  side: "driver",
+  "passenger-side": "passenger",
+  hood_detail: "hood",
+  front: "front",
+  rear: "rear",
+  "close-up": "driver",
+  roof: "roof",
+});
 const MAX_REFERENCE_BYTES = 20 * 1024 * 1024;
+// Gemini rejects generateContent request bodies at 20 MiB. The body includes
+// base64 expansion and prompt JSON, so leave a deterministic envelope rather
+// than comparing only decoded image bytes against the provider limit.
+const GEMINI_REQUEST_LIMIT_BYTES = 20 * 1024 * 1024;
+const GEMINI_REQUEST_SAFETY_BYTES = 256 * 1024;
+const MAX_ATLAS_REQUEST_BYTES = GEMINI_REQUEST_LIMIT_BYTES - GEMINI_REQUEST_SAFETY_BYTES;
+const MAX_ATLAS_DRIVER_REFERENCE_BYTES = 1_500_000;
+const MAX_ATLAS_DRIVER_REFERENCE_EDGE = 1280;
 const MAX_PASSENGER_EDGE = 2560;
 const PASSENGER_TEXT_FIX_TIMEOUT_MS = 90_000;
 const ORIENTATION_W = 64;
 const ORIENTATION_H = 32;
+const PASSENGER_FRAMING_W = 96;
+const PASSENGER_FRAMING_H = 54;
+const MAX_PASSENGER_FRAMING_MAE = 0.18;
 const FINISH_SPEC = Object.freeze({
   gloss: "High-gloss laminate — shiny wet-look surface with crisp reflections.",
   matte: "Matte laminate — completely flat, zero reflections, velvet appearance.",
   satin: "Satin laminate — soft sheen between matte and gloss, silk-like.",
+});
+
+// Exact production coverage contract from
+// supabase/functions/_shared/view-angles-os.ts. Atlas changes the artwork
+// authority, never what a real installer may wrap.
+const WRAP_COVERAGE_RULES = `
+WRAP COVERAGE — MANDATORY:
+The vinyl wrap covers ONLY painted body panels. The following areas must remain UNWRAPPED and show their original factory appearance:
+- Grille / front grille mesh — NOT wrapped, factory appearance
+- Manufacturer emblems and badges (Ford, Chevy, RAM, etc.) — NOT wrapped, visible
+- Windshield — NOT wrapped, clear glass
+- Driver and passenger side windows — NOT wrapped, clear glass
+- Rear window — NOT wrapped, clear glass
+- Headlights and taillights — NOT wrapped, factory appearance
+- Wheels, tires, wheel wells — NOT wrapped
+- Door handles — NOT wrapped
+- Side mirrors — NOT wrapped
+- Chrome trim, rain gutters, antenna — NOT wrapped
+TRUCK BED: on a pickup, the wrap covers the outer painted panels — cab, bed sides, and tailgate exterior; the open bed interior stays bare factory bedliner.
+This is how real vehicle wraps work. Vinyl goes on painted body panels only.
+`;
+
+// Camera/framing-only reinforcement. Artwork is supplied by the exact native
+// Atlas zone crop; adding logo/layout/flow instructions here would become a
+// second design prompt and let each proof invent a different wrap.
+const VIEW_REINFORCEMENT = Object.freeze({
+  // Keep the DesignPanel detail treatment, but never contradict the locked
+  // 18-inch view-angles-os camera with either historical 12-inch or 3-5-foot
+  // duplicate framing. The imported angle contract remains authoritative.
+  "close-up": " This is a CLOSE-UP design-detail photograph at the locked camera distance above. Show the vinyl texture grain, laminate sheen, ink depth, printed pattern, color transitions or artwork conforming to the body curve. A body line, panel edge or door handle may provide scale. The wrap design fills 90%+ of frame. This is NOT a full vehicle shot and NOT a three-quarter vehicle view.",
+  "passenger-side": " This is the PASSENGER SIDE of the vehicle — the opposite side from the driver. The vehicle faces RIGHT in frame (nose pointing right). All text and lettering reads correctly left-to-right, NEVER mirrored. Show the passenger-side wheels.",
+  roof: " This is a TOP-DOWN ROOF view — camera is DIRECTLY ABOVE the vehicle pointing straight down at 90 degrees. Orthographic flat top-down, NOT tilted and NOT angled. Frame only the roof/cab-top panel between windshield and rear glass. Crop tightly so that panel fills the frame. Exclude hood, front end, cargo bed, tailgate, wheels, mirrors, vehicle sides, floor and walls.",
+  hood_detail: " This is a TOP-DOWN HOOD view — camera is DIRECTLY ABOVE the hood pointing straight down. Orthographic flat overhead, NOT a 3/4 glamour shot. Frame only the hood between windshield base and front bumper edge, with the hood filling the frame.",
+  front: " This is a STRAIGHT-ON FRONT view — camera is DIRECTLY in front at grille/bumper height, perpendicular and perfectly symmetrical. NOT a 3/4 angle, rotated or tilted view. Frame grille, both headlights, hood edge, front bumper and windshield head-on, with the front filling the frame.",
+  rear: " This is a STRAIGHT-ON REAR view — camera is DIRECTLY behind at tailgate/bumper height, perpendicular and perfectly symmetrical. NOT a 3/4 angle, rotated or tilted view. Frame rear glass/tailgate, both tail lights and rear bumper head-on, with the rear filling the frame.",
 });
 
 // Ported from app/src/utils/passenger-mirror.ts. The server calls Gemini
@@ -38,6 +104,28 @@ const FINISH_SPEC = Object.freeze({
 const PASSENGER_TEXT_FIX_PROMPT = `This is a horizontally mirrored vehicle wrap. All text, lettering, numbers, URLs, and logos are BACKWARDS (mirror-reversed). Your ONLY task: flip every text/lettering element so it reads correctly left-to-right. Do NOT change the vehicle, design, colors, patterns, background, or any non-text element. CRITICAL: Keep the EXACT same straight-on side camera angle — do NOT rotate, tilt, or change the perspective in any way. The output must be a perfectly flat, straight-on side view identical to the input framing. Output the corrected image.
 
 KEEP THE FRAMING IDENTICAL: match the attached image's exact camera angle, zoom, crop, distance, and vehicle position. Do not re-frame, zoom, reposition, or recompose the shot. This is an EDIT of the attached photo — apply the design changes requested above directly onto it.`;
+
+// The deterministic mirror already contains the accepted vehicle, wrap and
+// photography. These imported production contracts are preservation checks in
+// the surgical text edit, never permission to relight or redesign the pixels.
+const PASSENGER_TEXT_FIX_WITH_PRODUCTION_LOCKS = `${PASSENGER_TEXT_FIX_PROMPT}
+
+PRESERVATION-ONLY CAMERA CONTRACT — the input already satisfies this; do not re-render or reframe it:
+${angles.cameraAngle(PASSENGER_VIEW)}
+
+PRESERVATION-ONLY STUDIO/LIGHTING CONTRACT — retain the input's existing studio and lighting pixel-for-pixel except corrected glyphs:
+${STUDIO_ENVIRONMENT}
+${STUDIO_REINFORCEMENT}
+
+PRESERVATION-ONLY PHOTOGRAPHY CONTRACT — retain the input's existing vehicle/vinyl photography pixel-for-pixel except corrected glyphs:
+${PHOTOREALISM_REQUIREMENT}`;
+
+function passengerTextFixPrompt(atlasAuthority = null) {
+  if (!atlasAuthority) return PASSENGER_TEXT_FIX_WITH_PRODUCTION_LOCKS;
+  return `${PASSENGER_TEXT_FIX_WITH_PRODUCTION_LOCKS}
+
+IMAGE 1 is the deterministic opposite-facing mirror whose vehicle geometry, camera and framing must stay pixel-identical. IMAGE 2 is the exact accepted PASSENGER native-zone crop from the flattened A.T.L.A.S. master (sha256 ${atlasAuthority.contentHash}). Use IMAGE 2 only as the forward-reading glyph and passenger-artwork identity authority. It is NOT permission to recompose IMAGE 1. The accepted master guarantees Passenger is mirror-compatible with Driver; preserve IMAGE 1's non-text pixels and placement, correct its glyphs to the exact forward-reading passenger identity, and invent nothing.`;
+}
 
 const PASSENGER_TEXT_FIX_SYSTEM_INSTRUCTION = {
   parts: [{
@@ -55,6 +143,328 @@ class DesignPanelServerError extends Error {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function populated(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(String(value || "").trim());
+}
+
+/** Artifact-level evidence required to compare a run with the Porsche baseline. */
+function proofPromptAudit({ input = {}, sourceViewType, prompt, renderMethod }) {
+  const vehicle = input.vehicle && typeof input.vehicle === "object" ? input.vehicle : {};
+  const promptText = String(prompt || "");
+  const companyPresent = populated(input.companyName || input.businessName || input.business);
+  const logoPresent = Boolean(input.logoAsset);
+  const phonePresent = populated(input.phone);
+  const websitePresent = populated(input.website);
+  return {
+    contract: ARTIFACT_AUDIT_CONTRACT,
+    sourceViewType,
+    renderMethod,
+    promptHash: sha256(Buffer.from(promptText, "utf8")),
+    promptLength: Buffer.byteLength(promptText, "utf8"),
+    studioContractVersion: STUDIO_CONTRACT_VERSION,
+    viewAngleContractVersion: angles.VIEW_ANGLE_CONTRACT_VERSION,
+    photographyContractVersion: PHOTOREALISM_CONTRACT_VERSION,
+    structuredInputs: {
+      brief: populated(input.brief || input.designBrief || input.description),
+      vehicleYear: populated(vehicle.year),
+      vehicleMake: populated(vehicle.make),
+      vehicleModel: populated(vehicle.model),
+      vehicleType: populated(vehicle.type),
+      companyName: companyPresent,
+      industry: populated(input.industry),
+      colors: populated(input.colors) || populated(input.brandColors),
+      style: populated(input.style) || populated(input.styleDescriptors),
+      phone: phonePresent,
+      website: websitePresent,
+      logo: logoPresent,
+      visionBoardImageCount: Array.isArray(input.visionBoardImages) ? input.visionBoardImages.length : 0,
+      bulletPointCount: Array.isArray(input.bulletPoints) ? input.bulletPoints.length : 0,
+      mascot: populated(input.mascot),
+    },
+    brandingPresent: companyPresent || logoPresent,
+    phonePresent,
+    logoPresent,
+  };
+}
+
+function vehicleDescription(input) {
+  const vehicleInput = input?.vehicle || {};
+  const makeModel = canonicalizeVehicle(vehicleInput.make, vehicleInput.model, vehicleInput.year)
+    || [vehicleInput.make, vehicleInput.model].filter(Boolean).join(" ");
+  return [vehicleInput.year, makeModel, vehicleInput.type]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ") || "the exact requested vehicle";
+}
+
+function pickupVehicle(input) {
+  return /\b(pickup|truck|f[- ]?\d{3}|silverado|sierra|tacoma|tundra|ridgeline|ranger|colorado|canyon|frontier|titan|ram|gladiator|maverick)\b/i
+    .test(vehicleDescription(input));
+}
+
+function atlasIdentity(atlas = {}) {
+  const authority = atlas.authorityMetadata && typeof atlas.authorityMetadata === "object"
+    ? atlas.authorityMetadata
+    : {};
+  return Object.freeze({
+    masterContentHash: String(atlas.masterContentHash || authority.masterContentHash || "").toLowerCase(),
+    projectionContentHash: String(atlas.projectionContentHash || authority.projectionContentHash || "").toLowerCase(),
+    manifestContentHash: String(atlas.manifestContentHash || authority.manifestContentHash || "").toLowerCase(),
+    revisionId: atlas.revisionId || authority.revisionId || null,
+    revisionSequence: atlas.revisionSequence || authority.revisionSequence || null,
+  });
+}
+
+async function atlasViewIdentity(atlas, sourceViewType) {
+  const expectedSurface = ATLAS_VIEW_SURFACES[sourceViewType];
+  if (!expectedSurface) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_view_invalid",
+      `${sourceViewType || "missing"} is not one of Driver, Passenger, Hood, Front, Rear, Close-Up, Roof`,
+      false,
+    );
+  }
+  const source = atlas?.conditioningIdentityFor || atlas?.viewAuthorities;
+  const candidate = typeof source === "function"
+    ? await source(sourceViewType)
+    : source?.[sourceViewType];
+  const identity = atlasIdentity(atlas);
+  if (!candidate || candidate.contract !== "designpro.flat-first-atlas-view-authority.v1"
+    || candidate.sourceViewType !== sourceViewType
+    || candidate.surfaceKey !== expectedSurface
+    || candidate.sourceMasterHash !== identity.masterContentHash) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_view_authority_invalid",
+      `${sourceViewType}: exact ${expectedSurface} authority is not bound to this master`,
+      false,
+    );
+  }
+  assertHash(candidate.contentHash, `${sourceViewType} Atlas zone hash`);
+  return Object.freeze({
+    contract: candidate.contract,
+    sourceViewType,
+    surfaceKey: expectedSurface,
+    contentHash: String(candidate.contentHash).toLowerCase(),
+    sourceMasterHash: identity.masterContentHash,
+  });
+}
+
+function assertHash(value, label) {
+  if (!/^[0-9a-f]{64}$/.test(String(value || ""))) {
+    throw new DesignPanelServerError("designpanel_atlas_identity_invalid", `${label} is required`, false);
+  }
+}
+
+function decodeInlineData(part) {
+  const inlineData = part?.inlineData;
+  const mimeType = String(inlineData?.mimeType || "").toLowerCase();
+  const data = String(inlineData?.data || "");
+  if (!["image/png", "image/jpeg", "image/webp"].includes(mimeType)
+    || !data || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_conditioning_invalid",
+      "Atlas conditioning must contain one inline PNG, JPEG or WebP identity",
+      false,
+    );
+  }
+  const bytes = Buffer.from(data, "base64");
+  if (!bytes.length) {
+    throw new DesignPanelServerError("designpanel_atlas_conditioning_invalid", "Atlas conditioning bytes are empty", false);
+  }
+  return { bytes, mimeType };
+}
+
+async function resolveAtlasConditioningParts(atlas, sourceViewType, callParts = null) {
+  // generation-worker already constructs the master-bound, view-specific
+  // Atlas projection parts on each slot. Preserve those exact call.parts by
+  // default; an explicit factory callback is supported for direct callers and
+  // focused tests, but neither path reconstructs the Atlas here.
+  const source = (Array.isArray(callParts) && callParts.length)
+    ? callParts
+    : atlas.conditioningPartsFor || atlas.conditioningParts;
+  const candidate = typeof source === "function" ? await source(sourceViewType) : source;
+  if (!Array.isArray(candidate) || !candidate.length) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_conditioning_missing",
+      `${sourceViewType}: immutable Atlas conditioning parts are required`,
+      false,
+    );
+  }
+  // One exact native surface crop is the complete artwork authority for this
+  // proof. A second image here could silently become another design source.
+  const imageParts = candidate.filter((part) => part?.inlineData);
+  if (imageParts.length !== 1) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_conditioning_invalid",
+      `${sourceViewType}: expected exactly one canonical Atlas image, received ${imageParts.length}`,
+      false,
+    );
+  }
+  const { bytes } = decodeInlineData(imageParts[0]);
+  const identity = atlasIdentity(atlas);
+  const viewIdentity = await atlasViewIdentity(atlas, sourceViewType);
+  assertHash(identity.masterContentHash, "Atlas master hash");
+  assertHash(identity.projectionContentHash, "Atlas projection hash");
+  if (sha256(bytes) !== viewIdentity.contentHash) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_view_authority_hash_mismatch",
+      `${sourceViewType}: Atlas conditioning bytes do not match the exact ${viewIdentity.surfaceKey} identity`,
+      false,
+    );
+  }
+  return candidate.map((part) => ({
+    ...(part?.text == null ? {} : { text: String(part.text) }),
+    ...(part?.inlineData ? { inlineData: { ...part.inlineData } } : {}),
+  }));
+}
+
+async function compactAtlasDriverReference(bytes, options = {}) {
+  const maxBytes = Math.min(
+    MAX_ATLAS_DRIVER_REFERENCE_BYTES,
+    Math.max(100_000, Number(options.maxBytes) || MAX_ATLAS_DRIVER_REFERENCE_BYTES),
+  );
+  const maxEdge = Math.min(
+    MAX_ATLAS_DRIVER_REFERENCE_EDGE,
+    Math.max(640, Number(options.maxEdge) || MAX_ATLAS_DRIVER_REFERENCE_EDGE),
+  );
+  const qualities = [88, 82, 75, 68, 60, 52];
+  const edges = [...new Set([maxEdge, Math.min(maxEdge, 1120), Math.min(maxEdge, 960), 800, 640])]
+    .filter((edge) => edge <= maxEdge);
+  for (const edge of edges) {
+    for (const quality of qualities) {
+      const candidate = await sharp(bytes, { limitInputPixels: false })
+        .rotate()
+        .resize(edge, edge, { fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+        .jpeg({ quality, chromaSubsampling: "4:2:0", optimiseCoding: true })
+        .toBuffer();
+      if (candidate.length <= maxBytes) {
+        return {
+          mimeType: "image/jpeg",
+          data: candidate.toString("base64"),
+          byteSize: candidate.length,
+          contentHash: sha256(candidate),
+        };
+      }
+    }
+  }
+  throw new DesignPanelServerError(
+    "designpanel_atlas_driver_reference_too_large",
+    `The verified Driver anchor cannot be conditioned below ${maxBytes} bytes`,
+    false,
+  );
+}
+
+function estimatedGeminiImageRequestBytes({ parts, aspectRatio = "16:9", imageSize = "4K", responseModalities = ["TEXT", "IMAGE"], temperature = 1 }) {
+  return Buffer.byteLength(JSON.stringify({
+    contents: [{ parts }],
+    generationConfig: {
+      responseModalities,
+      temperature,
+      imageConfig: { aspectRatio, imageSize },
+    },
+  }));
+}
+
+function assertAtlasRequestWithinLimit(request, configuredMaxBytes = MAX_ATLAS_REQUEST_BYTES) {
+  const maxBytes = Math.min(
+    MAX_ATLAS_REQUEST_BYTES,
+    Math.max(1, Number(configuredMaxBytes) || MAX_ATLAS_REQUEST_BYTES),
+  );
+  const byteSize = estimatedGeminiImageRequestBytes(request);
+  if (byteSize > maxBytes) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_request_too_large",
+      `Atlas projection request is ${byteSize} bytes; bounded maximum is ${maxBytes}`,
+      false,
+    );
+  }
+  return byteSize;
+}
+
+function buildAtlasProjectionPrompt({ input, sourceViewType, hasDriverAnchor, authorityIdentity = null }) {
+  const vehicle = vehicleDescription(input);
+  const finish = String(input?.finish || "Gloss");
+  const finishSpec = FINISH_SPEC[finish.toLowerCase()] || FINISH_SPEC.gloss;
+  const viewLabel = angles.viewLabel(sourceViewType).toLowerCase();
+  const reinforcement = VIEW_REINFORCEMENT[sourceViewType] || "";
+  const surfaceKey = authorityIdentity?.surfaceKey || ATLAS_VIEW_SURFACES[sourceViewType];
+  const pickupRoofOverride = sourceViewType === "roof" && pickupVehicle(input)
+    ? "\nPICKUP CAB-ROOF OVERRIDE: For this pickup, CAB ROOF ONLY between windshield and rear cab glass overrides the imported generalized phrase ‘A-pillars to trunk.’ The hood, complete front end, cargo bed/box, bedliner, tailgate, wheels, mirrors, body sides, floor and walls must be outside the frame."
+    : "";
+  const photoLock = briefWantsPhoto(String(input?.brief || ""))
+    ? "\nPHOTOGRAPHIC REALISM LOCK: preserve photographic artwork in the Atlas as a real high-resolution color photograph; never turn it into illustration, vector art or clip-art."
+    : "";
+  const driverRole = hasDriverAnchor
+    ? `\nThe second attached image is the byte-verified accepted Driver proof. Use it ONLY to keep the exact vehicle anatomy, wheelbase, cab/bed configuration, studio, lighting, physical vinyl finish and visible installed scale continuous. It is not permission to infer, redraw or replace hidden artwork; where the Driver proof and Atlas could be read differently, the Atlas wins.`
+    : "\nNo prior 3D proof is attached to this first projection. Establish the Driver proof directly from the Atlas and the locked vehicle/camera/photography contracts below.";
+
+  return `CAMERA ANGLE (LOCKED — read this FIRST):
+${angles.cameraAngle(sourceViewType)}
+
+Render the ${viewLabel} proof of this exact ${vehicle}. This is the sanctioned generate-color-render photography stage. It is texture projection from one already-approved design-panel-ai-generate flat master, NOT another design call.
+
+ARTWORK AUTHORITY — NON-NEGOTIABLE:
+The first attached image is the immutable A.T.L.A.S. native ${String(surfaceKey || "target").toUpperCase()} zone crop and the SOLE artwork authority for this proof. Project those exact pixels onto that corresponding painted surface. Preserve every color, photograph, pattern, gradient, graphic, logo, wordmark, character, spelling, relative scale, hierarchy and flow. Never redraw hidden content from Driver, borrow another master zone, redesign, reimagine, beautify, simplify, restyle, recolor, mirror, move, resize, substitute, autocomplete or invent. The crop is full-bleed behind future installer cut lines; mask it to factory glass/openings in the photo without relocating the master artwork.${driverRole}
+
+VIEW FIDELITY — NON-NEGOTIABLE:
+Reproduce the identical approved design on the same vehicle from the ${viewLabel} camera angle defined above.${reinforcement}
+${pickupRoofOverride}
+The artwork is LOCKED. Treat this as photographing one real wrapped vehicle while only the camera moves. The design does not change between angles.
+
+Finish: ${finish.toUpperCase()} — ${finishSpec} Keep this finish identical across every view.
+
+${WRAP_COVERAGE_RULES}
+${truckBedClause(vehicle)}
+
+${STUDIO_ENVIRONMENT}
+${STUDIO_REINFORCEMENT}
+${PHOTOREALISM_REQUIREMENT}
+
+The exact vehicle, wrap, studio, lighting and finish remain continuous; only the camera moves. Output one 16:9 photorealistic vehicle proof only. Never output an installer map, panel sheet, dieline, labels, dimensions or annotations.${photoLock}`;
+}
+
+async function buildAtlasProjectionRequest({ atlas, input, sourceViewType, call, driverReference = null }) {
+  angles.assertTextDirectionGuard(sourceViewType);
+  const authorityIdentity = await atlasViewIdentity(atlas, sourceViewType);
+  const atlasParts = await resolveAtlasConditioningParts(atlas, sourceViewType, call?.parts);
+  const prompt = buildAtlasProjectionPrompt({
+    input,
+    sourceViewType,
+    hasDriverAnchor: Boolean(driverReference),
+    authorityIdentity,
+  });
+  const parts = [
+    { text: prompt },
+    { text: `IMAGE 1 — IMMUTABLE A.T.L.A.S. ${authorityIdentity.surfaceKey.toUpperCase()} NATIVE-ZONE CROP sha256 ${authorityIdentity.contentHash} (SOLE ARTWORK AUTHORITY).` },
+    ...atlasParts,
+    ...(driverReference ? [
+      { text: "IMAGE 2 — BYTE-VERIFIED DRIVER PROOF (VEHICLE/STUDIO/FINISH CONTINUITY ONLY)." },
+      { inlineData: { mimeType: driverReference.mimeType, data: driverReference.data } },
+    ] : []),
+  ];
+  const responseModalities = Number(call?.attempt) === 3 ? ["IMAGE"] : ["TEXT", "IMAGE"];
+  const requestByteSize = assertAtlasRequestWithinLimit({
+    parts,
+    aspectRatio: call?.aspectRatio || angles.aspectRatio(sourceViewType),
+    imageSize: call?.imageSize || angles.resolutionTier(sourceViewType),
+    responseModalities,
+    temperature: 1,
+  }, atlas.maxRequestBytes);
+  return {
+    parts,
+    responseModalities,
+    requestByteSize,
+    authorityIdentity,
+    audit: proofPromptAudit({
+      input,
+      sourceViewType,
+      prompt,
+      renderMethod: "generate-color-render",
+    }),
+  };
 }
 
 function buildReproductionPrompt({ input, sourceViewType }) {
@@ -185,7 +595,173 @@ async function textFixUndidTheMirror(driverBytes, candidateBytes) {
   }
 }
 
-async function fixMirrorText({ mirrorBytes, provider, call }) {
+async function visiblePixelDimensions(bytes) {
+  const metadata = await sharp(bytes, { limitInputPixels: false }).metadata();
+  const width = Number(metadata.autoOrient?.width || metadata.width || 0);
+  const height = Number(metadata.autoOrient?.height || metadata.height || 0);
+  if (!width || !height) throw new Error("image dimensions are unavailable");
+  return { width, height };
+}
+
+async function passengerFramingSignature(bytes) {
+  const { data, info } = await sharp(bytes, { limitInputPixels: false })
+    .rotate()
+    .flatten({ background: "#ffffff" })
+    .toColourspace("srgb")
+    .resize(PASSENGER_FRAMING_W, PASSENGER_FRAMING_H, { fit: "fill", kernel: "lanczos3" })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const signature = new Uint8Array(PASSENGER_FRAMING_W * PASSENGER_FRAMING_H * 3);
+  for (let pixel = 0; pixel < PASSENGER_FRAMING_W * PASSENGER_FRAMING_H; pixel += 1) {
+    const inputOffset = pixel * info.channels;
+    const outputOffset = pixel * 3;
+    signature[outputOffset] = data[inputOffset];
+    signature[outputOffset + 1] = info.channels > 1 ? data[inputOffset + 1] : data[inputOffset];
+    signature[outputOffset + 2] = info.channels > 2 ? data[inputOffset + 2] : data[inputOffset];
+  }
+  return signature;
+}
+
+/**
+ * Fail-closed passenger repair guard. The text model is allowed to make a
+ * surgical glyph correction, never to resize, crop, zoom, or recompose the
+ * canonical deterministic mirror.
+ */
+async function passengerFramingVerdict(rawMirrorBytes, candidateBytes) {
+  try {
+    const [rawDimensions, candidateDimensions] = await Promise.all([
+      visiblePixelDimensions(rawMirrorBytes),
+      visiblePixelDimensions(candidateBytes),
+    ]);
+    if (rawDimensions.width !== candidateDimensions.width
+      || rawDimensions.height !== candidateDimensions.height) {
+      return {
+        matches: false,
+        reason: "pixel-dimensions-mismatch",
+        rawDimensions,
+        candidateDimensions,
+        mae: null,
+      };
+    }
+
+    const [rawSignature, candidateSignature] = await Promise.all([
+      passengerFramingSignature(rawMirrorBytes),
+      passengerFramingSignature(candidateBytes),
+    ]);
+    if (rawSignature.length !== candidateSignature.length || !rawSignature.length) {
+      return {
+        matches: false,
+        reason: "framing-signature-invalid",
+        rawDimensions,
+        candidateDimensions,
+        mae: null,
+      };
+    }
+    let absoluteDifference = 0;
+    for (let index = 0; index < rawSignature.length; index += 1) {
+      absoluteDifference += Math.abs(rawSignature[index] - candidateSignature[index]);
+    }
+    const mae = absoluteDifference / (rawSignature.length * 255);
+    return {
+      matches: mae <= MAX_PASSENGER_FRAMING_MAE,
+      reason: mae <= MAX_PASSENGER_FRAMING_MAE ? "matched" : "framing-mismatch",
+      rawDimensions,
+      candidateDimensions,
+      mae,
+    };
+  } catch (cause) {
+    return {
+      matches: false,
+      reason: "framing-verification-error",
+      rawDimensions: null,
+      candidateDimensions: null,
+      mae: null,
+      detail: String(cause?.message || cause).slice(0, 300),
+    };
+  }
+}
+
+function passengerRepairRequestByteSize(parts) {
+  return Buffer.byteLength(JSON.stringify({
+    systemInstruction: PASSENGER_TEXT_FIX_SYSTEM_INSTRUCTION,
+    contents: [{ parts }],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+      temperature: 1,
+      imageConfig: { aspectRatio: "16:9", imageSize: "4K" },
+    },
+  }));
+}
+
+function passengerRepairParts(mirrorBytes, authorityInlineData, atlasAuthority) {
+  return [
+    { inlineData: { mimeType: "image/jpeg", data: mirrorBytes.toString("base64") } },
+    ...(authorityInlineData ? [{ inlineData: { ...authorityInlineData } }] : []),
+    { text: passengerTextFixPrompt(atlasAuthority) },
+  ];
+}
+
+async function reencodePassengerTransport(bytes, quality) {
+  return sharp(bytes, { failOn: "error", limitInputPixels: false })
+    .rotate()
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality, chromaSubsampling: "4:2:0", mozjpeg: true })
+    .toBuffer();
+}
+
+async function buildPassengerTextFixRequest({
+  mirrorBytes,
+  atlasAuthority = null,
+  maxRequestBytes = MAX_ATLAS_REQUEST_BYTES,
+}) {
+  const configured = Number(maxRequestBytes);
+  const requestLimit = Math.min(
+    MAX_ATLAS_REQUEST_BYTES,
+    Number.isFinite(configured) && configured > 0 ? configured : MAX_ATLAS_REQUEST_BYTES,
+  );
+  const authorityBytes = atlasAuthority
+    ? decodeInlineData({ inlineData: atlasAuthority.inlineData }).bytes
+    : null;
+  let parts = passengerRepairParts(
+    mirrorBytes,
+    atlasAuthority?.inlineData || null,
+    atlasAuthority,
+  );
+  let requestByteSize = passengerRepairRequestByteSize(parts);
+  if (requestByteSize <= requestLimit) {
+    return { parts, requestByteSize, transportDerived: false };
+  }
+
+  // Preserve dimensions and composition. Only deterministic JPEG quality is
+  // reduced; no crop, resize or generative preprocessing may enter this edit.
+  for (const quality of [86, 80, 74, 68, 60, 52, 44, 36]) {
+    const mirrorTransport = await reencodePassengerTransport(mirrorBytes, quality);
+    const authorityTransport = authorityBytes
+      ? await reencodePassengerTransport(authorityBytes, quality)
+      : null;
+    parts = passengerRepairParts(
+      mirrorTransport,
+      authorityTransport ? { mimeType: "image/jpeg", data: authorityTransport.toString("base64") } : null,
+      atlasAuthority,
+    );
+    requestByteSize = passengerRepairRequestByteSize(parts);
+    if (requestByteSize <= requestLimit) {
+      return { parts, requestByteSize, transportDerived: true, quality };
+    }
+  }
+  throw new DesignPanelServerError(
+    "designpanel_atlas_passenger_request_too_large",
+    `Passenger authority repair request is ${requestByteSize} bytes after bounded same-dimension transport; maximum is ${requestLimit}`,
+    false,
+  );
+}
+
+async function fixMirrorText({ mirrorBytes, provider, call, atlasAuthority = null }) {
+  const repairRequest = await buildPassengerTextFixRequest({
+    mirrorBytes,
+    atlasAuthority,
+    maxRequestBytes: call?.maxRequestBytes,
+  });
   const deadline = new AbortController();
   const signal = call?.signal
     ? AbortSignal.any([call.signal, deadline.signal])
@@ -201,14 +777,11 @@ async function fixMirrorText({ mirrorBytes, provider, call }) {
   });
 
   try {
-    return await Promise.race([
+    const fixed = await Promise.race([
       provider.generateImage({
         ...call,
         // The proven revise-render rawPrompt path is image-first, instruction-last.
-        parts: [
-          { inlineData: { mimeType: "image/jpeg", data: mirrorBytes.toString("base64") } },
-          { text: PASSENGER_TEXT_FIX_PROMPT },
-        ],
+        parts: repairRequest.parts,
         aspectRatio: "16:9",
         imageSize: "4K",
         responseModalities: ["TEXT", "IMAGE"],
@@ -220,6 +793,14 @@ async function fixMirrorText({ mirrorBytes, provider, call }) {
       }),
       hardTimeout,
     ]);
+    return {
+      ...fixed,
+      metadata: {
+        ...(fixed?.metadata || {}),
+        passengerRepairRequestByteSize: repairRequest.requestByteSize,
+        passengerRepairTransportDerived: repairRequest.transportDerived,
+      },
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -229,7 +810,7 @@ async function fixMirrorText({ mirrorBytes, provider, call }) {
  * THE passenger-side producer, ported from app/src/utils/passenger-mirror.ts.
  * It never asks the ordinary renderer to invent a passenger angle.
  */
-async function producePassengerView({ driverBytes, provider, call, prompt = "" }) {
+async function producePassengerView({ driverBytes, provider, call, prompt = "", atlasAuthority = null }) {
   let rawMirror = null;
   let lastMirrorError = null;
   for (let attempt = 1; attempt <= 2 && !rawMirror; attempt += 1) {
@@ -267,7 +848,7 @@ async function producePassengerView({ driverBytes, provider, call, prompt = "" }
 
   let fixed;
   try {
-    fixed = await fixMirrorText({ mirrorBytes: rawMirror, provider, call });
+    fixed = await fixMirrorText({ mirrorBytes: rawMirror, provider, call, atlasAuthority });
   } catch (cause) {
     return rawResult("failed-raw-mirror-kept", String(cause?.message || cause).slice(0, 300));
   }
@@ -276,12 +857,29 @@ async function producePassengerView({ driverBytes, provider, call, prompt = "" }
   if (undone === true) {
     return rawResult("returned-driver-facing-raw-mirror-kept");
   }
+  // Only an explicit opposite-facing verdict may proceed. Ambiguous results
+  // include undecodable/invalid model bytes because orientation verification
+  // itself is fail-closed.
+  if (undone !== false) {
+    return rawResult("ambiguous-orientation-raw-mirror-kept");
+  }
+
+  const framing = await passengerFramingVerdict(rawMirror, fixed.bytes);
+  if (!framing.matches) {
+    return rawResult(
+      `${framing.reason}-raw-mirror-kept`,
+      framing.detail || (framing.mae == null ? null : `normalized-mae=${framing.mae.toFixed(6)}`),
+    );
+  }
   return {
     ...fixed,
     metadata: {
       passengerProducer: "producePassengerView",
       deterministicMirror: true,
-      textRepair: undone === false ? "accepted-opposite-facing" : "accepted-ambiguous-orientation",
+      textRepair: "accepted-opposite-facing",
+      framingVerified: true,
+      framingMae: framing.mae,
+      pixelDimensions: framing.candidateDimensions,
     },
   };
 }
@@ -415,24 +1013,219 @@ function createDesignPanelServerProvider(options = {}) {
   };
 }
 
+/**
+ * A.T.L.A.S. projection provider.
+ *
+ * A.T.L.A.S. has already made the sole creative decision before this provider
+ * is constructed. This adapter therefore runs only generate-color-render:
+ * Driver from the immutable flat master, Passenger through the canonical
+ * deterministic producer, then each remaining camera from that same flat
+ * master plus the accepted Driver as vehicle/studio continuity evidence.
+ */
+function createAtlasDesignPanelProvider(options = {}) {
+  const provider = options.provider;
+  const input = options.input && typeof options.input === "object" ? options.input : {};
+  const atlas = options.atlas && typeof options.atlas === "object" ? options.atlas : null;
+  if (!atlas) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_conditioning_missing",
+      "The immutable Atlas conditioning parts are required",
+      false,
+    );
+  }
+  const identity = atlasIdentity(atlas);
+  assertHash(identity.masterContentHash, "Atlas master hash");
+  assertHash(identity.projectionContentHash, "Atlas projection hash");
+
+  // Reuse the standard provider's exact database/storage View-1 identity
+  // verification. Atlas has a different generation policy, not a second way
+  // to trust or download accepted Driver bytes.
+  const driverStore = createDesignPanelServerProvider(options);
+  let compactDriver = null;
+
+  function atlasMetadata(extra = {}) {
+    return {
+      stage: "generate-color-render",
+      execution: "server-native",
+      anchoredToFlatAtlas: true,
+      atlasMasterContentHash: identity.masterContentHash,
+      atlasProjectionContentHash: identity.projectionContentHash,
+      ...(identity.manifestContentHash ? { atlasManifestContentHash: identity.manifestContentHash } : {}),
+      ...(identity.revisionId ? { atlasRevisionId: identity.revisionId } : {}),
+      ...(identity.revisionSequence ? { atlasRevisionSequence: identity.revisionSequence } : {}),
+      ...extra,
+    };
+  }
+
+  async function compactAcceptedDriver(acceptedDriver) {
+    if (compactDriver?.contentHash === acceptedDriver.contentHash) return compactDriver.reference;
+    const reference = await compactAtlasDriverReference(acceptedDriver.bytes, {
+      maxBytes: atlas.maxDriverReferenceBytes,
+      maxEdge: atlas.maxDriverReferenceEdge,
+    });
+    compactDriver = { contentHash: acceptedDriver.contentHash, reference };
+    return reference;
+  }
+
+  async function generateImage(call = {}) {
+    const sourceViewType = String(call.sourceViewType || "").trim();
+    if (!sourceViewType) throw new DesignPanelServerError("designpanel_server_view_missing", "A source view is required");
+
+    if (sourceViewType === PASSENGER_VIEW) {
+      // The deterministic Driver mirror locks vehicle/camera/framing. The
+      // verified Passenger crop is passed as a second, hash-bound glyph/art
+      // identity reference; the surgical prompt forbids recomposition.
+      const authorityIdentity = await atlasViewIdentity(atlas, sourceViewType);
+      const conditioning = await resolveAtlasConditioningParts(atlas, sourceViewType, call?.parts);
+      const authorityPart = conditioning.find((part) => part?.inlineData);
+      const acceptedDriver = await driverStore.hydrateHero();
+      if (!acceptedDriver) {
+        throw new DesignPanelServerError(
+          "designpanel_server_driver_required",
+          `${sourceViewType}: accepted Driver is required`,
+          false,
+        );
+      }
+      const generated = await producePassengerView({
+        driverBytes: acceptedDriver.bytes,
+        provider,
+        call,
+        prompt: input?.brief,
+        atlasAuthority: {
+          ...authorityIdentity,
+          inlineData: { ...authorityPart.inlineData },
+        },
+      });
+      return {
+        ...generated,
+        contract: ATLAS_SERVER_PROVIDER_CONTRACT,
+        metadata: {
+          ...(generated.metadata || {}),
+          ...proofPromptAudit({
+            input,
+            sourceViewType,
+            prompt: passengerTextFixPrompt(authorityIdentity),
+            renderMethod: "producePassengerView",
+          }),
+          ...atlasMetadata({
+            anchoredToView1: true,
+            driverStoragePath: acceptedDriver.storagePath,
+            driverContentHash: acceptedDriver.contentHash,
+            atlasConditioningVerified: true,
+            atlasZoneContract: authorityIdentity.contract,
+            atlasZoneContentHash: authorityIdentity.contentHash,
+            atlasZoneSurfaceKey: authorityIdentity.surfaceKey,
+            atlasZonePassedToPassengerRepair: true,
+          }),
+        },
+      };
+    }
+
+    let acceptedDriver = null;
+    let driverReference = null;
+    if (sourceViewType !== DRIVER_VIEW) {
+      acceptedDriver = await driverStore.hydrateHero();
+      if (!acceptedDriver) {
+        throw new DesignPanelServerError(
+          "designpanel_server_driver_required",
+          `${sourceViewType}: accepted Driver is required`,
+          false,
+        );
+      }
+      driverReference = await compactAcceptedDriver(acceptedDriver);
+    }
+    const request = await buildAtlasProjectionRequest({
+      atlas,
+      input,
+      sourceViewType,
+      call,
+      driverReference,
+    });
+    const generated = await provider.generateImage({
+      ...call,
+      parts: request.parts,
+      responseModalities: request.responseModalities,
+      temperature: 1,
+      label: `A.T.L.A.S. ${angles.viewLabel(sourceViewType)} projection`,
+    });
+    return {
+      ...generated,
+      contract: ATLAS_SERVER_PROVIDER_CONTRACT,
+      metadata: {
+        ...(generated.metadata || {}),
+        ...request.audit,
+        ...atlasMetadata({
+          anchoredToView1: Boolean(acceptedDriver),
+          ...(acceptedDriver ? {
+            driverStoragePath: acceptedDriver.storagePath,
+            driverContentHash: acceptedDriver.contentHash,
+            driverReferenceByteSize: driverReference.byteSize,
+            driverReferenceContentHash: driverReference.contentHash,
+          } : {}),
+          atlasConditioningVerified: true,
+          atlasZoneContract: request.authorityIdentity.contract,
+          atlasZoneContentHash: request.authorityIdentity.contentHash,
+          atlasZoneSurfaceKey: request.authorityIdentity.surfaceKey,
+          requestByteSize: request.requestByteSize,
+        }),
+      },
+    };
+  }
+
+  return {
+    generateImage,
+    hydrateDriver: driverStore.hydrateHero,
+    contract: ATLAS_SERVER_PROVIDER_CONTRACT,
+    maxProviderAttempts: 4,
+    models: [...(provider.models || [])],
+    keyCount: Number(provider.keyCount || 0),
+  };
+}
+
 module.exports = {
+  ARTIFACT_AUDIT_CONTRACT,
+  ATLAS_SERVER_PROVIDER_CONTRACT,
   SERVER_PROVIDER_CONTRACT,
   DesignPanelServerError,
+  buildAtlasProjectionPrompt,
+  buildAtlasProjectionRequest,
   buildReproductionPrompt,
+  compactAtlasDriverReference,
+  createAtlasDesignPanelProvider,
   createDesignPanelServerProvider,
   designLikelyHasText,
+  estimatedGeminiImageRequestBytes,
   fixMirrorText,
   generatePassengerMirror,
   orientationSignature,
   orientationVerdict,
+  passengerFramingVerdict,
+  proofPromptAudit,
   producePassengerView,
   reproductionParts,
   _test: {
+    assertAtlasRequestWithinLimit,
+    atlasIdentity,
+    atlasViewIdentity,
+    buildPassengerTextFixRequest,
+    resolveAtlasConditioningParts,
     sha256,
+    GEMINI_REQUEST_LIMIT_BYTES,
+    MAX_ATLAS_REQUEST_BYTES,
+    MAX_ATLAS_DRIVER_REFERENCE_BYTES,
     ORIENTATION_W,
     ORIENTATION_H,
+    PASSENGER_FRAMING_W,
+    PASSENGER_FRAMING_H,
+    MAX_PASSENGER_FRAMING_MAE,
     PASSENGER_TEXT_FIX_TIMEOUT_MS,
     PASSENGER_TEXT_FIX_PROMPT,
+    PASSENGER_TEXT_FIX_WITH_PRODUCTION_LOCKS,
+    passengerTextFixPrompt,
     PASSENGER_TEXT_FIX_SYSTEM_INSTRUCTION,
+    passengerRepairRequestByteSize,
+    PHOTOREALISM_REQUIREMENT,
+    VIEW_REINFORCEMENT,
+    WRAP_COVERAGE_RULES,
   },
 };

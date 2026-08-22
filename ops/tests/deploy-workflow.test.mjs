@@ -14,6 +14,7 @@ const backup = readFileSync(resolve(root, "ops/backup.sh"), "utf8");
 const deploy = readFileSync(resolve(root, "ops/deploy.sh"), "utf8");
 const inventoryScript = readFileSync(resolve(root, "ops/inventory.sh"), "utf8");
 const configure = readFileSync(resolve(root, "ops/configure-env.sh"), "utf8");
+const atlasSchemaAssertion = readFileSync(resolve(root, "ops/assert-atlas-production-schema.sh"), "utf8");
 
 function sshPinScript() {
   const pinStart = workflow.indexOf("Pin the new droplet SSH identity");
@@ -63,6 +64,36 @@ printf '%s\\n' '137.184.0.4 ssh-ed25519 AAAATESTHOST'
   const keyscanCalled = existsSync(marker);
   rmSync(fixture, { recursive: true, force: true });
   return { ...result, keyscanCalled };
+}
+
+function runAtlasSchemaFixture(response, {
+  projectRef = "wozyamlnygaddievzuwn",
+  accessToken = "fixture-management-access-token",
+} = {}) {
+  const fixture = mkdtempSync(resolve(tmpdir(), "designproai-atlas-schema-"));
+  const bin = resolve(fixture, "bin");
+  const curlMarker = resolve(fixture, "curl-called");
+  mkdirSync(bin);
+  writeFileSync(resolve(bin, "curl"), `#!/usr/bin/env bash
+set -Eeuo pipefail
+: > "$CURL_MARKER"
+printf '%s' "$MOCK_SCHEMA_RESPONSE"
+`);
+  chmodSync(resolve(bin, "curl"), 0o700);
+  const result = spawnSync("bash", [resolve(root, "ops/assert-atlas-production-schema.sh")], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      CURL_MARKER: curlMarker,
+      EXPECTED_PROJECT_REF: projectRef,
+      MOCK_SCHEMA_RESPONSE: JSON.stringify(response),
+      SUPABASE_ACCESS_TOKEN: accessToken,
+    },
+  });
+  const curlCalled = existsSync(curlMarker);
+  rmSync(fixture, { recursive: true, force: true });
+  return { ...result, curlCalled, accessToken };
 }
 
 test("dark deploy is exact-main, environment protected, and new-host pinned", () => {
@@ -147,16 +178,97 @@ test("deploy consumes one existing successful exact-main artifact and never rebu
 
 test("inventory precedes transfer and dark acceptance changes no public routing", () => {
   const providers = workflow.indexOf("Fail closed on required dark-deploy secret classes");
+  const liveSchema = workflow.indexOf("Refuse deploy unless the live A.T.L.A.S. schema is installed");
+  const storageConfig = workflow.indexOf("Reconcile the project-wide Storage upload limit with config.toml");
   const ssh = workflow.indexOf("Pin the new droplet SSH identity");
   const inventory = workflow.indexOf("Inventory the exact new droplet");
   const transfer = workflow.indexOf("Stage exact controls and artifact");
-  assert.ok(providers >= 0 && ssh > providers);
+  assert.ok(providers >= 0 && liveSchema > providers);
+  assert.ok(storageConfig > liveSchema && ssh > liveSchema, "live schema must be proven before project or host mutation");
   assert.ok(inventory >= 0 && transfer > inventory);
   assert.match(workflow, /ops\/inventory\.sh/);
   assert.match(workflow, /Unexpected DesignPro container/);
   assert.match(remote, /ALREADY_COMPLETE: exact release is locally accepted/);
   assert.match(remote, /acceptance\.sh" "\$EXACT_SHA"/);
   assert.doesNotMatch(`${workflow}\n${remote}`, /install-caddy\.sh|os\.designproai\.com.*curl|cloudflare|godaddy/i);
+});
+
+test("dark deploy requires live Atlas schema evidence instead of migration history", () => {
+  assert.match(workflow, /run: bash ops\/assert-atlas-production-schema\.sh/);
+  assert.match(atlasSchemaAssertion, /database\/query\/read-only/);
+  assert.match(atlasSchemaAssertion, /designpro_private\.calls_1_7_view_plan/);
+  assert.match(atlasSchemaAssertion, /'sourceViewType'',''close-up'',''consumerRole'',''closeup'/);
+  assert.match(atlasSchemaAssertion, /THENRAISEEXCEPTION''flat_first_atlas_new_run_required'';ENDIF;/);
+  assert.match(atlasSchemaAssertion, /UPDATEpublic\.designpro_generation_views/);
+  assert.match(atlasSchemaAssertion, /INSERTINTOpublic\.designpro_generation_slots/);
+  assert.match(atlasSchemaAssertion, /designpro_revision_snapshot_contract/);
+  assert.match(atlasSchemaAssertion, /renderAssets''\?''closeup/);
+  assert.match(atlasSchemaAssertion, /renderAssets''\?''hero3d/);
+  assert.match(atlasSchemaAssertion, /v_view\.consumer_role=''closeup''/);
+  assert.match(atlasSchemaAssertion, /verify_revision_render_assets/);
+  assert.match(atlasSchemaAssertion, /complete_designpro_stage/);
+  assert.match(atlasSchemaAssertion, /flat_first_atlas_view_set_valid/);
+  assert.match(atlasSchemaAssertion, /flat_first_atlas_requires_new_run/);
+  assert.match(atlasSchemaAssertion, /designpro_flat_atlas_revision_paths/);
+  assert.match(atlasSchemaAssertion, /designpro_owner_read_wrap_files/);
+  assert.match(atlasSchemaAssertion, /designpro_owner_insert_revision_inputs/);
+  assert.match(atlasSchemaAssertion, /revision_trigger_definition, 'hero3d'\) = 0/);
+  assert.match(atlasSchemaAssertion, /FROMpublic\.designpro_revision_sourcesfrozen/);
+  assert.match(atlasSchemaAssertion, /storage_insert_policy,'''hero3d'''\)=0/);
+  assert.match(atlasSchemaAssertion, /migration history alone is not release evidence/);
+  assert.doesNotMatch(atlasSchemaAssertion, /SUPABASE_DB_PASSWORD|service_role|SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test("live Atlas schema assertion accepts exactly one all-true catalog verdict", () => {
+  const result = runAtlasSchemaFixture([{
+    view_plan_closeup: true,
+    regenerate_guard_before_mutation: true,
+    revision_constraint_history_compatible: true,
+    handoff_carries_closeup: true,
+    revision_trigger_closeup_only: true,
+    revision_freeze_legacy_pinned_only: true,
+    storage_write_closeup_read_hero: true,
+    atlas_owner_read_quarantine: true,
+    atlas_preview_quarantine: true,
+  }]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.curlCalled, true);
+  assert.match(result.stdout, /PASS: live A\.T\.L\.A\.S\./);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(result.accessToken));
+});
+
+test("live Atlas schema assertion fails closed on a false or malformed verdict", () => {
+  for (const response of [
+    [{
+      view_plan_closeup: true,
+      regenerate_guard_before_mutation: false,
+      revision_constraint_history_compatible: true,
+      handoff_carries_closeup: true,
+      revision_trigger_closeup_only: true,
+      revision_freeze_legacy_pinned_only: true,
+      storage_write_closeup_read_hero: true,
+      atlas_owner_read_quarantine: true,
+      atlas_preview_quarantine: true,
+    }],
+    [],
+    { view_plan_closeup: true },
+  ]) {
+    const result = runAtlasSchemaFixture(response);
+    assert.equal(result.status, 1);
+    assert.equal(result.curlCalled, true);
+    assert.match(result.stderr, /migration history alone is not release evidence/);
+    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(result.accessToken));
+  }
+});
+
+test("live Atlas schema assertion refuses the wrong project before any request", () => {
+  const result = runAtlasSchemaFixture([], { projectRef: "wrong-project" });
+
+  assert.equal(result.status, 2);
+  assert.equal(result.curlCalled, false);
+  assert.match(result.stderr, /refused an unexpected Supabase project/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(result.accessToken));
 });
 
 test("dark deployment requires only its existing provider secrets and explicitly disables email", () => {

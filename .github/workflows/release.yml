@@ -254,3 +254,5 @@ jobs:
             | awk -F'|' '{ gsub(/ /,"",$1); gsub(/ /,"",$2);
                            if ($1 ~ /^[0-9]{14}$/ && $2 == "") print $1 }')
           test -z "$missing" || { echo "::error::local migrations absent from the remote history: $missing"; exit 1; }
+      - name: Prove the live A.T.L.A.S. schema, not only migration history
+        run: bash ops/assert-atlas-production-schema.sh
