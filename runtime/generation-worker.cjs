@@ -372,6 +372,7 @@ function createGenerationWorker({
       enteredFlatFirst = isFlatFirst;
       let flatAtlas = null;
       let dimensionRow = null;
+      let executionInput = claim.input;
       const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
       const standardProvider = isFlatFirst ? null : standardProviderFactory({
         supabase,
@@ -388,9 +389,16 @@ function createGenerationWorker({
         // ceasing to issue v3 without requiring a deployment-wide env change.
         let topologyExamples;
         [dimensionRow, topologyExamples] = await Promise.all([
-          resolveFlatAtlasPreviewDimensions(supabase, claim.input?.vehicle),
+          resolveFlatAtlasPreviewDimensions(supabase, claim.input?.vehicle, imageProvider),
           loadActiveFlatAtlasTopologyExamples(supabase),
         ]);
+        if (dimensionRow.resolvedVehicleClass
+          && dimensionRow.resolvedVehicleClass !== claim.input?.vehicle?.type) {
+          executionInput = {
+            ...claim.input,
+            vehicle: { ...claim.input.vehicle, type: dimensionRow.resolvedVehicleClass },
+          };
+        }
         flatAtlas = await generateOrReuseFlatAtlas({
           supabase,
           store,
@@ -400,7 +408,7 @@ function createGenerationWorker({
           generationId: claim.generationId,
           tenantKey: claim.tenantKey,
           ownerId,
-          input: claim.input,
+          input: executionInput,
           surfaces: expectedSurfacesFromRow(dimensionRow),
           geometryAuthority: dimensionRow.proofGeometryAuthority,
           topologyExamples,
@@ -414,7 +422,7 @@ function createGenerationWorker({
       // remain sequential so one frozen anchor yields one deterministic order.
       // A.T.L.A.S. remains its separate, explicitly requested experiment.
       const standardReferenceParts = isFlatFirst ? [] : await referenceImageParts(supabase, claim.input);
-      const slots = slotsFrom(claim.viewPlan, claim.input, instructions, flatAtlas, standardReferenceParts);
+      const slots = slotsFrom(claim.viewPlan, executionInput, instructions, flatAtlas, standardReferenceParts);
       let result;
       if (isFlatFirst) {
         result = await engine.runRequest({
@@ -499,7 +507,10 @@ function createGenerationWorker({
       const revisionId = handoffRevisionId(requestId);
 
       const authoringReceipt = isFlatFirst
-        ? { flatAtlas: atlasReceipt(flatAtlas) }
+        ? {
+            flatAtlas: atlasReceipt(flatAtlas),
+            vehicleClassResolution: dimensionRow.vehicleClassResolution,
+          }
         : {
             generationProducer: "design-panel-ai-generate",
             reproductionProducer: "generate-color-render",
