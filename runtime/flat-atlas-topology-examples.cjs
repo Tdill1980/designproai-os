@@ -1,27 +1,47 @@
 "use strict";
 
 /**
- * Loads the optional, globally curated A.T.L.A.S. topology example.
+ * Loads the server-owned A.T.L.A.S. topology examples.
  *
  * Security boundary:
+ * - the release carries one immutable, hash-pinned flat-to-finished pair;
  * - the active view is readable by `service_role` only;
  * - every object must live below the server-owned system prefix;
  * - guide, manifest and master bytes are verified against the immutable row;
- * - only the neutral before/guide bytes are exposed as `bytes` to Gemini;
- *   customer-style artwork, database metadata, prompts and storage URLs never
- *   enter the model request.
+ * - an optional database example exposes only its neutral before/guide bytes;
+ * - the bundled pair is explicitly topology-only: it teaches the relationship
+ *   between a flattened top-view design and its finished 3D proof, never the
+ *   example's artwork, palette, wording or brand;
+ * - database metadata, prompts and storage URLs never enter the model request.
  *
- * The revision schema records one example identity, and Gemini inline requests
- * have a hard byte budget, so more than one enabled row is a configuration
- * error rather than an invitation to pick one nondeterministically.
+ * The revision schema records at most one database example identity, and Gemini
+ * inline requests have a hard byte budget, so more than one enabled database
+ * row is a configuration error rather than an invitation to pick one
+ * nondeterministically.
  */
 
 const { createHash } = require("node:crypto");
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
 const { BUCKET } = require("./generation-store.cjs");
 
 const ACTIVE_EXAMPLES_VIEW = "designpro_active_flat_atlas_examples";
 const EXAMPLE_PURPOSE = "topology-only";
 const SYSTEM_PREFIX = "designpro/system/flat-first/examples/";
+const BUNDLED_PAIR = Object.freeze({
+  exampleKey: "houdini-flat-to-finished",
+  version: 1,
+  flattenedTopView: Object.freeze({
+    path: join(__dirname, "atlas-examples", "houdini-flattened-top-view.jpg"),
+    contentHash: "aa5d811b529d5b5b26696cc92414799446d0db5aee948e86ee852a5faebe7b1c",
+    contentType: "image/jpeg",
+  }),
+  finished3dProof: Object.freeze({
+    path: join(__dirname, "atlas-examples", "houdini-finished-3d-proof.jpg"),
+    contentHash: "2ea78a755f62c0158e4142f928bef61274c6d69bc7a8863c6bec5435ba4e2a85",
+    contentType: "image/jpeg",
+  }),
+});
 const HASH_RE = /^[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXAMPLE_KEY_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
@@ -68,6 +88,55 @@ function canonical(value) {
 
 function sameJson(left, right) {
   return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
+}
+
+function readBundledPairAsset(identity, label) {
+  let bytes;
+  try {
+    bytes = readFileSync(identity.path);
+  } catch (cause) {
+    throw new FlatAtlasTopologyExampleError(
+      "flat_atlas_bundled_example_missing",
+      `${label} is missing from the exact server release: ${cause.message}`,
+    );
+  }
+  if (!bytes.length || sha256(bytes) !== identity.contentHash) {
+    throw new FlatAtlasTopologyExampleError(
+      "flat_atlas_bundled_example_hash_mismatch",
+      `${label} does not match its release-pinned SHA-256 identity`,
+    );
+  }
+  return Object.freeze({
+    bytes,
+    contentHash: identity.contentHash,
+    byteSize: bytes.length,
+    contentType: identity.contentType,
+  });
+}
+
+function loadBundledFlatToFinishedExample() {
+  const flattenedTopView = readBundledPairAsset(
+    BUNDLED_PAIR.flattenedTopView,
+    "Bundled A.T.L.A.S. flattened top-view example",
+  );
+  const finished3dProof = readBundledPairAsset(
+    BUNDLED_PAIR.finished3dProof,
+    "Bundled A.T.L.A.S. finished 3D proof example",
+  );
+  return Object.freeze({
+    kind: "paired-flat-to-finished",
+    purpose: EXAMPLE_PURPOSE,
+    identity: Object.freeze({
+      exampleId: null,
+      exampleKey: BUNDLED_PAIR.exampleKey,
+      version: BUNDLED_PAIR.version,
+      source: "exact-server-release",
+      flattenedTopViewContentHash: flattenedTopView.contentHash,
+      finished3dProofContentHash: finished3dProof.contentHash,
+    }),
+    flattenedTopView,
+    finished3dProof,
+  });
 }
 
 function positiveInteger(value, maximum, label) {
@@ -249,13 +318,15 @@ async function loadActiveFlatAtlasTopologyExamples(supabase) {
     );
   }
   const rows = Array.isArray(data) ? data : [];
-  if (!rows.length) return [];
   if (rows.length > 1) {
     throw new FlatAtlasTopologyExampleError(
       "flat_atlas_topology_example_ambiguous",
       "Enable exactly one server-owned A.T.L.A.S. topology example at a time",
     );
   }
+
+  const examples = [loadBundledFlatToFinishedExample()];
+  if (!rows.length) return examples;
 
   const row = validatedRow(rows[0]);
   // The runtime receives a service-role client. Querying the security-invoker
@@ -283,7 +354,7 @@ async function loadActiveFlatAtlasTopologyExamples(supabase) {
     );
   }
 
-  return [Object.freeze({
+  examples.push(Object.freeze({
     // `flat-first-atlas.cjs` consumes only this field when building Gemini
     // parts. It is the verified neutral before/guide, never the example's
     // designed after/master and never an arbitrary URL.
@@ -301,15 +372,18 @@ async function loadActiveFlatAtlasTopologyExamples(supabase) {
     // neither object directly; only `bytes` above enters the request.
     guide: Object.freeze({ ...row.guide, bytes: guideBytes }),
     master: Object.freeze({ ...row.master, bytes: masterBytes }),
-  })];
+  }));
+  return examples;
 }
 
 module.exports = {
   ACTIVE_EXAMPLES_VIEW,
   EXAMPLE_PURPOSE,
   FlatAtlasTopologyExampleError,
+  loadBundledFlatToFinishedExample,
   loadActiveFlatAtlasTopologyExamples,
   _test: {
+    BUNDLED_PAIR,
     SELECT_COLUMNS,
     STYLE_KEYS,
     assertNoStyleFields,

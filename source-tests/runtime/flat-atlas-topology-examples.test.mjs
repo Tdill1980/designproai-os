@@ -87,31 +87,45 @@ function supabaseFor(rows, blobs = new Map(), { lookupError = null } = {}) {
   };
 }
 
-test("no active server-owned example is a valid optional configuration", async () => {
+test("the exact release always supplies the hash-pinned flattened-to-finished pair", async () => {
   const { client, observed } = supabaseFor([]);
-  assert.deepEqual(await loader.loadActiveFlatAtlasTopologyExamples(client), []);
+  const examples = await loader.loadActiveFlatAtlasTopologyExamples(client);
+  assert.equal(examples.length, 1);
+  assert.equal(examples[0].kind, "paired-flat-to-finished");
+  assert.equal(examples[0].purpose, "topology-only");
+  assert.equal(examples[0].identity.source, "exact-server-release");
+  assert.equal(examples[0].identity.exampleId, null);
+  assert.equal(
+    loader._test.sha256(examples[0].flattenedTopView.bytes),
+    loader._test.BUNDLED_PAIR.flattenedTopView.contentHash,
+  );
+  assert.equal(
+    loader._test.sha256(examples[0].finished3dProof.bytes),
+    loader._test.BUNDLED_PAIR.finished3dProof.contentHash,
+  );
   assert.equal(observed.table, "designpro_active_flat_atlas_examples");
   assert.equal(observed.limit, 2, "the query detects an ambiguous second active example");
-  assert.equal(observed.bucket, null, "empty allowlist never touches Storage");
+  assert.equal(observed.bucket, null, "the bundled pair requires no legacy Storage object");
 });
 
-test("one active example verifies before, manifest and after bytes and exposes only the neutral before guide to Gemini", async () => {
+test("one active database example is verified and appended after the mandatory bundled pair", async () => {
   const item = fixture();
   const { client, observed } = supabaseFor([item.row], item.blobs);
   const examples = await loader.loadActiveFlatAtlasTopologyExamples(client);
 
-  assert.equal(examples.length, 1);
-  assert.deepEqual(examples[0].bytes, item.guideBytes);
-  assert.notDeepEqual(examples[0].bytes, item.masterBytes,
+  assert.equal(examples.length, 2);
+  assert.equal(examples[0].kind, "paired-flat-to-finished");
+  assert.deepEqual(examples[1].bytes, item.guideBytes);
+  assert.notDeepEqual(examples[1].bytes, item.masterBytes,
     "the example's design style must never become a Gemini conditioning image");
-  assert.deepEqual(examples[0].guide.bytes, item.guideBytes);
-  assert.equal(examples[0].purpose, "topology-only");
-  assert.equal(examples[0].identity.exampleId, ID);
-  assert.equal(examples[0].identity.guideContentHash, item.row.guide_content_hash);
-  assert.equal(examples[0].identity.masterContentHash, item.row.master_content_hash);
-  assert.equal(Object.hasOwn(examples[0], "manifest"), false,
+  assert.deepEqual(examples[1].guide.bytes, item.guideBytes);
+  assert.equal(examples[1].purpose, "topology-only");
+  assert.equal(examples[1].identity.exampleId, ID);
+  assert.equal(examples[1].identity.guideContentHash, item.row.guide_content_hash);
+  assert.equal(examples[1].identity.masterContentHash, item.row.master_content_hash);
+  assert.equal(Object.hasOwn(examples[1], "manifest"), false,
     "the database manifest is verified but not exposed to Gemini parts");
-  assert.equal(Object.hasOwn(examples[0], "metadata"), false,
+  assert.equal(Object.hasOwn(examples[1], "metadata"), false,
     "operator metadata is never exposed to Gemini parts");
   assert.equal(observed.bucket, BUCKET);
   assert.deepEqual(new Set(observed.downloads), new Set([

@@ -4,6 +4,7 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const atlas = require("../../runtime/flat-first-atlas.cjs");
+const topologyExamples = require("../../runtime/flat-atlas-topology-examples.cjs");
 const worker = require("../../runtime/generation-worker.cjs");
 const runtimeRequire = createRequire(new URL("../../runtime/package.json", import.meta.url));
 const sharp = runtimeRequire("sharp");
@@ -109,6 +110,31 @@ test("provisional Google-grounded geometry is truthfully immutable and remains p
   const prompt = atlas._test.atlasPrompt(v3Input, manifest);
   assert.match(prompt, /Google-grounded.*PROVISIONAL proof-layout rectangles/i);
   assert.match(prompt, /never authorization for print production/i);
+});
+
+test("Call 1 sees the paired flattened top-view and corresponding finished 3D proof", async () => {
+  const example = topologyExamples.loadBundledFlatToFinishedExample();
+  const parts = await atlas._test.topologyExampleParts([example]);
+
+  assert.equal(parts.length, 5);
+  assert.match(parts[0].text, /FLATTENED TOP-VIEW OUTPUT FORMAT/);
+  assert.equal(parts[1].inlineData.mimeType, "image/png");
+  assert.match(parts[2].text, /CORRESPONDING FINISHED 3D PROOF/);
+  assert.equal(parts[3].inlineData.mimeType, "image/png");
+  assert.match(parts[4].text, /CALL 1 TARGET.*NEW flattened top-view design/i);
+  assert.notEqual(parts[1].inlineData.data, parts[3].inlineData.data,
+    "the model must receive both sides of the real teaching pair");
+
+  const flattened = Buffer.from(parts[1].inlineData.data, "base64");
+  const finished = Buffer.from(parts[3].inlineData.data, "base64");
+  assert.deepEqual([...flattened.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.deepEqual([...finished.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const prompt = atlas._test.atlasPrompt(v3Input, atlas.buildAtlasManifest(surfaces));
+  assert.match(prompt, /flattened top-view example.*finished 3D vehicle proof/i);
+  assert.match(prompt, /output the new flattened top-view design first/i);
+  assert.match(prompt, /never output a vehicle photograph/i);
+  assert.match(prompt, /IGNORE their palette, imagery, text, logos, brand and style/);
 });
 
 test("a duplicate-insert race cannot reuse an atlas from a stale geometry basis", () => {
@@ -316,6 +342,7 @@ test("reusing an atlas verifies the stored projection is the deterministic child
 test("initial authoring makes one image call, stores guide/manifest/master/projection, then inserts one immutable row", async () => {
   const events = [];
   let providerOptions = null;
+  const pairedExample = topologyExamples.loadBundledFlatToFinishedExample();
   const generated = await atlas.renderAtlasGuide(atlas.buildAtlasManifest(surfaces));
   const provider = {
     async generateImage(options) {
@@ -377,6 +404,7 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
     requestId: REQUEST, claimToken: CLAIM_TOKEN,
     generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
     input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
+    topologyExamples: [pairedExample],
   });
 
   assert.equal(events.filter((event) => event === "provider").length, 1);
@@ -387,10 +415,15 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(providerOptions.aspectRatio, "1:1");
   assert.equal(providerOptions.imageSize, "4K");
   assert.equal(providerOptions.parts[0].inlineData.mimeType, "image/png", "the deterministic guide is the first input image");
+  assert.match(providerOptions.parts[2].text, /FLATTENED TOP-VIEW OUTPUT FORMAT/);
+  assert.match(providerOptions.parts[4].text, /CORRESPONDING FINISHED 3D PROOF/);
+  assert.equal(inserted.example_id, null, "release-bundled examples never forge a database example foreign key");
   assert.equal(inserted.production_eligible, false);
   assert.equal(inserted.manifest.geometryAuthority.status, "provisional");
   assert.equal(inserted.metadata.geometryAuthority.operatorValidated, false);
   assert.equal(inserted.metadata.examplePurpose, "topology-only");
+  assert.equal(inserted.metadata.topologyExamplesApplied, 1);
+  assert.equal(inserted.metadata.topologyExampleIdentity.source, "exact-server-release");
   assert.equal(inserted.projection_content_type, "image/jpeg");
   assert.ok(inserted.projection_byte_size <= atlas.PROJECTION_MAX_BYTES);
   assert.equal(inserted.metadata.projectionSourceMasterHash, inserted.master_content_hash);
