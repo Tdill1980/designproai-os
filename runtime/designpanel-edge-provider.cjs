@@ -80,8 +80,9 @@ function createDesignPanelEdgeProvider(options = {}) {
     return email;
   }
 
-  async function signPath(storagePath, expiresIn = 900) {
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, expiresIn);
+  async function signPath(storagePath, expiresIn = 900, transform = null) {
+    const options = transform ? { transform } : undefined;
+    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, expiresIn, options);
     if (error || !data?.signedUrl) {
       throw new DesignPanelEdgeError(
         "designpanel_edge_sign_failed",
@@ -258,7 +259,15 @@ function createDesignPanelEdgeProvider(options = {}) {
       );
     }
     const vehicle = input.vehicle || {};
-    const heroReferenceUrl = await signPath(currentHero.storagePath);
+    // The accepted hero stays immutable at full resolution. The photographer
+    // receives a bounded, ephemeral Storage derivative because its two locked
+    // reference slots otherwise duplicate an 8-9 MB image inside one Edge
+    // request and exceed the managed worker's compute envelope before Gemini.
+    const heroReferenceUrl = await signPath(currentHero.storagePath, 900, {
+      width: 1024,
+      height: 1024,
+      resize: "contain",
+    });
     const email = await resolveOwnerEmail();
     const payload = await invoke("generate-color-render", {
       vehicleYear: vehicle.year,
