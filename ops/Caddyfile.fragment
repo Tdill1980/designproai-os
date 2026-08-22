@@ -1,11 +1,38 @@
-# The apex and www resolve to this droplet (verified 2026-08-11) but served
-# nothing. One canonical host keeps the SPA and API on a single origin, so
-# both redirect to it; Caddy issues certificates for all three names.
-designproai.com, www.designproai.com {
-  redir https://os.designproai.com{uri} 301
+# The apex is the selling site. It serves the public routes from the exact same
+# immutable web artifact as the OS, but it exposes no gateway or worker path.
+designproai.com {
+  encode zstd gzip
+
+  handle {
+    root * /opt/designproai-os/public/web/dist
+    try_files {path} /index.html
+    file_server
+  }
+
+  header {
+    -Server
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  }
 
   log {
     output file /var/log/caddy/designpro-apex-access.log {
+      roll_size 25MiB
+      roll_keep 10
+      roll_keep_for 336h
+    }
+  }
+}
+
+# Keep one canonical marketing origin. The www host never crosses into the OS.
+www.designproai.com {
+  redir https://designproai.com{uri} 301
+
+  log {
+    output file /var/log/caddy/designpro-www-access.log {
       roll_size 25MiB
       roll_keep 10
       roll_keep_for 336h

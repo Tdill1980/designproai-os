@@ -15,6 +15,7 @@ const deploy = readFileSync(resolve(root, "ops/deploy.sh"), "utf8");
 const inventoryScript = readFileSync(resolve(root, "ops/inventory.sh"), "utf8");
 const configure = readFileSync(resolve(root, "ops/configure-env.sh"), "utf8");
 const atlasSchemaAssertion = readFileSync(resolve(root, "ops/assert-atlas-production-schema.sh"), "utf8");
+const caddyWorkflow = readFileSync(resolve(root, ".github/workflows/install-caddy.yml"), "utf8");
 
 function sshPinScript() {
   const pinStart = workflow.indexOf("Pin the new droplet SSH identity");
@@ -208,6 +209,20 @@ test("dark deploy requires live Atlas schema evidence instead of migration histo
   assert.match(atlasSchemaAssertion, /verify_revision_render_assets/);
   assert.match(atlasSchemaAssertion, /complete_designpro_stage/);
   assert.match(atlasSchemaAssertion, /flat_first_atlas_view_set_valid/);
+  for (const path of [
+    "{provider,atlasZoneContract}",
+    "{provider,atlasZoneContentHash}",
+    "{provider,atlasZoneSurfaceKey}",
+    "{validation,authorityHash}",
+    "{validation,zoneHash}",
+    "{validation,zoneSurfaceKey}",
+    "{authority,zoneContract}",
+    "{authority,zoneContentHash}",
+    "{provider,atlasZonePassedToPassengerRepair}",
+  ]) {
+    assert.ok(atlasSchemaAssertion.includes(`'''${path}'''`), `missing exact JSON path ${path}`);
+  }
+  assert.doesNotMatch(atlasSchemaAssertion, /strpos\(atlas_valid_definition,'''atlasZoneContract'''\)/);
   assert.match(atlasSchemaAssertion, /flat_first_atlas_requires_new_run/);
   assert.match(atlasSchemaAssertion, /designpro_flat_atlas_revision_paths/);
   assert.match(atlasSchemaAssertion, /designpro_owner_read_wrap_files/);
@@ -217,6 +232,22 @@ test("dark deploy requires live Atlas schema evidence instead of migration histo
   assert.match(atlasSchemaAssertion, /storage_insert_policy,'''hero3d'''\)=0/);
   assert.match(atlasSchemaAssertion, /migration history alone is not release evidence/);
   assert.doesNotMatch(atlasSchemaAssertion, /SUPABASE_DB_PASSWORD|service_role|SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test("protected Caddy install ships and verifies every exact-SHA control it executes", () => {
+  for (const control of [
+    "install-caddy.sh",
+    "Caddyfile.fragment",
+    "acceptance.sh",
+    "validate-archive.py",
+    "validate-release-tree.py",
+    "validate-env.py",
+    "release-files.txt",
+  ]) {
+    assert.match(caddyWorkflow, new RegExp(`ops/${control.replaceAll(".", "\\.")}`));
+  }
+  assert.match(caddyWorkflow, /sha256sum -c caddy-controls\.sha256/);
+  assert.match(caddyWorkflow, /\[\[ -f \$control && ! -L \$control \]\]/);
 });
 
 test("live Atlas schema assertion accepts exactly one all-true catalog verdict", () => {

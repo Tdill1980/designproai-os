@@ -109,6 +109,11 @@ test("Caddy exposes only UI/gateway and explicitly denies worker routes", () => 
   assert.match(caddy, /handle \/api\/\*/);
   assert.doesNotMatch(caddy, /127\.0\.0\.1:300[12]/);
   assert.match(caddy, /root \* \/opt\/designproai-os\/public\/web\/dist/);
+  assert.doesNotMatch(caddy, /redir https:\/\/os\.designproai\.com/);
+  assert.match(caddy, /www\.designproai\.com \{\s+redir https:\/\/designproai\.com\{uri\} 301/);
+  const apex = caddy.match(/designproai\.com \{([\s\S]*?)\n\}/)?.[1] || "";
+  assert.match(apex, /file_server/);
+  assert.doesNotMatch(apex, /reverse_proxy|\/api\/|\/designpro-worker\//);
   const deploy = read("deploy.sh");
   assert.ok(deploy.lastIndexOf('acceptance.sh" "$sha"') < deploy.lastIndexOf('public.next'), "public web switches only after local acceptance");
 });
@@ -274,4 +279,3 @@ test("env validator fails closed when email is enabled without an exact provider
   chmodSync(runtime, 0o600);
   execFileSync("python3", [join(root, "validate-env.py"), runtime, gateway]);
 });
-

@@ -78,6 +78,7 @@ import { Header } from "@/components/Header";
 import { DeployVersionWatcher } from "@/components/DeployVersionWatcher";
 import { AppShell } from "@/components/layout/AppShell";
 import { AuthedRootRedirect } from "@/components/AuthedRootRedirect";
+import { isDesignProMarketingHost } from "@/lib/designpro-host-routing";
 import { WaitlistPopup } from "@/components/WaitlistPopup";
 import { PaywallTokenModal } from "@/components/PaywallTokenModal";
 import { PackPaymentResume } from "@/components/PackPaymentResume";
@@ -169,6 +170,13 @@ const Loading = () => (
   </div>
 );
 
+// The apex is the selling site even when a browser has an existing OS session.
+// Authentication-based root routing belongs only to the OS host.
+const HostAwareRoot = () => {
+  const hostname = typeof window === "undefined" ? "" : window.location.hostname;
+  return isDesignProMarketingHost(hostname) ? <Index /> : <AuthedRootRedirect />;
+};
+
 // Redirect legacy standalone email routes into the unified MightyMail hub,
 // preserving any existing query params (e.g. ?template=) and selecting the tab.
 const MightyMailRedirect = ({ tab }: { tab: string }) => {
@@ -240,7 +248,7 @@ const App = () => {
             <ErrorBoundary>
             <Suspense fallback={<Loading />}>
             <Routes>
-          <Route path="/" element={<AuthedRootRedirect />} />
+          <Route path="/" element={<HostAwareRoot />} />
           <Route path="/dashboard" element={<RequireAuth><RestyleDashboard /></RequireAuth>} />
           {/* Free-designs promo retired — the "3 free designs" offer has ended.
               Redirect any inbound traffic (old emails, SMS, ads, QR codes) to
