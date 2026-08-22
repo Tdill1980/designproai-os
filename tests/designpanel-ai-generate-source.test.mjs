@@ -15,7 +15,12 @@ test("the standalone creative engine identifies design-panel-ai-generate as its 
 
   assert.match(edge, /\* design-panel-ai-generate/);
   assert.match(prompt, /supabase\/functions\/design-panel-ai-generate\/index\.ts/);
-  assert.match(atlas, /buildFlatDesignIQDirection/);
+  assert.match(atlas, /buildAtlasArtboardDesignIQDirection/);
+  assert.match(
+    prompt,
+    /function buildFlatDesignIQDirection[\s\S]*?return buildAtlasArtboardDesignIQDirection\(input\)/,
+    "the historical flat prompt API remains a compatibility alias",
+  );
   assert.match(worker, /buildDesignIQPrompt/);
   assert.match(worker, /createDesignPanelServerProvider/);
   assert.match(provider, /stage: "design-panel-ai-generate"/);

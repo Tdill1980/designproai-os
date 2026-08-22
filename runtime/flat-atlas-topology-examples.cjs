@@ -27,6 +27,8 @@ const { BUCKET } = require("./generation-store.cjs");
 
 const ACTIVE_EXAMPLES_VIEW = "designpro_active_flat_atlas_examples";
 const EXAMPLE_PURPOSE = "topology-only";
+const DESIGNPANEL_ARTBOARD_EXAMPLE_BUCKET = "wrap-files flat panel";
+const DESIGNPANEL_ARTBOARD_EXAMPLE_MAX_BYTES = 8 * 1024 * 1024;
 const SYSTEM_PREFIX = "designpro/system/flat-first/examples/";
 const BUNDLED_PAIR = Object.freeze({
   exampleKey: "houdini-flat-to-finished",
@@ -376,11 +378,65 @@ async function loadActiveFlatAtlasTopologyExamples(supabase) {
   return examples;
 }
 
+/**
+ * Server-native port of `_shared/artboard-template-os.ts#loadArtboardExamples`.
+ *
+ * Deliberately preserves the existing DesignPanel behavior: list ten objects
+ * at the bucket root, take at most the first two supported images, skip an
+ * object over 8 MiB, and treat storage/configuration failure as non-fatal. The
+ * only A.T.L.A.S. adaptation is semantic: its deterministic guide remains the
+ * sole topology authority, while these exact existing examples set the proven
+ * DesignPanel artboard production-quality floor.
+ */
+async function loadDesignPanelArtboardExamples(supabase, max = 2) {
+  const out = [];
+  try {
+    const storage = supabase.storage.from(DESIGNPANEL_ARTBOARD_EXAMPLE_BUCKET);
+    const { data: files } = await storage.list("", { limit: 10 });
+    const boundedMax = Math.min(10, Math.max(0, Number(max) || 0));
+    const images = (files || [])
+      .filter((file) => /\.(png|jpe?g|webp)$/i.test(String(file?.name || "")))
+      .slice(0, boundedMax);
+    for (const file of images) {
+      const { data: blob } = await storage.download(file.name);
+      if (!blob) continue;
+      const bytes = Buffer.from(await blob.arrayBuffer());
+      if (!bytes.length || bytes.length > DESIGNPANEL_ARTBOARD_EXAMPLE_MAX_BYTES) continue;
+      const declaredType = String(blob.type || "").toLowerCase();
+      const extension = String(file.name).toLowerCase().split(".").pop();
+      const fallbackType = extension === "jpg" || extension === "jpeg"
+        ? "image/jpeg" : extension === "webp" ? "image/webp" : "image/png";
+      const contentType = ["image/png", "image/jpeg", "image/webp"].includes(declaredType)
+        ? declaredType : fallbackType;
+      out.push(Object.freeze({
+        kind: "designpanel-artboard-quality",
+        purpose: "production-quality-only",
+        bytes,
+        contentType,
+        identity: Object.freeze({
+          source: "design-panel-ai-generate-loadArtboardExamples",
+          bucket: DESIGNPANEL_ARTBOARD_EXAMPLE_BUCKET,
+          objectName: String(file.name),
+          contentHash: sha256(bytes),
+          byteSize: bytes.length,
+        }),
+      }));
+    }
+  } catch (_error) {
+    // Exact source behavior: examples improve quality but a bucket outage does
+    // not silently replace the hash-pinned topology lesson or kill authoring.
+  }
+  return out;
+}
+
 module.exports = {
   ACTIVE_EXAMPLES_VIEW,
+  DESIGNPANEL_ARTBOARD_EXAMPLE_BUCKET,
+  DESIGNPANEL_ARTBOARD_EXAMPLE_MAX_BYTES,
   EXAMPLE_PURPOSE,
   FlatAtlasTopologyExampleError,
   loadBundledFlatToFinishedExample,
+  loadDesignPanelArtboardExamples,
   loadActiveFlatAtlasTopologyExamples,
   _test: {
     BUNDLED_PAIR,

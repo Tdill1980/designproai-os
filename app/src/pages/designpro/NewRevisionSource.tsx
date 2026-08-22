@@ -20,7 +20,6 @@ import {
   dpApi,
   GenieSurfaceKey,
   PRODUCTION_SURFACES,
-  RenderRole,
   RENDER_ROLES,
   SURFACE_LABEL,
   uploadRevisionAsset,
@@ -57,7 +56,7 @@ function Field({
 
 export default function NewRevisionSource() {
   const navigate = useNavigate();
-  const [files, setFiles] = useState<Partial<Record<RenderRole, File>>>({});
+  const [files, setFiles] = useState<Partial<Record<ActiveRenderRole, File>>>({});
   const [logoMode, setLogoMode] = useState<"" | "none" | "listed">("");
   const [logos, setLogos] = useState<ExpectedLogo[]>([]);
   const [progress, setProgress] = useState("");
@@ -83,11 +82,9 @@ export default function NewRevisionSource() {
     const revisionId = crypto.randomUUID();
     const generationId = crypto.randomUUID();
     const visualizationId = crypto.randomUUID();
-    // This manual form remains the pre-migration historical-Hero authoring
-    // surface. During an emergency rollback after the Close-Up schema switch,
-    // the database's forward-only revision trigger is authoritative: it rejects
-    // this snapshot before a workflow can start. The compatible rollback path
-    // is the DB-driven DesignPanel generation/read/handoff flow.
+    // The manual source form authors the final active seven-view schema. Its
+    // seventh upload is Close-Up; immutable historical Hero rows remain
+    // read/handoff compatible elsewhere but can never be newly authored here.
     const renderAssets = {} as Record<ActiveRenderRole, AssetIdentity>;
     try {
       setProgress("Registering the confirmed WrapBox recipient…");

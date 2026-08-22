@@ -17,6 +17,8 @@
  * changes every render's look.
  */
 
+const STUDIO_CONTRACT_VERSION = "designpro.studio-os.port-ab0f0638.v1";
+
 const STUDIO_ENVIRONMENT = `
 You are a professional automotive photographer shooting for a luxury car brand campaign.
 Every shot is technically perfect — bright, clean, color-accurate, and photorealistic.
@@ -63,4 +65,4 @@ STUDIO LOCK:
 - Realistic specular highlights on hood, roof, fenders from LED strips fall on the clear-coat and never wash out the wrap design
 `;
 
-module.exports = { STUDIO_ENVIRONMENT, STUDIO_REINFORCEMENT };
+module.exports = { STUDIO_CONTRACT_VERSION, STUDIO_ENVIRONMENT, STUDIO_REINFORCEMENT };

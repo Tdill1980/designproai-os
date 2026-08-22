@@ -1680,12 +1680,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const hasHistoricalHeroSeventh = effectiveAllViews.some((view) =>
     view.type === 'hero-3d' || view.type === 'hero3d');
   const hasConflictingSeventh = hasCloseupSeventh && hasHistoricalHeroSeventh;
-  // The bridge keeps Hero as the empty/progressive pre-migration default, but
-  // switches to the real Close-Up identity as soon as that DB-authored plan is
-  // observed. It never relabels one as the other.
-  const standardViewOrder = hasCloseupSeventh && !hasHistoricalHeroSeventh
-    ? CLOSEUP_VIEW_ORDER
-    : HISTORICAL_HERO_VIEW_ORDER;
+  // Close-Up is the only active seventh view. An immutable historical Hero set
+  // keeps its own identity when read, and is never relabelled as Close-Up.
+  const standardViewOrder = hasHistoricalHeroSeventh && !hasCloseupSeventh
+    ? HISTORICAL_HERO_VIEW_ORDER
+    : CLOSEUP_VIEW_ORDER;
   const requiredViewTypes: readonly string[] =
     isFlatFirstDiagnostic
       ? standardViewOrder
@@ -1713,15 +1712,16 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     rear: 'Rear',
     roof: 'Roof Plan',
     'close-up': 'Close-Up',
-    'hero-3d': '3D Hero', hero3d: '3D Hero',
+    'hero-3d': 'Historical 3D Hero',
+    hero3d: 'Historical 3D Hero',
   };
 
   // Active view for arrow navigation in main preview
   const clampedViewIndex = displayedAllViews.length > 0 ? Math.min(activeViewIndex, displayedAllViews.length - 1) : 0;
   const savedDriverDisplayUrl = findViewByType('side')?.url || null;
   // Standard generation is side-first, so its legacy base URL is the Driver
-  // result. A.T.L.A.S. projections run in parallel; never let whichever angle
-  // happens to finish first impersonate Driver Side.
+  // result. A.T.L.A.S. keeps its flat master separate; never let another saved
+  // angle impersonate Driver Side.
   const driverDisplayUrl = savedDriverDisplayUrl || (!isFlatFirstDiagnostic ? baseDisplayUrl : null);
   // Driver Side stays pinned until the customer explicitly asks to see the
   // other angles. After reveal, the chosen thumbnail owns the canvas even while
@@ -1738,6 +1738,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     ? latestFlatAtlas?.masterUrl || null
     : null;
   const previewDisplayUrl = mainDisplayUrl || atlasMasterPreviewUrl;
+  const atlasNewRunRequired = isFlatFirstDiagnostic
+    && Boolean(generationError?.includes("Start a new A.T.L.A.S. run"));
   // When a precision modification has been stacked on the render,
   // show the modified image instead. Other workflows (PDF proof,
   // All Views, etc.) keep using mainDisplayUrl as the unmodified base.
@@ -1855,7 +1857,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           </div>
                           <p className="mt-2 text-[10px] leading-4 text-white/55">
                             {flatFirstAtlasSupportedVehicleType(vehicleType)
-                              ? "Creates the master design and Driver Side first. Use See All Views to reveal each saved vehicle view as it finishes. Production ordering is unavailable in Preview mode."
+                              ? "Creates the flattened master design, then Driver Side. Use See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready. Production ordering is unavailable in Preview mode."
                               : "Preview mode is available for car, truck, SUV and van. Production mode will be used for this vehicle."}
                           </p>
                         </div>
@@ -2041,7 +2043,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <div>
                             <p className="font-semibold">A.T.L.A.S. Preview</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
-                              Your A.T.L.A.S. master appears first, followed by Driver Side. Select See All Views to reveal each saved vehicle view as it becomes ready, using the same design.
+                              Your flattened A.T.L.A.S. master appears first, followed by Driver Side. Select See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready from that same design.
                             </p>
                             <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">
                               {generationRequestState
@@ -2089,7 +2091,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         )}
 
                         {/* Error state */}
-                        {renderError && !previewDisplayUrl && !pipelineActive ? (
+                        {(renderError || atlasNewRunRequired) && !previewDisplayUrl && !pipelineActive ? (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-red-500/5 via-background to-red-500/10 px-6">
                             <img src="/characters/ace-v2.png" alt="ACE" className="w-20 h-20 rounded-full border-2 border-red-400/50 object-cover" />
                             <p className="text-white text-base font-semibold text-center">
@@ -2544,7 +2546,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               Need more precision edits?
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Use RevisionStudioIQ&#8482; to dial in specific zones, lock your hero view, and make targeted revisions.
+                              Use RevisionStudioIQ&#8482; to dial in specific zones, lock your selected view, and make targeted revisions.
                             </p>
                           </div>
                         </div>
@@ -2682,7 +2684,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
                         <p className="text-sm text-amber-200">
-                          {allViews.length} of {requiredViewCount} views generated. {failedViews.length} view{failedViews.length > 1 ? 's' : ''} failed - retry below or regenerate all.
+                          {isFlatFirstDiagnostic
+                            ? `${allViews.length} of ${requiredViewCount} views generated. The A.T.L.A.S. proof set is incomplete. Start a new A.T.L.A.S. run; individual views cannot be retried.`
+                            : `${allViews.length} of ${requiredViewCount} views generated. ${failedViews.length} view${failedViews.length > 1 ? 's' : ''} failed - retry below or regenerate all.`}
                         </p>
                       </div>
                     )}
@@ -2730,19 +2734,23 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           >
                             <div className="text-center space-y-2">
                               <p className="text-sm text-muted-foreground">{VIEW_LABEL_MAP[viewType] || viewType}</p>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
-                                disabled={isRetryingView === viewType}
-                                onClick={() => retryFailedView(viewType, year, make, model)}
-                              >
-                                {isRetryingView === viewType ? (
-                                  <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Retrying...</>
-                                ) : (
-                                  <><RefreshCw className="w-3 h-3 mr-1.5" /> Retry This View</>
-                                )}
-                              </Button>
+                              {isFlatFirstDiagnostic ? (
+                                <p className="text-xs text-amber-300">Start a new A.T.L.A.S. run.</p>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+                                  disabled={isRetryingView === viewType}
+                                  onClick={() => retryFailedView(viewType, year, make, model)}
+                                >
+                                  {isRetryingView === viewType ? (
+                                    <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> Retrying...</>
+                                  ) : (
+                                    <><RefreshCw className="w-3 h-3 mr-1.5" /> Retry This View</>
+                                  )}
+                                </Button>
+                              )}
                             </div>
                           </Card>
                         ))}

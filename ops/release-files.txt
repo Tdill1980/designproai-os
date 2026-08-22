@@ -38,8 +38,11 @@ runtime/mesh-warp.cjs
 runtime/opentype-outline.cjs
 runtime/designpro-master-cycle.cjs
 runtime/view-angles.cjs
+runtime/photorealism-prompt.cjs
 runtime/generation-provider.cjs
 runtime/designpanel-server-provider.cjs
+runtime/atlas-master-qc.cjs
+runtime/atlas-proof-qc.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs
 runtime/generation-worker.cjs

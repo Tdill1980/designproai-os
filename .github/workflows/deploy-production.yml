@@ -177,6 +177,16 @@ jobs:
           rm -f -- "$project_json" "$keys_json" "$google_json"
           echo "runtime_key_file=$runtime_key_file" >> "$GITHUB_OUTPUT"
 
+      # A successful migration-history row is not proof that the function
+      # bodies and constraint this exact server expects are live. This check is
+      # intentionally repeated at deploy time so an automatic workflow_run or
+      # a later manual deploy cannot cut over a Close-Up runtime against the
+      # former Hero schema. It is read-only and happens before Storage config,
+      # SSH inventory, transfer or any host mutation.
+      - name: Refuse deploy unless the live A.T.L.A.S. schema is installed
+        shell: bash
+        run: bash ops/assert-atlas-production-schema.sh
+
       # Storage has TWO upload ceilings and the smaller one always wins. The
       # per-bucket limit lives in the database and is created by migration, so
       # it is already correct. The project-wide limit lives only in the hosted

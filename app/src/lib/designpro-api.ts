@@ -59,12 +59,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 /* ── Identity and workflow contracts ─────────────────────────────── */
 
 export type GenieSurfaceKey = "driver" | "passenger" | "hood" | "roof" | "front" | "rear";
-export type ActiveRenderRole = GenieSurfaceKey | "hero3d";
+export type ActiveRenderRole = GenieSurfaceKey | "closeup";
 export type RenderRole = GenieSurfaceKey | "closeup" | "hero3d";
-export type RevisionRenderAssets = Record<GenieSurfaceKey, AssetIdentity> & (
-  | { closeup: AssetIdentity; hero3d?: never }
-  | { closeup?: never; hero3d: AssetIdentity }
-);
+/** New revision submissions are Close-Up-only. Hero is historical read data. */
+export type RevisionRenderAssets = Record<ActiveRenderRole, AssetIdentity> & {
+  hero3d?: never;
+};
 
 /**
  * `legacy` deliberately serializes exactly the existing v2 request. The atlas
@@ -154,19 +154,15 @@ export const PRODUCTION_SURFACES: GenieSurfaceKey[] = [
   "rear",
 ];
 
-/**
- * The pre-migration authoring plan. Reads and revision handoff also accept a
- * real Close-Up slot, but this rollback bridge must keep writing the live
- * database's historical Hero plan until the schema switch happens.
- */
+/** The exact seven immutable source views, in their frozen display order. */
 export const RENDER_ROLES: ActiveRenderRole[] = [
   "driver",
   "passenger",
   "hood",
-  "roof",
   "front",
   "rear",
-  "hero3d",
+  "closeup",
+  "roof",
 ];
 
 /**
@@ -176,7 +172,8 @@ export const RENDER_ROLES: ActiveRenderRole[] = [
  * display surface is keyed by the role, so the translation lives here once.
  *
  * Close-Up and historical Hero are distinct seventh-slot identities. Neither
- * is relabelled as the other; a valid seven-view set contains exactly one.
+ * is relabelled as the other. Only Close-Up is authored now; Hero remains in
+ * this identity map solely so immutable historical responses can be displayed.
  */
 export const SOURCE_VIEW_TYPE_FOR_ROLE: Record<RenderRole, string> = {
   driver: "side",
@@ -200,11 +197,8 @@ type GenerationViewIdentity = {
 
 /**
  * Choose the cards that describe an existing generation without changing the
- * identity of its seventh slot. Before the schema switch a newly-authored run
- * has no returned slots yet, so the historical Hero plan remains the default.
- * A rollback reading final-schema rows switches to Close-Up only when the
- * server returns the exact close-up -> closeup pair. Invalid mixed identities
- * are ignored rather than relabelled.
+ * identity of its seventh slot. New and progressive runs default to Close-Up.
+ * An immutable historical Hero response keeps its own Hero identity.
  *
  * The gateway rejects a response containing both compatible seventh slots. If
  * one nevertheless reaches an emergency rollback UI, expose both conflicting
@@ -232,10 +226,14 @@ export function displayRenderRoles(
   const closeupRoles: RenderRole[] = [
     "driver", "passenger", "hood", "front", "rear", "closeup", "roof",
   ];
+  const historicalHeroRoles: RenderRole[] = [
+    "driver", "passenger", "hood", "front", "rear", "hero3d", "roof",
+  ];
   if (observedSeventhRoles.has("closeup") && observedSeventhRoles.has("hero3d")) {
     return [...closeupRoles, "hero3d"];
   }
   if (observedSeventhRoles.has("closeup")) return closeupRoles;
+  if (observedSeventhRoles.has("hero3d")) return historicalHeroRoles;
   return RENDER_ROLES;
 }
 
@@ -247,7 +245,7 @@ export const SURFACE_LABEL: Record<string, string> = {
   front: "Front",
   rear: "Rear",
   closeup: "Close-Up",
-  hero3d: "3D hero view",
+  hero3d: "Historical 3D Hero",
 };
 
 export type WorkflowStatus = {

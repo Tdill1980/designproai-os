@@ -45,6 +45,14 @@ type RoofSize = "none" | "small" | "medium" | "large";
 
 type GenerationError = 'auth_required' | 'limit_reached' | 'generation_failed';
 
+const ATLAS_NEW_RUN_REQUIRED_MESSAGE =
+  "This saved A.T.L.A.S. proof set cannot be reused. Start a new A.T.L.A.S. run.";
+const atlasNewRunRequired = (error: unknown) => {
+  const code = String((error as any)?.code || (error as any)?.message || error || "");
+  return code.includes("flat_first_atlas_new_run_required")
+    || code.includes("generation_atlas_lineage_invalid");
+};
+
 const RUNTIME_VISIONBOARD_IMAGE_TYPES = new Map([
   ["image/jpeg", "jpg"],
   ["image/png", "png"],
@@ -71,9 +79,8 @@ export function pickPrimaryProofView<T extends SignedDesignPanelView>(
   views: T[],
 ): T | undefined {
   const rendered = views.filter((view) => view.signedUrl);
-  return rendered.find(
-    (view) => view.consumerRole === "driver" && view.sourceViewType === "side",
-  );
+  return rendered.find((view) =>
+    view.consumerRole === "driver" && view.sourceViewType === "side" && view.signedUrl);
 }
 
 /** Convert browser-displayable image formats outside the runtime allowlist. */
@@ -335,6 +342,34 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   const [personaPhotographerProgress, setPersonaPhotographerProgress] = useState<{ completed: number; total: number }>({ completed: 0, total: 6 });
   const [isPersonaPipelineActive, setIsPersonaPipelineActive] = useState(false);
   const [personaElapsed, setPersonaElapsed] = useState(0);
+
+  // A completed legacy A.T.L.A.S. row can carry seven signed images while
+  // lacking the current immutable-master lineage, provider audit or semantic
+  // QC. Once the owner-read boundary reports that condition, remove every
+  // display identity for that request. In particular, never let the generic
+  // terminal-error recovery below put those old images back on screen.
+  const clearUntrustedAtlasProofState = () => {
+    setGeneratedImageUrl(null);
+    setVisualizationId(null);
+    setAllViews([]);
+    setFailedViews([]);
+    setDesignAnchorText(null);
+    setDesignName(null);
+    setDesignDnaId(null);
+    setRenderDid(null);
+    setRenderPt(null);
+    setFlatProofUrl(null);
+    setStandaloneRequestId(null);
+    setGenerationRequestState(null);
+    setIsDesignIQRender(false);
+    setPersonaHeroUrl(null);
+    setPersonaDesignAnchor(null);
+    setPersonaDesignName(null);
+    setPersonaGenerationId(null);
+    setPersonaAllViews({});
+    setPersonaFailedShots([]);
+    setPersonaPhotographerProgress({ completed: 0, total: RENDER_ROLES.length });
+  };
 
   // Persona pipeline timer
   useEffect(() => {
@@ -625,6 +660,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       return { generationId: request.generationId, directRender: true, renderUrl: primary?.signedUrl };
     } catch (error: any) {
       const code = String(error?.code || error?.message || "");
+      const requiresNewAtlasRun = atlasNewRunRequired(error);
+      if (requiresNewAtlasRun) clearUntrustedAtlasProofState();
       // A terminal request can still own byte-verified views. The legacy
       // worker used to discover a missing production manifest only after all
       // seven calls; hiding those saved images behind the error screen made a
@@ -632,7 +669,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       // reporting the failure. They remain explicitly legacy and are never
       // represented as an A.T.L.A.S. master.
       let recoveredViews: Awaited<ReturnType<typeof listDesignPanelViews>> = [];
-      if (acceptedRequest) {
+      if (acceptedRequest && !requiresNewAtlasRun) {
         try {
           recoveredViews = await listDesignPanelViews(acceptedRequest.requestId);
           if (recoveredViews.some((view) => view.signedUrl)) {
@@ -651,7 +688,9 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         }
       }
       const friendly =
-        code === "generation_pipeline_mode_mismatch"
+        requiresNewAtlasRun
+          ? ATLAS_NEW_RUN_REQUIRED_MESSAGE
+          : code === "generation_pipeline_mode_mismatch"
           ? "This design mode is temporarily unavailable. No production order was created."
           : code === "generation_input_conflict"
           ? "That design id already holds a different brief. Start a new design rather than overwriting it."
@@ -664,7 +703,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       setGenerationError(friendly);
       const recoveredPrimary = pickPrimaryProofView(recoveredViews);
       return {
-        generationId: acceptedRequest?.generationId || null,
+        generationId: requiresNewAtlasRun ? null : acceptedRequest?.generationId || null,
         directRender: Boolean(recoveredPrimary?.signedUrl),
         renderUrl: recoveredPrimary?.signedUrl,
         error: friendly,
@@ -712,7 +751,12 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       applyGeneratedViews(await listDesignPanelViews(standaloneRequestId));
       return null;
     } catch (error: any) {
-      setGenerationError(error?.message || "The views could not be refreshed.");
+      if (atlasNewRunRequired(error)) {
+        clearUntrustedAtlasProofState();
+        setGenerationError(ATLAS_NEW_RUN_REQUIRED_MESSAGE);
+      } else {
+        setGenerationError(error?.message || "The views could not be refreshed.");
+      }
       return 'generation_failed';
     } finally {
       setIsGeneratingAdditional(false);
@@ -732,6 +776,12 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     _model?: string,
   ): Promise<boolean> => {
     if (!standaloneRequestId) return false;
+    if (activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE) {
+      setGenerationError(
+        "A.T.L.A.S. proof views are locked to one master. Start a new A.T.L.A.S. run to regenerate the proof set.",
+      );
+      return false;
+    }
     const role = ROLE_FOR_SOURCE_VIEW_TYPE[viewType] as RenderRole | undefined;
     if (!role) return false;
     setIsRetryingView(viewType);
@@ -840,7 +890,11 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         ),
       );
       return state.state === "outputs_ready";
-    } catch {
+    } catch (error) {
+      if (atlasNewRunRequired(error)) {
+        clearUntrustedAtlasProofState();
+        setGenerationError(ATLAS_NEW_RUN_REQUIRED_MESSAGE);
+      }
       return false;
     } finally {
       setIsPersonaPipelineActive(false);

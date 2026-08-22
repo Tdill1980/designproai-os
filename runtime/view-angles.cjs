@@ -17,19 +17,17 @@
  * forward-reading presentation.
  */
 
+const VIEW_ANGLE_CONTRACT_VERSION = "designpro.view-angles-os.port-ab0f0638.v1";
+
 /**
- * The seventh slot is a true three-quarter hero view, not the close-up.
+ * The seven canonical views in the locked production order from
+ * `_shared/view-angles-os.ts`. Close-Up is the sixth quality-validation proof;
+ * a hero view is not one of Calls 1-7.
  *
- * The revision contract downstream requires the role `hero3d`
- * (gemini-flat-surface.cjs: VIEW_KEYS = [...SURFACE_KEYS, "hero3d"]), and
- * `closeup` is not a role it accepts at all. Aliasing the close-up into that
- * slot would put a two-square-foot panel detail where every downstream proof
- * expects a whole vehicle — the same class of defect as the mirrored passenger
- * side: a plausible image in the wrong semantic slot, which no hash check
- * catches. The close-up angle is retained below for provenance and may be
- * generated on request, but it is not one of the seven.
+ * The legacy `hero-3d` angle definition remains below only so older persisted
+ * records can still be described. It must never enter VIEW_ORDER.
  */
-const VIEW_ORDER = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof"]);
+const VIEW_ORDER = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
 
 const VIEW_LABELS = Object.freeze({
   "side": "Driver Side",
@@ -181,6 +179,7 @@ function assertTextDirectionGuard(viewType) {
 
 module.exports = {
   CAMERA_ANGLES, VIEW_ASPECT_RATIOS, VIEW_LABELS, VIEW_ORDER, VIEW_RESOLUTION,
+  VIEW_ANGLE_CONTRACT_VERSION,
   aspectRatio, assertTextDirectionGuard, cameraAngle, requiresOwnGeneration,
   resolutionTier, viewLabel, viewOrder,
 };

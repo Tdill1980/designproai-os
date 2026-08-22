@@ -1,5 +1,5 @@
 begin;
-select plan(29);
+select plan(31);
 
 select has_table(
   'designpro_private','revision_fulfillment_bindings',
@@ -82,7 +82,7 @@ from identity;
 with plan(source_view_type,consumer_role,ordinal) as (
   values ('side','driver',1),('passenger-side','passenger',2),
     ('hood_detail','hood',3),('front','front',4),('rear','rear',5),
-    ('hero-3d','hero3d',6),('roof','roof',7)
+    ('close-up','closeup',6),('roof','roof',7)
 )
 insert into public.designpro_generation_views(
   request_id,source_view_type,consumer_role,storage_path,content_hash,
@@ -94,6 +94,62 @@ select
     ||'32000000-0000-4000-8000-000000000003/calls-1-7/'
     ||source_view_type||'/'||repeat(ordinal::text,64)||'.png',
   repeat(ordinal::text,64),1000+ordinal,'image/png','{}'::jsonb
+from plan;
+
+-- A legacy-shaped request below proves that a fresh Hero handoff cannot author
+-- a new revision after Close-Up restoration.
+with input(value) as (values(jsonb_build_object(
+  'contractVersion','designpro.calls-1-7-input.v2',
+  'vehicle',jsonb_build_object(
+    'year','2024','make','Ford','model','F 250 Crew Cab','type','truck'
+  ),
+  'brief','Current Close-Up revision boundary regression',
+  'designName','Close-Up Contract',
+  'mode','commercial',
+  'companyName','Close-Up Contract'
+))), identity as (
+  select value,
+    encode(extensions.digest(convert_to(value::text,'UTF8'),'sha256'),'hex')
+      input_hash,
+    designpro_private.calls_1_7_engine_contract() engine_contract
+  from input
+)
+insert into public.designpro_generation_requests(
+  id,generation_id,owner_id,tenant_key,idempotency_key,state,request_input,
+  input_hash,engine_contract,engine_contract_hash,output_set_hash,
+  engine_receipt,completed_at
+)
+select
+  '31000000-0000-4000-8000-000000000004',
+  '32000000-0000-4000-8000-000000000004',
+  '11000000-0000-4000-8000-000000000001',
+  'user_11000000-0000-4000-8000-000000000001',
+  'calls17:32000000-0000-4000-8000-000000000004:'||input_hash,
+  'outputs_ready',value,input_hash,engine_contract,
+  encode(extensions.digest(convert_to(engine_contract::text,'UTF8'),'sha256'),'hex'),
+  repeat('e',64),
+  jsonb_build_object(
+    'contractVersion','designpro.calls-1-7-receipt.v1',
+    'handoffRevisionId','33000000-0000-4000-8000-000000000004',
+    'callsCompleted','7','byteVerified','true'
+  ),now()
+from identity;
+
+with plan(source_view_type,consumer_role,ordinal) as (
+  values ('side','driver',1),('passenger-side','passenger',2),
+    ('hood_detail','hood',3),('front','front',4),('rear','rear',5),
+    ('hero-3d','hero3d',6),('roof','roof',7)
+)
+insert into public.designpro_generation_views(
+  request_id,source_view_type,consumer_role,storage_path,content_hash,
+  byte_size,content_type,metadata
+)
+select
+  '31000000-0000-4000-8000-000000000004',source_view_type,consumer_role,
+  'designpro/user_11000000-0000-4000-8000-000000000001/'
+    ||'32000000-0000-4000-8000-000000000004/calls-1-7/'
+    ||source_view_type||'/'||repeat(ordinal::text,64)||'.png',
+  repeat(ordinal::text,64),2000+ordinal,'image/png','{}'::jsonb
 from plan;
 
 select is(
@@ -118,6 +174,23 @@ select matches(
   (select payload->>'workflowRunId' from first_handoff),
   '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
   'first v2 handoff starts the existing workflow'
+);
+
+select ok(
+  (select (snapshot->'renderAssets' ? 'closeup')
+      AND NOT (snapshot->'renderAssets' ? 'hero3d')
+      AND (select count(*)
+           from jsonb_object_keys(snapshot->'renderAssets'))=7
+   from public.designpro_revision_sources
+   where revision_id='33000000-0000-4000-8000-000000000003'),
+  'current revision freezes exactly seven Close-Up identities without Hero'
+);
+select throws_ok(
+  $$select public.handoff_designpro_generation_to_production(
+    '31000000-0000-4000-8000-000000000004'
+  )$$,
+  'P0001','seven_render_asset_identities_required',
+  'a fresh historical Hero-shaped handoff cannot author a new revision'
 );
 select ok(
   (select snapshot#>>'{fulfillment,state}'='unbound'

@@ -137,6 +137,71 @@ test("Call 1 sees the paired flattened top-view and corresponding finished 3D pr
   assert.match(prompt, /IGNORE their palette, imagery, text, logos, brand and style/);
 });
 
+test("Atlas preserves DesignPanel loadArtboardExamples behavior as optional quality evidence", async () => {
+  const downloads = new Map([
+    ["quality-one.png", new Blob([Buffer.from("first-quality-example")], { type: "image/png" })],
+    ["quality-two.JPG", new Blob([Buffer.from("second-quality-example")], { type: "image/jpeg" })],
+  ]);
+  const calls = [];
+  const storage = {
+    async list(prefix, options) {
+      calls.push(["list", prefix, options]);
+      return {
+        data: [
+          { name: "notes.txt" },
+          { name: "quality-one.png" },
+          { name: "quality-two.JPG" },
+          { name: "ignored-third.webp" },
+        ],
+      };
+    },
+    async download(name) {
+      calls.push(["download", name]);
+      return { data: downloads.get(name) || null };
+    },
+  };
+  const supabase = {
+    storage: {
+      from(bucket) {
+        assert.equal(bucket, topologyExamples.DESIGNPANEL_ARTBOARD_EXAMPLE_BUCKET);
+        return storage;
+      },
+    },
+  };
+
+  const examples = await topologyExamples.loadDesignPanelArtboardExamples(supabase);
+  assert.deepEqual(calls[0], ["list", "", { limit: 10 }]);
+  assert.deepEqual(calls.slice(1), [
+    ["download", "quality-one.png"],
+    ["download", "quality-two.JPG"],
+  ]);
+  assert.equal(examples.length, 2);
+  assert.equal(examples.every((example) => example.kind === "designpanel-artboard-quality"), true);
+  assert.deepEqual(examples.map((example) => example.contentType), ["image/png", "image/jpeg"]);
+  assert.equal(examples.every((example) => example.identity.source
+    === "design-panel-ai-generate-loadArtboardExamples"), true);
+  assert.equal(examples.every((example) => example.identity.contentHash
+    === atlas._test.sha256(example.bytes)), true);
+
+  const unavailable = await topologyExamples.loadDesignPanelArtboardExamples({
+    storage: { from() { throw new Error("live optional bucket is unseeded"); } },
+  });
+  assert.deepEqual(unavailable, [], "the hash-pinned Houdini pair remains mandatory when optional gold examples are absent");
+});
+
+test("Call 1 aggregate inline bytes fail closed before Gemini's request ceiling", () => {
+  const parts = [
+    { text: "bounded master request" },
+    { inlineData: { mimeType: "image/png", data: Buffer.alloc(512, 7).toString("base64") } },
+  ];
+  assert.ok(atlas._test.assertMasterRequestWithinLimit(parts, 4096) > 0);
+  assert.throws(
+    () => atlas._test.assertMasterRequestWithinLimit(parts, 128),
+    (error) => error.code === "flat_atlas_master_request_too_large"
+      && error.retryable === false,
+  );
+});
+
 test("a duplicate-insert race cannot reuse an atlas from a stale geometry basis", () => {
   const expected = "a".repeat(64);
   const raced = { manifestAsset: { contentHash: "b".repeat(64) } };
@@ -157,8 +222,9 @@ test("4K atlas reports effective PPI honestly and cannot masquerade as print rea
   assert.equal(manifest.quality.upscalingRequiredBeforeAnyProductionExport, true);
   assert.match(manifest.productionBlockers.join(" "), /PVO contour\/UV topology/);
   assert.match(manifest.productionBlockers.join(" "), /PPI/);
-  assert.equal(manifest.proofOnlyViews.includes("hero-3d"), true);
-  assert.equal(manifest.zones.some((zone) => zone.surfaceKey === "hero3d"), false);
+  assert.deepEqual(manifest.proofOnlyViews, ["close-up"]);
+  assert.equal(manifest.proofOnlyViews.includes("hero-3d"), false);
+  assert.equal(manifest.zones.some((zone) => zone.surfaceKey === "closeup" || zone.surfaceKey === "hero3d"), false);
 });
 
 test("topology examples are firewalled from customer style", () => {
@@ -206,11 +272,13 @@ test("content-addressed before/after storage stays inside the isolated flat-firs
   );
 });
 
-test("all seven proof prompts carry the exact same atlas bytes and view dependencies", () => {
+test("all seven proof prompts carry their exact master-bound native zone and identity", async () => {
   const manifest = atlas.buildAtlasManifest(surfaces);
-  const masterBytes = Buffer.from("one-canonical-atlas");
-  const projectionBytes = Buffer.from("one-request-safe-projection");
+  const guideBytes = await atlas.renderAtlasGuide(manifest);
+  const masterBytes = await atlas.normalizeAtlasMaster(guideBytes, manifest);
+  const projection = await atlas.projectionDerivative(masterBytes);
   const masterHash = atlas._test.sha256(masterBytes);
+  const viewAuthorities = await atlas._test.buildViewAuthorities(masterBytes, manifest);
   const flatAtlas = {
     contract: atlas.ATLAS_CONTRACT,
     revisionId: "44444444-4444-4444-8444-444444444444",
@@ -223,17 +291,21 @@ test("all seven proof prompts carry the exact same atlas bytes and view dependen
       contentHash: masterHash,
     },
     projection: {
-      bytes: projectionBytes,
-      byteSize: projectionBytes.length,
+      bytes: projection.bytes,
+      byteSize: projection.byteSize,
       contentType: "image/jpeg",
-      contentHash: atlas._test.sha256(projectionBytes),
+      contentHash: projection.contentHash,
       sourceMasterHash: masterHash,
     },
+    viewAuthorities,
   };
   const slots = worker.slotsFrom(undefined, v3Input, {}, flatAtlas);
   assert.equal(slots.length, 7);
-  assert.equal(new Set(slots.map((slot) => slot.promptParts[0].inlineData.data)).size, 1);
-  assert.equal(slots.every((slot) => slot.promptParts[0].inlineData.data === projectionBytes.toString("base64")), true);
+  assert.equal(new Set(slots.map((slot) => slot.promptParts[0].inlineData.data)).size, 6,
+    "Close-Up intentionally shares Driver's exact master zone; every other proof owns its native zone");
+  assert.equal(slots.every((slot) => (
+    slot.promptParts[0].inlineData.data === viewAuthorities[slot.sourceViewType].bytes.toString("base64")
+  )), true);
   assert.equal(slots.every((slot) => slot.promptParts[0].inlineData.mimeType === "image/jpeg"), true);
   assert.equal(slots.some((slot) => slot.promptParts[0].inlineData.data === masterBytes.toString("base64")), false,
     "the canonical PNG is never inlined into a proof request");
@@ -241,13 +313,17 @@ test("all seven proof prompts carry the exact same atlas bytes and view dependen
   assert.equal(slots.every((slot) => slot.authorityMetadata.projectionContentHash === flatAtlas.projection.contentHash), true);
   assert.equal(slots.every((slot) => slot.authorityMetadata.revisionId === flatAtlas.revisionId), true);
   assert.equal(slots.every((slot) => slot.authorityMetadata.geometryAuthority.status === "validated"), true);
+  assert.equal(slots.every((slot) => slot.authorityMetadata.zoneContentHash
+    === viewAuthorities[slot.sourceViewType].contentHash), true);
+  assert.equal(slots.every((slot) => slot.authorityMetadata.zoneSurfaceKey
+    === viewAuthorities[slot.sourceViewType].surfaceKey), true);
   assert.match(slots.find((slot) => slot.sourceViewType === "passenger-side").promptParts[1].text, /passenger/);
   assert.equal(slots.every((slot) => slot.promptParts.length === 3), true, "atlas image + topology lock + projection-only camera prompt");
-  const projection = slots.find((slot) => slot.sourceViewType === "side").promptParts[2].text;
-  assert.match(projection, /CAMERA AND FRAMING ARE LOCKED/);
-  assert.match(projection, /2024 Ford F-250 truck/);
-  assert.match(projection, /SOLE appearance authority/);
-  assert.doesNotMatch(projection, /senior graphic designer|creative call|THE CONCEPT/i,
+  const projectionPrompt = slots.find((slot) => slot.sourceViewType === "side").promptParts[2].text;
+  assert.match(projectionPrompt, /CAMERA AND FRAMING ARE LOCKED/);
+  assert.match(projectionPrompt, /2024 Ford F-250 truck/);
+  assert.match(projectionPrompt, /SOLE appearance authority/);
+  assert.doesNotMatch(projectionPrompt, /senior graphic designer|creative call|THE CONCEPT/i,
     "v3 must not append the legacy creative-author prompt after the atlas lock");
 });
 
@@ -405,10 +481,30 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
     generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
     input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
     topologyExamples: [pairedExample],
+    masterValidatorFactory: () => async ({ masterBytes, guideBytes }) => {
+      events.push("master-qc");
+      return {
+        accepted: true,
+        review: { confidence: 0.99 },
+        deterministic: { accepted: true },
+        metadata: {
+          contract: "designpro.atlas-master-semantic-qc.v1",
+          confidence: 0.99,
+          model: "gemini-2.5-flash",
+          keyFingerprint: "abcdef012345",
+          requestByteSize: 1234,
+          masterHash: atlas._test.sha256(masterBytes),
+          guideHash: atlas._test.sha256(guideBytes),
+        },
+      };
+    },
   });
 
   assert.equal(events.filter((event) => event === "provider").length, 1);
   assert.equal(stored.length, 4);
+  assert.ok(events.indexOf("master-qc") > events.indexOf("provider"));
+  assert.ok(events.indexOf("master-qc") < events.findIndex((event) => event.startsWith("put:")),
+    "master acceptance must pass before any Atlas artifact is persisted");
   assert.deepEqual(stored.map((item) => item.contentType).sort(), ["application/json", "image/jpeg", "image/png", "image/png"]);
   assert.ok(events.lastIndexOf("insert") > Math.max(...events.map((event, index) => event.startsWith("put:") ? index : -1)),
     "the immutable row is inserted only after all three objects exist");
@@ -423,6 +519,8 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(inserted.metadata.geometryAuthority.operatorValidated, false);
   assert.equal(inserted.metadata.examplePurpose, "topology-only");
   assert.equal(inserted.metadata.topologyExamplesApplied, 1);
+  assert.equal(inserted.metadata.masterQcPassed, true);
+  assert.equal(inserted.metadata.masterQcContract, "designpro.atlas-master-semantic-qc.v1");
   assert.equal(inserted.metadata.topologyExampleIdentity.source, "exact-server-release");
   assert.equal(inserted.projection_content_type, "image/jpeg");
   assert.ok(inserted.projection_byte_size <= atlas.PROJECTION_MAX_BYTES);

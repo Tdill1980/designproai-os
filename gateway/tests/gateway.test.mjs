@@ -362,6 +362,18 @@ test("source has no legacy approval RPC, public render URL fallback, or Supabase
   assert.match(source, /\/internal\/wrapbox\/recipient/);
 });
 
+test("gateway authors only the active Close-Up seven while retaining Hero read aliases", () => {
+  const source = readFileSync(new URL("../src/server.mjs", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /const VIEW_KEYS = \["driver", "passenger", "hood", "front", "rear", "closeup", "roof"\]/,
+  );
+  assert.match(source, /\["close-up", "closeup"\]/);
+  assert.match(source, /\["hero-3d", "hero3d"\]/);
+  assert.match(source, /const requiredViewKeys = VIEW_KEYS\.every\(\(key\) => assets\[key\]\) \? VIEW_KEYS : null/);
+  assert.doesNotMatch(source, /LEGACY_VIEW_KEYS|ALL_VIEW_KEYS/);
+});
+
 test("asset intents use the canonical immutable input prefix and never collide with derived runtime paths", () => {
   const source = readFileSync(new URL("../src/server.mjs", import.meta.url), "utf8");
   assert.match(source, /users\/\$\{userId\}\/revisions\/\$\{intent\.revisionId\}\/inputs/);
@@ -398,10 +410,40 @@ test("upload intent returns the exact canonical input path consumed by the runti
   assert.match(payload.signedUrl, /^https:\/\/dp-project\.supabase\.co\/storage\/v1\/object\/upload\/sign\//);
 });
 
+test("upload intent rejects historical hero3d before Storage signing", async (t) => {
+  let storageCalled = false;
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      storageCalled = true;
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/assets/upload-intents`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      revisionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      kind: "hero3d",
+      contentHash: "1".repeat(64),
+      contentType: "image/png",
+      byteSize: 1234,
+    }),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "asset_intent_invalid" });
+  assert.equal(storageCalled, false);
+});
+
 test("revision rejects silent zero-logo inventory but accepts an explicit no-logo attestation", async (t) => {
   const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const revisionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-  const viewKeys = ["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"];
+  const viewKeys = ["driver", "passenger", "hood", "front", "rear", "closeup", "roof"];
   const bytesByPath = new Map();
   const renderAssets = {};
   for (const key of viewKeys) {
@@ -411,18 +453,6 @@ test("revision rejects silent zero-logo inventory but accepts an explicit no-log
     bytesByPath.set(storagePath, bytes);
     renderAssets[key] = { storagePath, contentHash, byteSize: bytes.byteLength, contentType: "image/png" };
   }
-  const closeupBytes = Buffer.from("immutable-closeup");
-  const closeupHash = createHash("sha256").update(closeupBytes).digest("hex");
-  const closeupPath = `users/${userId}/revisions/${revisionId}/inputs/closeup/${closeupHash}.png`;
-  bytesByPath.set(closeupPath, closeupBytes);
-  const closeupRenderAssets = { ...renderAssets };
-  delete closeupRenderAssets.hero3d;
-  closeupRenderAssets.closeup = {
-    storagePath: closeupPath,
-    contentHash: closeupHash,
-    byteSize: closeupBytes.byteLength,
-    contentType: "image/png",
-  };
   const calls = [];
   const server = createGateway({
     env,
@@ -499,8 +529,8 @@ test("revision rejects silent zero-logo inventory but accepts an explicit no-log
   assert.deepEqual(await rejected.json(), { error: "logo_inventory_attestation_mismatch" });
 
   for (const invalidAssets of [
-    { ...renderAssets, closeup: closeupRenderAssets.closeup },
-    Object.fromEntries(Object.entries(renderAssets).filter(([key]) => key !== "hero3d")),
+    { ...renderAssets, hero3d: renderAssets.closeup },
+    Object.fromEntries(Object.entries(renderAssets).filter(([key]) => key !== "closeup")),
   ]) {
     const invalidSeventh = await fetch(`${base}/api/revisions`, {
       method: "POST",
@@ -525,20 +555,6 @@ test("revision rejects silent zero-logo inventory but accepts an explicit no-log
   });
   assert.equal(accepted.status, 202);
   assert.deepEqual(await accepted.json(), { runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", accepted: true });
-  const acceptedCloseup = await fetch(`${base}/api/revisions`, {
-    method: "POST",
-    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
-    body: JSON.stringify({
-      ...baseSubmission,
-      renderAssets: closeupRenderAssets,
-      revisionSnapshot: {
-        ...baseSubmission.revisionSnapshot,
-        logoInventoryAttestation: { mode: "none", attested: true },
-      },
-    }),
-  });
-  assert.equal(acceptedCloseup.status, 202);
-  assert.deepEqual(await acceptedCloseup.json(), { runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", accepted: true });
   const frozen = calls.find((call) => call.url.endsWith("/rpc/save_designpro_revision_source"));
   const frozenSnapshot = JSON.parse(frozen.init.body).p_snapshot;
   assert.equal(frozenSnapshot.logoInventoryAttestation.mode, "none");
@@ -546,7 +562,7 @@ test("revision rejects silent zero-logo inventory but accepts an explicit no-log
   assert.equal(frozenSnapshot.orderNumber, "ORDER-2026-0042");
 });
 
-test("a post-switch database rejection prevents manual historical Hero authoring", async (t) => {
+test("the final gateway prevents manual historical Hero authoring before Storage", async (t) => {
   const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const revisionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   const bytesByPath = new Map();
@@ -614,7 +630,7 @@ test("a post-switch database rejection prevents manual historical Hero authoring
     }),
   });
   assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { error: "revision_render_assets_require_closeup" });
+  assert.deepEqual(await response.json(), { error: "seven_render_assets_required" });
   assert.equal(workflowCalled, false, "a rejected source must never start a workflow");
 });
 
@@ -928,7 +944,7 @@ test("WrapBox list returns immutable metadata and detail signs only its exact ZI
   ]);
 });
 
-test("revision accepts one frozen logo identity on distinct target surfaces with composite placement keys", async (t) => {
+test("POST revision rejects a new hero3d revision before reading Storage", async (t) => {
   const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const revisionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   const bytesByPath = new Map();
@@ -1004,11 +1020,9 @@ test("revision accepts one frozen logo identity on distinct target surfaces with
       },
     }),
   });
-  assert.equal(response.status, 202);
-  assert.deepEqual(frozenSnapshot.expectedLogoInventory.map((logo) => logo.placementKey), [
-    `${identityKey}@driver`, `${identityKey}@passenger`,
-  ]);
-  assert.equal(new Set(frozenSnapshot.expectedLogoInventory.map((logo) => logo.contentHash)).size, 1);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "seven_render_assets_required" });
+  assert.equal(frozenSnapshot, undefined);
 });
 
 test("authenticated browser can enqueue Calls 1-7 without selecting engine controls", async (t) => {
@@ -1496,6 +1510,104 @@ test("generation status accepts Close-Up and rejects both, neither, or role rela
   }
 });
 
+test("a terminal legacy Atlas proof set is refused with the typed new-run code", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000011";
+  const generationId = "90000000-0000-4000-8000-000000000011";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/get_designpro_generation_request")) {
+        return Response.json({
+          requestId, generationId, state: "failed",
+          inputHash: "a".repeat(64), engineContractHash: "b".repeat(64),
+          attempt: 1, outputSetHash: "d".repeat(64),
+          failureCode: "flat_first_atlas_new_run_required",
+          createdAt: "2026-08-21T00:00:00Z", updatedAt: "2026-08-21T00:01:00Z",
+          completedAt: "2026-08-21T00:01:00Z", handoffReady: false,
+          handoffBlocker: "flat_first_atlas_new_run_required",
+          phase: "failed", shotsComplete: 0, shotsTotal: 7,
+          failedShots: [], regeneratingShots: [], views: [],
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "flat_first_atlas_new_run_required" });
+  assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
+});
+
+test("a rejected legacy Atlas signed-view read never reaches Storage", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000011";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/designpro_generation_view_paths")) {
+        return Response.json(
+          { message: "flat_first_atlas_new_run_required" },
+          { status: 400 },
+        );
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/views`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "flat_first_atlas_new_run_required" });
+  assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
+});
+
+test("a rejected legacy Atlas master preview returns typed 409 before Storage signing", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000011";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_atlas_revision_paths")) {
+        return Response.json(
+          { message: "flat_first_atlas_new_run_required" },
+          { status: 400 },
+        );
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/atlas`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "flat_first_atlas_new_run_required" });
+  assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
+});
+
 test("flat atlas lineage signs before and after previews without returning storage paths", async (t) => {
   const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const requestId = "10000000-0000-4000-8000-000000000010";
@@ -1785,7 +1897,7 @@ test("the flat-first gate does not change legacy handoff behavior", async (t) =>
   assert.equal((await response.json()).generationId, generationId);
 });
 
-test("a flat-first view instruction is rejected because edits require a new atlas revision", async (t) => {
+test("an instructed flat-first view regeneration is refused because Atlas requires a new run", async (t) => {
   const requestId = "10000000-0000-4000-8000-000000000010";
   const calls = [];
   const server = createGateway({
@@ -1814,11 +1926,11 @@ test("a flat-first view instruction is rejected because edits require a new atla
     body: JSON.stringify({ instruction: "Make the driver logo larger" }),
   });
   assert.equal(response.status, 409);
-  assert.deepEqual(await response.json(), { error: "flat_first_atlas_revision_required" });
+  assert.deepEqual(await response.json(), { error: "flat_first_atlas_new_run_required" });
   assert.equal(calls.some((item) => item.url.endsWith("/rpc/regenerate_designpro_generation_slot")), false);
 });
 
-test("an instructionless flat-first view retry reuses the same atlas", async (t) => {
+test("an instructionless flat-first view retry is also refused before the regeneration RPC", async (t) => {
   const requestId = "10000000-0000-4000-8000-000000000010";
   const calls = [];
   const server = createGateway({
@@ -1855,12 +1967,12 @@ test("an instructionless flat-first view retry reuses the same atlas", async (t)
     headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
     body: "{}",
   });
-  assert.equal(response.status, 202);
-  const retry = calls.find((item) => item.url.endsWith("/rpc/regenerate_designpro_generation_slot"));
-  assert.equal(JSON.parse(retry.init.body).p_instruction, null);
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { error: "flat_first_atlas_new_run_required" });
+  assert.equal(calls.some((item) => item.url.endsWith("/rpc/regenerate_designpro_generation_slot")), false);
 });
 
-test("a view can be regenerated without mutating the accepted one", async (t) => {
+test("the active Close-Up view can be regenerated without mutating the accepted one", async (t) => {
   const requestId = "10000000-0000-4000-8000-000000000002";
   const calls = [];
   const server = createGateway({
@@ -1874,7 +1986,7 @@ test("a view can be regenerated without mutating the accepted one", async (t) =>
       }
       if (value.endsWith("/rest/v1/rpc/regenerate_designpro_generation_slot")) {
         return Response.json({
-          requestId, sourceViewType: "hero-3d", consumerRole: "hero3d",
+          requestId, sourceViewType: "close-up", consumerRole: "closeup",
           supersededViews: 1, state: "queued",
         });
       }
@@ -1883,19 +1995,43 @@ test("a view can be regenerated without mutating the accepted one", async (t) =>
   });
   t.after(() => server.close());
   const base = await listen(server);
-  const response = await fetch(`${base}/api/generation/requests/${requestId}/views/hero-3d/regenerate`, {
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/views/close-up/regenerate`, {
     method: "POST",
     headers: { cookie: "dp_session=test-token", "content-type": "application/json", origin: env.DESIGNPRO_APP_ORIGIN },
     body: JSON.stringify({ instruction: "bolder lettering" }),
   });
   assert.equal(response.status, 202);
   const payload = await response.json();
-  assert.equal(payload.sourceViewType, "hero-3d");
-  assert.equal(payload.consumerRole, "hero3d");
+  assert.equal(payload.sourceViewType, "close-up");
+  assert.equal(payload.consumerRole, "closeup");
   assert.equal(payload.supersededViews, 1);
   // The instruction is carried to the server, never turned into a browser prompt.
   const rpcCall = calls.find((item) => item.url.includes("regenerate_designpro_generation_slot"));
   assert.equal(JSON.parse(rpcCall.init.body).p_instruction, "bolder lettering");
+});
+
+test("a historical hero3d view is readable history but cannot be regenerated", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000002";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/views/hero-3d/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json", origin: env.DESIGNPRO_APP_ORIGIN },
+    body: JSON.stringify({ instruction: "repair historical view" }),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "generation_view_not_in_plan" });
+  assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
 });
 
 test("a view outside the frozen plan cannot be regenerated", async (t) => {

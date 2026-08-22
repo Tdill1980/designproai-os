@@ -1,11 +1,14 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const worker = require("../../runtime/generation-worker.cjs");
 const ace = require("../../runtime/designiq-prompt.cjs");
+const photography = require("../../runtime/photorealism-prompt.cjs");
 const studio = require("../../runtime/studio-os.cjs");
+const angles = require("../../runtime/view-angles.cjs");
 
 const INPUT = Object.freeze({
   brief: "HVAC Hero, dark blue and ice blue, bold commercial wrap",
@@ -56,6 +59,83 @@ test("the camera angle is read first and never appended twice", () => {
 test("the studio contract is byte-identical to the ported file", () => {
   assert.ok(live().includes(studio.STUDIO_ENVIRONMENT.trim()),
     "the prompt must carry the studio kernel verbatim");
+});
+
+test("runtime Studio OS strings are byte-identical to the DesignProAI Edge source", () => {
+  const edgeSource = readFileSync(
+    new URL("../../supabase/functions/_shared/studio-os.ts", import.meta.url),
+    "utf8",
+  );
+  for (const name of ["STUDIO_ENVIRONMENT", "STUDIO_REINFORCEMENT"]) {
+    const sourceLiteral = edgeSource.match(
+      new RegExp("export const " + name + " = `([\\s\\S]*?)`;"),
+    );
+    assert.ok(sourceLiteral, `the Edge ${name} template literal must remain readable`);
+    assert.equal(
+      studio[name],
+      sourceLiteral[1],
+      `runtime ${name} must be a byte-for-byte port of the Edge contract`,
+    );
+  }
+});
+
+test("runtime view order and every active camera are exact Edge view-angles-os ports", () => {
+  const edgeSource = readFileSync(
+    new URL("../../supabase/functions/_shared/view-angles-os.ts", import.meta.url),
+    "utf8",
+  );
+  const orderLiteral = edgeSource.match(
+    /export const VIEW_ORDER = \[([\s\S]*?)\] as const;/,
+  );
+  assert.ok(orderLiteral, "the Edge VIEW_ORDER literal must remain readable");
+  const edgeOrder = [...orderLiteral[1].matchAll(/['\"]([^'\"]+)['\"]/g)]
+    .map((match) => match[1]);
+  assert.deepEqual(
+    angles.viewOrder(),
+    edgeOrder,
+    "runtime view order must be byte-derived from the active Edge order",
+  );
+  assert.deepEqual(edgeOrder, [
+    "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
+  ]);
+  assert.ok(!edgeOrder.includes("hero-3d"), "Hero must not enter the active seven");
+
+  const cameraBlock = edgeSource.match(
+    /export const CAMERA_ANGLES:[^=]+?= \{([\s\S]*?)\n\};/,
+  );
+  assert.ok(cameraBlock, "the Edge CAMERA_ANGLES object must remain readable");
+  for (const view of edgeOrder) {
+    const escaped = view.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const sourceLiteral = cameraBlock[1].match(
+      new RegExp(
+        "(?:^|\\n)\\s*(?:['\"]" + escaped + "['\"]|" + escaped
+          + "):\\s*`([\\s\\S]*?)`,",
+        "m",
+      ),
+    );
+    assert.ok(sourceLiteral, `the Edge ${view} camera template must remain readable`);
+    assert.equal(
+      angles.cameraAngle(view),
+      sourceLiteral[1],
+      `runtime ${view} camera must be a byte-for-byte Edge port`,
+    );
+  }
+});
+
+test("the photorealism contract is byte-identical to the DesignProAI Edge source", () => {
+  const edgeSource = readFileSync(
+    new URL("../../supabase/functions/_shared/photorealism-prompt.ts", import.meta.url),
+    "utf8",
+  );
+  const sourceLiteral = edgeSource.match(
+    /export const PHOTOREALISM_REQUIREMENT = `([\s\S]*?)`;/,
+  );
+  assert.ok(sourceLiteral, "the Edge PHOTOREALISM_REQUIREMENT template literal must remain readable");
+  assert.equal(
+    photography.PHOTOREALISM_REQUIREMENT,
+    sourceLiteral[1],
+    "runtime photography must be a byte-for-byte port of the Edge contract",
+  );
 });
 
 test("photo realism is explicit-request only", () => {

@@ -9,7 +9,8 @@
  *   COMMERCIAL_TRANSLATION  :150      buildLogoArchitecture   :153
  *   truckBedClause          :186      briefWantsPhoto         :203
  *   PHOTO_REALISM_LOCK      :221      FINISH_SPECS            :393
- *   PROFESSIONAL_JUDGMENT   :440      commercial assembly     :447-546
+ *   ARTBOARD MODE           :331-390  PROFESSIONAL_JUDGMENT   :440
+ *   commercial assembly     :447-546
  *   canonicalizeVehicle     _shared/render-events.ts:81
  *
  * WHY THIS EXISTS. The standalone runtime built its whole design prompt from
@@ -30,6 +31,11 @@
 
 const { STUDIO_ENVIRONMENT } = require("./studio-os.cjs");
 const angles = require("./view-angles.cjs");
+
+// Versioned independently from the A.T.L.A.S. topology prompt so an immutable
+// master authored with an older/partial DesignPanel port can never be reused
+// after the proven artboard implementation changes.
+const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.20260822.v1";
 
 // Names no form. Every version that prescribed one converged - "custom,
 // distinctive lettering" handed three trades the same lockup, and replacing it
@@ -96,15 +102,34 @@ function supplementalBrandDirection({ website, qrEnabled, qrUrl, textLayerPrompt
   return text;
 }
 
+function flatAtlasVehicle(input = {}) {
+  const nested = input.vehicle && typeof input.vehicle === "object" ? input.vehicle : {};
+  const year = String(input.vehicleYear || nested.year || "").trim();
+  const make = String(input.vehicleMake || nested.make || "").trim();
+  const model = String(input.vehicleModel || nested.model || "").trim();
+  const type = String(input.vehicleType || nested.type || "").trim();
+  const canonicalMakeModel = canonicalizeVehicle(make, model, year);
+  const makeModel = canonicalMakeModel || [make, model].filter(Boolean).join(" ");
+  const base = [year, makeModel].filter(Boolean).join(" ").trim();
+  if (!type || base.toLowerCase().includes(type.toLowerCase())) return base || type || "selected vehicle";
+  return [base, type].filter(Boolean).join(" ");
+}
+
 /**
- * The proven DesignIQ creative brain for the one flat A.T.L.A.S. authoring
- * call. It deliberately contains no camera, studio or 3D-vehicle scene: those
- * belong only to downstream proof projection. Everything that decides what the
- * design IS remains here, so "flat first" does not become "generic first".
+ * The DesignProAI artboard-mode creative brain for the one flat A.T.L.A.S.
+ * authoring call.
+ *
+ * This is a direct server-runtime port of the existing `mode === "artboard"`
+ * branch in design-panel-ai-generate. The only intentional adaptation is that
+ * A.T.L.A.S.'s deterministic first-image guide, rather than the Edge Function's
+ * example-artboard panel list, is the sole topology authority. Camera, studio,
+ * lighting and vehicle photography remain downstream generate-color-render
+ * concerns; putting them here would ask the master call to render a mockup.
  */
-function buildFlatDesignIQDirection(input = {}) {
+function buildAtlasArtboardDesignIQDirection(input = {}) {
   const prompt = String(input.brief || "").trim();
   const mode = String(input.mode || "commercial").toLowerCase();
+  const vehicle = flatAtlasVehicle(input);
   const companyName = String(input.companyName || input.businessName || "").trim();
   const phone = String(input.phone || "").trim();
   const website = String(input.website || "").trim();
@@ -118,16 +143,25 @@ function buildFlatDesignIQDirection(input = {}) {
   const finish = String(input.finish || "Gloss");
   const finishSpec = FINISH_SPECS[finish.toLowerCase()] || FINISH_SPECS.gloss;
 
-  const identity = exactReference
-    ? "You are a vehicle-wrap REPRODUCTION specialist. Reproduce the customer's verified approved artwork faithfully in one continuous FLAT unwrapped atlas. Do not redesign, restyle, recolor, simplify, correct, or invent; adapt only to the locked atlas zones."
+  const assignment = exactReference
+    ? "Reproduce the customer's verified approved artwork faithfully in one continuous FLAT unwrapped artboard. Do not redesign, restyle, recolor, simplify, correct, or invent; adapt only to the locked A.T.L.A.S. zones."
     : mode === "restyle"
-    ? "You are WePrintWraps.com Lead Vehicle Wrap Designer. Create an original, gallery-grade artistic wrap as one continuous FLAT unwrapped atlas. Amplify the customer's vision while staying true to it; make every open design decision with the judgment of a senior custom-wrap designer."
-    : "You are the senior graphic designer at a sign and wrap company with 20 years of premium commercial fleet-graphics experience. Create one original, readable-at-a-glance commercial design as a continuous FLAT unwrapped atlas, worth a professional custom-wrap budget.";
+    ? "Create an original artistic vehicle wrap as one continuous FLAT unwrapped artboard. Amplify the customer's vision while staying true to it; make every open design decision with the judgment of a senior custom-wrap designer."
+    : "Create one original, readable-at-a-glance commercial vehicle-wrap design as one continuous FLAT unwrapped artboard, worth a professional custom-wrap budget.";
 
-  let assembled = `${identity}
+  // Source parity: the role, one-flat-artboard framing, edge-to-edge fill,
+  // same-cohesive-design rule and final gallery-grade quality floor all come
+  // from design-panel-ai-generate's existing artboard branch.
+  let assembled = `You are a Custom Vehicle Wrap Designer at WePrintWraps.com. ${assignment}
+
+Design ONE flat vehicle-wrap ARTBOARD for a ${vehicle}. The output is flat print artwork on a 2D sheet.
+
+TOPOLOGY AUTHORITY: The caller's FIRST attached deterministic A.T.L.A.S. guide is the sole authority for panel count, position, size, rotation and surface identity. Fill every supplied exterior-panel zone edge-to-edge with artwork. Use the SAME cohesive design flowing across every zone as one connected wrap unwrapped flat. Never invent, move, resize, relabel, replace or add panels, and never copy the guide's neutral colors, outlines, labels or background into the artwork.
+
+SIDE-TWIN CONTRACT: DRIVER and PASSENGER are opposite-facing installations of the same side composition. Build PASSENGER as the mirror-compatible twin of DRIVER with the same motif, photographic scene, palette, hierarchy, scale, landmarks and flow reversed for the opposite flank. Every business name, logo lettering, URL, phone number and other readable glyph must still be drawn forward-reading on BOTH zones; never mirror-reverse text.
 
 THE CONCEPT — the heart of this design; build every connected atlas zone around it:
-Customer creative direction: "${prompt}"`;
+DESIGN BRIEF: "${prompt}"`;
 
   if (!exactReference) {
     assembled += mode === "restyle"
@@ -172,8 +206,16 @@ Customer creative direction: "${prompt}"`;
   assembled += `\n\nFINISH LOCK: ${finish.toUpperCase()} — ${finishSpec} Keep this finish intent consistent across every connected atlas zone.`;
   const substrateSpec = substrateContext(input.substrate);
   if (substrateSpec) assembled += `\n${substrateSpec}`;
-  assembled += "\nThe atlas is flat wrap artwork only: no camera, no studio, no vehicle photograph, no wheels, windows, lights, shadows, mockup, annotations or template graphics.";
+  const pickupCoverage = truckBedClause(vehicle);
+  assembled += `\n\nMASTER/PROOF APPLICATION BOUNDARY: The A.T.L.A.S. master stays FULL-BLEED inside every supplied exterior-panel zone. Do not punch out or draw window/glass openings, a pickup-bed opening, wheel arches, lights or trim into this flat artwork. Artwork may continue behind those future installer cut lines, but do not make glass or an opening the placement anchor for essential logos, lettering or contact copy. During downstream 3D proof projection only, the wrap covers painted body panels; windows, glass, lights, wheels and trim stay factory.${pickupCoverage}${pickupCoverage ? " The open bed interior is not an artwork surface and must never receive generated wrap graphics." : ""}`;
+  assembled += "\n\nGallery-grade custom artwork with real depth, movement, and a wow factor — never generic AI filler, never a template. Match the production quality of the provided gold-standard DesignPanel artboards, while the deterministic A.T.L.A.S. guide alone controls this sheet's topology. Output ONE flat 2D artboard sheet with the branded wrap artwork filling the deterministic A.T.L.A.S. zones, drawn straight-on and flat. No camera, studio, vehicle photograph, mockup, shadows, annotations or template graphics.";
   return assembled;
+}
+
+// Compatibility export for the already-shipped caller. New Atlas wiring should
+// use the explicit artboard name so this cannot be mistaken for a proof prompt.
+function buildFlatDesignIQDirection(input = {}) {
+  return buildAtlasArtboardDesignIQDirection(input);
 }
 
 function buildLogoArchitecture() {
@@ -552,7 +594,9 @@ module.exports = {
   PHOTO_REALISM_LOCK,
   PROFESSIONAL_JUDGMENT,
   SUBSTRATE_CONTEXT,
+  DESIGNPANEL_ARTBOARD_PORT_VERSION,
   briefWantsPhoto,
+  buildAtlasArtboardDesignIQDirection,
   buildDesignIQPrompt,
   buildFlatDesignIQDirection,
   buildLogoArchitecture,

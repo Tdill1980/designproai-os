@@ -12,20 +12,17 @@ const ownerId = "12345678-1234-4123-8123-123456789abc";
 const revisionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const runId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const tenantKey = `user_${ownerId}`;
-const roles = ["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"];
+const roles = ["driver", "passenger", "hood", "front", "rear", "closeup", "roof"];
 const views = Object.fromEntries(roles.map((role, index) => {
   const contentHash = String(index + 1).padStart(64, "0");
   return [role, { bucket: "wrap-files", storagePath: `users/${ownerId}/revisions/${revisionId}/inputs/${role}/${contentHash}.png`, contentHash, byteSize: index + 1, contentType: "image/png" }];
 }));
-const closeupViews = { ...views };
-delete closeupViews.hero3d;
-closeupViews.closeup = {
-  bucket: "wrap-files",
-  storagePath: `users/${ownerId}/revisions/${revisionId}/inputs/closeup/${"8".padStart(64, "0")}.png`,
-  contentHash: "8".padStart(64, "0"),
-  byteSize: 8,
-  contentType: "image/png",
+const historicalHero = {
+  ...views.closeup,
+  storagePath: views.closeup.storagePath.replace("/closeup/", "/hero3d/"),
 };
+const historicalViews = { ...views, hero3d: historicalHero };
+delete historicalViews.closeup;
 
 test("seven distinct views automatically precede flat proof, panels and logos", () => {
   // Call 11 (panels.delogo) sits between Call 10 and pack.verify so its
@@ -45,16 +42,20 @@ test("missing or reused required view refuses the chain", () => {
 });
 
 test("revision freeze accepts exactly one Close-Up or historical Hero identity", () => {
-  const resolvedCloseup = _test.exactSevenViews({ renderAssets: closeupViews }, tenantKey, revisionId);
+  const resolvedCloseup = _test.exactSevenViews({ renderAssets: views }, tenantKey, revisionId);
   assert.deepEqual(Object.keys(resolvedCloseup), ["driver", "passenger", "hood", "roof", "front", "rear", "closeup"]);
   assert.equal("hero3d" in resolvedCloseup, false);
 
+  const resolvedHistorical = _test.exactSevenViews({ renderAssets: historicalViews }, tenantKey, revisionId);
+  assert.equal(Object.hasOwn(resolvedHistorical, "hero3d"), true);
+  assert.equal(Object.hasOwn(resolvedHistorical, "closeup"), false);
+
   assert.throws(
-    () => _test.exactSevenViews({ renderAssets: { ...views, closeup: closeupViews.closeup } }, tenantKey, revisionId),
+    () => _test.exactSevenViews({ renderAssets: { ...views, hero3d: historicalHero } }, tenantKey, revisionId),
     /Exactly one Close-Up or immutable historical Hero proof/,
   );
   const neither = { ...views };
-  delete neither.hero3d;
+  delete neither.closeup;
   assert.throws(
     () => _test.exactSevenViews({ renderAssets: neither }, tenantKey, revisionId),
     /Exactly one Close-Up or immutable historical Hero proof/,

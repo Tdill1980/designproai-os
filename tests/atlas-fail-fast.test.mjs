@@ -31,6 +31,57 @@ test("the browser stops an old retrying request on fail-closed geometry", () => 
   assert.match(adapter, /terminalGenerationFailureCode\(state/);
 });
 
+test("A.T.L.A.S. per-view regeneration fails closed and tells the customer to start a new run", () => {
+  const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
+  const premium = read("app/src/pages/DesignPanelProPremium.tsx");
+  const guardedPage = read("app/src/pages/designpro/GenerateDesign.tsx");
+  const retry = hook.slice(
+    hook.indexOf("const retryFailedView"),
+    hook.indexOf("const saveDesignJob"),
+  );
+
+  assert.match(retry, /activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE/);
+  assert.match(retry, /Start a new A\.T\.L\.A\.S\. run/);
+  assert.ok(
+    retry.indexOf("activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE")
+      < retry.indexOf("regenerateDesignPanelView"),
+    "the browser guard must run before its regeneration request",
+  );
+  assert.match(premium, /isFlatFirstDiagnostic \? \([\s\S]*Start a new A\.T\.L\.A\.S\. run\.[\s\S]*\) : \([\s\S]*Retry This View/);
+  assert.match(guardedPage, /Start a new A\.T\.L\.A\.S\. run/);
+  assert.doesNotMatch(guardedPage, /Edit the canonical master first/);
+});
+
+test("legacy Atlas owner-read failures clear every preview and never recover signed views", () => {
+  const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
+  const premium = read("app/src/pages/DesignPanelProPremium.tsx");
+  const gateway = read("gateway/src/server.mjs");
+  const failure = hook.slice(
+    hook.indexOf("} catch (error: any) {", hook.indexOf("const runStandaloneGeneration")),
+    hook.indexOf("const generateRender"),
+  );
+
+  assert.match(hook, /flat_first_atlas_new_run_required/);
+  assert.match(hook, /generation_atlas_lineage_invalid/);
+  assert.match(failure, /if \(requiresNewAtlasRun\) clearUntrustedAtlasProofState\(\)/);
+  assert.match(failure, /if \(acceptedRequest && !requiresNewAtlasRun\)/);
+  assert.match(hook, /This saved A\.T\.L\.A\.S\. proof set cannot be reused\. Start a new A\.T\.L\.A\.S\. run\./);
+  const clear = hook.slice(
+    hook.indexOf("const clearUntrustedAtlasProofState"),
+    hook.indexOf("// Persona pipeline timer"),
+  );
+  for (const reset of [
+    "setGeneratedImageUrl(null)", "setVisualizationId(null)", "setAllViews([])",
+    "setFailedViews([])", "setFlatProofUrl(null)", "setStandaloneRequestId(null)",
+    "setGenerationRequestState(null)", "setPersonaHeroUrl(null)",
+    "setPersonaAllViews({})", "setPersonaFailedShots([])",
+  ]) assert.match(clear, new RegExp(reset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(premium, /renderError \|\| atlasNewRunRequired/);
+  assert.match(premium, /generationError\?\.includes\("Start a new A\.T\.L\.A\.S\. run"\)/);
+  assert.match(gateway, /request\.failureCode === ATLAS_NEW_RUN_REQUIRED[\s\S]*return json\(res, 409/);
+  assert.match(gateway, /designpro_generation_view_paths[\s\S]*includes\(ATLAS_NEW_RUN_REQUIRED\)[\s\S]*status: 409/);
+});
+
 test("the A.T.L.A.S. banner reports customer progress without implementation details", () => {
   const premium = read("app/src/pages/DesignPanelProPremium.tsx");
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");

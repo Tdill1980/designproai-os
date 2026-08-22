@@ -8,7 +8,7 @@ const closeup = { sourceViewType: "close-up", consumerRole: "closeup" };
 const hero = { sourceViewType: "hero-3d", consumerRole: "hero3d" };
 
 describe("displayRenderRoles", () => {
-  it("keeps historical Hero as the pre-migration authoring default", () => {
+  it("uses the active Close-Up plan when no completed views exist", () => {
     expect(displayRenderRoles([])).toEqual(RENDER_ROLES);
   });
 
@@ -25,7 +25,9 @@ describe("displayRenderRoles", () => {
   });
 
   it("preserves a historical Hero response", () => {
-    expect(displayRenderRoles([hero])).toEqual(RENDER_ROLES);
+    expect(displayRenderRoles([hero])).toEqual([
+      "driver", "passenger", "hood", "front", "rear", "hero3d", "roof",
+    ]);
   });
 
   it("never relabels a mismatched seventh-slot identity", () => {

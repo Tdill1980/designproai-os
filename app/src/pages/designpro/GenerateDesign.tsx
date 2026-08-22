@@ -309,7 +309,7 @@ export default function GenerateDesign() {
   async function regenerate(role: RenderRole, instruction: string) {
     if (!requestId) return;
     if (isFlatFirstDiagnostic) {
-      setError("An A.T.L.A.S. proof cannot be regenerated independently. Edit the canonical master first.");
+      setError("An A.T.L.A.S. proof cannot be regenerated independently. Start a new A.T.L.A.S. run.");
       return;
     }
     setBusy(true);
@@ -751,8 +751,10 @@ export default function GenerateDesign() {
                   onRegenerate={(instruction) => regenerate(role, instruction)}
                   regenerationDisabledReason={
                     isFlatFirstDiagnostic
-                      ? "A.T.L.A.S. authority is locked. Proof revisions must edit the flat master first; independent 3D regeneration is disabled."
-                      : undefined
+                      ? "A.T.L.A.S. authority is locked. Start a new A.T.L.A.S. run to regenerate its master and seven-view proof set."
+                      : role === "hero3d"
+                        ? "This immutable historical Hero proof is read-only and cannot be regenerated."
+                        : undefined
                   }
                 />
               ))}
