@@ -6,7 +6,7 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const angles = require("../../runtime/view-angles.cjs");
 const provider = require("../../runtime/generation-provider.cjs");
-const anglesSource = readFileSync(new URL("../../runtime/view-angles.cjs", import.meta.url), "utf8");
+const serverProviderSource = readFileSync(new URL("../../runtime/designpanel-server-provider.cjs", import.meta.url), "utf8");
 
 const okImage = (mimeType = "image/png") => ({
   candidates: [{ content: { parts: [{ inlineData: { mimeType, data: Buffer.from("render").toString("base64") } }] } }],
@@ -25,14 +25,16 @@ test("the seven immutable slots keep the locked production order", () => {
   for (const view of angles.viewOrder()) assert.ok(claimant.includes(`"${view}"`), `claimant lost slot ${view}`);
 });
 
-test("every view is generated — there is no mirror path", () => {
-  for (const view of angles.viewOrder()) assert.equal(angles.requiresOwnGeneration(view), true);
+test("passenger keeps its slot but uses the canonical passenger producer", () => {
+  for (const view of angles.viewOrder().filter((value) => value !== "passenger-side")) {
+    assert.equal(angles.requiresOwnGeneration(view), true);
+  }
+  assert.equal(angles.requiresOwnGeneration("passenger-side"), false);
   assert.throws(() => angles.requiresOwnGeneration("spoiler"), /unknown view/);
-  // The source disabled INSTANT_MIRROR because mirroring produced backwards
-  // text on wraps carrying lettering and URLs, then left dead branches behind.
-  // None of that is carried forward: no mirror helper, no flip.
-  const body = anglesSource.replace(/\/\*\*[\s\S]*?\*\//g, "");
-  assert.doesNotMatch(body, /isInstantMirrorView|getMirrorSource|scaleX\(-1\)|\.flop\(/);
+  assert.match(serverProviderSource, /producePassengerView/);
+  assert.match(serverProviderSource, /generatePassengerMirror/);
+  assert.match(serverProviderSource, /\.flop\(\)/);
+  assert.match(serverProviderSource, /textFixUndidTheMirror/);
 });
 
 test("the passenger angle keeps its text-direction guard", () => {
@@ -72,6 +74,27 @@ test("the provider falls back across models and rests an unhealthy key", async (
   assert.equal(calls.filter((c) => c === "pro").length, 2, "both keys tried on the primary model first");
   assert.ok(result.attempts.length >= 2, "the failed attempts are reported, not swallowed");
   assert.match(result.keyFingerprint, /^[0-9a-f]{12}$/);
+});
+
+test("the provider sends the passenger repair system instruction to Gemini", async () => {
+  let requestBody = null;
+  const pool = provider.createProvider({
+    keys: ["key-a"],
+    models: ["gemini-3-pro-image"],
+    fetchImpl: async (_url, init) => {
+      requestBody = JSON.parse(init.body);
+      return json(okImage());
+    },
+  });
+  const systemInstruction = { parts: [{ text: "preserve the camera" }] };
+  await pool.generateImage({
+    parts: [{ text: "repair the text" }],
+    aspectRatio: "16:9",
+    imageSize: "4K",
+    systemInstruction,
+  });
+  assert.deepEqual(requestBody.systemInstruction, systemInstruction);
+  assert.deepEqual(requestBody.contents[0].parts, [{ text: "repair the text" }]);
 });
 
 test("a rested key is skipped while it cools down, then returns", async () => {

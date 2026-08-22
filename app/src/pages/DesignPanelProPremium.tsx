@@ -908,6 +908,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const demoConsumedRef = useRef(false); // Ensures demo hero fires only once per push
   const demoViewsConsumedRef = useRef(false); // Ensures demo all-views fires only once
   const [activeViewIndex, setActiveViewIndex] = useState(0);
+  // The server may finish Views 2-7 while the customer is reviewing View 1,
+  // but those saved sides stay out of the presentation until this explicit
+  // reveal is chosen. This is display state only; it never changes production
+  // identity or starts a second generation pipeline.
+  const [allViewsRevealed, setAllViewsRevealed] = useState(false);
 
   useEffect(() => {
     if (pushedRender && !pushedInitialized.current) {
@@ -1120,6 +1125,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       const canGen = await checkCanGenerate();
       if (!canGen) return;
     }
+
+    setAllViewsRevealed(false);
+    setActiveViewIndex(0);
 
     // Light the progress UI from the FIRST step so the customer is never blind
     // while the edge functions run (GENIE enhance can take a few seconds before
@@ -1437,6 +1445,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   };
 
   const handleGenerateAllViews = async () => {
+    // Reveal immediately. The one server request is already producing/saving
+    // the approved view set, and its progressive observer will append each side
+    // here as it lands. The refresh below only reads those server-owned rows.
+    setAllViewsRevealed(true);
+    setActiveViewIndex(0);
     if (!generatedImageUrl) return;
 
     // ── DEMO MODE: If pushed from RevisionStudio, stagger-reveal preloaded views ──
@@ -1483,15 +1496,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     await generateAdditionalViews(viewYear, viewMake, viewModel);
   };
 
-  // ── Auto-fire the all-views + 2D-proof + back-of-house clean pass ──
-  // ── MULTI-VIEW GATE — HARD STOP after the Driver Side hero ───────────────
-  // The auto-fire that streamed the full view set the instant the hero landed is
-  // REMOVED. The system renders ONLY the Driver Side, then holds. The remaining
-  // vehicle-class angles + the 2D proof are
-  // generated ONLY when the customer explicitly clicks "See All Sides / Generate
-  // All Views" (handleGenerateAllViews, wired to the buttons below). This keeps
-  // the workspace fast and on a single view, and stops trailing renders from
-  // being pushed into the active set before the user asks for them.
+  // ── MULTI-VIEW PRESENTATION GATE ──────────────────────────────────────────
+  // Calls 1-7 remain one resumable server request. The page first presents only
+  // Driver Side; "See All Views" reveals the already-saved/progressive sides.
+  // It is a reveal/read control, never a second browser-side producer.
   const autoBoatViewsRef = useRef(false); // retained (referenced elsewhere); no auto-fire
 
   // 24/7 "Order Print-Ready Production Pack" — guest-capable $299 checkout.
@@ -1575,6 +1583,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       depth: request.revisionDepth,
     });
 
+    setAllViewsRevealed(false);
+    setActiveViewIndex(0);
     setPipelineActive(true);
     setPipelinePhase(1);
 
@@ -1682,6 +1692,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const sortedAllViews = requiredViewTypes
     .map(findViewByType)
     .filter((v): v is NonNullable<typeof v> => Boolean(v));
+  const displayedAllViews = allViewsRevealed ? sortedAllViews : [];
   const VIEW_LABEL_MAP: Record<string, string> = {
     side: 'Driver Side', 'driver-side': 'Driver Side',
     'passenger-side': 'Passenger Side',
@@ -1694,22 +1705,24 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   };
 
   // Active view for arrow navigation in main preview
-  const clampedViewIndex = sortedAllViews.length > 0 ? Math.min(activeViewIndex, sortedAllViews.length - 1) : 0;
-  // While the 7 views are still generating, PIN the main canvas to the driver-side
-  // hero — don't follow the growing/re-sorting sortedAllViews array, which made the
-  // Konva image blink between half-done angles. The filmstrip still fills in below;
-  // the big preview only becomes navigable once generation finishes.
-  const mainDisplayUrl = isViewsStillGenerating
-    ? baseDisplayUrl
-    : (sortedAllViews.length > 1 && sortedAllViews[clampedViewIndex]
-        ? sortedAllViews[clampedViewIndex].url
-        : baseDisplayUrl);
+  const clampedViewIndex = displayedAllViews.length > 0 ? Math.min(activeViewIndex, displayedAllViews.length - 1) : 0;
+  const savedDriverDisplayUrl = findViewByType('side')?.url || null;
+  // Standard generation is side-first, so its legacy base URL is the Driver
+  // result. A.T.L.A.S. projections run in parallel; never let whichever angle
+  // happens to finish first impersonate Driver Side.
+  const driverDisplayUrl = savedDriverDisplayUrl || (!isFlatFirstDiagnostic ? baseDisplayUrl : null);
+  // Driver Side stays pinned until the customer explicitly asks to see the
+  // other angles. After reveal, the chosen thumbnail owns the canvas even while
+  // later server views continue arriving.
+  const mainDisplayUrl = !allViewsRevealed
+    ? driverDisplayUrl
+    : (displayedAllViews[clampedViewIndex]?.url || baseDisplayUrl);
   // The canonical flat master is the first visual result in A.T.L.A.S. mode.
   // It may occupy the customer viewport while the seven downstream projection
   // slots run, but it is deliberately kept separate from `mainDisplayUrl` so a
   // proof image, revision source, order gate, or production identity can never
   // mistake the atlas sheet for a 3D vehicle view.
-  const atlasMasterPreviewUrl = isFlatFirstDiagnostic && pipelineActive && !renderError && !baseDisplayUrl
+  const atlasMasterPreviewUrl = isFlatFirstDiagnostic && pipelineActive && !renderError && !savedDriverDisplayUrl
     ? latestFlatAtlas?.masterUrl || null
     : null;
   const previewDisplayUrl = mainDisplayUrl || atlasMasterPreviewUrl;
@@ -1722,8 +1735,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     !!mainDisplayUrl &&
     !isViewsStillGenerating &&
     requiredViewTypes.every((type) => Boolean(findViewByType(type)));
-  const activeViewLabel = sortedAllViews.length > 1 && sortedAllViews[clampedViewIndex]
-    ? (VIEW_LABEL_MAP[sortedAllViews[clampedViewIndex].type] || sortedAllViews[clampedViewIndex].type)
+  const activeViewLabel = displayedAllViews.length > 1 && displayedAllViews[clampedViewIndex]
+    ? (VIEW_LABEL_MAP[displayedAllViews[clampedViewIndex].type] || displayedAllViews[clampedViewIndex].type)
     : "Driver Side";
 
   return (
@@ -1829,7 +1842,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           </div>
                           <p className="mt-2 text-[10px] leading-4 text-white/55">
                             {flatFirstAtlasSupportedVehicleType(vehicleType)
-                              ? "Creates the master design first, then shows all seven vehicle views as they finish. Production ordering is unavailable in Preview mode."
+                              ? "Creates the master design and Driver Side first. Use See All Views to reveal each saved vehicle view as it finishes. Production ordering is unavailable in Preview mode."
                               : "Preview mode is available for car, truck, SUV and van. Production mode will be used for this vehicle."}
                           </p>
                         </div>
@@ -2015,7 +2028,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <div>
                             <p className="font-semibold">A.T.L.A.S. Preview</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
-                              Your A.T.L.A.S. master appears first. Each of the seven vehicle views appears as soon as it is ready, using the same design.
+                              Your A.T.L.A.S. master appears first, followed by Driver Side. Select See All Views to reveal each saved vehicle view as it becomes ready, using the same design.
                             </p>
                             <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">
                               {generationRequestState
@@ -2093,7 +2106,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   below switch the view and hot-swap the background floor. */}
                               {(() => {
                                 const activeViewKey =
-                                  (sortedAllViews.length > 0 && sortedAllViews[clampedViewIndex]?.type) || "side";
+                                  displayedAllViews[clampedViewIndex]?.type || "side";
                                 // CONDITIONAL CANVAS — kills the "two logos" bug. Only show the
                                 // decomposed layer stack (clean background + editable overlays) when a
                                 // REAL editable brand asset exists: a LIFTED cutout (id "lift-") or the
@@ -2153,8 +2166,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 rounded-xl border border-cyan-300/35 bg-black/80 px-3 py-2.5 shadow-[0_0_24px_rgba(34,211,238,0.2)] backdrop-blur-sm">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
-                                      <p className="text-xs font-bold text-cyan-100">Your A.T.L.A.S. design is ready</p>
-                                      <p className="mt-0.5 text-[10px] text-cyan-100/65">Creating the remaining vehicle views.</p>
+                                      <p className="text-xs font-bold text-cyan-100">Your A.T.L.A.S. flattened top-view design is ready</p>
+                                      <p className="mt-0.5 text-[10px] text-cyan-100/65">Creating the seven projected 3D proof views.</p>
                                     </div>
                                     <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-1 text-[10px] font-bold text-cyan-200">
                                       {generationRequestState?.shotsComplete ?? 0} of {generationRequestState?.shotsTotal ?? 7} 3D proofs ready
@@ -2163,14 +2176,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 </div>
                               )}
                               {/* Arrow navigation for cycling through views */}
-                              {sortedAllViews.length > 1 && (
+                              {displayedAllViews.length > 1 && (
                                 <>
                                   <button
                                     type="button"
                                     className="absolute left-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity opacity-0 group-hover:opacity-100"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setActiveViewIndex((prev) => (prev - 1 + sortedAllViews.length) % sortedAllViews.length);
+                                      setActiveViewIndex((prev) => (prev - 1 + displayedAllViews.length) % displayedAllViews.length);
                                     }}
                                   >
                                     <ChevronLeft className="w-5 h-5" />
@@ -2180,7 +2193,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                     className="absolute right-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity opacity-0 group-hover:opacity-100"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setActiveViewIndex((prev) => (prev + 1) % sortedAllViews.length);
+                                      setActiveViewIndex((prev) => (prev + 1) % displayedAllViews.length);
                                     }}
                                   >
                                     <ChevronRight className="w-5 h-5" />
@@ -2188,7 +2201,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   {/* Thumbnail filmstrip */}
                                   <div className={cn("absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/70 to-transparent px-2", isMobile ? "pt-3 pb-1" : "pt-6 pb-2")}>
                                     <div className="flex gap-1.5 justify-center">
-                                      {sortedAllViews.map((view, i) => (
+                                      {displayedAllViews.map((view, i) => (
                                         <button
                                           key={view.type}
                                           type="button"
@@ -2267,16 +2280,34 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       </Card>
                     )}
 
+                    {/* Existing all-views action, restored at the point where
+                        Driver Side first becomes visible. It remains clickable
+                        while the server is finishing later sides because this
+                        action reveals/reads them; it does not start a producer. */}
+                    {mainDisplayUrl && !allViewsRevealed && (
+                      <Button
+                        onClick={handleGenerateAllViews}
+                        variant="outline"
+                        className="w-full gap-2 border-cyan-400/50 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10"
+                      >
+                        <Layers className="w-4 h-4" />
+                        See All Views
+                      </Button>
+                    )}
+
                     {/* Sprocket Generation Header — pinned DIRECTLY beneath the
                         canvas so the live timer + progress bar is visible the moment
                         "All Views" is clicked, with NO scrolling. Sprocket's rotating
                         wrap facts sit underneath as engagement content during the wait. */}
-                    {isViewsStillGenerating && mainDisplayUrl && (() => {
+                    {allViewsRevealed && mainDisplayUrl && (
+                      isViewsStillGenerating || (pipelineActive && sortedAllViews.length < requiredViewCount)
+                    ) && (() => {
                       const totalViews = requiredViewCount;
                       const doneViews = Math.min(sortedAllViews.length, totalViews);
                       const pct = Math.round((doneViews / totalViews) * 100);
-                      const mm = Math.floor(additionalViewsElapsed / 60).toString().padStart(2, '0');
-                      const ss = (additionalViewsElapsed % 60).toString().padStart(2, '0');
+                      const viewElapsed = pipelineActive ? pipelineElapsed : additionalViewsElapsed;
+                      const mm = Math.floor(viewElapsed / 60).toString().padStart(2, '0');
+                      const ss = (viewElapsed % 60).toString().padStart(2, '0');
                       // All 7 views are in, but isGeneratingAdditional stays true through
                       // Call 8 (generate-2d-proof) + the deterministic panel gridslice —
                       // so without this the card sat frozen on "7/7 views ready" while it
@@ -2352,10 +2383,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         side, passenger, hood, front, rear, close-up, roof) shown
                         below the canvas, above the page scroll. Click to switch
                         the canvas view; the Add View tile generates more angles. */}
-                    {sortedAllViews.length > 0 && (
+                    {displayedAllViews.length > 0 && (
                       <div className="overflow-x-auto pb-1">
                         <div className="flex gap-2">
-                          {sortedAllViews.map((view, i) => (
+                          {displayedAllViews.map((view, i) => (
                             <button
                               key={view.type}
                               type="button"
@@ -2545,23 +2576,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     {/* Post-Render Action Buttons */}
                     {mainDisplayUrl && !pipelineActive && (
                       <div className="space-y-3">
-                        {/* Action row: All Views + Proof */}
-                        <div className={cn("grid grid-cols-1 gap-2", !isFlatFirstDiagnostic && "sm:grid-cols-2")}>
-                          <Button
-                            onClick={handleGenerateAllViews}
-                            disabled={isGeneratingAdditional || isPersonaPipelineActive || isBusy}
-                            variant="outline"
-                            className="gap-2"
-                          >
-                            {(isGeneratingAdditional || isPersonaPipelineActive) ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Layers className="w-4 h-4" />
-                            )}
-                            {(isGeneratingAdditional || isPersonaPipelineActive) ? "Generating..." : "All Views"}
-                          </Button>
-
-                          {!isFlatFirstDiagnostic && (
+                        {!isFlatFirstDiagnostic && (
+                          <div className="grid grid-cols-1 gap-2">
                             <Button
                               onClick={() => setShowProofSheet(true)}
                               className="gap-2"
@@ -2569,8 +2585,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               <ClipboardSignature className="w-4 h-4" />
                               PDF Proof Sheet
                             </Button>
-                          )}
-                        </div>
+                          </div>
+                        )}
 
                         {/* Order CTAs */}
                         {isFlatFirstDiagnostic ? (
@@ -2649,7 +2665,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     )}
 
                     {/* Failed Views Banner */}
-                    {failedViews.length > 0 && (
+                    {allViewsRevealed && failedViews.length > 0 && (
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
                         <p className="text-sm text-amber-200">
@@ -2659,10 +2675,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     )}
 
                     {/* Additional Views Grid - sorted to match locked VIEW_ORDER */}
-                    {(sortedAllViews.length > 0 || failedViews.length > 0) && (
+                    {allViewsRevealed && (displayedAllViews.length > 0 || failedViews.length > 0) && (
                       <div className={cn("grid gap-4", isMobile ? "grid-cols-1" : "grid-cols-2")}>
                         {/* Successful views */}
-                        {sortedAllViews.map((view) => (
+                        {displayedAllViews.map((view) => (
                           <Card
                             key={view.type}
                             className={cn(
@@ -2724,7 +2740,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       <Card className="overflow-hidden border-cyan-400/35 bg-cyan-400/5">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-400/20 px-4 py-3">
                           <div>
-                            <p className="text-sm font-bold text-cyan-100">A.T.L.A.S. design master</p>
+                            <p className="text-sm font-bold text-cyan-100">A.T.L.A.S. flattened top-view master</p>
                             <p className="mt-0.5 text-[11px] text-cyan-100/60">
                               Master design and seven vehicle views
                             </p>
@@ -2742,7 +2758,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <div className="grid gap-3 p-4 sm:grid-cols-2">
                             {[
                               { label: "Vehicle layout", signedUrl: latestFlatAtlas.guideUrl },
-                              { label: "A.T.L.A.S. design", signedUrl: latestFlatAtlas.masterUrl },
+                              { label: "Flattened top-view design", signedUrl: latestFlatAtlas.masterUrl },
                             ].map(({ label, signedUrl }) => (
                               <div key={label} className="overflow-hidden rounded-lg border border-white/10 bg-black/40">
                                 <div className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold text-white/75">
