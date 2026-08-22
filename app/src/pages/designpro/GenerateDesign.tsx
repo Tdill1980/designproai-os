@@ -26,6 +26,7 @@ import { Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import {
   ApiError,
   AssetIdentity,
+  displayRenderRoles,
   dpApi,
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type FlatAtlasRevision,
@@ -34,7 +35,6 @@ import {
   GenerationVehicle,
   GenerationView,
   RenderRole,
-  RENDER_ROLES,
   ROLE_FOR_SOURCE_VIEW_TYPE,
   SOURCE_VIEW_TYPE_FOR_ROLE,
   SURFACE_LABEL,
@@ -417,7 +417,11 @@ export default function GenerateDesign() {
     }
   }
 
-  const shotsTotal = request?.shotsTotal ?? RENDER_ROLES.length;
+  const displayRoles = displayRenderRoles(
+    [...(request?.views || []), ...views, ...(request?.failedShots || [])],
+    request?.regeneratingShots || [],
+  );
+  const shotsTotal = request?.shotsTotal ?? displayRoles.length;
   const shotsComplete = request?.shotsComplete ?? 0;
   // Both arrive keyed by camera; every surface below is keyed by role.
   const regeneratingRoles = new Set(
@@ -736,7 +740,7 @@ export default function GenerateDesign() {
             description="The passenger side is generated, not mirrored — a flip reverses lettering, logos and URLs. Regenerating an angle supersedes the old view; it never rewrites bytes another call already hashed."
           >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {RENDER_ROLES.map((role) => (
+              {displayRoles.map((role) => (
                 <ViewCard
                   key={role}
                   role={role}

@@ -55,6 +55,23 @@ function flatFirstPanelMap() {
   ];
 }
 
+function compatibleGenerationViews(seventh = "hero-3d") {
+  const plan = [
+    ["side", "driver"], ["passenger-side", "passenger"],
+    ["hood_detail", "hood"], ["front", "front"], ["rear", "rear"],
+    seventh === "close-up" ? ["close-up", "closeup"] : ["hero-3d", "hero3d"],
+    ["roof", "roof"],
+  ];
+  return plan.map(([sourceViewType, consumerRole], index) => ({
+    sourceViewType,
+    consumerRole,
+    contentHash: (index + 1).toString(16).repeat(64),
+    byteSize: 100 + index,
+    contentType: "image/png",
+    createdAt: "2026-08-08T00:01:00Z",
+  }));
+}
+
 function flatFirstAtlasRpcRow({ userId, requestId, generationId, panelMap = flatFirstPanelMap() }) {
   const guideHash = "1".repeat(64);
   const manifestHash = "2".repeat(64);
@@ -394,6 +411,18 @@ test("revision rejects silent zero-logo inventory but accepts an explicit no-log
     bytesByPath.set(storagePath, bytes);
     renderAssets[key] = { storagePath, contentHash, byteSize: bytes.byteLength, contentType: "image/png" };
   }
+  const closeupBytes = Buffer.from("immutable-closeup");
+  const closeupHash = createHash("sha256").update(closeupBytes).digest("hex");
+  const closeupPath = `users/${userId}/revisions/${revisionId}/inputs/closeup/${closeupHash}.png`;
+  bytesByPath.set(closeupPath, closeupBytes);
+  const closeupRenderAssets = { ...renderAssets };
+  delete closeupRenderAssets.hero3d;
+  closeupRenderAssets.closeup = {
+    storagePath: closeupPath,
+    contentHash: closeupHash,
+    byteSize: closeupBytes.byteLength,
+    contentType: "image/png",
+  };
   const calls = [];
   const server = createGateway({
     env,
@@ -469,6 +498,26 @@ test("revision rejects silent zero-logo inventory but accepts an explicit no-log
   assert.equal(rejected.status, 400);
   assert.deepEqual(await rejected.json(), { error: "logo_inventory_attestation_mismatch" });
 
+  for (const invalidAssets of [
+    { ...renderAssets, closeup: closeupRenderAssets.closeup },
+    Object.fromEntries(Object.entries(renderAssets).filter(([key]) => key !== "hero3d")),
+  ]) {
+    const invalidSeventh = await fetch(`${base}/api/revisions`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({
+        ...baseSubmission,
+        renderAssets: invalidAssets,
+        revisionSnapshot: {
+          ...baseSubmission.revisionSnapshot,
+          logoInventoryAttestation: { mode: "none", attested: true },
+        },
+      }),
+    });
+    assert.equal(invalidSeventh.status, 400);
+    assert.deepEqual(await invalidSeventh.json(), { error: "seven_render_assets_required" });
+  }
+
   const accepted = await fetch(`${base}/api/revisions`, {
     method: "POST",
     headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
@@ -476,11 +525,97 @@ test("revision rejects silent zero-logo inventory but accepts an explicit no-log
   });
   assert.equal(accepted.status, 202);
   assert.deepEqual(await accepted.json(), { runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", accepted: true });
+  const acceptedCloseup = await fetch(`${base}/api/revisions`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      ...baseSubmission,
+      renderAssets: closeupRenderAssets,
+      revisionSnapshot: {
+        ...baseSubmission.revisionSnapshot,
+        logoInventoryAttestation: { mode: "none", attested: true },
+      },
+    }),
+  });
+  assert.equal(acceptedCloseup.status, 202);
+  assert.deepEqual(await acceptedCloseup.json(), { runId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", accepted: true });
   const frozen = calls.find((call) => call.url.endsWith("/rpc/save_designpro_revision_source"));
   const frozenSnapshot = JSON.parse(frozen.init.body).p_snapshot;
   assert.equal(frozenSnapshot.logoInventoryAttestation.mode, "none");
   assert.equal(frozenSnapshot.designId, "DID-EEEEEEEE");
   assert.equal(frozenSnapshot.orderNumber, "ORDER-2026-0042");
+});
+
+test("a post-switch database rejection prevents manual historical Hero authoring", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const revisionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const bytesByPath = new Map();
+  const renderAssets = {};
+  for (const key of ["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"]) {
+    const bytes = Buffer.from(`manual-historical-${key}`);
+    const contentHash = createHash("sha256").update(bytes).digest("hex");
+    const storagePath = `users/${userId}/revisions/${revisionId}/inputs/${key}/${contentHash}.png`;
+    bytesByPath.set(storagePath, bytes);
+    renderAssets[key] = { storagePath, contentHash, byteSize: bytes.length, contentType: "image/png" };
+  }
+  let workflowCalled = false;
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.includes("/storage/v1/object/wrap-files/")) {
+        const path = decodeURIComponent(value.split("/storage/v1/object/wrap-files/")[1]);
+        const bytes = bytesByPath.get(path);
+        return bytes
+          ? new Response(bytes, { headers: { "content-type": "image/png" } })
+          : new Response("missing", { status: 404 });
+      }
+      if (value.endsWith("/rpc/save_designpro_revision_source")) {
+        return Response.json(
+          { message: "revision_render_assets_require_closeup" },
+          { status: 400 },
+        );
+      }
+      if (value.endsWith("/rpc/create_designpro_entice_workflow")) {
+        workflowCalled = true;
+        return Response.json({ workflowRunId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/revisions`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      revisionId,
+      generationId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      visualizationId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      expectedUpdatedAt: "2026-08-06T00:00:00.000Z",
+      renderAssets,
+      idempotencyKey: `revision:${revisionId}`,
+      revisionSnapshot: {
+        contractVersion: "designpro.revision-snapshot.v1",
+        vehicle: { year: "2026", make: "Ford", model: "F-250", type: "truck" },
+        surfaceOptions: {}, finish: "standard", bodyText: "",
+        orderNumber: "ORDER-2026-0042", expectedLogoInventory: [],
+        logoInventoryAttestation: { mode: "none", attested: true },
+        delivery: {
+          contractVersion: "designpro.wrapbox-recipient.v1",
+          customerId: "99999999-9999-4999-8999-999999999999",
+          customerEmail: "customer@designproai.com",
+          recipientIdentityHash: "9".repeat(64),
+          orderNumber: "ORDER-2026-0042",
+          designName: "Manual historical source",
+        },
+      },
+    }),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "revision_render_assets_require_closeup" });
+  assert.equal(workflowCalled, false, "a rejected source must never start a workflow");
 });
 
 test("artifact review signs only owner-scoped derived files and never persists a URL identity", async (t) => {
@@ -1277,10 +1412,10 @@ test("Supabase anonymous Auth users cannot enqueue Calls 1-7", async (t) => {
   assert.equal(calls.some((item) => item.url.includes("/rest/v1/rpc/")), false);
 });
 
-test("generation status returns private immutable identities without signing objects", async (t) => {
+test("historical Hero generation status returns private immutable identities without signing objects", async (t) => {
   const requestId = "10000000-0000-4000-8000-000000000001";
   const generationId = "90000000-0000-4000-8000-000000000009";
-  const contentHash = "c".repeat(64);
+  const views = compatibleGenerationViews("hero-3d");
   const calls = [];
   const server = createGateway({
     env,
@@ -1293,12 +1428,9 @@ test("generation status returns private immutable identities without signing obj
         inputHash: "a".repeat(64), engineContractHash: "b".repeat(64),
         attempt: 1, outputSetHash: "d".repeat(64), failureCode: null,
         createdAt: "2026-08-08T00:00:00Z", updatedAt: "2026-08-08T00:01:00Z",
-        completedAt: "2026-08-08T00:01:00Z", handoffReady: false,
-        handoffBlocker: "source_close_up_has_no_verified_hero3d_role_mapping",
-        views: [{
-          sourceViewType: "side", consumerRole: "driver", contentHash,
-          byteSize: 100, contentType: "image/png", createdAt: "2026-08-08T00:01:00Z",
-        }],
+        completedAt: "2026-08-08T00:01:00Z", handoffReady: true,
+        handoffBlocker: null,
+        views,
       });
       throw new Error(`unexpected ${url}`);
     },
@@ -1311,8 +1443,8 @@ test("generation status returns private immutable identities without signing obj
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.requestId, requestId);
-  assert.equal(payload.handoffReady, false);
-  assert.equal(payload.handoffBlocker, "source_close_up_has_no_verified_hero3d_role_mapping");
+  assert.equal(payload.handoffReady, true);
+  assert.equal(payload.handoffBlocker, null);
   assert.equal("storagePath" in payload.views[0], false);
   assert.equal("error" in payload, false);
   assert.equal(payload.failureCode, null);
@@ -1320,6 +1452,48 @@ test("generation status returns private immutable identities without signing obj
   assert.equal("engineContract" in payload, false);
   assert.equal(calls.some((item) => item.url.includes("/rest/v1/designpro_generation_")), false);
   assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
+});
+
+test("generation status accepts Close-Up and rejects both, neither, or role relabelling", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000001";
+  const generationId = "90000000-0000-4000-8000-000000000009";
+  const closeupViews = compatibleGenerationViews("close-up");
+  const invalidSets = [
+    [...closeupViews.filter((view) => view.sourceViewType !== "roof"), compatibleGenerationViews("hero-3d")[5]],
+    closeupViews.filter((view) => view.sourceViewType !== "close-up"),
+    closeupViews.map((view) => view.sourceViewType === "close-up"
+      ? { ...view, consumerRole: "hero3d" }
+      : view),
+  ];
+  for (const [views, expectedStatus] of [[closeupViews, 200], ...invalidSets.map((item) => [item, 502])]) {
+    const server = createGateway({
+      env,
+      fetchImpl: async (url) => {
+        const value = String(url);
+        if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+        if (value.endsWith("/rest/v1/rpc/get_designpro_generation_request")) return Response.json({
+          requestId, generationId, state: "outputs_ready",
+          inputHash: "a".repeat(64), engineContractHash: "b".repeat(64),
+          attempt: 1, outputSetHash: "d".repeat(64), failureCode: null,
+          createdAt: "2026-08-08T00:00:00Z", updatedAt: "2026-08-08T00:01:00Z",
+          completedAt: "2026-08-08T00:01:00Z", handoffReady: true,
+          handoffBlocker: null, views,
+        });
+        throw new Error(`unexpected ${url}`);
+      },
+    });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/generation/requests/${requestId}`, {
+      headers: { cookie: "dp_session=test-token" },
+    });
+    assert.equal(response.status, expectedStatus);
+    if (expectedStatus === 200) {
+      assert.equal((await response.json()).views[5].consumerRole, "closeup");
+    } else {
+      assert.deepEqual(await response.json(), { error: "generation_status_response_invalid" });
+    }
+  }
 });
 
 test("flat atlas lineage signs before and after previews without returning storage paths", async (t) => {

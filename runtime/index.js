@@ -7,7 +7,15 @@ const { createHash } = require("node:crypto");
 const { registerDesignProStandaloneClaimant } = require("./designpro-standalone-claimant.cjs");
 const { canonicalTenantKey, canonicalUuid, immutableStorageUpload, normalizeSourceAsset, verifySourceBytes } = require("./runtime-contract.cjs");
 const { probeRuntimeDependencies } = require("./runtime-readiness.cjs");
-const { authorFlatSurfaceFields, flatSurfaceInputHash, normalizeTextLock, selectedImageModel, SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
+const {
+  authorFlatSurfaceFields,
+  flatSurfaceInputHash,
+  normalizeTextLock,
+  selectedImageModel,
+  sourceViewKeys,
+  SURFACE_KEYS,
+  VIEW_KEYS,
+} = require("./gemini-flat-surface.cjs");
 const { GRID_SLICE_CONTRACT, gridSliceAll } = require("./server-grid-slice.cjs");
 const { PROOF_SHEET_CONTRACT, renderProofSheet } = require("./proof-sheet.cjs");
 const { topazReadiness } = require("./topaz-upscale.cjs");
@@ -285,15 +293,18 @@ app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
     if (!Array.isArray(surfaces) || surfaces.length !== SURFACE_KEYS.length || !Array.isArray(sourceAssets) || sourceAssets.length !== VIEW_KEYS.length) {
       return res.status(400).json({ success: false, error: "exactly seven immutable views and exactly six validated GENIE surfaces are required" });
     }
+    let requiredViewKeys;
+    try { requiredViewKeys = sourceViewKeys(sourceAssets); }
+    catch (error) { return res.status(400).json({ success: false, error: error.message }); }
     const loadedSources = [];
     const sourceKeys = new Set();
     for (const raw of sourceAssets) {
       const viewKey = String(raw?.viewKey || "").trim().toLowerCase();
-      if (!VIEW_KEYS.includes(viewKey) || sourceKeys.has(viewKey)) return res.status(400).json({ success: false, error: `invalid seven-view role ${viewKey || "?"}` });
+      if (!requiredViewKeys.includes(viewKey) || sourceKeys.has(viewKey)) return res.status(400).json({ success: false, error: `invalid seven-view role ${viewKey || "?"}` });
       sourceKeys.add(viewKey);
       loadedSources.push({ viewKey, ...(await sourceObject(raw, tenantKey, revisionId)) });
     }
-    if (VIEW_KEYS.some((key) => !sourceKeys.has(key))) return res.status(400).json({ success: false, error: "seven-view source set is incomplete" });
+    if (requiredViewKeys.some((key) => !sourceKeys.has(key))) return res.status(400).json({ success: false, error: "seven-view source set is incomplete" });
     const frozenTextLock = normalizeTextLock(textLock);
     const computedMaterialHash = flatSurfaceInputHash({ sourceViews: loadedSources, surfaces, revisionId, textLock: frozenTextLock, model: GOOGLE_IMAGE_MODEL });
     if (String(flatMaterialHash || "").toLowerCase() !== computedMaterialHash) return res.status(409).json({ success: false, error: "Call 8 flat-surface material identity changed" });

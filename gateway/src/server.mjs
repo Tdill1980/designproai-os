@@ -4,7 +4,11 @@ import { pathToFileURL } from "node:url";
 
 const BUCKET = "wrap-files";
 const MAX_ASSET_BYTES = 25 * 1024 * 1024;
-const VIEW_KEYS = ["driver", "passenger", "hood", "roof", "front", "rear", "hero3d"];
+const CORE_VIEW_KEYS = ["driver", "passenger", "hood", "roof", "front", "rear"];
+// Keep Hero as this pre-migration bridge's authoring default. Read/upload and
+// revision handoff also accept the forward Close-Up identity, never an alias.
+const VIEW_KEYS = [...CORE_VIEW_KEYS, "hero3d"];
+const COMPATIBLE_VIEW_KEYS = new Set([...VIEW_KEYS, "closeup"]);
 const PREFLIGHT_CHECKS = [
   "dimensionsVerified",
   "sourceRegionsVerified",
@@ -864,8 +868,9 @@ function validateUploadIntent(body) {
   const contentHash = String(body.contentHash || "").toLowerCase();
   const contentType = String(body.contentType || "").toLowerCase();
   const byteSize = Number(body.byteSize);
-  const kindAllowed = VIEW_KEYS.includes(kind) || kind === "logo" || kind === "attachment";
-  const typeAllowed = MIME_EXTENSION.has(contentType) && (!VIEW_KEYS.includes(kind) || contentType.startsWith("image/") && contentType !== "image/svg+xml");
+  const viewKind = COMPATIBLE_VIEW_KEYS.has(kind);
+  const kindAllowed = viewKind || kind === "logo" || kind === "attachment";
+  const typeAllowed = MIME_EXTENSION.has(contentType) && (!viewKind || contentType.startsWith("image/") && contentType !== "image/svg+xml");
   if (!/^[0-9a-f-]{36}$/.test(revisionId) || !kindAllowed || !typeAllowed || !/^[0-9a-f]{64}$/.test(contentHash) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_ASSET_BYTES) {
     throw Object.assign(new Error("asset_intent_invalid"), { status: 400 });
   }
@@ -963,18 +968,32 @@ async function verifyStoredAsset(fetchImpl, token, cfg, userId, asset) {
   return { ...asset, verified: true };
 }
 
+function compatibleRevisionViewKeys(assets) {
+  if (!assets || typeof assets !== "object" || Array.isArray(assets)) return null;
+  const keys = Object.keys(assets);
+  if (keys.length !== 7 || keys.some((key) => !COMPATIBLE_VIEW_KEYS.has(key))
+    || CORE_VIEW_KEYS.some((key) => !Object.prototype.hasOwnProperty.call(assets, key))) {
+    return null;
+  }
+  const hasCloseup = Object.prototype.hasOwnProperty.call(assets, "closeup");
+  const hasHero = Object.prototype.hasOwnProperty.call(assets, "hero3d");
+  if (hasCloseup === hasHero) return null;
+  return [...CORE_VIEW_KEYS, hasCloseup ? "closeup" : "hero3d"];
+}
+
 async function validateRevisionAssets(fetchImpl, token, cfg, userId, body) {
   const assets = body.renderAssets;
-  if (!assets || typeof assets !== "object" || Array.isArray(assets) || Object.keys(assets).length !== VIEW_KEYS.length) {
+  const viewKeys = compatibleRevisionViewKeys(assets);
+  if (!viewKeys) {
     throw Object.assign(new Error("seven_render_assets_required"), { status: 400 });
   }
   const hashes = new Set();
-  for (const key of VIEW_KEYS) {
+  for (const key of viewKeys) {
     if (!validateAssetIdentity(assets[key], userId, body.revisionId, key)) throw Object.assign(new Error(`render_asset_invalid:${key}`), { status: 400 });
     await verifyStoredAsset(fetchImpl, token, cfg, userId, assets[key]);
     hashes.add(assets[key].contentHash);
   }
-  if (hashes.size !== VIEW_KEYS.length) throw Object.assign(new Error("seven_render_assets_must_be_distinct"), { status: 409 });
+  if (hashes.size !== viewKeys.length) throw Object.assign(new Error("seven_render_assets_must_be_distinct"), { status: 409 });
   const logos = body.revisionSnapshot?.expectedLogoInventory;
   const attestation = body.revisionSnapshot?.logoInventoryAttestation;
   if (!Array.isArray(logos) || !attestation || attestation.attested !== true || !["none", "listed"].includes(attestation.mode)) {
@@ -1006,11 +1025,23 @@ const GENERATION_SERVER_CONTROL_KEYS = new Set([
 const GENERATION_VIEW_ROLE = new Map([
   ["side", "driver"], ["passenger-side", "passenger"],
   ["hood_detail", "hood"], ["front", "front"], ["rear", "rear"],
-  // The seventh slot is a whole-vehicle hero view. close-up is retained so
-  // historical rows still validate, but it is no longer part of the plan and
-  // never maps to hero3d.
+  // Close-Up and historical Hero remain distinct seventh-slot identities.
   ["hero-3d", "hero3d"], ["close-up", "closeup"], ["roof", "roof"],
 ]);
+const CORE_GENERATION_VIEW_TYPES = ["side", "passenger-side", "hood_detail", "front", "rear", "roof"];
+
+function compatibleGenerationViewSet(views, requireComplete = false) {
+  if (!Array.isArray(views) || views.length > 7) return false;
+  const types = views.map((view) => String(view?.sourceViewType || ""));
+  if (types.some((type) => !GENERATION_VIEW_ROLE.has(type)) || new Set(types).size !== types.length) return false;
+  const hasCloseup = types.includes("close-up");
+  const hasHero = types.includes("hero-3d");
+  if (hasCloseup && hasHero) return false;
+  if (!requireComplete && views.length < 7) return true;
+  return views.length === 7
+    && CORE_GENERATION_VIEW_TYPES.every((type) => types.includes(type))
+    && hasCloseup !== hasHero;
+}
 
 // Every blocker calls_1_7_handoff_state can report. An unrecognised value means
 // the database and the gateway disagree, which is a 502, not a pass-through.
@@ -1236,11 +1267,10 @@ function validatedGenerationStatus(value) {
     || !Number.isInteger(attempt) || attempt < 0 || attempt > 12
     || outputSetHash !== null && !SHA256_PATTERN.test(String(outputSetHash || ""))
     || failureCode !== null && !/^[a-z0-9][a-z0-9_:-]{0,79}$/.test(String(failureCode || ""))
-    // handoffReady was pinned false while the plan's seventh slot was a close-up,
-    // a role the revision contract does not accept. The seventh slot is now a
-    // real hero-3d view carrying the hero3d role, so the database decides this
-    // from the persisted views and the gateway carries the verdict. It is still
-    // a strict boolean, and a true verdict must not arrive with a blocker.
+    // The database decides handoff readiness from the persisted exact view
+    // identities. This compatibility bridge carries either Close-Up or the
+    // immutable historical Hero verdict without changing either role. It is a
+    // strict boolean, and a true verdict must not arrive with a blocker.
     || typeof value.handoffReady !== "boolean"
     || value.handoffBlocker !== null && !GENERATION_HANDOFF_BLOCKERS.has(String(value.handoffBlocker))
     || value.handoffReady === true && value.handoffBlocker !== null
@@ -1259,6 +1289,12 @@ function validatedGenerationStatus(value) {
     }
     return { ...view, byteSize: Number(view.byteSize) };
   });
+  if (!compatibleGenerationViewSet(
+    publicViews,
+    state === "outputs_ready" || value.handoffReady === true,
+  )) {
+    throw Object.assign(new Error("generation_status_response_invalid"), { status: 502 });
+  }
   return {
     requestId: String(value.requestId), generationId: String(value.generationId),
     state, inputHash: String(value.inputHash),
@@ -1566,19 +1602,27 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
         const located = await rpc(fetchImpl, token, cfg, "designpro_generation_view_paths", { p_request_id: requestId });
         if (!Array.isArray(located)) return json(res, 404, { error: "generation_request_not_found" });
-        const views = await Promise.all(located.map(async (view) => {
-          const base = {
+        const identities = located.map((view) => {
+          const identity = {
             sourceViewType: String(view.sourceViewType || ""),
             consumerRole: String(view.consumerRole || ""),
             contentHash: String(view.contentHash || ""),
             contentType: String(view.contentType || ""),
             byteSize: Number(view.byteSize || 0),
+            storagePath: String(view.storagePath || ""),
           };
-          if (!SHA256_PATTERN.test(base.contentHash) || GENERATION_VIEW_ROLE.get(base.sourceViewType) !== base.consumerRole) {
+          if (!SHA256_PATTERN.test(identity.contentHash)
+            || GENERATION_VIEW_ROLE.get(identity.sourceViewType) !== identity.consumerRole) {
             throw Object.assign(new Error("generation_view_identity_invalid"), { status: 502 });
           }
+          return identity;
+        });
+        if (!compatibleGenerationViewSet(identities)) {
+          throw Object.assign(new Error("generation_view_identity_invalid"), { status: 502 });
+        }
+        const views = await Promise.all(identities.map(async ({ storagePath, ...base }) => {
           try {
-            return { ...base, signedUrl: await signedArtifactUrl(fetchImpl, token, cfg, String(view.storagePath)), expiresIn: 300 };
+            return { ...base, signedUrl: await signedArtifactUrl(fetchImpl, token, cfg, storagePath), expiresIn: 300 };
           } catch {
             // One unsignable view must not fail the whole read; the caller
             // renders it as pending.

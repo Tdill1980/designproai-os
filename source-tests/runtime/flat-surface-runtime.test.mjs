@@ -24,8 +24,8 @@ const surfaces = [
   { surfaceKey: "rear", widthInches: 76, heightInches: 34 },
 ];
 
-async function sourceViews() {
-  return Promise.all(viewKeys.map(async (viewKey, index) => {
+async function sourceViews(keys = viewKeys) {
+  return Promise.all(keys.map(async (viewKey, index) => {
     const bytes = await sharp({ create: { width: 64 + index, height: 48 + index, channels: 3, background: { r: 20 + index * 30, g: 90, b: 160 } } }).png().toBuffer();
     return {
       viewKey,
@@ -139,6 +139,23 @@ test("the authored design binds every source, the cut map, the text lock and the
   assert.notEqual(wrap.flatWrapInputHash({ sourceViews: views, layout, revisionId, textLock: { ...textLock, bodyText: { phone: "555-0143" } } }), base);
   assert.notEqual(wrap.flatWrapInputHash({ sourceViews: views, layout, revisionId, textLock, model: "gemini-2.5-flash-image" }), base);
   assert.throws(() => wrap.flatWrapInputHash({ sourceViews: views.slice(0, 6), layout, revisionId, textLock }), /exactly seven immutable source views/);
+});
+
+test("Call 8 material accepts exact Close-Up or historical Hero source sets", async () => {
+  const layout = layoutModule.flatWrapLayout(surfaces);
+  const closeupViews = await sourceViews(["driver", "passenger", "hood", "roof", "front", "rear", "closeup"]);
+  assert.match(wrap.flatWrapInputHash({ sourceViews: closeupViews, layout, revisionId, textLock }), /^[0-9a-f]{64}$/);
+
+  const hero = (await sourceViews()).find((view) => view.viewKey === "hero3d");
+  const both = [...closeupViews.filter((view) => view.viewKey !== "roof"), hero];
+  assert.throws(
+    () => wrap.flatWrapInputHash({ sourceViews: both, layout, revisionId, textLock }),
+    /exactly one Close-Up or immutable historical Hero proof/,
+  );
+  assert.throws(
+    () => wrap.flatWrapInputHash({ sourceViews: closeupViews.filter((view) => view.viewKey !== "closeup"), layout, revisionId, textLock }),
+    /exactly seven immutable source views/,
+  );
 });
 
 test("a retry reuses the immutable authored design instead of authoring a second one", async () => {

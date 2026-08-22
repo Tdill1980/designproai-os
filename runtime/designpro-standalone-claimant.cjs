@@ -13,7 +13,14 @@ const { AsyncLocalStorage } = require("node:async_hooks");
 const sharp = require("sharp");
 const { canonicalTenantKey, immutableStorageUpload, normalizeLogoAsset, normalizeSourceAsset, safeStoragePath, verifySourceBytes } = require("./runtime-contract.cjs");
 const { resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
-const { flatSurfaceInputHash, normalizeTextLock, selectedImageModel, SURFACE_KEYS, VIEW_KEYS } = require("./gemini-flat-surface.cjs");
+const {
+  flatSurfaceInputHash,
+  normalizeTextLock,
+  selectedImageModel,
+  sourceViewKeys,
+  SURFACE_KEYS,
+  VIEW_KEYS,
+} = require("./gemini-flat-surface.cjs");
 const { GRID_SLICE_CONTRACT, gridSliceAll } = require("./server-grid-slice.cjs");
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
@@ -97,6 +104,9 @@ const REQUIRED_REVISION_VIEWS = Object.freeze({
   roof: ["roof", "top"],
   front: ["front"],
   rear: ["rear", "back"],
+});
+const SEVENTH_REVISION_VIEWS = Object.freeze({
+  closeup: ["closeup"],
   hero3d: ["hero3d", "hero_3d", "hero", "angle", "three_quarter"],
 });
 
@@ -120,6 +130,23 @@ function exactSevenViews(snapshot, tenantValue, revisionId) {
     if (!key) throw new StageError("seven_views_incomplete", `Required ${role} view is missing`, false);
     resolved[role] = sourceAsset(normalized[key], tenant, revisionId);
   }
+  const seventh = Object.entries(SEVENTH_REVISION_VIEWS)
+    .map(([role, aliases]) => ({
+      role,
+      key: aliases.find((candidate) => normalized[candidate] && typeof normalized[candidate] === "object"),
+    }))
+    .filter((item) => item.key);
+  if (seventh.length !== 1) {
+    throw new StageError(
+      "seven_views_incomplete",
+      "Exactly one Close-Up or immutable historical Hero proof is required",
+      false,
+    );
+  }
+  if (Object.keys(assets).length !== 7) {
+    throw new StageError("seven_views_incomplete", "Exactly seven revision source views are required", false);
+  }
+  resolved[seventh[0].role] = sourceAsset(normalized[seventh[0].key], tenant, revisionId);
   if (new Set(Object.values(resolved).map((item) => item.storagePath)).size !== 7
     || new Set(Object.values(resolved).map((item) => item.contentHash)).size !== 7) {
     throw new StageError("seven_views_not_distinct", "All seven required views must have distinct paths and byte identities", false);
@@ -199,7 +226,10 @@ function call8ProofRequest(run, manifest, viewLineage, textLock, proofMeta) {
   if (!Array.isArray(viewLineage) || viewLineage.length !== VIEW_KEYS.length) {
     throw new StageError("call8_view_lineage_invalid", "Call 8 requires all seven immutable source identities", false);
   }
-  const sourceAssets = VIEW_KEYS.map((viewKey) => {
+  let requiredViewKeys;
+  try { requiredViewKeys = sourceViewKeys(viewLineage); }
+  catch (error) { throw new StageError("call8_view_lineage_invalid", error.message, false); }
+  const sourceAssets = requiredViewKeys.map((viewKey) => {
     const item = viewLineage.find((candidate) => String(candidate?.viewKey) === viewKey);
     if (!item) throw new StageError("call8_view_lineage_invalid", `Call 8 is missing ${viewKey}`, false);
     return {
@@ -1195,10 +1225,13 @@ function sourceViewZipEntries(sb, viewReceipts) {
   if (!Array.isArray(viewReceipts) || viewReceipts.length !== VIEW_KEYS.length) {
     throw new StageError("zip_source_views_incomplete", "ZIP requires all seven immutable source views", false);
   }
+  let requiredViewKeys;
+  try { requiredViewKeys = sourceViewKeys(viewReceipts); }
+  catch (error) { throw new StageError("zip_source_views_incomplete", error.message, false); }
   const seen = new Set();
   return [...viewReceipts].sort((left, right) => String(left.viewKey).localeCompare(String(right.viewKey))).map((item) => {
     const viewKey = requiredString(item.viewKey, "source view key");
-    if (!VIEW_KEYS.includes(viewKey) || seen.has(viewKey)) throw new StageError("zip_source_view_identity_invalid", viewKey, false);
+    if (!requiredViewKeys.includes(viewKey) || seen.has(viewKey)) throw new StageError("zip_source_view_identity_invalid", viewKey, false);
     seen.add(viewKey);
     const storagePath = safePath(item.storagePath, `${viewKey} source storagePath`);
     const contentHash = requiredString(item.contentHash, `${viewKey} source hash`).toLowerCase();
@@ -1664,6 +1697,26 @@ const CALLS_1_7_VIEW_PLAN = Object.freeze([
   Object.freeze({ sourceViewType: "hero-3d", consumerRole: "hero3d" }),
   Object.freeze({ sourceViewType: "roof", consumerRole: "roof" }),
 ]);
+const CLOSEUP_CALLS_1_7_VIEW_PLAN = Object.freeze([
+  Object.freeze({ sourceViewType: "side", consumerRole: "driver" }),
+  Object.freeze({ sourceViewType: "passenger-side", consumerRole: "passenger" }),
+  Object.freeze({ sourceViewType: "hood_detail", consumerRole: "hood" }),
+  Object.freeze({ sourceViewType: "front", consumerRole: "front" }),
+  Object.freeze({ sourceViewType: "rear", consumerRole: "rear" }),
+  Object.freeze({ sourceViewType: "close-up", consumerRole: "closeup" }),
+  Object.freeze({ sourceViewType: "roof", consumerRole: "roof" }),
+]);
+
+function acceptedCalls1To7ViewPlan(value) {
+  const serialized = JSON.stringify(canonical(value));
+  if (serialized === JSON.stringify(canonical(CALLS_1_7_VIEW_PLAN))) return CALLS_1_7_VIEW_PLAN;
+  if (serialized === JSON.stringify(canonical(CLOSEUP_CALLS_1_7_VIEW_PLAN))) return CLOSEUP_CALLS_1_7_VIEW_PLAN;
+  throw new StageError(
+    "generation_contract_drift",
+    "Calls 1-7 requires exactly one Close-Up or immutable historical Hero plan",
+    false,
+  );
+}
 // Calls 1-7 produce the seven immutable source renders and nothing else. The
 // 2D production proof is Call 8 and this system authors it. 'generate-2d-proof'
 // was sanctioned here from the period when the historical pipeline owned the
@@ -1683,7 +1736,9 @@ const CALLS_1_7_ENGINE_CONTRACT = Object.freeze({
     "studio-os": "6870eaebab4d43ef8605d812416f86621727d3e9",
     "view-angles-os": "03d6282d71faeec37d0fd304f3bc234d9a3cf0a4",
   }),
-  sourceViewOrder: Object.freeze(CALLS_1_7_VIEW_PLAN.map((item) => item.sourceViewType)),
+  // This is the immutable source-blob contract stored by the database. The
+  // later Hero-era database changed only its view plan, not this fingerprint.
+  sourceViewOrder: Object.freeze(CLOSEUP_CALLS_1_7_VIEW_PLAN.map((item) => item.sourceViewType)),
   freezePolicy: "exact-source-blob-behavior",
   retiredBlobs: Object.freeze(["generate-2d-proof"]),
   proofAuthority: "designpro-os-call8",
@@ -1759,15 +1814,16 @@ function assertCalls1To7Claim(value) {
     || Buffer.byteLength(JSON.stringify(input), "utf8") > 262_144) {
     throw new StageError("generation_claim_invalid", "Calls 1-7 input contract is invalid", false);
   }
-  if (JSON.stringify(canonical(value.engineContract)) !== JSON.stringify(canonical(CALLS_1_7_ENGINE_CONTRACT))
-    || JSON.stringify(canonical(value.viewPlan)) !== JSON.stringify(canonical(CALLS_1_7_VIEW_PLAN))) {
+  if (JSON.stringify(canonical(value.engineContract)) !== JSON.stringify(canonical(CALLS_1_7_ENGINE_CONTRACT))) {
     throw new StageError("generation_contract_drift", "Frozen Calls 1-7 source contract changed", false);
   }
-  return Object.freeze({ ...value, requestId, generationId: generationIdValue, claimToken, tenantKey: tenant });
+  const viewPlan = acceptedCalls1To7ViewPlan(value.viewPlan);
+  return Object.freeze({ ...value, viewPlan, requestId, generationId: generationIdValue, claimToken, tenantKey: tenant });
 }
 
 function normalizeCalls1To7Views(claim, rawViews) {
-  if (!Array.isArray(rawViews) || rawViews.length !== CALLS_1_7_VIEW_PLAN.length) {
+  const viewPlan = acceptedCalls1To7ViewPlan(claim?.viewPlan);
+  if (!Array.isArray(rawViews) || rawViews.length !== viewPlan.length) {
     throw new StageError("exact_seven_generation_views_required", "Exactly seven Calls 1-7 outputs are required", false);
   }
   const bySource = new Map();
@@ -1778,7 +1834,7 @@ function normalizeCalls1To7Views(claim, rawViews) {
       || Object.keys(raw).sort().join(",") !== "byteSize,consumerRole,contentHash,contentType,metadata,sourceViewType,storagePath") {
       throw new StageError("generation_view_identity_invalid", "Calls 1-7 view identity shape changed", false);
     }
-    const plan = CALLS_1_7_VIEW_PLAN.find((item) => item.sourceViewType === raw.sourceViewType);
+    const plan = viewPlan.find((item) => item.sourceViewType === raw.sourceViewType);
     const contentHash = String(raw.contentHash || "").toLowerCase();
     const contentType = String(raw.contentType || "").toLowerCase();
     const byteSize = Number(raw.byteSize);
@@ -1803,7 +1859,7 @@ function normalizeCalls1To7Views(claim, rawViews) {
     paths.add(storagePath);
     hashes.add(contentHash);
   }
-  return CALLS_1_7_VIEW_PLAN.map((item) => bySource.get(item.sourceViewType));
+  return viewPlan.map((item) => bySource.get(item.sourceViewType));
 }
 
 async function claimCalls1To7Generation(sb, workerId, leaseSeconds = CLAIM_SECONDS) {
@@ -1963,4 +2019,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CLOSEUP_CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };

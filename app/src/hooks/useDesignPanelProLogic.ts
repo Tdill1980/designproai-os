@@ -56,6 +56,26 @@ const RUNTIME_LOGO_TYPES = new Map([
   ["image/svg+xml", "svg"],
 ]);
 
+type SignedDesignPanelView = {
+  sourceViewType: string;
+  consumerRole: string;
+  signedUrl?: string;
+};
+
+/**
+ * Driver Side is the primary customer proof in both compatible seven-view
+ * plans. Close-Up and historical Hero remain seventh-slot proofs; neither may
+ * displace Driver merely because it completed first.
+ */
+export function pickPrimaryProofView<T extends SignedDesignPanelView>(
+  views: T[],
+): T | undefined {
+  const rendered = views.filter((view) => view.signedUrl);
+  return rendered.find(
+    (view) => view.consumerRole === "driver" && view.sourceViewType === "side",
+  );
+}
+
 /** Convert browser-displayable image formats outside the runtime allowlist. */
 const normalizeVisionBoardImage = async (blob: Blob, label: string): Promise<File> => {
   const contentType = String(blob.type || "").toLowerCase();
@@ -424,15 +444,11 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   /** The seven views, as the UI has always shaped them. */
   const applyGeneratedViews = (
     views: Array<{ sourceViewType: string; consumerRole: string; signedUrl?: string }>,
-    firstAvailableAsHero = false,
   ) => {
     const rendered = views.filter((view) => view.signedUrl);
     setAllViews(rendered.map((view) => ({ type: view.sourceViewType, url: view.signedUrl! })));
-    const hero =
-      rendered.find((view) => view.consumerRole === "hero3d") ||
-      rendered.find((view) => view.sourceViewType === "side") ||
-      (firstAvailableAsHero ? rendered[0] : undefined);
-    if (hero?.signedUrl) setGeneratedImageUrl(hero.signedUrl);
+    const primary = pickPrimaryProofView(rendered);
+    if (primary?.signedUrl) setGeneratedImageUrl(primary.signedUrl);
     setFailedViews(
       views.filter((view) => !view.signedUrl).map((view) => view.sourceViewType),
     );
@@ -554,12 +570,9 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         // performs signed GETs; closing or sleeping the browser cannot start,
         // cancel, repeat, or spend a generation call.
         onViews: async (progressiveViews) => {
-          applyGeneratedViews(progressiveViews, true);
-          const progressiveHero =
-            progressiveViews.find((view) => view.consumerRole === "hero3d" && view.signedUrl) ||
-            progressiveViews.find((view) => view.sourceViewType === "side" && view.signedUrl) ||
-            progressiveViews.find((view) => view.signedUrl);
-          setPersonaHeroUrl(progressiveHero?.signedUrl || null);
+          applyGeneratedViews(progressiveViews);
+          const progressivePrimary = pickPrimaryProofView(progressiveViews);
+          setPersonaHeroUrl(progressivePrimary?.signedUrl || null);
           setPersonaGenerationId(request.generationId);
           setPersonaAllViews(Object.fromEntries(
             progressiveViews
@@ -572,8 +585,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
 
       const views = await listDesignPanelViews(request.requestId);
       applyGeneratedViews(views);
-      const hero = views.find((view) => view.consumerRole === "hero3d" && view.signedUrl);
-      setPersonaHeroUrl(hero?.signedUrl || null);
+      const primary = pickPrimaryProofView(views);
+      setPersonaHeroUrl(primary?.signedUrl || null);
       setPersonaGenerationId(request.generationId);
       setPersonaAllViews(
         Object.fromEntries(
@@ -609,7 +622,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
             ? "Your A.T.L.A.S. design and seven vehicle views are ready and saved."
             : "Your seven DesignProAI™ views are ready and saved.",
       });
-      return { generationId: request.generationId, directRender: true, renderUrl: hero?.signedUrl };
+      return { generationId: request.generationId, directRender: true, renderUrl: primary?.signedUrl };
     } catch (error: any) {
       const code = String(error?.code || error?.message || "");
       // A terminal request can still own byte-verified views. The legacy
@@ -624,10 +637,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
           recoveredViews = await listDesignPanelViews(acceptedRequest.requestId);
           if (recoveredViews.some((view) => view.signedUrl)) {
             applyGeneratedViews(recoveredViews);
-            const hero = recoveredViews.find(
-              (view) => view.consumerRole === "hero3d" && view.signedUrl,
-            );
-            setPersonaHeroUrl(hero?.signedUrl || null);
+            const primary = pickPrimaryProofView(recoveredViews);
+            setPersonaHeroUrl(primary?.signedUrl || null);
             setPersonaGenerationId(acceptedRequest.generationId);
             setPersonaAllViews(Object.fromEntries(
               recoveredViews
@@ -651,13 +662,11 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
             : error?.message || "Something went wrong — let's try again!";
       console.error("[DesignPro] standalone generation failed:", error);
       setGenerationError(friendly);
-      const recoveredHero = recoveredViews.find(
-        (view) => view.consumerRole === "hero3d" && view.signedUrl,
-      );
+      const recoveredPrimary = pickPrimaryProofView(recoveredViews);
       return {
         generationId: acceptedRequest?.generationId || null,
-        directRender: Boolean(recoveredHero?.signedUrl),
-        renderUrl: recoveredHero?.signedUrl,
+        directRender: Boolean(recoveredPrimary?.signedUrl),
+        renderUrl: recoveredPrimary?.signedUrl,
         error: friendly,
       };
     }

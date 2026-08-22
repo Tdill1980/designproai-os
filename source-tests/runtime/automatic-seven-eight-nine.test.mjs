@@ -17,6 +17,15 @@ const views = Object.fromEntries(roles.map((role, index) => {
   const contentHash = String(index + 1).padStart(64, "0");
   return [role, { bucket: "wrap-files", storagePath: `users/${ownerId}/revisions/${revisionId}/inputs/${role}/${contentHash}.png`, contentHash, byteSize: index + 1, contentType: "image/png" }];
 }));
+const closeupViews = { ...views };
+delete closeupViews.hero3d;
+closeupViews.closeup = {
+  bucket: "wrap-files",
+  storagePath: `users/${ownerId}/revisions/${revisionId}/inputs/closeup/${"8".padStart(64, "0")}.png`,
+  contentHash: "8".padStart(64, "0"),
+  byteSize: 8,
+  contentType: "image/png",
+};
 
 test("seven distinct views automatically precede flat proof, panels and logos", () => {
   // Call 11 (panels.delogo) sits between Call 10 and pack.verify so its
@@ -33,6 +42,23 @@ test("missing or reused required view refuses the chain", () => {
   assert.throws(() => _test.exactSevenViews({ renderAssets: missing }, tenantKey, revisionId), /roof view is missing/);
   const reused = { ...views, passenger: { ...views.driver } };
   assert.throws(() => _test.exactSevenViews({ renderAssets: reused }, tenantKey, revisionId), /distinct paths and byte identities/);
+});
+
+test("revision freeze accepts exactly one Close-Up or historical Hero identity", () => {
+  const resolvedCloseup = _test.exactSevenViews({ renderAssets: closeupViews }, tenantKey, revisionId);
+  assert.deepEqual(Object.keys(resolvedCloseup), ["driver", "passenger", "hood", "roof", "front", "rear", "closeup"]);
+  assert.equal("hero3d" in resolvedCloseup, false);
+
+  assert.throws(
+    () => _test.exactSevenViews({ renderAssets: { ...views, closeup: closeupViews.closeup } }, tenantKey, revisionId),
+    /Exactly one Close-Up or immutable historical Hero proof/,
+  );
+  const neither = { ...views };
+  delete neither.hero3d;
+  assert.throws(
+    () => _test.exactSevenViews({ renderAssets: neither }, tenantKey, revisionId),
+    /Exactly one Close-Up or immutable historical Hero proof/,
+  );
 });
 
 test("Call 8 composes the proof from seven views and Call 9 gridslices six own-surface fields", async () => {
