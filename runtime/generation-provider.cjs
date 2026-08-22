@@ -122,7 +122,7 @@ function createProvider(options = {}) {
 
   async function generateImage({
     parts, aspectRatio, imageSize, signal, timeoutMs = 180_000, label = "render",
-    responseModalities = ["TEXT", "IMAGE"], temperature,
+    responseModalities = ["TEXT", "IMAGE"], temperature, systemInstruction,
   }) {
     const attempts = [];
     for (const model of models) {
@@ -133,6 +133,7 @@ function createProvider(options = {}) {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
+              ...(systemInstruction ? { systemInstruction } : {}),
               contents: [{ parts }],
               generationConfig: {
                 responseModalities,

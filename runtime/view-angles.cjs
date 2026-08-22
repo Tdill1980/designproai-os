@@ -9,11 +9,12 @@
  * behavioural baseline every render, proof and GENIE extraction depends on.
  * Do not tune them here.
  *
- * One deliberate divergence from the source, recorded rather than inherited:
- * INSTANT_MIRROR is absent. The source disabled it because mirroring produced
- * backwards text on wraps carrying lettering and URLs, but left dead branches
- * and two live callers behind. Passenger side is its own generation here, and
- * its angle carries the explicit text-direction guard.
+ * Passenger keeps its own immutable slot, but its pixels come from the
+ * canonical producePassengerView contract: deterministic driver flip, the
+ * existing text-direction repair, then the 64x32 orientation guard. It is not
+ * sent through the ordinary angle generator. The passenger camera text remains
+ * frozen because the repair/output contract still requires right-facing,
+ * forward-reading presentation.
  */
 
 /**
@@ -159,19 +160,16 @@ function viewLabel(viewType) {
 }
 
 /**
- * Every view is generated. There is no mirror path, and there must not be one:
- * a horizontal flip reverses logos, phone numbers and URLs, and asserts a
- * left-right symmetry that vehicles do not have.
+ * Every view owns a slot. Passenger alone uses the canonical deterministic
+ * producer instead of asking the ordinary renderer to invent another side.
  */
 function requiresOwnGeneration(viewType) {
   if (!VIEW_ORDER.includes(viewType)) throw new Error(`unknown view ${viewType}`);
-  return true;
+  return viewType !== "passenger-side";
 }
 
 /**
- * The passenger angle must keep its text-direction guard. A prompt that lost it
- * would reintroduce the backwards-text defect the source turned mirroring off
- * to escape.
+ * The passenger presentation contract must keep its text-direction guard.
  */
 function assertTextDirectionGuard(viewType) {
   const angle = cameraAngle(viewType);
