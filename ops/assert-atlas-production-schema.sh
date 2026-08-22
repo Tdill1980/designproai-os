@@ -329,17 +329,17 @@ SELECT
     AND pg_catalog.strpos(atlas_valid_definition,'''masterQcConfidence''')>0
     AND pg_catalog.strpos(atlas_valid_definition,'''masterPromptHash''')>0
     AND pg_catalog.strpos(atlas_valid_definition,'''masterExampleSetHash''')>0
-    AND pg_catalog.strpos(atlas_valid_definition,'''atlasZoneContract''')>0
-    AND pg_catalog.strpos(atlas_valid_definition,'''atlasZoneContentHash''')>0
-    AND pg_catalog.strpos(atlas_valid_definition,'''atlasZoneSurfaceKey''')>0
-    AND pg_catalog.strpos(atlas_valid_definition,'''authorityHash''')>0
-    AND pg_catalog.strpos(atlas_valid_definition,'''zoneHash''')>0
-    AND pg_catalog.strpos(atlas_valid_definition,'''zoneSurfaceKey''')>0
-    AND pg_catalog.strpos(atlas_valid_definition,'''zoneContract''')>0
-    AND pg_catalog.strpos(atlas_valid_definition,'''zoneContentHash''')>0
+    AND pg_catalog.strpos(atlas_valid_definition,'''{provider,atlasZoneContract}''')>0
+    AND pg_catalog.strpos(atlas_valid_definition,'''{provider,atlasZoneContentHash}''')>0
+    AND pg_catalog.strpos(atlas_valid_definition,'''{provider,atlasZoneSurfaceKey}''')>0
+    AND pg_catalog.strpos(atlas_valid_definition,'''{validation,authorityHash}''')>0
+    AND pg_catalog.strpos(atlas_valid_definition,'''{validation,zoneHash}''')>0
+    AND pg_catalog.strpos(atlas_valid_definition,'''{validation,zoneSurfaceKey}''')>0
+    AND pg_catalog.strpos(atlas_valid_definition,'''{authority,zoneContract}''')>0
+    AND pg_catalog.strpos(atlas_valid_definition,'''{authority,zoneContentHash}''')>0
     AND pg_catalog.strpos(
       atlas_valid_definition,
-      '''atlasZonePassedToPassengerRepair'''
+      '''{provider,atlasZonePassedToPassengerRepair}'''
     )>0
     AND pg_catalog.strpos(
       atlas_new_run_definition,
