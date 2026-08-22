@@ -86,7 +86,9 @@ test("A.T.L.A.S. reveals the immutable master and streams signed proof views wit
   assert.match(premium, /const atlasMasterPreviewUrl/);
   assert.match(premium, /pipelineActive && !renderError && !savedDriverDisplayUrl/);
   assert.match(premium, /savedDriverDisplayUrl \|\| \(!isFlatFirstDiagnostic \? baseDisplayUrl : null\)/);
-  assert.match(premium, /Your A\.T\.L\.A\.S\. design is ready/);
+  assert.match(premium, /latestFlatAtlas\?\.masterUrl/);
+  assert.match(premium, /Your A\.T\.L\.A\.S\. flattened top-view design is ready/);
+  assert.match(premium, /Flattened top-view design/);
   assert.match(premium, /previewDisplayUrl = mainDisplayUrl \|\| atlasMasterPreviewUrl/);
   assert.match(premium, /atlasReady=\{Boolean\(latestFlatAtlas\)\}/);
   assert.match(premium, /Production ordering is unavailable in Preview mode/);

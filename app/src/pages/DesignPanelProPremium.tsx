@@ -2166,8 +2166,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 rounded-xl border border-cyan-300/35 bg-black/80 px-3 py-2.5 shadow-[0_0_24px_rgba(34,211,238,0.2)] backdrop-blur-sm">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
-                                      <p className="text-xs font-bold text-cyan-100">Your A.T.L.A.S. design is ready</p>
-                                      <p className="mt-0.5 text-[10px] text-cyan-100/65">Creating the remaining vehicle views.</p>
+                                      <p className="text-xs font-bold text-cyan-100">Your A.T.L.A.S. flattened top-view design is ready</p>
+                                      <p className="mt-0.5 text-[10px] text-cyan-100/65">Creating the seven projected 3D proof views.</p>
                                     </div>
                                     <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-1 text-[10px] font-bold text-cyan-200">
                                       {generationRequestState?.shotsComplete ?? 0} of {generationRequestState?.shotsTotal ?? 7} 3D proofs ready
@@ -2740,7 +2740,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       <Card className="overflow-hidden border-cyan-400/35 bg-cyan-400/5">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-400/20 px-4 py-3">
                           <div>
-                            <p className="text-sm font-bold text-cyan-100">A.T.L.A.S. design master</p>
+                            <p className="text-sm font-bold text-cyan-100">A.T.L.A.S. flattened top-view master</p>
                             <p className="mt-0.5 text-[11px] text-cyan-100/60">
                               Master design and seven vehicle views
                             </p>
@@ -2758,7 +2758,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <div className="grid gap-3 p-4 sm:grid-cols-2">
                             {[
                               { label: "Vehicle layout", signedUrl: latestFlatAtlas.guideUrl },
-                              { label: "A.T.L.A.S. design", signedUrl: latestFlatAtlas.masterUrl },
+                              { label: "Flattened top-view design", signedUrl: latestFlatAtlas.masterUrl },
                             ].map(({ label, signedUrl }) => (
                               <div key={label} className="overflow-hidden rounded-lg border border-white/10 bg-black/40">
                                 <div className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold text-white/75">
