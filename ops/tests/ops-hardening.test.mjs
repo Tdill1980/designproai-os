@@ -14,7 +14,7 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 43);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 45);
   for (const name of [
     "runtime/resend-transport.cjs", "runtime/wrapbox-delivery.cjs", "runtime/zip-spool.cjs",
     "runtime/gemini-flat-wrap.cjs", "runtime/flat-wrap-layout.cjs", "runtime/proof-sheet.cjs", "runtime/server-grid-slice.cjs", "runtime/topaz-upscale.cjs",
@@ -29,6 +29,8 @@ test("one canonical policy includes every required runtime file and five deploy 
     "runtime/vehicle-proof-template.cjs", "runtime/proof-band-fit.cjs",
     "runtime/generation-engine.cjs", "runtime/generation-worker.cjs",
     "runtime/flat-first-atlas.cjs", "runtime/flat-atlas-topology-examples.cjs",
+    "runtime/atlas-examples/houdini-flattened-top-view.jpg",
+    "runtime/atlas-examples/houdini-finished-3d-proof.jpg",
     // The authoring boundary the worker requires to record the canonical
     // design master while Calls 1-7 run.
     "runtime/creative-authoring.cjs",

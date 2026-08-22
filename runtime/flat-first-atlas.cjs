@@ -27,7 +27,7 @@ const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
 const INPUT_CONTRACT = "designpro.calls-1-7-input.v3";
 const PIPELINE_MODE = "flat-first-atlas-v1";
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260820.v1";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260822.v2";
 const TOPOLOGY = "rectangular-preview-v1";
 const EXAMPLE_PURPOSE = "topology-only";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
@@ -557,7 +557,9 @@ ${map}
 
 OUTPUT CLEANLINESS: The guide's colors, labels, outlines, legend, dimensions, grid, background and template marks are instructions, never artwork. Do not copy any of them. Output artwork only inside the zones. Do not draw a vehicle, wheels, windows, lights, camera scene, shadows, or a second installer map.
 
-REFERENCE FIREWALL: Any attached installer-map or Lamborghini-style examples are TOPOLOGY/LAYOUT references only. Extract only panel arrangement, orientation, masks and seam-continuity intent. IGNORE their palette, imagery, text, logos, brand and style. The customer's brief and verified customer-owned assets are the sole style source.
+PAIRED FLAT-TO-FINISHED LESSON: The attached flattened top-view example and its corresponding finished 3D vehicle proof teach the direction of this first call. The FLATTENED TOP-VIEW image is the output-format example. The finished vehicle is shown only so you understand how one coherent flat design later wraps across hood, roof, driver, passenger, front and rear surfaces. For this call, output the new flattened top-view design first; never output a vehicle photograph.
+
+REFERENCE FIREWALL: Any attached installer-map, flattened top-view or finished-vehicle examples are TOPOLOGY/LAYOUT references only. Extract only panel arrangement, orientation, surface correspondence, masks and seam-continuity intent. IGNORE their palette, imagery, text, logos, brand and style. The customer's brief and verified customer-owned assets are the sole style source.
 
 FIDELITY: This atlas will condition seven downstream 3D proofs. Do not invent unrelated graphics between zones. Preserve supplied customer identity faithfully. This v1 atlas is design-proof authority only; exact typography/logo overlays and true PVO contours remain deterministic prepress concerns.
 
@@ -633,6 +635,29 @@ async function verifiedCustomerReferenceParts(supabase, input) {
 async function topologyExampleParts(examples = []) {
   const parts = [];
   for (const example of examples) {
+    if (example?.kind === "paired-flat-to-finished") {
+      if (!Buffer.isBuffer(example?.flattenedTopView?.bytes)
+        || !Buffer.isBuffer(example?.finished3dProof?.bytes)) {
+        throw new FlatAtlasError(
+          "flat_atlas_topology_example_invalid",
+          "The paired topology lesson requires release-owned flattened and finished proof bytes",
+        );
+      }
+      const flattened = await sharp(example.flattenedTopView.bytes, { limitInputPixels: false })
+        .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+        .png(PNG_OPTIONS).toBuffer();
+      const finished = await sharp(example.finished3dProof.bytes, { limitInputPixels: false })
+        .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+        .png(PNG_OPTIONS).toBuffer();
+      parts.push(
+        { text: "PAIRED TOPOLOGY EXAMPLE — FLATTENED TOP-VIEW OUTPUT FORMAT. Study how all visible vehicle surfaces are intentionally composed into one unwrapped design. Copy no artwork, wording, logo, color or brand." },
+        { inlineData: { mimeType: "image/png", data: flattened.toString("base64") } },
+        { text: "PAIRED TOPOLOGY EXAMPLE — CORRESPONDING FINISHED 3D PROOF. This shows how the preceding flat design reads after projection onto the vehicle. It is context only; do not return a vehicle image in Call 1 and copy no style." },
+        { inlineData: { mimeType: "image/png", data: finished.toString("base64") } },
+        { text: "CALL 1 TARGET: create the customer's NEW flattened top-view design in the deterministic guide layout. The seven finished 3D proof views are downstream projections of that saved master." },
+      );
+      continue;
+    }
     if (!Buffer.isBuffer(example?.bytes)) throw new FlatAtlasError("flat_atlas_topology_example_invalid", "Topology examples must be server-owned bytes");
     const conditioned = await sharp(example.bytes, { limitInputPixels: false })
       .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
@@ -885,7 +910,8 @@ async function generateOrReuseFlatAtlas(options) {
     }),
   ]);
 
-  const topologyExample = topologyExamples[0] || null;
+  const topologyExample = topologyExamples.find((example) => example?.identity?.exampleId) || null;
+  const primaryTopologyExample = topologyExamples[0] || null;
 
   const rowPayload = {
     request_id: requestId,
@@ -930,7 +956,8 @@ async function generateOrReuseFlatAtlas(options) {
       geometryAuthority: manifest.geometryAuthority,
       examplePurpose: EXAMPLE_PURPOSE,
       topologyExamplesApplied: topologyExamples.length,
-      topologyExampleIdentity: topologyExample?.identity || null,
+      topologyExampleIdentity: primaryTopologyExample?.identity || null,
+      topologyExampleIdentities: topologyExamples.map((example) => example?.identity).filter(Boolean),
       providerKeyFingerprint: generated.keyFingerprint || null,
       providerResponseContentType: generated.contentType,
       rawProviderResponseHash: sha256(generated.bytes),
