@@ -250,6 +250,15 @@ test("protected Caddy install ships and verifies every exact-SHA control it exec
   assert.match(caddyWorkflow, /\[\[ -f \$control && ! -L \$control \]\]/);
 });
 
+test("protected Caddy install normalizes mobile SHA paste before checkout and reports safely", () => {
+  const normalize = caddyWorkflow.indexOf("Normalize the exact SHA input");
+  const checkout = caddyWorkflow.indexOf("actions/checkout@", normalize);
+  assert.ok(normalize >= 0 && checkout > normalize);
+  assert.match(caddyWorkflow, /normalized=\$\(printf '%s' "\$EXACT_SHA" \| tr -d '\[:space:\]'\)/);
+  assert.match(caddyWorkflow, /ref: \$\{\{ steps\.exact\.outputs\.sha \}\}/);
+  assert.match(caddyWorkflow, /-z \$\{key_file:-\}[\s\S]*Caddy report skipped because the SSH identity step did not complete/);
+});
+
 test("live Atlas schema assertion accepts exactly one all-true catalog verdict", () => {
   const result = runAtlasSchemaFixture([{
     view_plan_closeup: true,
