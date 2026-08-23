@@ -5,7 +5,11 @@ OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 sha=${1:-}
 confirm=${2:-}
 site=/etc/caddy/sites/designproai-os.caddy
-legacy_site=/etc/caddy/sites/os.designproai.caddy
+legacy_sites=(
+  /etc/caddy/sites/os.designproai.caddy
+  /etc/caddy/sites/designproai-apex.caddy
+  /etc/caddy/sites/designproai.caddy
+)
 main=/etc/caddy/Caddyfile
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
@@ -13,9 +17,25 @@ main=/etc/caddy/Caddyfile
 [[ $confirm == INSTALL_DESIGNPRO_CADDY_ONLY ]] || { echo "Confirmation token required" >&2; exit 3; }
 command -v caddy >/dev/null || { echo "Caddy must be installed through the normal OS package first" >&2; exit 4; }
 [[ -f $main && ! -L $main ]] || { echo "The primary Caddyfile must be a regular, non-symlink file" >&2; exit 5; }
-[[ ! -L /etc/caddy/sites && ! -L $site && ! -L $legacy_site ]] || { echo "Refusing a symlinked Caddy site path" >&2; exit 5; }
+[[ ! -L /etc/caddy/sites && ! -L $site ]] || { echo "Refusing a symlinked Caddy site path" >&2; exit 5; }
+[[ ! -e $site || -f $site ]] || { echo "The canonical Caddy site path must be a regular file" >&2; exit 5; }
+for legacy_site in "${legacy_sites[@]}"; do
+  [[ ! -L $legacy_site ]] || { echo "Refusing a symlinked Caddy site path: $legacy_site" >&2; exit 5; }
+  [[ ! -e $legacy_site || -f $legacy_site ]] || { echo "A legacy Caddy site path is not a regular file: $legacy_site" >&2; exit 5; }
+done
+
+approved_designpro_site() {
+  local candidate=$1
+  local legacy_site
+  [[ $candidate == "$site" ]] && return 0
+  for legacy_site in "${legacy_sites[@]}"; do
+    [[ $candidate == "$legacy_site" ]] && return 0
+  done
+  return 1
+}
+
 while IFS= read -r existing; do
-  [[ $existing == "$site" || $existing == "$legacy_site" ]] || {
+  approved_designpro_site "$existing" || {
     echo "os.designproai.com already appears in another Caddy config: $existing" >&2
     exit 5
   }
@@ -40,17 +60,22 @@ backup_dir="/var/backups/designpro-cutover/caddy-$stamp"
 install -d -m 0700 "$backup_dir"
 cp -a "$main" "$backup_dir/Caddyfile.before"
 site_existed=false
-legacy_site_existed=false
+legacy_existing=()
+legacy_missing=()
 caddy_was_active=false
 systemctl is-active --quiet caddy && caddy_was_active=true
 if [[ -f $site ]]; then
   site_existed=true
   cp -a "$site" "$backup_dir/designproai-os.caddy.before"
 fi
-if [[ -f $legacy_site ]]; then
-  legacy_site_existed=true
-  cp -a "$legacy_site" "$backup_dir/os.designproai.caddy.before"
-fi
+for legacy_site in "${legacy_sites[@]}"; do
+  if [[ -f $legacy_site ]]; then
+    cp -a "$legacy_site" "$backup_dir/$(basename "$legacy_site").before"
+    legacy_existing+=("$legacy_site")
+  else
+    legacy_missing+=("$legacy_site")
+  fi
+done
 
 restore() {
   status=$?
@@ -62,11 +87,14 @@ restore() {
   elif [[ -f $site && ! -L $site ]]; then
     unlink "$site"
   fi
-  if [[ $legacy_site_existed == true ]]; then
-    cp -a "$backup_dir/os.designproai.caddy.before" "$legacy_site"
-  elif [[ -f $legacy_site && ! -L $legacy_site ]]; then
-    unlink "$legacy_site"
-  fi
+  for legacy_site in "${legacy_existing[@]}"; do
+    cp -a "$backup_dir/$(basename "$legacy_site").before" "$legacy_site"
+  done
+  for legacy_site in "${legacy_missing[@]}"; do
+    if [[ -f $legacy_site && ! -L $legacy_site ]]; then
+      unlink "$legacy_site"
+    fi
+  done
   caddy validate --adapter caddyfile --config "$main" >/dev/null 2>&1 || true
   if [[ $caddy_was_active == true ]]; then
     systemctl reload caddy >/dev/null 2>&1 || true
@@ -84,12 +112,13 @@ else
   echo "Caddy service account is missing" >&2
   false
 fi
-# This exact legacy filename was created by the earlier DesignProAI cutover.
-# Remove it only after its root-only backup exists, so the new canonical site
-# does not duplicate the same host during validation. The ERR trap restores it.
-if [[ $legacy_site_existed == true ]]; then
+# These exact legacy filenames were created by earlier DesignProAI cutovers.
+# Remove them only after every root-only backup exists, so the new canonical
+# site does not duplicate a host during validation. The ERR trap restores all.
+for legacy_site in "${legacy_existing[@]}"; do
+  [[ -f $legacy_site && ! -L $legacy_site ]] || { echo "Legacy Caddy site changed after backup: $legacy_site" >&2; false; }
   unlink "$legacy_site"
-fi
+done
 install -m 0644 "$OPS_DIR/Caddyfile.fragment" "$site"
 if ! grep -Eq '^[[:space:]]*import[[:space:]]+(/etc/caddy/)?sites/\*\.caddy[[:space:]]*$' "$main"; then
   printf '\nimport /etc/caddy/sites/*.caddy\n' >> "$main"
