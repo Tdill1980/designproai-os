@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirty-eight-migration chain', () => {
-  assert.equal(migrationNames.length, 38);
+test('fresh bootstrap contains one ordered thirty-nine-migration chain', () => {
+  assert.equal(migrationNames.length, 39);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -76,6 +76,11 @@ test('fresh bootstrap contains one ordered thirty-eight-migration chain', () => 
       // A failed run with no private Atlas identities reports the real cause;
       // saved invalid masters/proofs remain quarantined.
       '20260822100000',
+      // A.T.L.A.S. joins the ONE existing file-output pipeline: the handoff
+      // gate is decided by canonical-master acceptance, not by the atlas
+      // layout-geometry flag, which stays false because Calls 8+ resolve
+      // production dimensions from the GENIE manifest.
+      '20260823220000',
     ],
   );
 });
