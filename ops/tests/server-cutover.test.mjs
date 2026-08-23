@@ -147,6 +147,22 @@ test("Caddy activation falls back to one controlled restart and rollback restart
   assert.match(install, /journalctl -u caddy --since '-3 minutes' --no-pager -n 120/);
 });
 
+test("Caddy repairs only DesignProAI log ownership and cannot pass while the proxy is down", () => {
+  const install = read("install-caddy.sh");
+  for (const log of ["designpro-apex-access.log", "designpro-www-access.log", "designpro-access.log"]) {
+    assert.ok(install.includes(`/var/log/caddy/${log}`), `${log} must be explicitly controlled`);
+  }
+  assert.match(install, /for log_file in "\$\{caddy_log_files\[@\]\}"; do\s+if \[\[ -f \$log_file \]\]; then\s+chown caddy:caddy "\$log_file"\s+chmod 0640 "\$log_file"/);
+  assert.doesNotMatch(install, /chown\s+(?:-[Rr]|--recursive)/);
+  assert.match(install, /systemctl is-active --quiet caddy \|\| \{\s+echo "Caddy did not remain active after activation"/);
+  assert.match(install, /--resolve os\.designproai\.com:443:127\.0\.0\.1 \\\s+https:\/\/os\.designproai\.com\/gateway-healthz/);
+  assert.ok(
+    install.indexOf('https://os.designproai.com/gateway-healthz >/dev/null')
+      < install.lastIndexOf('"$OPS_DIR/acceptance.sh" "$sha"'),
+    "local public-proxy health must pass before final acceptance",
+  );
+});
+
 test("acceptance validates the regular exact release target, never the current symlink", () => {
   const acceptance = read("acceptance.sh");
   assert.match(acceptance, /release="\$ROOT\/releases\/\$sha"/);
