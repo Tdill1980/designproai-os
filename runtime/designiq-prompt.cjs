@@ -43,7 +43,7 @@ const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.2026
 // a logo EXIST and points the form decision at the brief, the one input that
 // varies between customers.
 const LOGO_REQUIREMENT =
-  "This business needs its own logo — decide its form from this brief alone.";
+  "This business needs its own logo — professionally art-directed and distinctive; decide its form from this brief alone. It must feel specific to this company and industry, remain legible at vehicle distance, and must not look like a generic template mark, stock icon, or placeholder.";
 
 // DEPTH - restored after a sweep flattened commercial work and Ridgeline
 // Roofing came back as flat panels of colour. Describes what depth IS; says
@@ -229,7 +229,7 @@ function truckBedClause(vehicle) {
   const v = (vehicle || "").toLowerCase();
   const isPickup = /\b(f[\s-]?[1234]50|silverado|sierra|ram|tundra|tacoma|colorado|canyon|ranger|maverick|frontier|titan|ridgeline|gladiator|dakota|pickup|crew cab)\b/.test(v);
   return isPickup
-    ? " On this pickup, the wrap covers the cab, bed sides, and tailgate exterior; the open bed interior stays bare factory bedliner."
+    ? " On this pickup, the wrap covers the cab, bed sides, and tailgate EXTERIOR only; the open bed interior stays bare factory bedliner. The entire cargo-bed interior—including bed floor, inner bed walls, wheel-well humps, rails, and bedliner—must remain bare factory material with zero printed artwork. Artwork visible inside the open bed is a failed result."
     : "";
 }
 

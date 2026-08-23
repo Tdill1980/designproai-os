@@ -13,10 +13,35 @@ const {
   SERVER_PROVIDER_CONTRACT,
   createDesignPanelServerProvider,
   generatePassengerMirror,
+  inspectStandardProof,
   orientationVerdict,
   passengerFramingVerdict,
   producePassengerView,
 } = require("../runtime/designpanel-server-provider.cjs");
+
+function qualityPayload(inspectionId, overrides = {}) {
+  return {
+    candidates: [{
+      finishReason: "STOP",
+      content: { parts: [{ text: JSON.stringify({
+        inspectionId,
+        cameraPass: true,
+        vehiclePass: true,
+        customerTextPass: true,
+        logoPass: true,
+        requestedPhotoPass: true,
+        professionalDesignPass: true,
+        photorealismPass: true,
+        studioPass: true,
+        wrapCoveragePass: true,
+        pickupBedPass: true,
+        confidence: 0.96,
+        reasons: [],
+        ...overrides,
+      }) }] },
+    }],
+  };
+}
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
 const REQUEST_ID = "22222222-2222-4222-8222-222222222222";
@@ -45,8 +70,64 @@ function textRepairProvider(bytes, overrides = {}) {
   };
 }
 
+test("Standard semantic QC binds the actual proof and enforces photo, branding, coverage, and truck-bed checks", async () => {
+  const bytes = await asymmetricDriverFixture();
+  let body;
+  const review = await inspectStandardProof({
+    provider: {
+      generateRaw: async (call) => {
+        body = call.body;
+        const prompt = call.body.contents[0].parts[1].text;
+        const inspectionId = prompt.match(/Inspection identity: ([0-9a-f]{64})/)?.[1];
+        return { payload: qualityPayload(inspectionId) };
+      },
+    },
+    input: {
+      brief: "Use a real photo of a swimming pool",
+      companyName: "Flamingo Pools",
+      phone: "(602) 555-1212",
+      website: "flamingopools.example",
+      vehicle: { year: "2022", make: "Ford", model: "F-150 Crew Cab", type: "truck" },
+    },
+    sourceViewType: "side",
+    bytes,
+  });
+  assert.equal(review.confidence, 0.96);
+  const prompt = body.contents[0].parts[1].text;
+  assert.match(prompt, /real high-resolution photograph/);
+  assert.match(prompt, /open bed floor, inner walls, rails and wheel-well humps/);
+  assert.match(prompt, /generic\/stock\/template branding/);
+  assert.match(prompt, /backwards, misspelled, replaced or unreadable/);
+});
+
+test("Standard semantic QC rejects AI slop or artwork inside a pickup bed", async () => {
+  const bytes = await asymmetricDriverFixture();
+  await assert.rejects(() => inspectStandardProof({
+    provider: {
+      generateRaw: async (call) => {
+        const prompt = call.body.contents[0].parts[1].text;
+        const inspectionId = prompt.match(/Inspection identity: ([0-9a-f]{64})/)?.[1];
+        return { payload: qualityPayload(inspectionId, {
+          professionalDesignPass: false,
+          pickupBedPass: false,
+          reasons: ["generic logo", "artwork is visible on the bedliner"],
+        }) };
+      },
+    },
+    input: {
+      brief: "premium pool company wrap",
+      companyName: "Flamingo Pools",
+      vehicle: { year: "2022", make: "Ford", model: "F-150", type: "truck" },
+    },
+    sourceViewType: "side",
+    bytes,
+  }), (error) => error.code === "designpanel_quality_rejected"
+    && /professionalDesignPass/.test(error.message)
+    && /pickupBedPass/.test(error.message));
+});
+
 async function fixture(overrides = {}) {
-  const heroBytes = await sharp({ create: { width: 1600, height: 900, channels: 3, background: "#1565c0" } }).png().toBuffer();
+  const heroBytes = await sharp(await asymmetricDriverFixture()).resize(1600, 900, { fit: "fill" }).png().toBuffer();
   const heroHash = createHash("sha256").update(heroBytes).digest("hex");
   const heroPath = `designpro/${TENANT_KEY}/${GENERATION_ID}/calls-1-7/side/${heroHash}.png`;
   const heroRow = {
@@ -79,6 +160,15 @@ test("Standard DesignPanel runs designer then anchored photographer directly on 
     keyCount: 2,
     generateImage: async (call) => {
       calls.push(call);
+      if (call.parts?.[0]?.inlineData?.data) {
+        return {
+          bytes: Buffer.from(call.parts[0].inlineData.data, "base64"),
+          contentType: call.parts[0].inlineData.mimeType,
+          model: "gemini-3-pro-image",
+          keyFingerprint: "0123456789ab",
+          attempts: [],
+        };
+      }
       const color = calls.length === 1 ? "#1e88e5" : "#ef6c00";
       return {
         bytes: await sharp({ create: { width: 1024, height: 576, channels: 3, background: color } }).png().toBuffer(),
@@ -216,7 +306,7 @@ test("passenger text repair may not undo the deterministic mirror", async () => 
     .toBuffer();
   const rawMirror = await generatePassengerMirror(driver);
   const calls = [];
-  const result = await producePassengerView({
+  await assert.rejects(() => producePassengerView({
     driverBytes: driver,
     prompt: "Acme company logo",
     call: { sourceViewType: "passenger-side", attempt: 1 },
@@ -232,28 +322,25 @@ test("passenger text repair may not undo the deterministic mirror", async () => 
         };
       },
     },
-  });
+  }), (error) => error.code === "designpanel_passenger_text_repair_required");
 
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   assert.equal(calls[0].parts[0].inlineData.mimeType, "image/jpeg");
   assert.equal(calls[0].parts.some((part) => part.inlineData?.mimeType === "image/png"), false,
     "the ordinary driver reference leaked into the passenger text edit");
-  assert.deepEqual(result.bytes, rawMirror);
-  assert.equal(result.metadata.textRepair, "returned-driver-facing-raw-mirror-kept");
 });
 
-test("passenger text-repair failure keeps the canonical raw mirror", async () => {
+test("passenger text-repair failure never publishes the raw mirror", async () => {
   const driver = await sharp({ create: { width: 640, height: 360, channels: 3, background: "#1565c0" } }).png().toBuffer();
-  const expected = await generatePassengerMirror(driver);
-  const result = await producePassengerView({
+  let calls = 0;
+  await assert.rejects(() => producePassengerView({
     driverBytes: driver,
     prompt: "Flamingo Pools",
     call: { sourceViewType: "passenger-side", attempt: 1 },
-    provider: { generateImage: async () => { throw new Error("text edit timed out"); } },
-  });
-  assert.deepEqual(result.bytes, expected);
-  assert.equal(result.contentType, "image/jpeg");
-  assert.equal(result.metadata.textRepair, "failed-raw-mirror-kept");
+    provider: { generateImage: async () => { calls += 1; throw new Error("text edit timed out"); } },
+  }), (error) => error.code === "designpanel_passenger_text_repair_required"
+    && /two|attempt 2/i.test(error.message));
+  assert.equal(calls, 2);
 });
 
 test("passenger accepts repaired bytes only for explicit opposite-facing orientation with matching pixels and framing", async () => {
@@ -274,34 +361,26 @@ test("passenger accepts repaired bytes only for explicit opposite-facing orienta
   assert.equal(result.metadata.framingMae, 0);
 });
 
-test("passenger keeps the raw mirror when orientation is ambiguous", async () => {
+test("passenger fails closed when orientation is ambiguous", async () => {
   const driver = await sharp({ create: { width: 640, height: 360, channels: 3, background: "#1565c0" } }).png().toBuffer();
   const rawMirror = await generatePassengerMirror(driver);
-  const result = await producePassengerView({
+  await assert.rejects(() => producePassengerView({
     driverBytes: driver,
     prompt: "Acme company logo",
     call: { sourceViewType: "passenger-side", attempt: 1 },
     provider: textRepairProvider(rawMirror),
-  });
-
-  assert.equal(result.model, "sharp-deterministic-mirror");
-  assert.deepEqual(result.bytes, rawMirror);
-  assert.equal(result.metadata.textRepair, "ambiguous-orientation-raw-mirror-kept");
+  }), (error) => error.code === "designpanel_passenger_text_repair_required");
 });
 
-test("passenger keeps the raw mirror when repaired bytes cannot be orientation-verified", async () => {
+test("passenger fails closed when repaired bytes cannot be orientation-verified", async () => {
   const driver = await asymmetricDriverFixture();
   const rawMirror = await generatePassengerMirror(driver);
-  const result = await producePassengerView({
+  await assert.rejects(() => producePassengerView({
     driverBytes: driver,
     prompt: "Acme company logo",
     call: { sourceViewType: "passenger-side", attempt: 1 },
     provider: textRepairProvider(Buffer.from("not-an-image")),
-  });
-
-  assert.equal(result.model, "sharp-deterministic-mirror");
-  assert.deepEqual(result.bytes, rawMirror);
-  assert.equal(result.metadata.textRepair, "ambiguous-orientation-raw-mirror-kept");
+  }), (error) => error.code === "designpanel_passenger_text_repair_required");
 });
 
 test("passenger rejects opposite-facing repaired bytes when pixel dimensions changed", async () => {
@@ -312,15 +391,12 @@ test("passenger rejects opposite-facing repaired bytes when pixel dimensions cha
   assert.equal(framing.matches, false);
   assert.equal(framing.reason, "pixel-dimensions-mismatch");
 
-  const result = await producePassengerView({
+  await assert.rejects(() => producePassengerView({
     driverBytes: driver,
     prompt: "Acme company logo",
     call: { sourceViewType: "passenger-side", attempt: 1 },
     provider: textRepairProvider(resized),
-  });
-  assert.equal(result.model, "sharp-deterministic-mirror");
-  assert.deepEqual(result.bytes, rawMirror);
-  assert.equal(result.metadata.textRepair, "pixel-dimensions-mismatch-raw-mirror-kept");
+  }), (error) => error.code === "designpanel_passenger_text_repair_required");
 });
 
 test("passenger rejects opposite-facing repaired bytes when framing changed at the same dimensions", async () => {
@@ -335,14 +411,10 @@ test("passenger rejects opposite-facing repaired bytes when framing changed at t
   assert.equal(framing.matches, false);
   assert.equal(framing.reason, "framing-mismatch");
 
-  const result = await producePassengerView({
+  await assert.rejects(() => producePassengerView({
     driverBytes: driver,
     prompt: "Acme company logo",
     call: { sourceViewType: "passenger-side", attempt: 1 },
     provider: textRepairProvider(reframed),
-  });
-  assert.equal(result.model, "sharp-deterministic-mirror");
-  assert.deepEqual(result.bytes, rawMirror);
-  assert.equal(result.metadata.textRepair, "framing-mismatch-raw-mirror-kept");
-  assert.match(result.metadata.textRepairDetail, /^normalized-mae=/);
+  }), (error) => error.code === "designpanel_passenger_text_repair_required");
 });

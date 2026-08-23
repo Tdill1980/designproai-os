@@ -104,6 +104,24 @@ function CandidateForm({
               No source URL supplied; verify against an independent authoritative source.
             </p>
           )}
+          <div className="mt-3 grid gap-2 sm:grid-cols-4">
+            {[
+              ["Overall length", candidate.overallDimensions.lengthInches],
+              ["Overall width", candidate.overallDimensions.widthInches],
+              ["Overall height", candidate.overallDimensions.heightInches],
+              ["Wheelbase", candidate.overallDimensions.wheelbaseInches],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="rounded border border-border/70 bg-background/70 px-3 py-2">
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {label}
+                </span>
+                <strong>{typeof value === "number" ? `${value}\u2033` : "Not grounded"}</strong>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            GENIE uses these Google-grounded OEM dimensions, including wheelbase, to calculate and store the provisional six-panel A.T.L.A.S. layout with 5-inch bleed. Exact production fields below still require operator validation.
+          </p>
         </div>
 
         {candidate.requestedRuns.length > 0 && (
