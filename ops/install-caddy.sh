@@ -10,6 +10,11 @@ legacy_sites=(
   /etc/caddy/sites/designproai-apex.caddy
   /etc/caddy/sites/designproai.caddy
 )
+caddy_log_files=(
+  /var/log/caddy/designpro-apex-access.log
+  /var/log/caddy/designpro-www-access.log
+  /var/log/caddy/designpro-access.log
+)
 main=/etc/caddy/Caddyfile
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
@@ -19,9 +24,14 @@ command -v caddy >/dev/null || { echo "Caddy must be installed through the norma
 [[ -f $main && ! -L $main ]] || { echo "The primary Caddyfile must be a regular, non-symlink file" >&2; exit 5; }
 [[ ! -L /etc/caddy/sites && ! -L $site ]] || { echo "Refusing a symlinked Caddy site path" >&2; exit 5; }
 [[ ! -e $site || -f $site ]] || { echo "The canonical Caddy site path must be a regular file" >&2; exit 5; }
+[[ ! -L /var/log/caddy ]] || { echo "Refusing a symlinked Caddy log directory" >&2; exit 5; }
 for legacy_site in "${legacy_sites[@]}"; do
   [[ ! -L $legacy_site ]] || { echo "Refusing a symlinked Caddy site path: $legacy_site" >&2; exit 5; }
   [[ ! -e $legacy_site || -f $legacy_site ]] || { echo "A legacy Caddy site path is not a regular file: $legacy_site" >&2; exit 5; }
+done
+for log_file in "${caddy_log_files[@]}"; do
+  [[ ! -L $log_file ]] || { echo "Refusing a symlinked Caddy log path: $log_file" >&2; exit 5; }
+  [[ ! -e $log_file || -f $log_file ]] || { echo "A Caddy log path is not a regular file: $log_file" >&2; exit 5; }
 done
 
 approved_designpro_site() {
@@ -115,6 +125,19 @@ trap restore ERR
 install -d -m 0755 /etc/caddy/sites
 if id caddy >/dev/null 2>&1; then
   install -d -m 0750 -o caddy -g caddy /var/log/caddy
+  # Caddy validates file-log syntax as root but opens these files as the caddy
+  # service user. Historical cutovers left one of the exact DesignProAI logs
+  # root-owned, which made reload fail and the subsequent service start exit.
+  # Repair only the three DesignProAI-owned logs; never recurse into the shared
+  # Caddy log directory or change a neighboring site's files.
+  for log_file in "${caddy_log_files[@]}"; do
+    if [[ -f $log_file ]]; then
+      chown caddy:caddy "$log_file"
+      chmod 0640 "$log_file"
+    else
+      install -m 0640 -o caddy -g caddy /dev/null "$log_file"
+    fi
+  done
 else
   echo "Caddy service account is missing" >&2
   false
@@ -144,6 +167,21 @@ if systemctl is-active --quiet caddy; then
 else
   systemctl start caddy
 fi
+# systemctl can report a successful start before the daemon finishes opening
+# its log writers. Require the unit to remain active and the expected local TLS
+# origin to answer before acceptance can make this workflow green.
+for _ in {1..10}; do
+  systemctl is-active --quiet caddy && break
+  sleep 1
+done
+systemctl is-active --quiet caddy || {
+  echo "Caddy did not remain active after activation" >&2
+  systemctl status caddy --no-pager -l >&2 || true
+  false
+}
+curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+  --resolve os.designproai.com:443:127.0.0.1 \
+  https://os.designproai.com/gateway-healthz >/dev/null
 "$OPS_DIR/acceptance.sh" "$sha"
 trap - ERR
 
