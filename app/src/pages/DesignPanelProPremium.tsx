@@ -2425,6 +2425,26 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               </div>
                             </button>
                           ))}
+                          {/* Call 8 is the eighth item in the finished design set.
+                              It is the server-owned customer proof selected by
+                              role, never a browser-composed substitute. */}
+                          {proofToShow && displayedAllViews.length >= requiredViewCount && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedImage({
+                                url: proofToShow,
+                                title: `${year} ${make} ${model} — 2D Production Proof`,
+                              })}
+                              className="shrink-0 w-28 overflow-hidden rounded-xl border-2 border-cyan-400/70 bg-cyan-500/10 shadow-[0_0_14px_rgba(34,211,238,0.28)] transition hover:border-cyan-300"
+                            >
+                              <div className="aspect-video bg-white">
+                                <img src={proofToShow} alt="2D Production Proof" className="h-full w-full object-contain" />
+                              </div>
+                              <div className="bg-cyan-500/15 px-2 py-1 text-center text-[10px] font-bold uppercase tracking-wider text-cyan-200">
+                                8 · 2D Proof
+                              </div>
+                            </button>
+                          )}
                           {/* REMOVED 2026-07-31 — the "Add View" tile was a
                               DESTRUCTIVE REGENERATE mislabelled as additive. It
                               called handleGenerateAllViews, which re-runs the
@@ -2727,6 +2747,20 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             </div>
                           </Card>
                         ))}
+                        {proofToShow && displayedAllViews.length >= requiredViewCount && (
+                          <Card
+                            className="group relative aspect-video cursor-pointer overflow-hidden border-cyan-400/60 bg-white shadow-[0_0_18px_rgba(34,211,238,0.18)]"
+                            onClick={() => setExpandedImage({
+                              url: proofToShow,
+                              title: `${year} ${make} ${model} — 2D Production Proof`,
+                            })}
+                          >
+                            <img src={proofToShow} alt="2D Production Proof — Call 8" className="h-full w-full object-contain" />
+                            <div className="absolute bottom-2 left-2 rounded bg-cyan-950/90 px-2 py-1 text-xs font-bold text-cyan-200">
+                              8 · 2D Production Proof
+                            </div>
+                          </Card>
+                        )}
                         {/* Failed view retry slots */}
                         {failedViews.map((viewType) => (
                           <Card
