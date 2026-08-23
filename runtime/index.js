@@ -148,7 +148,12 @@ function stopWorkerLoops() {
  */
 function ensureGenerationWorker() {
   if (generationWorker) return;
-  generationWorker = createGenerationWorker({ supabase, workerId: `${WORKER_ID}-calls-1-7` });
+  generationWorker = createGenerationWorker({
+    supabase,
+    supabaseUrl: SUPABASE_URL,
+    serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+    workerId: `${WORKER_ID}-calls-1-7`,
+  });
   generationWorker.start();
 }
 

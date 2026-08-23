@@ -33,8 +33,8 @@ const {
   ARTIFACT_AUDIT_CONTRACT,
   ATLAS_SERVER_PROVIDER_CONTRACT,
   createAtlasDesignPanelProvider,
-  createDesignPanelServerProvider,
 } = require("./designpanel-server-provider.cjs");
+const { createDesignPanelEdgeProvider } = require("./designpanel-edge-provider.cjs");
 const {
   QC_CONTRACT: ATLAS_PROOF_QC_CONTRACT,
   VIEW_CONTRACTS: ATLAS_QC_VIEW_CONTRACTS,
@@ -553,7 +553,9 @@ function createGenerationWorker({
   supabase,
   workerId,
   provider,
-  standardProviderFactory = createDesignPanelServerProvider,
+  supabaseUrl = process.env.SUPABASE_URL,
+  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  standardProviderFactory = createDesignPanelEdgeProvider,
   atlasProviderFactory = createAtlasDesignPanelProvider,
   atlasProofValidatorFactory = createAtlasProofValidator,
   intervalMs = POLL_MS,
@@ -623,6 +625,8 @@ function createGenerationWorker({
       const standardProvider = isFlatFirst ? null : standardProviderFactory({
         supabase,
         provider: imageProvider,
+        supabaseUrl,
+        serviceRoleKey,
         tenantKey: claim.tenantKey,
         generationId: claim.generationId,
         requestId,

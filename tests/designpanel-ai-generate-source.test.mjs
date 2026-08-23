@@ -5,12 +5,13 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("the standalone creative engine identifies design-panel-ai-generate as its source", () => {
+test("the Standard standalone worker routes through the sanctioned Edge producers", () => {
   const edge = read("supabase/functions/design-panel-ai-generate/index.ts");
   const prompt = read("runtime/designiq-prompt.cjs");
   const atlas = read("runtime/flat-first-atlas.cjs");
   const worker = read("runtime/generation-worker.cjs");
   const provider = read("runtime/designpanel-server-provider.cjs");
+  const edgeProvider = read("runtime/designpanel-edge-provider.cjs");
   const productionDeploy = read(".github/workflows/deploy-production.yml");
 
   assert.match(edge, /\* design-panel-ai-generate/);
@@ -22,7 +23,14 @@ test("the standalone creative engine identifies design-panel-ai-generate as its 
     "the historical flat prompt API remains a compatibility alias",
   );
   assert.match(worker, /buildDesignIQPrompt/);
-  assert.match(worker, /createDesignPanelServerProvider/);
+  assert.match(worker, /createDesignPanelEdgeProvider/);
+  assert.match(edgeProvider, /functions\/v1\/\$\{functionName\}/);
+  assert.match(edgeProvider, /invoke\("design-panel-ai-generate"/);
+  assert.match(edgeProvider, /invoke\("generate-color-render"/);
+  assert.match(edgeProvider, /execution: "supabase-edge-function"/);
+  assert.match(edgeProvider, /x-designpro-owner-id/);
+  assert.match(edgeProvider, /x-designpro-mode/);
+  assert.doesNotMatch(edgeProvider, /qualityProvider\?\.generateImage/);
   assert.match(provider, /stage: "design-panel-ai-generate"/);
   assert.match(provider, /stage: "generate-color-render"/);
   assert.match(provider, /execution: "server-native"/);
@@ -41,7 +49,7 @@ test("the standalone creative engine identifies design-panel-ai-generate as its 
   assert.doesNotMatch(worker, /authorCreativeInput/);
 });
 
-test("the retired Edge implementation remains a reference and is unreachable from the server release", () => {
+test("the sanctioned Edge implementation is reachable only through the server release", () => {
   const auth = read("supabase/functions/_shared/designpro-internal-call.ts");
   const designer = read("supabase/functions/design-panel-ai-generate/index.ts");
   const router = read("supabase/functions/generate-color-render/index.ts");
@@ -72,8 +80,8 @@ test("the retired Edge implementation remains a reference and is unreachable fro
   assert.match(photographer, /safeSegment\(viewType\)\}\.png/);
   assert.match(photographer, /contentType:\s*"image\/png"/);
   assert.doesNotMatch(`${router}\n${photographer}`, /design-panel-color-render/);
-  assert.doesNotMatch(releaseFiles, /designpanel-edge-provider\.cjs/);
-  assert.doesNotMatch(worker, /designpanel-edge-provider|createDesignPanelEdgeProvider/);
+  assert.match(releaseFiles, /designpanel-edge-provider\.cjs/);
+  assert.match(worker, /designpanel-edge-provider|createDesignPanelEdgeProvider/);
   assert.equal(
     createHash("sha256").update(legacy).digest("hex"),
     "46022e2f487e785256e76d6b3ee1c68b35f127138ea2b1117f687e9bba0fec47",
