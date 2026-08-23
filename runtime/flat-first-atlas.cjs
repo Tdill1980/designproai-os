@@ -34,7 +34,11 @@ const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
 const INPUT_CONTRACT = "designpro.calls-1-7-input.v3";
 const PIPELINE_MODE = "flat-first-atlas-v1";
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260822.v4";
+// v5: the solid-panel rule. v4 masters were authored under a prompt that let a
+// zone come back as a vehicle silhouette with the wheel arches and glass punched
+// out, so they are not reusable under this contract and the version is what
+// refuses them.
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260823.v5";
 const MASTER_PROVIDER_CONTRACT = "designpro.flat-first-master-provider.v1";
 const TOPOLOGY = "rectangular-preview-v1";
 const EXAMPLE_PURPOSE = "topology-only";
@@ -689,7 +693,9 @@ TOPOLOGY LOCK:
 ZONE MAP:
 ${map}
 
-OUTPUT CLEANLINESS: The guide's colors, labels, outlines, legend, dimensions, grid, background and template marks are instructions, never artwork. Do not copy any of them. Output artwork only inside the zones and fill every zone completely through every edge. Do not draw or punch out vehicle windows/glass, wheel arches, pickup-bed openings, lights or trim: this full-bleed master continues behind those future installer cut lines. Do not draw a vehicle, camera scene, shadows, or a second installer map.
+OUTPUT CLEANLINESS: The guide's colors, labels, outlines, legend, dimensions, grid, background and template marks are instructions, never artwork. Output artwork only inside the zones.
+
+SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL: every zone is ONE SOLID RECTANGLE of continuous printed artwork, opaque corner to corner and edge to edge. The design runs straight through every place a windshield, side window, door glass, wheel arch, tyre, pickup-bed opening, headlight, tail light, handle or trim piece will later sit, exactly as if those parts were not there. THE INSTALLER CUTS THE WHEEL AND WINDOW OPENINGS OUT OF THE FINISHED PANEL, so the panel must have artwork in those places for them to cut. Paint the wrap graphic across the whole rectangle. Each zone reads as a flat sheet of printed vinyl, never as a picture of a vehicle.
 
 PAIRED FLAT-TO-FINISHED LESSON: The attached flattened top-view example and its corresponding finished 3D vehicle proof teach the direction of this first call. The FLATTENED TOP-VIEW image is the output-format example. The finished vehicle is shown only so you understand how one coherent flat design later wraps across hood, roof, driver, passenger, front and rear surfaces. For this call, output the new flattened top-view design first; never output a vehicle photograph.
 

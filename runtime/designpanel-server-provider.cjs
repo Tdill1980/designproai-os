@@ -57,6 +57,15 @@ const ORIENTATION_H = 32;
 const PASSENGER_FRAMING_W = 96;
 const PASSENGER_FRAMING_H = 54;
 const MAX_PASSENGER_FRAMING_MAE = 0.18;
+// The repair model answers at its own canonical raster size, so an exact
+// pixel-dimension equality test rejects every candidate forever -- live
+// evidence: four consecutive passenger attempts on 2026-08-23 all died with
+// "pixel-dimensions-mismatch" and took the whole seven-view run down with
+// them. What the guard actually protects is FRAMING: a crop, zoom or
+// recompose changes the picture, a re-encode at another resolution does not.
+// Aspect ratio catches the geometric change; the signature MAE below catches
+// the pictorial one. 1% absorbs the model's rounding to its own raster grid.
+const MAX_PASSENGER_ASPECT_DRIFT = 0.01;
 const STANDARD_QC_MODEL = "gemini-2.5-flash";
 const STANDARD_QC_TIMEOUT_MS = 45_000;
 const STANDARD_QC_CONFIDENCE = 0.9;
@@ -590,16 +599,22 @@ ${truckBedClause(vehicle)}
 The vehicle and studio must be the same as View 1; only the camera moves.${photoLock}`;
 }
 
-function reproductionParts({ attempt, prompt, reference }) {
+function reproductionParts({ attempt, prompt, reference, corrections = [] }) {
   const safeAttempt = Math.min(4, Math.max(1, Number(attempt) || 1));
   const text = safeAttempt === 1
     ? prompt
     : safeAttempt === 2
       ? `[GENERATE IMAGE] Create a photorealistic production asset: ${prompt}`.slice(0, 2000)
       : `[GENERATE IMAGE] ${prompt}`.slice(0, 1000);
+  // This path rebuilds its own parts, so the engine's trailing correction part
+  // would be dropped. Re-attach it here or a rejected view re-rolls unchanged.
+  const findings = Array.isArray(corrections)
+    ? corrections.filter((entry) => typeof entry === "string" && entry.trim()).join("\n\n")
+    : "";
   return {
     parts: [
       { text },
+      ...(findings ? [{ text: findings }] : []),
       { inlineData: reference },
       { inlineData: reference },
     ],
@@ -729,13 +744,16 @@ async function passengerFramingVerdict(rawMirrorBytes, candidateBytes) {
       visiblePixelDimensions(rawMirrorBytes),
       visiblePixelDimensions(candidateBytes),
     ]);
-    if (rawDimensions.width !== candidateDimensions.width
-      || rawDimensions.height !== candidateDimensions.height) {
+    const rawAspect = rawDimensions.width / rawDimensions.height;
+    const candidateAspect = candidateDimensions.width / candidateDimensions.height;
+    const aspectDrift = Math.abs(candidateAspect - rawAspect) / rawAspect;
+    if (!Number.isFinite(aspectDrift) || aspectDrift > MAX_PASSENGER_ASPECT_DRIFT) {
       return {
         matches: false,
-        reason: "pixel-dimensions-mismatch",
+        reason: "aspect-ratio-mismatch",
         rawDimensions,
         candidateDimensions,
+        aspectDrift: Number.isFinite(aspectDrift) ? aspectDrift : null,
         mae: null,
       };
     }
@@ -750,6 +768,7 @@ async function passengerFramingVerdict(rawMirrorBytes, candidateBytes) {
         reason: "framing-signature-invalid",
         rawDimensions,
         candidateDimensions,
+        aspectDrift,
         mae: null,
       };
     }
@@ -763,6 +782,7 @@ async function passengerFramingVerdict(rawMirrorBytes, candidateBytes) {
       reason: mae <= MAX_PASSENGER_FRAMING_MAE ? "matched" : "framing-mismatch",
       rawDimensions,
       candidateDimensions,
+      aspectDrift,
       mae,
     };
   } catch (cause) {
@@ -771,10 +791,34 @@ async function passengerFramingVerdict(rawMirrorBytes, candidateBytes) {
       reason: "framing-verification-error",
       rawDimensions: null,
       candidateDimensions: null,
+      aspectDrift: null,
       mae: null,
       detail: String(cause?.message || cause).slice(0, 300),
     };
   }
+}
+
+/**
+ * Resample an accepted repair back onto the mirror's exact pixel grid. Called
+ * only after passengerFramingVerdict has already proven the aspect ratio and
+ * the framing signature match, so nothing here can change what the picture
+ * shows.
+ */
+async function conformToMirrorGeometry(candidateBytes, framing) {
+  const target = framing?.rawDimensions;
+  const current = framing?.candidateDimensions;
+  if (!target?.width || !target?.height) {
+    return { bytes: candidateBytes, contentType: null, dimensions: current || null };
+  }
+  if (current?.width === target.width && current?.height === target.height) {
+    return { bytes: candidateBytes, contentType: null, dimensions: target };
+  }
+  const bytes = await sharp(candidateBytes, { limitInputPixels: false })
+    .rotate()
+    .resize(target.width, target.height, { fit: "fill", kernel: "lanczos3" })
+    .jpeg({ quality: 92 })
+    .toBuffer();
+  return { bytes, contentType: "image/jpeg", dimensions: target };
 }
 
 function passengerRepairRequestByteSize(parts) {
@@ -974,8 +1018,16 @@ async function producePassengerView({ driverBytes, provider, call, prompt = "", 
       );
       continue;
     }
+    // The repair is accepted at the model's own raster size. Conform it back
+    // to the deterministic mirror's exact pixel geometry so the passenger
+    // proof stays a true geometric twin of the driver it was mirrored from;
+    // the aspect ratio already matched within MAX_PASSENGER_ASPECT_DRIFT, so
+    // this is a resample, never a reframe.
+    const conformed = await conformToMirrorGeometry(fixed.bytes, framing);
     return {
       ...fixed,
+      bytes: conformed.bytes,
+      contentType: conformed.contentType || fixed.contentType,
       metadata: {
         passengerProducer: "producePassengerView",
         deterministicMirror: true,
@@ -983,7 +1035,9 @@ async function producePassengerView({ driverBytes, provider, call, prompt = "", 
         textRepairAttempts: repairAttempt,
         framingVerified: true,
         framingMae: framing.mae,
-        pixelDimensions: framing.candidateDimensions,
+        framingAspectDrift: framing.aspectDrift,
+        pixelDimensions: conformed.dimensions,
+        modelPixelDimensions: framing.candidateDimensions,
       },
     };
   }
@@ -1135,6 +1189,7 @@ function createDesignPanelServerProvider(options = {}) {
       attempt: call.attempt,
       prompt: buildReproductionPrompt({ input, sourceViewType }),
       reference: acceptedHero.reference,
+      corrections: call.corrections,
     });
     const generated = await qualityChecked(await provider.generateImage({
       ...call,

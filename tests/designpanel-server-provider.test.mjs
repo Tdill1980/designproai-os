@@ -383,20 +383,51 @@ test("passenger fails closed when repaired bytes cannot be orientation-verified"
   }), (error) => error.code === "designpanel_passenger_text_repair_required");
 });
 
-test("passenger rejects opposite-facing repaired bytes when pixel dimensions changed", async () => {
+test("passenger rejects opposite-facing repaired bytes when the aspect ratio changed", async () => {
   const driver = await asymmetricDriverFixture();
   const rawMirror = await generatePassengerMirror(driver);
-  const resized = await sharp(rawMirror).resize(320, 180, { fit: "fill" }).jpeg({ quality: 92 }).toBuffer();
-  const framing = await passengerFramingVerdict(rawMirror, resized);
+  const squashed = await sharp(rawMirror).resize(480, 360, { fit: "fill" }).jpeg({ quality: 92 }).toBuffer();
+  const framing = await passengerFramingVerdict(rawMirror, squashed);
   assert.equal(framing.matches, false);
-  assert.equal(framing.reason, "pixel-dimensions-mismatch");
+  assert.equal(framing.reason, "aspect-ratio-mismatch");
 
   await assert.rejects(() => producePassengerView({
     driverBytes: driver,
     prompt: "Acme company logo",
     call: { sourceViewType: "passenger-side", attempt: 1 },
-    provider: textRepairProvider(resized),
+    provider: textRepairProvider(squashed),
   }), (error) => error.code === "designpanel_passenger_text_repair_required");
+});
+
+// The repair model answers at its own canonical raster size. Rejecting that
+// was a live outage: every passenger attempt died on "pixel-dimensions-mismatch"
+// and failed the whole seven-view run. A same-aspect rescale is not a reframe,
+// so it is accepted and resampled back onto the mirror's exact pixel grid.
+test("passenger accepts a same-aspect rescale and conforms it to the mirror geometry", async () => {
+  const driver = await asymmetricDriverFixture();
+  const rawMirror = await generatePassengerMirror(driver);
+  const mirrorMeta = await sharp(rawMirror).metadata();
+  const rescaled = await sharp(rawMirror)
+    .resize(Math.round(mirrorMeta.width / 2), Math.round(mirrorMeta.height / 2), { fit: "fill" })
+    .jpeg({ quality: 92 })
+    .toBuffer();
+
+  const framing = await passengerFramingVerdict(rawMirror, rescaled);
+  assert.equal(framing.matches, true, framing.reason);
+  assert.ok(framing.aspectDrift <= 0.01);
+
+  const produced = await producePassengerView({
+    driverBytes: driver,
+    prompt: "Acme company logo",
+    call: { sourceViewType: "passenger-side", attempt: 1 },
+    provider: textRepairProvider(rescaled),
+  });
+  assert.equal(produced.metadata.textRepair, "accepted-opposite-facing");
+  assert.equal(produced.metadata.framingVerified, true);
+  const producedMeta = await sharp(produced.bytes).metadata();
+  assert.equal(producedMeta.width, mirrorMeta.width);
+  assert.equal(producedMeta.height, mirrorMeta.height);
+  assert.equal(produced.metadata.modelPixelDimensions.width, Math.round(mirrorMeta.width / 2));
 });
 
 test("passenger rejects opposite-facing repaired bytes when framing changed at the same dimensions", async () => {

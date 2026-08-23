@@ -65,7 +65,10 @@ export function ServerRevisionStudio({
   layersSource,
 }: {
   generationId: string;
-  job: WorkflowStatus;
+  // The studio survives a job that is not reporting yet: the seven frozen
+  // approved views are owned by the generation, not by the production run, and
+  // hiding them behind a missing run is what made RevisionStudio look absent.
+  job?: WorkflowStatus;
   artifacts: WorkflowArtifact[];
   artifactsLoading: boolean;
   layersSource: ProductionLayersSource | null;
@@ -154,10 +157,12 @@ export function ServerRevisionStudio({
             </Badge>
           </div>
           <h2 className="mt-1 truncate text-xl font-black tracking-tight md:text-2xl">
-            {job.designId}
+            {job?.designId || "Design not yet in production"}
           </h2>
           <p className="mt-1 text-xs text-zinc-400">
-            Order {job.orderNumber} · Revision {job.revision} · one frozen source set
+            {job
+              ? `Order ${job.orderNumber} · Revision ${job.revision} · one frozen source set`
+              : "No production run is reporting yet · the approved views below are the frozen Calls 1–7 set"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">

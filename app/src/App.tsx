@@ -110,6 +110,11 @@ const DesignPanelProPremium = lazyWithRetry(() => import("./pages/DesignPanelPro
 const DesignProGenerate = lazyWithRetry(() => import("./pages/designpro/GenerateDesign"));
 const DesignProJobs = lazyWithRetry(() => import("./pages/designpro/ProductionJobs"));
 const DesignProWorkflow = lazyWithRetry(() => import("./pages/designpro/ProductionWorkflow"));
+// The design team's per-side validation board and the customer's build-progress
+// page. Both were RestylePro surfaces driven from the browser; these are the
+// server-backed rebuilds that read the run through the gateway only.
+const PanelProStudioBoard = lazyWithRetry(() => import("./pages/designpro/PanelProStudioBoard"));
+const GenieProgress = lazyWithRetry(() => import("./pages/designpro/GenieProgress"));
 const DesignProGenieQc = lazyWithRetry(() => import("./pages/designpro/GenieQc"));
 const DesignProNewRevision = lazyWithRetry(() => import("./pages/designpro/NewRevisionSource"));
 const DesignProWrapBox = lazyWithRetry(() =>
@@ -282,6 +287,8 @@ const App = () => {
           <Route path="/designpro/create" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId/panel-studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
+          <Route path="/designpro/jobs/:generationId/panelpro" element={<RequireAuth><PanelProStudioBoard /></RequireAuth>} />
+          <Route path="/designpro/jobs/:generationId/progress" element={<RequireAuth><GenieProgress /></RequireAuth>} />
           <Route path="/designpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/raster" element={<RequireAuth><DesignStudio /></RequireAuth>} />
           {/* FadeWrap generator hidden — use DesignProAI for fade wraps via prompt */}
@@ -331,7 +338,9 @@ const App = () => {
               the browser. The runtime owns the whole pipeline now, so the job
               page is the one place a job's state is reported. */}
           <Route path="/productionflow" element={<Navigate to="/designpro/jobs" replace />} />
-          <Route path="/productionflow/:jobId" element={<Navigate to="/designpro/jobs" replace />} />
+          {/* The GENIE progress page exists again, server-backed. The bare
+              /productionflow still lands on the job list because it names no job. */}
+          <Route path="/productionflow/:generationId" element={<RequireAuth><GenieProgress /></RequireAuth>} />
           <Route path="/production-flow" element={<Navigate to="/designpro/jobs" replace />} />
           {/* Designer-side production QC — files land here first; writes to the SAME
               panelizer_jobs row the customer GENIE page on ProductionFlow polls. */}

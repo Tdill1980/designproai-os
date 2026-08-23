@@ -534,7 +534,20 @@ function rejectionFor(review, expected, confidenceThreshold) {
     .map((field) => `${field}=${review[field]}`);
   const reason = [...statuses, ...modelReasons].join("; ").slice(0, 500)
     || `A.T.L.A.S. proof inspection rejected ${expected.expectedView}`;
-  return { accepted: false, code, reason, review };
+  // The inspector's own findings, addressed to the next attempt. Without this
+  // the ladder re-sends a byte-identical prompt and re-rolls the same dice --
+  // live evidence 2026-08-23: Hood and Close-Up were each rejected twice for
+  // the same correctable framing faults ("camera height is too low", "the hood
+  // surface does not fill a minimum of 80%") and the run died. The camera
+  // contract itself is unchanged; this only tells the renderer which part of
+  // that contract the previous frame missed.
+  const correction = [
+    `PREVIOUS ATTEMPT REJECTED BY THE ${expected.expectedView.toUpperCase()} PROOF INSPECTOR (${code}).`,
+    "Correct exactly these findings on this attempt while keeping the artwork authority unchanged:",
+    ...[...statuses, ...modelReasons].map((entry) => `- ${entry}`),
+    "Re-read the locked camera and framing contract above and satisfy it literally. Do not redesign, restyle, recolor or move any artwork to compensate.",
+  ].join("\n").slice(0, 1200);
+  return { accepted: false, code, reason, correction, review };
 }
 
 function createAtlasProofValidator({

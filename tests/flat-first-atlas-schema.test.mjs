@@ -14,8 +14,18 @@ const regenerationSql = readFileSync(new URL(
   "../supabase/migrations/20260822070000_designpro_refuse_atlas_view_regeneration.sql",
   import.meta.url,
 ), "utf8");
+// 20260822080000 owns the typed new-run plumbing: requires_new_run, the request
+// read and the view-paths read. Those are still its definitions.
 const ownerReadGuardSql = readFileSync(new URL(
   "../supabase/migrations/20260822080000_designpro_guard_atlas_owner_reads.sql",
+  import.meta.url,
+), "utf8");
+// flat_first_atlas_view_set_valid is redefined by the solid-panel migration, so
+// the CURRENT body lives there. Asserting the lineage contract against the
+// introducing migration would check a body the database has replaced -- exactly
+// the drift this suite exists to catch.
+const viewSetGuardSql = readFileSync(new URL(
+  "../supabase/migrations/20260823230000_designpro_atlas_solid_panel_prompt.sql",
   import.meta.url,
 ), "utf8");
 const closeupBoundarySql = readFileSync(new URL(
@@ -52,13 +62,13 @@ test("the owner-callable regeneration RPC refuses exact Atlas v3 before any muta
 });
 
 test("terminal Atlas owner reads require exact seven current roles and one audited lineage", () => {
-  assert.match(ownerReadGuardSql, /flat_first_atlas_view_set_valid/);
+  assert.match(viewSetGuardSql, /flat_first_atlas_view_set_valid/);
   assert.match(
-    ownerReadGuardSql,
+    viewSetGuardSql,
     /OR NOT \(CASE[\s\S]*masterQcConfidence[\s\S]*END\)/,
     "master QC confidence CASE stays parenthesized for PL/pgSQL IF parsing",
   );
-  assert.match(ownerReadGuardSql, /v_count=7[\s\S]*v_source_count=7[\s\S]*v_role_count=7[\s\S]*v_hash_count=7[\s\S]*v_valid_count=7/);
+  assert.match(viewSetGuardSql, /v_count=7[\s\S]*v_source_count=7[\s\S]*v_role_count=7[\s\S]*v_hash_count=7[\s\S]*v_valid_count=7/);
   for (const identity of [
     "'side','passenger-side','hood_detail','front','rear','close-up','roof'",
     "designpro.atlas-designpanel-server-provider.v1",
@@ -71,7 +81,7 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
     "producePassengerView",
     "deterministicMirror",
     "driverContentHash",
-    "designpro-flat-first-atlas-20260822.v4",
+    "designpro-flat-first-atlas-20260823.v5",
     "designpro.atlas-master-semantic-qc.v1",
     "designpro.flat-first-master-provider.v1",
     "designpanel-ai-generate.artboard.20260822.v1",
@@ -87,9 +97,9 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
     "zoneSurfaceKey",
     "zoneContentHash",
     "atlasZonePassedToPassengerRepair",
-  ]) assert.match(ownerReadGuardSql, new RegExp(identity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  ]) assert.match(viewSetGuardSql, new RegExp(identity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(
-    ownerReadGuardSql.match(/v\.source_view_type IN \([\s\S]*?\)/)?.[0] || "",
+    viewSetGuardSql.match(/v\.source_view_type IN \([\s\S]*?\)/)?.[0] || "",
     /hero-3d/,
   );
 });

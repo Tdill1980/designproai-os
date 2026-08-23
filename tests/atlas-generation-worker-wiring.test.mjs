@@ -49,7 +49,7 @@ const VIEW_AUTHORITIES = Object.freeze(Object.fromEntries(Object.entries(ZONE_SU
 
 const FLAT_ATLAS = Object.freeze({
   contract: "designpro.flat-first-atlas.v1",
-  promptVersion: "designpro-flat-first-atlas-20260822.v4",
+  promptVersion: "designpro-flat-first-atlas-20260823.v5",
   revisionId: "11111111-1111-4111-8111-111111111111",
   revisionSequence: 1,
   master: { contentHash: "a".repeat(64) },

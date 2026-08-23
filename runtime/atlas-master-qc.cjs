@@ -21,6 +21,22 @@ const MIN_ZONE_OPAQUE_RATIO = 0.995;
 const MIN_ZONE_EDGE_OPAQUE_RATIO = 0.99;
 const MIN_ZONE_LUMA_STDDEV = 6;
 const MAX_PASSENGER_MIRROR_MAE = 0.26;
+// A punched-out wheel arch or window is a flat, near-black blob sitting inside
+// otherwise bright artwork -- opaque, so opaqueRatio never saw it. Live evidence
+// 2026-08-23 (Becky's Bakery): the master came back as a van silhouette with
+// black wheel circles and black glass, every deterministic check reported pass,
+// and those holes would have printed as holes. A wrap panel is a solid
+// rectangle; the installer cuts the wheel opening, the artwork never does.
+//
+// What keeps a genuinely dark design legal is the SHARE of the zone that is
+// bright, not how bright the bright parts are: a mostly-black wrap still has
+// vivid accents, so a mean taken over its non-black pixels reads high and would
+// convict it. A cutout is a minority of flat black sitting inside a zone that is
+// mostly artwork. Measured on synthetic zones: punched wheels/glass = 22% flat
+// black with 78% bright, a black wrap = 90% flat black with 10% bright.
+const MAX_ZONE_FLAT_BLACK_RATIO = 0.05;
+const FLAT_BLACK_CHANNEL_MAX = 24;
+const CUTOUT_BRIGHT_MAJORITY = 0.55;
 const MAX_REQUEST_BYTES = 18 * 1024 * 1024;
 const MAX_TRANSPORT_BYTES = 3 * 1024 * 1024;
 const MAX_TRANSPORT_DIMENSION = 1800;
@@ -136,11 +152,44 @@ async function zonePixelMetrics(masterBytes, manifest) {
     }
     const average = opaque ? luminanceTotal / opaque : 0;
     const variance = opaque ? Math.max(0, luminanceSquared / opaque - average * average) : 0;
+    // Second pass for the cutout signature: a near-black pixel whose four
+    // neighbours are also near-black is blob INTERIOR, not a dark line, an
+    // outline or a shadow edge. Counting interiors is what separates a punched
+    // wheel arch from dark artwork detail.
+    let flatBlack = 0;
+    let brightTotal = 0;
+    let brightCount = 0;
+    const nearBlackAt = (px, py) => {
+      if (px < 0 || py < 0 || px >= info.width || py >= info.height) return true;
+      const offset = (py * info.width + px) * info.channels;
+      const red = data[offset];
+      const green = data[offset + 1] ?? red;
+      const blue = data[offset + 2] ?? red;
+      return Math.max(red, green, blue) <= FLAT_BLACK_CHANNEL_MAX;
+    };
+    for (let py = 0; py < info.height; py += 1) {
+      for (let px = 0; px < info.width; px += 1) {
+        if (nearBlackAt(px, py)) {
+          if (nearBlackAt(px - 1, py) && nearBlackAt(px + 1, py)
+            && nearBlackAt(px, py - 1) && nearBlackAt(px, py + 1)) flatBlack += 1;
+          continue;
+        }
+        const offset = (py * info.width + px) * info.channels;
+        const red = data[offset];
+        const green = data[offset + 1] ?? red;
+        const blue = data[offset + 2] ?? red;
+        brightTotal += 0.299 * red + 0.587 * green + 0.114 * blue;
+        brightCount += 1;
+      }
+    }
     metrics.push({
       surfaceKey: String(zone.surfaceKey),
       opaqueRatio: opaque / pixelCount,
       edgeOpaqueRatio: edgePixels ? edgeOpaque / edgePixels : 0,
       lumaStddev: Math.sqrt(variance),
+      flatBlackRatio: flatBlack / pixelCount,
+      nonBlackFraction: brightCount / pixelCount,
+      nonBlackMeanLuma: brightCount ? brightTotal / brightCount : 0,
     });
   }
   return metrics;
@@ -195,6 +244,17 @@ async function deterministicMasterChecks(masterBytes, manifest) {
     if (zone.lumaStddev < MIN_ZONE_LUMA_STDDEV) {
       failures.push(`${zone.surfaceKey} lumaStddev=${zone.lumaStddev.toFixed(2)}`);
     }
+    // Wheel arches, glass and bed openings drawn as holes. Printed, these are
+    // holes in the wrap; the installer is the one who cuts an opening, and they
+    // cut it out of a solid panel.
+    if (zone.flatBlackRatio > MAX_ZONE_FLAT_BLACK_RATIO
+      && zone.nonBlackFraction >= CUTOUT_BRIGHT_MAJORITY) {
+      failures.push(
+        `${zone.surfaceKey} flatBlackRatio=${zone.flatBlackRatio.toFixed(5)} `
+        + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
+        + `(wheel/glass/bed shapes cut out of the panel)`,
+      );
+    }
   }
   if (passengerMae > MAX_PASSENGER_MIRROR_MAE) {
     failures.push(`passengerMirrorMae=${passengerMae.toFixed(5)}`);
@@ -243,7 +303,7 @@ Deterministic pixel evidence: ${JSON.stringify(deterministic)}
 
 ACCEPTANCE CONTRACT:
 1. IMAGE 1 is one flat 2D unwrapped artwork sheet in exactly the guide's six zones, not a vehicle photo, mockup, proof, second template, labelled diagram or Hero view.
-2. Every zone is visibly filled edge-to-edge. There are no punched-out windows/glass, wheel arches, pickup-bed openings, lights or trim. Artwork may run behind future installer cut lines.
+2. Every zone is one solid rectangle of continuous artwork, filled edge to edge and corner to corner. The artwork runs unbroken straight through the places a windshield, side window, wheel arch, pickup-bed opening, light or trim will later sit -- the installer cuts those openings out of a finished panel, so the master carries artwork there. A zone containing a vehicle silhouette, a wheel circle, a glass shape or any hole punched through the design is a failure even when the hole is filled with flat colour.
 3. The sheet is one premium DesignPanelAI wrap: layered depth, intentional flow, strong hierarchy, readable-at-a-glance composition and gallery-grade custom quality. Six unrelated designs, generic AI filler, duplicated panels or incoherent motifs fail.
 4. The brief, palette, supplied identity and requested photographic/illustrated treatment are visibly honored. Do not excuse a generic design merely because it is colorful.
 5. Every supplied business/contact string that is visibly rendered must be exact and forward-reading. Malformed or invented words, URLs or numbers fail. If no brand strings are required, brandTextContract is not_applicable.

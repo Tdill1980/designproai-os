@@ -59,6 +59,123 @@ RestylePro stack — `design-panel-ai-generate` with `_shared/studio-os.ts` and
 are the same thing; a design that does not reach Porsche quality means the
 port is incomplete, not that a new creative approach is needed.
 
+## 🛞 RULE 0.15 — A WRAP PANEL IS A SOLID RECTANGLE. THE INSTALLER CUTS THE HOLES. (Trish 2026-08-23)
+
+**Every A.T.L.A.S. zone, every Call 9 panel, every print file is one solid
+rectangle of continuous artwork, opaque corner to corner.** The design runs
+straight through the places a windshield, side window, door glass, wheel arch,
+tyre, pickup-bed opening, light, handle or trim will later sit.
+
+**The installer cuts the wheel opening and the window out of the finished
+panel.** That is why the artwork has to exist there — there is nothing to cut
+otherwise, and a hole in the master prints as a hole in the vinyl.
+
+A zone that comes back as a *picture of a vehicle* — a silhouette with wheel
+circles and glass shapes punched through it — is a failed master, not a stylistic
+choice, **even when the hole is filled with flat colour.**
+
+Live evidence, 2026-08-23 (Becky's Bakery, Chevy Transit Connect): the master
+returned a van silhouette with black wheels and black glass, and *every*
+deterministic check reported pass — because `opaqueRatio` only asks whether a
+pixel is opaque, and black is opaque. Two things now stop it:
+
+- **`runtime/flat-first-atlas.cjs`** states the rule positively (SOLID PANELS),
+  because negatives make Gemini over-index on the forbidden thing. `PROMPT_VERSION`
+  is `designpro-flat-first-atlas-20260823.v5`; v4 masters are refused, not
+  migrated, and the version string is the mechanism that refuses them.
+- **`runtime/atlas-master-qc.cjs`** measures `flatBlackRatio` (near-black blob
+  *interiors*, not edges) against `nonBlackFraction` — the SHARE of the zone that
+  is artwork. A cutout is a minority of flat black inside a zone that is mostly
+  artwork; a black wrap is mostly black. Measured on fixtures: punched
+  wheels/glass = 22% flat black with 77% artwork (fails), black wrap = 90% flat
+  black with 10% artwork (passes).
+
+  **Do not use the mean brightness of the non-black pixels as the
+  discriminator.** That was the first attempt and it convicts black wraps: a
+  mostly-black design still has vivid accents, so the mean over its non-black
+  pixels reads high. Locked by `tests/atlas-master-qc.test.mjs`, which fixtures
+  all three cases.
+
+**Do not relax either threshold to get a run through.** A master that fails this
+is telling you the truth.
+
+## 🖥️ RULE 0.16 — CALLS 1–7 EXECUTE ON THIS SERVER (2026-08-23)
+
+`design-panel-ai-generate` and `generate-color-render` run **in this runtime**,
+against the server key pool, behind the worker secret. The persona stack is
+ported by name:
+
+| File | What it is |
+|---|---|
+| `runtime/designiq-prompt.cjs` | A.C.E., ported verbatim from `supabase/functions/design-panel-ai-generate/index.ts` |
+| `runtime/view-angles.cjs` | the locked seven camera angles |
+| `runtime/studio-os.cjs` | studio lighting |
+| `runtime/photorealism-prompt.cjs` | the photorealism lock |
+
+`standardProviderFactoryFor()` in `runtime/generation-worker.cjs` defaults to
+`createDesignPanelServerProvider`. **The Supabase Edge transport is an explicit
+rollback only** — `DESIGNPRO_STANDARD_TRANSPORT=edge`. Unset, or misspelled,
+resolves to the server, so Edge can never become the default again by omission.
+It was the default on 2026-08-23 and cost six of seven views to
+`provider_attempts_exhausted`.
+
+**Both pipelines produce 3D proofs through that same stack.** A.T.L.A.S. makes
+exactly **one** fast flattened AI call for the canonical top-view master; every
+camera after it is a projection, and the panel cut is pure geometry.
+
+## 🔗 RULE 0.17 — ONE PIPELINE. A.T.L.A.S. IS NOT A SIDE EXPERIMENT. (Trish 2026-08-23)
+
+A.T.L.A.S. runs the **same** file-output chain as Standard. It was excluded from
+the production handoff, which made it a dead end by construction: a master, six
+separated surfaces, seven proofs, and then nothing to validate.
+
+Both pipelines now reach the same idempotent handoff, behind the same seven-view
+readiness check. The flat-first gate
+(`designpro_flat_first_handoff_gate`) decides on **canonical-master acceptance**
+(`metadata.masterQcPassed`), never on the atlas `production_eligible` column —
+that column describes the atlas *layout* geometry, is false by design
+(`calls-1-7-layout-only`), and production dimensions come from the GENIE manifest
+at `manifest.resolve`. Conflating the two is why the gate could never open.
+
+After purchase: `source.verify` → `await_panelpro_preflight_qc` →
+`enhance.upscale` (Topaz, gated on the purchased entitlement, skipped when
+unpurchased) → `output.build`. Panels are already cut at GENIE dimensions with
+5″ bleed by Call 9; the upscale reaches print resolution.
+
+## 🖼️ RULE 0.18 — THE THREE PRODUCTION SURFACES LIVE ON THIS SERVER
+
+None of these may be re-implemented against `supabase.functions` or
+`production_flow_assets`. They read the run through `dpApi` only, and
+`tests/designpro-customer-path-seam.test.mjs` walks their whole import closure.
+
+| Surface | Route | Module |
+|---|---|---|
+| RevisionStudio — 2D Production Proof, Production Layers, Logo Pack entice | `/designpro/jobs/:generationId` | `components/revisioniq/ServerRevisionStudio.tsx` + `ProductionFlowLayersCard.tsx` |
+| PanelPro Studio board — per-side REAL DESIGN PROOF ∥ PRINT PANEL, approve side, preflight gate | `/designpro/jobs/:generationId/panelpro` | `pages/designpro/PanelProStudioBoard.tsx` |
+| GENIE Universal Panelizer progress — step rail, glowing 7 sides, "when all panels glow it's a go" | `/designpro/jobs/:generationId/progress`, `/productionflow/:generationId` | `pages/designpro/GenieProgress.tsx` |
+
+**The board is not a producer.** RestylePro's "Pull panel" / "Mirror from driver"
+built panels in the browser; here Call 9 cuts them deterministically. A side with
+no panel is reported as server work, never hand-patched — adding those buttons
+back is the second producer the one-sanctioned-chain rule forbids.
+
+A side **glows** on the progress page only when its Call 9 panel actually exists,
+not when a view merely rendered.
+
+## ⏸️ RULE 0.19 — A PARKED RUN IS NOT A RUNNING RUN
+
+`manifest.resolve` waits with `wait_reason = genie_dimension_validation_required`
+until a human validates the vehicle's GENIE dimensions. The gateway reported that
+as `running`, so on 2026-08-23 a run sat parked for sixteen hours looking busy
+while Call 8, Call 9 and every panel below it never started — **that, not a code
+bug, is why RevisionStudio had no extracted panels.**
+
+The gateway now projects `waiting_for_genie_dimensions` with the candidate id,
+and the job and progress pages link straight to `/designpro/genie-qc`. **Never
+re-map a `waiting` stage onto `running`.** Validating dimensions is a human
+judgement about a real vehicle; do not auto-accept grounded candidate values to
+clear a queue.
+
 ## ⛔ RULE 0 — OPTIMIZE FOR BEHAVIORAL PARITY, NOT ARCHITECTURE (Trish 2026-08-17)
 
 **The screenshots in `docs/LAST-WORKING-STATE-2026-07-24.md` are the spec.**

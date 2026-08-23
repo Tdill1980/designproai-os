@@ -202,6 +202,60 @@ test("semantic rejection is bounded at two regenerations, not retried forever", 
   assert.ok(store.state.finished.every((row) => row.errorCode === "text_mirrored"));
 });
 
+// A retry that re-sends a byte-identical prompt is not a retry, it is the same
+// dice roll. Live evidence 2026-08-23: Hood and Close-Up were each rejected
+// twice by the A.T.L.A.S. proof inspector for the same correctable framing
+// faults and the whole seven-view run failed. The inspector's findings must
+// reach the next attempt.
+test("a rejected attempt carries the inspector's findings into the next call", async () => {
+  const seen = [];
+  const provider = {
+    calls: 0,
+    async generateImage(call) {
+      this.calls += 1;
+      seen.push({ parts: call.parts, corrections: call.corrections });
+      return { bytes: Buffer.from("render"), contentType: "image/png", model: "gemini-3-pro-image-preview", keyFingerprint: "0123456789ab", attempts: [] };
+    },
+  };
+  const store = makeStore();
+  await engine.runSlot({
+    ...base,
+    sourceViewType: "hood_detail",
+    consumerRole: "hood",
+    provider,
+    store,
+    validate: async () => ({
+      accepted: false,
+      code: "atlas_qc_camera_failed",
+      reason: "framingContract=fail",
+      correction: "PREVIOUS ATTEMPT REJECTED: the hood surface does not fill a minimum of 80%.",
+    }),
+  });
+
+  assert.equal(provider.calls, engine.MAX_SLOT_REGENERATIONS);
+  assert.deepEqual(seen[0].parts, base.promptParts, "attempt 1 is the untouched contract prompt");
+  assert.deepEqual(seen[0].corrections, [], "attempt 1 has no findings to correct");
+  assert.equal(seen[1].parts.length, base.promptParts.length + 1, "the finding is one extra trailing part");
+  assert.match(seen[1].parts.at(-1).text, /does not fill a minimum of 80%/);
+  assert.deepEqual(seen[1].parts.slice(0, base.promptParts.length), base.promptParts,
+    "the camera, studio and artwork authority parts are never rewritten");
+  assert.equal(seen[1].corrections.length, 1, "providers that rebuild parts read the findings from call.corrections");
+});
+
+test("an identical finding is carried once, not stacked on every attempt", async () => {
+  const seen = [];
+  const provider = {
+    calls: 0,
+    async generateImage(call) { this.calls += 1; seen.push(call.corrections); return { bytes: Buffer.from("r"), contentType: "image/png", model: "m", keyFingerprint: "0123456789ab", attempts: [] }; },
+  };
+  await engine.runSlot({
+    ...base, provider, store: makeStore(),
+    maxProviderAttempts: 4, maxRegenerations: 4,
+    validate: async () => ({ accepted: false, code: "atlas_qc_camera_failed", reason: "x", correction: "same finding" }),
+  });
+  assert.deepEqual(seen.at(-1), ["same finding"]);
+});
+
 test("a slot already leased by another worker is left alone", async () => {
   const provider = okProvider();
   const store = makeStore({ leaseBusy: true });
