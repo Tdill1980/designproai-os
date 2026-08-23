@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirty-nine-migration chain', () => {
-  assert.equal(migrationNames.length, 39);
+test('fresh bootstrap contains one ordered forty-migration chain', () => {
+  assert.equal(migrationNames.length, 40);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -81,6 +81,9 @@ test('fresh bootstrap contains one ordered thirty-nine-migration chain', () => {
       // layout-geometry flag, which stays false because Calls 8+ resolve
       // production dimensions from the GENIE manifest.
       '20260823220000',
+      // A.T.L.A.S. panels are solid rectangles. v4 masters, which could punch
+      // wheel arches and glass out of a zone, stop qualifying.
+      '20260823230000',
     ],
   );
 });
