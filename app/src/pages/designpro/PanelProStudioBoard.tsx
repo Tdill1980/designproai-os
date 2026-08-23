@@ -14,16 +14,25 @@
  * what the one-sanctioned-chain rule forbids. A side with no panel is reported
  * as a gap the server has to fill, never patched by hand here.
  *
- * The six side attestations roll up into the ONE real server gate,
- * await_panelpro_preflight_qc, through dpApi.approvePreflight. Nothing ships
- * until every side is ticked, which is the same rule the board always had.
+ * It carries the whole back half, because the team needs every panel asset in
+ * one place to sign anything off: the branded Call 9 panels, the Call 11
+ * de-logoed QC duplicates, the Call 10 logo inventory, the Topaz print-resolution
+ * panels, and the eighteen verified output files.
+ *
+ * Two real server gates run through it. The six side attestations plus the six
+ * preflight checks roll into await_panelpro_preflight_qc, which releases the
+ * panels into Topaz and the output build; the three final checks roll into
+ * await_final_human_qc, which is what lets the run stamp, ZIP and deliver to
+ * WrapBox. Nothing ships until both are ticked, which is the rule the board
+ * always had.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CheckCircle2, Download, ImageOff, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Download, FileArchive, ImageOff, PackageCheck, ShieldCheck } from "lucide-react";
 import {
   ApprovedGenerationView,
   dpApi,
+  FinalQc,
   GenieSurfaceKey,
   PreflightQc,
   PRODUCTION_SURFACES,
@@ -31,7 +40,13 @@ import {
   WorkflowArtifact,
   WorkflowStatus,
 } from "@/lib/designpro-api";
-import { PREFLIGHT_CHECKS } from "@/lib/designpro-stages";
+import {
+  EXPECTED_OUTPUT_FILES,
+  FINAL_CHECKS,
+  OUTPUT_FORMATS,
+  outputFormatOf,
+  PREFLIGHT_CHECKS,
+} from "@/lib/designpro-stages";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -170,6 +185,10 @@ export default function PanelProStudioBoard() {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [finalChecks, setFinalChecks] = useState<Record<string, boolean>>({});
+  const [finalNotes, setFinalNotes] = useState("");
+  const [finalSubmitting, setFinalSubmitting] = useState(false);
+  const [finalError, setFinalError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -218,10 +237,26 @@ export default function PanelProStudioBoard() {
     return rows;
   }, [artifacts]);
 
+  const logos = useMemo(() => artifacts.filter((a) => a.kind === "logo"), [artifacts]);
+  const upscaledBySide = useMemo(() => {
+    const rows = new Map<string, WorkflowArtifact>();
+    for (const artifact of artifacts) {
+      if (artifact.kind !== "upscaled-panel") continue;
+      if (!rows.has(artifact.surfaceKey)) rows.set(artifact.surfaceKey, artifact);
+    }
+    return rows;
+  }, [artifacts]);
+  const outputs = useMemo(() => artifacts.filter((a) => a.kind === "output"), [artifacts]);
+  const stamp = useMemo(() => artifacts.find((a) => a.kind === "stamp"), [artifacts]);
+  const zip = useMemo(() => artifacts.find((a) => a.kind === "zip"), [artifacts]);
+  const wrapbox = useMemo(() => artifacts.find((a) => a.kind === "wrapbox-manifest"), [artifacts]);
+
   const producedCount = PRODUCTION_SURFACES.filter((side) => panelBySide.has(side)).length;
   const everySideApproved = PRODUCTION_SURFACES.every((side) => approvedSides.has(side));
   const everyCheckTicked = PREFLIGHT_CHECKS.every(([key]) => checks[key]);
   const waitingForGate = job?.state === "waiting_for_preflight";
+  const everyFinalTicked = FINAL_CHECKS.every(([key]) => finalChecks[key]);
+  const waitingForFinal = job?.state === "waiting_for_final_qc";
 
   const toggleSide = (side: string, next: boolean) => {
     setApprovedSides((current) => {
@@ -242,6 +277,19 @@ export default function PanelProStudioBoard() {
       setSubmitError(cause instanceof Error ? cause.message : "The preflight approval was refused.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const submitFinal = async () => {
+    setFinalSubmitting(true);
+    setFinalError("");
+    try {
+      await dpApi.approveFinalQc(generationId, finalChecks as unknown as FinalQc, finalNotes);
+      await load();
+    } catch (cause) {
+      setFinalError(cause instanceof Error ? cause.message : "The final approval was refused.");
+    } finally {
+      setFinalSubmitting(false);
     }
   };
 
@@ -333,6 +381,99 @@ export default function PanelProStudioBoard() {
         </Panel>
       )}
 
+      {logos.length > 0 && (
+        <Panel
+          eyebrow="Call 10"
+          title={`Logo assets · ${logos.length}`}
+          description="The separated logo inventory the design team resizes on a vehicle template, and the Logo Pack the customer can buy."
+        >
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {logos.map((artifact) => (
+              <div key={artifact.id} className="rounded-lg border border-border p-2">
+                {artifact.signedUrl && (
+                  <img
+                    src={artifact.signedUrl}
+                    alt="logo asset"
+                    className="aspect-square w-full rounded bg-[repeating-conic-gradient(#0002_0_25%,transparent_0_50%)] bg-[length:16px_16px] object-contain"
+                  />
+                )}
+                <div className="mt-1 truncate text-[10px] text-muted-foreground">
+                  {artifact.surfaceKey || "unassigned"}
+                </div>
+                <SaveLink url={artifact.signedUrl} name={`logo-${artifact.id}.png`} />
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {upscaledBySide.size > 0 && (
+        <Panel
+          eyebrow="Call 12 · Topaz"
+          title={`Print-resolution panels · ${upscaledBySide.size}/${PRODUCTION_SURFACES.length}`}
+          description="The branded panels enhanced to print size after preflight. These are the production path; the QC duplicates are never upscaled."
+        >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {PRODUCTION_SURFACES.filter((side) => upscaledBySide.has(side)).map((side) => {
+              const artifact = upscaledBySide.get(side)!;
+              return (
+                <div key={side} className="rounded-lg border border-border p-2">
+                  <div className="mb-1 flex items-center justify-between text-xs font-semibold">
+                    <span>{SURFACE_LABEL[side] || side}</span>
+                    <span className="text-muted-foreground">{panelSize(artifact) || ""}</span>
+                  </div>
+                  {artifact.signedUrl && (
+                    <img src={artifact.signedUrl} alt={`${side} upscaled panel`} className="aspect-video w-full rounded bg-white object-contain" />
+                  )}
+                  <ContentHash value={artifact.contentHash} />
+                  <SaveLink url={artifact.signedUrl} name={`${side}-print.png`} />
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      )}
+
+      {outputs.length > 0 && (
+        <Panel
+          eyebrow="Production output"
+          title={`Verified output files · ${outputs.length}/${EXPECTED_OUTPUT_FILES}`}
+          description="Six surfaces × PNG, TIFF and EPS. The final gate signs off exactly these."
+        >
+          <div className="space-y-3">
+            {OUTPUT_FORMATS.map((format) => {
+              const rows = outputs.filter((artifact) => outputFormatOf(artifact.storagePath) === format);
+              return (
+                <div key={format} className="rounded-lg border border-border p-3">
+                  <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider">
+                    <span>{format}</span>
+                    <span className="text-muted-foreground">
+                      {rows.length}/{PRODUCTION_SURFACES.length}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {PRODUCTION_SURFACES.map((side) => {
+                      const artifact = rows.find((row) => row.surfaceKey === side);
+                      return (
+                        <span
+                          key={side}
+                          className={cn(
+                            "rounded-full border px-2 py-0.5 text-[11px]",
+                            artifact ? "border-emerald-500/40 text-emerald-300" : "border-border text-muted-foreground",
+                          )}
+                        >
+                          {SURFACE_LABEL[side] || side}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      )}
+
       <Panel
         eyebrow="The gate"
         title="PanelPro preflight approval"
@@ -378,6 +519,104 @@ export default function PanelProStudioBoard() {
           >
             {submitting ? "Submitting…" : "Approve preflight"}
           </Button>
+        </div>
+      </Panel>
+
+      {/* The second gate. Preflight releases the panels into Topaz and the output
+          build; this one signs off the finished files and is what lets the run
+          stamp, zip and deliver to WrapBox. */}
+      <Panel
+        eyebrow="Final production QC"
+        title="Sign off the finished output files"
+        description="The last gate before the QC stamp, the ZIP and the WrapBox delivery."
+      >
+        <div className="space-y-4">
+          <div className="space-y-3">
+            {FINAL_CHECKS.map(([key, label]) => (
+              <label key={key} className="flex items-start gap-3 text-sm">
+                <Checkbox
+                  checked={finalChecks[key] === true}
+                  onCheckedChange={(value) => setFinalChecks((current) => ({ ...current, [key]: value === true }))}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+
+          <Textarea
+            value={finalNotes}
+            onChange={(event) => setFinalNotes(event.target.value)}
+            placeholder="Final reviewer notes"
+            rows={3}
+          />
+
+          {finalError && <Notice tone="error">{finalError}</Notice>}
+          {!waitingForFinal && job && (
+            <Notice tone="info">
+              This run is not at the final QC gate yet (current state: {job.state}).
+            </Notice>
+          )}
+
+          <Button
+            disabled={!everyFinalTicked || finalSubmitting || !waitingForFinal}
+            onClick={() => void submitFinal()}
+          >
+            {finalSubmitting ? "Submitting…" : "Approve final QC"}
+          </Button>
+        </div>
+      </Panel>
+
+      <Panel
+        eyebrow="Delivery"
+        title="Stamp, ZIP and WrapBox"
+        description="What the run produced after the final gate. Nothing here is built in the browser."
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-border p-3">
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+              <ShieldCheck className="h-4 w-4" /> QC stamp
+            </div>
+            {stamp ? (
+              <>
+                {stamp.signedUrl && (
+                  <img src={stamp.signedUrl} alt="QC certificate" className="w-full rounded border border-border bg-white object-contain" />
+                )}
+                <SaveLink url={stamp.signedUrl} name="qc-certificate.png" />
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Produced after final QC approval.</p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-border p-3">
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+              <FileArchive className="h-4 w-4" /> Production ZIP
+            </div>
+            {zip ? (
+              <>
+                <ContentHash value={zip.contentHash} />
+                <SaveLink url={zip.signedUrl} name="production-pack.zip" />
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Built once the stamp exists.</p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-border p-3">
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+              <PackageCheck className="h-4 w-4" /> WrapBox
+            </div>
+            {wrapbox ? (
+              <>
+                <ContentHash value={wrapbox.contentHash} />
+                <Button asChild size="sm" variant="outline" className="mt-2">
+                  <Link to="/designpro/wrapbox">Open WrapBox</Link>
+                </Button>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Delivered after the ZIP is sealed.</p>
+            )}
+          </div>
         </div>
       </Panel>
     </div>
