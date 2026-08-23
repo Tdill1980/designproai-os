@@ -204,10 +204,11 @@ export async function handleDesignPanelRender(req: Request): Promise<Response> {
     studioEnvironment: STUDIO_ENVIRONMENT,
     wrapCoverageRules: WRAP_COVERAGE_RULES,
   });
-  const references = [
-    { label: "pattern-primary", inlineData: reference },
-    { label: "hero-reference", inlineData: reference },
-  ];
+  // The immutable Driver is the only photography anchor. Sending the same
+  // multi-megabyte base64 payload under two labels exhausted Edge compute
+  // before Gemini was reached. One verified reference preserves the exact
+  // design while keeping the request inside the worker budget.
+  const references = [{ label: "hero-reference", inlineData: reference }];
 
   let imageBytes: Uint8Array | null = null;
   let lastError = "no_image";
