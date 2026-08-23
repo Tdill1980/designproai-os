@@ -14,6 +14,10 @@ const {
   buildAtlasProjectionPrompt,
 } = require("../runtime/designpanel-server-provider.cjs");
 const angles = require("../runtime/view-angles.cjs");
+// Track the shipped contract rather than a literal: a prompt-version bump is
+// supposed to invalidate stale masters, so pinning the string here turns that
+// working mechanism into a fixture failure on every legitimate bump.
+const { PROMPT_VERSION } = require("../runtime/flat-first-atlas.cjs");
 
 const WORKER_SOURCE = readFileSync(new URL("../runtime/generation-worker.cjs", import.meta.url), "utf8");
 const PROVIDER_SOURCE = readFileSync(new URL("../runtime/designpanel-server-provider.cjs", import.meta.url), "utf8");
@@ -50,7 +54,7 @@ const VIEW_AUTHORITIES = Object.freeze(Object.fromEntries(Object.entries(ZONE_SU
 
 const FLAT_ATLAS = Object.freeze({
   contract: "designpro.flat-first-atlas.v1",
-  promptVersion: "designpro-flat-first-atlas-20260823.v5",
+  promptVersion: PROMPT_VERSION,
   revisionId: "11111111-1111-4111-8111-111111111111",
   revisionSequence: 1,
   master: { contentHash: "a".repeat(64) },

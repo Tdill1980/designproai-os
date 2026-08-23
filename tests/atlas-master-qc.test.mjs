@@ -215,3 +215,93 @@ test("a genuinely black wrap is not mistaken for a punched-out panel", async () 
     "a dark design must not be convicted as a cutout",
   );
 });
+
+/* ── What the component rule adds over the flat-black aggregate ────────── */
+
+// The aggregate asks how much of the zone is flat black. The component rule
+// asks whether any ONE shape is a hole. Those differ in both directions, and
+// these fixtures pin each direction so neither rule can be dropped as redundant.
+
+async function driverSheet(driverExtra) {
+  const clean = await zoneTile("");
+  const driver = await zoneTile(driverExtra);
+  return sharp({
+    create: { width: 300, height: 200, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  }).composite(manifest.zones.map((zone) => ({
+    input: zone.surfaceKey === "driver" ? driver : clean, left: zone.x, top: zone.y,
+  }))).png().toBuffer();
+}
+
+async function zoneTile(extra) {
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+    <rect width="100" height="100" fill="#082f49"/>
+    <rect x="8" y="8" width="84" height="84" fill="#38bdf8"/>
+    <rect x="20" y="20" width="60" height="60" fill="#f97316"/>
+    <rect x="35" y="35" width="30" height="30" fill="#ffffff"/>
+    ${extra}
+  </svg>`)).png().toBuffer();
+}
+
+test("ONE wheel arch under the flat-black aggregate is still refused", async () => {
+  // 5.3% of the zone: below MAX_ZONE_FLAT_BLACK_RATIO's reach in aggregate
+  // terms once the interior erosion is applied, but unmistakable as a single
+  // shape. This is the case the component rule exists for.
+  const result = await deterministicMasterChecks(
+    await driverSheet('<circle cx="50" cy="50" r="13" fill="#000000"/>'), manifest,
+  );
+
+  assert.equal(result.accepted, false);
+  assert.match(result.failures.join(" "), /driver largestCutoutComponentRatio/);
+  const driver = result.zones.find((zone) => zone.surfaceKey === "driver");
+  assert.ok(
+    driver.largestCutoutComponentRatio > _test.MAX_ZONE_CUTOUT_COMPONENT_RATIO,
+    `expected the arch to clear the component bound, saw ${driver.largestCutoutComponentRatio}`,
+  );
+  // Proof the checks that predate this could not have caught it: it is opaque
+  // and the zone's contrast is healthy.
+  assert.ok(driver.opaqueRatio >= _test.MIN_ZONE_OPAQUE_RATIO);
+  assert.ok(driver.lumaStddev >= _test.MIN_ZONE_LUMA_STDDEV);
+});
+
+test("a transparent punch is seen as a cut-out, not only as missing opacity", async () => {
+  const driver = manifest.zones.find((zone) => zone.surfaceKey === "driver");
+  const punched = await sharp(await driverSheet(""))
+    .composite([{
+      // `dest-out` removes wherever the SOURCE is opaque, so the punch must be solid.
+      input: await sharp({ create: { width: 26, height: 26, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).png().toBuffer(),
+      left: driver.x + 30, top: driver.y + 30, blend: "dest-out",
+    }])
+    .png().toBuffer();
+
+  const result = await deterministicMasterChecks(punched, manifest);
+  assert.equal(result.accepted, false);
+  // A near-black test is blind to this; the hole mask counts transparency too.
+  const zone = result.zones.find((item) => item.surfaceKey === "driver");
+  assert.ok(
+    zone.largestCutoutComponentRatio > _test.MAX_ZONE_CUTOUT_COMPONENT_RATIO,
+    `transparency must register as blob material, saw ${zone.largestCutoutComponentRatio}`,
+  );
+});
+
+test("black lettering carrying more ink than one arch is not a cut-out", async () => {
+  const strokes = Array.from({ length: 14 }, (_, index) =>
+    `<rect x="${6 + index * 6}" y="70" width="3" height="16" fill="#000000"/>`).join("");
+  const result = await deterministicMasterChecks(await driverSheet(strokes), manifest);
+
+  const driver = result.zones.find((zone) => zone.surfaceKey === "driver");
+  assert.ok(driver.cutoutComponentCount >= 10, "the fixture must be many separate strokes");
+  assert.ok(
+    driver.largestCutoutComponentRatio <= _test.MAX_ZONE_CUTOUT_COMPONENT_RATIO,
+    "glyph strokes must not read as one punched-out opening",
+  );
+  assert.equal(result.accepted, true, result.failures.join("; "));
+});
+
+test("a clean full-bleed sheet reports no cut-out component at all", async () => {
+  const result = await deterministicMasterChecks(await driverSheet(""), manifest);
+  assert.equal(result.accepted, true, result.failures.join("; "));
+  for (const zone of result.zones) {
+    assert.equal(zone.largestCutoutComponentRatio, 0, `${zone.surfaceKey} reported a phantom cut-out`);
+    assert.equal(zone.cutoutComponentCount, 0);
+  }
+});
