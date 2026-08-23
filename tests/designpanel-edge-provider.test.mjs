@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 
@@ -7,6 +8,8 @@ const require = createRequire(import.meta.url);
 const {
   EDGE_PROVIDER_CONTRACT,
   LOCKED_MODEL,
+  MAX_EDGE_REFERENCE_BYTES,
+  compactHeroReference,
   createDesignPanelEdgeProvider,
 } = require("../runtime/designpanel-edge-provider.cjs");
 
@@ -35,6 +38,9 @@ test("Standard server orchestration invokes the sanctioned designer then photogr
   const acceptedHeroPath = `designpro/${TENANT_KEY}/${GENERATION_ID}/calls-1-7/side/${heroHash}.png`;
   const designerPath = `renders/${OWNER_ID}/DesignPanelPro/ai-generated/hero.png`;
   const photographerPath = `renders/${OWNER_ID}/designpanelpro/passenger.png`;
+  const compactBytes = Buffer.alloc(60_000, 0x52);
+  const compactHash = hash(compactBytes);
+  const compactPath = `designpro/${TENANT_KEY}/${GENERATION_ID}/calls-1-7/_edge-reference/${heroHash}/${compactHash}.jpg`;
   let heroReady = false;
   const calls = [];
 
@@ -51,6 +57,12 @@ test("Standard server orchestration invokes the sanctioned designer then photogr
         return { data: new Blob([passengerBytes]), error: null };
       }
       return { data: null, error: { message: `unexpected ${storagePath}` } };
+    },
+    upload: async (storagePath, bytes, options) => {
+      assert.equal(storagePath, compactPath);
+      assert.deepEqual(Buffer.from(bytes), compactBytes);
+      assert.deepEqual(options, { contentType: "image/jpeg", upsert: false });
+      return { error: null };
     },
   };
   const heroRow = {
@@ -115,6 +127,7 @@ test("Standard server orchestration invokes the sanctioned designer then photogr
     requestId: REQUEST_ID,
     generationId: GENERATION_ID,
     tenantKey: TENANT_KEY,
+    referenceCompactor: async () => compactBytes,
     input: {
       brief: "Photographic pool scene with premium custom branding",
       mode: "commercial",
@@ -180,8 +193,17 @@ test("Standard server orchestration invokes the sanctioned designer then photogr
   assert.equal(calls[1].body.colorData.designAnchorText, "locked hero design anchor");
   assert.equal(
     calls[1].body.colorData.heroReferenceUrl,
-    `${PROJECT_URL}/storage/v1/object/sign/wrap-files/${acceptedHeroPath}?token=test`,
+    `${PROJECT_URL}/storage/v1/object/sign/wrap-files/${compactPath}?token=test`,
   );
+});
+
+test("the Edge photographer reference is a bounded JPEG derived from the immutable Driver", async () => {
+  const source = readFileSync(new URL("../app/public/screenshots/designproai-system.png", import.meta.url));
+  const compact = await compactHeroReference(source);
+  assert.ok(compact.length > 0);
+  assert.ok(compact.length <= MAX_EDGE_REFERENCE_BYTES);
+  assert.equal(compact[0], 0xff);
+  assert.equal(compact[1], 0xd8);
 });
 
 test("the Standard Edge adapter rejects a response object outside the authenticated owner", async () => {

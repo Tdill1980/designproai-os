@@ -13,6 +13,7 @@
  */
 
 const { createHash } = require("node:crypto");
+const sharp = require("sharp");
 const {
   DesignPanelServerError,
   inspectStandardProof,
@@ -23,11 +24,34 @@ const EDGE_PROVIDER_CONTRACT = "designpro.designpanel-edge-provider.v1";
 const HERO_VIEW = "side";
 const LOCKED_MODEL = "gemini-3-pro-image-preview";
 const MAX_REFERENCE_BYTES = 20 * 1024 * 1024;
+const MAX_EDGE_REFERENCE_BYTES = 3 * 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function compactHeroReference(bytes) {
+  const source = Buffer.from(bytes);
+  const firstPass = await sharp(source)
+    .rotate()
+    .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 82, chromaSubsampling: "4:4:4", mozjpeg: true })
+    .toBuffer();
+  if (firstPass.length <= MAX_EDGE_REFERENCE_BYTES) return firstPass;
+  const fallback = await sharp(source)
+    .rotate()
+    .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 74, chromaSubsampling: "4:2:0", mozjpeg: true })
+    .toBuffer();
+  if (!fallback.length || fallback.length > MAX_EDGE_REFERENCE_BYTES) {
+    throw edgeError(
+      "designpanel_edge_reference_budget_exceeded",
+      "The verified Driver could not be reduced to the Edge photographer budget",
+    );
+  }
+  return fallback;
 }
 
 function edgeError(code, message, retryable = false) {
@@ -122,6 +146,7 @@ function createDesignPanelEdgeProvider(options = {}) {
   const supabaseUrl = canonicalProjectUrl(options.supabaseUrl || process.env.SUPABASE_URL);
   const serviceRoleKey = String(options.serviceRoleKey || process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
   const ownerId = ownerIdFromTenant(tenantKey);
+  const referenceCompactor = options.referenceCompactor || compactHeroReference;
 
   if (!supabase) throw edgeError("designpanel_edge_supabase_missing", "A Supabase client is required");
   if (typeof fetchImpl !== "function") throw edgeError("designpanel_edge_fetch_missing", "The Edge Function transport is unavailable");
@@ -132,6 +157,7 @@ function createDesignPanelEdgeProvider(options = {}) {
 
   const expectedPrefix = `designpro/${tenantKey}/${generationId}/calls-1-7/${HERO_VIEW}/`;
   let hero = null;
+  let compactHero = null;
   let ownerEmail = null;
 
   async function resolveOwnerEmail() {
@@ -243,6 +269,63 @@ function createDesignPanelEdgeProvider(options = {}) {
     return signedUrl;
   }
 
+  async function compactHeroUrl() {
+    const acceptedHero = await hydrateHero();
+    if (!acceptedHero) {
+      throw edgeError("designpanel_edge_hero_required", "The accepted Driver is required");
+    }
+    if (compactHero?.sourceHash === acceptedHero.contentHash) {
+      return signedHeroUrl(compactHero.storagePath);
+    }
+
+    const bytes = Buffer.from(await referenceCompactor(acceptedHero.bytes));
+    if (!bytes.length || bytes.length > MAX_EDGE_REFERENCE_BYTES) {
+      throw edgeError(
+        "designpanel_edge_reference_budget_exceeded",
+        "The verified Driver reference exceeds the Edge photographer budget",
+      );
+    }
+    const compactHash = sha256(bytes);
+    const storagePath = [
+      "designpro",
+      tenantKey,
+      generationId,
+      "calls-1-7",
+      "_edge-reference",
+      acceptedHero.contentHash,
+      `${compactHash}.jpg`,
+    ].join("/");
+    const bucket = supabase.storage.from(BUCKET);
+    const { error: uploadError } = await bucket.upload(storagePath, bytes, {
+      contentType: "image/jpeg",
+      upsert: false,
+    });
+    if (uploadError) {
+      const { data: existing, error: downloadError } = await bucket.download(storagePath);
+      if (downloadError || !existing) {
+        throw edgeError(
+          "designpanel_edge_reference_upload_failed",
+          uploadError.message || "The compact Driver reference could not be stored",
+          true,
+        );
+      }
+      const existingBytes = Buffer.from(await existing.arrayBuffer());
+      if (existingBytes.length !== bytes.length || sha256(existingBytes) !== compactHash) {
+        throw edgeError(
+          "designpanel_edge_reference_hash_mismatch",
+          "The stored compact Driver reference does not match its immutable identity",
+        );
+      }
+    }
+    compactHero = Object.freeze({
+      sourceHash: acceptedHero.contentHash,
+      contentHash: compactHash,
+      byteSize: bytes.length,
+      storagePath,
+    });
+    return signedHeroUrl(storagePath);
+  }
+
   async function qualityChecked(sourceViewType, generated, signal) {
     if (typeof qualityProvider?.generateRaw !== "function") return generated;
     const review = await inspectStandardProof({
@@ -326,7 +409,7 @@ function createDesignPanelEdgeProvider(options = {}) {
         colorName: input?.designName || input?.companyName || "DesignProAI",
         panelName: input?.designName || input?.companyName || "DesignProAI",
         finish: input?.finish || "Gloss",
-        heroReferenceUrl: await signedHeroUrl(acceptedHero.storagePath),
+        heroReferenceUrl: await compactHeroUrl(),
         designAnchorText: acceptedHero.designAnchorText,
         originalPrompt: String(input?.brief || "").trim(),
       },
@@ -369,5 +452,7 @@ function createDesignPanelEdgeProvider(options = {}) {
 module.exports = {
   EDGE_PROVIDER_CONTRACT,
   LOCKED_MODEL,
+  MAX_EDGE_REFERENCE_BYTES,
+  compactHeroReference,
   createDesignPanelEdgeProvider,
 };

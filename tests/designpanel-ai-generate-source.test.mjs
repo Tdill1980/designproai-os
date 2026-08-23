@@ -75,8 +75,8 @@ test("the sanctioned Edge implementation is reachable only through the server re
     /tokenGate|vehicle-specs-lookup|graphicspro-prompt-builder/,
   );
   assert.match(photographer, /sourceFunction:\s*"generate-color-render"/);
-  assert.match(photographer, /label:\s*"pattern-primary"/);
   assert.match(photographer, /label:\s*"hero-reference"/);
+  assert.doesNotMatch(photographer, /label:\s*"pattern-primary"/);
   assert.match(photographer, /safeSegment\(viewType\)\}\.png/);
   assert.match(photographer, /contentType:\s*"image\/png"/);
   assert.doesNotMatch(`${router}\n${photographer}`, /design-panel-color-render/);
