@@ -25,4 +25,6 @@ fi
 cp -a /etc/caddy/Caddyfile "$dest/Caddyfile.before" 2>/dev/null || true
 cp -a /etc/caddy/sites/designproai-os.caddy "$dest/designproai-os.caddy.before" 2>/dev/null || true
 cp -a /etc/caddy/sites/os.designproai.caddy "$dest/os.designproai.caddy.before" 2>/dev/null || true
+cp -a /etc/caddy/sites/designproai-apex.caddy "$dest/designproai-apex.caddy.before" 2>/dev/null || true
+cp -a /etc/caddy/sites/designproai.caddy "$dest/designproai.caddy.before" 2>/dev/null || true
 echo "$dest"
