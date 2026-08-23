@@ -340,7 +340,11 @@ function makeBody({
     }],
     generationConfig: {
       temperature: 0,
-      maxOutputTokens: 1536,
+      // Keep the bounded semantic grader's allowance for its locked JSON
+      // receipt. With Gemini 2.5 Flash, an implicit thinking budget can consume
+      // the whole response and fail a valid proof with MAX_TOKENS.
+      thinkingConfig: { thinkingBudget: 0 },
+      maxOutputTokens: 2048,
       responseMimeType: "application/json",
       responseSchema: responseSchema({ expectedView, proofHash, atlasHash, authorityHash }),
     },

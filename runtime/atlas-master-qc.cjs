@@ -358,7 +358,12 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
         ] }],
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 1536,
+          // Gemini 2.5 Flash otherwise spends this small structured-response
+          // budget on hidden reasoning and can return MAX_TOKENS before it
+          // emits the schema-bound JSON. QC must grade pixels, not burn the
+          // entire response allowance thinking about how to format its receipt.
+          thinkingConfig: { thinkingBudget: 0 },
+          maxOutputTokens: 2048,
           responseMimeType: "application/json",
           responseSchema: responseSchema({ masterHash, guideHash, brandRequired }),
         },

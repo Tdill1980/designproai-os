@@ -346,6 +346,22 @@ SELECT
       'flat_first_atlas_view_set_valid(v_row.id)'
     )>0
     AND pg_catalog.strpos(
+      atlas_new_run_definition,
+      'FROMpublic.designpro_generation_viewsv'
+    )>0
+    AND pg_catalog.strpos(
+      atlas_new_run_definition,
+      'v.superseded_atISNULL'
+    )>0
+    AND pg_catalog.strpos(
+      atlas_new_run_definition,
+      'FROMpublic.designpro_flat_atlas_revisionsa'
+    )>0
+    AND pg_catalog.strpos(
+      atlas_new_run_definition,
+      'v_row.state=''outputs_ready''ORv_has_private_identity'
+    )>0
+    AND pg_catalog.strpos(
       status_definition,
       '''flat_first_atlas_new_run_required'''
     )>0
