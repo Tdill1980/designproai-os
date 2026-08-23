@@ -143,3 +143,75 @@ test("master QC parser is identity-bound and rejects extra fields", () => {
     (error) => error?.code === "atlas_master_qc_response_malformed",
   );
 });
+
+
+/**
+ * A wrap panel is a solid rectangle -- the installer cuts the wheel opening and
+ * the window out of the finished print. On 2026-08-23 the Becky's Bakery master
+ * came back as a van silhouette with the arches and glass punched out and filled
+ * flat black, and every deterministic check reported pass, because opaqueRatio
+ * only asks whether a pixel is opaque and black is opaque.
+ *
+ * The discriminator is the SHARE of the zone that is artwork, not how bright the
+ * artwork is: a mostly-black wrap still has vivid accents, so a mean taken over
+ * its non-black pixels reads high and would convict it.
+ */
+async function cutoutZoneFixture({ holes, dark }) {
+  const width = 400;
+  const height = 200;
+  const layers = [];
+  for (let index = 0; index < 40; index += 1) {
+    layers.push({
+      input: await sharp({ create: { width: 12, height: 12, channels: 3, background: index % 2 ? "#a8d8f0" : "#f7c8a0" } }).png().toBuffer(),
+      left: (index * 37) % (width - 12),
+      top: (index * 53) % (height - 12),
+    });
+  }
+  if (holes) {
+    for (const [left, top, w, h] of [[40, 120, 70, 70], [270, 120, 70, 70], [120, 30, 150, 60]]) {
+      layers.push({
+        input: await sharp({ create: { width: w, height: h, channels: 3, background: "#000000" } }).png().toBuffer(),
+        left, top,
+      });
+    }
+  }
+  return sharp({ create: { width, height, channels: 3, background: dark ? "#101010" : "#f2d8e8" } })
+    .composite(layers).png().toBuffer();
+}
+
+const cutoutManifest = {
+  zones: ["driver", "passenger"].map((surfaceKey) => ({ surfaceKey, x: 0, y: 0, w: 400, h: 200 })),
+};
+
+test("a zone with the wheel arches and glass cut out of it is refused", async () => {
+  const bytes = await cutoutZoneFixture({ holes: true, dark: false });
+  const result = await deterministicMasterChecks(bytes, cutoutManifest);
+  assert.equal(result.accepted, false);
+  assert.ok(
+    result.failures.some((failure) => /flatBlackRatio/.test(failure) && /cut out of the panel/.test(failure)),
+    `expected a cutout failure, got ${JSON.stringify(result.failures)}`,
+  );
+  assert.ok(result.zones[0].flatBlackRatio > 0.05);
+  assert.ok(result.zones[0].nonBlackFraction >= 0.55, "the zone is still mostly artwork");
+});
+
+test("a solid panel of continuous artwork passes the cutout check", async () => {
+  const bytes = await cutoutZoneFixture({ holes: false, dark: false });
+  const result = await deterministicMasterChecks(bytes, cutoutManifest);
+  assert.equal(result.zones[0].flatBlackRatio, 0);
+  assert.equal(result.failures.filter((failure) => /flatBlackRatio/.test(failure)).length, 0);
+});
+
+test("a genuinely black wrap is not mistaken for a punched-out panel", async () => {
+  const bytes = await cutoutZoneFixture({ holes: false, dark: true });
+  const result = await deterministicMasterChecks(bytes, cutoutManifest);
+  // Overwhelmingly flat black -- and legal, because the zone is not mostly
+  // artwork with holes in it, it is a dark design.
+  assert.ok(result.zones[0].flatBlackRatio > 0.5);
+  assert.ok(result.zones[0].nonBlackFraction < 0.55);
+  assert.equal(
+    result.failures.filter((failure) => /flatBlackRatio/.test(failure)).length,
+    0,
+    "a dark design must not be convicted as a cutout",
+  );
+});

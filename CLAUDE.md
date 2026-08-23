@@ -84,9 +84,17 @@ pixel is opaque, and black is opaque. Two things now stop it:
   is `designpro-flat-first-atlas-20260823.v5`; v4 masters are refused, not
   migrated, and the version string is the mechanism that refuses them.
 - **`runtime/atlas-master-qc.cjs`** measures `flatBlackRatio` (near-black blob
-  *interiors*, not edges) against `nonBlackMeanLuma`. A hole punched in light
-  artwork fails; a genuinely dark design still passes, because a black wrap is
-  dark everywhere and a punched hole is dark inside a light zone.
+  *interiors*, not edges) against `nonBlackFraction` — the SHARE of the zone that
+  is artwork. A cutout is a minority of flat black inside a zone that is mostly
+  artwork; a black wrap is mostly black. Measured on fixtures: punched
+  wheels/glass = 22% flat black with 77% artwork (fails), black wrap = 90% flat
+  black with 10% artwork (passes).
+
+  **Do not use the mean brightness of the non-black pixels as the
+  discriminator.** That was the first attempt and it convicts black wraps: a
+  mostly-black design still has vivid accents, so the mean over its non-black
+  pixels reads high. Locked by `tests/atlas-master-qc.test.mjs`, which fixtures
+  all three cases.
 
 **Do not relax either threshold to get a run through.** A master that fails this
 is telling you the truth.

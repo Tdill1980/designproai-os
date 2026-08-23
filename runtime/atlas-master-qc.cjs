@@ -28,11 +28,15 @@ const MAX_PASSENGER_MIRROR_MAE = 0.26;
 // and those holes would have printed as holes. A wrap panel is a solid
 // rectangle; the installer cuts the wheel opening, the artwork never does.
 //
-// The brightness floor is what keeps a genuinely dark design legal: a black
-// wrap is dark everywhere, a punched hole is dark inside a light zone.
+// What keeps a genuinely dark design legal is the SHARE of the zone that is
+// bright, not how bright the bright parts are: a mostly-black wrap still has
+// vivid accents, so a mean taken over its non-black pixels reads high and would
+// convict it. A cutout is a minority of flat black sitting inside a zone that is
+// mostly artwork. Measured on synthetic zones: punched wheels/glass = 22% flat
+// black with 78% bright, a black wrap = 90% flat black with 10% bright.
 const MAX_ZONE_FLAT_BLACK_RATIO = 0.05;
 const FLAT_BLACK_CHANNEL_MAX = 24;
-const CUTOUT_SURROUNDING_LUMA_FLOOR = 90;
+const CUTOUT_BRIGHT_MAJORITY = 0.55;
 const MAX_REQUEST_BYTES = 18 * 1024 * 1024;
 const MAX_TRANSPORT_BYTES = 3 * 1024 * 1024;
 const MAX_TRANSPORT_DIMENSION = 1800;
@@ -184,6 +188,7 @@ async function zonePixelMetrics(masterBytes, manifest) {
       edgeOpaqueRatio: edgePixels ? edgeOpaque / edgePixels : 0,
       lumaStddev: Math.sqrt(variance),
       flatBlackRatio: flatBlack / pixelCount,
+      nonBlackFraction: brightCount / pixelCount,
       nonBlackMeanLuma: brightCount ? brightTotal / brightCount : 0,
     });
   }
@@ -243,10 +248,11 @@ async function deterministicMasterChecks(masterBytes, manifest) {
     // holes in the wrap; the installer is the one who cuts an opening, and they
     // cut it out of a solid panel.
     if (zone.flatBlackRatio > MAX_ZONE_FLAT_BLACK_RATIO
-      && zone.nonBlackMeanLuma >= CUTOUT_SURROUNDING_LUMA_FLOOR) {
+      && zone.nonBlackFraction >= CUTOUT_BRIGHT_MAJORITY) {
       failures.push(
         `${zone.surfaceKey} flatBlackRatio=${zone.flatBlackRatio.toFixed(5)} `
-        + `(cut-out wheel/glass/bed shapes inside artwork at mean luma ${zone.nonBlackMeanLuma.toFixed(1)})`,
+        + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
+        + `(wheel/glass/bed shapes cut out of the panel)`,
       );
     }
   }
