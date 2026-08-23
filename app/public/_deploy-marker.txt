@@ -1,3 +1,4 @@
 force build: entire DesignProAI restored to 6/29 (67aadae)
 surgical-split: undo over-broad 6/29 subsystem restore; production/file-output=current + design fixes
 layerlift-ui-removed: DesignPro viewport is now a flat image (no Konva canvas/handles/overlays)
+revisionstudio-server-ui: deploy Call 8, RevisionStudio, and existing PanelProStudio integration
