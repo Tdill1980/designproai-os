@@ -80,6 +80,10 @@ done
 restore() {
   status=$?
   trap - ERR
+  echo "--- failed Caddy activation status ---" >&2
+  systemctl status caddy --no-pager -l >&2 || true
+  echo "--- recent Caddy journal ---" >&2
+  journalctl -u caddy --since '-3 minutes' --no-pager -n 120 >&2 || true
   echo "Caddy update failed; restoring the previous Caddy configuration" >&2
   cp -a "$backup_dir/Caddyfile.before" "$main"
   if [[ $site_existed == true ]]; then
@@ -97,7 +101,10 @@ restore() {
   done
   caddy validate --adapter caddyfile --config "$main" >/dev/null 2>&1 || true
   if [[ $caddy_was_active == true ]]; then
-    systemctl reload caddy >/dev/null 2>&1 || true
+    # A failed restart can leave the unit inactive. Restart the validated old
+    # configuration instead of relying on the admin reload endpoint that may
+    # have caused the original activation failure.
+    systemctl restart caddy >/dev/null 2>&1 || true
   else
     systemctl stop caddy >/dev/null 2>&1 || true
   fi
@@ -125,7 +132,15 @@ if ! grep -Eq '^[[:space:]]*import[[:space:]]+(/etc/caddy/)?sites/\*\.caddy[[:sp
 fi
 caddy validate --adapter caddyfile --config "$main"
 if systemctl is-active --quiet caddy; then
-  systemctl reload caddy
+  # Prefer a zero-downtime reload. Some pre-existing Caddy configurations have
+  # no reachable admin endpoint, so the packaged systemd reload command can
+  # fail even though both the old and new configurations validate. In that
+  # exact case, use one controlled service restart. The ERR trap restores and
+  # restarts the previous configuration if the restart does not succeed.
+  if ! systemctl reload caddy; then
+    echo "Caddy reload was refused; using one controlled service restart" >&2
+    systemctl restart caddy
+  fi
 else
   systemctl start caddy
 fi

@@ -244,6 +244,9 @@ jobs:
           command -v caddy >/dev/null 2>&1 && caddy version 2>&1 | head -1 || echo "(not installed)"
           echo "--- caddy unit ---"
           systemctl is-active caddy 2>&1 || true
+          systemctl status caddy --no-pager -l 2>&1 || true
+          echo "--- recent caddy journal ---"
+          journalctl -u caddy --since '-5 minutes' --no-pager -n 120 2>&1 || true
           echo "--- configured site hostnames ---"
           grep -RIhoE '^[a-z0-9.-]+\.designproai\.com' /etc/caddy 2>/dev/null | sort -u || echo "(none found)"
           echo "--- local TLS answer on the expected origin ---"
