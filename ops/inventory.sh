@@ -34,7 +34,7 @@ if [[ -e /opt/designproai-os || -L /opt/designproai-os ]]; then
 else
   echo "MISSING /opt/designproai-os"
 fi
-for path in /etc/systemd/system/designproai-os.service /etc/systemd/system/designproai.service /etc/caddy/sites/designproai-os.caddy /etc/caddy/sites/os.designproai.caddy /etc/caddy/sites/designproai.caddy; do
+for path in /etc/systemd/system/designproai-os.service /etc/systemd/system/designproai.service /etc/caddy/sites/designproai-os.caddy /etc/caddy/sites/os.designproai.caddy /etc/caddy/sites/designproai-apex.caddy /etc/caddy/sites/designproai.caddy; do
   if [[ -e $path || -L $path ]]; then
     stat -c '%F\t%U:%G\t%a\t%n' "$path"
   fi
