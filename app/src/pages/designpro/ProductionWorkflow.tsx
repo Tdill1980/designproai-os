@@ -48,8 +48,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
+import { ServerRevisionStudio } from "@/components/revisioniq/ServerRevisionStudio";
 import {
   ContentHash,
   Loading,
@@ -702,18 +702,13 @@ export default function ProductionWorkflow() {
 
       {artifactsError && <Notice tone="error">{artifactsError}</Notice>}
 
-      <RevisionStudio artifacts={artifacts} loading={artifactsLoading} />
-
-      {/* The original Production Layers surface: six branded panels beside their
-          own approved views, the clean set, the separated logos, and the two
-          purchase actions. Same component the product has always used. */}
-      {layersSource && (
-        <ProductionFlowLayersCard
-          generationId={generationId}
-          source={layersSource}
-          className="border-border"
-        />
-      )}
+      <ServerRevisionStudio
+        generationId={generationId}
+        job={job}
+        artifacts={artifacts}
+        artifactsLoading={artifactsLoading}
+        layersSource={layersSource}
+      />
       <TopazEnhancement artifacts={artifacts} />
       <VerifiedOutputFiles artifacts={artifacts} />
       <DeliveryArtifacts artifacts={artifacts} />

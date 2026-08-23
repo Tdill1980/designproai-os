@@ -281,6 +281,7 @@ const App = () => {
           <Route path="/designpro/panel-sizer" element={<RequireAuth><PanelSizer /></RequireAuth>} />
           <Route path="/designpro/create" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
+          <Route path="/designpro/jobs/:generationId/panel-studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
           <Route path="/designpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/raster" element={<RequireAuth><DesignStudio /></RequireAuth>} />
           {/* FadeWrap generator hidden — use DesignProAI for fade wraps via prompt */}

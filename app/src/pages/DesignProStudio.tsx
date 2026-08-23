@@ -1,8 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
+import { Link, useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useDesignCanvas } from "@/components/designpanelpro/canvas/useDesignCanvas";
 import { LayerCanvasEditor } from "@/components/designpanelpro/canvas/LayerCanvasEditor";
+import {
+  ApprovedGenerationView,
+  dpApi,
+  GenieSurfaceKey,
+  SURFACE_LABEL,
+  WorkflowArtifact,
+  WorkflowStatus,
+} from "@/lib/designpro-api";
 import {
   MousePointer2,
   Move,
@@ -32,6 +41,8 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  ArrowLeft,
+  ShieldCheck,
 } from "lucide-react";
 
 /**
@@ -117,6 +128,7 @@ interface LayerRow {
 }
 
 export default function DesignProStudio() {
+  const { generationId = "" } = useParams();
   const [activeTool, setActiveTool] = useState<ToolId>("design");
   const [activeView, setActiveView] = useState<ViewId>("side");
   const [activeLayerId, setActiveLayerId] = useState("text-logo");
@@ -133,6 +145,60 @@ export default function DesignProStudio() {
   // ── Live editing engine (Carley's Konva canvas) — the real editor that
   // mounts into the canvas stage. The 3-column shell drives it via this hook.
   const studio = useDesignCanvas();
+  const [serverJob, setServerJob] = useState<WorkflowStatus | null>(null);
+  const [serverArtifacts, setServerArtifacts] = useState<WorkflowArtifact[]>([]);
+  const [serverViews, setServerViews] = useState<ApprovedGenerationView[]>([]);
+  const [serverError, setServerError] = useState("");
+
+  // The existing PanelProStudio UI stays intact. A production-job route simply
+  // binds its source rail to the artifacts the standalone server already owns.
+  useEffect(() => {
+    let live = true;
+    if (!generationId) return () => { live = false; };
+    Promise.all([
+      dpApi.getStatus(generationId),
+      dpApi.listArtifacts(generationId),
+      dpApi.listApprovedViews(generationId),
+    ])
+      .then(([job, artifacts, views]) => {
+        if (!live) return;
+        setServerJob(job);
+        setServerArtifacts(artifacts);
+        setServerViews(views);
+        setServerError("");
+      })
+      .catch(() => {
+        if (live) setServerError("The verified server panel set could not be loaded.");
+      });
+    return () => { live = false; };
+  }, [generationId]);
+
+  const surfaceForView: Partial<Record<ViewId, GenieSurfaceKey>> = {
+    side: "driver",
+    "passenger-side": "passenger",
+    hood_detail: "hood",
+    front: "front",
+    rear: "rear",
+    roof: "roof",
+  };
+  const activeSurface = surfaceForView[activeView];
+  const activeServerView = serverViews.find(
+    (view) => view.sourceViewType === activeView || view.surfaceKey === activeSurface,
+  );
+  const activeServerPanel = serverArtifacts.find(
+    (artifact) => artifact.kind === "panel" && artifact.surfaceKey === activeSurface,
+  );
+  const serverLogos = serverArtifacts.filter((artifact) => artifact.kind === "logo");
+
+  const addRemoteLayer = useCallback((url: string, name: string) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      studio.addImageLayer(url, image.naturalWidth, image.naturalHeight, name);
+      enterDesignModeRef.current?.();
+    };
+    image.src = url;
+  }, [studio]);
 
   // Upload → add an image layer the user can move/scale/rotate. Reads the
   // file as a data URL and measures it before handing to the engine.
@@ -272,13 +338,21 @@ export default function DesignProStudio() {
             </span>
           </button>
           <div className="hidden lg:flex items-center gap-2 text-sm text-white/55 min-w-0">
-            <span className="truncate">· Untitled design</span>
+            <span className="truncate">· {serverJob?.designId || "Untitled design"}</span>
             <button className="text-white/40 hover:text-white shrink-0" aria-label="Rename design">
               <Settings className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {generationId && (
+            <Link
+              to={`/designpro/jobs/${generationId}`}
+              className="hidden items-center gap-1.5 rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10 sm:flex"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> RevisionStudio
+            </Link>
+          )}
           <button className="p-2 rounded-md hover:bg-white/10 text-white/70" aria-label="Undo">
             <Undo2 className="w-4 h-4" />
           </button>
@@ -447,6 +521,29 @@ export default function DesignProStudio() {
                   onChangeLayer={studio.updateLayer}
                   highlightOverlays={liftActive}
                 />
+              ) : activeServerView ? (
+                <div className="relative h-full w-full">
+                  <img
+                    src={activeServerView.signedUrl}
+                    alt={`${VIEWS.find((view) => view.id === activeView)?.label} approved server design`}
+                    className="h-full w-full object-contain"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 bg-gradient-to-t from-black via-black/75 to-transparent px-4 pb-4 pt-10">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+                        <ShieldCheck className="h-3.5 w-3.5" /> Verified server view
+                      </div>
+                      <p className="mt-1 text-[10px] text-white/50">Load a copy into the existing editor; the approved source remains immutable.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addRemoteLayer(activeServerView.signedUrl, `${VIEWS.find((view) => view.id === activeView)?.label} approved view`)}
+                      className="shrink-0 rounded-lg bg-gradient-blue-magenta px-3 py-2 text-xs font-bold text-white"
+                    >
+                      Edit this view
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div className="text-center px-6">
                   <div className="w-14 h-14 mx-auto rounded-xl bg-gradient-blue-magenta flex items-center justify-center mb-3">
@@ -516,7 +613,15 @@ export default function DesignProStudio() {
                       active ? "border-transparent ring-2 ring-[#3b82f6]" : "border-white/15",
                     )}
                   >
-                    <ImageIcon className="w-5 h-5 text-white/30" />
+                    {serverViews.find((view) => view.sourceViewType === v.id) ? (
+                      <img
+                        src={serverViews.find((view) => view.sourceViewType === v.id)!.signedUrl}
+                        alt={v.label}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <ImageIcon className="w-5 h-5 text-white/30" />
+                    )}
                   </span>
                   {v.label}
                 </button>
@@ -546,6 +651,61 @@ export default function DesignProStudio() {
               <PanelRightClose className="w-4 h-4" />
             </button>
           </div>
+
+          {serverError && (
+            <div className="border-b border-red-500/20 bg-red-500/10 p-3 text-xs text-red-200">{serverError}</div>
+          )}
+
+          {generationId && (
+            <div className="border-b border-white/10 p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Server production panel</span>
+                <span className="text-[10px] text-white/40">{activeSurface ? SURFACE_LABEL[activeSurface] : "No panel for Close-Up"}</span>
+              </div>
+              {activeServerPanel ? (
+                <div className="overflow-hidden rounded-lg border border-cyan-500/30 bg-[#141414]">
+                  <button
+                    type="button"
+                    onClick={() => addRemoteLayer(activeServerPanel.signedUrl, `${SURFACE_LABEL[activeServerPanel.surfaceKey]} production panel`)}
+                    className="block w-full bg-black"
+                    title="Load this verified panel into the editor"
+                  >
+                    <img src={activeServerPanel.signedUrl} alt={`${activeServerPanel.surfaceKey} production panel`} className="aspect-video w-full object-contain" />
+                  </button>
+                  <div className="flex items-center justify-between gap-2 border-t border-white/10 px-2.5 py-2 text-[10px] text-white/50">
+                    <span>
+                      {Number(activeServerPanel.metadata.trimWidthInches || 0) || "—"}″ × {Number(activeServerPanel.metadata.trimHeightInches || 0) || "—"}″ trim
+                    </span>
+                    <a href={activeServerPanel.signedUrl} target="_blank" rel="noreferrer" className="font-semibold text-cyan-300 hover:text-cyan-200">Open</a>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-white/15 p-3 text-center text-xs text-white/35">This surface panel has not been published.</div>
+              )}
+
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-fuchsia-300">Entice logos</span>
+                <span className="text-[10px] text-white/40">{serverLogos.length} extracted</span>
+              </div>
+              {serverLogos.length ? (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {serverLogos.map((logo, index) => (
+                    <button
+                      key={logo.id}
+                      type="button"
+                      onClick={() => addRemoteLayer(logo.signedUrl, String(logo.metadata.displayName || `Logo ${index + 1}`))}
+                      className="overflow-hidden rounded-lg border border-fuchsia-500/25 bg-[#141414] hover:border-fuchsia-400"
+                      title="Add this extracted logo to the canvas"
+                    >
+                      <img src={logo.signedUrl} alt={`Extracted logo ${index + 1}`} className="aspect-square w-full object-contain p-1" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-[10px] leading-4 text-white/35">No separated logo assets were published. The branded panel above stays intact.</p>
+              )}
+            </div>
+          )}
 
           {/* Active layer */}
           <div className="p-4 border-b border-white/10">

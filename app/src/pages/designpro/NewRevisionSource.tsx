@@ -11,7 +11,7 @@
  * "no logos found" and "no logos expected" are not the same claim.
  */
 import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Trash2 } from "lucide-react";
 import {
   ApiError,
@@ -56,6 +56,10 @@ function Field({
 
 export default function NewRevisionSource() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sourceGenerationId = searchParams.get("source") || "";
+  const requestedSurface = searchParams.get("surface") || "";
+  const requestedInstruction = searchParams.get("instruction") || "";
   const [files, setFiles] = useState<Partial<Record<ActiveRenderRole, File>>>({});
   const [logoMode, setLogoMode] = useState<"" | "none" | "listed">("");
   const [logos, setLogos] = useState<ExpectedLogo[]>([]);
@@ -173,9 +177,11 @@ export default function NewRevisionSource() {
       <PageHead
         eyebrow="Immutable source"
         title="New revision source"
-        description="These seven files become immutable inputs. The server builds the 2D proof and panels automatically."
-        backTo="/designpro/jobs"
-        backLabel="Production jobs"
+        description={sourceGenerationId
+          ? `RevisionStudio request from ${requestedSurface ? SURFACE_LABEL[requestedSurface] : "the approved proof"}. Upload the seven revised views; the original server-owned job remains unchanged.`
+          : "These seven files become immutable inputs. The server builds the 2D proof and panels automatically."}
+        backTo={sourceGenerationId ? `/designpro/jobs/${sourceGenerationId}` : "/designpro/jobs"}
+        backLabel={sourceGenerationId ? "Back to RevisionStudio" : "Production jobs"}
       />
 
       <form className="flex flex-col gap-5" onSubmit={submit}>
@@ -218,7 +224,13 @@ export default function NewRevisionSource() {
               <Label htmlFor="instruction" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Revision instruction
               </Label>
-              <Textarea id="instruction" name="instruction" rows={3} className="mt-1.5" />
+              <Textarea
+                id="instruction"
+                name="instruction"
+                rows={3}
+                className="mt-1.5"
+                defaultValue={requestedInstruction}
+              />
             </div>
           </div>
         </Panel>
