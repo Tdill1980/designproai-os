@@ -260,9 +260,14 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   // Polling continues after the proof is found because these URLs are signed
   // for five minutes. A page left open would otherwise show a proof that had
   // silently expired into a broken image, which reads as "the design is gone".
+  //
+  // Both pipelines poll here. A.T.L.A.S. used to be excluded because it stopped
+  // before the production handoff; now that its button reaches the same Calls
+  // 8+ chain, excluding it would hide the very artifact the run exists to
+  // validate -- the customer 2D Production Proof.
   const { data: customerProofUrl } = useQuery({
     queryKey: ["designpro-customer-proof", visualizationId],
-    enabled: !!visualizationId && activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE,
+    enabled: !!visualizationId,
     retry: false,
     queryFn: async () => {
       const artifacts = await dpApi.listArtifacts(String(visualizationId)).catch(() => []);
@@ -273,7 +278,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
 
   const { data: productionJobStatus = null } = useQuery({
     queryKey: ["designpro-production-job", visualizationId],
-    enabled: !!visualizationId && activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE,
+    enabled: !!visualizationId,
     retry: false,
     queryFn: () => dpApi.getStatus(String(visualizationId)).catch(() => null),
     refetchInterval: (query) => query.state.data?.state === "complete" ? 240_000 : 5_000,
@@ -283,10 +288,11 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     if (customerProofUrl) setFlatProofUrl(customerProofUrl);
   }, [customerProofUrl]);
 
-  // The atlas diagnostic intentionally stops before the production handoff.
-  // Its visible output is the immutable before/after pair owned by the gateway:
-  // the deterministic guide and Gemini-painted canonical master. Signed image
-  // URLs are refreshed before their five-minute expiry just like proof URLs.
+  // The atlas before/after pair owned by the gateway: the deterministic guide
+  // and the Gemini-painted canonical master. This is the flattened top-view
+  // design the designer reviews, and it stays on screen alongside the seven
+  // proofs and the Call 8 sheet the same run now produces. Signed image URLs
+  // are refreshed before their five-minute expiry just like proof URLs.
   const {
     data: flatAtlasRevisions = [],
     error: flatAtlasLoadError,
@@ -644,30 +650,33 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
 
       // The customer-facing DesignPanel page is the front door to the ONE
       // production chain, not a seven-image dead end. Once the server proves
-      // the standard view set is complete, freeze those exact immutable views
-      // into the existing Calls 8+ workflow. The endpoint is idempotent, owns
-      // the Call 8 proof/panel sequence, and cannot create a second producer.
+      // the view set is complete, freeze those exact immutable views into the
+      // existing Calls 8+ workflow. The endpoint is idempotent, owns the Call 8
+      // proof/panel sequence, and cannot create a second producer.
       //
-      // A.T.L.A.S. remains the explicitly selected proof-only experiment. Its
-      // canonical master and seven projections must never enter production
-      // until Trish promotes the winning pipeline deliberately.
-      if (acceptedPipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE) {
-        if (finished.handoffReady !== true) {
-          throw new Error(
-            `generation_handoff_blocked:${finished.handoffBlocker || "unknown"}`,
-          );
-        }
-        const handoff = await handoffGeneration(request.requestId);
-        if (handoff.generationId !== request.generationId) {
-          throw new Error("generation_handoff_identity_mismatch");
-        }
+      // BOTH pipelines hand off here. A.T.L.A.S. was previously excluded as a
+      // proof-only experiment, which made its run a dead end: a canonical
+      // master, six separated surfaces and seven proofs, and then nothing to
+      // validate downstream. Trish promoted the split path on 2026-08-23 -- the
+      // A.T.L.A.S. button must reach the existing file-output pipeline. It
+      // enters through this same idempotent endpoint, behind the same
+      // seven-view readiness check, and the server's own flat-first gate still
+      // refuses a run whose canonical master never passed acceptance.
+      if (finished.handoffReady !== true) {
+        throw new Error(
+          `generation_handoff_blocked:${finished.handoffBlocker || "unknown"}`,
+        );
+      }
+      const handoff = await handoffGeneration(request.requestId);
+      if (handoff.generationId !== request.generationId) {
+        throw new Error("generation_handoff_identity_mismatch");
       }
 
       toast({
         title: finished.designName || "Design Rendered",
         description:
           pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-            ? "Your A.T.L.A.S. design and seven vehicle views are ready and saved."
+            ? "Your A.T.L.A.S. master and seven vehicle views are saved. The server started Call 8 and the production job now reports its real status."
             : "Your seven DesignProAI™ views are saved. The server started Call 8 and the production job now reports its real status.",
       });
       return { generationId: request.generationId, directRender: true, renderUrl: primary?.signedUrl };

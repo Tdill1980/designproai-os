@@ -93,6 +93,20 @@ function classifyFailure(error) {
 }
 
 /**
+ * Appends the validator's own rejection findings to the slot prompt.
+ *
+ * The base prompt parts are never rewritten -- the camera, studio and artwork
+ * authority contracts stay exactly as the worker assembled them, and the image
+ * parts keep their order and position, which is what the Atlas conditioning
+ * identity check reads. The correction is one extra trailing text part, and it
+ * exists only on attempts that follow a rejection.
+ */
+function correctedParts(promptParts, corrections) {
+  if (!Array.isArray(promptParts) || !corrections.length) return promptParts;
+  return [...promptParts, { text: corrections.join("\n\n") }];
+}
+
+/**
  * Runs one slot to a decision. Returns an accepted winner or a failed slot.
  * It never returns "still trying".
  */
@@ -127,6 +141,10 @@ async function runSlot(options) {
   const attempts = [];
   let providerCalls = 0;
   let rejections = 0;
+  // The inspector's findings from rejected attempts, carried forward so the
+  // next call is a correction rather than a byte-identical re-roll. Attempt 1
+  // is always the untouched contract prompt.
+  const corrections = [];
 
   try {
     // 3. Storage-first reconciliation. A crash between upload and row commit
@@ -167,11 +185,16 @@ async function runSlot(options) {
       let failure = null;
       try {
         result = await provider.generateImage({
-          parts: promptParts, aspectRatio, imageSize, signal, timeoutMs,
+          parts: correctedParts(promptParts, corrections),
+          aspectRatio, imageSize, signal, timeoutMs,
           // The direct transport ignores these identities. The Standard
           // DesignPanel server adapter uses the view identity and bounded
           // attempt number to select its designer/reproduction contract.
           requestId, generationId, sourceViewType, consumerRole, attempt,
+          // Providers that rebuild their own parts (the anchored Standard
+          // reproduction path) read the findings from here instead of the
+          // trailing prompt part.
+          corrections: [...corrections],
           label: `${sourceViewType} attempt ${attempt}`,
         });
       } catch (error) {
@@ -207,6 +230,8 @@ async function runSlot(options) {
       }
       if (!verdict?.accepted) {
         rejections += 1;
+        const correction = typeof verdict?.correction === "string" ? verdict.correction.trim() : "";
+        if (correction && !corrections.includes(correction)) corrections.push(correction);
         const record = {
           requestId, sourceViewType, attempt, model: result.model, keyFingerprint: result.keyFingerprint,
           outcome: "rejected", durationMs, errorCode: verdict?.code || "semantic_rejected",

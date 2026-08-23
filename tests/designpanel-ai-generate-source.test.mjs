@@ -5,7 +5,7 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("the Standard standalone worker routes through the sanctioned Edge producers", () => {
+test("the Standard standalone worker executes Calls 1-7 on this server", () => {
   const edge = read("supabase/functions/design-panel-ai-generate/index.ts");
   const prompt = read("runtime/designiq-prompt.cjs");
   const atlas = read("runtime/flat-first-atlas.cjs");
@@ -23,7 +23,20 @@ test("the Standard standalone worker routes through the sanctioned Edge producer
     "the historical flat prompt API remains a compatibility alias",
   );
   assert.match(worker, /buildDesignIQPrompt/);
-  assert.match(worker, /createDesignPanelEdgeProvider/);
+  // Calls 1-7 run in this process. The Edge transport survives only as the
+  // explicitly-selected rollback, so an unset or misspelled environment value
+  // resolves to the server-native provider rather than silently to Edge.
+  assert.match(
+    worker,
+    /function standardProviderFactoryFor[\s\S]*?=== "edge"\s*\?\s*createDesignPanelEdgeProvider\s*:\s*createDesignPanelServerProvider/,
+    "the Edge transport must be opt-in and the server provider the default",
+  );
+  assert.match(worker, /standardProviderFactory = standardProviderFactoryFor\(\)/);
+  assert.doesNotMatch(
+    worker,
+    /standardProviderFactory\s*=\s*createDesignPanelEdgeProvider/,
+    "Edge must never be the default Standard transport again",
+  );
   assert.match(edgeProvider, /functions\/v1\/\$\{functionName\}/);
   assert.match(edgeProvider, /invoke\("design-panel-ai-generate"/);
   assert.match(edgeProvider, /invoke\("generate-color-render"/);

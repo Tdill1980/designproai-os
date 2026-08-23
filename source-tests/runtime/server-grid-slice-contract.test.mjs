@@ -59,10 +59,19 @@ test("each own-surface field and gridslice is immutable hash-bound across Calls 
   assert.match(claimant, /new Set\(Object\.values\(panelHashes\)\)\.size !== produced\.length/);
 });
 
-test("A.T.L.A.S. remains outside the standard handoff", () => {
+// Owner decision 2026-08-23: the A.T.L.A.S. split path is wired to the ONE
+// existing file-output pipeline. Both pipelines reach the same idempotent
+// handoff, so the customer page can never again be a seven-image dead end for
+// one of them.
+test("both pipelines enter the standard handoff, and neither forks a second producer", () => {
   const hook = readFileSync(new URL("../../app/src/hooks/useDesignPanelProLogic.ts", import.meta.url), "utf8");
-  assert.match(hook, /acceptedPipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE/);
   assert.match(hook, /await handoffGeneration\(request\.requestId\)/);
+  assert.doesNotMatch(
+    hook,
+    /if \(acceptedPipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE\) \{[\s\S]*?handoffGeneration/,
+    "A.T.L.A.S. must not be excluded from the production handoff again",
+  );
+  assert.equal((hook.match(/handoffGeneration\(/g) || []).length, 1, "one handoff call site, not one per pipeline");
 });
 
 test("executable gridslice produces deterministic GENIE trim plus exact five-inch mirror bleed", async () => {

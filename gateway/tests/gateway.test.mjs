@@ -634,6 +634,78 @@ test("the final gateway prevents manual historical Hero authoring before Storage
   assert.equal(workflowCalled, false, "a rejected source must never start a workflow");
 });
 
+// A stage parked on a human action must never be reported as progress. Live
+// evidence 2026-08-23: manifest.resolve sat in wait_reason
+// genie_dimension_validation_required for sixteen hours while the job read as
+// "running", so nothing downstream ran and RevisionStudio had no panels.
+test("a run parked on GENIE dimension validation reports waiting, not running", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const runId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const revisionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const generationId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const snapshotHash = "d".repeat(64);
+  const candidateId = "0779d6db-f403-491e-a037-5cde77ee2f50";
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.includes("/rest/v1/designpro_workflow_runs?")) {
+        return Response.json([{
+          id: runId,
+          workflow_type: "designpro.entice_pack",
+          status: "running",
+          results: { generationId: "job-genie" },
+          input: {},
+          revision_id: revisionId,
+          revision_snapshot_hash: snapshotHash,
+        }]);
+      }
+      if (value.includes("/rest/v1/designpro_revision_sources?")) {
+        return Response.json([{
+          generation_id: generationId,
+          snapshot: {
+            generationId,
+            designId: `DID-${generationId.replace(/-/g, "").slice(0, 8).toUpperCase()}`,
+            orderNumber: "DP-9001",
+          },
+        }]);
+      }
+      if (value.includes("/rest/v1/designpro_workflow_stages?")) {
+        assert.match(value, /wait_reason/, "the status read must fetch the wait reason");
+        return Response.json([
+          { stage_key: "revision.freeze", status: "completed", output: {}, wait_reason: null, wait_details: {} },
+          {
+            stage_key: "manifest.resolve",
+            status: "waiting",
+            output: {},
+            wait_reason: "genie_dimension_validation_required",
+            wait_details: { candidateId, requestedAt: "2026-08-23T05:27:36.795071+00:00" },
+          },
+          { stage_key: "proof.build", status: "pending", output: {}, wait_reason: null, wait_details: {} },
+          { stage_key: "panels.build", status: "pending", output: {}, wait_reason: null, wait_details: {} },
+        ]);
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/jobs/job-genie`, { headers: { cookie: "dp_session=test-token" } });
+  assert.equal(response.status, 200);
+  const job = await response.json();
+  assert.equal(job.state, "waiting_for_genie_dimensions");
+  assert.deepEqual(job.waiting, {
+    stage: "manifest.resolve",
+    reason: "genie_dimension_validation_required",
+    candidateId,
+    requestedAt: "2026-08-23T05:27:36.795071+00:00",
+  });
+  const manifest = job.stages.find((stage) => stage.key === "manifest.resolve");
+  assert.equal(manifest.state, "waiting", "a parked stage must not render as a spinner");
+  assert.equal(manifest.waitReason, "genie_dimension_validation_required");
+});
+
 test("artifact review signs only owner-scoped derived files and never persists a URL identity", async (t) => {
   const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const runId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -1872,6 +1944,67 @@ test("flat-first handoff fails closed until an immutable atlas revision is produ
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), { error: "flat_first_production_gate_required" });
   assert.equal(calls.some((item) => item.url.endsWith("/rpc/handoff_designpro_generation_to_production")), false);
+});
+
+// The A.T.L.A.S. split path is wired to the ONE existing file-output pipeline
+// (owner decision 2026-08-23). A run whose canonical master passed acceptance
+// hands off through the same endpoint as Standard -- otherwise the button
+// produces a master and seven proofs with no Call 8 proof or Call 9 panels to
+// validate.
+test("an accepted flat-first atlas run hands off to the existing production pipeline", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000011";
+  const generationId = "90000000-0000-4000-8000-000000000011";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) {
+        return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      }
+      if (value.endsWith("/rest/v1/rpc/designpro_flat_first_handoff_gate")) {
+        return Response.json({
+          flatFirst: true,
+          productionEligible: true,
+          // The atlas LAYOUT geometry is still not production geometry, and
+          // that must not block the handoff: Calls 8+ resolve their own
+          // dimensions from the GENIE manifest.
+          geometryProductionEligible: false,
+          masterQcPassed: true,
+          revisionId: "40000000-0000-4000-8000-000000000002",
+        });
+      }
+      if (value.endsWith("/rest/v1/rpc/handoff_designpro_generation_to_production")) {
+        return Response.json({
+          revisionId: "50000000-0000-4000-8000-000000000002",
+          generationId,
+          workflowRunId: "60000000-0000-4000-8000-000000000002",
+          alreadyHandedOff: false,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/handoff`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), {
+    revisionId: "50000000-0000-4000-8000-000000000002",
+    generationId,
+    runId: "60000000-0000-4000-8000-000000000002",
+    alreadyHandedOff: false,
+  });
+  assert.equal(
+    calls.some((item) => item.url.endsWith("/rpc/handoff_designpro_generation_to_production")),
+    true,
+    "the atlas run must reach the existing production handoff RPC",
+  );
 });
 
 test("the flat-first gate does not change legacy handoff behavior", async (t) => {

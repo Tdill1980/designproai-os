@@ -256,15 +256,27 @@ export type WorkflowStatus = {
   state:
     | "queued"
     | "running"
+    // manifest.resolve parks here until a human validates the vehicle's GENIE
+    // dimensions. It is NOT progress: Call 8, Call 9 and every panel below it
+    // are blocked, so it must never be reported as "running".
+    | "waiting_for_genie_dimensions"
     | "waiting_for_preflight"
     | "waiting_for_final_qc"
     | "complete"
     | "failed";
   currentStage: string;
+  /** Present only while the run is parked on a human action. */
+  waiting?: {
+    stage: string;
+    reason: string;
+    candidateId: string | null;
+    requestedAt: string | null;
+  };
   stages: Array<{
     key: string;
     label: string;
-    state: "pending" | "running" | "complete" | "failed";
+    state: "pending" | "running" | "waiting" | "complete" | "failed";
+    waitReason?: string;
     artifactPath?: string;
   }>;
   failure?: { stage: string; message: string; retryable: boolean };

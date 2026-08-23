@@ -206,22 +206,68 @@ function firstArtifactPath(output) {
   return undefined;
 }
 
+/**
+ * A stage that is WAITING is not a stage that is working.
+ *
+ * manifest.resolve parks with wait_reason "genie_dimension_validation_required"
+ * until a human validates the vehicle's GENIE dimensions. Reported as "running"
+ * -- which is what this function used to do for every waiting stage that was not
+ * one of the two named QC gates -- a run that needs an operator looks busy
+ * forever, and Call 8, Call 9 and every downstream panel silently never start.
+ * Live evidence 2026-08-23: run 7fe117ab sat in that state for sixteen hours and
+ * read as "in progress" the whole time, which is why RevisionStudio had no
+ * extracted panels to show.
+ */
+function waitingStage(stages, stageKey, reason) {
+  return stages.find((s) => s.stage_key === stageKey
+    && s.status === "waiting"
+    && (!reason || String(s.wait_reason || "") === reason));
+}
+
 function publicState(raw) {
   const run = raw.run || {};
   const stages = raw.stages || [];
   const waitingPreflight = stages.some((s) => s.stage_key === "await_panelpro_preflight_qc" && s.status === "waiting");
   const waitingFinal = stages.some((s) => s.stage_key === "await_final_human_qc" && s.status === "waiting");
+  const waitingGenie = waitingStage(stages, "manifest.resolve", "genie_dimension_validation_required");
   const failed = stages.find((s) => s.status === "failed");
   const active = stages.find((s) => ["running", "waiting", "retryable"].includes(s.status)) || [...stages].reverse().find((s) => s.status === "completed");
   return {
     generationId: generationId(run),
     revision: Number(run.results?.revision || run.input?.revision || 1),
-    state: failed ? "failed" : waitingPreflight ? "waiting_for_preflight" : waitingFinal ? "waiting_for_final_qc" : run.status === "completed" ? "complete" : run.status === "queued" ? "queued" : "running",
+    state: failed
+      ? "failed"
+      : waitingPreflight
+        ? "waiting_for_preflight"
+        : waitingFinal
+          ? "waiting_for_final_qc"
+          : waitingGenie
+            ? "waiting_for_genie_dimensions"
+            : run.status === "completed" ? "complete" : run.status === "queued" ? "queued" : "running",
     currentStage: String(active?.stage_key || run.status || "queued"),
+    ...(waitingGenie ? {
+      waiting: {
+        stage: "manifest.resolve",
+        reason: "genie_dimension_validation_required",
+        candidateId: typeof waitingGenie.wait_details?.candidateId === "string"
+          ? waitingGenie.wait_details.candidateId
+          : null,
+        requestedAt: typeof waitingGenie.wait_details?.requestedAt === "string"
+          ? waitingGenie.wait_details.requestedAt
+          : null,
+      },
+    } : {}),
     stages: stages.map((s) => ({
       key: s.stage_key,
       label: s.stage_key,
-      state: s.status === "completed" ? "complete" : s.status === "failed" ? "failed" : ["running", "waiting"].includes(s.status) ? "running" : "pending",
+      state: s.status === "completed"
+        ? "complete"
+        : s.status === "failed"
+          ? "failed"
+          : s.status === "waiting"
+            ? "waiting"
+            : s.status === "running" ? "running" : "pending",
+      ...(s.status === "waiting" && s.wait_reason ? { waitReason: String(s.wait_reason) } : {}),
       artifactPath: firstArtifactPath(s.output),
     })),
     failure: failed ? { stage: failed.stage_key, message: String(failed.error_message || "Stage failed"), retryable: failed.error_details?.retryable !== false } : undefined,
@@ -278,7 +324,7 @@ function verifiedSourceEnticeRun(run, runs) {
 
 async function runState(fetchImpl, token, cfg, run) {
   const runId = encodeURIComponent(run.id);
-  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_workflow_stages?select=stage_key,status,output,error_message,error_details&run_id=eq.${runId}&order=sequence.asc`, { method: "GET" }, token, cfg);
+  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_workflow_stages?select=stage_key,status,output,error_message,error_details,wait_reason,wait_details&run_id=eq.${runId}&order=sequence.asc`, { method: "GET" }, token, cfg);
   if (!response.ok) throw Object.assign(new Error(`stages_query_${response.status}`), { status: response.status });
   return { run, stages: await response.json() };
 }

@@ -23,7 +23,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CheckCircle2, Circle, CircleDashed, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, CircleDashed, PauseCircle, XCircle } from "lucide-react";
 import {
   dpApi,
   FinalQc,
@@ -86,6 +86,8 @@ function StageTimeline({ job }: { job: WorkflowStatus }) {
   const icon = {
     complete: <CheckCircle2 className="h-4 w-4 text-emerald-400" />,
     running: <CircleDashed className="h-4 w-4 animate-spin text-blue-400" />,
+    // A parked stage is deliberately not a spinner. It is waiting on a person.
+    waiting: <PauseCircle className="h-4 w-4 text-amber-400" />,
     failed: <XCircle className="h-4 w-4 text-destructive" />,
     pending: <Circle className="h-4 w-4 text-muted-foreground/50" />,
   };
@@ -103,7 +105,11 @@ function StageTimeline({ job }: { job: WorkflowStatus }) {
             >
               {STAGE_LABEL[stage.key] || stage.label || stage.key}
             </div>
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">{stage.state}</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">
+              {stage.state === "waiting" && stage.waitReason
+                ? `waiting · ${stage.waitReason.replace(/_/g, " ")}`
+                : stage.state}
+            </div>
           </div>
         </li>
       ))}
@@ -640,10 +646,48 @@ export default function ProductionWorkflow() {
     [job],
   );
 
+  // RevisionStudio is a REQUIRED stage of the flow, not decoration. Returning
+  // only "Status unavailable." here is why it reads as missing: a design whose
+  // production run has not been created yet -- or whose status read failed --
+  // loses the seven approved views, the proof and the panels along with it.
+  // Report the real state and keep the studio on screen.
   if (!job) {
+    if (!error) {
+      return (
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-6">
+          <Loading label="Loading server status…" />
+        </div>
+      );
+    }
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-6">
-        {error ? <Notice tone="error">{error}</Notice> : <Loading label="Loading server status…" />}
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 md:px-6">
+        <PageHead
+          eyebrow="Calls 8–12 · Production"
+          title="RevisionStudio"
+          description="The production job for this design is not reporting yet. The approved views below are the frozen Calls 1–7 set."
+          backTo="/designpro/jobs"
+          backLabel="Production jobs"
+        />
+        <Notice tone="warning">
+          <div className="space-y-2">
+            <strong className="block">No production job is reporting for this design yet</strong>
+            <span className="block">
+              The server creates the run at handoff, immediately after the seventh
+              view is accepted. If this persists, the seven views were never frozen
+              into Calls 8+ and the design has no proof or panels to show.
+            </span>
+            <Button size="sm" variant="outline" onClick={() => void load()}>
+              Check again
+            </Button>
+          </div>
+        </Notice>
+        <ServerRevisionStudio
+          generationId={generationId}
+          job={undefined}
+          artifacts={artifacts}
+          artifactsLoading={artifactsLoading}
+          layersSource={layersSource}
+        />
       </div>
     );
   }
@@ -673,6 +717,33 @@ export default function ProductionWorkflow() {
                 Request server resume
               </Button>
             )}
+          </div>
+        </Notice>
+      )}
+
+      {/* The pipeline is parked, not working. Say so and route the operator to
+          the one page that can clear it, or Call 8 and Call 9 never run and the
+          job reads as "still building" indefinitely. */}
+      {job.state === "waiting_for_genie_dimensions" && (
+        <Notice tone="warning">
+          <div className="space-y-2">
+            <strong className="block">GENIE vehicle dimensions need validation</strong>
+            <span className="block">
+              This job is stopped at <code>manifest.resolve</code>. The 2D Production
+              Proof, the six production panels and everything below them cannot start
+              until the vehicle's GENIE dimensions are validated by a person.
+            </span>
+            <Button asChild size="sm" variant="outline">
+              <Link
+                to={
+                  job.waiting?.candidateId
+                    ? `/designpro/genie-qc?candidate=${encodeURIComponent(job.waiting.candidateId)}`
+                    : "/designpro/genie-qc"
+                }
+              >
+                Validate dimensions in GENIE QC
+              </Link>
+            </Button>
           </div>
         </Notice>
       )}

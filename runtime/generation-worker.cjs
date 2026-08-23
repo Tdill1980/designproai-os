@@ -33,8 +33,27 @@ const {
   ARTIFACT_AUDIT_CONTRACT,
   ATLAS_SERVER_PROVIDER_CONTRACT,
   createAtlasDesignPanelProvider,
+  createDesignPanelServerProvider,
 } = require("./designpanel-server-provider.cjs");
 const { createDesignPanelEdgeProvider } = require("./designpanel-edge-provider.cjs");
+
+/**
+ * Calls 1-7 execute on this server.
+ *
+ * design-panel-ai-generate (the A.C.E. persona brief, view-angles, studio-os
+ * lighting and the photorealism lock) and generate-color-render (the anchored
+ * reproduction of the accepted View 1) are ported into
+ * designpanel-server-provider.cjs and run in this process against the server
+ * Gemini key pool. The Supabase Edge transport is retained only as an explicit,
+ * operator-selected rollback: DESIGNPRO_STANDARD_TRANSPORT=edge. Anything else
+ * -- unset, "server", a typo -- runs server-native, so the Edge path can never
+ * become the default again by omission.
+ */
+function standardProviderFactoryFor(env = process.env) {
+  return String(env.DESIGNPRO_STANDARD_TRANSPORT || "").trim().toLowerCase() === "edge"
+    ? createDesignPanelEdgeProvider
+    : createDesignPanelServerProvider;
+}
 const {
   QC_CONTRACT: ATLAS_PROOF_QC_CONTRACT,
   VIEW_CONTRACTS: ATLAS_QC_VIEW_CONTRACTS,
@@ -555,7 +574,7 @@ function createGenerationWorker({
   provider,
   supabaseUrl = process.env.SUPABASE_URL,
   serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
-  standardProviderFactory = createDesignPanelEdgeProvider,
+  standardProviderFactory = standardProviderFactoryFor(),
   atlasProviderFactory = createAtlasDesignPanelProvider,
   atlasProofValidatorFactory = createAtlasProofValidator,
   intervalMs = POLL_MS,
@@ -924,4 +943,5 @@ module.exports = {
   referenceImageParts,
   runAtlasProofStages,
   slotsFrom,
+  standardProviderFactoryFor,
 };

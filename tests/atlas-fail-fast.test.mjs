@@ -114,19 +114,33 @@ test("the guarded create page defaults to DesignPanel and opens A.T.L.A.S. only 
   assert.match(home, /setPipelineMode\("legacy"\)/);
 });
 
-test("the customer DesignPanel page enters the one production chain but A.T.L.A.S. stays isolated", () => {
+// A.T.L.A.S. is no longer isolated from production (owner decision
+// 2026-08-23): its button must reach the existing file-output pipeline so the
+// Call 8 proof and Call 9 panels exist to validate. What stays isolated is
+// per-view regeneration -- one master owns the whole proof set.
+test("the customer DesignPanel page enters the one production chain on both pipelines", () => {
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
-  const standardHandoff = hook.match(
-    /if \(acceptedPipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE\) \{[\s\S]*?\n      \}/,
-  )?.[0] || "";
 
-  assert.match(standardHandoff, /finished\.handoffReady !== true/);
-  assert.match(standardHandoff, /await handoffGeneration\(request\.requestId\)/);
-  assert.match(standardHandoff, /handoff\.generationId !== request\.generationId/);
+  assert.match(hook, /finished\.handoffReady !== true/);
+  assert.match(hook, /await handoffGeneration\(request\.requestId\)/);
+  assert.match(hook, /handoff\.generationId !== request\.generationId/);
   assert.doesNotMatch(
-    hook.match(/if \(acceptedPipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE\) \{[\s\S]*?\n      \}/)?.[0] || "",
-    /handoffGeneration/,
+    hook,
+    /if \(acceptedPipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE\) \{[\s\S]*?handoffGeneration/,
+    "the A.T.L.A.S. handoff exclusion must not come back",
   );
+  // The Call 8 proof and the production job are what "validation of file
+  // output" means on this page, so neither may be hidden by pipeline mode.
+  assert.doesNotMatch(
+    hook,
+    /queryKey: \["designpro-customer-proof"[\s\S]{0,200}?activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE/,
+  );
+  assert.doesNotMatch(
+    hook,
+    /queryKey: \["designpro-production-job"[\s\S]{0,200}?activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE/,
+  );
+  // One master owns the A.T.L.A.S. proof set; a single view is never re-rolled.
+  assert.match(hook, /A\.T\.L\.A\.S\. proof views are locked to one master/);
 });
 
 test("A.T.L.A.S. reveals the immutable master and streams signed proof views without new generation calls", () => {

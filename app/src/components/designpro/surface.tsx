@@ -94,7 +94,7 @@ export function Notice({
   tone = "info",
   children,
 }: {
-  tone?: "info" | "error" | "success";
+  tone?: "info" | "error" | "success" | "warning";
   children: ReactNode;
 }) {
   return (
@@ -103,10 +103,13 @@ export function Notice({
         "flex items-start gap-2 rounded-lg border px-4 py-3 text-sm",
         tone === "error" && "border-destructive/40 bg-destructive/10 text-destructive-foreground",
         tone === "success" && "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+        // A blocked pipeline is not an error and not neutral information: a
+        // person has to act before anything downstream can run.
+        tone === "warning" && "border-amber-500/40 bg-amber-500/10 text-amber-100",
         tone === "info" && "border-border bg-muted/40 text-muted-foreground",
       )}
     >
-      {tone === "error" && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
+      {(tone === "error" || tone === "warning") && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
       <div className="min-w-0">{children}</div>
     </div>
   );
