@@ -78,9 +78,22 @@ jobs:
       STRIPE_SECRET_KEY: ${{ secrets.DESIGNPRO_STRIPE_SECRET_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.DESIGNPRO_STRIPE_WEBHOOK_SECRET }}
     steps:
+      - id: normalize-sha
+        name: Normalize and validate the exact SHA input
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          raw_sha=$EXACT_SHA
+          normalized_sha=$(tr -d '[:space:]' <<<"$raw_sha")
+          [[ $normalized_sha =~ ^[0-9a-f]{40}$ ]]
+          [[ $(tr -d '[:space:][:xdigit:]' <<<"$raw_sha") == "" ]]
+          printf 'EXACT_SHA=%s\n' "$normalized_sha" >> "$GITHUB_ENV"
+          printf 'exact_sha=%s\n' "$normalized_sha" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ env.EXACT_SHA }}
+          ref: ${{ steps.normalize-sha.outputs.exact_sha }}
           persist-credentials: false
 
       - name: Prove exact protected main intent
