@@ -58,11 +58,27 @@ jobs:
       EXACT_SHA: ${{ inputs.exact_sha }}
       MODE: ${{ inputs.confirmation }}
     steps:
+      # Mobile paste can carry leading/trailing whitespace. Normalize it once,
+      # publish the canonical SHA to every later step, and still refuse
+      # anything that is not exactly one lowercase Git object identity.
+      - name: Normalize the exact SHA input
+        id: exact
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          normalized=$(printf '%s' "$EXACT_SHA" | tr -d '[:space:]')
+          [[ $normalized =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Exact lowercase 40-character SHA required" >&2
+            exit 2
+          }
+          echo "sha=$normalized" >> "$GITHUB_OUTPUT"
+          echo "EXACT_SHA=$normalized" >> "$GITHUB_ENV"
+
       # Pinned to the requested SHA so the script that runs is the one belonging
       # to the live release. It cannot drift from the release it configures.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ inputs.exact_sha }}
+          ref: ${{ steps.exact.outputs.sha }}
           persist-credentials: false
 
       - name: Pin the exact new droplet SSH identity
@@ -214,6 +230,10 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          if [[ -z ${key_file:-} || -z ${known_hosts:-} || ! -f $key_file || ! -f $known_hosts ]]; then
+            echo "Caddy report skipped because the SSH identity step did not complete."
+            exit 0
+          fi
           ssh_args=(-i "$key_file" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           # Read-only. Certificate issuance is NOT retried here: Let's Encrypt
           # rate limits a domain after repeated failed challenges, so a failure
