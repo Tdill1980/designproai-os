@@ -118,6 +118,20 @@ test("Caddy exposes only UI/gateway and explicitly denies worker routes", () => 
   assert.ok(deploy.lastIndexOf('acceptance.sh" "$sha"') < deploy.lastIndexOf('public.next'), "public web switches only after local acceptance");
 });
 
+test("Caddy installer safely replaces only the known legacy DesignProAI site", () => {
+  const install = read("install-caddy.sh");
+  assert.match(install, /legacy_site=\/etc\/caddy\/sites\/os\.designproai\.caddy/);
+  assert.match(install, /cp -a "\$legacy_site" "\$backup_dir\/os\.designproai\.caddy\.before"/);
+  assert.ok(
+    install.indexOf('cp -a "$legacy_site" "$backup_dir/os.designproai.caddy.before"')
+      < install.indexOf('unlink "$legacy_site"'),
+    "legacy site must be backed up before removal",
+  );
+  assert.match(install, /cp -a "\$backup_dir\/os\.designproai\.caddy\.before" "\$legacy_site"/);
+  assert.match(install, /\$existing == "\$site" \|\| \$existing == "\$legacy_site"/);
+  assert.match(install, /already appears in another Caddy config/);
+});
+
 test("acceptance validates the regular exact release target, never the current symlink", () => {
   const acceptance = read("acceptance.sh");
   assert.match(acceptance, /release="\$ROOT\/releases\/\$sha"/);

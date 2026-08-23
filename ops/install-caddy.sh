@@ -5,6 +5,7 @@ OPS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 sha=${1:-}
 confirm=${2:-}
 site=/etc/caddy/sites/designproai-os.caddy
+legacy_site=/etc/caddy/sites/os.designproai.caddy
 main=/etc/caddy/Caddyfile
 
 [[ $EUID -eq 0 ]] || { echo "Run as root" >&2; exit 1; }
@@ -12,9 +13,9 @@ main=/etc/caddy/Caddyfile
 [[ $confirm == INSTALL_DESIGNPRO_CADDY_ONLY ]] || { echo "Confirmation token required" >&2; exit 3; }
 command -v caddy >/dev/null || { echo "Caddy must be installed through the normal OS package first" >&2; exit 4; }
 [[ -f $main && ! -L $main ]] || { echo "The primary Caddyfile must be a regular, non-symlink file" >&2; exit 5; }
-[[ ! -L /etc/caddy/sites && ! -L $site ]] || { echo "Refusing a symlinked Caddy site path" >&2; exit 5; }
+[[ ! -L /etc/caddy/sites && ! -L $site && ! -L $legacy_site ]] || { echo "Refusing a symlinked Caddy site path" >&2; exit 5; }
 while IFS= read -r existing; do
-  [[ $existing == "$site" ]] || {
+  [[ $existing == "$site" || $existing == "$legacy_site" ]] || {
     echo "os.designproai.com already appears in another Caddy config: $existing" >&2
     exit 5
   }
@@ -39,11 +40,16 @@ backup_dir="/var/backups/designpro-cutover/caddy-$stamp"
 install -d -m 0700 "$backup_dir"
 cp -a "$main" "$backup_dir/Caddyfile.before"
 site_existed=false
+legacy_site_existed=false
 caddy_was_active=false
 systemctl is-active --quiet caddy && caddy_was_active=true
 if [[ -f $site ]]; then
   site_existed=true
   cp -a "$site" "$backup_dir/designproai-os.caddy.before"
+fi
+if [[ -f $legacy_site ]]; then
+  legacy_site_existed=true
+  cp -a "$legacy_site" "$backup_dir/os.designproai.caddy.before"
 fi
 
 restore() {
@@ -55,6 +61,11 @@ restore() {
     cp -a "$backup_dir/designproai-os.caddy.before" "$site"
   elif [[ -f $site && ! -L $site ]]; then
     unlink "$site"
+  fi
+  if [[ $legacy_site_existed == true ]]; then
+    cp -a "$backup_dir/os.designproai.caddy.before" "$legacy_site"
+  elif [[ -f $legacy_site && ! -L $legacy_site ]]; then
+    unlink "$legacy_site"
   fi
   caddy validate --adapter caddyfile --config "$main" >/dev/null 2>&1 || true
   if [[ $caddy_was_active == true ]]; then
@@ -72,6 +83,12 @@ if id caddy >/dev/null 2>&1; then
 else
   echo "Caddy service account is missing" >&2
   false
+fi
+# This exact legacy filename was created by the earlier DesignProAI cutover.
+# Remove it only after its root-only backup exists, so the new canonical site
+# does not duplicate the same host during validation. The ERR trap restores it.
+if [[ $legacy_site_existed == true ]]; then
+  unlink "$legacy_site"
 fi
 install -m 0644 "$OPS_DIR/Caddyfile.fragment" "$site"
 if ! grep -Eq '^[[:space:]]*import[[:space:]]+(/etc/caddy/)?sites/\*\.caddy[[:space:]]*$' "$main"; then
