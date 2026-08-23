@@ -84,6 +84,8 @@ test("master acceptance grades the actual full-bleed authority before persistenc
         rawCalls += 1;
         assert.equal(model, "gemini-2.5-flash");
         assert.equal(body.generationConfig.responseMimeType, "application/json");
+        assert.deepEqual(body.generationConfig.thinkingConfig, { thinkingBudget: 0 });
+        assert.equal(body.generationConfig.maxOutputTokens, 2048);
         assert.deepEqual(body.generationConfig.responseSchema.required, _test.RESPONSE_FIELDS);
         return {
           payload: payload(passingReview(body)),

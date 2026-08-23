@@ -674,7 +674,10 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     } catch (error: any) {
       const code = String(error?.code || error?.message || "");
       const requiresNewAtlasRun = atlasNewRunRequired(error);
-      if (requiresNewAtlasRun) clearUntrustedAtlasProofState();
+      const freshAtlasMasterQcFailure =
+        acceptedRequest?.pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+        && code.includes("flat_atlas_master_qc_failed");
+      if (requiresNewAtlasRun || freshAtlasMasterQcFailure) clearUntrustedAtlasProofState();
       // A terminal request can still own byte-verified views. The legacy
       // worker used to discover a missing production manifest only after all
       // seven calls; hiding those saved images behind the error screen made a
@@ -703,6 +706,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       const friendly =
         requiresNewAtlasRun
           ? ATLAS_NEW_RUN_REQUIRED_MESSAGE
+          : freshAtlasMasterQcFailure
+          ? "A.T.L.A.S. rejected the new flattened master during visual quality inspection. No proof set was saved. Start a new A.T.L.A.S. run."
           : code === "generation_pipeline_mode_mismatch"
           ? "This design mode is temporarily unavailable. No production order was created."
           : code === "generation_input_conflict"
@@ -716,7 +721,9 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       setGenerationError(friendly);
       const recoveredPrimary = pickPrimaryProofView(recoveredViews);
       return {
-        generationId: requiresNewAtlasRun ? null : acceptedRequest?.generationId || null,
+        generationId: requiresNewAtlasRun || freshAtlasMasterQcFailure
+          ? null
+          : acceptedRequest?.generationId || null,
         directRender: Boolean(recoveredPrimary?.signedUrl),
         renderUrl: recoveredPrimary?.signedUrl,
         error: friendly,

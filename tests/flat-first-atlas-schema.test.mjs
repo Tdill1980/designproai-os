@@ -22,6 +22,10 @@ const closeupBoundarySql = readFileSync(new URL(
   "../supabase/migrations/20260822090000_designpro_closeup_schema_boundaries.sql",
   import.meta.url,
 ), "utf8");
+const freshFailureSql = readFileSync(new URL(
+  "../supabase/migrations/20260822100000_designpro_preserve_fresh_atlas_failure.sql",
+  import.meta.url,
+), "utf8");
 
 test("flat-first is an exact opt-in v3 contract with a separate intake RPC", () => {
   assert.match(sql, /calls_1_7_input_v3_valid/);
@@ -107,6 +111,17 @@ test("invalid terminal Atlas status and signed-view reads fail with one typed ne
   assert.match(
     closeupBoundarySql,
     /CREATE OR REPLACE FUNCTION public\.designpro_flat_atlas_revision_paths[\s\S]*flat_first_atlas_requires_new_run[\s\S]*RAISE EXCEPTION 'flat_first_atlas_new_run_required'[\s\S]*'guideStoragePath'/,
+  );
+});
+
+test("fresh zero-artifact Atlas failures preserve their real failure code", () => {
+  assert.match(freshFailureSql, /v_row\.state='outputs_ready'[\s\S]*OR v_has_private_identity/);
+  assert.match(freshFailureSql, /designpro_generation_views[\s\S]*superseded_at IS NULL/);
+  assert.match(freshFailureSql, /designpro_flat_atlas_revisions/);
+  assert.match(freshFailureSql, /NOT designpro_private\.flat_first_atlas_view_set_valid/);
+  assert.match(
+    freshFailureSql,
+    /REVOKE ALL ON FUNCTION[\s\S]*flat_first_atlas_requires_new_run\(uuid\)[\s\S]*FROM PUBLIC,anon,authenticated,service_role/,
   );
 });
 

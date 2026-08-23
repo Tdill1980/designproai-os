@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered thirty-seven-migration chain', () => {
-  assert.equal(migrationNames.length, 37);
+test('fresh bootstrap contains one ordered thirty-eight-migration chain', () => {
+  assert.equal(migrationNames.length, 38);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -73,6 +73,9 @@ test('fresh bootstrap contains one ordered thirty-seven-migration chain', () => 
       // Complete the Close-Up port at revision, Storage, freeze and Atlas master
       // preview boundaries while keeping historical Hero rows immutable.
       '20260822090000',
+      // A failed run with no private Atlas identities reports the real cause;
+      // saved invalid masters/proofs remain quarantined.
+      '20260822100000',
     ],
   );
 });

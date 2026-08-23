@@ -2110,7 +2110,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white gap-2"
                             >
                               <RefreshCw className="w-4 h-4" />
-                              Relaunch
+                              {isFlatFirstDiagnostic ? "Start New A.T.L.A.S. Run" : "Relaunch"}
                             </Button>
                           </div>
                         ) : previewDisplayUrl ? (

@@ -63,9 +63,14 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
 
   assert.match(hook, /flat_first_atlas_new_run_required/);
   assert.match(hook, /generation_atlas_lineage_invalid/);
-  assert.match(failure, /if \(requiresNewAtlasRun\) clearUntrustedAtlasProofState\(\)/);
+  assert.match(
+    failure,
+    /if \(requiresNewAtlasRun \|\| freshAtlasMasterQcFailure\) clearUntrustedAtlasProofState\(\)/,
+  );
   assert.match(failure, /if \(acceptedRequest && !requiresNewAtlasRun\)/);
   assert.match(hook, /This saved A\.T\.L\.A\.S\. proof set cannot be reused\. Start a new A\.T\.L\.A\.S\. run\./);
+  assert.match(hook, /freshAtlasMasterQcFailure/);
+  assert.match(hook, /No proof set was saved\. Start a new A\.T\.L\.A\.S\. run\./);
   const clear = hook.slice(
     hook.indexOf("const clearUntrustedAtlasProofState"),
     hook.indexOf("// Persona pipeline timer"),
@@ -78,6 +83,7 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
   ]) assert.match(clear, new RegExp(reset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(premium, /renderError \|\| atlasNewRunRequired/);
   assert.match(premium, /generationError\?\.includes\("Start a new A\.T\.L\.A\.S\. run"\)/);
+  assert.match(premium, /Start New A\.T\.L\.A\.S\. Run/);
   assert.match(gateway, /request\.failureCode === ATLAS_NEW_RUN_REQUIRED[\s\S]*return json\(res, 409/);
   assert.match(gateway, /designpro_generation_view_paths[\s\S]*includes\(ATLAS_NEW_RUN_REQUIRED\)[\s\S]*status: 409/);
 });

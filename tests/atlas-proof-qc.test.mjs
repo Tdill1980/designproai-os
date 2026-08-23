@@ -181,7 +181,8 @@ test("the validator grades the actual candidate inline against the canonical Atl
   assert.equal(calls[0].timeoutMs, 45_000);
   assert.equal(calls[0].body.generationConfig.temperature, 0);
   assert.equal(calls[0].body.generationConfig.responseMimeType, "application/json");
-  assert.equal(calls[0].body.generationConfig.maxOutputTokens, 1536);
+  assert.deepEqual(calls[0].body.generationConfig.thinkingConfig, { thinkingBudget: 0 });
+  assert.equal(calls[0].body.generationConfig.maxOutputTokens, 2048);
   assert.deepEqual(calls[0].body.generationConfig.responseSchema.required, _test.RESPONSE_FIELDS);
   const parts = calls[0].body.contents[0].parts;
   assert.equal(parts[1].inlineData.mimeType, "image/png");
