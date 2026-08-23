@@ -519,6 +519,15 @@ test("cold-cache A.T.L.A.S. grounds once, stores the candidate as unvalidated, a
     assert.equal(insertedRows.length, 1);
     assert.equal(insertedRows[0].requires_validation, true);
     assert.equal(insertedRows[0].source, "gemini_grounded");
+    assert.equal(insertedRows[0].panels.contract, universal.PROVISIONAL_ESTIMATOR_CONTRACT);
+    assert.equal(insertedRows[0].panels.status, "provisional");
+    assert.equal(insertedRows[0].panels.inputs.wheelbaseInches, 160);
+    assert.deepEqual(
+      insertedRows[0].panels.surfaces.map((surface) => surface.surfaceKey),
+      universal.SURFACES,
+    );
+    assert.equal(insertedRows[0].panels.surfaces.every((surface) => surface.bleedInchesPerEdge === 5), true);
+    assert.equal(insertedRows[0].panels.productionEligible, false);
     assert.equal(preview.proofGeometryAuthority.status, "provisional");
     assert.equal(preview.proofGeometryAuthority.sourceUrls.length, 2);
     assert.equal(universal.expectedSurfacesFromRow(preview).length, 6);

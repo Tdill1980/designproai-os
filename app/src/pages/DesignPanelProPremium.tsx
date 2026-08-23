@@ -321,6 +321,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     generationRequestState,
     clearGenerationError,
     flatProofUrl,
+    productionJobStatus,
     activePipelineMode,
     flatAtlasRevisions,
     flatAtlasLoadError,
@@ -2553,7 +2554,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         <Button
                           onClick={() => {
                             const id = generationIdRef.current;
-                            navigate(id ? `/revision-studio?id=${id}` : '/revision-studio');
+                            navigate(id ? `/designpro/jobs/${id}` : '/designpro/jobs');
                           }}
                           className="w-full gap-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-semibold"
                         >
@@ -2568,7 +2569,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       <Button
                         onClick={() => {
                           const id = generationIdRef.current;
-                          navigate(id ? `/revision-studio?id=${id}` : '/revision-studio');
+                          navigate(id ? `/designpro/jobs/${id}` : '/designpro/jobs');
                         }}
                         variant="ghost"
                         size="sm"
@@ -2848,6 +2849,23 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             loading="lazy"
                           />
                         </button>
+                      </Card>
+                    )}
+                    {!isFlatFirstDiagnostic && mainDisplayUrl && !pipelineActive && !proofToShow && productionJobStatus && (
+                      <Card className="border-amber-400/30 bg-amber-400/10 p-4">
+                        <p className="text-sm font-semibold text-amber-100">
+                          Call 8 is waiting at {productionJobStatus.currentStage || "production setup"}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-amber-100/70">
+                          Your seven source views are saved, but the 2D proof and extracted panels are not complete yet.
+                        </p>
+                        <Button
+                          className="mt-3"
+                          variant="outline"
+                          onClick={() => navigate(`/designpro/jobs/${productionJobStatus.generationId}`)}
+                        >
+                          Open RevisionStudio production job
+                        </Button>
                       </Card>
                     )}
                   </div>

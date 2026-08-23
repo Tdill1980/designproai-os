@@ -751,6 +751,12 @@ test("GENIE candidate list strips raw discovery data and maps string confidence 
       sub_type: "crew cab",
       source: "OEM body guide",
       source_urls: ["https://example.com/evidence", "javascript:bad"],
+      overall_dimensions: {
+        length_inches: 250,
+        width_inches: 80,
+        height_inches: 82,
+        wheelbase_inches: 160,
+      },
       confidence: "medium",
       requested_runs: [{ run_id: "ffffffff-ffff-4fff-8fff-ffffffffffff", generation_id: "job-7" }],
       raw_response: { mustNeverReachBrowser: true },
@@ -769,6 +775,12 @@ test("GENIE candidate list strips raw discovery data and maps string confidence 
   const [candidate, high, low, unknown] = await response.json();
   assert.equal(candidate.vehicleClass, "truck");
   assert.deepEqual(candidate.sourceUrls, ["https://example.com/evidence"]);
+  assert.deepEqual(candidate.overallDimensions, {
+    lengthInches: 250,
+    widthInches: 80,
+    heightInches: 82,
+    wheelbaseInches: 160,
+  });
   assert.equal(candidate.confidence, 0.7);
   assert.equal(high.confidence, 0.95);
   assert.equal(low.confidence, 0.4);

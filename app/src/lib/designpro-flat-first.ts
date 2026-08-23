@@ -85,6 +85,25 @@ export function normalizeDesignProVehicleType(value: unknown): VehicleType {
     : "car";
 }
 
+/**
+ * Correct unmistakable model identities before they enter either pipeline.
+ * The selector historically defaulted to `car`, so a Ford F-Series request
+ * could reach prompts and GENIE with contradictory body-class data even though
+ * the model name itself was unambiguous.
+ */
+export function normalizeDesignProVehicleTypeForIdentity(
+  value: unknown,
+  make: unknown,
+  model: unknown,
+): VehicleType {
+  const declared = normalizeDesignProVehicleType(value);
+  const identity = `${String(make || "").trim()} ${String(model || "").trim()}`.toLowerCase();
+  if (/\b(ford\s+)?f[\s-]?(?:150|250|350|450|550)\b|\b(?:silverado|sierra|ram|tundra|tacoma|colorado|canyon|ranger|maverick|frontier|titan|ridgeline|gladiator)\b/.test(identity)) {
+    return "truck";
+  }
+  return declared;
+}
+
 /** Flat-first cannot use the independent photo-edit path as an atlas source. */
 export function myVehiclePhotoFlowEnabledForPipeline(mode: GenerationPipelineMode): boolean {
   return mode !== FLAT_FIRST_ATLAS_PIPELINE_MODE;

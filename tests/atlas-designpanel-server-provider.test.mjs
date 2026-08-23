@@ -98,8 +98,11 @@ test("Atlas runs Driver from existing Atlas call.parts, Passenger from the canon
     keyCount: 2,
     generateImage: async (call) => {
       calls.push(call);
+      const repairedPassengerBytes = call.passengerRepairAttempt
+        ? Buffer.from(call.parts[0].inlineData.data, "base64")
+        : null;
       return {
-        bytes: f.driverBytes,
+        bytes: repairedPassengerBytes || f.driverBytes,
         contentType: "image/png",
         model: "gemini-3-pro-image",
         keyFingerprint: "0123456789ab",

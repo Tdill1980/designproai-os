@@ -901,6 +901,10 @@ function genieEvidence(body) {
 function publicGenieCandidate(row) {
   const urls = row?.sourceUrls || row?.source_urls;
   const runs = row?.requestedRuns || row?.requested_runs;
+  const dimensions = row?.overallDimensions || row?.overall_dimensions || {};
+  const finiteDimension = (value) => value == null || !Number.isFinite(Number(value))
+    ? null
+    : Number(value);
   const confidenceValue = row?.confidence;
   const confidence = typeof confidenceValue === "string"
     ? ({ high: 0.95, medium: 0.7, low: 0.4 }[confidenceValue.toLowerCase()] ?? null)
@@ -914,6 +918,12 @@ function publicGenieCandidate(row) {
     subType: row?.subType ?? row?.sub_type ?? null,
     source: String(row?.source || "unknown"),
     sourceUrls: Array.isArray(urls) ? urls.map(String).filter((value) => value.startsWith("https://")) : [],
+    overallDimensions: {
+      lengthInches: finiteDimension(dimensions.lengthInches ?? dimensions.length_inches),
+      widthInches: finiteDimension(dimensions.widthInches ?? dimensions.width_inches),
+      heightInches: finiteDimension(dimensions.heightInches ?? dimensions.height_inches),
+      wheelbaseInches: finiteDimension(dimensions.wheelbaseInches ?? dimensions.wheelbase_inches),
+    },
     confidence,
     requestedRuns: Array.isArray(runs)
       ? runs.map((item) => ({ runId: String(item.runId || item.run_id || ""), generationId: item.generationId || item.generation_id || undefined })).filter((item) => item.runId)

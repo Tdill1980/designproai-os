@@ -338,6 +338,12 @@ export type GenieCandidate = {
   subType: string | null;
   source: string;
   sourceUrls: string[];
+  overallDimensions: {
+    lengthInches: number | null;
+    widthInches: number | null;
+    heightInches: number | null;
+    wheelbaseInches: number | null;
+  };
   confidence: number | null;
   requestedRuns: Array<{ runId: string; generationId?: string }>;
 };

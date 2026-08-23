@@ -392,12 +392,43 @@ async function findCandidates(sb, vehicle) {
 }
 
 function groundedInsertPayload(vehicle, candidate) {
+  const provisional = provisionalDimensionsFromCandidate({
+    id: null,
+    make: vehicle.make,
+    model: vehicle.model,
+    overall_length_in: candidate.dimensions.overall_length_in,
+    overall_width_in: candidate.dimensions.overall_width_in,
+    overall_height_in: candidate.dimensions.overall_height_in,
+    wheelbase_in: candidate.dimensions.wheelbase_in,
+    source: "gemini_grounded",
+    source_urls: candidate.sourceUrls,
+    confidence: candidate.confidence,
+    sub_type: candidate.subType,
+  }, vehicle.vehicleClass);
   return {
     vehicle_class: vehicle.vehicleClass, make: vehicle.make, model: vehicle.model, year: vehicle.year,
     sub_type: candidate.subType, overall_length_in: candidate.dimensions.overall_length_in,
     overall_width_in: candidate.dimensions.overall_width_in, overall_height_in: candidate.dimensions.overall_height_in,
     wheelbase_in: candidate.dimensions.wheelbase_in, source: "gemini_grounded",
     source_urls: candidate.sourceUrls, confidence: candidate.confidence, requires_validation: true,
+    panels: {
+      contract: PROVISIONAL_ESTIMATOR_CONTRACT,
+      status: "provisional",
+      purpose: "calls-1-7-layout-only",
+      inputs: {
+        overallLengthInches: candidate.dimensions.overall_length_in,
+        overallWidthInches: candidate.dimensions.overall_width_in,
+        overallHeightInches: candidate.dimensions.overall_height_in,
+        wheelbaseInches: candidate.dimensions.wheelbase_in,
+      },
+      surfaces: expectedSurfacesFromRow(provisional).map((surface) => ({
+        surfaceKey: surface.surfaceKey,
+        widthInches: surface.widthInches,
+        heightInches: surface.heightInches,
+        bleedInchesPerEdge: 5,
+      })),
+      productionEligible: false,
+    },
     raw_response: candidate.raw,
   };
 }

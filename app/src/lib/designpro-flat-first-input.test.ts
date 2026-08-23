@@ -14,6 +14,7 @@ import {
   inlineRevisionEnabledForPipeline,
   myVehiclePhotoFlowEnabledForPipeline,
   normalizeDesignProVehicleType,
+  normalizeDesignProVehicleTypeForIdentity,
 } from "./designpro-flat-first";
 
 const base: CreateGenerationRequestOptions = {
@@ -137,6 +138,12 @@ describe("flat-first generation input", () => {
     expect(normalizeDesignProVehicleType("Truck")).toBe("truck");
     expect(normalizeDesignProVehicleType("SUV")).toBe("suv");
     expect(normalizeDesignProVehicleType("not-a-vehicle")).toBe("car");
+  });
+
+  it("corrects unmistakable pickup identities before either pipeline starts", () => {
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "Ford", "F150 Crew Cab")).toBe("truck");
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "Chevrolet", "Silverado 1500")).toBe("truck");
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "Toyota", "Camry")).toBe("car");
   });
 
   it("fails closed when MyVehicle photos would bypass the atlas master", () => {

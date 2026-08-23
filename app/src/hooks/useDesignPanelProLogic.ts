@@ -28,6 +28,7 @@ import { classifyDesignIqCombinedContact } from "@/lib/designpro-input-normaliza
 import type { PersonaPipelinePhase } from "@/components/designpanelpro/PersonaPipelineProgress";
 import type { CoverageType } from "@/components/tools/CoverageSelector";
 import { type VehicleType } from "@/components/tools/VehicleTypeSelector";
+import { normalizeDesignProVehicleTypeForIdentity } from "@/lib/designpro-flat-first";
 import type { VehicleSpecsPreview } from "@/components/tools/NonStandardVehicleWarning";
 
 type KitSize = "small" | "medium" | "large" | "xl";
@@ -268,6 +269,14 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       return selectCustomerProof(artifacts)?.signedUrl ?? null;
     },
     refetchInterval: (query) => (query.state.data ? 240_000 : 5_000),
+  });
+
+  const { data: productionJobStatus = null } = useQuery({
+    queryKey: ["designpro-production-job", visualizationId],
+    enabled: !!visualizationId && activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE,
+    retry: false,
+    queryFn: () => dpApi.getStatus(String(visualizationId)).catch(() => null),
+    refetchInterval: (query) => query.state.data?.state === "complete" ? 240_000 : 5_000,
   });
 
   useEffect(() => {
@@ -558,7 +567,11 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
           year: String(vehicleInfo?.year || "").trim(),
           make: String(vehicleInfo?.make || "").trim(),
           model: String(vehicleInfo?.model || "").trim(),
-          type: vehicleType,
+          type: normalizeDesignProVehicleTypeForIdentity(
+            vehicleType,
+            vehicleInfo?.make,
+            vehicleInfo?.model,
+          ),
         },
         // A company name means commercial whatever the toggle says -- the rule
         // the proven intake has always applied.
@@ -655,7 +668,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         description:
           pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
             ? "Your A.T.L.A.S. design and seven vehicle views are ready and saved."
-            : "Your seven DesignProAI™ views are ready and saved.",
+            : "Your seven DesignProAI™ views are saved. The server started Call 8 and the production job now reports its real status.",
       });
       return { generationId: request.generationId, directRender: true, renderUrl: primary?.signedUrl };
     } catch (error: any) {
@@ -947,6 +960,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     setShowLoginModal,
     clearLastRender,
     flatProofUrl,
+    productionJobStatus,
     activePipelineMode,
     flatAtlasRevisions,
     flatAtlasLoadError,

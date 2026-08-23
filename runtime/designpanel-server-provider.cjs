@@ -57,6 +57,9 @@ const ORIENTATION_H = 32;
 const PASSENGER_FRAMING_W = 96;
 const PASSENGER_FRAMING_H = 54;
 const MAX_PASSENGER_FRAMING_MAE = 0.18;
+const STANDARD_QC_MODEL = "gemini-2.5-flash";
+const STANDARD_QC_TIMEOUT_MS = 45_000;
+const STANDARD_QC_CONFIDENCE = 0.9;
 const FINISH_SPEC = Object.freeze({
   gloss: "High-gloss laminate — shiny wet-look surface with crisp reflections.",
   matte: "Matte laminate — completely flat, zero reflections, velvet appearance.",
@@ -148,6 +151,96 @@ function sha256(bytes) {
 function populated(value) {
   if (Array.isArray(value)) return value.length > 0;
   return Boolean(String(value || "").trim());
+}
+
+async function standardProofTransport(bytes) {
+  if (!Buffer.isBuffer(bytes) || !bytes.length) {
+    throw new DesignPanelServerError("designpanel_quality_image_missing", "Standard proof bytes are required", false);
+  }
+  return sharp(bytes, { limitInputPixels: false })
+    .rotate()
+    .resize(1600, 1600, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 82, mozjpeg: true })
+    .toBuffer();
+}
+
+function standardProofQcPrompt({ input = {}, sourceViewType, inspectionId }) {
+  const vehicle = input.vehicle && typeof input.vehicle === "object" ? input.vehicle : {};
+  const vehicleName = [vehicle.year, vehicle.make, vehicle.model, vehicle.type].filter(Boolean).join(" ");
+  const businessName = String(input.companyName || input.businessName || input.business || "").trim();
+  const phone = String(input.phone || "").trim();
+  const website = String(input.website || "").trim();
+  const photoRequired = briefWantsPhoto(String(input.brief || input.designBrief || input.description || ""));
+  const pickup = Boolean(truckBedClause(vehicleName));
+  return `Inspect the attached Standard DesignProAI vehicle-wrap proof. Be strict: this is a release gate, not design feedback.
+Inspection identity: ${inspectionId}
+Expected view: ${angles.viewLabel(sourceViewType)} (${sourceViewType})
+Expected vehicle: ${vehicleName || "the specified vehicle"}
+Exact business name: ${businessName || "none supplied"}
+Exact phone: ${phone || "none supplied"}
+Exact website: ${website || "none supplied"}
+Uploaded customer logo supplied: ${input.logoAsset ? "yes — logo must look intentionally placed and faithful, not substituted" : "no — generated logo must still be distinctive and industry-specific"}
+Photographic subject explicitly required by brief: ${photoRequired ? "yes — it must look like a real high-resolution photograph, not illustration or AI mush" : "no"}
+Pickup-bed rule applies: ${pickup ? "yes — open bed floor, inner walls, rails and wheel-well humps must show bare factory bedliner with zero artwork" : "no"}
+
+Reject if any visible customer wording is backwards, misspelled, replaced or unreadable. Reject generic/stock/template branding, malformed logos, incoherent imagery, fake lettering, obvious AI artifacts, a wrong vehicle, a wrong camera, an unprofessional wrap, artwork on glass/lights/wheels/trim, or artwork inside an open pickup bed. The result must be a photorealistic installed-vinyl studio proof. Return exactly one JSON object and no markdown:
+{"inspectionId":"${inspectionId}","cameraPass":boolean,"vehiclePass":boolean,"customerTextPass":boolean,"logoPass":boolean,"requestedPhotoPass":boolean,"professionalDesignPass":boolean,"photorealismPass":boolean,"studioPass":boolean,"wrapCoveragePass":boolean,"pickupBedPass":boolean,"confidence":number,"reasons":[string]}`;
+}
+
+function standardProofQcReview(payload, inspectionId) {
+  const candidate = payload?.candidates?.[0];
+  if (String(candidate?.finishReason || "").toUpperCase() !== "STOP") {
+    throw new DesignPanelServerError("designpanel_quality_incomplete", "Standard proof inspector did not finish", true);
+  }
+  const texts = (candidate?.content?.parts || []).filter((part) => typeof part?.text === "string");
+  if (texts.length !== 1 || Buffer.byteLength(texts[0].text, "utf8") > 16 * 1024) {
+    throw new DesignPanelServerError("designpanel_quality_response_invalid", "Standard proof inspector returned an invalid response", true);
+  }
+  let review;
+  try { review = JSON.parse(texts[0].text.trim()); } catch {
+    throw new DesignPanelServerError("designpanel_quality_response_invalid", "Standard proof inspector response was not JSON", true);
+  }
+  const fields = [
+    "cameraPass", "vehiclePass", "customerTextPass", "logoPass", "requestedPhotoPass",
+    "professionalDesignPass", "photorealismPass", "studioPass", "wrapCoveragePass", "pickupBedPass",
+  ];
+  if (review?.inspectionId !== inspectionId
+    || fields.some((field) => typeof review?.[field] !== "boolean")
+    || !Number.isFinite(Number(review?.confidence))
+    || !Array.isArray(review?.reasons)) {
+    throw new DesignPanelServerError("designpanel_quality_response_invalid", "Standard proof inspector fields were invalid", true);
+  }
+  const failed = fields.filter((field) => review[field] !== true);
+  if (failed.length || Number(review.confidence) < STANDARD_QC_CONFIDENCE) {
+    throw new DesignPanelServerError(
+      "designpanel_quality_rejected",
+      `Standard proof rejected: ${[...failed, ...review.reasons].join("; ")}`.slice(0, 700),
+      true,
+    );
+  }
+  return review;
+}
+
+async function inspectStandardProof({ provider, input, sourceViewType, bytes, signal }) {
+  if (!provider || typeof provider.generateRaw !== "function") {
+    throw new DesignPanelServerError("designpanel_quality_transport_missing", "Standard proof QC requires provider.generateRaw", false);
+  }
+  const inspectionId = sha256(bytes);
+  const transport = await standardProofTransport(bytes);
+  const result = await provider.generateRaw({
+    model: STANDARD_QC_MODEL,
+    body: {
+      contents: [{ parts: [
+        { inlineData: { mimeType: "image/jpeg", data: transport.toString("base64") } },
+        { text: standardProofQcPrompt({ input, sourceViewType, inspectionId }) },
+      ] }],
+      generationConfig: { temperature: 0, responseMimeType: "application/json" },
+    },
+    signal,
+    timeoutMs: STANDARD_QC_TIMEOUT_MS,
+    label: `Standard ${angles.viewLabel(sourceViewType)} semantic QC`,
+  });
+  return standardProofQcReview(result?.payload, inspectionId);
 }
 
 /** Artifact-level evidence required to compare a run with the Porsche baseline. */
@@ -490,6 +583,9 @@ Preserve every color, pattern, graphic, logo, wordmark, line of text, spelling, 
 Finish: ${finish.toUpperCase()} — ${finishSpec} Keep this finish identical across every view.
 
 ${STUDIO_ENVIRONMENT}
+
+${WRAP_COVERAGE_RULES}
+${truckBedClause(vehicle)}
 
 The vehicle and studio must be the same as View 1; only the camera moves.${photoLock}`;
 }
@@ -846,42 +942,61 @@ async function producePassengerView({ driverBytes, provider, call, prompt = "", 
     return rawResult("not-required");
   }
 
-  let fixed;
-  try {
-    fixed = await fixMirrorText({ mirrorBytes: rawMirror, provider, call, atlasAuthority });
-  } catch (cause) {
-    return rawResult("failed-raw-mirror-kept", String(cause?.message || cause).slice(0, 300));
+  const failures = [];
+  for (let repairAttempt = 1; repairAttempt <= 2; repairAttempt += 1) {
+    let fixed;
+    try {
+      fixed = await fixMirrorText({
+        mirrorBytes: rawMirror,
+        provider,
+        call: { ...call, passengerRepairAttempt: repairAttempt },
+        atlasAuthority,
+      });
+    } catch (cause) {
+      failures.push(`attempt ${repairAttempt}: ${String(cause?.message || cause).slice(0, 240)}`);
+      continue;
+    }
+
+    const undone = await textFixUndidTheMirror(driverBytes, fixed.bytes);
+    if (undone === true) {
+      failures.push(`attempt ${repairAttempt}: returned driver-facing image`);
+      continue;
+    }
+    if (undone !== false) {
+      failures.push(`attempt ${repairAttempt}: orientation was ambiguous`);
+      continue;
+    }
+
+    const framing = await passengerFramingVerdict(rawMirror, fixed.bytes);
+    if (!framing.matches) {
+      failures.push(
+        `attempt ${repairAttempt}: ${framing.reason}${framing.detail ? ` (${framing.detail})` : ""}`,
+      );
+      continue;
+    }
+    return {
+      ...fixed,
+      metadata: {
+        passengerProducer: "producePassengerView",
+        deterministicMirror: true,
+        textRepair: "accepted-opposite-facing",
+        textRepairAttempts: repairAttempt,
+        framingVerified: true,
+        framingMae: framing.mae,
+        pixelDimensions: framing.candidateDimensions,
+      },
+    };
   }
 
-  const undone = await textFixUndidTheMirror(driverBytes, fixed.bytes);
-  if (undone === true) {
-    return rawResult("returned-driver-facing-raw-mirror-kept");
-  }
-  // Only an explicit opposite-facing verdict may proceed. Ambiguous results
-  // include undecodable/invalid model bytes because orientation verification
-  // itself is fail-closed.
-  if (undone !== false) {
-    return rawResult("ambiguous-orientation-raw-mirror-kept");
-  }
-
-  const framing = await passengerFramingVerdict(rawMirror, fixed.bytes);
-  if (!framing.matches) {
-    return rawResult(
-      `${framing.reason}-raw-mirror-kept`,
-      framing.detail || (framing.mae == null ? null : `normalized-mae=${framing.mae.toFixed(6)}`),
-    );
-  }
-  return {
-    ...fixed,
-    metadata: {
-      passengerProducer: "producePassengerView",
-      deterministicMirror: true,
-      textRepair: "accepted-opposite-facing",
-      framingVerified: true,
-      framingMae: framing.mae,
-      pixelDimensions: framing.candidateDimensions,
-    },
-  };
+  // A raw mirror is useful only as an edit source. Publishing it as the
+  // passenger proof guarantees every word and logo is backwards, which is
+  // worse than a failed slot. Two bounded surgical repairs were attempted;
+  // now fail closed and let the generation engine record the rejected slot.
+  throw new DesignPanelServerError(
+    "designpanel_passenger_text_repair_required",
+    `Passenger text repair did not produce a verified forward-reading proof: ${failures.join("; ")}`.slice(0, 900),
+    false,
+  );
 }
 
 function createDesignPanelServerProvider(options = {}) {
@@ -941,8 +1056,39 @@ function createDesignPanelServerProvider(options = {}) {
   async function generateImage(call = {}) {
     const sourceViewType = String(call.sourceViewType || "").trim();
     if (!sourceViewType) throw new DesignPanelServerError("designpanel_server_view_missing", "A source view is required");
+
+    const qualityChecked = async (generated) => {
+      if (typeof provider.generateRaw !== "function") {
+        if (provider.contract) {
+          throw new DesignPanelServerError(
+            "designpanel_quality_transport_missing",
+            "The production image provider cannot perform Standard proof QC",
+            false,
+          );
+        }
+        // Unit-test doubles without the production transport remain usable;
+        // the real provider always carries a contract and generateRaw.
+        return generated;
+      }
+      const review = await inspectStandardProof({
+        provider,
+        input,
+        sourceViewType,
+        bytes: generated.bytes,
+        signal: call.signal,
+      });
+      return {
+        ...generated,
+        metadata: {
+          ...(generated.metadata || {}),
+          standardQualityContract: "designpro.standard-proof-semantic-qc.v1",
+          standardQualityConfidence: Number(review.confidence),
+          standardQualityInspectionId: review.inspectionId,
+        },
+      };
+    };
     if (sourceViewType === HERO_VIEW) {
-      const generated = await provider.generateImage(call);
+      const generated = await qualityChecked(await provider.generateImage(call));
       return {
         ...generated,
         contract: SERVER_PROVIDER_CONTRACT,
@@ -959,12 +1105,19 @@ function createDesignPanelServerProvider(options = {}) {
       throw new DesignPanelServerError("designpanel_server_hero_required", `${sourceViewType}: accepted View 1 is required`, false);
     }
     if (sourceViewType === PASSENGER_VIEW) {
-      const generated = await producePassengerView({
+      const generated = await qualityChecked(await producePassengerView({
         driverBytes: acceptedHero.bytes,
         provider,
         call,
-        prompt: input?.brief,
-      });
+        prompt: [
+          input?.brief,
+          input?.companyName,
+          input?.phone,
+          input?.website,
+          input?.textLayerPrompt,
+          input?.logoAsset ? "verified customer logo" : "",
+        ].filter(Boolean).join("\n"),
+      }));
       return {
         ...generated,
         contract: SERVER_PROVIDER_CONTRACT,
@@ -983,12 +1136,12 @@ function createDesignPanelServerProvider(options = {}) {
       prompt: buildReproductionPrompt({ input, sourceViewType }),
       reference: acceptedHero.reference,
     });
-    const generated = await provider.generateImage({
+    const generated = await qualityChecked(await provider.generateImage({
       ...call,
       parts: request.parts,
       responseModalities: request.responseModalities,
       temperature: 1,
-    });
+    }));
     return {
       ...generated,
       contract: SERVER_PROVIDER_CONTRACT,
@@ -1197,6 +1350,7 @@ module.exports = {
   estimatedGeminiImageRequestBytes,
   fixMirrorText,
   generatePassengerMirror,
+  inspectStandardProof,
   orientationSignature,
   orientationVerdict,
   passengerFramingVerdict,
@@ -1227,5 +1381,9 @@ module.exports = {
     PHOTOREALISM_REQUIREMENT,
     VIEW_REINFORCEMENT,
     WRAP_COVERAGE_RULES,
+    STANDARD_QC_MODEL,
+    STANDARD_QC_CONFIDENCE,
+    standardProofQcPrompt,
+    standardProofQcReview,
   },
 };
