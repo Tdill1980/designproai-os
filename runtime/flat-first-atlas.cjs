@@ -47,6 +47,7 @@ const CENTER_ORDER = Object.freeze(["rear", "roof", "hood", "front"]);
 const PROOF_VIEWS = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
 const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 const BLEED_INCHES = 5;
+const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 const TARGET_PRINT_PPI = 150;
 const PROJECTION_CONTRACT = "designpro.flat-first-atlas-projection.v1";
 const VIEW_AUTHORITY_CONTRACT = "designpro.flat-first-atlas-view-authority.v1";
@@ -605,6 +606,75 @@ async function viewAuthorityDerivative(masterBytes, manifest, sourceViewType) {
   );
 }
 
+/**
+ * CALL 1 CUTS THE SIX PANELS.
+ *
+ * The panels a buyer is enticed with, and the panels PanelPro Studio is later
+ * served, are cut here -- from the canonical master, at Call 1, before any GENIE
+ * dimension exists and before the production workflow is created. Nothing
+ * downstream re-derives them; Call 9 promotes these exact bytes.
+ *
+ * It is pure geometry. Every zone already carries its extraction rectangle, its
+ * inverse rotation, and its real per-side dimensions with the five-inch bleed
+ * already included (trimWidthIn + BLEED_INCHES * 2). So there is nothing to
+ * infer: crop, unrotate, stamp the size on it.
+ *
+ * PNG, not the JPEG the view authorities use. A view authority is conditioning
+ * evidence for another model; a panel is print artwork, and print artwork is
+ * never handed a lossy round trip.
+ */
+async function cutCallOnePanels(masterBytes, manifest) {
+  const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
+  return Promise.all(SURFACE_KEYS.map(async (surfaceKey) => {
+    const zone = zones.find((candidate) => candidate.surfaceKey === surfaceKey);
+    if (!zone?.extraction) {
+      throw new FlatAtlasError("flat_atlas_panel_zone_missing", `${surfaceKey} master zone is missing`);
+    }
+    const extract = {
+      left: Number(zone.extraction.x),
+      top: Number(zone.extraction.y),
+      width: Number(zone.extraction.w),
+      height: Number(zone.extraction.h),
+    };
+    if (!Object.values(extract).every(Number.isSafeInteger)
+      || extract.left < 0 || extract.top < 0 || extract.width < 1 || extract.height < 1
+      || extract.left + extract.width > CANVAS.widthPx
+      || extract.top + extract.height > CANVAS.heightPx) {
+      throw new FlatAtlasError("flat_atlas_panel_zone_invalid", `${surfaceKey} extraction is outside the canonical master`);
+    }
+    const bytes = await sharp(masterBytes, { limitInputPixels: false })
+      .extract(extract)
+      .rotate(Number(zone.extraction.outputRotationDegrees || 0))
+      .flatten({ background: "#ffffff" })
+      .removeAlpha()
+      .toColourspace("srgb")
+      .png()
+      .toBuffer();
+    const metadata = await sharp(bytes).metadata();
+    return Object.freeze({
+      contract: CALL_ONE_PANEL_CONTRACT,
+      surfaceKey,
+      bytes,
+      contentHash: sha256(bytes),
+      byteSize: bytes.length,
+      contentType: "image/png",
+      pixelWidth: Number(metadata.width || 0),
+      pixelHeight: Number(metadata.height || 0),
+      // The design-time size of this surface. GENIE replaces it with the
+      // validated production size only when the pack is ordered.
+      trimWidthIn: Number(zone.trimWidthIn),
+      trimHeightIn: Number(zone.trimHeightIn),
+      printWidthIn: Number(zone.printWidthIn),
+      printHeightIn: Number(zone.printHeightIn),
+      surfaceSqFt: Number(zone.surfaceSqFt),
+      bleedInches: BLEED_INCHES,
+      effectivePpi: Number(zone.effectivePpi),
+      geometryPurpose: "calls-1-7-layout-only",
+      sourceMasterHash: sha256(masterBytes),
+    });
+  }));
+}
+
 async function buildViewAuthorities(masterBytes, manifest) {
   const entries = await Promise.all(PROOF_VIEWS.map(async (sourceViewType) => [
     sourceViewType,
@@ -890,6 +960,7 @@ function atlasStoragePath({ tenantKey, generationId, revisionSequence = 1, kind,
   if (kind === "manifest") return `${prefix}/manifest/${contentHash}.json`;
   if (kind === "master") return `${prefix}/revisions/${Number(revisionSequence)}/master/${contentHash}.png`;
   if (kind === "projection") return `${prefix}/revisions/${Number(revisionSequence)}/projection/${contentHash}.jpg`;
+  if (kind === "panel") return `${prefix}/revisions/${Number(revisionSequence)}/panels/${contentHash}.png`;
   throw new FlatAtlasError("flat_atlas_artifact_kind_invalid", `Unknown atlas artifact ${kind}`);
 }
 
@@ -921,6 +992,10 @@ async function rowIdentity(row, manifest, masterBytes, projectionBytes, { reused
       guideContentHash: row.example_guide_hash,
       masterContentHash: row.example_master_hash,
     } : null,
+    // The six panels Call 1 cut, each with the design-time size of its side.
+    // Read off the immutable row so a resumed run projects the same sizes it
+    // cut with, rather than re-deriving them.
+    callOnePanels: Array.isArray(row.metadata?.callOnePanels) ? row.metadata.callOnePanels : [],
     guide: {
       storagePath: row.guide_storage_path,
       contentHash: row.guide_content_hash,
@@ -1191,6 +1266,11 @@ async function generateOrReuseFlatAtlas(options) {
     );
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
+  // Call 1 cuts the six panels. They are what RevisionStudio shows to entice the
+  // buyer and what PanelPro Studio is later served, so they are produced here --
+  // before GENIE, before the production workflow exists -- rather than being
+  // re-derived downstream from a 3D render.
+  const callOnePanels = await cutCallOnePanels(masterBytes, manifest);
   const projection = await projectionDerivative(masterBytes);
   const projectionStoragePath = atlasStoragePath({
     tenantKey, generationId, revisionSequence, kind: "projection", contentHash: projection.contentHash,
@@ -1205,7 +1285,37 @@ async function generateOrReuseFlatAtlas(options) {
     store.putImmutableBytes({
       storagePath: projectionStoragePath, bytes: projection.bytes, contentType: projection.contentType,
     }),
+    ...callOnePanels.map((panel) => store.putImmutableBytes({
+      storagePath: atlasStoragePath({
+        tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
+      }),
+      bytes: panel.bytes,
+      contentType: panel.contentType,
+    })),
   ]);
+  // Identity + the design-time size of every side, recorded on the immutable
+  // revision. Downstream consumes these; it never re-cuts them.
+  const callOnePanelRecords = callOnePanels.map((panel) => ({
+    contract: panel.contract,
+    surfaceKey: panel.surfaceKey,
+    storagePath: atlasStoragePath({
+      tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
+    }),
+    contentHash: panel.contentHash,
+    byteSize: panel.byteSize,
+    contentType: panel.contentType,
+    pixelWidth: panel.pixelWidth,
+    pixelHeight: panel.pixelHeight,
+    trimWidthIn: panel.trimWidthIn,
+    trimHeightIn: panel.trimHeightIn,
+    printWidthIn: panel.printWidthIn,
+    printHeightIn: panel.printHeightIn,
+    surfaceSqFt: panel.surfaceSqFt,
+    bleedInches: panel.bleedInches,
+    effectivePpi: panel.effectivePpi,
+    geometryPurpose: panel.geometryPurpose,
+    sourceMasterHash: masterHash,
+  }));
 
   const topologyExample = topologyExamples.find((example) => example?.identity?.exampleId) || null;
   const primaryTopologyExample = topologyExamples[0] || null;
@@ -1251,6 +1361,9 @@ async function generateOrReuseFlatAtlas(options) {
       pipelineMode: PIPELINE_MODE,
       topology: TOPOLOGY,
       geometryAuthority: manifest.geometryAuthority,
+      // The six panels Call 1 cut, with the design-time size of each side.
+      callOnePanelContract: CALL_ONE_PANEL_CONTRACT,
+      callOnePanels: callOnePanelRecords,
       examplePurpose: EXAMPLE_PURPOSE,
       topologyExamplesApplied: topologyExamples.length,
       topologyExampleIdentity: primaryTopologyExample?.identity || null,
@@ -1333,6 +1446,8 @@ This crop is full-bleed print artwork: it intentionally continues behind windows
 }
 
 module.exports = {
+  CALL_ONE_PANEL_CONTRACT,
+  cutCallOnePanels,
   ATLAS_CONTRACT,
   BLEED_INCHES,
   CANVAS,
