@@ -134,6 +134,19 @@ test("Caddy installer safely consolidates only explicitly known legacy DesignPro
   assert.match(install, /already appears in another Caddy config/);
 });
 
+test("Caddy activation falls back to one controlled restart and rollback restarts the old config", () => {
+  const install = read("install-caddy.sh");
+  assert.match(install, /if ! systemctl reload caddy; then\s+echo "Caddy reload was refused; using one controlled service restart" >&2\s+systemctl restart caddy\s+fi/);
+  assert.match(install, /Caddy update failed; restoring the previous Caddy configuration/);
+  assert.match(install, /caddy validate --adapter caddyfile --config "\$main" >\/dev\/null 2>&1 \|\| true/);
+  assert.ok(
+    install.indexOf('cp -a "$backup_dir/Caddyfile.before" "$main"')
+      < install.indexOf('systemctl restart caddy >/dev/null 2>&1 || true'),
+    "rollback must restore the prior Caddyfile before restarting Caddy",
+  );
+  assert.match(install, /journalctl -u caddy --since '-3 minutes' --no-pager -n 120/);
+});
+
 test("acceptance validates the regular exact release target, never the current symlink", () => {
   const acceptance = read("acceptance.sh");
   assert.match(acceptance, /release="\$ROOT\/releases\/\$sha"/);
