@@ -769,6 +769,16 @@ export default function ProductionWorkflow() {
 
       <Panel eyebrow="Automatic workflow" title="Server-owned stages">
         <StageTimeline job={job} />
+        {/* The two surfaces this job feeds: the customer watches the panelizer,
+            the design team works the per-side board. Both read this same run. */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/designpro/jobs/${generationId}/progress`}>GENIE panelizer progress</Link>
+          </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/designpro/jobs/${generationId}/panelpro`}>PanelPro Studio board</Link>
+          </Button>
+        </div>
       </Panel>
 
       {artifactsError && <Notice tone="error">{artifactsError}</Notice>}

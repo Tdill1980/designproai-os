@@ -49,6 +49,12 @@ const CUSTOMER_ROUTE_MODULES = [
   "pages/PanelSizer.tsx",
   "pages/DesignStudio.tsx",
   "pages/DesignProStudio.tsx",
+  // The design team's per-side validation board and the customer's build
+  // progress page. Both were RestylePro surfaces driven from the browser and
+  // are rebuilt server-backed, so they are inside the seam closure like every
+  // other customer-reachable module.
+  "pages/designpro/PanelProStudioBoard.tsx",
+  "pages/designpro/GenieProgress.tsx",
 ];
 
 /**
