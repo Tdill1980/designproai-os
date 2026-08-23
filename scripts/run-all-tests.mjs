@@ -19,6 +19,7 @@ const required = [
   "runtime/genie-universal-resolver.cjs",
   "runtime/gemini-flat-surface.cjs",
   "runtime/designpanel-server-provider.cjs",
+  "runtime/designpanel-edge-provider.cjs",
   "runtime/server-grid-slice.cjs",
   "runtime/output-qc.cjs",
   "runtime/resend-transport.cjs",
