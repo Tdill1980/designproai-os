@@ -161,6 +161,41 @@ template.** That is what `await_panelpro_preflight_qc` is for. `masterQcPassed`
 stays `true` because the *design* passed; the cut-out is panel-scoped and
 carried separately. Locked by `tests/atlas-master-qc.test.mjs`.
 
+### DO NOT RE-ROLL FOR A CUT-OUT. FILL IT. (Trish 2026-08-24)
+
+**A cut-out is never worth another authoring pass.** Re-rolling costs ~60s and
+buys nothing: the proofs mask that region away, so the design is already
+correct, and the panel is repaired deterministically. Spending three passes
+hoping Gemini draws it solid put two minutes on the critical path *before the
+customer saw a single image*. Call 1 now breaks on a cut-out's first
+appearance. Re-rolls remain only for a broken **design**, where another throw is
+genuinely the only remedy.
+
+**The proofs use the authored master; the panels use a filled duplicate.**
+`runtime/atlas-cutout-fill.cjs` closes each convicted hole by repeatedly
+averaging its boundary pixels from the artwork they already touch, growing the
+surrounding design inward from every side. Deterministic, ~100ms, no AI, **no
+second producer of design**.
+
+- The master is **never mutated** — same rule as the Call 11 de-logo set:
+  duplicate, modify the duplicate, preserve the original byte for byte. It stays
+  the authority the seven proofs are conditioned on and hash-bound to.
+- The fill reads its mask from `atlas-master-qc.cjs`'s **own exported
+  thresholds** (`CUTOUT_ALPHA_MAX`, `FLAT_BLACK_CHANNEL_MAX`,
+  `MIN_CUTOUT_COMPONENT_RATIO`). Two definitions of "hole" would let the fill
+  miss a shape the gate convicted, or erase artwork it never objected to.
+- Master and duplicate differ **only inside the holes** — exactly the region the
+  proof masks away — so proof and panel still agree everywhere either asserts
+  anything. `panelSourceHash` records what the panels were actually cut from;
+  it equals `canonicalMasterHash` on a clean master.
+- **Mirroring is not used.** It is well defined across a straight outer edge,
+  which is why the 5″ bleed uses it, and undefined across an interior hole.
+
+It does not invent: a large hole closes as a soft continuation of its own
+border, not as new design. `masterCutoutSurfaces` still records that the sheet
+arrived holed, and PanelPro's human QC still sees those sides flagged. Locked by
+`tests/atlas-cutout-fill.test.mjs`.
+
 ## 🖥️ RULE 0.16 — CALLS 1–7 EXECUTE ON THIS SERVER (2026-08-23)
 
 `design-panel-ai-generate` and `generate-color-render` run **in this runtime**,

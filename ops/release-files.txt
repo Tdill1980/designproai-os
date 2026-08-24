@@ -46,6 +46,7 @@ runtime/generation-provider.cjs
 runtime/designpanel-server-provider.cjs
 runtime/designpanel-edge-provider.cjs
 runtime/atlas-master-qc.cjs
+runtime/atlas-cutout-fill.cjs
 runtime/atlas-proof-qc.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs

@@ -14,7 +14,7 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 50);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 51);
   for (const name of [
     // stamp.build requires it at module load, so a release without it dies at
     // require time rather than merely shipping a pack with no certificate.
