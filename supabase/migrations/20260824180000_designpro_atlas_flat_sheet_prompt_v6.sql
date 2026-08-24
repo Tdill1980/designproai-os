@@ -30,6 +30,7 @@
 -- The body below is the 20260823230000 definition reproduced verbatim with that
 -- one string changed. No lineage, role, hash, provider or contract evidence is
 -- relaxed.
+CREATE OR REPLACE FUNCTION designpro_private.flat_first_atlas_view_set_valid(
   p_request_id uuid
 ) RETURNS boolean
 LANGUAGE plpgsql
