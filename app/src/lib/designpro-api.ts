@@ -333,6 +333,14 @@ export type PreflightQc = {
   panelHashesVerified: boolean;
   logoInventoryVerified: boolean;
   textLockVerified: boolean;
+  /**
+   * The six sides the designer approved individually, each against its own proof
+   * and its own panel. The board has always gated its button on all six; they
+   * just never left the browser, so the receipt recorded the six checkboxes and
+   * nothing about whether anyone looked at the rear panel. The gateway refuses
+   * anything other than exactly the six canonical surfaces.
+   */
+  approvedSides: string[];
 };
 
 export type FinalQc = {

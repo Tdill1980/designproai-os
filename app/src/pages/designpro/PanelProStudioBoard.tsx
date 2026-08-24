@@ -20,7 +20,7 @@
  * panels, and the eighteen verified output files.
  *
  * Two real server gates run through it. The six side attestations plus the six
- * preflight checks roll into await_panelpro_preflight_qc, which releases the
+ * preflight checks both travel to await_panelpro_preflight_qc, which releases the
  * panels into Topaz and the output build; the three final checks roll into
  * await_final_human_qc, which is what lets the run stamp, ZIP and deliver to
  * WrapBox. Nothing ships until both are ticked, which is the rule the board
@@ -279,7 +279,13 @@ export default function PanelProStudioBoard() {
     setSubmitting(true);
     setSubmitError("");
     try {
-      await dpApi.approvePreflight(generationId, checks as unknown as PreflightQc, notes);
+      await dpApi.approvePreflight(
+        generationId,
+        // The per-side approvals travel with the checkboxes. They are what the
+        // board actually gates on, so the receipt should record them too.
+        { ...checks, approvedSides: [...approvedSides].sort() } as unknown as PreflightQc,
+        notes,
+      );
       await load();
     } catch (cause) {
       setSubmitError(cause instanceof Error ? cause.message : "The preflight approval was refused.");

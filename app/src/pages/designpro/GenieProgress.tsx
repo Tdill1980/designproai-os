@@ -1,6 +1,13 @@
 /**
  * GENIE Universal Panelizer — the customer-facing build progress page.
  *
+ * The glowing diagram is the ORIGINAL PanelizerProgressDiagram, reused rather
+ * than reimplemented: it is the surface the customer already knows and it is
+ * pure presentation with no data access of its own. What changed is where its
+ * props come from. The built card fed it out of `panelizer_jobs` through a
+ * browser Supabase client -- a second reader of a table this server does not
+ * own. Here the same component is driven by the run's own artifacts.
+ *
  * "When all panels glow, it's a go." The step rail, the glowing per-side
  * thumbnails and the terminal states are the surface the customer watches while
  * the server works, and they are reported here from the server's own run state
@@ -24,6 +31,8 @@ import {
   WorkflowArtifact,
   WorkflowStatus,
 } from "@/lib/designpro-api";
+import { PanelizerProgressDiagram } from "@/components/production/PanelizerProgressDiagram";
+import type { PackPanel } from "@/lib/panelizer-config";
 import { Loading, Notice, PageHead, Panel, StatePill } from "@/components/designpro/surface";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -43,6 +52,16 @@ const RAIL: Array<{ key: string; label: string; stages: string[] }> = [
 ];
 
 type StepState = "complete" | "active" | "waiting" | "pending";
+
+/** Canonical surface_key -> the zone ids PanelizerProgressDiagram lays out. */
+const ZONE_ID_FOR_SURFACE: Record<string, string> = {
+  driver: "driver-side",
+  passenger: "passenger-side",
+  hood: "hood",
+  roof: "roof",
+  front: "front-bumper",
+  rear: "rear",
+};
 
 function railState(job: WorkflowStatus | undefined, stages: string[]): StepState {
   if (!job) return "pending";
@@ -105,6 +124,27 @@ export default function GenieProgress() {
 
   const glowing = PRODUCTION_SURFACES.filter((side) => panelSides.has(side)).length;
   const allGlow = glowing === PRODUCTION_SURFACES.length;
+
+  // The diagram draws the zones a design HAS, sized from the panel the server
+  // actually cut. A side with no Call 9 panel still gets a zone -- the customer
+  // needs to see the hole -- but it is never reported as lit.
+  const packPanels = useMemo<PackPanel[]>(() => PRODUCTION_SURFACES.map((side) => {
+    const panel = artifacts.find((item) => item.kind === "panel" && item.surfaceKey === side);
+    const metadata = (panel?.metadata || {}) as Record<string, unknown>;
+    return {
+      id: ZONE_ID_FOR_SURFACE[side] || side,
+      label: SURFACE_LABEL[side] || side,
+      widthInches: Number(metadata.printWidthIn ?? metadata.widthInches ?? 0),
+      heightInches: Number(metadata.printHeightIn ?? metadata.heightInches ?? 0),
+      // Passenger is a deterministic mirror of the driver panel. Saying so on
+      // the customer's own progress page is the same statement the print files
+      // carry, not a UI flourish.
+      mirrored: side === "passenger",
+    };
+  }), [artifacts]);
+
+  const packState = allGlow ? "complete" : glowing > 0 ? "processing" : "pending";
+  const zipArtifact = artifacts.find((item) => item.kind === "zip");
   const active = viewByRole.get(activeRole);
 
   if (loading && !job) {
@@ -158,6 +198,35 @@ export default function GenieProgress() {
               );
             })}
           </ol>
+        </Panel>
+      )}
+
+      {job && (
+        <Panel
+          eyebrow="ProductionFlow · UniversalPanelizer™"
+          title="When all panels glow, it's a go"
+          description={`${glowing} of ${PRODUCTION_SURFACES.length} panels ${allGlow ? "complete" : "processing"}`}
+        >
+          <PanelizerProgressDiagram
+            panels={packPanels}
+            completedCount={glowing}
+            totalCount={PRODUCTION_SURFACES.length}
+            status={job.state === "failed" ? "failed" : packState}
+          />
+          <p className="mt-3 text-xs text-muted-foreground">
+            {allGlow
+              ? "Files sent to Admin QC — 24h review window active."
+              : "Each panel glows when the server has cut its print file. When all glow, it's a go."}
+          </p>
+          {zipArtifact && (
+            <div className="mt-3">
+              <Button asChild size="sm">
+                <a href={zipArtifact.signedUrl} download={`production-pack-${job.orderNumber || job.designId}.zip`}>
+                  Download production pack
+                </a>
+              </Button>
+            </div>
+          )}
         </Panel>
       )}
 
