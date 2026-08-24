@@ -627,7 +627,12 @@ async function approvedViewsForRun(fetchImpl, token, cfg, run, userId) {
   const requestRows = await requestResponse.json();
   if (!Array.isArray(requestRows) || requestRows.length !== 1) return [];
 
-  const fields = encodeURIComponent("id,consumer_role,source_view_type,storage_path,content_hash,byte_size,content_type");
+  // `metadata` is selected only to project the read-only A.T.L.A.S. binding
+  // below. It proves, per proof, WHICH master that proof was rendered from --
+  // the one thing the design team could never see, and the failure they were
+  // burned by most: proofs that were not actually fed the master. Nothing about
+  // the view's identity, storage contract or semantics changes.
+  const fields = encodeURIComponent("id,consumer_role,source_view_type,storage_path,content_hash,byte_size,content_type,metadata");
   const viewResponse = await upstream(fetchImpl,
     `${cfg.supabaseUrl}/rest/v1/designpro_generation_views?select=${fields}&request_id=eq.${encodeURIComponent(String(requestRows[0].id))}&order=consumer_role.asc`,
     { method: "GET" }, token, cfg);
@@ -641,6 +646,8 @@ async function approvedViewsForRun(fetchImpl, token, cfg, run, userId) {
     if (!PRODUCTION_SURFACES.includes(surfaceKey)) continue;
     const storagePath = String(row.storage_path || "");
     if (!authorizedGenerationViewPath(storagePath, userId, generation)) continue;
+    const provider = row?.metadata?.provider;
+    const hashOrNull = (value) => (SHA256_PATTERN.test(String(value || "")) ? String(value).toLowerCase() : null);
     views.push({
       id: String(row.id),
       generationId: generation,
@@ -652,6 +659,19 @@ async function approvedViewsForRun(fetchImpl, token, cfg, run, userId) {
       contentType: String(row.content_type || ""),
       signedUrl: await signedArtifactUrl(fetchImpl, token, cfg, storagePath),
       expiresIn: 300,
+      // Null on a Standard run, which has no master to be bound to. Present on
+      // A.T.L.A.S., where the runtime already refuses to render a proof whose
+      // conditioning bytes do not hash to the master zone -- this only reports
+      // that fact so a human can see it rather than trust it.
+      atlasBinding: provider && typeof provider === "object"
+        ? {
+          masterContentHash: hashOrNull(provider.atlasMasterContentHash),
+          zoneContentHash: hashOrNull(provider.atlasZoneContentHash),
+          zoneSurfaceKey: typeof provider.atlasZoneSurfaceKey === "string" ? provider.atlasZoneSurfaceKey : null,
+          anchoredToDriver: provider.anchoredToView1 === true,
+          deterministicMirror: provider.deterministicMirror === true,
+        }
+        : null,
     });
   }
   return views;

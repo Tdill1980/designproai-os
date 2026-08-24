@@ -294,6 +294,19 @@ export type ApprovedGenerationView = {
   contentType: string;
   signedUrl: string;
   expiresIn: 300;
+  /**
+   * Which master this proof was rendered from — null on a Standard run, which
+   * has no master. The runtime already refuses to render a proof whose
+   * conditioning bytes do not hash to the master zone; this reports that fact
+   * so the design team can SEE the binding rather than trust it.
+   */
+  atlasBinding: {
+    masterContentHash: string | null;
+    zoneContentHash: string | null;
+    zoneSurfaceKey: string | null;
+    anchoredToDriver: boolean;
+    deterministicMirror: boolean;
+  } | null;
 };
 
 export type WorkflowArtifact = {

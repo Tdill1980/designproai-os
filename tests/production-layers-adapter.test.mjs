@@ -59,6 +59,40 @@ test("each panel is paired with its own approved 3D view", () => {
 });
 
 /**
+ * WHICH MASTER DID THIS PROOF COME FROM.
+ *
+ * A proof that drifted from the master is the failure that cost the most: the
+ * customer approves one design and the panels are cut from another. The runtime
+ * already makes it impossible -- the provider refuses to render a proof whose
+ * conditioning bytes do not hash to the master zone -- but none of that was
+ * visible to the design team, who had to take it on trust. The board now shows
+ * it, so this pins the whole path: the gateway must project the binding, and
+ * the board must compare it against the master actually on screen.
+ */
+test("a proof carries the master it was rendered from, all the way to the board", () => {
+  const gateway = readFileSync(new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
+  const board = readFileSync(new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url), "utf8");
+
+  // The metadata has to be selected, or there is nothing to project.
+  assert.match(gateway, /content_type,metadata/);
+  assert.match(gateway, /atlasBinding:/);
+  for (const field of ["masterContentHash", "zoneContentHash", "zoneSurfaceKey", "anchoredToDriver", "deterministicMirror"]) {
+    assert.match(gateway, new RegExp(field), `the gateway must project ${field}`);
+  }
+  // Null rather than a fabricated binding when the run has no master.
+  assert.match(gateway, /:\s*null,\s*\n\s*\}\);/);
+
+  assert.match(api, /atlasBinding:/);
+
+  // The board compares against the master ON SCREEN, not any master, or the
+  // badge would agree with itself while showing a different version.
+  assert.match(board, /binding!\.masterContentHash === selected\.masterContentHash/);
+  assert.match(board, /DIFFERENT MASTER/);
+  // A Standard run and a pre-binding proof are not drifted proofs.
+  assert.match(board, /no master binding/);
+});
+
+/**
  * One resolver, two surfaces. The card renders the same product wherever it is
  * mounted, so where its rows come from is decided once -- otherwise the job
  * page and RevisionStudio can disagree about what a run published.
