@@ -297,6 +297,34 @@ test("black lettering carrying more ink than one arch is not a cut-out", async (
   assert.equal(result.accepted, true, result.failures.join("; "));
 });
 
+test("dark artwork texture past the aggregate bound is not convicted as cut-outs", async () => {
+  // The first real master through this gate (2026-08-24) was refused with
+  // "driver flatBlackRatio=0.073 across 3761 shapes ... wheel/glass/bed shapes
+  // cut out of the panel". Three thousand shapes are not wheels: that is
+  // anti-aliased lettering interiors and shadow detail, which the synthetic
+  // flat-colour fixtures could never produce. Forty 6x6 specks reproduce the
+  // signature -- raw interior ink past 5%, every component under the 0.25%
+  // concentration floor.
+  const specks = Array.from({ length: 40 }, (_, index) => {
+    const x = 5 + (index % 8) * 11;
+    const y = 5 + Math.floor(index / 8) * 11;
+    return `<rect x="${x}" y="${y}" width="6" height="6" fill="#000000"/>`;
+  }).join("");
+  const result = await deterministicMasterChecks(await driverSheet(specks), manifest);
+
+  const driver = result.zones.find((zone) => zone.surfaceKey === "driver");
+  assert.ok(
+    driver.flatBlackRatio > _test.MAX_ZONE_FLAT_BLACK_RATIO,
+    `the fixture must exceed the raw aggregate the old rule convicted on, saw ${driver.flatBlackRatio}`,
+  );
+  assert.ok(driver.cutoutComponentCount >= 30, "the ink must be scattered, not concentrated");
+  assert.ok(
+    driver.concentratedFlatBlackRatio <= _test.MAX_ZONE_FLAT_BLACK_RATIO,
+    `no component reaches the concentration floor, saw ${driver.concentratedFlatBlackRatio}`,
+  );
+  assert.equal(result.accepted, true, result.failures.join("; "));
+});
+
 test("a clean full-bleed sheet reports no cut-out component at all", async () => {
   const result = await deterministicMasterChecks(await driverSheet(""), manifest);
   assert.equal(result.accepted, true, result.failures.join("; "));
