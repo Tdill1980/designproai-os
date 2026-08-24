@@ -28,6 +28,7 @@ const {
   MASTER_QC_CONTRACT,
   createAtlasMasterValidator,
 } = require("./atlas-master-qc.cjs");
+const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -1307,38 +1308,34 @@ async function generateOrReuseFlatAtlas(options) {
       && masterQc.metadata.masterHash === masterHash
       && masterQc.metadata.guideHash === guideHash;
     if (accepted) break;
-    if (attempt === MAX_MASTER_AUTHORING_ATTEMPTS) {
-      // EXHAUSTED. What happens now depends on WHY, because the two failure
-      // classes have completely different blast radii.
-      //
-      // A cut-out is a PRINT defect. The 3D proof masks the master to the real
-      // painted body, so a hole where the wheel arch sits lands in the region
-      // the mask discards anyway -- live proof: the Flamingo Pools seven-view
-      // set (DID-5B2EB96C) came out of a completely ungated cut-out master and
-      // every proof is correct. Killing the whole request over it destroyed a
-      // good design, its DesignID and all seven proofs to prevent a defect that
-      // only exists in the extracted panels. So the design survives, the
-      // affected surfaces are flagged, and the panel is caught where it
-      // actually matters: PanelPro's human QC, on the template, before print.
-      //
-      // Anything else -- a blank zone, no contrast, a passenger flank that is
-      // not the driver's twin -- is a broken DESIGN, not a print defect. There
-      // is nothing worth showing the customer and nothing worth flagging, so it
-      // stays fatal exactly as before.
-      const cutoutOnly = masterQc?.code === "atlas_master_qc_cutouts_present"
-        && masterQc?.metadata?.contract === MASTER_QC_CONTRACT
-        && masterQc.metadata.masterHash === masterHash
-        && masterQc.metadata.guideHash === guideHash
-        && Array.isArray(masterQc?.cutout?.surfaces);
-      if (!cutoutOnly) {
-        throw new FlatAtlasError(
-          "flat_atlas_master_qc_failed",
-          `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
-        );
-      }
+    // A CUT-OUT IS NOT WORTH RE-ROLLING FOR.
+    //
+    // Re-rolling costs a full authoring pass -- about a minute -- and it buys
+    // nothing here: the proofs mask that region away, so the design is already
+    // correct, and the panel is fixed deterministically below by continuing the
+    // artwork that borders the hole. Spending three passes hoping Gemini draws
+    // it solid put two minutes on the critical path before the customer saw a
+    // single image. Re-rolls stay for a broken DESIGN, where another throw is
+    // genuinely the only remedy.
+    const cutoutOnly = masterQc?.code === "atlas_master_qc_cutouts_present"
+      && masterQc?.metadata?.contract === MASTER_QC_CONTRACT
+      && masterQc.metadata.masterHash === masterHash
+      && masterQc.metadata.guideHash === guideHash
+      && Array.isArray(masterQc?.cutout?.surfaces);
+    if (cutoutOnly) {
       masterCutoutSurfaces = masterQc.cutout.surfaces.map(String);
       masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
       break;
+    }
+    if (attempt === MAX_MASTER_AUTHORING_ATTEMPTS) {
+      // Only a broken DESIGN can reach here -- a cut-out broke out above on its
+      // first appearance. A blank zone, no contrast, or a passenger flank that
+      // is not the driver's twin leaves nothing worth showing the customer, and
+      // three throws have already failed to produce one.
+      throw new FlatAtlasError(
+        "flat_atlas_master_qc_failed",
+        `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
+      );
     }
     correctiveParts.length = 0;
     correctiveParts.push({
@@ -1352,11 +1349,22 @@ async function generateOrReuseFlatAtlas(options) {
     });
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
-  // Call 1 cuts the six panels. They are what RevisionStudio shows to entice the
-  // buyer and what PanelPro Studio is later served, so they are produced here --
-  // before GENIE, before the production workflow exists -- rather than being
-  // re-derived downstream from a 3D render.
-  const callOnePanels = await cutCallOnePanels(masterBytes, manifest);
+  // THE PANELS ARE CUT FROM A FILLED DUPLICATE, THE PROOFS FROM THE MASTER.
+  //
+  // `masterBytes` is never touched: it is persisted as authored and remains the
+  // authority the seven proofs are conditioned on and hash-bound to. When the
+  // sheet arrived with a wheel arch punched through it, the panel source is a
+  // duplicate whose holes are closed by continuing the artwork that borders
+  // them -- deterministic pixel work, no AI, no second producer of design.
+  //
+  // The two differ only inside the holes, which is precisely the region the 3D
+  // proof masks away, so proof and panel still agree everywhere either of them
+  // asserts anything. Nothing is filled on a clean master: `fillMasterCutouts`
+  // returns the same buffer and `panelSourceHash` equals `masterHash`.
+  const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
+  const panelSourceBytes = cutoutFill.bytes;
+  const panelSourceHash = cutoutFill.changed ? sha256(panelSourceBytes) : masterHash;
+  const callOnePanels = await cutCallOnePanels(panelSourceBytes, manifest);
   const projection = await projectionDerivative(masterBytes);
   const projectionStoragePath = atlasStoragePath({
     tenantKey, generationId, revisionSequence, kind: "projection", contentHash: projection.contentHash,
@@ -1465,10 +1473,18 @@ async function generateOrReuseFlatAtlas(options) {
       // proofs are sound. A cut-out does not change that -- it is a defect in
       // the printed panel, recorded below and caught at PanelPro's human QC.
       masterQcPassed: true,
-      // Empty on a clean master. Non-empty means these surfaces' PANELS carry a
-      // hole and must not print until a human has looked at them on a template.
+      // Empty on a clean master. Non-empty means the sheet arrived with a hole
+      // in these surfaces; their panels were closed deterministically below and
+      // still must not print until a human has seen them on a template.
       masterCutoutSurfaces,
       masterCutoutFindings,
+      // What the six panels were actually cut from. Equal to canonicalMasterHash
+      // on a clean master; on a filled one it addresses the duplicate, so the
+      // panel bytes are traceable to their source rather than silently differing
+      // from the master the proofs used.
+      panelSourceHash,
+      cutoutFillContract: cutoutFill.changed ? FILL_CONTRACT : null,
+      cutoutFillApplied: cutoutFill.filled,
       masterQcContract: MASTER_QC_CONTRACT,
       masterQcConfidence: masterQc.metadata.confidence,
       masterQcModel: masterQc.metadata.model,

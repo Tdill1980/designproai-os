@@ -428,6 +428,71 @@ export default function PanelProStudioBoard() {
                 </p>
               )}
             </div>
+            {/* BEFORE → AFTER, for this run.
+                The master on the left, the seven proofs it produced on the
+                right, and per proof the evidence that it was actually rendered
+                FROM that master. Proofs drifting from the master is the failure
+                this board exists to make visible: the runtime already refuses to
+                render a proof whose conditioning bytes do not hash to the master
+                zone, so a mismatch here means the proof belongs to a different
+                version -- read the version strip above. */}
+            <div className="mt-4 border-t border-border pt-3">
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                This master → its {views.length} proof{views.length === 1 ? "" : "s"}
+              </div>
+              {views.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No proofs are saved for this run yet.
+                </p>
+              ) : (
+                <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr))]">
+                  {views.map((view) => {
+                    const binding = view.atlasBinding;
+                    // Only a real disagreement is called out. A Standard run has
+                    // no master, and an older proof that predates the binding
+                    // carries no hash -- neither is a drifted proof, so neither
+                    // is reported as one.
+                    const known = Boolean(binding?.masterContentHash && selected.masterContentHash);
+                    const matches = known
+                      && binding!.masterContentHash === selected.masterContentHash;
+                    return (
+                      <div key={view.id} className="rounded-lg border border-border p-1.5">
+                        <a href={view.signedUrl} target="_blank" rel="noreferrer">
+                          <img
+                            src={view.signedUrl}
+                            alt={SURFACE_LABEL[view.surfaceKey] || view.surfaceKey}
+                            className="aspect-[4/3] w-full rounded bg-white object-contain"
+                          />
+                        </a>
+                        <div className="mt-1 truncate text-[11px] font-semibold">
+                          {SURFACE_LABEL[view.surfaceKey] || view.surfaceKey}
+                        </div>
+                        <div
+                          className={cn(
+                            "mt-0.5 text-[10px] font-semibold",
+                            !known
+                              ? "text-muted-foreground"
+                              : matches
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-destructive",
+                          )}
+                        >
+                          {!known
+                            ? "no master binding"
+                            : matches
+                              ? (binding!.deterministicMirror
+                                ? "from this master · mirrored"
+                                : binding!.anchoredToDriver
+                                  ? "from this master · anchored"
+                                  : "from this master · driver")
+                              : "DIFFERENT MASTER"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </Panel>
         );
       })()}

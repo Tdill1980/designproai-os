@@ -650,6 +650,12 @@ module.exports = {
   deterministicMasterChecks,
   masterQcPrompt,
   parseMasterQcResponse,
+  // Exported so the deterministic cut-out fill closes EXACTLY what this gate
+  // convicts. Two definitions of "hole" would let the fill miss a shape the
+  // detector flagged, or erase artwork it never objected to.
+  CUTOUT_ALPHA_MAX,
+  FLAT_BLACK_CHANNEL_MAX,
+  MIN_CUTOUT_COMPONENT_RATIO,
   _test: {
     DEFAULT_CONFIDENCE_THRESHOLD,
     MIN_ZONE_EDGE_OPAQUE_RATIO,
