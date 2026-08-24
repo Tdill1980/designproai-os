@@ -11,6 +11,7 @@
 const { createHash } = require("node:crypto");
 const { AsyncLocalStorage } = require("node:async_hooks");
 const sharp = require("sharp");
+const QRCode = require("qrcode");
 const { canonicalTenantKey, immutableStorageUpload, normalizeLogoAsset, normalizeSourceAsset, safeStoragePath, verifySourceBytes } = require("./runtime-contract.cjs");
 const { resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
 const {
@@ -1180,6 +1181,116 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
   throw new StageError("unsupported_entice_stage", stage.stage_key, false);
 }
 
+/**
+ * The identification slug every print file carries in its right bleed margin.
+ *
+ * A panel with no markings is unusable on a shop floor: six large rectangles of
+ * artwork arrive and nothing says which side each one is, what it measures, or
+ * which job it belongs to. So each output states it, printed down the right
+ * margin the way a printer's slug does.
+ *
+ * WHY IT IS STAMPED HERE AND NOT AT THE CUT. At design time the 5" bleed is
+ * only 59-76 pixels, so nothing legible fits inside it -- a stamp there would
+ * be a few pixels tall. At output the same 5" is 750px, because the panel is
+ * rasterised at (inches + 10) * 150. This is the first point in the chain where
+ * the margin can hold readable type.
+ *
+ * WHY IT SITS IN THE BLEED AND NOT THE TRIM. Everything inside the trim is
+ * artwork the customer approved, and the CORE PRINT RULE requires it to stay
+ * continuous. The bleed is the wrap-around allowance, so it is the only region
+ * that can carry a marking without touching the design. It is rotated to read
+ * up the margin because 750px of width cannot hold the line horizontally, while
+ * the margin's length can.
+ *
+ * WHY A WHITE PLATE AND BLACK TYPE. Outlined type floating on artwork is
+ * legible but never certain -- the bleed carries whatever colours the design
+ * happens to end on. A white plate makes the marking's contrast fixed rather
+ * than a function of the design underneath, and it is what makes the QR
+ * scannable at all: a QR needs light modules and a quiet zone, so printing one
+ * straight onto artwork is unreliable by construction.
+ *
+ * The QR resolves to the panel's own job board, which already sits behind
+ * RequireAuth. An unauthenticated scanner -- a print vendor, a shipping
+ * handler, anyone who sees the panel -- reaches a login wall rather than
+ * production data, so the code carries no payload of its own. That is why it
+ * encodes a URL and not a metadata blob.
+ */
+function panelIdentityLine({ surfaceKey, designId, orderNumber, dims }) {
+  const trimW = Number(dims.widthInches);
+  const trimH = Number(dims.heightInches);
+  return [
+    String(surfaceKey).toUpperCase(),
+    `TRIM ${trimW}" x ${trimH}"`,
+    `PRINT ${trimW + 10}" x ${trimH + 10}" (5" BLEED)`,
+    `${((trimW * trimH) / 144).toFixed(1)} SQ FT`,
+    String(designId),
+    orderNumber ? `ORDER ${orderNumber}` : "",
+  ].filter(Boolean).join("   ·   ");
+}
+
+function panelBoardUrl(generationId) {
+  return `https://os.designproai.com/designpro/jobs/${String(generationId)}/panelpro`;
+}
+
+function panelIdentitySlugSvg({ widthPx, heightPx, bleedPx, surfaceKey, designId, orderNumber, dims, qrModules = null }) {
+  const line = panelIdentityLine({ surfaceKey, designId, orderNumber, dims });
+  // Type sized to the margin, capped so a very deep bleed does not produce
+  // absurd lettering, and floored so it stays readable on the smallest panel.
+  const fontSize = Math.max(24, Math.min(96, Math.round(bleedPx * 0.34)));
+  const inset = Math.round(bleedPx * 0.08);
+  const plateW = bleedPx - inset * 2;
+  // The QR is square and sits at the top of the plate; the type runs up the
+  // remainder. Both are black on the same white ground.
+  const qrSize = qrModules ? plateW : 0;
+  const qrGap = qrModules ? Math.round(bleedPx * 0.12) : 0;
+  const textTop = inset + qrSize + qrGap;
+  const textCentreX = inset + Math.round(plateW / 2);
+  const textCentreY = textTop + Math.round((heightPx - inset - textTop) / 2);
+  // ONLY THE MARGIN STRIP IS DRAWN, not the whole canvas. A driver panel is
+  // 30000x11400 at print scale; rasterising a full-canvas SVG to place one line
+  // of text would cost hundreds of megabytes and, because librsvg scales by its
+  // own density rather than the declared width, came back a different size than
+  // the base image and refused to composite. The strip is bleed-wide, so it is
+  // cheap and its geometry is exact.
+  const qr = qrModules
+    ? `<g transform="translate(${inset} ${inset}) scale(${qrSize / qrModules.size})">`
+      + `<rect width="${qrModules.size}" height="${qrModules.size}" fill="#ffffff"/>`
+      + `<path d="${qrModules.path}" fill="#000000"/></g>`
+    : "";
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${bleedPx}" height="${heightPx}" viewBox="0 0 ${bleedPx} ${heightPx}">`
+    + `<rect x="${inset}" y="${inset}" width="${plateW}" height="${heightPx - inset * 2}" fill="#ffffff"/>`
+    + qr
+    + `<text x="${textCentreX}" y="${textCentreY}" transform="rotate(-90 ${textCentreX} ${textCentreY})" `
+    + `text-anchor="middle" dominant-baseline="central" `
+    + `font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" font-weight="700" `
+    + `letter-spacing="${Math.round(fontSize * 0.06)}" `
+    + `fill="#000000">${escapeXmlText(line)}</text></svg>`,
+  );
+}
+
+/**
+ * The QR as raw geometry rather than a nested SVG document, so it can be scaled
+ * into the plate without librsvg resolving a second viewport.
+ */
+async function panelQrModules(url) {
+  const { modules } = await QRCode.create(String(url), { errorCorrectionLevel: "M" });
+  const size = modules.size;
+  let path = "";
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      if (modules.get(x, y)) path += `M${x} ${y}h1v1h-1z`;
+    }
+  }
+  return { size, path };
+}
+
+function escapeXmlText(value) {
+  return String(value)
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&apos;");
+}
+
 async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
   const sourceRunId = requiredString(run.results?.sourceEnticeRunId || input.sourceEnticeRunId, "sourceEnticeRunId");
   // Production files are rendered from the Call 12 enhanced masters, which are
@@ -1196,6 +1307,19 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
   }
   const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
   const dimensions = new Map((dimensionManifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
+  // The identity every print file is marked with. Read from the immutable
+  // revision snapshot, the same source the QC stamp uses, so the slug on the
+  // panel and the DesignID on the certificate can never disagree.
+  const { data: identitySource, error: identityError } = await sb
+    .from("designpro_revision_sources").select("snapshot").eq("revision_id", run.revision_id).maybeSingle();
+  if (identityError) throw new StageError("output_identity_unavailable", identityError.message, true);
+  const identitySnapshot = requiredObject(identitySource?.snapshot, "immutable revision snapshot");
+  const outputDesignId = canonicalDesignId(identitySnapshot.generationId);
+  const outputOrderNumber = String(identitySnapshot.delivery?.orderNumber || identitySnapshot.orderNumber || "").trim();
+  // One code for the job, built once. It resolves to the job's own PanelPro
+  // board, which is already behind RequireAuth, so an unauthenticated scan
+  // reaches a login wall instead of production data.
+  const outputQrModules = await panelQrModules(panelBoardUrl(identitySnapshot.generationId));
   const produced = [];
   const spools = [];
   for (const panel of panels) {
@@ -1211,6 +1335,23 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
     const left = Math.floor((width - containedMeta.width) / 2); const right = width - containedMeta.width - left;
     const top = Math.floor((height - containedMeta.height) / 2); const bottom = height - containedMeta.height - top;
     if (left || right || top || bottom) contained = await sharp(contained).extend({ left, right, top, bottom, extendWith: "mirror" }).png().toBuffer();
+    // Marked before any format is written, so the PNG, the TIFF and the EPS all
+    // carry the same slug rather than three chances to diverge.
+    contained = await sharp(contained).composite([{
+      input: panelIdentitySlugSvg({
+        widthPx: width,
+        heightPx: height,
+        bleedPx: Math.round(5 * 150),
+        surfaceKey: panel.surface_key,
+        designId: outputDesignId,
+        orderNumber: outputOrderNumber,
+        dims,
+        qrModules: outputQrModules,
+      }),
+      // Placed against the right edge; the strip is exactly the bleed wide.
+      top: 0,
+      left: width - Math.round(5 * 150),
+    }]).png().toBuffer();
     const raster = await sharp(contained).removeAlpha().toColourspace("srgb").png({ compressionLevel: 6 }).withMetadata({ density: 1500 }).toBuffer();
     const slug = String(panel.surface_key).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const base = `designpro/${tenantKey(run.tenant_key)}/${run.id}/outputs/${slug}`;
@@ -2270,4 +2411,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, panelIdentitySlugSvg, panelQrModules, panelBoardUrl, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
