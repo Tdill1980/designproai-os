@@ -744,6 +744,22 @@ export const dpApi = {
       "/wrapbox/recipients/register",
       { method: "POST", body: JSON.stringify(input) },
     ),
+  /**
+   * Bind the order to the design. The purchase gate cannot release until this
+   * exists: the reconciler compares run.input.fulfillment against the revision's
+   * resolved fulfillment, and for a v2 snapshot that comes only from this write.
+   * Register the WrapBox recipient first -- its recipientIdentityHash is the
+   * input here.
+   */
+  bindFulfillment: (generationId: string, input: {
+    recipientIdentityHash: string;
+    orderNumber: string;
+    designName: string;
+  }) =>
+    request<{ bound: true; bindingHash: string }>(
+      `/jobs/${encodeURIComponent(generationId)}/fulfillment`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
   listWrapbox: () => request<WrapboxPack[]>("/wrapbox"),
   getWrapboxPack: (packId: string) =>
     request<WrapboxPack>(`/wrapbox/${encodeURIComponent(packId)}`),

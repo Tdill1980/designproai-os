@@ -541,19 +541,38 @@ export default function PanelProStudioBoard() {
                       {rows.length}/{PRODUCTION_SURFACES.length}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  {/* Presence alone cannot be signed off. The final gate asks a
+                      human to certify resolution, print dimensions and colour
+                      mode, which means the human has to be able to open the
+                      file -- so every one of the eighteen is downloadable here,
+                      not just counted. */}
+                  <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
                     {PRODUCTION_SURFACES.map((side) => {
                       const artifact = rows.find((row) => row.surfaceKey === side);
                       return (
-                        <span
+                        <div
                           key={side}
                           className={cn(
-                            "rounded-full border px-2 py-0.5 text-[11px]",
-                            artifact ? "border-emerald-500/40 text-emerald-300" : "border-border text-muted-foreground",
+                            "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[11px]",
+                            artifact ? "border-emerald-500/40" : "border-border",
                           )}
                         >
-                          {SURFACE_LABEL[side] || side}
-                        </span>
+                          <span className={artifact ? "text-emerald-300" : "text-muted-foreground"}>
+                            {SURFACE_LABEL[side] || side}
+                          </span>
+                          {artifact ? (
+                            <span className="flex shrink-0 items-center gap-2">
+                              <span className="text-muted-foreground">
+                                {artifact.byteSize == null
+                                  ? ""
+                                  : `${(Number(artifact.byteSize) / 1_048_576).toFixed(1)} MB`}
+                              </span>
+                              <SaveLink url={artifact.signedUrl} name={`${side}-print.${format}`} />
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">pending</span>
+                          )}
+                        </div>
                       );
                     })}
                   </div>

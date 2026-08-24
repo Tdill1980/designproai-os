@@ -1802,6 +1802,36 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         }));
       }
 
+      // BIND THE ORDER TO THE DESIGN. Without this the purchase gate can never
+      // release: reconcile_designpro_purchase_gates requires run.input.fulfillment
+      // to equal designpro_private.revision_fulfillment(revision_id), and for a v2
+      // snapshot that resolves only through the late binding this RPC writes.
+      // bind_designpro_revision_fulfillment was granted to `authenticated` and
+      // enforces owner identity, a registered recipient and an exact design-name
+      // match -- it simply had no caller anywhere, so a paid run parked forever.
+      // The caller's own token is passed through so the RPC's auth.uid() fence
+      // does the authorization; this route adds none of its own.
+      const fulfillmentMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/fulfillment$/);
+      if (req.method === "POST" && fulfillmentMatch) {
+        const run = await resolveRun(fetchImpl, token, cfg, decodeURIComponent(fulfillmentMatch[1]));
+        if (!run) return json(res, 404, { error: "job_not_found" });
+        const revisionId = String(run.revision_id || "").toLowerCase();
+        if (!UUID_PATTERN.test(revisionId)) return json(res, 409, { error: "revision_not_frozen" });
+        const body = await readBody(req);
+        const identityHash = String(body.recipientIdentityHash || "").toLowerCase();
+        const orderNumber = String(body.orderNumber || "").trim();
+        const designName = String(body.designName || "").trim();
+        if (!SHA256_PATTERN.test(identityHash) || !orderNumber || !designName) {
+          return json(res, 400, { error: "fulfillment_binding_incomplete" });
+        }
+        return json(res, 202, await rpc(fetchImpl, token, cfg, "bind_designpro_revision_fulfillment", {
+          p_revision_id: revisionId,
+          p_recipient_identity_hash: identityHash,
+          p_order_number: orderNumber,
+          p_design_name: designName,
+        }));
+      }
+
       if (req.method === "POST" && url.pathname === "/api/wrapbox/recipients/register") {
         return json(res, 201, await registerRecipientThroughRuntime(fetchImpl, cfg, user.id, await readBody(req)));
       }
