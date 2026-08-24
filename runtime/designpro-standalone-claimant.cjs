@@ -1295,9 +1295,50 @@ function immutableBusinessIdentity(revisionSource, run) {
   return { designId, orderNumber };
 }
 
+/**
+ * The seal's curved ring caption, drawn as individually rotated glyphs.
+ *
+ * It used to be a <textPath>, which librsvg -- the renderer sharp uses -- does
+ * not implement. It emitted no error and no pixels, so every seal this server has
+ * ever stamped carried a bare ring with the caption silently missing. Measured
+ * both ways: `href` and `xlink:href` each render exactly zero ink.
+ *
+ * Placing each character on the arc is plain SVG that librsvg does support, so
+ * the caption survives rendering instead of depending on a feature the renderer
+ * lacks.
+ */
+function ringCaption(text, centre, radius, size, fill) {
+  const characters = [...String(text)];
+  const span = 170;
+  const start = 180 - (180 - span) / 2;
+  // Advance by approximate glyph width rather than by slot. Equal slots give a
+  // narrow "I" the same arc as a wide "W", which reads as ragged spacing on a
+  // seal that appears on every delivered pack.
+  const widthOf = (character) => {
+    if (character === " ") return 0.5;
+    if ("Il.·'".includes(character)) return 0.45;
+    if ("JT".includes(character)) return 0.8;
+    if ("MW".includes(character)) return 1.3;
+    return 1;
+  };
+  const widths = characters.map(widthOf);
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  let advanced = 0;
+  return characters.map((character, index) => {
+    const centreOffset = advanced + widths[index] / 2;
+    advanced += widths[index];
+    const angle = start - (centreOffset / total) * span;
+    const radians = angle * Math.PI / 180;
+    const x = (centre + radius * Math.cos(radians)).toFixed(1);
+    const y = (centre - radius * Math.sin(radians)).toFixed(1);
+    const glyph = character.replace(/[&<>"']/g, (value) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[value]);
+    return `<text x="${x}" y="${y}" transform="rotate(${(90 - angle).toFixed(1)} ${x} ${y})" text-anchor="middle" font-family="Arial" font-size="${size}" font-weight="700" fill="${fill}">${glyph}</text>`;
+  }).join("");
+}
+
 function stampSvg(verifiedBy, designId, orderNumber, date) {
   const escape = (text) => String(text).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character]);
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000"><defs><path id="qc-ring" d="M 145,500 A 355,355 0 0,1 855,500"/></defs><circle cx="500" cy="500" r="455" fill="none" stroke="#059669" stroke-width="28"/><circle cx="500" cy="500" r="410" fill="none" stroke="#10b981" stroke-width="10"/><text font-family="Arial" font-size="56" font-weight="700" fill="#059669" letter-spacing="4"><textPath href="#qc-ring" startOffset="50%" text-anchor="middle">DESIGNPROAI · QUALITY CONTROL</textPath></text><text x="500" y="385" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#065f46">QUALITY</text><text x="500" y="480" text-anchor="middle" font-family="Arial" font-size="88" font-weight="700" fill="#059669">APPROVED</text><text x="500" y="565" text-anchor="middle" font-family="Arial" font-size="43" font-weight="700" fill="#065f46">DesignID: ${escape(designId)}</text><text x="500" y="625" text-anchor="middle" font-family="Arial" font-size="39" font-weight="700" fill="#065f46">Order #: ${escape(orderNumber)}</text><text x="500" y="692" text-anchor="middle" font-family="Arial" font-size="31" font-weight="700" fill="#065f46">Quality Checked by ${escape(verifiedBy).slice(0, 120)}</text><text x="500" y="745" text-anchor="middle" font-family="Arial" font-size="29" fill="#6b7280">${escape(date)}</text></svg>`);
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000"><circle cx="500" cy="500" r="455" fill="none" stroke="#059669" stroke-width="28"/><circle cx="500" cy="500" r="410" fill="none" stroke="#10b981" stroke-width="10"/>${ringCaption("DESIGNPROAI · QUALITY CONTROL", 500, 355, 56, "#059669")}<text x="500" y="385" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#065f46">QUALITY</text><text x="500" y="480" text-anchor="middle" font-family="Arial" font-size="88" font-weight="700" fill="#059669">APPROVED</text><text x="500" y="565" text-anchor="middle" font-family="Arial" font-size="43" font-weight="700" fill="#065f46">DesignID: ${escape(designId)}</text><text x="500" y="625" text-anchor="middle" font-family="Arial" font-size="39" font-weight="700" fill="#065f46">Order #: ${escape(orderNumber)}</text><text x="500" y="692" text-anchor="middle" font-family="Arial" font-size="31" font-weight="700" fill="#065f46">Quality Checked by ${escape(verifiedBy).slice(0, 120)}</text><text x="500" y="745" text-anchor="middle" font-family="Arial" font-size="29" fill="#6b7280">${escape(date)}</text></svg>`);
 }
 
 async function storageStream(sb, storagePath) {
