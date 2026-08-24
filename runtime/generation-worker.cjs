@@ -540,8 +540,14 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
  *
  *   Driver -> persist/hash-verify Driver -> Passenger and five remaining views
  *
- * Keeping the staging in one exported helper makes the no-parallel contract
- * executable in tests instead of relying on comments or prompt wording.
+ * Driver is isolated and sequential because every later camera is anchored to
+ * its accepted, hash-verified bytes. Once that anchor exists the remaining six
+ * are independent of each other: each is a projection of the same frozen master
+ * onto its own already-cut Call-1 panel, so running them one at a time only
+ * multiplies the customer's wait by six. They now run together.
+ *
+ * Keeping the staging in one exported helper makes that ordering executable in
+ * tests instead of relying on comments or prompt wording.
  */
 async function runAtlasProofStages({
   runRequest = engine.runRequest,
@@ -588,7 +594,9 @@ async function runAtlasProofStages({
     provider,
     store,
     slots: slots.slice(1),
-    parallel: false,
+    // One master is already frozen and the Driver anchor is already verified, so
+    // six concurrent projections cannot become six independent design decisions.
+    parallel: true,
     allowOrphanReconciliation: false,
     maxProviderAttempts: provider.maxProviderAttempts,
   });
