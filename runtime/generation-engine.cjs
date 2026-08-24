@@ -82,6 +82,40 @@ function slotStoragePrefix({ tenantKey, generationId, sourceViewType }) {
   return `designpro/${tenantKey}/${generationId}/calls-1-7/${sourceViewType}`;
 }
 
+// The ONE provider error code that is a semantic verdict rather than a
+// transport fault. Matched on the exact code, never on message text: a
+// substring match would eventually catch a real transport error whose message
+// happens to quote an inspector, and laundering a genuine fault into a
+// rejection spends the regeneration budget on something re-prompting cannot fix.
+const SEMANTIC_QUALITY_REJECTION_CODE = "designpanel_quality_rejected";
+
+function isSemanticQualityRejection(error) {
+  return error?.code === SEMANTIC_QUALITY_REJECTION_CODE;
+}
+
+/**
+ * Turns a thrown inspector rejection into the correction the next attempt reads.
+ *
+ * Same shape the proof QC validator returns on the verdict path, so both
+ * rejection routes hand the renderer the same kind of instruction: name the
+ * inspector, list its findings, and forbid redesigning around them.
+ */
+function semanticRejectionCorrection(error, sourceViewType) {
+  const message = String(error?.message || "").trim();
+  // "Standard proof rejected: a; b; c" -> ["a", "b", "c"]
+  const findings = message.replace(/^[^:]*:\s*/, "")
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (!findings.length) return "";
+  return [
+    `PREVIOUS ATTEMPT REJECTED BY THE ${String(sourceViewType || "proof").toUpperCase()} PROOF INSPECTOR (${error.code}).`,
+    "Correct exactly these findings on this attempt while keeping the artwork authority unchanged:",
+    ...findings.map((entry) => `- ${entry}`),
+    "Satisfy the locked contract above literally. Do not redesign, restyle, recolor or move any artwork to compensate.",
+  ].join("\n").slice(0, 1200);
+}
+
 function classifyFailure(error) {
   const message = String(error?.message || error);
   if (/timed? ?out|TimeoutError/i.test(message)) return OUTCOME.TIMEOUT;
@@ -202,6 +236,46 @@ async function runSlot(options) {
       }
 
       const durationMs = now() - startedAt;
+
+      // A SEMANTIC REJECTION THAT ARRIVES AS A THROW IS STILL A REJECTION.
+      //
+      // The Standard server provider runs its own proof inspector and signals a
+      // failed inspection by throwing designpanel_quality_rejected. That lands
+      // here, in the transport-failure branch, and everything downstream then
+      // treats a QC verdict as a network fault:
+      //
+      //   - classifyFailure() matches none of its patterns, so the attempt is
+      //     recorded as http_error with a null model;
+      //   - `rejections` never increments, so the slot cannot reach
+      //     maxRegenerations and terminates as provider_attempts_exhausted
+      //     instead of semantic_review_required -- the state a human acts on;
+      //   - and no correction is pushed, so the next attempt re-sends a
+      //     byte-identical prompt.
+      //
+      // That last one is the expensive part: the run burns its whole budget
+      // re-asking an unchanged question. Live proof, generation 2c0fc9f4
+      // (2026-08-24), side: four attempts, four inspector rejections naming the
+      // same invented phone number, recorded as four http_errors, then
+      // provider_attempts_exhausted.
+      //
+      // Only this one code is re-routed. Every genuine transport, timeout,
+      // abort, empty-response and unsupported-type failure keeps the branch
+      // below unchanged -- a real provider fault must never be laundered into a
+      // semantic rejection, because that would spend the regeneration budget on
+      // something no amount of re-prompting can fix.
+      if (failure && isSemanticQualityRejection(failure)) {
+        rejections += 1;
+        const correction = semanticRejectionCorrection(failure, sourceViewType);
+        if (correction && !corrections.includes(correction)) corrections.push(correction);
+        const record = {
+          requestId, sourceViewType, attempt, model: failure.model || null, keyFingerprint: null,
+          outcome: "rejected", durationMs, errorCode: failure.code,
+          detail: String(failure.message || failure).slice(0, 500), winnerHash: null,
+        };
+        await store.recordAttemptFinished(record);
+        attempts.push(record);
+        continue;
+      }
 
       if (failure) {
         const record = {
@@ -340,5 +414,5 @@ module.exports = {
   runSlot,
   slotStoragePath,
   slotStoragePrefix,
-  _test: { classifyFailure, extensionFor, sha256 },
+  _test: { classifyFailure, extensionFor, isSemanticQualityRejection, semanticRejectionCorrection, sha256 },
 };

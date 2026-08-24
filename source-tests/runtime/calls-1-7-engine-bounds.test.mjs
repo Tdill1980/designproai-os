@@ -465,3 +465,112 @@ test("slot storage is content-addressed so reconciliation can find it", () => {
   // A slot cannot be addressed without both identity parts.
   assert.throws(() => engine.slotStoragePath({ tenantKey: TENANT, sourceViewType: "side", contentHash: "b".repeat(64), contentType: "image/png" }), /required to address a slot/);
 });
+
+// ── A QC REJECTION IS A VERDICT, NOT A TRANSPORT FAULT ────────────────────────
+//
+// The Standard server provider runs its own proof inspector and signals a failed
+// inspection by THROWING designpanel_quality_rejected. That landed in the
+// transport-failure branch, where a QC verdict was treated as a network fault:
+// recorded as http_error, `rejections` never incremented, no correction pushed,
+// and the slot terminated as provider_attempts_exhausted rather than
+// semantic_review_required.
+//
+// The expensive consequence was the missing correction: every retry re-sent a
+// byte-identical prompt, so the run spent its whole budget re-asking an
+// unchanged question. Live proof, generation 2c0fc9f4 (2026-08-24), side: four
+// attempts, four inspector rejections naming the same invented phone number,
+// four http_errors, then provider_attempts_exhausted.
+
+/** Throws exactly what the Standard server provider throws on a failed inspection. */
+const qcRejectingProvider = () => ({
+  calls: 0,
+  seenParts: [],
+  async generateImage({ parts }) {
+    this.calls += 1;
+    this.seenParts.push(JSON.stringify(parts));
+    const error = new Error(
+      "Standard proof rejected: customerTextPass; A phone number (602-555-0184) is present on the wrap, but the brief specified 'none supplied'.",
+    );
+    error.code = "designpanel_quality_rejected";
+    error.retryable = true;
+    throw error;
+  },
+});
+
+test("A thrown QC rejection counts as a rejection, not a provider failure", async () => {
+  const provider = qcRejectingProvider();
+  const store = makeStore();
+  const result = await engine.runSlot({ ...base, provider, store });
+
+  // (1) it spends the REGENERATION budget, not the provider-attempt budget.
+  assert.equal(provider.calls, engine.MAX_SLOT_REGENERATIONS, "a semantic rejection must spend the regeneration budget");
+  assert.ok(
+    engine.MAX_SLOT_REGENERATIONS < engine.MAX_PROVIDER_ATTEMPTS_PER_SLOT,
+    "this test is only meaningful while the two ceilings differ",
+  );
+
+  // Every attempt is recorded as a rejection carrying the inspector's own code,
+  // never as http_error.
+  assert.ok(store.state.finished.length > 0);
+  for (const row of store.state.finished) {
+    assert.equal(row.outcome, "rejected", "a QC rejection must not be recorded as a transport outcome");
+    assert.equal(row.errorCode, "designpanel_quality_rejected");
+    assert.match(row.detail, /Standard proof rejected/);
+  }
+
+  // (4) and it terminates as the state a human acts on.
+  assert.equal(result.state, "failed");
+  assert.equal(result.reason, "semantic_review_required");
+  assert.notEqual(result.reason, "provider_attempts_exhausted");
+  assert.equal(store.state.failures.at(-1).reason, "semantic_review_required");
+});
+
+test("The inspector's findings reach the next attempt, so the retry prompt changes", async () => {
+  const provider = qcRejectingProvider();
+  const store = makeStore();
+  await engine.runSlot({ ...base, provider, store });
+
+  assert.ok(provider.seenParts.length >= 2, "there must be a retry to compare against");
+
+  // (3) the retry is not a byte-identical re-ask.
+  assert.notEqual(
+    provider.seenParts[0],
+    provider.seenParts[1],
+    "the attempt after a semantic rejection must not re-send an identical prompt",
+  );
+
+  // (2) and the difference is the inspector's own reasons, carried forward.
+  const retry = provider.seenParts[1];
+  assert.match(retry, /PREVIOUS ATTEMPT REJECTED BY THE SIDE PROOF INSPECTOR \(designpanel_quality_rejected\)/);
+  assert.match(retry, /602-555-0184/, "the retry must name the finding it has to correct");
+  assert.match(retry, /customerTextPass/);
+  // The correction instructs a fix, never a redesign around the finding.
+  assert.match(retry, /Do not redesign, restyle, recolor or move any artwork to compensate/);
+});
+
+test("Genuine provider failures still take the transport path", async () => {
+  // (5) Only the one semantic code is re-routed. A real fault must keep
+  // spending the provider-attempt budget and keep its transport outcome --
+  // laundering it into a rejection would burn the regeneration budget on
+  // something no amount of re-prompting can fix.
+  const provider = deadProvider(500);
+  const store = makeStore();
+  const result = await engine.runSlot({ ...base, provider, store });
+
+  assert.equal(provider.calls, engine.MAX_PROVIDER_ATTEMPTS_PER_SLOT);
+  assert.equal(result.reason, "provider_attempts_exhausted");
+  for (const row of store.state.finished) {
+    assert.notEqual(row.outcome, "rejected", "a transport failure must never be recorded as a semantic rejection");
+    assert.equal(row.outcome, engine.OUTCOME.HTTP_ERROR);
+  }
+
+  // The predicate is keyed on the exact code, never on message text: a real
+  // transport error whose message happens to quote an inspector stays a
+  // transport error.
+  const { isSemanticQualityRejection } = engine._test;
+  assert.equal(isSemanticQualityRejection({ code: "designpanel_quality_rejected" }), true);
+  assert.equal(isSemanticQualityRejection({ code: "provider_exhausted", message: "Standard proof rejected: x" }), false);
+  assert.equal(isSemanticQualityRejection({ message: "designpanel_quality_rejected" }), false);
+  assert.equal(isSemanticQualityRejection(new Error("boom")), false);
+  assert.equal(isSemanticQualityRejection(null), false);
+});
