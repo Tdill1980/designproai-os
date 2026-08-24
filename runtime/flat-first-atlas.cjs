@@ -420,18 +420,52 @@ function buildAtlasManifest(surfaces, geometryAuthorityInput) {
   };
 }
 
+/**
+ * THE CALL-OUT SITS ON ITS OWN PANEL, THE WAY AN INSTALLER'S SHEET DOES.
+ *
+ * The labels used to be a legend: six words in a fixed row along the top edge
+ * at font-size 26 on a 4096px canvas -- roughly half a percent of the height --
+ * in the flat order PASSENGER, REAR, ROOF, HOOD, FRONT, DRIVER. The zones
+ * themselves are laid out passenger-left, a rear/roof/hood/front centre column,
+ * driver-right. So the row neither matched the layout nor touched the rectangle
+ * it named, and the model had to infer the mapping from a caption it could
+ * barely resolve.
+ *
+ * The bundled Houdini sheet does the obvious thing instead: every panel carries
+ * its own name, printed on it. So does this now -- each label is centred on its
+ * zone, rotated with the panel so it reads along the length exactly as the
+ * artwork will, and scaled to the zone rather than fixed.
+ *
+ * Still monochrome: `#1a1a1a` is neutral, so the guide carries no palette
+ * information, which `flat-first-atlas.test.mjs` enforces channel by channel.
+ */
+function zoneLabelSvg(zone) {
+  const label = String(zone.surfaceKey || "").toUpperCase();
+  if (!label) return "";
+  const centreX = Number(zone.x) + Number(zone.w) / 2;
+  const centreY = Number(zone.y) + Number(zone.h) / 2;
+  // The short side is what constrains the text: a rotated label on a tall flank
+  // runs along the height, so its cap height has to fit the width.
+  const shortSide = Math.min(Number(zone.w), Number(zone.h));
+  const fontSize = Math.max(48, Math.min(180, Math.round(shortSide * 0.14)));
+  // Rotate with the panel. The flanks are +/-90, the centre column is 0, so the
+  // name reads the same direction the livery does on that surface.
+  const rotation = Number(zone.rotationDegrees || 0);
+  return `<text x="${centreX}" y="${centreY}" transform="rotate(${rotation} ${centreX} ${centreY})" `
+    + `text-anchor="middle" dominant-baseline="central" fill="#1a1a1a" `
+    + `font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="700" `
+    + `letter-spacing="${Math.round(fontSize * 0.08)}">${label}</text>`;
+}
+
 function guideSvg(manifest) {
   const zoneRects = manifest.zones.map((zone) => (
     `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="10" fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
   )).join("");
-  const legend = ["PASSENGER", "REAR", "ROOF", "HOOD", "FRONT", "DRIVER"].map((label, index) => {
-    const x = 220 + index * 635;
-    return `<text x="${x}" y="84" fill="#ffffff" font-family="Arial,sans-serif" font-size="26" font-weight="700">${label}</text>`;
-  }).join("");
+  const zoneLabels = manifest.zones.map(zoneLabelSvg).join("");
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
-    ${legend}
     ${zoneRects}
+    ${zoneLabels}
     <text x="2048" y="4050" text-anchor="middle" fill="#d9d9d9" font-family="Arial,sans-serif" font-size="25">TOPOLOGY GUIDE ONLY · GRAYS AND LABELS MUST NOT APPEAR IN ARTWORK</text>
   </svg>`);
 }

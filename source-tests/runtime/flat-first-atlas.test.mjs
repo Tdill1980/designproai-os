@@ -237,6 +237,45 @@ test("topology examples are firewalled from customer style", () => {
   assert.match(prompt, /REAR, ROOF, HOOD, FRONT/);
 });
 
+/**
+ * EVERY CALL-OUT SITS ON THE PANEL IT NAMES.
+ *
+ * The labels were a legend: six words in a fixed row along the top edge at
+ * font-size 26 on a 4096px canvas, ordered PASSENGER, REAR, ROOF, HOOD, FRONT,
+ * DRIVER while the zones are laid out passenger-left, centre column,
+ * driver-right. The row neither matched the layout nor touched the rectangle it
+ * named, so the mapping was left to inference from a caption barely resolvable
+ * at that scale. The bundled Houdini sheet prints each name on its own panel;
+ * so does the guide.
+ */
+test("each zone label is centred on its own rectangle and rotated with the panel", () => {
+  const manifest = atlas.buildAtlasManifest(surfaces);
+  const svg = atlas._test.guideSvg(manifest).toString("utf8");
+
+  // The fixed top-edge legend row is gone.
+  assert.doesNotMatch(svg, /y="84"/, "the old legend row must not come back");
+
+  for (const zone of manifest.zones) {
+    const label = zone.surfaceKey.toUpperCase();
+    const centreX = zone.x + zone.w / 2;
+    const centreY = zone.y + zone.h / 2;
+    const node = svg.match(new RegExp(`<text[^>]*>${label}</text>`));
+    assert.ok(node, `${label} must be drawn on the guide`);
+    assert.match(node[0], new RegExp(`x="${centreX}"`), `${label} must sit at its zone's centre`);
+    assert.match(node[0], new RegExp(`y="${centreY}"`), `${label} must sit at its zone's centre`);
+    // Rotated with the panel: the flanks read along their length, the centre
+    // column reads horizontally, exactly as the livery will.
+    assert.match(
+      node[0],
+      new RegExp(`rotate\\(${zone.rotationDegrees} ${centreX} ${centreY}\\)`),
+      `${label} must rotate with its panel`,
+    );
+    // Scaled to the zone, not a fixed size that vanishes on a 4096px canvas.
+    const size = Number(node[0].match(/font-size="(\d+)"/)[1]);
+    assert.ok(size >= 48, `${label} at ${size}px is too small to resolve`);
+  }
+});
+
 test("the deterministic guide is neutral monochrome, never a hidden style palette", () => {
   const manifest = atlas.buildAtlasManifest(surfaces);
   const svg = atlas._test.guideSvg(manifest).toString("utf8");
