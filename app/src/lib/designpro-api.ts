@@ -776,6 +776,17 @@ export const dpApi = {
    */
   listApprovedViews: (generationId: string) =>
     request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
+  /**
+   * Every A.T.L.A.S. version this design has been through, oldest first.
+   *
+   * Addressed by job because that is how the design team reaches it: a design
+   * outlives the request that first produced it, and a revision mints a new
+   * request against the same generation. This is a PanelPro Studio surface --
+   * the canonical master is a production instrument and is never shown to the
+   * customer, who sees the seven proofs and the six panels cut from it.
+   */
+  listJobFlatAtlasRevisions: (generationId: string) =>
+    request<FlatAtlasRevision[]>(`/jobs/${encodeURIComponent(generationId)}/atlas`),
   submitRevision: (submission: RevisionSubmission) =>
     request<{ runId: string; accepted: true }>("/revisions", {
       method: "POST",

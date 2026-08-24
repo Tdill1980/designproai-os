@@ -459,6 +459,19 @@ function validatedFlatFirstGate(value) {
   };
 }
 
+/**
+ * `requestId` names one request's lineage; `null` means every lineage on one
+ * generation, which is what the PanelPro Studio board shows.
+ *
+ * The sequence chain is asserted only in the request-scoped case, because that
+ * is the only scope in which it is a chain: a revision's parent must share its
+ * request_id, so each request restarts at 1 and a generation carrying several
+ * requests has several independent chains. Requiring a single ascending run
+ * across a generation would reject a design that has been revised, which is
+ * precisely the history the board exists to show. Every other check -- owner-
+ * bound storage paths, content hashes, byte sizes, content types, the zone
+ * manifest -- is identical in both scopes.
+ */
 function validatedFlatAtlasRevisions(value, requestId, userId) {
   if (value === null) return null;
   if (!Array.isArray(value) || value.length > 100) {
@@ -488,10 +501,14 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
     const affectedSurfaces = row?.affectedSurfaces;
     const exampleGuideHash = row?.exampleGuideHash == null ? null : String(row.exampleGuideHash);
     const exampleMasterHash = row?.exampleMasterHash == null ? null : String(row.exampleMasterHash);
-    if (!UUID_PATTERN.test(id) || rowRequestId !== requestId
+    const chained = requestId === null
+      ? Number.isInteger(revisionSequence) && revisionSequence >= 1
+      : Number.isInteger(revisionSequence) && revisionSequence === previousSequence + 1;
+    if (!UUID_PATTERN.test(id)
+      || (requestId === null ? !UUID_PATTERN.test(rowRequestId) : rowRequestId !== requestId)
       || !UUID_PATTERN.test(generationId)
       || parentRevisionId !== null && !UUID_PATTERN.test(parentRevisionId)
-      || !Number.isInteger(revisionSequence) || revisionSequence !== previousSequence + 1
+      || !chained
       || revisionSequence === 1 && parentRevisionId !== null
       || revisionSequence > 1 && parentRevisionId === null
       || !Number.isInteger(widthPx) || widthPx < 256 || widthPx > 32768
@@ -1906,6 +1923,46 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const run = requestedRun(runs, decodeURIComponent(approvedViewMatch[1]));
         if (!run) return json(res, 404, { error: "job_not_found" });
         return json(res, 200, await approvedViewsForRun(fetchImpl, token, cfg, run, user.id));
+      }
+
+      // The A.T.L.A.S. master and its version history, for the design team.
+      //
+      // Same signing and path-stripping as the request-scoped lineage route:
+      // the database returns private storage paths only after proving the
+      // caller owns the generation, and the response carries five-minute signed
+      // previews with the paths removed. It is addressed by generation because
+      // the board shows every version a design has been through, and a revision
+      // mints a new request against the same generation.
+      const jobAtlasMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/atlas$/);
+      if (req.method === "GET" && jobAtlasMatch) {
+        const run = await resolveRun(fetchImpl, token, cfg, decodeURIComponent(jobAtlasMatch[1]));
+        if (!run) return json(res, 404, { error: "job_not_found" });
+        const jobGenerationId = generationId(run).toLowerCase();
+        if (!UUID_PATTERN.test(jobGenerationId)) return json(res, 404, { error: "job_not_found" });
+        const located = await rpc(fetchImpl, token, cfg, "designpro_flat_atlas_generation_paths", {
+          p_generation_id: jobGenerationId,
+        });
+        const revisions = validatedFlatAtlasRevisions(located, null, user.id);
+        if (revisions === null) return json(res, 404, { error: "job_not_found" });
+        if (revisions.some((revision) => revision.generationId !== jobGenerationId)) {
+          throw Object.assign(new Error("flat_atlas_response_invalid"), { status: 502 });
+        }
+        const publicRevisions = await Promise.all(revisions.map(async (revision) => {
+          const {
+            guideStoragePath, masterStoragePath, projectionStoragePath, ...base
+          } = revision;
+          const [guideUrl, masterUrl] = await Promise.all([
+            signedArtifactUrl(fetchImpl, token, cfg, guideStoragePath).catch(() => null),
+            signedArtifactUrl(fetchImpl, token, cfg, masterStoragePath).catch(() => null),
+          ]);
+          return {
+            ...base,
+            ...(guideUrl ? { guideUrl } : {}),
+            ...(masterUrl ? { masterUrl } : {}),
+            ...((guideUrl || masterUrl) ? { expiresIn: 300 } : {}),
+          };
+        }));
+        return json(res, 200, publicRevisions);
       }
 
       const artifactMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/artifacts$/);
