@@ -341,6 +341,41 @@ function artifact(kind, storagePath, contentHash, bytes, surfaceKey = "", metada
   return { kind, storagePath: safePath(storagePath, "artifact storagePath"), contentHash, byteSize: bytes, surfaceKey, metadata };
 }
 
+/**
+ * The six panels A.T.L.A.S. cut at Call 1, or null for a run with no atlas.
+ *
+ * Read off the immutable revision snapshot -- the interface this side of the
+ * seam is allowed to read -- so a resumed run promotes the same bytes the
+ * customer was already shown.
+ */
+async function callOnePanelSet(sb, run) {
+  const { data, error } = await sb
+    .from("designpro_revision_sources")
+    .select("snapshot,snapshot_hash")
+    .eq("revision_id", run.revision_id)
+    .maybeSingle();
+  if (error || !data) return null;
+  if (data.snapshot_hash !== run.revision_snapshot_hash) {
+    throw new StageError("call9_revision_source_drift", "Immutable revision source changed before Call 9", false);
+  }
+  const panels = Array.isArray(data.snapshot?.callOnePanels) ? data.snapshot.callOnePanels : [];
+  if (!panels.length) return null;
+  if (panels.length !== SURFACE_KEYS.length) {
+    throw new StageError("call9_call1_panel_set_invalid", `Call 1 recorded ${panels.length} panels, expected ${SURFACE_KEYS.length}`, false);
+  }
+  const keys = panels.map((panel) => String(panel?.surfaceKey || ""));
+  if (SURFACE_KEYS.some((key) => !keys.includes(key))) {
+    throw new StageError("call9_call1_panel_surface_missing", "Call 1 panels do not cover the six canonical surfaces", false);
+  }
+  for (const panel of panels) {
+    if (!HASH_RE.test(String(panel?.contentHash || ""))
+      || !(Number(panel?.printWidthIn) > 0) || !(Number(panel?.printHeightIn) > 0)) {
+      throw new StageError("call9_call1_panel_identity_invalid", `${panel?.surfaceKey || "unknown"} has no immutable identity or size`, false);
+    }
+  }
+  return panels;
+}
+
 async function storageBytes(sb, storagePath) {
   const path = safePath(storagePath, "storagePath");
   const { data, error } = await sb.storage.from(BUCKET).download(path);
@@ -741,6 +776,59 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     }, null, [proofArtifact]);
   }
   if (stage.stage_key === "panels.build") {
+    // CALL 1 ALREADY CUT THESE PANELS. Promote those exact bytes.
+    //
+    // The panels RevisionStudio entices the buyer with, and the panels PanelPro
+    // Studio is served, are the six A.T.L.A.S. cut from the canonical master at
+    // Call 1, each sized to its own side with the five-inch bleed already in the
+    // layout. Re-deriving them here would hand the board a different set of
+    // bytes than the customer was shown.
+    //
+    // They arrive on the immutable revision snapshot, which is the interface
+    // this side of the seam is allowed to read. Manufacturing never reaches back
+    // into the generation tables to find them.
+    const callOnePanels = await callOnePanelSet(sb, run);
+    if (callOnePanels) {
+      const spools = [];
+      const produced = [];
+      const panelHashes = {};
+      for (const panel of callOnePanels) {
+        const bytes = await storageBytes(sb, panel.storagePath);
+        const observed = hashBytes(bytes);
+        if (observed !== String(panel.contentHash || "").toLowerCase() || bytes.length !== Number(panel.byteSize)) {
+          throw new StageError("call9_call1_panel_changed", `${panel.surfaceKey} Call 1 panel changed before promotion`, false);
+        }
+        panelHashes[panel.surfaceKey] = observed;
+        const dims = {
+          trimWidthIn: Number(panel.trimWidthIn),
+          trimHeightIn: Number(panel.trimHeightIn),
+          printWidthIn: Number(panel.printWidthIn),
+          printHeightIn: Number(panel.printHeightIn),
+          surfaceSqFt: Number(panel.surfaceSqFt),
+          bleedInches: Number(panel.bleedInches),
+        };
+        produced.push({ surfaceKey: panel.surfaceKey, storagePath: panel.storagePath, contentHash: observed, byteSize: bytes.length, ...dims });
+        spools.push(artifact("panel", panel.storagePath, observed, bytes.length, panel.surfaceKey, {
+          source: "atlas-call1-panel",
+          sourceMasterHash: panel.sourceMasterHash,
+          geometryPurpose: panel.geometryPurpose,
+          ...dims,
+        }));
+      }
+      if (new Set(Object.values(panelHashes)).size !== SURFACE_KEYS.length) {
+        throw new StageError("call9_panel_identity_collision", "Call 1 panels are not six distinct surfaces", false);
+      }
+      return complete(sb, stage, run, {
+        verified: true,
+        receiptKind: "call9.surface-panels",
+        call: 9,
+        panelSourceRule: PANEL_SOURCE_RULE,
+        promotedFrom: "atlas-call1",
+        panels: produced,
+        panelHashes,
+      }, null, spools);
+    }
+
     const proof = await stageOutput(sb, run.id, "proof.build");
     const manifest = requiredObject(run.results?.dimensionManifest, "bound GENIE dimension manifest");
     const expected = new Map((manifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));

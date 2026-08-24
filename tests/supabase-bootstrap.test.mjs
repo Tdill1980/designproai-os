@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered forty-one-migration chain', () => {
-  assert.equal(migrationNames.length, 41);
+test('fresh bootstrap contains one ordered forty-two-migration chain', () => {
+  assert.equal(migrationNames.length, 42);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -88,6 +88,9 @@ test('fresh bootstrap contains one ordered forty-one-migration chain', () => {
       // second in the FREE run, parking every job before a proof or a panel
       // existed.
       '20260824000000',
+      // The revision snapshot carries the six Call-1 panels, so manufacturing
+      // consumes those exact bytes without reaching into generation's tables.
+      '20260824010000',
     ],
   );
 });
