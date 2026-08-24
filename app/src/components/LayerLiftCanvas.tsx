@@ -408,17 +408,32 @@ export const LayerLiftRevisionStudio: React.FC<LayerLiftCanvasProps> = ({
   // handles (move / scale / rotate) are immediately visible — no "locked ghost"
   // the user has to click to discover. Only fires once per view and never steals
   // an active selection or fights a manual deselect.
+  //
+  // GATED ON toolsActive (restored 2026-08-24). This effect and the transformer
+  // below keyed off `tool === "select"` alone, which is the DEFAULT tool — so a
+  // viewer-mode canvas (tools={false}) still auto-selected the first overlay and
+  // drew the Transformer over the render. Its anchors and border are #d946ef,
+  // and that is exactly the "pink drag-handles and the torn/smeared draggable
+  // overlay box on the render" that got LayerLiftIQ ripped out of the viewport
+  // instead of gated. `tools` was already the flag for "this canvas is an
+  // editor"; it simply was never consulted here.
   useEffect(() => {
-    if (tool !== "select" || autoSelectedRef.current) return;
+    if (!toolsActive || tool !== "select" || autoSelectedRef.current) return;
     if (!selectedId && elements.length > 0) {
       setSelectedId(elements[0].id);
       autoSelectedRef.current = true;
     }
-  }, [elements, tool, selectedId]);
+  }, [elements, tool, selectedId, toolsActive]);
+
+  // Viewer mode owns no selection. Without this a selection made while the tools
+  // were on would keep its handles painted after they were switched off.
+  useEffect(() => {
+    if (!toolsActive && selectedId) setSelectedId(null);
+  }, [toolsActive, selectedId]);
 
   useEffect(() => {
     if (!transformerRef.current) return;
-    if (selectedId && tool === "select") {
+    if (toolsActive && selectedId && tool === "select") {
       const node = stageRef.current?.findOne("#" + selectedId);
       if (node) {
         transformerRef.current.nodes([node]);
@@ -427,7 +442,7 @@ export const LayerLiftRevisionStudio: React.FC<LayerLiftCanvasProps> = ({
       }
     }
     transformerRef.current.nodes([]);
-  }, [selectedId, elements, size, tool]);
+  }, [selectedId, elements, size, tool, toolsActive]);
 
   // ── Element mutations — all IMMEDIATE / deterministic ──────────
   const commit = (next: OverlayElement[]) => {
@@ -560,8 +575,11 @@ export const LayerLiftRevisionStudio: React.FC<LayerLiftCanvasProps> = ({
           <URLImage
             key={el.id}
             el={el}
-            draggable={tool === "select"}
-            onSelect={() => tool === "select" && setSelectedId(el.id)}
+            // Same gate as the Transformer: a viewer-mode canvas paints the
+            // approved artwork and nothing else. Dragging here is what tore the
+            // overlay away from the render underneath it.
+            draggable={toolsActive && tool === "select"}
+            onSelect={() => toolsActive && tool === "select" && setSelectedId(el.id)}
             onChange={handleChange}
           />
         ))}

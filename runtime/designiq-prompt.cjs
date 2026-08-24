@@ -42,8 +42,24 @@ const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.2026
 // with a menu was the same pressure in different clothes. It requires only that
 // a logo EXIST and points the form decision at the brief, the one input that
 // varies between customers.
+//
+// RESTORED TO SOURCE PARITY (2026-08-24). The comment above described the
+// proven one-sentence requirement, but the string had drifted away from it
+// during the port: it re-added a form prescription ("professionally
+// art-directed and distinctive", "must feel specific to this company and
+// industry") and a NEGATIVE ("must not look like a generic template mark,
+// stock icon, or placeholder"). Both are the exact wording the reference
+// implementation deleted after live convergence - the owner's report was "they
+// all look the same" - and the negative also violates the standing rule that a
+// forbidden concept is the one Gemini over-indexes on. The vendored reference
+// at supabase/functions/design-panel-ai-generate/index.ts:116 still carries the
+// proven text, so the regression is provable inside this repository.
+//
+// ONE literal, shared by BOTH producers, exactly as the reference keeps it: the
+// artboard/A.T.L.A.S. path and the commercial path interpolate this same const,
+// so the two can no longer drift apart. Change both or neither.
 const LOGO_REQUIREMENT =
-  "This business needs its own logo — professionally art-directed and distinctive; decide its form from this brief alone. It must feel specific to this company and industry, remain legible at vehicle distance, and must not look like a generic template mark, stock icon, or placeholder.";
+  "This business needs its own logo — decide its form from this brief alone.";
 
 // DEPTH - restored after a sweep flattened commercial work and Ridgeline
 // Roofing came back as flat panels of colour. Describes what depth IS; says
@@ -171,10 +187,25 @@ DESIGN BRIEF: "${prompt}"`;
 
   assembled += "\n\nCUSTOMER IDENTITY AND DESIGN LOCKS:";
   if (companyName) {
-    assembled += `\nBusiness: ${companyName}. Spell it exactly.`;
+    // THE BRAND LINE, RESTORED (2026-08-24). The reference artboard branch
+    // (design-panel-ai-generate/index.ts:376) asks for a COMPOSED identity:
+    // "BRAND: <name> - integrate the company name + logo + a clean contact bar
+    // into the design, legible at a glance." The port replaced that entire
+    // direction with "Spell it exactly", which is a spelling lock and not a
+    // design instruction - so the one call that authors the design was told
+    // how to render the name and never told to build an identity out of it.
+    // That is the branding half of the reported quality regression, and it is
+    // why a commercial sheet comes back with set type instead of a lockup.
+    //
+    // Spelling is still locked; it just no longer stands in for the design
+    // direction. The duplicate that followed it is gone too: this said "Spell
+    // it exactly." and then buildLogoArchitecture() immediately said "Spell the
+    // business name exactly." - the same instruction twice, which carries no
+    // creative value and dilutes the sentence that does.
+    assembled += `\nBRAND: ${companyName} — integrate the company name + logo + a clean contact bar into the design, legible at a glance. Spell the business name exactly.`;
     assembled += input.logoAsset
       ? " The attached verified customer-owned logo is the logo authority; preserve its form, spelling, proportions and palette exactly and never invent a substitute."
-      : buildLogoArchitecture();
+      : ` ${LOGO_REQUIREMENT}`;
   } else if (mode === "commercial") {
     assembled += `\nIdentify the business name only from the customer's creative direction and spell it exactly. ${LOGO_REQUIREMENT}`;
   }
@@ -190,7 +221,20 @@ DESIGN BRIEF: "${prompt}"`;
   if (brandColors) assembled += `\nBrand colors: ${brandColors}. Build the design from this palette and introduce no unrelated colors.`;
   if (input.fontStyle) assembled += `\nTypography preference: ${String(input.fontStyle)}.`;
   if (keywords.length) assembled += `\nBrand keywords (tone, not automatic literal copy): ${keywords.join(", ")}.`;
-  if (input.mascot) assembled += `\nBrand mascot: ${String(input.mascot)}. Render one distinctive, polished character identity consistently wherever it crosses related atlas zones.`;
+  // THE MASCOT DIRECTION, RESTORED (2026-08-24). The reference
+  // (design-panel-ai-generate/index.ts:514) and this file's own downstream
+  // commercial builder both carry the full premium-emblem brief; only the
+  // A.T.L.A.S. branch was reduced to "render one distinctive, polished
+  // character identity", which asks for a character without saying what makes
+  // one good. A mascot is a logo, so the same quality bar that applies to the
+  // logo applies here - and the master call is the ONLY call that draws it.
+  //
+  // The reference's trailing placement clause ("anchor the mascot as a hero
+  // graphic on the rear quarter panel") is deliberately NOT carried over: where
+  // a graphic sits on the sheet is A.T.L.A.S. zone topology, which this file
+  // does not get to direct. Only the craft half is restored; the consistency
+  // requirement across related zones is kept.
+  if (input.mascot) assembled += `\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${String(input.mascot)} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Keep it one consistent character wherever it crosses related atlas zones.`;
 
   if (references.length) {
     if (exactReference) {

@@ -2151,25 +2151,42 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 const uploadedOverlays = (overlaysHere || []).filter(
                                   (o: any) => typeof o?.id === "string" && o.id.startsWith("upload-")
                                 );
-                                // SMEAR FIX: the "clean" scrub (designpro-clean-views) plaid-inpaints
-                                // the area where it erases baked text — that plaid band IS the smear.
-                                // Never display the scrubbed view; always show the REAL branded render.
-                                // Only the customer's uploaded logo rides on top (the render already has
-                                // the design baked in) so there's no doubled branding. This is the
-                                // faithful "LayerLift-gone" view the owner asked for.
-                                // LAYERLIFT UI REMOVED — the design viewport is now a plain
-                                // image of the real branded render. No Konva canvas, no
-                                // transform/drag handles, no editable overlay layers. The
-                                // render already has the full design (and logo) baked in, so
-                                // a flat image is the faithful single-source view the owner
-                                // wants across every angle.
-                                void uploadedOverlays;
+                                // SMEAR FIX, KEPT: the "clean" scrub (designpro-clean-views)
+                                // plaid-inpaints the area where it erases baked text — that plaid
+                                // band IS the smear. Never floor on the scrubbed view; always floor
+                                // on the REAL branded render. Only the customer's uploaded logo
+                                // rides on top (the render is authored clean of it — logo-wins), so
+                                // there is no doubled branding.
+                                //
+                                // REVISIONSTUDIO RESTORED (2026-08-24). The viewport was a plain
+                                // <img> because LayerLiftIQ was ripped out of the render tree
+                                // wholesale, over "pink drag-handles and the torn/smeared draggable
+                                // overlay box on the render". That was a real defect, but the cause
+                                // was never the studio: LayerLiftCanvas attached its Transformer on
+                                // `tool === "select"` — the DEFAULT tool — without ever consulting
+                                // `tools`, so even this viewer-mode canvas auto-selected an overlay
+                                // and painted #d946ef handles over the design. That gate is now
+                                // applied in the component, so the intended editor returns and the
+                                // defect stays fixed rather than the feature staying disabled.
+                                //
+                                // Nothing here produces design. The floor is the server's approved
+                                // view, the only overlays are the customer's own verified upload,
+                                // and the AI hooks stay off until the customer presses Revise.
+                                void scrubbedBg;
+                                void haveScrubbed;
                                 return (
-                                  <img
-                                    src={effectiveDisplayUrl}
-                                    alt={designName || selectedPanel?.ai_generated_name || "Design"}
-                                    className="absolute inset-0 h-full w-full object-contain"
-                                    draggable={false}
+                                  <LayerLiftRevisionStudio
+                                    embedded
+                                    tools={revising}
+                                    viewKey={activeViewKey}
+                                    backgroundUrl={effectiveDisplayUrl}
+                                    initialOverlays={uploadedOverlays}
+                                    onLayoutUpdated={(updated, stage) =>
+                                      persistViewLayout(activeViewKey, updated, stage)
+                                    }
+                                    // Delete / scale / visibility are immediate; keep the master
+                                    // layer list in sync so every view + the deck reflect it.
+                                    onElementsChange={(updated) => setLayerLiftElements(updated)}
                                   />
                                 );
                               })()}
@@ -2251,11 +2268,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 already shows tool name, design name, and DID. */}
                           </div>
                         ) : (
-                          // Idle + generating BOTH live INSIDE the Konva window:
-                          // ACE prompt invite when idle; ACE's moving progress bar
-                          // + cycling status text (floor → desk) while generating.
+                          // Idle + generating deliberately do NOT use the Konva
+                          // showcase floor the reference shell puts here. That floor
+                          // cycles marketing renders; this one reports the server's
+                          // real server stages and whether the master has landed.
+                          // The browser observes what the server owns, so the progress
+                          // surface stays and only the EDITOR was restored above.
                           <div className="absolute inset-0 min-h-[400px] flex items-center justify-center bg-black/30">
-                            {/* LAYERLIFT UI REMOVED — plain idle/generating state, no Konva canvas. */}
+                            {/* Server-owned progress, not a placeholder. */}
                             {(pipelineActive || pipelineStage) ? (
                               // Live pipeline progress — the customer sees each real
                               // stage (analyze → GENIE enhance → render → finish) and
@@ -2847,9 +2867,54 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         </button>
                       </div>
 
-                      {/* LAYERLIFT UI REMOVED — the "Revise with LayerLiftIQ" button and the
-                          "Layer Stack" overlay panel are gone. Editing is no longer done via the
-                          Konva overlay tools; the design viewport is a flat image. */}
+                      {/* Revise — turns ON the LayerLiftIQ deterministic tools so the
+                          user can edit the current view immediately (no regeneration).
+                          Restored with the viewport: this is the control that moves the
+                          canvas out of viewer mode, and while it is off the Transformer
+                          stays detached, so the handles that got this ripped out cannot
+                          paint themselves over the render. */}
+                      {mainDisplayUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRevising((v) => !v);
+                            // The editing canvas lives in the CENTER viewport; the
+                            // button is down in the right rail. Tapping it used to do
+                            // nothing visible — now jump the user straight to the
+                            // editable canvas so the LayerLiftIQ tools are in view.
+                            requestAnimationFrame(() => {
+                              document
+                                .querySelector(".konvajs-content")
+                                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            });
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-bold text-white shadow-lg transition",
+                            revising
+                              ? "bg-gradient-to-r from-fuchsia-600 to-blue-600 ring-2 ring-fuchsia-400/60"
+                              : "bg-gradient-to-r from-blue-600 to-fuchsia-600 hover:opacity-90 animate-pulse"
+                          )}
+                        >
+                          <Sparkles className="h-4 w-4" /> {revising ? "Editing — LayerLiftIQ on" : "Revise with LayerLiftIQ"}
+                        </button>
+                      )}
+
+                      {/* Layer stack (current view's overlays) */}
+                      <div className="rounded-lg border border-white/10 bg-black/30 p-2">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/40">Layer Stack</p>
+                        {layerLiftElements.length === 0 ? (
+                          <p className="text-xs text-white/30">No Layer-2 overlays yet.</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {layerLiftElements.map((el, i) => (
+                              <div key={el.id || i} className="flex items-center justify-between rounded bg-white/5 px-2 py-1 text-xs text-white/70">
+                                <span className="truncate">{el.text || el.id || (el.isLogo ? "Logo" : "Text")} #{i + 1}</span>
+                                <span className="shrink-0 text-white/30">{el.isLogo ? "logo" : "text"}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
                       {/* Coordinate table (per-view saved layouts) */}
                       <div className="rounded-lg border border-white/10 bg-black/30 p-2">
