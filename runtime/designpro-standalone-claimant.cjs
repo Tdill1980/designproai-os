@@ -26,6 +26,7 @@ const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProdu
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
+const { CERTIFICATE_CONTRACT, buildQcCertificatePng } = require("./qc-certificate.cjs");
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
 
 const CLAIM_SECONDS = 900;
@@ -1294,9 +1295,50 @@ function immutableBusinessIdentity(revisionSource, run) {
   return { designId, orderNumber };
 }
 
+/**
+ * The seal's curved ring caption, drawn as individually rotated glyphs.
+ *
+ * It used to be a <textPath>, which librsvg -- the renderer sharp uses -- does
+ * not implement. It emitted no error and no pixels, so every seal this server has
+ * ever stamped carried a bare ring with the caption silently missing. Measured
+ * both ways: `href` and `xlink:href` each render exactly zero ink.
+ *
+ * Placing each character on the arc is plain SVG that librsvg does support, so
+ * the caption survives rendering instead of depending on a feature the renderer
+ * lacks.
+ */
+function ringCaption(text, centre, radius, size, fill) {
+  const characters = [...String(text)];
+  const span = 170;
+  const start = 180 - (180 - span) / 2;
+  // Advance by approximate glyph width rather than by slot. Equal slots give a
+  // narrow "I" the same arc as a wide "W", which reads as ragged spacing on a
+  // seal that appears on every delivered pack.
+  const widthOf = (character) => {
+    if (character === " ") return 0.5;
+    if ("Il.·'".includes(character)) return 0.45;
+    if ("JT".includes(character)) return 0.8;
+    if ("MW".includes(character)) return 1.3;
+    return 1;
+  };
+  const widths = characters.map(widthOf);
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  let advanced = 0;
+  return characters.map((character, index) => {
+    const centreOffset = advanced + widths[index] / 2;
+    advanced += widths[index];
+    const angle = start - (centreOffset / total) * span;
+    const radians = angle * Math.PI / 180;
+    const x = (centre + radius * Math.cos(radians)).toFixed(1);
+    const y = (centre - radius * Math.sin(radians)).toFixed(1);
+    const glyph = character.replace(/[&<>"']/g, (value) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[value]);
+    return `<text x="${x}" y="${y}" transform="rotate(${(90 - angle).toFixed(1)} ${x} ${y})" text-anchor="middle" font-family="Arial" font-size="${size}" font-weight="700" fill="${fill}">${glyph}</text>`;
+  }).join("");
+}
+
 function stampSvg(verifiedBy, designId, orderNumber, date) {
   const escape = (text) => String(text).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character]);
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000"><defs><path id="qc-ring" d="M 145,500 A 355,355 0 0,1 855,500"/></defs><circle cx="500" cy="500" r="455" fill="none" stroke="#059669" stroke-width="28"/><circle cx="500" cy="500" r="410" fill="none" stroke="#10b981" stroke-width="10"/><text font-family="Arial" font-size="56" font-weight="700" fill="#059669" letter-spacing="4"><textPath href="#qc-ring" startOffset="50%" text-anchor="middle">DESIGNPROAI · QUALITY CONTROL</textPath></text><text x="500" y="385" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#065f46">QUALITY</text><text x="500" y="480" text-anchor="middle" font-family="Arial" font-size="88" font-weight="700" fill="#059669">APPROVED</text><text x="500" y="565" text-anchor="middle" font-family="Arial" font-size="43" font-weight="700" fill="#065f46">DesignID: ${escape(designId)}</text><text x="500" y="625" text-anchor="middle" font-family="Arial" font-size="39" font-weight="700" fill="#065f46">Order #: ${escape(orderNumber)}</text><text x="500" y="692" text-anchor="middle" font-family="Arial" font-size="31" font-weight="700" fill="#065f46">Quality Checked by ${escape(verifiedBy).slice(0, 120)}</text><text x="500" y="745" text-anchor="middle" font-family="Arial" font-size="29" fill="#6b7280">${escape(date)}</text></svg>`);
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000"><circle cx="500" cy="500" r="455" fill="none" stroke="#059669" stroke-width="28"/><circle cx="500" cy="500" r="410" fill="none" stroke="#10b981" stroke-width="10"/>${ringCaption("DESIGNPROAI · QUALITY CONTROL", 500, 355, 56, "#059669")}<text x="500" y="385" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#065f46">QUALITY</text><text x="500" y="480" text-anchor="middle" font-family="Arial" font-size="88" font-weight="700" fill="#059669">APPROVED</text><text x="500" y="565" text-anchor="middle" font-family="Arial" font-size="43" font-weight="700" fill="#065f46">DesignID: ${escape(designId)}</text><text x="500" y="625" text-anchor="middle" font-family="Arial" font-size="39" font-weight="700" fill="#065f46">Order #: ${escape(orderNumber)}</text><text x="500" y="692" text-anchor="middle" font-family="Arial" font-size="31" font-weight="700" fill="#065f46">Quality Checked by ${escape(verifiedBy).slice(0, 120)}</text><text x="500" y="745" text-anchor="middle" font-family="Arial" font-size="29" fill="#6b7280">${escape(date)}</text></svg>`);
 }
 
 async function storageStream(sb, storagePath) {
@@ -1725,6 +1767,38 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const svg = stampSvg(verifiedBy, designId, orderNumber, approvalDate.toISOString().slice(0, 10));
     const png = await sharp(svg).png().toBuffer();
     const sealStored = await upload(sb, `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-approval-stamp.png`, png, "image/png");
+    // THE PAGE THAT SAYS WHAT WAS CHECKED. The seal proves a permitted human
+    // signed; it carries no checklist and no dimensions, so the pack shipped with
+    // nothing a shop could read to see which checks passed or how big each panel
+    // is. The checks come from the two receipts those humans actually signed and
+    // the sizes from the bound GENIE manifest -- nothing here is defaulted, so the
+    // page can only ever state what the run really recorded.
+    const preflightReceipt = await receipt(sb, run.id, "panelpro.preflight");
+    const certificateSurfaces = SURFACE_KEYS.map((surfaceKey) => {
+      const surface = (input.dimensionManifest?.expectedSurfaces || [])
+        .find((item) => String(item.surfaceKey) === surfaceKey) || {};
+      const width = Number(surface.widthInches);
+      const height = Number(surface.heightInches);
+      return {
+        surfaceKey,
+        label: surfaceKey.charAt(0).toUpperCase() + surfaceKey.slice(1),
+        trimWidthIn: width, trimHeightIn: height,
+        printWidthIn: Number.isFinite(width) ? width + 10 : null,
+        printHeightIn: Number.isFinite(height) ? height + 10 : null,
+        surfaceSqFt: surface.surfaceSqFt,
+      };
+    });
+    const certificateBytes = await buildQcCertificatePng({
+      designId, orderNumber,
+      designName: revisionSource.snapshot?.designName || "",
+      vehicle: revisionSource.snapshot?.vehicle || {},
+      verifiedBy,
+      approvedAtIso: approvalDate.toISOString(),
+      preflightQc: preflightReceipt.receipt?.qc || {},
+      finalQc: finalQc.receipt?.qc || {},
+      surfaces: certificateSurfaces,
+    });
+    const certificateStored = await upload(sb, `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-certificate.png`, certificateBytes, "image/png");
     const proofRows = await artifacts(sb, run.id, ["flat-proof"]);
     if (proofRows.length !== 1) throw new StageError("stamp_source_proof_missing", "Exact copied Call 8 proof is required for stamping", false);
     const proofBytes = await storageBytes(sb, proofRows[0].storage_path);
@@ -1736,8 +1810,9 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const stampedProof = await sharp(proofBytes).composite([{ input: sealOverlay, gravity: "southeast" }]).png().toBuffer();
     const stampedStored = await uploadProducedBytes(sb, run, stage, runtimeConfig, `designpro/${tenantKey(run.tenant_key)}/${run.id}/stamped-call8-proof.png`, stampedProof, "image/png");
     const seal = artifact("stamp", sealStored.storagePath, sealStored.hash, sealStored.bytes, "seal", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), source: "server-svg-port-of-frozen-canvas-stamp", approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables });
+    const certificate = artifact("stamp", certificateStored.storagePath, certificateStored.hash, certificateStored.bytes, "certificate", { contract: CERTIFICATE_CONTRACT, designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), preflightQc: preflightReceipt.receipt?.qc || {}, finalQc: finalQc.receipt?.qc || {}, surfaces: certificateSurfaces, approvedProducts: authorized.products });
     const stamped = artifact("stamp", stampedStored.storagePath, stampedStored.hash, stampedStored.bytes, "stamped-proof", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), sourceProofHash: proofRows[0].content_hash, sealHash: sealStored.hash, composition: "deterministic-southeast-overlay.v1" });
-    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables }, stampedStored.hash, [seal, stamped]);
+    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, certificateHash: certificateStored.hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables }, stampedStored.hash, [seal, stamped, certificate]);
     if (stampedStored.spool) await removeCommittedSpool(stampedStored.spool).catch((error) => console.error(`[DESIGNPRO-OS] committed stamped-proof spool cleanup failed: ${error.message}`));
     return completed;
   }
@@ -1755,7 +1830,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const zipKinds = [...new Set(authorized.zipKinds || [])];
     const rows = await artifacts(sb, run.id, zipKinds);
     const counts = Object.fromEntries(zipKinds.map((kind) => [kind, rows.filter((item) => item.artifact_kind === kind).length]));
-    if (counts.stamp !== 2) throw new StageError("zip_artifacts_incomplete", "Every delivered pack carries its seal and stamped proof", false);
+    if (counts.stamp !== 3) throw new StageError("zip_artifacts_incomplete", "Every delivered pack carries its seal, its stamped proof and its QC certificate", false);
     if (authorized.productionPackAuthorized
       && (counts["flat-proof"] !== 1 || counts.panel !== SURFACE_KEYS.length || counts.output !== authorized.requiredOutputFiles)) {
       throw new StageError("zip_artifacts_incomplete", "The Production Pack ZIP requires the Call 8 proof, six Call 9 masters and the complete output set", false);

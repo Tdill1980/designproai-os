@@ -147,7 +147,16 @@ test("visible approval seal binds canonical immutable DesignID and Order #, neve
   };
   assert.deepEqual(_test.immutableBusinessIdentity(source, run), { designId: "DID-EEEEEEEE", orderNumber: "ORD-2026-0042" });
   const svg = _test.stampSvg("Trish", "DID-EEEEEEEE", "ORD-2026-0042", "2026-08-06").toString("utf8");
-  assert.match(svg, /DESIGNPROAI · QUALITY CONTROL/);
+  // The ring caption is drawn as individually rotated glyphs, so the contiguous
+  // string no longer appears in the markup. Asserting the string was exactly the
+  // check that let the real defect through: it was a <textPath>, which librsvg
+  // does not implement, so the caption matched here and rendered ZERO pixels on
+  // every seal this server ever stamped. Assert the mechanism instead.
+  assert.doesNotMatch(svg, /<textPath/, "librsvg renders no textPath -- the caption must not depend on one");
+  for (const glyph of ["D", "E", "S", "I", "G", "N", "P", "R", "O", "A", "Q", "U", "L", "T", "Y", "C"]) {
+    assert.match(svg, new RegExp(`<text[^>]*transform="rotate\\([^"]*"[^>]*>${glyph}</text>`),
+      `ring caption is missing the glyph ${glyph}`);
+  }
   assert.match(svg, /DesignID: DID-EEEEEEEE/);
   assert.match(svg, /Order #: ORD-2026-0042/);
   assert.match(svg, /Quality Checked by Trish/);

@@ -16,7 +16,16 @@ test("released standalone stamp visibly binds immutable business identity", () =
     "ORDER-240806-77",
     "2026-08-06",
   ).toString("utf8");
-  assert.match(svg, /DESIGNPROAI · QUALITY CONTROL/);
+  // The ring caption is drawn as individually rotated glyphs, so the contiguous
+  // string no longer appears in the markup. Asserting the string was exactly the
+  // check that let the real defect through: it was a <textPath>, which librsvg
+  // does not implement, so the caption matched here and rendered ZERO pixels on
+  // every seal this server ever stamped. Assert the mechanism instead.
+  assert.doesNotMatch(svg, /<textPath/, "librsvg renders no textPath -- the caption must not depend on one");
+  for (const glyph of ["D", "E", "S", "I", "G", "N", "P", "R", "O", "A", "Q", "U", "L", "T", "Y", "C"]) {
+    assert.match(svg, new RegExp(`<text[^>]*transform="rotate\\([^"]*"[^>]*>${glyph}</text>`),
+      `ring caption is missing the glyph ${glyph}`);
+  }
   assert.match(svg, /QUALITY/);
   assert.match(svg, /APPROVED/);
   assert.match(svg, /DesignID: DID-1234ABCD/);
@@ -25,10 +34,17 @@ test("released standalone stamp visibly binds immutable business identity", () =
   assert.match(svg, /2026-08-06/);
 });
 
-test("released claimant deterministically composites and archives seal plus stamped proof", () => {
+test("released claimant archives the seal, the stamped proof and the QC certificate", () => {
   assert.match(claimantSource, /stamped-call8-proof\.png/);
   assert.match(claimantSource, /composition: "deterministic-southeast-overlay\.v1"/);
-  assert.match(claimantSource, /counts\.stamp !== 2/);
+  // The seal proves a permitted human signed. The certificate is the page that
+  // says WHAT they signed -- the two checklists they actually ticked and the
+  // per-side sizes from the bound GENIE manifest -- so a pack without it ships
+  // an approval nobody downstream can read.
+  assert.match(claimantSource, /qc-certificate\.png/);
+  assert.match(claimantSource, /buildQcCertificatePng\(/);
+  assert.match(claimantSource, /\[seal, stamped, certificate\]/);
+  assert.match(claimantSource, /counts\.stamp !== 3/);
   assert.match(claimantSource, /identity\/design-order\.json/);
   // Seven when the Production Pack was bought -- they are its design proofs.
   assert.match(claimantSource, /"source-view": viewEntries\.length/);
