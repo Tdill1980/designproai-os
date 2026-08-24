@@ -1282,6 +1282,10 @@ async function generateOrReuseFlatAtlas(options) {
   let masterQc;
   let masterRequestByteSize = 0;
   let masterAuthoringAttempts = 0;
+  // Empty unless the re-rolls were exhausted on cut-outs alone. These name the
+  // surfaces whose PANEL carries a hole; the design and its proofs are fine.
+  let masterCutoutSurfaces = [];
+  let masterCutoutFindings = [];
   const correctiveParts = [];
   for (let attempt = 1; attempt <= MAX_MASTER_AUTHORING_ATTEMPTS; attempt += 1) {
     masterAuthoringAttempts = attempt;
@@ -1304,10 +1308,37 @@ async function generateOrReuseFlatAtlas(options) {
       && masterQc.metadata.guideHash === guideHash;
     if (accepted) break;
     if (attempt === MAX_MASTER_AUTHORING_ATTEMPTS) {
-      throw new FlatAtlasError(
-        "flat_atlas_master_qc_failed",
-        `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
-      );
+      // EXHAUSTED. What happens now depends on WHY, because the two failure
+      // classes have completely different blast radii.
+      //
+      // A cut-out is a PRINT defect. The 3D proof masks the master to the real
+      // painted body, so a hole where the wheel arch sits lands in the region
+      // the mask discards anyway -- live proof: the Flamingo Pools seven-view
+      // set (DID-5B2EB96C) came out of a completely ungated cut-out master and
+      // every proof is correct. Killing the whole request over it destroyed a
+      // good design, its DesignID and all seven proofs to prevent a defect that
+      // only exists in the extracted panels. So the design survives, the
+      // affected surfaces are flagged, and the panel is caught where it
+      // actually matters: PanelPro's human QC, on the template, before print.
+      //
+      // Anything else -- a blank zone, no contrast, a passenger flank that is
+      // not the driver's twin -- is a broken DESIGN, not a print defect. There
+      // is nothing worth showing the customer and nothing worth flagging, so it
+      // stays fatal exactly as before.
+      const cutoutOnly = masterQc?.code === "atlas_master_qc_cutouts_present"
+        && masterQc?.metadata?.contract === MASTER_QC_CONTRACT
+        && masterQc.metadata.masterHash === masterHash
+        && masterQc.metadata.guideHash === guideHash
+        && Array.isArray(masterQc?.cutout?.surfaces);
+      if (!cutoutOnly) {
+        throw new FlatAtlasError(
+          "flat_atlas_master_qc_failed",
+          `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
+        );
+      }
+      masterCutoutSurfaces = masterQc.cutout.surfaces.map(String);
+      masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
+      break;
     }
     correctiveParts.length = 0;
     correctiveParts.push({
@@ -1430,7 +1461,14 @@ async function generateOrReuseFlatAtlas(options) {
       masterProviderContract: MASTER_PROVIDER_CONTRACT,
       masterPromptHash: promptHash,
       masterExampleSetHash: currentExampleSetHash,
+      // The DESIGN passed: coherent, faithful, correctly lettered, and its seven
+      // proofs are sound. A cut-out does not change that -- it is a defect in
+      // the printed panel, recorded below and caught at PanelPro's human QC.
       masterQcPassed: true,
+      // Empty on a clean master. Non-empty means these surfaces' PANELS carry a
+      // hole and must not print until a human has looked at them on a template.
+      masterCutoutSurfaces,
+      masterCutoutFindings,
       masterQcContract: MASTER_QC_CONTRACT,
       masterQcConfidence: masterQc.metadata.confidence,
       masterQcModel: masterQc.metadata.model,

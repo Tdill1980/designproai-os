@@ -328,19 +328,42 @@ async function passengerMirrorMae(masterBytes, manifest) {
   return difference / (keep * 255);
 }
 
+/**
+ * A cut-out is a PRINT defect, not a broken design.
+ *
+ * The 3D proof masks the master to the real painted body, so a hole punched
+ * where the wheel arch sits lands exactly in the region the mask discards --
+ * the proof is unaffected, which is why gorgeous seven-view sets came out of
+ * ungated cut-out masters all through August. The hole only becomes real at the
+ * panel cut, where it prints as a hole in the vinyl.
+ *
+ * So the findings are classified rather than pooled. A blank, flat or
+ * mirror-broken master is unusable as a DESIGN and stays fatal. A cut-out is
+ * carried as a flag on the affected surfaces, so the design and its seven
+ * proofs survive and PanelPro's human QC catches the panel before it prints.
+ * `accepted` still means "clean on every count" -- the strict path is unchanged
+ * and callers that want it keep it.
+ */
 async function deterministicMasterChecks(masterBytes, manifest) {
   const zones = await zonePixelMetrics(masterBytes, manifest);
   const passengerMae = await passengerMirrorMae(masterBytes, manifest);
   const failures = [];
+  const blockingFailures = [];
+  const cutoutFindings = [];
+  const blocking = (finding) => { failures.push(finding); blockingFailures.push(finding); };
+  const cutout = (surfaceKey, finding) => {
+    failures.push(finding);
+    cutoutFindings.push({ surfaceKey, finding });
+  };
   for (const zone of zones) {
     if (zone.opaqueRatio < MIN_ZONE_OPAQUE_RATIO) {
-      failures.push(`${zone.surfaceKey} opaqueRatio=${zone.opaqueRatio.toFixed(5)}`);
+      blocking(`${zone.surfaceKey} opaqueRatio=${zone.opaqueRatio.toFixed(5)}`);
     }
     if (zone.edgeOpaqueRatio < MIN_ZONE_EDGE_OPAQUE_RATIO) {
-      failures.push(`${zone.surfaceKey} edgeOpaqueRatio=${zone.edgeOpaqueRatio.toFixed(5)}`);
+      blocking(`${zone.surfaceKey} edgeOpaqueRatio=${zone.edgeOpaqueRatio.toFixed(5)}`);
     }
     if (zone.lumaStddev < MIN_ZONE_LUMA_STDDEV) {
-      failures.push(`${zone.surfaceKey} lumaStddev=${zone.lumaStddev.toFixed(2)}`);
+      blocking(`${zone.surfaceKey} lumaStddev=${zone.lumaStddev.toFixed(2)}`);
     }
     // Wheel arches, glass and bed openings drawn as holes. Printed, these are
     // holes in the wrap; the installer is the one who cuts an opening, and they
@@ -348,7 +371,7 @@ async function deterministicMasterChecks(masterBytes, manifest) {
     // bright-majority guard on each is what keeps a black wrap legal.
     if (zone.nonBlackFraction >= CUTOUT_BRIGHT_MAJORITY) {
       if (zone.largestCutoutComponentRatio > MAX_ZONE_CUTOUT_COMPONENT_RATIO) {
-        failures.push(
+        cutout(zone.surfaceKey,
           `${zone.surfaceKey} largestCutoutComponentRatio=${zone.largestCutoutComponentRatio.toFixed(5)} `
           + `(flatBlackRatio=${zone.flatBlackRatio.toFixed(5)}) `
           + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
@@ -358,7 +381,7 @@ async function deterministicMasterChecks(masterBytes, manifest) {
         // Only components at least 0.25% of the zone count here. The raw
         // aggregate convicted a real master's lettering and shadow detail --
         // 7.3% spread across 3,761 specks -- as "wheel/glass/bed shapes".
-        failures.push(
+        cutout(zone.surfaceKey,
           `${zone.surfaceKey} concentratedFlatBlackRatio=${zone.concentratedFlatBlackRatio.toFixed(5)} `
           + `(flatBlackRatio=${zone.flatBlackRatio.toFixed(5)} across ${zone.cutoutComponentCount} shapes) `
           + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
@@ -368,9 +391,16 @@ async function deterministicMasterChecks(masterBytes, manifest) {
     }
   }
   if (passengerMae > MAX_PASSENGER_MIRROR_MAE) {
-    failures.push(`passengerMirrorMae=${passengerMae.toFixed(5)}`);
+    blocking(`passengerMirrorMae=${passengerMae.toFixed(5)}`);
   }
-  return { accepted: failures.length === 0, zones, passengerMirrorMae: passengerMae, failures };
+  return {
+    accepted: failures.length === 0,
+    zones,
+    passengerMirrorMae: passengerMae,
+    failures,
+    blockingFailures,
+    cutoutFindings,
+  };
 }
 
 async function boundedTransport(bytes, label) {
@@ -485,10 +515,14 @@ function parseMasterQcResponse(payload, expected) {
   return review;
 }
 
+// A hole is scoped to the printed panel, so fullBleedNoCutoutsContract is
+// deliberately absent from this list -- see cutoutContractFailed below. Every
+// other contract describes whether this is a usable DESIGN, and those stay
+// fatal: there is nothing worth showing a customer in an incoherent sheet.
 function rejectionFor(review, brandRequired, confidenceThreshold) {
   const requiredPass = [
     "outputFormatContract", "topologyContract", "zoneCoverageContract",
-    "fullBleedNoCutoutsContract", "coherentDesignContract", "briefFidelityContract",
+    "coherentDesignContract", "briefFidelityContract",
     "passengerMirrorContract", "artifactFreeContract",
   ];
   const failed = requiredPass.filter((field) => review[field] !== "pass");
@@ -497,6 +531,13 @@ function rejectionFor(review, brandRequired, confidenceThreshold) {
   if (!Number.isFinite(review.confidence) || review.confidence < confidenceThreshold) failed.push("confidence");
   if (!failed.length) return null;
   return `${failed.join(", ")}: ${(Array.isArray(review.reasons) ? review.reasons : []).map((reason) => cleanText(reason, 240)).filter(Boolean).join("; ")}`.slice(0, 800);
+}
+
+// The reviewer's own read on holes. Deterministic pixel measurement is the
+// authority, but the model sometimes sees an opening the metrics do not, and
+// either way the consequence is the same: flag the panel, keep the design.
+function cutoutContractFailed(review) {
+  return review?.fullBleedNoCutoutsContract !== "pass";
 }
 
 function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -512,8 +553,18 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
       const masterHash = sha256(master);
       const guideHash = sha256(guide);
       const deterministic = await deterministicMasterChecks(master, exactManifest);
-      if (!deterministic.accepted) {
-        return { accepted: false, code: "atlas_master_qc_deterministic_failed", reason: deterministic.failures.join("; ").slice(0, 800), deterministic };
+      // Only a broken DESIGN short-circuits the review. A cut-out master still
+      // has to earn its design review -- coherence, brief fidelity, lettering --
+      // because it is going to be shown to the customer as seven proofs, and
+      // because the exhausted-re-roll path needs a complete QC record to
+      // persist rather than an empty one.
+      if (deterministic.blockingFailures.length) {
+        return {
+          accepted: false,
+          code: "atlas_master_qc_deterministic_failed",
+          reason: deterministic.blockingFailures.join("; ").slice(0, 800),
+          deterministic,
+        };
       }
       const [masterTransport, guideTransport] = await Promise.all([
         boundedTransport(master, "master"), boundedTransport(guide, "guide"),
@@ -549,19 +600,36 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
       const review = parseMasterQcResponse(result?.payload, { masterHash, guideHash });
       const reason = rejectionFor(review, brandRequired, confidenceThreshold);
       if (reason) return { accepted: false, code: "atlas_master_qc_semantic_failed", reason, review, deterministic };
+      const cutoutSurfaces = [...new Set(
+        deterministic.cutoutFindings.map((item) => String(item.surfaceKey)),
+      )].sort();
+      const semanticCutout = cutoutContractFailed(review);
+      const findings = deterministic.cutoutFindings.map((item) => String(item.finding));
+      if (semanticCutout) findings.push("fullBleedNoCutoutsContract did not pass the design review");
+      const metadata = {
+        contract: MASTER_QC_CONTRACT,
+        model: result?.model || model,
+        keyFingerprint: result?.keyFingerprint || null,
+        confidence: review.confidence,
+        masterHash,
+        guideHash,
+        requestByteSize,
+      };
+      // The design is sound either way. `accepted` still means spotless, so the
+      // authoring loop keeps re-rolling for a clean sheet -- but a cut-out
+      // result now carries its full QC record, so the exhausted case can keep
+      // the design and flag the panels instead of destroying the run.
+      if (!cutoutSurfaces.length && !semanticCutout) {
+        return { accepted: true, review, deterministic, metadata };
+      }
       return {
-        accepted: true,
+        accepted: false,
+        code: "atlas_master_qc_cutouts_present",
+        reason: findings.join("; ").slice(0, 800),
+        cutout: { surfaces: cutoutSurfaces, findings, semantic: semanticCutout },
         review,
         deterministic,
-        metadata: {
-          contract: MASTER_QC_CONTRACT,
-          model: result?.model || model,
-          keyFingerprint: result?.keyFingerprint || null,
-          confidence: review.confidence,
-          masterHash,
-          guideHash,
-          requestByteSize,
-        },
+        metadata,
       };
     } catch (cause) {
       return {

@@ -405,6 +405,85 @@ async function unrelatedPassengerMaster() {
     ]).png().toBuffer();
 }
 
+/* ── A cut-out is a PRINT defect, not a broken design ───────────────────── */
+
+// The 3D proof masks the master to the real painted body, so a hole where the
+// wheel arch sits lands in the region the mask discards -- live proof, the
+// Flamingo Pools seven-view set (DID-5B2EB96C) came out of a completely ungated
+// cut-out master and every proof is correct. The hole only becomes real at the
+// panel cut. So it is carried as a flag on the affected surfaces, and the
+// design plus its seven proofs survive; PanelPro's human QC catches the panel
+// on the template before it prints.
+
+test("cut-out findings are classified apart from design-breaking failures", async () => {
+  const holed = await deterministicMasterChecks(await driverSheet('<circle cx="50" cy="50" r="13" fill="#000000"/>'), manifest);
+  assert.ok(holed.cutoutFindings.length > 0, "the arch must be found");
+  assert.deepEqual(holed.cutoutFindings.map((item) => item.surfaceKey), ["driver"]);
+  assert.deepEqual(holed.blockingFailures, [], "a hole is a print defect, not a broken design");
+  assert.equal(holed.accepted, false, "spotless still means spotless");
+});
+
+test("a blank master is a broken design, and its failure is blocking", async () => {
+  const blank = await sharp({
+    create: { width: 300, height: 200, channels: 4, background: { r: 229, g: 229, b: 229, alpha: 1 } },
+  }).png().toBuffer();
+  const result = await deterministicMasterChecks(blank, manifest);
+  assert.ok(result.blockingFailures.length > 0, "no contrast is not a print defect, it is no design");
+  assert.match(result.blockingFailures.join("; "), /lumaStddev/);
+  assert.deepEqual(result.cutoutFindings, []);
+});
+
+test("a cut-out master still earns its design review, and returns flagged with a full QC record", async () => {
+  const masterBytes = await driverSheet('<circle cx="50" cy="50" r="13" fill="#000000"/>');
+  const guideBytes = await sharp({
+    create: { width: 300, height: 200, channels: 3, background: "#e5e5e5" },
+  }).png().toBuffer();
+
+  let rawCalls = 0;
+  const validate = createAtlasMasterValidator({
+    provider: {
+      generateRaw: async ({ body, model }) => {
+        rawCalls += 1;
+        return { payload: payload(passingReview(body)), model, keyFingerprint: "0123456789ab" };
+      },
+    },
+  });
+  const result = await validate({ masterBytes, guideBytes, manifest, input: {} });
+
+  // It is going to be shown to the customer as seven proofs, so it still has to
+  // be coherent, faithful and correctly lettered.
+  assert.equal(rawCalls, 1, "a cut-out must NOT short-circuit the design review");
+  // Not spotless -- the authoring loop keeps re-rolling for a clean sheet.
+  assert.equal(result.accepted, false);
+  assert.equal(result.code, "atlas_master_qc_cutouts_present");
+  assert.deepEqual(result.cutout.surfaces, ["driver"]);
+  assert.equal(result.cutout.semantic, false, "the reviewer saw no hole; the pixels did");
+
+  // The decisive part: a COMPLETE record, so the exhausted-re-roll path can
+  // persist the design instead of destroying it for want of metadata.
+  assert.equal(result.metadata.contract, MASTER_QC_CONTRACT);
+  assert.equal(result.metadata.masterHash, _test.sha256(masterBytes));
+  assert.equal(result.metadata.guideHash, _test.sha256(guideBytes));
+  assert.ok(result.metadata.confidence >= 0.92);
+  assert.ok(result.review, "the design review is retained");
+});
+
+test("a design-breaking failure never reaches the review and carries no cut-out flag", async () => {
+  const blank = await sharp({
+    create: { width: 300, height: 200, channels: 4, background: { r: 229, g: 229, b: 229, alpha: 1 } },
+  }).png().toBuffer();
+  let rawCalls = 0;
+  const validate = createAtlasMasterValidator({
+    provider: { generateRaw: async () => { rawCalls += 1; throw new Error("must not run"); } },
+  });
+  const result = await validate({ masterBytes: blank, guideBytes: blank, manifest, input: {} });
+  assert.equal(rawCalls, 0);
+  assert.equal(result.accepted, false);
+  assert.equal(result.code, "atlas_master_qc_deterministic_failed");
+  assert.equal(result.cutout, undefined, "nothing to flag -- there is no design to keep");
+  assert.equal(result.metadata, undefined);
+});
+
 test("a true mirror twin with identical forward-reading text on both flanks passes", async () => {
   const bytes = await trueMirrorMasterWithForwardText();
   const mae = await passengerMirrorMae(bytes, sideBySideManifest);
