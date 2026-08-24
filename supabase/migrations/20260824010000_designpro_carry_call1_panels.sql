@@ -20,7 +20,12 @@
 -- existing renderAssets contract and its validation trigger are untouched.
 --
 -- The body below is the 20260821200000 definition with that one field added and
--- the read that populates it.
+-- the read that populates it -- plus the Close-Up correction that 20260822060000
+-- had applied as a TEXTUAL PATCH to the installed function rather than as a new
+-- definition. A wholesale CREATE OR REPLACE from the 20260821200000 source silently
+-- reverts that patch, which drops the seventh proof identity and makes the
+-- revision trigger raise seven_render_asset_identities_required on every handoff.
+-- The guard at the end of this file is what makes that failure loud instead.
 
 CREATE OR REPLACE FUNCTION public.handoff_designpro_generation_to_production(
   p_request_id uuid
@@ -94,7 +99,7 @@ BEGIN
     WHERE request_id=v_row.id AND superseded_at IS NULL
     ORDER BY consumer_role
   LOOP
-    IF v_view.consumer_role='closeup' THEN CONTINUE; END IF;
+    -- Close-Up is the seventh immutable proof and is carried unchanged.
     v_extension:=CASE v_view.content_type
       WHEN 'image/png' THEN 'png'
       WHEN 'image/jpeg' THEN 'jpg'
@@ -365,3 +370,28 @@ BEGIN
   );
 END;
 $fn$;
+
+-- Any later wholesale redefinition of this function reverts every textual patch
+-- applied to the installed body. Close-Up is the one that has already been lost
+-- this way, so it is asserted here rather than discovered in a shadow run.
+DO $migration$
+DECLARE
+  v_definition text;
+BEGIN
+  SELECT pg_catalog.pg_get_functiondef(
+    'public.handoff_designpro_generation_to_production(uuid)'::regprocedure
+  ) INTO v_definition;
+  IF pg_catalog.position(
+    'v_view.consumer_role=''closeup'' THEN CONTINUE' IN v_definition
+  )>0 THEN
+    RAISE EXCEPTION 'designpro_handoff_drops_closeup_identity';
+  END IF;
+END
+$migration$;
+
+REVOKE ALL ON FUNCTION
+  public.handoff_designpro_generation_to_production(uuid)
+  FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION
+  public.handoff_designpro_generation_to_production(uuid)
+  TO authenticated;
