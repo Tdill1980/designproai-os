@@ -112,28 +112,54 @@ test("provisional Google-grounded geometry is truthfully immutable and remains p
   assert.match(prompt, /never authorization for print production/i);
 });
 
-test("Call 1 sees the paired flattened top-view and corresponding finished 3D proof", async () => {
+/**
+ * NO VEHICLE PHOTOGRAPH REACHES CALL 1.
+ *
+ * The finished 3D proof used to be attached here, captioned "do not return a
+ * vehicle image in Call 1". That is the shape RULE 0.15 warns about -- a
+ * negative makes the model over-index on the forbidden thing -- and the
+ * forbidden thing was also in the context window as a photograph. Live,
+ * 2026-08-24 (request a43d3a61): three consecutive masters refused, driver and
+ * passenger each carrying ONE contiguous cut-out blob at 3.76% of a zone that
+ * was otherwise 91% artwork. A wheel arch, flattened into the sheet.
+ *
+ * The example record still has to carry both halves -- that release contract is
+ * unchanged and asserted below -- but only the flat sheet is shown to the model.
+ */
+test("Call 1 is taught by the flat sheet alone, and never shown the finished vehicle", async () => {
   const example = topologyExamples.loadBundledFlatToFinishedExample();
+  // The pair is still required to be well-formed; this is what is SENT, not what is STORED.
+  assert.ok(Buffer.isBuffer(example.flattenedTopView.bytes));
+  assert.ok(Buffer.isBuffer(example.finished3dProof.bytes));
+
   const parts = await atlas._test.topologyExampleParts([example]);
 
-  assert.equal(parts.length, 5);
-  assert.match(parts[0].text, /FLATTENED TOP-VIEW OUTPUT FORMAT/);
+  assert.equal(parts.length, 3, "one caption, one flat image, one target -- no vehicle photo");
+  assert.match(parts[0].text, /FLAT OUTPUT-FORMAT EXAMPLE/);
   assert.equal(parts[1].inlineData.mimeType, "image/png");
-  assert.match(parts[2].text, /CORRESPONDING FINISHED 3D PROOF/);
-  assert.equal(parts[3].inlineData.mimeType, "image/png");
-  assert.match(parts[4].text, /CALL 1 TARGET.*NEW flattened top-view design/i);
-  assert.notEqual(parts[1].inlineData.data, parts[3].inlineData.data,
-    "the model must receive both sides of the real teaching pair");
+  assert.match(parts[2].text, /CALL 1 TARGET.*NEW flat sheet/i);
 
   const flattened = Buffer.from(parts[1].inlineData.data, "base64");
-  const finished = Buffer.from(parts[3].inlineData.data, "base64");
   assert.deepEqual([...flattened.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-  assert.deepEqual([...finished.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+
+  // The decisive assertion: no attached image derives from the finished proof.
+  const finishedPng = await sharp(example.finished3dProof.bytes, { limitInputPixels: false })
+    .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+    .png().toBuffer();
+  for (const part of parts.filter((item) => item.inlineData)) {
+    assert.notEqual(
+      part.inlineData.data,
+      finishedPng.toString("base64"),
+      "a photograph of a wrapped vehicle must never enter the master authoring context",
+    );
+  }
 
   const prompt = atlas._test.atlasPrompt(v3Input, atlas.buildAtlasManifest(surfaces));
-  assert.match(prompt, /flattened top-view example.*finished 3D vehicle proof/i);
-  assert.match(prompt, /output the new flattened top-view design first/i);
-  assert.match(prompt, /never output a vehicle photograph/i);
+  // Stated positively: what the sheet IS, not what it must not look like.
+  assert.match(prompt, /six flat sheets of printed vinyl/i);
+  assert.match(prompt, /addresses, not subjects/i);
+  assert.doesNotMatch(prompt, /never output a vehicle photograph/i);
+  assert.doesNotMatch(prompt, /finished 3D vehicle proof/i);
   assert.match(prompt, /IGNORE their palette, imagery, text, logos, brand and style/);
 });
 
@@ -519,8 +545,15 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(providerOptions.aspectRatio, "1:1");
   assert.equal(providerOptions.imageSize, "4K");
   assert.equal(providerOptions.parts[0].inlineData.mimeType, "image/png", "the deterministic guide is the first input image");
-  assert.match(providerOptions.parts[2].text, /FLATTENED TOP-VIEW OUTPUT FORMAT/);
-  assert.match(providerOptions.parts[4].text, /CORRESPONDING FINISHED 3D PROOF/);
+  assert.match(providerOptions.parts[2].text, /FLAT OUTPUT-FORMAT EXAMPLE/);
+  // Exactly two images reach the authoring call: the deterministic guide and the
+  // flat example. A photograph of a wrapped vehicle is not one of them -- see
+  // "Call 1 is taught by the flat sheet alone" above for why.
+  assert.equal(
+    providerOptions.parts.filter((part) => part.inlineData).length,
+    2,
+    "guide + flat example only; no finished-vehicle photo in the master context",
+  );
   assert.equal(inserted.example_id, null, "release-bundled examples never forge a database example foreign key");
   assert.equal(inserted.production_eligible, false);
   assert.equal(inserted.manifest.geometryAuthority.status, "provisional");

@@ -81,8 +81,21 @@ pixel is opaque, and black is opaque. Two things now stop it:
 
 - **`runtime/flat-first-atlas.cjs`** states the rule positively (SOLID PANELS),
   because negatives make Gemini over-index on the forbidden thing. `PROMPT_VERSION`
-  is `designpro-flat-first-atlas-20260823.v5`; v4 masters are refused, not
+  is `designpro-flat-first-atlas-20260824.v6`; older masters are refused, not
   migrated, and the version string is the mechanism that refuses them.
+
+  **Do not attach a finished vehicle proof to Call 1.** v5 did, captioned "do
+  not return a vehicle image in Call 1" — a negative, with the forbidden thing
+  sitting in the context window as a photograph. It defeated SOLID PANELS
+  outright: live 2026-08-24 (request `a43d3a61`) three consecutive masters were
+  refused, driver and passenger each carrying ONE contiguous cut-out blob at
+  3.76% of a zone that was otherwise 91% artwork — a wheel arch, flattened into
+  the sheet. Call 1 authors a flat sheet; projection onto the vehicle is Calls
+  2–7's job, downstream, from that master. The flattened top-view example is the
+  only teacher this call needs, and v6 describes the output as printed vinyl on
+  the roll whose zone names are *addresses, not subjects*. Locked by
+  `source-tests/runtime/flat-first-atlas.test.mjs` ("Call 1 is taught by the flat
+  sheet alone"), which asserts no attached image derives from the finished proof.
 - **`runtime/atlas-master-qc.cjs`** measures `flatBlackRatio` (near-black blob
   *interiors*, not edges) against `nonBlackFraction` — the SHARE of the zone that
   is artwork. A cutout is a minority of flat black inside a zone that is mostly
@@ -111,9 +124,42 @@ pixel is opaque, and black is opaque. Two things now stop it:
 is telling you the truth — but a *rejection no longer kills the run*: Call 1
 re-rolls up to `MAX_MASTER_AUTHORING_ATTEMPTS` (3) times inside the one claimed
 authoring fence, feeding the gate's own findings back as corrective direction,
-exactly like the proof QC. Only the exhausted case fails the request. A rejected
-candidate was never persisted and is not "the design"; the fence still makes a
-second concurrent master impossible.
+exactly like the proof QC. A rejected candidate was never persisted and is not
+"the design"; the fence still makes a second concurrent master impossible.
+
+### A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN (Trish 2026-08-24)
+
+**A cut-out must never destroy the design or its seven proofs.** The 3D proof
+masks the master to the real painted body — the proof prompt says so in as many
+words — so a hole where the wheel arch sits lands in the region the mask
+discards anyway. The proof is unaffected *by construction*. Live proof: the
+Flamingo Pools seven-view set (`DID-5B2EB96C`, prompt version `…20260822.v2`,
+`masterQcPassed = null`) came out of a completely ungated cut-out master and
+every one of its proofs is correct. **The hole only becomes real at the panel
+cut**, where it prints as a hole in the vinyl.
+
+Killing the whole request at authoring therefore had the blast radius exactly
+backwards: it destroyed a good design, its DesignID and all seven proofs to
+prevent a defect that only exists in the extracted panels. So the two failure
+classes are now separated, and `deterministicMasterChecks` returns them apart:
+
+| class | examples | consequence |
+|---|---|---|
+| **blocking** — a broken *design* | blank zone, no contrast, passenger not the driver's twin | fatal, exactly as before; there is nothing worth showing a customer |
+| **cut-out** — a defect in the *panel* | wheel arch, glass, bed opening punched out | design and proofs survive, affected surfaces flagged |
+
+A cut-out no longer short-circuits the semantic review — the sheet still has to
+earn coherence, brief fidelity and correct lettering, because it is about to be
+shown to the customer, and because the exhausted path needs a complete QC record
+to persist rather than an empty one. `accepted` still means spotless, so the
+loop keeps re-rolling for a clean sheet; only when all three attempts carry
+cut-outs is the design kept, with `masterCutoutSurfaces` / `masterCutoutFindings`
+recorded on the revision.
+
+**Those surfaces' panels must not print until a human has seen them on a
+template.** That is what `await_panelpro_preflight_qc` is for. `masterQcPassed`
+stays `true` because the *design* passed; the cut-out is panel-scoped and
+carried separately. Locked by `tests/atlas-master-qc.test.mjs`.
 
 ## 🖥️ RULE 0.16 — CALLS 1–7 EXECUTE ON THIS SERVER (2026-08-23)
 

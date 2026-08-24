@@ -38,7 +38,11 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // zone come back as a vehicle silhouette with the wheel arches and glass punched
 // out, so they are not reusable under this contract and the version is what
 // refuses them.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260823.v5";
+// v6 (2026-08-24): the finished 3D vehicle proof is no longer attached to this
+// call, and the sheet is described as printed vinyl on the roll rather than as
+// vehicle flanks. v5 masters are refused rather than migrated, and this string
+// is the mechanism that refuses them.
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260824.v6";
 // Bounded QC-corrective re-rolls inside the one claimed authoring fence. Three
 // is the proof QC's budget for the same generate/inspect/correct loop.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
@@ -770,7 +774,7 @@ OUTPUT CLEANLINESS: The guide's colors, labels, outlines, legend, dimensions, gr
 
 SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL: every zone is ONE SOLID RECTANGLE of continuous printed artwork, opaque corner to corner and edge to edge. The design runs straight through every place a windshield, side window, door glass, wheel arch, tyre, pickup-bed opening, headlight, tail light, handle or trim piece will later sit, exactly as if those parts were not there. THE INSTALLER CUTS THE WHEEL AND WINDOW OPENINGS OUT OF THE FINISHED PANEL, so the panel must have artwork in those places for them to cut. Paint the wrap graphic across the whole rectangle. Each zone reads as a flat sheet of printed vinyl, never as a picture of a vehicle.
 
-PAIRED FLAT-TO-FINISHED LESSON: The attached flattened top-view example and its corresponding finished 3D vehicle proof teach the direction of this first call. The FLATTENED TOP-VIEW image is the output-format example. The finished vehicle is shown only so you understand how one coherent flat design later wraps across hood, roof, driver, passenger, front and rear surfaces. For this call, output the new flattened top-view design first; never output a vehicle photograph.
+WHAT YOU ARE PAINTING: six flat sheets of printed vinyl, laid out side by side on one canvas. Think of it as printed wallpaper on the roll, before anything is cut or applied. The zone names describe where each finished sheet is destined to go later; they are addresses, not subjects. Nothing in this canvas depicts a vehicle: there is no body, no panel gap, no door seam, no window, no wheel, no bumper and no ground shadow anywhere in the artwork. Every zone is filled corner to corner with the livery graphic itself, exactly as the printer lays down ink. The attached flat example shows the format of the answer.
 
 REFERENCE FIREWALL: Any attached installer-map, flattened top-view or finished-vehicle examples are TOPOLOGY/LAYOUT references only. Extract only panel arrangement, orientation, surface correspondence, masks and seam-continuity intent. IGNORE their palette, imagery, text, logos, brand and style. The customer's brief and verified customer-owned assets are the sole style source.
 
@@ -856,18 +860,32 @@ async function topologyExampleParts(examples = []) {
           "The paired topology lesson requires release-owned flattened and finished proof bytes",
         );
       }
+      // ONLY THE FLAT SHEET IS SHOWN. The example record still has to carry both
+      // halves -- that contract is validated above and unchanged -- but the
+      // finished 3D proof is deliberately NOT attached to this call.
+      //
+      // It used to be, captioned "do not return a vehicle image in Call 1". That
+      // is the exact shape RULE 0.15 warns about: a negative makes the model
+      // over-index on the forbidden thing, and here the forbidden thing was also
+      // sitting in the context window as a photograph. Gemini was shown a
+      // wrapped van and asked not to draw a van, so it drew one -- flattened
+      // into the zones, with the wheel arches and glass rendered as solid dark
+      // shapes. Live, 2026-08-24 (request a43d3a61): three consecutive attempts
+      // refused, driver and passenger each carrying ONE contiguous cut-out blob
+      // at 3.76% of a zone that was otherwise 91% artwork. A wheel arch.
+      //
+      // Call 1 does not need it. Its whole job is to author a flat sheet; the
+      // projection onto the vehicle is what Calls 2-7 do, from this master,
+      // downstream. The flattened top-view example already teaches the output
+      // format, which is the only thing this call has to learn. Removing the
+      // photo also shrinks the request against the master byte limit.
       const flattened = await sharp(example.flattenedTopView.bytes, { limitInputPixels: false })
         .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
         .png(PNG_OPTIONS).toBuffer();
-      const finished = await sharp(example.finished3dProof.bytes, { limitInputPixels: false })
-        .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
-        .png(PNG_OPTIONS).toBuffer();
       parts.push(
-        { text: "PAIRED TOPOLOGY EXAMPLE — FLATTENED TOP-VIEW OUTPUT FORMAT. Study how all visible vehicle surfaces are intentionally composed into one unwrapped design. Copy no artwork, wording, logo, color or brand." },
+        { text: "FLAT OUTPUT-FORMAT EXAMPLE. This is the shape of the answer: one unwrapped sheet, every zone filled corner to corner with continuous printed artwork. Study the layout and the way the design carries across zones. Copy no artwork, wording, logo, color or brand." },
         { inlineData: { mimeType: "image/png", data: flattened.toString("base64") } },
-        { text: "PAIRED TOPOLOGY EXAMPLE — CORRESPONDING FINISHED 3D PROOF. This shows how the preceding flat design reads after projection onto the vehicle. It is context only; do not return a vehicle image in Call 1 and copy no style." },
-        { inlineData: { mimeType: "image/png", data: finished.toString("base64") } },
-        { text: "CALL 1 TARGET: create the customer's NEW flattened top-view design in the deterministic guide layout. The seven finished 3D proof views are downstream projections of that saved master." },
+        { text: "CALL 1 TARGET: create the customer's NEW flat sheet in the deterministic guide layout, in that same format." },
       );
       continue;
     }
@@ -1264,6 +1282,10 @@ async function generateOrReuseFlatAtlas(options) {
   let masterQc;
   let masterRequestByteSize = 0;
   let masterAuthoringAttempts = 0;
+  // Empty unless the re-rolls were exhausted on cut-outs alone. These name the
+  // surfaces whose PANEL carries a hole; the design and its proofs are fine.
+  let masterCutoutSurfaces = [];
+  let masterCutoutFindings = [];
   const correctiveParts = [];
   for (let attempt = 1; attempt <= MAX_MASTER_AUTHORING_ATTEMPTS; attempt += 1) {
     masterAuthoringAttempts = attempt;
@@ -1286,10 +1308,37 @@ async function generateOrReuseFlatAtlas(options) {
       && masterQc.metadata.guideHash === guideHash;
     if (accepted) break;
     if (attempt === MAX_MASTER_AUTHORING_ATTEMPTS) {
-      throw new FlatAtlasError(
-        "flat_atlas_master_qc_failed",
-        `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
-      );
+      // EXHAUSTED. What happens now depends on WHY, because the two failure
+      // classes have completely different blast radii.
+      //
+      // A cut-out is a PRINT defect. The 3D proof masks the master to the real
+      // painted body, so a hole where the wheel arch sits lands in the region
+      // the mask discards anyway -- live proof: the Flamingo Pools seven-view
+      // set (DID-5B2EB96C) came out of a completely ungated cut-out master and
+      // every proof is correct. Killing the whole request over it destroyed a
+      // good design, its DesignID and all seven proofs to prevent a defect that
+      // only exists in the extracted panels. So the design survives, the
+      // affected surfaces are flagged, and the panel is caught where it
+      // actually matters: PanelPro's human QC, on the template, before print.
+      //
+      // Anything else -- a blank zone, no contrast, a passenger flank that is
+      // not the driver's twin -- is a broken DESIGN, not a print defect. There
+      // is nothing worth showing the customer and nothing worth flagging, so it
+      // stays fatal exactly as before.
+      const cutoutOnly = masterQc?.code === "atlas_master_qc_cutouts_present"
+        && masterQc?.metadata?.contract === MASTER_QC_CONTRACT
+        && masterQc.metadata.masterHash === masterHash
+        && masterQc.metadata.guideHash === guideHash
+        && Array.isArray(masterQc?.cutout?.surfaces);
+      if (!cutoutOnly) {
+        throw new FlatAtlasError(
+          "flat_atlas_master_qc_failed",
+          `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
+        );
+      }
+      masterCutoutSurfaces = masterQc.cutout.surfaces.map(String);
+      masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
+      break;
     }
     correctiveParts.length = 0;
     correctiveParts.push({
@@ -1412,7 +1461,14 @@ async function generateOrReuseFlatAtlas(options) {
       masterProviderContract: MASTER_PROVIDER_CONTRACT,
       masterPromptHash: promptHash,
       masterExampleSetHash: currentExampleSetHash,
+      // The DESIGN passed: coherent, faithful, correctly lettered, and its seven
+      // proofs are sound. A cut-out does not change that -- it is a defect in
+      // the printed panel, recorded below and caught at PanelPro's human QC.
       masterQcPassed: true,
+      // Empty on a clean master. Non-empty means these surfaces' PANELS carry a
+      // hole and must not print until a human has looked at them on a template.
+      masterCutoutSurfaces,
+      masterCutoutFindings,
       masterQcContract: MASTER_QC_CONTRACT,
       masterQcConfidence: masterQc.metadata.confidence,
       masterQcModel: masterQc.metadata.model,
