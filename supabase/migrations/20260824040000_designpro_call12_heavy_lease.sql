@@ -76,7 +76,7 @@ BEGIN
   WHERE lease_key='production-heavy';
   RETURN true;
 END
-$fn$
+$fn$;
 
 REVOKE ALL ON FUNCTION public.acquire_designpro_heavy_lease(uuid,uuid,text,integer)
   FROM PUBLIC,anon,authenticated;
