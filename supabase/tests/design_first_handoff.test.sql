@@ -226,12 +226,18 @@ select is(
      and workflow_type='designpro.entice_pack'),1,
   'one entice workflow is created'
 );
-select is(
-  (select count(*)::integer from public.designpro_workflow_stages s
-   join public.designpro_workflow_runs r on r.id=s.run_id
-   where r.revision_id='33000000-0000-4000-8000-000000000003'
-     and r.workflow_type='designpro.entice_pack'),8,
-  'the existing revision-to-Call-11 stage list is intact'
+-- GENIE deploys on order, so manifest.resolve is no longer one of these. The
+-- free run is asserted by name rather than by count: a stage silently added or
+-- dropped here is the failure mode this test exists to catch.
+select results_eq(
+  $$select s.stage_key from public.designpro_workflow_stages s
+    join public.designpro_workflow_runs r on r.id=s.run_id
+    where r.revision_id='33000000-0000-4000-8000-000000000003'
+      and r.workflow_type='designpro.entice_pack'
+    order by s.sequence$$,
+  $$values ('revision.freeze'),('proof.build'),('panels.build'),
+    ('logos.extract'),('panels.delogo'),('pack.verify'),('pack.activate')$$,
+  'the revision-to-Call-11 free run runs without GENIE'
 );
 
 -- Simulate the exact crash window: revision insertion committed, workflow
@@ -266,8 +272,8 @@ select is(
 select is(
   (select count(*)::integer from public.designpro_workflow_stages s
    join public.designpro_workflow_runs r on r.id=s.run_id
-   where r.id=(select (payload->>'workflowRunId')::uuid from replay_handoff)),8,
-  'repaired workflow receives the complete existing Calls 8-11 schedule'
+   where r.id=(select (payload->>'workflowRunId')::uuid from replay_handoff)),7,
+  'repaired workflow receives the complete Calls 8-11 schedule'
 );
 
 -- A paid production run exists, but neither the paid-products RPC nor the
