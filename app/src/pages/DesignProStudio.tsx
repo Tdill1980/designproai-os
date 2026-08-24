@@ -353,6 +353,18 @@ export default function DesignProStudio() {
               <ArrowLeft className="h-3.5 w-3.5" /> RevisionStudio
             </Link>
           )}
+          {/* This editor's production counterpart. The two surfaces bind the
+              same generation and the same server artifacts; this one composes,
+              the board validates and holds the human preflight gate. Reaching
+              it required going back through the job page. */}
+          {generationId && (
+            <Link
+              to={`/designpro/jobs/${generationId}/panelpro`}
+              className="hidden items-center gap-1.5 rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10 sm:flex"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" /> PanelPro board
+            </Link>
+          )}
           <button className="p-2 rounded-md hover:bg-white/10 text-white/70" aria-label="Undo">
             <Undo2 className="w-4 h-4" />
           </button>

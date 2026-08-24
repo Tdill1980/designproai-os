@@ -429,8 +429,19 @@ function StudioWorkspace({
                 </div>
               </div>
             )}
+            {/* TWO SURFACES, NAMED FOR WHAT THEY ARE. This was a single button
+                reading "Open in PanelProStudio" that opened /panel-studio — the
+                BRANDED DESIGN EDITOR — while the PanelPro board, the production
+                validation surface, lives at /panelpro and had no route from
+                here at all. One button carrying the other surface's name is the
+                confusion that makes an operator open the editor expecting the
+                QC gate. They are separate responsibilities and now separate,
+                correctly labelled routes. */}
             <Button asChild variant="outline" className="w-full border-cyan-500/30 bg-cyan-500/5 text-cyan-200 hover:bg-cyan-500/10">
-              <Link to={`/designpro/jobs/${generationId}/panel-studio`}>Open in PanelProStudio</Link>
+              <Link to={`/designpro/jobs/${generationId}/panel-studio`}>Open in DesignPro Studio</Link>
+            </Button>
+            <Button asChild variant="outline" className="w-full border-fuchsia-500/30 bg-fuchsia-500/5 text-fuchsia-200 hover:bg-fuchsia-500/10">
+              <Link to={`/designpro/jobs/${generationId}/panelpro`}>Open PanelPro Studio board</Link>
             </Button>
           </div>
         )}

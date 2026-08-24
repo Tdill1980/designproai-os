@@ -5,6 +5,7 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const {
+  LOGO_REQUIREMENT,
   PHOTO_REALISM_LOCK,
   buildAtlasArtboardDesignIQDirection,
   buildFlatDesignIQDirection,
@@ -102,4 +103,58 @@ test("Atlas freezes Close-Up as proof seven without reintroducing a hero view", 
   assert.deepEqual(manifest.proofOnlyViews, ["close-up"]);
   assert.match(JSON.stringify(PROOF_DEPENDENCIES), /close-up/);
   assert.doesNotMatch(JSON.stringify({ manifest, dependencies: PROOF_DEPENDENCIES }), /hero-3d/);
+});
+
+// THE CREATIVE HALF IS HELD TO THE SAME SOURCE PARITY AS THE QUALITY CONTRACT.
+//
+// A.T.L.A.S. topology is protected and is NOT what these assert. They cover the
+// branding/logo/mascot intelligence that the port had quietly weakened while
+// the topology half stayed correct - the regression that made a commercial
+// sheet come back with set type and a template-grade mark instead of a designed
+// identity. Each phrase is asserted against the vendored reference AND the
+// generated prompt, so neither copy can drift alone.
+test("Atlas keeps the proven branding, logo and mascot creative intelligence", () => {
+  const prompt = buildAtlasArtboardDesignIQDirection({
+    brief: "Rugged mountain graphics for a roofing fleet",
+    companyName: "Ridgeline Roofing",
+    phone: "555-0142",
+    mascot: "a granite ram",
+    finish: "Gloss",
+    vehicle: { year: "2024", make: "Ford", model: "Transit" },
+  });
+
+  // The BRAND line is a DESIGN instruction, not a spelling lock. Losing it is
+  // what left the master call with nothing asking for a composed identity.
+  const brandComposition =
+    "integrate the company name + logo + a clean contact bar into the design, legible at a glance";
+  assert.ok(edgeSource.includes(brandComposition), "the reference must still carry the BRAND composition line");
+  assert.ok(prompt.includes(brandComposition), "Atlas must ask for a composed brand identity, not just correct spelling");
+
+  // ONE literal, shared by both producers, matching the reference exactly. The
+  // port had re-added a form prescription and a negative here; both are the
+  // wording the reference deleted after logos converged on one look.
+  assert.equal(
+    LOGO_REQUIREMENT,
+    "This business needs its own logo — decide its form from this brief alone.",
+  );
+  assert.ok(edgeSource.includes(LOGO_REQUIREMENT), "the logo requirement must stay identical to the reference");
+  assert.ok(prompt.includes(LOGO_REQUIREMENT));
+  assert.doesNotMatch(prompt, /must not look like a generic template mark/);
+  assert.doesNotMatch(prompt, /professionally art-directed and distinctive/);
+
+  // A mascot is a logo, and the master call is the only call that draws it.
+  for (const phrase of [
+    "premium mascot logo in the spirit of a pro sports or esports emblem",
+    "clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance",
+    "bespoke illustration a top studio would charge for",
+  ]) {
+    assert.ok(edgeSource.includes(phrase), `the reference must still carry: ${phrase}`);
+    assert.ok(prompt.includes(phrase), `Atlas must carry the proven mascot craft bar: ${phrase}`);
+  }
+  // Placement is A.T.L.A.S. zone topology and is not this file's to direct.
+  assert.doesNotMatch(prompt, /rear quarter panel, sized to complement/);
+
+  // The spelling instruction appeared twice in a row before this. Duplication
+  // carries no creative value and dilutes the sentence that does.
+  assert.equal(prompt.match(/[Ss]pell (?:it|the business name) exactly/g)?.length, 1);
 });
