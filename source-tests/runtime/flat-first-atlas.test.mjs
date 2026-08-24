@@ -112,54 +112,28 @@ test("provisional Google-grounded geometry is truthfully immutable and remains p
   assert.match(prompt, /never authorization for print production/i);
 });
 
-/**
- * NO VEHICLE PHOTOGRAPH REACHES CALL 1.
- *
- * The finished 3D proof used to be attached here, captioned "do not return a
- * vehicle image in Call 1". That is the shape RULE 0.15 warns about -- a
- * negative makes the model over-index on the forbidden thing -- and the
- * forbidden thing was also in the context window as a photograph. Live,
- * 2026-08-24 (request a43d3a61): three consecutive masters refused, driver and
- * passenger each carrying ONE contiguous cut-out blob at 3.76% of a zone that
- * was otherwise 91% artwork. A wheel arch, flattened into the sheet.
- *
- * The example record still has to carry both halves -- that release contract is
- * unchanged and asserted below -- but only the flat sheet is shown to the model.
- */
-test("Call 1 is taught by the flat sheet alone, and never shown the finished vehicle", async () => {
+test("Call 1 sees the paired flattened top-view and corresponding finished 3D proof", async () => {
   const example = topologyExamples.loadBundledFlatToFinishedExample();
-  // The pair is still required to be well-formed; this is what is SENT, not what is STORED.
-  assert.ok(Buffer.isBuffer(example.flattenedTopView.bytes));
-  assert.ok(Buffer.isBuffer(example.finished3dProof.bytes));
-
   const parts = await atlas._test.topologyExampleParts([example]);
 
-  assert.equal(parts.length, 3, "one caption, one flat image, one target -- no vehicle photo");
-  assert.match(parts[0].text, /FLAT OUTPUT-FORMAT EXAMPLE/);
+  assert.equal(parts.length, 5);
+  assert.match(parts[0].text, /FLATTENED TOP-VIEW OUTPUT FORMAT/);
   assert.equal(parts[1].inlineData.mimeType, "image/png");
-  assert.match(parts[2].text, /CALL 1 TARGET.*NEW flat sheet/i);
+  assert.match(parts[2].text, /CORRESPONDING FINISHED 3D PROOF/);
+  assert.equal(parts[3].inlineData.mimeType, "image/png");
+  assert.match(parts[4].text, /CALL 1 TARGET.*NEW flattened top-view design/i);
+  assert.notEqual(parts[1].inlineData.data, parts[3].inlineData.data,
+    "the model must receive both sides of the real teaching pair");
 
   const flattened = Buffer.from(parts[1].inlineData.data, "base64");
+  const finished = Buffer.from(parts[3].inlineData.data, "base64");
   assert.deepEqual([...flattened.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-
-  // The decisive assertion: no attached image derives from the finished proof.
-  const finishedPng = await sharp(example.finished3dProof.bytes, { limitInputPixels: false })
-    .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
-    .png().toBuffer();
-  for (const part of parts.filter((item) => item.inlineData)) {
-    assert.notEqual(
-      part.inlineData.data,
-      finishedPng.toString("base64"),
-      "a photograph of a wrapped vehicle must never enter the master authoring context",
-    );
-  }
+  assert.deepEqual([...finished.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 
   const prompt = atlas._test.atlasPrompt(v3Input, atlas.buildAtlasManifest(surfaces));
-  // Stated positively: what the sheet IS, not what it must not look like.
-  assert.match(prompt, /six flat sheets of printed vinyl/i);
-  assert.match(prompt, /addresses, not subjects/i);
-  assert.doesNotMatch(prompt, /never output a vehicle photograph/i);
-  assert.doesNotMatch(prompt, /finished 3D vehicle proof/i);
+  assert.match(prompt, /flattened top-view example.*finished 3D vehicle proof/i);
+  assert.match(prompt, /output the new flattened top-view design first/i);
+  assert.match(prompt, /never output a vehicle photograph/i);
   assert.match(prompt, /IGNORE their palette, imagery, text, logos, brand and style/);
 });
 
@@ -261,6 +235,45 @@ test("topology examples are firewalled from customer style", () => {
   assert.match(prompt, /passenger flank.*LEFT/i);
   assert.match(prompt, /driver flank.*RIGHT/i);
   assert.match(prompt, /REAR, ROOF, HOOD, FRONT/);
+});
+
+/**
+ * EVERY CALL-OUT SITS ON THE PANEL IT NAMES.
+ *
+ * The labels were a legend: six words in a fixed row along the top edge at
+ * font-size 26 on a 4096px canvas, ordered PASSENGER, REAR, ROOF, HOOD, FRONT,
+ * DRIVER while the zones are laid out passenger-left, centre column,
+ * driver-right. The row neither matched the layout nor touched the rectangle it
+ * named, so the mapping was left to inference from a caption barely resolvable
+ * at that scale. The bundled Houdini sheet prints each name on its own panel;
+ * so does the guide.
+ */
+test("each zone label is centred on its own rectangle and rotated with the panel", () => {
+  const manifest = atlas.buildAtlasManifest(surfaces);
+  const svg = atlas._test.guideSvg(manifest).toString("utf8");
+
+  // The fixed top-edge legend row is gone.
+  assert.doesNotMatch(svg, /y="84"/, "the old legend row must not come back");
+
+  for (const zone of manifest.zones) {
+    const label = zone.surfaceKey.toUpperCase();
+    const centreX = zone.x + zone.w / 2;
+    const centreY = zone.y + zone.h / 2;
+    const node = svg.match(new RegExp(`<text[^>]*>${label}</text>`));
+    assert.ok(node, `${label} must be drawn on the guide`);
+    assert.match(node[0], new RegExp(`x="${centreX}"`), `${label} must sit at its zone's centre`);
+    assert.match(node[0], new RegExp(`y="${centreY}"`), `${label} must sit at its zone's centre`);
+    // Rotated with the panel: the flanks read along their length, the centre
+    // column reads horizontally, exactly as the livery will.
+    assert.match(
+      node[0],
+      new RegExp(`rotate\\(${zone.rotationDegrees} ${centreX} ${centreY}\\)`),
+      `${label} must rotate with its panel`,
+    );
+    // Scaled to the zone, not a fixed size that vanishes on a 4096px canvas.
+    const size = Number(node[0].match(/font-size="(\d+)"/)[1]);
+    assert.ok(size >= 48, `${label} at ${size}px is too small to resolve`);
+  }
 });
 
 test("the deterministic guide is neutral monochrome, never a hidden style palette", () => {
@@ -545,15 +558,8 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(providerOptions.aspectRatio, "1:1");
   assert.equal(providerOptions.imageSize, "4K");
   assert.equal(providerOptions.parts[0].inlineData.mimeType, "image/png", "the deterministic guide is the first input image");
-  assert.match(providerOptions.parts[2].text, /FLAT OUTPUT-FORMAT EXAMPLE/);
-  // Exactly two images reach the authoring call: the deterministic guide and the
-  // flat example. A photograph of a wrapped vehicle is not one of them -- see
-  // "Call 1 is taught by the flat sheet alone" above for why.
-  assert.equal(
-    providerOptions.parts.filter((part) => part.inlineData).length,
-    2,
-    "guide + flat example only; no finished-vehicle photo in the master context",
-  );
+  assert.match(providerOptions.parts[2].text, /FLATTENED TOP-VIEW OUTPUT FORMAT/);
+  assert.match(providerOptions.parts[4].text, /CORRESPONDING FINISHED 3D PROOF/);
   assert.equal(inserted.example_id, null, "release-bundled examples never forge a database example foreign key");
   assert.equal(inserted.production_eligible, false);
   assert.equal(inserted.manifest.geometryAuthority.status, "provisional");
