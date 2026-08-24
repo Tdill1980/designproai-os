@@ -25,10 +25,17 @@ test("released standalone stamp visibly binds immutable business identity", () =
   assert.match(svg, /2026-08-06/);
 });
 
-test("released claimant deterministically composites and archives seal plus stamped proof", () => {
+test("released claimant archives the seal, the stamped proof and the QC certificate", () => {
   assert.match(claimantSource, /stamped-call8-proof\.png/);
   assert.match(claimantSource, /composition: "deterministic-southeast-overlay\.v1"/);
-  assert.match(claimantSource, /counts\.stamp !== 2/);
+  // The seal proves a permitted human signed. The certificate is the page that
+  // says WHAT they signed -- the two checklists they actually ticked and the
+  // per-side sizes from the bound GENIE manifest -- so a pack without it ships
+  // an approval nobody downstream can read.
+  assert.match(claimantSource, /qc-certificate\.png/);
+  assert.match(claimantSource, /buildQcCertificatePng\(/);
+  assert.match(claimantSource, /\[seal, stamped, certificate\]/);
+  assert.match(claimantSource, /counts\.stamp !== 3/);
   assert.match(claimantSource, /identity\/design-order\.json/);
   // Seven when the Production Pack was bought -- they are its design proofs.
   assert.match(claimantSource, /"source-view": viewEntries\.length/);

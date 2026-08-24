@@ -26,6 +26,7 @@ const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProdu
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
+const { CERTIFICATE_CONTRACT, buildQcCertificatePng } = require("./qc-certificate.cjs");
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
 
 const CLAIM_SECONDS = 900;
@@ -1725,6 +1726,38 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const svg = stampSvg(verifiedBy, designId, orderNumber, approvalDate.toISOString().slice(0, 10));
     const png = await sharp(svg).png().toBuffer();
     const sealStored = await upload(sb, `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-approval-stamp.png`, png, "image/png");
+    // THE PAGE THAT SAYS WHAT WAS CHECKED. The seal proves a permitted human
+    // signed; it carries no checklist and no dimensions, so the pack shipped with
+    // nothing a shop could read to see which checks passed or how big each panel
+    // is. The checks come from the two receipts those humans actually signed and
+    // the sizes from the bound GENIE manifest -- nothing here is defaulted, so the
+    // page can only ever state what the run really recorded.
+    const preflightReceipt = await receipt(sb, run.id, "panelpro.preflight");
+    const certificateSurfaces = SURFACE_KEYS.map((surfaceKey) => {
+      const surface = (input.dimensionManifest?.expectedSurfaces || [])
+        .find((item) => String(item.surfaceKey) === surfaceKey) || {};
+      const width = Number(surface.widthInches);
+      const height = Number(surface.heightInches);
+      return {
+        surfaceKey,
+        label: surfaceKey.charAt(0).toUpperCase() + surfaceKey.slice(1),
+        trimWidthIn: width, trimHeightIn: height,
+        printWidthIn: Number.isFinite(width) ? width + 10 : null,
+        printHeightIn: Number.isFinite(height) ? height + 10 : null,
+        surfaceSqFt: surface.surfaceSqFt,
+      };
+    });
+    const certificateBytes = await buildQcCertificatePng({
+      designId, orderNumber,
+      designName: revisionSource.snapshot?.designName || "",
+      vehicle: revisionSource.snapshot?.vehicle || {},
+      verifiedBy,
+      approvedAtIso: approvalDate.toISOString(),
+      preflightQc: preflightReceipt.receipt?.qc || {},
+      finalQc: finalQc.receipt?.qc || {},
+      surfaces: certificateSurfaces,
+    });
+    const certificateStored = await upload(sb, `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-certificate.png`, certificateBytes, "image/png");
     const proofRows = await artifacts(sb, run.id, ["flat-proof"]);
     if (proofRows.length !== 1) throw new StageError("stamp_source_proof_missing", "Exact copied Call 8 proof is required for stamping", false);
     const proofBytes = await storageBytes(sb, proofRows[0].storage_path);
@@ -1736,8 +1769,9 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const stampedProof = await sharp(proofBytes).composite([{ input: sealOverlay, gravity: "southeast" }]).png().toBuffer();
     const stampedStored = await uploadProducedBytes(sb, run, stage, runtimeConfig, `designpro/${tenantKey(run.tenant_key)}/${run.id}/stamped-call8-proof.png`, stampedProof, "image/png");
     const seal = artifact("stamp", sealStored.storagePath, sealStored.hash, sealStored.bytes, "seal", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), source: "server-svg-port-of-frozen-canvas-stamp", approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables });
+    const certificate = artifact("stamp", certificateStored.storagePath, certificateStored.hash, certificateStored.bytes, "certificate", { contract: CERTIFICATE_CONTRACT, designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), preflightQc: preflightReceipt.receipt?.qc || {}, finalQc: finalQc.receipt?.qc || {}, surfaces: certificateSurfaces, approvedProducts: authorized.products });
     const stamped = artifact("stamp", stampedStored.storagePath, stampedStored.hash, stampedStored.bytes, "stamped-proof", { designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), sourceProofHash: proofRows[0].content_hash, sealHash: sealStored.hash, composition: "deterministic-southeast-overlay.v1" });
-    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables }, stampedStored.hash, [seal, stamped]);
+    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt: approvalDate.toISOString(), stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, certificateHash: certificateStored.hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables }, stampedStored.hash, [seal, stamped, certificate]);
     if (stampedStored.spool) await removeCommittedSpool(stampedStored.spool).catch((error) => console.error(`[DESIGNPRO-OS] committed stamped-proof spool cleanup failed: ${error.message}`));
     return completed;
   }
@@ -1755,7 +1789,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const zipKinds = [...new Set(authorized.zipKinds || [])];
     const rows = await artifacts(sb, run.id, zipKinds);
     const counts = Object.fromEntries(zipKinds.map((kind) => [kind, rows.filter((item) => item.artifact_kind === kind).length]));
-    if (counts.stamp !== 2) throw new StageError("zip_artifacts_incomplete", "Every delivered pack carries its seal and stamped proof", false);
+    if (counts.stamp !== 3) throw new StageError("zip_artifacts_incomplete", "Every delivered pack carries its seal, its stamped proof and its QC certificate", false);
     if (authorized.productionPackAuthorized
       && (counts["flat-proof"] !== 1 || counts.panel !== SURFACE_KEYS.length || counts.output !== authorized.requiredOutputFiles)) {
       throw new StageError("zip_artifacts_incomplete", "The Production Pack ZIP requires the Call 8 proof, six Call 9 masters and the complete output set", false);
