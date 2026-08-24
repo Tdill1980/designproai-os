@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered forty-migration chain', () => {
-  assert.equal(migrationNames.length, 40);
+test('fresh bootstrap contains one ordered forty-one-migration chain', () => {
+  assert.equal(migrationNames.length, 41);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -84,6 +84,10 @@ test('fresh bootstrap contains one ordered forty-migration chain', () => {
       // A.T.L.A.S. panels are solid rectangles. v4 masters, which could punch
       // wheel arches and glass out of a zone, stop qualifying.
       '20260823230000',
+      // GENIE deploys only when the production pack is ordered. It used to sit
+      // second in the FREE run, parking every job before a proof or a panel
+      // existed.
+      '20260824000000',
     ],
   );
 });

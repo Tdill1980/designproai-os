@@ -28,7 +28,20 @@ test("seven distinct views automatically precede flat proof, panels and logos", 
   // Call 11 (panels.delogo) sits between Call 10 and pack.verify so its
   // de-logoed duplicates exist before the pack is sealed and handed to the
   // PanelPro preflight gate.
-  assert.deepEqual(STAGES.slice(0, 8), ["revision.freeze", "manifest.resolve", "proof.build", "panels.build", "logos.extract", "panels.delogo", "pack.verify", "pack.activate"]);
+  // GENIE is NOT here. manifest.resolve deploys only when the production pack is
+  // ordered; the free half needs no validated production geometry, because Call
+  // 1 resolved the design-time size of every side and cut the six panels to it.
+  assert.deepEqual(STAGES.slice(0, 7), ["revision.freeze", "proof.build", "panels.build", "logos.extract", "panels.delogo", "pack.verify", "pack.activate"]);
+  assert.equal(STAGES[7], "await_purchase", "the purchase gate leads the paid half");
+  assert.equal(STAGES[8], "manifest.resolve", "GENIE deploys on order, behind the gate");
+  assert.ok(
+    STAGES.indexOf("manifest.resolve") > STAGES.indexOf("await_purchase"),
+    "GENIE must never run before the pack is ordered",
+  );
+  assert.ok(
+    STAGES.indexOf("manifest.resolve") < STAGES.indexOf("source.verify"),
+    "every paid stage is cut and verified against the dimensions GENIE produces",
+  );
   assert.deepEqual(RECEIPTS.slice(0, 4), ["views.seven-source", "call8.flat-proof", "call9.surface-panels", "call10.logo-inventory"]);
   assert.ok(RECEIPTS.includes("final.human-qc"));
   assert.equal(new Set(Object.values(_test.exactSevenViews({ renderAssets: views }, tenantKey, revisionId)).map((asset) => asset.contentHash)).size, 7);

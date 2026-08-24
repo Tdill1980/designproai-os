@@ -35,13 +35,23 @@ const HASH_RE = /^[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const stageLeaseContext = new AsyncLocalStorage();
 const STAGES = Object.freeze([
-  "revision.freeze", "manifest.resolve", "proof.build", "panels.build",
+  "revision.freeze", "proof.build", "panels.build",
   // Call 11 sits between Call 10 and the PanelPro gate: its de-logoed
   // duplicates are what that gate validates against vehicle templates.
   "logos.extract", "panels.delogo", "pack.verify", "pack.activate",
   // The purchase gate leads production. Everything after it is paid work, so
   // nothing expensive sits ahead of it.
-  "await_purchase", "source.verify",
+  //
+  // GENIE DEPLOYS ONLY WHEN THE PRODUCTION PACK IS ORDERED. manifest.resolve
+  // used to sit second, in the FREE half, where it parked every run on
+  // genie_dimension_validation_required before Call 8 or a single panel
+  // existed -- a run sat there sixteen hours on 2026-08-23 and that, not a code
+  // bug, is why RevisionStudio had nothing to show. The free half needs no
+  // validated production geometry: Call 1 resolves the design-time size of each
+  // side and cuts the six panels to it. GENIE resolves the true production
+  // dimensions and drives the progress page, and it is paid work, so it belongs
+  // behind the gate with the rest of the paid work.
+  "await_purchase", "manifest.resolve", "source.verify",
   "await_panelpro_preflight_qc", "enhance.upscale", "output.build", "output.verify",
   "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver",
 ]);
