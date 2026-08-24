@@ -430,7 +430,11 @@ function StudioWorkspace({
               </div>
             )}
             <Button asChild variant="outline" className="w-full border-cyan-500/30 bg-cyan-500/5 text-cyan-200 hover:bg-cyan-500/10">
-              <Link to={`/designpro/jobs/${generationId}/panel-studio`}>Open in PanelProStudio</Link>
+              {/* /panel-studio routes to DesignProStudio, a different page. The
+                  PanelPro Studio board -- per-side proof beside print panel, the
+                  A.T.L.A.S. master and its version history, both QC gates -- is
+                  /panelpro. This button sent the design team to the wrong page. */}
+              <Link to={`/designpro/jobs/${generationId}/panelpro`}>Open in PanelProStudio</Link>
             </Button>
           </div>
         )}

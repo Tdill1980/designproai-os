@@ -369,3 +369,32 @@ test("every customer proof surface selects by role, never by shape or order", ()
     }
   }
 });
+
+// Every link that says "PanelProStudio" must reach the PanelPro Studio board.
+//
+// /designpro/jobs/:generationId/panel-studio and .../panelpro are two different
+// routes rendering two different pages. RevisionStudio's button pointed at the
+// first, so the design team was sent to DesignProStudio and never saw the
+// A.T.L.A.S. master, its version history, the QC duplicates or either gate --
+// the board looked missing when it was simply never opened.
+test("a PanelProStudio link opens the PanelPro Studio board, not DesignProStudio", () => {
+  const routes = readFileSync(resolve(ROOT, "App.tsx"), "utf8");
+  assert.match(
+    routes,
+    /path="\/designpro\/jobs\/:generationId\/panelpro"[\s\S]{0,140}?PanelProStudioBoard/,
+    "the board route moved -- update the links with it",
+  );
+  for (const file of [
+    "components/revisioniq/ServerRevisionStudio.tsx",
+    "pages/designpro/ProductionWorkflow.tsx",
+  ]) {
+    const source = readFileSync(resolve(ROOT, file), "utf8");
+    const links = [...source.matchAll(/to=\{`([^`]*panel[^`]*)`\}/g)].map((match) => match[1]);
+    for (const link of links) {
+      assert.ok(
+        !link.includes("/panel-studio"),
+        `${file} links to ${link}; the PanelPro Studio board is /panelpro`,
+      );
+    }
+  }
+});
