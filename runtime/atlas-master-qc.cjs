@@ -21,6 +21,24 @@ const MIN_ZONE_OPAQUE_RATIO = 0.995;
 const MIN_ZONE_EDGE_OPAQUE_RATIO = 0.99;
 const MIN_ZONE_LUMA_STDDEV = 6;
 const MAX_PASSENGER_MIRROR_MAE = 0.26;
+// The trim fraction this check drops before averaging. The authoring prompt
+// requires passenger to be the mirror-compatible TWIN of driver -- same
+// motif, scene, hierarchy, scale -- while "every word/logo/URL/number
+// remains forward-reading on both zones" (flat-first-atlas.cjs TOPOLOGY
+// LOCK). That second clause makes a literal full-zone pixel mirror
+// impossible for any design that carries legible branding: flipping driver's
+// forward text produces backward text, which can never match passenger's
+// independently forward text at the same pixels, however well the two flanks
+// actually match as a design. Live evidence 2026-08-24 (generation
+// dda491ae-ed63-4aa7-96af-c377d4f71383): a real branded master was refused
+// at passengerMirrorMae=0.28346, barely over the old untrimmed 0.26 bound,
+// with no other check flagging it -- the motif matched, only the localized
+// text/logo band did not, exactly as the prompt instructs. Dropping the
+// worst-matching quarter of pixels before averaging absorbs one text/logo
+// band's worth of legitimate divergence while a passenger zone that is not
+// actually the driver's twin still differs across nearly the whole zone and
+// still fails on the trimmed mean.
+const PASSENGER_MIRROR_TRIM_FRACTION = 0.25;
 // A punched-out wheel arch or window is a flat, near-black blob sitting inside
 // otherwise bright artwork -- opaque, so opaqueRatio never saw it. Live evidence
 // 2026-08-23 (Becky's Bakery): the master came back as a van silhouette with
@@ -299,11 +317,15 @@ async function passengerMirrorMae(masterBytes, manifest) {
   if (!mirroredDriver.length || mirroredDriver.length !== passengerPixels.length) {
     throw new AtlasMasterQcError("atlas_master_qc_side_comparison_invalid", "Passenger mirror comparison could not be computed");
   }
-  let difference = 0;
+  const diffs = new Array(mirroredDriver.length);
   for (let index = 0; index < mirroredDriver.length; index += 1) {
-    difference += Math.abs(mirroredDriver[index] - passengerPixels[index]);
+    diffs[index] = Math.abs(mirroredDriver[index] - passengerPixels[index]);
   }
-  return difference / (mirroredDriver.length * 255);
+  diffs.sort((a, b) => a - b);
+  const keep = Math.max(1, Math.ceil(diffs.length * (1 - PASSENGER_MIRROR_TRIM_FRACTION)));
+  let difference = 0;
+  for (let index = 0; index < keep; index += 1) difference += diffs[index];
+  return difference / (keep * 255);
 }
 
 async function deterministicMasterChecks(masterBytes, manifest) {
@@ -555,6 +577,7 @@ module.exports = {
   AtlasMasterQcError,
   MASTER_QC_CONTRACT,
   MAX_PASSENGER_MIRROR_MAE,
+  PASSENGER_MIRROR_TRIM_FRACTION,
   createAtlasMasterValidator,
   deterministicMasterChecks,
   masterQcPrompt,

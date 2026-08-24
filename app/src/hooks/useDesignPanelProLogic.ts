@@ -47,7 +47,7 @@ type RoofSize = "none" | "small" | "medium" | "large";
 type GenerationError = 'auth_required' | 'limit_reached' | 'generation_failed';
 
 const ATLAS_NEW_RUN_REQUIRED_MESSAGE =
-  "This saved A.T.L.A.S. proof set cannot be reused. Start a new A.T.L.A.S. run.";
+  "This saved proof set cannot be reused. Start a new Precision run.";
 const atlasNewRunRequired = (error: unknown) => {
   const code = String((error as any)?.code || (error as any)?.message || error || "");
   return code.includes("flat_first_atlas_new_run_required")
@@ -676,7 +676,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         title: finished.designName || "Design Rendered",
         description:
           pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-            ? "Your A.T.L.A.S. master and seven vehicle views are saved. The server started Call 8 and the production job now reports its real status."
+            ? "Your precision master and seven vehicle views are saved. The server started Call 8 and the production job now reports its real status."
             : "Your seven DesignProAI™ views are saved. The server started Call 8 and the production job now reports its real status.",
       });
       return { generationId: request.generationId, directRender: true, renderUrl: primary?.signedUrl };
@@ -716,7 +716,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         requiresNewAtlasRun
           ? ATLAS_NEW_RUN_REQUIRED_MESSAGE
           : freshAtlasMasterQcFailure
-          ? "A.T.L.A.S. rejected the new flattened master during visual quality inspection. No proof set was saved. Start a new A.T.L.A.S. run."
+          ? "The new flattened master was rejected during visual quality inspection. No proof set was saved. Start a new Precision run."
           : code === "generation_pipeline_mode_mismatch"
           ? "This design mode is temporarily unavailable. No production order was created."
           : code === "generation_input_conflict"
@@ -807,7 +807,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     if (!standaloneRequestId) return false;
     if (activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE) {
       setGenerationError(
-        "A.T.L.A.S. proof views are locked to one master. Start a new A.T.L.A.S. run to regenerate the proof set.",
+        "Proof views are locked to one master. Start a new Precision run to regenerate the proof set.",
       );
       return false;
     }
