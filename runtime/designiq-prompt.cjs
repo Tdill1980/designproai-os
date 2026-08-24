@@ -105,8 +105,13 @@ function substrateContext(substrate) {
 
 function supplementalBrandDirection({ website, qrEnabled, qrUrl, textLayerPrompt }) {
   let text = "";
+  // Paired per-field guard, the website half. Both builders call this, so the
+  // supplied/absent pair for the website lives in exactly one place and cannot
+  // be gated on some other field's presence.
   if (website) {
     text += `\nWebsite (place in the contact bar): ${website} — display this EXACT URL, character for character. Never alter or invent it.`;
+  } else {
+    text += `\nNo website was supplied — invent no website, email address or street address, and display none anywhere on the design.`;
   }
   if (textLayerPrompt) {
     text += `\nTEXT LAYER DIRECTION (customer-authored): ${textLayerPrompt} Preserve every supplied name, slogan, service and contact string exactly; do not invent replacement copy.`;
@@ -209,8 +214,20 @@ DESIGN BRIEF: "${prompt}"`;
   } else if (mode === "commercial") {
     assembled += `\nIdentify the business name only from the customer's creative direction and spell it exactly. ${LOGO_REQUIREMENT}`;
   }
+  // PER-FIELD PAIRED GUARDS. Each contact field decides its own instruction and
+  // nothing else can suppress it:
+  //   supplied     -> preserve it exactly
+  //   not supplied -> invent nothing for THAT field
+  //
+  // This was gated on `!phone && !website`, which only fires when BOTH are
+  // absent — so a populated website suppressed the phone guard entirely and a
+  // website-without-phone brief reached the model with nothing forbidding an
+  // invented number. Coupling two independent fields into one condition is the
+  // defect; the fields are separated here, and the website half is emitted by
+  // supplementalBrandDirection() below so the supplied/absent pair stays
+  // together in one place per field.
   if (phone) assembled += `\nPhone: ${phone} — preserve every digit exactly.`;
-  if (!phone && !website) assembled += "\nNo contact information was supplied; invent no phone number, website, email or address.";
+  else assembled += "\nNo phone number was supplied — invent no phone number, and display none anywhere on the design.";
   assembled += supplementalBrandDirection({
     website,
     qrEnabled: input.qrEnabled === true,
@@ -580,8 +597,18 @@ CLIENT BRIEF:`;
   if (phone) {
     assembled += `\nContact info (place in the contact bar): ${phone} — display this EXACT number, digit for digit. Never alter or invent any digits.`;
   }
-  if (!phone && !website) {
-    assembled += `\nNo phone number was provided — do NOT invent, fabricate, or display any phone number, website, email, or address anywhere on the vehicle. Show the company name only.`;
+  // PER-FIELD PAIRED GUARD, the phone half. The reference makes this the `else`
+  // of `if (phone)` (design-panel-ai-generate/index.ts:503). The port moved it
+  // behind `!phone && !website`, which only fires when BOTH are absent — so a
+  // populated website suppressed the phone guard, and a website-without-phone
+  // brief reached the model with nothing forbidding an invented number.
+  //
+  // Coupling two independent fields into one condition is the defect. Each
+  // field now decides its own instruction: supplied -> preserve exactly,
+  // absent -> invent nothing for that field. The website half lives in
+  // supplementalBrandDirection() so each field's pair stays in one place.
+  else {
+    assembled += `\nNo phone number was provided — do NOT invent, fabricate, or display any phone number anywhere on the vehicle.`;
   }
   assembled += supplementalBrandDirection({ website, qrEnabled, qrUrl, textLayerPrompt });
   if (industryType) assembled += `\nIndustry: ${industryType}`;
