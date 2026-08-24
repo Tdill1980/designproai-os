@@ -1853,7 +1853,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           </div>
                           <p className="mt-2 text-[10px] leading-4 text-white/55">
                             {flatFirstAtlasSupportedVehicleType(vehicleType)
-                              ? "Creates the flattened master design, then Driver Side. Use See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready. The master is cut into the six print panels as it is authored."
+                              ? "Creates your design, then Driver Side. Use See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready. Your print-ready files are prepared alongside them."
                               : "Precision mode is available for car, truck, SUV and van. Standard generation will be used for this vehicle."}
                           </p>
                         </div>
@@ -2039,7 +2039,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <div>
                             <p className="font-semibold">Precision Mode</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
-                              Your flattened master design appears first, followed by Driver Side. Select See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready from that same design.
+                              Your design appears first, followed by Driver Side. Select See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready from that same design.
                             </p>
                             <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">
                               {generationRequestState
@@ -2819,7 +2819,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           Call 8 is waiting at {productionJobStatus.currentStage || "production setup"}
                         </p>
                         <p className="mt-1 text-xs leading-5 text-amber-100/70">
-                          Your seven source views are saved, but the 2D proof and extracted panels are not complete yet.
+                          Your seven source views are saved, but the 2D proof and production files are not complete yet.
                         </p>
                         <Button
                           className="mt-3"

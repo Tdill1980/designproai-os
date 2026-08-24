@@ -314,7 +314,7 @@ test("content-addressed before/after storage stays inside the isolated flat-firs
 test("all seven proof prompts carry their exact master-bound native zone and identity", async () => {
   const manifest = atlas.buildAtlasManifest(surfaces);
   const guideBytes = await atlas.renderAtlasGuide(manifest);
-  const masterBytes = await atlas.normalizeAtlasMaster(guideBytes, manifest);
+  const masterBytes = (await atlas.normalizeAtlasMaster(guideBytes, manifest)).bytes;
   const projection = await atlas.projectionDerivative(masterBytes);
   const masterHash = atlas._test.sha256(masterBytes);
   const viewAuthorities = await atlas._test.buildViewAuthorities(masterBytes, manifest);
@@ -369,7 +369,7 @@ test("all seven proof prompts carry their exact master-bound native zone and ide
 test("proof-conditioning JPEG is deterministic, 4096px, white-flattened and below twelve MiB without resize", async () => {
   const manifest = atlas.buildAtlasManifest(surfaces);
   const guide = await atlas.renderAtlasGuide(manifest);
-  const master = await atlas.normalizeAtlasMaster(guide, manifest);
+  const master = (await atlas.normalizeAtlasMaster(guide, manifest)).bytes;
   const first = await atlas.projectionDerivative(master);
   const second = await atlas.projectionDerivative(master);
 
@@ -401,7 +401,7 @@ test("reusing an atlas verifies the stored projection is the deterministic child
   const manifest = atlas.buildAtlasManifest(surfaces);
   const manifestBytes = atlas._test.canonicalBytes(manifest);
   const guideBytes = await atlas.renderAtlasGuide(manifest);
-  const masterBytes = await atlas.normalizeAtlasMaster(guideBytes, manifest);
+  const masterBytes = (await atlas.normalizeAtlasMaster(guideBytes, manifest)).bytes;
   const projection = await atlas.projectionDerivative(masterBytes);
   const identities = {
     guide: { path: "guide.png", bytes: guideBytes, hash: atlas._test.sha256(guideBytes) },

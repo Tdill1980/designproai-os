@@ -201,7 +201,7 @@ test("flat DesignIQ carries the Edge artboard-mode quality contract without came
 test("A.T.L.A.S. projections carry exact studio constants but no customer reference bytes", async () => {
   const manifest = atlas.buildAtlasManifest(SURFACES);
   const guide = await atlas.renderAtlasGuide(manifest);
-  const masterBytes = await atlas.normalizeAtlasMaster(guide, manifest);
+  const masterBytes = (await atlas.normalizeAtlasMaster(guide, manifest)).bytes;
   const projection = await atlas.projectionDerivative(masterBytes);
   const masterHash = atlas._test.sha256(masterBytes);
   const flatAtlas = {

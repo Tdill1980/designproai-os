@@ -499,10 +499,24 @@ async function normalizeAtlasMaster(generatedBytes, manifest) {
     .ensureAlpha()
     .png(PNG_OPTIONS)
     .toBuffer();
-  return sharp(resized, { limitInputPixels: false })
+  const bytes = await sharp(resized, { limitInputPixels: false })
     .composite([{ input: activeZoneMaskSvg(manifest), blend: "dest-in" }])
     .png(PNG_OPTIONS)
     .toBuffer();
+  // WHAT GEMINI ACTUALLY DELIVERED, before this resize touched it.
+  //
+  // The canvas is always 4096 because the line above fills to it -- which means
+  // a smaller return is silently UPSCALED and the master reports 4K either way.
+  // The floor here is only 1024, so "Call 1 is 4K" was unprovable: the delivered
+  // size was measured, used for two sanity checks, and thrown away. It is now
+  // carried out so the run records its true optical resolution rather than the
+  // canvas it was stretched onto.
+  return {
+    bytes,
+    deliveredWidthPx: Number(metadata.width),
+    deliveredHeightPx: Number(metadata.height),
+    nativelyFourK: Number(metadata.width) >= CANVAS.widthPx && Number(metadata.height) >= CANVAS.heightPx,
+  };
 }
 
 /**
@@ -1321,6 +1335,7 @@ async function generateOrReuseFlatAtlas(options) {
   let masterAuthoringAttempts = 0;
   // Empty unless the re-rolls were exhausted on cut-outs alone. These name the
   // surfaces whose PANEL carries a hole; the design and its proofs are fine.
+  let masterDelivery = null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
   const correctiveParts = [];
@@ -1336,7 +1351,9 @@ async function generateOrReuseFlatAtlas(options) {
         ? "flat-first canonical atlas"
         : `flat-first canonical atlas (corrective re-roll ${attempt})`,
     });
-    masterBytes = await normalizeAtlasMaster(generated.bytes, manifest);
+    const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
+    masterBytes = normalized.bytes;
+    masterDelivery = normalized;
     masterHash = sha256(masterBytes);
     masterQc = await validateMaster({ masterBytes, guideBytes, manifest, input });
     const accepted = masterQc?.accepted === true
@@ -1521,6 +1538,13 @@ async function generateOrReuseFlatAtlas(options) {
       panelSourceHash,
       cutoutFillContract: cutoutFill.changed ? FILL_CONTRACT : null,
       cutoutFillApplied: cutoutFill.filled,
+      // The optical resolution Gemini actually delivered, before the canvas
+      // resize. The master is always 4096 because it is filled to it, so
+      // without these the run could never distinguish a true 4K sheet from a
+      // smaller one stretched onto a 4K canvas.
+      masterDeliveredWidthPx: masterDelivery?.deliveredWidthPx ?? null,
+      masterDeliveredHeightPx: masterDelivery?.deliveredHeightPx ?? null,
+      masterNativelyFourK: masterDelivery?.nativelyFourK ?? null,
       masterQcContract: MASTER_QC_CONTRACT,
       masterQcConfidence: masterQc.metadata.confidence,
       masterQcModel: masterQc.metadata.model,
