@@ -93,8 +93,12 @@ test("the A.T.L.A.S. banner reports customer progress without implementation det
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
   const gateway = read("gateway/src/server.mjs");
   assert.match(premium, /initialDesignProPipelineMode\(briefState\?\.pipelineMode, location\.search\)/);
-  assert.match(premium, /A\.T\.L\.A\.S\. Preview/);
-  assert.match(premium, /Preview started/);
+  // A.T.L.A.S. is named as itself. Call 1 is the initial design generation --
+  // it authors the canonical master and cuts the six panels from it -- so
+  // calling the mode a "preview" understated what the run had already produced
+  // and was the framing behind hiding the order button.
+  assert.match(premium, /A\.T\.L\.A\.S\./);
+  assert.doesNotMatch(premium, /A\.T\.L\.A\.S\. Preview/);
   assert.doesNotMatch(premium, /Server accepted A\.T\.L\.A\.S\. v3/);
   assert.doesNotMatch(premium, /Google-grounded vehicle proportions/);
   assert.doesNotMatch(premium, /Gemini paints one canonical/);
@@ -163,7 +167,14 @@ test("A.T.L.A.S. reveals the immutable master and streams signed proof views wit
   assert.match(premium, /Flattened top-view design/);
   assert.match(premium, /previewDisplayUrl = mainDisplayUrl \|\| atlasMasterPreviewUrl/);
   assert.match(premium, /atlasReady=\{Boolean\(latestFlatAtlas\)\}/);
-  assert.match(premium, /Production ordering is unavailable in Preview mode/);
+  // An A.T.L.A.S. run is orderable. It produced the design and its six panels,
+  // so refusing the order was the last thing making the path a dead end.
+  assert.doesNotMatch(premium, /Production ordering is unavailable/);
+  assert.doesNotMatch(
+    premium,
+    /mainDisplayUrl && !isFlatFirstDiagnostic/,
+    "the Order Production Pack button must not be hidden from A.T.L.A.S. again",
+  );
   assert.doesNotMatch(premium, /paid ProductionPack slicing stays locked/);
 });
 
