@@ -917,10 +917,29 @@ function exactQc(body, gate) {
   const qc = body?.qc;
   if (!qc || typeof qc !== "object" || Array.isArray(qc)) return null;
   if (required.some((key) => qc[key] !== true)) return null;
+  // THE SIX PER-SIDE ATTESTATIONS. The board asks a designer to approve each
+  // side against its own proof and its own panel, and gates the button on all
+  // six -- but they were browser state and stopped at the browser, so the
+  // receipt recorded only the six checkboxes. Whether a designer looked at the
+  // rear panel was not written down anywhere.
+  //
+  // They are carried on the preflight payload and, like every other claim here,
+  // reconstructed server-side rather than trusted: the set must be exactly the
+  // six canonical surfaces, so a partial or invented list is refused instead of
+  // being recorded as an approval.
+  let approvedSides;
+  if (gate === "preflight") {
+    const claimed = Array.isArray(qc.approvedSides) ? qc.approvedSides.map(String) : [];
+    const unique = [...new Set(claimed)].sort();
+    if (unique.length !== PRODUCTION_SURFACES.length
+      || unique.some((side) => !PRODUCTION_SURFACES.includes(side))) return null;
+    approvedSides = unique;
+  }
   return Object.fromEntries([
     ["known", true],
     ["pass", true],
     ...required.map((key) => [key, true]),
+    ...(approvedSides ? [["approvedSides", approvedSides]] : []),
     ["notes", String(body.notes || "").trim().slice(0, 2000)],
   ]);
 }

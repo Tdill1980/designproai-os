@@ -153,6 +153,10 @@ const preflightQc = {
   panelHashesVerified: true,
   logoInventoryVerified: true,
   textLockVerified: true,
+  // The six per-side attestations the board gates its button on. They used to
+  // stop at the browser, so the receipt said nothing about whether a designer
+  // had looked at the rear panel.
+  approvedSides: ["driver", "passenger", "hood", "roof", "front", "rear"],
 };
 
 const finalQc = {
@@ -184,7 +188,10 @@ for (const [gate, expectedStage, qc] of [
     assert.equal(payload.p_qc.known, true);
     assert.equal(payload.p_qc.pass, true);
     assert.equal(payload.p_qc.notes, "Operator verified");
-    for (const [key, value] of Object.entries(qc)) assert.equal(payload.p_qc[key], value);
+    for (const [key, value] of Object.entries(qc)) {
+      if (Array.isArray(value)) assert.deepEqual(payload.p_qc[key], [...value].sort());
+      else assert.equal(payload.p_qc[key], value);
+    }
     if (gate === "final") {
       assert.equal(payload.p_qc.designId, "DID-EEEEEEEE");
       assert.equal(payload.p_qc.orderNumber, "ORDER-2026-0042");
@@ -192,6 +199,57 @@ for (const [gate, expectedStage, qc] of [
     assert.match(payload.p_approval_ref, new RegExp(`^designpro-qc:${expectedStage}:[0-9a-f]{64}$`));
   });
 }
+
+test("preflight refuses a side list that is not exactly the six canonical surfaces", async (t) => {
+  // The board gates its own button on all six, but the button is not the
+  // control -- a request can be made without it. Each of these is a way the
+  // receipt could otherwise record an approval nobody gave.
+  for (const approvedSides of [
+    ["driver", "passenger", "hood", "roof", "front"],                       // one short
+    ["driver", "passenger", "hood", "roof", "front", "rear", "closeup"],    // a seventh
+    [],                                                                      // none at all
+  ]) {
+    const calls = [];
+    const server = createGateway({ env, fetchImpl: authenticatedFetch(calls) });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/jobs/job-1/approvals/preflight`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({ qc: { ...preflightQc, approvedSides }, notes: "" }),
+    });
+    assert.equal(response.status, 400, `${JSON.stringify(approvedSides)} was accepted`);
+    assert.ok(
+      !calls.some((call) => call.url.endsWith("/rest/v1/rpc/approve_designpro_human_gate")),
+      "a refused side list must never reach the gate RPC",
+    );
+  }
+});
+
+test("a repeated side is normalized, not refused -- the six approvals are still exactly six", async (t) => {
+  // A duplicate is neither a partial list nor an invented one: after dedupe it
+  // means precisely "all six approved", which is the claim being recorded. It
+  // is normalized rather than rejected, and what lands on the receipt is the
+  // canonical set -- never the caller's array.
+  const calls = [];
+  const server = createGateway({ env, fetchImpl: authenticatedFetch(calls) });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/jobs/job-1/approvals/preflight`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      qc: { ...preflightQc, approvedSides: ["driver", "driver", "passenger", "hood", "roof", "front", "rear"] },
+      notes: "",
+    }),
+  });
+  assert.equal(response.status, 202);
+  const approval = calls.find((call) => call.url.endsWith("/rest/v1/rpc/approve_designpro_human_gate"));
+  assert.deepEqual(
+    JSON.parse(approval.init.body).p_qc.approvedSides,
+    ["driver", "front", "hood", "passenger", "rear", "roof"],
+  );
+});
 
 test("approval refuses a visually clicked gate unless every required check is explicit", async (t) => {
   const calls = [];
