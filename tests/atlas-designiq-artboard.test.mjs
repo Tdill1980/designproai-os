@@ -158,3 +158,71 @@ test("Atlas keeps the proven branding, logo and mascot creative intelligence", (
   // carries no creative value and dilutes the sentence that does.
   assert.equal(prompt.match(/[Ss]pell (?:it|the business name) exactly/g)?.length, 1);
 });
+
+// THE NO-INVENT CONTACT RULE IS UNCONDITIONAL, IN BOTH BUILDERS.
+//
+// It was gated on `!phone && !website`, so a brief that supplied a website but
+// no phone reached the model with nothing forbidding an invented number — while
+// the proof judge is handed "Exact phone: none supplied" and rejects any number
+// it sees. Nothing forbade it and the judge refused it, so the run could not
+// converge and simply burned every attempt.
+//
+// Live proof, generation 2c0fc9f4 (2026-08-24 21:18, a dental brief with a
+// website and no phone): four `side` attempts, every one carrying the same
+// invented 602-555-0184, every one rejected on customerTextPass, then
+// provider_attempts_exhausted. No control guard may decide whether this rule
+// ships.
+test("The contact no-invent rule reaches the model on every brief shape", () => {
+  const { buildDesignIQPrompt } = require("../runtime/designiq-prompt.cjs");
+  const PHONE_GUARD = /do NOT invent, fabricate, or display any phone number|invent no phone number/;
+  const WEBSITE_GUARD = /invent no website/;
+
+  const shapes = [
+    { label: "website only (the shape that failed live)", website: "www.DesertBloomDental.com" },
+    { label: "phone only", phone: "602-555-0184" },
+    { label: "both supplied", phone: "602-555-0184", website: "www.DesertBloomDental.com" },
+    { label: "neither supplied" },
+  ];
+
+  for (const shape of shapes) {
+    const { label, ...contact } = shape;
+    const atlas = buildAtlasArtboardDesignIQDirection({
+      brief: "Bright modern dental wrap",
+      mode: "commercial",
+      companyName: "Desert Bloom Dental",
+      vehicle: { make: "Ford", model: "Transit" },
+      ...contact,
+    });
+    const standard = buildDesignIQPrompt({
+      prompt: "Bright modern dental wrap",
+      mode: "commercial",
+      companyName: "Desert Bloom Dental",
+      viewType: "side",
+      vehicleMake: "Ford",
+      vehicleModel: "Transit",
+      ...contact,
+    });
+
+    // Paired per field: a missing field always gets its own guard, and no other
+    // field's presence can suppress it.
+    if (!contact.phone) {
+      assert.match(atlas, PHONE_GUARD, `Atlas must forbid inventing a phone: ${label}`);
+      assert.match(standard, PHONE_GUARD, `The commercial builder must forbid inventing a phone: ${label}`);
+    }
+    if (!contact.website) {
+      assert.match(atlas, WEBSITE_GUARD, `Atlas must forbid inventing a website: ${label}`);
+      assert.match(standard, WEBSITE_GUARD, `The commercial builder must forbid inventing a website: ${label}`);
+    }
+
+    // A supplied value is still stated exactly; the rule closes the set, it
+    // never suppresses a contact the customer actually gave.
+    if (contact.phone) {
+      assert.ok(atlas.includes(contact.phone), `Atlas must still state the supplied phone: ${label}`);
+      assert.ok(standard.includes(contact.phone), `The commercial builder must still state the supplied phone: ${label}`);
+    }
+    if (contact.website) {
+      assert.ok(atlas.includes(contact.website), `Atlas must still state the supplied website: ${label}`);
+      assert.ok(standard.includes(contact.website), `The commercial builder must still state the supplied website: ${label}`);
+    }
+  }
+});
