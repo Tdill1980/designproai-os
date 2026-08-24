@@ -6,6 +6,10 @@ const claimant = readFileSync(new URL("../runtime/designpro-standalone-claimant.
 const runtime = readFileSync(new URL("../runtime/index.js", import.meta.url), "utf8");
 const gateway = readFileSync(new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../supabase/migrations/20260818210000_designpro_purchase_entitlements.sql", import.meta.url), "utf8");
+// The stage order is redefined by the GENIE-on-order migration, so the CURRENT
+// production stage array lives there. Asserting it against the migration that
+// introduced the gate would check an array the database has replaced.
+const genieOnOrder = readFileSync(new URL("../supabase/migrations/20260824000000_designpro_genie_deploys_on_order.sql", import.meta.url), "utf8");
 const card = readFileSync(new URL("../app/src/components/revisioniq/ProductionFlowLayersCard.tsx", import.meta.url), "utf8");
 const { _test } = require0("../runtime/designpro-standalone-claimant.cjs");
 function require0(rel) {
@@ -54,9 +58,12 @@ test("nothing is recorded before payment", () => {
 test("one production workflow exists early and stops before paid work", () => {
   assert.match(claimant, /return ensureAutomaticProduction\(sb, run\.id\);/,
     "the prepared pack still gets its production workflow");
-  assert.match(migration, /ARRAY\['await_purchase','source\.verify'/,
-    "await_purchase must lead, so nothing expensive sits ahead of it");
-  assert.match(claimant, /"await_purchase", "source\.verify"/);
+  // await_purchase leads, then GENIE. manifest.resolve used to sit in the FREE
+  // entice run, where it parked every job before a proof or a panel existed;
+  // resolving true production geometry is paid work and belongs behind the gate.
+  assert.match(genieOnOrder, /ARRAY\['await_purchase','manifest\.resolve','source\.verify'/,
+    "await_purchase must lead and GENIE must sit behind it");
+  assert.match(claimant, /"await_purchase", "manifest\.resolve", "source\.verify"/);
   // One conductor, not two.
   assert.equal(claimant.match(/create_designpro_production_workflow/g)?.length, 1);
 });

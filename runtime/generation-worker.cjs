@@ -239,7 +239,41 @@ function promptPartsFor(input, sourceViewType, instruction = "", imageParts = []
  * it can load a parent atlas revision and reuse this exact conditioning without
  * teaching another code path how the installer map is oriented.
  */
-function projectionOnlyPromptFor(input, sourceViewType, instruction = "") {
+/**
+ * The real size of the surface this camera is looking at.
+ *
+ * Call 1 already resolved every side's dimensions and cut the six panels to
+ * them, so the renderer does not have to infer how long a driver side is next to
+ * a hood -- it is told. Without this each 3D side is drawn at whatever
+ * proportion the model assumes, and the proof disagrees with the panel the
+ * customer is about to buy.
+ *
+ * These are the design-time dimensions (calls-1-7-layout-only). GENIE replaces
+ * them with the validated production dimensions when the pack is ordered.
+ */
+function surfaceSizeClause(flatAtlas, sourceViewType) {
+  const panel = callOnePanelFor(flatAtlas, sourceViewType);
+  if (!panel) return "";
+  const trimW = Number(panel.trimWidthIn);
+  const trimH = Number(panel.trimHeightIn);
+  if (!(trimW > 0) || !(trimH > 0)) return "";
+  const sqft = Number(panel.surfaceSqFt);
+  return `\n\nSURFACE SIZE (measured, not estimated): the ${panel.surfaceKey} surface is `
+    + `${trimW}in wide by ${trimH}in tall`
+    + (sqft > 0 ? ` (${sqft} sq ft)` : "")
+    + `. Render this panel at that true proportion relative to the rest of the vehicle. `
+    + `Do not stretch, squash, crop or re-fit the artwork to a different shape.`;
+}
+
+/** The Call-1 panel record for the surface a proof view is showing. */
+function callOnePanelFor(flatAtlas, sourceViewType) {
+  const surfaceKey = ATLAS_VIEW_ROLES[sourceViewType];
+  const panels = flatAtlas?.callOnePanels;
+  if (!surfaceKey || !Array.isArray(panels)) return null;
+  return panels.find((panel) => panel?.surfaceKey === surfaceKey) || null;
+}
+
+function projectionOnlyPromptFor(input, sourceViewType, instruction = "", flatAtlas = null) {
   angles.assertTextDirectionGuard(sourceViewType);
   const vehicle = input?.vehicle || {};
   const target = [vehicle.year, vehicle.make, vehicle.model, vehicle.type]
@@ -260,14 +294,14 @@ ${STUDIO_ENVIRONMENT}
 
 ${STUDIO_REINFORCEMENT}
 
-Physically realistic printed vinyl; factory glass, lights, wheels and trim; no added props or graphics. Output one 16:9 vehicle proof only. Do not output an installer map, dieline, panel sheet, labels, dimensions or annotations.${correction}`,
+Physically realistic printed vinyl; factory glass, lights, wheels and trim; no added props or graphics. Output one 16:9 vehicle proof only. Do not output an installer map, dieline, panel sheet, labels, dimensions or annotations.${surfaceSizeClause(flatAtlas, sourceViewType)}${correction}`,
   };
 }
 
 function conditionedPromptPartsFor(input, sourceViewType, instruction, flatAtlas) {
   return [
     ...atlasProjectionParts(flatAtlas, sourceViewType),
-    projectionOnlyPromptFor(input, sourceViewType, instruction),
+    projectionOnlyPromptFor(input, sourceViewType, instruction, flatAtlas),
   ];
 }
 
@@ -940,6 +974,7 @@ module.exports = {
   designBrief,
   promptPartsFor,
   projectionOnlyPromptFor,
+  surfaceSizeClause,
   referenceImageParts,
   runAtlasProofStages,
   slotsFrom,

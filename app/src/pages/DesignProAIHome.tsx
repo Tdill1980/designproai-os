@@ -92,14 +92,14 @@ function PipelineModeSelector({
               : "border-white/10 text-white/50 hover:bg-white/5",
           )}
         >
-          A.T.L.A.S. Preview
+          A.T.L.A.S.
         </button>
       </div>
       <p className="mt-2 text-[10px] leading-4 text-white/55">
         {disabled
           ? "Design mode is locked for this run. Start a new design to change it."
           : flatFirstAtlasSupportedVehicleType(vehicleType)
-            ? "Creates the master design first, then shows all seven vehicle views as they finish. Production ordering is unavailable in Preview mode."
+            ? "Creates the master design first, then shows all seven vehicle views as they finish. The master is cut into the six print panels as it is authored."
             : "Preview mode is available for car, truck, SUV and van. Production mode will be used for this vehicle."}
       </p>
     </div>

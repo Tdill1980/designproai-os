@@ -5,10 +5,11 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
+const worker = require("../runtime/generation-worker.cjs");
 const {
   assertAtlasViewLineage,
   runAtlasProofStages,
-} = require("../runtime/generation-worker.cjs");
+} = worker;
 const {
   buildAtlasProjectionPrompt,
 } = require("../runtime/designpanel-server-provider.cjs");
@@ -381,4 +382,49 @@ test("Atlas provider carries locked angles, photography, Studio OS lighting, det
   assert.match(PROVIDER_SOURCE, /producePassengerView\(\{/);
   assert.match(PROVIDER_SOURCE, /atlasZonePassedToPassengerRepair:\s*true/);
   assert.match(PROVIDER_SOURCE, /exact accepted PASSENGER native-zone crop/);
+});
+
+/**
+ * CALL 1 SIZES THE 3D CALLS.
+ *
+ * Call 1 resolves every side's dimensions and cuts the six panels to them. If
+ * those dimensions never reach the projection prompt, each 3D side is rendered
+ * at whatever proportion the model assumes and the proof disagrees with the
+ * panel the customer is about to buy. This is deterministic input -- the camera
+ * contract in view-angles.cjs is untouched.
+ */
+test("the Call-1 surface size is sent into the 3D projection prompt", () => {
+  const flatAtlas = {
+    callOnePanels: [
+      { surfaceKey: "driver", trimWidthIn: 153, trimHeightIn: 56, printWidthIn: 163, printHeightIn: 66, surfaceSqFt: 59.5 },
+      { surfaceKey: "hood", trimWidthIn: 71.5, trimHeightIn: 56, printWidthIn: 81.5, printHeightIn: 66, surfaceSqFt: 27.8 },
+    ],
+  };
+
+  const driver = worker.projectionOnlyPromptFor({ vehicle: { make: "Ford", model: "F-250" } }, "side", "", flatAtlas);
+  assert.match(driver.text, /SURFACE SIZE \(measured, not estimated\)/);
+  assert.match(driver.text, /driver surface is 153in wide by 56in tall \(59\.5 sq ft\)/);
+  assert.match(driver.text, /Do not stretch, squash, crop or re-fit/);
+
+  const hood = worker.projectionOnlyPromptFor({ vehicle: {} }, "hood_detail", "", flatAtlas);
+  assert.match(hood.text, /hood surface is 71\.5in wide by 56in tall/);
+
+  // Close-Up is a design-detail proof, not one of the six printed surfaces, so
+  // it has no panel and must not be handed a size it does not own.
+  const closeup = worker.projectionOnlyPromptFor({ vehicle: {} }, "close-up", "", flatAtlas);
+  assert.doesNotMatch(closeup.text, /SURFACE SIZE/);
+
+  // An atlas with no recorded panels renders exactly as before rather than
+  // emitting an empty or zeroed size clause.
+  const unsized = worker.projectionOnlyPromptFor({ vehicle: {} }, "side", "", { callOnePanels: [] });
+  assert.doesNotMatch(unsized.text, /SURFACE SIZE/);
+
+  // And the atlas is actually threaded through the call the worker makes, so
+  // the clause reaches the real projection rather than only this unit.
+  const source = readFileSync(new URL("../runtime/generation-worker.cjs", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /projectionOnlyPromptFor\(input, sourceViewType, instruction, flatAtlas\)/,
+    "conditionedPromptPartsFor must pass the atlas so the size clause is built",
+  );
 });

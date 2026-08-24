@@ -137,10 +137,9 @@ that column describes the atlas *layout* geometry, is false by design
 (`calls-1-7-layout-only`), and production dimensions come from the GENIE manifest
 at `manifest.resolve`. Conflating the two is why the gate could never open.
 
-After purchase: `source.verify` → `await_panelpro_preflight_qc` →
-`enhance.upscale` (Topaz, gated on the purchased entitlement, skipped when
-unpurchased) → `output.build`. Panels are already cut at GENIE dimensions with
-5″ bleed by Call 9; the upscale reaches print resolution.
+After purchase: `manifest.resolve` (GENIE) → `source.verify` →
+`await_panelpro_preflight_qc` → `enhance.upscale` (Topaz, gated on the purchased
+entitlement, skipped when unpurchased) → `output.build`.
 
 ## 🖼️ RULE 0.18 — THE THREE PRODUCTION SURFACES LIVE ON THIS SERVER
 
@@ -162,19 +161,50 @@ back is the second producer the one-sanctioned-chain rule forbids.
 A side **glows** on the progress page only when its Call 9 panel actually exists,
 not when a view merely rendered.
 
-## ⏸️ RULE 0.19 — A PARKED RUN IS NOT A RUNNING RUN
+## 🧞 RULE 0.19 — GENIE DEPLOYS ONLY WHEN THE PRODUCTION PACK IS ORDERED (Trish 2026-08-23)
 
-`manifest.resolve` waits with `wait_reason = genie_dimension_validation_required`
-until a human validates the vehicle's GENIE dimensions. The gateway reported that
-as `running`, so on 2026-08-23 a run sat parked for sixteen hours looking busy
-while Call 8, Call 9 and every panel below it never started — **that, not a code
-bug, is why RevisionStudio had no extracted panels.**
+`manifest.resolve` sits **after** `await_purchase`, never in the free entice run.
+It resolves the true production dimensions and drives the progress page, and that
+is paid work.
 
-The gateway now projects `waiting_for_genie_dimensions` with the candidate id,
-and the job and progress pages link straight to `/designpro/genie-qc`. **Never
-re-map a `waiting` stage onto `running`.** Validating dimensions is a human
-judgement about a real vehicle; do not auto-accept grounded candidate values to
-clear a queue.
+It used to sit second, in the free half, where it waits with
+`wait_reason = genie_dimension_validation_required` until a human validates the
+vehicle. So every run parked before the 2D proof or a single panel existed — one
+sat there sixteen hours on 2026-08-23 — and **that, not a code bug, is why
+RevisionStudio had no extracted panels.**
+
+**The free half needs no validated production geometry.** Call 1 resolves the
+design-time size of every side (`resolveFlatAtlasPreviewDimensions`) and cuts the
+six panels to it with the 5″ bleed already in the layout. Those panels are what
+RevisionStudio entices with and what PanelPro Studio is later served. That
+geometry is marked `calls-1-7-layout-only` precisely because it is the design
+size, not the validated production size.
+
+Because the entice run no longer resolves GENIE, it can no longer prove a
+dimension manifest — so `create_designpro_production_workflow` requires only what
+that run actually proves: a completed `pack.activate` and its immutable
+source/artifact identity.
+
+A parked stage is still never reported as a running one: the gateway projects
+`waiting_for_genie_dimensions` with the candidate id and the pages link to
+`/designpro/genie-qc`. **Never re-map a `waiting` stage onto `running`,** and
+never auto-accept grounded candidate values to clear a queue — validating
+dimensions is a human judgement about a real vehicle.
+
+## 🎨 RULE 0.20 — A.T.L.A.S. CALL 1 IS THE INITIAL DESIGN GENERATION
+
+Not a preview. Call 1 authors the canonical flattened master **and cuts the six
+print panels from it**, each stamped with that side's trim/print inches and
+square footage. Every one of the seven vehicle views is a projection of that
+master, and those same dimensions are sent into `design-panel-ai-generate` so
+each 3D side renders at its true proportion instead of a guessed one.
+
+An A.T.L.A.S. run is therefore orderable like any other. Hiding the Order
+Production Pack button, the Logo Pack, the proof actions or the Call 8 card
+behind `!isFlatFirstDiagnostic` is the dead-end framing — it was written in five
+places and is locked out by `tests/atlas-fail-fast.test.mjs`.
+
+What stays refused: per-view regeneration. One master owns the whole proof set.
 
 ## ⛔ RULE 0 — OPTIMIZE FOR BEHAVIORAL PARITY, NOT ARCHITECTURE (Trish 2026-08-17)
 

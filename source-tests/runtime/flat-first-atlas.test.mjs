@@ -501,11 +501,19 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   });
 
   assert.equal(events.filter((event) => event === "provider").length, 1);
-  assert.equal(stored.length, 4);
+  // Guide, manifest, master, projection -- plus the six panels Call 1 cuts from
+  // the accepted master. Those six are what RevisionStudio entices with and what
+  // PanelPro Studio is later served, so they are produced here rather than
+  // re-derived downstream.
+  assert.equal(stored.length, 10);
   assert.ok(events.indexOf("master-qc") > events.indexOf("provider"));
   assert.ok(events.indexOf("master-qc") < events.findIndex((event) => event.startsWith("put:")),
     "master acceptance must pass before any Atlas artifact is persisted");
-  assert.deepEqual(stored.map((item) => item.contentType).sort(), ["application/json", "image/jpeg", "image/png", "image/png"]);
+  assert.deepEqual(
+    stored.map((item) => item.contentType).sort(),
+    ["application/json", "image/jpeg", ...Array(8).fill("image/png")],
+    "the six panels are lossless PNG -- print artwork never takes a lossy round trip",
+  );
   assert.ok(events.lastIndexOf("insert") > Math.max(...events.map((event, index) => event.startsWith("put:") ? index : -1)),
     "the immutable row is inserted only after all three objects exist");
   assert.equal(providerOptions.aspectRatio, "1:1");
@@ -518,6 +526,32 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(inserted.manifest.geometryAuthority.status, "provisional");
   assert.equal(inserted.metadata.geometryAuthority.operatorValidated, false);
   assert.equal(inserted.metadata.examplePurpose, "topology-only");
+
+  // CALL 1 CUTS THE SIX PANELS, AND EACH ONE CARRIES ITS SIDE'S SIZE.
+  // Without the dimensions the 3D calls have to guess how long a driver side is
+  // next to a hood, and the proof disagrees with the panel being sold.
+  const panels = inserted.metadata.callOnePanels;
+  assert.equal(panels.length, 6);
+  assert.deepEqual(
+    panels.map((panel) => panel.surfaceKey).sort(),
+    ["driver", "front", "hood", "passenger", "rear", "roof"],
+  );
+  for (const panel of panels) {
+    assert.match(panel.contentHash, /^[0-9a-f]{64}$/);
+    assert.equal(panel.contentType, "image/png");
+    assert.ok(panel.trimWidthIn > 0 && panel.trimHeightIn > 0, `${panel.surfaceKey} has no trim size`);
+    // The five-inch bleed is already in the layout, on every edge.
+    assert.equal(panel.printWidthIn, panel.trimWidthIn + 10);
+    assert.equal(panel.printHeightIn, panel.trimHeightIn + 10);
+    assert.equal(panel.bleedInches, 5);
+    assert.ok(panel.surfaceSqFt > 0);
+    // Design-time geometry, not validated production geometry: GENIE supplies
+    // that only when the pack is ordered.
+    assert.equal(panel.geometryPurpose, "calls-1-7-layout-only");
+    assert.equal(panel.sourceMasterHash, inserted.master_content_hash);
+    assert.ok(stored.some((item) => item.storagePath === panel.storagePath), `${panel.surfaceKey} bytes were not stored`);
+  }
+  assert.equal(new Set(panels.map((panel) => panel.contentHash)).size, 6, "six distinct panels");
   assert.equal(inserted.metadata.topologyExamplesApplied, 1);
   assert.equal(inserted.metadata.masterQcPassed, true);
   assert.equal(inserted.metadata.masterQcContract, "designpro.atlas-master-semantic-qc.v1");

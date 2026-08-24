@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -28,7 +29,20 @@ test("seven distinct views automatically precede flat proof, panels and logos", 
   // Call 11 (panels.delogo) sits between Call 10 and pack.verify so its
   // de-logoed duplicates exist before the pack is sealed and handed to the
   // PanelPro preflight gate.
-  assert.deepEqual(STAGES.slice(0, 8), ["revision.freeze", "manifest.resolve", "proof.build", "panels.build", "logos.extract", "panels.delogo", "pack.verify", "pack.activate"]);
+  // GENIE is NOT here. manifest.resolve deploys only when the production pack is
+  // ordered; the free half needs no validated production geometry, because Call
+  // 1 resolved the design-time size of every side and cut the six panels to it.
+  assert.deepEqual(STAGES.slice(0, 7), ["revision.freeze", "proof.build", "panels.build", "logos.extract", "panels.delogo", "pack.verify", "pack.activate"]);
+  assert.equal(STAGES[7], "await_purchase", "the purchase gate leads the paid half");
+  assert.equal(STAGES[8], "manifest.resolve", "GENIE deploys on order, behind the gate");
+  assert.ok(
+    STAGES.indexOf("manifest.resolve") > STAGES.indexOf("await_purchase"),
+    "GENIE must never run before the pack is ordered",
+  );
+  assert.ok(
+    STAGES.indexOf("manifest.resolve") < STAGES.indexOf("source.verify"),
+    "every paid stage is cut and verified against the dimensions GENIE produces",
+  );
   assert.deepEqual(RECEIPTS.slice(0, 4), ["views.seven-source", "call8.flat-proof", "call9.surface-panels", "call10.logo-inventory"]);
   assert.ok(RECEIPTS.includes("final.human-qc"));
   assert.equal(new Set(Object.values(_test.exactSevenViews({ renderAssets: views }, tenantKey, revisionId)).map((asset) => asset.contentHash)).size, 7);
@@ -163,4 +177,43 @@ test("a copied Call 9 panel larger than 6 MiB uses exact server-side Storage cop
   assert.equal(copied.byteSize, body.length);
   assert.equal(calls.filter((call) => call.operation === "copy").length, 1);
   assert.equal(calls.filter((call) => call.operation === "upload").length, 0);
+});
+
+/**
+ * PANELPRO STUDIO IS SERVED THE PANELS CALL 1 CUT.
+ *
+ * The six panels RevisionStudio entices the buyer with are the ones A.T.L.A.S.
+ * cut from the canonical master at Call 1. Call 9 PROMOTES those exact bytes; it
+ * does not re-derive them, because a board showing different bytes than the
+ * customer was shown is the failure this chain exists to prevent.
+ *
+ * They cross the seam on the immutable revision snapshot -- the interface
+ * manufacturing is allowed to read -- never by reaching into the generation
+ * tables, which standalone-claimant-contract.test.mjs pins.
+ */
+test("Call 9 promotes the Call-1 panels rather than re-cutting them", () => {
+  const source = readFileSync(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");
+
+  assert.match(source, /promotedFrom: "atlas-call1"/);
+  assert.match(source, /source: "atlas-call1-panel"/);
+  // Read from the snapshot, and only from a snapshot that still matches the run.
+  const helper = source.slice(source.indexOf("async function callOnePanelSet"), source.indexOf("async function storageBytes"));
+  assert.match(helper, /from\("designpro_revision_sources"\)/);
+  assert.match(helper, /snapshot\?\.callOnePanels/);
+  assert.match(helper, /call9_revision_source_drift/);
+  assert.doesNotMatch(
+    source,
+    /designpro_flat_atlas_revisions/,
+    "manufacturing must not reach into the generation tables for these panels",
+  );
+  // The promoted bytes are verified against their recorded identity, and six
+  // distinct surfaces are still required.
+  assert.match(source, /call9_call1_panel_changed/);
+  assert.match(source, /call9_call1_panel_surface_missing/);
+  assert.match(source, /call9_panel_identity_collision/);
+  // A run with no atlas still reaches the existing gridslice path.
+  assert.ok(
+    source.indexOf('promotedFrom: "atlas-call1"') < source.indexOf('requiredObject(run.results?.dimensionManifest'),
+    "the Call-1 promotion is tried before the GENIE-dimensioned gridslice fallback",
+  );
 });

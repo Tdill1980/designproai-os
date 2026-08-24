@@ -35,13 +35,23 @@ const HASH_RE = /^[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const stageLeaseContext = new AsyncLocalStorage();
 const STAGES = Object.freeze([
-  "revision.freeze", "manifest.resolve", "proof.build", "panels.build",
+  "revision.freeze", "proof.build", "panels.build",
   // Call 11 sits between Call 10 and the PanelPro gate: its de-logoed
   // duplicates are what that gate validates against vehicle templates.
   "logos.extract", "panels.delogo", "pack.verify", "pack.activate",
   // The purchase gate leads production. Everything after it is paid work, so
   // nothing expensive sits ahead of it.
-  "await_purchase", "source.verify",
+  //
+  // GENIE DEPLOYS ONLY WHEN THE PRODUCTION PACK IS ORDERED. manifest.resolve
+  // used to sit second, in the FREE half, where it parked every run on
+  // genie_dimension_validation_required before Call 8 or a single panel
+  // existed -- a run sat there sixteen hours on 2026-08-23 and that, not a code
+  // bug, is why RevisionStudio had nothing to show. The free half needs no
+  // validated production geometry: Call 1 resolves the design-time size of each
+  // side and cuts the six panels to it. GENIE resolves the true production
+  // dimensions and drives the progress page, and it is paid work, so it belongs
+  // behind the gate with the rest of the paid work.
+  "await_purchase", "manifest.resolve", "source.verify",
   "await_panelpro_preflight_qc", "enhance.upscale", "output.build", "output.verify",
   "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver",
 ]);
@@ -331,6 +341,86 @@ function artifact(kind, storagePath, contentHash, bytes, surfaceKey = "", metada
   return { kind, storagePath: safePath(storagePath, "artifact storagePath"), contentHash, byteSize: bytes, surfaceKey, metadata };
 }
 
+/**
+ * The six panels A.T.L.A.S. cut at Call 1, or null for a run with no atlas.
+ *
+ * Read off the immutable revision snapshot -- the interface this side of the
+ * seam is allowed to read -- so a resumed run promotes the same bytes the
+ * customer was already shown.
+ */
+async function callOnePanelSet(sb, run) {
+  const { data, error } = await sb
+    .from("designpro_revision_sources")
+    .select("snapshot,snapshot_hash")
+    .eq("revision_id", run.revision_id)
+    .maybeSingle();
+  if (error || !data) return null;
+  if (data.snapshot_hash !== run.revision_snapshot_hash) {
+    throw new StageError("call9_revision_source_drift", "Immutable revision source changed before Call 9", false);
+  }
+  const panels = Array.isArray(data.snapshot?.callOnePanels) ? data.snapshot.callOnePanels : [];
+  if (!panels.length) return null;
+  if (panels.length !== SURFACE_KEYS.length) {
+    throw new StageError("call9_call1_panel_set_invalid", `Call 1 recorded ${panels.length} panels, expected ${SURFACE_KEYS.length}`, false);
+  }
+  const keys = panels.map((panel) => String(panel?.surfaceKey || ""));
+  if (SURFACE_KEYS.some((key) => !keys.includes(key))) {
+    throw new StageError("call9_call1_panel_surface_missing", "Call 1 panels do not cover the six canonical surfaces", false);
+  }
+  for (const panel of panels) {
+    if (!HASH_RE.test(String(panel?.contentHash || ""))
+      || !(Number(panel?.printWidthIn) > 0) || !(Number(panel?.printHeightIn) > 0)) {
+      throw new StageError("call9_call1_panel_identity_invalid", `${panel?.surfaceKey || "unknown"} has no immutable identity or size`, false);
+    }
+  }
+  return panels;
+}
+
+/**
+ * The design-time dimension manifest, built from the panels Call 1 cut.
+ *
+ * Same shape the GENIE manifest binds, so every consumer reads one structure --
+ * but marked genieVerified:false, because these are the design-time sizes
+ * (calls-1-7-layout-only) rather than validated production geometry. Nothing
+ * downstream of the purchase gate is allowed to run on them.
+ */
+async function designTimeManifest(sb, run) {
+  const panels = await callOnePanelSet(sb, run);
+  if (!panels) {
+    throw new StageError(
+      "call8_dimensions_unavailable",
+      "No GENIE manifest is bound and Call 1 recorded no panel dimensions for this run",
+      false,
+    );
+  }
+  const expectedSurfaces = SURFACE_KEYS.map((surfaceKey) => {
+    const panel = panels.find((item) => item.surfaceKey === surfaceKey);
+    if (!panel) {
+      throw new StageError(
+        "call8_dimensions_unavailable",
+        `Call 1 recorded no panel for ${surfaceKey}`,
+        false,
+      );
+    }
+    const widthInches = round2(panel.trimWidthIn);
+    const heightInches = round2(panel.trimHeightIn);
+    return {
+      surfaceKey,
+      widthInches,
+      heightInches,
+      bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+      surfaceSqFt: round2((widthInches * heightInches) / 144),
+    };
+  });
+  return {
+    contract: "designpro.design-time-dimension-manifest.v1",
+    genieVerified: false,
+    geometryPurpose: "calls-1-7-layout-only",
+    expectedSurfaces,
+    totalSqFt: round2(expectedSurfaces.reduce((total, surface) => total + surface.surfaceSqFt, 0)),
+  };
+}
+
 async function storageBytes(sb, storagePath) {
   const path = safePath(storagePath, "storagePath");
   const { data, error } = await sb.storage.from(BUCKET).download(path);
@@ -605,23 +695,15 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const viewIdentities = await fingerprintSevenViews(views, sb, run.tenant_key, run.revision_id);
     return complete(sb, stage, run, { verified: true, receiptKind: "views.seven-source", revisionSnapshotHash: data.snapshot_hash, requiredViewCount: 7, viewReceipts: viewIdentities, distinctViewsVerified: true });
   }
-  if (stage.stage_key === "manifest.resolve") {
-    const resolved = await resolveGenieManifest(sb, run, stage);
-    const spec = resolved.manifest;
-    const manifestId = resolved.dimensionManifestId;
-    const basisHash = resolved.dimensionBasisHash;
-    const { data, error } = await sb.rpc("bind_designpro_entice_manifest", {
-      p_run_id: run.id, p_stage_id: stage.id, p_lease_token: stage.lease_token,
-      p_dimension_manifest_id: manifestId, p_manifest: spec, p_manifest_hash: null,
-      p_dimension_basis_hash: basisHash,
-    });
-    if (error) throw new StageError("manifest_bind_failed", error.message, false);
-    const rebound = await getRun(sb, run.id);
-    return complete(sb, stage, rebound, { verified: true, ...data, dimensionBasisHash: basisHash });
-  }
   if (stage.stage_key === "proof.build") {
     const rebound = await getRun(sb, run.id);
-    const manifest = requiredObject(rebound.results?.dimensionManifest, "bound GENIE dimension manifest");
+    // GENIE deploys on order, so the free run has no bound production manifest.
+    // Call 8 draws a dimensioned proof either way: pre-purchase it uses the
+    // design-time sizes Call 1 already resolved and cut the panels to, which is
+    // exactly what the proof's trim table reports. GENIE replaces them with the
+    // validated production sizes once the pack is ordered.
+    const manifest = rebound.results?.dimensionManifest
+      || await designTimeManifest(sb, run);
     const frozenViews = await stageOutput(sb, run.id, "revision.freeze");
     const { data: revisionSource, error: revisionError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
     if (revisionError || !revisionSource || revisionSource.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("call8_revision_source_drift", "Frozen Call 8 text source changed", false);
@@ -731,6 +813,59 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     }, null, [proofArtifact]);
   }
   if (stage.stage_key === "panels.build") {
+    // CALL 1 ALREADY CUT THESE PANELS. Promote those exact bytes.
+    //
+    // The panels RevisionStudio entices the buyer with, and the panels PanelPro
+    // Studio is served, are the six A.T.L.A.S. cut from the canonical master at
+    // Call 1, each sized to its own side with the five-inch bleed already in the
+    // layout. Re-deriving them here would hand the board a different set of
+    // bytes than the customer was shown.
+    //
+    // They arrive on the immutable revision snapshot, which is the interface
+    // this side of the seam is allowed to read. Manufacturing never reaches back
+    // into the generation tables to find them.
+    const callOnePanels = await callOnePanelSet(sb, run);
+    if (callOnePanels) {
+      const spools = [];
+      const produced = [];
+      const panelHashes = {};
+      for (const panel of callOnePanels) {
+        const bytes = await storageBytes(sb, panel.storagePath);
+        const observed = hashBytes(bytes);
+        if (observed !== String(panel.contentHash || "").toLowerCase() || bytes.length !== Number(panel.byteSize)) {
+          throw new StageError("call9_call1_panel_changed", `${panel.surfaceKey} Call 1 panel changed before promotion`, false);
+        }
+        panelHashes[panel.surfaceKey] = observed;
+        const dims = {
+          trimWidthIn: Number(panel.trimWidthIn),
+          trimHeightIn: Number(panel.trimHeightIn),
+          printWidthIn: Number(panel.printWidthIn),
+          printHeightIn: Number(panel.printHeightIn),
+          surfaceSqFt: Number(panel.surfaceSqFt),
+          bleedInches: Number(panel.bleedInches),
+        };
+        produced.push({ surfaceKey: panel.surfaceKey, storagePath: panel.storagePath, contentHash: observed, byteSize: bytes.length, ...dims });
+        spools.push(artifact("panel", panel.storagePath, observed, bytes.length, panel.surfaceKey, {
+          source: "atlas-call1-panel",
+          sourceMasterHash: panel.sourceMasterHash,
+          geometryPurpose: panel.geometryPurpose,
+          ...dims,
+        }));
+      }
+      if (new Set(Object.values(panelHashes)).size !== SURFACE_KEYS.length) {
+        throw new StageError("call9_panel_identity_collision", "Call 1 panels are not six distinct surfaces", false);
+      }
+      return complete(sb, stage, run, {
+        verified: true,
+        receiptKind: "call9.surface-panels",
+        call: 9,
+        panelSourceRule: PANEL_SOURCE_RULE,
+        promotedFrom: "atlas-call1",
+        panels: produced,
+        panelHashes,
+      }, null, spools);
+    }
+
     const proof = await stageOutput(sb, run.id, "proof.build");
     const manifest = requiredObject(run.results?.dimensionManifest, "bound GENIE dimension manifest");
     const expected = new Map((manifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
@@ -1277,6 +1412,23 @@ async function copyPinnedSourceArtifact(sb, run, row, kind, relativePath, conten
 async function executeProduction(sb, stage, run, runtimeConfig) {
   const input = requiredObject(run.input, "workflow input");
   const sourceRunId = requiredString(run.results?.sourceEnticeRunId || input.sourceEnticeRunId, "sourceEnticeRunId");
+  // GENIE deploys here, on order -- never in the free run. It resolves the true
+  // production dimensions every paid stage below is cut and verified against,
+  // and it is what the customer's progress page reports.
+  if (stage.stage_key === "manifest.resolve") {
+    const resolved = await resolveGenieManifest(sb, run, stage);
+    const spec = resolved.manifest;
+    const manifestId = resolved.dimensionManifestId;
+    const basisHash = resolved.dimensionBasisHash;
+    const { data, error } = await sb.rpc("bind_designpro_dimension_manifest", {
+      p_run_id: run.id, p_stage_id: stage.id, p_lease_token: stage.lease_token,
+      p_dimension_manifest_id: manifestId, p_manifest: spec, p_manifest_hash: null,
+      p_dimension_basis_hash: basisHash,
+    });
+    if (error) throw new StageError("manifest_bind_failed", error.message, false);
+    const rebound = await getRun(sb, run.id);
+    return complete(sb, stage, rebound, { verified: true, ...data, dimensionBasisHash: basisHash });
+  }
   if (stage.stage_key === "source.verify") {
     const call8 = await receipt(sb, sourceRunId, "call8.flat-proof");
     const call9 = await receipt(sb, sourceRunId, "call9.surface-panels");

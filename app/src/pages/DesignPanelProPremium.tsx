@@ -1084,7 +1084,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       !myVehiclePhotoFlowEnabledForPipeline(requestedPipelineMode)
     ) {
       toast({
-        title: "MyVehicle is unavailable in A.T.L.A.S. Preview",
+        title: "MyVehicle is unavailable in A.T.L.A.S.",
         description: "Turn off MyVehicle or choose Production mode before starting.",
         variant: "destructive",
       });
@@ -1569,7 +1569,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (!request.revisionText.trim()) return;
     if (!inlineRevisionEnabledForPipeline(activePipelineMode)) {
       toast({
-        title: "Revisions are unavailable in A.T.L.A.S. Preview",
+        title: "Revisions are unavailable in A.T.L.A.S.",
         description: "Your design and vehicle views remain saved. Start a new design to explore another direction.",
         variant: "destructive",
       });
@@ -1853,13 +1853,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   : "border-white/10 text-white/50 hover:bg-white/5",
                               )}
                             >
-                              A.T.L.A.S. Preview
+                              A.T.L.A.S.
                             </button>
                           </div>
                           <p className="mt-2 text-[10px] leading-4 text-white/55">
                             {flatFirstAtlasSupportedVehicleType(vehicleType)
-                              ? "Creates the flattened master design, then Driver Side. Use See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready. Production ordering is unavailable in Preview mode."
-                              : "Preview mode is available for car, truck, SUV and van. Production mode will be used for this vehicle."}
+                              ? "Creates the flattened master design, then Driver Side. Use See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready. The master is cut into the six print panels as it is authored."
+                              : "A.T.L.A.S. is available for car, truck, SUV and van. Standard generation will be used for this vehicle."}
                           </p>
                         </div>
                       )}
@@ -2042,7 +2042,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         <div className="flex items-start gap-2">
                           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
                           <div>
-                            <p className="font-semibold">A.T.L.A.S. Preview</p>
+                            <p className="font-semibold">A.T.L.A.S.</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
                               Your flattened A.T.L.A.S. master appears first, followed by Driver Side. Select See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready from that same design.
                             </p>
@@ -2602,7 +2602,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
                     {mainDisplayUrl && !pipelineActive && isFlatFirstDiagnostic && (
                       <Card className="border-amber-400/30 bg-amber-400/10 p-4">
-                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable in A.T.L.A.S. Preview.</p>
+                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable in A.T.L.A.S..</p>
                         <p className="mt-1 text-xs leading-5 text-amber-100/70">
                           Your design and vehicle views remain saved. Start a new design to explore another direction.
                         </p>
@@ -2612,7 +2612,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     {/* Post-Render Action Buttons */}
                     {mainDisplayUrl && !pipelineActive && (
                       <div className="space-y-3">
-                        {!isFlatFirstDiagnostic && (
+                        {(
                           <div className="grid grid-cols-1 gap-2">
                             <Button
                               onClick={() => setShowProofSheet(true)}
@@ -2624,12 +2624,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           </div>
                         )}
 
-                        {/* Order CTAs */}
-                        {isFlatFirstDiagnostic ? (
-                          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-xs leading-5 text-amber-100/80">
-                            Production ordering is unavailable in Preview mode. Choose Production mode when you need production files.
-                          </div>
-                        ) : (
+                        {/* Order CTAs — the same for both pipelines. A.T.L.A.S.
+                            Call 1 IS the initial design generation, so an
+                            A.T.L.A.S. design is orderable exactly like any other. */}
                         <div className="p-4 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-lg space-y-3">
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-semibold">Ready to bring this to life?</p>
@@ -2672,13 +2669,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             Send for Client Approval
                           </Button>
                         </div>
-                        )}
                       </div>
                     )}
 
 
-                    {/* Cut Contour Logo Pack */}
-                    {mainDisplayUrl && !isFlatFirstDiagnostic && (
+                    {/* Cut Contour Logo Pack — both pipelines. An A.T.L.A.S. design
+                        has logos exactly like any other. */}
+                    {mainDisplayUrl && (
                       <Button
                         className="w-full bg-purple-600 hover:bg-purple-700 text-white h-11"
                         onClick={() => handleGenerateCutFiles({
@@ -2801,8 +2798,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               Master design and seven vehicle views
                             </p>
                           </div>
-                          <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200">
-                            Preview mode
+                          <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200">
+                            Call 1 · design master
                           </Badge>
                         </div>
 
@@ -2885,7 +2882,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         </button>
                       </Card>
                     )}
-                    {!isFlatFirstDiagnostic && mainDisplayUrl && !pipelineActive && !proofToShow && productionJobStatus && (
+                    {mainDisplayUrl && !pipelineActive && !proofToShow && productionJobStatus && (
                       <Card className="border-amber-400/30 bg-amber-400/10 p-4">
                         <p className="text-sm font-semibold text-amber-100">
                           Call 8 is waiting at {productionJobStatus.currentStage || "production setup"}
@@ -2943,8 +2940,16 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       {/* Order Production Pack — always shown once a design exists.
                           If the required vehicle-class views aren't done yet, clicking PROMPTS the user
                           to finish the remaining views first (and kicks off the
-                          all-views generation). Highlighted once it's truly ready. */}
-                      {mainDisplayUrl && !isFlatFirstDiagnostic && (
+                          all-views generation). Highlighted once it's truly ready.
+
+                          A.T.L.A.S. is NOT excluded. Call 1 is the initial design
+                          generation, not a preview: it authors the canonical
+                          flattened master and cuts the six panels from it, and the
+                          seven vehicle views are projections of that master. A run
+                          that produced the design and its panels is exactly a run
+                          that can be ordered, so hiding this button was the last
+                          thing making A.T.L.A.S. a dead end. */}
+                      {mainDisplayUrl && (
                         <>
                           <button
                             type="button"
@@ -2993,11 +2998,6 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             </p>
                           )}
                         </>
-                      )}
-                      {mainDisplayUrl && isFlatFirstDiagnostic && (
-                        <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100/75">
-                          Production ordering is unavailable in A.T.L.A.S. Preview. Your design and seven vehicle views remain saved.
-                        </div>
                       )}
                     </div>
                   ) : (
@@ -3095,9 +3095,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
             />
           ) : (
             <div className="p-10 text-center text-sm text-gray-500">
-              {isFlatFirstDiagnostic
-                ? "The production proof is unavailable in A.T.L.A.S. Preview."
-                : "The 2D Production Proof is still building and will appear here when it is ready."}
+              {"The 2D Production Proof is still building and will appear here when it is ready."}
             </div>
           )}
         </DialogContent>

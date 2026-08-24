@@ -14,7 +14,7 @@ const allowedTables=new Set(["designpro_workflow_runs","designpro_workflow_stage
 for(const table of tables) assert.ok(allowedTables.has(table),`claimant reads forbidden table ${table}`);
 for(const forbidden of ["workforce_runs","workflow_stage_runs","panelizer_jobs","color_visualizations","design_version_commits","designiq_generations","designpro_entice_packs","designpro_production_jobs","production_flow_assets","production_panel_dispatches","user_roles","railway"])
   assert.ok(!lower.includes(forbidden),`claimant retains legacy/shared surface ${forbidden}`);
-for(const rpc of ["claim_designpro_stage","heartbeat_designpro_stage","complete_designpro_stage","fail_designpro_stage","bind_designpro_entice_manifest","finalize_designpro_entice_identity","request_designpro_human_gate","request_designpro_universal_dimension_validation","acquire_designpro_heavy_lease"])
+for(const rpc of ["claim_designpro_stage","heartbeat_designpro_stage","complete_designpro_stage","fail_designpro_stage","bind_designpro_dimension_manifest","finalize_designpro_entice_identity","request_designpro_human_gate","request_designpro_universal_dimension_validation","acquire_designpro_heavy_lease"])
   assert.ok(lower.includes(rpc),`claimant missing RPC ${rpc}`);
 assert.ok(!lower.includes('sb.rpc("release_designpro_heavy_lease"'),"heavy slot must remain bound until the durable complete/fail transition releases it");
 assert.ok(!lower.includes("deliver_designpro_wrapbox_pack"),"claimant must use the durable WrapBox v2 publisher/reconciler, not the retired one-shot delivery RPC");
