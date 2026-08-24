@@ -24,8 +24,12 @@ const ownerReadGuardSql = readFileSync(new URL(
 // the CURRENT body lives there. Asserting the lineage contract against the
 // introducing migration would check a body the database has replaced -- exactly
 // the drift this suite exists to catch.
+// The newest redefinition of flat_first_atlas_view_set_valid is the live one.
+// Each prompt-version bump reproduces the whole function verbatim with one
+// string changed, so this must track the latest file or the test grades a
+// superseded definition.
 const viewSetGuardSql = readFileSync(new URL(
-  "../supabase/migrations/20260823230000_designpro_atlas_solid_panel_prompt.sql",
+  "../supabase/migrations/20260824180000_designpro_atlas_flat_sheet_prompt_v6.sql",
   import.meta.url,
 ), "utf8");
 const closeupBoundarySql = readFileSync(new URL(
@@ -81,7 +85,7 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
     "producePassengerView",
     "deterministicMirror",
     "driverContentHash",
-    "designpro-flat-first-atlas-20260823.v5",
+    "designpro-flat-first-atlas-20260824.v6",
     "designpro.atlas-master-semantic-qc.v1",
     "designpro.flat-first-master-provider.v1",
     "designpanel-ai-generate.artboard.20260822.v1",

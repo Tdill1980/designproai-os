@@ -94,7 +94,7 @@ test("Atlas freezes Close-Up as proof seven without reintroducing a hero view", 
     }));
   const manifest = buildAtlasManifest(surfaces);
 
-  assert.equal(PROMPT_VERSION, "designpro-flat-first-atlas-20260823.v5");
+  assert.equal(PROMPT_VERSION, "designpro-flat-first-atlas-20260824.v6");
   assert.deepEqual(PROOF_VIEWS, [
     "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
   ]);

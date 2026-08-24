@@ -81,8 +81,21 @@ pixel is opaque, and black is opaque. Two things now stop it:
 
 - **`runtime/flat-first-atlas.cjs`** states the rule positively (SOLID PANELS),
   because negatives make Gemini over-index on the forbidden thing. `PROMPT_VERSION`
-  is `designpro-flat-first-atlas-20260823.v5`; v4 masters are refused, not
+  is `designpro-flat-first-atlas-20260824.v6`; older masters are refused, not
   migrated, and the version string is the mechanism that refuses them.
+
+  **Do not attach a finished vehicle proof to Call 1.** v5 did, captioned "do
+  not return a vehicle image in Call 1" — a negative, with the forbidden thing
+  sitting in the context window as a photograph. It defeated SOLID PANELS
+  outright: live 2026-08-24 (request `a43d3a61`) three consecutive masters were
+  refused, driver and passenger each carrying ONE contiguous cut-out blob at
+  3.76% of a zone that was otherwise 91% artwork — a wheel arch, flattened into
+  the sheet. Call 1 authors a flat sheet; projection onto the vehicle is Calls
+  2–7's job, downstream, from that master. The flattened top-view example is the
+  only teacher this call needs, and v6 describes the output as printed vinyl on
+  the roll whose zone names are *addresses, not subjects*. Locked by
+  `source-tests/runtime/flat-first-atlas.test.mjs` ("Call 1 is taught by the flat
+  sheet alone"), which asserts no attached image derives from the finished proof.
 - **`runtime/atlas-master-qc.cjs`** measures `flatBlackRatio` (near-black blob
   *interiors*, not edges) against `nonBlackFraction` — the SHARE of the zone that
   is artwork. A cutout is a minority of flat black inside a zone that is mostly
