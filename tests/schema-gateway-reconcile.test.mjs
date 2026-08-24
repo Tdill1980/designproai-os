@@ -18,9 +18,6 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
   assert.deepEqual(names.slice(-30), [
-    "20260808024500_designpro_calls_1_7_adapter.sql",
-    "20260812120000_designpro_retire_legacy_2d_proof.sql",
-    "20260812140000_designpro_call12_topaz_enhance.sql",
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -86,6 +83,9 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // PanelPro Studio is served the same bytes.
     "20260824010000_designpro_carry_call1_panels.sql",
     "20260824020000_designpro_bind_dimension_manifest.sql",
+    "20260824030000_designpro_atlas_by_generation.sql",
+    "20260824040000_designpro_call12_heavy_lease.sql",
+    "20260824050000_designpro_promotion_codes.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

@@ -1730,15 +1730,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const mainDisplayUrl = !allViewsRevealed
     ? driverDisplayUrl
     : (displayedAllViews[clampedViewIndex]?.url || baseDisplayUrl);
-  // The canonical flat master is the first visual result in A.T.L.A.S. mode.
-  // It may occupy the customer viewport while the seven downstream projection
-  // slots run, but it is deliberately kept separate from `mainDisplayUrl` so a
-  // proof image, revision source, order gate, or production identity can never
-  // mistake the atlas sheet for a 3D vehicle view.
-  const atlasMasterPreviewUrl = isFlatFirstDiagnostic && pipelineActive && !renderError && !savedDriverDisplayUrl
-    ? latestFlatAtlas?.masterUrl || null
-    : null;
-  const previewDisplayUrl = mainDisplayUrl || atlasMasterPreviewUrl;
+  // The customer's design is the seven 3D proofs and, in RevisionStudio, the six
+  // panels cut from the master. The master sheet itself is never shown here --
+  // it is a production instrument and it lives on the PanelPro Studio board.
+  const previewDisplayUrl = mainDisplayUrl;
   const atlasNewRunRequired = isFlatFirstDiagnostic
     && Boolean(generationError?.includes("Start a new A.T.L.A.S. run"));
   // When a precision modification has been stacked on the render,
@@ -2178,19 +2173,6 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   />
                                 );
                               })()}
-                              {atlasMasterPreviewUrl && !mainDisplayUrl && (
-                                <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 rounded-xl border border-cyan-300/35 bg-black/80 px-3 py-2.5 shadow-[0_0_24px_rgba(34,211,238,0.2)] backdrop-blur-sm">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div>
-                                      <p className="text-xs font-bold text-cyan-100">Your A.T.L.A.S. flattened top-view design is ready</p>
-                                      <p className="mt-0.5 text-[10px] text-cyan-100/65">Creating the seven projected 3D proof views.</p>
-                                    </div>
-                                    <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-1 text-[10px] font-bold text-cyan-200">
-                                      {generationRequestState?.shotsComplete ?? 0} of {generationRequestState?.shotsTotal ?? 7} 3D proofs ready
-                                    </span>
-                                  </div>
-                                </div>
-                              )}
                               {/* Arrow navigation for cycling through views */}
                               {displayedAllViews.length > 1 && (
                                 <>
@@ -2789,62 +2771,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       </div>
                     )}
 
-                    {isFlatFirstDiagnostic && (
-                      <Card className="overflow-hidden border-cyan-400/35 bg-cyan-400/5">
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-400/20 px-4 py-3">
-                          <div>
-                            <p className="text-sm font-bold text-cyan-100">A.T.L.A.S. flattened top-view master</p>
-                            <p className="mt-0.5 text-[11px] text-cyan-100/60">
-                              Master design and seven vehicle views
-                            </p>
-                          </div>
-                          <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200">
-                            Call 1 · design master
-                          </Badge>
-                        </div>
-
-                        {flatAtlasLoadError ? (
-                          <div className="p-4 text-xs text-red-300">
-                            Your saved A.T.L.A.S. design could not be loaded. Please refresh this page.
-                          </div>
-                        ) : latestFlatAtlas ? (
-                          <div className="grid gap-3 p-4 sm:grid-cols-2">
-                            {[
-                              { label: "Vehicle layout", signedUrl: latestFlatAtlas.guideUrl },
-                              { label: "Flattened top-view design", signedUrl: latestFlatAtlas.masterUrl },
-                            ].map(({ label, signedUrl }) => (
-                              <div key={label} className="overflow-hidden rounded-lg border border-white/10 bg-black/40">
-                                <div className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold text-white/75">
-                                  {label}
-                                </div>
-                                {signedUrl ? (
-                                  <button
-                                    type="button"
-                                    className="block w-full"
-                                    onClick={() => setExpandedImage({ url: signedUrl, title: label })}
-                                  >
-                                    <img src={signedUrl} alt={label} className="aspect-[4/3] w-full bg-white object-contain" />
-                                  </button>
-                                ) : (
-                                  <div className="flex aspect-[4/3] items-center justify-center px-4 text-center text-xs text-white/40">
-                                    Preparing preview…
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                            <div className="sm:col-span-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/10 pt-3 text-[10px] text-white/55">
-                              <span>Revision {latestFlatAtlas.revisionSequence}</span>
-                              <span>{flatAtlasRevisions.length} saved version{flatAtlasRevisions.length === 1 ? "" : "s"}</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 p-4 text-xs text-cyan-100/65">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Preparing your saved A.T.L.A.S. design…
-                          </div>
-                        )}
-                      </Card>
-                    )}
+                    {/* The canonical A.T.L.A.S. master and the vehicle layout guide are
+                        production instruments, not customer proofs. The customer's design
+                        is the seven 3D proofs above and, in RevisionStudio, the six panels
+                        cut from that master. The master itself -- and its version history --
+                        belongs to the design team, on the PanelPro Studio board. */}
 
                     {/* ── 2D PRODUCTION PROOF (the "8th call") ──
                         Composited from the 7 locked views by the DesignIQ pipeline

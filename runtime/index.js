@@ -211,7 +211,7 @@ app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(r
 app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
-    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["amountCents", "checkoutSessionId", "generationId", "paymentIntentId", "productType", "userEmail"])) {
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["amountCents", "checkoutSessionId", "discountCents", "generationId", "paymentIntentId", "productType", "promotionCode", "userEmail"])) {
       return res.status(400).json({ error: "purchase_confirm_request_invalid" });
     }
     // The two products the system sells. Anything else is refused rather than
@@ -220,8 +220,22 @@ app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
     if (!["print_pack_entitlement", "logo_pack"].includes(String(body.productType))) {
       return res.status(400).json({ error: "unknown_product_type" });
     }
-    if (!Number.isInteger(body.amountCents) || body.amountCents <= 0) {
+    // A fully-discounted order is a real purchase at zero -- but only when the
+    // code that made it free came with it. Zero with no code is refused here as
+    // well as by the table constraint, so a webhook that lost its total cannot
+    // mint a free entitlement.
+    const promotionCode = body.promotionCode == null ? null : String(body.promotionCode).trim();
+    if (!Number.isInteger(body.amountCents) || body.amountCents < 0) {
       return res.status(400).json({ error: "purchase_amount_invalid" });
+    }
+    if (body.amountCents === 0 && !promotionCode) {
+      return res.status(400).json({ error: "purchase_amount_invalid" });
+    }
+    if (!Number.isInteger(body.discountCents) || body.discountCents < 0) {
+      return res.status(400).json({ error: "purchase_discount_invalid" });
+    }
+    if ((body.discountCents > 0) !== Boolean(promotionCode)) {
+      return res.status(400).json({ error: "purchase_discount_invalid" });
     }
     const { data, error } = await supabase.rpc("confirm_designpro_purchase", {
       p_checkout_session_id: String(body.checkoutSessionId || ""),
@@ -230,6 +244,8 @@ app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
       p_generation_id: canonicalUuid(body.generationId, "generationId"),
       p_amount_cents: Number(body.amountCents),
       p_user_email: body.userEmail ? String(body.userEmail) : null,
+      p_promotion_code: promotionCode || null,
+      p_discount_cents: Number(body.discountCents),
     });
     if (error) return res.status(400).json({ error: error.message });
     // Recording the entitlement is the whole of it. The worker's reconciler

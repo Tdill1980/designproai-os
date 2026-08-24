@@ -147,7 +147,7 @@ test("the customer DesignPanel page enters the one production chain on both pipe
   assert.match(hook, /A\.T\.L\.A\.S\. proof views are locked to one master/);
 });
 
-test("A.T.L.A.S. reveals the immutable master and streams signed proof views without new generation calls", () => {
+test("A.T.L.A.S. streams signed proof views without new generation calls, and never shows the customer the master", () => {
   const adapter = read("app/src/lib/designpanelpro-standalone-adapter.ts");
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
   const premium = read("app/src/pages/DesignPanelProPremium.tsx");
@@ -159,14 +159,19 @@ test("A.T.L.A.S. reveals the immutable master and streams signed proof views wit
   assert.match(hook, /onViews: async \(progressiveViews\)/);
   assert.match(hook, /applyGeneratedViews\(progressiveViews\)/);
   assert.match(hook, /pickPrimaryProofView\(progressiveViews\)/);
-  assert.match(premium, /const atlasMasterPreviewUrl/);
-  assert.match(premium, /pipelineActive && !renderError && !savedDriverDisplayUrl/);
   assert.match(premium, /savedDriverDisplayUrl \|\| \(!isFlatFirstDiagnostic \? baseDisplayUrl : null\)/);
-  assert.match(premium, /latestFlatAtlas\?\.masterUrl/);
-  assert.match(premium, /Your A\.T\.L\.A\.S\. flattened top-view design is ready/);
-  assert.match(premium, /Flattened top-view design/);
-  assert.match(premium, /previewDisplayUrl = mainDisplayUrl \|\| atlasMasterPreviewUrl/);
   assert.match(premium, /atlasReady=\{Boolean\(latestFlatAtlas\)\}/);
+  // The customer sees the seven 3D proofs, and in RevisionStudio the six panels
+  // cut from the master. The canonical master and the vehicle layout guide are
+  // production instruments: they belong to the design team on the PanelPro
+  // Studio board, with their version history, and never to the buyer.
+  assert.doesNotMatch(premium, /atlasMasterPreviewUrl/);
+  assert.doesNotMatch(premium, /latestFlatAtlas\?\.masterUrl/);
+  assert.doesNotMatch(premium, /Your A\.T\.L\.A\.S\. flattened top-view design is ready/);
+  assert.doesNotMatch(premium, /Flattened top-view design/);
+  assert.doesNotMatch(premium, /A\.T\.L\.A\.S\. flattened top-view master/);
+  assert.doesNotMatch(premium, /Vehicle layout/);
+  assert.match(premium, /previewDisplayUrl = mainDisplayUrl;/);
   // An A.T.L.A.S. run is orderable. It produced the design and its six panels,
   // so refusing the order was the last thing making the path a dead end.
   assert.doesNotMatch(premium, /Production ordering is unavailable/);

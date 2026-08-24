@@ -459,6 +459,19 @@ function validatedFlatFirstGate(value) {
   };
 }
 
+/**
+ * `requestId` names one request's lineage; `null` means every lineage on one
+ * generation, which is what the PanelPro Studio board shows.
+ *
+ * The sequence chain is asserted only in the request-scoped case, because that
+ * is the only scope in which it is a chain: a revision's parent must share its
+ * request_id, so each request restarts at 1 and a generation carrying several
+ * requests has several independent chains. Requiring a single ascending run
+ * across a generation would reject a design that has been revised, which is
+ * precisely the history the board exists to show. Every other check -- owner-
+ * bound storage paths, content hashes, byte sizes, content types, the zone
+ * manifest -- is identical in both scopes.
+ */
 function validatedFlatAtlasRevisions(value, requestId, userId) {
   if (value === null) return null;
   if (!Array.isArray(value) || value.length > 100) {
@@ -488,10 +501,14 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
     const affectedSurfaces = row?.affectedSurfaces;
     const exampleGuideHash = row?.exampleGuideHash == null ? null : String(row.exampleGuideHash);
     const exampleMasterHash = row?.exampleMasterHash == null ? null : String(row.exampleMasterHash);
-    if (!UUID_PATTERN.test(id) || rowRequestId !== requestId
+    const chained = requestId === null
+      ? Number.isInteger(revisionSequence) && revisionSequence >= 1
+      : Number.isInteger(revisionSequence) && revisionSequence === previousSequence + 1;
+    if (!UUID_PATTERN.test(id)
+      || (requestId === null ? !UUID_PATTERN.test(rowRequestId) : rowRequestId !== requestId)
       || !UUID_PATTERN.test(generationId)
       || parentRevisionId !== null && !UUID_PATTERN.test(parentRevisionId)
-      || !Number.isInteger(revisionSequence) || revisionSequence !== previousSequence + 1
+      || !chained
       || revisionSequence === 1 && parentRevisionId !== null
       || revisionSequence > 1 && parentRevisionId === null
       || !Number.isInteger(widthPx) || widthPx < 256 || widthPx > 32768
@@ -714,6 +731,27 @@ async function stripeCall(fetchImpl, cfg, path, form) {
  * An unsigned or stale delivery confirms nothing -- it would otherwise be a way
  * to grant a paid entitlement for free.
  */
+/**
+ * The promotion code Stripe reports as applied, or null.
+ *
+ * Stripe puts it in different shapes depending on how the session was expanded,
+ * so read the ones that carry a human-facing code and refuse anything that is
+ * only an internal id -- recording `promo_1Abc…` as the code an affiliate handed
+ * out would make the row useless for attribution.
+ */
+function stripePromotionCode(session) {
+  const candidates = [
+    session?.discounts?.[0]?.promotion_code?.code,
+    session?.total_details?.breakdown?.discounts?.[0]?.discount?.promotion_code?.code,
+    session?.metadata?.promotion_code,
+  ];
+  for (const candidate of candidates) {
+    const code = typeof candidate === "string" ? candidate.trim() : "";
+    if (code) return code;
+  }
+  return null;
+}
+
 function verifiedStripeEvent(rawBody, signatureHeader, secret, nowSeconds) {
   const parts = String(signatureHeader || "").split(",").map((piece) => piece.trim());
   const timestamp = parts.find((piece) => piece.startsWith("t="))?.slice(2) || "";
@@ -1471,13 +1509,25 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         if (!PURCHASE_PRODUCTS[String(metadata.product_type || "")]) {
           return json(res, 200, { received: true, skipped: "not_a_designpro_product" });
         }
+        // amount_total is authoritative WHEN STRIPE SENT IT, including when it is
+        // zero. This used to be an OR-chain onto the session metadata, which fell
+        // back to the LIST PRICE on any fully-discounted order -- so a free pack
+        // would have been recorded as a $299 payment that never happened. Only a
+        // session carrying no total at all falls back to its own metadata.
+        const amountCents = object.amount_total == null
+          ? Number(metadata.amount_cents || 0)
+          : Number(object.amount_total);
+        const discountCents = Number(object.total_details?.amount_discount || 0);
+        const promotionCode = stripePromotionCode(object);
         const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
           checkoutSessionId: String(object.id || ""),
           paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
           productType: String(metadata.product_type),
           generationId: String(metadata.generation_id || ""),
-          amountCents: Number(object.amount_total || metadata.amount_cents || 0),
+          amountCents,
           userEmail: String(metadata.user_email || object.customer_email || ""),
+          promotionCode,
+          discountCents,
         });
         return json(res, 200, { received: true, ...confirmed });
       }
@@ -1752,6 +1802,36 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         }));
       }
 
+      // BIND THE ORDER TO THE DESIGN. Without this the purchase gate can never
+      // release: reconcile_designpro_purchase_gates requires run.input.fulfillment
+      // to equal designpro_private.revision_fulfillment(revision_id), and for a v2
+      // snapshot that resolves only through the late binding this RPC writes.
+      // bind_designpro_revision_fulfillment was granted to `authenticated` and
+      // enforces owner identity, a registered recipient and an exact design-name
+      // match -- it simply had no caller anywhere, so a paid run parked forever.
+      // The caller's own token is passed through so the RPC's auth.uid() fence
+      // does the authorization; this route adds none of its own.
+      const fulfillmentMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/fulfillment$/);
+      if (req.method === "POST" && fulfillmentMatch) {
+        const run = await resolveRun(fetchImpl, token, cfg, decodeURIComponent(fulfillmentMatch[1]));
+        if (!run) return json(res, 404, { error: "job_not_found" });
+        const revisionId = String(run.revision_id || "").toLowerCase();
+        if (!UUID_PATTERN.test(revisionId)) return json(res, 409, { error: "revision_not_frozen" });
+        const body = await readBody(req);
+        const identityHash = String(body.recipientIdentityHash || "").toLowerCase();
+        const orderNumber = String(body.orderNumber || "").trim();
+        const designName = String(body.designName || "").trim();
+        if (!SHA256_PATTERN.test(identityHash) || !orderNumber || !designName) {
+          return json(res, 400, { error: "fulfillment_binding_incomplete" });
+        }
+        return json(res, 202, await rpc(fetchImpl, token, cfg, "bind_designpro_revision_fulfillment", {
+          p_revision_id: revisionId,
+          p_recipient_identity_hash: identityHash,
+          p_order_number: orderNumber,
+          p_design_name: designName,
+        }));
+      }
+
       if (req.method === "POST" && url.pathname === "/api/wrapbox/recipients/register") {
         return json(res, 201, await registerRecipientThroughRuntime(fetchImpl, cfg, user.id, await readBody(req)));
       }
@@ -1884,7 +1964,11 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           "line_items[0][price_data][product_data][name]": spec.name,
           "line_items[0][price_data][product_data][description]": spec.description,
           customer_email: user.email || undefined,
-          success_url: `${cfg.appOrigin}${returnPath}?purchase=${spec.product}`,
+          // Affiliates get working discount codes, and a fully-discounted code is
+          // also how an owner runs the pipeline end to end without paying. The
+          // codes live in Stripe; nothing here prices anything.
+          allow_promotion_codes: true,
+          success_url: `${cfg.appOrigin}${returnPath}?purchase=${spec.productType}`,
           cancel_url: `${cfg.appOrigin}${returnPath}?purchase=cancelled`,
           // The proven metadata, unchanged. This is what reconnects a payment
           // to the design it was made for.
@@ -1906,6 +1990,46 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const run = requestedRun(runs, decodeURIComponent(approvedViewMatch[1]));
         if (!run) return json(res, 404, { error: "job_not_found" });
         return json(res, 200, await approvedViewsForRun(fetchImpl, token, cfg, run, user.id));
+      }
+
+      // The A.T.L.A.S. master and its version history, for the design team.
+      //
+      // Same signing and path-stripping as the request-scoped lineage route:
+      // the database returns private storage paths only after proving the
+      // caller owns the generation, and the response carries five-minute signed
+      // previews with the paths removed. It is addressed by generation because
+      // the board shows every version a design has been through, and a revision
+      // mints a new request against the same generation.
+      const jobAtlasMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/atlas$/);
+      if (req.method === "GET" && jobAtlasMatch) {
+        const run = await resolveRun(fetchImpl, token, cfg, decodeURIComponent(jobAtlasMatch[1]));
+        if (!run) return json(res, 404, { error: "job_not_found" });
+        const jobGenerationId = generationId(run).toLowerCase();
+        if (!UUID_PATTERN.test(jobGenerationId)) return json(res, 404, { error: "job_not_found" });
+        const located = await rpc(fetchImpl, token, cfg, "designpro_flat_atlas_generation_paths", {
+          p_generation_id: jobGenerationId,
+        });
+        const revisions = validatedFlatAtlasRevisions(located, null, user.id);
+        if (revisions === null) return json(res, 404, { error: "job_not_found" });
+        if (revisions.some((revision) => revision.generationId !== jobGenerationId)) {
+          throw Object.assign(new Error("flat_atlas_response_invalid"), { status: 502 });
+        }
+        const publicRevisions = await Promise.all(revisions.map(async (revision) => {
+          const {
+            guideStoragePath, masterStoragePath, projectionStoragePath, ...base
+          } = revision;
+          const [guideUrl, masterUrl] = await Promise.all([
+            signedArtifactUrl(fetchImpl, token, cfg, guideStoragePath).catch(() => null),
+            signedArtifactUrl(fetchImpl, token, cfg, masterStoragePath).catch(() => null),
+          ]);
+          return {
+            ...base,
+            ...(guideUrl ? { guideUrl } : {}),
+            ...(masterUrl ? { masterUrl } : {}),
+            ...((guideUrl || masterUrl) ? { expiresIn: 300 } : {}),
+          };
+        }));
+        return json(res, 200, publicRevisions);
       }
 
       const artifactMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/artifacts$/);

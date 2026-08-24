@@ -744,6 +744,22 @@ export const dpApi = {
       "/wrapbox/recipients/register",
       { method: "POST", body: JSON.stringify(input) },
     ),
+  /**
+   * Bind the order to the design. The purchase gate cannot release until this
+   * exists: the reconciler compares run.input.fulfillment against the revision's
+   * resolved fulfillment, and for a v2 snapshot that comes only from this write.
+   * Register the WrapBox recipient first -- its recipientIdentityHash is the
+   * input here.
+   */
+  bindFulfillment: (generationId: string, input: {
+    recipientIdentityHash: string;
+    orderNumber: string;
+    designName: string;
+  }) =>
+    request<{ bound: true; bindingHash: string }>(
+      `/jobs/${encodeURIComponent(generationId)}/fulfillment`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
   listWrapbox: () => request<WrapboxPack[]>("/wrapbox"),
   getWrapboxPack: (packId: string) =>
     request<WrapboxPack>(`/wrapbox/${encodeURIComponent(packId)}`),
@@ -776,6 +792,17 @@ export const dpApi = {
    */
   listApprovedViews: (generationId: string) =>
     request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
+  /**
+   * Every A.T.L.A.S. version this design has been through, oldest first.
+   *
+   * Addressed by job because that is how the design team reaches it: a design
+   * outlives the request that first produced it, and a revision mints a new
+   * request against the same generation. This is a PanelPro Studio surface --
+   * the canonical master is a production instrument and is never shown to the
+   * customer, who sees the seven proofs and the six panels cut from it.
+   */
+  listJobFlatAtlasRevisions: (generationId: string) =>
+    request<FlatAtlasRevision[]>(`/jobs/${encodeURIComponent(generationId)}/atlas`),
   submitRevision: (submission: RevisionSubmission) =>
     request<{ runId: string; accepted: true }>("/revisions", {
       method: "POST",

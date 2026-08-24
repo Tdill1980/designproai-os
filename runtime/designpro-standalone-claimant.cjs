@@ -1577,6 +1577,33 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
           results.push({ key, bytes: existing, reused: true, dims, targetWidthPx, targetHeightPx, detail: null });
           continue;
         }
+        // A panel that already carries the print target's pixels does not need
+        // enhancing, and sending it to Topaz would resample it for nothing. The
+        // comparison is against the exact GENIE target, so this can only skip a
+        // panel that is already at or above print geometry -- never one that is
+        // short. Conforming it to the target is a pure resize.
+        //
+        // At today's 4K master this rarely fires: six surfaces share one
+        // 4096-pixel canvas, so a long side arrives near 20 PPI against a
+        // 150-PPI target. It exists so that a surface which IS already big
+        // enough is not paid for twice, and so the receipt says which is which.
+        const sourceMeta = await sharp(source, { limitInputPixels: false }).metadata();
+        if (Number(sourceMeta.width) >= targetWidthPx && Number(sourceMeta.height) >= targetHeightPx) {
+          const conformed = await sharp(source, { limitInputPixels: false })
+            .resize(targetWidthPx, targetHeightPx, { fit: "fill" })
+            .flatten({ background: "#ffffff" })
+            .removeAlpha()
+            .toColourspace("srgb")
+            .png()
+            .toBuffer();
+          results.push({
+            key, bytes: conformed, reused: false, dims, targetWidthPx, targetHeightPx,
+            detail: null,
+            enhancement: "not-required",
+            sourcePixels: { widthPx: Number(sourceMeta.width), heightPx: Number(sourceMeta.height) },
+          });
+          continue;
+        }
         let outcome;
         try {
           outcome = await enhancePanel({
@@ -1584,7 +1611,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
             targetWidthPx, targetHeightPx, signal: stageLeaseContext.getStore()?.controller?.signal,
           });
         } catch (error) { throw new StageError(error.code || "topaz_enhance_failed", error.message, error.retryable === true); }
-        results.push({ key, bytes: outcome.bytes, reused: false, dims, targetWidthPx, targetHeightPx, detail: outcome, storagePath });
+        results.push({ key, bytes: outcome.bytes, reused: false, dims, targetWidthPx, targetHeightPx, detail: outcome, storagePath, enhancement: "topaz" });
       }
       return results;
     });
@@ -1602,6 +1629,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         sourcePanelHash: panels.find((p) => p.surface_key === key).content_hash,
         enhancedSha256: item.detail?.enhancedSha256 || stored.hash,
         reusedImmutableWinner: item.reused === true,
+        // "topaz" | "not-required" | "reused-immutable-winner". A panel that was
+        // never enhanced must never read as though it was.
+        enhancement: item.reused === true ? "reused-immutable-winner" : (item.enhancement || "topaz"),
+        sourcePixels: item.sourcePixels || null,
         plan: item.detail?.plan || null,
         clampedByEngineCeiling: item.detail?.plan?.clampedByEngineCeiling === true,
         widthPx: item.targetWidthPx, heightPx: item.targetHeightPx,
@@ -1615,6 +1646,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       verified: true, receiptKind: "call12.topaz-upscale", call: 12,
       contract: TOPAZ_CONTRACT, engine: "topaz-image-enhance", model: readiness.model,
       enhancedHashes, plans, surfaces: Object.keys(enhancedHashes).sort(),
+      enhancement: Object.fromEntries(enhanced.map((item) => [
+        item.key,
+        item.reused === true ? "reused-immutable-winner" : (item.enhancement || "topaz"),
+      ])),
       authoredWinner: true, deterministic: false,
       note: "Topaz output is not reproducible; downstream stages bind these exact hashes.",
     }, null, produced);

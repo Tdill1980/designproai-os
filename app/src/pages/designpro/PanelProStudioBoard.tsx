@@ -33,6 +33,7 @@ import {
   ApprovedGenerationView,
   dpApi,
   FinalQc,
+  FlatAtlasRevision,
   GenieSurfaceKey,
   PreflightQc,
   PRODUCTION_SURFACES,
@@ -178,6 +179,8 @@ export default function PanelProStudioBoard() {
   const [job, setJob] = useState<WorkflowStatus>();
   const [views, setViews] = useState<ApprovedGenerationView[]>([]);
   const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
+  const [atlasRevisions, setAtlasRevisions] = useState<FlatAtlasRevision[]>([]);
+  const [atlasVersion, setAtlasVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [approvedSides, setApprovedSides] = useState<Set<string>>(new Set());
@@ -192,14 +195,19 @@ export default function PanelProStudioBoard() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [status, viewRows, artifactRows] = await Promise.all([
+    const [status, viewRows, artifactRows, atlasRows] = await Promise.all([
       dpApi.getStatus(generationId).catch(() => undefined),
       dpApi.listApprovedViews(generationId).catch(() => []),
       dpApi.listArtifacts(generationId).catch(() => []),
+      // A Standard run has no atlas. An empty list is the honest answer, not an
+      // error, so the board renders without the section rather than failing.
+      dpApi.listJobFlatAtlasRevisions(generationId).catch(() => []),
     ]);
     setJob(status);
     setViews(viewRows);
     setArtifacts(artifactRows);
+    setAtlasRevisions(atlasRows);
+    setAtlasVersion((current) => Math.min(current, Math.max(0, atlasRows.length - 1)));
     setError(status ? "" : "The production job for this design is not reporting.");
     setLoading(false);
   }, [generationId]);
@@ -336,6 +344,88 @@ export default function PanelProStudioBoard() {
         </Notice>
       )}
 
+      {atlasRevisions.length > 0 && (() => {
+        const selected = atlasRevisions[Math.min(atlasVersion, atlasRevisions.length - 1)];
+        return (
+          <Panel
+            eyebrow="Call 1 · A.T.L.A.S."
+            title="The canonical master every panel was cut from"
+            description="The design team's authority, never the customer's. The buyer sees the seven 3D proofs and, in RevisionStudio, the six panels cut from this sheet."
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { label: "Vehicle layout", url: selected.guideUrl, name: "atlas-vehicle-layout.png" },
+                { label: "Flattened top-view master", url: selected.masterUrl, name: "atlas-master.png" },
+              ].map(({ label, url, name }) => (
+                <div key={label} className="rounded-lg border border-border p-2">
+                  <div className="mb-1 text-xs font-semibold">{label}</div>
+                  {url ? (
+                    <>
+                      <a href={url} target="_blank" rel="noreferrer">
+                        <img src={url} alt={label} className="aspect-[4/3] w-full rounded bg-white object-contain" />
+                      </a>
+                      <SaveLink url={url} name={name} />
+                    </>
+                  ) : (
+                    <div className="flex aspect-[4/3] items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+                      <ImageOff className="mr-1.5 h-4 w-4" /> Not signed
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>{selected.widthPx}×{selected.heightPx} px</span>
+              <span>{Math.round(selected.effectivePpi * 10) / 10} effective PPI</span>
+              <span>{selected.promptVersion}</span>
+              <ContentHash value={selected.masterContentHash || ""} chars={14} />
+            </div>
+
+            {/* Version history. A revision starts a new A.T.L.A.S. lineage against
+                the same design, so these are ordered oldest first and numbered
+                across the whole generation rather than by per-request sequence. */}
+            <div className="mt-4 border-t border-border pt-3">
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                Version history · {atlasRevisions.length}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {atlasRevisions.map((revision, index) => (
+                  <button
+                    key={revision.id}
+                    type="button"
+                    onClick={() => setAtlasVersion(index)}
+                    className={cn(
+                      "w-24 overflow-hidden rounded-lg border text-left transition",
+                      index === Math.min(atlasVersion, atlasRevisions.length - 1)
+                        ? "border-primary ring-1 ring-primary/40"
+                        : "border-border hover:border-muted-foreground",
+                    )}
+                    title={revision.instruction || `Version ${index + 1}`}
+                  >
+                    {revision.masterUrl ? (
+                      <img src={revision.masterUrl} alt={`Version ${index + 1}`} className="aspect-square w-full bg-white object-contain" />
+                    ) : (
+                      <div className="flex aspect-square items-center justify-center bg-muted text-muted-foreground">
+                        <ImageOff className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className="truncate border-t border-border px-1.5 py-1 text-[10px] font-semibold">
+                      V{index + 1}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {selected.instruction && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  This version was asked for: “{selected.instruction}”
+                </p>
+              )}
+            </div>
+          </Panel>
+        );
+      })()}
+
       <Panel
         eyebrow="Per-side validation"
         title="Download each panel, check it on the vehicle template, approve the side"
@@ -451,19 +541,38 @@ export default function PanelProStudioBoard() {
                       {rows.length}/{PRODUCTION_SURFACES.length}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  {/* Presence alone cannot be signed off. The final gate asks a
+                      human to certify resolution, print dimensions and colour
+                      mode, which means the human has to be able to open the
+                      file -- so every one of the eighteen is downloadable here,
+                      not just counted. */}
+                  <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
                     {PRODUCTION_SURFACES.map((side) => {
                       const artifact = rows.find((row) => row.surfaceKey === side);
                       return (
-                        <span
+                        <div
                           key={side}
                           className={cn(
-                            "rounded-full border px-2 py-0.5 text-[11px]",
-                            artifact ? "border-emerald-500/40 text-emerald-300" : "border-border text-muted-foreground",
+                            "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[11px]",
+                            artifact ? "border-emerald-500/40" : "border-border",
                           )}
                         >
-                          {SURFACE_LABEL[side] || side}
-                        </span>
+                          <span className={artifact ? "text-emerald-300" : "text-muted-foreground"}>
+                            {SURFACE_LABEL[side] || side}
+                          </span>
+                          {artifact ? (
+                            <span className="flex shrink-0 items-center gap-2">
+                              <span className="text-muted-foreground">
+                                {artifact.byteSize == null
+                                  ? ""
+                                  : `${(Number(artifact.byteSize) / 1_048_576).toFixed(1)} MB`}
+                              </span>
+                              <SaveLink url={artifact.signedUrl} name={`${side}-print.${format}`} />
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">pending</span>
+                          )}
+                        </div>
                       );
                     })}
                   </div>

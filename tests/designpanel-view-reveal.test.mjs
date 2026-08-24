@@ -26,7 +26,9 @@ test("later sides stay hidden until the existing reveal action is clicked", () =
   assert.match(source, /allViewsRevealed && \(displayedAllViews\.length > 0 \|\| failedViews\.length > 0\)/);
   assert.match(source, /const savedDriverDisplayUrl = findViewByType\('side'\)\?\.url \|\| null/);
   assert.match(source, /const driverDisplayUrl = savedDriverDisplayUrl \|\| \(!isFlatFirstDiagnostic \? baseDisplayUrl : null\)/);
-  assert.match(source, /isFlatFirstDiagnostic && pipelineActive && !renderError && !savedDriverDisplayUrl/);
+  // The canonical master no longer stands in for a missing Driver while the
+  // proofs render. It is a production instrument, not a customer proof.
+  assert.doesNotMatch(source, /atlasMasterPreviewUrl/);
 });
 
 test("the reveal state never controls production completion", () => {

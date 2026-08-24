@@ -157,10 +157,9 @@ test("generation-worker selects the Atlas DesignPanel provider and has no generi
   );
   assert.match(atlasExecution, /runAtlasProofStages/);
   assert.doesNotMatch(atlasExecution, /provider:\s*imageProvider/);
-  assert.doesNotMatch(atlasExecution, /parallel:\s*true/);
 });
 
-test("Atlas executes Driver, verifies its persisted identity, then runs the remaining six sequentially", async () => {
+test("Atlas isolates Driver, verifies its persisted identity, then runs the remaining six together", async () => {
   const slots = angles.viewOrder().map((sourceViewType) => ({ sourceViewType }));
   assert.deepEqual(slots.map((slot) => slot.sourceViewType), [
     "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
@@ -177,16 +176,17 @@ test("Atlas executes Driver, verifies its persisted identity, then runs the rema
   };
   const runRequest = async (request) => {
     assert.equal(request.provider, atlasProvider);
-    assert.equal(request.parallel, false, "Atlas may never ask the engine for parallel proof calls");
     assert.equal(request.maxProviderAttempts, 4);
     assert.equal(request.allowOrphanReconciliation, false, "Atlas must not adopt anonymous storage bytes");
     const views = request.slots.map((slot) => slot.sourceViewType);
     events.push(`run:${views.join(",")}`);
     if (events.length === 1) {
       assert.deepEqual(views, ["side"], "Driver must be the isolated first projection");
+      assert.equal(request.parallel, false, "the Driver anchor is established alone");
       return stageResult(views);
     }
     assert.deepEqual(views, ["passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
+    assert.equal(request.parallel, true, "the six anchored projections run together");
     return stageResult(views);
   };
 
@@ -353,7 +353,7 @@ test("Atlas cannot finalize when a later proof slot is leased elsewhere", async 
   assert.deepEqual(events, [
     "run:side:false",
     "driver-hash-verified",
-    "run:passenger-side,hood_detail,front,rear,close-up,roof:false",
+    "run:passenger-side,hood_detail,front,rear,close-up,roof:true",
   ]);
 });
 
