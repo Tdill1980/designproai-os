@@ -41,13 +41,13 @@ test("A.T.L.A.S. per-view regeneration fails closed and tells the customer to st
   );
 
   assert.match(retry, /activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE/);
-  assert.match(retry, /Start a new A\.T\.L\.A\.S\. run/);
+  assert.match(retry, /Start a new Precision run/);
   assert.ok(
     retry.indexOf("activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE")
       < retry.indexOf("regenerateDesignPanelView"),
     "the browser guard must run before its regeneration request",
   );
-  assert.match(premium, /isFlatFirstDiagnostic \? \([\s\S]*Start a new A\.T\.L\.A\.S\. run\.[\s\S]*\) : \([\s\S]*Retry This View/);
+  assert.match(premium, /isFlatFirstDiagnostic \? \([\s\S]*Start a new Precision run\.[\s\S]*\) : \([\s\S]*Retry This View/);
   assert.match(guardedPage, /Start a new A\.T\.L\.A\.S\. run/);
   assert.doesNotMatch(guardedPage, /Edit the canonical master first/);
 });
@@ -68,9 +68,9 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
     /if \(requiresNewAtlasRun \|\| freshAtlasMasterQcFailure\) clearUntrustedAtlasProofState\(\)/,
   );
   assert.match(failure, /if \(acceptedRequest && !requiresNewAtlasRun\)/);
-  assert.match(hook, /This saved A\.T\.L\.A\.S\. proof set cannot be reused\. Start a new A\.T\.L\.A\.S\. run\./);
+  assert.match(hook, /This saved proof set cannot be reused\. Start a new Precision run\./);
   assert.match(hook, /freshAtlasMasterQcFailure/);
-  assert.match(hook, /No proof set was saved\. Start a new A\.T\.L\.A\.S\. run\./);
+  assert.match(hook, /No proof set was saved\. Start a new Precision run\./);
   const clear = hook.slice(
     hook.indexOf("const clearUntrustedAtlasProofState"),
     hook.indexOf("// Persona pipeline timer"),
@@ -82,22 +82,27 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
     "setPersonaAllViews({})", "setPersonaFailedShots([])",
   ]) assert.match(clear, new RegExp(reset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(premium, /renderError \|\| atlasNewRunRequired/);
-  assert.match(premium, /generationError\?\.includes\("Start a new A\.T\.L\.A\.S\. run"\)/);
-  assert.match(premium, /Start New A\.T\.L\.A\.S\. Run/);
+  assert.match(premium, /generationError\?\.includes\("Start a new Precision run"\)/);
+  assert.match(premium, /Start New Precision Run/);
   assert.match(gateway, /request\.failureCode === ATLAS_NEW_RUN_REQUIRED[\s\S]*return json\(res, 409/);
   assert.match(gateway, /designpro_generation_view_paths[\s\S]*includes\(ATLAS_NEW_RUN_REQUIRED\)[\s\S]*status: 409/);
 });
 
-test("the A.T.L.A.S. banner reports customer progress without implementation details", () => {
+test("the design-mode banner reports customer progress without naming the internal pipeline", () => {
   const premium = read("app/src/pages/DesignPanelProPremium.tsx");
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
   const gateway = read("gateway/src/server.mjs");
   assert.match(premium, /initialDesignProPipelineMode\(briefState\?\.pipelineMode, location\.search\)/);
-  // A.T.L.A.S. is named as itself. Call 1 is the initial design generation --
-  // it authors the canonical master and cuts the six panels from it -- so
-  // calling the mode a "preview" understated what the run had already produced
-  // and was the framing behind hiding the order button.
-  assert.match(premium, /A\.T\.L\.A\.S\./);
+  // A.T.L.A.S. is the internal codename for the flat-first master pipeline --
+  // it is a trade secret and must never reach customer-visible copy. The
+  // customer sees "Precision" mode and its outcomes (master design, seven
+  // views, panels), never the internal name or its QC mechanics. Call 1 is
+  // still the initial design generation -- it authors the canonical master
+  // and cuts the six panels from it -- so calling the mode a "preview"
+  // understated what the run had already produced and was the framing behind
+  // hiding the order button; that stays fixed, just under a customer-safe name.
+  assert.doesNotMatch(premium, /A\.T\.L\.A\.S\./);
+  assert.match(premium, /Precision/);
   assert.doesNotMatch(premium, /A\.T\.L\.A\.S\. Preview/);
   assert.doesNotMatch(premium, /Server accepted A\.T\.L\.A\.S\. v3/);
   assert.doesNotMatch(premium, /Google-grounded vehicle proportions/);
@@ -144,7 +149,7 @@ test("the customer DesignPanel page enters the one production chain on both pipe
     /queryKey: \["designpro-production-job"[\s\S]{0,200}?activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE/,
   );
   // One master owns the A.T.L.A.S. proof set; a single view is never re-rolled.
-  assert.match(hook, /A\.T\.L\.A\.S\. proof views are locked to one master/);
+  assert.match(hook, /Proof views are locked to one master/);
 });
 
 test("A.T.L.A.S. streams signed proof views without new generation calls, and never shows the customer the master", () => {
@@ -189,9 +194,10 @@ test("the progress surface reports server state instead of a fake elapsed percen
   assert.match(progress, /requestState\?: GenerationRequestState/);
   assert.match(progress, /proof views complete/);
   assert.match(progress, /safely return to this page later/);
-  assert.match(progress, /Creating your A\.T\.L\.A\.S\. design/);
+  assert.match(progress, /Creating your precision design/);
   assert.doesNotMatch(progress, /Gemini is painting/);
   assert.doesNotMatch(progress, /canonical flattened A\.T\.L\.A\.S\. master/);
+  assert.doesNotMatch(progress, /A\.T\.L\.A\.S\./);
   assert.match(progress, /atlasProofStatus/);
   assert.doesNotMatch(progress, /renders here in your browser/);
 });

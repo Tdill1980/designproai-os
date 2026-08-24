@@ -92,7 +92,7 @@ function PipelineModeSelector({
               : "border-white/10 text-white/50 hover:bg-white/5",
           )}
         >
-          A.T.L.A.S.
+          Precision
         </button>
       </div>
       <p className="mt-2 text-[10px] leading-4 text-white/55">

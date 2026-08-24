@@ -147,7 +147,7 @@ export function DesignPipelineProgress({
   const headline = isAtlas
     ? atlasReady
       ? "Creating all seven vehicle views"
-      : "Creating your A.T.L.A.S. design"
+      : "Creating your precision design"
     : "Creating your custom wrap design";
   const subMsg = isAtlas
     ? atlasReady
@@ -157,7 +157,7 @@ export function DesignPipelineProgress({
   const activeLabel = isAtlas
     ? atlasReady
       ? "Rendering your 3D proof views"
-      : "Creating your A.T.L.A.S. design"
+      : "Creating your precision design"
     : activeStep.label;
   const serverStatus = isAtlas
     ? atlasReady

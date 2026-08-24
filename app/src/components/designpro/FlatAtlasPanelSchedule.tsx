@@ -18,7 +18,7 @@ export function FlatAtlasPanelSchedule({
   if (!panels?.length) {
     return (
       <div className={cn("rounded-lg border border-border/70 bg-muted/20 p-3 text-xs text-muted-foreground", className)}>
-        The six-panel dimension schedule is still being resolved from the A.T.L.A.S. manifest.
+        The six-panel dimension schedule is still being resolved from the master manifest.
       </div>
     );
   }

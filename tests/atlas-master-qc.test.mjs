@@ -13,6 +13,7 @@ const {
   parseMasterQcResponse,
   _test,
 } = require("../runtime/atlas-master-qc.cjs");
+const { passengerMirrorMae } = _test;
 
 const zoneKeys = ["driver", "passenger", "hood", "roof", "front", "rear"];
 const manifest = {
@@ -332,4 +333,86 @@ test("a clean full-bleed sheet reports no cut-out component at all", async () =>
     assert.equal(zone.largestCutoutComponentRatio, 0, `${zone.surfaceKey} reported a phantom cut-out`);
     assert.equal(zone.cutoutComponentCount, 0);
   }
+});
+
+/* ── Passenger mirror MAE must tolerate forward-reading text ───────────── */
+
+// The authoring prompt requires passenger to be driver's mirror-compatible
+// twin (same motif, scene, hierarchy, scale) while "every word/logo/URL/
+// number remains forward-reading on both zones" -- flat-first-atlas.cjs's
+// TOPOLOGY LOCK. A literal full-zone pixel-mirror comparison cannot pass any
+// design that honors that second clause: flipping driver's forward text
+// yields backward text, which never matches passenger's independently
+// forward text at those pixels. Live evidence 2026-08-24 (generation
+// dda491ae-ed63-4aa7-96af-c377d4f71383): a real branded master was refused
+// at passengerMirrorMae=0.28346 with every other check passing.
+
+const sideBySideManifest = {
+  zones: [
+    { surfaceKey: "passenger", x: 0, y: 0, w: 200, h: 200 },
+    { surfaceKey: "driver", x: 200, y: 0, w: 200, h: 200 },
+  ],
+};
+
+async function motifTile() {
+  // Asymmetric on purpose -- a left/right flip must actually change it, or a
+  // mirror-comparison bug could hide behind an accidentally-symmetric fixture.
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+    <rect width="200" height="200" fill="#082f49"/>
+    <polygon points="20,20 150,40 60,160" fill="#38bdf8"/>
+    <circle cx="150" cy="130" r="30" fill="#f97316"/>
+  </svg>`)).png().toBuffer();
+}
+
+async function textBand() {
+  // A forward-reading "company name" band -- high-contrast strokes so a
+  // flipped copy of it reads as clearly different from the original.
+  const strokes = Array.from({ length: 10 }, (_, index) =>
+    `<rect x="${10 + index * 18}" y="172" width="10" height="20" fill="#ffffff"/>`).join("");
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+    <rect x="0" y="168" width="200" height="32" fill="#000000"/>
+    ${strokes}
+  </svg>`)).png().toBuffer();
+}
+
+async function trueMirrorMasterWithForwardText() {
+  const motif = await motifTile();
+  const band = await textBand();
+  const driverZone = await sharp(motif).composite([{ input: band }]).png().toBuffer();
+  const flippedMotif = await sharp(motif).flop().toBuffer();
+  const passengerZone = await sharp(flippedMotif).composite([{ input: band }]).png().toBuffer();
+  return sharp({ create: { width: 400, height: 200, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([
+      { input: passengerZone, left: 0, top: 0 },
+      { input: driverZone, left: 200, top: 0 },
+    ]).png().toBuffer();
+}
+
+async function unrelatedPassengerMaster() {
+  const motif = await motifTile();
+  const band = await textBand();
+  const driverZone = await sharp(motif).composite([{ input: band }]).png().toBuffer();
+  const passengerZone = await sharp({
+    create: { width: 200, height: 200, channels: 3, background: "#facc15" },
+  }).composite([{
+    input: await sharp({ create: { width: 60, height: 60, channels: 3, background: "#7c3aed" } }).png().toBuffer(),
+    left: 70, top: 70,
+  }]).png().toBuffer();
+  return sharp({ create: { width: 400, height: 200, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([
+      { input: passengerZone, left: 0, top: 0 },
+      { input: driverZone, left: 200, top: 0 },
+    ]).png().toBuffer();
+}
+
+test("a true mirror twin with identical forward-reading text on both flanks passes", async () => {
+  const bytes = await trueMirrorMasterWithForwardText();
+  const mae = await passengerMirrorMae(bytes, sideBySideManifest);
+  assert.ok(mae <= MAX_PASSENGER_MIRROR_MAE, `expected the trimmed mean to absorb the text band, saw ${mae}`);
+});
+
+test("a passenger zone that is not actually driver's twin still fails", async () => {
+  const bytes = await unrelatedPassengerMaster();
+  const mae = await passengerMirrorMae(bytes, sideBySideManifest);
+  assert.ok(mae > MAX_PASSENGER_MIRROR_MAE, `expected an unrelated flank to still fail, saw ${mae}`);
 });

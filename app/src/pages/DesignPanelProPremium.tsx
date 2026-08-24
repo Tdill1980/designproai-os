@@ -195,7 +195,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // Keep the launch authority in a ref as well as React state. The selector and
   // the nested DesignIQ submit button live in different components; a callback
   // retained across their render boundary must never submit yesterday's
-  // `legacy` value while the page visibly says A.T.L.A.S. Updating the ref in
+  // `legacy` value while the page visibly says Precision. Updating the ref in
   // the selector's click handler makes the chosen mode synchronous, and the
   // server echoes it back before the UI accepts the request.
   const pipelineModeRef = useRef<GenerationPipelineMode>(pipelineMode);
@@ -1084,7 +1084,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       !myVehiclePhotoFlowEnabledForPipeline(requestedPipelineMode)
     ) {
       toast({
-        title: "MyVehicle is unavailable in A.T.L.A.S.",
+        title: "MyVehicle is unavailable in Precision Mode",
         description: "Turn off MyVehicle or choose Production mode before starting.",
         variant: "destructive",
       });
@@ -1569,7 +1569,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (!request.revisionText.trim()) return;
     if (!inlineRevisionEnabledForPipeline(activePipelineMode)) {
       toast({
-        title: "Revisions are unavailable in A.T.L.A.S.",
+        title: "Revisions are unavailable in Precision Mode",
         description: "Your design and vehicle views remain saved. Start a new design to explore another direction.",
         variant: "destructive",
       });
@@ -1721,8 +1721,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const clampedViewIndex = displayedAllViews.length > 0 ? Math.min(activeViewIndex, displayedAllViews.length - 1) : 0;
   const savedDriverDisplayUrl = findViewByType('side')?.url || null;
   // Standard generation is side-first, so its legacy base URL is the Driver
-  // result. A.T.L.A.S. keeps its flat master separate; never let another saved
-  // angle impersonate Driver Side.
+  // result. Precision Mode keeps its flat master separate; never let another
+  // saved angle impersonate Driver Side.
   const driverDisplayUrl = savedDriverDisplayUrl || (!isFlatFirstDiagnostic ? baseDisplayUrl : null);
   // Driver Side stays pinned until the customer explicitly asks to see the
   // other angles. After reveal, the chosen thumbnail owns the canvas even while
@@ -1735,7 +1735,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // it is a production instrument and it lives on the PanelPro Studio board.
   const previewDisplayUrl = mainDisplayUrl;
   const atlasNewRunRequired = isFlatFirstDiagnostic
-    && Boolean(generationError?.includes("Start a new A.T.L.A.S. run"));
+    && Boolean(generationError?.includes("Start a new Precision run"));
   // When a precision modification has been stacked on the render,
   // show the modified image instead. Other workflows (PDF proof,
   // All Views, etc.) keep using mainDisplayUrl as the unmodified base.
@@ -1848,13 +1848,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   : "border-white/10 text-white/50 hover:bg-white/5",
                               )}
                             >
-                              A.T.L.A.S.
+                              Precision
                             </button>
                           </div>
                           <p className="mt-2 text-[10px] leading-4 text-white/55">
                             {flatFirstAtlasSupportedVehicleType(vehicleType)
                               ? "Creates the flattened master design, then Driver Side. Use See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready. The master is cut into the six print panels as it is authored."
-                              : "A.T.L.A.S. is available for car, truck, SUV and van. Standard generation will be used for this vehicle."}
+                              : "Precision mode is available for car, truck, SUV and van. Standard generation will be used for this vehicle."}
                           </p>
                         </div>
                       )}
@@ -2037,9 +2037,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         <div className="flex items-start gap-2">
                           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
                           <div>
-                            <p className="font-semibold">A.T.L.A.S.</p>
+                            <p className="font-semibold">Precision Mode</p>
                             <p className="mt-1 text-xs leading-5 text-cyan-100/70">
-                              Your flattened A.T.L.A.S. master appears first, followed by Driver Side. Select See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready from that same design.
+                              Your flattened master design appears first, followed by Driver Side. Select See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready from that same design.
                             </p>
                             <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">
                               {generationRequestState
@@ -2105,7 +2105,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white gap-2"
                             >
                               <RefreshCw className="w-4 h-4" />
-                              {isFlatFirstDiagnostic ? "Start New A.T.L.A.S. Run" : "Relaunch"}
+                              {isFlatFirstDiagnostic ? "Start New Precision Run" : "Relaunch"}
                             </Button>
                           </div>
                         ) : previewDisplayUrl ? (
@@ -2584,7 +2584,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
                     {mainDisplayUrl && !pipelineActive && isFlatFirstDiagnostic && (
                       <Card className="border-amber-400/30 bg-amber-400/10 p-4">
-                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable in A.T.L.A.S..</p>
+                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable in Precision Mode.</p>
                         <p className="mt-1 text-xs leading-5 text-amber-100/70">
                           Your design and vehicle views remain saved. Start a new design to explore another direction.
                         </p>
@@ -2606,9 +2606,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           </div>
                         )}
 
-                        {/* Order CTAs — the same for both pipelines. A.T.L.A.S.
-                            Call 1 IS the initial design generation, so an
-                            A.T.L.A.S. design is orderable exactly like any other. */}
+                        {/* Order CTAs — the same for both pipelines. Precision
+                            Mode's Call 1 IS the initial design generation, so a
+                            Precision Mode design is orderable exactly like any other. */}
                         <div className="p-4 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-lg space-y-3">
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-semibold">Ready to bring this to life?</p>
@@ -2655,8 +2655,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     )}
 
 
-                    {/* Cut Contour Logo Pack — both pipelines. An A.T.L.A.S. design
-                        has logos exactly like any other. */}
+                    {/* Cut Contour Logo Pack — both pipelines. A Precision Mode
+                        design has logos exactly like any other. */}
                     {mainDisplayUrl && (
                       <Button
                         className="w-full bg-purple-600 hover:bg-purple-700 text-white h-11"
@@ -2685,7 +2685,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
                         <p className="text-sm text-amber-200">
                           {isFlatFirstDiagnostic
-                            ? `${allViews.length} of ${requiredViewCount} views generated. The A.T.L.A.S. proof set is incomplete. Start a new A.T.L.A.S. run; individual views cannot be retried.`
+                            ? `${allViews.length} of ${requiredViewCount} views generated. The proof set is incomplete. Start a new Precision run; individual views cannot be retried.`
                             : `${allViews.length} of ${requiredViewCount} views generated. ${failedViews.length} view${failedViews.length > 1 ? 's' : ''} failed - retry below or regenerate all.`}
                         </p>
                       </div>
@@ -2749,7 +2749,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <div className="text-center space-y-2">
                               <p className="text-sm text-muted-foreground">{VIEW_LABEL_MAP[viewType] || viewType}</p>
                               {isFlatFirstDiagnostic ? (
-                                <p className="text-xs text-amber-300">Start a new A.T.L.A.S. run.</p>
+                                <p className="text-xs text-amber-300">Start a new Precision run.</p>
                               ) : (
                                 <Button
                                   size="sm"
@@ -2771,7 +2771,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       </div>
                     )}
 
-                    {/* The canonical A.T.L.A.S. master and the vehicle layout guide are
+                    {/* The canonical Precision master and the vehicle layout guide are
                         production instruments, not customer proofs. The customer's design
                         is the seven 3D proofs above and, in RevisionStudio, the six panels
                         cut from that master. The master itself -- and its version history --
@@ -2873,13 +2873,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           to finish the remaining views first (and kicks off the
                           all-views generation). Highlighted once it's truly ready.
 
-                          A.T.L.A.S. is NOT excluded. Call 1 is the initial design
-                          generation, not a preview: it authors the canonical
+                          Precision Mode is NOT excluded. Call 1 is the initial
+                          design generation, not a preview: it authors the canonical
                           flattened master and cuts the six panels from it, and the
                           seven vehicle views are projections of that master. A run
                           that produced the design and its panels is exactly a run
                           that can be ordered, so hiding this button was the last
-                          thing making A.T.L.A.S. a dead end. */}
+                          thing making Precision Mode a dead end. */}
                       {mainDisplayUrl && (
                         <>
                           <button
