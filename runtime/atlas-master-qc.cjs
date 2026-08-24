@@ -34,9 +34,25 @@ const MAX_PASSENGER_MIRROR_MAE = 0.26;
 // convict it. A cutout is a minority of flat black sitting inside a zone that is
 // mostly artwork. Measured on synthetic zones: punched wheels/glass = 22% flat
 // black with 78% bright, a black wrap = 90% flat black with 10% bright.
+//
+// TWO CONVICTIONS, ONE GUARD. The bright-majority guard below protects the black
+// wrap in both. What differs is what counts as evidence of a hole:
+//
+//   largestCutoutComponentRatio -- ONE contiguous blob over 2% of the zone.
+//     Catches a single arch or window that the 5% aggregate is too coarse to
+//     see, and it is the only path that sees a TRANSPARENT punch, which is not
+//     near-black at all. Being per-component, it also cannot be reached by dark
+//     detail scattered across a zone the way an aggregate can.
+//   flatBlackRatio -- 5% of the zone in flat black overall. Still convicts the
+//     many-small-openings case, where no single blob clears 2% but the panel is
+//     visibly perforated. Kept for exactly that reason.
+//
+// Neither subsumes the other, so both stand.
 const MAX_ZONE_FLAT_BLACK_RATIO = 0.05;
 const FLAT_BLACK_CHANNEL_MAX = 24;
 const CUTOUT_BRIGHT_MAJORITY = 0.55;
+const MAX_ZONE_CUTOUT_COMPONENT_RATIO = 0.02;
+const CUTOUT_ALPHA_MAX = 128;
 const MAX_REQUEST_BYTES = 18 * 1024 * 1024;
 const MAX_TRANSPORT_BYTES = 3 * 1024 * 1024;
 const MAX_TRANSPORT_DIMENSION = 1800;
@@ -159,19 +175,29 @@ async function zonePixelMetrics(masterBytes, manifest) {
     let flatBlack = 0;
     let brightTotal = 0;
     let brightCount = 0;
-    const nearBlackAt = (px, py) => {
+    // A hole is either flat black or nothing at all, so both count as blob
+    // material. Transparency is the case the near-black test cannot see.
+    const holeAt = (px, py) => {
       if (px < 0 || py < 0 || px >= info.width || py >= info.height) return true;
       const offset = (py * info.width + px) * info.channels;
       const red = data[offset];
       const green = data[offset + 1] ?? red;
       const blue = data[offset + 2] ?? red;
+      if (data[offset + info.channels - 1] < CUTOUT_ALPHA_MAX) return true;
       return Math.max(red, green, blue) <= FLAT_BLACK_CHANNEL_MAX;
     };
+    // `interior` is the blob mask the component pass labels: marking only
+    // interiors is what stops a dark outline or a shadow edge from chaining
+    // scattered detail into one apparently large "opening".
+    const interior = new Uint8Array(pixelCount);
     for (let py = 0; py < info.height; py += 1) {
       for (let px = 0; px < info.width; px += 1) {
-        if (nearBlackAt(px, py)) {
-          if (nearBlackAt(px - 1, py) && nearBlackAt(px + 1, py)
-            && nearBlackAt(px, py - 1) && nearBlackAt(px, py + 1)) flatBlack += 1;
+        if (holeAt(px, py)) {
+          if (holeAt(px - 1, py) && holeAt(px + 1, py)
+            && holeAt(px, py - 1) && holeAt(px, py + 1)) {
+            flatBlack += 1;
+            interior[py * info.width + px] = 1;
+          }
           continue;
         }
         const offset = (py * info.width + px) * info.channels;
@@ -182,12 +208,45 @@ async function zonePixelMetrics(masterBytes, manifest) {
         brightCount += 1;
       }
     }
+
+    // Iterative 4-connected labelling over the interior mask. An explicit stack
+    // keeps a zone-sized blob from recursing deeper than the call stack allows.
+    const seen = new Uint8Array(pixelCount);
+    const stack = new Int32Array(pixelCount);
+    let largestComponent = 0;
+    let componentCount = 0;
+    for (let start = 0; start < pixelCount; start += 1) {
+      if (!interior[start] || seen[start]) continue;
+      componentCount += 1;
+      let top = 0;
+      stack[top] = start;
+      top += 1;
+      seen[start] = 1;
+      let size = 0;
+      while (top > 0) {
+        top -= 1;
+        const index = stack[top];
+        size += 1;
+        const x = index % info.width;
+        const y = (index - x) / info.width;
+        // Inlined on purpose: this is the inner loop of a per-pixel labelling
+        // pass over six full-resolution zones on every Atlas authoring attempt.
+        let neighbour = 0;
+        if (x > 0) { neighbour = index - 1; if (interior[neighbour] && !seen[neighbour]) { seen[neighbour] = 1; stack[top] = neighbour; top += 1; } }
+        if (x + 1 < info.width) { neighbour = index + 1; if (interior[neighbour] && !seen[neighbour]) { seen[neighbour] = 1; stack[top] = neighbour; top += 1; } }
+        if (y > 0) { neighbour = index - info.width; if (interior[neighbour] && !seen[neighbour]) { seen[neighbour] = 1; stack[top] = neighbour; top += 1; } }
+        if (y + 1 < info.height) { neighbour = index + info.width; if (interior[neighbour] && !seen[neighbour]) { seen[neighbour] = 1; stack[top] = neighbour; top += 1; } }
+      }
+      if (size > largestComponent) largestComponent = size;
+    }
     metrics.push({
       surfaceKey: String(zone.surfaceKey),
       opaqueRatio: opaque / pixelCount,
       edgeOpaqueRatio: edgePixels ? edgeOpaque / edgePixels : 0,
       lumaStddev: Math.sqrt(variance),
       flatBlackRatio: flatBlack / pixelCount,
+      largestCutoutComponentRatio: pixelCount ? largestComponent / pixelCount : 0,
+      cutoutComponentCount: componentCount,
       nonBlackFraction: brightCount / pixelCount,
       nonBlackMeanLuma: brightCount ? brightTotal / brightCount : 0,
     });
@@ -246,14 +305,24 @@ async function deterministicMasterChecks(masterBytes, manifest) {
     }
     // Wheel arches, glass and bed openings drawn as holes. Printed, these are
     // holes in the wrap; the installer is the one who cuts an opening, and they
-    // cut it out of a solid panel.
-    if (zone.flatBlackRatio > MAX_ZONE_FLAT_BLACK_RATIO
-      && zone.nonBlackFraction >= CUTOUT_BRIGHT_MAJORITY) {
-      failures.push(
-        `${zone.surfaceKey} flatBlackRatio=${zone.flatBlackRatio.toFixed(5)} `
-        + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
-        + `(wheel/glass/bed shapes cut out of the panel)`,
-      );
+    // cut it out of a solid panel. Both readings of "hole" convict, and the
+    // bright-majority guard on each is what keeps a black wrap legal.
+    if (zone.nonBlackFraction >= CUTOUT_BRIGHT_MAJORITY) {
+      if (zone.largestCutoutComponentRatio > MAX_ZONE_CUTOUT_COMPONENT_RATIO) {
+        failures.push(
+          `${zone.surfaceKey} largestCutoutComponentRatio=${zone.largestCutoutComponentRatio.toFixed(5)} `
+          + `(flatBlackRatio=${zone.flatBlackRatio.toFixed(5)}) `
+          + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
+          + `-- one wheel/glass/bed shape cut out of the panel`,
+        );
+      } else if (zone.flatBlackRatio > MAX_ZONE_FLAT_BLACK_RATIO) {
+        failures.push(
+          `${zone.surfaceKey} flatBlackRatio=${zone.flatBlackRatio.toFixed(5)} `
+          + `across ${zone.cutoutComponentCount} shapes `
+          + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
+          + `(wheel/glass/bed shapes cut out of the panel)`,
+        );
+      }
     }
   }
   if (passengerMae > MAX_PASSENGER_MIRROR_MAE) {
@@ -475,6 +544,9 @@ module.exports = {
     MIN_ZONE_EDGE_OPAQUE_RATIO,
     MIN_ZONE_LUMA_STDDEV,
     MIN_ZONE_OPAQUE_RATIO,
+    MAX_ZONE_CUTOUT_COMPONENT_RATIO,
+    MAX_ZONE_FLAT_BLACK_RATIO,
+    CUTOUT_BRIGHT_MAJORITY,
     RESPONSE_FIELDS,
     STATUS,
     boundedTransport,

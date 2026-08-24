@@ -58,8 +58,12 @@ test("Atlas keeps a pickup master full-bleed but preserves factory glass and the
 
   assert.match(prompt, /2024 Ford F-250 Crew Cab/);
   assert.match(prompt, /master stays FULL-BLEED inside every supplied exterior-panel zone/);
-  assert.match(prompt, /Do not punch out or draw window\/glass openings/);
-  assert.match(prompt, /do not make glass or an opening the placement anchor for essential logos/);
+  // Positive framing, not a negation: Gemini over-indexes on negated words, so
+  // the rule that keeps wheels filled in is stated as what to paint.
+  assert.match(prompt, /Paint the livery continuously THROUGH every place a window, glass panel, pickup-bed opening, wheel, wheel arch, lamp or trim piece will later sit/);
+  assert.match(prompt, /the installer cuts them out of the printed vinyl afterwards/);
+  assert.match(prompt, /Keep essential logos, lettering and contact copy anchored to solid painted body area rather than to an opening/);
+  assert.doesNotMatch(prompt, /punch out/i);
   assert.match(prompt, /downstream 3D proof projection only/);
   assert.match(prompt, /windows, glass, lights, wheels and trim stay factory/);
   assert.match(prompt, /open bed interior stays bare factory bedliner/);
