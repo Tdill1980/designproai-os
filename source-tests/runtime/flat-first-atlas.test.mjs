@@ -598,6 +598,13 @@ test("an interrupted Atlas authoring fence prevents a duplicate provider call", 
       providerCalls += 1;
       throw new Error("simulated worker interruption after the fence");
     },
+    // The fail-closed validator is now constructed BEFORE the design call, so
+    // its own precondition cannot fire after a 4K image was already paid for.
+    // The mock therefore has to satisfy that precondition to reach the
+    // interruption this test is actually about.
+    async generateRaw() {
+      throw new Error("QC must never run before a master exists");
+    },
   };
   const options = {
     supabase, store, provider, requestId: REQUEST, claimToken: CLAIM_TOKEN,

@@ -96,8 +96,24 @@ pixel is opaque, and black is opaque. Two things now stop it:
   pixels reads high. Locked by `tests/atlas-master-qc.test.mjs`, which fixtures
   all three cases.
 
+  **Do not use the raw flat-black aggregate as the discriminator either.** That
+  was the second attempt, and the first REAL master through the gate
+  (2026-08-24) proved it convicts artwork: driver read 7.3% flat black across
+  **3,761 components** — anti-aliased lettering interiors and shadow detail,
+  average component 0.002% of the zone. A die-cut wheel is ONE shape. The
+  synthetic fixtures were clean flat colours and could never produce that
+  texture. The aggregate now counts only components ≥0.25% of the zone
+  (`concentratedFlatBlackRatio`); a punched opening is orders of magnitude
+  above that floor, so every hole fixture still convicts. Ink scattered as
+  specks is design; ink concentrated in shapes is a hole.
+
 **Do not relax either threshold to get a run through.** A master that fails this
-is telling you the truth.
+is telling you the truth — but a *rejection no longer kills the run*: Call 1
+re-rolls up to `MAX_MASTER_AUTHORING_ATTEMPTS` (3) times inside the one claimed
+authoring fence, feeding the gate's own findings back as corrective direction,
+exactly like the proof QC. Only the exhausted case fails the request. A rejected
+candidate was never persisted and is not "the design"; the fence still makes a
+second concurrent master impossible.
 
 ## 🖥️ RULE 0.16 — CALLS 1–7 EXECUTE ON THIS SERVER (2026-08-23)
 

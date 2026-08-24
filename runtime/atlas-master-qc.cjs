@@ -43,15 +43,28 @@ const MAX_PASSENGER_MIRROR_MAE = 0.26;
 //     see, and it is the only path that sees a TRANSPARENT punch, which is not
 //     near-black at all. Being per-component, it also cannot be reached by dark
 //     detail scattered across a zone the way an aggregate can.
-//   flatBlackRatio -- 5% of the zone in flat black overall. Still convicts the
-//     many-small-openings case, where no single blob clears 2% but the panel is
-//     visibly perforated. Kept for exactly that reason.
+//   concentratedFlatBlackRatio -- 5% of the zone in flat black overall, counting
+//     ONLY components that are individually at least 0.25% of the zone. Still
+//     convicts the many-small-openings case, where no single blob clears 2% but
+//     the panel is visibly perforated -- a punched opening is orders of
+//     magnitude larger than the floor.
+//
+//     The floor exists because the raw aggregate convicted real artwork. First
+//     live master through this gate (2026-08-24): driver read 7.3% flat black
+//     across THREE THOUSAND SEVEN HUNDRED SIXTY-ONE components -- average
+//     component 0.002% of the zone. That is anti-aliased lettering interiors,
+//     outlines and shadow detail, not holes; a die-cut wheel is ONE shape. The
+//     synthetic fixtures were clean flat colours and could never produce that
+//     texture, which is why the false-positive class was invisible until a real
+//     Gemini master arrived. Ink scattered as specks is design; ink concentrated
+//     in shapes is a hole.
 //
 // Neither subsumes the other, so both stand.
 const MAX_ZONE_FLAT_BLACK_RATIO = 0.05;
 const FLAT_BLACK_CHANNEL_MAX = 24;
 const CUTOUT_BRIGHT_MAJORITY = 0.55;
 const MAX_ZONE_CUTOUT_COMPONENT_RATIO = 0.02;
+const MIN_CUTOUT_COMPONENT_RATIO = 0.0025;
 const CUTOUT_ALPHA_MAX = 128;
 const MAX_REQUEST_BYTES = 18 * 1024 * 1024;
 const MAX_TRANSPORT_BYTES = 3 * 1024 * 1024;
@@ -213,8 +226,10 @@ async function zonePixelMetrics(masterBytes, manifest) {
     // keeps a zone-sized blob from recursing deeper than the call stack allows.
     const seen = new Uint8Array(pixelCount);
     const stack = new Int32Array(pixelCount);
+    const componentFloor = pixelCount * MIN_CUTOUT_COMPONENT_RATIO;
     let largestComponent = 0;
     let componentCount = 0;
+    let concentratedFlatBlack = 0;
     for (let start = 0; start < pixelCount; start += 1) {
       if (!interior[start] || seen[start]) continue;
       componentCount += 1;
@@ -238,6 +253,7 @@ async function zonePixelMetrics(masterBytes, manifest) {
         if (y + 1 < info.height) { neighbour = index + info.width; if (interior[neighbour] && !seen[neighbour]) { seen[neighbour] = 1; stack[top] = neighbour; top += 1; } }
       }
       if (size > largestComponent) largestComponent = size;
+      if (size >= componentFloor) concentratedFlatBlack += size;
     }
     metrics.push({
       surfaceKey: String(zone.surfaceKey),
@@ -245,6 +261,7 @@ async function zonePixelMetrics(masterBytes, manifest) {
       edgeOpaqueRatio: edgePixels ? edgeOpaque / edgePixels : 0,
       lumaStddev: Math.sqrt(variance),
       flatBlackRatio: flatBlack / pixelCount,
+      concentratedFlatBlackRatio: concentratedFlatBlack / pixelCount,
       largestCutoutComponentRatio: pixelCount ? largestComponent / pixelCount : 0,
       cutoutComponentCount: componentCount,
       nonBlackFraction: brightCount / pixelCount,
@@ -315,10 +332,13 @@ async function deterministicMasterChecks(masterBytes, manifest) {
           + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
           + `-- one wheel/glass/bed shape cut out of the panel`,
         );
-      } else if (zone.flatBlackRatio > MAX_ZONE_FLAT_BLACK_RATIO) {
+      } else if (zone.concentratedFlatBlackRatio > MAX_ZONE_FLAT_BLACK_RATIO) {
+        // Only components at least 0.25% of the zone count here. The raw
+        // aggregate convicted a real master's lettering and shadow detail --
+        // 7.3% spread across 3,761 specks -- as "wheel/glass/bed shapes".
         failures.push(
-          `${zone.surfaceKey} flatBlackRatio=${zone.flatBlackRatio.toFixed(5)} `
-          + `across ${zone.cutoutComponentCount} shapes `
+          `${zone.surfaceKey} concentratedFlatBlackRatio=${zone.concentratedFlatBlackRatio.toFixed(5)} `
+          + `(flatBlackRatio=${zone.flatBlackRatio.toFixed(5)} across ${zone.cutoutComponentCount} shapes) `
           + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
           + `(wheel/glass/bed shapes cut out of the panel)`,
         );
@@ -546,6 +566,7 @@ module.exports = {
     MIN_ZONE_OPAQUE_RATIO,
     MAX_ZONE_CUTOUT_COMPONENT_RATIO,
     MAX_ZONE_FLAT_BLACK_RATIO,
+    MIN_CUTOUT_COMPONENT_RATIO,
     CUTOUT_BRIGHT_MAJORITY,
     RESPONSE_FIELDS,
     STATUS,

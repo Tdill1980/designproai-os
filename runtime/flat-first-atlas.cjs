@@ -39,6 +39,9 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // out, so they are not reusable under this contract and the version is what
 // refuses them.
 const PROMPT_VERSION = "designpro-flat-first-atlas-20260823.v5";
+// Bounded QC-corrective re-rolls inside the one claimed authoring fence. Three
+// is the proof QC's budget for the same generate/inspect/correct loop.
+const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
 const MASTER_PROVIDER_CONTRACT = "designpro.flat-first-master-provider.v1";
 const TOPOLOGY = "rectangular-preview-v1";
 const EXAMPLE_PURPOSE = "topology-only";
@@ -1233,15 +1236,6 @@ async function generateOrReuseFlatAtlas(options) {
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...(await verifiedCustomerReferenceParts(supabase, input)),
   ];
-  const masterRequestByteSize = assertMasterRequestWithinLimit(parts, masterRequestMaxBytes);
-  const generated = await provider.generateImage({
-    parts,
-    aspectRatio: "1:1",
-    imageSize: "4K",
-    label: "flat-first canonical atlas",
-  });
-  const masterBytes = await normalizeAtlasMaster(generated.bytes, manifest);
-  const masterHash = sha256(masterBytes);
   if (typeof masterValidatorFactory !== "function") {
     throw new FlatAtlasError(
       "flat_atlas_master_qc_runtime_invalid",
@@ -1255,15 +1249,58 @@ async function generateOrReuseFlatAtlas(options) {
       "The fail-closed A.T.L.A.S. master validator is unavailable",
     );
   }
-  const masterQc = await validateMaster({ masterBytes, guideBytes, manifest, input });
-  if (masterQc?.accepted !== true
-    || masterQc?.metadata?.contract !== MASTER_QC_CONTRACT
-    || masterQc.metadata.masterHash !== masterHash
-    || masterQc.metadata.guideHash !== guideHash) {
-    throw new FlatAtlasError(
-      "flat_atlas_master_qc_failed",
-      `The one flattened A.T.L.A.S. design call failed acceptance (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
-    );
+  // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
+  // so no replacement worker can mint a second master -- but inside that fence a
+  // rejected candidate is not "the design": it was never persisted and nobody
+  // saw it. Killing the whole run on the first rejection made every A.T.L.A.S.
+  // request a coin flip on Gemini honouring SOLID PANELS in one throw (live,
+  // 2026-08-24: the first real run after the cutout gate shipped died exactly
+  // there). A rejection now re-rolls with the gate's own findings appended as
+  // corrective direction -- the same generate/inspect/correct loop the proof QC
+  // already runs -- and only the exhausted case fails the run.
+  let generated;
+  let masterBytes;
+  let masterHash;
+  let masterQc;
+  let masterRequestByteSize = 0;
+  let masterAuthoringAttempts = 0;
+  const correctiveParts = [];
+  for (let attempt = 1; attempt <= MAX_MASTER_AUTHORING_ATTEMPTS; attempt += 1) {
+    masterAuthoringAttempts = attempt;
+    const attemptParts = [...parts, ...correctiveParts];
+    masterRequestByteSize = assertMasterRequestWithinLimit(attemptParts, masterRequestMaxBytes);
+    generated = await provider.generateImage({
+      parts: attemptParts,
+      aspectRatio: "1:1",
+      imageSize: "4K",
+      label: attempt === 1
+        ? "flat-first canonical atlas"
+        : `flat-first canonical atlas (corrective re-roll ${attempt})`,
+    });
+    masterBytes = await normalizeAtlasMaster(generated.bytes, manifest);
+    masterHash = sha256(masterBytes);
+    masterQc = await validateMaster({ masterBytes, guideBytes, manifest, input });
+    const accepted = masterQc?.accepted === true
+      && masterQc?.metadata?.contract === MASTER_QC_CONTRACT
+      && masterQc.metadata.masterHash === masterHash
+      && masterQc.metadata.guideHash === guideHash;
+    if (accepted) break;
+    if (attempt === MAX_MASTER_AUTHORING_ATTEMPTS) {
+      throw new FlatAtlasError(
+        "flat_atlas_master_qc_failed",
+        `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
+      );
+    }
+    correctiveParts.length = 0;
+    correctiveParts.push({
+      text: "CORRECTION -- the previous sheet was refused by production QC and discarded: "
+        + `${String(masterQc?.reason || "the master was not accepted").slice(0, 600)}. `
+        + "Author a NEW sheet. Every zone is one SOLID rectangle of continuous artwork, "
+        + "opaque corner to corner: paint the livery straight through every position where "
+        + "a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece will "
+        + "later sit. The installer cuts those openings out of the printed vinyl; the "
+        + "artwork itself never contains a dark or empty shape standing in for one.",
+    });
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
   // Call 1 cuts the six panels. They are what RevisionStudio shows to entice the
@@ -1398,6 +1435,7 @@ async function generateOrReuseFlatAtlas(options) {
       requestedImageSize: "4K",
       masterRequestByteSize,
       masterRequestMaxBytes: MASTER_REQUEST_MAX_BYTES,
+      masterAuthoringAttempts,
       proofExecution: "driver-first-sequential-generate-color-render",
     },
   };
