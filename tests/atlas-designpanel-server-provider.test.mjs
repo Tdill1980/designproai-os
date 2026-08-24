@@ -232,7 +232,7 @@ test("real atlasProjectionParts passes its exact native crop through the provide
   }));
   const manifest = flatFirst.buildAtlasManifest(panelSurfaces);
   const guide = await flatFirst.renderAtlasGuide(manifest);
-  const masterBytes = await flatFirst.normalizeAtlasMaster(guide, manifest);
+  const masterBytes = (await flatFirst.normalizeAtlasMaster(guide, manifest)).bytes;
   const projection = await flatFirst.projectionDerivative(masterBytes);
   const viewAuthorities = await flatFirst._test.buildViewAuthorities(masterBytes, manifest);
   const masterContentHash = hash(masterBytes);

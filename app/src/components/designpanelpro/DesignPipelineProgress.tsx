@@ -152,7 +152,7 @@ export function DesignPipelineProgress({
   const subMsg = isAtlas
     ? atlasReady
       ? atlasProofStatus
-      : "Your master design will appear here first"
+      : "Your design will appear here first"
     : legacySubMsg;
   const activeLabel = isAtlas
     ? atlasReady
@@ -162,7 +162,7 @@ export function DesignPipelineProgress({
   const serverStatus = isAtlas
     ? atlasReady
       ? atlasProofStatus
-      : "Creating your master design"
+      : "Creating your design"
     : legacyServerStatus;
 
   // Honest long-wait signal instead of a frozen-looking bar.

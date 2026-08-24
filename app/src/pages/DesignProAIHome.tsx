@@ -99,7 +99,7 @@ function PipelineModeSelector({
         {disabled
           ? "Design mode is locked for this run. Start a new design to change it."
           : flatFirstAtlasSupportedVehicleType(vehicleType)
-            ? "Creates the master design first, then shows all seven vehicle views as they finish. The master is cut into the six print panels as it is authored."
+            ? "Creates your design first, then shows all seven vehicle views as they finish. Your print-ready files are prepared alongside them."
             : "Preview mode is available for car, truck, SUV and van. Production mode will be used for this vehicle."}
       </p>
     </div>
