@@ -381,8 +381,8 @@ BEGIN
   SELECT pg_catalog.pg_get_functiondef(
     'public.handoff_designpro_generation_to_production(uuid)'::regprocedure
   ) INTO v_definition;
-  IF pg_catalog.position(
-    'v_view.consumer_role=''closeup'' THEN CONTINUE' IN v_definition
+  IF pg_catalog.strpos(
+    v_definition,'v_view.consumer_role=''closeup'' THEN CONTINUE'
   )>0 THEN
     RAISE EXCEPTION 'designpro_handoff_drops_closeup_identity';
   END IF;
