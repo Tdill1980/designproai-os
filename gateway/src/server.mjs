@@ -731,6 +731,27 @@ async function stripeCall(fetchImpl, cfg, path, form) {
  * An unsigned or stale delivery confirms nothing -- it would otherwise be a way
  * to grant a paid entitlement for free.
  */
+/**
+ * The promotion code Stripe reports as applied, or null.
+ *
+ * Stripe puts it in different shapes depending on how the session was expanded,
+ * so read the ones that carry a human-facing code and refuse anything that is
+ * only an internal id -- recording `promo_1Abc…` as the code an affiliate handed
+ * out would make the row useless for attribution.
+ */
+function stripePromotionCode(session) {
+  const candidates = [
+    session?.discounts?.[0]?.promotion_code?.code,
+    session?.total_details?.breakdown?.discounts?.[0]?.discount?.promotion_code?.code,
+    session?.metadata?.promotion_code,
+  ];
+  for (const candidate of candidates) {
+    const code = typeof candidate === "string" ? candidate.trim() : "";
+    if (code) return code;
+  }
+  return null;
+}
+
 function verifiedStripeEvent(rawBody, signatureHeader, secret, nowSeconds) {
   const parts = String(signatureHeader || "").split(",").map((piece) => piece.trim());
   const timestamp = parts.find((piece) => piece.startsWith("t="))?.slice(2) || "";
@@ -1488,13 +1509,25 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         if (!PURCHASE_PRODUCTS[String(metadata.product_type || "")]) {
           return json(res, 200, { received: true, skipped: "not_a_designpro_product" });
         }
+        // amount_total is authoritative WHEN STRIPE SENT IT, including when it is
+        // zero. This used to be an OR-chain onto the session metadata, which fell
+        // back to the LIST PRICE on any fully-discounted order -- so a free pack
+        // would have been recorded as a $299 payment that never happened. Only a
+        // session carrying no total at all falls back to its own metadata.
+        const amountCents = object.amount_total == null
+          ? Number(metadata.amount_cents || 0)
+          : Number(object.amount_total);
+        const discountCents = Number(object.total_details?.amount_discount || 0);
+        const promotionCode = stripePromotionCode(object);
         const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
           checkoutSessionId: String(object.id || ""),
           paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
           productType: String(metadata.product_type),
           generationId: String(metadata.generation_id || ""),
-          amountCents: Number(object.amount_total || metadata.amount_cents || 0),
+          amountCents,
           userEmail: String(metadata.user_email || object.customer_email || ""),
+          promotionCode,
+          discountCents,
         });
         return json(res, 200, { received: true, ...confirmed });
       }
@@ -1901,7 +1934,11 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           "line_items[0][price_data][product_data][name]": spec.name,
           "line_items[0][price_data][product_data][description]": spec.description,
           customer_email: user.email || undefined,
-          success_url: `${cfg.appOrigin}${returnPath}?purchase=${spec.product}`,
+          // Affiliates get working discount codes, and a fully-discounted code is
+          // also how an owner runs the pipeline end to end without paying. The
+          // codes live in Stripe; nothing here prices anything.
+          allow_promotion_codes: true,
+          success_url: `${cfg.appOrigin}${returnPath}?purchase=${spec.productType}`,
           cancel_url: `${cfg.appOrigin}${returnPath}?purchase=cancelled`,
           // The proven metadata, unchanged. This is what reconnects a payment
           // to the design it was made for.

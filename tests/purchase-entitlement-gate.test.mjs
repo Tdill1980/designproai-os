@@ -6,6 +6,9 @@ const claimant = readFileSync(new URL("../runtime/designpro-standalone-claimant.
 const runtime = readFileSync(new URL("../runtime/index.js", import.meta.url), "utf8");
 const gateway = readFileSync(new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../supabase/migrations/20260818210000_designpro_purchase_entitlements.sql", import.meta.url), "utf8");
+// The promotion-code layer relaxes amount_cents to >= 0 and adds the constraint
+// that keeps a free order honest, so the purchase contract now spans two files.
+const promoMigration = readFileSync(new URL("../supabase/migrations/20260824050000_designpro_promotion_codes.sql", import.meta.url), "utf8");
 // The stage order is redefined by the GENIE-on-order migration, so the CURRENT
 // production stage array lives there. Asserting it against the migration that
 // introduced the gate would check an array the database has replaced.
@@ -41,8 +44,26 @@ test("the identifiers, prices and metadata are the proven ones", () => {
 test("the price is the server's and the charge is Stripe's", () => {
   assert.match(gateway, /const spec = PURCHASE_PRODUCTS\[String\(body\.product \|\| ""\)\]/);
   assert.doesNotMatch(gateway, /body\.amountCents|body\.unitAmount|body\.price/);
-  assert.match(gateway, /Number\(object\.amount_total \|\| metadata\.amount_cents \|\| 0\)/,
-    "the recorded amount must be what was actually charged");
+  // `amount_total || metadata.amount_cents` fell back to the LIST PRICE whenever
+  // a promotion code brought the charge to zero, so a free pack would have been
+  // recorded as a $299 payment that never happened. Zero is a real total.
+  assert.doesNotMatch(gateway, /object\.amount_total \|\| metadata\.amount_cents/);
+  assert.match(gateway, /object\.amount_total == null\s*\?\s*Number\(metadata\.amount_cents \|\| 0\)\s*:\s*Number\(object\.amount_total\)/,
+    "the recorded amount must be what was actually charged, including zero");
+  assert.match(gateway, /total_details\?\.amount_discount/);
+  assert.match(gateway, /stripePromotionCode\(object\)/);
+});
+
+test("a free order has to name the code that made it free", () => {
+  // A fully-discounted purchase is legitimate -- it is how affiliate codes and
+  // owner test runs work. What must stay impossible is a zero-value entitlement
+  // appearing without the code that explains it, which is what a webhook missing
+  // its total would otherwise produce.
+  assert.match(gateway, /allow_promotion_codes: true/);
+  assert.match(runtime, /body\.amountCents === 0 && !promotionCode/);
+  assert.match(runtime, /\(body\.discountCents > 0\) !== Boolean\(promotionCode\)/);
+  assert.match(promoMigration, /AND \(amount_cents > 0 OR promotion_code IS NOT NULL\)/);
+  assert.match(promoMigration, /AND \(discount_cents = 0\) = \(promotion_code IS NULL\)/);
 });
 
 test("nothing is recorded before payment", () => {
@@ -225,7 +246,7 @@ test("delivery ships only authorized artifacts and keeps the products distinct",
 test("case 7: wrong product or amount fails closed", () => {
   assert.match(runtime, /\["print_pack_entitlement", "logo_pack"\]\.includes\(String\(body\.productType\)\)/);
   assert.match(runtime, /unknown_product_type/);
-  assert.match(runtime, /!Number\.isInteger\(body\.amountCents\) \|\| body\.amountCents <= 0/);
+  assert.match(runtime, /!Number\.isInteger\(body\.amountCents\) \|\| body\.amountCents < 0/);
   assert.match(gateway, /skipped: "not_a_designpro_product"/);
   assert.match(migration, /prepared_pack_not_found/,
     "a payment naming a design with no prepared pack records nothing");
