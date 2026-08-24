@@ -84,18 +84,33 @@ pixel is opaque, and black is opaque. Two things now stop it:
   is `designpro-flat-first-atlas-20260824.v6`; older masters are refused, not
   migrated, and the version string is the mechanism that refuses them.
 
-  **Do not attach a finished vehicle proof to Call 1.** v5 did, captioned "do
-  not return a vehicle image in Call 1" — a negative, with the forbidden thing
-  sitting in the context window as a photograph. It defeated SOLID PANELS
-  outright: live 2026-08-24 (request `a43d3a61`) three consecutive masters were
-  refused, driver and passenger each carrying ONE contiguous cut-out blob at
-  3.76% of a zone that was otherwise 91% artwork — a wheel arch, flattened into
-  the sheet. Call 1 authors a flat sheet; projection onto the vehicle is Calls
-  2–7's job, downstream, from that master. The flattened top-view example is the
-  only teacher this call needs, and v6 describes the output as printed vinyl on
-  the roll whose zone names are *addresses, not subjects*. Locked by
-  `source-tests/runtime/flat-first-atlas.test.mjs` ("Call 1 is taught by the flat
-  sheet alone"), which asserts no attached image derives from the finished proof.
+  **⛔ THE PAIRED EXAMPLE AND THE ORIGINAL PROMPT ARE RESTORED. DO NOT REMOVE
+  THEM AGAIN. (Trish 2026-08-24)** A session concluded that showing Call 1 the
+  finished 3D proof was what produced the wheel-arch cut-outs, detached it, and
+  rewrote the prompt to say *"nothing in this canvas depicts a vehicle: no body,
+  no panel gap, no door seam, no window, no wheel…"*. **That was wrong and it
+  broke the design.**
+
+  **An A.T.L.A.S. master IS a flattened top view OF A VEHICLE WRAP.** It
+  legitimately carries the vehicle's panel geometry — door seams, rocker and
+  hood contours, the lines an installer cuts to. The bundled Houdini example
+  shows exactly that, and so did every good master this system has produced.
+  Forbidding that geometry removed the very thing that makes the sheet a wrap
+  layout rather than abstract art.
+
+  The defect was never the geometry — it was **openings rendered as absent
+  instead of painted through**, and that is now closed deterministically after
+  authoring (see the cut-out fill below), so the teaching pair carries no risk
+  worth trading design quality for. The owner's actual correction was narrow:
+  the sheet must read as an **exact flattened-from-above view of ONE cohesive
+  wrap**, not six designs sharing a canvas, with the livery painted straight
+  THROUGH any panel line at full opacity. That is the only change v6 makes to
+  the working v5 text.
+
+  **The rule this violated: RULE 0.1 — a design below baseline means the port or
+  the inputs are incomplete, it NEVER means A.C.E. needs new creative
+  direction.** Rewriting the creative framing to fix a pixel defect is exactly
+  the move that rule forbids.
 - **`runtime/atlas-master-qc.cjs`** measures `flatBlackRatio` (near-black blob
   *interiors*, not edges) against `nonBlackFraction` — the SHARE of the zone that
   is artwork. A cutout is a minority of flat black inside a zone that is mostly

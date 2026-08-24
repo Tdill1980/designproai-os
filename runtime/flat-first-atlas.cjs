@@ -775,7 +775,9 @@ OUTPUT CLEANLINESS: The guide's colors, labels, outlines, legend, dimensions, gr
 
 SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL: every zone is ONE SOLID RECTANGLE of continuous printed artwork, opaque corner to corner and edge to edge. The design runs straight through every place a windshield, side window, door glass, wheel arch, tyre, pickup-bed opening, headlight, tail light, handle or trim piece will later sit, exactly as if those parts were not there. THE INSTALLER CUTS THE WHEEL AND WINDOW OPENINGS OUT OF THE FINISHED PANEL, so the panel must have artwork in those places for them to cut. Paint the wrap graphic across the whole rectangle. Each zone reads as a flat sheet of printed vinyl, never as a picture of a vehicle.
 
-WHAT YOU ARE PAINTING: six flat sheets of printed vinyl, laid out side by side on one canvas. Think of it as printed wallpaper on the roll, before anything is cut or applied. The zone names describe where each finished sheet is destined to go later; they are addresses, not subjects. Nothing in this canvas depicts a vehicle: there is no body, no panel gap, no door seam, no window, no wheel, no bumper and no ground shadow anywhere in the artwork. Every zone is filled corner to corner with the livery graphic itself, exactly as the printer lays down ink. The attached flat example shows the format of the answer.
+PAIRED FLAT-TO-FINISHED LESSON: The attached flattened top-view example and its corresponding finished 3D vehicle proof teach the direction of this first call. The FLATTENED TOP-VIEW image is the output-format example. The finished vehicle is shown only so you understand how one coherent flat design later wraps across hood, roof, driver, passenger, front and rear surfaces. For this call, output the new flattened top-view design first; never output a vehicle photograph.
+
+ONE COHESIVE WRAP, FLATTENED FROM DIRECTLY ABOVE: this is an EXACT flattened top view of a SINGLE vehicle wrap — one design laid open, the way the attached example is. Not six separate designs sharing a canvas, and not a perspective or three-quarter view. Every zone is the same wrap continuing across the vehicle, so the motif, palette, scale and flow read as one artwork that happens to be laid flat. Where a zone shows the panel's own geometry — a door seam, a rocker or hood contour, the line an installer cuts to — paint the livery straight THROUGH it at full opacity, so the shape reads as printed artwork and never as an opening in the sheet.
 
 REFERENCE FIREWALL: Any attached installer-map, flattened top-view or finished-vehicle examples are TOPOLOGY/LAYOUT references only. Extract only panel arrangement, orientation, surface correspondence, masks and seam-continuity intent. IGNORE their palette, imagery, text, logos, brand and style. The customer's brief and verified customer-owned assets are the sole style source.
 
@@ -861,32 +863,32 @@ async function topologyExampleParts(examples = []) {
           "The paired topology lesson requires release-owned flattened and finished proof bytes",
         );
       }
-      // ONLY THE FLAT SHEET IS SHOWN. The example record still has to carry both
-      // halves -- that contract is validated above and unchanged -- but the
-      // finished 3D proof is deliberately NOT attached to this call.
+      // THE PAIR IS THE LESSON. Restored verbatim 2026-08-24 after a session
+      // removed the finished proof on the theory that having a vehicle in the
+      // context window was what produced the wheel-arch cut-outs. That was the
+      // wrong conclusion and it cost the design: an A.T.L.A.S. master IS a
+      // flattened top view OF A VEHICLE WRAP, so it legitimately carries the
+      // vehicle's panel geometry -- door seams, rocker and hood contours, the
+      // shapes an installer cuts to. The bundled Houdini pair shows exactly
+      // that. Telling the model "nothing here depicts a vehicle" removed the
+      // very thing that makes the sheet a wrap layout instead of abstract art.
       //
-      // It used to be, captioned "do not return a vehicle image in Call 1". That
-      // is the exact shape RULE 0.15 warns about: a negative makes the model
-      // over-index on the forbidden thing, and here the forbidden thing was also
-      // sitting in the context window as a photograph. Gemini was shown a
-      // wrapped van and asked not to draw a van, so it drew one -- flattened
-      // into the zones, with the wheel arches and glass rendered as solid dark
-      // shapes. Live, 2026-08-24 (request a43d3a61): three consecutive attempts
-      // refused, driver and passenger each carrying ONE contiguous cut-out blob
-      // at 3.76% of a zone that was otherwise 91% artwork. A wheel arch.
-      //
-      // Call 1 does not need it. Its whole job is to author a flat sheet; the
-      // projection onto the vehicle is what Calls 2-7 do, from this master,
-      // downstream. The flattened top-view example already teaches the output
-      // format, which is the only thing this call has to learn. Removing the
-      // photo also shrinks the request against the master byte limit.
+      // The real defect was never the geometry, it was the HOLES: openings
+      // rendered as absent instead of painted through. That is now closed
+      // deterministically after authoring (atlas-cutout-fill.cjs), so the
+      // teaching pair carries no risk worth trading the design quality for.
       const flattened = await sharp(example.flattenedTopView.bytes, { limitInputPixels: false })
         .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
         .png(PNG_OPTIONS).toBuffer();
+      const finished = await sharp(example.finished3dProof.bytes, { limitInputPixels: false })
+        .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
+        .png(PNG_OPTIONS).toBuffer();
       parts.push(
-        { text: "FLAT OUTPUT-FORMAT EXAMPLE. This is the shape of the answer: one unwrapped sheet, every zone filled corner to corner with continuous printed artwork. Study the layout and the way the design carries across zones. Copy no artwork, wording, logo, color or brand." },
+        { text: "PAIRED TOPOLOGY EXAMPLE — FLATTENED TOP-VIEW OUTPUT FORMAT. Study how all visible vehicle surfaces are intentionally composed into one unwrapped design. Copy no artwork, wording, logo, color or brand." },
         { inlineData: { mimeType: "image/png", data: flattened.toString("base64") } },
-        { text: "CALL 1 TARGET: create the customer's NEW flat sheet in the deterministic guide layout, in that same format." },
+        { text: "PAIRED TOPOLOGY EXAMPLE — CORRESPONDING FINISHED 3D PROOF. This shows how the preceding flat design reads after projection onto the vehicle. It is context only; do not return a vehicle image in Call 1 and copy no style." },
+        { inlineData: { mimeType: "image/png", data: finished.toString("base64") } },
+        { text: "CALL 1 TARGET: create the customer's NEW flattened top-view design in the deterministic guide layout. The seven finished 3D proof views are downstream projections of that saved master." },
       );
       continue;
     }
