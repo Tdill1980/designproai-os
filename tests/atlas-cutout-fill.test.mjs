@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
 const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
@@ -125,4 +126,83 @@ test("the fill is reproducible: the same sheet fills to the same bytes", async (
   const first = await fillMasterCutouts(bytes, manifest, ["driver"]);
   const second = await fillMasterCutouts(bytes, manifest, ["driver"]);
   assert.equal(Buffer.compare(first.bytes, second.bytes), 0);
+});
+
+/* ── Every print file identifies itself ─────────────────────────────────── */
+
+// A panel with no markings is unusable on a shop floor: six large rectangles
+// arrive and nothing says which side each is, what it measures, or which job it
+// belongs to. The slug is stamped at output, not at the cut, because at design
+// time the 5" bleed is only 59-76px and nothing legible fits; at print scale the
+// same 5" is 750px.
+
+const claimant = require("../runtime/designpro-standalone-claimant.cjs");
+
+test("each print file carries its surface, dimensions and DesignID up the right margin", () => {
+  const svg = claimant._test.panelIdentitySlugSvg({
+    widthPx: (190 + 10) * 150,
+    heightPx: (66 + 10) * 150,
+    bleedPx: 5 * 150,
+    surfaceKey: "driver",
+    designId: "DID-5B2EB96C",
+    orderNumber: "RP-101093",
+    dims: { widthInches: 190, heightInches: 66 },
+  }).toString("utf8");
+
+  for (const fragment of ["DRIVER", 'TRIM 190&quot; x 66&quot;', 'PRINT 200&quot; x 76&quot;', "87.1 SQ FT", "DID-5B2EB96C", "ORDER RP-101093"]) {
+    assert.ok(svg.includes(fragment), `the slug must state ${fragment}`);
+  }
+
+  // Only the margin strip is drawn. A driver panel is 30000x11400 at print
+  // scale; a full-canvas SVG to place one line would cost hundreds of MB and
+  // rasterise to a size that refuses to composite.
+  assert.match(svg, /width="750" height="11400"/);
+  assert.doesNotMatch(svg, /width="30000"/);
+  // Rotated to run up the margin -- 750px cannot hold that line horizontally.
+  assert.match(svg, /rotate\(-90 /);
+  // A WHITE PLATE WITH BLACK TYPE, not outlined type floating on artwork.
+  // The bleed carries whatever colours the design happens to end on, so a plate
+  // makes contrast fixed rather than a function of what is underneath -- and it
+  // is what makes the QR scannable at all, since a QR needs light modules and a
+  // quiet zone.
+  assert.match(svg, /<rect [^>]*fill="#ffffff"/);
+  assert.match(svg, /fill="#000000">/);
+  assert.doesNotMatch(svg, /paint-order/);
+});
+
+test("the QR resolves to the auth-gated job board, and carries no payload of its own", async () => {
+  const url = claimant._test.panelBoardUrl("5b2eb96c-77b5-4705-8cad-fef00af677fe");
+  // A printed panel is scannable by anyone who sees it -- a print vendor, a
+  // shipping handler, the end customer. So the code points at a page that is
+  // already behind RequireAuth rather than returning production metadata.
+  assert.equal(url, "https://os.designproai.com/designpro/jobs/5b2eb96c-77b5-4705-8cad-fef00af677fe/panelpro");
+  assert.doesNotMatch(url, /trim|print|sqft|surface|master|panel-?source/i,
+    "the code must not encode production data");
+
+  const qr = await claimant._test.panelQrModules(url);
+  assert.ok(qr.size >= 21, "a real QR symbol");
+  assert.ok(qr.path.length > 0, "the modules must render as geometry");
+
+  const svg = claimant._test.panelIdentitySlugSvg({
+    widthPx: (84 + 10) * 150, heightPx: (34 + 10) * 150, bleedPx: 5 * 150,
+    surfaceKey: "front", designId: "DID-5B2EB96C", orderNumber: "RP-101093",
+    dims: { widthInches: 84, heightInches: 34 }, qrModules: qr,
+  }).toString("utf8");
+  // Drawn as geometry scaled into the plate, never a nested SVG document --
+  // librsvg would resolve a second viewport and the size would stop being ours.
+  assert.match(svg, /<path d="M[^"]+" fill="#000000"\/>/);
+  assert.equal((svg.match(/<svg /g) || []).length, 1, "one document, no nested viewport");
+});
+
+test("the slug is stamped once, before every output format is written", () => {
+  const source = readFileSync(new URL("../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");
+  const build = source.slice(source.indexOf("async function buildPrintOutputs"));
+  const stamp = build.indexOf("panelIdentitySlugSvg(");
+  assert.ok(stamp > 0, "output.build must stamp the slug");
+  // PNG, TIFF and EPS all derive from `contained`, so stamping it once is what
+  // stops the three formats carrying three different markings.
+  // Matched on the real format writes, not the stamp's own .png() encode.
+  for (const format of ['png({ compressionLevel: 6 })', 'tiff({ compression: "lzw"', "buildDeterministicRasterEps"]) {
+    assert.ok(build.indexOf(format) > stamp, `${format} must be written after the slug is applied`);
+  }
 });
