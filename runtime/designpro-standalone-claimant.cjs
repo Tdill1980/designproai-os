@@ -376,6 +376,51 @@ async function callOnePanelSet(sb, run) {
   return panels;
 }
 
+/**
+ * The design-time dimension manifest, built from the panels Call 1 cut.
+ *
+ * Same shape the GENIE manifest binds, so every consumer reads one structure --
+ * but marked genieVerified:false, because these are the design-time sizes
+ * (calls-1-7-layout-only) rather than validated production geometry. Nothing
+ * downstream of the purchase gate is allowed to run on them.
+ */
+async function designTimeManifest(sb, run) {
+  const panels = await callOnePanelSet(sb, run);
+  if (!panels) {
+    throw new StageError(
+      "call8_dimensions_unavailable",
+      "No GENIE manifest is bound and Call 1 recorded no panel dimensions for this run",
+      false,
+    );
+  }
+  const expectedSurfaces = SURFACE_KEYS.map((surfaceKey) => {
+    const panel = panels.find((item) => item.surfaceKey === surfaceKey);
+    if (!panel) {
+      throw new StageError(
+        "call8_dimensions_unavailable",
+        `Call 1 recorded no panel for ${surfaceKey}`,
+        false,
+      );
+    }
+    const widthInches = round2(panel.trimWidthIn);
+    const heightInches = round2(panel.trimHeightIn);
+    return {
+      surfaceKey,
+      widthInches,
+      heightInches,
+      bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+      surfaceSqFt: round2((widthInches * heightInches) / 144),
+    };
+  });
+  return {
+    contract: "designpro.design-time-dimension-manifest.v1",
+    genieVerified: false,
+    geometryPurpose: "calls-1-7-layout-only",
+    expectedSurfaces,
+    totalSqFt: round2(expectedSurfaces.reduce((total, surface) => total + surface.surfaceSqFt, 0)),
+  };
+}
+
 async function storageBytes(sb, storagePath) {
   const path = safePath(storagePath, "storagePath");
   const { data, error } = await sb.storage.from(BUCKET).download(path);
@@ -650,23 +695,15 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const viewIdentities = await fingerprintSevenViews(views, sb, run.tenant_key, run.revision_id);
     return complete(sb, stage, run, { verified: true, receiptKind: "views.seven-source", revisionSnapshotHash: data.snapshot_hash, requiredViewCount: 7, viewReceipts: viewIdentities, distinctViewsVerified: true });
   }
-  if (stage.stage_key === "manifest.resolve") {
-    const resolved = await resolveGenieManifest(sb, run, stage);
-    const spec = resolved.manifest;
-    const manifestId = resolved.dimensionManifestId;
-    const basisHash = resolved.dimensionBasisHash;
-    const { data, error } = await sb.rpc("bind_designpro_entice_manifest", {
-      p_run_id: run.id, p_stage_id: stage.id, p_lease_token: stage.lease_token,
-      p_dimension_manifest_id: manifestId, p_manifest: spec, p_manifest_hash: null,
-      p_dimension_basis_hash: basisHash,
-    });
-    if (error) throw new StageError("manifest_bind_failed", error.message, false);
-    const rebound = await getRun(sb, run.id);
-    return complete(sb, stage, rebound, { verified: true, ...data, dimensionBasisHash: basisHash });
-  }
   if (stage.stage_key === "proof.build") {
     const rebound = await getRun(sb, run.id);
-    const manifest = requiredObject(rebound.results?.dimensionManifest, "bound GENIE dimension manifest");
+    // GENIE deploys on order, so the free run has no bound production manifest.
+    // Call 8 draws a dimensioned proof either way: pre-purchase it uses the
+    // design-time sizes Call 1 already resolved and cut the panels to, which is
+    // exactly what the proof's trim table reports. GENIE replaces them with the
+    // validated production sizes once the pack is ordered.
+    const manifest = rebound.results?.dimensionManifest
+      || await designTimeManifest(sb, run);
     const frozenViews = await stageOutput(sb, run.id, "revision.freeze");
     const { data: revisionSource, error: revisionError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
     if (revisionError || !revisionSource || revisionSource.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("call8_revision_source_drift", "Frozen Call 8 text source changed", false);
@@ -1375,6 +1412,23 @@ async function copyPinnedSourceArtifact(sb, run, row, kind, relativePath, conten
 async function executeProduction(sb, stage, run, runtimeConfig) {
   const input = requiredObject(run.input, "workflow input");
   const sourceRunId = requiredString(run.results?.sourceEnticeRunId || input.sourceEnticeRunId, "sourceEnticeRunId");
+  // GENIE deploys here, on order -- never in the free run. It resolves the true
+  // production dimensions every paid stage below is cut and verified against,
+  // and it is what the customer's progress page reports.
+  if (stage.stage_key === "manifest.resolve") {
+    const resolved = await resolveGenieManifest(sb, run, stage);
+    const spec = resolved.manifest;
+    const manifestId = resolved.dimensionManifestId;
+    const basisHash = resolved.dimensionBasisHash;
+    const { data, error } = await sb.rpc("bind_designpro_dimension_manifest", {
+      p_run_id: run.id, p_stage_id: stage.id, p_lease_token: stage.lease_token,
+      p_dimension_manifest_id: manifestId, p_manifest: spec, p_manifest_hash: null,
+      p_dimension_basis_hash: basisHash,
+    });
+    if (error) throw new StageError("manifest_bind_failed", error.message, false);
+    const rebound = await getRun(sb, run.id);
+    return complete(sb, stage, rebound, { verified: true, ...data, dimensionBasisHash: basisHash });
+  }
   if (stage.stage_key === "source.verify") {
     const call8 = await receipt(sb, sourceRunId, "call8.flat-proof");
     const call9 = await receipt(sb, sourceRunId, "call9.surface-panels");

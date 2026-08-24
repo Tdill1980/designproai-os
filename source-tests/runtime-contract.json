@@ -24,6 +24,7 @@
     "acquire_designpro_heavy_lease",
     "activate_designpro_entice_pack",
     "begin_production_panel_dispatch",
+    "bind_designpro_dimension_manifest",
     "bind_designpro_entice_manifest",
     "claim_designpro_generation_request",
     "claim_designpro_stage",
