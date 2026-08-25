@@ -14,8 +14,10 @@ import StudioBoardEditor, { StudioBoardEditTarget } from "@/components/studioboa
 import {
   dpApi,
   type FinalQc,
+  type GenieSurfaceKey,
   type PreflightQc,
   PRODUCTION_SURFACES,
+  type WorkflowArtifact,
 } from "@/lib/designpro-api";
 import {
   EXPECTED_OUTPUT_FILES,
@@ -694,6 +696,376 @@ function JobHeader({
 }
 
 /**
+ * EXTRACTED LOGOS AND BRAND ASSETS, FOR THE SELECTED VERSION.
+ *
+ * Call 10 separates the brand marks out of the accepted panels, one artifact
+ * per placement, each recording which surface it sits on and which A.T.L.A.S.
+ * master it descends from. This is where the design team downloads them --
+ * individually, because the whole point of a Logo Pack is that a designer wants
+ * one mark, not a ZIP of six.
+ *
+ * A logo whose master hash does not match the selected version is not shown as
+ * that version's. It is reported as unattributed, because a brand asset from V3
+ * sitting under a V1 heading is exactly the kind of quiet substitution the
+ * lineage rules exist to stop.
+ */
+function LogoGallery({ job, selectedVersion }: { job: PanelProStudioJob; selectedVersion: DesignVersion | null }) {
+  const master = selectedVersion?.masterContentHash || "";
+  const { bound, unattributed } = useMemo(() => {
+    const boundRows: WorkflowArtifact[] = [];
+    const looseRows: WorkflowArtifact[] = [];
+    for (const logo of job.logos) {
+      const hash = String((logo.metadata as Record<string, unknown> | undefined)?.sourceMasterHash || "");
+      if (master && hash === master) boundRows.push(logo);
+      else if (!hash) looseRows.push(logo);
+    }
+    return { bound: boundRows, unattributed: looseRows };
+  }, [job.logos, master]);
+
+  const card = (logo: WorkflowArtifact, attributed: boolean) => {
+    const metadata = (logo.metadata || {}) as Record<string, unknown>;
+    const name = String(metadata.displayName || metadata.identityKey || "Brand asset");
+    const surface = String(metadata.targetSurfaceKey || "");
+    return (
+      <div key={logo.id} className="rounded-lg border border-gray-200 p-2">
+        <div className="flex aspect-square items-center justify-center rounded bg-[repeating-conic-gradient(#f3f4f6_0%_25%,#ffffff_0%_50%)] bg-[length:16px_16px]">
+          {logo.signedUrl ? (
+            <img src={logo.signedUrl} alt={name} className="max-h-full max-w-full object-contain" />
+          ) : (
+            <ImageIcon className="h-5 w-5 text-gray-300" />
+          )}
+        </div>
+        <div className="mt-1.5 truncate text-[11px] font-semibold text-gray-900" title={name}>{name}</div>
+        <div className="flex flex-wrap items-center gap-1 text-[10px] text-gray-500">
+          {surface && <span className="rounded bg-gray-100 px-1 py-0.5">{surface}</span>}
+          <span className="font-mono">{String(metadata.contentType || "").replace("image/", "") || "png"}</span>
+          {!attributed && <span className="text-amber-600">unattributed</span>}
+        </div>
+        <a
+          href={logo.signedUrl}
+          download={`${surface || "logo"}-${name.replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}.png`}
+          className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline"
+        >
+          <Download className="h-3 w-3" /> Download
+        </a>
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-gray-900">Extracted logos &amp; brand assets</h2>
+        <span className="font-mono text-[10px] text-gray-500">
+          {bound.length} for {selectedVersion ? `V${selectedVersion.version}` : "this design"}
+          {unattributed.length ? ` · ${unattributed.length} unattributed` : ""}
+        </span>
+      </div>
+      {bound.length + unattributed.length === 0 ? (
+        <p className="text-[11px] text-gray-500">
+          The server separates these at Call 10, from the accepted panels. None has been produced for
+          this run yet.
+        </p>
+      ) : (
+        <>
+          {bound.length > 0 && (
+            <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr))]">
+              {bound.map((logo) => card(logo, true))}
+            </div>
+          )}
+          {unattributed.length > 0 && (
+            <div className="mt-3 border-t border-gray-100 pt-2">
+              {/* Shown, not hidden, and not claimed for this version. These
+                  predate the master binding on logo artifacts. */}
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600">
+                No version binding · {unattributed.length}
+              </div>
+              <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr))]">
+                {unattributed.map((logo) => card(logo, false))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * PER-SURFACE HUMAN QC, AND WHAT IT ADDS UP TO.
+ *
+ * This is a physical check: a designer downloads the panel, lays it on the real
+ * vehicle template, and confirms it will fit. The ten questions below are that
+ * check written down, and the board answers three of them itself because they
+ * are facts it can read rather than judgements a person has to make -- correct
+ * A.T.L.A.S. version, proof and panel from the same master, and the panel's own
+ * effective DPI against print. The rest are the designer's, and they are not
+ * pre-ticked.
+ *
+ * PASS means every question is answered yes. Anything else is NEEDS CORRECTION,
+ * which is a statement about the panel, not about the designer's progress -- a
+ * surface nobody has looked at yet reads as not passed, because it has not
+ * passed.
+ *
+ * Nothing here writes to the server. The release gate is the preflight
+ * submission in the Production Pack section, and this is the evidence a person
+ * assembles before they touch it.
+ */
+const SURFACE_QC_CHECKS: Array<[string, string, "human" | "derived"]> = [
+  ["template", "Correct vehicle template for this exact year/make/model", "human"],
+  ["version", "Panel is from the selected A.T.L.A.S. version", "derived"],
+  ["lineage", "Proof and panel come from the same master", "derived"],
+  ["dimensions", "Trim and print dimensions match the vehicle record", "human"],
+  ["bleed", "5 inches of bleed on all four edges", "human"],
+  ["fit", "Lays on the real template and physically fits", "human"],
+  ["openings", "Wheel wells, glass and openings fall where they should", "human"],
+  ["safe", "Text and logos clear of cut areas and openings", "human"],
+  ["resolution", "Effective DPI is adequate for print", "derived"],
+  ["design", "Design matches the approved proof", "human"],
+];
+
+/**
+ * ONE VERDICT FUNCTION, USED BY THE PANEL AND BY THE RELEASE GATE.
+ *
+ * If the checklist and the gate computed "passed" separately they would
+ * eventually disagree, and the disagreement would only ever surface as a
+ * surface that reads PASS but will not release -- or worse, one that releases
+ * while reading NEEDS CORRECTION.
+ */
+function surfaceQcVerdicts(
+  job: PanelProStudioJob,
+  selectedVersion: DesignVersion | null,
+  answers: Record<string, Record<string, boolean>>,
+) {
+  const derivedFor = (surfaceKey: GenieSurfaceKey) => {
+    const panel = job.raw_artifacts.find(
+      (artifact) => artifact.kind === "panel" && artifact.surfaceKey === surfaceKey,
+    );
+    const view = job.raw_views.find((row) => row.surfaceKey === surfaceKey);
+    const panelMaster = String((panel?.metadata as Record<string, unknown> | undefined)?.sourceMasterHash || "");
+    const proofMaster = String(view?.atlasBinding?.masterContentHash || "");
+    const metadata = (panel?.metadata || {}) as Record<string, unknown>;
+    const printWidthIn = Number(metadata.printWidthInches);
+    const pixelWidth = Number(metadata.pixelWidth);
+    const upscaled = job.upscaled.some((row) => row.surfaceKey === surfaceKey);
+    const effectiveDpi = printWidthIn > 0 && pixelWidth > 0 ? pixelWidth / printWidthIn : null;
+    return {
+      version: Boolean(selectedVersion && panelMaster && panelMaster === selectedVersion.masterContentHash),
+      lineage: Boolean(panelMaster && proofMaster && panelMaster === proofMaster),
+      // A panel short of print resolution passes this only once an enhanced
+      // derivative exists for the surface -- which is the whole reason RUN
+      // UPSCALE is on the board.
+      resolution: upscaled || (effectiveDpi !== null && effectiveDpi >= 150),
+      effectiveDpi,
+    };
+  };
+
+  return PRODUCTION_SURFACES.map((surfaceKey) => {
+    const derived = derivedFor(surfaceKey);
+    const given = answers[surfaceKey] || {};
+    const results = SURFACE_QC_CHECKS.map(([key, , kind]) => ({
+      key,
+      ok: kind === "derived" ? Boolean((derived as Record<string, unknown>)[key]) : given[key] === true,
+      kind,
+    }));
+    return {
+      surfaceKey,
+      derived,
+      results,
+      passed: results.every((entry) => entry.ok),
+      answered: results.filter((entry) => entry.ok).length,
+    };
+  });
+}
+
+function SurfaceQcPanel({
+  job,
+  selectedVersion,
+  answers,
+  onAnswer,
+}: {
+  job: PanelProStudioJob;
+  selectedVersion: DesignVersion | null;
+  answers: Record<string, Record<string, boolean>>;
+  onAnswer: (surfaceKey: string, check: string, value: boolean) => void;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  const verdicts = useMemo(
+    () => surfaceQcVerdicts(job, selectedVersion, answers),
+    [job, selectedVersion, answers],
+  );
+  const passedCount = verdicts.filter((entry) => entry.passed).length;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-gray-900">Human QC — against the actual vehicle template</h2>
+        <span
+          className={`rounded px-2 py-0.5 font-mono text-[10px] font-bold ${
+            passedCount === PRODUCTION_SURFACES.length
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-amber-50 text-amber-700"
+          }`}
+        >
+          {passedCount}/{PRODUCTION_SURFACES.length} PASS
+        </span>
+      </div>
+
+      {/* THE SUMMARY. One line per surface, so the state of the whole order is
+          readable without opening anything. */}
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {verdicts.map((entry) => (
+          <div key={entry.surfaceKey}>
+            <button
+              type="button"
+              onClick={() => setOpen(open === entry.surfaceKey ? null : entry.surfaceKey)}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition ${
+                entry.passed
+                  ? "border-emerald-300 bg-emerald-50/60 hover:border-emerald-400"
+                  : "border-amber-300 bg-amber-50/40 hover:border-amber-400"
+              }`}
+            >
+              <span className="text-xs font-semibold capitalize text-gray-900">{entry.surfaceKey}</span>
+              <span className="flex items-center gap-2">
+                <span className="font-mono text-[10px] text-gray-500">
+                  {entry.answered}/{SURFACE_QC_CHECKS.length}
+                </span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                    entry.passed ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"
+                  }`}
+                >
+                  {entry.passed ? "PASS" : "NEEDS CORRECTION"}
+                </span>
+              </span>
+            </button>
+
+            {open === entry.surfaceKey && (
+              <ul className="mt-1 space-y-1 rounded-lg border border-gray-200 p-2">
+                {SURFACE_QC_CHECKS.map(([key, label, kind]) => {
+                  const result = entry.results.find((row) => row.key === key)!;
+                  return (
+                    <li key={key} className="flex items-start gap-2">
+                      {kind === "derived" ? (
+                        // Read, not asked. Ticking a box the board can already
+                        // answer would let a person attest to something they
+                        // did not check.
+                        <span
+                          className={`mt-0.5 inline-block h-3 w-3 shrink-0 rounded-sm ${
+                            result.ok ? "bg-emerald-500" : "bg-amber-500"
+                          }`}
+                          title={result.ok ? "verified by the server record" : "the server record does not support this"}
+                        />
+                      ) : (
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 shrink-0 accent-emerald-600"
+                          checked={result.ok}
+                          onChange={(event) => onAnswer(entry.surfaceKey, key, event.target.checked)}
+                        />
+                      )}
+                      <span className="text-[11px] leading-snug text-gray-600">
+                        {label}
+                        {kind === "derived" && <span className="ml-1 text-gray-400">(from the record)</span>}
+                        {key === "resolution" && entry.derived.effectiveDpi !== null && (
+                          <span className="ml-1 font-mono text-gray-500">
+                            {Math.round(entry.derived.effectiveDpi * 10) / 10} PPI
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * WHAT HAPPENED TO THIS ORDER, AND WHEN.
+ *
+ * Assembled from what the server actually recorded -- its stage rail and its
+ * artifacts -- rather than from a separate event log the browser appends to. An
+ * activity list that a UI writes is a list of what the UI believes; this is a
+ * list of what the run did, and the two drift the moment a tab is closed at the
+ * wrong time.
+ *
+ * Each entry names an actor. `server` for work a stage did, and the recorded
+ * person for the two things a human causes: a corrected panel and an
+ * operator-triggered enhancement.
+ */
+function ActivityHistory({ job }: { job: PanelProStudioJob }) {
+  const entries = useMemo(() => {
+    const rows: Array<{ at: string; what: string; actor: string; detail?: string }> = [];
+
+    for (const version of job.version_history.versions) {
+      rows.push({
+        at: version.createdAt || "",
+        what: `V${version.version} created`,
+        actor: "customer",
+        detail: version.promptKind === "original-brief" ? "original brief" : "revision",
+      });
+    }
+    for (const stage of job.stages) {
+      if (stage.state !== "complete") continue;
+      rows.push({ at: "", what: STAGE_LABEL[stage.key] || stage.key, actor: "server" });
+    }
+    for (const artifact of job.raw_artifacts) {
+      const metadata = (artifact.metadata || {}) as Record<string, unknown>;
+      if (artifact.kind === "corrected-panel") {
+        rows.push({
+          at: String(metadata.correctedAt || ""),
+          what: `${artifact.surfaceKey} panel corrected`,
+          actor: String(metadata.correctedBy || "design team"),
+          detail: String(metadata.reason || ""),
+        });
+      }
+      if (artifact.kind === "upscaled-panel") {
+        rows.push({
+          at: "",
+          what: `${artifact.surfaceKey} upscaled to ${Number(metadata.widthPx) || "?"}px`,
+          actor: metadata.adminTriggered === true ? "design team" : "server",
+          detail: metadata.humanCorrected === true ? "from the corrected panel" : undefined,
+        });
+      }
+    }
+    if (job.stamp) rows.push({ at: "", what: "Production Pack approved and stamped", actor: "design team" });
+    if (job.zip) rows.push({ at: "", what: "Production ZIP built", actor: "server" });
+    if (job.wrapbox) rows.push({ at: "", what: "Delivered to WrapBox", actor: "server" });
+
+    // Timestamped entries first, oldest to newest; the rest keep the order the
+    // server reported them in. A missing timestamp is left blank rather than
+    // filled with "now" -- inventing one would make the audit trail a guess.
+    return rows;
+  }, [job]);
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-bold text-gray-900">Activity &amp; audit history</h2>
+        <span className="font-mono text-[10px] text-gray-500">{entries.length} events</span>
+      </div>
+      <ol className="space-y-1">
+        {entries.map((entry, index) => (
+          <li key={`${entry.what}-${index}`} className="flex flex-wrap items-baseline gap-2 text-[11px]">
+            <span className="w-40 shrink-0 font-mono text-[10px] text-gray-400">
+              {entry.at ? exactTimestamp(entry.at) : "—"}
+            </span>
+            <span className="font-semibold text-gray-900">{entry.what}</span>
+            <span className="rounded bg-gray-100 px-1 py-0.5 text-[10px] text-gray-600">{entry.actor}</span>
+            {entry.detail && <span className="min-w-0 flex-1 truncate text-gray-500">{entry.detail}</span>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/**
  * PRODUCTION PACK — the back half of one job, from the server's own record.
  *
  * This replaces RestylePro's ProductionPackQCCard, which read `panelizer_jobs`,
@@ -710,10 +1082,13 @@ function JobHeader({
 function ProductionPackSection({
   job,
   approvedSides,
+  qcPassedSides,
   onApproved,
 }: {
   job: PanelProStudioJob;
   approvedSides: ReadonlySet<string>;
+  /** Surfaces whose template check reads PASS. The release gate needs all six. */
+  qcPassedSides: ReadonlySet<string>;
   onApproved: () => Promise<void>;
 }) {
   const { toast } = useToast();
@@ -727,7 +1102,12 @@ function ProductionPackSection({
   const preflightDone = stageState("await_panelpro_preflight_qc") === "complete";
   const finalDone = stageState("await_final_human_qc") === "complete";
   const allSidesApproved = PRODUCTION_SURFACES.every((side) => approvedSides.has(side));
-  const preflightReady = PREFLIGHT_CHECKS.every(([key]) => preflight[key]) && allSidesApproved;
+  // NO RELEASE WITH AN UNRESOLVED SURFACE. A side reading NEEDS CORRECTION has
+  // not been laid on a real template and confirmed to fit, and releasing it
+  // sends artwork to print that nobody physically checked.
+  const qcOutstanding = PRODUCTION_SURFACES.filter((side) => !qcPassedSides.has(side));
+  const preflightReady = PREFLIGHT_CHECKS.every(([key]) => preflight[key])
+    && allSidesApproved && qcOutstanding.length === 0;
   const finalReady = FINAL_CHECKS.every(([key]) => finalQc[key]);
 
   const outputsByFormat = OUTPUT_FORMATS.map((format) => ({
@@ -843,6 +1223,11 @@ function ProductionPackSection({
                 Every surface has to be approved on its own card first.
               </p>
             )}
+            {qcOutstanding.length > 0 && (
+              <p className="mt-1 text-[11px] text-amber-700">
+                Human QC still reads NEEDS CORRECTION on: {qcOutstanding.join(", ")}.
+              </p>
+            )}
           </>
         )}
       </div>
@@ -855,9 +1240,31 @@ function ProductionPackSection({
             {job.outputs.length}/{EXPECTED_OUTPUT_FILES}
           </span>
         </div>
+        {/* WHERE THESE COME FROM, PER SURFACE. Call 12 enhances the ACTIVE
+            artifact -- the newest human correction when one exists, the branded
+            Call 9 panel otherwise -- and output.build reads ONLY those enhanced
+            panels, hash-verified against the Call 12 receipt. So the file that
+            prints is the file the team approved, through the enhancement, never
+            around it. */}
+        <ul className="mb-2 grid gap-1 sm:grid-cols-2">
+          {PRODUCTION_SURFACES.map((side) => {
+            const correction = (job.corrections[side] || [])[0];
+            const enhanced = job.upscaled.find((row) => row.surfaceKey === side);
+            return (
+              <li key={side} className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="capitalize text-gray-700">{side}</span>
+                <span className="font-mono text-[10px] text-gray-500">
+                  {correction ? "corrected panel" : "branded panel"}
+                  {enhanced ? " → upscaled" : " → not upscaled yet"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+
         {job.outputs.length === 0 ? (
           <p className="text-[11px] text-gray-500">
-            Built on the server from the ACTIVE approved panel per surface, after preflight releases.
+            Built on the server from each surface's enhanced panel, after preflight releases.
           </p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-3">
@@ -1006,6 +1413,16 @@ export default function AdminGeminiCompareStudio() {
    * panel gets approved.
    */
   const [selectedVersionNumber, setSelectedVersionNumber] = useState<number | null>(null);
+  /**
+   * The designer's answers to the per-surface template check, held in the
+   * browser until the preflight gate is submitted. Three of the ten questions
+   * are read off the server record instead of asked, so only the human ones
+   * live here.
+   */
+  const [surfaceQc, setSurfaceQc] = useState<Record<string, Record<string, boolean>>>({});
+  const answerSurfaceQc = useCallback((surfaceKey: string, check: string, value: boolean) => {
+    setSurfaceQc((prev) => ({ ...prev, [surfaceKey]: { ...(prev[surfaceKey] || {}), [check]: value } }));
+  }, []);
   const [runningPanelPro, setRunningPanelPro] = useState(false);
   const [panelProProgress, setPanelProProgress] = useState<{ done: number; total: number; label: string } | null>(null);
   const [buildingPrint, setBuildingPrint] = useState<{ done: number; total: number } | null>(null);
@@ -1147,13 +1564,69 @@ export default function AdminGeminiCompareStudio() {
     return () => window.clearInterval(timer);
   }, [job?.id, loadJob]);
 
-  const viewMap = useMemo(() => {
-    const fromAll = toViewUrlMap(job?.all_view_urls);
-    const fromConcept = toViewUrlMap(job?.concept_json?.render_urls);
-    return { ...fromConcept, ...fromAll };
-  }, [job?.all_view_urls, job?.concept_json]);
+  /**
+   * The version on screen, and the assets that belong to it.
+   *
+   * Membership is the master hash a panel or proof already records, so
+   * switching versions actually changes what is shown instead of relabelling
+   * the same files. An artifact with no binding is not attributed to the
+   * selected version -- it is reported separately rather than mislabelled.
+   */
+  const versionHistory = (job as unknown as PanelProStudioJob | null)?.version_history;
+  const selectedVersion = useMemo(() => {
+    const versions = versionHistory?.versions || [];
+    if (!versions.length) return null;
+    if (selectedVersionNumber == null) return versions[versions.length - 1];
+    return versions.find((entry) => entry.version === selectedVersionNumber) || versions[versions.length - 1];
+  }, [versionHistory, selectedVersionNumber]);
 
-  const qcPanels: Record<string, any> = job?.concept_json?.qc_side_panels || {};
+  /**
+   * The job as it was at the selected version. Switching versions changes the
+   * panels, proofs and logos on screen, never just the badge -- two versions on
+   * one board is how the wrong panel gets approved.
+   */
+  const versionedJob = useMemo(() => {
+    const current = job as unknown as PanelProStudioJob | null;
+    if (!current || !selectedVersion) return current;
+    try {
+      return panelProJobAtVersion(current, selectedVersion, approvedSidesRef.current);
+    } catch {
+      return current;
+    }
+  }, [job, selectedVersion]);
+
+  /**
+   * Which surfaces read PASS. Computed by the same function the checklist
+   * renders from, so the gate and the panel can never disagree about whether a
+   * side is releasable.
+   */
+  const qcPassedSides = useMemo(() => {
+    if (!versionedJob) return new Set<string>();
+    return new Set(
+      surfaceQcVerdicts(versionedJob, selectedVersion, surfaceQc)
+        .filter((entry) => entry.passed)
+        .map((entry) => entry.surfaceKey),
+    );
+  }, [versionedJob, selectedVersion, surfaceQc]);
+
+  /**
+   * THE PROOFS AND PANELS OF THE SELECTED VERSION, NOT OF THE NEWEST ONE.
+   *
+   * Both read the version-scoped job, so choosing V1 on a design now at V3
+   * changes the six surfaces on screen. Reading the raw job here was the gap
+   * that let the version badge move while the artwork underneath it did not --
+   * which is worse than not offering the switch at all, because the board would
+   * then be labelling V3's panels as V1.
+   */
+  const viewMap = useMemo(() => {
+    const source = versionedJob || job;
+    const fromAll = toViewUrlMap(source?.all_view_urls);
+    const fromConcept = toViewUrlMap(source?.concept_json?.render_urls);
+    return { ...fromConcept, ...fromAll };
+  }, [versionedJob, job]);
+
+  const qcPanels: Record<string, any> =
+    (versionedJob || job)?.concept_json?.qc_side_panels || {};
   const approvedCount = VIEW_DEFS.filter((d) => qcPanels[d.sideKey]?.approved).length;
   const total = VIEW_DEFS.length;
   const pct = Math.round((approvedCount / total) * 100);
@@ -1888,37 +2361,6 @@ export default function AdminGeminiCompareStudio() {
     }
   };
 
-  /**
-   * The version on screen, and the assets that belong to it.
-   *
-   * Membership is the master hash a panel or proof already records, so
-   * switching versions actually changes what is shown instead of relabelling
-   * the same files. An artifact with no binding is not attributed to the
-   * selected version -- it is reported separately rather than mislabelled.
-   */
-  const versionHistory = (job as unknown as PanelProStudioJob | null)?.version_history;
-  const selectedVersion = useMemo(() => {
-    const versions = versionHistory?.versions || [];
-    if (!versions.length) return null;
-    if (selectedVersionNumber == null) return versions[versions.length - 1];
-    return versions.find((entry) => entry.version === selectedVersionNumber) || versions[versions.length - 1];
-  }, [versionHistory, selectedVersionNumber]);
-
-  /**
-   * The job as it was at the selected version. Switching versions changes the
-   * panels, proofs and logos on screen, never just the badge -- two versions on
-   * one board is how the wrong panel gets approved.
-   */
-  const versionedJob = useMemo(() => {
-    const current = job as unknown as PanelProStudioJob | null;
-    if (!current || !selectedVersion) return current;
-    try {
-      return panelProJobAtVersion(current, selectedVersion, approvedSidesRef.current);
-    } catch {
-      return current;
-    }
-  }, [job, selectedVersion]);
-
   const vehicleName = job
     ? [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ")
     : "";
@@ -2152,6 +2594,22 @@ export default function AdminGeminiCompareStudio() {
               </div>
             )}
 
+            {/* Every brand mark Call 10 separated out of this version's panels,
+                individually downloadable. */}
+            {versionedJob && (
+              <LogoGallery job={versionedJob} selectedVersion={selectedVersion} />
+            )}
+
+            {/* The physical check, per surface, and what it adds up to. */}
+            {versionedJob && (
+              <SurfaceQcPanel
+                job={versionedJob}
+                selectedVersion={selectedVersion}
+                answers={surfaceQc}
+                onAnswer={answerSurfaceQc}
+              />
+            )}
+
             {/* The back half of this job, from the server's own record: its
                 stage rail, the two human release gates, the eighteen output
                 files, and the stamp/ZIP/WrapBox artifacts it produced. */}
@@ -2159,9 +2617,14 @@ export default function AdminGeminiCompareStudio() {
               <ProductionPackSection
                 job={(versionedJob || job) as unknown as PanelProStudioJob}
                 approvedSides={approvedSidesRef.current}
+                qcPassedSides={qcPassedSides}
                 onApproved={async () => { await loadJob(String(job.id)); }}
               />
             )}
+
+            {/* What happened to this order, and when -- from what the server
+                recorded, never from a log the browser appends to. */}
+            {versionedJob && <ActivityHistory job={versionedJob} />}
 
             {/* View toggle: structured compare grid vs free-form board */}
             <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1 w-fit">

@@ -439,3 +439,62 @@ test("RevisionStudio and PanelPro read one canonical version and prompt history"
   assert.match(board, /whitespace-pre-wrap/);
   assert.match(studio, /presentation\.revisionNotes/);
 });
+
+/**
+ * THE PANELPRO ADMIN STUDIO IS A COMPLETE PRODUCTION RECORD, OR IT IS DECORATION.
+ *
+ * A board that shows six panels and a QC button looks finished and is not. The
+ * design team cannot release an order from it without the brand assets they
+ * have to hand a printer, a per-surface verdict they can read at a glance, and
+ * a record of what happened to the order and who caused it. This pins those
+ * three, plus the two properties that make the rest safe: the release gate and
+ * the checklist compute PASS with ONE function, and the print files are built
+ * from the artifact the team actually approved.
+ */
+test("the PanelPro Admin Studio carries logos, per-surface verdicts, and an audit trail", () => {
+  const studio = readFileSync(new URL("../app/src/pages/AdminGeminiCompareStudio.tsx", import.meta.url), "utf8");
+  const claimant = readFileSync(
+    new URL("../runtime/designpro-standalone-claimant.cjs", import.meta.url),
+    "utf8",
+  );
+
+  // 1. Extracted logos, per version, individually downloadable.
+  assert.match(studio, /function LogoGallery/);
+  assert.match(studio, /Extracted logos &amp; brand assets/);
+  // A brand asset from another version is reported, never shown as this one's.
+  assert.match(studio, /unattributed/);
+  // Call 10 has to carry the master forward or nothing can attribute a logo.
+  assert.match(claimant, /sourceMasterHash: masterBySurface\.get\(targetSurfaceKey\)/);
+
+  // 2. Per-surface PASS / NEEDS CORRECTION.
+  assert.match(studio, /function SurfaceQcPanel/);
+  assert.match(studio, /NEEDS CORRECTION/);
+  // The three the board can answer itself are read, not asked -- ticking a box
+  // the record already answers is an attestation nobody made.
+  assert.match(studio, /\["version", "Panel is from the selected A\.T\.L\.A\.S\. version", "derived"\]/);
+  assert.match(studio, /\["lineage", "Proof and panel come from the same master", "derived"\]/);
+  assert.match(studio, /\["resolution", "Effective DPI is adequate for print", "derived"\]/);
+
+  // ONE verdict function, or the gate and the checklist will disagree.
+  assert.match(studio, /function surfaceQcVerdicts/);
+  assert.match(studio, /surfaceQcVerdicts\(job, selectedVersion, answers\)/);
+  assert.match(studio, /surfaceQcVerdicts\(versionedJob, selectedVersion, surfaceQc\)/);
+  // And an unresolved surface blocks release.
+  assert.match(studio, /qcOutstanding\.length === 0/);
+
+  // 3. Activity and audit history, from the server's record.
+  assert.match(studio, /function ActivityHistory/);
+  assert.match(studio, /Activity &amp; audit history/);
+  assert.match(studio, /panel corrected/);
+  assert.match(studio, /adminTriggered === true \? "design team" : "server"/);
+
+  // 4. Version switching reaches the six-surface workspace, not just the badge.
+  assert.match(studio, /const source = versionedJob \|\| job;/);
+  assert.match(studio, /\(versionedJob \|\| job\)\?\.concept_json\?\.qc_side_panels/);
+
+  // 6. Print files come from the enhanced ACTIVE panel, which the runtime
+  // enforces: output.build reads upscaled-panel and nothing else.
+  assert.match(claimant, /const panels = await artifacts\(sb, run\.id, \["upscaled-panel"\]\)/);
+  assert.match(claimant, /enhanced_panel_receipt_mismatch/);
+  assert.match(studio, /corrected panel" : "branded panel"/);
+});
