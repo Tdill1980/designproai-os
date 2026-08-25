@@ -1050,7 +1050,19 @@ function SurfaceQcPanel({
       complete: ticked === SURFACE_QC_CHECKLIST.length,
       evidence: machine.find((row) => row.surfaceKey === surfaceKey),
     };
-  });
+  }).map((row) => ({
+    ...row,
+    // APPROVE SURFACE also needs the machine facts the server will re-prove:
+    // the panel belongs to the selected A.T.L.A.S. version, and its proof
+    // descends from the same master. Effective DPI is deliberately not here --
+    // upscale runs after the preflight gate in the frozen stage order, so
+    // requiring print resolution to approve a surface would deadlock the
+    // workflow. Resolution is enforced at enhancement and output, where it can
+    // actually be satisfied.
+    approvable: row.complete
+      && row.evidence?.derived.version === true
+      && row.evidence?.derived.lineage === true,
+  }));
   const approvedCount = surfaces.filter((row) => row.recorded?.approved).length;
 
   const tick = (surfaceKey: string, hash: string, key: string, value: boolean) => {
@@ -1202,6 +1214,13 @@ function SurfaceQcPanel({
                         onChange={(event) => setReasons((prev) => ({ ...prev, [id]: event.target.value }))}
                         className="w-full rounded border border-gray-300 px-2 py-1 text-[11px]"
                       />
+                      {row.complete && !row.approvable && (
+                        <p className="rounded bg-amber-50 p-2 text-[10px] text-amber-800">
+                          The checklist is complete, but this panel does not bind
+                          to the selected A.T.L.A.S. version and its proof. The
+                          server refuses the approval for the same reason.
+                        </p>
+                      )}
                       <div className="flex gap-2">
                         <Button
                           size="sm"
@@ -1217,7 +1236,7 @@ function SurfaceQcPanel({
                           // Every one of the thirteen, or the button does not
                           // arm. The server refuses an incomplete approval too,
                           // so this is a courtesy rather than the control.
-                          disabled={!row.complete || busy === id}
+                          disabled={!row.approvable || busy === id}
                           onClick={() => submit(row.surfaceKey, row.hash, row.artifact?.id || null, row.checks, "approve")}
                           className="flex-1 bg-emerald-600 hover:bg-emerald-700"
                         >

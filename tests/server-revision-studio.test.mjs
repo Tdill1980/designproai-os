@@ -498,10 +498,33 @@ test("the PanelPro Admin Studio carries logos, per-surface verdicts, and an audi
   assert.match(studio, /dpApi\.recordSurfaceQc/);
   assert.match(studio, /dpApi\.listSurfaceQc/);
   assert.match(studio, /records\[`\$\{surfaceKey\}:\$\{hash\}`\]/);
-  // APPROVE SURFACE arms only on the complete checklist, and the server refuses
-  // an incomplete approval regardless of what the button allows.
-  assert.match(studio, /disabled=\{!row\.complete \|\| busy === id\}/);
+  // APPROVE SURFACE needs the checklist AND the identity facts: the panel must
+  // belong to the selected A.T.L.A.S. version and share a master with its proof.
+  // The button reflects that; the SERVER re-proves it from the artifacts, so a
+  // caller that skips the browser gets the same refusal.
+  assert.match(studio, /disabled=\{!row\.approvable \|\| busy === id\}/);
+  assert.match(studio, /row\.evidence\?\.derived\.version === true/);
+  assert.match(studio, /row\.evidence\?\.derived\.lineage === true/);
   assert.match(gateway, /surface_qc_incomplete/);
+  // The identity proof must actually RUN on an approval, not merely exist in
+  // the file: this pins the guard that arms it.
+  assert.match(
+    gateway,
+    /let verifiedLineage = \{ atlasMasterHash: null, artifactId: null \};\s*\n\s*if \(approved\) \{/,
+  );
+  assert.match(gateway, /surface_qc_stale_artifact/);
+  assert.match(gateway, /surface_qc_atlas_version_mismatch/);
+  assert.match(gateway, /surface_qc_lineage_mismatch/);
+  // The identity an approval is STORED under is the one the server proved,
+  // never the one the caller sent.
+  assert.match(gateway, /p_atlas_master_hash: verifiedLineage\.atlasMasterHash/);
+  // Effective DPI is NOT a surface-approval blocker: upscale runs after the
+  // preflight gate, so gating approval on print resolution would deadlock the
+  // workflow. It is enforced where it can be satisfied -- every enhanced panel
+  // is conformed to the GENIE print target at 150 PPI and geometry drift throws.
+  assert.doesNotMatch(gateway, /surface_qc_dpi/);
+  assert.match(claimant, /const targetWidthPx = Math\.round\(\(Number\(dims\.widthInches\) \+ 10\) \* 150\)/);
+  assert.match(claimant, /enhance_winner_geometry_drift/);
   assert.match(gateway, /SURFACE_QC_CHECKLIST\.map\(\(key\) => \[key, claimed\[key\] === true\]\)/);
   // The thirteen are one list, shared by the board and the gateway.
   for (const check of [

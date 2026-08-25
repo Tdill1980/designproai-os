@@ -153,13 +153,17 @@ test("visible approval seal binds canonical immutable DesignID and Order #, neve
   // does not implement, so the caption matched here and rendered ZERO pixels on
   // every seal this server ever stamped. Assert the mechanism instead.
   assert.doesNotMatch(svg, /<textPath/, "librsvg renders no textPath -- the caption must not depend on one");
-  for (const glyph of ["D", "E", "S", "I", "G", "N", "P", "R", "O", "A", "Q", "U", "L", "T", "Y", "C"]) {
+  // Both arcs, glyph by glyph: DesignProAI over the top and QUALITY APPROVAL
+  // CHECK under the bottom. The property is that each glyph is its own rotated
+  // <text>, because librsvg renders no <textPath> -- assert it on the wording
+  // the seal actually carries rather than on a fixed alphabet.
+  for (const glyph of ["D", "e", "s", "i", "g", "n", "P", "r", "o", "A", "I", "Q", "U", "L", "T", "Y", "V", "C", "H", "E", "K"]) {
     assert.match(svg, new RegExp(`<text[^>]*transform="rotate\\([^"]*"[^>]*>${glyph}</text>`),
       `ring caption is missing the glyph ${glyph}`);
   }
-  assert.match(svg, /DesignID: DID-EEEEEEEE/);
-  assert.match(svg, /Order #: ORD-2026-0042/);
-  assert.match(svg, /Quality Checked by Trish/);
+  assert.match(svg, /DID-EEEEEEEE/);
+  assert.match(svg, /Order #ORD-2026-0042/);
+  assert.match(svg, /Approved by Trish/);
   assert.match(svg, /<circle[^>]+fill="none"/);
   assert.doesNotMatch(svg, new RegExp(runId, "i"));
   assert.throws(() => _test.immutableBusinessIdentity({ ...source, snapshot: { ...source.snapshot, designId: `DID-${runId.slice(0, 8).toUpperCase()}` } }, run), /immutable revision/i);

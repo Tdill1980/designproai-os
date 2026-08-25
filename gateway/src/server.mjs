@@ -2520,16 +2520,86 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           }
           const correctionReason = String(body.correctionReason || "").trim().slice(0, 2000);
           if (needsCorrection && !correctionReason) return json(res, 400, { error: "correction_reason_required" });
+
+          // APPROVAL IS GATED ON IDENTITY AS WELL AS ON THE CHECKLIST.
+          //
+          // Thirteen ticks say a person looked. They do not say they looked at
+          // the right file. Before an approval is recorded the server proves,
+          // from the artifacts themselves:
+          //
+          //   * the hash names the panel that is ACTIVE for this surface right
+          //     now -- newest correction, else the branded Call 9 panel -- so a
+          //     superseded file cannot be approved;
+          //   * that panel was cut from the A.T.L.A.S. master the caller says
+          //     they were reviewing, so a panel from another version is refused;
+          //   * that surface's 3D proof descends from the same master, so proof
+          //     and panel provably agree.
+          //
+          // Effective DPI is deliberately NOT here. Upscale runs after the
+          // preflight gate in the frozen stage order, so requiring print
+          // resolution to approve a surface would deadlock the workflow --
+          // nothing could be approved, so preflight could never open, so upscale
+          // could never run. Resolution is enforced where it can be satisfied:
+          // at enhancement and output.
+          let verifiedLineage = { atlasMasterHash: null, artifactId: null };
+          if (approved) {
+            const runs = await listRuns(fetchImpl, token, cfg);
+            const run = requestedRun(runs, generationIdValue);
+            if (!run) return json(res, 409, { error: "surface_qc_run_not_found" });
+            const rows = await artifactsForRun(fetchImpl, token, cfg, run.id);
+            const forSurface = rows.filter((row) => String(row.surface_key || "") === surfaceKey);
+            const active = forSurface
+              .filter((row) => row.artifact_kind === "corrected-panel")
+              .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))[0]
+              || forSurface.find((row) => row.artifact_kind === "panel");
+            if (!active) return json(res, 409, { error: "surface_qc_panel_missing" });
+            if (String(active.content_hash || "").toLowerCase() !== artifactHash) {
+              return json(res, 409, {
+                error: "surface_qc_stale_artifact",
+                detail: "This surface has a newer panel; approve the file that is active now.",
+              });
+            }
+            // A correction replaces artwork, never the master it descends from,
+            // so the branded panel is where the binding is read.
+            const branded = forSurface.find((row) => row.artifact_kind === "panel");
+            const panelMaster = String(branded?.metadata?.sourceMasterHash || "").toLowerCase();
+            if (!SHA256_PATTERN.test(panelMaster)) {
+              return json(res, 409, { error: "surface_qc_master_binding_missing" });
+            }
+            const claimedMaster = String(body.atlasMasterHash || "").toLowerCase();
+            if (SHA256_PATTERN.test(claimedMaster) && claimedMaster !== panelMaster) {
+              return json(res, 409, {
+                error: "surface_qc_atlas_version_mismatch",
+                detail: "This panel was cut from a different A.T.L.A.S. version than the one selected.",
+              });
+            }
+            const views = await approvedViewsForRun(fetchImpl, token, cfg, run, user.id).catch(() => []);
+            const proof = (Array.isArray(views) ? views : [])
+              .find((view) => String(view.surfaceKey || "") === surfaceKey);
+            const proofMaster = String(proof?.atlasBinding?.masterContentHash || "").toLowerCase();
+            if (SHA256_PATTERN.test(proofMaster) && proofMaster !== panelMaster) {
+              return json(res, 409, {
+                error: "surface_qc_lineage_mismatch",
+                detail: "The proof and the panel came from different masters.",
+              });
+            }
+            verifiedLineage = { atlasMasterHash: panelMaster, artifactId: String(active.id || "") };
+          }
           return json(res, 200, await rpc(fetchImpl, token, cfg, "record_designpro_surface_qc", {
             p_generation_id: generationIdValue,
             p_surface_key: surfaceKey,
             p_artifact_hash: artifactHash,
-            p_artifact_id: UUID_PATTERN.test(String(body.artifactId || "").toLowerCase())
-              ? String(body.artifactId).toLowerCase() : null,
+            // The artifact id and master hash an approval is stored under are
+            // the ones the server just proved, never the ones the caller sent.
+            p_artifact_id: UUID_PATTERN.test(verifiedLineage.artifactId || "")
+              ? verifiedLineage.artifactId
+              : (UUID_PATTERN.test(String(body.artifactId || "").toLowerCase())
+                ? String(body.artifactId).toLowerCase() : null),
             p_atlas_revision_id: UUID_PATTERN.test(String(body.atlasRevisionId || "").toLowerCase())
               ? String(body.atlasRevisionId).toLowerCase() : null,
-            p_atlas_master_hash: SHA256_PATTERN.test(String(body.atlasMasterHash || "").toLowerCase())
-              ? String(body.atlasMasterHash).toLowerCase() : null,
+            p_atlas_master_hash: verifiedLineage.atlasMasterHash
+              || (SHA256_PATTERN.test(String(body.atlasMasterHash || "").toLowerCase())
+                ? String(body.atlasMasterHash).toLowerCase() : null),
             p_checks: checks,
             p_approved: approved,
             p_needs_correction: needsCorrection,
