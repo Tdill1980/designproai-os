@@ -318,6 +318,70 @@ places and is locked out by `tests/atlas-fail-fast.test.mjs`.
 
 What stays refused: per-view regeneration. One master owns the whole proof set.
 
+## 🔀 RULE 0.21 — THE ACCEPTED MASTER FANS OUT IMMEDIATELY, TO BOTH SURFACES AT ONCE (Trish 2026-08-25)
+
+**A.T.L.A.S. is not a pretty flattened preview. It is the production source.**
+The first A.T.L.A.S. AI design generation creates the ONE flattened master and
+is the design authority. The moment that master is accepted it fans out — it
+does not wait for a later UI to recreate or "pull" anything:
+
+```text
+A.T.L.A.S. FIRST AI DESIGN GENERATION
+one flattened master / one design authority
+        │
+        ├──► deterministic split by surface
+        │      driver · passenger · hood · roof · front · rear
+        │      exact GENIE dimensions + 5" physical bleed on every side
+        │
+        ├──► those SAME surface regions condition the matching 3D proof views
+        │
+        └──► the SAME paired artifact set, published in parallel to
+               RevisionStudioIQ   AND   PanelPro Studio
+```
+
+**No side independently redesigns the wrap.** RevisionStudio does not wait for
+PanelPro and PanelPro does not wait for RevisionStudio: they are parallel
+consumers of one server-owned lineage, never two workflows.
+
+The intended relationship, for all six surfaces, is one row:
+
+> **REAL DESIGN PROOF ∥ PRINT PANEL**
+
+Left is that surface's 3D proof. Right is the deterministic A.T.L.A.S.
+extraction for that exact `surfaceKey` at GENIE dimensions + 5" bleed — **never
+an upload, never an AI regeneration, never a browser-made crop.** The pair is
+bound by the same `generationId`, A.T.L.A.S. revision / `masterContentHash`, and
+`surfaceKey`.
+
+| surface | purpose |
+|---|---|
+| **RevisionStudioIQ** | revise/edit the approved design lineage and inspect its production artifacts |
+| **PanelPro Studio** | validate the exact print panels beside the real 3D proof and release them through production QC |
+
+**Neither UI is a producer.** Do not restore `Pull panel`, `Mirror from driver`
+or manual `Upload panel` as the canonical workflow — those are browser-era
+producer controls, and the server already holds the panel bytes cut from the
+accepted master. This whole rule is a **handoff/wiring** statement; it is not
+permission to redesign A.T.L.A.S.
+
+### The acceptance test — this is what catches a fake "wired" state
+
+> For one fresh generation, open the same `generationId` in RevisionStudioIQ and
+> PanelPro Studio. Driver proof + driver panel must carry the same A.T.L.A.S.
+> parent hash; repeat for all six surfaces. **If either UI shows an empty panel,
+> an uploaded replacement, a different revision, or a generated substitute, the
+> wiring is not complete.**
+
+Where this already holds, and where it is enforced: `cutCallOnePanels` splits
+the accepted master by `SURFACE_KEYS` with `sharp.extract` (no AI), stamping
+`surfaceKey`, `sourceMasterHash` and the trim/print inches with `bleedInches`;
+`viewAuthorityFor` **throws** unless a proof's authority hashes to the master and
+matches `surfaceForProofView()`; the panel artifact publishes
+`metadata.sourceMasterHash` and the view publishes
+`atlasBinding.masterContentHash`, so both halves carry the binding to the UI.
+PanelPro compares them per side and **refuses to approve** a pair that provably
+came from different masters — locked by `tests/server-revision-studio.test.mjs`.
+
 ## ⛔ RULE 0 — OPTIMIZE FOR BEHAVIORAL PARITY, NOT ARCHITECTURE (Trish 2026-08-17)
 
 **The screenshots in `docs/LAST-WORKING-STATE-2026-07-24.md` are the spec.**
