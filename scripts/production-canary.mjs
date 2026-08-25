@@ -70,6 +70,12 @@ const VEHICLE = Object.freeze({
   model: arg("model", "F250 Crew Cab"),
 });
 const DESIGN_NAME = arg("design", "Precision Climate Solutions — July 24 canary");
+// A.T.L.A.S. authors from a brief, so the canary has to carry a real one. v3
+// requires both `brief` and `designName` and caps the brief at 8000 characters.
+const DESIGN_BRIEF = arg("brief",
+  "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with "
+  + "sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif "
+  + "company name, high contrast and legible at highway distance.");
 
 if (!SUPABASE_URL || !SERVICE_KEY || !WORKER_SECRET || !CUSTOMER_EMAIL) {
   console.error(
@@ -86,7 +92,7 @@ const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const stableJsonHash = (value) => sha256(Buffer.from(JSON.stringify(value)));
 
 const evidence = {
-  contract: "designpro.production-canary-evidence.v2",
+  contract: "designpro.production-canary-evidence.v3",
   ranAt: new Date().toISOString(),
   sourceJobId: SOURCE_JOB_ID,
   vehicle: VEHICLE,
@@ -99,6 +105,9 @@ const evidence = {
   enticeRunId: null,
   productionRunId: null,
   renderAssets: {},
+  // The persisted A.T.L.A.S. revision this run authored. Null means Calls 1-7
+  // never produced a master, which is a failed canary however green the rest is.
+  flatAtlas: null,
   stageTransitions: [],
   autoApprovals: [],
   outputs: [],
@@ -526,37 +535,45 @@ function assertOutputSet() {
  * read; the revision itself is still saved by the operator's own JWT.
  */
 async function runCallsOneToSeven({ operator, operatorId, generationId, delivery }) {
+  // THE CANARY RUNS A.T.L.A.S., BECAUSE THAT IS WHAT PRODUCTION RUNS.
+  //
+  // It used to submit `designpro.calls-1-7-input.v1` -- the legacy replay
+  // contract that hands the runtime seven pre-existing July 24 render URLs -- and
+  // then assert `receipt.designMaster`. Nothing about that exercised A.T.L.A.S.:
+  // no flattened master was authored, no zone was cut, no proof was projected.
+  // Worse, it could never pass, because the v1 path records no design master at
+  // all. Live run 32886592846 (2026-08-25) died on exactly that -- "Calls 1-7
+  // recorded no design master: null" -- while reporting green through every
+  // stage before it. A canary that cannot pass is not a canary; a canary that
+  // tests a contract production does not use is worse, because it reports
+  // confidence about a path nobody runs.
+  //
+  // v3 is the contract the gateway now normalizes every real vehicle-wrap
+  // generation onto, so the canary submits it directly. Its validator
+  // (calls_1_7_input_v3_valid) forbids `orderNumber` and `delivery` on the
+  // input -- Calls 1-7 no longer decide fulfilment -- so the recipient stays
+  // registered separately and reaches the revision through the snapshot, which
+  // is unchanged.
   const input = {
-    // create_designpro_generation_request rejects any input without this exact
-    // literal. Live canary 32002655505 died here as generation_request_invalid.
-    contractVersion: "designpro.calls-1-7-input.v1",
+    contractVersion: "designpro.calls-1-7-input.v3",
+    pipelineMode: "flat-first-atlas-v1",
     vehicle: VEHICLE,
-    brief: DESIGN_NAME,
+    brief: DESIGN_BRIEF,
+    designName: DESIGN_NAME,
+    mode: "commercial",
     industry: "HVAC and climate control",
     colors: ["deep blue", "sunrise orange"],
     style: "modern commercial",
-    orderNumber: ORDER_NUMBER,
-    // The adapter allows EXACTLY these three delivery keys and rejects the
-    // object outright if anything else is present:
-    //   (p_input->'delivery') - ARRAY[...] <> '{}'::jsonb
-    // The registered recipient also carries customerId, customerEmail and
-    // designName, which the revision snapshot needs and this contract forbids,
-    // so the full object stays intact for the snapshot and only this call site
-    // narrows it.
-    delivery: {
-      contractVersion: delivery.contractVersion,
-      recipientIdentityHash: delivery.recipientIdentityHash,
-      orderNumber: delivery.orderNumber,
-    },
   };
-  // The exact key the adapter recomputes; anything else is rejected outright.
-  const idempotencyKey = `calls17:${generationId}:${delivery.recipientIdentityHash}:${sha256(Buffer.from(ORDER_NUMBER))}`;
 
-  step("creating a new Calls 1-7 generation request");
-  const created = await rpc(operator, "create_designpro_generation_request", {
+  step("creating a new A.T.L.A.S. Calls 1-7 generation request");
+  const created = await rpc(operator, "create_designpro_flat_first_generation_request", {
     p_generation_id: generationId,
     p_input: input,
-    p_idempotency_key: idempotencyKey,
+    // The v3 RPC recomputes its own key from the Postgres rendering of the
+    // input jsonb, which a client cannot reproduce byte for byte. It accepts
+    // NULL and derives the canonical key itself.
+    p_idempotency_key: null,
   });
   const requestId = String(created?.requestId || created?.id || "");
   if (!requestId) throw new Error(`generation request was not created: ${JSON.stringify(created).slice(0, 300)}`);
@@ -585,12 +602,71 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
   if (error || !row) throw new Error(`engine receipt read failed: ${error?.message || "no row"}`);
   const receipt = row.engine_receipt || {};
   const revisionId = String(receipt.handoffRevisionId || "");
-  const designMaster = receipt.designMaster;
   if (!revisionId) throw new Error("the engine receipt carries no handoff revision id");
-  if (!designMaster?.creativeAssets?.length || !designMaster?.composition?.layers?.length) {
-    throw new Error(`Calls 1-7 recorded no design master: ${JSON.stringify(designMaster || null).slice(0, 300)}`);
+
+  // AN A.T.L.A.S. RUN IS PROVEN BY ITS PERSISTED REVISION, NOT BY ITS RECEIPT.
+  //
+  // The receipt is written by the same worker whose work is under test, so
+  // trusting it alone would let a run assert its own success. The revision row
+  // is the durable artifact every downstream consumer reads -- RevisionStudio,
+  // PanelPro, the handoff gate -- and it exists only after the master passed
+  // deterministic and semantic acceptance, because nothing is stored before
+  // then. The receipt is still checked, and then checked AGAINST the row.
+  const flatAtlas = receipt.flatAtlas;
+  if (!flatAtlas?.master?.contentHash) {
+    throw new Error(`Calls 1-7 recorded no A.T.L.A.S. master: ${JSON.stringify(flatAtlas || null).slice(0, 300)}`);
   }
-  step(`authored master: ${designMaster.creativeAssets.length} creative assets, ${designMaster.composition.layers.length} layers`);
+  const { data: atlasRow, error: atlasError } = await service
+    .from("designpro_flat_atlas_revisions")
+    .select("id,revision_sequence,master_content_hash,master_storage_path,master_byte_size,"
+      + "projection_content_hash,manifest_content_hash,guide_content_hash,prompt_version,model,"
+      + "width_px,height_px,effective_ppi,metadata")
+    .eq("generation_id", generationId)
+    .order("revision_sequence", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (atlasError || !atlasRow) {
+    throw new Error(`no A.T.L.A.S. revision was persisted for ${generationId}: ${atlasError?.message || "no row"}`);
+  }
+  if (atlasRow.master_content_hash !== flatAtlas.master.contentHash) {
+    throw new Error("the engine receipt's master hash does not match the persisted A.T.L.A.S. revision");
+  }
+  if (atlasRow.prompt_version !== flatAtlas.promptVersion) {
+    throw new Error("the engine receipt's prompt version does not match the persisted A.T.L.A.S. revision");
+  }
+  // The master QC gate is the reason a defective sheet never reaches a panel.
+  // A canary that accepted a revision without it would report green on exactly
+  // the failure this whole path exists to prevent.
+  if (atlasRow.metadata?.masterQcPassed !== true) {
+    throw new Error(`the A.T.L.A.S. master did not pass QC: ${JSON.stringify(atlasRow.metadata || null).slice(0, 300)}`);
+  }
+  for (const [field, value] of Object.entries({
+    master_storage_path: atlasRow.master_storage_path,
+    projection_content_hash: atlasRow.projection_content_hash,
+    manifest_content_hash: atlasRow.manifest_content_hash,
+    guide_content_hash: atlasRow.guide_content_hash,
+  })) {
+    if (!value) throw new Error(`the A.T.L.A.S. revision carries no ${field}`);
+  }
+  evidence.flatAtlas = {
+    revisionId: atlasRow.id,
+    revisionSequence: atlasRow.revision_sequence,
+    masterContentHash: atlasRow.master_content_hash,
+    masterStoragePath: atlasRow.master_storage_path,
+    masterByteSize: atlasRow.master_byte_size,
+    projectionContentHash: atlasRow.projection_content_hash,
+    manifestContentHash: atlasRow.manifest_content_hash,
+    guideContentHash: atlasRow.guide_content_hash,
+    promptVersion: atlasRow.prompt_version,
+    model: atlasRow.model,
+    widthPx: atlasRow.width_px,
+    heightPx: atlasRow.height_px,
+    effectivePpi: atlasRow.effective_ppi,
+    masterQcPassed: atlasRow.metadata?.masterQcPassed === true,
+    masterCutoutSurfaces: atlasRow.metadata?.masterCutoutSurfaces || [],
+  };
+  step(`A.T.L.A.S. master ${atlasRow.master_content_hash.slice(0, 12)} `
+    + `(${atlasRow.prompt_version}, ${atlasRow.width_px}x${atlasRow.height_px}, QC passed)`);
 
   // The worker copied the accepted views to the revision input paths; rebuild
   // the same addresses it wrote, since the status RPC withholds storage paths.
@@ -615,7 +691,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
     throw new Error(`expected seven placed views, found ${Object.keys(renderAssets).length}`);
   }
   step(`revision ${revisionId} carries seven placed views`);
-  return { revisionId, renderAssets, designMaster };
+  return { revisionId, renderAssets, flatAtlas: evidence.flatAtlas };
 }
 
 async function main() {
@@ -648,20 +724,11 @@ async function main() {
   // production master authored from them would be reconstruction. Calls 1-7 run
   // for real here, and the authoring boundary records the canonical design as
   // they do it.
-  const { revisionId, renderAssets, designMaster } = await runCallsOneToSeven({
+  const { revisionId, renderAssets } = await runCallsOneToSeven({
     operator, operatorId, generationId, delivery,
   });
   evidence.revisionId = revisionId;
   evidence.renderAssets = renderAssets;
-  evidence.designMaster = {
-    contractVersion: designMaster.contractVersion,
-    creativeAssets: designMaster.creativeAssets.map(({ assetId, role, contentHash, storagePath, intrinsic, minPxPerInch, generatedBy }) => ({
-      assetId, role, contentHash, storagePath, intrinsic, minPxPerInch, generatedBy,
-    })),
-    layers: designMaster.composition.layers.map(({ layerId, assetId, space, extent, zOrder }) => ({ layerId, assetId, space, extent, zOrder })),
-    provenance: designMaster.provenance,
-  };
-
   const snapshot = {
     contractVersion: "designpro.revision-snapshot.v1",
     vehicle: VEHICLE,
@@ -684,9 +751,6 @@ async function main() {
     visualizationId,
     renderAssets,
     designId,
-    // The canonical authored state. Frozen with the rest of the snapshot, so
-    // Call 8 consumes this exact object and nothing can substitute it later.
-    designMaster,
   };
 
   step("saving revision through authenticated operator JWT");
