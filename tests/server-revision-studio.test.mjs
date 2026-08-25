@@ -498,3 +498,42 @@ test("the PanelPro Admin Studio carries logos, per-surface verdicts, and an audi
   assert.match(claimant, /enhanced_panel_receipt_mismatch/);
   assert.match(studio, /corrected panel" : "branded panel"/);
 });
+
+/**
+ * TRIM AND BLEED ARE THE SAME ARTIFACT, SHOWN TWO WAYS.
+ *
+ * The production contract asks for `PANEL WITH 5" BLEED` and `PANEL WITHOUT
+ * BLEED / TRIM`, and the tempting way to deliver the second is to cut a new
+ * image -- which would put a panel producer back in the browser, bound to
+ * nothing, indistinguishable on screen from the one Call 9 cut.
+ *
+ * There is no need. The panel already IS trim plus exactly 5 inches on every
+ * edge, so the trim view is that same artifact displayed without its margin,
+ * and the bleed view draws the cut line on top of it. What the installer cuts
+ * to becomes visible instead of imagined, and no file is created.
+ *
+ * The inset comes from the panel's own stamped inches. When the panel does not
+ * state both, no cut line is drawn -- a guessed inset would put the line in the
+ * wrong place, and a wrong cut line is worse than none.
+ */
+test("the panel shows its trim and its bleed without producing a second file", () => {
+  const board = readFileSync(
+    new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(board, /Panel with 5″ bleed/);
+  assert.match(board, /Panel · trim, no bleed/);
+  assert.match(board, /Show trim/);
+  assert.match(board, /Show bleed/);
+  // The inset is derived from the artifact's own geometry, both axes.
+  assert.match(board, /geometry\.printWidthIn - geometry\.trimWidthIn\) \/ 2 \/ geometry\.printWidthIn/);
+  assert.match(board, /geometry\.printHeightIn - geometry\.trimHeightIn\) \/ 2 \/ geometry\.printHeightIn/);
+  // No geometry, no cut line.
+  assert.match(board, /trimInsetPct &&/);
+  // And the trim figure is stated, not only drawn.
+  assert.match(board, /Trim \(no bleed\)/);
+  // Display only: the trim view is a transform on the same <img>, never a
+  // canvas that would author a new image.
+  assert.doesNotMatch(board, /toDataURL|createElement\("canvas"\)|toBlob/,
+    "the board must never author panel pixels in the browser");
+});
