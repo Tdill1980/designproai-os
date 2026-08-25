@@ -139,6 +139,114 @@ jobs:
           echo "log_window=${LOGS_SINCE} .. ${LOGS_UNTIL}"
           echo "current_release=$(readlink -f /opt/designproai-os/current 2>/dev/null || echo '(none)')"
 
+          # ─── DESIGN STACK INVENTORY ────────────────────────────────────
+          # Read-only. `test -f` and `sha256sum` on the release tree, and a
+          # `ls` inside each running container. Nothing is written, started,
+          # stopped or changed. The point is to separate three questions that
+          # get answered as one and should not be:
+          #   * is the file IN the active release on disk
+          #   * is the file IN the image the container is actually running
+          #   * is the file LOADED by the process (which the require graph
+          #     answers, not the filesystem -- a shipped file nothing requires
+          #     is dead weight, and this capture must not imply otherwise)
+          STACK=(
+            runtime/designiq-prompt.cjs
+            runtime/studio-os.cjs
+            runtime/view-angles.cjs
+            runtime/photorealism-prompt.cjs
+            runtime/flat-first-atlas.cjs
+            runtime/flat-atlas-topology-examples.cjs
+            runtime/atlas-master-qc.cjs
+            runtime/atlas-cutout-fill.cjs
+            runtime/atlas-proof-qc.cjs
+            runtime/designpanel-server-provider.cjs
+            runtime/generation-provider.cjs
+            runtime/generation-worker.cjs
+            runtime/generation-engine.cjs
+            runtime/generation-store.cjs
+            runtime/creative-authoring.cjs
+            runtime/design-master.cjs
+            runtime/design-master-author.cjs
+            runtime/design-master-renderer.cjs
+            runtime/design-master-revision.cjs
+            runtime/design-revision-cycle.cjs
+            runtime/designpro-master-cycle.cjs
+            runtime/master-derived-3d-proof.cjs
+            runtime/vehicle-proof-template.cjs
+            runtime/vehicle-view-plate.cjs
+            runtime/proof-band-fit.cjs
+            runtime/master-proof-sheet.cjs
+            runtime/output-qc.cjs
+            runtime/topaz-upscale.cjs
+            runtime/logo-removal.cjs
+            runtime/designpanel-edge-provider.cjs
+            gateway/src/server.mjs
+          )
+          RELEASE=$(readlink -f /opt/designproai-os/current 2>/dev/null || echo "")
+          echo
+          echo "=== design stack in the ACTIVE RELEASE ($RELEASE) ==="
+          for f in "${STACK[@]}"; do
+            if [ -n "$RELEASE" ] && [ -f "$RELEASE/$f" ]; then
+              echo "PRESENT  $f  sha256=$(sha256sum "$RELEASE/$f" | cut -c1-16)  bytes=$(stat -c%s "$RELEASE/$f")"
+            else
+              echo "ABSENT   $f"
+            fi
+          done
+
+          echo
+          echo "=== design stack INSIDE each running runtime container ==="
+          # The runtime image copies runtime/ to /app, so the runtime files sit
+          # at /app/<basename>. The gateway is its own container and is checked
+          # separately below.
+          for c in "${OFFICIAL[@]}"; do
+            echo "--- $c ---"
+            if ! docker inspect "$c" >/dev/null 2>&1; then echo "ABSENT container"; continue; fi
+            docker inspect -f 'declared_sha={{index .Config.Labels "com.designpro.sha"}}' "$c" 2>&1
+            docker inspect -f 'image_revision={{index .Config.Labels "org.opencontainers.image.revision"}}' "$c" 2>&1
+            for f in "${STACK[@]}"; do
+              case "$f" in gateway/*) continue;; esac
+              b=$(basename "$f")
+              if docker exec "$c" test -f "/app/$b" 2>/dev/null; then
+                echo "PRESENT  $b  $(docker exec "$c" sha256sum "/app/$b" 2>/dev/null | cut -c1-16)"
+              else
+                echo "ABSENT   $b"
+              fi
+            done
+          done
+
+          echo
+          echo "=== gateway container: server.mjs ==="
+          GW=$(docker ps --format '{{.Names}}' | grep -i gateway | head -1)
+          if [ -n "$GW" ]; then
+            echo "gateway_container=$GW"
+            docker inspect -f 'declared_sha={{index .Config.Labels "com.designpro.sha"}}' "$GW" 2>&1
+            docker exec "$GW" sh -c 'test -f /app/src/server.mjs && echo "PRESENT  src/server.mjs  $(sha256sum /app/src/server.mjs | cut -c1-16)" || echo "ABSENT   src/server.mjs"' 2>&1
+          else
+            echo "(no gateway container matched by name)"
+          fi
+
+          echo
+          echo "=== what the running runtime process actually LOADED ==="
+          # The decisive question. A file on disk proves nothing about whether
+          # the process uses it; Node's own module cache does. /proc/<pid>/maps
+          # will not show .cjs files, so this reads the open file handles and
+          # the require graph the process built at boot.
+          for c in "${OFFICIAL[@]}"; do
+            echo "--- $c ---"
+            docker exec "$c" node -e '
+              const seen = new Set();
+              const walk = (f) => {
+                if (seen.has(f)) return; seen.add(f);
+                const src = require("fs").readFileSync(f, "utf8");
+                for (const m of src.matchAll(/require\(\s*"(\.\/[^"]+)"\s*\)/g)) {
+                  walk(require("path").resolve(require("path").dirname(f), m[1]));
+                }
+              };
+              walk("/app/index.js");
+              console.log([...seen].map((f) => f.replace("/app/", "")).sort().join("\n"));
+            ' 2>&1 || echo "(node introspection unavailable)"
+          done
+
           echo
           echo "=== docker ps --no-trunc (running) ==="
           docker ps --no-trunc 2>&1 || echo "(docker ps failed)"

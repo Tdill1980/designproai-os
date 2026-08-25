@@ -179,6 +179,7 @@ function SideCard({
   const [correcting, setCorrecting] = useState(false);
   const [correctionError, setCorrectionError] = useState("");
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [trimOnly, setTrimOnly] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [upscaleError, setUpscaleError] = useState("");
   // THE ACTIVE PANEL'S REAL PIXEL SIZE, MEASURED RATHER THAN ASSUMED.
@@ -192,6 +193,22 @@ function SideCard({
   useEffect(() => { setActivePixels(null); }, [active?.contentHash]);
 
   const geometry = panelGeometry(panel);
+  /**
+   * How much of the panel is bleed, as a percentage of each axis.
+   *
+   * The panel is trim plus exactly 5 inches on every edge, so the trim box is
+   * inset by 5/printInches on each side. Null when the panel does not state
+   * both its trim and print inches -- an inset guessed from one of them would
+   * draw the cut line in the wrong place, and a wrong cut line is worse than
+   * no cut line.
+   */
+  const trimInsetPct = geometry.printWidthIn && geometry.printHeightIn
+    && geometry.trimWidthIn && geometry.trimHeightIn
+    ? {
+        x: ((geometry.printWidthIn - geometry.trimWidthIn) / 2 / geometry.printWidthIn) * 100,
+        y: ((geometry.printHeightIn - geometry.trimHeightIn) / 2 / geometry.printHeightIn) * 100,
+      }
+    : null;
   const latestUpscale = upscaled[0];
   // An enhancement made from bytes that are no longer active is stale: the team
   // corrected the panel after it ran, so it enhanced the file they rejected.
@@ -279,25 +296,67 @@ function SideCard({
 
         <div>
           <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>Print panel{correctedActive ? " · corrected" : ""}</span>
-            {correctedActive && (
-              <Badge variant="outline" className="border-amber-500/60 text-amber-600 dark:text-amber-400">
-                human corrected
-              </Badge>
-            )}
+            <span>
+              {trimOnly ? "Panel · trim, no bleed" : "Panel with 5″ bleed"}
+              {correctedActive ? " · corrected" : ""}
+            </span>
+            <span className="flex items-center gap-1.5">
+              {correctedActive && (
+                <Badge variant="outline" className="border-amber-500/60 text-amber-600 dark:text-amber-400">
+                  human corrected
+                </Badge>
+              )}
+              {/* THE SAME BYTES, SHOWN TWO WAYS. Not a second file and not a
+                  second producer: the panel IS trim plus 5" of bleed on every
+                  edge, so the trim view is that exact artifact displayed
+                  without its margin, and the bleed view draws the cut line on
+                  top of it. What the installer cuts to becomes something the
+                  team can see rather than something they have to imagine. */}
+              {trimInsetPct && (
+                <button
+                  type="button"
+                  onClick={() => setTrimOnly((on) => !on)}
+                  className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal hover:bg-muted"
+                >
+                  {trimOnly ? "Show bleed" : "Show trim"}
+                </button>
+              )}
+            </span>
           </div>
           {active?.signedUrl ? (
-            <img
-              src={active.signedUrl}
-              alt={`${surfaceKey} print panel`}
-              className="aspect-video w-full rounded-lg border border-border bg-white object-contain"
-              onLoad={(event) => {
-                const image = event.currentTarget;
-                if (image.naturalWidth && image.naturalHeight) {
-                  setActivePixels({ w: image.naturalWidth, h: image.naturalHeight });
-                }
-              }}
-            />
+            <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-border bg-white">
+              <img
+                src={active.signedUrl}
+                alt={`${surfaceKey} print panel`}
+                className="h-full w-full object-contain"
+                style={trimOnly && trimInsetPct
+                  ? {
+                      // Scale the panel up so its trim box fills the frame, and
+                      // pull the bleed off every edge. Pure display geometry
+                      // derived from the panel's own stamped inches.
+                      transform: `scale(${100 / (100 - 2 * trimInsetPct.x)}, ${100 / (100 - 2 * trimInsetPct.y)})`,
+                    }
+                  : undefined}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  if (image.naturalWidth && image.naturalHeight) {
+                    setActivePixels({ w: image.naturalWidth, h: image.naturalHeight });
+                  }
+                }}
+              />
+              {/* Where the cut lands, on the bleed view. */}
+              {!trimOnly && trimInsetPct && (
+                <div
+                  className="pointer-events-none absolute border border-dashed border-destructive/70"
+                  style={{
+                    left: `${trimInsetPct.x}%`,
+                    right: `${trimInsetPct.x}%`,
+                    top: `${trimInsetPct.y}%`,
+                    bottom: `${trimInsetPct.y}%`,
+                  }}
+                />
+              )}
+            </div>
           ) : (
             <div className="flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-xs text-muted-foreground">
               <ImageOff className="h-4 w-4" />
@@ -403,11 +462,24 @@ function SideCard({
                   : "Not upscaled"}
             </Badge>
           </div>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-5">
             <div>
               <dt className="text-muted-foreground">Source resolution</dt>
               <dd className="font-mono font-semibold">
                 {sourceWidthPx && sourceHeightPx ? `${sourceWidthPx} × ${sourceHeightPx} px` : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Trim (no bleed)</dt>
+              <dd className="font-mono font-semibold">
+                {inches(geometry.trimWidthIn) && inches(geometry.trimHeightIn)
+                  ? `${inches(geometry.trimWidthIn)}″ × ${inches(geometry.trimHeightIn)}″`
+                  : "—"}
+                {geometry.surfaceSqFt && (
+                  <span className="ml-1 font-sans font-normal text-muted-foreground">
+                    · {geometry.surfaceSqFt} sq ft
+                  </span>
+                )}
               </dd>
             </div>
             <div>
