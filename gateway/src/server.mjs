@@ -1470,7 +1470,41 @@ function validatedGenerationRequestV2(body, generationIdValue, ownerId) {
   // canonical hash of the stored jsonb, which this process cannot reproduce
   // byte-for-byte -- Node's key order is insertion order, Postgres's is sorted.
   // Sending a guess would only create a way to be wrong.
-  return { generationId: generationIdValue, idempotencyKey: null, input };
+  return {
+    generationId: generationIdValue,
+    idempotencyKey: null,
+    input: atlasNormalizedGenerationInput(input),
+  };
+}
+
+// DesignPro vehicle design has ONE production architecture, and it is the
+// flat-first atlas. Standard/3D-first is retired for new vehicle generations.
+//
+// This normalization is the enforcement point, and it lives here rather than
+// in React on purpose: the page default was `legacy` until 2026-08-25, so
+// every live customer request on 08-24/25 arrived as contract v2 with a null
+// pipelineMode and died in `generation_slots_failed`, while all three atlas
+// masters showed zero production runs. Fixing only the browser would leave a
+// stale tab -- or any hand-rolled caller -- able to resurrect the retired
+// producer. A v2 body is accepted (old clients keep working) and upgraded to
+// the v3 atlas contract before it reaches the intake RPC, so what is persisted
+// and what the worker dispatches are both the atlas, always.
+//
+// Only the four body classes the atlas layout estimator has bounded rules for
+// are normalized. A motorcycle, boat, bus, rv or trailer has no atlas topology
+// contract, so it stays on the standard producer rather than consuming a
+// Gemini call that cannot be laid out -- that is the surviving, non-vehicle-
+// wrap use, and it is not reachable from a DesignPro car/truck/suv/van create.
+const ATLAS_MANDATORY_VEHICLE_CLASSES = new Set(["car", "truck", "suv", "van"]);
+
+function atlasNormalizedGenerationInput(input) {
+  if (input.contractVersion !== "designpro.calls-1-7-input.v2") return input;
+  if (!ATLAS_MANDATORY_VEHICLE_CLASSES.has(String(input.vehicle?.type || ""))) return input;
+  return {
+    ...input,
+    contractVersion: "designpro.calls-1-7-input.v3",
+    pipelineMode: "flat-first-atlas-v1",
+  };
 }
 
 function validatedGenerationRequestV3(body, generationIdValue, ownerId) {

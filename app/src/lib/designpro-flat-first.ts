@@ -26,16 +26,28 @@ export function initialDesignProPipelineMode(
 ): GenerationPipelineMode {
   if (!FLAT_FIRST_ATLAS_UI_ENABLED) return "legacy";
 
-  // A.T.L.A.S. is an isolated diagnostic until its second pipeline test is
-  // product-proven. It may be opened explicitly, but an enabled feature flag
-  // never replaces the proven DesignPanel producer as the customer default.
+  // A.T.L.A.S. is the canonical design authority (RULE 0.17 / 0.21), so it is
+  // what Create Design sends. This used to default to `legacy` and treat the
+  // atlas as an opt-in diagnostic — which is why every live customer request
+  // on 2026-08-24/25 arrived as `designpro.calls-1-7-input.v2` with a null
+  // pipelineMode and died in `generation_slots_failed`, while the atlas
+  // masters sat at zero production runs. The diagnostic framing is over.
   if (flatFirstAtlasRequestedBySearch(search)) return FLAT_FIRST_ATLAS_PIPELINE_MODE;
 
-  // A mode deliberately carried by the Home brief remains authoritative.
+  // An explicit mode carried by the Home brief remains authoritative, and
+  // `?pipeline=legacy` is still the one-URL rollback to the standard producer.
   if (value === "legacy") return "legacy";
-  if (value === FLAT_FIRST_ATLAS_PIPELINE_MODE) return FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  if (legacyRequestedBySearch(search)) return "legacy";
 
-  return "legacy";
+  return FLAT_FIRST_ATLAS_PIPELINE_MODE;
+}
+
+function legacyRequestedBySearch(search: unknown): boolean {
+  try {
+    return new URLSearchParams(String(search || "")).get("pipeline") === "legacy";
+  } catch {
+    return false;
+  }
 }
 
 /**

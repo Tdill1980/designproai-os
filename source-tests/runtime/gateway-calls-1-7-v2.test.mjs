@@ -77,7 +77,12 @@ function upstreamFor(rpcResponse) {
     if (href.includes("/auth/v1/user")) {
       return new Response(JSON.stringify(SESSION_USER), { status: 200, headers: { "content-type": "application/json" } });
     }
-    if (href.includes("/rpc/create_designpro_generation_request")) {
+    // Both intakes answer. A v2 vehicle create is normalized to the atlas at
+    // the creation boundary, so what these design-first cases now exercise is
+    // the flat-first RPC -- the point they hold is that no order and no
+    // recipient are needed, which is unchanged by which producer runs.
+    if (href.includes("/rpc/create_designpro_flat_first_generation_request")
+      || href.includes("/rpc/create_designpro_generation_request")) {
       calls.push(JSON.parse(String(init.body || "{}")));
       return rpcResponse();
     }
@@ -118,7 +123,11 @@ test("a design-first request with no order and no recipient reaches the database
   assert.equal(result.status, 202);
   assert.equal(result.calls.length, 1, "the request never reached the RPC");
   assert.equal(result.calls[0].p_generation_id, GENERATION_ID);
-  assert.equal(result.calls[0].p_input.contractVersion, "designpro.calls-1-7-input.v2");
+  // Sent as v2, persisted as the atlas. DesignPro vehicle design has one
+  // production architecture, and the creation boundary is what enforces it --
+  // a stale tab must not be able to put the retired producer back on the wire.
+  assert.equal(result.calls[0].p_input.contractVersion, "designpro.calls-1-7-input.v3");
+  assert.equal(result.calls[0].p_input.pipelineMode, "flat-first-atlas-v1");
 });
 
 test("the client does not have to send an idempotency key", async () => {

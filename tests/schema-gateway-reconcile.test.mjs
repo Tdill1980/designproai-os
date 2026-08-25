@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-32), [
+  assert.deepEqual(names.slice(-34), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -95,6 +95,15 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // exact surface and revision; the branded Call 9 panel is left byte-for-byte
     // and stays what source.verify counts.
     "20260825000000_designpro_panelpro_corrected_panels.sql",
+    // A.T.L.A.S. enters the production handoff. 20260823220000 opened the gate,
+    // but the handoff function itself still raised
+    // generation_contract_not_production_eligible on v3, so the gate opened onto
+    // a closed door and no atlas master ever reached manufacturing.
+    "20260825120000_designpro_atlas_enters_handoff.sql",
+    // ...and the three revision-source gates behind that door -- the snapshot
+    // CHECK, the delivery-binding trigger, and the WrapBox fulfillment bind --
+    // each of which required the v2 contract by literal string equality.
+    "20260825121000_designpro_atlas_revision_source_admitted.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

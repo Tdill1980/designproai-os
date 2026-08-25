@@ -1256,6 +1256,105 @@ test("flat-first v3 opts into the isolated intake RPC without changing v1", asyn
   assert.equal(calls.some((item) => item.url.endsWith("/rpc/create_designpro_generation_request")), false);
 });
 
+// DesignPro vehicle design has ONE production architecture. Until 2026-08-25
+// the create page defaulted to `legacy`, so every live customer request on
+// 08-24/25 was persisted as contract v2 with a null pipelineMode and died in
+// `generation_slots_failed` -- while all three atlas masters showed zero
+// production runs. The browser default is fixed, but a stale tab would still
+// put the retired producer on the wire, so the creation boundary is what
+// actually enforces it. Flip ATLAS_MANDATORY_VEHICLE_CLASSES to an empty set,
+// or drop the normalization, and this test fails.
+test("a v2 vehicle create is normalized to A.T.L.A.S. at the server boundary", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-00000000001a";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request")) {
+        return Response.json({
+          requestId: "10000000-0000-4000-8000-00000000001a",
+          generationId, state: "queued", inputHash: "a".repeat(64),
+          engineContractHash: "b".repeat(64), idempotent: false,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const input = {
+    contractVersion: "designpro.calls-1-7-input.v2",
+    vehicle: { year: "2025", make: "Ford", model: "Transit", type: "van" },
+    brief: "Bright commercial bakery wrap",
+    designName: "Becky's Bakery Transit",
+  };
+  const response = await fetch(`${base}/api/generation/requests`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId, input }),
+  });
+  assert.equal(response.status, 202);
+  assert.equal((await response.json()).pipelineMode, "flat-first-atlas-v1");
+  // The standard intake RPC is never reached, so no Standard row can exist.
+  assert.equal(calls.some((item) => item.url.endsWith("/rpc/create_designpro_generation_request")), false);
+  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request"));
+  assert.ok(rpcCall);
+  assert.deepEqual(JSON.parse(rpcCall.init.body).p_input, {
+    ...input,
+    contractVersion: "designpro.calls-1-7-input.v3",
+    pipelineMode: "flat-first-atlas-v1",
+  });
+});
+
+// The surviving standard use, and the reason normalization is scoped rather
+// than blanket: the atlas layout estimator has bounded body-class rules for
+// car/truck/suv/van only, so a trailer would consume a Gemini call it cannot
+// lay out. It is not reachable from a DesignPro car/truck/suv/van create.
+test("a body class with no atlas topology contract still reaches the standard intake", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-00000000001b";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/create_designpro_generation_request")) {
+        return Response.json({
+          requestId: "10000000-0000-4000-8000-00000000001b",
+          generationId, state: "queued", inputHash: "a".repeat(64),
+          engineContractHash: "b".repeat(64), idempotent: false,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const input = {
+    contractVersion: "designpro.calls-1-7-input.v2",
+    vehicle: { year: "2025", make: "Wells", model: "Cargo", type: "trailer" },
+    brief: "Bright commercial bakery wrap",
+    designName: "Becky's Bakery Trailer",
+  };
+  const response = await fetch(`${base}/api/generation/requests`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId, input }),
+  });
+  assert.equal(response.status, 202);
+  assert.equal((await response.json()).pipelineMode, "legacy");
+  assert.deepEqual(
+    JSON.parse(calls.find((item) => item.url.endsWith("/rpc/create_designpro_generation_request")).init.body).p_input,
+    input,
+  );
+});
+
 test("flat-first v3 admits the full DesignIQ contract and exact private reference identities", async (t) => {
   const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const generationId = "90000000-0000-4000-8000-000000000010";

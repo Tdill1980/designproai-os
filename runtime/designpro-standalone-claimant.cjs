@@ -1335,7 +1335,11 @@ function resolvedFulfillmentSnapshot(revisionSource, run) {
   }
 
   const exactKeys = ["bindingHash", "contractVersion", "delivery", "orderNumber", "revisionId"];
-  if (snapshot.sourceInputContract !== "designpro.calls-1-7-input.v2"
+  // v3/A.T.L.A.S. and v2 are both design-first: neither carries a WrapBox
+  // recipient at generation time, so both reach the late fulfillment binding
+  // here. Only v2 was named, which would have refused every atlas production
+  // run at the delivery leg even after the handoff itself admitted them.
+  if (!["designpro.calls-1-7-input.v2", "designpro.calls-1-7-input.v3"].includes(snapshot.sourceInputContract)
     || snapshot.fulfillment?.contractVersion !== "designpro.fulfillment-state.v1"
     || snapshot.fulfillment?.state !== "unbound"
     || snapshot.orderNumber != null || snapshot.delivery != null

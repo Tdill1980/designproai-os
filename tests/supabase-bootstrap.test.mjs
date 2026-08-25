@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered forty-eight-migration chain', () => {
-  assert.equal(migrationNames.length, 48);
+test('fresh bootstrap contains one ordered fifty-migration chain', () => {
+  assert.equal(migrationNames.length, 50);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -95,6 +95,12 @@ test('fresh bootstrap contains one ordered forty-eight-migration chain', () => {
       // The audited human correction path: a corrected panel is its own artifact
       // kind, bound to the Call 9 panel it replaces, which is never touched.
       '20260825000000',
+      // A.T.L.A.S. enters the production handoff, and the revision source
+      // accepts it. 20260823220000 opened the gate; the handoff function and
+      // the three revision-source gates behind it still refused v3, so every
+      // atlas run raised on the next statement and no master ever reached
+      // manufacturing.
+      '20260825120000', '20260825121000',
     ],
   );
 });
