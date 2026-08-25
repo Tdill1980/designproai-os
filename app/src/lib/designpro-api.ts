@@ -922,6 +922,33 @@ export const dpApi = {
     );
   },
 
+  /**
+   * RUN UPSCALE on one surface, on purpose.
+   *
+   * The same Topaz enhancement Call 12 runs on all six automatically, invoked by
+   * hand from the PanelPro board so the team can exercise and inspect the real
+   * upscale path. It writes a NEW derivative and never touches the panel it came
+   * from -- both stay downloadable, and the derivative records which one it was
+   * made from, at what pixel size, by what factor.
+   */
+  runPanelUpscale: (generationId: string, surfaceKey: GenieSurfaceKey) =>
+    request<{
+      surfaceKey: string;
+      contentHash: string;
+      byteSize: number;
+      sourceArtifactKind: string;
+      sourcePanelHash: string;
+      sourcePixels: { widthPx: number | null; heightPx: number | null };
+      outputPixels: { widthPx: number; heightPx: number };
+      upscaleFactor: number | null;
+      clampedByEngineCeiling: boolean;
+      engineModel: string;
+      idempotent: boolean;
+    }>(`/jobs/${encodeURIComponent(generationId)}/panels/${encodeURIComponent(surfaceKey)}/upscale`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
   approveFinalQc: (generationId: string, qc: FinalQc, notes: string) =>
     request<{ accepted: true }>(`/jobs/${encodeURIComponent(generationId)}/approvals/final`, {
       method: "POST",

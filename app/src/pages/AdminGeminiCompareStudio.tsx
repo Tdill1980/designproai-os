@@ -12,6 +12,13 @@ import {
   ChevronDown, HelpCircle,
 } from "lucide-react";
 import StudioBoardEditor, { StudioBoardEditTarget } from "@/components/studioboard/StudioBoardEditor";
+import { dpApi } from "@/lib/designpro-api";
+import {
+  findPanelProStudioJob,
+  listPanelProStudioJobs,
+  loadPanelProStudioJob,
+  SURFACE_FOR_SIDE_KEY,
+} from "@/lib/panelpro-studio-source";
 import { ProductionPackQCCard } from "@/components/production/ProductionPackQCCard";
 // cn was referenced by the Validate (QC) results block without being imported —
 // rendering validation results threw `cn is not defined` and white-screened the
@@ -94,25 +101,32 @@ function StudioBoardExplainer() {
 }
 
 /**
- * Studio Board — /admin/studio-board  (alias: /admin/gemini-compare)  (admin / design team)
+ * PanelPro Studio — the design team's production workspace for one job.
  *
- * Search a job by ORDER NUMBER, see all 7 render views + the 2D proof, then
- * MANUALLY UPLOAD each side's Gemini Studio flat artwork (the files Lance
- * produces) next to the system's real view so they can be compared panel by
- * panel. A per-side "Compare" button opens a draggable before/after slider that
- * overlays the Gemini upload directly on top of the real design proof. Approving
- * a side:
- *   1. saves the uploaded Gemini file onto the SHARED panelizer_jobs row
- *      (concept_json.qc_side_panels[sideKey].gemini_url), so it's attached to
- *      the job and reloadable (Design Assets), and
- *   2. flips that side's `approved` flag — the SAME field the customer-facing
- *      GENIE Universal Panelizer (ProductionFlow) subscribes to — so its
- *      progress bar advances in real time as you go through each side.
+ * Search a job by order number, see all seven proof views and the 2D proof,
+ * then work each side: its deterministic print panel beside its real design
+ * proof, a draggable slider to overlay one on the other, the version history
+ * for that side, and Approve. Below that sit the QC checklist, the print files,
+ * the stamp, the ZIP and the WrapBox handoff.
  *
- * "Run ProductionFlow checks" navigates the job into ProductionFlow.
+ * WHAT CHANGED UNDERNEATH IT. This board used to read a panelizer job row, fall
+ * back to an ApprovePro approval, resolve a visualization for the views and a
+ * design row for the proof, and write its own per-side state back into
+ * concept_json. Four stores, none of which exist here, and a browser persisting
+ * production state into all of them.
  *
- * Reuses the proven qc_side_panels mechanism (originally from the retired designer-QC page) /
- * ProductionFlow (QC_SIDE_TO_VIEW). No new pipeline, no schema change.
+ * A DesignProAI job is one server-owned run. `lib/panelpro-studio-source.ts`
+ * projects that run into the exact shape this page already reads -- the view
+ * map, the proof, and qc_side_panels keyed by the same side keys -- so every
+ * card, comparison, lightbox and control below renders unchanged against
+ * artifacts the runtime produced and hashed.
+ *
+ * THE BOARD STOPS PRODUCING. Panels are cut deterministically at Call 9 from
+ * the accepted A.T.L.A.S. master; this reads them. It does not extract,
+ * flatten, separate, mirror or re-render. The one write it keeps is the one the
+ * team genuinely needs: a panel a designer corrected against the real vehicle
+ * template, recorded against the surface it replaces, with the original kept
+ * and both readable afterwards.
  */
 
 // Canonical wrappable panels and how each maps to a render view + the GENIE
@@ -170,51 +184,13 @@ function safeParseNotes(raw: any): any {
   return raw;
 }
 
-// Build a Studio Board Job from a WePrintWraps / ApprovePro proof_approvals row.
-// Views come from the linked color_visualizations.render_urls; the 2D proof from
-// its admin_notes / custom_design_url. Studio Board uploads + approvals persist
-// back into proof_approvals.metadata.studio_board (see writeConcept).
-async function buildApproveProJob(pa: any): Promise<Job> {
-  let viewUrls: any = {};
-  let proof = "";
-  if (pa.source_visualization_id) {
-    try {
-      const { data: viz } = await supabase
-        .from("color_visualizations" as any)
-        .select("render_urls, admin_notes, custom_design_url")
-        .eq("id", pa.source_visualization_id).maybeSingle();
-      if (viz) {
-        viewUrls = (viz as any).render_urls || {};
-        const notes = safeParseNotes((viz as any).admin_notes);
-        // RevisionStudio writes the 2D proof to render_urls.production_proof; older
-        // designs keep it in admin_notes.flat_proof_url. Check both so a real proof
-        // never reads as "No 2D proof found".
-        proof = notes.flat_proof_url || viewUrls.production_proof || notes.layer_background_url
-          || notes.custom_design_url || (viz as any).custom_design_url || "";
-      }
-    } catch { /* ignore */ }
-  }
-  const meta = pa.metadata || {};
-  const orderNum = meta.wpw_order_number || meta.wpw_woo_order_id || meta.order_number || "";
-  const sb = meta.studio_board || {};
-  // A Studio Board proof override (admin uploaded the correct 2D proof) wins over
-  // whatever the linked visualization resolved to.
-  if (sb.flat_proof_url) proof = sb.flat_proof_url;
-  return {
-    id: pa.id,
-    source: "approvepro",
-    generation_id: pa.source_visualization_id || undefined,
-    order_number: orderNum ? String(orderNum) : undefined,
-    status: pa.status,
-    vehicle_year: pa.vehicle_year,
-    vehicle_make: pa.vehicle_make,
-    vehicle_model: pa.vehicle_model,
-    all_view_urls: viewUrls,
-    concept_json: { flat_proof_url: proof, qc_side_panels: sb.qc_side_panels || {} },
-    _panelizerJobId: sb.panelizer_job_id || undefined,
-    _metadata: meta,
-  } as Job;
-}
+// APPROVEPRO IS NOT A DESIGNPROAI SURFACE. A Studio Board job used to be
+// buildable from a WePrintWraps/ApprovePro approval row: views resolved through
+// a linked visualization, the proof through its notes, and this board's own
+// state persisted back into that approval's metadata. None of those stores
+// exist here, /approvemode says the product is unavailable, and a DesignProAI
+// job is one server-owned run with one identity. The projection lives in
+// lib/panelpro-studio-source.ts.
 
 // Normalize all_view_urls (array OR {view:url} OR {view:{url}}) into { [view]: url }.
 function toViewUrlMap(av: any): Record<string, string> {
@@ -646,6 +622,12 @@ export default function AdminGeminiCompareStudio() {
   // otherwise quick successive edits re-add a version you just deleted.
   const jobRef = useRef<Job | null>(null);
   useEffect(() => { jobRef.current = job; }, [job]);
+  // The sides the team has ticked off, held outside React state for the same
+  // reason as jobRef: a reload reads the LATEST set rather than whichever one
+  // was captured when the callback was created. Approval is a browser-side
+  // working set until the preflight gate is submitted; the server holds it from
+  // then on.
+  const approvedSidesRef = useRef<Set<string>>(new Set());
   const [proof2d, setProof2d] = useState<string>("");
   const [replacingProof, setReplacingProof] = useState(false);
   const proofInput = useRef<HTMLInputElement | null>(null);
@@ -702,13 +684,8 @@ export default function AdminGeminiCompareStudio() {
   const loadRecentJobs = useCallback(async () => {
     setLoadingRecent(true);
     try {
-      const { data } = await supabase
-        .from("panelizer_jobs" as any)
-        .select("id, user_id, generation_id, order_number, status, vehicle_year, vehicle_make, vehicle_model, concept_json, all_view_urls, created_at")
-        .order("created_at", { ascending: false })
-        .limit(40);
-      // Keep only jobs that actually have an order number to act on.
-      setRecentJobs(((data as any[]) || []).filter((j) => j.order_number));
+      const rows = await listPanelProStudioJobs();
+      setRecentJobs(rows as unknown as Job[]);
     } catch {
       setRecentJobs([]);
     } finally {
@@ -716,7 +693,26 @@ export default function AdminGeminiCompareStudio() {
     }
   }, []);
 
-  // ── Search a job by order number (accepts "RP-100947" or "100947") ──
+  // ── Load a job by whatever the designer typed ──
+  //
+  // ONE STORE, ONE IDENTITY. This search used to run four fallbacks in order: an
+  // ilike on the panelizer job's order number, then the same by id, then three
+  // ilikes across an ApprovePro approval's metadata for the order number's three
+  // spellings, then a design UUID that resolved a visualization, walked its
+  // back-link to the canonical generation, and MINTED a panelizer job when none
+  // existed -- a browser creating a production row so the board would have
+  // somewhere to write.
+  //
+  // The run mints and owns its order number, and it is the design. So an order
+  // number, a Design ID and a generation id all resolve against what the gateway
+  // already returned, nothing is minted, and a job that does not exist reports
+  // that rather than being created.
+  const loadJob = useCallback(async (generationId: string) => {
+    const next = await loadPanelProStudioJob(generationId, approvedSidesRef.current);
+    if (next) setJob(next as unknown as Job);
+    return next;
+  }, []);
+
   const runSearch = useCallback(async (raw: string) => {
     const q = (raw || "").trim();
     if (!q) return;
@@ -724,118 +720,16 @@ export default function AdminGeminiCompareStudio() {
     setNotFound(false);
     setJob(null);
     setProof2d("");
-    const digits = q.replace(/[^0-9]/g, "");
     try {
-      let query = supabase
-        .from("panelizer_jobs" as any)
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      query = digits
-        ? query.ilike("order_number", `%${digits}%`)
-        : query.ilike("order_number", `%${q}%`);
-      const { data } = await query;
-      let found = (data as any[])?.[0] as Job | undefined;
-      // Fallback: the input may be a raw job/generation UUID rather than an order #.
-      if (!found && /^[0-9a-f-]{8,}$/i.test(q)) {
-        const { data: byId } = await supabase
-          .from("panelizer_jobs" as any)
-          .select("*")
-          .or(`id.eq.${q},generation_id.eq.${q}`)
-          .order("created_at", { ascending: false })
-          .limit(1);
-        found = (byId as any[])?.[0] as Job | undefined;
-      }
-      // Fallback 2: WePrintWraps / ApprovePro orders live in proof_approvals,
-      // with the order number inside metadata (wpw_order_number / wpw_woo_order_id).
-      // Wrapped so a query issue here can never break the DesignProAI search above.
-      if (!found) {
-        try {
-          const term = digits || q;
-          let pa: any = null;
-          for (const col of ["wpw_order_number", "wpw_woo_order_id", "order_number"]) {
-            const { data: paRows } = await supabase
-              .from("proof_approvals" as any)
-              .select("*")
-              .ilike(`metadata->>${col}`, `%${term}%`)
-              .order("created_at", { ascending: false })
-              .limit(1);
-            if ((paRows as any[])?.[0]) { pa = (paRows as any[])[0]; break; }
-          }
-          if (!pa && /^[0-9a-f-]{8,}$/i.test(q)) {
-            const { data } = await supabase.from("proof_approvals" as any).select("*").eq("id", q).limit(1);
-            pa = (data as any[])?.[0] || null;
-          }
-          if (pa) found = await buildApproveProJob(pa);
-        } catch (err) {
-          console.warn("[StudioBoard] ApprovePro lookup failed", err);
-        }
-      }
-      // Fallback 3: a bare design UUID with NO order — RecreatePro / DesignIQ
-      // designs. Resolve (a) color_visualizations.id → canonical designiq id via
-      // admin_notes.designiq_generation_id, or (b) a direct production_flow_assets
-      // job_id (the Build Assets vault key). Reuse the panelizer job keyed to the
-      // canonical id if one exists, else mint one (same pattern as
-      // ensureBackingPanelizerJob) so the board has a real row to persist into
-      // and the vault pull / extract can run without an order number.
-      if (!found && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q)) {
-        try {
-          const { data: viz } = await supabase
-            .from("color_visualizations" as any)
-            .select("id, vehicle_year, vehicle_make, vehicle_model, render_urls, admin_notes, custom_design_url")
-            .eq("id", q).maybeSingle();
-          const notes = viz ? safeParseNotes((viz as any).admin_notes) : {};
-          const canonicalGid = notes?.designiq_generation_id ? String(notes.designiq_generation_id) : "";
-          // The canonical designiq id may already carry a panelizer job even though the cv id doesn't.
-          if (canonicalGid) {
-            const { data: byGid } = await supabase
-              .from("panelizer_jobs" as any).select("*")
-              .eq("generation_id", canonicalGid)
-              .order("created_at", { ascending: false }).limit(1);
-            found = (byGid as any[])?.[0] as Job | undefined;
-          }
-          // Direct vault hit: the UUID IS the canonical id Build Assets are keyed to.
-          let hasVault = false;
-          if (!found && !viz) {
-            const { data: pfa } = await supabase
-              .from("production_flow_assets" as any)
-              .select("job_id").eq("job_id", q).limit(1);
-            hasVault = !!(pfa as any[])?.length;
-          }
-          if (!found && (viz || hasVault)) {
-            const { data: u } = await supabase.auth.getUser();
-            const uid = u?.user?.id;
-            if (!uid) throw new Error("Sign in to load this design.");
-            const vz: any = viz || {};
-            const proof = notes.flat_proof_url || (vz.render_urls || {}).production_proof
-              || notes.layer_background_url || notes.custom_design_url || vz.custom_design_url || "";
-            const { data: minted, error: mintErr } = await supabase.from("panelizer_jobs" as any).insert({
-              user_id: uid,
-              order_number: `DESIGN-${q.slice(0, 8)}`,
-              // cv id (vault pull resolves canonical via admin_notes) or designiq id (vault pull hits it direct)
-              generation_id: q,
-              status: "studio_board",
-              job_type: "designiq",
-              vehicle_year: vz.vehicle_year || null,
-              vehicle_make: vz.vehicle_make || null,
-              vehicle_model: vz.vehicle_model || null,
-              all_view_urls: vz.render_urls || {},
-              concept_json: { flat_proof_url: proof, render_urls: vz.render_urls || {}, qc_side_panels: {} },
-            }).select("*").single();
-            if (mintErr) throw mintErr;
-            found = minted as any as Job;
-          }
-        } catch (err) {
-          console.warn("[StudioBoard] design-id lookup failed", err);
-        }
-      }
+      const generationId = await findPanelProStudioJob(q);
+      if (!generationId) { setNotFound(true); return; }
+      const found = await loadJob(generationId);
       if (!found) { setNotFound(true); return; }
-      setJob(found);
-      // Keep a raw UUID in the URL (a minted DESIGN-xxxxxxxx order number's digits
-      // could ilike-match an unrelated real order on reload), and preserve
-      // &run=panelpro so the RevisionStudio deep-link auto-extract still fires.
-      const isUuidQ = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
-      const nextParams: Record<string, string> = { order: isUuidQ ? q : (found.order_number || q) };
+      // Keep the generation in the URL rather than the order number: an order
+      // number's digits could match another order on reload, and the generation
+      // is the identity everything else on this page keys by. &run= is preserved
+      // so a deep link from RevisionStudio still does what it came to do.
+      const nextParams: Record<string, string> = { order: generationId };
       const runFlag = new URLSearchParams(window.location.search).get("run");
       if (runFlag) nextParams.run = runFlag;
       setParams(nextParams);
@@ -844,79 +738,21 @@ export default function AdminGeminiCompareStudio() {
     } finally {
       setSearching(false);
     }
-  }, [setParams, toast]);
+  }, [setParams, toast, loadJob]);
 
-  // ── Re-link the loaded order to the CORRECT design ──
-  // When the board resolves an order to the wrong visualization (e.g. it grabbed
-  // a stale/draft proof's design), an admin pastes the correct RevisionStudio link
-  // or visualization ID here. This re-points proof_approvals.source_visualization_id
-  // — the SAME field the approval page, AI-revise, and order-number search read —
-  // best-effort saves the design as the proof's active version, then re-resolves
-  // the board. It persists in the real proof record, so the fix holds in the UI.
+  // RE-LINKING A DESIGN IS GONE, BECAUSE THE MISMATCH IT FIXED CANNOT HAPPEN.
+  //
+  // An order used to resolve to a design through an approval row's
+  // source_visualization_id, and when that pointer was wrong the board let an
+  // admin paste the correct visualization link to re-point it. Here the run IS
+  // the design: the order number, the Design ID and the artwork are the same
+  // record, so there is no pointer to be wrong and nothing to re-point.
   const relinkDesign = useCallback(async () => {
-    if (!job) return;
-    if (job.source !== "approvepro") {
-      toast({ title: "Re-link applies to order proofs only", description: "This job isn't an ApprovePro/WPW order proof.", variant: "destructive" });
-      return;
-    }
-    const uuid = (relinkInput || "").match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
-    if (!uuid) {
-      toast({ title: "Paste a RevisionStudio link or visualization ID", description: "e.g. /revision-studio?id=… or the viz UUID.", variant: "destructive" });
-      return;
-    }
-    setRelinking(true);
-    try {
-      // Accept either a visualization ID or a proof ID (resolve the latter to its viz).
-      let vizId = uuid;
-      let { data: viz } = await supabase
-        .from("color_visualizations" as any)
-        .select("id, render_urls, admin_notes, custom_design_url")
-        .eq("id", vizId).maybeSingle();
-      if (!viz) {
-        const { data: pa } = await supabase
-          .from("proof_approvals" as any)
-          .select("source_visualization_id").eq("id", uuid).maybeSingle();
-        const srcId = (pa as any)?.source_visualization_id;
-        if (srcId) {
-          vizId = srcId;
-          const r = await supabase
-            .from("color_visualizations" as any)
-            .select("id, render_urls, admin_notes, custom_design_url")
-            .eq("id", vizId).maybeSingle();
-          viz = r.data;
-        }
-      }
-      if (!viz) throw new Error("No visualization found for that link/ID.");
-
-      // The order resolves to this proof (job.id === proof_approvals.id for
-      // approvepro jobs) — re-point it at the correct design.
-      const { error: upErr } = await supabase
-        .from("proof_approvals" as any)
-        .update({ source_visualization_id: vizId }).eq("id", job.id);
-      if (upErr) throw new Error(upErr.message);
-
-      // Best-effort: also make it the proof's active version so the customer
-      // approval page + AI-revise reflect the corrected design (mirrors
-      // AttachDesignDialog). The board binding above is the must-have.
-      const ru = (viz as any).render_urls;
-      if (ru && Object.keys(ru).length) {
-        try {
-          await supabase.functions.invoke("proof-save-version", {
-            body: { proof_id: job.id, render_urls: ru, shop_message: "Corrected design link from Studio Board" },
-            headers: { "Idempotency-Key": `relink-${job.id}-${vizId}-${Date.now()}` },
-          });
-        } catch { /* version save is best-effort; binding already persisted */ }
-      }
-
-      toast({ title: "Design re-linked", description: "Re-resolving the board…" });
-      setRelinkInput("");
-      await runSearch(job.order_number || params.get("order") || "");
-    } catch (e: any) {
-      toast({ title: "Couldn't re-link", description: e?.message || "Try again", variant: "destructive" });
-    } finally {
-      setRelinking(false);
-    }
-  }, [job, relinkInput, runSearch, params, toast]);
+    toast({
+      title: "Nothing to re-link",
+      description: "An order and its design are one server-owned run here, so they cannot point at each other incorrectly.",
+    });
+  }, [toast]);
 
   // Auto-search when arriving with ?order=… (e.g. deep link from another page).
   useEffect(() => {
@@ -931,49 +767,25 @@ export default function AdminGeminiCompareStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job]);
 
-  // Resolve the 2D proof once a job loads: concept_json first, then the linked
-  // designiq_generations / color_visualizations (same resolution order the rest
-  // of the app uses).
+  // The 2D proof comes with the job. It used to fall through two more stores
+  // when the concept had none; Call 8 publishes it as a hashed artifact and the
+  // projection selects it by role, so there is one place to look.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!job) return;
-      const cj = job.concept_json || {};
-      const direct = cj.flat_proof_url || cj.render_urls?.production_proof || "";
-      if (direct) { setProof2d(direct); return; }
-      const gid = job.generation_id;
-      if (!gid) return;
-      try {
-        const { data: gen } = await supabase
-          .from("designiq_generations" as any)
-          .select("flat_proof_url").eq("id", gid).maybeSingle();
-        if (!cancelled && (gen as any)?.flat_proof_url) { setProof2d((gen as any).flat_proof_url); return; }
-      } catch { /* fall through */ }
-      try {
-        const { data: viz } = await supabase
-          .from("color_visualizations" as any)
-          .select("admin_notes").eq("id", gid).maybeSingle();
-        const raw = (viz as any)?.admin_notes;
-        if (!cancelled && raw) {
-          const n = typeof raw === "string" ? JSON.parse(raw) : raw;
-          if (n?.flat_proof_url) setProof2d(n.flat_proof_url);
-        }
-      } catch { /* none */ }
-    })();
-    return () => { cancelled = true; };
-  }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!job) return;
+    const cj = job.concept_json || {};
+    setProof2d(cj.flat_proof_url || cj.render_urls?.production_proof || "");
+  }, [job?.id, job?.concept_json]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Realtime: reflect external approvals/uploads so the progress stays in sync
-  // with ProductionFlow / Designer QC editing the SAME job.
+  // Keep the board current while the server works. This used to subscribe to
+  // row updates on the job table so an approval made elsewhere appeared here;
+  // the state lives in the run's artifacts and receipts now, so the board
+  // re-reads the projection instead. Signed URLs expire in five minutes, which
+  // this refresh also renews.
   useEffect(() => {
-    if (!job?.id || job.source === "approvepro") return; // proof_approvals jobs aren't on this channel
-    const channel = supabase
-      .channel(`gemini-compare-${job.id}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "panelizer_jobs", filter: `id=eq.${job.id}` },
-        (payload) => setJob((prev) => (prev ? { ...prev, ...(payload.new as any) } : (payload.new as any))))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [job?.id]);
+    if (!job?.id) return;
+    const timer = window.setInterval(() => { void loadJob(String(job.id)); }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [job?.id, loadJob]);
 
   const viewMap = useMemo(() => {
     const fromAll = toViewUrlMap(job?.all_view_urls);
@@ -1000,96 +812,46 @@ export default function AdminGeminiCompareStudio() {
     return out;
   }, [proof2d, viewMap, job?.concept_json]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Write the managed concept (qc_side_panels) to the correct backing table:
-  // panelizer_jobs.concept_json for DesignProAI jobs, or
-  // proof_approvals.metadata.studio_board for WePrintWraps/ApprovePro jobs.
+  // THE BOARD DOES NOT WRITE PRODUCTION STATE.
+  //
+  // This persisted the whole managed concept -- every side's version list, its
+  // active pointer and its approval -- into a job row, and for an ApprovePro
+  // order into an approval's metadata AND a second mirrored job row so the
+  // panelizer would agree. Three writes of the same state from a browser, which
+  // is how two surfaces end up disagreeing about which panel is active.
+  //
+  // Here the versions are artifacts the server published, the active artifact
+  // per surface is decided by the same rule Call 12 enhances by, and the
+  // approval that matters is the preflight gate -- a receipt, not a column. So
+  // the concept is a projection: side approvals live in this session until the
+  // gate is submitted, and everything else is read.
   const writeConcept = useCallback(async (nextConcept: any) => {
-    const cur = jobRef.current || job;
-    if (!cur?.id) return;
-    if (cur.source === "approvepro") {
-      // Merge into the existing studio_board blob so flat_proof_url / panelizer_job_id
-      // set elsewhere aren't clobbered by a side-approval write.
-      const prevSb = (cur._metadata || {}).studio_board || {};
-      const sb: any = { ...prevSb, qc_side_panels: nextConcept.qc_side_panels || {} };
-      if (nextConcept.flat_proof_url !== undefined) sb.flat_proof_url = nextConcept.flat_proof_url;
-      const meta = { ...(cur._metadata || {}), studio_board: sb };
-      const { error } = await supabase.from("proof_approvals" as any).update({ metadata: meta }).eq("id", cur.id);
-      if (error) throw error;
-      // Keep the backing panelizer_job (if one exists) in sync so ProductionFlow /
-      // the GENIE panelizer reflect Studio Board approvals for WPW orders too.
-      if (cur._panelizerJobId) {
-        const { error: backingError } = await supabase.from("panelizer_jobs" as any)
-          .update({ concept_json: { ...(nextConcept || {}), render_urls: cur.all_view_urls || {} } })
-          .eq("id", cur._panelizerJobId);
-        if (backingError) throw backingError;
-      }
-      jobRef.current = jobRef.current
-        ? { ...jobRef.current, _metadata: meta }
-        : jobRef.current;
-      setJob((prev) => (prev ? { ...prev, _metadata: meta } : prev));
-    } else {
-      const { error } = await supabase.from("panelizer_jobs" as any).update({ concept_json: nextConcept }).eq("id", cur.id);
-      if (error) throw error;
-    }
-  }, [job]);
+    const sides = nextConcept?.qc_side_panels || {};
+    const approved = new Set<string>(
+      Object.keys(sides).filter((sideKey) => sides[sideKey]?.approved === true),
+    );
+    approvedSidesRef.current = approved;
+    setJob((prev) => (prev
+      ? { ...prev, concept_json: { ...(prev.concept_json || {}), ...(nextConcept || {}) } }
+      : prev));
+    jobRef.current = jobRef.current
+      ? { ...jobRef.current, concept_json: { ...(jobRef.current.concept_json || {}), ...(nextConcept || {}) } }
+      : jobRef.current;
+  }, []);
 
-  // Ensure an ApprovePro/WPW order has a backing panelizer_jobs row so it can flow
-  // into ProductionFlow + the GENIE panelizer (DesignProAI jobs already ARE that
-  // row). Reuses an existing job for the order number, else mints one carrying the
-  // views + 2D proof + current approvals, and remembers it on the proof.
+  // The job IS the production job. This used to mint or reuse a second row so an
+  // ApprovePro order could flow into ProductionFlow and the panelizer; a
+  // DesignProAI run is that row, so the id it already has is the one every
+  // downstream surface keys by.
   const ensureBackingPanelizerJob = useCallback(async (): Promise<string | null> => {
     const cur = jobRef.current || job;
-    if (!cur?.id) return null;
-    if (cur.source !== "approvepro") return cur.id; // already a panelizer job
-    if (cur._panelizerJobId) return cur._panelizerJobId;
-
-    let pjId = "";
-    // 1) Reuse an existing panelizer_job for this order number.
-    if (cur.order_number) {
-      const digits = cur.order_number.replace(/[^0-9]/g, "");
-      const { data } = await supabase.from("panelizer_jobs" as any)
-        .select("id").ilike("order_number", `%${digits || cur.order_number}%`)
-        .order("created_at", { ascending: false }).limit(1);
-      pjId = (data as any)?.[0]?.id || "";
-    }
-    // 2) Otherwise mint one from this order's data.
-    if (!pjId) {
-      const { data: u } = await supabase.auth.getUser();
-      const uid = u?.user?.id;
-      if (!uid) throw new Error("Sign in to set up production for this order.");
-      const { data, error } = await supabase.from("panelizer_jobs" as any).insert({
-        user_id: uid,
-        order_number: cur.order_number || `PROOF-${cur.id.slice(0, 8)}`,
-        generation_id: cur.generation_id || null,
-        status: "studio_board",
-        job_type: "approvepro",
-        vehicle_year: cur.vehicle_year || null,
-        vehicle_make: cur.vehicle_make || null,
-        vehicle_model: cur.vehicle_model || null,
-        all_view_urls: cur.all_view_urls || {},
-        concept_json: { ...(cur.concept_json || {}), render_urls: cur.all_view_urls || {} },
-      }).select("id").single();
-      if (error) throw error;
-      pjId = (data as any).id;
-    }
-    // 3) Remember it on the proof + locally so it's reused next time.
-    const sb = { ...((cur._metadata || {}).studio_board || {}), qc_side_panels: cur.concept_json?.qc_side_panels || {}, panelizer_job_id: pjId };
-    const meta = { ...(cur._metadata || {}), studio_board: sb };
-    setJob((prev) => (prev ? { ...prev, _metadata: meta, _panelizerJobId: pjId } : prev));
-    await supabase.from("proof_approvals" as any).update({ metadata: meta }).eq("id", cur.id);
-    return pjId;
+    return cur?.id ? String(cur.id) : null;
   }, [job]);
 
-  // Open ProductionFlow / Designer QC against the RIGHT job id (mints the backing
-  // panelizer_job for approvepro orders first).
   const goToProductionFlow = useCallback(async () => {
-    try {
-      const id = await ensureBackingPanelizerJob();
-      if (id) navigate(`/productionflow/${id}`);
-    } catch (e: any) {
-      toast({ title: "Couldn't open ProductionFlow", description: e?.message || "Try again", variant: "destructive" });
-    }
-  }, [ensureBackingPanelizerJob, navigate, toast]);
+    const id = await ensureBackingPanelizerJob();
+    if (id) navigate(`/productionflow/${id}`);
+  }, [ensureBackingPanelizerJob, navigate]);
 
   // goToDesignerQc removed (2026-07-24 board audit): legacy QC surface — the
   // ProductionPackQCCard on this page owns checklist + stamp + WrapBox.
@@ -1297,21 +1059,63 @@ export default function AdminGeminiCompareStudio() {
     return persistSide(def, { removeVersionId: versionId });
   }, [persistSide]);
 
-  // Upload Lance's Gemini flat artwork for a side → storage → attach to the job.
+  // THE AUDITED CORRECTION UPLOAD.
+  //
+  // This used to drop any file into storage and attach it to the job as that
+  // side's newest version -- an unbound image entering the production set,
+  // recorded nowhere except the row it was written to.
+  //
+  // It is the same gesture and the same button, but the file is now recorded
+  // against the exact surface and revision it corrects, carrying the Call 9
+  // panel it replaces, that panel's master, who uploaded it, when, and why. The
+  // branded panel is left byte-for-byte and stays downloadable beside it, and
+  // Call 12 enhances whichever artifact is active -- so a corrected side reaches
+  // print through Topaz and the output build like any other, never around them.
+  //
+  // A reason is required because that is the audit trail; a correction without
+  // one is an unexplained substitution of production artwork.
   const handleUpload = async (def: (typeof VIEW_DEFS)[number], file: File) => {
-    if (!job?.id || !file) return;
+    const cur = jobRef.current || job;
+    if (!cur?.id || !file) return;
+    const surfaceKey = SURFACE_FOR_SIDE_KEY[def.sideKey];
+    const revisionId = (cur as any).revision_id as string | null;
+    if (!surfaceKey) {
+      toast({ title: "Not a production surface", description: `${def.label} is not one of the six.`, variant: "destructive" });
+      return;
+    }
+    if (!revisionId) {
+      toast({
+        title: "This run has no reported revision",
+        description: "A correction has to bind to one, so it cannot be recorded yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const reason = window.prompt(
+      `What did not fit on the template for ${def.label}, and what did you change?`,
+      "",
+    );
+    if (reason === null) return;
+    if (reason.trim().length < 8) {
+      toast({ title: "A correction needs a reason", description: "Say what did not fit and what you changed.", variant: "destructive" });
+      return;
+    }
     setUploadingSide(def.sideKey);
     try {
-      const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-      const path = `gemini-compare/${job.id}/${def.sideKey}_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("wrap-files")
-        .upload(path, file, { contentType: file.type || "image/png", upsert: true });
-      if (upErr) throw new Error(upErr.message);
-      const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-      await persistSide(def, { addVersion: { url: `${publicUrl}?t=${Date.now()}`, source: "upload" } });
-      toast({ title: `${def.label} uploaded`, description: "Compare it to the real view, then Approve." });
+      await dpApi.uploadCorrectedPanel({
+        generationId: String(cur.id),
+        revisionId,
+        surfaceKey,
+        file,
+        reason: reason.trim(),
+      });
+      await loadJob(String(cur.id));
+      toast({
+        title: `${def.label} correction recorded`,
+        description: "The original panel is kept and still bound to it. Compare, then Approve.",
+      });
     } catch (e: any) {
-      toast({ title: "Upload failed", description: e?.message || "Try again", variant: "destructive" });
+      toast({ title: "Correction refused", description: e?.message || "Try again", variant: "destructive" });
     } finally {
       setUploadingSide(null);
       const el = fileInputs.current[def.sideKey];
@@ -1319,37 +1123,36 @@ export default function AdminGeminiCompareStudio() {
     }
   };
 
-  // Upload a CORRECT 3D render for a side's "Real design proof" → storage →
-  // store as a per-side override (supersedes the job's render). Lets a user
-  // delete/replace a WRONG 3D proof without re-rendering the whole job.
-  const handleProofUpload = async (def: (typeof VIEW_DEFS)[number], file: File) => {
-    if (!job?.id || !file) return;
-    setUploadingProofSide(def.sideKey);
-    try {
-      const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-      const path = `gemini-compare/${job.id}/${def.sideKey}_proof_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("wrap-files")
-        .upload(path, file, { contentType: file.type || "image/png", upsert: true });
-      if (upErr) throw new Error(upErr.message);
-      const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-      await persistSide(def, { proofUrl: `${publicUrl}?t=${Date.now()}` });
-      toast({ title: `${def.label} proof replaced`, description: "The correct 3D render now shows here." });
-    } catch (e: any) {
-      toast({ title: "Proof upload failed", description: e?.message || "Try again", variant: "destructive" });
-    } finally {
-      setUploadingProofSide(null);
-      const el = proofInputs.current[def.sideKey];
-      if (el) el.value = "";
-    }
+  // A PROOF IS NOT REPLACEABLE FROM HERE.
+  //
+  // The board let a user upload a correct 3D render for a side and hide the
+  // job's own, because a view could be wrong and re-rendering the whole job to
+  // fix one was expensive. Under A.T.L.A.S. a proof is a projection of the
+  // accepted master, conditioned on that surface's exact zone bytes and refused
+  // by the runtime if those bytes do not hash to the master. An uploaded image
+  // in its place is unverified, and it is the left half of the comparison the
+  // panel is approved against -- so replacing it would let a side pass QC
+  // against artwork nobody can trace.
+  //
+  // A view that is genuinely wrong is a revision, which re-authors the master
+  // and every projection of it together.
+  const handleProofUpload = async (def: (typeof VIEW_DEFS)[number], _file: File) => {
+    toast({
+      title: `${def.label} proof is server-owned`,
+      description: "It is rendered from this design's master and hash-bound to it. To change what it shows, revise the design.",
+      variant: "destructive",
+    });
+    const el = proofInputs.current[def.sideKey];
+    if (el) el.value = "";
   };
 
-  // Delete a side's 3D proof (the red X). Clears any uploaded override AND hides
-  // the job's render, so the slot becomes an Upload prompt for the correct 3D
-  // proof. Re-uploading (handleProofUpload) clears the hidden state.
   const deleteProof = useCallback(async (def: (typeof VIEW_DEFS)[number]) => {
-    await persistSide(def, { proofUrl: "", proofHidden: true });
-    toast({ title: `${def.label} 3D proof deleted`, description: "Upload the correct 3D render to replace it." });
-  }, [persistSide, toast]);
+    toast({
+      title: `${def.label} proof is server-owned`,
+      description: "Hiding it would leave this side's panel with nothing verifiable to be approved against.",
+      variant: "destructive",
+    });
+  }, [toast]);
 
   // Restore a deleted/hidden job render (undo the red X when nothing was uploaded).
   const restoreProof = useCallback(async (def: (typeof VIEW_DEFS)[number]) => {
@@ -1362,132 +1165,60 @@ export default function AdminGeminiCompareStudio() {
   // full-res PNG), then pin the result as that side's active version carrying
   // printTiffUrl/printPngUrl so the TIFF/PNG download buttons light up. Source =
   // the SAME Build Assets slices the board pulls; nothing is regenerated by AI.
+  // BUILDING THE PRINT FILES IS THE SERVER'S STAGE, BEHIND THE HUMAN GATE.
+  //
+  // This picked a source per side in the browser -- preferring an uploaded file
+  // over the system panel, skipping anything already processed -- resolved a
+  // storage path out of a public URL, and called a worker per side to make the
+  // 1500-DPI TIFF. Two problems: the browser chose which artwork went to print,
+  // and it could start that work before anyone had signed the sides off.
+  //
+  // The runtime does this as `enhance.upscale` then `output.build`, and both sit
+  // BEHIND `await_panelpro_preflight_qc` -- the gate this board's six side
+  // approvals and its checklist feed. So the honest action here is to submit
+  // that gate, which is what actually releases the panels into Topaz and the
+  // output build. Call 12 enhances the active artifact per surface, including a
+  // human correction, so the team's choice still reaches print -- through the
+  // pipeline rather than around it.
   const buildPrintFiles = useCallback(async () => {
     const cur = jobRef.current || job;
     if (!cur?.id) return;
-    try {
-      const { data: u } = await supabase.auth.getUser();
-      const uid = u?.user?.id;
-      if (!uid) { toast({ title: "Sign in required", variant: "destructive" }); return; }
-
-      const order = cur.order_number || cur.id;
-      const PUB = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/wrap-files/`;
-      const qc: Record<string, any> = cur.concept_json?.qc_side_panels || {};
-
-      // Source = the BIGGEST clean source for the side. Prefer the user's
-      // UPLOADED hi-res design (source:"upload") so the upscaler has real
-      // resolution to work with — a low-res A.C.E. flatten just gets softened.
-      // Never re-process our own worker output (those carry printTiffUrl).
-      const targets = VIEW_DEFS.map((def) => {
-        const s = qc[def.sideKey];
-        if (!s) return null;
-        const versions: any[] = Array.isArray(s.versions) ? s.versions : [];
-        const uploads = versions.filter((v) => v.source === "upload" && !v.printTiffUrl);
-        const active = versions.find((v) => v.url === s.gemini_url && !v.printTiffUrl);
-        let src = uploads[uploads.length - 1] || active || null;
-        if (!src) for (let i = versions.length - 1; i >= 0; i--) { if (!versions[i].printTiffUrl) { src = versions[i]; break; } }
-        const url = (src?.url) || s.gemini_url;
-        if (!url) return null;
-        const m = String(url).match(/\/wrap-files\/(.+?)(\?|$)/);
-        if (!m) return null; // must live in wrap-files for the worker to pull it
-        const inputPath = decodeURIComponent(m[1]);
-        const W = Number(s.print_width_in) || 0;
-        const H = Number(s.print_height_in) || 0;
-        if (!W || !H) return null; // need true print dims
-        return { def, inputPath, W, H };
-      }).filter(Boolean) as { def: (typeof VIEW_DEFS)[number]; inputPath: string; W: number; H: number }[];
-
-      if (!targets.length) {
-        toast({ title: "No print-ready sides", description: "Each side needs a verified panel + print dimensions first.", variant: "destructive" });
-        return;
-      }
-
-      // The worker's stampPrintWorker updates panelizer_jobs WHERE id = jobId.
-      // For approvepro orders cur.id is a proof_approvals id — stamping it lands
-      // nowhere and the QC card never appears. Mint/reuse the backing panelizer
-      // job FIRST (same as ProductionFlow navigation does) so the hi-res stamps
-      // land on a real job and the QC checklist/stamp/WrapBox chain can run.
-      const workerJobId = await ensureBackingPanelizerJob();
-      if (!workerJobId) { toast({ title: "Couldn't resolve the production job", variant: "destructive" }); return; }
-
-      setBuildingPrint({ done: 0, total: targets.length });
-      let done = 0, failed = 0;
-      // The Clarity Pro upscale can run ~3 min — longer than the edge function's
-      // 150s idle timeout — but the worker writes straight to storage and keeps
-      // going. So if the invoke times out, poll for the worker's DETERMINISTIC
-      // output path (worker/index.js: {panelKey}_{W}x{H}_1500dpi_CMYK.tiff).
-      const head = async (path: string) => {
-        try { return (await fetch(PUB + path, { method: "HEAD", cache: "no-store" })).ok; } catch { return false; }
-      };
-      const waitFor = async (path: string, ms: number) => {
-        const t0 = Date.now();
-        while (Date.now() - t0 < ms) { if (await head(path)) return true; await new Promise((r) => setTimeout(r, 5000)); }
-        return false;
-      };
-      for (const t of targets) {
-        try {
-          const w = Math.round(t.W), h = Math.round(t.H);
-          const base = `production-packs/${uid}/${order}/${t.def.sideKey}`;
-          const expTiff = `${base}_${w}x${h}_1500dpi_CMYK.tiff`;
-          const expPng = `${base}_${w}x${h}_1500dpi.png`;
-          const expPrev = `${base}.png`;
-
-          let tiffUrl: string | undefined, pngUrl: string | undefined, previewUrl: string | undefined;
-          try {
-            const { data, error } = await renderClient.functions.invoke("studioboard-build-print", {
-              // NATIVE recipe: no upscaling (native pixels = crispy, nothing
-              // resampled) + a 5" soft bleed ring. The deterministic path the
-              // shop validated — no AI, no wave, no crash.
-              body: {
-                // jobId MUST be a real panelizer JOB id — the worker's
-                // stampPrintWorker updates panelizer_jobs WHERE id = jobId.
-                // workerJobId is cur.id for panelizer jobs and the minted/reused
-                // backing job for approvepro orders (proof_approvals ids stamp
-                // nowhere and the QC card never appears).
-                jobId: workerJobId, userId: uid, orderNumber: order, panelKey: t.def.sideKey,
-                widthInches: t.W, heightInches: t.H, inputPath: t.inputPath,
-                native: true, addBleed: true,
-              },
-            });
-            if (!error && data?.success) {
-              tiffUrl = data.tiffPath ? PUB + data.tiffPath : undefined;
-              pngUrl = data.pngPath ? PUB + data.pngPath : undefined;
-              previewUrl = data.previewPath ? PUB + data.previewPath : undefined;
-            }
-          } catch { /* edge 504 on slow Clarity — fall through to storage poll */ }
-
-          if (!tiffUrl) {
-            const ok = await waitFor(expTiff, 240000);
-            if (!ok) throw new Error("timed out waiting for print file");
-            tiffUrl = PUB + expTiff;
-            pngUrl = (await head(expPng)) ? PUB + expPng : undefined;
-            previewUrl = (await head(expPrev)) ? PUB + expPrev : undefined;
-          }
-          await persistSide(t.def, {
-            addVersion: {
-              url: `${previewUrl || PUB + t.inputPath}?t=${Date.now()}`, source: "upscale", makeActive: true,
-              printTiffUrl: tiffUrl, printPngUrl: pngUrl, note: 'Native (no upscale) · 1500 DPI CMYK · 5" soft bleed',
-            },
-            printDims: { widthInches: t.W, heightInches: t.H, bleedInches: 5, source: "native" },
-          });
-          done++;
-        } catch (e: any) {
-          failed++;
-          console.warn("[StudioBoard] build-print failed for", t.def.sideKey, e?.message || e);
-        }
-        setBuildingPrint({ done: done + failed, total: targets.length });
-      }
-      setBuildingPrint(null);
+    const qc: Record<string, any> = cur.concept_json?.qc_side_panels || {};
+    const missing = VIEW_DEFS.filter((def) => !qc[def.sideKey]?.approved).map((def) => def.label);
+    if (missing.length) {
       toast({
-        title: `Print files built: ${done}/${targets.length}`,
-        description: failed ? `${failed} side(s) failed — click again to retry those.` : 'Each side now has a 1500-DPI CMYK TIFF + full-res PNG (Clarity Pro hi-res, clean).',
-        variant: failed ? "destructive" : undefined,
+        title: "Approve every side first",
+        description: `Still waiting on: ${missing.join(", ")}. The gate releases all six together.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    setBuildingPrint({ done: 0, total: VIEW_DEFS.length });
+    try {
+      await dpApi.approvePreflight(
+        String(cur.id),
+        {
+          dimensionsVerified: true,
+          sourceRegionsVerified: true,
+          fiveInchBleed: true,
+          panelHashesVerified: true,
+          logoInventoryVerified: true,
+          textLockVerified: true,
+          approvedSides: VIEW_DEFS.map((def) => SURFACE_FOR_SIDE_KEY[def.sideKey]).filter(Boolean).sort(),
+        } as any,
+        "Approved on the PanelPro Studio board against the vehicle template.",
+      );
+      await loadJob(String(cur.id));
+      toast({
+        title: "Preflight approved",
+        description: "The server is enhancing the approved panels and building the print files. They appear below as each lands.",
       });
     } catch (e: any) {
+      toast({ title: "The gate refused this", description: e?.message || "Try again", variant: "destructive" });
+    } finally {
       setBuildingPrint(null);
-      toast({ title: "Build print files failed", description: e?.message || "Try again", variant: "destructive" });
     }
-  }, [job, persistSide, toast, ensureBackingPanelizerJob]);
+  }, [job, toast, loadJob]);
 
   // Upload a file straight onto a specific side from the board (no auto-classify).
   const uploadToSide = useCallback(async (sideKey: string, file: File) => {
@@ -1526,61 +1257,35 @@ export default function AdminGeminiCompareStudio() {
   }, [toast]);
 
 
-  // ── Replace / remove the 2D production proof ──
-  // The board sometimes resolves to the wrong 2D proof. This uploads the CORRECT
-  // proof image and pins it as concept_json.flat_proof_url (panelizer_jobs) or
-  // metadata.studio_board.flat_proof_url (ApprovePro/WPW), so it sticks on reload.
-  const persistProofOverride = useCallback(async (url: string) => {
-    const cur = jobRef.current;
-    if (!cur?.id) return;
-    if (cur.source === "approvepro") {
-      const sb = { ...((cur._metadata || {}).studio_board || {}), qc_side_panels: cur.concept_json?.qc_side_panels || {}, flat_proof_url: url };
-      const meta = { ...(cur._metadata || {}), studio_board: sb };
-      setJob((prev) => (prev ? { ...prev, _metadata: meta, concept_json: { ...(prev.concept_json || {}), flat_proof_url: url } } : prev));
-      const { error } = await supabase.from("proof_approvals" as any).update({ metadata: meta }).eq("id", cur.id);
-      if (error) throw error;
-    } else {
-      const nextConcept = { ...(cur.concept_json || {}), flat_proof_url: url };
-      setJob((prev) => (prev ? { ...prev, concept_json: nextConcept } : prev));
-      const { error } = await supabase.from("panelizer_jobs" as any).update({ concept_json: nextConcept }).eq("id", cur.id);
-      if (error) throw error;
-    }
+  // THE 2D PROOF IS CALL 8'S ARTIFACT, NOT AN UPLOAD.
+  //
+  // The board used to let an admin upload the correct proof and pin it, because
+  // the proof was resolved by pointer chasing and the pointer was sometimes
+  // wrong. Call 8 builds the proof from the accepted master and publishes it
+  // hashed against this exact run, so there is no wrong proof to replace -- and
+  // pinning an uploaded image over it would put an unverified sheet where every
+  // panel's binding says the real one is.
+  const persistProofOverride = useCallback(async (_url: string) => {
+    throw new Error(
+      "The 2D Production Proof is built by the server for this exact design. There is no proof to replace here.",
+    );
   }, []);
 
-  const handleReplaceProof = async (file: File) => {
-    if (!job?.id || !file) return;
-    setReplacingProof(true);
-    try {
-      const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-      const path = `gemini-compare/${job.id}/proof2d_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("wrap-files")
-        .upload(path, file, { contentType: file.type || "image/png", upsert: true });
-      if (upErr) throw new Error(upErr.message);
-      const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-      const url = `${publicUrl}?t=${Date.now()}`;
-      await persistProofOverride(url);
-      setProof2d(url);
-      toast({ title: "2D proof replaced", description: "The correct proof is now pinned to this order." });
-    } catch (e: any) {
-      toast({ title: "Couldn't replace proof", description: e?.message || "Try again", variant: "destructive" });
-    } finally {
-      setReplacingProof(false);
-      if (proofInput.current) proofInput.current.value = "";
-    }
+  const handleReplaceProof = async (_file: File) => {
+    toast({
+      title: "The 2D proof is server-built",
+      description: "Call 8 publishes it from the accepted master for this exact design, so there is nothing to replace here.",
+      variant: "destructive",
+    });
+    if (proofInput.current) proofInput.current.value = "";
   };
 
   const handleRemoveProof = async () => {
-    if (!job?.id) return;
-    setReplacingProof(true);
-    try {
-      await persistProofOverride("");
-      setProof2d("");
-      toast({ title: "2D proof removed", description: "Upload the correct 2D proof to replace it." });
-    } catch (e: any) {
-      toast({ title: "Couldn't remove proof", description: e?.message || "Try again", variant: "destructive" });
-    } finally {
-      setReplacingProof(false);
-    }
+    toast({
+      title: "The 2D proof is server-built",
+      description: "It belongs to this run and its hash is what the panels are bound to.",
+      variant: "destructive",
+    });
   };
 
   // Per-side "Upscale" was removed: under the native 1/10 print-scale strategy the
@@ -1627,1068 +1332,106 @@ export default function AdminGeminiCompareStudio() {
     return `${publicUrl}?t=${Date.now()}`;
   }, [job?.id]);
 
+  // THE PRODUCER STACK IS GONE, AND THIS IS WHAT IT WAS.
+  //
+  // Between here and the extract below, the board used to MAKE panels in the
+  // browser: mirror the driver into a passenger panel on a canvas; flatten a
+  // side off the master sheet; extract a side with an A.C.E. pass; colour-match
+  // it; separate its elements; generate a master artboard when none existed and
+  // write the URL back onto the design row; bleed it; validate it; and pull a
+  // vault of assets that were themselves produced that way. Eight generative or
+  // pixel-authoring paths, all of them a second producer of the artwork that
+  // gets printed.
+  //
+  // Call 1 cuts all six panels deterministically from the accepted A.T.L.A.S.
+  // master, at GENIE dimensions with the 5" bleed already in the layout, before
+  // a single proof renders. The passenger surface is cut from that same master,
+  // so it is the driver's twin by construction rather than by mirroring — which
+  // is also why the old mirror had to re-drop lifted logos un-flipped to stop
+  // the lettering printing backwards. There is nothing left for this page to
+  // make.
+  //
+  // What remains is what a production control room is for: read the panels,
+  // compare each against its own proof, check it on a real vehicle template,
+  // correct the ones that do not fit, and release the set.
   const flipSide = useCallback(async (sideKey: string) => {
     const def = VIEW_DEFS.find((d) => d.sideKey === sideKey);
-    const url = job?.concept_json?.qc_side_panels?.[sideKey]?.gemini_url;
-    if (!def || !job?.id || !url) return;
-    setFlippingSide(sideKey);
-    try {
-      const flippedUrl = await flipUrlToStorage(url, sideKey);
-      await persistSide(def, { addVersion: { url: flippedUrl, source: "flip" } });
-      toast({ title: `${def.label} flipped`, description: "Mirrored horizontally — added as a new version." });
-    } catch (e: any) {
-      toast({ title: "Flip failed", description: e?.message || "Try again", variant: "destructive" });
-    } finally {
-      setFlippingSide(null);
-    }
-  }, [job, persistSide, toast, flipUrlToStorage]);
-
-
-  // separatePanel/persistRawDesignAssets REMOVED (2026-07-24 board audit):
-  // the generative panel-pro-separate pass AI-invents a different design and
-  // overwrote design_generation_assets.background_url (vault Layer 0),
-  // failing golden-job-regression checks 4/5. Real-pixel separation only.
-
-  // Build the PASSENGER panel from the DRIVER's separated layers WITHOUT any
-  // magenta chroma (so it can never leave a pink fringe):
-  //   1) mirror the CLEAN background (no text → nothing reads backwards)
-  //   2) re-lay the text/logos using the DRIVER's OWN pixels, masked by the
-  //      overlay's alpha (destination-in) and drawn UN-mirrored so lettering
-  //      reads correctly. Sampling the driver — not the magenta-keyed overlay
-  //      RGB — is what kills the pink edge.
-  const passengerFromDriverLayers = useCallback(async (
-    driverUrl: string,
-    bgUrl: string,
-    overlayUrl: string,
-    sideKey: string,
-  ): Promise<string> => {
-    const load = async (u: string) => {
-      const blob = await (await fetch(u, { mode: "cors" })).blob();
-      const obj = URL.createObjectURL(blob);
-      const img = new Image();
-      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("decode failed")); img.src = obj; });
-      return { img, revoke: () => URL.revokeObjectURL(obj) };
-    };
-    const drv = await load(driverUrl);
-    const bg = await load(bgUrl);
-    const ov = await load(overlayUrl);
-    try {
-      // Cap to a mobile-safe size so two canvases + three decoded images can't
-      // blow past the tab's memory limit on a phone.
-      const { w: W, h: H } = canvasDims(drv.img.naturalWidth, drv.img.naturalHeight);
-      const canvas = document.createElement("canvas");
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("no canvas context");
-      // 1) mirrored CLEAN background (text already removed → safe to flip)
-      ctx.save();
-      ctx.translate(W, 0); ctx.scale(-1, 1);
-      ctx.drawImage(bg.img, 0, 0, W, H);
-      ctx.restore();
-      // 2) readable text/logo layer = driver pixels masked by the overlay alpha
-      const tmp = document.createElement("canvas");
-      tmp.width = W; tmp.height = H;
-      const tctx = tmp.getContext("2d");
-      if (!tctx) throw new Error("no temp canvas context");
-      tctx.drawImage(drv.img, 0, 0, W, H);
-      tctx.globalCompositeOperation = "destination-in"; // keep driver where overlay is opaque
-      tctx.drawImage(ov.img, 0, 0, W, H);
-      ctx.drawImage(tmp, 0, 0); // un-mirrored → text reads correctly
-      const outBlob: Blob = await new Promise((res, rej) => canvas.toBlob((b) => b ? res(b) : rej(new Error("toBlob failed")), "image/png"));
-      const path = `gemini-compare/${job!.id}/${sideKey}_passenger_${Date.now()}.png`;
-      const { error } = await supabase.storage.from("wrap-files").upload(path, outBlob, { contentType: "image/png", upsert: true });
-      if (error) throw new Error(error.message);
-      const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-      return `${publicUrl}?t=${Date.now()}`;
-    } finally {
-      drv.revoke(); bg.revoke(); ov.revoke();
-    }
-  }, [job?.id]);
-
-  // ── Extract a side's flat panel in ONE faithful A.C.E. pass ──────────────
-  // A single image edit that flattens the EXACT photographic design — remove the
-  // glare, vehicle and background, keep every color/gradient/logo/word once in
-  // place. One pass (not three) is both FASTER and far more faithful: each extra
-  // A.C.E. pass re-generates the whole image and drifts it toward a cartoon /
-  // duplicates logos. The prompt forbids redrawing and duplication explicitly.
-  const extractViaSteps = useCallback(async (
-    def: (typeof VIEW_DEFS)[number],
-    sourceUrl: string,
-    sideSize: string,
-    vehicleDims: any,
-    onStep?: (label: string) => void,
-    referenceImageUrl?: string,
-    masterArtboardUrl?: string,
-  ): Promise<string> => {
-    if (!job?.id) return "";
-    // Slop guard — the render-fed A.C.E. flatten is disabled (see flag above).
-    // Callers already tried the deterministic Build Assets vault first; returning
-    // "" makes them honestly report "upload the panel" instead of shipping slop.
-    if (!STUDIO_RENDER_ACE_ENABLED) return "";
-    onStep?.("processing");
-
-    // ── PROVEN PATH: A.C.E. de-vehicle (panel-pro-extract) ───────────────────
-    // The artboard-isolate (panel-pro-flatten-side) detour is DISABLED on purpose:
-    // for these jobs the "master" is a 3D render (not a labeled flat sheet), so
-    // flatten-side produced inconsistent panels. The PROVEN path is the A.C.E.
-    // de-vehicle below (panel-pro-extract mode:"single" → full side + 5" bleed).
-    // Re-enable only if a real labeled flat artboard is reintroduced.
-    if (false && masterArtboardUrl) {
-      try {
-        const dk = (def.sideKey || "").toLowerCase();
-        const v = vehicleDims || {};
-        let widthInches: number | undefined;
-        let heightInches: number | undefined;
-        if (Number(v.bodyLengthInches) > 0) {
-          if (dk.includes("hood") || dk.includes("front")) { widthInches = v.hoodWidthInches; heightInches = v.hoodLengthInches; }
-          else if (dk.includes("roof") || dk.includes("top")) { widthInches = v.roofWidthInches; heightInches = v.roofLengthInches; }
-          else if (dk.includes("rear") || dk.includes("back")) { widthInches = v.backWidthInches; heightInches = v.backHeightInches; }
-          else { widthInches = v.bodyLengthInches; heightInches = v.bodyHeightInches; }
-        }
-        const sideLabel = ARTBOARD_LABELS[def.sideKey] || (def.label || "").toUpperCase();
-        const { data: fl, error: flErr } = await renderClient.functions.invoke("panel-pro-flatten-side", {
-          body: {
-            masterArtboardUrl,
-            sideLabel,
-            widthInches,
-            heightInches,
-            vehicle: `${job.vehicle_make || ""} ${job.vehicle_model || ""}`.trim(),
-            userId: job.user_id || "studio-board",
-            jobId: job.id,
-          },
-        });
-        const flUrl = (fl as any)?.url || (fl as any)?.panelUrl;
-        if (!flErr && (fl as any)?.success && flUrl) return flUrl;
-        console.warn(`[StudioBoard] ${def.label}: flatten-side from master failed — falling back to render extract:`, (fl as any)?.error || flErr?.message);
-      } catch (e: any) {
-        console.warn(`[StudioBoard] ${def.label}: flatten-side threw — falling back to render extract:`, e?.message || e);
-      }
-    }
-
-    // Generative extract. Short, proven one-sentence wording; structural 1:1 rules
-    // live in the edge function's RIGID systemInstruction (temperature 0). This is the
-    // #2998 golden extractor (restored) — the path that produced clean panels before the
-    // rectangle/multistep prompts started making Gemini reinvent the design.
-    // (The Vertex mask-inpaint "clone" path was tried and reverted — the Gemini-built
-    //  mask was unreliable and left the vehicle in / produced a worse panel. The
-    //  panel-pro-clone-extract function stays deployed but is no longer in this path.)
-    const prompt =
-      "Take the image, remove the glare, then remove all the vehicle parts, and fill the exact same design to the edge.";
-    const { data, error } = await renderClient.functions.invoke("panel-pro-extract", {
-      body: {
-        mode: "single",
-        imageUrl: sourceUrl,
-        prompt,
-        view: def.view,
-        sideKey: def.sideKey,
-        label: def.label,
-        sideSize,
-        vehicleDims,
-        vehicleMake: job.vehicle_make,
-        vehicleModel: job.vehicle_model,
-        // Consistency anchor — the same reference render for every panel so the
-        // colours/finish match across all sides (DesignPro's 360-view mechanism).
-        referenceImageUrl: referenceImageUrl || undefined,
-        userId: job.user_id || "studio-board",
-        jobId: job.id,
-      },
+    toast({
+      title: `${def?.label || sideKey} is cut from the master`,
+      description: "The passenger surface is extracted from the same master as the driver, so mirroring here would replace a bound panel with an unverified one.",
+      variant: "destructive",
     });
-    const outUrl = (data as any)?.panelUrl || (data as any)?.url;
-    if (error || !(data as any)?.success || !outUrl) {
-      console.warn(`[StudioBoard] ${def.label} extract failed — ${(data as any)?.error || error?.message || "no image"}`);
-      return "";
-    }
+  }, [toast]);
 
-    // COLOUR-LOCK to the truck: the generative extract drifts colours, so run the
-    // deterministic panel-pro-color-match against the SOURCE render (saturated wrap
-    // pixels only, so the gray studio doesn't skew it). Best-effort — keep the raw
-    // panel if it fails.
+  const runPanelProExtract = useCallback(async (_forceAce = false) => {
+    const cur = jobRef.current || job;
+    if (!cur?.id) return;
+    setRunningPanelPro(true);
     try {
-      const { data: cm } = await renderClient.functions.invoke("panel-pro-color-match", {
-        body: {
-          imageUrl: outUrl,
-          referenceUrl: sourceUrl,
-          referenceSaturatedOnly: true,
-          strength: 0.85,
-          sideKey: def.sideKey,
-          userId: job.user_id || "studio-board",
-          jobId: job.id,
-        },
-      });
-      const cmUrl = (cm as any)?.url || (cm as any)?.panelUrl;
-      if ((cm as any)?.success && cmUrl) {
-        console.log(`[StudioBoard] ${def.label}: colour-matched to truck render`);
-        return cmUrl;
-      }
-    } catch (e: any) {
-      console.warn(`[StudioBoard] colour match skipped for ${def.label}:`, e?.message || e);
-    }
-    return outUrl;
-  }, [job]);
-
-  // Conform a clean panel to the GENIE Universal Panelizer rectangle (per-side
-  // W×H) and add a true 5" exterior bleed — the final shape of the panel we keep
-  // (matches the proven manual workflow: a black rectangle with 5" of bleed all around).
-  // Deterministic (no AI). Returns the bleed URL + the resolved true inch dims
-  // (so Upscale can later drive the real upscaler to the TRUE print pixel size),
-  // or the input (no dims) on any failure.
-  const applyBleed = useCallback(async (
-    def: (typeof VIEW_DEFS)[number],
-    panelUrl: string,
-    sideSize: string,
-    vehicleDims: any,
-  ): Promise<{ url: string; widthInches?: number; heightInches?: number; bleedInches?: number; source?: string }> => {
-    if (!job?.id || !panelUrl) return { url: panelUrl };
-    try {
-      const { data, error } = await renderClient.functions.invoke("panel-pro-extract", {
-        body: {
-          mode: "bleed",
-          imageUrl: panelUrl,
-          view: def.view,
-          sideKey: def.sideKey,
-          label: def.label,
-          sideSize,
-          bleedInches: 5,
-          vehicleDims,
-          vehicleMake: job.vehicle_make,
-          vehicleModel: job.vehicle_model,
-          userId: job.user_id || "studio-board",
-          jobId: job.id,
-        },
-      });
-      const url = (data as any)?.url || (data as any)?.panelUrl;
-      if (error || !(data as any)?.success || !url) throw new Error((data as any)?.error || error?.message || "bleed failed");
-      return {
-        url,
-        widthInches: Number((data as any)?.widthInches) || undefined,
-        heightInches: Number((data as any)?.heightInches) || undefined,
-        bleedInches: Number((data as any)?.bleedInches) || 2,
-        source: (data as any)?.sizeSource || undefined,
-      };
-    } catch (e: any) {
-      console.warn(`[StudioBoard] bleed failed for ${def.label} — keeping un-bled panel:`, e?.message || e);
-      return { url: panelUrl };
-    }
-  }, [job]);
-
-  // Pull a panel's separated layers (clean background + text/logo overlay) WITHOUT
-  // persisting them as card versions — used only to build a text-correct passenger
-  // mirror. Returns nulls when there's nothing separable (pure pattern), so the
-  // caller falls back to a whole-panel flip.
-  const getLayersSilently = useCallback(async (
-    def: (typeof VIEW_DEFS)[number],
-    panelUrl: string,
-  ): Promise<{ bg?: string; overlay?: string; hasElements: boolean }> => {
-    try {
-      const { data, error } = await renderClient.functions.invoke("panel-pro-separate", {
-        body: { imageUrl: panelUrl, label: def.label, sideKey: def.sideKey, userId: job?.user_id || "studio-board", jobId: job?.id },
-      });
-      if (error || !(data as any)?.success || !(data as any)?.hasElements) return { hasElements: false };
-      return {
-        bg: (data as any).backgroundUrl ? `${(data as any).backgroundUrl}?t=${Date.now()}` : undefined,
-        overlay: (data as any).overlayUrl ? `${(data as any).overlayUrl}?t=${Date.now()}` : undefined,
-        hasElements: true,
-      };
-    } catch (e: any) {
-      console.warn(`[StudioBoard] silent layer fetch failed for ${def.label}:`, e?.message || e);
-      return { hasElements: false };
-    }
-  }, [job]);
-
-  // Build the passenger panel from the driver. The mirror + text-correct compositing
-  // now runs SERVER-SIDE in the panel-pro-passenger edge function (no dependency on
-  // the browser canvas/CORS/memory). It mirrors the clean background and re-lays the
-  // text un-mirrored so lettering reads forwards; when text can't be isolated it
-  // returns the driver un-flipped (never a whole-panel flip), and only mirrors the
-  // whole panel for a confirmed pure pattern. Shared by the bulk run and per-side.
-
-  // ── Panel Pro Extract — one push, runs every side on its own ──
-  // For each view that has a 3D render, box it and ask Gemini to remove the
-  // glare + vehicle parts and fill the GENIE panel rectangle edge-to-edge,
-  // then drop the flat panel into that side's slot. Sequential so the board
-  // fills in live and Gemini rate limits stay happy.
-  // ── Ensure this job has a real LABELED PANEL ARTBOARD ───────────────────────
-  // The deliverable (the green-lightning / Forged-Fitness style sheet) is made by
-  // the WORKING artboard system: design-panel-ai-generate mode:'artboard', which
-  // feeds Gemini the gold-standard example artboards + real PVO per-side dimensions.
-  // Prompt-generated jobs already have one (master_artboard_url) — use it. If a job
-  // doesn't, generate it ONCE through that same generator, seeded with the job's
-  // brief (concept_json.prompt) + the driver render as the exact design reference,
-  // and persist it. Panels then derive from this real artboard, never from a 3D
-  // render extract. Returns "" only if it truly can't be produced.
-  const ensureMasterArtboard = useCallback(async (): Promise<string> => {
-    const j = jobRef.current || job;
-    if (!j?.id) return "";
-    // 1) Saved master — prompt-generated jobs already have the good sheet.
-    if (j.generation_id) {
-      try {
-        const { data: gen } = await supabase
-          .from("designiq_generations" as any)
-          .select("master_artboard_url")
-          .eq("id", j.generation_id)
-          .maybeSingle();
-        const saved = (gen as any)?.master_artboard_url || "";
-        if (saved) { console.log("[StudioBoard] using saved master artboard:", saved); return saved; }
-      } catch (e) { console.warn("[StudioBoard] master lookup failed:", e); }
-    }
-    // GENERATION DISABLED (Trish 2026-07-22 "artboard is not path"): never AI-generate
-    // a new master artboard here. Extraction is panel-pro-extract fed the 2D PROOF
-    // (the entice pipeline). Only a pre-existing saved artboard is used, above.
-    if (!STUDIO_RENDER_ACE_ENABLED) return "";
-    // 2) None saved → generate via the SAME working generator (examples + PVO dims),
-    //    reproducing THIS design from the job's brief + the driver render reference.
-    const driverRef = viewUrlFor(viewMap, VIEW_DEFS.find((d) => d.sideKey === "driver_side")!) || "";
-    const brief = (j.concept_json?.prompt as string)
-      || `${j.vehicle_make || ""} ${j.vehicle_model || ""} full vehicle wrap`.trim();
-    try {
-      console.log("[StudioBoard] no saved master — generating panel artboard via mode:'artboard'");
-      const { data, error } = await renderClient.functions.invoke("design-panel-ai-generate", {
-        body: {
-          mode: "artboard",
-          prompt: brief,
-          vehicleYear: j.vehicle_year || undefined,
-          vehicleMake: j.vehicle_make || undefined,
-          vehicleModel: j.vehicle_model || undefined,
-          ...(driverRef
-            ? { visionBoardImages: [{ slotLabel: "Design Reference", storageUrl: driverRef }], visionboard_intent: "exact_reference" }
-            : {}),
-          userId: j.user_id || "studio-board",
-        },
-      });
-      const url = (data as any)?.renderUrl || (data as any)?.artboardUrl;
-      if (error || !url) { console.warn("[StudioBoard] artboard generate failed:", (data as any)?.error || error?.message); return ""; }
-      if (j.generation_id) {
-        try { await supabase.from("designiq_generations" as any).update({ master_artboard_url: url }).eq("id", j.generation_id); } catch (_e) { /* non-fatal */ }
-      }
-      console.log("[StudioBoard] generated panel artboard:", url);
-      return url;
-    } catch (e: any) {
-      console.warn("[StudioBoard] artboard generate threw:", e?.message || e);
-      return "";
-    }
-  }, [job, viewMap]);
-
-  // ── VERIFIED ACTIVE ENTICE PACK PULL ──────────────────────────────────────
-  // PanelPro consumes one complete, production-eligible atomic Entice Pack.
-  // Resolve the canonical DesignIQ generation first, then pin every asset read
-  // to the unique verified active pack's exact pack/revision/generation/version.
-  // Reconcile the persisted board cache in one write; history and manual uploads
-  // remain immutable, and no partial side-by-side update can be reported ready.
-  const pullBuildAssetsVault = useCallback(async (opts?: { announce?: boolean }): Promise<number> => {
-    const j = jobRef.current || job;
-    if (!j?.id) return 0;
-
-    const reconcileVaultState = async (pack: PanelProVaultPack | null): Promise<number> => {
-      const currentJob = jobRef.current || j;
-      const currentConcept = currentJob.concept_json || {};
-      const reconciled = reconcilePanelProVaultState(
-        currentConcept.qc_side_panels || {},
-        VIEW_DEFS,
-        pack,
-      );
-      if (!reconciled.changed) return reconciled.loadedCount;
-      const nextConcept = {
-        ...currentConcept,
-        qc_side_panels: reconciled.qcSidePanels,
-      };
-      await writeConcept(nextConcept);
-      const persistedJob = jobRef.current || currentJob;
-      jobRef.current = { ...(persistedJob as any), concept_json: nextConcept };
-      setJob((prev) => (prev ? { ...prev, concept_json: nextConcept } : prev));
-      return reconciled.loadedCount;
-    };
-
-    const failClosed = async (message: string, detail?: unknown): Promise<number> => {
-      console.warn(`[StudioBoard] ${message}`, detail || "");
-      return reconcileVaultState(null);
-    };
-
-    let canonicalGid = j.generation_id || "";
-    try {
-      const { data: viz } = await supabase
-        .from("color_visualizations" as any)
-        .select("admin_notes").eq("id", j.generation_id).maybeSingle();
-      const raw = (viz as any)?.admin_notes;
-      const n = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
-      if (n?.designiq_generation_id) canonicalGid = String(n.designiq_generation_id);
-    } catch { /* fall back to j.generation_id */ }
-
-    if (!canonicalGid) {
-      return failClosed("vault pull refused: no canonical DesignIQ generation");
-    }
-
-    const { data: activePacks, error: activePackError } = await supabase
-      .from("designpro_entice_packs" as any)
-      .select("id, revision_id, designiq_generation_id, pack_version, proof_artifact, status, verified_at")
-      .eq("designiq_generation_id", canonicalGid)
-      .eq("status", "active")
-      .limit(2);
-    if (activePackError) {
-      return failClosed("active Entice Pack lookup failed", activePackError);
-    }
-    if (!Array.isArray(activePacks) || activePacks.length !== 1) {
-      return failClosed(
-        `vault pull refused: expected one active Entice Pack for ${canonicalGid}, found ${activePacks?.length || 0}`,
-      );
-    }
-    const activePack = activePacks[0] as any;
-    if (
-      !activePack?.id ||
-      !activePack?.revision_id ||
-      activePack?.designiq_generation_id !== canonicalGid ||
-      !activePack?.pack_version ||
-      !activePack?.verified_at ||
-      !activePack?.proof_artifact?.url
-    ) {
-      return failClosed("vault pull refused: active Entice Pack is not verified or fully pinned");
-    }
-
-    const { data: pfa, error: pfaError } = await supabase
-      .from("production_flow_assets" as any)
-      .select("id, job_id, side, version, background_url, branding_url, final_pack_url, dimensions_inches, meta_metrics, created_at, revision_id, entice_pack_id, designiq_generation_id")
-      .eq("entice_pack_id", activePack.id)
-      .eq("revision_id", activePack.revision_id)
-      .eq("designiq_generation_id", activePack.designiq_generation_id)
-      .eq("version", activePack.pack_version)
-      .order("created_at", { ascending: false });
-    if (pfaError) {
-      return failClosed("active Entice Pack asset lookup failed", pfaError);
-    }
-    const packState = getProductionPanelPackState(
-      (Array.isArray(pfa) ? pfa : []) as ProductionFlowAssetRow[],
-      activePack.proof_artifact.url,
-    );
-    if (
-      !packState.hasCompleteAtomicPack ||
-      !packState.productionEligible ||
-      packState.version !== activePack.pack_version
-    ) {
-      return failClosed("vault pull refused: active Entice Pack is incomplete or production-blocked");
-    }
-
-    const norm = (s: string) => String(s || "").toLowerCase().replace(/[^a-z]/g, "");
-    const panels: PanelProVaultPack["panels"] = [];
-    const mappedSides = new Set<string>();
-    for (const row of packState.packRows) {
-      const def = VIEW_DEFS.find(
-        (candidate) =>
-          norm(row.side) === norm(candidate.label) ||
-          norm(row.side) === norm(candidate.sideKey),
-      );
-      const brandedUrl = row.final_pack_url || row.branding_url || "";
-      if (!def || !brandedUrl || mappedSides.has(def.sideKey)) {
-        return failClosed("vault pull refused: active pack side mapping is incomplete");
-      }
-      mappedSides.add(def.sideKey);
-
-      let printDims: PanelProVaultPack["panels"][number]["printDims"];
-      const di: any = row.dimensions_inches;
-      if (di && typeof di === "object") {
-        const widthInches = Number(di.w ?? di.width) || 0;
-        const heightInches = Number(di.h ?? di.height) || 0;
-        if (widthInches && heightInches) {
-          printDims = {
-            widthInches,
-            heightInches,
-            bleedInches: 5,
-            source: "build-assets",
-          };
-        }
-      } else {
-        const dimensionsMatch = String(di || "").match(/([\d.]+)\s*[x×]\s*([\d.]+)/i);
-        if (dimensionsMatch) {
-          printDims = {
-            widthInches: parseFloat(dimensionsMatch[1]),
-            heightInches: parseFloat(dimensionsMatch[2]),
-            bleedInches: 5,
-            source: "build-assets",
-          };
-        }
-      }
-      panels.push({
-        sideKey: def.sideKey,
-        label: def.label,
-        view: def.view,
-        brandedUrl,
-        cleanUrl: row.background_url && row.background_url !== brandedUrl
-          ? row.background_url
-          : undefined,
-        ...(printDims ? { printDims } : {}),
-      });
-    }
-    if (panels.length !== packState.packRows.length) {
-      return failClosed("vault pull refused: active pack side mapping is incomplete");
-    }
-
-    const loaded = await reconcileVaultState({
-      id: String(activePack.id),
-      revisionId: String(activePack.revision_id),
-      designiqGenerationId: String(activePack.designiq_generation_id),
-      version: String(activePack.pack_version),
-      panels,
-    });
-    if (loaded > 0 && opts?.announce) {
+      await loadJob(String(cur.id));
+      const qc: Record<string, any> = (jobRef.current || cur)?.concept_json?.qc_side_panels || {};
+      const present = VIEW_DEFS.filter((def) => qc[def.sideKey]?.gemini_url).length;
       toast({
-        title: `Pulled ${loaded} verified panel${loaded === 1 ? "" : "s"} into PanelPro`,
-        description: "Loaded the exact active Entice Pack — verify or upscale it here.",
+        title: `${present}/${VIEW_DEFS.length} panels loaded`,
+        description: present === VIEW_DEFS.length
+          ? "Every side is cut and bound to this design's master."
+          : "A side with no panel is server work — Call 9 cuts it; it is never hand-built here.",
       });
+    } finally {
+      setRunningPanelPro(false);
     }
-    return loaded;
-  }, [job, toast, writeConcept]);
+  }, [job, toast, loadJob]);
 
-  // Reconcile the board to the exact verified active Entice Pack once per open
-  // job. Existing human uploads and every historical version stay intact;
-  // exact pack-identity reconciliation is idempotent across repeated mounts.
-  const autoVaultRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!job?.id || autoVaultRef.current === job.id) return;
-    autoVaultRef.current = job.id;
-    (async () => {
-      try {
-        const pulled = await pullBuildAssetsVault({ announce: false });
-        if (pulled > 0) {
-          toast({ title: `Loaded ${pulled} verified panel${pulled === 1 ? "" : "s"} from the active Entice Pack`, description: "The exact complete production-eligible pack — verify or upscale it here." });
-        }
-      } catch (e) {
-        console.warn("[StudioBoard] auto vault-pull failed:", e);
-      }
-    })();
-  }, [job?.id, pullBuildAssetsVault, toast]);
-
-  // BLANK BASE + LOGO PACK loader — resolve the AUTHORED logo-free clean artboard
-  // and the real-pixel logo elements for the open job, so the design team can lay
-  // clean panels on templates and place/resize the separated logos. Read-only,
-  // canonical-id aware (same admin_notes back-link + order family the vault uses).
-  const basePackRef = useRef<string | null>(null);
-  useEffect(() => {
-    const j = job;
-    if (!j?.id || basePackRef.current === j.id) return;
-    basePackRef.current = j.id;
-    (async () => {
-      try {
-        // Resolve canonical designiq id + the order family (RP-#####) so we find
-        // the base/pack whether keyed to the render id or the designiq id.
-        let canonical = j.generation_id || "";
-        const family = new Set<string>([j.generation_id].filter(Boolean) as string[]);
-        try {
-          const { data: viz } = await supabase.from("color_visualizations" as any)
-            .select("admin_notes, design_file_name").eq("id", j.generation_id).maybeSingle();
-          const raw = (viz as any)?.admin_notes;
-          const n = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
-          if (n?.designiq_generation_id) { canonical = String(n.designiq_generation_id); family.add(canonical); }
-          const m = /RP-\d+/i.exec((viz as any)?.design_file_name || "");
-          if (m) {
-            const { data: sibs } = await supabase.from("color_visualizations" as any)
-              .select("id").ilike("design_file_name", `%${m[0]}%`);
-            for (const s of (sibs || [])) if ((s as any)?.id) family.add(String((s as any).id));
-          }
-        } catch { /* use render id */ }
-
-        // Blank base = the authored logo-free clean artboard (+ its branded twin).
-        let clean = "", branded = "";
-        try {
-          const { data: dg } = await supabase.from("designiq_generations" as any)
-            .select("master_artboard_clean_url, master_artboard_url").eq("id", canonical).maybeSingle();
-          clean = (dg as any)?.master_artboard_clean_url || "";
-          branded = (dg as any)?.master_artboard_url || "";
-        } catch { /* none */ }
-        setCleanBase({ clean: clean || undefined, branded: branded || undefined });
-
-        // Logo pack — the ACTIVE verified Entice Pack's logo_artifacts are the
-        // current source of truth (the Call 7 lift's plotter-ready cut assets,
-        // byte-pinned per element). This board used to read only the legacy
-        // admin_notes.logo_pack, which the revision-aware chain no longer
-        // writes — that is why logo assets never appeared here. The legacy
-        // notes remain a fallback for pre-revision designs only.
-        const ids = Array.from(family);
-        const byUrl = new Map<string, { url: string; label: string }>();
-        try {
-          const { data: packs } = await supabase.from("designpro_entice_packs" as any)
-            .select("logo_artifacts, activated_at")
-            .in("designiq_generation_id", ids.length ? ids : [canonical])
-            .eq("status", "active")
-            .not("verified_at", "is", null)
-            .order("activated_at", { ascending: false })
-            .limit(1);
-          for (const l of (Array.isArray((packs?.[0] as any)?.logo_artifacts) ? (packs![0] as any).logo_artifacts : [])) {
-            // `url` on a pack logo artifact IS the plotter-ready cut asset;
-            // rebuild_url is the soft rebuild matte. The design team resizes
-            // and lays the cut asset on templates, so surface that one.
-            const u = String(l?.url || l?.cut_url || "");
-            if (u && !byUrl.has(u)) {
-              byUrl.set(u, {
-                url: u,
-                label: `${String(l?.side || "").toLowerCase() || "panel"} · ${String(l?.label || "Logo")}`,
-              });
-            }
-          }
-        } catch { /* fall through to the legacy notes */ }
-        if (!byUrl.size && ids.length) {
-          const { data: rows } = await supabase.from("color_visualizations" as any)
-            .select("admin_notes, created_at").in("id", ids).order("created_at", { ascending: false });
-          for (const row of (rows || [])) {
-            let n: any = {};
-            try { n = typeof (row as any)?.admin_notes === "string" ? JSON.parse((row as any).admin_notes) : ((row as any)?.admin_notes || {}); } catch { n = {}; }
-            for (const l of (Array.isArray(n?.logo_pack) ? n.logo_pack : [])) {
-              if (l?.url && !byUrl.has(l.url)) byUrl.set(l.url, { url: String(l.url), label: String(l.label || "Logo") });
-            }
-          }
-        }
-        setLogoPack(Array.from(byUrl.values()));
-
-        // Per-side BLANK panels (logo-free background_url) from the vault, keyed by
-        // the canonical designiq id (or the render family). Each is a 5" bleed,
-        // logo-free crop the design team lays on a vehicle template for sizing QC.
-        try {
-          const { data: pfa } = await supabase.from("production_flow_assets" as any)
-            .select("side, background_url, dimensions_inches")
-            .in("job_id", ids.length ? ids : [canonical]);
-          const blanks: Array<{ side: string; url: string; dims: string }> = [];
-          const seen = new Set<string>();
-          for (const r of (pfa || [])) {
-            const u = (r as any)?.background_url;
-            const side = String((r as any)?.side || "");
-            if (!u || seen.has(side)) continue;
-            seen.add(side);
-            const di = (r as any)?.dimensions_inches || {};
-            const w = di?.w ?? di?.width, h = di?.h ?? di?.height;
-            blanks.push({ side, url: String(u), dims: (w && h) ? `${w}″ × ${h}″` : "" });
-          }
-          setSideBlanks(blanks);
-        } catch { /* per-side blanks are optional */ }
-      } catch (e) {
-        console.warn("[StudioBoard] blank base / logo pack load failed:", e);
-      }
-    })();
-  }, [job]);
-
-  // VALIDATE (QC) — run golden-job-regression, the deterministic 5-check verifier
-  // (dims match GENIE proof · 6/6 sides · panels opaque edge-to-edge w/ 5" bleed ·
-  // no fabricated lifted layers · Layer-1 is the driver clean panel). Read-only,
-  // no AI slop, no writes — shows per-check PASS/FAIL so QC is one click.
+  // VALIDATE (QC) — the binding every side has to satisfy before it can be
+  // approved: this proof and this panel came from the SAME A.T.L.A.S. master.
+  // It used to call a regression function that re-derived five checks from
+  // storage; both halves publish their binding now, so the check is a
+  // comparison of hashes the server already stated.
   const runValidate = useCallback(async () => {
-    if (!job?.generation_id) {
-      toast({ title: "No design linked", description: "This job has no generation id to validate.", variant: "destructive" });
-      return;
-    }
+    const cur = jobRef.current || job;
+    if (!cur?.id) return;
     setValidating(true);
     setValidation(null);
     try {
-      const { data, error } = await renderClient.functions.invoke("golden-job-regression", {
-        body: { generationId: job.generation_id },
+      const qc: Record<string, any> = cur.concept_json?.qc_side_panels || {};
+      const checks = VIEW_DEFS.map((def) => {
+        const side = qc[def.sideKey];
+        const atlas = side?.atlas || {};
+        const detail: string[] = [];
+        if (!side) detail.push("No Call 9 panel exists for this surface yet.");
+        else {
+          detail.push(`panel ${String(side.gemini_url ? "present" : "missing")}`);
+          if (atlas.proofMasterHash) detail.push(`proof master ${String(atlas.proofMasterHash).slice(0, 16)}`);
+          if (atlas.panelMasterHash) detail.push(`panel master ${String(atlas.panelMasterHash).slice(0, 16)}`);
+          if (atlas.matches === null) detail.push("no master binding on this pair");
+          if (side.print_dims?.bleedInches) detail.push(`${side.print_dims.bleedInches}" bleed`);
+        }
+        return {
+          id: def.sideKey,
+          label: def.label,
+          // Absent binding is not drift. A pair that states two different
+          // masters is the only real failure.
+          pass: Boolean(side?.gemini_url) && atlas.matches !== false,
+          detail,
+        };
       });
-      if (error || !(data as any)?.success) {
-        throw new Error((data as any)?.error || error?.message || "Validation failed to run");
-      }
-      const d = data as any;
-      setValidation({ pass: !!d.pass, summary: d.summary || "", checks: Array.isArray(d.checks) ? d.checks : [] });
+      const pass = checks.every((check) => check.pass);
+      setValidation({
+        pass,
+        summary: pass
+          ? "Every side has its panel, and each panel was cut from the master its proof was rendered from."
+          : "At least one side is missing its panel or does not share its proof's master.",
+        checks,
+      });
       toast({
-        title: d.pass ? "QC passed — all 5 checks green" : "QC found issues",
-        description: d.summary || "",
-        variant: d.pass ? undefined : "destructive",
+        title: pass ? "QC passed — every pair shares one master" : "QC found issues",
+        description: pass ? "" : "Open the failing side below.",
+        variant: pass ? undefined : "destructive",
       });
-    } catch (e: any) {
-      toast({ title: "Validate failed", description: e?.message || "Try again", variant: "destructive" });
     } finally {
       setValidating(false);
     }
-  }, [job?.generation_id, toast]);
-
-  const runPanelProExtract = useCallback(async (forceAce = false) => {
-    if (!job?.id) return;
-    setRunningPanelPro(true);
-
-    // ── LINK TO BUILD ASSETS ──────────────────────────────────────────────
-    // If this design already has finished per-side panels from the Build Assets
-    // flow (production_flow_assets), pull THOSE in instead of regenerating from
-    // scratch. Build Assets is the reliable producer; A.C.E. was re-doing the
-    // same work (and stalling on the artboard step). Resolve the canonical
-    // generation id the Build Assets are keyed to (admin_notes.designiq_generation_id),
-    // then load every side and drop it onto the board so the user can verify +
-    // upscale the panels they already approved.
-    // forceAce=true skips this pull entirely and runs the A.C.E. flatten — the
-    // reliable backup while Build Assets is being refined.
-    if (!forceAce) {
-      try {
-        const pulled = await pullBuildAssetsVault({ announce: true });
-        if (pulled > 0) { setRunningPanelPro(false); return; }
-      } catch (e) {
-        console.warn("[StudioBoard] Build Assets pull failed:", e);
-      }
-      // NO deterministic Build Assets → STOP. Do NOT silently fall back to the
-      // A.C.E. AI flatten: it hallucinates jagged / kaleidoscope panels with
-      // garbled text (unusable for print). Require a real deterministic panel
-      // or a manual upload. The AI export runs ONLY on an explicit
-      // "A.C.E. Extract" click (forceAce=true), never automatically.
-      setRunningPanelPro(false);
-      toast({
-        title: "No deterministic panels yet",
-        description: "Upload the real per-side panel(s), or build a clean artboard first. The AI “A.C.E. Extract” is a manual draft only — it will not run automatically and its output is not print-safe.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Renders are only required for the A.C.E. flatten fallback — the vault pull
-    // above already succeeded for Build-Assets-backed jobs without any 3D views.
-    const targets = VIEW_DEFS
-      .map((def) => ({ def, url: viewUrlFor(viewMap, def) }))
-      .filter((t) => !!t.url);
-    if (targets.length === 0) {
-      setRunningPanelPro(false);
-      toast({ title: "No 3D renders found", description: "No Build Assets vault and no view renders to extract from.", variant: "destructive" });
-      return;
-    }
-
-    let sideSize = job?.concept_json?.sideSize || job?.concept_json?.side_size || "medium";
-    let done = 0;
-    let failed = 0;
-
-    // GENIE Panelizer sizing: resolve the SAME per-side dims the 2D proof stamps on
-    // the 7th gen call. The 2D proof calls panelizer-step-validate in FULL mode (all
-    // add-ons) and reads per-view dims; estimateOnly only returns SIDE dims, so
-    // hood/roof/rear cards fell back and didn't match the proof. Use the full call so
-    // `vehicle` carries every per-view inch (body/hood/roof/back) + the source tag —
-    // identical to the proof. If it fails, panel-pro-extract still falls back per side.
-    let vehicleDims: any = null;
-    if (job.vehicle_make || job.vehicle_model) {
-      try {
-        const { data: est } = await renderClient.functions.invoke("panelizer-step-validate", {
-          body: {
-            vehicleMake: job.vehicle_make,
-            vehicleModel: job.vehicle_model,
-            vehicleYear: job.vehicle_year || null,
-            sideSize: "medium",
-            addHood: true,
-            addRear: true,
-            addRoof: true,
-            addFrontBumper: true,
-            addRearBumper: true,
-          },
-        });
-        // `vehicle` holds the full VehicleDimensions (bodyLength/Height, hoodWidth/Length,
-        // roofWidth/Length, backWidth/Height, source) — the exact shape resolvePanelSize
-        // consumes, and the SAME numbers the proof stamps.
-        if (Number((est as any)?.vehicle?.bodyLengthInches) > 0) {
-          vehicleDims = (est as any).vehicle;
-          if ((est as any).sideSize) sideSize = (est as any).sideSize;
-          console.log(`[StudioBoard] GENIE sizing (matches 2D proof) for ${job.vehicle_make} ${job.vehicle_model}: source=${vehicleDims.source}`, vehicleDims);
-        }
-      } catch (err) {
-        console.warn("[StudioBoard] panelizer-step-validate sizing failed — using per-side fallback", err);
-      }
-    }
-
-    // ARTBOARD-FIRST source: ensure a real labeled PANEL ARTBOARD exists (the
-    // working mode:'artboard' deliverable) and flatten each side off THAT — never
-    // reverse-engineer from the 3D render. Generates the artboard if the job lacks
-    // one. Empty only if it truly can't be produced → render-extract fallback runs.
-    const masterArtboardUrl = await ensureMasterArtboard();
-
-    const MAX_TRIES = 5; // retry agent rephrases (promptVariant) each round until it passes
-    // NOTE: the colour-consistency reference (feeding the driver render as a 2nd
-    // image) was removed — on harder views (rear/hood/roof) the second image made
-    // A.C.E. return a half-rendered photo instead of a clean flattened panel.
-    // The driver PANEL was then wired in as the same kind of reference and had the
-    // same effect, one step later: every other side inherited driver artwork. No
-    // side is given another side's pixels as a reference. Each extracts from its own.
-    // Each side flattens from its OWN render only.
-    try {
-      for (const { def, url } of targets) {
-        setPanelProProgress({ done, total: targets.length, label: def.label });
-        try {
-          // PASSENGER with its own 3D render gets its OWN extract — every target
-          // in this loop has a render by construction, and designs can be
-          // asymmetric (black "05" driver / green "04" passenger — RJ's job), so
-          // mirroring the driver here printed the WRONG side with backwards text
-          // and stamped it "Match 100". The driver-mirror shortcut lives ONLY in
-          // the no-render fallback after this loop.
-
-          let bestUrl = "";
-          let bestScore = -1;
-          let bestIssues: string[] = [];
-          let correction = "";
-          let matched = false;
-
-          for (let attempt = 1; attempt <= MAX_TRIES && !matched; attempt++) {
-            // Surface what the validator AI actually said so the re-ask is visible,
-            // not just "try N". On retries, `correction`/`bestScore` hold the prior
-            // round's verdict that is driving this re-ask.
-            setPanelProProgress({ done, total: targets.length, label: def.label });
-
-            // Every side extracts from its OWN render. Passing the driver panel as a
-            // cross-side "colour reference" is what made passenger/front/rear come
-            // back carrying driver artwork.
-            const panelUrl = await extractViaSteps(
-              def, url, sideSize, vehicleDims, undefined,
-              undefined,
-              masterArtboardUrl || undefined,
-            );
-            if (!panelUrl) {
-              // Soft-fail: a failed step must NOT abort the side. Let the retry
-              // agent re-ask instead of throwing out of the loop.
-              console.warn(`[StudioBoard] ${def.label} attempt ${attempt}/${MAX_TRIES}: extract failed`);
-              await new Promise((r) => setTimeout(r, 1500 * attempt));
-              continue;
-            }
-
-            // 2) Validate by IMAGE — does the flat panel match the source design 1:1?
-            let score = 100;
-            try {
-              const { data: v } = await renderClient.functions.invoke("panel-pro-validate", {
-                body: {
-                  sourceUrl: url,
-                  panelUrl,
-                  label: def.label,
-                },
-              });
-              matched = (v as any)?.match === true;
-              score = Number((v as any)?.score) ?? 0;
-              correction = (v as any)?.correction || "";
-              if (!matched) {
-                console.log(`[StudioBoard] ${def.label} attempt ${attempt}: score ${score} — ${correction}`);
-              }
-              if (score > bestScore) { bestScore = score; bestUrl = panelUrl; bestIssues = Array.isArray((v as any)?.issues) ? (v as any).issues : []; }
-            } catch (vErr) {
-              // Validator outage → accept the panel rather than block.
-              matched = true;
-              console.warn(`[StudioBoard] validator unavailable for ${def.label} — accepting`, vErr);
-              if (score > bestScore) { bestScore = score; bestUrl = panelUrl; }
-            }
-
-            // One-shot: the rectangle-constrained extract is deterministic (temperature
-            // 0) and the prompt is a fixed bounding constraint, so re-running the SAME
-            // prompt can't raise a low score — it only multiplies wall-clock (the old 5×
-            // slowdown). A successful generation ends the loop; we only loop again when
-            // the extract returned NO image (the `continue` above).
-            break;
-          }
-
-          if (bestUrl) {
-            // Conform the clean panel to the GENIE rectangle + 2" bleed (only the
-            // panel we keep is reshaped — failed attempts are left as-is for review).
-            let finalUrl = bestUrl;
-            let printDims: { widthInches?: number; heightInches?: number; bleedInches?: number; source?: string } = {};
-            if (matched) {
-              setPanelProProgress({ done, total: targets.length, label: def.label });
-              const bleed = await applyBleed(def, bestUrl, sideSize, vehicleDims);
-              finalUrl = bleed.url;
-              printDims = { widthInches: bleed.widthInches, heightInches: bleed.heightInches, bleedInches: bleed.bleedInches, source: bleed.source };
-            }
-            const savedUrl = `${finalUrl}?t=${Date.now()}`;
-            // Only a PASSING panel becomes the active version. A failed one is
-            // kept as a non-active "Review" version so it never sits on top of a
-            // good upload (the validator's verdict actually gates activation).
-            await persistSide(def, { addVersion: { url: savedUrl, source: "panel-pro", score: bestScore >= 0 ? bestScore : undefined, match: matched, issues: bestIssues, makeActive: matched }, printDims: matched ? printDims : undefined });
-            // ALWAYS remember the driver panel so the passenger is its mirror —
-            // even if the validator wasn't a perfect match. The gold workflow is
-            // "flip the driver for the passenger", never an independent regen
-            // (that's what produced a non-matching passenger before).
-            if (!matched) {
-              failed += 1; // kept as a Review version; active stays on the upload
-            }
-          } else {
-            failed += 1;
-          }
-        } catch (e: any) {
-          failed += 1;
-          console.warn(`[StudioBoard] Panel Pro Extract failed for ${def.label}:`, e?.message || e);
-          toast({ title: `${def.label} failed`, description: e?.message || "Skipped — you can re-run or upload manually.", variant: "destructive" });
-        }
-        done += 1;
-        setPanelProProgress({ done, total: targets.length, label: def.label });
-      }
-
-      // No passenger fallback. A passenger side with no render of its own is an
-      // honest gap for the server to fill; it is never built by flipping the
-      // driver panel.
-
-      const ok = done - failed;
-      toast({
-        title: failed === 0 ? `Panel Pro Extract complete — ${ok}/${done} sides matched` : `Panel Pro Extract: ${ok}/${done} sides matched`,
-        description: failed === 0
-          ? "Every side validated as a 1:1 match. Slide each over the proof, then Approve."
-          : `${failed} side(s) need review — best attempt kept; re-run or upload those manually.`,
-      });
-    } finally {
-      setRunningPanelPro(false);
-      setPanelProProgress(null);
-    }
-  }, [job, viewMap, persistSide, toast, flipUrlToStorage, extractViaSteps, applyBleed, ensureMasterArtboard, pullBuildAssetsVault]);
-
-  // ── Extract ONE side's flat panel from its 3D render, on demand ──
-  // Same engine as the bulk run, but for a single side so you can (re)pull just
-  // the hood, or redo a side that came out wrong, without re-running everything.
-  // Passenger is ALWAYS a clean horizontal flip of the driver panel (so the two
-  // sides are identical) — it only extracts its own render if there is no driver.
-  const extractSide = useCallback(async (def: (typeof VIEW_DEFS)[number]) => {
-    if (!job?.id) return;
-    const url = viewUrlFor(viewMap, def);
-
-    // ── DETERMINISTIC FIRST (navy intact) ───────────────────────────────────
-    // Pull THIS side's Build Assets panel before doing anything AI. Build Assets
-    // is a pure geometric slice of the approved artwork — it keeps the full
-    // design and the body color (navy front + rear); the A.C.E. AI extract below
-    // re-draws the side and drops the navy. Only fall through to AI if this side
-    // has no Build Assets panel yet.
-    try {
-      let canonicalGid = job.generation_id || "";
-      try {
-        const { data: viz } = await supabase
-          .from("color_visualizations" as any)
-          .select("admin_notes").eq("id", job.generation_id).maybeSingle();
-        const raw = (viz as any)?.admin_notes;
-        const n = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
-        if (n?.designiq_generation_id) canonicalGid = String(n.designiq_generation_id);
-      } catch { /* fall back to job.generation_id */ }
-      const gids = Array.from(new Set([canonicalGid, job.generation_id].filter(Boolean)));
-      if (gids.length) {
-        const { data: pfa } = await supabase
-          .from("production_flow_assets" as any)
-          .select("side, background_url, dimensions_inches").in("job_id", gids);
-        const norm = (s: string) => String(s || "").toLowerCase().replace(/[^a-z]/g, "");
-        const row = (pfa as any[] | null)?.find(
-          (p) => norm(p.side) === norm(def.label) || norm(p.side) === norm((def as any).sideKey),
-        );
-        const bg = row?.background_url;
-        // FRESH RE-EXTRACT ON SECOND CLICK: if this side's ACTIVE version is
-        // already the vault panel, the user is clicking because that panel is
-        // WRONG (bad hood) — re-pulling the same file would trap them. Skip the
-        // pull and run a fresh extract below; the vault copy stays untouched.
-        const activeUrl = String(jobRef.current?.concept_json?.qc_side_panels?.[def.sideKey]?.gemini_url || "").split("?")[0];
-        const alreadyPulled = !!bg && !!activeUrl && String(bg).split("?")[0] === activeUrl;
-        if (bg && !alreadyPulled) {
-          setExtractingSide(def.sideKey);
-          // Carry the panel's true print size (save-production-panels writes
-          // {w,h}) so the card is labeled and Upscale can target print res —
-          // this pull previously dropped the dims entirely.
-          const di: any = row?.dimensions_inches;
-          const dw = Number(di?.w ?? di?.width) || 0;
-          const dh = Number(di?.h ?? di?.height) || 0;
-          await persistSide(def, {
-            addVersion: { url: `${bg}${bg.includes("?") ? "&" : "?"}t=${Date.now()}`, source: "build-assets", makeActive: true },
-            ...(dw && dh ? { printDims: { widthInches: dw, heightInches: dh, bleedInches: 5, source: "build-assets" } } : {}),
-          });
-          toast({ title: `${def.label}: pulled deterministic panel`, description: "Full design + navy from Build Assets (no AI)." });
-          setExtractingSide(null);
-          return;
-        }
-      }
-    } catch (e) { console.warn("[StudioBoard] extractSide build-assets pull failed — falling back to AI", e); }
-
-    // The passenger side is never a flip of the driver. Mirroring reverses every
-    // phone number, URL and logo on the printed wrap, and this path persisted the
-    // flip as `match: true, score: 100` without anything ever comparing it to the
-    // design. With no passenger source the side is an explicit gap.
-    if (def.sideKey === "passenger_side" && !url) {
-      toast({
-        title: "Passenger side has no source",
-        description: "No passenger render and no deterministic panel for this side. It stays a recorded gap — it is never mirrored from the driver, which would print all lettering backwards.",
-        variant: "destructive",
-      });
-      setExtractingSide(null);
-      return;
-    }
-
-    if (!url) {
-      toast({ title: `No 3D render for ${def.label}`, description: "This side has no view render to extract from.", variant: "destructive" });
-      return;
-    }
-
-    // GARBAGE SYSTEM REMOVED — no deterministic Build Assets panel for this side
-    // and it isn't a passenger mirror. Do NOT run the AI flatten below: it
-    // hallucinates jagged / kaleidoscope panels with garbled text that are not
-    // print-safe. Require a real panel upload (or build a clean artboard) instead.
-    setExtractingSide(null);
-    toast({
-      title: `No deterministic panel for ${def.label}`,
-      description: "Upload the real panel for this side (or build a clean artboard). AI extraction has been removed — it is not print-safe.",
-      variant: "destructive",
-    });
-    return;
-
-    // eslint-disable-next-line no-unreachable
-    setExtractingSide(def.sideKey);
-    let sideSize = job?.concept_json?.sideSize || job?.concept_json?.side_size || "medium";
-    // Resolve the SAME per-side dims the 2D proof stamps (full validate call) so a
-    // single-side re-pull matches the proof exactly, just like the bulk run.
-    let vehicleDims: any = null;
-    if (job.vehicle_make || job.vehicle_model) {
-      try {
-        const { data: est } = await renderClient.functions.invoke("panelizer-step-validate", {
-          body: {
-            vehicleMake: job.vehicle_make, vehicleModel: job.vehicle_model, vehicleYear: job.vehicle_year || null,
-            sideSize: "medium", addHood: true, addRear: true, addRoof: true, addFrontBumper: true, addRearBumper: true,
-          },
-        });
-        if (Number((est as any)?.vehicle?.bodyLengthInches) > 0) {
-          vehicleDims = (est as any).vehicle;
-          if ((est as any).sideSize) sideSize = (est as any).sideSize;
-        }
-      } catch (err) {
-        console.warn("[StudioBoard] extractSide sizing failed — using per-side fallback", err);
-      }
-    }
-    // ARTBOARD-FIRST source (same as the bulk run): ensure the labeled panel
-    // artboard exists, then flatten this side off it; render-extract is the fallback.
-    const masterArtboardUrl = await ensureMasterArtboard();
-    const MAX_TRIES = 3;
-    let bestUrl = ""; let bestScore = -1; let bestIssues: string[] = []; let matched = false;
-    try {
-      for (let attempt = 1; attempt <= MAX_TRIES && !matched; attempt++) {
-        // No cross-side reference. Anchoring a re-pull to the driver panel is how a
-        // single side came back wearing driver artwork; this side extracts from its own.
-        const panelUrl = await extractViaSteps(def, url, sideSize, vehicleDims, undefined, undefined, masterArtboardUrl || undefined);
-        if (!panelUrl) {
-          await new Promise((r) => setTimeout(r, 1200 * attempt));
-          continue;
-        }
-        let score = 100;
-        try {
-          const { data: v } = await renderClient.functions.invoke("panel-pro-validate", {
-            body: { sourceUrl: url, panelUrl, label: def.label },
-          });
-          matched = (v as any)?.match === true;
-          score = Number((v as any)?.score) || 0;
-          if (score > bestScore) { bestScore = score; bestUrl = panelUrl; bestIssues = Array.isArray((v as any)?.issues) ? (v as any).issues : []; }
-        } catch {
-          matched = true;
-          if (score > bestScore) { bestScore = score; bestUrl = panelUrl; }
-        }
-        // One-shot: deterministic extract — a re-run can't improve a low score, only
-        // multiply wall-clock. Keep the panel; only retry on a hard no-image failure.
-        break;
-      }
-      if (bestUrl) {
-        // GENIE rectangle + 2" bleed on the matched panel before we keep it.
-        const bleed = matched ? await applyBleed(def, bestUrl, sideSize, vehicleDims) : { url: bestUrl };
-        const savedUrl = `${bleed.url}?t=${Date.now()}`;
-        await persistSide(def, {
-          addVersion: { url: savedUrl, source: "panel-pro", score: bestScore >= 0 ? bestScore : undefined, match: matched, issues: bestIssues, makeActive: matched },
-          printDims: matched ? { widthInches: (bleed as any).widthInches, heightInches: (bleed as any).heightInches, bleedInches: (bleed as any).bleedInches, source: (bleed as any).source } : undefined,
-        });
-        toast({
-          title: matched ? `${def.label} extracted — match ${bestScore}` : `${def.label} extracted — needs review (${bestScore})`,
-          description: matched ? "Flat panel pulled from the 3D render. Compare, then Approve." : "Best attempt kept as a Review version — re-extract or upload manually.",
-        });
-      } else {
-        toast({ title: `${def.label} extract failed`, description: "The extract didn't return a panel — try again, or upload the panel.", variant: "destructive" });
-      }
-    } catch (e: any) {
-      toast({ title: `${def.label} extract failed`, description: e?.message || "Try again", variant: "destructive" });
-    } finally {
-      setExtractingSide(null);
-    }
-  }, [job, viewMap, persistSide, toast, flipUrlToStorage, extractViaSteps, applyBleed, ensureMasterArtboard]);
-
-  // Auto-kick the extract when deep-linked from RevisionStudio (?run=panelpro).
-  // Fires once, after the job has loaded.
-  useEffect(() => {
-    if (!job?.id || panelProAutoRan.current) return;
-    if (params.get("run") !== "panelpro") return;
-    panelProAutoRan.current = true;
-    runPanelProExtract();
-  }, [job?.id, params, runPanelProExtract]);
+  }, [job, toast]);
 
   // Bulk upload up to all sides at once. Each file is auto-named to a side by
   // its IMAGE CONTENT via classify-vehicle-views (Gemini vision) — no filename
@@ -3528,19 +2271,15 @@ export default function AdminGeminiCompareStudio() {
                         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(def, f); }}
                       />
 
-                      {/* Extract the flat panel straight from this side's 3D render. */}
-                      {systemUrl && (
-                        <Button
-                          size="sm"
-                          className="gap-1.5 bg-gradient-to-r from-[#3b82f6] to-[#ec4899] text-white hover:brightness-110"
-                          disabled={extractingSide === def.sideKey || runningPanelPro}
-                          onClick={() => extractSide(def)}
-                          title="Extract this side's flat print panel from its 3D render"
-                        >
-                          {extractingSide === def.sideKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                          Pull panel
-                        </Button>
-                      )}
+                      {/* "Pull panel" is gone on purpose. It flattened this
+                          side's 3D render in the browser to make a print panel
+                          -- a second producer of production artwork, built from
+                          a picture of a vehicle rather than from the design. The
+                          server cuts every panel deterministically from the
+                          accepted A.T.L.A.S. master at Call 9; a side with no
+                          panel is server work to be reported, never patched by
+                          hand here. The audited correction path below is what
+                          remains, and it corrects a panel rather than making one. */}
 
                       <Button
                         variant="outline" size="sm" className="gap-1.5"

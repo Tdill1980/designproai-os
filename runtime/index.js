@@ -18,7 +18,7 @@ const {
 } = require("./gemini-flat-surface.cjs");
 const { GRID_SLICE_CONTRACT, gridSliceAll } = require("./server-grid-slice.cjs");
 const { PROOF_SHEET_CONTRACT, renderProofSheet } = require("./proof-sheet.cjs");
-const { topazReadiness } = require("./topaz-upscale.cjs");
+const { enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 const { dispatchOneWrapboxNotification, reconcileCompletedWrapboxDeliveries } = require("./wrapbox-delivery.cjs");
 const { createResendTransport, resendReadiness } = require("./resend-transport.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolImmutableBuffer, uploadSpoolWithTus } = require("./zip-spool.cjs");
@@ -79,6 +79,23 @@ async function uploadBuffer(storagePath, buffer, contentType, tenantKey, workflo
   const spool = await spoolImmutableBuffer({ spoolDir: DESIGNPRO_SPOOL_DIR, runId: workflowRunId, materialHash, bytes: body, signal });
   const stored = await uploadSpoolWithTus({ supabase, supabaseUrl: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY, endpoint: SUPABASE_TUS_ENDPOINT, spoolDir: DESIGNPRO_SPOOL_DIR, spool, storagePath, contentType, signal });
   await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 8 master spool cleanup failed: ${error.message}`));
+  return stored;
+}
+
+// An enhanced panel lands on full print geometry -- a 227" side at 150 DPI is
+// tens of thousands of pixels across -- so it is routinely past the standard
+// upload threshold and has to go up the same resumable way Call 12 sends it.
+// The prefix fence is the run's own `enhanced/` namespace and nothing else.
+async function uploadEnhancedPanel(storagePath, buffer, contentType, tenantKey, workflowRunId, signal) {
+  const runPrefix = `designpro/${canonicalTenantKey(tenantKey)}/${canonicalUuid(workflowRunId, "workflowRunId")}/enhanced/`;
+  if (!storagePath.startsWith(runPrefix) || !/^[A-Za-z0-9._/-]+$/.test(storagePath) || storagePath.includes("..")) throw new Error("unsafe enhanced panel path");
+  const body = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  if (body.length <= MAX_STANDARD_UPLOAD_BYTES) return immutableStorageUpload(supabase.storage, "wrap-files", storagePath, body, contentType);
+  const contentHash = createHash("sha256").update(body).digest("hex");
+  const materialHash = createHash("sha256").update(JSON.stringify({ storagePath, contentHash, byteSize: body.length, contentType })).digest("hex");
+  const spool = await spoolImmutableBuffer({ spoolDir: DESIGNPRO_SPOOL_DIR, runId: workflowRunId, materialHash, bytes: body, signal });
+  const stored = await uploadSpoolWithTus({ supabase, supabaseUrl: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY, endpoint: SUPABASE_TUS_ENDPOINT, spoolDir: DESIGNPRO_SPOOL_DIR, spool, storagePath, contentType, signal });
+  await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed enhanced panel spool cleanup failed: ${error.message}`));
   return stored;
 }
 
@@ -253,6 +270,171 @@ app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
     return res.status(200).json(data);
   } catch (error) {
     return res.status(400).json({ error: String(error.message || error) });
+  }
+});
+
+/**
+ * RUN UPSCALE, ON ONE SURFACE, ON PURPOSE.
+ *
+ * Call 12 enhances all six surfaces automatically once the purchase gate and
+ * the PanelPro preflight gate have both released. That is the production path
+ * and it is unchanged. This is the same enhancement, on one surface, triggered
+ * explicitly from the PanelPro Studio board so the design team can exercise and
+ * inspect the real upscale before trusting it to run unattended.
+ *
+ * It is the production implementation, not a stand-in: the same
+ * `enhancePanel` from topaz-upscale.cjs, the same readiness check, the same
+ * three-attempt ladder, the same exact-geometry landing, and the same
+ * `upscaled-panel` artifact kind carrying the same provenance fields Call 12
+ * writes. A derivative made here is therefore a derivative Call 12 would
+ * recognise and reuse.
+ *
+ * THE SOURCE IS NEVER OVERWRITTEN. The active artifact for the surface is read,
+ * hash-verified against what the database says it is, and enhanced into a NEW
+ * object at a material-addressed path. Both stay downloadable, and the
+ * derivative records which one it came from, at what size, by what factor.
+ *
+ * The target geometry is the panel's own stamped trim inches plus the 5" bleed
+ * at 150 DPI -- the identical formula Call 12 uses -- so an admin-triggered
+ * derivative lands on exactly the print geometry the automatic one would.
+ */
+app.post("/internal/panels/upscale", authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["generationId", "ownerId", "surfaceKey"])) {
+      return res.status(400).json({ error: "panel_upscale_request_invalid" });
+    }
+    const generationId = canonicalUuid(body.generationId, "generationId");
+    const ownerId = canonicalUuid(body.ownerId, "ownerId");
+    const surfaceKey = String(body.surfaceKey || "");
+    if (!SURFACE_KEYS.includes(surfaceKey)) return res.status(400).json({ error: "panel_upscale_surface_invalid" });
+
+    const readiness = topazReadiness(process.env);
+    if (!readiness.configurationValid) return res.status(503).json({ error: "topaz_configuration_invalid", detail: readiness.detail });
+    if (!readiness.enabled || !readiness.available) return res.status(503).json({ error: "topaz_unavailable", detail: readiness.detail });
+
+    // The run this design belongs to, newest first: a revision mints a new run
+    // against the same generation and the board works the current one.
+    const { data: runs, error: runError } = await supabase
+      .from("designpro_workflow_runs")
+      .select("id,tenant_key,owner_id,results,created_at")
+      .eq("owner_id", ownerId)
+      .order("created_at", { ascending: false });
+    if (runError) return res.status(400).json({ error: runError.message });
+    const run = (runs || []).find((row) => String(row.results?.generationId || "") === generationId);
+    if (!run) return res.status(404).json({ error: "panel_upscale_run_not_found" });
+
+    const { data: artifacts, error: artifactError } = await supabase
+      .from("designpro_artifacts")
+      .select("id,stage_id,artifact_kind,surface_key,storage_path,content_hash,byte_size,metadata,created_at")
+      .eq("run_id", run.id)
+      .in("artifact_kind", ["panel", "corrected-panel"])
+      .eq("surface_key", surfaceKey)
+      .order("created_at", { ascending: false });
+    if (artifactError) return res.status(400).json({ error: artifactError.message });
+    const branded = (artifacts || []).find((row) => row.artifact_kind === "panel");
+    if (!branded) return res.status(409).json({ error: "panel_upscale_source_missing" });
+    // The ACTIVE artifact, by the same rule Call 12 enhances by: the newest
+    // human correction when one exists, the branded Call 9 panel otherwise.
+    const source = (artifacts || []).find((row) => row.artifact_kind === "corrected-panel") || branded;
+
+    // The GENIE trim inches this surface was cut to, read off the branded Call 9
+    // panel. A correction replaces the artwork, never the geometry it has to fit,
+    // so the target is the same whichever artifact is active.
+    const metadata = branded.metadata || {};
+    const trimWidthIn = Number(metadata.trimWidthInches);
+    const trimHeightIn = Number(metadata.trimHeightInches);
+    if (!(trimWidthIn > 0) || !(trimHeightIn > 0)) {
+      return res.status(409).json({ error: "panel_upscale_dimensions_missing" });
+    }
+    const bleed = metadata.bleed || {};
+    if (!["top", "right", "bottom", "left"].every((edge) => Number(bleed[edge]) === 5)) {
+      return res.status(409).json({ error: "panel_upscale_bleed_invalid" });
+    }
+    const targetWidthPx = Math.round((trimWidthIn + 10) * 150);
+    const targetHeightPx = Math.round((trimHeightIn + 10) * 150);
+
+    const download = await supabase.storage.from("wrap-files").download(source.storage_path);
+    if (download.error || !download.data) return res.status(409).json({ error: "panel_upscale_source_unreadable" });
+    const sourceBytes = Buffer.from(await download.data.arrayBuffer());
+    const sourceHash = createHash("sha256").update(sourceBytes).digest("hex");
+    // The bytes have to be the ones the database says they are. Enhancing an
+    // object that changed under its own hash would produce a derivative bound to
+    // a panel that no longer exists.
+    if (sourceHash !== source.content_hash) return res.status(409).json({ error: "panel_upscale_source_changed" });
+    const sourceMeta = await sharp(sourceBytes, { limitInputPixels: false }).metadata();
+
+    const enhanced = await enhancePanel({
+      readiness,
+      surfaceKey,
+      bytes: sourceBytes,
+      mimeType: "image/png",
+      targetWidthPx,
+      targetHeightPx,
+    });
+
+    const storagePath = `designpro/${canonicalTenantKey(run.tenant_key)}/${run.id}/enhanced/${surfaceKey}-${String(source.content_hash).slice(0, 24)}.png`;
+    const stored = await uploadEnhancedPanel(storagePath, enhanced.bytes, "image/png", run.tenant_key, run.id, null);
+    if (stored.contentHash !== enhanced.contentHash) return res.status(409).json({ error: "panel_upscale_storage_hash_drift" });
+
+    const { error: insertError } = await supabase.from("designpro_artifacts").insert({
+      run_id: run.id,
+      stage_id: source.stage_id,
+      artifact_kind: "upscaled-panel",
+      surface_key: surfaceKey,
+      storage_path: storagePath,
+      content_hash: enhanced.contentHash,
+      byte_size: enhanced.byteSize,
+      metadata: {
+        call: 12,
+        contract: enhanced.contract,
+        engine: enhanced.engine,
+        model: enhanced.model,
+        // Explicitly an operator-run enhancement, so a receipt reader can tell
+        // it apart from the automatic Call 12 pass without inferring anything.
+        adminTriggered: true,
+        sourcePanelPath: source.storage_path,
+        sourcePanelHash: source.content_hash,
+        sourceArtifactKind: source.artifact_kind,
+        humanCorrected: source.artifact_kind === "corrected-panel",
+        brandedPanelHash: branded.content_hash,
+        enhancedSha256: enhanced.enhancedSha256,
+        enhancement: "topaz",
+        plan: enhanced.plan,
+        clampedByEngineCeiling: enhanced.plan?.clampedByEngineCeiling === true,
+        sourcePixels: { widthPx: Number(sourceMeta.width) || null, heightPx: Number(sourceMeta.height) || null },
+        widthPx: targetWidthPx,
+        heightPx: targetHeightPx,
+        trimWidthInches: trimWidthIn,
+        trimHeightInches: trimHeightIn,
+        bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+        surfaceSqFt: metadata.surfaceSqFt ?? null,
+        dpi: 1500,
+        outputScale: 0.1,
+      },
+    });
+    // Re-running on unchanged bytes lands on the same material-addressed path
+    // and the same hash, which the artifact table's own uniqueness rejects.
+    // That is the idempotent answer, not a failure.
+    if (insertError && !/duplicate|conflict|unique/i.test(insertError.message)) {
+      return res.status(400).json({ error: insertError.message });
+    }
+
+    return res.status(200).json({
+      surfaceKey,
+      contentHash: enhanced.contentHash,
+      byteSize: enhanced.byteSize,
+      sourceArtifactKind: source.artifact_kind,
+      sourcePanelHash: source.content_hash,
+      sourcePixels: { widthPx: Number(sourceMeta.width) || null, heightPx: Number(sourceMeta.height) || null },
+      outputPixels: { widthPx: targetWidthPx, heightPx: targetHeightPx },
+      upscaleFactor: enhanced.plan?.scale ?? null,
+      clampedByEngineCeiling: enhanced.plan?.clampedByEngineCeiling === true,
+      engineModel: enhanced.model,
+      idempotent: Boolean(insertError),
+    });
+  } catch (error) {
+    return res.status(400).json({ error: String(error.code || error.message || error) });
   }
 });
 

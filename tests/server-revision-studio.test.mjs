@@ -317,3 +317,69 @@ test("the customer is asked before six more proofs are rendered", () => {
   assert.match(page, /Revise This Design/);
   assert.match(page, /navigate\("\/revision-studio"\)/);
 });
+
+/**
+ * RUN UPSCALE IS THE PRODUCTION UPSCALE, NOT A STAND-IN FOR IT.
+ *
+ * The whole value of an admin-triggered enhancement is that it exercises the
+ * real path before anyone trusts it to run unattended. A button that resized an
+ * image in the browser, or called a second enhancement written for testing,
+ * would prove nothing and would quietly become a second producer of production
+ * artwork -- so this pins the one property that makes it worth having: the
+ * admin route calls the same `enhancePanel` from topaz-upscale.cjs that Call 12
+ * calls, behind the same readiness gate.
+ *
+ * And it pins the two rules the source has to keep. The active artifact is the
+ * newest human correction when one exists and the branded Call 9 panel
+ * otherwise -- the same rule Call 12 enhances by, because enhancing the panel
+ * the team rejected would make their QC decorative. The source is read,
+ * hash-verified and left alone; the enhancement is a NEW artifact at its own
+ * material-addressed path.
+ */
+test("RUN UPSCALE invokes the production enhancement and never overwrites its source", () => {
+  const runtime = readFileSync(new URL("../runtime/index.js", import.meta.url), "utf8");
+  const gateway = readFileSync(new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
+  const api = readFileSync(new URL("../app/src/lib/designpro-api.ts", import.meta.url), "utf8");
+  const board = readFileSync(
+    new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  // The real implementation, from the module Call 12 uses, behind its own gate.
+  assert.match(runtime, /require\("\.\/topaz-upscale\.cjs"\)/);
+  assert.match(runtime, /app\.post\("\/internal\/panels\/upscale", authMiddleware/);
+  assert.match(runtime, /await enhancePanel\(\{/);
+  assert.match(runtime, /topazReadiness\(process\.env\)/);
+  // Same target geometry as Call 12: trim plus the 5" bleed at 150 PPI.
+  assert.match(runtime, /\(trimWidthIn \+ 10\) \* 150/);
+  assert.match(runtime, /\(trimHeightIn \+ 10\) \* 150/);
+  // The active artifact, by Call 12's rule.
+  assert.match(runtime, /\.in\("artifact_kind", \["panel", "corrected-panel"\]\)/);
+  assert.match(runtime, /artifact_kind === "corrected-panel"\) \|\| branded/);
+  // Read, verified, and left where it is. The derivative is its own row.
+  assert.match(runtime, /panel_upscale_source_changed/);
+  assert.match(runtime, /artifact_kind: "upscaled-panel"/);
+  assert.match(runtime, /sourcePanelHash: source\.content_hash/);
+  assert.match(runtime, /adminTriggered: true/);
+  assert.doesNotMatch(runtime, /upsert:\s*true/,
+    "an enhancement must never overwrite an object");
+
+  // The browser holds no service role, so the write travels the internal
+  // channel with the caller's own id as the owner fence.
+  assert.match(gateway, /upscalePanelThroughRuntime/);
+  assert.match(gateway, /\/internal\/panels\/upscale/);
+  assert.match(gateway, /cfg\.workerSecret\.length < 32/);
+  assert.match(gateway, /panels\\\/\(\[a-z\]\{4,9\}\)\\\/upscale/);
+
+  assert.match(api, /runPanelUpscale/);
+  assert.match(board, /dpApi\.runPanelUpscale/);
+  // The four figures the team reads before deciding a panel needs enhancing.
+  for (const label of ["Source resolution", "Final physical size", "Effective DPI", "Upscale status"]) {
+    assert.ok(board.includes(label), `the board must show ${label}`);
+  }
+  assert.match(board, /Run upscale/);
+  assert.match(board, /Download upscaled/);
+  // Original and derivative together, and a stale one readable as stale.
+  assert.match(board, /Upscale stale/);
+  assert.match(board, /Upscaled derivative/);
+});
