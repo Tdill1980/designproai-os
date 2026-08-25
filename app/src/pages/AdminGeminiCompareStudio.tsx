@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { renderClient } from "@/integrations/supabase/renderClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, Loader2, Upload, Check, X, Package, ShieldCheck, Truck,
@@ -12,14 +11,27 @@ import {
   ChevronDown, HelpCircle,
 } from "lucide-react";
 import StudioBoardEditor, { StudioBoardEditTarget } from "@/components/studioboard/StudioBoardEditor";
-import { dpApi } from "@/lib/designpro-api";
+import {
+  dpApi,
+  type FinalQc,
+  type PreflightQc,
+  PRODUCTION_SURFACES,
+} from "@/lib/designpro-api";
+import {
+  EXPECTED_OUTPUT_FILES,
+  FINAL_CHECKS,
+  OUTPUT_FORMATS,
+  outputFormatOf,
+  PREFLIGHT_CHECKS,
+  STAGE_LABEL,
+} from "@/lib/designpro-stages";
 import {
   findPanelProStudioJob,
   listPanelProStudioJobs,
   loadPanelProStudioJob,
   SURFACE_FOR_SIDE_KEY,
+  type PanelProStudioJob,
 } from "@/lib/panelpro-studio-source";
-import { ProductionPackQCCard } from "@/components/production/ProductionPackQCCard";
 // cn was referenced by the Validate (QC) results block without being imported —
 // rendering validation results threw `cn is not defined` and white-screened the
 // whole board into the ErrorBoundary (caught in the 2026-07-24 button audit).
@@ -233,43 +245,11 @@ function viewUrlFor(map: Record<string, string>, def: (typeof VIEW_DEFS)[number]
   return "";
 }
 
-// classify-vehicle-views returns one of these camera angles; map each to our
-// wrappable side key. (top → roof, detail/close-up → hood.)
-const VIEWTYPE_TO_SIDEKEY: Record<string, string> = {
-  "front": "front",
-  "driver-side": "driver_side",
-  "passenger-side": "passenger_side",
-  "rear": "rear",
-  "top": "roof",
-  "detail": "hood",
-};
-
-// Downscale a file to <=800px JPEG and return raw base64 (no data-URL prefix) —
-// the payload shape classify-vehicle-views expects. Keeps the vision call fast.
-function fileToClassifyPayload(file: File): Promise<{ base64: string; mimeType: string }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const MAX = 800;
-      let w = img.width, h = img.height;
-      if (w > MAX || h > MAX) {
-        const s = MAX / Math.max(w, h);
-        w = Math.round(w * s); h = Math.round(h * s);
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) { reject(new Error("no canvas context")); return; }
-      ctx.drawImage(img, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
-      resolve({ base64: dataUrl.split(",")[1], mimeType: "image/jpeg" });
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image load failed")); };
-    img.src = url;
-  });
-}
+// The AI view classifier is gone with the direct-upload path it served. It
+// downscaled each dropped file, sent it to a vision model, and let the model's
+// answer decide which surface that file became -- a guess about image contents
+// choosing which side gets printed. Filenames decide it now, because the
+// designer controls those and can see them.
 
 // Bulk upload: guess which side a file belongs to from its filename. Specific
 // terms win first (passenger before the generic "side"/"driver"). Returns the
@@ -588,7 +568,6 @@ function StudioBoardCanvas({ jobId, items, onEnlarge, onEdit, onUploadToSide, on
 // decoding/compositing a full 4K panel can silently fail or reload the tab. Cap
 // the working canvas to a long-side that stays well under that limit while still
 // being print-usable; the server-side bleed pass can upscale to true print size.
-const MOBILE_CANVAS_MAX = 3000;
 
 // ── RENDER-FED A.C.E. DISABLED (Trish, 2026-07-22) ──────────────────────────
 // The per-side A.C.E. flatten (extractViaSteps → panel-pro-extract fed the 3D
@@ -601,11 +580,271 @@ const MOBILE_CANVAS_MAX = 3000;
 // panel" instead of generating slop. Flip true only to debug the AI draft.
 const STUDIO_RENDER_ACE_ENABLED = false;
 
-function canvasDims(w: number, h: number, max = MOBILE_CANVAS_MAX): { w: number; h: number } {
-  const long = Math.max(w, h);
-  if (long <= max) return { w, h };
-  const s = max / long;
-  return { w: Math.round(w * s), h: Math.round(h * s) };
+/**
+ * PRODUCTION PACK — the back half of one job, from the server's own record.
+ *
+ * This replaces RestylePro's ProductionPackQCCard, which read `panelizer_jobs`,
+ * `color_visualizations` and `designiq_generations` and drove delivery through
+ * `deploy-to-wrapbox`. None of those exist on this server, and a card that
+ * looks live while reading a database nobody writes is worse than no card.
+ *
+ * Everything below is the standalone runtime's own state: the stage rail it
+ * reports, the artifacts it produced, and the two human gates it will not pass
+ * without. The gates are real -- the database refuses approval unless every
+ * check is explicitly confirmed -- so both are listed rather than summarised,
+ * and neither is pre-ticked.
+ */
+function ProductionPackSection({
+  job,
+  approvedSides,
+  onApproved,
+}: {
+  job: PanelProStudioJob;
+  approvedSides: ReadonlySet<string>;
+  onApproved: () => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const [preflight, setPreflight] = useState<Record<string, boolean>>({});
+  const [preflightNotes, setPreflightNotes] = useState("");
+  const [finalQc, setFinalQc] = useState<Record<string, boolean>>({});
+  const [finalNotes, setFinalNotes] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const stageState = (key: string) => job.stages.find((stage) => stage.key === key)?.state || "pending";
+  const preflightDone = stageState("await_panelpro_preflight_qc") === "complete";
+  const finalDone = stageState("await_final_human_qc") === "complete";
+  const allSidesApproved = PRODUCTION_SURFACES.every((side) => approvedSides.has(side));
+  const preflightReady = PREFLIGHT_CHECKS.every(([key]) => preflight[key]) && allSidesApproved;
+  const finalReady = FINAL_CHECKS.every(([key]) => finalQc[key]);
+
+  const outputsByFormat = OUTPUT_FORMATS.map((format) => ({
+    format,
+    files: job.outputs.filter((artifact) => outputFormatOf(artifact.storagePath) === format),
+  }));
+
+  const submitPreflight = async () => {
+    setBusy("preflight");
+    try {
+      await dpApi.approvePreflight(
+        job.generation_id,
+        {
+          ...(PREFLIGHT_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as PreflightQc),
+          approvedSides: [...approvedSides],
+        } as PreflightQc,
+        preflightNotes,
+      );
+      await onApproved();
+      toast({ title: "Preflight released", description: "The panels are cleared into enhancement and output." });
+    } catch (cause: any) {
+      toast({ title: "Preflight refused", description: cause?.message, variant: "destructive" });
+    } finally { setBusy(null); }
+  };
+
+  const submitFinal = async () => {
+    setBusy("final");
+    try {
+      await dpApi.approveFinalQc(
+        job.generation_id,
+        FINAL_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as FinalQc,
+        finalNotes,
+      );
+      await onApproved();
+      toast({ title: "Production Pack approved", description: "Stamp, ZIP and WrapBox delivery follow on the server." });
+    } catch (cause: any) {
+      toast({ title: "Approval refused", description: cause?.message, variant: "destructive" });
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-gray-900">Production Pack</h2>
+        <span className="rounded bg-gray-100 px-2 py-0.5 font-mono text-[10px] text-gray-600">
+          {STAGE_LABEL[job.current_stage] || job.current_stage} · {job.state}
+        </span>
+      </div>
+
+      {/* THE SERVER'S OWN STAGE RAIL. Reported, never inferred: a stage is
+          complete because the runtime says so, not because a file exists. */}
+      <ol className="mb-4 grid gap-1 sm:grid-cols-2">
+        {job.stages.map((stage) => (
+          <li key={stage.key} className="flex items-center gap-2 text-[11px]">
+            <span
+              className={
+                stage.state === "complete" ? "h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                : stage.state === "running" ? "h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500"
+                : stage.state === "waiting" ? "h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                : stage.state === "failed" ? "h-2 w-2 shrink-0 rounded-full bg-red-500"
+                : "h-2 w-2 shrink-0 rounded-full bg-gray-300"
+              }
+            />
+            <span className={stage.state === "complete" ? "text-gray-900" : "text-gray-500"}>
+              {STAGE_LABEL[stage.key] || stage.key}
+            </span>
+            {stage.waitReason && <span className="text-amber-600">· {stage.waitReason}</span>}
+          </li>
+        ))}
+      </ol>
+
+      {/* GATE ONE. Releases the panels into Topaz and the output build. */}
+      <div className="mb-4 rounded-lg border border-gray-200 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">PanelPro preflight</h3>
+          {preflightDone
+            ? <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">released</span>
+            : <span className="text-[10px] text-gray-500">{approvedSides.size}/{PRODUCTION_SURFACES.length} sides approved</span>}
+        </div>
+        {!preflightDone && (
+          <>
+            <ul className="space-y-1.5">
+              {PREFLIGHT_CHECKS.map(([key, label]) => (
+                <li key={key} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-emerald-600"
+                    checked={!!preflight[key]}
+                    onChange={(event) => setPreflight((prev) => ({ ...prev, [key]: event.target.checked }))}
+                  />
+                  <span className="text-[11px] leading-snug text-gray-600">{label}</span>
+                </li>
+              ))}
+            </ul>
+            <Textarea
+              value={preflightNotes}
+              onChange={(event) => setPreflightNotes(event.target.value)}
+              placeholder="What you checked on the vehicle template"
+              rows={2}
+              className="mt-2 resize-none text-xs"
+            />
+            <Button
+              size="sm"
+              className="mt-2 gap-1.5"
+              disabled={!preflightReady || busy === "preflight"}
+              onClick={() => void submitPreflight()}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              {busy === "preflight" ? "Releasing…" : "Release preflight"}
+            </Button>
+            {!allSidesApproved && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                Every surface has to be approved on its own card first.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* THE OUTPUT SET. Eighteen files: six surfaces times PNG, TIFF and EPS. */}
+      <div className="mb-4 rounded-lg border border-gray-200 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Print files</h3>
+          <span className="font-mono text-[10px] text-gray-500">
+            {job.outputs.length}/{EXPECTED_OUTPUT_FILES}
+          </span>
+        </div>
+        {job.outputs.length === 0 ? (
+          <p className="text-[11px] text-gray-500">
+            Built on the server from the ACTIVE approved panel per surface, after preflight releases.
+          </p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-3">
+            {outputsByFormat.map(({ format, files }) => (
+              <div key={format}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  {format} · {files.length}
+                </div>
+                <ul className="mt-1 space-y-1">
+                  {files.map((file) => (
+                    <li key={file.id} className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className="truncate text-gray-700">{file.surfaceKey}</span>
+                      <a
+                        href={file.signedUrl}
+                        download={`${file.surfaceKey}.${format}`}
+                        className="shrink-0 font-medium text-blue-600 hover:underline"
+                      >
+                        Download
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* GATE TWO. What lets the run stamp, ZIP and deliver. */}
+      <div className="mb-4 rounded-lg border border-gray-200 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Approve Production Pack</h3>
+          {finalDone && <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">approved</span>}
+        </div>
+        {!finalDone && (
+          <>
+            <ul className="space-y-1.5">
+              {FINAL_CHECKS.map(([key, label]) => (
+                <li key={key} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-emerald-600"
+                    checked={!!finalQc[key]}
+                    onChange={(event) => setFinalQc((prev) => ({ ...prev, [key]: event.target.checked }))}
+                  />
+                  <span className="text-[11px] leading-snug text-gray-600">{label}</span>
+                </li>
+              ))}
+            </ul>
+            <Textarea
+              value={finalNotes}
+              onChange={(event) => setFinalNotes(event.target.value)}
+              placeholder="Approver notes"
+              rows={2}
+              className="mt-2 resize-none text-xs"
+            />
+            <Button
+              size="sm"
+              className="mt-2 gap-1.5"
+              disabled={!finalReady || job.outputs.length < EXPECTED_OUTPUT_FILES || busy === "final"}
+              onClick={() => void submitFinal()}
+            >
+              <Check className="h-4 w-4" />
+              {busy === "final" ? "Approving…" : "Approve Production Pack"}
+            </Button>
+            {job.outputs.length < EXPECTED_OUTPUT_FILES && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                All {EXPECTED_OUTPUT_FILES} output files have to exist before the pack can be approved.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* DELIVERY. Each of the three is an artifact the server wrote, so the
+          board shows the file rather than a claim that it happened. */}
+      <div className="grid gap-2 sm:grid-cols-3">
+        {[
+          { label: "Approval stamp", artifact: job.stamp, name: "qc-certificate.png" },
+          { label: "Production ZIP", artifact: job.zip, name: `production-pack-${job.order_number || job.design_id}.zip` },
+          { label: "WrapBox delivery", artifact: job.wrapbox, name: "wrapbox-manifest.json" },
+        ].map(({ label, artifact, name }) => (
+          <div key={label} className="rounded-lg border border-gray-200 p-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</div>
+            {artifact ? (
+              <a
+                href={artifact.signedUrl}
+                download={name}
+                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline"
+              >
+                <Download className="h-3.5 w-3.5" /> Download
+              </a>
+            ) : (
+              <p className="mt-1 text-[11px] text-gray-400">Not produced yet</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function AdminGeminiCompareStudio() {
@@ -1305,32 +1544,11 @@ export default function AdminGeminiCompareStudio() {
     return {};
   }, []);
 
-  // Mirror a side's Gemini file horizontally (e.g. reuse a driver-side design on
-  // the passenger side). Bakes a flipped PNG via canvas (taint-safe blob load),
-  // uploads it, and replaces that side's file.
-  // Horizontally flip an image URL (taint-safe blob load → canvas) and upload
-  // the mirrored PNG. Returns the public URL. Shared by flipSide + the
-  // passenger-from-driver mirror in Panel Pro Extract.
-  const flipUrlToStorage = useCallback(async (url: string, sideKey: string): Promise<string> => {
-    const blob = await (await fetch(url, { mode: "cors" })).blob();
-    const obj = URL.createObjectURL(blob);
-    const img = new Image();
-    await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("decode failed")); img.src = obj; });
-    const { w: cw, h: ch } = canvasDims(img.naturalWidth, img.naturalHeight);
-    const canvas = document.createElement("canvas");
-    canvas.width = cw; canvas.height = ch;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("no canvas context");
-    ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-    ctx.drawImage(img, 0, 0, cw, ch);
-    URL.revokeObjectURL(obj);
-    const outBlob: Blob = await new Promise((res, rej) => canvas.toBlob((b) => b ? res(b) : rej(new Error("toBlob failed")), "image/png"));
-    const path = `gemini-compare/${job!.id}/${sideKey}_flip_${Date.now()}.png`;
-    const { error } = await supabase.storage.from("wrap-files").upload(path, outBlob, { contentType: "image/png", upsert: true });
-    if (error) throw new Error(error.message);
-    const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-    return `${publicUrl}?t=${Date.now()}`;
-  }, [job?.id]);
+  // The browser mirror is gone with the rest of the producer stack. It baked a
+  // horizontally flipped PNG on a canvas and uploaded it as a side's panel --
+  // artwork authored in a tab, bound to nothing, indistinguishable on screen
+  // from a panel the server cut. Passenger is extracted from the same accepted
+  // master as driver, at its own GENIE dimensions, by Call 9.
 
   // THE PRODUCER STACK IS GONE, AND THIS IS WHAT IT WAS.
   //
@@ -1433,116 +1651,114 @@ export default function AdminGeminiCompareStudio() {
     }
   }, [job, toast]);
 
-  // Bulk upload up to all sides at once. Each file is auto-named to a side by
-  // its IMAGE CONTENT via classify-vehicle-views (Gemini vision) — no filename
-  // discipline required. Falls back to the filename, then to filling remaining
-  // empty slots in order. Files upload in parallel, then ONE concept_json write
-  // attaches every gemini_url so ProductionFlow stays in sync.
+  /**
+   * CORRECT SEVERAL SIDES IN ONE PASS.
+   *
+   * The board used to take a drop of files, ask a vision model which side each
+   * one showed, and write them straight into storage as those sides' panels. Two
+   * things were wrong with that on a server-owned lineage. The files never said
+   * what they were correcting or why, so a panel could be substituted with no
+   * audit trail at all; and the side each file belonged to was decided by a
+   * guess about its contents, which is not a thing to guess about when the
+   * answer picks which surface gets printed.
+   *
+   * So this is the same convenience -- a designer who re-output four sides
+   * against the real vehicle template uploads them together -- routed through
+   * the audited correction path, one file per surface, with the reason that
+   * applies to the batch. Each file is matched to its side by FILENAME, which
+   * the designer controls and can see, and an unmatched file is reported rather
+   * than assigned to whichever slot happened to be free.
+   *
+   * The Call 9 panels are untouched. Each correction is its own artifact bound
+   * to the panel it replaces, and both stay downloadable.
+   */
   const handleBulkUpload = async (fileList: FileList) => {
-    if (!job?.id || !fileList?.length) return;
-    const files = Array.from(fileList);
-    setBulkUploading(true);
-    setBulkPhase("analyzing");
-    setBulkProgress(null);
-    try {
-      // 1a) Ask the vision model to name each file by content (camera angle → side).
-      //     Resilient: any failure just falls through to filename/in-order below.
-      const aiSideByIdx = new Map<number, string>();
-      try {
-        const payloads = await Promise.all(
-          files.map(async (f, i) => {
-            const { base64, mimeType } = await fileToClassifyPayload(f);
-            return { id: `f-${i}`, data: base64, mimeType };
-          }),
-        );
-        const { data, error } = await supabase.functions.invoke("classify-vehicle-views", {
-          body: { images: payloads },
-        });
-        const classifications = (data as any)?.classifications;
-        if (!error && Array.isArray(classifications)) {
-          for (const c of classifications as Array<{ id: string; viewType: string }>) {
-            const idx = Number(String(c.id).replace(/^f-/, ""));
-            const sk = VIEWTYPE_TO_SIDEKEY[c.viewType];
-            if (!Number.isNaN(idx) && sk) aiSideByIdx.set(idx, sk);
-          }
-        }
-      } catch (err) {
-        console.warn("[StudioBoard] auto-classify unavailable, using filenames", err);
-      }
-
-      // 1b) Resolve a side per file: AI content first, then filename, then in order.
-      setBulkPhase("uploading");
-      setBulkProgress({ done: 0, total: files.length });
-      const used = new Set<string>();
-      const assignments: Array<{ def: (typeof VIEW_DEFS)[number]; file: File }> = [];
-      const leftover: File[] = [];
-      files.forEach((file, idx) => {
-        const key = aiSideByIdx.get(idx) || matchSideByFilename(file.name);
-        const def = key ? VIEW_DEFS.find((d) => d.sideKey === key) : undefined;
-        if (def && !used.has(def.sideKey)) {
-          assignments.push({ def, file });
-          used.add(def.sideKey);
-        } else {
-          leftover.push(file);
-        }
+    const cur = jobRef.current || job;
+    if (!cur?.id || !fileList?.length) return;
+    const revisionId = (cur as any).revision_id as string | null;
+    if (!revisionId) {
+      toast({
+        title: "This run has no reported revision",
+        description: "A correction has to be bound to the revision it corrects.",
+        variant: "destructive",
       });
-      for (const file of leftover) {
-        const def = VIEW_DEFS.find((d) => !used.has(d.sideKey));
-        if (!def) break; // every side already has a file in this batch
-        assignments.push({ def, file });
-        used.add(def.sideKey);
-      }
-      if (!assignments.length) {
-        toast({ title: "Nothing to upload", description: "No free sides for the selected files." });
-        return;
-      }
+      return;
+    }
+    const files = Array.from(fileList);
+    const reason = window.prompt(
+      `What did not fit on the template, and what you changed? (applies to all ${files.length} file${files.length === 1 ? "" : "s"}, 8 characters minimum)`,
+      "",
+    );
+    if (reason === null) return;
+    if (reason.trim().length < 8) {
+      toast({
+        title: "A correction needs a reason",
+        description: "That is the audit trail; a blank one is not one.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      // 2) Upload all assigned files to storage (parallel), tick progress as each lands.
-      let done = 0;
-      const uploads = await Promise.all(
-        assignments.map(async ({ def, file }) => {
-          const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-          const path = `gemini-compare/${job.id}/${def.sideKey}_${Date.now()}.${ext}`;
-          const { error: upErr } = await supabase.storage.from("wrap-files")
-            .upload(path, file, { contentType: file.type || "image/png", upsert: true });
-          if (upErr) throw new Error(`${def.label}: ${upErr.message}`);
-          const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-          done += 1;
-          setBulkProgress({ done, total: assignments.length });
-          return { def, url: `${publicUrl}?t=${Date.now()}` };
-        }),
-      );
+    // Filename decides the side, and a file that names none is reported.
+    const assignments: Array<{ def: (typeof VIEW_DEFS)[number]; file: File }> = [];
+    const unmatched: string[] = [];
+    const claimed = new Set<string>();
+    for (const file of files) {
+      const key = matchSideByFilename(file.name);
+      const def = key ? VIEW_DEFS.find((d) => d.sideKey === key) : undefined;
+      const surfaceKey = def ? SURFACE_FOR_SIDE_KEY[def.sideKey] : undefined;
+      if (!def || !surfaceKey || claimed.has(def.sideKey)) {
+        unmatched.push(file.name);
+        continue;
+      }
+      claimed.add(def.sideKey);
+      assignments.push({ def, file });
+    }
+    if (!assignments.length) {
+      toast({
+        title: "No file named a surface",
+        description: "Name each file for its side (driver, passenger, hood, roof, front, rear).",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      // 3) APPEND each upload as a new version in qc_side_panels (single row update).
-      //     Never overwrite an existing good file — it stays in the versions list.
-      const cj = job.concept_json || {};
-      const existing = cj.qc_side_panels || {};
-      const nextPanels: Record<string, any> = { ...existing };
-      const now = new Date().toISOString();
-      for (const { def, url } of uploads) {
-        const prev = existing[def.sideKey] || {};
-        let versions: any[] = Array.isArray(prev.versions) ? [...prev.versions] : [];
-        if (versions.length === 0 && prev.gemini_url) {
-          versions.push({ id: `v-${prev.gemini_uploaded_at || Date.now()}`, url: prev.gemini_url, source: prev.gemini_source || "upload", createdAt: prev.gemini_uploaded_at || now });
+    setBulkUploading(true);
+    setBulkPhase("uploading");
+    setBulkProgress({ done: 0, total: assignments.length });
+    const recorded: string[] = [];
+    const refused: string[] = [];
+    try {
+      // Sequential on purpose: each correction is a separate audited write, and
+      // a failure part-way through has to be reportable per side rather than
+      // collapsing the batch into one unattributable error.
+      for (const { def, file } of assignments) {
+        try {
+          await dpApi.uploadCorrectedPanel({
+            generationId: String(cur.generation_id || cur.id),
+            revisionId,
+            surfaceKey: SURFACE_FOR_SIDE_KEY[def.sideKey]!,
+            file,
+            reason: reason.trim(),
+          });
+          recorded.push(def.label);
+        } catch (cause: any) {
+          refused.push(`${def.label}: ${cause?.message || "refused"}`);
         }
-        versions.push({ id: (globalThis.crypto?.randomUUID?.() || `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`), url, source: "upload", createdAt: now });
-        nextPanels[def.sideKey] = {
-          ...prev,
-          label: def.label,
-          view: def.view,
-          versions,
-          gemini_url: url,
-          gemini_uploaded_at: now,
-        };
+        setBulkProgress({ done: recorded.length + refused.length, total: assignments.length });
       }
-      const nextConcept = { ...cj, qc_side_panels: nextPanels };
-      setJob((prev) => (prev ? { ...prev, concept_json: nextConcept } : prev));
-      await writeConcept(nextConcept);
-
-      const matched = uploads.map((u) => u.def.label).join(", ");
-      toast({ title: `Uploaded ${uploads.length} panel file${uploads.length === 1 ? "" : "s"}`, description: `Assigned to: ${matched}. Compare each side, then Approve.` });
-    } catch (e: any) {
-      toast({ title: "Bulk upload failed", description: e?.message || "Try again", variant: "destructive" });
+      await loadJob(String(cur.id));
+      toast({
+        title: recorded.length
+          ? `Recorded ${recorded.length} correction${recorded.length === 1 ? "" : "s"}`
+          : "No correction was recorded",
+        description: [
+          recorded.length ? recorded.join(", ") : null,
+          refused.length ? `Refused — ${refused.join("; ")}` : null,
+          unmatched.length ? `Unmatched files — ${unmatched.join(", ")}` : null,
+        ].filter(Boolean).join(". "),
+        variant: recorded.length ? undefined : "destructive",
+      });
     } finally {
       setBulkUploading(false);
       setBulkPhase(null);
@@ -1778,19 +1994,16 @@ export default function AdminGeminiCompareStudio() {
               </div>
             )}
 
-            {/* Production Pack QC — ALL pack quality control in one place (the
-                two-part check): AI checks (worker per-side print files +
-                regression stamp + auto-ZIP) then the designer's Approve & Send
-                to WrapBox. Renders once the print worker has run for this job. */}
-            {/* For approvepro orders the on-screen job is a proof_approvals row —
-                the QC card must key on the BACKING panelizer job (where the
-                worker stamps land) or fall back to the generation id. */}
-            <ProductionPackQCCard
-              job={job?.source === "approvepro"
-                ? (job?._panelizerJobId ? { id: job._panelizerJobId, order_number: job.order_number } : null)
-                : job}
-              generationId={job?.source === "approvepro" && !job?._panelizerJobId ? job?.generation_id || null : null}
-            />
+            {/* The back half of this job, from the server's own record: its
+                stage rail, the two human release gates, the eighteen output
+                files, and the stamp/ZIP/WrapBox artifacts it produced. */}
+            {job && (
+              <ProductionPackSection
+                job={job as unknown as PanelProStudioJob}
+                approvedSides={approvedSidesRef.current}
+                onApproved={async () => { await loadJob(String(job.id)); }}
+              />
+            )}
 
             {/* View toggle: structured compare grid vs free-form board */}
             <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1 w-fit">
@@ -2419,16 +2632,30 @@ export default function AdminGeminiCompareStudio() {
         )}
       </div>
 
-      {/* Minor-edits editor (color/depth · AI · paint) */}
+      {/* THE CORRECTION BENCH. Adjust and paint a panel against the real
+          vehicle template, then record the corrected file against this exact
+          surface and revision with a reason. The Call 9 panel is left
+          byte-for-byte; the correction is its own artifact bound to it. */}
       {job && (
         <StudioBoardEditor
           open={!!editTarget}
           target={editTarget}
           jobId={job.id}
           onClose={() => setEditTarget(null)}
-          onSaved={(sideKey, newUrl) => {
-            const def = VIEW_DEFS.find((d) => d.sideKey === sideKey);
-            if (def) persistSide(def, { addVersion: { url: newUrl, source: "edit" } });
+          onSaved={async (sideKey, file, reason) => {
+            const cur = jobRef.current || job;
+            const surfaceKey = SURFACE_FOR_SIDE_KEY[sideKey];
+            const revisionId = (cur as any)?.revision_id as string | null;
+            if (!surfaceKey) throw new Error(`${sideKey} is not one of the six production surfaces.`);
+            if (!revisionId) throw new Error("This run has no reported revision, so a correction cannot be bound to it.");
+            await dpApi.uploadCorrectedPanel({
+              generationId: String(cur!.generation_id || cur!.id),
+              revisionId,
+              surfaceKey,
+              file,
+              reason,
+            });
+            await loadJob(String(cur!.id));
           }}
         />
       )}

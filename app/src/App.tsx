@@ -114,6 +114,7 @@ const DesignProWorkflow = lazyWithRetry(() => import("./pages/designpro/Producti
 // page. Both were RestylePro surfaces driven from the browser; these are the
 // server-backed rebuilds that read the run through the gateway only.
 const PanelProStudioBoard = lazyWithRetry(() => import("./pages/designpro/PanelProStudioBoard"));
+const AdminGeminiCompareStudio = lazyWithRetry(() => import("./pages/AdminGeminiCompareStudio"));
 const GenieProgress = lazyWithRetry(() => import("./pages/designpro/GenieProgress"));
 const DesignProGenieQc = lazyWithRetry(() => import("./pages/designpro/GenieQc"));
 const DesignProNewRevision = lazyWithRetry(() => import("./pages/designpro/NewRevisionSource"));
@@ -289,6 +290,13 @@ const App = () => {
           <Route path="/designpro/studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId/panel-studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId/panelpro" element={<RequireAuth><PanelProStudioBoard /></RequireAuth>} />
+          {/* PANELPRO ADMIN STUDIO — the design team's full production control
+              room for one order. The per-surface board above is the customer-
+              lineage validation view; this is the workspace: job header, every
+              A.T.L.A.S. version with the prompt that made it, the six surfaces
+              with their proofs and panels, the logo inventory, the correction
+              bench, the two release gates and the output/ZIP/WrapBox record. */}
+          <Route path="/designpro/studio-board" element={<RequireAuth><AdminGeminiCompareStudio /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId/progress" element={<RequireAuth><GenieProgress /></RequireAuth>} />
           <Route path="/designpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/raster" element={<RequireAuth><DesignStudio /></RequireAuth>} />

@@ -4,29 +4,37 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Loader2, Sparkles, SlidersHorizontal, Brush, Eraser, Undo2, RotateCcw, Save, Check, Maximize2,
+  Loader2, SlidersHorizontal, Brush, Eraser, Undo2, RotateCcw, Save, Check, Maximize2,
 } from "lucide-react";
 
 /**
- * StudioBoardEditor — minor edits on an uploaded Gemini file so it matches the
- * design, without leaving the app. Three tabs:
- *   • Adjust — brightness/contrast/saturation/hue (CSS filter, baked via canvas)
- *   • AI edit — natural-language change via revise-render, the RevisionIQ
- *     Master Editor that RevisionStudio uses. It edits THIS rectangle panel
- *     (Image 1) and preserves its flat shape/framing. Check "Match this 3D
- *     design" to attach the side's 3D render as a reference so the editor lays
- *     that exact design onto the panel. (Replaced the old studio-board-edit
- *     call, which re-fed the panel into a naive image-edit endpoint and
- *     regenerated literal flags/slop.)
- *   • Paint  — brush / erase on a Konva canvas at native resolution.
+ * StudioBoardEditor — the design team's correction bench for one surface.
  *
- * Each tab's "Apply" bakes its result into the working image, so edits stack.
- * Save uploads the working image and returns its URL to the caller.
+ * WHAT IT IS NOW, AND WHY IT CHANGED. This opened as an editor that changed a
+ * side's panel: adjust it, repaint it, ask an AI to redraw it, and Save wrote
+ * the result back as that side's print panel. On the server-owned lineage that
+ * is a second producer of production artwork -- a panel authored in a browser
+ * tab, bound to no master, indistinguishable on screen from one Call 9 cut.
+ *
+ * The AI tab is gone outright. It sent the panel to a generative edit and put
+ * whatever came back into the print set; nothing downstream could tell that
+ * artwork apart from the approved design, which is exactly the confusion the
+ * one-sanctioned-chain rule exists to prevent.
+ *
+ * What remains is the bench a designer actually needs, and it ends in the
+ * audited correction path rather than a silent overwrite:
+ *   • Adjust — brightness/contrast/saturation/hue (CSS filter, baked via canvas)
+ *   • Paint  — brush / erase on a Konva canvas at native resolution
+ *   • Resolution — what this file can print at, and where the real upscale lives
+ *
+ * Save records the corrected file against this exact surface and revision, with
+ * a reason. The Call 9 panel is left byte-for-byte and stays downloadable; the
+ * correction is its own artifact bound to it, and Call 12 enhances whichever is
+ * active -- so a corrected side reaches print through Topaz and the output build
+ * like any other, never around them.
  *
  * Canvas export is taint-safe: source images are loaded via fetch→blob→objectURL
  * (same-origin) so toDataURL never throws on a remote storage URL.
@@ -42,9 +50,19 @@ export interface StudioBoardEditTarget {
 interface Props {
   open: boolean;
   target: StudioBoardEditTarget | null;
+  /**
+   * Kept for the dialog's own identity in logs and keys. Nothing here writes to
+   * storage any more, so it no longer names an upload path.
+   */
   jobId: string;
   onClose: () => void;
-  onSaved: (sideKey: string, newUrl: string) => void;
+  /**
+   * The corrected file for this surface, and why it was corrected. A URL is not
+   * enough any more: the correction is recorded as an artifact bound to the
+   * panel it replaces, so the caller needs the bytes and the reason, not a link
+   * to something already written somewhere.
+   */
+  onSaved: (sideKey: string, file: File, reason: string) => Promise<void>;
 }
 
 const DEFAULT_ADJUST = { brightness: 1, contrast: 1, saturate: 1, hue: 0 };
@@ -68,20 +86,25 @@ type Stroke = { points: number[]; color: string; size: number; erase: boolean };
 export default function StudioBoardEditor({ open, target, jobId, onClose, onSaved }: Props) {
   const { toast } = useToast();
   const [tab, setTab] = useState("adjust");
+  const [correctionReason, setCorrectionReason] = useState("");
   const [workingUrl, setWorkingUrl] = useState<string>("");
   const [busy, setBusy] = useState<string | null>(null);
+
+  // The working file's real pixel size, measured rather than assumed -- it is
+  // the number that says whether this file can print at its physical size.
+  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    let live = true;
+    const image = new Image();
+    image.onload = () => { if (live && image.naturalWidth) setNaturalSize({ w: image.naturalWidth, h: image.naturalHeight }); };
+    image.src = workingUrl;
+    return () => { live = false; };
+  }, [workingUrl]);
 
   // Adjust tab
   const [adj, setAdj] = useState({ ...DEFAULT_ADJUST });
   const filterStr = `brightness(${adj.brightness}) contrast(${adj.contrast}) saturate(${adj.saturate}) hue-rotate(${adj.hue}deg)`;
   const adjDirty = adj.brightness !== 1 || adj.contrast !== 1 || adj.saturate !== 1 || adj.hue !== 0;
-
-  // AI tab
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [refUrl, setRefUrl] = useState<string>("");
-  const [refEnabled, setRefEnabled] = useState(false);
-  const [refUploading, setRefUploading] = useState(false);
-  const refInput = useRef<HTMLInputElement | null>(null);
 
   // Paint tab
   const [bmp, setBmp] = useState<HTMLImageElement | null>(null);
@@ -91,8 +114,6 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
   const [brushSize, setBrushSize] = useState(14);
   const [erasing, setErasing] = useState(false);
 
-  // Upscale tab
-  const [upscaleFactor, setUpscaleFactor] = useState(2);
   const drawing = useRef(false);
   const stageRef = useRef<any>(null);
 
@@ -102,11 +123,9 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
       setTab("adjust");
       setWorkingUrl(target.url);
       setAdj({ ...DEFAULT_ADJUST });
-      setAiPrompt("");
       setStrokes([]);
       setErasing(false);
-      setRefUrl(target.referenceUrl || "");
-      setRefEnabled(!!target.referenceUrl);
+      setCorrectionReason("");
     }
   }, [open, target?.url]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -150,17 +169,6 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
     } finally { revoke(); }
   }, []);
 
-  // Ensure the working image is a fetchable PUBLIC url for the edge function.
-  const ensurePublicUrl = useCallback(async (): Promise<string> => {
-    if (!workingUrl.startsWith("data:")) return workingUrl;
-    const blob = await (await fetch(workingUrl)).blob();
-    const path = `gemini-compare/${jobId}/${target?.sideKey || "edit"}_preai_${Date.now()}.png`;
-    const { error } = await supabase.storage.from("wrap-files").upload(path, blob, { contentType: "image/png", upsert: true });
-    if (error) throw new Error(error.message);
-    const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-    return `${publicUrl}?t=${Date.now()}`;
-  }, [workingUrl, jobId, target?.sideKey]);
-
   // ── Tab actions ──────────────────────────────────────────────────────────
   const applyAdjust = async () => {
     if (!adjDirty) return;
@@ -175,65 +183,17 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
     } finally { setBusy(null); }
   };
 
-  // Upload a custom reference image (so the edge function can fetch a public URL).
-  const handleRefUpload = async (file: File) => {
-    if (!file) return;
-    setRefUploading(true);
-    try {
-      const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-      const path = `gemini-compare/${jobId}/${target?.sideKey || "edit"}_ref_${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("wrap-files").upload(path, file, { contentType: file.type || "image/png", upsert: true });
-      if (error) throw new Error(error.message);
-      const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-      setRefUrl(`${publicUrl}?t=${Date.now()}`);
-      setRefEnabled(true);
-    } catch (e: any) {
-      toast({ title: "Reference upload failed", description: e?.message, variant: "destructive" });
-    } finally {
-      setRefUploading(false);
-      if (refInput.current) refInput.current.value = "";
-    }
-  };
+  // The AI edit and the in-editor upscale both lived here, and both wrote
+  // production artwork from the browser. The edit asked a generative model to
+  // redraw the panel; the upscale sent the working copy to an enhancement
+  // endpoint and made the result the panel. Neither was bound to the accepted
+  // master, and neither left a record of what had changed.
+  //
+  // The real enhancement now runs from the board, on the ACTIVE artifact for
+  // the surface, hash-verified, into a new derivative that never overwrites its
+  // source -- which is what makes it inspectable and what lets Call 12 reuse it.
 
-  const applyAI = async () => {
-    const instruction = aiPrompt.trim();
-    const useReference = refEnabled && !!refUrl;
-    if (!instruction && !useReference) return;
-    setBusy("ai");
-    try {
-      // Always the RevisionIQ Master Editor (revise-render) — the same tuned
-      // edit brain RevisionStudio uses. It EDITS the current rectangle panel
-      // (Image 1), preserving its flat shape and framing, instead of
-      // regenerating from scratch — so it can't wander off into a literal flag
-      // the way the old studio-board-edit did. When a reference 3D render is
-      // provided we attach it and force a reference-match, so the editor lays
-      // that exact design onto this panel while keeping the rectangle.
-      const imageUrl = await ensurePublicUrl();
-      const revisionPrompt =
-        instruction ||
-        "Match the attached reference wrap design exactly — same colors, gradients, artwork and layout. Keep this flat rectangular panel and its framing; do not add a vehicle, background, or 3D shape.";
-      const { data, error } = await supabase.functions.invoke("revise-render", {
-        body: {
-          originalRenderUrl: imageUrl,
-          revisionPrompt,
-          toolType: "designpanelpro",
-          viewType: target?.sideKey || "side",
-          ...(useReference ? { visionBoardImageUrls: [refUrl], forceReferenceMatch: true } : {}),
-        },
-      });
-      if (error) throw new Error(error.message || "Edit failed");
-      const url = (data as any)?.renderUrl || (data as any)?.url;
-      if (!url) throw new Error((data as any)?.message || (data as any)?.error || "No image returned");
-
-      setWorkingUrl(`${url}${String(url).includes("?") ? "&" : "?"}t=${Date.now()}`);
-      setAdj({ ...DEFAULT_ADJUST });
-      setAiPrompt("");
-      toast({ title: "AI edit applied", description: "Refine further or Save." });
-    } catch (e: any) {
-      toast({ title: "AI edit unavailable", description: e?.message, variant: "destructive" });
-    } finally { setBusy(null); }
-  };
-
+  // Bake the brush strokes into the working image. Pure canvas, no network.
   const applyPaint = async () => {
     if (!strokes.length || !stageRef.current) return;
     setBusy("paint");
@@ -244,24 +204,6 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
       toast({ title: "Paint applied" });
     } catch (e: any) {
       toast({ title: "Could not apply paint", description: e?.message, variant: "destructive" });
-    } finally { setBusy(null); }
-  };
-
-  const applyUpscale = async () => {
-    setBusy("upscale");
-    try {
-      const imageUrl = await ensurePublicUrl();
-      const { data, error } = await supabase.functions.invoke("upscale-production-panel", {
-        body: { image_url: imageUrl, scale: upscaleFactor, output_format: "png" },
-      });
-      if (error) throw new Error(error.message || "Upscale failed");
-      const url = (data as any)?.upscaled_url || (data as any)?.url;
-      if (!(data as any)?.success || !url) throw new Error((data as any)?.error || "No upscaled image returned");
-      setWorkingUrl(`${url}${String(url).includes("?") ? "&" : "?"}t=${Date.now()}`);
-      setAdj({ ...DEFAULT_ADJUST });
-      toast({ title: `Upscaled ${upscaleFactor}×`, description: "Higher-resolution image is now the working copy. Save to keep it." });
-    } catch (e: any) {
-      toast({ title: "Upscale unavailable", description: e?.message, variant: "destructive" });
     } finally { setBusy(null); }
   };
 
@@ -284,9 +226,33 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
   };
   const onUp = () => { drawing.current = false; };
 
-  // ── Save ─────────────────────────────────────────────────────────────────
+  // ── Save, as an audited correction ───────────────────────────────────────
+  //
+  // This used to upload the working image to storage and hand back its URL,
+  // which silently became that side's print panel. The corrected file now
+  // travels the recorded correction path instead: it is bound to the surface
+  // and revision it corrects, it carries the reason it was corrected, and the
+  // Call 9 panel it replaces is kept byte-for-byte beside it.
+  //
+  // The reason is not a formality -- it is the audit trail, and the server
+  // refuses a correction without one.
   const save = async () => {
     if (!target) return;
+    const reason = window.prompt(
+      `What did not fit on the template for ${target.label}, and what you changed? (8 characters minimum)`,
+      correctionReason,
+    );
+    if (reason === null) return;
+    if (reason.trim().length < 8) {
+      setCorrectionReason(reason);
+      toast({
+        title: "A correction needs a reason",
+        description: "That is the audit trail; a blank one is not one.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setCorrectionReason(reason);
     setBusy("save");
     try {
       let finalUrl = workingUrl;
@@ -295,20 +261,13 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
       // Fold in any unbaked paint strokes.
       if (strokes.length && stageRef.current) finalUrl = stageRef.current.toDataURL({ pixelRatio: stageSize.ratio });
 
-      let publicUrl = finalUrl;
-      if (finalUrl.startsWith("data:")) {
-        const blob = await (await fetch(finalUrl)).blob();
-        const path = `gemini-compare/${jobId}/${target.sideKey}_edited_${Date.now()}.png`;
-        const { error } = await supabase.storage.from("wrap-files").upload(path, blob, { contentType: "image/png", upsert: true });
-        if (error) throw new Error(error.message);
-        const { data: { publicUrl: pu } } = supabase.storage.from("wrap-files").getPublicUrl(path);
-        publicUrl = `${pu}?t=${Date.now()}`;
-      }
-      onSaved(target.sideKey, publicUrl);
-      toast({ title: "Saved", description: `${target.label} updated.` });
+      const blob = await (await fetch(finalUrl)).blob();
+      const file = new File([blob], `${target.sideKey}-corrected.png`, { type: "image/png" });
+      await onSaved(target.sideKey, file, reason.trim());
+      toast({ title: "Correction recorded", description: `${target.label} — the original panel is kept.` });
       onClose();
     } catch (e: any) {
-      toast({ title: "Save failed", description: e?.message, variant: "destructive" });
+      toast({ title: "Correction refused", description: e?.message, variant: "destructive" });
     } finally { setBusy(null); }
   };
 
@@ -327,9 +286,8 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="adjust" className="gap-1.5"><SlidersHorizontal className="h-4 w-4" /> Adjust</TabsTrigger>
-            <TabsTrigger value="ai" className="gap-1.5"><Sparkles className="h-4 w-4" /> AI edit</TabsTrigger>
             <TabsTrigger value="paint" className="gap-1.5"><Brush className="h-4 w-4" /> Paint</TabsTrigger>
-            <TabsTrigger value="upscale" className="gap-1.5"><Maximize2 className="h-4 w-4" /> Upscale</TabsTrigger>
+            <TabsTrigger value="resolution" className="gap-1.5"><Maximize2 className="h-4 w-4" /> Resolution</TabsTrigger>
           </TabsList>
 
           {/* ADJUST */}
@@ -370,50 +328,6 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
           </TabsContent>
 
           {/* AI EDIT */}
-          <TabsContent value="ai" className="mt-4">
-            <div className="grid gap-4 sm:grid-cols-[1fr_280px]">
-              <div className="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-2">
-                <img src={workingUrl} alt="preview" className="max-h-[320px] w-auto object-contain" />
-              </div>
-              <div className="space-y-3">
-                {/* Reference image to match (defaults to the side's 3D render) */}
-                <div className="rounded-lg border border-gray-200 p-2">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
-                      <input type="checkbox" checked={refEnabled} onChange={(e) => setRefEnabled(e.target.checked)} disabled={!refUrl} className="accent-fuchsia-600" />
-                      Match this 3D design (attach as reference)
-                    </label>
-                    <button className="text-[11px] font-medium text-blue-600 hover:underline" onClick={() => refInput.current?.click()}>
-                      {refUploading ? "Uploading…" : refUrl ? "Change" : "Upload"}
-                    </button>
-                  </div>
-                  {refUrl ? (
-                    <img src={refUrl} alt="reference" className="mt-2 max-h-24 w-full rounded border border-gray-100 object-contain" />
-                  ) : (
-                    <p className="mt-1 text-[11px] text-gray-400">Upload the side's 3D render to rebuild the flat panel from it.</p>
-                  )}
-                  <input ref={refInput} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefUpload(f); }} />
-                </div>
-                <div>
-                  <Label className="text-xs text-gray-600">Describe the change (optional with a reference)</Label>
-                  <Textarea
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="e.g. match the reference exactly — give the blue the same gradient and depth"
-                    rows={4}
-                    className="mt-1 resize-none text-sm"
-                  />
-                </div>
-                <p className="text-[11px] leading-snug text-gray-400">
-                  With a reference checked, it rebuilds a flat print panel from that 3D render (strips the vehicle, fills the rectangle). Without one, it uses the RevisionStudio Master Editor to tweak this panel's color, gradient and depth.
-                </p>
-                <Button className="w-full gap-1.5" onClick={applyAI} disabled={(!aiPrompt.trim() && !(refEnabled && refUrl)) || busy === "ai"}>
-                  {busy === "ai" ? <><Loader2 className="h-4 w-4 animate-spin" /> Editing…</> : <><Sparkles className="h-4 w-4" /> Apply with AI</>}
-                </Button>
-              </div>
-            </div>
-          </TabsContent>
-
           {/* PAINT */}
           <TabsContent value="paint" className="mt-4">
             <div className="grid gap-4 sm:grid-cols-[1fr_240px]">
@@ -484,33 +398,37 @@ export default function StudioBoardEditor({ open, target, jobId, onClose, onSave
           </TabsContent>
 
           {/* UPSCALE */}
-          <TabsContent value="upscale" className="mt-4">
+          {/* RESOLUTION. What this file can print at, and where the real
+              enhancement lives. The in-editor upscale used to make its result
+              the working copy, which meant a designer could Save an enhanced
+              image as the panel without it ever being bound to the artifact it
+              came from. Run upscale on the board does the same enhancement
+              against the ACTIVE artifact, records what it was made from, and
+              leaves the source alone. */}
+          <TabsContent value="resolution" className="mt-4">
             <div className="grid gap-4 sm:grid-cols-[1fr_240px]">
               <div className="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-2">
                 <img src={workingUrl} alt="preview" className="max-h-[320px] w-auto object-contain" />
               </div>
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-xs text-gray-600">Upscale factor</Label>
-                  <div className="mt-1.5 flex gap-2">
-                    {[2, 4].map((f) => (
-                      <Button
-                        key={f}
-                        variant={upscaleFactor === f ? "default" : "outline"}
-                        size="sm" className="flex-1"
-                        onClick={() => setUpscaleFactor(f)}
-                      >
-                        {f}×
-                      </Button>
-                    ))}
+              <div className="space-y-3">
+                <div className="rounded-lg border border-gray-200 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+                    This file
+                  </div>
+                  <div className="mt-1 font-mono text-sm font-semibold text-gray-900">
+                    {naturalSize ? `${naturalSize.w} × ${naturalSize.h} px` : "measuring…"}
                   </div>
                 </div>
-                <p className="text-[11px] leading-snug text-gray-400">
-                  Increases resolution/sharpness for print using the production upscaler (Topaz). Runs on the current working image; Save keeps the result. Larger files take longer.
+                <p className="text-[11px] leading-snug text-gray-500">
+                  Enhancement to print resolution runs from the board, not from here.
+                  It reads the surface's active artifact, verifies its bytes, and writes
+                  a new derivative — so the file you are looking at is never replaced by
+                  one you cannot trace.
                 </p>
-                <Button className="w-full gap-1.5" onClick={applyUpscale} disabled={busy === "upscale"}>
-                  {busy === "upscale" ? <><Loader2 className="h-4 w-4 animate-spin" /> Upscaling {upscaleFactor}×…</> : <><Maximize2 className="h-4 w-4" /> Upscale {upscaleFactor}×</>}
-                </Button>
+                <p className="text-[11px] leading-snug text-gray-400">
+                  Close this and use <span className="font-semibold text-gray-600">Run upscale</span> on
+                  the surface card.
+                </p>
               </div>
             </div>
           </TabsContent>
