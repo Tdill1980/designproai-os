@@ -931,6 +931,31 @@ const SURFACE_QC_CHECKS: Array<[string, string, "human" | "derived"]> = [
   ["design", "Design matches the approved proof", "human"],
 ];
 
+/** The human half of the checklist -- what the gateway records per surface. */
+const SURFACE_HUMAN_CHECKS = SURFACE_QC_CHECKS
+  .filter(([, , kind]) => kind === "human")
+  .map(([key]) => key);
+
+/**
+ * The designer's per-surface attestations, in the exact shape the gate accepts.
+ *
+ * The derived checks are deliberately left out: the server computes version,
+ * lineage and effective DPI from the artifacts themselves and does not need a
+ * browser to assert them. What only a person can supply -- that the panel lays
+ * on the real template and physically fits -- is what travels.
+ */
+function surfaceHumanAttestations(
+  answers: Record<string, Record<string, boolean>> = {},
+): Record<string, Record<string, boolean>> {
+  return Object.fromEntries(PRODUCTION_SURFACES.map((surfaceKey) => [
+    surfaceKey,
+    Object.fromEntries(SURFACE_HUMAN_CHECKS.map((check) => [
+      check,
+      answers[surfaceKey]?.[check] === true,
+    ])),
+  ]));
+}
+
 /**
  * ONE VERDICT FUNCTION, USED BY THE PANEL AND BY THE RELEASE GATE.
  *
@@ -1190,12 +1215,15 @@ function ProductionPackSection({
   job,
   approvedSides,
   qcPassedSides,
+  surfaceQc,
   onApproved,
 }: {
   job: PanelProStudioJob;
   approvedSides: ReadonlySet<string>;
   /** Surfaces whose template check reads PASS. The release gate needs all six. */
   qcPassedSides: ReadonlySet<string>;
+  /** The designer's per-surface attestations, carried into the QC receipt. */
+  surfaceQc: Record<string, Record<string, boolean>>;
   onApproved: () => Promise<void>;
 }) {
   const { toast } = useToast();
@@ -1230,6 +1258,9 @@ function ProductionPackSection({
         {
           ...(PREFLIGHT_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as PreflightQc),
           approvedSides: [...approvedSides],
+          // What was verified on each side, so the receipt records the physical
+          // check rather than only that a button was pressed.
+          surfaceQc: surfaceHumanAttestations(surfaceQc),
         } as PreflightQc,
         preflightNotes,
       );
@@ -1537,8 +1568,16 @@ export default function AdminGeminiCompareStudio() {
    * live here.
    */
   const [surfaceQc, setSurfaceQc] = useState<Record<string, Record<string, boolean>>>({});
+  // The same answers in a ref, because the Build Print Files handler is a
+  // callback retained across renders and must submit today's attestations
+  // rather than the empty object it closed over on mount.
+  const surfaceQcRef = useRef<Record<string, Record<string, boolean>>>({});
   const answerSurfaceQc = useCallback((surfaceKey: string, check: string, value: boolean) => {
-    setSurfaceQc((prev) => ({ ...prev, [surfaceKey]: { ...(prev[surfaceKey] || {}), [check]: value } }));
+    setSurfaceQc((prev) => {
+      const next = { ...prev, [surfaceKey]: { ...(prev[surfaceKey] || {}), [check]: value } };
+      surfaceQcRef.current = next;
+      return next;
+    });
   }, []);
   const [runningPanelPro, setRunningPanelPro] = useState(false);
   const [panelProProgress, setPanelProProgress] = useState<{ done: number; total: number; label: string } | null>(null);
@@ -2159,6 +2198,7 @@ export default function AdminGeminiCompareStudio() {
           logoInventoryVerified: true,
           textLockVerified: true,
           approvedSides: VIEW_DEFS.map((def) => SURFACE_FOR_SIDE_KEY[def.sideKey]).filter(Boolean).sort(),
+          surfaceQc: surfaceHumanAttestations(surfaceQcRef.current),
         } as any,
         "Approved on the PanelPro Studio board against the vehicle template.",
       );
@@ -2739,6 +2779,7 @@ export default function AdminGeminiCompareStudio() {
                 job={(versionedJob || job) as unknown as PanelProStudioJob}
                 approvedSides={approvedSidesRef.current}
                 qcPassedSides={qcPassedSides}
+                surfaceQc={surfaceQc}
                 onApproved={async () => { await loadJob(String(job.id)); }}
               />
             )}

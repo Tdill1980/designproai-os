@@ -15,6 +15,12 @@ const PREFLIGHT_CHECKS = [
 ];
 const FINAL_CHECKS = ["outputHashesVerified", "printDimensionsVerified", "colorModeVerified"];
 const PRODUCTION_SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
+// The physical judgements only a person standing at a vehicle template can
+// make. The board's derived checks (version, lineage, resolution) are absent on
+// purpose -- the server computes those from the artifacts themselves.
+const SURFACE_HUMAN_CHECKS = [
+  "template", "dimensions", "bleed", "fit", "openings", "safe", "design",
+];
 const VEHICLE_CLASSES = ["car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv", "trailer", "aircraft", "heavy_equipment"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -1217,11 +1223,48 @@ function exactQc(body, gate) {
       || unique.some((side) => !PRODUCTION_SURFACES.includes(side))) return null;
     approvedSides = unique;
   }
+  // WHAT THE DESIGNER ACTUALLY CHECKED, PER SIDE.
+  //
+  // `approvedSides` records THAT a side was approved. These record WHAT was
+  // verified on it: the correct vehicle template, the trim and print
+  // dimensions, five inches of bleed on four edges, that it lays on the real
+  // template and physically fits, that wheel wells and glass fall where they
+  // should, that text and logos clear the cut areas, and that the design
+  // matches the approved proof. Those are physical judgements about a real
+  // vehicle -- the only part of this gate a machine cannot make -- and they
+  // were living in React state, so a reload erased them and the receipt
+  // recorded that six boxes were ticked and nothing about what was looked at.
+  //
+  // Reconstructed here rather than trusted, exactly like approvedSides: every
+  // canonical surface must be present and every human attestation on it must be
+  // true, so a partial or invented record is refused rather than written down.
+  // The derived checks (version, lineage, resolution) are deliberately absent:
+  // the server already knows those from the artifacts and does not need a
+  // browser to tell it.
+  let surfaceQc;
+  if (gate === "preflight") {
+    const claimed = qc.surfaceQc;
+    if (!claimed || typeof claimed !== "object" || Array.isArray(claimed)) return null;
+    const keys = Object.keys(claimed).sort();
+    if (JSON.stringify(keys) !== JSON.stringify([...PRODUCTION_SURFACES].sort())) return null;
+    surfaceQc = {};
+    for (const surface of [...PRODUCTION_SURFACES].sort()) {
+      const answers = claimed[surface];
+      if (!answers || typeof answers !== "object" || Array.isArray(answers)) return null;
+      const given = Object.keys(answers).sort();
+      if (JSON.stringify(given) !== JSON.stringify([...SURFACE_HUMAN_CHECKS].sort())) return null;
+      if (SURFACE_HUMAN_CHECKS.some((check) => answers[check] !== true)) return null;
+      surfaceQc[surface] = Object.fromEntries(
+        [...SURFACE_HUMAN_CHECKS].sort().map((check) => [check, true]),
+      );
+    }
+  }
   return Object.fromEntries([
     ["known", true],
     ["pass", true],
     ...required.map((key) => [key, true]),
     ...(approvedSides ? [["approvedSides", approvedSides]] : []),
+    ...(surfaceQc ? [["surfaceQc", surfaceQc]] : []),
     ["notes", String(body.notes || "").trim().slice(0, 2000)],
   ]);
 }

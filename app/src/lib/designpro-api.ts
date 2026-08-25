@@ -387,6 +387,18 @@ export type PreflightQc = {
    * anything other than exactly the six canonical surfaces.
    */
   approvedSides: string[];
+  /**
+   * What was actually verified on each side, not merely that it was approved.
+   * The physical judgements a designer makes at a vehicle template: correct
+   * template, trim/print dimensions, five inches of bleed, that it lays and
+   * fits, that openings fall where they should, that text and logos clear the
+   * cut areas, and that the design matches the approved proof.
+   *
+   * These lived in browser state, so a reload erased them and the QC receipt
+   * recorded that six boxes were ticked and nothing about what was looked at.
+   * The gateway reconstructs this server-side and refuses a partial record.
+   */
+  surfaceQc: Record<string, Record<string, boolean>>;
 };
 
 export type FinalQc = {
