@@ -411,6 +411,64 @@ async function artifactsForRun(fetchImpl, token, cfg, runId) {
   return response.json();
 }
 
+/**
+ * THE SIX PANELS CALL 1 CUT, ON THEIR WAY ACROSS THE SEAM.
+ *
+ * A.T.L.A.S. cuts them from the accepted master and records them on the atlas
+ * revision row. Manufacturing may not read that row -- the frozen seam makes the
+ * immutable revision snapshot the only interface it is allowed to consult -- so
+ * something has to carry them over, and nothing did. Every revision snapshot in
+ * production has an empty callOnePanels, which is why Call 9 has never taken its
+ * promotion path and why source.verify has never seen an A.T.L.A.S. panel set.
+ *
+ * This reads the newest revision for the generation under the caller's own
+ * token, so RLS still decides what they may see, and returns the records only
+ * when all six canonical surfaces are present with a usable identity. A partial
+ * set is returned as none: half a panel set on a frozen snapshot is worse than
+ * an absent one, because the snapshot cannot be repaired afterwards.
+ *
+ * Only the RECORD crosses -- surface, storage path, hash, byte size, the master
+ * it was cut from, and the trim/print inches with the bleed. Call 9 re-downloads
+ * and re-hashes each panel before promoting it, so a snapshot that disagreed
+ * with storage is refused there rather than trusted here.
+ */
+const CALL_ONE_SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
+
+async function atlasCallOnePanels(fetchImpl, token, cfg, generationId, snapshot) {
+  // An explicit set on the incoming snapshot wins: a resumed or replayed
+  // revision must freeze the same panels it was already built against.
+  if (Array.isArray(snapshot?.callOnePanels) && snapshot.callOnePanels.length) {
+    return snapshot.callOnePanels;
+  }
+  if (!UUID_PATTERN.test(String(generationId || ""))) return [];
+  try {
+    const fields = encodeURIComponent("metadata,created_at");
+    const response = await upstream(
+      fetchImpl,
+      `${cfg.supabaseUrl}/rest/v1/designpro_flat_atlas_revisions?select=${fields}`
+        + `&generation_id=eq.${encodeURIComponent(generationId)}`
+        + "&order=created_at.desc&limit=1",
+      { method: "GET" }, token, cfg,
+    );
+    if (!response.ok) return [];
+    const rows = await response.json().catch(() => []);
+    const panels = rows?.[0]?.metadata?.callOnePanels;
+    if (!Array.isArray(panels) || panels.length !== CALL_ONE_SURFACES.length) return [];
+    const usable = panels.filter((panel) => CALL_ONE_SURFACES.includes(String(panel?.surfaceKey || ""))
+      && SHA256_PATTERN.test(String(panel?.contentHash || "").toLowerCase())
+      && String(panel?.storagePath || "").trim()
+      && Number(panel?.byteSize) > 0
+      && Number(panel?.printWidthIn) > 0 && Number(panel?.printHeightIn) > 0);
+    if (usable.length !== CALL_ONE_SURFACES.length) return [];
+    if (new Set(usable.map((panel) => panel.surfaceKey)).size !== CALL_ONE_SURFACES.length) return [];
+    return usable;
+  } catch {
+    // A revision must still be freezable when this read fails. Call 9 falls back
+    // to its existing path, which is exactly today's behaviour.
+    return [];
+  }
+}
+
 async function signedArtifactUrl(fetchImpl, token, cfg, storagePath) {
   const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/storage/v1/object/sign/${BUCKET}/${encodeStoragePath(storagePath)}`, { method: "POST", body: JSON.stringify({ expiresIn: 300 }) }, token, cfg);
   const payload = await response.json().catch(() => ({}));
@@ -2064,6 +2122,32 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           }
         }
         await validateRevisionAssets(fetchImpl, token, cfg, user.id, body);
+
+        // THE SIX A.T.L.A.S. PANELS HAVE TO CROSS THE SEAM HERE.
+        //
+        // Call 1 cuts them from the accepted master and records them on the
+        // atlas revision row. Manufacturing is not allowed to read that row --
+        // the frozen seam says the immutable revision snapshot is the only
+        // interface -- so unless this snapshot carries them, Call 9 finds no
+        // atlas panel set and falls through to the path that re-derives panels
+        // from the 2D proof.
+        //
+        // Nothing was carrying them. Every revision snapshot in production has
+        // an empty callOnePanels, which is why no run has ever taken the
+        // promotion path, and why the only stage that ever reached
+        // source.verify failed for want of a proof it should never have needed.
+        // The panels existed; the bridge did not.
+        //
+        // This copies the record, not the bytes: each entry already names its
+        // surface, its immutable storage path, its content hash and byte size,
+        // the master it was cut from, and its trim/print inches with the bleed.
+        // Call 9 re-downloads and re-hashes every one before promoting it, so a
+        // snapshot that disagreed with storage would be refused there, not
+        // trusted here.
+        const callOnePanels = await atlasCallOnePanels(
+          fetchImpl, token, cfg, body.generationId, snapshot,
+        );
+
         const frozenSnapshot = {
           ...snapshot,
           revisionId: body.revisionId,
@@ -2072,6 +2156,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           orderNumber: snapshot.delivery.orderNumber,
           visualizationId: body.visualizationId,
           renderAssets: body.renderAssets,
+          ...(callOnePanels.length ? { callOnePanels } : {}),
           change: { ...(snapshot.change || {}), view: body.view, instruction: body.instruction, attachmentIds: body.attachmentIds || [] },
         };
         const saved = await rpc(fetchImpl, token, cfg, "save_designpro_revision_source", {

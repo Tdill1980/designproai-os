@@ -314,3 +314,47 @@ test("the 2D Production Proof never gates A.T.L.A.S. manufacturing", () => {
   assert.match(verify, /const snapshotPanels = await callOnePanelSet\(sb, run\);/);
   assert.doesNotMatch(claimant, /designpro_flat_atlas_revisions/);
 });
+
+/**
+ * THE SIX CALL-1 PANELS HAVE TO CROSS THE SEAM, OR NOTHING DOWNSTREAM EXISTS.
+ *
+ * A.T.L.A.S. cuts the panels from the accepted master and records them on the
+ * atlas revision row. Manufacturing may not read that row -- the frozen seam
+ * makes the immutable revision snapshot its only interface -- so something has
+ * to carry them over.
+ *
+ * Nothing did. Every revision snapshot in production had an empty
+ * callOnePanels, so Call 9 never took its promotion path, source.verify never
+ * saw an A.T.L.A.S. panel set, and the whole manufacturing chain sat unbuilt
+ * behind a bridge that was never laid. The panels existed; the crossing did not.
+ *
+ * A partial set is deliberately treated as none. The snapshot is immutable, so
+ * freezing four of six panels produces a revision that can never be repaired --
+ * worse than one that falls back to the existing path.
+ */
+test("the six Call-1 panels reach the immutable revision snapshot", () => {
+  const gateway = readFileSync(
+    resolve(import.meta.dirname, "..", "gateway", "src", "server.mjs"),
+    "utf8",
+  );
+  const claimant = readFileSync(
+    resolve(import.meta.dirname, "..", "runtime", "designpro-standalone-claimant.cjs"),
+    "utf8",
+  );
+
+  // The bridge exists and runs when a revision is frozen.
+  assert.match(gateway, /async function atlasCallOnePanels\(/);
+  assert.match(gateway, /const callOnePanels = await atlasCallOnePanels\(/);
+  assert.match(gateway, /\.\.\.\(callOnePanels\.length \? \{ callOnePanels \} : \{\}\)/);
+
+  // All six surfaces, each with a usable identity, or none at all.
+  assert.match(gateway, /panels\.length !== CALL_ONE_SURFACES\.length\) return \[\]/);
+  assert.match(gateway, /usable\.length !== CALL_ONE_SURFACES\.length\) return \[\]/);
+  assert.match(gateway, /new Set\(usable\.map\(\(panel\) => panel\.surfaceKey\)\)\.size !== CALL_ONE_SURFACES\.length/);
+  // An explicit snapshot set wins, so a replayed revision freezes the same panels.
+  assert.match(gateway, /if \(Array\.isArray\(snapshot\?\.callOnePanels\) && snapshot\.callOnePanels\.length\)/);
+
+  // And the far side reads exactly that field, from the snapshot alone.
+  assert.match(claimant, /snapshot\?\.callOnePanels/);
+  assert.match(claimant, /from\("designpro_revision_sources"\)/);
+});
