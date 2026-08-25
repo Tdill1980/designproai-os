@@ -1249,7 +1249,6 @@ function createAtlasDesignPanelProvider(options = {}) {
   // verification. Atlas has a different generation policy, not a second way
   // to trust or download accepted Driver bytes.
   const driverStore = createDesignPanelServerProvider(options);
-  let compactDriver = null;
 
   function atlasMetadata(extra = {}) {
     return {
@@ -1265,89 +1264,48 @@ function createAtlasDesignPanelProvider(options = {}) {
     };
   }
 
-  async function compactAcceptedDriver(acceptedDriver) {
-    if (compactDriver?.contentHash === acceptedDriver.contentHash) return compactDriver.reference;
-    const reference = await compactAtlasDriverReference(acceptedDriver.bytes, {
-      maxBytes: atlas.maxDriverReferenceBytes,
-      maxEdge: atlas.maxDriverReferenceEdge,
-    });
-    compactDriver = { contentHash: acceptedDriver.contentHash, reference };
-    return reference;
-  }
-
   async function generateImage(call = {}) {
     const sourceViewType = String(call.sourceViewType || "").trim();
     if (!sourceViewType) throw new DesignPanelServerError("designpanel_server_view_missing", "A source view is required");
 
-    if (sourceViewType === PASSENGER_VIEW) {
-      // The deterministic Driver mirror locks vehicle/camera/framing. The
-      // verified Passenger crop is passed as a second, hash-bound glyph/art
-      // identity reference; the surgical prompt forbids recomposition.
-      const authorityIdentity = await atlasViewIdentity(atlas, sourceViewType);
-      const conditioning = await resolveAtlasConditioningParts(atlas, sourceViewType, call?.parts);
-      const authorityPart = conditioning.find((part) => part?.inlineData);
-      const acceptedDriver = await driverStore.hydrateHero();
-      if (!acceptedDriver) {
-        throw new DesignPanelServerError(
-          "designpanel_server_driver_required",
-          `${sourceViewType}: accepted Driver is required`,
-          false,
-        );
-      }
-      const generated = await producePassengerView({
-        driverBytes: acceptedDriver.bytes,
-        provider,
-        call,
-        prompt: input?.brief,
-        atlasAuthority: {
-          ...authorityIdentity,
-          inlineData: { ...authorityPart.inlineData },
-        },
-      });
-      return {
-        ...generated,
-        contract: ATLAS_SERVER_PROVIDER_CONTRACT,
-        metadata: {
-          ...(generated.metadata || {}),
-          ...proofPromptAudit({
-            input,
-            sourceViewType,
-            prompt: passengerTextFixPrompt(authorityIdentity),
-            renderMethod: "producePassengerView",
-          }),
-          ...atlasMetadata({
-            anchoredToView1: true,
-            driverStoragePath: acceptedDriver.storagePath,
-            driverContentHash: acceptedDriver.contentHash,
-            atlasConditioningVerified: true,
-            atlasZoneContract: authorityIdentity.contract,
-            atlasZoneContentHash: authorityIdentity.contentHash,
-            atlasZoneSurfaceKey: authorityIdentity.surfaceKey,
-            atlasZonePassedToPassengerRepair: true,
-          }),
-        },
-      };
-    }
-
-    let acceptedDriver = null;
-    let driverReference = null;
-    if (sourceViewType !== DRIVER_VIEW) {
-      acceptedDriver = await driverStore.hydrateHero();
-      if (!acceptedDriver) {
-        throw new DesignPanelServerError(
-          "designpanel_server_driver_required",
-          `${sourceViewType}: accepted Driver is required`,
-          false,
-        );
-      }
-      driverReference = await compactAcceptedDriver(acceptedDriver);
-    }
+    // SIX SIBLING SURFACES, NOT ONE PARENT AND FIVE CHILDREN.
+    //
+    // Passenger used to be produced by mirroring the accepted Driver render and
+    // asking the model to repair the reversed lettering, policed by a similarity
+    // bound. Every other non-Driver view additionally BLOCKED on an accepted
+    // Driver and was handed a compacted copy of it as a cross-view anchor. Both
+    // couplings came from the server port (daf3929, 2026-08-23); neither is what
+    // the proven A.T.L.A.S.-first path did.
+    //
+    // Live evidence: Flamingo Pools (5b2eb96c, 2026-08-22) rendered Passenger as
+    // its own Gemini call -- 35,747 ms with a real key fingerprint, LONGER than
+    // its own Driver at 30,709 ms -- from the same master authority
+    // (f9015398...) Driver used. A sharp mirror costs ~100 ms and burns no key,
+    // so that Passenger was independently generated, not mirrored.
+    //
+    // The mirror chain then became the top cause of failed runs, because a
+    // branded design can never be a literal pixel mirror: the prompt requires
+    // every word to stay forward-reading on BOTH flanks. dda491ae was refused at
+    // 0.28346, a9daede trimmed the mean to absorb it, a6dd78aa still failed at
+    // 0.29343 -- and fc2f2e80 failed the other way, the reviewer reporting
+    // upside-down Passenger lettering. Two detectors, one defect, and the defect
+    // is the operation itself.
+    //
+    // Cross-view identity now rests where it always actually lived: the shared
+    // A.T.L.A.S. authority. Every view is conditioned on the same frozen master
+    // and its own exact surface region, and carries generationId,
+    // atlasRevisionId, masterContentHash and surfaceKey. That is a stronger
+    // guarantee than injecting one render into the others, because it is
+    // hash-verified rather than hoped for -- and it means a Driver failure can
+    // no longer take the other five down with it.
+    //
+    // Driver keeps scheduling priority: it is what the customer sees first
+    // (RULE 0.23). Priority is not the same as prerequisite.
     const request = await buildAtlasProjectionRequest({
       atlas,
       input,
       sourceViewType,
       call,
-      driverReference,
     });
     const generated = await provider.generateImage({
       ...call,
@@ -1363,13 +1321,9 @@ function createAtlasDesignPanelProvider(options = {}) {
         ...(generated.metadata || {}),
         ...request.audit,
         ...atlasMetadata({
-          anchoredToView1: Boolean(acceptedDriver),
-          ...(acceptedDriver ? {
-            driverStoragePath: acceptedDriver.storagePath,
-            driverContentHash: acceptedDriver.contentHash,
-            driverReferenceByteSize: driverReference.byteSize,
-            driverReferenceContentHash: driverReference.contentHash,
-          } : {}),
+          // Stated, not computed: no A.T.L.A.S. view is anchored to another
+          // view, and the seam refuses any that claims to be.
+          anchoredToView1: false,
           atlasConditioningVerified: true,
           atlasZoneContract: request.authorityIdentity.contract,
           atlasZoneContentHash: request.authorityIdentity.contentHash,

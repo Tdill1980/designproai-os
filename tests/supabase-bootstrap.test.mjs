@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-two-migration chain', () => {
-  assert.equal(migrationNames.length, 52);
+test('fresh bootstrap contains one ordered fifty-three-migration chain', () => {
+  assert.equal(migrationNames.length, 53);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -106,6 +106,9 @@ test('fresh bootstrap contains one ordered fifty-two-migration chain', () => {
       '20260825140000',
       // A.T.L.A.S. prompt v7: the authoring guide carries geometry only.
       '20260825190000',
+      // Six sibling surfaces after master acceptance -- no view may carry a
+      // Driver reference, and Passenger renders like every other surface.
+      '20260826000000',
     ],
   );
 });

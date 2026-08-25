@@ -589,53 +589,62 @@ async function runAtlasProofStages({
   if (!provider?.generateImage || typeof provider.hydrateDriver !== "function") {
     throw new Error("A.T.L.A.S. requires the DesignPanel projection provider");
   }
-  if (!Array.isArray(slots) || slots.length !== 7 || slots[0]?.sourceViewType !== "side") {
-    throw new Error("A.T.L.A.S. requires Driver first and exactly seven proof slots");
+  // A FULL SET STILL LEADS WITH DRIVER; A RETRY NEED NOT BE A FULL SET.
+  //
+  // This demanded exactly seven slots with Driver first, which was right while
+  // Driver was staged alone and the rest depended on it. Now that the six
+  // surfaces are siblings, a single failed surface can be re-run on its own --
+  // it needs only the frozen master it was always conditioned on, and refusing
+  // that would force a whole seven-view regeneration to recover one view.
+  //
+  // The full-set shape is still enforced, so the customer-facing run cannot
+  // quietly start without Driver first and lose its priority.
+  if (!Array.isArray(slots) || !slots.length) {
+    throw new Error("A.T.L.A.S. requires at least one proof slot");
+  }
+  if (slots.length === 7 && slots[0]?.sourceViewType !== "side") {
+    throw new Error("A.T.L.A.S. requires Driver first in a full seven-proof set");
+  }
+  if (slots.length > 7) {
+    throw new Error("A.T.L.A.S. accepts at most seven proof slots");
   }
 
-  const driver = await runRequest({
+  // PRIORITY IS NOT PREREQUISITE.
+  //
+  // This used to render Driver alone, hash-verify it, and only then start the
+  // other six -- and the provider additionally handed each of them a compacted
+  // copy of the Driver render as a cross-view anchor, with Passenger built by
+  // mirroring Driver's pixels outright. So one slow or failed Driver stalled or
+  // killed the entire set, and Passenger inherited a defect no amount of
+  // repair could fix (a6dd78aa, passengerMirrorMae 0.29343; fc2f2e80,
+  // upside-down passenger lettering).
+  //
+  // The master is already frozen and hash-bound before this function is called.
+  // Every view is conditioned on that same master and its own exact surface
+  // region, and carries generationId, atlasRevisionId, masterContentHash and
+  // surfaceKey -- identity that is hash-verified rather than inherited from a
+  // sibling render. So the six surfaces are siblings and start together.
+  //
+  // Driver keeps its priority by being first in the slot array: Promise.all
+  // dispatches in order, so Driver's provider call is issued first and it is
+  // still what the customer sees first (RULE 0.23). It is simply no longer a
+  // gate -- a failed Driver now leaves the other five free to complete, and
+  // `waitForGeneration` still reveals each view the instant it lands.
+  const proofs = await runRequest({
     requestId,
     generationId,
     tenantKey,
     provider,
     store,
-    slots: slots.slice(0, 1),
-    parallel: false,
+    slots,
+    parallel: true,
     // An orphan image has no persisted Atlas/provider lineage. It may have
     // been produced by the retired generic renderer, so Atlas must regenerate
     // it from the immutable master instead of adopting anonymous bytes.
     allowOrphanReconciliation: false,
     maxProviderAttempts: provider.maxProviderAttempts,
   });
-  if (driver.state !== "outputs_ready") return driver;
-
-  // runRequest returns outputs_ready only after the store accepted the Driver
-  // bytes. hydrateDriver then re-reads and hash-verifies that immutable row
-  // before any later camera is allowed to start.
-  const acceptedDriver = await provider.hydrateDriver();
-  if (!acceptedDriver) throw new Error("A.T.L.A.S. accepted Driver is missing after the Driver stage");
-
-  const photographer = await runRequest({
-    requestId,
-    generationId,
-    tenantKey,
-    provider,
-    store,
-    slots: slots.slice(1),
-    // One master is already frozen and the Driver anchor is already verified, so
-    // six concurrent projections cannot become six independent design decisions.
-    parallel: true,
-    allowOrphanReconciliation: false,
-    maxProviderAttempts: provider.maxProviderAttempts,
-  });
-  return {
-    ...photographer,
-    providerCalls: driver.providerCalls + photographer.providerCalls,
-    budget: driver.budget + photographer.budget,
-    results: [...driver.results, ...photographer.results],
-    requiresExplicitResume:
-      driver.requiresExplicitResume || photographer.requiresExplicitResume,
-  };
+  return proofs;
 }
 
 function createGenerationWorker({
