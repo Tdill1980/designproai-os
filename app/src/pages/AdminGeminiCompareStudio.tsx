@@ -603,6 +603,88 @@ const STUDIO_RENDER_ACE_ENABLED = false;
  * V1 is never replaced when V2 is made. Every version stays selectable, and
  * selecting one is what switches the workspace below to that revision's assets.
  */
+/**
+ * THE A.T.L.A.S. CARD, FILLING IN AS THE SERVER ACTUALLY PRODUCES.
+ *
+ * PanelPro is the live internal production record of a generation, not a report
+ * written after the fact. The moment Create Design mints a generationId this
+ * board can be opened on it, and at that instant there is genuinely nothing but
+ * the brief -- so the card says so, and then fills:
+ *
+ *   master accepted -> six panels cut -> Driver 3D -> the remaining six proofs
+ *
+ * Each row states what exists RIGHT NOW. Nothing is pre-drawn as done and
+ * nothing is inferred from elapsed time: a panel counts when its artifact
+ * exists, a proof counts when its view exists. An operator watching this card
+ * is watching the database, which is the only thing worth watching.
+ */
+function AtlasProgressCard({ job }: { job: PanelProStudioJob }) {
+  const atlas = job.atlas_versions[job.atlas_versions.length - 1] || null;
+  const panels = job.concept_json?.qc_side_panels || {};
+  const panelCount = PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).length;
+  const proofUrls = job.all_view_urls || {};
+  const proofCount = Object.values(proofUrls).filter(Boolean).length;
+  const driverReady = Boolean(proofUrls.driver || proofUrls.side);
+
+  const step = (label: string, done: boolean, detail: string) => (
+    <div key={label} className="flex items-start gap-2">
+      <span
+        aria-hidden
+        className={`mt-1 h-2 w-2 shrink-0 rounded-full ${done ? "bg-emerald-500" : "bg-gray-300"}`}
+      />
+      <div className="min-w-0">
+        <div className={`text-[11px] font-semibold ${done ? "text-gray-900" : "text-gray-400"}`}>
+          {label}
+        </div>
+        <div className="truncate text-[10px] text-gray-500" title={detail}>{detail}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+          A.T.L.A.S.
+        </span>
+        <span className="text-[10px] text-gray-400">
+          {atlas ? `V${atlas.revisionSequence} · ${atlas.promptVersion}` : "authoring"}
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {step(
+          "Accepted master",
+          Boolean(atlas?.master?.contentHash),
+          atlas?.master?.contentHash
+            ? `${atlas.master.contentHash.slice(0, 16)} · ${atlas.master.widthPx}×${atlas.master.heightPx}`
+            : "Call 1 has not produced an accepted master yet",
+        )}
+        {step(
+          `Print panels ${panelCount}/${PRODUCTION_SURFACES.length}`,
+          panelCount === PRODUCTION_SURFACES.length,
+          panelCount
+            ? PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).join(" · ")
+            : "Cut deterministically from the accepted master",
+        )}
+        {step(
+          "Driver 3D",
+          driverReady,
+          driverReady
+            ? "Rendered and hash-verified before the other cameras"
+            : "Rendered first, so the design can be judged before the full set",
+        )}
+        {step(
+          `3D proofs ${proofCount}/7`,
+          proofCount >= 7,
+          proofCount >= 7
+            ? "All seven views saved"
+            : "Projected from the same frozen master, concurrently",
+        )}
+      </div>
+    </div>
+  );
+}
+
 function JobHeader({
   job,
   selectedVersion,
@@ -614,13 +696,29 @@ function JobHeader({
 }) {
   const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ");
   const history = job.version_history;
+  // THE GENERATION ID IS THE FIRST PERMANENT IDENTITY OF A DESIGN.
+  //
+  // It is minted at Create Design and every later table carries it forward.
+  // The Design ID and the Design Order # are minted later, when the Production
+  // Pack is purchased, and attached to this same generation -- so before that
+  // purchase they are genuinely not assigned. Showing them as "—" read as
+  // missing data on a healthy job; saying what they are waiting for is the
+  // truth, and it is what tells an operator the record is fine.
+  const awaitingPurchase = "Not assigned until Production Pack";
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">
+          Generation ID
+        </div>
+        <div className="mt-0.5 break-all font-mono text-sm font-semibold text-gray-900">
+          {job.generation_id || "—"}
+        </div>
+      </div>
       <dl className="grid gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
         {[
-          ["Design Order #", job.order_number || "—"],
-          ["Design ID", job.design_id || "—"],
-          ["generationId", job.generation_id || "—"],
+          ["Design ID", job.design_id || awaitingPurchase],
+          ["Design Order #", job.order_number || awaitingPurchase],
           ["Customer vehicle", vehicle || "—"],
           ["Current A.T.L.A.S. version", history.current ? `V${history.current.version}` : "—"],
           ["Job status", `${job.state}${job.current_stage ? ` · ${job.current_stage}` : ""}`],
@@ -628,12 +726,21 @@ function JobHeader({
         ].map(([label, value]) => (
           <div key={label}>
             <dt className="text-gray-500">{label}</dt>
-            <dd className="truncate font-mono text-[11px] font-semibold text-gray-900" title={String(value)}>
+            <dd
+              className={`truncate text-[11px] font-semibold ${
+                value === awaitingPurchase
+                  ? "text-gray-400"
+                  : "font-mono text-gray-900"
+              }`}
+              title={String(value)}
+            >
               {value}
             </dd>
           </div>
         ))}
       </dl>
+
+      <AtlasProgressCard job={job} />
 
       <div className="mt-4 border-t border-gray-100 pt-3">
         <div className="mb-2 flex items-center justify-between">
