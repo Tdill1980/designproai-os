@@ -18,8 +18,23 @@ const PRODUCTION_SURFACES = ["driver", "passenger", "hood", "roof", "front", "re
 // The physical judgements only a person standing at a vehicle template can
 // make. The board's derived checks (version, lineage, resolution) are absent on
 // purpose -- the server computes those from the artifacts themselves.
-const SURFACE_HUMAN_CHECKS = [
-  "template", "dimensions", "bleed", "fit", "openings", "safe", "design",
+// The design authority's literal checklist for one surface against one exact
+// file. Every one must be ticked before that surface may be approved, and all
+// six surfaces must be approved before the production pack gate opens.
+const SURFACE_QC_CHECKLIST = [
+  "template",            // correct vehicle/template
+  "surface",             // correct surface
+  "version",             // correct design version
+  "fit",                 // panel fit/alignment verified on the actual template
+  "safeArea",            // logos and text inside the safe printable area
+  "openings",            // wheel wells, handles, windows, lights, body breaks
+  "trimDims",            // trim dimensions verified
+  "printDims",           // print dimensions verified
+  "bleed",               // 5" bleed verified
+  "dpi",                 // effective DPI / resolution verified
+  "customerText",        // customer text and contact info verified
+  "artworkIntact",       // no missing, cropped or shifted artwork
+  "finalFileInspected",  // final production file visually inspected
 ];
 const VEHICLE_CLASSES = ["car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv", "trailer", "aircraft", "heavy_equipment"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -1252,10 +1267,10 @@ function exactQc(body, gate) {
       const answers = claimed[surface];
       if (!answers || typeof answers !== "object" || Array.isArray(answers)) return null;
       const given = Object.keys(answers).sort();
-      if (JSON.stringify(given) !== JSON.stringify([...SURFACE_HUMAN_CHECKS].sort())) return null;
-      if (SURFACE_HUMAN_CHECKS.some((check) => answers[check] !== true)) return null;
+      if (JSON.stringify(given) !== JSON.stringify([...SURFACE_QC_CHECKLIST].sort())) return null;
+      if (SURFACE_QC_CHECKLIST.some((check) => answers[check] !== true)) return null;
       surfaceQc[surface] = Object.fromEntries(
-        [...SURFACE_HUMAN_CHECKS].sort().map((check) => [check, true]),
+        [...SURFACE_QC_CHECKLIST].sort().map((check) => [check, true]),
       );
     }
   }
@@ -2463,6 +2478,75 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       // binds them to the surface and revision they correct. The database refuses
       // a correction with no Call 9 panel to correct, a surface outside the six,
       // and a file outside the caller's own upload namespace.
+      // THE HUMAN CHECKLIST, PER SURFACE, AGAINST ONE EXACT FILE.
+      //
+      // Read and write the design authority's physical template check. The row
+      // is keyed by the panel's content hash, so a corrected or re-uploaded
+      // panel -- different bytes, different hash -- simply has no checklist yet
+      // and cannot inherit the previous file's approval. That is a property of
+      // the key, not of any reset logic that could be forgotten.
+      const surfaceQcMatch = url.pathname.match(
+        /^\/api\/jobs\/([0-9a-f-]{36})\/surfaces\/([a-z]{4,9})\/qc$/,
+      );
+      if (surfaceQcMatch) {
+        const generationIdValue = surfaceQcMatch[1].toLowerCase();
+        const surfaceKey = surfaceQcMatch[2];
+        if (!UUID_PATTERN.test(generationIdValue)) return json(res, 400, { error: "generation_id_invalid" });
+        if (!PRODUCTION_SURFACES.includes(surfaceKey)) return json(res, 400, { error: "surface_key_invalid" });
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          const required = ["artifactHash", "checks"];
+          if (!body || typeof body !== "object" || Array.isArray(body)
+            || required.some((key) => body[key] === undefined)) {
+            return json(res, 400, { error: "surface_qc_request_invalid" });
+          }
+          const artifactHash = String(body.artifactHash || "").toLowerCase();
+          if (!SHA256_PATTERN.test(artifactHash)) return json(res, 400, { error: "artifact_hash_invalid" });
+          const claimed = body.checks;
+          if (!claimed || typeof claimed !== "object" || Array.isArray(claimed)) {
+            return json(res, 400, { error: "surface_qc_checks_invalid" });
+          }
+          // Rebuilt from the gateway's own list, so a caller cannot invent a
+          // check, omit one, or store anything but a boolean.
+          const checks = Object.fromEntries(
+            SURFACE_QC_CHECKLIST.map((key) => [key, claimed[key] === true]),
+          );
+          const approved = body.approved === true;
+          const needsCorrection = body.needsCorrection === true;
+          if (approved && needsCorrection) return json(res, 400, { error: "surface_qc_state_contradictory" });
+          // The board disables the button, but the button is not the control.
+          if (approved && SURFACE_QC_CHECKLIST.some((key) => checks[key] !== true)) {
+            return json(res, 409, { error: "surface_qc_incomplete", required: SURFACE_QC_CHECKLIST });
+          }
+          const correctionReason = String(body.correctionReason || "").trim().slice(0, 2000);
+          if (needsCorrection && !correctionReason) return json(res, 400, { error: "correction_reason_required" });
+          return json(res, 200, await rpc(fetchImpl, token, cfg, "record_designpro_surface_qc", {
+            p_generation_id: generationIdValue,
+            p_surface_key: surfaceKey,
+            p_artifact_hash: artifactHash,
+            p_artifact_id: UUID_PATTERN.test(String(body.artifactId || "").toLowerCase())
+              ? String(body.artifactId).toLowerCase() : null,
+            p_atlas_revision_id: UUID_PATTERN.test(String(body.atlasRevisionId || "").toLowerCase())
+              ? String(body.atlasRevisionId).toLowerCase() : null,
+            p_atlas_master_hash: SHA256_PATTERN.test(String(body.atlasMasterHash || "").toLowerCase())
+              ? String(body.atlasMasterHash).toLowerCase() : null,
+            p_checks: checks,
+            p_approved: approved,
+            p_needs_correction: needsCorrection,
+            p_correction_reason: correctionReason || null,
+          }));
+        }
+      }
+      const surfaceQcListMatch = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/surface-qc$/);
+      if (req.method === "GET" && surfaceQcListMatch) {
+        const generationIdValue = surfaceQcListMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(generationIdValue)) return json(res, 400, { error: "generation_id_invalid" });
+        const rows = await rpc(fetchImpl, token, cfg, "get_designpro_surface_qc", {
+          p_generation_id: generationIdValue,
+        });
+        return json(res, 200, Array.isArray(rows) ? rows : []);
+      }
+
       const correctionMatch = url.pathname.match(
         /^\/api\/jobs\/([0-9a-f-]{36})\/panels\/([a-z]{4,9})\/correction$/,
       );

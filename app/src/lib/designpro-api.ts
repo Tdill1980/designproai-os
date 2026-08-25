@@ -401,6 +401,46 @@ export type PreflightQc = {
   surfaceQc: Record<string, Record<string, boolean>>;
 };
 
+/**
+ * The design authority's literal checklist for one surface against one file.
+ *
+ * Thirteen questions only a person standing at a vehicle template can answer.
+ * The machine checks — lineage, hash and effective DPI — are computed from the
+ * artifacts and are deliberately not in this list: they are not a substitute
+ * for the physical check and they must not be assertable by a browser.
+ */
+export const SURFACE_QC_CHECKLIST: Array<[string, string]> = [
+  ["template", "Correct vehicle / template"],
+  ["surface", "Correct surface"],
+  ["version", "Correct design version"],
+  ["fit", "Panel fit / alignment verified on actual vehicle template"],
+  ["safeArea", "Logos and text in safe printable area"],
+  ["openings", "Wheel wells, handles, windows, lights, body breaks checked"],
+  ["trimDims", "Trim dimensions verified"],
+  ["printDims", "Print dimensions verified"],
+  ["bleed", "5″ bleed verified"],
+  ["dpi", "Effective DPI / resolution verified"],
+  ["customerText", "Customer text and contact info verified"],
+  ["artworkIntact", "No missing, cropped or shifted artwork"],
+  ["finalFileInspected", "Final production file visually inspected"],
+];
+
+export type SurfaceQcRecord = {
+  generationId: string;
+  surfaceKey: string;
+  /** The exact file this checklist belongs to. */
+  artifactHash: string;
+  atlasRevisionId: string | null;
+  atlasMasterHash: string | null;
+  checks: Record<string, boolean>;
+  approved: boolean;
+  needsCorrection: boolean;
+  correctionReason: string | null;
+  checkedBy: string;
+  checkedByName: string;
+  checkedAt: string;
+};
+
 export type FinalQc = {
   outputHashesVerified: boolean;
   printDimensionsVerified: boolean;
@@ -878,6 +918,34 @@ export const dpApi = {
     request<{ accepted: true }>(`/jobs/${encodeURIComponent(generationId)}/resume`, {
       method: "POST",
     }),
+  /** Every surface checklist recorded for this generation, newest first. */
+  listSurfaceQc: (generationId: string) =>
+    request<SurfaceQcRecord[]>(`/jobs/${encodeURIComponent(generationId)}/surface-qc`),
+  /**
+   * Record one surface's checklist against ONE EXACT FILE.
+   *
+   * `artifactHash` is the identity, not the surface: a corrected or re-uploaded
+   * panel is different bytes and therefore a different row, so its checklist
+   * starts empty and cannot inherit the previous file's approval.
+   */
+  recordSurfaceQc: (
+    generationId: string,
+    surfaceKey: string,
+    submission: {
+      artifactHash: string;
+      artifactId?: string | null;
+      atlasRevisionId?: string | null;
+      atlasMasterHash?: string | null;
+      checks: Record<string, boolean>;
+      approved?: boolean;
+      needsCorrection?: boolean;
+      correctionReason?: string;
+    },
+  ) =>
+    request<SurfaceQcRecord>(
+      `/jobs/${encodeURIComponent(generationId)}/surfaces/${encodeURIComponent(surfaceKey)}/qc`,
+      { method: "POST", body: JSON.stringify(submission) },
+    ),
   approvePreflight: (generationId: string, qc: PreflightQc, notes: string) =>
     request<{ accepted: true }>(`/jobs/${encodeURIComponent(generationId)}/approvals/preflight`, {
       method: "POST",

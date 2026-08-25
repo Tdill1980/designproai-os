@@ -164,7 +164,11 @@ const preflightQc = {
   surfaceQc: Object.fromEntries(
     ["driver", "passenger", "hood", "roof", "front", "rear"].map((surface) => [
       surface,
-      { template: true, dimensions: true, bleed: true, fit: true, openings: true, safe: true, design: true },
+      {
+        template: true, surface: true, version: true, fit: true, safeArea: true,
+        openings: true, trimDims: true, printDims: true, bleed: true, dpi: true,
+        customerText: true, artworkIntact: true, finalFileInspected: true,
+      },
     ]),
   ),
 };
@@ -241,14 +245,18 @@ test("preflight refuses a per-surface QC record that is partial, invented or unt
   // approvedSides records THAT a side was approved; surfaceQc records WHAT was
   // verified on it. Each of these is a way the receipt could otherwise claim a
   // physical template check nobody performed.
-  const full = { template: true, dimensions: true, bleed: true, fit: true, openings: true, safe: true, design: true };
+  const full = {
+    template: true, surface: true, version: true, fit: true, safeArea: true,
+    openings: true, trimDims: true, printDims: true, bleed: true, dpi: true,
+    customerText: true, artworkIntact: true, finalFileInspected: true,
+  };
   const six = ["driver", "passenger", "hood", "roof", "front", "rear"];
   const complete = Object.fromEntries(six.map((surface) => [surface, { ...full }]));
   for (const [why, surfaceQc] of [
     ["a surface missing", Object.fromEntries(six.slice(0, 5).map((s) => [s, { ...full }]))],
     ["a seventh surface", { ...complete, closeup: { ...full } }],
     ["one check unticked", { ...complete, rear: { ...full, fit: false } }],
-    ["one check absent", { ...complete, rear: { template: true, dimensions: true, bleed: true, fit: true, openings: true, safe: true } }],
+    ["one check absent", { ...complete, rear: (({ finalFileInspected, ...rest }) => rest)({ ...full }) }],
     ["a derived check smuggled in", { ...complete, rear: { ...full, lineage: true } }],
     ["absent entirely", undefined],
   ]) {

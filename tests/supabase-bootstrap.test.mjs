@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-migration chain', () => {
-  assert.equal(migrationNames.length, 50);
+test('fresh bootstrap contains one ordered fifty-one-migration chain', () => {
+  assert.equal(migrationNames.length, 51);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -101,6 +101,9 @@ test('fresh bootstrap contains one ordered fifty-migration chain', () => {
       // atlas run raised on the next statement and no master ever reached
       // manufacturing.
       '20260825120000', '20260825121000',
+      // Carley's checklist, on the server, keyed by the panel's own content
+      // hash -- so a corrected file starts an empty checklist by construction.
+      '20260825140000',
     ],
   );
 });
