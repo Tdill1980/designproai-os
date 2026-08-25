@@ -341,14 +341,23 @@ app.post("/internal/panels/upscale", authMiddleware, async (req, res) => {
     // The GENIE trim inches this surface was cut to, read off the branded Call 9
     // panel. A correction replaces the artwork, never the geometry it has to fit,
     // so the target is the same whichever artifact is active.
+    // Read BOTH shapes, the same way enhance.upscale's own gate does. Call 9
+    // writes two: a gridslice panel carries trimWidthInches with a four-edge
+    // `bleed` object, an A.T.L.A.S. Call-1 promotion carries trimWidthIn with a
+    // scalar `bleedInches`. Naming only the gridslice shape would have refused
+    // every atlas panel here with panel_upscale_dimensions_missing -- which is
+    // exactly the set this button exists to enhance.
     const metadata = branded.metadata || {};
-    const trimWidthIn = Number(metadata.trimWidthInches);
-    const trimHeightIn = Number(metadata.trimHeightInches);
+    const trimWidthIn = Number(metadata.trimWidthIn ?? metadata.trimWidthInches);
+    const trimHeightIn = Number(metadata.trimHeightIn ?? metadata.trimHeightInches);
     if (!(trimWidthIn > 0) || !(trimHeightIn > 0)) {
       return res.status(409).json({ error: "panel_upscale_dimensions_missing" });
     }
-    const bleed = metadata.bleed || {};
-    if (!["top", "right", "bottom", "left"].every((edge) => Number(bleed[edge]) === 5)) {
+    const bleed = metadata.bleed && typeof metadata.bleed === "object" ? metadata.bleed : null;
+    const fiveOnEveryEdge = bleed
+      ? ["top", "right", "bottom", "left"].every((edge) => Number(bleed[edge]) === 5)
+      : Number(metadata.bleedInches) === 5;
+    if (!fiveOnEveryEdge) {
       return res.status(409).json({ error: "panel_upscale_bleed_invalid" });
     }
     const targetWidthPx = Math.round((trimWidthIn + 10) * 150);

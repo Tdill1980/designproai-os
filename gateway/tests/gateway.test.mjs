@@ -157,6 +157,20 @@ const preflightQc = {
   // stop at the browser, so the receipt said nothing about whether a designer
   // had looked at the rear panel.
   approvedSides: ["driver", "passenger", "hood", "roof", "front", "rear"],
+  // WHAT was verified on each side, not merely that it was approved. These are
+  // the physical judgements a designer makes at a vehicle template, and they
+  // lived in React state until now -- a reload erased them and the receipt
+  // recorded six ticked boxes with nothing about what was looked at.
+  surfaceQc: Object.fromEntries(
+    ["driver", "passenger", "hood", "roof", "front", "rear"].map((surface) => [
+      surface,
+      {
+        template: true, surface: true, version: true, fit: true, safeArea: true,
+        openings: true, trimDims: true, printDims: true, bleed: true, dpi: true,
+        customerText: true, artworkIntact: true, finalFileInspected: true,
+      },
+    ]),
+  ),
 };
 
 const finalQc = {
@@ -190,6 +204,7 @@ for (const [gate, expectedStage, qc] of [
     assert.equal(payload.p_qc.notes, "Operator verified");
     for (const [key, value] of Object.entries(qc)) {
       if (Array.isArray(value)) assert.deepEqual(payload.p_qc[key], [...value].sort());
+      else if (value && typeof value === "object") assert.deepEqual(payload.p_qc[key], value);
       else assert.equal(payload.p_qc[key], value);
     }
     if (gate === "final") {
@@ -222,6 +237,44 @@ test("preflight refuses a side list that is not exactly the six canonical surfac
     assert.ok(
       !calls.some((call) => call.url.endsWith("/rest/v1/rpc/approve_designpro_human_gate")),
       "a refused side list must never reach the gate RPC",
+    );
+  }
+});
+
+test("preflight refuses a per-surface QC record that is partial, invented or unticked", async (t) => {
+  // approvedSides records THAT a side was approved; surfaceQc records WHAT was
+  // verified on it. Each of these is a way the receipt could otherwise claim a
+  // physical template check nobody performed.
+  const full = {
+    template: true, surface: true, version: true, fit: true, safeArea: true,
+    openings: true, trimDims: true, printDims: true, bleed: true, dpi: true,
+    customerText: true, artworkIntact: true, finalFileInspected: true,
+  };
+  const six = ["driver", "passenger", "hood", "roof", "front", "rear"];
+  const complete = Object.fromEntries(six.map((surface) => [surface, { ...full }]));
+  for (const [why, surfaceQc] of [
+    ["a surface missing", Object.fromEntries(six.slice(0, 5).map((s) => [s, { ...full }]))],
+    ["a seventh surface", { ...complete, closeup: { ...full } }],
+    ["one check unticked", { ...complete, rear: { ...full, fit: false } }],
+    ["one check absent", { ...complete, rear: (({ finalFileInspected, ...rest }) => rest)({ ...full }) }],
+    ["a derived check smuggled in", { ...complete, rear: { ...full, lineage: true } }],
+    ["absent entirely", undefined],
+  ]) {
+    const calls = [];
+    const server = createGateway({ env, fetchImpl: authenticatedFetch(calls) });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const qc = { ...preflightQc };
+    if (surfaceQc === undefined) delete qc.surfaceQc; else qc.surfaceQc = surfaceQc;
+    const response = await fetch(`${base}/api/jobs/job-1/approvals/preflight`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({ qc, notes: "" }),
+    });
+    assert.equal(response.status, 400, `${why} was accepted`);
+    assert.ok(
+      !calls.some((call) => call.url.endsWith("/rest/v1/rpc/approve_designpro_human_gate")),
+      `${why} reached the gate RPC`,
     );
   }
 });
@@ -1207,6 +1260,105 @@ test("authenticated browser can enqueue Calls 1-7 without selecting engine contr
     p_input: input,
     p_idempotency_key: idempotencyKey,
   });
+});
+
+// PanelPro must open on the generationId the moment Create Design mints it.
+// Every job route used to resolve only through designpro_workflow_runs, and a
+// run does not exist until the handoff -- after all seven proofs land. So the
+// board answered 404 for the entire window in which the design is actually
+// worth watching. Same id, looked up in the table that has had it since second
+// zero; no second identity, no new column.
+test("a job route resolves a generation that has no workflow run yet", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-00000000002a";
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.includes("/rest/v1/designpro_workflow_runs")) return Response.json([]);
+      if (value.includes("/rest/v1/designpro_generation_requests")) {
+        return Response.json([{
+          id: "11111111-2222-4333-8444-55555555002a",
+          generation_id: generationId,
+          state: "queued",
+          request_input: {
+            contractVersion: "designpro.calls-1-7-input.v3",
+            pipelineMode: "flat-first-atlas-v1",
+            vehicle: { year: "2025", make: "Ford", model: "Transit", type: "van" },
+            brief: "Bright commercial bakery wrap",
+            designName: "Becky's Bakery Transit",
+          },
+          created_at: "2026-08-25T18:00:00Z",
+          updated_at: "2026-08-25T18:00:00Z",
+        }]);
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/jobs/${generationId}`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.generationId, generationId);
+  assert.equal(body.pipelineMode, "flat-first-atlas-v1");
+  assert.equal(body.handoffPending, true);
+  assert.equal(body.designId, "DID-90000000");
+  assert.deepEqual(body.vehicle, { year: "2025", make: "Ford", model: "Transit", type: "van" });
+  // Nothing has been manufactured yet, and saying so is the point: an empty
+  // stage list is what lets the board fill in as the atlas and proofs land.
+  assert.deepEqual(body.stages, []);
+  // The order number is minted at purchase; it is null now, never invented.
+  assert.equal(body.orderNumber, null);
+});
+
+test("artifacts and approved views answer empty, not 404, before the handoff", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-00000000002b";
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.includes("/rest/v1/designpro_workflow_runs")) return Response.json([]);
+      if (value.includes("/rest/v1/designpro_generation_requests")) {
+        // Honour the generation_id filter, so the not-found case below is a
+        // real absence rather than a stub that answers everything.
+        if (!value.includes(generationId)) return Response.json([]);
+        return Response.json([{
+          id: "11111111-2222-4333-8444-55555555002b",
+          generation_id: generationId,
+          state: "leased",
+          request_input: {
+            contractVersion: "designpro.calls-1-7-input.v3",
+            pipelineMode: "flat-first-atlas-v1",
+            vehicle: { year: "2025", make: "Ford", model: "Transit", type: "van" },
+            brief: "Bright commercial bakery wrap",
+            designName: "Becky's Bakery Transit",
+          },
+          created_at: "2026-08-25T18:00:00Z",
+        }]);
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  for (const path of ["artifacts", "approved-views"]) {
+    const response = await fetch(`${base}/api/jobs/${generationId}/${path}`, {
+      headers: { cookie: "dp_session=test-token" },
+    });
+    assert.equal(response.status, 200, `${path} refused a live generation`);
+    assert.deepEqual(await response.json(), []);
+  }
+  // A generation that genuinely does not exist is still 404.
+  const missing = await fetch(`${base}/api/jobs/90000000-0000-4000-8000-0000000000ff/artifacts`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(missing.status, 404);
 });
 
 test("flat-first v3 opts into the isolated intake RPC without changing v1", async (t) => {

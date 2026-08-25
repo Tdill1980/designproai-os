@@ -59,6 +59,41 @@ function metaNumber(metadata: Record<string, unknown>, key: string): number {
 }
 
 /**
+ * CALL 9 WRITES TWO METADATA SHAPES, AND ONLY ONE WAS BEING READ.
+ *
+ * A gridslice panel carries `trimWidthInches` with a four-edge `bleed` object.
+ * An A.T.L.A.S. Call-1 promotion carries `trimWidthIn` with a scalar
+ * `bleedInches` -- the shape `cutCallOnePanels` stamps and the claimant's
+ * promotion path copies through verbatim. Naming only the gridslice spelling
+ * meant every atlas panel reached RevisionStudio with `w: 0, h: 0`, so the card
+ * rendered the side with no dimensions at all: no trim inches, no square
+ * footage, nothing to compare against the proof beside it. The panels were
+ * correct; the reader was looking for a key they do not have.
+ *
+ * `enhance.upscale` already reads both (`meta.trimWidthIn ?? meta.trimWidthInches`).
+ * This is the same tolerance, in the surface the customer actually sees.
+ */
+function panelInches(metadata: Record<string, unknown>, edge: "Width" | "Height"): number {
+  return metaNumber(metadata, `trim${edge}In`) || metaNumber(metadata, `trim${edge}Inches`);
+}
+
+function printInches(metadata: Record<string, unknown>, edge: "Width" | "Height"): number {
+  return metaNumber(metadata, `print${edge}In`) || metaNumber(metadata, `print${edge}Inches`);
+}
+
+/** Five inches per edge, stated either as the object or the scalar. */
+function bleedInches(metadata: Record<string, unknown>): number {
+  const bleed = metadata?.bleed;
+  if (bleed && typeof bleed === "object" && !Array.isArray(bleed)) {
+    const edges = ["top", "right", "bottom", "left"]
+      .map((edge) => Number((bleed as Record<string, unknown>)[edge]));
+    if (edges.every((value) => Number.isFinite(value) && value === edges[0])) return edges[0];
+    return 0;
+  }
+  return metaNumber(metadata, "bleedInches");
+}
+
+/**
  * THE PACK'S IDENTITY IS THE PROOF IT WAS BOUND TO.
  *
  * One approved proof binds one panel set for one revision, so the proof's
@@ -219,9 +254,16 @@ export function toProductionLayers(input: {
       revision_id: revisionId,
       side: SIDE_LABEL_FOR_SURFACE[surface],
       version: identity.version,
+      // Trim is the vehicle side; print is trim plus the physical bleed on every
+      // edge. Both are carried so the card can show the panel at print size AND
+      // draw where the trim sits inside it, which is the only way a designer can
+      // see what survives the cut.
       dimensions_inches: {
-        w: metaNumber(panel.metadata, "trimWidthInches"),
-        h: metaNumber(panel.metadata, "trimHeightInches"),
+        w: panelInches(panel.metadata, "Width"),
+        h: panelInches(panel.metadata, "Height"),
+        print_w: printInches(panel.metadata, "Width"),
+        print_h: printInches(panel.metadata, "Height"),
+        bleed: bleedInches(panel.metadata),
       },
       background_url: separationGap ? "" : duplicate!.signedUrl,
       branding_url: panel.signedUrl,
@@ -231,6 +273,7 @@ export function toProductionLayers(input: {
         production_eligible: true,
         pack_version: identity.version,
         source_hash: identity.sourceHash,
+        source_master_hash: String(panel.metadata?.sourceMasterHash || ""),
         source_proof_url: binding,
         expected_sides: expectedSides,
         logo_pack: logoPack,

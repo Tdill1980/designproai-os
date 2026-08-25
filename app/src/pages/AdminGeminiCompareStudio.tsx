@@ -17,6 +17,8 @@ import {
   type GenieSurfaceKey,
   type PreflightQc,
   PRODUCTION_SURFACES,
+  SURFACE_QC_CHECKLIST,
+  type SurfaceQcRecord,
   type WorkflowArtifact,
 } from "@/lib/designpro-api";
 import {
@@ -603,6 +605,88 @@ const STUDIO_RENDER_ACE_ENABLED = false;
  * V1 is never replaced when V2 is made. Every version stays selectable, and
  * selecting one is what switches the workspace below to that revision's assets.
  */
+/**
+ * THE A.T.L.A.S. CARD, FILLING IN AS THE SERVER ACTUALLY PRODUCES.
+ *
+ * PanelPro is the live internal production record of a generation, not a report
+ * written after the fact. The moment Create Design mints a generationId this
+ * board can be opened on it, and at that instant there is genuinely nothing but
+ * the brief -- so the card says so, and then fills:
+ *
+ *   master accepted -> six panels cut -> Driver 3D -> the remaining six proofs
+ *
+ * Each row states what exists RIGHT NOW. Nothing is pre-drawn as done and
+ * nothing is inferred from elapsed time: a panel counts when its artifact
+ * exists, a proof counts when its view exists. An operator watching this card
+ * is watching the database, which is the only thing worth watching.
+ */
+function AtlasProgressCard({ job }: { job: PanelProStudioJob }) {
+  const atlas = job.atlas_versions[job.atlas_versions.length - 1] || null;
+  const panels = job.concept_json?.qc_side_panels || {};
+  const panelCount = PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).length;
+  const proofUrls = job.all_view_urls || {};
+  const proofCount = Object.values(proofUrls).filter(Boolean).length;
+  const driverReady = Boolean(proofUrls.driver || proofUrls.side);
+
+  const step = (label: string, done: boolean, detail: string) => (
+    <div key={label} className="flex items-start gap-2">
+      <span
+        aria-hidden
+        className={`mt-1 h-2 w-2 shrink-0 rounded-full ${done ? "bg-emerald-500" : "bg-gray-300"}`}
+      />
+      <div className="min-w-0">
+        <div className={`text-[11px] font-semibold ${done ? "text-gray-900" : "text-gray-400"}`}>
+          {label}
+        </div>
+        <div className="truncate text-[10px] text-gray-500" title={detail}>{detail}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+          A.T.L.A.S.
+        </span>
+        <span className="text-[10px] text-gray-400">
+          {atlas ? `V${atlas.revisionSequence} · ${atlas.promptVersion}` : "authoring"}
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {step(
+          "Accepted master",
+          Boolean(atlas?.master?.contentHash),
+          atlas?.master?.contentHash
+            ? `${atlas.master.contentHash.slice(0, 16)} · ${atlas.master.widthPx}×${atlas.master.heightPx}`
+            : "Call 1 has not produced an accepted master yet",
+        )}
+        {step(
+          `Print panels ${panelCount}/${PRODUCTION_SURFACES.length}`,
+          panelCount === PRODUCTION_SURFACES.length,
+          panelCount
+            ? PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).join(" · ")
+            : "Cut deterministically from the accepted master",
+        )}
+        {step(
+          "Driver 3D",
+          driverReady,
+          driverReady
+            ? "Rendered and hash-verified before the other cameras"
+            : "Rendered first, so the design can be judged before the full set",
+        )}
+        {step(
+          `3D proofs ${proofCount}/7`,
+          proofCount >= 7,
+          proofCount >= 7
+            ? "All seven views saved"
+            : "Projected from the same frozen master, concurrently",
+        )}
+      </div>
+    </div>
+  );
+}
+
 function JobHeader({
   job,
   selectedVersion,
@@ -614,13 +698,29 @@ function JobHeader({
 }) {
   const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ");
   const history = job.version_history;
+  // THE GENERATION ID IS THE FIRST PERMANENT IDENTITY OF A DESIGN.
+  //
+  // It is minted at Create Design and every later table carries it forward.
+  // The Design ID and the Design Order # are minted later, when the Production
+  // Pack is purchased, and attached to this same generation -- so before that
+  // purchase they are genuinely not assigned. Showing them as "—" read as
+  // missing data on a healthy job; saying what they are waiting for is the
+  // truth, and it is what tells an operator the record is fine.
+  const awaitingPurchase = "Not assigned until Production Pack";
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">
+          Generation ID
+        </div>
+        <div className="mt-0.5 break-all font-mono text-sm font-semibold text-gray-900">
+          {job.generation_id || "—"}
+        </div>
+      </div>
       <dl className="grid gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
         {[
-          ["Design Order #", job.order_number || "—"],
-          ["Design ID", job.design_id || "—"],
-          ["generationId", job.generation_id || "—"],
+          ["Design ID", job.design_id || awaitingPurchase],
+          ["Design Order #", job.order_number || awaitingPurchase],
           ["Customer vehicle", vehicle || "—"],
           ["Current A.T.L.A.S. version", history.current ? `V${history.current.version}` : "—"],
           ["Job status", `${job.state}${job.current_stage ? ` · ${job.current_stage}` : ""}`],
@@ -628,12 +728,21 @@ function JobHeader({
         ].map(([label, value]) => (
           <div key={label}>
             <dt className="text-gray-500">{label}</dt>
-            <dd className="truncate font-mono text-[11px] font-semibold text-gray-900" title={String(value)}>
+            <dd
+              className={`truncate text-[11px] font-semibold ${
+                value === awaitingPurchase
+                  ? "text-gray-400"
+                  : "font-mono text-gray-900"
+              }`}
+              title={String(value)}
+            >
               {value}
             </dd>
           </div>
         ))}
       </dl>
+
+      <AtlasProgressCard job={job} />
 
       <div className="mt-4 border-t border-gray-100 pt-3">
         <div className="mb-2 flex items-center justify-between">
@@ -811,18 +920,29 @@ function LogoGallery({ job, selectedVersion }: { job: PanelProStudioJob; selecte
  * submission in the Production Pack section, and this is the evidence a person
  * assembles before they touch it.
  */
-const SURFACE_QC_CHECKS: Array<[string, string, "human" | "derived"]> = [
-  ["template", "Correct vehicle template for this exact year/make/model", "human"],
-  ["version", "Panel is from the selected A.T.L.A.S. version", "derived"],
-  ["lineage", "Proof and panel come from the same master", "derived"],
-  ["dimensions", "Trim and print dimensions match the vehicle record", "human"],
-  ["bleed", "5 inches of bleed on all four edges", "human"],
-  ["fit", "Lays on the real template and physically fits", "human"],
-  ["openings", "Wheel wells, glass and openings fall where they should", "human"],
-  ["safe", "Text and logos clear of cut areas and openings", "human"],
-  ["resolution", "Effective DPI is adequate for print", "derived"],
-  ["design", "Design matches the approved proof", "human"],
-];
+/**
+ * The thirteen ticks each surface was approved on, for the release receipt.
+ *
+ * Read from what the server already recorded rather than from anything the
+ * board still holds: the durable record is `designpro_surface_qc`, and this
+ * copies it into the gate's evidence so the approval and the checklist that
+ * justified it end up in the same receipt.
+ */
+function approvedSurfaceChecklists(
+  records: Record<string, SurfaceQcRecord> = {},
+): Record<string, Record<string, boolean>> {
+  const approved: Record<string, Record<string, boolean>> = {};
+  for (const record of Object.values(records)) {
+    if (!record?.approved) continue;
+    approved[record.surfaceKey] = Object.fromEntries(
+      SURFACE_QC_CHECKLIST.map(([key]) => [key, record.checks?.[key] === true]),
+    );
+  }
+  return Object.fromEntries(PRODUCTION_SURFACES.map((surfaceKey) => [
+    surfaceKey,
+    approved[surfaceKey] || Object.fromEntries(SURFACE_QC_CHECKLIST.map(([key]) => [key, false])),
+  ]));
+}
 
 /**
  * ONE VERDICT FUNCTION, USED BY THE PANEL AND BY THE RELEASE GATE.
@@ -835,7 +955,6 @@ const SURFACE_QC_CHECKS: Array<[string, string, "human" | "derived"]> = [
 function surfaceQcVerdicts(
   job: PanelProStudioJob,
   selectedVersion: DesignVersion | null,
-  answers: Record<string, Record<string, boolean>>,
 ) {
   const derivedFor = (surfaceKey: GenieSurfaceKey) => {
     const panel = job.raw_artifacts.find(
@@ -860,127 +979,284 @@ function surfaceQcVerdicts(
     };
   };
 
-  return PRODUCTION_SURFACES.map((surfaceKey) => {
-    const derived = derivedFor(surfaceKey);
-    const given = answers[surfaceKey] || {};
-    const results = SURFACE_QC_CHECKS.map(([key, , kind]) => ({
-      key,
-      ok: kind === "derived" ? Boolean((derived as Record<string, unknown>)[key]) : given[key] === true,
-      kind,
-    }));
-    return {
-      surfaceKey,
-      derived,
-      results,
-      passed: results.every((entry) => entry.ok),
-      answered: results.filter((entry) => entry.ok).length,
-    };
-  });
+  // MACHINE EVIDENCE ONLY. What the server can prove from the artifacts
+  // themselves: that the panel belongs to the selected version, that it and its
+  // proof descend from one master, and what the effective resolution is. It is
+  // shown to the person making the call and never counts as one of their ticks.
+  return PRODUCTION_SURFACES.map((surfaceKey) => ({
+    surfaceKey,
+    derived: derivedFor(surfaceKey),
+  }));
 }
 
+/**
+ * THE DESIGN AUTHORITY'S CHECKLIST, PER SURFACE, AGAINST ONE EXACT FILE.
+ *
+ * Thirteen questions only a person standing at a real vehicle template can
+ * answer, ticked by hand, stored on the server against the panel's own content
+ * hash. Nothing here is scored automatically and nothing is pre-ticked: an
+ * automated lineage or DPI check is evidence for the person making the call, not
+ * a substitute for the call.
+ *
+ * THE HASH IS THE VERSION SAFETY. A corrected or re-uploaded panel is different
+ * bytes, so it addresses a different row, so its checklist is empty and its
+ * APPROVE SURFACE button is disabled again. There is no inheritance to prevent
+ * and no reset to remember -- a new file has simply never been checked.
+ */
 function SurfaceQcPanel({
   job,
   selectedVersion,
-  answers,
-  onAnswer,
+  records,
+  onRecorded,
 }: {
   job: PanelProStudioJob;
   selectedVersion: DesignVersion | null;
-  answers: Record<string, Record<string, boolean>>;
-  onAnswer: (surfaceKey: string, check: string, value: boolean) => void;
+  /** What the server has recorded, keyed by `${surfaceKey}:${artifactHash}`. */
+  records: Record<string, SurfaceQcRecord>;
+  onRecorded: (record: SurfaceQcRecord) => void;
 }) {
+  const { toast } = useToast();
   const [open, setOpen] = useState<string | null>(null);
-  const verdicts = useMemo(
-    () => surfaceQcVerdicts(job, selectedVersion, answers),
-    [job, selectedVersion, answers],
+  const [busy, setBusy] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, Record<string, boolean>>>({});
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const machine = useMemo(
+    () => surfaceQcVerdicts(job, selectedVersion),
+    [job, selectedVersion],
   );
-  const passedCount = verdicts.filter((entry) => entry.passed).length;
+
+  /** The ACTIVE production file for a surface: newest correction, else Call 9. */
+  const activeArtifact = (surfaceKey: string) => {
+    const corrected = (job.corrections?.[surfaceKey] || [])[0];
+    return corrected
+      || job.raw_artifacts.find((a) => a.kind === "panel" && a.surfaceKey === surfaceKey)
+      || null;
+  };
+
+  const surfaces = PRODUCTION_SURFACES.map((surfaceKey) => {
+    const artifact = activeArtifact(surfaceKey);
+    const hash = String(artifact?.contentHash || "");
+    const recorded = hash ? records[`${surfaceKey}:${hash}`] : undefined;
+    const draft = drafts[`${surfaceKey}:${hash}`];
+    const checks = draft || recorded?.checks || {};
+    const ticked = SURFACE_QC_CHECKLIST.filter(([key]) => checks[key] === true).length;
+    return {
+      surfaceKey,
+      artifact,
+      hash,
+      recorded,
+      checks,
+      ticked,
+      complete: ticked === SURFACE_QC_CHECKLIST.length,
+      evidence: machine.find((row) => row.surfaceKey === surfaceKey),
+    };
+  }).map((row) => ({
+    ...row,
+    // APPROVE SURFACE also needs the machine facts the server will re-prove:
+    // the panel belongs to the selected A.T.L.A.S. version, and its proof
+    // descends from the same master. Effective DPI is deliberately not here --
+    // upscale runs after the preflight gate in the frozen stage order, so
+    // requiring print resolution to approve a surface would deadlock the
+    // workflow. Resolution is enforced at enhancement and output, where it can
+    // actually be satisfied.
+    approvable: row.complete
+      && row.evidence?.derived.version === true
+      && row.evidence?.derived.lineage === true,
+  }));
+  const approvedCount = surfaces.filter((row) => row.recorded?.approved).length;
+
+  const tick = (surfaceKey: string, hash: string, key: string, value: boolean) => {
+    const id = `${surfaceKey}:${hash}`;
+    setDrafts((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] || records[id]?.checks || {}), [key]: value },
+    }));
+  };
+
+  const submit = async (
+    surfaceKey: string,
+    hash: string,
+    artifactId: string | null,
+    checks: Record<string, boolean>,
+    intent: "approve" | "correction",
+  ) => {
+    const id = `${surfaceKey}:${hash}`;
+    setBusy(id);
+    try {
+      const record = await dpApi.recordSurfaceQc(job.generation_id, surfaceKey, {
+        artifactHash: hash,
+        artifactId,
+        atlasRevisionId: selectedVersion?.revisionId || null,
+        atlasMasterHash: selectedVersion?.masterContentHash || null,
+        checks,
+        approved: intent === "approve",
+        needsCorrection: intent === "correction",
+        correctionReason: intent === "correction" ? (reasons[id] || "").trim() : undefined,
+      });
+      onRecorded(record);
+      setDrafts((prev) => { const next = { ...prev }; delete next[id]; return next; });
+      toast({
+        title: intent === "approve" ? `${surfaceKey} approved` : `${surfaceKey} marked for correction`,
+        description: intent === "approve"
+          ? "Recorded against this exact file. A corrected panel starts a fresh checklist."
+          : "The reason is on the record with your name and the time.",
+      });
+    } catch (cause: any) {
+      toast({ title: "The server refused this", description: cause?.message, variant: "destructive" });
+    } finally { setBusy(null); }
+  };
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-gray-900">Human QC — against the actual vehicle template</h2>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+          Human QC · per surface, against the real vehicle template
+        </span>
         <span
           className={`rounded px-2 py-0.5 font-mono text-[10px] font-bold ${
-            passedCount === PRODUCTION_SURFACES.length
+            approvedCount === PRODUCTION_SURFACES.length
               ? "bg-emerald-50 text-emerald-700"
               : "bg-amber-50 text-amber-700"
           }`}
         >
-          {passedCount}/{PRODUCTION_SURFACES.length} PASS
+          {approvedCount}/{PRODUCTION_SURFACES.length} APPROVED
         </span>
       </div>
 
-      {/* THE SUMMARY. One line per surface, so the state of the whole order is
-          readable without opening anything. */}
-      <div className="grid gap-1.5 sm:grid-cols-2">
-        {verdicts.map((entry) => (
-          <div key={entry.surfaceKey}>
-            <button
-              type="button"
-              onClick={() => setOpen(open === entry.surfaceKey ? null : entry.surfaceKey)}
-              className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition ${
-                entry.passed
-                  ? "border-emerald-300 bg-emerald-50/60 hover:border-emerald-400"
-                  : "border-amber-300 bg-amber-50/40 hover:border-amber-400"
-              }`}
-            >
-              <span className="text-xs font-semibold capitalize text-gray-900">{entry.surfaceKey}</span>
-              <span className="flex items-center gap-2">
-                <span className="font-mono text-[10px] text-gray-500">
-                  {entry.answered}/{SURFACE_QC_CHECKS.length}
+      <div className="space-y-1.5">
+        {surfaces.map((row) => {
+          const id = `${row.surfaceKey}:${row.hash}`;
+          const state = row.recorded?.approved
+            ? "APPROVED"
+            : row.recorded?.needsCorrection ? "NEEDS CORRECTION" : "PENDING";
+          return (
+            <div key={row.surfaceKey}>
+              <button
+                type="button"
+                onClick={() => setOpen(open === row.surfaceKey ? null : row.surfaceKey)}
+                disabled={!row.hash}
+                className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition disabled:opacity-50 ${
+                  state === "APPROVED"
+                    ? "border-emerald-300 bg-emerald-50/60 hover:border-emerald-400"
+                    : state === "NEEDS CORRECTION"
+                      ? "border-red-300 bg-red-50/40 hover:border-red-400"
+                      : "border-gray-300 bg-white hover:border-gray-400"
+                }`}
+              >
+                <span className="text-xs font-semibold capitalize text-gray-900">{row.surfaceKey}</span>
+                <span className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] text-gray-500">
+                    {row.hash ? `${row.ticked}/${SURFACE_QC_CHECKLIST.length}` : "no panel yet"}
+                  </span>
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                      state === "APPROVED"
+                        ? "bg-emerald-600 text-white"
+                        : state === "NEEDS CORRECTION" ? "bg-red-600 text-white" : "bg-gray-400 text-white"
+                    }`}
+                  >
+                    {state}
+                  </span>
                 </span>
-                <span
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                    entry.passed ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"
-                  }`}
-                >
-                  {entry.passed ? "PASS" : "NEEDS CORRECTION"}
-                </span>
-              </span>
-            </button>
+              </button>
 
-            {open === entry.surfaceKey && (
-              <ul className="mt-1 space-y-1 rounded-lg border border-gray-200 p-2">
-                {SURFACE_QC_CHECKS.map(([key, label, kind]) => {
-                  const result = entry.results.find((row) => row.key === key)!;
-                  return (
-                    <li key={key} className="flex items-start gap-2">
-                      {kind === "derived" ? (
-                        // Read, not asked. Ticking a box the board can already
-                        // answer would let a person attest to something they
-                        // did not check.
-                        <span
-                          className={`mt-0.5 inline-block h-3 w-3 shrink-0 rounded-sm ${
-                            result.ok ? "bg-emerald-500" : "bg-amber-500"
-                          }`}
-                          title={result.ok ? "verified by the server record" : "the server record does not support this"}
-                        />
-                      ) : (
+              {open === row.surfaceKey && row.hash && (
+                <div className="mt-1 rounded-lg border border-gray-200 p-3">
+                  <div className="mb-2 font-mono text-[9px] text-gray-500">
+                    file {row.hash.slice(0, 16)}
+                    {row.recorded && (
+                      <> · checked by {row.recorded.checkedByName} · {exactTimestamp(row.recorded.checkedAt)}</>
+                    )}
+                  </div>
+
+                  {/* Machine evidence, shown so the person deciding can see it.
+                      It is never a tick and never counts toward the thirteen. */}
+                  {row.evidence && (
+                    <ul className="mb-3 space-y-0.5 rounded bg-gray-50 p-2 text-[10px] text-gray-600">
+                      <li>Panel is from the selected A.T.L.A.S. version: {row.evidence.derived.version ? "yes" : "no"}</li>
+                      <li>Proof and panel share one master: {row.evidence.derived.lineage ? "yes" : "no"}</li>
+                      <li>
+                        Effective resolution:{" "}
+                        {row.evidence.derived.effectiveDpi !== null
+                          ? `${Math.round(row.evidence.derived.effectiveDpi * 10) / 10} PPI`
+                          : "unknown"}
+                      </li>
+                    </ul>
+                  )}
+
+                  <ul className="space-y-1">
+                    {SURFACE_QC_CHECKLIST.map(([key, label]) => (
+                      <li key={key} className="flex items-start gap-2">
                         <input
                           type="checkbox"
-                          className="mt-0.5 shrink-0 accent-emerald-600"
-                          checked={result.ok}
-                          onChange={(event) => onAnswer(entry.surfaceKey, key, event.target.checked)}
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-gray-300"
+                          checked={row.checks[key] === true}
+                          disabled={row.recorded?.approved === true || busy === id}
+                          onChange={(event) => tick(row.surfaceKey, row.hash, key, event.target.checked)}
                         />
+                        <span className="text-[11px] leading-snug text-gray-700">{label}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {row.recorded?.needsCorrection && row.recorded.correctionReason && (
+                    <p className="mt-2 rounded bg-red-50 p-2 text-[10px] text-red-700">
+                      {row.recorded.correctionReason}
+                    </p>
+                  )}
+
+                  {!row.recorded?.approved && (
+                    <div className="mt-3 space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Why this surface needs correction"
+                        value={reasons[id] || ""}
+                        onChange={(event) => setReasons((prev) => ({ ...prev, [id]: event.target.value }))}
+                        className="w-full rounded border border-gray-300 px-2 py-1 text-[11px]"
+                      />
+                      {row.complete && !row.approvable && (
+                        <p className="rounded bg-amber-50 p-2 text-[10px] text-amber-800">
+                          The checklist is complete, but this panel does not bind
+                          to the selected A.T.L.A.S. version and its proof. The
+                          server refuses the approval for the same reason.
+                        </p>
                       )}
-                      <span className="text-[11px] leading-snug text-gray-600">
-                        {label}
-                        {kind === "derived" && <span className="ml-1 text-gray-400">(from the record)</span>}
-                        {key === "resolution" && entry.derived.effectiveDpi !== null && (
-                          <span className="ml-1 font-mono text-gray-500">
-                            {Math.round(entry.derived.effectiveDpi * 10) / 10} PPI
-                          </span>
-                        )}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        ))}
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy === id || !(reasons[id] || "").trim()}
+                          onClick={() => submit(row.surfaceKey, row.hash, row.artifact?.id || null, row.checks, "correction")}
+                          className="flex-1 border-red-300 text-red-700 hover:bg-red-50"
+                        >
+                          Needs correction
+                        </Button>
+                        <Button
+                          size="sm"
+                          // Every one of the thirteen, or the button does not
+                          // arm. The server refuses an incomplete approval too,
+                          // so this is a courtesy rather than the control.
+                          disabled={!row.approvable || busy === id}
+                          onClick={() => submit(row.surfaceKey, row.hash, row.artifact?.id || null, row.checks, "approve")}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          {busy === id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Approve surface"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+
+      <p className="mt-3 text-[10px] leading-snug text-gray-500">
+        Each checklist is bound to that surface's exact file. A corrected or
+        re-uploaded panel starts a new checklist and must be approved again — an
+        approval is never inherited from the file it replaced.
+      </p>
     </div>
   );
 }
@@ -1083,12 +1359,15 @@ function ProductionPackSection({
   job,
   approvedSides,
   qcPassedSides,
+  surfaceQc,
   onApproved,
 }: {
   job: PanelProStudioJob;
   approvedSides: ReadonlySet<string>;
   /** Surfaces whose template check reads PASS. The release gate needs all six. */
   qcPassedSides: ReadonlySet<string>;
+  /** What the server recorded per surface, carried into the QC receipt. */
+  surfaceQc: Record<string, SurfaceQcRecord>;
   onApproved: () => Promise<void>;
 }) {
   const { toast } = useToast();
@@ -1123,6 +1402,9 @@ function ProductionPackSection({
         {
           ...(PREFLIGHT_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as PreflightQc),
           approvedSides: [...approvedSides],
+          // What was verified on each side, so the receipt records the physical
+          // check rather than only that a button was pressed.
+          surfaceQc: approvedSurfaceChecklists(surfaceQc),
         } as PreflightQc,
         preflightNotes,
       );
@@ -1429,9 +1711,18 @@ export default function AdminGeminiCompareStudio() {
    * are read off the server record instead of asked, so only the human ones
    * live here.
    */
-  const [surfaceQc, setSurfaceQc] = useState<Record<string, Record<string, boolean>>>({});
-  const answerSurfaceQc = useCallback((surfaceKey: string, check: string, value: boolean) => {
-    setSurfaceQc((prev) => ({ ...prev, [surfaceKey]: { ...(prev[surfaceKey] || {}), [check]: value } }));
+  // WHAT THE SERVER HAS RECORDED, keyed by `${surfaceKey}:${artifactHash}`.
+  // The checklist is not browser state any more: it is read back here, so a
+  // reload shows what was actually checked and by whom, and a corrected panel
+  // (different hash, no row) correctly shows an empty checklist.
+  const [surfaceQcRecords, setSurfaceQcRecords] = useState<Record<string, SurfaceQcRecord>>({});
+  const surfaceQcRef = useRef<Record<string, SurfaceQcRecord>>({});
+  const rememberSurfaceQc = useCallback((record: SurfaceQcRecord) => {
+    setSurfaceQcRecords((prev) => {
+      const next = { ...prev, [`${record.surfaceKey}:${record.artifactHash}`]: record };
+      surfaceQcRef.current = next;
+      return next;
+    });
   }, []);
   const [runningPanelPro, setRunningPanelPro] = useState(false);
   const [panelProProgress, setPanelProProgress] = useState<{ done: number; total: number; label: string } | null>(null);
@@ -1497,6 +1788,15 @@ export default function AdminGeminiCompareStudio() {
   const loadJob = useCallback(async (generationId: string) => {
     const next = await loadPanelProStudioJob(generationId, approvedSidesRef.current);
     if (next) setJob(next as unknown as Job);
+    // The checklist lives on the server, so it is READ here rather than
+    // remembered. A reload shows what was actually ticked, by whom and when;
+    // a job opened by a second person shows the same thing.
+    const recorded = await dpApi.listSurfaceQc(generationId).catch(() => [] as SurfaceQcRecord[]);
+    const byFile = Object.fromEntries(
+      recorded.map((record) => [`${record.surfaceKey}:${record.artifactHash}`, record]),
+    );
+    surfaceQcRef.current = byFile;
+    setSurfaceQcRecords(byFile);
     return next;
   }, []);
 
@@ -1614,14 +1914,19 @@ export default function AdminGeminiCompareStudio() {
    * renders from, so the gate and the panel can never disagree about whether a
    * side is releasable.
    */
+  // A surface counts as passed only when the SERVER holds an approval for the
+  // file that is active right now. A correction changes the active hash, so the
+  // old approval stops counting the moment it is superseded -- which is exactly
+  // the behaviour "never inherit approval from the old file" describes.
   const qcPassedSides = useMemo(() => {
     if (!versionedJob) return new Set<string>();
-    return new Set(
-      surfaceQcVerdicts(versionedJob, selectedVersion, surfaceQc)
-        .filter((entry) => entry.passed)
-        .map((entry) => entry.surfaceKey),
-    );
-  }, [versionedJob, selectedVersion, surfaceQc]);
+    return new Set(PRODUCTION_SURFACES.filter((surfaceKey) => {
+      const active = (versionedJob.corrections?.[surfaceKey] || [])[0]
+        || versionedJob.raw_artifacts.find((a) => a.kind === "panel" && a.surfaceKey === surfaceKey);
+      const hash = String(active?.contentHash || "");
+      return Boolean(hash && surfaceQcRecords[`${surfaceKey}:${hash}`]?.approved);
+    }));
+  }, [versionedJob, surfaceQcRecords]);
 
   /**
    * THE PROOFS AND PANELS OF THE SELECTED VERSION, NOT OF THE NEWEST ONE.
@@ -2052,6 +2357,7 @@ export default function AdminGeminiCompareStudio() {
           logoInventoryVerified: true,
           textLockVerified: true,
           approvedSides: VIEW_DEFS.map((def) => SURFACE_FOR_SIDE_KEY[def.sideKey]).filter(Boolean).sort(),
+          surfaceQc: approvedSurfaceChecklists(surfaceQcRef.current),
         } as any,
         "Approved on the PanelPro Studio board against the vehicle template.",
       );
@@ -2619,8 +2925,8 @@ export default function AdminGeminiCompareStudio() {
               <SurfaceQcPanel
                 job={versionedJob}
                 selectedVersion={selectedVersion}
-                answers={surfaceQc}
-                onAnswer={answerSurfaceQc}
+                records={surfaceQcRecords}
+                onRecorded={rememberSurfaceQc}
               />
             )}
 
@@ -2632,6 +2938,7 @@ export default function AdminGeminiCompareStudio() {
                 job={(versionedJob || job) as unknown as PanelProStudioJob}
                 approvedSides={approvedSidesRef.current}
                 qcPassedSides={qcPassedSides}
+                surfaceQc={surfaceQcRecords}
                 onApproved={async () => { await loadJob(String(job.id)); }}
               />
             )}

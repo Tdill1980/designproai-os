@@ -171,8 +171,8 @@ test("visible stamp, ZIP identity file, and WrapBox bind immutable DesignID plus
   assert.match(claimantSource, /DID-\$\{value\.replaceAll\("-", ""\)\.slice\(0, 8\)\.toUpperCase\(\)\}/);
   assert.match(claimantSource, /snapshot\.designId !== designId/);
   assert.match(claimantSource, /snapshot\.delivery\?\.orderNumber !== orderNumber/);
-  assert.match(claimantSource, /DesignID: \$\{escape\(designId\)\}/);
-  assert.match(claimantSource, /Order #: \$\{escape\(orderNumber\)\}/);
+  assert.match(claimantSource, /\$\{escape\(designId\)\}<\/text>/);
+  assert.match(claimantSource, /Order #\$\{escape\(orderNumber\)\}<\/text>/);
   assert.match(claimantSource, /finalQc\.receipt\?\.qc\?\.designId !== designId[\s\S]*?finalQc\.receipt\?\.qc\?\.orderNumber !== orderNumber/);
   assert.match(claimantSource, /identity\/design-order\.json/);
   assert.match(claimantSource, /manifest = \{[\s\S]*?designId: zipReceipt\.receipt\.designId, orderNumber: zipReceipt\.receipt\.orderNumber/);

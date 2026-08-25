@@ -15,6 +15,27 @@ const PREFLIGHT_CHECKS = [
 ];
 const FINAL_CHECKS = ["outputHashesVerified", "printDimensionsVerified", "colorModeVerified"];
 const PRODUCTION_SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
+// The physical judgements only a person standing at a vehicle template can
+// make. The board's derived checks (version, lineage, resolution) are absent on
+// purpose -- the server computes those from the artifacts themselves.
+// The design authority's literal checklist for one surface against one exact
+// file. Every one must be ticked before that surface may be approved, and all
+// six surfaces must be approved before the production pack gate opens.
+const SURFACE_QC_CHECKLIST = [
+  "template",            // correct vehicle/template
+  "surface",             // correct surface
+  "version",             // correct design version
+  "fit",                 // panel fit/alignment verified on the actual template
+  "safeArea",            // logos and text inside the safe printable area
+  "openings",            // wheel wells, handles, windows, lights, body breaks
+  "trimDims",            // trim dimensions verified
+  "printDims",           // print dimensions verified
+  "bleed",               // 5" bleed verified
+  "dpi",                 // effective DPI / resolution verified
+  "customerText",        // customer text and contact info verified
+  "artworkIntact",       // no missing, cropped or shifted artwork
+  "finalFileInspected",  // final production file visually inspected
+];
 const VEHICLE_CLASSES = ["car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv", "trailer", "aircraft", "heavy_equipment"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -286,6 +307,91 @@ function publicState(raw) {
       artifactPath: firstArtifactPath(s.output),
     })),
     failure: failed ? { stage: failed.stage_key, message: String(failed.error_message || "Stage failed"), retryable: failed.error_details?.retryable !== false } : undefined,
+  };
+}
+
+/**
+ * THE GENERATION EXISTS BEFORE THE RUN DOES.
+ *
+ * `generationId` is minted at Create Design and written to
+ * designpro_generation_requests.generation_id in the same statement that
+ * accepts the brief. A workflow run does not exist until
+ * handoff_designpro_generation_to_production fires, which is after all seven
+ * proofs have landed -- so every job route resolving only through
+ * designpro_workflow_runs answered 404 for the entire life of the generation
+ * that matters most to watch: the one still rendering.
+ *
+ * That is why PanelPro could not be opened on a fresh design. It is not a
+ * missing identity and it is not a second id; it is the same generationId,
+ * looked up in the table that already has it.
+ */
+async function generationRequestByGenerationId(fetchImpl, token, cfg, generationIdValue) {
+  const id = String(generationIdValue || "").trim().toLowerCase();
+  if (!UUID_PATTERN.test(id)) return null;
+  const fields = encodeURIComponent(
+    "id,generation_id,state,request_input,error,created_at,updated_at,completed_at",
+  );
+  const response = await upstream(
+    fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${fields}`
+      + `&generation_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=1`,
+    { method: "GET" }, token, cfg,
+  );
+  if (!response.ok) return null;
+  const rows = await response.json().catch(() => []);
+  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+}
+
+/**
+ * The honest pre-handoff projection, in the same shape a run answers with.
+ *
+ * There are no stages yet, because the workflow that owns stages has not been
+ * created -- reporting an empty list is the truth, and it is what lets the board
+ * fill in progressively as the atlas and its proofs land rather than showing a
+ * fabricated progress bar. `orderNumber` and `designOrder` stay null until the
+ * production pack is purchased; the Design ID is derived from the generation id
+ * itself, so it is knowable from the first second.
+ */
+function preHandoffState(request) {
+  const generationIdValue = String(request.generation_id || "").toLowerCase();
+  const isoOrNull = (value) => {
+    const text = String(value ?? "").trim();
+    return text && !Number.isNaN(Date.parse(text)) ? new Date(text).toISOString() : null;
+  };
+  const input = request.request_input || {};
+  const state = String(request.state || "queued");
+  return {
+    generationId: generationIdValue,
+    revisionId: null,
+    createdAt: isoOrNull(request.created_at),
+    updatedAt: isoOrNull(request.updated_at) || isoOrNull(request.created_at),
+    revision: 1,
+    state: state === "failed" || state === "cancelled"
+      ? "failed"
+      : state === "outputs_ready" ? "running" : state === "queued" ? "queued" : "running",
+    currentStage: state === "outputs_ready" ? "calls_1_7_complete" : `calls_1_7_${state}`,
+    stages: [],
+    designId: canonicalDesignId(generationIdValue),
+    orderNumber: null,
+    designName: typeof input.designName === "string" ? input.designName : null,
+    brief: typeof input.brief === "string" ? input.brief : null,
+    vehicle: input.vehicle && typeof input.vehicle === "object" && !Array.isArray(input.vehicle)
+      ? {
+        year: String(input.vehicle.year || ""),
+        make: String(input.vehicle.make || ""),
+        model: String(input.vehicle.model || ""),
+        type: String(input.vehicle.type || ""),
+      }
+      : null,
+    pipelineMode: input.contractVersion === "designpro.calls-1-7-input.v3"
+      ? "flat-first-atlas-v1"
+      : "legacy",
+    // The design is still being made. Manufacturing has not started, and saying
+    // so is what stops the board reading an empty artifact list as a failure.
+    handoffPending: true,
+    ...(state === "failed" && request.error
+      ? { failure: { stage: "calls_1_7", message: String(request.error.message || "Generation failed"), retryable: request.error.retryable === true } }
+      : {}),
   };
 }
 
@@ -1132,11 +1238,48 @@ function exactQc(body, gate) {
       || unique.some((side) => !PRODUCTION_SURFACES.includes(side))) return null;
     approvedSides = unique;
   }
+  // WHAT THE DESIGNER ACTUALLY CHECKED, PER SIDE.
+  //
+  // `approvedSides` records THAT a side was approved. These record WHAT was
+  // verified on it: the correct vehicle template, the trim and print
+  // dimensions, five inches of bleed on four edges, that it lays on the real
+  // template and physically fits, that wheel wells and glass fall where they
+  // should, that text and logos clear the cut areas, and that the design
+  // matches the approved proof. Those are physical judgements about a real
+  // vehicle -- the only part of this gate a machine cannot make -- and they
+  // were living in React state, so a reload erased them and the receipt
+  // recorded that six boxes were ticked and nothing about what was looked at.
+  //
+  // Reconstructed here rather than trusted, exactly like approvedSides: every
+  // canonical surface must be present and every human attestation on it must be
+  // true, so a partial or invented record is refused rather than written down.
+  // The derived checks (version, lineage, resolution) are deliberately absent:
+  // the server already knows those from the artifacts and does not need a
+  // browser to tell it.
+  let surfaceQc;
+  if (gate === "preflight") {
+    const claimed = qc.surfaceQc;
+    if (!claimed || typeof claimed !== "object" || Array.isArray(claimed)) return null;
+    const keys = Object.keys(claimed).sort();
+    if (JSON.stringify(keys) !== JSON.stringify([...PRODUCTION_SURFACES].sort())) return null;
+    surfaceQc = {};
+    for (const surface of [...PRODUCTION_SURFACES].sort()) {
+      const answers = claimed[surface];
+      if (!answers || typeof answers !== "object" || Array.isArray(answers)) return null;
+      const given = Object.keys(answers).sort();
+      if (JSON.stringify(given) !== JSON.stringify([...SURFACE_QC_CHECKLIST].sort())) return null;
+      if (SURFACE_QC_CHECKLIST.some((check) => answers[check] !== true)) return null;
+      surfaceQc[surface] = Object.fromEntries(
+        [...SURFACE_QC_CHECKLIST].sort().map((check) => [check, true]),
+      );
+    }
+  }
   return Object.fromEntries([
     ["known", true],
     ["pass", true],
     ...required.map((key) => [key, true]),
     ...(approvedSides ? [["approvedSides", approvedSides]] : []),
+    ...(surfaceQc ? [["surfaceQc", surfaceQc]] : []),
     ["notes", String(body.notes || "").trim().slice(0, 2000)],
   ]);
 }
@@ -2268,9 +2411,18 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
 
       const approvedViewMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/approved-views$/);
       if (req.method === "GET" && approvedViewMatch) {
+        const requestedViewId = decodeURIComponent(approvedViewMatch[1]);
         const runs = await listRuns(fetchImpl, token, cfg);
-        const run = requestedRun(runs, decodeURIComponent(approvedViewMatch[1]));
-        if (!run) return json(res, 404, { error: "job_not_found" });
+        const run = requestedRun(runs, requestedViewId);
+        if (!run) {
+          // The proofs a run freezes are the seven Calls 1-7 views. Before the
+          // handoff they exist on the generation request instead, and the
+          // request-scoped /views route already serves them to their owner --
+          // so an empty list here is the honest pre-handoff answer, not a 404.
+          const request = await generationRequestByGenerationId(fetchImpl, token, cfg, requestedViewId);
+          if (request) return json(res, 200, []);
+          return json(res, 404, { error: "job_not_found" });
+        }
         return json(res, 200, await approvedViewsForRun(fetchImpl, token, cfg, run, user.id));
       }
 
@@ -2284,9 +2436,15 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       // mints a new request against the same generation.
       const jobAtlasMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/atlas$/);
       if (req.method === "GET" && jobAtlasMatch) {
-        const run = await resolveRun(fetchImpl, token, cfg, decodeURIComponent(jobAtlasMatch[1]));
-        if (!run) return json(res, 404, { error: "job_not_found" });
-        const jobGenerationId = generationId(run).toLowerCase();
+        const requestedAtlasId = decodeURIComponent(jobAtlasMatch[1]);
+        const run = await resolveRun(fetchImpl, token, cfg, requestedAtlasId);
+        // The atlas is authored in Call 1, long before a run exists. Resolving
+        // only through runs meant the master and its six panels were invisible
+        // for the whole time they were the only thing there was to look at.
+        const jobGenerationId = (run
+          ? generationId(run)
+          : String((await generationRequestByGenerationId(fetchImpl, token, cfg, requestedAtlasId))?.generation_id || "")
+        ).toLowerCase();
         if (!UUID_PATTERN.test(jobGenerationId)) return json(res, 404, { error: "job_not_found" });
         const located = await rpc(fetchImpl, token, cfg, "designpro_flat_atlas_generation_paths", {
           p_generation_id: jobGenerationId,
@@ -2320,6 +2478,145 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       // binds them to the surface and revision they correct. The database refuses
       // a correction with no Call 9 panel to correct, a surface outside the six,
       // and a file outside the caller's own upload namespace.
+      // THE HUMAN CHECKLIST, PER SURFACE, AGAINST ONE EXACT FILE.
+      //
+      // Read and write the design authority's physical template check. The row
+      // is keyed by the panel's content hash, so a corrected or re-uploaded
+      // panel -- different bytes, different hash -- simply has no checklist yet
+      // and cannot inherit the previous file's approval. That is a property of
+      // the key, not of any reset logic that could be forgotten.
+      const surfaceQcMatch = url.pathname.match(
+        /^\/api\/jobs\/([0-9a-f-]{36})\/surfaces\/([a-z]{4,9})\/qc$/,
+      );
+      if (surfaceQcMatch) {
+        const generationIdValue = surfaceQcMatch[1].toLowerCase();
+        const surfaceKey = surfaceQcMatch[2];
+        if (!UUID_PATTERN.test(generationIdValue)) return json(res, 400, { error: "generation_id_invalid" });
+        if (!PRODUCTION_SURFACES.includes(surfaceKey)) return json(res, 400, { error: "surface_key_invalid" });
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          const required = ["artifactHash", "checks"];
+          if (!body || typeof body !== "object" || Array.isArray(body)
+            || required.some((key) => body[key] === undefined)) {
+            return json(res, 400, { error: "surface_qc_request_invalid" });
+          }
+          const artifactHash = String(body.artifactHash || "").toLowerCase();
+          if (!SHA256_PATTERN.test(artifactHash)) return json(res, 400, { error: "artifact_hash_invalid" });
+          const claimed = body.checks;
+          if (!claimed || typeof claimed !== "object" || Array.isArray(claimed)) {
+            return json(res, 400, { error: "surface_qc_checks_invalid" });
+          }
+          // Rebuilt from the gateway's own list, so a caller cannot invent a
+          // check, omit one, or store anything but a boolean.
+          const checks = Object.fromEntries(
+            SURFACE_QC_CHECKLIST.map((key) => [key, claimed[key] === true]),
+          );
+          const approved = body.approved === true;
+          const needsCorrection = body.needsCorrection === true;
+          if (approved && needsCorrection) return json(res, 400, { error: "surface_qc_state_contradictory" });
+          // The board disables the button, but the button is not the control.
+          if (approved && SURFACE_QC_CHECKLIST.some((key) => checks[key] !== true)) {
+            return json(res, 409, { error: "surface_qc_incomplete", required: SURFACE_QC_CHECKLIST });
+          }
+          const correctionReason = String(body.correctionReason || "").trim().slice(0, 2000);
+          if (needsCorrection && !correctionReason) return json(res, 400, { error: "correction_reason_required" });
+
+          // APPROVAL IS GATED ON IDENTITY AS WELL AS ON THE CHECKLIST.
+          //
+          // Thirteen ticks say a person looked. They do not say they looked at
+          // the right file. Before an approval is recorded the server proves,
+          // from the artifacts themselves:
+          //
+          //   * the hash names the panel that is ACTIVE for this surface right
+          //     now -- newest correction, else the branded Call 9 panel -- so a
+          //     superseded file cannot be approved;
+          //   * that panel was cut from the A.T.L.A.S. master the caller says
+          //     they were reviewing, so a panel from another version is refused;
+          //   * that surface's 3D proof descends from the same master, so proof
+          //     and panel provably agree.
+          //
+          // Effective DPI is deliberately NOT here. Upscale runs after the
+          // preflight gate in the frozen stage order, so requiring print
+          // resolution to approve a surface would deadlock the workflow --
+          // nothing could be approved, so preflight could never open, so upscale
+          // could never run. Resolution is enforced where it can be satisfied:
+          // at enhancement and output.
+          let verifiedLineage = { atlasMasterHash: null, artifactId: null };
+          if (approved) {
+            const runs = await listRuns(fetchImpl, token, cfg);
+            const run = requestedRun(runs, generationIdValue);
+            if (!run) return json(res, 409, { error: "surface_qc_run_not_found" });
+            const rows = await artifactsForRun(fetchImpl, token, cfg, run.id);
+            const forSurface = rows.filter((row) => String(row.surface_key || "") === surfaceKey);
+            const active = forSurface
+              .filter((row) => row.artifact_kind === "corrected-panel")
+              .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))[0]
+              || forSurface.find((row) => row.artifact_kind === "panel");
+            if (!active) return json(res, 409, { error: "surface_qc_panel_missing" });
+            if (String(active.content_hash || "").toLowerCase() !== artifactHash) {
+              return json(res, 409, {
+                error: "surface_qc_stale_artifact",
+                detail: "This surface has a newer panel; approve the file that is active now.",
+              });
+            }
+            // A correction replaces artwork, never the master it descends from,
+            // so the branded panel is where the binding is read.
+            const branded = forSurface.find((row) => row.artifact_kind === "panel");
+            const panelMaster = String(branded?.metadata?.sourceMasterHash || "").toLowerCase();
+            if (!SHA256_PATTERN.test(panelMaster)) {
+              return json(res, 409, { error: "surface_qc_master_binding_missing" });
+            }
+            const claimedMaster = String(body.atlasMasterHash || "").toLowerCase();
+            if (SHA256_PATTERN.test(claimedMaster) && claimedMaster !== panelMaster) {
+              return json(res, 409, {
+                error: "surface_qc_atlas_version_mismatch",
+                detail: "This panel was cut from a different A.T.L.A.S. version than the one selected.",
+              });
+            }
+            const views = await approvedViewsForRun(fetchImpl, token, cfg, run, user.id).catch(() => []);
+            const proof = (Array.isArray(views) ? views : [])
+              .find((view) => String(view.surfaceKey || "") === surfaceKey);
+            const proofMaster = String(proof?.atlasBinding?.masterContentHash || "").toLowerCase();
+            if (SHA256_PATTERN.test(proofMaster) && proofMaster !== panelMaster) {
+              return json(res, 409, {
+                error: "surface_qc_lineage_mismatch",
+                detail: "The proof and the panel came from different masters.",
+              });
+            }
+            verifiedLineage = { atlasMasterHash: panelMaster, artifactId: String(active.id || "") };
+          }
+          return json(res, 200, await rpc(fetchImpl, token, cfg, "record_designpro_surface_qc", {
+            p_generation_id: generationIdValue,
+            p_surface_key: surfaceKey,
+            p_artifact_hash: artifactHash,
+            // The artifact id and master hash an approval is stored under are
+            // the ones the server just proved, never the ones the caller sent.
+            p_artifact_id: UUID_PATTERN.test(verifiedLineage.artifactId || "")
+              ? verifiedLineage.artifactId
+              : (UUID_PATTERN.test(String(body.artifactId || "").toLowerCase())
+                ? String(body.artifactId).toLowerCase() : null),
+            p_atlas_revision_id: UUID_PATTERN.test(String(body.atlasRevisionId || "").toLowerCase())
+              ? String(body.atlasRevisionId).toLowerCase() : null,
+            p_atlas_master_hash: verifiedLineage.atlasMasterHash
+              || (SHA256_PATTERN.test(String(body.atlasMasterHash || "").toLowerCase())
+                ? String(body.atlasMasterHash).toLowerCase() : null),
+            p_checks: checks,
+            p_approved: approved,
+            p_needs_correction: needsCorrection,
+            p_correction_reason: correctionReason || null,
+          }));
+        }
+      }
+      const surfaceQcListMatch = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/surface-qc$/);
+      if (req.method === "GET" && surfaceQcListMatch) {
+        const generationIdValue = surfaceQcListMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(generationIdValue)) return json(res, 400, { error: "generation_id_invalid" });
+        const rows = await rpc(fetchImpl, token, cfg, "get_designpro_surface_qc", {
+          p_generation_id: generationIdValue,
+        });
+        return json(res, 200, Array.isArray(rows) ? rows : []);
+      }
+
       const correctionMatch = url.pathname.match(
         /^\/api\/jobs\/([0-9a-f-]{36})\/panels\/([a-z]{4,9})\/correction$/,
       );
@@ -2381,9 +2678,17 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       }
 
       if (req.method === "GET" && artifactMatch) {
+        const requestedArtifactId = decodeURIComponent(artifactMatch[1]);
         const runs = await listRuns(fetchImpl, token, cfg);
-        const run = requestedRun(runs, decodeURIComponent(artifactMatch[1]));
-        if (!run) return json(res, 404, { error: "job_not_found" });
+        const run = requestedRun(runs, requestedArtifactId);
+        if (!run) {
+          // Manufacturing has not started, so there are no artifacts. For a
+          // generation that exists this is an empty list, not a missing job --
+          // 404 here made the board report a live design as not found.
+          const request = await generationRequestByGenerationId(fetchImpl, token, cfg, requestedArtifactId);
+          if (request) return json(res, 200, []);
+          return json(res, 404, { error: "job_not_found" });
+        }
         const source = verifiedSourceEnticeRun(run, runs);
         const artifactRuns = source ? [source, run] : [run];
         const result = [];
@@ -2414,7 +2719,18 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       if (match) {
         const requestedId = decodeURIComponent(match[1]);
         const run = await resolveRun(fetchImpl, token, cfg, requestedId);
-        if (!run) return json(res, 404, { error: "job_not_found" });
+        if (!run) {
+          // No run yet: the design is still in Calls 1-7. Answer from the
+          // generation request, which has existed since Create Design, so the
+          // board can be opened on the generationId immediately and fill in as
+          // the atlas, its panels and the proofs arrive. Only the plain GET --
+          // resume and the human gates genuinely need a run to act on.
+          const request = req.method === "GET" && !match[2]
+            ? await generationRequestByGenerationId(fetchImpl, token, cfg, requestedId)
+            : null;
+          if (request) return json(res, 200, preHandoffState(request));
+          return json(res, 404, { error: "job_not_found" });
+        }
         const production = run.workflow_type === "designpro.production_pack";
         if (req.method === "GET" && !match[2]) return json(res, 200, {
           ...publicState(await runState(fetchImpl, token, cfg, run)),

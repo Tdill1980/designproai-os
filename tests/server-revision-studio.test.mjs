@@ -475,6 +475,7 @@ test("the PanelPro Admin Studio carries logos, per-surface verdicts, and an audi
     new URL("../runtime/designpro-standalone-claimant.cjs", import.meta.url),
     "utf8",
   );
+  const gateway = readFileSync(new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
 
   // 1. Extracted logos, per version, individually downloadable.
   assert.match(studio, /function LogoGallery/);
@@ -484,19 +485,61 @@ test("the PanelPro Admin Studio carries logos, per-surface verdicts, and an audi
   // Call 10 has to carry the master forward or nothing can attribute a logo.
   assert.match(claimant, /sourceMasterHash: masterBySurface\.get\(targetSurfaceKey\)/);
 
-  // 2. Per-surface PASS / NEEDS CORRECTION.
+  // 2. The human checklist, per surface, PERSISTED AGAINST ONE EXACT FILE.
+  //
+  // It used to be React state: a reload erased it, a second person could not
+  // see it, and the release receipt recorded six ticked boxes with nothing
+  // about what was looked at. The row is keyed by the panel's content hash, so
+  // a corrected panel -- different bytes, different hash, no row -- starts an
+  // empty checklist and cannot inherit the replaced file's approval. That is a
+  // property of the key, not of reset logic somebody has to remember to call.
   assert.match(studio, /function SurfaceQcPanel/);
   assert.match(studio, /NEEDS CORRECTION/);
-  // The three the board can answer itself are read, not asked -- ticking a box
-  // the record already answers is an attestation nobody made.
-  assert.match(studio, /\["version", "Panel is from the selected A\.T\.L\.A\.S\. version", "derived"\]/);
-  assert.match(studio, /\["lineage", "Proof and panel come from the same master", "derived"\]/);
-  assert.match(studio, /\["resolution", "Effective DPI is adequate for print", "derived"\]/);
-
-  // ONE verdict function, or the gate and the checklist will disagree.
+  assert.match(studio, /dpApi\.recordSurfaceQc/);
+  assert.match(studio, /dpApi\.listSurfaceQc/);
+  assert.match(studio, /records\[`\$\{surfaceKey\}:\$\{hash\}`\]/);
+  // APPROVE SURFACE needs the checklist AND the identity facts: the panel must
+  // belong to the selected A.T.L.A.S. version and share a master with its proof.
+  // The button reflects that; the SERVER re-proves it from the artifacts, so a
+  // caller that skips the browser gets the same refusal.
+  assert.match(studio, /disabled=\{!row\.approvable \|\| busy === id\}/);
+  assert.match(studio, /row\.evidence\?\.derived\.version === true/);
+  assert.match(studio, /row\.evidence\?\.derived\.lineage === true/);
+  assert.match(gateway, /surface_qc_incomplete/);
+  // The identity proof must actually RUN on an approval, not merely exist in
+  // the file: this pins the guard that arms it.
+  assert.match(
+    gateway,
+    /let verifiedLineage = \{ atlasMasterHash: null, artifactId: null \};\s*\n\s*if \(approved\) \{/,
+  );
+  assert.match(gateway, /surface_qc_stale_artifact/);
+  assert.match(gateway, /surface_qc_atlas_version_mismatch/);
+  assert.match(gateway, /surface_qc_lineage_mismatch/);
+  // The identity an approval is STORED under is the one the server proved,
+  // never the one the caller sent.
+  assert.match(gateway, /p_atlas_master_hash: verifiedLineage\.atlasMasterHash/);
+  // Effective DPI is NOT a surface-approval blocker: upscale runs after the
+  // preflight gate, so gating approval on print resolution would deadlock the
+  // workflow. It is enforced where it can be satisfied -- every enhanced panel
+  // is conformed to the GENIE print target at 150 PPI and geometry drift throws.
+  assert.doesNotMatch(gateway, /surface_qc_dpi/);
+  assert.match(claimant, /const targetWidthPx = Math\.round\(\(Number\(dims\.widthInches\) \+ 10\) \* 150\)/);
+  assert.match(claimant, /enhance_winner_geometry_drift/);
+  assert.match(gateway, /SURFACE_QC_CHECKLIST\.map\(\(key\) => \[key, claimed\[key\] === true\]\)/);
+  // The thirteen are one list, shared by the board and the gateway.
+  for (const check of [
+    "template", "surface", "version", "fit", "safeArea", "openings", "trimDims",
+    "printDims", "bleed", "dpi", "customerText", "artworkIntact", "finalFileInspected",
+  ]) {
+    assert.match(gateway, new RegExp(`"${check}"`), `gateway lost the ${check} check`);
+  }
+  // The machine checks stay evidence, never a tick: they are computed from the
+  // artifacts and are deliberately absent from the checklist a person fills in.
   assert.match(studio, /function surfaceQcVerdicts/);
-  assert.match(studio, /surfaceQcVerdicts\(job, selectedVersion, answers\)/);
-  assert.match(studio, /surfaceQcVerdicts\(versionedJob, selectedVersion, surfaceQc\)/);
+  assert.match(studio, /MACHINE EVIDENCE ONLY/);
+  // A surface counts as passed only while the SERVER holds an approval for the
+  // file that is active right now.
+  assert.match(studio, /surfaceQcRecords\[`\$\{surfaceKey\}:\$\{hash\}`\]\?\.approved/);
   // And an unresolved surface blocks release.
   assert.match(studio, /qcOutstanding\.length === 0/);
 

@@ -22,15 +22,21 @@ test("released standalone stamp visibly binds immutable business identity", () =
   // does not implement, so the caption matched here and rendered ZERO pixels on
   // every seal this server ever stamped. Assert the mechanism instead.
   assert.doesNotMatch(svg, /<textPath/, "librsvg renders no textPath -- the caption must not depend on one");
-  for (const glyph of ["D", "E", "S", "I", "G", "N", "P", "R", "O", "A", "Q", "U", "L", "T", "Y", "C"]) {
+  // Both arcs, glyph by glyph: DesignProAI over the top and QUALITY APPROVAL
+  // CHECK under the bottom. The property is that each glyph is its own rotated
+  // <text>, because librsvg renders no <textPath> -- assert it on the wording
+  // the seal actually carries rather than on a fixed alphabet.
+  for (const glyph of ["D", "e", "s", "i", "g", "n", "P", "r", "o", "A", "I", "Q", "U", "L", "T", "Y", "V", "C", "H", "E", "K"]) {
     assert.match(svg, new RegExp(`<text[^>]*transform="rotate\\([^"]*"[^>]*>${glyph}</text>`),
       `ring caption is missing the glyph ${glyph}`);
   }
-  assert.match(svg, /QUALITY/);
-  assert.match(svg, /APPROVED/);
-  assert.match(svg, /DesignID: DID-1234ABCD/);
-  assert.match(svg, /Order #: ORDER-240806-77/);
-  assert.match(svg, /Quality Checked by Production QC/);
+  assert.match(svg, /QUALITY APPROVAL CHECK|Quality Approval Check/);
+  // The seal carries the CANONICAL identity, in the owner's stamp wording.
+  // What matters is the binding, not the label that precedes it: a seal naming
+  // a run UUID instead of the immutable DesignID is the failure this guards.
+  assert.match(svg, /DID-1234ABCD/);
+  assert.match(svg, /Order #ORDER-240806-77/);
+  assert.match(svg, /Approved by Production QC/);
   assert.match(svg, /2026-08-06/);
 });
 

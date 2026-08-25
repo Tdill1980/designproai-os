@@ -508,6 +508,18 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           const di: any = p.dimensions_inches || {};
           const w = di.w ?? di.width;
           const h = di.h ?? di.height;
+          // TRIM vs PRINT. The panel image IS the print size -- the vehicle side
+          // plus the physical bleed on every edge -- so the trim rectangle sits
+          // inside it, inset by the bleed. Stating only one number leaves a
+          // designer unable to tell which they are looking at, and the bleed is
+          // exactly the part that gets cut away on the vehicle.
+          const printW = di.print_w ?? 0;
+          const printH = di.print_h ?? 0;
+          const bleedIn = di.bleed ?? 0;
+          const trimInsetPct = printW > 0 && printH > 0 && bleedIn > 0
+            ? { x: (bleedIn / printW) * 100, y: (bleedIn / printH) * 100 }
+            : null;
+          const masterHash = String(p.meta_metrics?.source_master_hash || "");
           // Comparison-only reassurance thumb: the customer's approved 3D render
           // for this side, so the flat panel doesn't read as "wrong design".
           const brandedView = designViews[SIDE_TO_VIEW[p.side] || ""] || "";
@@ -520,18 +532,41 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                 <span className="inline-flex items-center gap-2">
                   <span className="text-[10px] text-zinc-500">
                     {p.version}
-                    {w && h ? ` · ${w}″ × ${h}″` : ""}
+                    {w && h ? ` · trim ${w}″ × ${h}″` : ""}
+                    {printW && printH ? ` · print ${printW}″ × ${printH}″` : ""}
+                    {bleedIn ? ` · ${bleedIn}″ bleed` : ""}
                   </span>
                 </span>
               </div>
+              {masterHash && (
+                <div className="mb-2 font-mono text-[9px] text-zinc-600" title="A.T.L.A.S. master this panel and its proof were both cut from">
+                  master {masterHash.slice(0, 16)}
+                </div>
+              )}
               <div className={cn("grid gap-2", cols)}>
                 {panelUrl && (
-                  <Thumb
-                    url={panelUrl}
-                    label={panelLabel}
-                    downloadable={printReady}
-                    onOpen={() => setPreview({ url: panelUrl, label: `${p.side} — ${panelLabel}` })}
-                  />
+                  <div className="relative">
+                    <Thumb
+                      url={panelUrl}
+                      label={panelLabel}
+                      downloadable={printReady}
+                      onOpen={() => setPreview({ url: panelUrl, label: `${p.side} — ${panelLabel}` })}
+                    />
+                    {/* Where the bleed ends and the vehicle side begins. Drawn,
+                        never cropped -- the panel must stay full-bleed. */}
+                    {trimInsetPct && (
+                      <div
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 border border-dashed border-cyan-400/70"
+                        style={{
+                          left: `${trimInsetPct.x}%`,
+                          right: `${trimInsetPct.x}%`,
+                          top: `${trimInsetPct.y}%`,
+                          bottom: `${trimInsetPct.y}%`,
+                        }}
+                      />
+                    )}
+                  </div>
                 )}
                 {showApproved && <Thumb url={brandedView} label="Your approved design" onOpen={() => setPreview({ url: brandedView, label: `${p.side} — your approved design` })} />}
               </div>

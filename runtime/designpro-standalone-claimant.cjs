@@ -1383,10 +1383,11 @@ function immutableBusinessIdentity(revisionSource, run) {
  * the caption survives rendering instead of depending on a feature the renderer
  * lacks.
  */
-function ringCaption(text, centre, radius, size, fill) {
+function ringCaption(text, centre, radius, size, fill, arc = "top", span = 170) {
   const characters = [...String(text)];
-  const span = 170;
-  const start = 180 - (180 - span) / 2;
+  // The lower arc sweeps the other way so its glyphs read left to right
+  // along the bottom of the seal instead of upside down.
+  const start = arc === "bottom" ? -180 + (180 - span) / 2 : 180 - (180 - span) / 2;
   // Advance by approximate glyph width rather than by slot. Equal slots give a
   // narrow "I" the same arc as a wide "W", which reads as ragged spacing on a
   // seal that appears on every delivered pack.
@@ -1403,18 +1404,62 @@ function ringCaption(text, centre, radius, size, fill) {
   return characters.map((character, index) => {
     const centreOffset = advanced + widths[index] / 2;
     advanced += widths[index];
-    const angle = start - (centreOffset / total) * span;
+    const angle = arc === "bottom"
+      ? start + (centreOffset / total) * span
+      : start - (centreOffset / total) * span;
     const radians = angle * Math.PI / 180;
     const x = (centre + radius * Math.cos(radians)).toFixed(1);
     const y = (centre - radius * Math.sin(radians)).toFixed(1);
     const glyph = character.replace(/[&<>"']/g, (value) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[value]);
-    return `<text x="${x}" y="${y}" transform="rotate(${(90 - angle).toFixed(1)} ${x} ${y})" text-anchor="middle" font-family="Arial" font-size="${size}" font-weight="700" fill="${fill}">${glyph}</text>`;
+    const rotation = arc === "bottom" ? -90 - angle : 90 - angle;
+    return `<text x="${x}" y="${y}" transform="rotate(${rotation.toFixed(1)} ${x} ${y})" text-anchor="middle" font-family="Arial" font-size="${size}" font-weight="700" fill="${fill}">${glyph}</text>`;
   }).join("");
 }
 
 function stampSvg(verifiedBy, designId, orderNumber, date) {
   const escape = (text) => String(text).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character]);
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000"><circle cx="500" cy="500" r="455" fill="none" stroke="#059669" stroke-width="28"/><circle cx="500" cy="500" r="410" fill="none" stroke="#10b981" stroke-width="10"/>${ringCaption("DESIGNPROAI · QUALITY CONTROL", 500, 355, 56, "#059669")}<text x="500" y="385" text-anchor="middle" font-family="Arial" font-size="72" font-weight="700" fill="#065f46">QUALITY</text><text x="500" y="480" text-anchor="middle" font-family="Arial" font-size="88" font-weight="700" fill="#059669">APPROVED</text><text x="500" y="565" text-anchor="middle" font-family="Arial" font-size="43" font-weight="700" fill="#065f46">DesignID: ${escape(designId)}</text><text x="500" y="625" text-anchor="middle" font-family="Arial" font-size="39" font-weight="700" fill="#065f46">Order #: ${escape(orderNumber)}</text><text x="500" y="692" text-anchor="middle" font-family="Arial" font-size="31" font-weight="700" fill="#065f46">Quality Checked by ${escape(verifiedBy).slice(0, 120)}</text><text x="500" y="745" text-anchor="middle" font-family="Arial" font-size="29" fill="#6b7280">${escape(date)}</text></svg>`);
+  // The DesignProAI Quality Approval Check seal, drawn to the owner's stamp:
+  // a scalloped teal rosette, DesignProAI arced over the top, QUALITY APPROVAL
+  // CHECK arced under the bottom, a star either side of the centre panel.
+  //
+  // It is drawn rather than embedded so the identity it carries is the run's
+  // own: the DesignID, the Order #, who approved it and when. A seal that is a
+  // fixed image says only that SOMETHING was approved -- this one says which
+  // design, which order, by whom, on what date, and it appears on the delivered
+  // proof and in the pack.
+  const teal = "#2f8f97";
+  const paper = "#f3efe6";
+  // 48 scallops around the rim, the rosette edge of a rubber stamp.
+  const scallops = Array.from({ length: 48 }, (unused, index) => {
+    const radians = (index / 48) * Math.PI * 2;
+    const x = (500 + 470 * Math.cos(radians)).toFixed(1);
+    const y = (500 + 470 * Math.sin(radians)).toFixed(1);
+    return `<circle cx="${x}" cy="${y}" r="17" fill="${teal}"/>`;
+  }).join("");
+  const star = (x, y, size) => {
+    const points = Array.from({ length: 10 }, (unused, index) => {
+      const radius = index % 2 === 0 ? size : size * 0.42;
+      const radians = (Math.PI / 5) * index - Math.PI / 2;
+      return `${(x + radius * Math.cos(radians)).toFixed(1)},${(y + radius * Math.sin(radians)).toFixed(1)}`;
+    }).join(" ");
+    return `<polygon points="${points}" fill="${paper}"/>`;
+  };
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000">`
+    + `<rect width="1000" height="1000" fill="${paper}"/>`
+    + scallops
+    + `<circle cx="500" cy="500" r="470" fill="${teal}"/>`
+    + `<circle cx="500" cy="500" r="432" fill="none" stroke="${paper}" stroke-width="9"/>`
+    + `<circle cx="500" cy="500" r="404" fill="none" stroke="${paper}" stroke-width="4" stroke-dasharray="14 12"/>`
+    + ringCaption("DesignProAI", 500, 392, 72, paper, "top", 76)
+    + ringCaption("QUALITY APPROVAL CHECK", 500, 392, 47, paper, "bottom", 150)
+    + star(500, 336, 34) + star(500, 754, 30)
+    + `<rect x="196" y="392" width="608" height="176" fill="none" stroke="${paper}" stroke-width="7"/>`
+    + `<text x="500" y="472" text-anchor="middle" font-family="Arial" font-size="66" font-weight="700" fill="${paper}">DesignProAI</text>`
+    + `<text x="500" y="528" text-anchor="middle" font-family="Arial" font-size="36" font-weight="700" fill="${paper}">Quality Approval Check</text>`
+    + `<text x="500" y="624" text-anchor="middle" font-family="Arial" font-size="44" font-weight="700" fill="${paper}">${escape(designId)}</text>`
+    + `<text x="500" y="668" text-anchor="middle" font-family="Arial" font-size="32" font-weight="700" fill="${paper}">Order #${escape(orderNumber)}</text>`
+    + `<text x="500" y="706" text-anchor="middle" font-family="Arial" font-size="25" fill="${paper}">Approved by ${escape(verifiedBy).slice(0, 90)} · ${escape(date)}</text>`
+    + `</svg>`);
 }
 
 async function storageStream(sb, storagePath) {
