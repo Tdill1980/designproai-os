@@ -252,6 +252,25 @@ export type WorkflowStatus = {
   generationId: string;
   designId: string;
   orderNumber: string;
+  /**
+   * Card metadata, projected from the same immutable revision snapshot the
+   * design id and order number come from. RevisionStudioIQ draws its vehicle
+   * line and brand/finish line from these; before they were projected the only
+   * source was the legacy color_visualizations row, which is the second door
+   * the customer-path seam gate exists to keep shut. Null when the snapshot
+   * genuinely has no value -- a card says nothing rather than inventing one.
+   */
+  designName: string | null;
+  finish: string | null;
+  /** Run timestamps, for the design card's "N days ago" line. */
+  createdAt: string | null;
+  updatedAt: string | null;
+  vehicle: {
+    year: string | null;
+    make: string | null;
+    model: string | null;
+    type: string | null;
+  } | null;
   revision: number;
   state:
     | "queued"

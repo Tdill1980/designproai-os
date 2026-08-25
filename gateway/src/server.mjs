@@ -232,8 +232,17 @@ function publicState(raw) {
   const waitingGenie = waitingStage(stages, "manifest.resolve", "genie_dimension_validation_required");
   const failed = stages.find((s) => s.status === "failed");
   const active = stages.find((s) => ["running", "waiting", "retryable"].includes(s.status)) || [...stages].reverse().find((s) => s.status === "completed");
+  // The run's own timestamps, so a design card can say when it was made. Same
+  // rule as the snapshot metadata below: already on the row this function was
+  // handed, no extra query, and null rather than a fabricated date.
+  const isoOrNull = (value) => {
+    const text = String(value ?? "").trim();
+    return text && !Number.isNaN(Date.parse(text)) ? new Date(text).toISOString() : null;
+  };
   return {
     generationId: generationId(run),
+    createdAt: isoOrNull(run.created_at),
+    updatedAt: isoOrNull(run.updated_at),
     revision: Number(run.results?.revision || run.input?.revision || 1),
     state: failed
       ? "failed"
@@ -302,7 +311,43 @@ async function businessIdentityForRun(fetchImpl, token, cfg, run) {
   if (snapshot?.generationId !== generation || snapshot?.designId !== designId || !ORDER_NUMBER_PATTERN.test(orderNumber) || orderNumber.trim() !== orderNumber) {
     throw Object.assign(new Error("immutable_design_id_and_order_number_invalid"), { status: 409 });
   }
-  return { designId, orderNumber };
+  // THE CARD METADATA COMES FROM THE SAME FROZEN SNAPSHOT, NOT A SECOND STORE.
+  //
+  // RevisionStudioIQ's design cards read a vehicle line ("2022 Ford F250 Crew
+  // Cab") and a brand/finish line ("Precision Climate Solutions - Gloss"). Those
+  // three values were never projected, so the only way to draw the card used to
+  // be the legacy color_visualizations row -- which is exactly the second door
+  // the seam gate exists to keep shut.
+  //
+  // They are already here. This function has fetched `snapshot` for the design
+  // id and order number since the run-identity work, and the immutable revision
+  // snapshot carries vehicle, finish and delivery.designName alongside them. So
+  // this adds no query, no table and no store: it returns three fields already
+  // in hand, bound to the same canonical generation identity that was just
+  // validated above. Read-only, and the artifact seam (surface_key, storagePath,
+  // contentHash, revisionId, receipt_hash) is untouched.
+  //
+  // Absent values stay null rather than becoming a placeholder. A card with no
+  // vehicle should say nothing, not invent one.
+  const vehicle = snapshot?.vehicle && typeof snapshot.vehicle === "object" ? snapshot.vehicle : null;
+  const text = (value) => {
+    const trimmed = String(value ?? "").trim();
+    return trimmed.length > 0 && trimmed.length <= 240 ? trimmed : null;
+  };
+  return {
+    designId,
+    orderNumber,
+    designName: text(snapshot?.delivery?.designName),
+    finish: text(snapshot?.finish),
+    vehicle: vehicle
+      ? {
+          year: text(vehicle.year),
+          make: text(vehicle.make),
+          model: text(vehicle.model),
+          type: text(vehicle.type),
+        }
+      : null,
+  };
 }
 
 function requestedRun(runs, requestedGenerationId) {

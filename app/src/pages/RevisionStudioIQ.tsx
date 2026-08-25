@@ -3,6 +3,7 @@ import { Helmet } from "react-helmet-async";
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { listRevisionStudioDesigns } from "@/lib/revisionstudio-source";
 import { renderClient } from "@/integrations/supabase/renderClient";
 import { extractTransparentSlice, uploadLiftedAsset } from "@/lib/precise-erase-composite";
 import { downscaleStorageImage } from "@/lib/storage-image";
@@ -2574,131 +2575,39 @@ export default function RevisionStudioIQ() {
   } = useInfiniteQuery({
     queryKey: ["revision-studio-renders", modeFilter, searchQuery, isAdmin, showTeamRenders],
     queryFn: async ({ pageParam = 0 }) => {
-      const from = pageParam * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
+      // SERVER-OWNED SOURCE. This used to select color_visualizations -- a
+      // RestylePro table that holds zero rows in DesignProAI, and a name the
+      // customer-path seam gate forbids precisely because it is a second door
+      // onto a design. The designs live in the run tables the gateway owns, so
+      // the rows come from dpApi and arrive in exactly the shape the cards
+      // below already read. Nothing about the grid, the cards or GalleryMode
+      // changes -- only where a row comes from.
+      const all = await listRevisionStudioDesigns();
 
-      let query = supabase
-        .from("color_visualizations")
-        .select(GRID_COLUMNS)
-        // Some legacy rows landed on "complete" instead of "completed" —
-        // accept both so MyVehiclePro / RestyleLibrary renders that
-        // finished on the older status string still show up.
-        .in("generation_status", ["completed", "complete"])
-        .not("render_urls", "is", null)
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      // Standard users only see their own renders (or team renders if toggled)
-      if (!isAdmin) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user?.email) {
-          if (showTeamRenders) {
-            // Find user's organization_id from their own renders
-            const { data: orgRow } = await supabase
-              .from("color_visualizations")
-              .select("organization_id")
-              .ilike("customer_email", session.user.email)
-              .not("organization_id", "is", null)
-              .limit(1)
-              .maybeSingle();
-
-            if (orgRow?.organization_id) {
-              // Show own renders + all renders in same org
-              query = query.or(`customer_email.ilike.${session.user.email},organization_id.eq.${orgRow.organization_id}`);
-            } else {
-              // No org found, fall back to own renders only
-              query = query.ilike("customer_email", session.user.email);
-            }
-          } else {
-            query = query.ilike("customer_email", session.user.email);
-          }
-        }
-      } else {
-        // Admins see all renders, but hide demo-seed clones (rows duplicated
-        // into another account purely for demo filming) so the admin view
-        // doesn't show every design twice.
-        query = query.not("admin_notes", "ilike", "%royaltywraps_demo_seed%");
-      }
-
-      if (modeFilter !== "all") {
-        if (modeFilter === "myvehicle") {
-          query = query.ilike("mode_type", "myvehicle\\_%");
-        } else if (modeFilter.startsWith("myvehicle_")) {
-          // MV × sub-filters: each tool category rolls up every saved
-          // mode_type variant so paid customers see every render they
-          // produced, not just the canonical name. Underscores are
-          // escaped (\\_) so PostgreSQL ILIKE treats them as literals
-          // instead of single-char wildcards.
-          const MV_VARIANTS: Record<string, string[]> = {
-            myvehicle_colorpro: ["myvehicle\\_colorpro%"],
-            myvehicle_designpanelpro: [
-              "myvehicle\\_designpanelpro%",
-              "myvehicle\\_designpro\\_direct",
-            ],
-            myvehicle_fadewraps: ["myvehicle\\_fadewraps%"],
-            myvehicle_graphicspro: ["myvehicle\\_graphicspro%"],
-            myvehicle_wbty: ["myvehicle\\_wbty%"],
-            myvehicle_wallpro: ["myvehicle\\_wallpro%"],
-          };
-          const patterns = MV_VARIANTS[modeFilter] ?? [modeFilter];
-          query = query.or(
-            patterns.map((p) => `mode_type.ilike.${p}`).join(",")
-          );
-        } else {
-          query = query.ilike("mode_type", modeFilter);
-        }
-      }
-
-      if (searchQuery) {
-        const q = searchQuery.trim();
-        // vehicle_year is an integer column — ilike against it makes PostgREST
-        // 400 the whole request (which blanked the grid the moment anyone
-        // typed in the search box). Match the year separately only when the
-        // query is purely numeric.
-        const orParts = [
-          `vehicle_make.ilike.%${searchQuery}%`,
-          `vehicle_model.ilike.%${searchQuery}%`,
-          `color_name.ilike.%${searchQuery}%`,
-          `design_file_name.ilike.%${searchQuery}%`,
-          `custom_styling_prompt_key.ilike.%${searchQuery}%`,
-          `customer_email.ilike.%${searchQuery}%`,
-          `admin_notes.ilike.%${searchQuery}%`,
-          `mode_type.ilike.%${searchQuery}%`,
-        ];
-        if (/^\d+$/.test(q)) {
-          orParts.push(`vehicle_year.eq.${q}`);
-          // Order-number search: color_visualizations has no order number, but
-          // the WePrintWraps order's proof links to the design it was made for
-          // (source_visualization_id). Resolve the order # → its proof(s) →
-          // the linked render id(s) so typing a WPW order # finds the design.
-          try {
-            const { data: proofs } = await supabase
-              .from("proof_approvals" as any)
-              .select("source_visualization_id")
-              .or(`metadata->>wpw_order_number.eq.${q},metadata->>woo_order_number.eq.${q},metadata->>wpw_woo_order_id.eq.${q}`)
-              .not("source_visualization_id", "is", null);
-            const ids = (proofs || [])
-              .map((p: any) => p.source_visualization_id)
-              .filter(Boolean);
-            if (ids.length) orParts.push(`id.in.(${ids.join(",")})`);
-          } catch { /* order lookup is best-effort */ }
-        }
-        query = query.or(orParts.join(","));
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      // Filter out phantom renders - records with empty render_urls objects
-      const filtered = (data || []).filter((r: any) => {
-        const urls = r.render_urls as Record<string, string> | null;
-        if (!urls || typeof urls !== "object") return false;
-        return Object.values(urls).some(
-          (v) => typeof v === "string" && v.length > 0
-        );
+      // Mode and search narrow the list in memory. The gateway already returns
+      // only the caller's own runs, so the ownership branches the old query
+      // carried are gone rather than reimplemented weakly in the browser, and
+      // one operator's designs are not a volume worth a round trip per
+      // keystroke.
+      const needle = searchQuery.trim().toLowerCase();
+      const matches = all.filter((row) => {
+        if (modeFilter !== "all"
+          && !String(row.mode_type || "").toLowerCase().startsWith(modeFilter.toLowerCase())) return false;
+        if (!needle) return true;
+        return [
+          row.vehicle_year, row.vehicle_make, row.vehicle_model, row.vehicle_type,
+          row.design_file_name, row.color_name, row.finish_type,
+          row.design_id, row.order_number, row.mode_type,
+        ].some((field) => String(field || "").toLowerCase().includes(needle));
       });
 
-      return filtered;
+      // Same phantom-row rule the old query applied: a card needs an image.
+      const filtered = matches.filter((row) =>
+        Object.values(row.render_urls || {}).some((v) => typeof v === "string" && v.length > 0),
+      );
+
+      const from = pageParam * PAGE_SIZE;
+      return filtered.slice(from, from + PAGE_SIZE);
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
