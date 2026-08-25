@@ -203,8 +203,36 @@ function promptPartsFor(input, sourceViewType, instruction = "", imageParts = []
   // list plus a camera angle, with none of the creative stack the proven
   // product runs on. buildDesignIQPrompt reads the camera angle itself and
   // locks it first, so it is not appended again here.
+  //
+  // THE CUSTOMER'S RAW WORDS, NOT A FORM DUMP (2026-08-24).
+  //
+  // This passed designBrief(input) -- the key:value list this port exists to
+  // have replaced. Its output lands inside the quotation marks of "THE CONCEPT
+  // -- the heart of this design; build everything around it: Client's creative
+  // direction: ..." , so the slot meant to carry what the customer actually
+  // said was carrying a form:
+  //
+  //     "Bright modern dental wrap ... blues and whites
+  //      Business: BrightSmiles
+  //      Industry: Dental
+  //      Colors: blue, white
+  //      Vehicle: 2025 Ford Transit (cargo van)"
+  //
+  // Measured on that prompt: an 80-character brief inflated to 516, and every
+  // injected line already stated elsewhere by buildDesignIQPrompt from its own
+  // structured fields -- the business name appeared FOUR times in one prompt,
+  // the industry, vehicle and palette twice each. The reference interpolates
+  // the raw brief (design-panel-ai-generate/index.ts:480, `${prompt}`
+  // destructured straight from params at :297), which is the same rule the
+  // architecture states as "nothing between the customer's words and A.C.E. --
+  // no brief rewriting, no template injection".
+  //
+  // Nothing is lost by dropping the composite: every field it injected is
+  // emitted below from the explicit argument next to it. designBrief() stays
+  // exported for callers that still want the summary form.
   const design = buildDesignIQPrompt({
-    prompt: designBrief(input),
+    prompt: String(input?.brief || input?.designBrief || input?.description || "").trim()
+      || designBrief(input),
     finish: input?.finish,
     substrate: input?.substrate,
     companyName: input?.companyName || input?.businessName || input?.business,
