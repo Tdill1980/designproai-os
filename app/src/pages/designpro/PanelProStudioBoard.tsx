@@ -62,6 +62,11 @@ import {
   SaveLink,
   StatePill,
 } from "@/components/designpro/surface";
+import {
+  assetsForVersion,
+  designVersionsFrom,
+  exactTimestamp,
+} from "@/lib/design-version-history";
 import { cn } from "@/lib/utils";
 
 /** A stable empty list, so a side with no history does not remount its card. */
@@ -597,8 +602,8 @@ function SideCard({
 export default function PanelProStudioBoard() {
   const { generationId = "" } = useParams();
   const [job, setJob] = useState<WorkflowStatus>();
-  const [views, setViews] = useState<ApprovedGenerationView[]>([]);
-  const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
+  const [allViews, setViews] = useState<ApprovedGenerationView[]>([]);
+  const [allArtifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
   const [atlasRevisions, setAtlasRevisions] = useState<FlatAtlasRevision[]>([]);
   const [atlasVersion, setAtlasVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -637,6 +642,44 @@ export default function PanelProStudioBoard() {
     const timer = window.setInterval(load, 120_000);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  /**
+   * THE SAME VERSION HISTORY REVISIONSTUDIO SHOWS.
+   *
+   * One reader, one numbering, one prompt store. A revision created in
+   * RevisionStudio appears here because both surfaces call the same function --
+   * not because anything is copied or synchronised.
+   */
+  const versionHistory = useMemo(
+    () => designVersionsFrom({ generationId, job, revisions: atlasRevisions }),
+    [generationId, job, atlasRevisions],
+  );
+  const selectedVersion = versionHistory.versions.length
+    ? versionHistory.versions[Math.min(atlasVersion, versionHistory.versions.length - 1)]
+    : null;
+
+  /**
+   * SELECTING A VERSION SWITCHES THE WHOLE WORKSPACE, AND NEVER MIXES TWO.
+   *
+   * Every panel records the master it was cut from and every proof records the
+   * master it was conditioned on, so membership is a hash comparison rather
+   * than a guess from timestamps or from whichever artifact is newest. Picking
+   * V2 shows V2's proofs, V2's panels, V2's corrections, V2's enhancements and
+   * V2's logos, and nothing from V1.
+   *
+   * An artifact carrying no master binding is not silently attributed to the
+   * selected version -- it predates the binding or came from a Standard run.
+   * Hiding it would empty the board for every such run, and labelling it V2
+   * would be the version mixing this exists to stop, so it is shown alongside
+   * and the surface card reports it as unbound.
+   */
+  const { views, artifacts } = useMemo(() => {
+    const scoped = assetsForVersion(selectedVersion, allArtifacts, allViews);
+    return {
+      views: [...scoped.views, ...scoped.unboundViews],
+      artifacts: [...scoped.artifacts, ...scoped.unboundArtifacts],
+    };
+  }, [selectedVersion, allArtifacts, allViews]);
 
   const viewBySide = useMemo(() => {
     const rows = new Map<string, ApprovedGenerationView>();
@@ -902,8 +945,8 @@ export default function PanelProStudioBoard() {
         </Notice>
       )}
 
-      {atlasRevisions.length > 0 && (() => {
-        const selected = atlasRevisions[Math.min(atlasVersion, atlasRevisions.length - 1)];
+      {selectedVersion && (() => {
+        const selected = selectedVersion.revision;
         return (
           <Panel
             eyebrow="Call 1 · A.T.L.A.S."
@@ -946,22 +989,28 @@ export default function PanelProStudioBoard() {
                 only by which thumbnail is highlighted. */}
             <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
               <div className="flex gap-2">
+                <dt className="text-muted-foreground">Version</dt>
+                <dd className="font-semibold">V{selectedVersion.version}</dd>
+              </div>
+              <div className="flex gap-2">
                 <dt className="text-muted-foreground">Design Order</dt>
-                <dd className="font-semibold">{job?.orderNumber || "—"}</dd>
+                <dd className="font-semibold">{selectedVersion.orderNumber || "—"}</dd>
               </div>
               <div className="flex gap-2">
                 <dt className="text-muted-foreground">Design ID</dt>
-                <dd className="font-semibold">{job?.designId || "—"}</dd>
+                <dd className="font-semibold">{selectedVersion.designId || "—"}</dd>
               </div>
               <div className="flex gap-2">
                 <dt className="text-muted-foreground">Generation</dt>
-                <dd className="font-mono text-[11px]">{generationId}</dd>
+                <dd className="font-mono text-[11px]">{selectedVersion.generationId}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground">A.T.L.A.S. revision</dt>
+                <dd className="font-mono text-[11px]">{selectedVersion.revisionId}</dd>
               </div>
               <div className="flex gap-2">
                 <dt className="text-muted-foreground">Authored</dt>
-                <dd className="font-semibold">
-                  {selected.createdAt ? new Date(selected.createdAt).toISOString().replace("T", " ").slice(0, 19) + " UTC" : "—"}
-                </dd>
+                <dd className="font-semibold">{exactTimestamp(selectedVersion.createdAt)}</dd>
               </div>
             </dl>
 
@@ -971,55 +1020,84 @@ export default function PanelProStudioBoard() {
                 against words nobody said. */}
             <div className="mt-3 rounded-lg border border-border bg-muted/40 p-3">
               <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-                {selected.instruction ? "Revision asked for" : "Original brief"}
+                {selectedVersion.promptKind === "original-brief"
+                  ? `V${selectedVersion.version} · original brief`
+                  : `V${selectedVersion.version} · revision asked for`}
               </div>
               <p className="whitespace-pre-wrap text-xs">
-                {selected.instruction || job?.brief || (
+                {selectedVersion.prompt || (
                   <span className="text-muted-foreground">
-                    No brief was recorded for this design.
+                    No prompt was recorded for this version.
                   </span>
                 )}
               </p>
             </div>
 
-            {/* Version history. A revision starts a new A.T.L.A.S. lineage against
-                the same design, so these are ordered oldest first and numbered
-                across the whole generation rather than by per-request sequence. */}
+            {/* VERSION HISTORY — THE SAME ONE REVISIONSTUDIO SHOWS.
+                Chronological, oldest first, every version kept: V1 is never
+                replaced when V2 is made. Each entry carries the prompt that
+                produced it verbatim and the exact moment it was authored, and
+                selecting one switches this whole workspace -- proofs, panels,
+                corrections, enhancements, logos -- to that revision's assets.
+                Nothing is ever shown from two versions at once. */}
             <div className="mt-4 border-t border-border pt-3">
               <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-                Version history · {atlasRevisions.length}
+                Version history · {versionHistory.versions.length}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {atlasRevisions.map((revision, index) => (
-                  <button
-                    key={revision.id}
-                    type="button"
-                    onClick={() => setAtlasVersion(index)}
-                    className={cn(
-                      "w-24 overflow-hidden rounded-lg border text-left transition",
-                      index === Math.min(atlasVersion, atlasRevisions.length - 1)
-                        ? "border-primary ring-1 ring-primary/40"
-                        : "border-border hover:border-muted-foreground",
-                    )}
-                    title={revision.instruction || `Version ${index + 1}`}
-                  >
-                    {revision.masterUrl ? (
-                      <img src={revision.masterUrl} alt={`Version ${index + 1}`} className="aspect-square w-full bg-white object-contain" />
-                    ) : (
-                      <div className="flex aspect-square items-center justify-center bg-muted text-muted-foreground">
-                        <ImageOff className="h-4 w-4" />
-                      </div>
-                    )}
-                    <div className="border-t border-border px-1.5 py-1">
-                      <div className="truncate text-[10px] font-semibold">V{index + 1}</div>
-                      <div className="truncate text-[9px] text-muted-foreground">
-                        {revision.createdAt ? revision.createdAt.slice(0, 10) : ""}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <ol className="space-y-1.5">
+                {versionHistory.versions.map((entry) => {
+                  const active = entry.revisionId === selectedVersion.revisionId;
+                  return (
+                    <li key={entry.revisionId}>
+                      <button
+                        type="button"
+                        onClick={() => setAtlasVersion(entry.version - 1)}
+                        className={cn(
+                          "flex w-full items-start gap-3 rounded-lg border p-2 text-left transition",
+                          active
+                            ? "border-primary bg-primary/5 ring-1 ring-primary/40"
+                            : "border-border hover:border-muted-foreground",
+                        )}
+                      >
+                        {entry.masterUrl ? (
+                          <img
+                            src={entry.masterUrl}
+                            alt={`V${entry.version}`}
+                            className="h-14 w-14 shrink-0 rounded bg-white object-contain"
+                          />
+                        ) : (
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+                            <ImageOff className="h-4 w-4" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={active ? "default" : "outline"}>V{entry.version}</Badge>
+                            <span className="font-mono text-[10px] text-muted-foreground">
+                              {exactTimestamp(entry.createdAt)}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                              {entry.promptKind === "original-brief" ? "original brief" : "revision"}
+                            </span>
+                          </div>
+                          {/* Verbatim. A paraphrase here is how a design gets
+                              rebuilt against words nobody said. */}
+                          <p className="mt-1 whitespace-pre-wrap text-[11px] leading-snug text-foreground">
+                            {entry.prompt || (
+                              <span className="text-muted-foreground">No prompt recorded for this version.</span>
+                            )}
+                          </p>
+                          <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+                            master {entry.masterContentHash.slice(0, 14)}
+                          </div>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
+
             {/* BEFORE → AFTER, for this run.
                 The master on the left, the seven proofs it produced on the
                 right, and per proof the evidence that it was actually rendered

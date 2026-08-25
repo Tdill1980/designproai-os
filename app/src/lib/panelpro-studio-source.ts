@@ -36,6 +36,10 @@ import {
   type WorkflowStatus,
 } from "@/lib/designpro-api";
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
+import {
+  designVersionsFrom,
+  type DesignVersionHistory,
+} from "@/lib/design-version-history";
 
 /**
  * The board's own side vocabulary -> the server's surface key.
@@ -111,6 +115,12 @@ export type PanelProStudioJob = {
   };
   /** Every A.T.L.A.S. version this design has been through, oldest first. */
   atlas_versions: FlatAtlasRevision[];
+  /**
+   * The SAME version and prompt history RevisionStudio shows, from the one
+   * canonical reader. Not a copy and not a second numbering: V2 here is V2
+   * there, with the same prompt text, the same timestamp and the same master.
+   */
+  version_history: DesignVersionHistory;
   /** The rest of the production stream the board displays and downloads. */
   logos: WorkflowArtifact[];
   qc_panels: WorkflowArtifact[];
@@ -301,6 +311,11 @@ export function studioJobFrom(input: {
       qc_side_panels: qcSidePanels,
     },
     atlas_versions: [...input.atlasRevisions],
+    version_history: designVersionsFrom({
+      generationId: input.job.generationId,
+      job: input.job,
+      revisions: input.atlasRevisions,
+    }),
     logos: input.artifacts.filter((artifact) => artifact.kind === "logo"),
     qc_panels: input.artifacts.filter((artifact) => artifact.kind === "qc-panel"),
     upscaled: input.artifacts.filter((artifact) => artifact.kind === "upscaled-panel"),

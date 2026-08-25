@@ -40,6 +40,10 @@ import {
   type WorkflowStatus,
 } from "@/lib/designpro-api";
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
+import {
+  loadDesignVersionHistory,
+  versionCommitsFromHistory,
+} from "@/lib/design-version-history";
 
 /**
  * One design as the page consumes it. The names are the legacy column names on
@@ -326,22 +330,32 @@ export async function loadDriverPanelGeometry(generationId: string): Promise<
 }
 
 /**
- * The design's version history, oldest first.
+ * THE DESIGN'S VERSION HISTORY — from the one canonical source.
  *
- * RevisionStudio's version timeline used to be assembled by walking
- * `color_visualizations` -- name matches, a parent_id chain, an admin_notes
- * ilike sweep and a lineage_root_id union, four overlapping heuristics for a
- * relationship nobody had recorded. The server records it: a revision of a
- * design is a revision OF this generation, so the history is the run's own
- * revisions and there is nothing to infer.
+ * This used to return the design row itself, which was a truthful answer to
+ * "what is this design" and not an answer to "what versions has it been
+ * through". Meanwhile PanelPro read the server's real A.T.L.A.S. revision list.
+ * Two surfaces looking at one job and reporting different histories is the
+ * thing a shared lineage is supposed to make impossible.
  *
- * Today a design has exactly one revision until an A.T.L.A.S. re-authoring
- * mints another, so this commonly returns a single row. That is the truthful
- * shape, and it is the shape the timeline component already renders.
+ * Both now call `loadDesignVersionHistory`, so V2 means the same version, with
+ * the same prompt text and the same timestamp, wherever it is shown. There is
+ * no second table, no separate numbering, and nothing copied between surfaces.
  */
 export async function listRevisionStudioVersions(
   generationId: string,
 ): Promise<RevisionStudioDesignRow[]> {
   const row = await readRevisionStudioDesign(generationId);
   return row ? [row] : [];
+}
+
+/**
+ * The canonical version and prompt history for this design, projected into the
+ * shape RevisionStudio's existing timeline already draws. Same numbering, same
+ * verbatim prompts, same timestamps and same master hashes PanelPro shows,
+ * because both come from `loadDesignVersionHistory` and nothing else.
+ */
+export async function revisionStudioVersionCommits(generationId: string) {
+  const history = await loadDesignVersionHistory(generationId);
+  return versionCommitsFromHistory(history);
 }
