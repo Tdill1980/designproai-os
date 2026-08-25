@@ -530,7 +530,61 @@ function rejectionFor(review, brandRequired, confidenceThreshold) {
   if (review.brandTextContract !== brandExpected) failed.push("brandTextContract");
   if (!Number.isFinite(review.confidence) || review.confidence < confidenceThreshold) failed.push("confidence");
   if (!failed.length) return null;
-  return `${failed.join(", ")}: ${(Array.isArray(review.reasons) ? review.reasons : []).map((reason) => cleanText(reason, 240)).filter(Boolean).join("; ")}`.slice(0, 800);
+  // The caller needs to know WHICH contracts failed, not only that something
+  // did -- a coverage failure caused by holes is a repairable panel defect,
+  // while the same failure caused by anything else is a broken design. The
+  // string is unchanged, so every existing message and test still reads the
+  // same; `failed` is additive.
+  return {
+    failed,
+    reason: `${failed.join(", ")}: ${(Array.isArray(review.reasons) ? review.reasons : []).map((item) => cleanText(item, 240)).filter(Boolean).join("; ")}`.slice(0, 800),
+  };
+}
+
+/**
+ * THE ONE CASE WHERE A SEMANTIC COVERAGE FAILURE IS NOT FATAL.
+ *
+ * RULE 0.15 is explicit that a cut-out must never destroy the design: the 3D
+ * proof masks the master to the painted body, so a hole where the wheel arch
+ * sits lands in the region the mask discards, and the hole only becomes real at
+ * the panel cut -- where `atlas-cutout-fill.cjs` closes it deterministically.
+ * `fullBleedNoCutoutsContract` is therefore deliberately absent from
+ * `requiredPass`.
+ *
+ * But the reviewer records the same holes a second time under
+ * `zoneCoverageContract`, which IS fatal, and that conviction returned before
+ * the cut-out classification below could ever run. So the repair stage was
+ * unreachable by construction:
+ *
+ *     detect cut-out -> classify repairable -> reviewer sees the same cut-out
+ *       -> master killed -> fill never runs
+ *
+ * Live evidence 2026-08-25, canary ff1566c3: three attempts refused on
+ * zoneCoverageContract alone, every finding a wheel/glass shape, artifactFree
+ * passing, nothing else failing -- a design the architecture says should have
+ * survived and been repaired.
+ *
+ * The escape is deliberately narrow. It requires ALL of:
+ *   - zoneCoverageContract is the ONLY failed contract, so brand text,
+ *     topology, coherence, brief fidelity, passenger mirror, artifact-free and
+ *     confidence all passed;
+ *   - the deterministic layer independently measured and classified cut-outs,
+ *     so this is not the model's word alone;
+ *   - the reviewer's own hole contract also failed, so it agrees the coverage
+ *     problem is holes rather than, say, a transparent region.
+ *
+ * That last clause is what keeps a genuinely unpainted zone fatal. A reviewer
+ * reporting transparency but no holes leaves `fullBleedNoCutoutsContract`
+ * passing, and this returns false. No threshold moves, nothing is reclassified
+ * as a cut-out that was not already one, and every other contract stays fatal.
+ */
+function coverageFailedOnClassifiedCutoutsOnly(rejection, review, deterministic) {
+  return Array.isArray(rejection?.failed)
+    && rejection.failed.length === 1
+    && rejection.failed[0] === "zoneCoverageContract"
+    && Array.isArray(deterministic?.cutoutFindings)
+    && deterministic.cutoutFindings.length > 0
+    && cutoutContractFailed(review);
 }
 
 // The reviewer's own read on holes. Deterministic pixel measurement is the
@@ -598,8 +652,18 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
         model, body, timeoutMs, label: "A.T.L.A.S. flattened-master semantic QC",
       });
       const review = parseMasterQcResponse(result?.payload, { masterHash, guideHash });
-      const reason = rejectionFor(review, brandRequired, confidenceThreshold);
-      if (reason) return { accepted: false, code: "atlas_master_qc_semantic_failed", reason, review, deterministic };
+      const rejection = rejectionFor(review, brandRequired, confidenceThreshold);
+      // Every semantic failure is fatal EXCEPT a coverage failure that is
+      // nothing but the classified cut-outs restated. That one falls through to
+      // the cut-out path below, where the design survives and the panel is
+      // repaired -- which is what RULE 0.15 already specified and what this
+      // return was silently preventing.
+      if (rejection && !coverageFailedOnClassifiedCutoutsOnly(rejection, review, deterministic)) {
+        return {
+          accepted: false, code: "atlas_master_qc_semantic_failed",
+          reason: rejection.reason, review, deterministic,
+        };
+      }
       const cutoutSurfaces = [...new Set(
         deterministic.cutoutFindings.map((item) => String(item.surfaceKey)),
       )].sort();
@@ -619,7 +683,12 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
       // authoring loop keeps re-rolling for a clean sheet -- but a cut-out
       // result now carries its full QC record, so the exhausted case can keep
       // the design and flag the panels instead of destroying the run.
-      if (!cutoutSurfaces.length && !semanticCutout) {
+      // `!rejection` is belt-and-braces: the only rejection that reaches here
+      // requires classified cut-outs, so `cutoutSurfaces` is already non-empty
+      // and this branch is unreachable with one. Stating it means a future edit
+      // to the escape condition cannot turn a refused master into an accepted
+      // one without failing this read.
+      if (!rejection && !cutoutSurfaces.length && !semanticCutout) {
         return { accepted: true, review, deterministic, metadata };
       }
       return {
