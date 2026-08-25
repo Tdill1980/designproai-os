@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-three-migration chain', () => {
-  assert.equal(migrationNames.length, 53);
+test('fresh bootstrap contains one ordered fifty-four-migration chain', () => {
+  assert.equal(migrationNames.length, 54);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -109,6 +109,9 @@ test('fresh bootstrap contains one ordered fifty-three-migration chain', () => {
       // Six sibling surfaces after master acceptance -- no view may carry a
       // Driver reference, and Passenger renders like every other surface.
       '20260826000000',
+      // The stage machine learns the A.T.L.A.S. manufacturing path: a deferred
+      // Call 8 and a Call 1 panel promotion are accepted on their own evidence.
+      '20260826010000',
     ],
   );
 });
