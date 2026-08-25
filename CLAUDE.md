@@ -723,6 +723,27 @@ list, and the one documented exception:
 **`docs/RESTYLEPRO-REFERENCE-RULE.md`. Read it before touching a
 post-approval stage.**
 
+## 💾 A DARK DEPLOY THAT DIES ON "120 GiB FREE" IS A FULL DISK, NOT A BAD BUILD
+
+`ops/install.sh` refuses to install below **120 GiB free on /opt**, and every
+deploy attempt leaves an immutable release directory, a runtime+gateway image
+pair (~730 MB) and a `/var/backups/designpro-cutover` snapshot behind. They
+accumulate until the next release is starved.
+
+The error reads `Host requires at least 120 GiB free on the /opt filesystem`
+and exit code 3, in the *dark-deploy* job, **after** a green release gate — so it
+looks like the change under review broke the deploy. It did not.
+
+**The remedy is the repo's own workflow**, `disk-maintenance.yml`, dispatched
+with `RECLAIM_DESIGNPROAI_DISK`. It deletes only DesignProAI-owned leftovers —
+release directories and `designproai-*` images that no live `current`/`public`/
+`restore` pointer references, and all but the newest three cutover backups — and
+never touches the shared spool, env files, Caddy, or any non-DesignPro path.
+Then re-run the failed dark-deploy job; nothing needs rebuilding.
+
+Live on 2026-08-25: 116 GiB free blocked the deploy; the reclaim took the host
+from 194 GiB used to 58 GiB, and the same artifact deployed unchanged.
+
 ## Where things are
 
 | | |
