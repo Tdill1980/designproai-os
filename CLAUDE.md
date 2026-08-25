@@ -261,7 +261,9 @@ None of these may be re-implemented against `supabase.functions` or
 
 | Surface | Route | Module |
 |---|---|---|
-| RevisionStudio — 2D Production Proof, Production Layers, Logo Pack entice | `/designpro/jobs/:generationId` | `components/revisioniq/ServerRevisionStudio.tsx` + `ProductionFlowLayersCard.tsx` |
+| RevisionStudioIQ — the product editor: design grid, seven-view carousel, GalleryMode, layered canvas, revision box, Production Layers, Logo Pack entice | `/revision-studio` | `pages/RevisionStudioIQ.tsx` + `ProductionFlowLayersCard.tsx`, sourced by `lib/revisionstudio-source.ts` and `lib/revisionstudio-flow.ts` |
+| The job's server-artifact status view (NOT the product RevisionStudio) | `/designpro/jobs/:generationId` | `components/revisioniq/ServerRevisionStudio.tsx` |
+| PanelPro branded studio — tool rail, canvas, seven view tabs | `/designpro/jobs/:generationId/panel-studio` | `pages/DesignProStudio.tsx` |
 | PanelPro Studio board — per-side REAL DESIGN PROOF ∥ PRINT PANEL, approve side, preflight gate | `/designpro/jobs/:generationId/panelpro` | `pages/designpro/PanelProStudioBoard.tsx` |
 | GENIE Universal Panelizer progress — step rail, glowing 7 sides, "when all panels glow it's a go" | `/designpro/jobs/:generationId/progress`, `/productionflow/:generationId` | `pages/designpro/GenieProgress.tsx` |
 
@@ -317,6 +319,214 @@ behind `!isFlatFirstDiagnostic` is the dead-end framing — it was written in fi
 places and is locked out by `tests/atlas-fail-fast.test.mjs`.
 
 What stays refused: per-view regeneration. One master owns the whole proof set.
+
+## 🔀 RULE 0.21 — THE ACCEPTED MASTER FANS OUT IMMEDIATELY, TO BOTH SURFACES AT ONCE (Trish 2026-08-25)
+
+**A.T.L.A.S. is not a pretty flattened preview. It is the production source.**
+The first A.T.L.A.S. AI design generation creates the ONE flattened master and
+is the design authority. The moment that master is accepted it fans out — it
+does not wait for a later UI to recreate or "pull" anything:
+
+```text
+A.T.L.A.S. FIRST AI DESIGN GENERATION
+one flattened master / one design authority
+        │
+        ├──► deterministic split by surface
+        │      driver · passenger · hood · roof · front · rear
+        │      exact GENIE dimensions + 5" physical bleed on every side
+        │
+        ├──► those SAME surface regions condition the matching 3D proof views
+        │
+        └──► the SAME paired artifact set, published in parallel to
+               RevisionStudioIQ   AND   PanelPro Studio
+```
+
+**No side independently redesigns the wrap.** RevisionStudio does not wait for
+PanelPro and PanelPro does not wait for RevisionStudio: they are parallel
+consumers of one server-owned lineage, never two workflows.
+
+The intended relationship, for all six surfaces, is one row:
+
+> **REAL DESIGN PROOF ∥ PRINT PANEL**
+
+Left is that surface's 3D proof. Right is the deterministic A.T.L.A.S.
+extraction for that exact `surfaceKey` at GENIE dimensions + 5" bleed — **never
+an upload, never an AI regeneration, never a browser-made crop.** The pair is
+bound by the same `generationId`, A.T.L.A.S. revision / `masterContentHash`, and
+`surfaceKey`.
+
+| surface | purpose |
+|---|---|
+| **RevisionStudioIQ** | revise/edit the approved design lineage and inspect its production artifacts |
+| **PanelPro Studio** | validate the exact print panels beside the real 3D proof and release them through production QC |
+
+**Neither UI is a producer.** Do not restore `Pull panel`, `Mirror from driver`
+or manual `Upload panel` as the canonical workflow — those are browser-era
+producer controls, and the server already holds the panel bytes cut from the
+accepted master. This whole rule is a **handoff/wiring** statement; it is not
+permission to redesign A.T.L.A.S.
+
+### The acceptance test — this is what catches a fake "wired" state
+
+> For one fresh generation, open the same `generationId` in RevisionStudioIQ and
+> PanelPro Studio. Driver proof + driver panel must carry the same A.T.L.A.S.
+> parent hash; repeat for all six surfaces. **If either UI shows an empty panel,
+> an uploaded replacement, a different revision, or a generated substitute, the
+> wiring is not complete.**
+
+Where this already holds, and where it is enforced: `cutCallOnePanels` splits
+the accepted master by `SURFACE_KEYS` with `sharp.extract` (no AI), stamping
+`surfaceKey`, `sourceMasterHash` and the trim/print inches with `bleedInches`;
+`viewAuthorityFor` **throws** unless a proof's authority hashes to the master and
+matches `surfaceForProofView()`; the panel artifact publishes
+`metadata.sourceMasterHash` and the view publishes
+`atlasBinding.masterContentHash`, so both halves carry the binding to the UI.
+PanelPro compares them per side and **refuses to approve** a pair that provably
+came from different masters — locked by `tests/server-revision-studio.test.mjs`.
+
+## 🏭 RULE 0.22 — PANELPRO STUDIO IS THE PRODUCTION CONTROL ROOM, NOT A SIX-CARD VALIDATOR (Trish 2026-08-25)
+
+**PanelPro is TWO surfaces, and confusing them is how one gets rebuilt as the
+other.** The canonical contract (2026-08-24, §6) names both:
+
+| Surface | Route | File |
+|---|---|---|
+| The branded studio — tool rail, canvas, seven view tabs, upload/text/logo/adjust/layers/move/scale/rotate/arrange | `/designpro/jobs/:generationId/panel-studio` | `app/src/pages/DesignProStudio.tsx` |
+| The production/QC board — proof ∥ panel per side, dimensions, hashes, human preflight, downstream artifacts | `/designpro/jobs/:generationId/panelpro` | `app/src/pages/designpro/PanelProStudioBoard.tsx` |
+
+Both are routed and both bind to the same generation. An earlier revision of
+this rule named `AdminGeminiCompareStudio.tsx` as the restore target; the
+canonical contract names `DesignProStudio.tsx`, and that is what is routed.
+`AdminGeminiCompareStudio.tsx` is unrouted RestylePro import weight, not the
+DesignProAI studio.
+
+The board is a validator, not a second producer — but it IS the design team's
+complete production workspace for one order, keyed by `generationId` · Design
+Order ID / order number · Design ID (DID), and it must preserve the whole
+chronological lineage.
+
+### A.T.L.A.S. version history — every revision, never only the newest
+
+V1, V2, V3, V4… all remain inspectable and downloadable. **Never silently
+replace V1 when V2 is created.** Each revision shows: revision number · Design
+ID · Design Order ID · date · exact timestamp · **the customer revision/prompt
+text that produced it** · the A.T.L.A.S. master · master hash / lineage
+identity · its 3D proofs · its production proof · its deterministic surface
+panels.
+
+### The complete asset set, each individually downloadable
+
+Flattened A.T.L.A.S. master · every saved A.T.L.A.S. version · driver ·
+passenger · hood · roof · front · rear panels · 5″ bleed versions · all
+canonical 3D proofs · 2D Production Proof · logos / extracted branding ·
+metadata + dimension sheet · panel dimensions · square footage / GENIE geometry
+· production PNG · production TIFF · required production derivatives · QC and
+approval metadata.
+
+**Do not hide files behind only a final ZIP.**
+
+### PanelPro QC is HUMAN design-team QC, not AI scoring
+
+The team verifies each output against the **actual vehicle template** and
+confirms the panel will physically fit the real vehicle. Per surface: correct
+vehicle/template · correct surface · correct dimensions · 5″ bleed · correct
+design/revision · proof and panel from the same A.T.L.A.S. master · graphics
+aligned to the real template · text/logo placement safe · nothing important
+falling into openings or cut areas · production resolution and file integrity.
+
+### ⚠️ THE MANUAL CORRECTION PATH MUST REMAIN — DO NOT STRIP IT
+
+**No manual/browser panel GENERATION. Yes to controlled human production
+CORRECTION and upload, with lineage and audit history preserved.**
+
+That distinction is the whole rule. `Pull panel` and `Mirror from driver` were
+browser-era *producers* and stay gone — the server already holds the panel bytes
+cut from the accepted master. But when a deterministic panel does not fit the
+real template, the designer must be able to:
+
+1. download the panel;
+2. correct/re-output it against the real vehicle template;
+3. **upload the corrected production panel back into the SAME surface/revision
+   lineage**;
+4. retain BOTH the original system artifact and the corrected human-approved
+   artifact, for audit history;
+5. mark the corrected artifact as the active production artifact;
+6. click Approved only after physical/template QC passes.
+
+An agent reading "no Upload panel" out of context will delete a required
+production function. One already did: a lock in
+`tests/server-revision-studio.test.mjs` forbade the string outright and had to be
+corrected. Forbid *generation*, never *correction*.
+
+**How it is wired (2026-08-25).** A correction is its own artifact kind,
+`corrected-panel`, recorded by `record_designpro_corrected_panel`
+(`supabase/migrations/20260825000000_designpro_panelpro_corrected_panels.sql`)
+against the exact `surface_key` and revision it replaces. It carries
+`correctedFromPath`, `correctedFromHash`, `sourceMasterHash`, `correctedBy`,
+`correctedAt` and a required reason; a correction with no Call 9 panel to
+correct is refused. The branded panel is **never touched**, so `source.verify`'s
+exactly-six-distinct assertion still reads the same six rows.
+
+`enhance.upscale` enhances the **active** artifact per surface — the newest
+correction when one exists, the branded panel otherwise — and records
+`humanCorrectedSurfaces` on the receipt. That is what makes the human gate real:
+enhancing the panel the team rejected, while the correction sat unused in the
+vault, would let the gate pass and the wrong artwork print.
+
+### Approval → Production Pack → WrapBox
+
+Once the human QC checks pass: freeze the approved revision and panel
+identities · stamp the Production Pack Proof approved · record approver, date,
+time, hashes and metadata · assemble the Production Pack · generate the
+metadata/dimension sheet · ZIP the approved deliverable.
+
+The ZIP carries at minimum the approved 3D proof set, approved 2D Production
+Proof, metadata/panel-dimension sheet, approved production panels, TIFF and PNG
+outputs, and the production/approval metadata — **plus any pack assets the
+working implementation already supports.** After the ZIP is built and verified,
+publish it to **WrapBox**, where the customer downloads it.
+
+### Final acceptance
+
+For one fresh generation, PanelPro Studio must show the whole lineage:
+
+> Design Order → Design ID → V1/V2/V3… → prompt + timestamp → A.T.L.A.S. master
+> → 3D proofs → 2D Production Proof → six panels → human/template QC →
+> corrected upload if needed → approved Production Pack → ZIP → WrapBox
+
+**Nothing in that lineage may be silently replaced, disconnected, or lost.**
+
+## ⚡ RULE 0.23 — DRIVER SIDE FIRST, THEN ASK. (Trish 2026-08-25)
+
+**The customer must not wait for seven proofs to see whether the design is
+right.** A.T.L.A.S. renders Driver first and hash-verifies it before projecting
+the other six, so a real look at the design exists about a minute before the set
+is finished. The product asks there:
+
+> **"Do you want to see all sides of this design, or revise it?"**
+
+- **See All Views** reveals the remaining proofs the server is already rendering.
+- **Revise This Design** opens `/revision-studio` immediately, against the same
+  design lineage.
+
+Neither button is a producer. Making the customer watch six more proofs before
+they can say "change it" spends six renders on a design they have already
+rejected — and a revision supersedes all of them anyway.
+
+**What already holds, and must not be undone.** `runAtlasProofStages` runs
+Driver alone, hash-verifies the accepted bytes through `hydrateDriver()`, then
+projects the remaining six **concurrently** (`parallel: true`) from the same
+frozen master. `waitForGeneration` polls every 2s and reveals each view the
+instant it lands. Call 1 cuts the six panels deterministically before any proof
+renders, so panel extraction is never on the AI critical path.
+
+**Do not serialize the six projections to "reduce load", and do not hold a
+finished artifact back for an all-or-nothing bundle.** Progressive publication is
+the contract: RevisionStudio and PanelPro fill per surface as either half
+arrives, and a panel appearing before its proof is correct.
+
+Locked by `tests/server-revision-studio.test.mjs` and
+`tests/designpanel-view-reveal.test.mjs`.
 
 ## ⛔ RULE 0 — OPTIMIZE FOR BEHAVIORAL PARITY, NOT ARCHITECTURE (Trish 2026-08-17)
 

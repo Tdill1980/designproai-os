@@ -5,10 +5,17 @@ import test from "node:test";
 const source = readFileSync(new URL("../app/src/pages/DesignPanelProPremium.tsx", import.meta.url), "utf8");
 
 test("See All Views is available as soon as Driver Side exists", () => {
+  // The reveal now sits inside the decision the customer is asked the moment
+  // Driver Side lands -- see all sides, or revise -- so the guard it is
+  // conditioned on is a little further above the label than it used to be. The
+  // condition itself is unchanged and is what this asserts.
   const label = source.lastIndexOf("See All Views");
   assert.ok(label > 0, "the See All Views action is missing");
-  const button = source.slice(label - 500, label + 100);
+  const button = source.slice(label - 2500, label + 900);
   assert.match(button, /mainDisplayUrl\s*&&\s*!allViewsRevealed/);
+  // And the customer can say no there, without waiting out six more proofs.
+  assert.match(button, /Do you want to see all sides of this design, or revise it\?/);
+  assert.match(button, /Revise This Design/);
   assert.doesNotMatch(button, /!pipelineActive/);
 
   const handler = source.slice(

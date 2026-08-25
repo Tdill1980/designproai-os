@@ -7,7 +7,7 @@ import { loadShopProfile } from '@/lib/proof-service';
 import { getToolLabel, type ToolKey } from '@/lib/tool-registry';
 import { findVehicle } from '@/data/vehicle-measurements';
 import { supabase } from '@/integrations/supabase/client';
-import { generateDisplaySafe2DProof } from '@/lib/generateDisplaySafe2DProof';
+import { readRevisionStudioDesign } from '@/lib/revisionstudio-source';
 
 interface RenderView {
   type: string;
@@ -39,9 +39,9 @@ interface TwoDProofSheetProps {
    */
   initialProofUrl?: string | null;
   /**
-   * Generation/visualization id, passed through to generateDisplaySafe2DProof
+   * The design's generation id. Used to look up the proof Call 8 published
    * (the flat painter is primary for display; the composer is a fallback-only
-   * path — see src/lib/generateDisplaySafe2DProof.ts).
+   * for this design, so re-opening shows it instantly.
    */
   generationId?: string | null;
   /**
@@ -167,76 +167,36 @@ export const TwoDProofSheet: React.FC<TwoDProofSheetProps> = ({
     };
   };
 
-  const doGenerate = async (revision?: string) => {
-    if (!effectiveViews.length) return;
-    setIsGenerating(true);
+  // THE 2D PRODUCTION PROOF IS BUILT BY THE SERVER, AT CALL 8.
+  //
+  // This function assembled a proof body in the browser -- every view URL,
+  // vehicle dimensions looked up from a local table, a shop name for template
+  // selection -- and called the flat painter and the composer through a shared
+  // display-safe helper that decided which of the two outputs to show. That was
+  // the right shape when the browser conducted the pipeline.
+  //
+  // It does not conduct it any more. Call 8 builds the proof from the accepted
+  // A.T.L.A.S. master, at GENIE dimensions, and publishes it as a hashed
+  // artifact; a browser-made sheet would be a second proof of the same design,
+  // built from different inputs, with nothing binding it to the master the six
+  // panels are cut from. So the build is a server request, and this component
+  // is what it always should have been for DesignPro: the viewer.
+  const doGenerate = async (_revision?: string) => {
     setError(null);
     setShowReviseInput(false);
-
+    if (!onRetryBuild) {
+      setError('The 2D Production Proof is built on the server for this design. Reopen it from the job page to request the build.');
+      return;
+    }
+    setIsGenerating(true);
     try {
-      const dims = getVehicleDimensions();
-      const allViewUrls: Record<string, string> = {};
-      for (const v of effectiveViews) {
-        if (v.url) allViewUrls[v.type] = v.url;
-      }
-
-      const body: Record<string, unknown> = {
-        allViewUrls,
-        sideUrl: sideView?.url,
-        vehicleYear,
-        vehicleMake,
-        vehicleModel,
-        designName: displayDesign,
-        finish: finish || 'Gloss',
-        // shopName ONLY drives WPW-branded template selection server-side
-        // (generate-2d-proof / compose-2d-proof match it against
-        // "weprintwraps"/"wpw"). It must NEVER be sent for other tools — the
-        // operator's own shop_profiles.shop_name (e.g. an admin account that
-        // is itself "WePrintWraps") is not the same thing as "this job is a
-        // WBTY/WePrintWraps storefront order". Sending it unconditionally
-        // made every DesignPro/ColorPro/FadeWraps/GraphicsPro proof carry
-        // WePrintWraps branding instead of DesignProAI's own (live-verified
-        // 2026-07-27). WBTY is the one real WPW tenant tool.
-        ...(resolvedToolKey === 'wbty' ? { shopName } : {}),
-        dimensions: dims,
-        // This shared viewer is an on-demand preview surface. Canonical
-        // DesignPro proof/panel state is authored by the durable Entice Pack
-        // workflow, so a browser-opened modal must never race or overwrite it.
-        persistCanonical: false,
-      };
-      // Keep the id for source resolution and audit only. The server adapter
-      // uses persistCanonical:false to avoid canonical database/storage writes.
-      if (generationId) body.designiqGenerationId = generationId;
-      if (revision) {
-        body.revisionNote = revision;
-        if (proofImageUrl) body.previousProofUrl = proofImageUrl;
-      }
-
-      // CANONICAL two-producer proof (lib/generateDisplaySafe2DProof) — the
-      // ONE shared implementation of "panel-source flat painter + faithful
-      // composer for display", so this drift bug (wrong logo, missing contact
-      // bar — live-verified on Summit Ridge Electric 2026-07-27) can't
-      // resurface here or in any future caller that reaches for it instead of
-      // hand-rolling its own copy of this logic again.
-      const { proofUrl, error: proofGenError } = await generateDisplaySafe2DProof({
-        body,
-        generationId,
-        viewUrls: allViewUrls,
+      await onRetryBuild();
+      toast({
+        title: '2D Proof requested',
+        description: 'The server is building it. It appears here as soon as Call 8 publishes it.',
       });
-      if (!proofUrl) throw new Error(proofGenError || 'Failed to generate 2D proof');
-
-      setProofImageUrl(proofUrl);
-      try { sessionStorage.setItem(cacheStorageKey, proofUrl); } catch {}
-      // AWAIT the persist so the proof is durably saved before we leave the
-      // generating state — a fire-and-forget here was racy and could be dropped
-      // (page close / re-render) leaving flat_proof_url NULL. The callback owns
-      // its own error toast, so persistence failures surface to the user.
-      await onProofGenerated?.(proofUrl);
-      toast({ title: '2D Proof Generated', description: 'Flat orthographic proof is ready.' });
     } catch (err: any) {
-      console.error('2D proof generation error:', err);
-      setError(err.message || 'Failed to generate proof');
-      toast({ title: 'Generation Failed', description: err.message || 'Could not generate proof.', variant: 'destructive' });
+      setError(err?.message || 'The server did not accept the proof request.');
     } finally {
       setIsGenerating(false);
     }
@@ -316,40 +276,26 @@ export const TwoDProofSheet: React.FC<TwoDProofSheetProps> = ({
     (async () => {
       if (generationId) {
         try {
+          // THE SAVED PROOF IS THE SERVER'S CALL-8 ARTIFACT. This used to read
+          // a legacy design row's cached proof URL and then fall through to a
+          // second production row, because the proof was written by whichever
+          // browser generated it. Call 8 publishes it now, so there is one
+          // place to look and no cache to go stale against.
+          const row = await readRevisionStudioDesign(String(generationId));
           let saved: string | null = null;
-          let linkedGenId: string | null = null;
-
-          const { data: viz } = await supabase
-            .from('color_visualizations')
-            .select('admin_notes')
-            .eq('id', generationId)
-            .maybeSingle();
-          if ((viz as any)?.admin_notes) {
+          if (row?.admin_notes) {
             try {
-              const notes = JSON.parse((viz as any).admin_notes);
-              if (notes?.flat_proof_url && typeof notes.flat_proof_url === 'string') saved = notes.flat_proof_url;
-              if (typeof notes?.designiq_generation_id === 'string') linkedGenId = notes.designiq_generation_id;
-            } catch { /* admin_notes not JSON */ }
+              const notes = JSON.parse(row.admin_notes);
+              if (typeof notes?.flat_proof_url === 'string') saved = notes.flat_proof_url;
+            } catch { /* projection not JSON */ }
           }
-
-          // Fallback: the production row (generationId may itself be a DesignIQ
-          // generation id, or the viz pointed us to a linked one).
-          if (!saved) {
-            const { data: g } = await supabase
-              .from('designiq_generations' as any)
-              .select('flat_proof_url')
-              .eq('id', linkedGenId || generationId)
-              .maybeSingle();
-            if ((g as any)?.flat_proof_url) saved = (g as any).flat_proof_url;
-          }
-
           if (!cancelled && saved) {
             setProofImageUrl(saved);
             autoGenerated.current = true;
             try { sessionStorage.setItem(cacheStorageKey, saved); } catch {}
             return;
           }
-        } catch { /* fall through to auto-generate */ }
+        } catch { /* fall through */ }
       }
 
       // Truly no saved proof anywhere — auto-generate from renders if ready.

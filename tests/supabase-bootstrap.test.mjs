@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered forty-seven-migration chain', () => {
-  assert.equal(migrationNames.length, 47);
+test('fresh bootstrap contains one ordered forty-eight-migration chain', () => {
+  assert.equal(migrationNames.length, 48);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -92,6 +92,9 @@ test('fresh bootstrap contains one ordered forty-seven-migration chain', () => {
       // consumes those exact bytes without reaching into generation's tables.
       '20260824010000', '20260824020000', '20260824030000', '20260824040000',
       '20260824050000', '20260824180000',
+      // The audited human correction path: a corrected panel is its own artifact
+      // kind, bound to the Call 9 panel it replaces, which is never touched.
+      '20260825000000',
     ],
   );
 });

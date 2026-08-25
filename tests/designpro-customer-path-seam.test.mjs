@@ -55,6 +55,10 @@ const CUSTOMER_ROUTE_MODULES = [
   // other customer-reachable module.
   "pages/designpro/PanelProStudioBoard.tsx",
   "pages/designpro/GenieProgress.tsx",
+  // The canonical RevisionStudio, routed at /revision-studio. It is the largest
+  // customer-reachable module in the app and the one that used to hold the most
+  // doors onto the RestylePro backend, so it is exactly what this gate is for.
+  "pages/RevisionStudioIQ.tsx",
 ];
 
 /**

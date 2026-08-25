@@ -2298,19 +2298,46 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       </Card>
                     )}
 
-                    {/* Existing all-views action, restored at the point where
-                        Driver Side first becomes visible. It remains clickable
-                        while the server is finishing later sides because this
-                        action reveals/reads them; it does not start a producer. */}
+                    {/* THE DECISION POINT, AT THE MOMENT DRIVER SIDE LANDS.
+                        The server renders Driver first and hash-verifies it
+                        before projecting the other six, so the customer has a
+                        real look at their design roughly a minute before the set
+                        is finished. Making them watch the remaining six render
+                        before they can say "no, change it" spends six proofs on
+                        a design they have already rejected -- and every one of
+                        those proofs would be superseded by the revision anyway.
+                        So the question is asked here, with both answers.
+                        Neither button starts a producer: the reveal shows the
+                        views the server is already rendering, and Revise opens
+                        the studio against this same design lineage. */}
                     {mainDisplayUrl && !allViewsRevealed && (
-                      <Button
-                        onClick={handleGenerateAllViews}
-                        variant="outline"
-                        className="w-full gap-2 border-cyan-400/50 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10"
-                      >
-                        <Layers className="w-4 h-4" />
-                        See All Views
-                      </Button>
+                      <div className="w-full space-y-2 rounded-lg border border-cyan-400/30 bg-cyan-400/5 p-3">
+                        <p className="text-sm font-semibold text-cyan-100">
+                          Do you want to see all sides of this design, or revise it?
+                        </p>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            onClick={handleGenerateAllViews}
+                            variant="outline"
+                            className="flex-1 gap-2 border-cyan-400/50 bg-cyan-400/5 text-cyan-100 hover:bg-cyan-400/10"
+                          >
+                            <Layers className="w-4 h-4" />
+                            See All Views
+                          </Button>
+                          <Button
+                            onClick={() => navigate("/revision-studio")}
+                            variant="outline"
+                            className="flex-1 gap-2 border-fuchsia-400/50 bg-fuchsia-400/5 text-fuchsia-100 hover:bg-fuchsia-400/10"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                            Revise This Design
+                          </Button>
+                        </div>
+                        <p className="text-[11px] text-white/50">
+                          The remaining sides keep rendering on the server either way — they
+                          are projections of the same master, so nothing is lost by revising now.
+                        </p>
+                      </div>
                     )}
 
                     {/* Sprocket Generation Header — pinned DIRECTLY beneath the

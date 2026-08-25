@@ -232,8 +232,23 @@ function publicState(raw) {
   const waitingGenie = waitingStage(stages, "manifest.resolve", "genie_dimension_validation_required");
   const failed = stages.find((s) => s.status === "failed");
   const active = stages.find((s) => ["running", "waiting", "retryable"].includes(s.status)) || [...stages].reverse().find((s) => s.status === "completed");
+  // The run's own timestamps, so a design card can say when it was made. Same
+  // rule as the snapshot metadata below: already on the row this function was
+  // handed, no extra query, and null rather than a fabricated date.
+  const isoOrNull = (value) => {
+    const text = String(value ?? "").trim();
+    return text && !Number.isNaN(Date.parse(text)) ? new Date(text).toISOString() : null;
+  };
   return {
     generationId: generationId(run),
+    // The immutable revision this run was frozen against. Projected because the
+    // owner-scoped upload path is keyed by it, and PanelPro's corrected-panel
+    // upload has to put the file somewhere the storage identity trigger will
+    // accept. It is this caller's own revision -- the gateway only ever returns
+    // runs they own -- so it discloses nothing they do not already hold.
+    revisionId: String(run.revision_id || "") || null,
+    createdAt: isoOrNull(run.created_at),
+    updatedAt: isoOrNull(run.updated_at),
     revision: Number(run.results?.revision || run.input?.revision || 1),
     state: failed
       ? "failed"
@@ -302,7 +317,67 @@ async function businessIdentityForRun(fetchImpl, token, cfg, run) {
   if (snapshot?.generationId !== generation || snapshot?.designId !== designId || !ORDER_NUMBER_PATTERN.test(orderNumber) || orderNumber.trim() !== orderNumber) {
     throw Object.assign(new Error("immutable_design_id_and_order_number_invalid"), { status: 409 });
   }
-  return { designId, orderNumber };
+  // THE CARD METADATA COMES FROM THE SAME FROZEN SNAPSHOT, NOT A SECOND STORE.
+  //
+  // RevisionStudioIQ's design cards read a vehicle line ("2022 Ford F250 Crew
+  // Cab") and a brand/finish line ("Precision Climate Solutions - Gloss"). Those
+  // three values were never projected, so the only way to draw the card used to
+  // be the legacy color_visualizations row -- which is exactly the second door
+  // the seam gate exists to keep shut.
+  //
+  // They are already here. This function has fetched `snapshot` for the design
+  // id and order number since the run-identity work, and the immutable revision
+  // snapshot carries vehicle, finish and delivery.designName alongside them. So
+  // this adds no query, no table and no store: it returns three fields already
+  // in hand, bound to the same canonical generation identity that was just
+  // validated above. Read-only, and the artifact seam (surface_key, storagePath,
+  // contentHash, revisionId, receipt_hash) is untouched.
+  //
+  // Absent values stay null rather than becoming a placeholder. A card with no
+  // vehicle should say nothing, not invent one.
+  // THE CUSTOMER'S OWN WORDS, VERBATIM.
+  //
+  // Both studios have to show the brief a version was authored from -- PanelPro
+  // because a version history without the prompt that produced it is a strip of
+  // thumbnails, and RevisionStudio because its revision is composed from it. It
+  // lives on the generation request, which is where the customer typed it, so it
+  // is read from there rather than reconstructed from the snapshot.
+  //
+  // Best-effort by design: a request that predates this projection, or a read
+  // this caller is not entitled to, leaves the brief absent. Absent is honest;
+  // a summary or a reconstruction would be a design rebuilt against words
+  // nobody said, so there is no fallback.
+  let brief = null;
+  const briefResponse = await upstream(fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${encodeURIComponent("input")}&generation_id=eq.${encodeURIComponent(generation)}&order=created_at.asc&limit=1`,
+    { method: "GET" }, token, cfg).catch(() => null);
+  if (briefResponse?.ok) {
+    const briefRows = await briefResponse.json().catch(() => []);
+    const raw = Array.isArray(briefRows) && briefRows.length === 1 ? briefRows[0]?.input?.brief : null;
+    const trimmed = String(raw ?? "").trim();
+    if (trimmed && trimmed.length <= 8000) brief = trimmed;
+  }
+
+  const vehicle = snapshot?.vehicle && typeof snapshot.vehicle === "object" ? snapshot.vehicle : null;
+  const text = (value) => {
+    const trimmed = String(value ?? "").trim();
+    return trimmed.length > 0 && trimmed.length <= 240 ? trimmed : null;
+  };
+  return {
+    designId,
+    orderNumber,
+    brief,
+    designName: text(snapshot?.delivery?.designName),
+    finish: text(snapshot?.finish),
+    vehicle: vehicle
+      ? {
+          year: text(vehicle.year),
+          make: text(vehicle.make),
+          model: text(vehicle.model),
+          type: text(vehicle.type),
+        }
+      : null,
+  };
 }
 
 function requestedRun(runs, requestedGenerationId) {
@@ -988,7 +1063,12 @@ function validateUploadIntent(body) {
   const contentType = String(body.contentType || "").toLowerCase();
   const byteSize = Number(body.byteSize);
   const viewKind = VIEW_KEYS.includes(kind);
-  const kindAllowed = viewKind || kind === "logo" || kind === "attachment";
+  // "corrected-panel" is a designer's re-output of a panel that did not fit the
+  // real vehicle template. It travels the same owner-scoped upload path as every
+  // other customer-supplied file; what makes it a correction rather than a
+  // second producer is where it is RECORDED -- bound to the Call 9 panel it
+  // replaces, which never changes.
+  const kindAllowed = viewKind || kind === "logo" || kind === "attachment" || kind === "corrected-panel";
   const typeAllowed = MIME_EXTENSION.has(contentType) && (!viewKind || contentType.startsWith("image/") && contentType !== "image/svg+xml");
   if (!/^[0-9a-f-]{36}$/.test(revisionId) || !kindAllowed || !typeAllowed || !/^[0-9a-f]{64}$/.test(contentHash) || !Number.isInteger(byteSize) || byteSize < 1 || byteSize > MAX_ASSET_BYTES) {
     throw Object.assign(new Error("asset_intent_invalid"), { status: 400 });
@@ -2072,6 +2152,51 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       }
 
       const artifactMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/artifacts$/);
+      // RECORD A CORRECTED PANEL. The bytes are already stored and hash-verified
+      // through /assets/upload-intents + /assets/verify, exactly like a logo; this
+      // binds them to the surface and revision they correct. The database refuses
+      // a correction with no Call 9 panel to correct, a surface outside the six,
+      // and a file outside the caller's own upload namespace.
+      const correctionMatch = url.pathname.match(
+        /^\/api\/jobs\/([0-9a-f-]{36})\/panels\/([a-z]{4,9})\/correction$/,
+      );
+      if (req.method === "POST" && correctionMatch) {
+        const generationIdValue = correctionMatch[1].toLowerCase();
+        const surfaceKey = correctionMatch[2];
+        if (!UUID_PATTERN.test(generationIdValue)) return json(res, 400, { error: "generation_id_invalid" });
+        if (!PRODUCTION_SURFACES.includes(surfaceKey)) return json(res, 400, { error: "surface_key_invalid" });
+        const body = await readBody(req);
+        const asset = body?.asset;
+        // Shape only. The identity was already proven by /assets/verify, which
+        // downloaded the object and hashed it; re-asserting the shape here stops
+        // a malformed body reaching the database as an exception.
+        if (!asset || typeof asset !== "object" || Array.isArray(asset)
+          || !/^[0-9a-f]{64}$/.test(String(asset.contentHash || "").toLowerCase())
+          || !String(asset.storagePath || "").startsWith(`users/${user.id}/revisions/`)
+          || !Number.isInteger(asset.byteSize) || asset.byteSize < 1) {
+          return json(res, 400, { error: "corrected_panel_asset_invalid" });
+        }
+        const reason = String(body?.reason || "").trim().slice(0, 2000);
+        if (reason.length < 8) return json(res, 400, { error: "corrected_panel_reason_required" });
+        const result = await rpc(fetchImpl, token, cfg, "record_designpro_corrected_panel", {
+          p_generation_id: generationIdValue,
+          p_surface_key: surfaceKey,
+          p_asset: {
+            storagePath: String(asset.storagePath),
+            contentHash: String(asset.contentHash).toLowerCase(),
+            byteSize: Number(asset.byteSize),
+            contentType: String(asset.contentType || ""),
+          },
+          p_reason: reason,
+        });
+        return json(res, 201, {
+          artifactId: String(result?.artifactId || ""),
+          surfaceKey,
+          correctedFromHash: String(result?.correctedFromHash || ""),
+          idempotent: result?.idempotent === true,
+        });
+      }
+
       if (req.method === "GET" && artifactMatch) {
         const runs = await listRuns(fetchImpl, token, cfg);
         const run = requestedRun(runs, decodeURIComponent(artifactMatch[1]));
