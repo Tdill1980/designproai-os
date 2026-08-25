@@ -119,11 +119,38 @@ export type PanelProStudioJob = {
   stamp: WorkflowArtifact | null;
   zip: WorkflowArtifact | null;
   wrapbox: WorkflowArtifact | null;
+  /** Every human correction, newest first per surface. */
+  corrections: Record<string, WorkflowArtifact[]>;
   /** The run's state, so the board can say which gate it is actually at. */
   state: WorkflowStatus["state"];
   current_stage: string;
   revision_id: string | null;
+  /**
+   * The server's own stage rail, verbatim. The board reports what the run has
+   * actually done rather than inferring progress from which files happen to
+   * exist -- an artifact can be present because a stage produced it or because
+   * an earlier revision left it behind, and those are not the same fact.
+   */
+  stages: WorkflowStatus["stages"];
 };
+
+/**
+ * Human corrections grouped by surface, newest first. Additive by contract: a
+ * side corrected twice keeps both, the newest is the active production
+ * artifact, and the earlier ones stay readable.
+ */
+function correctionsBySurface(artifacts: readonly WorkflowArtifact[]): Record<string, WorkflowArtifact[]> {
+  const rows: Record<string, WorkflowArtifact[]> = {};
+  for (const artifact of artifacts) {
+    if (artifact.kind !== "corrected-panel") continue;
+    (rows[artifact.surfaceKey] ||= []).push(artifact);
+  }
+  for (const list of Object.values(rows)) {
+    list.sort((left, right) =>
+      String(right.metadata?.correctedAt || "").localeCompare(String(left.metadata?.correctedAt || "")));
+  }
+  return rows;
+}
 
 function viewUrls(views: readonly ApprovedGenerationView[]): Record<string, string> {
   const urls: Record<string, string> = {};
@@ -281,9 +308,11 @@ export function studioJobFrom(input: {
     stamp: input.artifacts.find((artifact) => artifact.kind === "stamp") || null,
     zip: input.artifacts.find((artifact) => artifact.kind === "zip") || null,
     wrapbox: input.artifacts.find((artifact) => artifact.kind === "wrapbox-manifest") || null,
+    corrections: correctionsBySurface(input.artifacts),
     state: input.job.state,
     current_stage: input.job.currentStage,
     revision_id: input.job.revisionId,
+    stages: input.job.stages,
   };
 }
 

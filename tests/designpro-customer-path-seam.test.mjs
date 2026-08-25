@@ -59,6 +59,13 @@ const CUSTOMER_ROUTE_MODULES = [
   // customer-reachable module in the app and the one that used to hold the most
   // doors onto the RestylePro backend, so it is exactly what this gate is for.
   "pages/RevisionStudioIQ.tsx",
+  // The PanelPro Admin Studio, routed at /designpro/studio-board. It came over
+  // from RestylePro as the studio board and carried more producers than any
+  // other page -- it mirrored panels on a canvas, flattened renders, asked a
+  // vision model which surface a dropped file was, and ran a generative edit
+  // whose output became the print panel. All of that is gone, and this is what
+  // keeps it gone.
+  "pages/AdminGeminiCompareStudio.tsx",
 ];
 
 /**

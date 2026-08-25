@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, Loader2, Upload, Check, X, Package, ShieldCheck, Truck,
@@ -10,14 +11,27 @@ import {
   ChevronDown, HelpCircle,
 } from "lucide-react";
 import StudioBoardEditor, { StudioBoardEditTarget } from "@/components/studioboard/StudioBoardEditor";
-import { dpApi } from "@/lib/designpro-api";
+import {
+  dpApi,
+  type FinalQc,
+  type PreflightQc,
+  PRODUCTION_SURFACES,
+} from "@/lib/designpro-api";
+import {
+  EXPECTED_OUTPUT_FILES,
+  FINAL_CHECKS,
+  OUTPUT_FORMATS,
+  outputFormatOf,
+  PREFLIGHT_CHECKS,
+  STAGE_LABEL,
+} from "@/lib/designpro-stages";
 import {
   findPanelProStudioJob,
   listPanelProStudioJobs,
   loadPanelProStudioJob,
   SURFACE_FOR_SIDE_KEY,
+  type PanelProStudioJob,
 } from "@/lib/panelpro-studio-source";
-import { ProductionPackQCCard } from "@/components/production/ProductionPackQCCard";
 // cn was referenced by the Validate (QC) results block without being imported —
 // rendering validation results threw `cn is not defined` and white-screened the
 // whole board into the ErrorBoundary (caught in the 2026-07-24 button audit).
@@ -565,6 +579,273 @@ function StudioBoardCanvas({ jobId, items, onEnlarge, onEdit, onUploadToSide, on
 // panels (or an uploaded panel); a side with none honestly reports "upload the
 // panel" instead of generating slop. Flip true only to debug the AI draft.
 const STUDIO_RENDER_ACE_ENABLED = false;
+
+/**
+ * PRODUCTION PACK — the back half of one job, from the server's own record.
+ *
+ * This replaces RestylePro's ProductionPackQCCard, which read `panelizer_jobs`,
+ * `color_visualizations` and `designiq_generations` and drove delivery through
+ * `deploy-to-wrapbox`. None of those exist on this server, and a card that
+ * looks live while reading a database nobody writes is worse than no card.
+ *
+ * Everything below is the standalone runtime's own state: the stage rail it
+ * reports, the artifacts it produced, and the two human gates it will not pass
+ * without. The gates are real -- the database refuses approval unless every
+ * check is explicitly confirmed -- so both are listed rather than summarised,
+ * and neither is pre-ticked.
+ */
+function ProductionPackSection({
+  job,
+  approvedSides,
+  onApproved,
+}: {
+  job: PanelProStudioJob;
+  approvedSides: ReadonlySet<string>;
+  onApproved: () => Promise<void>;
+}) {
+  const { toast } = useToast();
+  const [preflight, setPreflight] = useState<Record<string, boolean>>({});
+  const [preflightNotes, setPreflightNotes] = useState("");
+  const [finalQc, setFinalQc] = useState<Record<string, boolean>>({});
+  const [finalNotes, setFinalNotes] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const stageState = (key: string) => job.stages.find((stage) => stage.key === key)?.state || "pending";
+  const preflightDone = stageState("await_panelpro_preflight_qc") === "complete";
+  const finalDone = stageState("await_final_human_qc") === "complete";
+  const allSidesApproved = PRODUCTION_SURFACES.every((side) => approvedSides.has(side));
+  const preflightReady = PREFLIGHT_CHECKS.every(([key]) => preflight[key]) && allSidesApproved;
+  const finalReady = FINAL_CHECKS.every(([key]) => finalQc[key]);
+
+  const outputsByFormat = OUTPUT_FORMATS.map((format) => ({
+    format,
+    files: job.outputs.filter((artifact) => outputFormatOf(artifact.storagePath) === format),
+  }));
+
+  const submitPreflight = async () => {
+    setBusy("preflight");
+    try {
+      await dpApi.approvePreflight(
+        job.generation_id,
+        {
+          ...(PREFLIGHT_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as PreflightQc),
+          approvedSides: [...approvedSides],
+        } as PreflightQc,
+        preflightNotes,
+      );
+      await onApproved();
+      toast({ title: "Preflight released", description: "The panels are cleared into enhancement and output." });
+    } catch (cause: any) {
+      toast({ title: "Preflight refused", description: cause?.message, variant: "destructive" });
+    } finally { setBusy(null); }
+  };
+
+  const submitFinal = async () => {
+    setBusy("final");
+    try {
+      await dpApi.approveFinalQc(
+        job.generation_id,
+        FINAL_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as FinalQc,
+        finalNotes,
+      );
+      await onApproved();
+      toast({ title: "Production Pack approved", description: "Stamp, ZIP and WrapBox delivery follow on the server." });
+    } catch (cause: any) {
+      toast({ title: "Approval refused", description: cause?.message, variant: "destructive" });
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-gray-900">Production Pack</h2>
+        <span className="rounded bg-gray-100 px-2 py-0.5 font-mono text-[10px] text-gray-600">
+          {STAGE_LABEL[job.current_stage] || job.current_stage} · {job.state}
+        </span>
+      </div>
+
+      {/* THE SERVER'S OWN STAGE RAIL. Reported, never inferred: a stage is
+          complete because the runtime says so, not because a file exists. */}
+      <ol className="mb-4 grid gap-1 sm:grid-cols-2">
+        {job.stages.map((stage) => (
+          <li key={stage.key} className="flex items-center gap-2 text-[11px]">
+            <span
+              className={
+                stage.state === "complete" ? "h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                : stage.state === "running" ? "h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500"
+                : stage.state === "waiting" ? "h-2 w-2 shrink-0 rounded-full bg-amber-500"
+                : stage.state === "failed" ? "h-2 w-2 shrink-0 rounded-full bg-red-500"
+                : "h-2 w-2 shrink-0 rounded-full bg-gray-300"
+              }
+            />
+            <span className={stage.state === "complete" ? "text-gray-900" : "text-gray-500"}>
+              {STAGE_LABEL[stage.key] || stage.key}
+            </span>
+            {stage.waitReason && <span className="text-amber-600">· {stage.waitReason}</span>}
+          </li>
+        ))}
+      </ol>
+
+      {/* GATE ONE. Releases the panels into Topaz and the output build. */}
+      <div className="mb-4 rounded-lg border border-gray-200 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">PanelPro preflight</h3>
+          {preflightDone
+            ? <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">released</span>
+            : <span className="text-[10px] text-gray-500">{approvedSides.size}/{PRODUCTION_SURFACES.length} sides approved</span>}
+        </div>
+        {!preflightDone && (
+          <>
+            <ul className="space-y-1.5">
+              {PREFLIGHT_CHECKS.map(([key, label]) => (
+                <li key={key} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-emerald-600"
+                    checked={!!preflight[key]}
+                    onChange={(event) => setPreflight((prev) => ({ ...prev, [key]: event.target.checked }))}
+                  />
+                  <span className="text-[11px] leading-snug text-gray-600">{label}</span>
+                </li>
+              ))}
+            </ul>
+            <Textarea
+              value={preflightNotes}
+              onChange={(event) => setPreflightNotes(event.target.value)}
+              placeholder="What you checked on the vehicle template"
+              rows={2}
+              className="mt-2 resize-none text-xs"
+            />
+            <Button
+              size="sm"
+              className="mt-2 gap-1.5"
+              disabled={!preflightReady || busy === "preflight"}
+              onClick={() => void submitPreflight()}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              {busy === "preflight" ? "Releasing…" : "Release preflight"}
+            </Button>
+            {!allSidesApproved && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                Every surface has to be approved on its own card first.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* THE OUTPUT SET. Eighteen files: six surfaces times PNG, TIFF and EPS. */}
+      <div className="mb-4 rounded-lg border border-gray-200 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Print files</h3>
+          <span className="font-mono text-[10px] text-gray-500">
+            {job.outputs.length}/{EXPECTED_OUTPUT_FILES}
+          </span>
+        </div>
+        {job.outputs.length === 0 ? (
+          <p className="text-[11px] text-gray-500">
+            Built on the server from the ACTIVE approved panel per surface, after preflight releases.
+          </p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-3">
+            {outputsByFormat.map(({ format, files }) => (
+              <div key={format}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  {format} · {files.length}
+                </div>
+                <ul className="mt-1 space-y-1">
+                  {files.map((file) => (
+                    <li key={file.id} className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className="truncate text-gray-700">{file.surfaceKey}</span>
+                      <a
+                        href={file.signedUrl}
+                        download={`${file.surfaceKey}.${format}`}
+                        className="shrink-0 font-medium text-blue-600 hover:underline"
+                      >
+                        Download
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* GATE TWO. What lets the run stamp, ZIP and deliver. */}
+      <div className="mb-4 rounded-lg border border-gray-200 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Approve Production Pack</h3>
+          {finalDone && <span className="rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">approved</span>}
+        </div>
+        {!finalDone && (
+          <>
+            <ul className="space-y-1.5">
+              {FINAL_CHECKS.map(([key, label]) => (
+                <li key={key} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-emerald-600"
+                    checked={!!finalQc[key]}
+                    onChange={(event) => setFinalQc((prev) => ({ ...prev, [key]: event.target.checked }))}
+                  />
+                  <span className="text-[11px] leading-snug text-gray-600">{label}</span>
+                </li>
+              ))}
+            </ul>
+            <Textarea
+              value={finalNotes}
+              onChange={(event) => setFinalNotes(event.target.value)}
+              placeholder="Approver notes"
+              rows={2}
+              className="mt-2 resize-none text-xs"
+            />
+            <Button
+              size="sm"
+              className="mt-2 gap-1.5"
+              disabled={!finalReady || job.outputs.length < EXPECTED_OUTPUT_FILES || busy === "final"}
+              onClick={() => void submitFinal()}
+            >
+              <Check className="h-4 w-4" />
+              {busy === "final" ? "Approving…" : "Approve Production Pack"}
+            </Button>
+            {job.outputs.length < EXPECTED_OUTPUT_FILES && (
+              <p className="mt-1 text-[11px] text-gray-500">
+                All {EXPECTED_OUTPUT_FILES} output files have to exist before the pack can be approved.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* DELIVERY. Each of the three is an artifact the server wrote, so the
+          board shows the file rather than a claim that it happened. */}
+      <div className="grid gap-2 sm:grid-cols-3">
+        {[
+          { label: "Approval stamp", artifact: job.stamp, name: "qc-certificate.png" },
+          { label: "Production ZIP", artifact: job.zip, name: `production-pack-${job.order_number || job.design_id}.zip` },
+          { label: "WrapBox delivery", artifact: job.wrapbox, name: "wrapbox-manifest.json" },
+        ].map(({ label, artifact, name }) => (
+          <div key={label} className="rounded-lg border border-gray-200 p-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</div>
+            {artifact ? (
+              <a
+                href={artifact.signedUrl}
+                download={name}
+                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline"
+              >
+                <Download className="h-3.5 w-3.5" /> Download
+              </a>
+            ) : (
+              <p className="mt-1 text-[11px] text-gray-400">Not produced yet</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function AdminGeminiCompareStudio() {
   const navigate = useNavigate();
@@ -1713,19 +1994,16 @@ export default function AdminGeminiCompareStudio() {
               </div>
             )}
 
-            {/* Production Pack QC — ALL pack quality control in one place (the
-                two-part check): AI checks (worker per-side print files +
-                regression stamp + auto-ZIP) then the designer's Approve & Send
-                to WrapBox. Renders once the print worker has run for this job. */}
-            {/* For approvepro orders the on-screen job is a proof_approvals row —
-                the QC card must key on the BACKING panelizer job (where the
-                worker stamps land) or fall back to the generation id. */}
-            <ProductionPackQCCard
-              job={job?.source === "approvepro"
-                ? (job?._panelizerJobId ? { id: job._panelizerJobId, order_number: job.order_number } : null)
-                : job}
-              generationId={job?.source === "approvepro" && !job?._panelizerJobId ? job?.generation_id || null : null}
-            />
+            {/* The back half of this job, from the server's own record: its
+                stage rail, the two human release gates, the eighteen output
+                files, and the stamp/ZIP/WrapBox artifacts it produced. */}
+            {job && (
+              <ProductionPackSection
+                job={job as unknown as PanelProStudioJob}
+                approvedSides={approvedSidesRef.current}
+                onApproved={async () => { await loadJob(String(job.id)); }}
+              />
+            )}
 
             {/* View toggle: structured compare grid vs free-form board */}
             <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1 w-fit">
