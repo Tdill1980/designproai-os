@@ -113,12 +113,31 @@ test("the design-mode banner reports customer progress without naming the intern
   assert.match(gateway, /pipelineMode: acceptedPipelineMode/);
 });
 
-test("the guarded create page defaults to DesignPanel and opens A.T.L.A.S. only explicitly", () => {
+// Create Design sends A.T.L.A.S. This test used to assert the opposite --
+// that the page "defaults to DesignPanel and opens A.T.L.A.S. only
+// explicitly" -- which is the diagnostic framing RULE 0.17 and RULE 0.21
+// retired. The cost was measurable: every live customer request on
+// 2026-08-24/25 arrived as contract v2 with a null pipelineMode and died in
+// `generation_slots_failed`, while all three atlas masters showed zero
+// production runs. The default is the whole mechanism, so it is locked here.
+test("the create page sends A.T.L.A.S. by default and keeps a one-URL rollback", () => {
   const selector = read("app/src/lib/designpro-flat-first.ts");
+  const premium = read("app/src/pages/DesignPanelProPremium.tsx");
   const home = read("app/src/pages/DesignProAIHome.tsx");
   assert.match(selector, /if \(!FLAT_FIRST_ATLAS_UI_ENABLED\) return "legacy"/);
   assert.match(selector, /flatFirstAtlasRequestedBySearch\(search\)/);
-  assert.match(selector, /return "legacy";\s*\n}/);
+  assert.match(selector, /return FLAT_FIRST_ATLAS_PIPELINE_MODE;\s*\n}/);
+  // `?pipeline=legacy` must stay reachable -- the standard producer is the
+  // rollback, and losing it would make a bad atlas day unrecoverable.
+  assert.match(selector, /get\("pipeline"\) === "legacy"/);
+  assert.match(selector, /if \(value === "legacy"\) return "legacy";/);
+  // A body class the atlas layout estimator has no rules for must still land
+  // on the standard producer instead of burning a Gemini call it cannot lay
+  // out -- on the brief-carried path as well as the hand-changed selector.
+  assert.match(
+    premium,
+    /pipelineModeRef\.current === FLAT_FIRST_ATLAS_PIPELINE_MODE &&\s*\n\s*!flatFirstAtlasSupportedVehicleType\(vehicleType\)\s*\n\s*\? "legacy"/,
+  );
   assert.match(home, /initialDesignProPipelineMode\(/);
   assert.match(home, /setPipelineMode\("legacy"\)/);
 });

@@ -1076,7 +1076,16 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
   // Pipeline entry point - called when user clicks "Create with DesignIQ"
   const handlePipelineStart = async (params: DesignIQParams) => {
-    const requestedPipelineMode = pipelineModeRef.current;
+    // Precision is the default producer, so a vehicle family its layout
+    // estimator has no body-class rules for (motorcycle, boat, bus, rv,
+    // trailer) has to land on the standard producer here rather than consume a
+    // Gemini call it cannot lay out. The selector's own handler covers a type
+    // changed by hand; this covers a type arriving on the brief.
+    const requestedPipelineMode =
+      pipelineModeRef.current === FLAT_FIRST_ATLAS_PIPELINE_MODE &&
+      !flatFirstAtlasSupportedVehicleType(vehicleType)
+        ? "legacy"
+        : pipelineModeRef.current;
     if (params.prompt?.trim()) lastDesignBriefRef.current = params.prompt.trim();
     if (
       mvp.isMyVehicleMode &&
