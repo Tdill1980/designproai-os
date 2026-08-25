@@ -432,3 +432,52 @@ test("the Call-1 surface size is sent into the 3D projection prompt", () => {
     "conditionedPromptPartsFor must pass the atlas so the size clause is built",
   );
 });
+
+// THE CONCEPT SLOT CARRIES THE CUSTOMER'S WORDS, NOT A FORM DUMP.
+//
+// promptPartsFor passed designBrief(input) -- a key:value summary -- into the
+// slot the prompt itself calls "THE CONCEPT -- the heart of this design; build
+// everything around it". So the quotation marks meant to hold what the customer
+// actually said held a form instead: an 80-character brief inflated to 516, with
+// Business/Industry/Colors/Vehicle lines that buildDesignIQPrompt already emits
+// from its own structured arguments. Measured on one real prompt, the business
+// name appeared four times and the industry, vehicle and palette twice each.
+//
+// The reference interpolates the raw brief (design-panel-ai-generate/index.ts:480,
+// `${prompt}` destructured from params at :297), which is the architecture's
+// "nothing between the customer's words and A.C.E." stated as code.
+test("The design concept slot receives the raw customer brief", () => {
+  const brief = "Bright modern dental wrap for BrightSmiles, clean and friendly, blues and whites";
+  const input = {
+    brief,
+    mode: "commercial",
+    companyName: "BrightSmiles",
+    website: "www.BrightSmiles.com",
+    industry: "Dental",
+    colors: ["blue", "white"],
+    finish: "Gloss",
+    vehicle: { year: "2025", make: "Ford", model: "Transit", type: "cargo van" },
+  };
+  const prompt = worker.promptPartsFor(input, "side")[0].text;
+
+  const concept = prompt.slice(prompt.indexOf("THE CONCEPT"), prompt.indexOf("CLIENT BRIEF"));
+  assert.ok(concept.includes(`"${brief}"`), "the customer's own words must be quoted verbatim");
+  // The summary form's injected lines must not reappear inside the concept.
+  for (const injected of ["Business: BrightSmiles", "Industry: Dental", "Colors: blue, white", "Vehicle: 2025 Ford"]) {
+    assert.ok(!concept.includes(injected), `the concept slot must not carry the form line: ${injected}`);
+  }
+
+  // Nothing was lost: every field the summary injected is still stated once,
+  // from buildDesignIQPrompt's own explicit arguments.
+  assert.match(prompt, /Business: BrightSmiles/);
+  assert.match(prompt, /Industry: Dental/);
+  assert.match(prompt, /Brand colors/);
+  assert.match(prompt, /display this EXACT URL/);
+  assert.match(prompt, /covers painted body panels only/);
+
+  // And the identity is no longer repeated across the prompt.
+  assert.ok(
+    prompt.split("Industry: Dental").length - 1 === 1,
+    "the industry must be stated exactly once",
+  );
+});
