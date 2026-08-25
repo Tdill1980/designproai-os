@@ -289,6 +289,91 @@ function publicState(raw) {
   };
 }
 
+/**
+ * THE GENERATION EXISTS BEFORE THE RUN DOES.
+ *
+ * `generationId` is minted at Create Design and written to
+ * designpro_generation_requests.generation_id in the same statement that
+ * accepts the brief. A workflow run does not exist until
+ * handoff_designpro_generation_to_production fires, which is after all seven
+ * proofs have landed -- so every job route resolving only through
+ * designpro_workflow_runs answered 404 for the entire life of the generation
+ * that matters most to watch: the one still rendering.
+ *
+ * That is why PanelPro could not be opened on a fresh design. It is not a
+ * missing identity and it is not a second id; it is the same generationId,
+ * looked up in the table that already has it.
+ */
+async function generationRequestByGenerationId(fetchImpl, token, cfg, generationIdValue) {
+  const id = String(generationIdValue || "").trim().toLowerCase();
+  if (!UUID_PATTERN.test(id)) return null;
+  const fields = encodeURIComponent(
+    "id,generation_id,state,request_input,error,created_at,updated_at,completed_at",
+  );
+  const response = await upstream(
+    fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${fields}`
+      + `&generation_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=1`,
+    { method: "GET" }, token, cfg,
+  );
+  if (!response.ok) return null;
+  const rows = await response.json().catch(() => []);
+  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+}
+
+/**
+ * The honest pre-handoff projection, in the same shape a run answers with.
+ *
+ * There are no stages yet, because the workflow that owns stages has not been
+ * created -- reporting an empty list is the truth, and it is what lets the board
+ * fill in progressively as the atlas and its proofs land rather than showing a
+ * fabricated progress bar. `orderNumber` and `designOrder` stay null until the
+ * production pack is purchased; the Design ID is derived from the generation id
+ * itself, so it is knowable from the first second.
+ */
+function preHandoffState(request) {
+  const generationIdValue = String(request.generation_id || "").toLowerCase();
+  const isoOrNull = (value) => {
+    const text = String(value ?? "").trim();
+    return text && !Number.isNaN(Date.parse(text)) ? new Date(text).toISOString() : null;
+  };
+  const input = request.request_input || {};
+  const state = String(request.state || "queued");
+  return {
+    generationId: generationIdValue,
+    revisionId: null,
+    createdAt: isoOrNull(request.created_at),
+    updatedAt: isoOrNull(request.updated_at) || isoOrNull(request.created_at),
+    revision: 1,
+    state: state === "failed" || state === "cancelled"
+      ? "failed"
+      : state === "outputs_ready" ? "running" : state === "queued" ? "queued" : "running",
+    currentStage: state === "outputs_ready" ? "calls_1_7_complete" : `calls_1_7_${state}`,
+    stages: [],
+    designId: canonicalDesignId(generationIdValue),
+    orderNumber: null,
+    designName: typeof input.designName === "string" ? input.designName : null,
+    brief: typeof input.brief === "string" ? input.brief : null,
+    vehicle: input.vehicle && typeof input.vehicle === "object" && !Array.isArray(input.vehicle)
+      ? {
+        year: String(input.vehicle.year || ""),
+        make: String(input.vehicle.make || ""),
+        model: String(input.vehicle.model || ""),
+        type: String(input.vehicle.type || ""),
+      }
+      : null,
+    pipelineMode: input.contractVersion === "designpro.calls-1-7-input.v3"
+      ? "flat-first-atlas-v1"
+      : "legacy",
+    // The design is still being made. Manufacturing has not started, and saying
+    // so is what stops the board reading an empty artifact list as a failure.
+    handoffPending: true,
+    ...(state === "failed" && request.error
+      ? { failure: { stage: "calls_1_7", message: String(request.error.message || "Generation failed"), retryable: request.error.retryable === true } }
+      : {}),
+  };
+}
+
 async function listRuns(fetchImpl, token, cfg) {
   const fields = encodeURIComponent("id,workflow_type,status,results,input,revision_id,revision_snapshot_hash,artifact_set_hash,created_at");
   const types = encodeURIComponent("(designpro.entice_pack,designpro.production_pack)");
@@ -2268,9 +2353,18 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
 
       const approvedViewMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/approved-views$/);
       if (req.method === "GET" && approvedViewMatch) {
+        const requestedViewId = decodeURIComponent(approvedViewMatch[1]);
         const runs = await listRuns(fetchImpl, token, cfg);
-        const run = requestedRun(runs, decodeURIComponent(approvedViewMatch[1]));
-        if (!run) return json(res, 404, { error: "job_not_found" });
+        const run = requestedRun(runs, requestedViewId);
+        if (!run) {
+          // The proofs a run freezes are the seven Calls 1-7 views. Before the
+          // handoff they exist on the generation request instead, and the
+          // request-scoped /views route already serves them to their owner --
+          // so an empty list here is the honest pre-handoff answer, not a 404.
+          const request = await generationRequestByGenerationId(fetchImpl, token, cfg, requestedViewId);
+          if (request) return json(res, 200, []);
+          return json(res, 404, { error: "job_not_found" });
+        }
         return json(res, 200, await approvedViewsForRun(fetchImpl, token, cfg, run, user.id));
       }
 
@@ -2284,9 +2378,15 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       // mints a new request against the same generation.
       const jobAtlasMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/atlas$/);
       if (req.method === "GET" && jobAtlasMatch) {
-        const run = await resolveRun(fetchImpl, token, cfg, decodeURIComponent(jobAtlasMatch[1]));
-        if (!run) return json(res, 404, { error: "job_not_found" });
-        const jobGenerationId = generationId(run).toLowerCase();
+        const requestedAtlasId = decodeURIComponent(jobAtlasMatch[1]);
+        const run = await resolveRun(fetchImpl, token, cfg, requestedAtlasId);
+        // The atlas is authored in Call 1, long before a run exists. Resolving
+        // only through runs meant the master and its six panels were invisible
+        // for the whole time they were the only thing there was to look at.
+        const jobGenerationId = (run
+          ? generationId(run)
+          : String((await generationRequestByGenerationId(fetchImpl, token, cfg, requestedAtlasId))?.generation_id || "")
+        ).toLowerCase();
         if (!UUID_PATTERN.test(jobGenerationId)) return json(res, 404, { error: "job_not_found" });
         const located = await rpc(fetchImpl, token, cfg, "designpro_flat_atlas_generation_paths", {
           p_generation_id: jobGenerationId,
@@ -2381,9 +2481,17 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       }
 
       if (req.method === "GET" && artifactMatch) {
+        const requestedArtifactId = decodeURIComponent(artifactMatch[1]);
         const runs = await listRuns(fetchImpl, token, cfg);
-        const run = requestedRun(runs, decodeURIComponent(artifactMatch[1]));
-        if (!run) return json(res, 404, { error: "job_not_found" });
+        const run = requestedRun(runs, requestedArtifactId);
+        if (!run) {
+          // Manufacturing has not started, so there are no artifacts. For a
+          // generation that exists this is an empty list, not a missing job --
+          // 404 here made the board report a live design as not found.
+          const request = await generationRequestByGenerationId(fetchImpl, token, cfg, requestedArtifactId);
+          if (request) return json(res, 200, []);
+          return json(res, 404, { error: "job_not_found" });
+        }
         const source = verifiedSourceEnticeRun(run, runs);
         const artifactRuns = source ? [source, run] : [run];
         const result = [];
@@ -2414,7 +2522,18 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       if (match) {
         const requestedId = decodeURIComponent(match[1]);
         const run = await resolveRun(fetchImpl, token, cfg, requestedId);
-        if (!run) return json(res, 404, { error: "job_not_found" });
+        if (!run) {
+          // No run yet: the design is still in Calls 1-7. Answer from the
+          // generation request, which has existed since Create Design, so the
+          // board can be opened on the generationId immediately and fill in as
+          // the atlas, its panels and the proofs arrive. Only the plain GET --
+          // resume and the human gates genuinely need a run to act on.
+          const request = req.method === "GET" && !match[2]
+            ? await generationRequestByGenerationId(fetchImpl, token, cfg, requestedId)
+            : null;
+          if (request) return json(res, 200, preHandoffState(request));
+          return json(res, 404, { error: "job_not_found" });
+        }
         const production = run.workflow_type === "designpro.production_pack";
         if (req.method === "GET" && !match[2]) return json(res, 200, {
           ...publicState(await runState(fetchImpl, token, cfg, run)),
