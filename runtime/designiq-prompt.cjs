@@ -147,6 +147,19 @@ function flatAtlasVehicle(input = {}) {
  * lighting and vehicle photography remain downstream generate-color-render
  * concerns; putting them here would ask the master call to render a mockup.
  */
+/**
+ * The proven commercial authoring persona, copied byte for byte from
+ * design-panel-ai-generate/index.ts:470 -- the branch that authored the
+ * commercial designs this system is judged against. A named const so the two
+ * cannot drift apart silently, and so a parity test can pin it to the source.
+ */
+const COMMERCIAL_AUTHORING_PERSONA =
+  "You are the senior graphic designer at a sign and wrap company \u2014 20 years of "
+  + "$5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real "
+  + "trucks and vans. You amplify each brief into an original design built for this one "
+  + "business \u2014 premium, readable at a glance from across a parking lot, and worth what "
+  + "the customer paid.";
+
 function buildAtlasArtboardDesignIQDirection(input = {}) {
   const prompt = String(input.brief || "").trim();
   const mode = String(input.mode || "commercial").toLowerCase();
@@ -173,7 +186,34 @@ function buildAtlasArtboardDesignIQDirection(input = {}) {
   // Source parity: the role, one-flat-artboard framing, edge-to-edge fill,
   // same-cohesive-design rule and final gallery-grade quality floor all come
   // from design-panel-ai-generate's existing artboard branch.
-  let assembled = `You are a Custom Vehicle Wrap Designer at WePrintWraps.com. ${assignment}
+  // THE DESIGNER PERSONA, NOT THE PROJECTION HELPER'S.
+  //
+  // This branch opened with the reference's ARTBOARD persona -- "You are a
+  // Custom Vehicle Wrap Designer at WePrintWraps.com." -- which was correct in
+  // the architecture it came from: there the artboard was a PROJECTION of a
+  // design the commercial branch had already authored, so its opening line only
+  // had to name the output format. The commercial branch, the one that actually
+  // authored commercial designs, opens with a designer of stated seniority,
+  // budget and audience (design-panel-ai-generate/index.ts:470).
+  //
+  // Under A.T.L.A.S. that relationship inverted. RULE 0.20: "A.T.L.A.S. CALL 1
+  // IS THE INITIAL DESIGN GENERATION ... Not a preview." This call IS the design
+  // origin now, and it inherited the projection helper's framing while doing the
+  // designer's job -- so the sentence that sets the standard for the work was
+  // the one sentence that did not travel.
+  //
+  // Live evidence 2026-08-25, generation 02e83eb3 (Pro-Tech Automotive): a
+  // technically perfect run -- master QC confidence 1.0, 7/7 proofs, 6 panels --
+  // that came back generic blue/silver template-feeling work with no brand
+  // system beyond a centred wordmark and a phone number.
+  //
+  // This is a parity restoration, not new creative direction: the literal below
+  // is the reference's own, byte for byte, and RULE 0.1 is explicit that quality
+  // below baseline means the port is incomplete and never that A.C.E. needs
+  // something invented for it. Every other creative block in this function is
+  // untouched, and no typography, negative-space, focal-point or colour-strategy
+  // instruction is added, because the proven source contains none to restore.
+  let assembled = `${COMMERCIAL_AUTHORING_PERSONA} ${assignment}
 
 Design ONE flat vehicle-wrap ARTBOARD for a ${vehicle}. The output is flat print artwork on a 2D sheet.
 
@@ -667,6 +707,7 @@ module.exports = {
   SUBSTRATE_CONTEXT,
   DESIGNPANEL_ARTBOARD_PORT_VERSION,
   briefWantsPhoto,
+  COMMERCIAL_AUTHORING_PERSONA,
   buildAtlasArtboardDesignIQDirection,
   buildDesignIQPrompt,
   buildFlatDesignIQDirection,

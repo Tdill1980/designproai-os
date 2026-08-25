@@ -5,6 +5,9 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const {
+  COMMERCIAL_AUTHORING_PERSONA,
+  COMMERCIAL_DEPTH,
+  COMMERCIAL_TRANSLATION,
   LOGO_REQUIREMENT,
   PHOTO_REALISM_LOCK,
   buildAtlasArtboardDesignIQDirection,
@@ -31,7 +34,12 @@ test("Atlas reuses the DesignPanelAI artboard quality contract with its guide as
   });
 
   const sourceParityPhrases = [
-    "You are a Custom Vehicle Wrap Designer at WePrintWraps.com.",
+    // The opening sentence is now the reference's COMMERCIAL authoring persona,
+    // not its artboard branch's. Under RULE 0.20 this call is the design origin
+    // rather than a projection of one, so it takes the designer's framing --
+    // approved 2026-08-25 and pinned byte-for-byte to the vendored source in
+    // the persona parity test below.
+    COMMERCIAL_AUTHORING_PERSONA,
     "The output is flat print artwork on a 2D sheet.",
     "the SAME cohesive design",
     "Gallery-grade custom artwork with real depth, movement, and a wow factor — never generic AI filler, never a template.",
@@ -224,5 +232,72 @@ test("The contact no-invent rule reaches the model on every brief shape", () => 
       assert.ok(atlas.includes(contact.website), `Atlas must still state the supplied website: ${label}`);
       assert.ok(standard.includes(contact.website), `The commercial builder must still state the supplied website: ${label}`);
     }
+  }
+});
+
+// THE AUTHORING PERSONA IS PINNED TO THE PROVEN COMMERCIAL SOURCE.
+//
+// The A.T.L.A.S. branch opened with the reference's ARTBOARD persona -- "You are
+// a Custom Vehicle Wrap Designer at WePrintWraps.com." -- which was right in the
+// architecture it came from, where the artboard was a PROJECTION of a design the
+// commercial branch had already authored. Under RULE 0.20 Call 1 IS the design
+// origin, so it was doing the designer's job with the projection helper's
+// framing, and the sentence that sets the standard for the work was the one that
+// did not travel.
+//
+// Live evidence 2026-08-25, generation 02e83eb3 (Pro-Tech Automotive): master QC
+// confidence 1.0, 7/7 proofs, 6 panels -- and generic template-feeling work with
+// no brand system beyond a centred wordmark and a phone number.
+//
+// This asserts parity against the vendored source itself rather than a copy of
+// the string, so the two cannot drift: if the reference is ever re-ported, this
+// fails until the runtime follows it.
+test("the A.T.L.A.S. authoring persona is the proven commercial designer, byte for byte", () => {
+  const reference = readFileSync(
+    new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    reference.includes(COMMERCIAL_AUTHORING_PERSONA),
+    "the persona must exist verbatim in design-panel-ai-generate/index.ts",
+  );
+  assert.match(COMMERCIAL_AUTHORING_PERSONA, /senior graphic designer at a sign and wrap company/);
+  assert.match(COMMERCIAL_AUTHORING_PERSONA, /20 years of \$5,000-per-vehicle commercial fleet graphics/);
+  assert.match(COMMERCIAL_AUTHORING_PERSONA, /readable at a glance from across a parking lot/);
+
+  const atlas = buildAtlasArtboardDesignIQDirection({
+    brief: "masculine wrap for an automotive business",
+    companyName: "Pro-Tech Automotive",
+    mode: "commercial",
+  });
+  assert.ok(
+    atlas.startsWith(COMMERCIAL_AUTHORING_PERSONA),
+    "the design call must OPEN with the designer persona, not carry it later",
+  );
+  assert.equal(
+    atlas.includes("You are a Custom Vehicle Wrap Designer at WePrintWraps.com."),
+    false,
+    "the projection-helper persona must not remain on the authoring path",
+  );
+
+  // Parity restoration only. Nothing was invented for typography, negative
+  // space, focal point or colour strategy, because the proven source carries no
+  // such block to restore -- inventing one is what RULE 0.1 forbids.
+  for (const invented of [
+    /negative space/i, /focal point/i, /kerning/i, /leading/i,
+    /colou?r strategy/i, /rule of thirds/i, /golden ratio/i,
+  ]) {
+    assert.doesNotMatch(atlas, invented, `no invented creative direction: ${invented}`);
+  }
+
+  // The blocks that were already at parity stay exactly as they were. The
+  // reference is TypeScript source, so its literals carry escaped quotes
+  // (\"stealth bomber\") that the runtime value does not -- unescape before
+  // comparing, or a correct block reads as drifted purely on backslashes.
+  const referenceText = reference.replace(/\\"/g, '"');
+  for (const [name, proven] of Object.entries({
+    LOGO_REQUIREMENT, COMMERCIAL_DEPTH, COMMERCIAL_TRANSLATION,
+  })) {
+    assert.ok(referenceText.includes(proven), `${name} drifted from the reference`);
   }
 });
