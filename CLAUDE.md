@@ -261,7 +261,9 @@ None of these may be re-implemented against `supabase.functions` or
 
 | Surface | Route | Module |
 |---|---|---|
-| RevisionStudio — 2D Production Proof, Production Layers, Logo Pack entice | `/designpro/jobs/:generationId` | `components/revisioniq/ServerRevisionStudio.tsx` + `ProductionFlowLayersCard.tsx` |
+| RevisionStudioIQ — the product editor: design grid, seven-view carousel, GalleryMode, layered canvas, revision box, Production Layers, Logo Pack entice | `/revision-studio` | `pages/RevisionStudioIQ.tsx` + `ProductionFlowLayersCard.tsx`, sourced by `lib/revisionstudio-source.ts` and `lib/revisionstudio-flow.ts` |
+| The job's server-artifact status view (NOT the product RevisionStudio) | `/designpro/jobs/:generationId` | `components/revisioniq/ServerRevisionStudio.tsx` |
+| PanelPro branded studio — tool rail, canvas, seven view tabs | `/designpro/jobs/:generationId/panel-studio` | `pages/DesignProStudio.tsx` |
 | PanelPro Studio board — per-side REAL DESIGN PROOF ∥ PRINT PANEL, approve side, preflight gate | `/designpro/jobs/:generationId/panelpro` | `pages/designpro/PanelProStudioBoard.tsx` |
 | GENIE Universal Panelizer progress — step rail, glowing 7 sides, "when all panels glow it's a go" | `/designpro/jobs/:generationId/progress`, `/productionflow/:generationId` | `pages/designpro/GenieProgress.tsx` |
 
@@ -384,21 +386,24 @@ came from different masters — locked by `tests/server-revision-studio.test.mjs
 
 ## 🏭 RULE 0.22 — PANELPRO STUDIO IS THE PRODUCTION CONTROL ROOM, NOT A SIX-CARD VALIDATOR (Trish 2026-08-25)
 
-**PanelPro Studio already existed as a working product page. Restore it; do not
-rebuild a smaller replacement.** The working implementation is
-`app/src/pages/AdminGeminiCompareStudio.tsx` (present in this repo from the
-RestylePro import, currently unrouted, routed in RestylePro at
-`/admin/studio-board`). Migrate its data seams to the server-owned A.T.L.A.S.
-lineage exactly as `RevisionStudioIQ.tsx` is being migrated — **preserve the
-UI/UX and its asset-management capability**, and reuse the newer server
-verification/binding logic underneath it.
+**PanelPro is TWO surfaces, and confusing them is how one gets rebuilt as the
+other.** The canonical contract (2026-08-24, §6) names both:
 
-`PanelProStudioBoard.tsx` holds useful server-backed validation, but it is **not
-permission to replace the full studio.**
+| Surface | Route | File |
+|---|---|---|
+| The branded studio — tool rail, canvas, seven view tabs, upload/text/logo/adjust/layers/move/scale/rotate/arrange | `/designpro/jobs/:generationId/panel-studio` | `app/src/pages/DesignProStudio.tsx` |
+| The production/QC board — proof ∥ panel per side, dimensions, hashes, human preflight, downstream artifacts | `/designpro/jobs/:generationId/panelpro` | `app/src/pages/designpro/PanelProStudioBoard.tsx` |
 
-It is the design team's complete production workspace for one order, keyed by
-`generationId` · Design Order ID / order number · Design ID (DID), and it must
-preserve the whole chronological lineage.
+Both are routed and both bind to the same generation. An earlier revision of
+this rule named `AdminGeminiCompareStudio.tsx` as the restore target; the
+canonical contract names `DesignProStudio.tsx`, and that is what is routed.
+`AdminGeminiCompareStudio.tsx` is unrouted RestylePro import weight, not the
+DesignProAI studio.
+
+The board is a validator, not a second producer — but it IS the design team's
+complete production workspace for one order, keyed by `generationId` · Design
+Order ID / order number · Design ID (DID), and it must preserve the whole
+chronological lineage.
 
 ### A.T.L.A.S. version history — every revision, never only the newest
 
@@ -453,6 +458,21 @@ production function. One already did: a lock in
 `tests/server-revision-studio.test.mjs` forbade the string outright and had to be
 corrected. Forbid *generation*, never *correction*.
 
+**How it is wired (2026-08-25).** A correction is its own artifact kind,
+`corrected-panel`, recorded by `record_designpro_corrected_panel`
+(`supabase/migrations/20260825000000_designpro_panelpro_corrected_panels.sql`)
+against the exact `surface_key` and revision it replaces. It carries
+`correctedFromPath`, `correctedFromHash`, `sourceMasterHash`, `correctedBy`,
+`correctedAt` and a required reason; a correction with no Call 9 panel to
+correct is refused. The branded panel is **never touched**, so `source.verify`'s
+exactly-six-distinct assertion still reads the same six rows.
+
+`enhance.upscale` enhances the **active** artifact per surface — the newest
+correction when one exists, the branded panel otherwise — and records
+`humanCorrectedSurfaces` on the receipt. That is what makes the human gate real:
+enhancing the panel the team rejected, while the correction sat unused in the
+vault, would let the gate pass and the wrong artwork print.
+
 ### Approval → Production Pack → WrapBox
 
 Once the human QC checks pass: freeze the approved revision and panel
@@ -475,6 +495,38 @@ For one fresh generation, PanelPro Studio must show the whole lineage:
 > corrected upload if needed → approved Production Pack → ZIP → WrapBox
 
 **Nothing in that lineage may be silently replaced, disconnected, or lost.**
+
+## ⚡ RULE 0.23 — DRIVER SIDE FIRST, THEN ASK. (Trish 2026-08-25)
+
+**The customer must not wait for seven proofs to see whether the design is
+right.** A.T.L.A.S. renders Driver first and hash-verifies it before projecting
+the other six, so a real look at the design exists about a minute before the set
+is finished. The product asks there:
+
+> **"Do you want to see all sides of this design, or revise it?"**
+
+- **See All Views** reveals the remaining proofs the server is already rendering.
+- **Revise This Design** opens `/revision-studio` immediately, against the same
+  design lineage.
+
+Neither button is a producer. Making the customer watch six more proofs before
+they can say "change it" spends six renders on a design they have already
+rejected — and a revision supersedes all of them anyway.
+
+**What already holds, and must not be undone.** `runAtlasProofStages` runs
+Driver alone, hash-verifies the accepted bytes through `hydrateDriver()`, then
+projects the remaining six **concurrently** (`parallel: true`) from the same
+frozen master. `waitForGeneration` polls every 2s and reveals each view the
+instant it lands. Call 1 cuts the six panels deterministically before any proof
+renders, so panel extraction is never on the AI critical path.
+
+**Do not serialize the six projections to "reduce load", and do not hold a
+finished artifact back for an all-or-nothing bundle.** Progressive publication is
+the contract: RevisionStudio and PanelPro fill per surface as either half
+arrives, and a panel appearing before its proof is correct.
+
+Locked by `tests/server-revision-studio.test.mjs` and
+`tests/designpanel-view-reveal.test.mjs`.
 
 ## ⛔ RULE 0 — OPTIMIZE FOR BEHAVIORAL PARITY, NOT ARCHITECTURE (Trish 2026-08-17)
 

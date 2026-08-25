@@ -141,6 +141,11 @@ function adminNotesFor(input: {
     wpw_order_number: input.job.orderNumber,
     order_number: input.job.orderNumber,
   };
+  // The customer's brief, verbatim, under the key the page's prompt card and
+  // its revision composer already read. Never a paraphrase: a revision is
+  // authored from this text plus the requested change, so a summary here would
+  // rebuild the design against words nobody typed.
+  if (input.job.brief) notes.original_prompt = input.job.brief;
   if (proof?.signedUrl) notes.flat_proof_url = proof.signedUrl;
   if (logoPack.length) notes.logo_pack = logoPack;
   return JSON.stringify(notes);
@@ -173,7 +178,7 @@ export function designRowFromJob(
     admin_notes: adminNotesFor({ job, artifacts }),
     custom_design_url: null,
     custom_swatch_url: null,
-    custom_styling_prompt_key: null,
+    custom_styling_prompt_key: text(job.brief),
     uses_custom_design: false,
     customer_email: null,
     subscription_tier: null,

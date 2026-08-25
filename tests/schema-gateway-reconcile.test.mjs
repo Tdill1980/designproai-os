@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-31), [
+  assert.deepEqual(names.slice(-32), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -90,6 +90,11 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // finished 3D proof captioned "do not return a vehicle image", and the model
     // drew the van anyway -- wheel arches punched into the sheet.
     "20260824180000_designpro_atlas_flat_sheet_prompt_v6.sql",
+    // The audited human correction path. A designer who finds a panel does not
+    // fit the real vehicle template records the corrected file against that
+    // exact surface and revision; the branded Call 9 panel is left byte-for-byte
+    // and stays what source.verify counts.
+    "20260825000000_designpro_panelpro_corrected_panels.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

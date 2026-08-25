@@ -28,7 +28,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CheckCircle2, Download, FileArchive, ImageOff, PackageCheck, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Download, FileArchive, ImageOff, PackageCheck, ShieldCheck, UploadCloud } from "lucide-react";
 import {
   ApprovedGenerationView,
   dpApi,
@@ -63,6 +63,9 @@ import {
 } from "@/components/designpro/surface";
 import { cn } from "@/lib/utils";
 
+/** A stable empty list, so a side with no corrections does not remount its card. */
+const EMPTY_CORRECTIONS: WorkflowArtifact[] = [];
+
 function inches(value: unknown): string | null {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
@@ -81,14 +84,19 @@ function SideCard({
   surfaceKey,
   view,
   panel,
+  corrections,
   approved,
   onToggle,
+  onCorrect,
 }: {
   surfaceKey: GenieSurfaceKey;
   view: ApprovedGenerationView | undefined;
   panel: WorkflowArtifact | undefined;
+  /** Every human correction for this side, newest first. */
+  corrections: WorkflowArtifact[];
   approved: boolean;
   onToggle: (next: boolean) => void;
+  onCorrect: (surfaceKey: GenieSurfaceKey, file: File, reason: string) => Promise<void>;
 }) {
   const size = panelSize(panel);
   // THE PAIR MUST COME FROM ONE MASTER, AND THIS IS WHERE THAT IS CHECKED.
@@ -113,6 +121,38 @@ function SideCard({
     : null;
   const lineageKnown = Boolean(proofMaster && panelMaster);
   const lineageMatches = lineageKnown && proofMaster === panelMaster;
+
+  // THE ACTIVE PRODUCTION ARTIFACT FOR THIS SIDE.
+  //
+  // Normally the Call 9 panel. When the team has corrected one against the real
+  // vehicle template, the newest correction is what Call 12 enhances and what
+  // reaches print -- so it is what this card shows as active, with the branded
+  // original still downloadable beside it. Both are kept; neither replaces the
+  // other in the vault.
+  const active = corrections[0] || panel;
+  const correctedActive = Boolean(corrections[0]);
+  const [correctionFile, setCorrectionFile] = useState<File | null>(null);
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [correcting, setCorrecting] = useState(false);
+  const [correctionError, setCorrectionError] = useState("");
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+
+  const submitCorrection = async () => {
+    if (!correctionFile || correctionReason.trim().length < 8) return;
+    setCorrecting(true);
+    setCorrectionError("");
+    try {
+      await onCorrect(surfaceKey, correctionFile, correctionReason.trim());
+      setCorrectionFile(null);
+      setCorrectionReason("");
+      setCorrectionOpen(false);
+    } catch (cause) {
+      setCorrectionError(cause instanceof Error ? cause.message : "The correction was refused.");
+    } finally {
+      setCorrecting(false);
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -150,12 +190,17 @@ function SideCard({
         </div>
 
         <div>
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Print panel
+          <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span>Print panel{correctedActive ? " · corrected" : ""}</span>
+            {correctedActive && (
+              <Badge variant="outline" className="border-amber-500/60 text-amber-600 dark:text-amber-400">
+                human corrected
+              </Badge>
+            )}
           </div>
-          {panel?.signedUrl ? (
+          {active?.signedUrl ? (
             <img
-              src={panel.signedUrl}
+              src={active.signedUrl}
               alt={`${surfaceKey} print panel`}
               className="aspect-video w-full rounded-lg border border-border bg-white object-contain"
             />
@@ -165,7 +210,7 @@ function SideCard({
               Not produced yet
             </div>
           )}
-          {panel && <ContentHash value={panel.contentHash} />}
+          {active && <ContentHash value={active.contentHash} />}
         </div>
       </div>
 
@@ -191,11 +236,28 @@ function SideCard({
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {panel?.signedUrl && (
+        {active?.signedUrl && (
           <Button asChild size="sm" variant="outline">
-            <a href={panel.signedUrl} download={`${surfaceKey}-print-panel.png`}>
-              <Download className="mr-1 h-4 w-4" /> Download panel
+            <a href={active.signedUrl} download={`${surfaceKey}-print-panel.png`}>
+              <Download className="mr-1 h-4 w-4" />
+              {correctedActive ? "Download corrected panel" : "Download panel"}
             </a>
+          </Button>
+        )}
+        {/* The branded Call 9 panel stays downloadable even when a correction is
+            active. Both versions are kept on purpose: the original is what the
+            server produced and what the correction is bound to. */}
+        {correctedActive && panel?.signedUrl && (
+          <Button asChild size="sm" variant="ghost">
+            <a href={panel.signedUrl} download={`${surfaceKey}-original-panel.png`}>
+              <Download className="mr-1 h-4 w-4" /> Original
+            </a>
+          </Button>
+        )}
+        {panel && (
+          <Button size="sm" variant="ghost" onClick={() => setCorrectionOpen((open) => !open)}>
+            <UploadCloud className="mr-1 h-4 w-4" />
+            {correctionOpen ? "Cancel correction" : "Upload corrected panel"}
           </Button>
         )}
         {/* A side whose panel came from a different master cannot be approved.
@@ -221,6 +283,69 @@ function SideCard({
           </span>
         )}
       </div>
+
+      {/* THE AUDITED CORRECTION. Not a producer: the file is one a designer
+          corrected against the real vehicle template, and it is recorded against
+          this exact surface and revision with a reason. The Call 9 panel is left
+          byte-for-byte -- it stays downloadable above and stays what the
+          correction is bound to -- and Call 12 enhances whichever artifact is
+          active, so a corrected side reaches print through Topaz and the output
+          build like any other, never around them. */}
+      {correctionOpen && panel && (
+        <div className="mt-3 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+          <p className="text-xs text-muted-foreground">
+            Upload the file you re-output against the real vehicle template. The original
+            panel is kept and stays bound to this correction; the corrected file becomes
+            the active production artwork for {SURFACE_LABEL[surfaceKey] || surfaceKey}.
+          </p>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,application/pdf"
+            className="block w-full text-xs file:mr-3 file:rounded file:border file:border-border file:bg-background file:px-2 file:py-1 file:text-xs"
+            onChange={(event) => setCorrectionFile(event.target.files?.[0] || null)}
+          />
+          <Textarea
+            value={correctionReason}
+            onChange={(event) => setCorrectionReason(event.target.value)}
+            placeholder="What did not fit on the template, and what you changed"
+            rows={2}
+          />
+          {correctionError && <Notice tone="error">{correctionError}</Notice>}
+          <Button
+            size="sm"
+            disabled={!correctionFile || correctionReason.trim().length < 8 || correcting}
+            onClick={() => void submitCorrection()}
+          >
+            {correcting ? "Recording…" : "Record correction"}
+          </Button>
+        </div>
+      )}
+
+      {/* Correction history. Additive: correcting twice keeps both, newest
+          active, and every entry says who, when and why. */}
+      {corrections.length > 0 && (
+        <div className="mt-3 border-t border-border pt-2">
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+            Correction history · {corrections.length}
+          </div>
+          <ul className="space-y-1">
+            {corrections.map((correction, index) => (
+              <li key={correction.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <Badge variant={index === 0 ? "default" : "outline"}>
+                  {index === 0 ? "active" : "superseded"}
+                </Badge>
+                <span className="text-muted-foreground">
+                  {String(correction.metadata?.correctedAt || "")}
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  {String(correction.metadata?.reason || "")}
+                </span>
+                <SaveLink url={correction.signedUrl} name={`${surfaceKey}-corrected.png`} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -295,6 +420,50 @@ export default function PanelProStudioBoard() {
     }
     return rows;
   }, [artifacts]);
+
+  // Every correction for a side, newest first. Newest is the active production
+  // artifact; the rest are kept so the history is readable rather than implied.
+  const correctionsBySide = useMemo(() => {
+    const rows = new Map<string, WorkflowArtifact[]>();
+    for (const artifact of artifacts) {
+      if (artifact.kind !== "corrected-panel") continue;
+      const list = rows.get(artifact.surfaceKey) || [];
+      list.push(artifact);
+      rows.set(artifact.surfaceKey, list);
+    }
+    for (const list of rows.values()) {
+      list.sort((left, right) =>
+        String(right.metadata?.correctedAt || "").localeCompare(String(left.metadata?.correctedAt || "")));
+    }
+    return rows;
+  }, [artifacts]);
+
+  /**
+   * Record a corrected panel and reload.
+   *
+   * The upload is keyed by the run's own revision, which is the only namespace
+   * outside the run prefix the server admits a designer's file into. A run whose
+   * revision the gateway has not reported cannot take a correction -- refusing
+   * here is what stops the file landing somewhere the storage identity check
+   * would later reject.
+   */
+  const correctPanel = useCallback(async (
+    surfaceKey: GenieSurfaceKey,
+    file: File,
+    reason: string,
+  ) => {
+    if (!job?.revisionId) {
+      throw new Error("This run has no reported revision, so a correction cannot be bound to it.");
+    }
+    await dpApi.uploadCorrectedPanel({
+      generationId,
+      revisionId: job.revisionId,
+      surfaceKey,
+      file,
+      reason,
+    });
+    await load();
+  }, [generationId, job?.revisionId, load]);
 
   const logos = useMemo(() => artifacts.filter((a) => a.kind === "logo"), [artifacts]);
   const upscaledBySide = useMemo(() => {
@@ -439,6 +608,48 @@ export default function PanelProStudioBoard() {
               <ContentHash value={selected.masterContentHash || ""} chars={14} />
             </div>
 
+            {/* THE VERSION'S OWN RECORD. Order number, Design ID, generation and
+                the exact timestamp this version was authored -- so a version is
+                identifiable off the page, in an email, on a shop floor, and not
+                only by which thumbnail is highlighted. */}
+            <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground">Design Order</dt>
+                <dd className="font-semibold">{job?.orderNumber || "—"}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground">Design ID</dt>
+                <dd className="font-semibold">{job?.designId || "—"}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground">Generation</dt>
+                <dd className="font-mono text-[11px]">{generationId}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground">Authored</dt>
+                <dd className="font-semibold">
+                  {selected.createdAt ? new Date(selected.createdAt).toISOString().replace("T", " ").slice(0, 19) + " UTC" : "—"}
+                </dd>
+              </div>
+            </dl>
+
+            {/* THE PROMPT, VERBATIM. V1 carries the customer's original brief;
+                a later version carries the change that was asked for. Both are
+                shown as typed -- a paraphrase here is how a design gets rebuilt
+                against words nobody said. */}
+            <div className="mt-3 rounded-lg border border-border bg-muted/40 p-3">
+              <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                {selected.instruction ? "Revision asked for" : "Original brief"}
+              </div>
+              <p className="whitespace-pre-wrap text-xs">
+                {selected.instruction || job?.brief || (
+                  <span className="text-muted-foreground">
+                    No brief was recorded for this design.
+                  </span>
+                )}
+              </p>
+            </div>
+
             {/* Version history. A revision starts a new A.T.L.A.S. lineage against
                 the same design, so these are ordered oldest first and numbered
                 across the whole generation rather than by per-request sequence. */}
@@ -467,17 +678,15 @@ export default function PanelProStudioBoard() {
                         <ImageOff className="h-4 w-4" />
                       </div>
                     )}
-                    <div className="truncate border-t border-border px-1.5 py-1 text-[10px] font-semibold">
-                      V{index + 1}
+                    <div className="border-t border-border px-1.5 py-1">
+                      <div className="truncate text-[10px] font-semibold">V{index + 1}</div>
+                      <div className="truncate text-[9px] text-muted-foreground">
+                        {revision.createdAt ? revision.createdAt.slice(0, 10) : ""}
+                      </div>
                     </div>
                   </button>
                 ))}
               </div>
-              {selected.instruction && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  This version was asked for: “{selected.instruction}”
-                </p>
-              )}
             </div>
             {/* BEFORE → AFTER, for this run.
                 The master on the left, the seven proofs it produced on the
@@ -559,8 +768,10 @@ export default function PanelProStudioBoard() {
               surfaceKey={side}
               view={viewBySide.get(side)}
               panel={panelBySide.get(side)}
+              corrections={correctionsBySide.get(side) || EMPTY_CORRECTIONS}
               approved={approvedSides.has(side)}
               onToggle={(next) => toggleSide(side, next)}
+              onCorrect={correctPanel}
             />
           ))}
         </div>

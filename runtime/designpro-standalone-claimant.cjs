@@ -66,7 +66,7 @@ const ARTIFACT_KINDS = Object.freeze([
   // "panel": the branded six stay the only "panel" artifacts, so source.verify's
   // exactly-six-distinct-surface_key assertion keeps working untouched, and no
   // downstream consumer can mistake a QC instrument for production artwork.
-  "flat-proof", "panel", "qc-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
+  "flat-proof", "panel", "qc-panel", "corrected-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
 // The Call 9 rule the database enforces. Every output is the deterministic
@@ -1587,10 +1587,40 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         skippedUnpurchased: ["panel"],
       });
     }
-    const panels = await artifacts(sb, run.id, ["panel"]);
-    if (panels.length !== SURFACE_KEYS.length || new Set(panels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
+    const brandedPanels = await artifacts(sb, run.id, ["panel"]);
+    if (brandedPanels.length !== SURFACE_KEYS.length || new Set(brandedPanels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
       throw new StageError("enhance_source_panels_missing", "Exact six approved source panels are required", false);
     }
+    // THE ACTIVE ARTIFACT PER SURFACE, WHICH IS NOT ALWAYS THE CALL 9 PANEL.
+    //
+    // PanelPro's QC is a physical check against the real vehicle template, and
+    // when a panel does not fit, a designer corrects the file and uploads it
+    // against that surface. The correction is a separate artifact bound to the
+    // panel it replaces -- the branded Call 9 set is never touched, still hashes
+    // the same, and is still what source.verify counts.
+    //
+    // But it is the corrected file that has to reach print. Enhancing the panel
+    // the team rejected, while the correction sat unused in the vault, would
+    // make the human QC decorative: the gate would pass and the wrong artwork
+    // would ship. So the enhancement source is the newest correction for a
+    // surface when one exists, and the branded panel otherwise, and the receipt
+    // records which was used for every side.
+    const corrections = await artifacts(sb, run.id, ["corrected-panel"]);
+    const activeBySurface = new Map();
+    for (const correction of corrections) {
+      const key = String(correction.surface_key);
+      const current = activeBySurface.get(key);
+      if (!current || String(correction.created_at || "") > String(current.created_at || "")) {
+        activeBySurface.set(key, correction);
+      }
+    }
+    const panels = brandedPanels.map((branded) => {
+      const correction = activeBySurface.get(String(branded.surface_key));
+      return correction ? { ...correction, brandedPanel: branded } : { ...branded, brandedPanel: branded };
+    });
+    const correctedSurfaces = [...activeBySurface.keys()].filter(
+      (key) => SURFACE_KEYS.includes(key),
+    ).sort();
     const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
     const dimensions = new Map((dimensionManifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
     const produced = [];
@@ -1661,14 +1691,24 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     for (const item of enhanced) {
       const key = item.key;
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/enhanced/${key}-${String(panels.find((p) => p.surface_key === key).content_hash).slice(0, 24)}.png`;
+      // Material-addressed by the ACTIVE source, so a correction gets its own
+      // enhanced object rather than colliding with the rejected panel's.
       const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, item.bytes, "image/png");
       if (stored.spool) spools.push(stored.spool);
       enhancedHashes[key] = stored.hash;
       plans[key] = item.detail ? item.detail.plan : { reusedImmutableWinner: true };
+      const activeSource = panels.find((p) => p.surface_key === key);
       produced.push(artifact("upscaled-panel", stored.storagePath, stored.hash, stored.bytes, key, {
         call: 12, contract: TOPAZ_CONTRACT, engine: "topaz-image-enhance", model: readiness.model,
-        sourcePanelPath: panels.find((p) => p.surface_key === key).storage_path,
-        sourcePanelHash: panels.find((p) => p.surface_key === key).content_hash,
+        sourcePanelPath: activeSource.storage_path,
+        sourcePanelHash: activeSource.content_hash,
+        // Which artifact this side was actually enhanced from, and the branded
+        // Call 9 panel it descends from either way. A corrected side must be
+        // readable as corrected from the artifact alone, not only from the
+        // stage receipt.
+        sourceArtifactKind: activeSource.artifact_kind,
+        humanCorrected: activeSource.artifact_kind === "corrected-panel",
+        brandedPanelHash: activeSource.brandedPanel.content_hash,
         enhancedSha256: item.detail?.enhancedSha256 || stored.hash,
         reusedImmutableWinner: item.reused === true,
         // "topaz" | "not-required" | "reused-immutable-winner". A panel that was
@@ -1687,6 +1727,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const completed = await complete(sb, stage, run, {
       verified: true, receiptKind: "call12.topaz-upscale", call: 12,
       contract: TOPAZ_CONTRACT, engine: "topaz-image-enhance", model: readiness.model,
+      // Which sides went to print from a human-corrected file. This is the audit
+      // trail the correction path exists for -- a receipt that did not say so
+      // would leave "the team fixed the hood" true but unprovable.
+      humanCorrectedSurfaces: correctedSurfaces,
       enhancedHashes, plans, surfaces: Object.keys(enhancedHashes).sort(),
       enhancement: Object.fromEntries(enhanced.map((item) => [
         item.key,

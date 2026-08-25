@@ -250,6 +250,13 @@ export const SURFACE_LABEL: Record<string, string> = {
 
 export type WorkflowStatus = {
   generationId: string;
+  /**
+   * The immutable revision this run was frozen against. PanelPro's corrected
+   * panel upload is keyed by it -- a designer's re-output lands in the owner's
+   * own revision-input namespace, which is the only place outside the run's
+   * prefix the storage identity check admits.
+   */
+  revisionId: string | null;
   designId: string;
   orderNumber: string;
   /**
@@ -261,6 +268,13 @@ export type WorkflowStatus = {
    * genuinely has no value -- a card says nothing rather than inventing one.
    */
   designName: string | null;
+  /**
+   * The customer's own brief, verbatim, as they typed it on the request this
+   * design was authored from. Null when the run predates the projection. Both
+   * studios show it: a version history without the words that produced the
+   * version is a strip of thumbnails.
+   */
+  brief: string | null;
   finish: string | null;
   /** Run timestamps, for the design card's "N days ago" line. */
   createdAt: string | null;
@@ -573,7 +587,7 @@ async function sha256File(file: File): Promise<string> {
 
 export async function uploadRevisionAsset(
   revisionId: string,
-  kind: RenderRole | "logo" | "attachment",
+  kind: RenderRole | "logo" | "attachment" | "corrected-panel",
   file: File,
 ): Promise<AssetIdentity> {
   if (file.size < 1 || file.size > 25 * 1024 * 1024) {
@@ -874,6 +888,39 @@ export const dpApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+
+  /**
+   * A panel a designer corrected against the real vehicle template.
+   *
+   * PanelPro's QC is physical: the panel is downloaded, laid on the template,
+   * and checked for fit. When it does not fit, the corrected file goes back in
+   * here -- against the exact surface and revision it replaces, with a reason,
+   * and with the Call 9 panel left byte-for-byte intact. That is the difference
+   * between an audited correction and the browser-era producers this system
+   * retired: `Pull panel` and `Mirror from driver` BUILT panels in a tab; this
+   * records one a human corrected, bound to what it corrects.
+   *
+   * The bytes travel the same upload-and-verify path a logo does, so the file is
+   * hashed and proven stored before anything is recorded against it.
+   */
+  uploadCorrectedPanel: async (input: {
+    generationId: string;
+    revisionId: string;
+    surfaceKey: GenieSurfaceKey;
+    file: File;
+    reason: string;
+  }) => {
+    const asset = await uploadRevisionAsset(input.revisionId, "corrected-panel", input.file);
+    return request<{
+      artifactId: string;
+      surfaceKey: string;
+      correctedFromHash: string;
+      idempotent: boolean;
+    }>(
+      `/jobs/${encodeURIComponent(input.generationId)}/panels/${encodeURIComponent(input.surfaceKey)}/correction`,
+      { method: "POST", body: JSON.stringify({ asset, reason: input.reason }) },
+    );
+  },
 
   approveFinalQc: (generationId: string, qc: FinalQc, notes: string) =>
     request<{ accepted: true }>(`/jobs/${encodeURIComponent(generationId)}/approvals/final`, {
