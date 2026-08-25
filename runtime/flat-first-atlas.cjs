@@ -43,7 +43,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // call, and the sheet is described as printed vinyl on the roll rather than as
 // vehicle flanks. v5 masters are refused rather than migrated, and this string
 // is the mechanism that refuses them.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260824.v6";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260825.v7";
 // Bounded QC-corrective re-rolls inside the one claimed authoring fence. Three
 // is the proof QC's budget for the same generate/inspect/correct loop.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
@@ -457,24 +457,99 @@ function zoneLabelSvg(zone) {
     + `letter-spacing="${Math.round(fontSize * 0.08)}">${label}</text>`;
 }
 
-function guideSvg(manifest) {
-  const zoneRects = manifest.zones.map((zone) => (
+/**
+ * The geometry both guides share. Rectangles, fills, strokes -- the zone
+ * authority itself, identical in each, so the two renders can never disagree
+ * about where a surface is.
+ */
+function guideGeometrySvg(manifest) {
+  return manifest.zones.map((zone) => (
     `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="10" fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
   )).join("");
+}
+
+/**
+ * THE MODEL'S GUIDE CARRIES NO READABLE TEXT. THAT IS THE WHOLE POINT.
+ *
+ * There used to be one guide, and it went to three consumers at once: the
+ * authoring model, the QC inspector and the human design team. It carried each
+ * surface's name printed across the middle of that surface -- "HOOD" set at up
+ * to 180px, bold, dead centre on the hood rectangle -- plus a footer reading
+ * "TOPOLOGY GUIDE ONLY · GRAYS AND LABELS MUST NOT APPEAR IN ARTWORK".
+ *
+ * Handed a rectangle with a large bold word centred on it and asked to paint
+ * artwork inside that rectangle, an image model paints the word. Live evidence
+ * 2026-08-25 (generation eb7835a8-247b-443c-9804-e73f66379603, Carley's Chevy
+ * Traverse): three consecutive authoring attempts were refused on
+ * `artifactFreeContract`, the inspector reporting "The hood zone contains the
+ * guide label 'HOOD'" and "The roof zone contains the guide label 'ROOF'". The
+ * run died with zero masters, zero proofs and zero panels.
+ *
+ * The only defence was a sentence of prose telling the model the labels were
+ * instructions rather than artwork -- and a negative instruction naming the
+ * forbidden thing is the one prompt shape Gemini reliably over-indexes on. The
+ * footer was that same instruction rendered as pixels INSIDE the image it was
+ * warning about.
+ *
+ * So the guide is split by consumer instead. The model receives geometry and
+ * nothing else: same rectangles, same fills, same strokes, same canvas, zero
+ * glyphs. Nothing readable is present, so nothing readable can be copied. Zone
+ * identity is not lost -- it was never carried by the glyphs. The prompt's ZONE
+ * MAP names every surface with its exact box and rotation, and the TOPOLOGY
+ * LOCK describes the layout in words, both of which the model reads as text
+ * rather than as something to paint.
+ *
+ * The labelled guide is unchanged and still rendered: it is what the design
+ * team reads, what enters durable storage as `guide_storage_path`, and what the
+ * QC inspector receives as IMAGE 2 -- which is precisely what lets
+ * `artifactFreeContract` keep working, because the inspector still has the
+ * annotations to look for. Removing the labels there would have blinded the
+ * check that caught this.
+ */
+function authoringGuideSvg(manifest) {
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
+    <rect width="100%" height="100%" fill="#111111"/>
+    ${guideGeometrySvg(manifest)}
+  </svg>`);
+}
+
+/** The human-readable installer map. Labels stay; the design team needs them. */
+function guideSvg(manifest) {
   const zoneLabels = manifest.zones.map(zoneLabelSvg).join("");
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
-    ${zoneRects}
+    ${guideGeometrySvg(manifest)}
     ${zoneLabels}
     <text x="2048" y="4050" text-anchor="middle" fill="#d9d9d9" font-family="Arial,sans-serif" font-size="25">TOPOLOGY GUIDE ONLY · GRAYS AND LABELS MUST NOT APPEAR IN ARTWORK</text>
   </svg>`);
 }
 
-async function renderAtlasGuide(manifest) {
-  return sharp(guideSvg(manifest), { density: 96 })
+async function rasterizeGuide(svg) {
+  return sharp(svg, { density: 96 })
     .resize(CANVAS.widthPx, CANVAS.heightPx, { fit: "fill", kernel: "nearest" })
     .png(PNG_OPTIONS)
     .toBuffer();
+}
+
+/** The labelled installer map: persisted, shown to humans, inspected by QC. */
+async function renderAtlasGuide(manifest) {
+  return rasterizeGuide(guideSvg(manifest));
+}
+
+/** Geometry authority only. This is the one the authoring model ever sees. */
+async function renderAtlasAuthoringGuide(manifest) {
+  const svg = authoringGuideSvg(manifest);
+  // Fail closed rather than ship a glyph to the model. The split above is the
+  // whole defence against `artifactFreeContract`; if a future edit reintroduces
+  // text on this path, the run stops here instead of authoring another sheet
+  // with a surface name painted across it.
+  if (/<text\b/i.test(svg.toString("utf8"))) {
+    throw new FlatAtlasError(
+      "flat_atlas_authoring_guide_contains_text",
+      "The authoring guide must carry geometry only; readable text is reproducible as artwork",
+    );
+  }
+  return rasterizeGuide(svg);
 }
 
 function activeZoneMaskSvg(manifest) {
@@ -819,7 +894,9 @@ TOPOLOGY LOCK:
 ZONE MAP:
 ${map}
 
-OUTPUT CLEANLINESS: The guide's colors, labels, outlines, legend, dimensions, grid, background and template marks are instructions, never artwork. Output artwork only inside the zones.
+OUTPUT CLEANLINESS: The guide carries geometry only -- rectangle positions, sizes and rotations. Its grays, outlines and background state where each surface sits and carry no palette, style or content meaning. Output your own artwork inside those rectangles.
+
+FULL BLEED PER ZONE: fill every rectangle listed in the ZONE MAP with opaque artwork from corner to corner. Each listed box is 100% covered: no gap, no empty region, no transparent pixel and no unpainted area anywhere inside it, on any surface. Outside the rectangles the canvas stays empty.
 
 SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL: every zone is ONE SOLID RECTANGLE of continuous printed artwork, opaque corner to corner and edge to edge. The design runs straight through every place a windshield, side window, door glass, wheel arch, tyre, pickup-bed opening, headlight, tail light, handle or trim piece will later sit, exactly as if those parts were not there. THE INSTALLER CUTS THE WHEEL AND WINDOW OPENINGS OUT OF THE FINISHED PANEL, so the panel must have artwork in those places for them to cut. Paint the wrap graphic across the whole rectangle. Each zone reads as a flat sheet of printed vinyl, never as a picture of a vehicle.
 
@@ -1291,14 +1368,23 @@ async function generateOrReuseFlatAtlas(options) {
   const revisionSequence = 1;
   const manifestBytes = canonicalBytes(manifest);
   const manifestHash = sha256(manifestBytes);
+  // TWO RENDERS OF ONE GEOMETRY, SPLIT BY CONSUMER.
+  //
+  // `guideBytes` is the labelled installer map: it is what enters storage, what
+  // the design team reads, and what the QC inspector compares the master
+  // against -- so `artifactFreeContract` still has annotations to look for.
+  // `authoringGuideBytes` is the same rectangles with no glyphs at all, and is
+  // the only one the authoring model is ever shown.
   const guideBytes = await renderAtlasGuide(manifest);
   const guideHash = sha256(guideBytes);
+  const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
   const parts = [
-    // The deterministic guide is deliberately the first IMAGE in the request.
-    { inlineData: { mimeType: "image/png", data: guideBytes.toString("base64") } },
+    // The deterministic guide is deliberately the first IMAGE in the request,
+    // and it is the glyph-free authoring render -- never the labelled map.
+    { inlineData: { mimeType: "image/png", data: authoringGuideBytes.toString("base64") } },
     { text: prompt },
     ...(await topologyExampleParts(topologyExamples)),
     ...(await artboardQualityExampleParts(artboardQualityExamples)),
@@ -1653,6 +1739,7 @@ module.exports = {
   loadLatestAtlasRevision,
   normalizeAtlasMaster,
   projectionDerivative,
+  renderAtlasAuthoringGuide,
   renderAtlasGuide,
   viewAuthorityFor,
   _test: {
@@ -1671,6 +1758,8 @@ module.exports = {
     atlasCreativeRules,
     fitCenterColumn,
     fitRotatedSide,
+    authoringGuideSvg,
+    guideGeometrySvg,
     guideSvg,
     normalizedGeometryAuthority,
     normalizedSurfaces,

@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-one-migration chain', () => {
-  assert.equal(migrationNames.length, 51);
+test('fresh bootstrap contains one ordered fifty-two-migration chain', () => {
+  assert.equal(migrationNames.length, 52);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -104,6 +104,8 @@ test('fresh bootstrap contains one ordered fifty-one-migration chain', () => {
       // Carley's checklist, on the server, keyed by the panel's own content
       // hash -- so a corrected file starts an empty checklist by construction.
       '20260825140000',
+      // A.T.L.A.S. prompt v7: the authoring guide carries geometry only.
+      '20260825190000',
     ],
   );
 });

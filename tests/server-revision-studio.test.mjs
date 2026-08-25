@@ -137,7 +137,20 @@ test("The branded panel editor and the PanelPro production board stay distinct",
     "utf8",
   );
   assert.match(adminStudio, /const \{ generationId: routeGenerationId \} = useParams\(\);/);
-  assert.match(adminStudio, /if \(routeGenerationId\) \{ void loadJob\(String\(routeGenerationId\)\); return; \}/);
+  assert.match(adminStudio, /loadJob\(String\(routeGenerationId\)\)/);
+  // AND IT RE-READS THE SERVER WHILE THE RUN IS STILL LIVE.
+  //
+  // The loader used to bail out whenever a job was already in state, so a route
+  // change reused the previous generation and a run still authoring its master
+  // rendered once -- empty -- and never updated. Progressive publication (RULE
+  // 0.23) means panels and proofs land one at a time, so a board that reads once
+  // shows a permanently blank job and cannot be told apart from a stale one.
+  assert.doesNotMatch(adminStudio, /if \(job\) return;/,
+    "the board must not skip the server read because it already holds a job");
+  assert.match(adminStudio, /setTimeout\([\s\S]{0,80}poll\(\)/,
+    "the board must keep re-reading the server while the run is unsettled");
+  assert.match(adminStudio, /\["complete", "failed", "cancelled"\]\.includes\(state\)/,
+    "polling must stop only at a terminal state");
 
   // Both routes are reachable from RevisionStudio, each under its own name.
   assert.match(studio, /panel-studio`\}>Open in DesignPro Studio</);
