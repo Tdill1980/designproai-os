@@ -2354,16 +2354,30 @@ export default function AdminGeminiCompareStudio() {
         )}
       </div>
 
-      {/* Minor-edits editor (color/depth · AI · paint) */}
+      {/* THE CORRECTION BENCH. Adjust and paint a panel against the real
+          vehicle template, then record the corrected file against this exact
+          surface and revision with a reason. The Call 9 panel is left
+          byte-for-byte; the correction is its own artifact bound to it. */}
       {job && (
         <StudioBoardEditor
           open={!!editTarget}
           target={editTarget}
           jobId={job.id}
           onClose={() => setEditTarget(null)}
-          onSaved={(sideKey, newUrl) => {
-            const def = VIEW_DEFS.find((d) => d.sideKey === sideKey);
-            if (def) persistSide(def, { addVersion: { url: newUrl, source: "edit" } });
+          onSaved={async (sideKey, file, reason) => {
+            const cur = jobRef.current || job;
+            const surfaceKey = SURFACE_FOR_SIDE_KEY[sideKey];
+            const revisionId = (cur as any)?.revision_id as string | null;
+            if (!surfaceKey) throw new Error(`${sideKey} is not one of the six production surfaces.`);
+            if (!revisionId) throw new Error("This run has no reported revision, so a correction cannot be bound to it.");
+            await dpApi.uploadCorrectedPanel({
+              generationId: String(cur!.generation_id || cur!.id),
+              revisionId,
+              surfaceKey,
+              file,
+              reason,
+            });
+            await loadJob(String(cur!.id));
           }}
         />
       )}
