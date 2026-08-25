@@ -8,6 +8,12 @@ export interface ProductionFlowLogoAsset {
 export interface ProductionFlowAssetMeta {
   production_eligible?: boolean;
   source_hash?: string;
+  /**
+   * The A.T.L.A.S. master this side's panel was cut from. It is what binds the
+   * print panel to the 3D proof beside it: both halves publish the same hash,
+   * and a pair that disagrees provably came from different masters.
+   */
+  source_master_hash?: string;
   source_proof_url?: string;
   pack_version?: string;
   expected_sides?: string[];
