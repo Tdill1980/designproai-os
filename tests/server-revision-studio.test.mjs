@@ -383,3 +383,59 @@ test("RUN UPSCALE invokes the production enhancement and never overwrites its so
   assert.match(board, /Upscale stale/);
   assert.match(board, /Upscaled derivative/);
 });
+
+/**
+ * ONE VERSION HISTORY, READ BY BOTH SURFACES.
+ *
+ * RevisionStudio is the revision workspace and PanelPro is the production
+ * record, and they are looking at the same job -- so V2 has to mean the same
+ * thing on both. It did not. RevisionStudio read `design_version_commits`, a
+ * separate table with its own version_number, its own prompt column and a
+ * browser-side writer; PanelPro read the server's A.T.L.A.S. revision lineage.
+ * Two histories of one job, numbered independently: a revision made in
+ * RevisionStudio had no reason to appear in PanelPro at all, and V2 in one was
+ * not necessarily V2 in the other.
+ *
+ * This pins the property that fixes it: exactly one reader, whose numbering is
+ * the server's own revision sequence and whose prompt text is the customer's
+ * words verbatim. A surface that reads revisions another way is the drift.
+ */
+test("RevisionStudio and PanelPro read one canonical version and prompt history", () => {
+  const history = readFileSync(new URL("../app/src/lib/design-version-history.ts", import.meta.url), "utf8");
+  const revisionSource = readFileSync(new URL("../app/src/lib/revisionstudio-source.ts", import.meta.url), "utf8");
+  const panelSource = readFileSync(new URL("../app/src/lib/panelpro-studio-source.ts", import.meta.url), "utf8");
+  const studio = readFileSync(new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url), "utf8");
+  const board = readFileSync(
+    new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  // The version number is the server's revision sequence, never recomputed.
+  assert.match(history, /version:\s*revision\.revisionSequence/);
+  // V1's words are the run's brief; a later version's are its own instruction.
+  assert.match(history, /isOriginal \? \(brief \|\| instruction \|\| null\) : \(instruction \|\| null\)/);
+  // Membership in a version is the master hash, not a timestamp guess.
+  assert.match(history, /artifactMaster\(artifact\) === master/);
+  assert.match(history, /viewMaster\(view\) === master/);
+  // The A.T.L.A.S. master is admin-only and must not reach the customer
+  // timeline's "View master artboard" link.
+  assert.match(history, /master_artboard_url: null/);
+
+  // Both surfaces call the one reader.
+  assert.match(revisionSource, /loadDesignVersionHistory/);
+  assert.match(panelSource, /designVersionsFrom\(\{/);
+  assert.match(studio, /revisionStudioVersionCommits/);
+  assert.match(board, /designVersionsFrom\(\{/);
+
+  // And neither reaches the second store any more.
+  assert.doesNotMatch(studio, /getVersionCommits/,
+    "RevisionStudio must not read the separate design_version_commits history");
+
+  // Selecting a version switches the whole PanelPro workspace to that
+  // revision's assets, which is the only thing that makes a version switchable.
+  assert.match(board, /assetsForVersion\(selectedVersion, allArtifacts, allViews\)/);
+  // The prompt is shown verbatim on both, and labelled for which kind it is.
+  assert.match(board, /selectedVersion\.promptKind === "original-brief"/);
+  assert.match(board, /whitespace-pre-wrap/);
+  assert.match(studio, /presentation\.revisionNotes/);
+});

@@ -7,12 +7,13 @@ import {
   listRevisionStudioDesigns,
   listRevisionStudioVersions,
   loadDriverPanelGeometry,
+  revisionStudioVersionCommits,
   loadLayeredEditSources,
   readRevisionStudioDesign,
 } from "@/lib/revisionstudio-source";
 import { renderClient } from "@/integrations/supabase/renderClient";
 import { downscaleStorageImage } from "@/lib/storage-image";
-import { getVersionCommits, type VersionCommit } from "@/lib/revision-commits";
+import { type VersionCommit } from "@/lib/revision-commits";
 import { isAllowlistedAdmin } from "@/lib/admin-allowlist";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -2928,17 +2929,30 @@ export default function RevisionStudioIQ() {
       }));
     } catch { /* storage disabled — the page's DB resolvers still apply */ }
   }, []);
-  const lineageCommitIds = useMemo(
-    () => Array.from(new Set([
-      ...(versionChain || []).map(genIdOf),
-      ...(versionChain || []).map((row: any) => row?.id),
-    ].filter(Boolean))) as string[],
-    [versionChain, genIdOf]
-  );
+  /**
+   * ONE VERSION HISTORY, SHARED WITH PANELPRO.
+   *
+   * This read `design_version_commits` -- a separate table with its OWN
+   * version_number, its own prompt column and a browser-side writer. PanelPro
+   * read the server's A.T.L.A.S. revision lineage. Two histories of one job,
+   * numbered independently: V2 here was not necessarily V2 there, and a
+   * revision made on this page had no reason to appear in PanelPro at all.
+   *
+   * The fix is not a sync job -- it is deleting one of the two answers. The
+   * server's revision sequence is the version number now, its stored
+   * instruction is the prompt verbatim, and its stamp is the timestamp. Both
+   * surfaces call the same reader, so a revision created here shows up in
+   * PanelPro with the same number, the same words and the same master, because
+   * it is the same record and not a copy of one.
+   *
+   * The timeline below is untouched: the canonical history is projected into
+   * the exact shape it already draws.
+   */
   const { data: versionCommits } = useQuery<VersionCommit[]>({
-    queryKey: ["version-commits", lineageCommitIds],
-    queryFn: () => getVersionCommits(lineageCommitIds),
-    enabled: lineageCommitIds.length > 0,
+    queryKey: ["design-version-history", selectedRender?.id],
+    queryFn: async () =>
+      (await revisionStudioVersionCommits(String(selectedRender?.id || ""))) as unknown as VersionCommit[],
+    enabled: !!selectedRender?.id,
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -5339,6 +5353,19 @@ export default function RevisionStudioIQ() {
                                   </button>
                                 )}
                               </div>
+                              {/* WHAT WAS ASKED FOR, VERBATIM. A version is
+                                  identified by the words that produced it, not
+                                  only by its thumbnail -- and it is the same
+                                  text PanelPro shows for the same version,
+                                  because both read one record. */}
+                              {presentation.revisionNotes && (
+                                <span
+                                  className="w-36 truncate text-[9px] leading-snug text-zinc-400"
+                                  title={presentation.revisionNotes}
+                                >
+                                  {presentation.revisionNotes}
+                                </span>
+                              )}
                               {/* Per-version timestamp */}
                               {versionDate && (
                                 <span className="text-[9px] text-zinc-500 whitespace-nowrap">
