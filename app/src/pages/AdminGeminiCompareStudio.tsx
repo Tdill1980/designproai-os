@@ -620,8 +620,27 @@ const STUDIO_RENDER_ACE_ENABLED = false;
  * exists, a proof counts when its view exists. An operator watching this card
  * is watching the database, which is the only thing worth watching.
  */
-function AtlasProgressCard({ job }: { job: PanelProStudioJob }) {
-  const atlas = job.atlas_versions[job.atlas_versions.length - 1] || null;
+/**
+ * THE MASTER IS THE DESIGN AUTHORITY, SO THE CONTROL ROOM HAS TO SHOW IT.
+ *
+ * This card reported that a master existed and printed its hash, and never
+ * rendered the artwork -- `masterUrl` has been on the wire the whole time
+ * (FlatAtlasRevision carries it, signed, alongside `guideUrl`) and no line in
+ * this file referenced it. So the production board could tell you
+ * `87a24e3c3da22d40 · 4096×4096` about a sheet you could not look at, which is
+ * the one asset RULE 0.22 lists first: "Flattened A.T.L.A.S. master ... each
+ * individually downloadable", and "Do not hide files behind only a final ZIP".
+ *
+ * It binds to the SELECTED version rather than the newest, because the same
+ * rule requires V1/V2/V3 to stay inspectable and forbids silently replacing V1
+ * when V2 is created.
+ */
+function AtlasProgressCard({
+  job, selectedVersion,
+}: { job: PanelProStudioJob; selectedVersion: DesignVersion | null }) {
+  const atlas = job.atlas_versions.find(
+    (entry) => entry.id === selectedVersion?.revisionId,
+  ) || job.atlas_versions[job.atlas_versions.length - 1] || null;
   const panels = job.concept_json?.qc_side_panels || {};
   const panelCount = PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).length;
   const proofUrls = job.all_view_urls || {};
@@ -683,6 +702,62 @@ function AtlasProgressCard({ job }: { job: PanelProStudioJob }) {
             : "Projected from the same frozen master, concurrently",
         )}
       </div>
+
+      {/* THE SHEET ITSELF. Everything above is a status line about the master;
+          this is the master. It is the design authority every proof and every
+          panel is cut from, so the production board has to render it rather
+          than describe it. */}
+      {atlas?.masterUrl && (
+        <div className="mt-3 border-t border-gray-200 pt-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+              Flattened A.T.L.A.S. master · V{atlas.revisionSequence}
+            </span>
+            <span className="flex items-center gap-3 text-[10px]">
+              <a
+                href={atlas.masterUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="font-semibold text-blue-700 underline"
+              >
+                Open full size
+              </a>
+              <a
+                href={atlas.masterUrl}
+                download={`atlas-master-v${atlas.revisionSequence}-${atlas.master.contentHash.slice(0, 12)}.png`}
+                className="font-semibold text-blue-700 underline"
+              >
+                Download master
+              </a>
+              {atlas.guideUrl && (
+                <a
+                  href={atlas.guideUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-gray-500 underline"
+                >
+                  Installer map
+                </a>
+              )}
+            </span>
+          </div>
+          <a href={atlas.masterUrl} target="_blank" rel="noreferrer" className="block">
+            <img
+              src={atlas.masterUrl}
+              alt={`Flattened A.T.L.A.S. master, revision ${atlas.revisionSequence}`}
+              loading="lazy"
+              className="max-h-[26rem] w-full rounded border border-gray-200 bg-white object-contain"
+            />
+          </a>
+          <p className="mt-1 text-[10px] text-gray-500">
+            {atlas.master.widthPx}×{atlas.master.heightPx} ·{" "}
+            {(atlas.master.byteSize / 1_048_576).toFixed(1)} MB ·{" "}
+            {atlas.master.effectivePpi.toFixed(1)} PPI at design size · sha256{" "}
+            <span className="font-mono">{atlas.master.contentHash.slice(0, 16)}</span>
+            {" · "}links are signed for 5 minutes; reload the page if an image stops loading
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -742,7 +817,7 @@ function JobHeader({
         ))}
       </dl>
 
-      <AtlasProgressCard job={job} />
+      <AtlasProgressCard job={job} selectedVersion={selectedVersion} />
 
       <div className="mt-4 border-t border-gray-100 pt-3">
         <div className="mb-2 flex items-center justify-between">
