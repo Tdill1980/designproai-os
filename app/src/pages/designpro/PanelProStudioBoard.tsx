@@ -30,6 +30,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CheckCircle2, Download, FileArchive, ImageOff, PackageCheck, ShieldCheck, UploadCloud, Wand2 } from "lucide-react";
 import {
+  ApiError,
   ApprovedGenerationView,
   dpApi,
   FinalQc,
@@ -783,8 +784,27 @@ export default function PanelProStudioBoard() {
    * minutes, and the button says so rather than appearing to hang.
    */
   const runUpscale = useCallback(async (surfaceKey: GenieSurfaceKey) => {
-    await dpApi.runPanelUpscale(generationId, surfaceKey);
-    await load();
+    try {
+      await dpApi.runPanelUpscale(generationId, surfaceKey);
+      await load();
+    } catch (cause) {
+      // A LOST CONNECTION IS NOT A LOST ENHANCEMENT.
+      //
+      // The runtime holds the request open for the whole Topaz call, and a long
+      // side can outlast the proxy's response window. The work does not stop
+      // when the socket does: the derivative is still written, hashed and bound
+      // to its source. Reporting this as a failure would send the operator to
+      // press the button again on an enhancement that already succeeded, so the
+      // board reloads first and says what actually happened.
+      await load().catch(() => {});
+      const code = cause instanceof ApiError ? cause.code : "";
+      if (cause instanceof ApiError && (cause.status === 504 || cause.status === 503 || /timeout|unavailable/i.test(code))) {
+        throw new Error(
+          "The connection closed before the enhancement reported back. It is most likely still running on the server — reload in a few minutes and check the enhancement history before running it again.",
+        );
+      }
+      throw cause;
+    }
   }, [generationId, load]);
   const outputs = useMemo(() => artifacts.filter((a) => a.kind === "output"), [artifacts]);
   const stamp = useMemo(() => artifacts.find((a) => a.kind === "stamp"), [artifacts]);
