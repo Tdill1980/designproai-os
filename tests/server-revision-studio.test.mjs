@@ -139,3 +139,56 @@ test("The branded panel editor and the PanelPro production board stay distinct",
   assert.doesNotMatch(board, /dpApi\.(regenerateView|createGenerationRequest|handoffGeneration)/);
   assert.match(board, /dpApi\.approvePreflight\(/);
 });
+
+// A PROOF AND ITS PANEL MUST BE THE SAME DESIGN, AND THE BOARD MUST SAY SO.
+//
+// A.T.L.A.S. authors one flattened master; the six panels are deterministic
+// extractions of it and each proof is conditioned on that same surface's region.
+// The runtime enforces the proof half -- viewAuthorityFor throws unless the
+// authority's sourceMasterHash equals the master's contentHash. But the two
+// halves of a side card arrive from different endpoints, and nothing compared
+// them at the pairing: a panel cut from a different master, or an earlier
+// revision, would sit beside its proof looking normal.
+//
+// Both sides already publish the binding, so the check is a comparison. This is
+// the acceptance rule stated as a test: same generationId, same surfaceKey, same
+// A.T.L.A.S. parent hash -- or the side cannot be approved.
+test("PanelPro pairs a proof with a panel only when they share one master", () => {
+  const board = readFileSync(
+    new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  // Both bindings are read, from the fields the server actually publishes.
+  assert.match(board, /view\?\.atlasBinding\?\.masterContentHash/);
+  assert.match(board, /panel\?\.metadata\?\.sourceMasterHash/);
+  assert.match(board, /lineageMatches\s*=\s*lineageKnown && proofMaster === panelMaster/);
+
+  // A real disagreement is named, and an absent binding is not called drift.
+  assert.match(board, /DIFFERENT MASTERS/);
+  assert.match(board, /No master binding on this pair/);
+
+  // And it is a gate, not a label: this approval releases artwork to print.
+  assert.match(board, /disabled=\{!panel \|\| \(lineageKnown && !lineageMatches\)\}/);
+
+  // The board stays a validator. The browser-era producer controls must not
+  // come back -- the server already holds the panel bytes from the master.
+  //
+  // Checked against CODE lines only. The file's own header names those controls
+  // while explaining that it deliberately does not carry them, and a gate that
+  // cannot tell a comment from a button would forbid documenting the decision.
+  const boardCode = board
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed && !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
+    })
+    .join("\n");
+  for (const producerControl of ["Pull panel", "Mirror from driver", "Upload panel"]) {
+    assert.ok(
+      !boardCode.includes(producerControl),
+      `PanelPro must not reintroduce the browser-era producer control: ${producerControl}`,
+    );
+  }
+  assert.match(board, /The server produces this panel at Call 9\. It is never hand-built here\./);
+});

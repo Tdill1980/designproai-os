@@ -91,6 +91,28 @@ function SideCard({
   onToggle: (next: boolean) => void;
 }) {
   const size = panelSize(panel);
+  // THE PAIR MUST COME FROM ONE MASTER, AND THIS IS WHERE THAT IS CHECKED.
+  //
+  // A.T.L.A.S. authors one flattened master, the six panels are deterministic
+  // extractions of it, and each proof is conditioned on that same surface's
+  // region -- the runtime already refuses to render a proof whose conditioning
+  // bytes do not hash to the master zone. But the two halves of this card
+  // arrive from different endpoints, and until now nothing compared them here:
+  // a panel cut from a different master, or from an earlier revision, would sit
+  // beside its proof looking perfectly normal. Both sides already publish the
+  // binding -- `atlasBinding.masterContentHash` on the view, `sourceMasterHash`
+  // on the panel artifact -- so the check costs a comparison and turns "looks
+  // wired" into "is wired".
+  //
+  // Only a real disagreement is called out. A Standard run has no master, and
+  // an older artifact predating the binding carries no hash; neither is drift,
+  // so neither is reported as drift.
+  const proofMaster = view?.atlasBinding?.masterContentHash || null;
+  const panelMaster = typeof panel?.metadata?.sourceMasterHash === "string"
+    ? panel.metadata.sourceMasterHash
+    : null;
+  const lineageKnown = Boolean(proofMaster && panelMaster);
+  const lineageMatches = lineageKnown && proofMaster === panelMaster;
   return (
     <div
       className={cn(
@@ -147,6 +169,27 @@ function SideCard({
         </div>
       </div>
 
+      {/* One line stating whether this proof and this panel are the same
+          design. It is the whole point of showing them side by side. */}
+      {(view || panel) && (
+        <div
+          className={cn(
+            "mt-2 text-[11px] font-semibold",
+            !lineageKnown
+              ? "text-muted-foreground"
+              : lineageMatches
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-destructive",
+          )}
+        >
+          {!lineageKnown
+            ? "No master binding on this pair"
+            : lineageMatches
+              ? "Proof and panel share one A.T.L.A.S. master"
+              : "DIFFERENT MASTERS — this panel was not cut from the proof's design"}
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {panel?.signedUrl && (
           <Button asChild size="sm" variant="outline">
@@ -155,15 +198,23 @@ function SideCard({
             </a>
           </Button>
         )}
+        {/* A side whose panel came from a different master cannot be approved.
+            This gate releases artwork to print; signing off a pair that is
+            provably not the same design is the one thing it must never do. */}
         <Button
           size="sm"
           variant={approved ? "secondary" : "default"}
-          disabled={!panel}
+          disabled={!panel || (lineageKnown && !lineageMatches)}
           onClick={() => onToggle(!approved)}
         >
           <CheckCircle2 className="mr-1 h-4 w-4" />
           {approved ? "Approved · undo" : "Approve side"}
         </Button>
+        {lineageKnown && !lineageMatches && (
+          <span className="text-xs text-destructive">
+            Approval is blocked until the panel is cut from this proof's master.
+          </span>
+        )}
         {!panel && (
           <span className="text-xs text-muted-foreground">
             The server produces this panel at Call 9. It is never hand-built here.
