@@ -311,7 +311,7 @@ SELECT
     )>0
     AND pg_catalog.strpos(
       atlas_valid_definition,
-      '''designpro-flat-first-atlas-20260822.v4'''
+      '''__ATLAS_PROMPT_VERSION__'''
     )>0
     AND pg_catalog.strpos(
       atlas_valid_definition,
@@ -378,6 +378,25 @@ SELECT
   ) AS atlas_preview_quarantine
 FROM positions;
 SQL
+
+# THE EXPECTED PROMPT VERSION COMES FROM THE REPO, NEVER FROM A LITERAL HERE.
+#
+# This was pinned to `...20260822.v4`. Migration 20260824180000 moved the atlas
+# to v6 months of work later, and the fence -- whose whole job is to refuse a
+# deploy onto the wrong schema -- started refusing the RIGHT one instead. A
+# guard that has to be hand-edited whenever the thing it guards changes will be
+# out of date exactly when it matters. Read the newest version the migrations
+# actually install, and assert THAT.
+# Resolved from THIS script's own location, never the caller's cwd: the deploy
+# workflow, the migration job and the test fixture all invoke it from different
+# directories, and a relative glob silently finds nothing in two of the three.
+ATLAS_MIGRATIONS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../supabase/migrations" && pwd)
+ATLAS_PROMPT_VERSION=$(grep -rho 'designpro-flat-first-atlas-[0-9]\{8\}\.v[0-9]\+' "$ATLAS_MIGRATIONS_DIR"/*.sql | sort -V | tail -1)
+[[ $ATLAS_PROMPT_VERSION =~ ^designpro-flat-first-atlas-[0-9]{8}\.v[0-9]+$ ]] || {
+  echo "::error::no A.T.L.A.S. prompt version found in supabase/migrations" >&2
+  exit 2
+}
+query=${query//__ATLAS_PROMPT_VERSION__/$ATLAS_PROMPT_VERSION}
 
 payload=$(jq -cn --arg query "$query" '{query: $query, parameters: []}')
 curl --fail --silent --show-error \
