@@ -90,7 +90,7 @@ async function fixture() {
   };
 }
 
-test("Atlas runs Driver from existing Atlas call.parts, Passenger from the canonical mirror, and later views from Atlas plus verified Driver", async () => {
+test("Atlas renders every surface from its own master-zone authority, with no Driver dependency", async () => {
   const f = await fixture();
   const calls = [];
   const directProvider = {
@@ -178,25 +178,38 @@ test("Atlas runs Driver from existing Atlas call.parts, Passenger from the canon
     imageSize: "4K",
     attempt: 1,
   });
-  assert.equal(passenger.metadata.passengerProducer, "producePassengerView");
-  assert.equal(passenger.metadata.deterministicMirror, true);
-  assert.equal(passenger.metadata.anchoredToView1, true);
-  assert.equal(passenger.metadata.driverContentHash, f.driverHash);
-  assert.equal(passenger.metadata.renderMethod, "producePassengerView");
+  // PASSENGER IS A SIBLING, RENDERED FROM ITS OWN SURFACE AUTHORITY.
+  //
+  // It used to be a sharp mirror of the accepted Driver followed by a surgical
+  // AI text-repair pass, policed by a similarity bound. Flamingo Pools
+  // (5b2eb96c, the proven A.T.L.A.S.-first run) did no such thing: its
+  // Passenger was its own Gemini call at 35,747 ms with a real key
+  // fingerprint, LONGER than its own Driver -- a sharp mirror costs ~100 ms and
+  // burns no key. The mirror chain arrived with the server port and became the
+  // top cause of failed runs, because a branded design can never be a literal
+  // pixel mirror while every word stays forward-reading on both flanks.
+  assert.equal(passenger.metadata.renderMethod, "generate-color-render",
+    "Passenger renders like every other surface");
+  assert.equal(passenger.metadata.passengerProducer, undefined);
+  assert.equal(passenger.metadata.deterministicMirror, undefined);
+  assert.equal(passenger.metadata.atlasZonePassedToPassengerRepair, undefined);
+  // No Driver dependency of any kind.
+  assert.equal(passenger.metadata.anchoredToView1, false);
+  assert.equal(passenger.metadata.driverContentHash, undefined);
+  // Identity still binds to the shared master, for this exact surface.
   assert.equal(passenger.metadata.atlasZoneSurfaceKey, "passenger");
   assert.match(passenger.metadata.promptHash, /^[0-9a-f]{64}$/);
-  assert.equal(calls.length, 2, "Passenger may call Gemini only for surgical mirror-text repair");
-  assert.equal(calls[1].parts.length, 3);
-  assert.equal(calls[1].parts[0].inlineData.mimeType, "image/jpeg");
-  assert.equal(hash(Buffer.from(calls[1].parts[1].inlineData.data, "base64")), f.projectionContentHash,
-    "Passenger repair must receive its verified native master-zone authority");
-  assert.match(calls[1].parts[2].text, /PERFECTLY STRAIGHT side-on elevation/);
-  assert.match(calls[1].parts[2].text, /DARK EPOXY WITH MIRROR REFLECTIONS/);
-  assert.match(calls[1].parts[2].text, /Canon EOS R5, RF 24-70mm/);
-  assert.match(calls[1].parts[2].text, /retain the input's existing.*pixel-for-pixel except corrected glyphs/is);
-  assert.match(calls[1].parts[2].text, /exact accepted PASSENGER native-zone crop/);
-  assert.match(calls[1].parts[2].text, /not permission to recompose IMAGE 1/i);
-  assert.equal(passenger.metadata.atlasZonePassedToPassengerRepair, true);
+  assert.equal(calls.length, 2, "Passenger is one render, not a mirror plus a repair");
+  const passengerParts = calls[1].parts;
+  const passengerAuthority = passengerParts.find((part) => part?.inlineData);
+  assert.ok(passengerAuthority, "Passenger must receive its master-zone authority as image data");
+  assert.equal(hash(Buffer.from(passengerAuthority.inlineData.data, "base64")), f.projectionContentHash,
+    "Passenger must be conditioned on its verified native master-zone authority");
+  // The camera contract itself is asserted against the real builder in
+  // atlas-generation-worker-wiring.test.mjs; this harness stubs the prompt, so
+  // what matters here is that Passenger got the canonical projection prompt for
+  // its OWN view rather than a mirror-repair instruction.
+  assert.match(passengerParts.at(-1).text, /canonical Atlas projection instructions for passenger-side/);
 
   const roof = await provider.generateImage({
     sourceViewType: "roof",
@@ -207,18 +220,25 @@ test("Atlas runs Driver from existing Atlas call.parts, Passenger from the canon
   });
   assert.equal(calls.length, 3);
   const roofCall = calls[2];
-  assert.equal(roofCall.parts.filter((part) => part.inlineData).length, 2,
-    "Roof must receive exactly Atlas plus the bounded Driver continuity anchor");
+  // Roof, like every other surface, receives its OWN master-zone authority and
+  // nothing else. The bounded Driver continuity anchor is gone: cross-view
+  // identity comes from the shared frozen master, hash-verified per surface,
+  // rather than from injecting one render into the others.
+  assert.equal(roofCall.parts.filter((part) => part.inlineData).length, 1,
+    "Roof must receive exactly its own Atlas authority, with no Driver anchor");
   assert.match(roofCall.parts[0].text, /CAB ROOF ONLY/);
   assert.match(roofCall.parts[0].text, /cargo bed\/box.*must be outside the frame/is);
   assert.match(roofCall.parts[0].text, /open bed interior stays bare factory bedliner/i);
-  assert.match(roofCall.parts[0].text, /Atlas wins/i);
+  // "the Atlas wins" existed only to arbitrate between the Atlas authority and
+  // the injected Driver anchor. With no anchor there is no conflict to resolve,
+  // and the Atlas is simply the sole authority.
+  assert.doesNotMatch(roofCall.parts[0].text, /accepted Driver proof/i);
   assert.equal(roof.metadata.stage, "generate-color-render");
   assert.equal(roof.metadata.anchoredToFlatAtlas, true);
-  assert.equal(roof.metadata.anchoredToView1, true);
-  assert.equal(roof.metadata.driverStoragePath, f.driverPath);
+  assert.equal(roof.metadata.anchoredToView1, false);
+  assert.equal(roof.metadata.driverStoragePath, undefined);
+  assert.equal(roof.metadata.driverReferenceByteSize, undefined);
   assert.equal(roof.metadata.atlasZoneSurfaceKey, "roof");
-  assert.ok(roof.metadata.driverReferenceByteSize <= _test.MAX_ATLAS_DRIVER_REFERENCE_BYTES);
   assert.ok(roof.metadata.requestByteSize < _test.GEMINI_REQUEST_LIMIT_BYTES);
 });
 
