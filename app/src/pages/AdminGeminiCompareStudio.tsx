@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1371,6 +1371,16 @@ export default function AdminGeminiCompareStudio() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [params, setParams] = useSearchParams();
+  /**
+   * The job this page is about, when the URL already names it.
+   *
+   * The studio was reachable only at /designpro/studio-board?order=RP-… and
+   * searched for its job. It is now what the PanelPro route mounts --
+   * /designpro/jobs/:generationId/panelpro -- where the generation is already
+   * in the path, so opening that URL has to land on that job rather than on a
+   * search box. The order query still works for the deep links that use it.
+   */
+  const { generationId: routeGenerationId } = useParams();
 
   const [orderInput, setOrderInput] = useState(params.get("order") || "");
   const [searching, setSearching] = useState(false);
@@ -1531,12 +1541,16 @@ export default function AdminGeminiCompareStudio() {
     });
   }, [toast]);
 
-  // Auto-search when arriving with ?order=… (e.g. deep link from another page).
+  // Open the job named by the URL. The route parameter wins over ?order=,
+  // because a path that names a generation is a stronger statement of intent
+  // than a query left over from a previous navigation.
   useEffect(() => {
+    if (job) return;
+    if (routeGenerationId) { void loadJob(String(routeGenerationId)); return; }
     const o = params.get("order");
-    if (o && !job) runSearch(o);
+    if (o) runSearch(o);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [routeGenerationId]);
 
   // Load the recent-jobs list whenever there's no job loaded (landing screen).
   useEffect(() => {

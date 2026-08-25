@@ -118,8 +118,26 @@ test("The branded panel editor and the PanelPro production board stay distinct",
   const routes = readFileSync(new URL("../app/src/App.tsx", import.meta.url), "utf8");
 
   // Each canonical route resolves to its own component.
+  //
+  // THE PANELPRO ROUTE IS THE ADMIN STUDIO. The full production workspace was
+  // routed at /designpro/studio-board -- a URL nobody asked for -- while
+  // /panelpro, the URL the design team actually opens, kept the per-surface
+  // validator. The workspace was therefore deployed and unreachable in
+  // practice, which is indistinguishable from not having built it.
+  //
+  // The validator is not lost; it has its own path one level down. What this
+  // still pins is the thing it always pinned: three distinct surfaces, each on
+  // its own route, none of them standing in for another.
   assert.match(routes, /path="\/designpro\/jobs\/:generationId\/panel-studio"[\s\S]{0,120}<DesignProStudio \/>/);
-  assert.match(routes, /path="\/designpro\/jobs\/:generationId\/panelpro"[\s\S]{0,120}<PanelProStudioBoard \/>/);
+  assert.match(routes, /path="\/designpro\/jobs\/:generationId\/panelpro"[\s\S]{0,160}<AdminGeminiCompareStudio \/>/);
+  assert.match(routes, /path="\/designpro\/jobs\/:generationId\/panelpro\/surfaces"[\s\S]{0,120}<PanelProStudioBoard \/>/);
+  // And the Admin Studio opens the job the URL names, rather than a search box.
+  const adminStudio = readFileSync(
+    new URL("../app/src/pages/AdminGeminiCompareStudio.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(adminStudio, /const \{ generationId: routeGenerationId \} = useParams\(\);/);
+  assert.match(adminStudio, /if \(routeGenerationId\) \{ void loadJob\(String\(routeGenerationId\)\); return; \}/);
 
   // Both routes are reachable from RevisionStudio, each under its own name.
   assert.match(studio, /panel-studio`\}>Open in DesignPro Studio</);

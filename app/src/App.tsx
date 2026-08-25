@@ -289,13 +289,24 @@ const App = () => {
           <Route path="/designpro/create" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId/panel-studio" element={<RequireAuth><DesignProStudio /></RequireAuth>} />
-          <Route path="/designpro/jobs/:generationId/panelpro" element={<RequireAuth><PanelProStudioBoard /></RequireAuth>} />
-          {/* PANELPRO ADMIN STUDIO — the design team's full production control
-              room for one order. The per-surface board above is the customer-
-              lineage validation view; this is the workspace: job header, every
-              A.T.L.A.S. version with the prompt that made it, the six surfaces
-              with their proofs and panels, the logo inventory, the correction
-              bench, the two release gates and the output/ZIP/WrapBox record. */}
+          {/* THE PANELPRO ROUTE IS THE ADMIN STUDIO. It is the design team's
+              complete production control room for one order: job header,
+              every A.T.L.A.S. version with the prompt that made it, the six
+              surfaces with their proofs and panels, the logo inventory, the
+              correction bench, human QC, RUN UPSCALE, Build Print Files and
+              the Production Pack / ZIP / WrapBox record.
+
+              The Admin Studio was routed at /designpro/studio-board -- a URL
+              nobody asked for -- while this one, the URL the team actually
+              opens, kept the per-surface validator. So the full workspace was
+              deployed and unreachable in practice, which is indistinguishable
+              from not having built it.
+
+              The per-surface board keeps its own URL below. It is the
+              proof-beside-panel validation view, not the workspace, and
+              nothing is lost by moving it one path down. */}
+          <Route path="/designpro/jobs/:generationId/panelpro" element={<RequireAuth><AdminGeminiCompareStudio /></RequireAuth>} />
+          <Route path="/designpro/jobs/:generationId/panelpro/surfaces" element={<RequireAuth><PanelProStudioBoard /></RequireAuth>} />
           <Route path="/designpro/studio-board" element={<RequireAuth><AdminGeminiCompareStudio /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId/progress" element={<RequireAuth><GenieProgress /></RequireAuth>} />
           <Route path="/designpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
