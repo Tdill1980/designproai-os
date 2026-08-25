@@ -422,7 +422,23 @@ function authorizedArtifactPath(storagePath, userId, runId) {
   if (!storagePath || storagePath.includes("..") || !/^[A-Za-z0-9._/-]+$/.test(storagePath)) return false;
   const derivedPrefix = `designpro/user_${userId}/${runId}/`;
   const deliveryPrefix = `wrapbox/user_${userId}/`;
-  return storagePath.startsWith(derivedPrefix) || storagePath.startsWith(deliveryPrefix) && storagePath.includes(`/${runId}/`);
+  // A HUMAN-CORRECTED PANEL ARRIVES FROM A DESIGNER'S MACHINE, NOT FROM A STAGE.
+  //
+  // Server-produced artifacts sit under the run's own prefix, which a browser
+  // cannot write to. A corrected panel comes up the owner-scoped upload path
+  // every customer-supplied file uses -- the same exception a logo already has,
+  // and the same one the storage-identity trigger admits. Without this the
+  // correction is recorded and then filtered straight back out of the artifact
+  // listing, so PanelPro would show the panel the team rejected and no sign that
+  // a corrected one exists.
+  //
+  // The run binding is not weakened by admitting it: rows are only ever read for
+  // runs this token already owns, and `users/${userId}/` still refuses a row
+  // that points at somebody else's object.
+  const correctionPrefix = `users/${userId}/revisions/`;
+  return storagePath.startsWith(derivedPrefix)
+    || (storagePath.startsWith(correctionPrefix) && storagePath.includes("/inputs/"))
+    || storagePath.startsWith(deliveryPrefix) && storagePath.includes(`/${runId}/`);
 }
 
 // The approved Calls 1-7 renders are read in place from
@@ -910,6 +926,34 @@ async function purchaseThroughRuntime(fetchImpl, cfg, action, payload) {
       { status: response.status >= 400 && response.status < 500 ? 400 : 503 });
   }
   return body;
+}
+
+/**
+ * RUN UPSCALE, from the PanelPro board, on one surface.
+ *
+ * Same channel and same reasoning as the two writes around it: this process is
+ * browser-facing and holds no service role, so it proves who is asking and the
+ * runtime is what may read the panel bytes, call Topaz and write the derivative.
+ *
+ * The owner fence is the payload. The runtime resolves the run by owner_id, so
+ * a caller can only ever enhance a panel on a run they own -- there is no path
+ * here to name somebody else's generation.
+ */
+async function upscalePanelThroughRuntime(fetchImpl, cfg, ownerId, generationId, surfaceKey) {
+  if (!cfg.internalRuntimeUrl || cfg.workerSecret.length < 32) {
+    throw Object.assign(new Error("upscale_service_unavailable"), { status: 503 });
+  }
+  const response = await fetchImpl(`${cfg.internalRuntimeUrl}/internal/panels/upscale`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${cfg.workerSecret}` },
+    body: JSON.stringify({ generationId, ownerId, surfaceKey }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(payload.error || "panel_upscale_failed"),
+      { status: response.status >= 400 && response.status < 500 ? 400 : 503 });
+  }
+  return payload;
 }
 
 async function registerRecipientThroughRuntime(fetchImpl, cfg, operatorId, body) {
@@ -2195,6 +2239,26 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           correctedFromHash: String(result?.correctedFromHash || ""),
           idempotent: result?.idempotent === true,
         });
+      }
+
+      // RUN THE REAL UPSCALE ON ONE SURFACE, DELIBERATELY.
+      //
+      // Call 12 does this for all six automatically once the purchase and the
+      // PanelPro preflight gates release, and that path is untouched. This is the
+      // same enhancement invoked by hand so the design team can watch a panel go
+      // from its cut resolution to print geometry and inspect the result before
+      // trusting it unattended. It writes a NEW derivative; the panel it came
+      // from stays byte-for-byte and still hashes the same.
+      const upscaleMatch = url.pathname.match(
+        /^\/api\/jobs\/([0-9a-f-]{36})\/panels\/([a-z]{4,9})\/upscale$/,
+      );
+      if (req.method === "POST" && upscaleMatch) {
+        const generationIdValue = upscaleMatch[1].toLowerCase();
+        const surfaceKey = upscaleMatch[2];
+        if (!UUID_PATTERN.test(generationIdValue)) return json(res, 400, { error: "generation_id_invalid" });
+        if (!PRODUCTION_SURFACES.includes(surfaceKey)) return json(res, 400, { error: "surface_key_invalid" });
+        const result = await upscalePanelThroughRuntime(fetchImpl, cfg, user.id, generationIdValue, surfaceKey);
+        return json(res, 201, result);
       }
 
       if (req.method === "GET" && artifactMatch) {

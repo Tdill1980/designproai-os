@@ -28,7 +28,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CheckCircle2, Download, FileArchive, ImageOff, PackageCheck, ShieldCheck, UploadCloud } from "lucide-react";
+import { CheckCircle2, Download, FileArchive, ImageOff, PackageCheck, ShieldCheck, UploadCloud, Wand2 } from "lucide-react";
 import {
   ApprovedGenerationView,
   dpApi,
@@ -63,8 +63,8 @@ import {
 } from "@/components/designpro/surface";
 import { cn } from "@/lib/utils";
 
-/** A stable empty list, so a side with no corrections does not remount its card. */
-const EMPTY_CORRECTIONS: WorkflowArtifact[] = [];
+/** A stable empty list, so a side with no history does not remount its card. */
+const EMPTY_ARTIFACTS: WorkflowArtifact[] = [];
 
 function inches(value: unknown): string | null {
   const parsed = Number(value);
@@ -72,12 +72,44 @@ function inches(value: unknown): string | null {
   return Number.isInteger(parsed) ? String(parsed) : String(Math.round(parsed * 100) / 100);
 }
 
+/**
+ * The panel's own stamped geometry. Call 9 writes `printWidthInches` /
+ * `printHeightInches` (trim plus the 5" bleed on every edge) and the trim
+ * separately -- the older `printWidthIn` / `widthInches` spellings are read too
+ * so an artifact from before that naming still shows its size instead of
+ * silently rendering nothing.
+ */
+function panelGeometry(artifact: WorkflowArtifact | undefined) {
+  const metadata = (artifact?.metadata || {}) as Record<string, unknown>;
+  const printWidthIn = Number(metadata.printWidthInches ?? metadata.printWidthIn ?? metadata.widthInches);
+  const printHeightIn = Number(metadata.printHeightInches ?? metadata.printHeightIn ?? metadata.heightInches);
+  const trimWidthIn = Number(metadata.trimWidthInches ?? metadata.trimWidthIn);
+  const trimHeightIn = Number(metadata.trimHeightInches ?? metadata.trimHeightIn);
+  return {
+    printWidthIn: Number.isFinite(printWidthIn) && printWidthIn > 0 ? printWidthIn : null,
+    printHeightIn: Number.isFinite(printHeightIn) && printHeightIn > 0 ? printHeightIn : null,
+    trimWidthIn: Number.isFinite(trimWidthIn) && trimWidthIn > 0 ? trimWidthIn : null,
+    trimHeightIn: Number.isFinite(trimHeightIn) && trimHeightIn > 0 ? trimHeightIn : null,
+    surfaceSqFt: Number(metadata.surfaceSqFt) > 0 ? Number(metadata.surfaceSqFt) : null,
+  };
+}
+
 function panelSize(artifact: WorkflowArtifact | undefined): string | null {
   if (!artifact) return null;
-  const metadata = artifact.metadata || {};
-  const width = inches((metadata as Record<string, unknown>).printWidthIn ?? (metadata as Record<string, unknown>).widthInches);
-  const height = inches((metadata as Record<string, unknown>).printHeightIn ?? (metadata as Record<string, unknown>).heightInches);
+  const { printWidthIn, printHeightIn } = panelGeometry(artifact);
+  const width = inches(printWidthIn);
+  const height = inches(printHeightIn);
   return width && height ? `${width}″ × ${height}″` : null;
+}
+
+/** The print target every panel is enhanced to: 150 PPI across trim + 5" bleed. */
+const PRINT_TARGET_PPI = 150;
+
+/** The pixel width the enhancement started from, as the derivative recorded it. */
+function sourcePixelWidth(artifact: WorkflowArtifact): number | null {
+  const pixels = (artifact.metadata || {})["sourcePixels"] as { widthPx?: unknown } | undefined;
+  const width = Number(pixels?.widthPx);
+  return Number.isFinite(width) && width > 0 ? width : null;
 }
 
 function SideCard({
@@ -85,18 +117,23 @@ function SideCard({
   view,
   panel,
   corrections,
+  upscaled,
   approved,
   onToggle,
   onCorrect,
+  onUpscale,
 }: {
   surfaceKey: GenieSurfaceKey;
   view: ApprovedGenerationView | undefined;
   panel: WorkflowArtifact | undefined;
   /** Every human correction for this side, newest first. */
   corrections: WorkflowArtifact[];
+  /** Every enhanced derivative for this side, newest first. */
+  upscaled: WorkflowArtifact[];
   approved: boolean;
   onToggle: (next: boolean) => void;
   onCorrect: (surfaceKey: GenieSurfaceKey, file: File, reason: string) => Promise<void>;
+  onUpscale: (surfaceKey: GenieSurfaceKey) => Promise<void>;
 }) {
   const size = panelSize(panel);
   // THE PAIR MUST COME FROM ONE MASTER, AND THIS IS WHERE THAT IS CHECKED.
@@ -136,6 +173,51 @@ function SideCard({
   const [correcting, setCorrecting] = useState(false);
   const [correctionError, setCorrectionError] = useState("");
   const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [upscaling, setUpscaling] = useState(false);
+  const [upscaleError, setUpscaleError] = useState("");
+  // THE ACTIVE PANEL'S REAL PIXEL SIZE, MEASURED RATHER THAN ASSUMED.
+  //
+  // A Call 9 panel stamps its own pixel dimensions, but a human-corrected file
+  // arrives from a designer's machine and carries none -- the server records
+  // what it was told, not what it decoded. Reading naturalWidth off the image
+  // the card already loaded is the honest answer for both, and it is what makes
+  // the effective-DPI figure below true of the file actually sitting there.
+  const [activePixels, setActivePixels] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => { setActivePixels(null); }, [active?.contentHash]);
+
+  const geometry = panelGeometry(panel);
+  const latestUpscale = upscaled[0];
+  // An enhancement made from bytes that are no longer active is stale: the team
+  // corrected the panel after it ran, so it enhanced the file they rejected.
+  const upscaleSourceHash = typeof latestUpscale?.metadata?.sourcePanelHash === "string"
+    ? latestUpscale.metadata.sourcePanelHash
+    : null;
+  const upscaleCurrent = Boolean(latestUpscale && upscaleSourceHash === active?.contentHash);
+  const sourceWidthPx = activePixels?.w
+    ?? (Number((active?.metadata as Record<string, unknown> | undefined)?.pixelWidth) || null);
+  const sourceHeightPx = activePixels?.h
+    ?? (Number((active?.metadata as Record<string, unknown> | undefined)?.pixelHeight) || null);
+  // Effective DPI is what the file can actually print at across its own physical
+  // size -- pixels over inches. It is the number that decides whether a panel
+  // needs enhancing, so it is computed here rather than read from a field that
+  // may describe a different artifact.
+  const effectiveDpi = sourceWidthPx && geometry.printWidthIn
+    ? Math.round((sourceWidthPx / geometry.printWidthIn) * 10) / 10
+    : null;
+  const targetWidthPx = geometry.printWidthIn ? Math.round(geometry.printWidthIn * PRINT_TARGET_PPI) : null;
+  const targetHeightPx = geometry.printHeightIn ? Math.round(geometry.printHeightIn * PRINT_TARGET_PPI) : null;
+
+  const runUpscale = async () => {
+    setUpscaling(true);
+    setUpscaleError("");
+    try {
+      await onUpscale(surfaceKey);
+    } catch (cause) {
+      setUpscaleError(cause instanceof Error ? cause.message : "The upscale was refused.");
+    } finally {
+      setUpscaling(false);
+    }
+  };
 
   const submitCorrection = async () => {
     if (!correctionFile || correctionReason.trim().length < 8) return;
@@ -203,6 +285,12 @@ function SideCard({
               src={active.signedUrl}
               alt={`${surfaceKey} print panel`}
               className="aspect-video w-full rounded-lg border border-border bg-white object-contain"
+              onLoad={(event) => {
+                const image = event.currentTarget;
+                if (image.naturalWidth && image.naturalHeight) {
+                  setActivePixels({ w: image.naturalWidth, h: image.naturalHeight });
+                }
+              }}
             />
           ) : (
             <div className="flex aspect-video w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-xs text-muted-foreground">
@@ -283,6 +371,161 @@ function SideCard({
           </span>
         )}
       </div>
+
+      {/* PRODUCTION RESOLUTION, AND THE REAL UPSCALE ON DEMAND.
+          A panel is cut from a 4096px master shared by six surfaces, so a long
+          side leaves Call 9 at roughly 20 PPI against a 150-PPI print target.
+          Call 12 enhances all six automatically once the purchase and preflight
+          gates release; this runs that same enhancement on one side, now, so the
+          team can watch a panel reach print geometry and check the result before
+          trusting it unattended. It writes a NEW derivative -- the panel it came
+          from is never touched and stays downloadable above. */}
+      {active && (
+        <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+              Production resolution
+            </span>
+            <Badge
+              variant={upscaleCurrent ? "default" : latestUpscale ? "outline" : "secondary"}
+              className={cn(!upscaleCurrent && latestUpscale && "border-amber-500/60 text-amber-600 dark:text-amber-400")}
+            >
+              {upscaleCurrent
+                ? "Upscaled"
+                : latestUpscale
+                  ? "Upscale stale — active panel changed"
+                  : "Not upscaled"}
+            </Badge>
+          </div>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-4">
+            <div>
+              <dt className="text-muted-foreground">Source resolution</dt>
+              <dd className="font-mono font-semibold">
+                {sourceWidthPx && sourceHeightPx ? `${sourceWidthPx} × ${sourceHeightPx} px` : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Final physical size</dt>
+              <dd className="font-mono font-semibold">
+                {inches(geometry.printWidthIn) && inches(geometry.printHeightIn)
+                  ? `${inches(geometry.printWidthIn)}″ × ${inches(geometry.printHeightIn)}″`
+                  : "—"}
+                {geometry.trimWidthIn && geometry.trimHeightIn && (
+                  <span className="ml-1 font-sans font-normal text-muted-foreground">
+                    (trim {inches(geometry.trimWidthIn)}″ × {inches(geometry.trimHeightIn)}″ + 5″ bleed)
+                  </span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Effective DPI</dt>
+              <dd
+                className={cn(
+                  "font-mono font-semibold",
+                  effectiveDpi !== null && effectiveDpi < PRINT_TARGET_PPI && "text-amber-600 dark:text-amber-400",
+                )}
+              >
+                {effectiveDpi === null ? "—" : `${effectiveDpi} PPI`}
+                {targetWidthPx && (
+                  <span className="ml-1 font-sans font-normal text-muted-foreground">
+                    / {PRINT_TARGET_PPI} target
+                  </span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Upscale status</dt>
+              <dd className="font-mono font-semibold">
+                {latestUpscale
+                  ? `${Number(latestUpscale.metadata?.widthPx) || "?"} × ${Number(latestUpscale.metadata?.heightPx) || "?"} px`
+                  : targetWidthPx && targetHeightPx
+                    ? `target ${targetWidthPx} × ${targetHeightPx} px`
+                    : "—"}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" disabled={upscaling} onClick={() => void runUpscale()}>
+              <Wand2 className="mr-1 h-4 w-4" />
+              {upscaling ? "Upscaling — this takes a few minutes…" : "Run upscale"}
+            </Button>
+            {latestUpscale?.signedUrl && (
+              <Button asChild size="sm" variant="ghost">
+                <a href={latestUpscale.signedUrl} download={`${surfaceKey}-upscaled.png`}>
+                  <Download className="mr-1 h-4 w-4" /> Download upscaled
+                </a>
+              </Button>
+            )}
+            <span className="text-[11px] text-muted-foreground">
+              Runs the production enhancement. The source panel is never overwritten.
+            </span>
+          </div>
+          {upscaleError && (
+            <div className="mt-2">
+              <Notice tone="error">{upscaleError}</Notice>
+            </div>
+          )}
+
+          {/* ORIGINAL BESIDE ENHANCED. The point of running this by hand is to
+              look at the result, so the two are shown together rather than the
+              derivative replacing the panel above. */}
+          {latestUpscale?.signedUrl && active.signedUrl && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Source panel
+                </div>
+                <img
+                  src={active.signedUrl}
+                  alt={`${surfaceKey} source panel`}
+                  className="aspect-video w-full rounded border border-border bg-white object-contain"
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Upscaled derivative
+                </div>
+                <img
+                  src={latestUpscale.signedUrl}
+                  alt={`${surfaceKey} upscaled panel`}
+                  className="aspect-video w-full rounded border border-border bg-white object-contain"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Enhancement history. Every derivative says which artifact it was
+              made from and by what factor, so a stale one is readable as stale
+              rather than merely older. */}
+          {upscaled.length > 0 && (
+            <ul className="mt-3 space-y-1 border-t border-border pt-2">
+              {upscaled.map((item, index) => (
+                <li key={item.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <Badge variant={index === 0 ? "default" : "outline"}>
+                    {index === 0 ? "newest" : "superseded"}
+                  </Badge>
+                  <span className="font-mono text-muted-foreground">
+                    {sourcePixelWidth(item) ?? "?"}px → {Number(item.metadata?.widthPx) || "?"}px
+                  </span>
+                  {item.metadata?.humanCorrected === true && (
+                    <Badge variant="outline" className="border-amber-500/60 text-amber-600 dark:text-amber-400">
+                      from corrected panel
+                    </Badge>
+                  )}
+                  {item.metadata?.clampedByEngineCeiling === true && (
+                    <span className="text-amber-600 dark:text-amber-400">clamped by engine ceiling</span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">
+                    from {String(item.metadata?.sourcePanelHash || "").slice(0, 12)}
+                  </span>
+                  <SaveLink url={item.signedUrl} name={`${surfaceKey}-upscaled.png`} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* THE AUDITED CORRECTION. Not a producer: the file is one a designer
           corrected against the real vehicle template, and it is recorded against
@@ -465,15 +708,84 @@ export default function PanelProStudioBoard() {
     await load();
   }, [generationId, job?.revisionId, load]);
 
+  /**
+   * The dimension sheet, read off the panels rather than recomputed.
+   *
+   * Every number here is one the server stamped on the artifact when it cut the
+   * panel. Deriving them again in the browser -- from the GENIE manifest, or
+   * from the image, or from a vehicle table -- would produce a second set of
+   * numbers that agrees with the first only by luck, and a designer checking a
+   * template against the wrong one has no way to tell.
+   */
+  const dimensionSheet = useMemo(() => {
+    const surfaces = PRODUCTION_SURFACES.map((side) => {
+      const correction = (correctionsBySide.get(side) || [])[0];
+      const active = correction || panelBySide.get(side);
+      if (!active) return null;
+      const source = panelBySide.get(side);
+      const metadata = (source?.metadata || {}) as Record<string, unknown>;
+      const trimWidth = inches(metadata.trimWidthIn ?? metadata.widthInches);
+      const trimHeight = inches(metadata.trimHeightIn ?? metadata.heightInches);
+      const printWidth = inches(metadata.printWidthIn);
+      const printHeight = inches(metadata.printHeightIn);
+      const sqft = Number(metadata.surfaceSqFt);
+      return {
+        surfaceKey: side,
+        label: SURFACE_LABEL[side] || side,
+        trim: trimWidth && trimHeight ? `${trimWidth}″ × ${trimHeight}″` : null,
+        print: printWidth && printHeight ? `${printWidth}″ × ${printHeight}″` : null,
+        surfaceSqFt: Number.isFinite(sqft) && sqft > 0 ? Math.round(sqft * 100) / 100 : null,
+        bleedInches: Number(metadata.bleedInches) || null,
+        humanCorrected: Boolean(correction),
+        contentHash: active.contentHash,
+        sourceMasterHash: typeof metadata.sourceMasterHash === "string" ? metadata.sourceMasterHash : null,
+      };
+    }).filter(Boolean) as Array<Record<string, unknown> & { surfaceKey: string; trim: string | null; print: string | null; surfaceSqFt: number | null; humanCorrected: boolean; contentHash: string }>;
+    const document = {
+      contract: "designpro.dimension-sheet.v1",
+      generationId,
+      designId: job?.designId || null,
+      orderNumber: job?.orderNumber || null,
+      revision: job?.revision ?? null,
+      surfaces,
+    };
+    return {
+      surfaces,
+      href: `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(document, null, 2))}`,
+    };
+  }, [correctionsBySide, panelBySide, generationId, job?.designId, job?.orderNumber, job?.revision]);
+
   const logos = useMemo(() => artifacts.filter((a) => a.kind === "logo"), [artifacts]);
+  // Every enhanced derivative for a side, newest first. A side can carry more
+  // than one: correcting a panel and enhancing again produces a second, and
+  // both stay readable so a stale enhancement is visible as stale rather than
+  // quietly replaced.
   const upscaledBySide = useMemo(() => {
-    const rows = new Map<string, WorkflowArtifact>();
+    const rows = new Map<string, WorkflowArtifact[]>();
     for (const artifact of artifacts) {
       if (artifact.kind !== "upscaled-panel") continue;
-      if (!rows.has(artifact.surfaceKey)) rows.set(artifact.surfaceKey, artifact);
+      const list = rows.get(artifact.surfaceKey) || [];
+      list.push(artifact);
+      rows.set(artifact.surfaceKey, list);
     }
     return rows;
   }, [artifacts]);
+
+  /**
+   * RUN THE REAL UPSCALE ON ONE SIDE.
+   *
+   * The gateway hands this to the runtime, which reads the side's ACTIVE
+   * artifact -- the newest human correction when there is one, the branded Call
+   * 9 panel otherwise -- hash-verifies it, and runs the same Topaz enhancement
+   * Call 12 runs on all six. It writes a NEW artifact; nothing is overwritten.
+   *
+   * It is slow on purpose: a print-geometry enhancement of a long side takes
+   * minutes, and the button says so rather than appearing to hang.
+   */
+  const runUpscale = useCallback(async (surfaceKey: GenieSurfaceKey) => {
+    await dpApi.runPanelUpscale(generationId, surfaceKey);
+    await load();
+  }, [generationId, load]);
   const outputs = useMemo(() => artifacts.filter((a) => a.kind === "output"), [artifacts]);
   const stamp = useMemo(() => artifacts.find((a) => a.kind === "stamp"), [artifacts]);
   const zip = useMemo(() => artifacts.find((a) => a.kind === "zip"), [artifacts]);
@@ -602,10 +914,10 @@ export default function PanelProStudioBoard() {
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>{selected.widthPx}×{selected.heightPx} px</span>
-              <span>{Math.round(selected.effectivePpi * 10) / 10} effective PPI</span>
+              <span>{selected.master.widthPx}×{selected.master.heightPx} px</span>
+              <span>{Math.round(selected.master.effectivePpi * 10) / 10} effective PPI</span>
               <span>{selected.promptVersion}</span>
-              <ContentHash value={selected.masterContentHash || ""} chars={14} />
+              <ContentHash value={selected.master.contentHash || ""} chars={14} />
             </div>
 
             {/* THE VERSION'S OWN RECORD. Order number, Design ID, generation and
@@ -712,9 +1024,15 @@ export default function PanelProStudioBoard() {
                     // no master, and an older proof that predates the binding
                     // carries no hash -- neither is a drifted proof, so neither
                     // is reported as one.
-                    const known = Boolean(binding?.masterContentHash && selected.masterContentHash);
+                    // The master identity lives on the revision's `master`
+                    // object, not on the revision itself. Reading it off the
+                    // wrong level made this comparison undefined === undefined
+                    // -- always "unknown", never a match and never a drift --
+                    // so the check that proves a proof belongs to the selected
+                    // version silently did nothing.
+                    const known = Boolean(binding?.masterContentHash && selected.master.contentHash);
                     const matches = known
-                      && binding!.masterContentHash === selected.masterContentHash;
+                      && binding!.masterContentHash === selected.master.contentHash;
                     return (
                       <div key={view.id} className="rounded-lg border border-border p-1.5">
                         <a href={view.signedUrl} target="_blank" rel="noreferrer">
@@ -768,14 +1086,70 @@ export default function PanelProStudioBoard() {
               surfaceKey={side}
               view={viewBySide.get(side)}
               panel={panelBySide.get(side)}
-              corrections={correctionsBySide.get(side) || EMPTY_CORRECTIONS}
+              corrections={correctionsBySide.get(side) || EMPTY_ARTIFACTS}
+              upscaled={upscaledBySide.get(side) || EMPTY_ARTIFACTS}
               approved={approvedSides.has(side)}
+              onUpscale={runUpscale}
               onToggle={(next) => toggleSide(side, next)}
               onCorrect={correctPanel}
             />
           ))}
         </div>
       </Panel>
+
+      {/* THE METADATA / DIMENSION SHEET, NOT HIDDEN INSIDE THE ZIP.
+          The ZIP carries this as designpro-genie-dimension-manifest.json, which
+          is the right place for it at delivery -- but a designer validating a
+          panel against a template needs the numbers now, and every one of them
+          is already stamped on the panel artifact the server produced. This
+          renders exactly those values and serializes exactly those values; it
+          computes nothing, so the sheet cannot drift from the panels. */}
+      {panelBySide.size > 0 && (
+        <Panel
+          eyebrow="Metadata"
+          title="Dimension sheet"
+          description="Per surface, as the server stamped it on the panel: trim, print with the 5″ bleed, square footage, and the content hash of the artwork itself."
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[46rem] text-left text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="pb-2 pr-4">Surface</th>
+                  <th className="pb-2 pr-4">Trim</th>
+                  <th className="pb-2 pr-4">Print (+5″ bleed)</th>
+                  <th className="pb-2 pr-4">Sq ft</th>
+                  <th className="pb-2 pr-4">Active artwork</th>
+                  <th className="pb-2">Content hash</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PRODUCTION_SURFACES.map((side) => {
+                  const row = dimensionSheet.surfaces.find((item) => item.surfaceKey === side);
+                  return (
+                    <tr key={side} className="border-t border-border">
+                      <td className="py-1.5 pr-4 font-semibold">{SURFACE_LABEL[side] || side}</td>
+                      <td className="py-1.5 pr-4">{row?.trim || "—"}</td>
+                      <td className="py-1.5 pr-4">{row?.print || "—"}</td>
+                      <td className="py-1.5 pr-4">{row?.surfaceSqFt ?? "—"}</td>
+                      <td className="py-1.5 pr-4">
+                        {row?.humanCorrected ? "human corrected" : row ? "Call 9 panel" : "—"}
+                      </td>
+                      <td className="py-1.5 font-mono text-[10px]">
+                        {row?.contentHash ? row.contentHash.slice(0, 16) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Button asChild size="sm" variant="outline" className="mt-3">
+            <a href={dimensionSheet.href} download={`${job?.designId || "design"}-dimension-sheet.json`}>
+              <Download className="mr-1 h-4 w-4" /> Download dimension sheet
+            </a>
+          </Button>
+        </Panel>
+      )}
 
       {qcPanelBySide.size > 0 && (
         <Panel
@@ -838,7 +1212,7 @@ export default function PanelProStudioBoard() {
         >
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {PRODUCTION_SURFACES.filter((side) => upscaledBySide.has(side)).map((side) => {
-              const artifact = upscaledBySide.get(side)!;
+              const artifact = upscaledBySide.get(side)![0];
               return (
                 <div key={side} className="rounded-lg border border-border p-2">
                   <div className="mb-1 flex items-center justify-between text-xs font-semibold">

@@ -86,7 +86,13 @@ test("a proof carries the master it was rendered from, all the way to the board"
 
   // The board compares against the master ON SCREEN, not any master, or the
   // badge would agree with itself while showing a different version.
-  assert.match(board, /binding!\.masterContentHash === selected\.masterContentHash/);
+  // `selected.master.contentHash`, not `selected.masterContentHash`. The board
+  // read the flat spelling, which does not exist on FlatAtlasRevision, so the
+  // comparison was undefined === undefined: it never matched, never drifted,
+  // and reported "unknown" for every proof on every run. This assertion pinned
+  // the wrong spelling and so froze the defect in place -- it names the real
+  // field now, which is the only version of this check that can ever fire.
+  assert.match(board, /binding!\.masterContentHash === selected\.master\.contentHash/);
   assert.match(board, /DIFFERENT MASTER/);
   // A Standard run and a pre-binding proof are not drifted proofs.
   assert.match(board, /no master binding/);
