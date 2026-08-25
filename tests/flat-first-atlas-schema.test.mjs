@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const sql = readFileSync(new URL(
@@ -28,10 +28,22 @@ const ownerReadGuardSql = readFileSync(new URL(
 // Each prompt-version bump reproduces the whole function verbatim with one
 // string changed, so this must track the latest file or the test grades a
 // superseded definition.
-const viewSetGuardSql = readFileSync(new URL(
-  "../supabase/migrations/20260824180000_designpro_atlas_flat_sheet_prompt_v6.sql",
-  import.meta.url,
-), "utf8");
+//
+// It used to name that file as a literal, which meant the suite kept grading the
+// previous body every time a bump shipped until somebody remembered to hand-edit
+// this line -- the same shape as the deploy fence that pinned a stale prompt
+// version and began refusing correct schemas. It now resolves the newest
+// migration that redefines the function, so it tracks the contract instead of a
+// snapshot of it.
+const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+const viewSetGuardFile = readdirSync(migrationsDir)
+  .filter((name) => name.endsWith(".sql"))
+  .filter((name) => readFileSync(new URL(name, migrationsDir), "utf8")
+    .includes("FUNCTION designpro_private.flat_first_atlas_view_set_valid"))
+  .sort()
+  .at(-1);
+assert.ok(viewSetGuardFile, "no migration defines flat_first_atlas_view_set_valid");
+const viewSetGuardSql = readFileSync(new URL(viewSetGuardFile, migrationsDir), "utf8");
 const closeupBoundarySql = readFileSync(new URL(
   "../supabase/migrations/20260822090000_designpro_closeup_schema_boundaries.sql",
   import.meta.url,
@@ -85,7 +97,7 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
     "producePassengerView",
     "deterministicMirror",
     "driverContentHash",
-    "designpro-flat-first-atlas-20260824.v6",
+    "designpro-flat-first-atlas-20260825.v7",
     "designpro.atlas-master-semantic-qc.v1",
     "designpro.flat-first-master-provider.v1",
     "designpanel-ai-generate.artboard.20260822.v1",

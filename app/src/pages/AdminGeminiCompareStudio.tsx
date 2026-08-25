@@ -1841,14 +1841,41 @@ export default function AdminGeminiCompareStudio() {
     });
   }, [toast]);
 
-  // Open the job named by the URL. The route parameter wins over ?order=,
-  // because a path that names a generation is a stronger statement of intent
-  // than a query left over from a previous navigation.
+  // THE BOARD READS THE SERVER, ALWAYS, AND KEEPS READING IT.
+  //
+  // The route parameter wins over ?order=: a path that names a generation is a
+  // stronger statement of intent than a query left over from a previous
+  // navigation.
+  //
+  // It used to bail out when a job was already in state (`if (job) return`),
+  // which made the board a snapshot of whenever it first loaded. Opened while a
+  // design is still being made -- which is exactly when this page is worth
+  // watching -- it showed the empty state forever, because at that instant
+  // there genuinely was nothing and nothing ever asked again.
+  //
+  // So: load on mount and on every route change, then keep polling while the
+  // run is unfinished. The A.T.L.A.S. master, the six panels, Driver 3D and the
+  // remaining proofs each appear as the SERVER produces them, never from
+  // anything the browser is holding. Polling stops once the run is terminal,
+  // because a finished run has nothing left to reveal.
   useEffect(() => {
-    if (job) return;
-    if (routeGenerationId) { void loadJob(String(routeGenerationId)); return; }
-    const o = params.get("order");
-    if (o) runSearch(o);
+    if (!routeGenerationId) {
+      const o = params.get("order");
+      if (!job && o) runSearch(o);
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      if (cancelled) return;
+      const next = await loadJob(String(routeGenerationId)).catch(() => null);
+      if (cancelled) return;
+      const state = String((next as { state?: string } | null)?.state || "");
+      const settled = ["complete", "failed", "cancelled"].includes(state);
+      if (!settled) timer = setTimeout(() => { void poll(); }, 5000);
+    };
+    void poll();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeGenerationId]);
 
