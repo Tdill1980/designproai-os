@@ -996,6 +996,18 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     }
     const call9 = await stageOutput(sb, run.id, "panels.build");
     const regionHashes = call9.sourceRegionHashes || {};
+    // WHICH DESIGN THESE LOGOS BELONG TO.
+    //
+    // A logo was separated from a panel, and that panel records the A.T.L.A.S.
+    // master it was cut from. Without carrying that hash forward the logo is
+    // unattributable: PanelPro can tell which surface it sits on but not which
+    // VERSION of the design it came from, so selecting V1 would still show V3's
+    // brand assets. Reading it off the panel rather than restating it keeps one
+    // statement of the lineage instead of two that can disagree.
+    const panelRows = await artifacts(sb, run.id, ["panel"]);
+    const masterBySurface = new Map(panelRows.map((row) => [
+      String(row.surface_key), String(row.metadata?.sourceMasterHash || ""),
+    ]));
     const produced = [];
     for (let index = 0; index < expected.length; index++) {
       const identityKey = requiredString(expected[index]?.identityKey, `expectedInventory[${index}].identityKey`);
@@ -1007,7 +1019,7 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       let logoAsset;
       try { logoAsset = normalizeLogoAsset(expected[index], run.tenant_key, run.revision_id); }
       catch (error) { throw new StageError("call10_logo_asset_invalid", `${identityKey}: ${error.message}`, false); }
-      produced.push(await exactStoredArtifact(sb, { ...logoAsset, surfaceKey: placementKey, metadata: { placementKey, identityKey, displayName, targetSurfaceKey, contentType: logoAsset.contentType, sourceRegionHash, separationContract: "designpro.deterministic-stored-overlay.v1" } }, "logo"));
+      produced.push(await exactStoredArtifact(sb, { ...logoAsset, surfaceKey: placementKey, metadata: { placementKey, identityKey, displayName, targetSurfaceKey, contentType: logoAsset.contentType, sourceRegionHash, sourceMasterHash: masterBySurface.get(targetSurfaceKey) || null, separationContract: "designpro.deterministic-stored-overlay.v1" } }, "logo"));
     }
     const inventory = expected.map((item, index) => ({ placementKey: produced[index]?.metadata?.placementKey, identityKey: item.identityKey, targetSurfaceKey: item.surfaceKey, contentHash: produced[index]?.contentHash || null }));
     const inventoryHash = hashJson(inventory);
