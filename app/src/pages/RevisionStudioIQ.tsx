@@ -3,9 +3,14 @@ import { Helmet } from "react-helmet-async";
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { listRevisionStudioDesigns } from "@/lib/revisionstudio-source";
+import {
+  listRevisionStudioDesigns,
+  listRevisionStudioVersions,
+  loadDriverPanelGeometry,
+  loadLayeredEditSources,
+  readRevisionStudioDesign,
+} from "@/lib/revisionstudio-source";
 import { renderClient } from "@/integrations/supabase/renderClient";
-import { extractTransparentSlice, uploadLiftedAsset } from "@/lib/precise-erase-composite";
 import { downscaleStorageImage } from "@/lib/storage-image";
 import { getVersionCommits, type VersionCommit } from "@/lib/revision-commits";
 import { isAllowlistedAdmin } from "@/lib/admin-allowlist";
@@ -30,7 +35,6 @@ import {
 } from "lucide-react";
 import { useCutFiles } from "@/hooks/useCutFiles";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
-import { ProductionPackDialog } from "@/components/designpanelpro/ProductionPackDialog";
 import { useCutGraphicsProof } from "@/hooks/useCutGraphicsProof";
 import { CutGraphicsProofSheet } from "@/components/graphicspro/CutGraphicsProofSheet";
 import { MobileZoomImageModal } from "@/components/visualize/MobileZoomImageModal";
@@ -50,15 +54,16 @@ import {
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
+import { dpApi } from "@/lib/designpro-api";
 import {
-  getEnticeRevisionStatus,
-  resumeEnticeRevision,
-  saveEnticeRevision,
-  submitEnticeRevision,
-  type EnticeRevisionTrigger,
-} from "@/lib/designpro-file-output";
+  getDesignBuildStatus,
+  resumeDesignBuild,
+  readDesignAfterEdit,
+  submitDesignRevision,
+  requestDesignBuild,
+  type DesignBuildTrigger,
+} from "@/lib/revisionstudio-flow";
 import { formatDid } from "@/lib/designId";
-import { ProductionPackQCCard } from "@/components/production/ProductionPackQCCard";
 import {
   composeRenderWithLayers,
   uploadCompositeRender,
@@ -102,7 +107,6 @@ import { SendForApprovalDialog } from "@/components/proof/SendForApprovalDialog"
 import { ApproveProContextPanel } from "@/components/proof/ApproveProContextPanel";
 import { ClipboardSignature as ClipboardSignatureIcon } from "lucide-react";
 import { MyVehicleProInline } from "@/components/tools/MyVehicleProInline";
-import { generatePassengerMirror, designLikelyHasText, fixMirrorText, producePassengerView } from "@/utils/passenger-mirror";
 // useStudioToggle removed - dark studio only
 
 // ApprovePro remains intentionally offline until its DesignProAI-owned OS
@@ -332,7 +336,7 @@ async function invokeWithFreshAuth(
 }
 
 /**
- * Raw fetch() call to a Supabase edge function - bypasses supabase.functions.invoke()
+ * Raw fetch() call to a Supabase edge function - bypasses the SDK's invoke()
  * to avoid SDK header merging issues. We control EXACTLY what headers are sent.
  */
 async function _doInvoke(
@@ -420,7 +424,7 @@ const designNameForPrompt = (rawName: string | null | undefined): string => {
 
 /**
  * Extract DesignIQ mode and commercial details from a render record.
- * Checks admin_notes first, then falls back to a designiq_generations lookup
+ * Checks admin_notes first, then used to fall back to a legacy design-row lookup
  * (for records created before the mode was stored in admin_notes).
  * Patches admin_notes in the DB if a lookup succeeds, so future reads are fast.
  */
@@ -445,7 +449,7 @@ async function getDesignIQModeAndDetails(render: any): Promise<{
 
 /**
  * Fetch VisionBoard image URLs for a render.
- * Checks admin_notes cache first, then falls back to designiq_generations lookup.
+ * Checks the admin_notes cache; the legacy design-row fallback behind it is gone.
  * Patches admin_notes so future reads are instant.
  */
 /**
@@ -487,37 +491,11 @@ async function getVisionBoardImageUrls(render: any): Promise<string[]> {
     }
   } catch {}
 
-  // 2. Fallback: look up designiq_generations by matching render URL
-  try {
-    const renderUrls = render.render_urls as Record<string, string> | null;
-    const heroUrl = renderUrls?.side || renderUrls?.hero;
-    if (heroUrl) {
-      const { data } = await supabase
-        .from("designiq_generations")
-        .select("visionboard_image_refs")
-        .eq("panel_url", heroUrl)
-        .limit(1)
-        .maybeSingle();
-      if (data?.visionboard_image_refs && Array.isArray(data.visionboard_image_refs) && data.visionboard_image_refs.length > 0) {
-        // Extract storageUrl from each ref (object, JSON string, or plain URL).
-        const urls: string[] = data.visionboard_image_refs
-          .map(normalizeRefUrl)
-          .filter(Boolean) as string[];
-        if (urls.length > 0) {
-          // Patch admin_notes for future reads
-          const existingNotes = (() => {
-            try { return JSON.parse(render.admin_notes || "{}"); } catch { return {}; }
-          })();
-          const patched = { ...existingNotes, visionboard_image_urls: urls };
-          supabase.from("color_visualizations").update({
-            admin_notes: JSON.stringify(patched),
-          } as any).eq("id", render.id).then(() => {});
-          return urls;
-        }
-      }
-    }
-  } catch {}
-
+  // No second lookup, and nothing to patch. The reference-URL cache above was a
+  // cache OF a legacy design row, and the fallback behind it matched that row by
+  // hero URL because the two stores had no shared key. Here the run tables are
+  // the design, `readRevisionStudioDesign` projects them, and a reference the
+  // server did not record is honestly absent rather than searched for.
   return [];
 }
 
@@ -547,6 +525,41 @@ function getCommercialDetails(render: any): Record<string, unknown> {
 }
 
 const VIEW_ORDER = ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"];
+
+/**
+ * Stable empties for the feeds and lookups DesignProAI does not have.
+ *
+ * Module constants rather than inline `[]` / `{}` literals: several of these
+ * are dependencies of the grid's `useMemo`, and a fresh literal on every render
+ * would re-run the whole merge every time anything else changed.
+ */
+const EMPTY_LEGACY_FEED: any[] = [];
+const EMPTY_ORDER_NUMBERS: Record<string, string> = {};
+
+/**
+ * The `__source` tag a card from the retired production-job feed carried.
+ *
+ * Nothing sets it any more -- that feed is empty -- but the checks against it
+ * stay so a card from an older cached query is still routed the way it was.
+ */
+const LEGACY_PANELIZER_SOURCE = "panelizer-job";
+
+/**
+ * The camera a view is named by -> the production surface it shows.
+ *
+ * Exact, never fuzzy: this is how a page keyed on cameras asks the server for
+ * assets keyed on surfaces. Close-up is deliberately absent -- it is a framing
+ * of the driver side, not a seventh surface, and offering the driver's panel
+ * under it would be the driver-substitution the client contract forbids.
+ */
+const SURFACE_KEY_FOR_VIEW: Record<string, string> = {
+  side: "driver",
+  "passenger-side": "passenger",
+  hood_detail: "hood",
+  front: "front",
+  rear: "rear",
+  roof: "roof",
+};
 
 /**
  * Camera distance/framing is geometry, not a design revision. Sending one of
@@ -1026,14 +1039,13 @@ function InlineVisionBoard({
 // back to the DB so future opens stay instant.
 //
 // Lookup order:
-//   1. color_visualizations.admin_notes.flat_proof_url   (universal cache)
-//   2. designiq_generations.flat_proof_url               (DesignIQ renders)
+// The proof comes from the design's own projection, which carries the Call-8
+// customer artifact the server selected by role.
 // ---------------------------------------------------------------------------
 
 // InlineStoredProof — PRELOADS the saved 2D production proof for the selected
 // render and shows it inline (no dialog, no click). Resolves the canonical
-// proof URL the same way the dialog does: color_visualizations.admin_notes.
-// flat_proof_url first, then the linked designiq_generations.flat_proof_url.
+// proof URL the same way the dialog does, from the design's own projection.
 // Renders nothing until a stored proof exists, so it's always additive.
 function InlineStoredProof({ render }: { render: any }) {
   const id = render?.id || null;
@@ -1043,27 +1055,20 @@ function InlineStoredProof({ render }: { render: any }) {
     queryFn: async () => {
       let notes: Record<string, any> = {};
       try { notes = render?.admin_notes ? JSON.parse(render.admin_notes) : {}; } catch { /* not JSON */ }
-      // Re-read the freshest admin_notes from the DB by id — the in-memory copy
-      // can be stale (the 2D proof is saved after the render list loaded), which
-      // otherwise hides an already-saved proof from this preload.
+      // Re-read the freshest row from the server by id — the in-memory copy can
+      // be stale (Call 8 publishes the proof after the design list loaded),
+      // which otherwise hides an already-built proof from this preload.
       if (id) {
-        try {
-          const { data: vizRow } = await supabase.from("color_visualizations").select("admin_notes").eq("id", id).maybeSingle();
-          if ((vizRow as any)?.admin_notes) {
-            try { notes = JSON.parse((vizRow as any).admin_notes); } catch { /* keep in-memory */ }
-          }
-        } catch { /* keep in-memory notes */ }
+        const fresh = await readRevisionStudioDesign(String(id)).catch(() => null);
+        if (fresh?.admin_notes) {
+          try { notes = JSON.parse(fresh.admin_notes); } catch { /* keep in-memory */ }
+        }
       }
-      // Only preview a stored value that looks like a real 2D proof — never a
-      // raw 3D render URL wrongly saved as flat_proof_url.
-      const isProofUrl = (u: any) => typeof u === "string" && /proof/i.test(u);
-      if (isProofUrl(notes?.flat_proof_url)) return notes.flat_proof_url as string;
-      const genId: string | null = notes?.designiq_generation_id || null;
-      if (genId) {
-        const { data } = await supabase.from("designiq_generations" as any).select("flat_proof_url").eq("id", genId).maybeSingle();
-        if (isProofUrl((data as any)?.flat_proof_url)) return (data as any).flat_proof_url as string;
-      }
-      return null;
+      // The projected proof is the Call-8 customer artifact the server selected
+      // by role, so there is no longer a class of wrong value to screen out --
+      // a 3D render can never arrive under this key. Absent means Call 8 has not
+      // published one yet.
+      return typeof notes?.flat_proof_url === "string" ? notes.flat_proof_url : null;
     },
   });
   if (!proofUrl) return null;
@@ -1098,51 +1103,20 @@ function StoredOrGenerated2DProof({
   const autoProofRunRef = useRef<string | null>(null);
   const [initialProofUrl, setInitialProofUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  // render.id is not always a color_visualizations id. A card opened from the
-  // QC queue carries the PANELIZER JOB id (live: bd266e70… → generation
-  // 5714755c… → visualization e90e74b2…, whose activated proof this dialog
-  // then failed to find, showing "No production proof yet" over a finished
-  // pack and refusing the build button with "not a saved revision"). Resolve
-  // the true visualization once and key everything below on it.
-  const { data: resolvedVizId = null, isLoading: resolvingVizId } = useQuery({
-    queryKey: ["revstudio-resolve-viz-id", render?.id],
-    enabled: !!render?.id,
-    staleTime: 5 * 60_000,
-    queryFn: async () => {
-      const { data: direct } = await (supabase as any)
-        .from("color_visualizations")
-        .select("id")
-        .eq("id", render.id)
-        .maybeSingle();
-      if (direct?.id) return String(direct.id);
-      // Not a visualization — try it as a QC job id, else as a generation id.
-      let generationId = String(render.id);
-      try {
-        const { data: job } = await (supabase as any)
-          .from("panelizer_jobs")
-          .select("generation_id")
-          .eq("id", render.id)
-          .maybeSingle();
-        if (job?.generation_id) generationId = String(job.generation_id);
-      } catch { /* not a panelizer id — fall through with render.id */ }
-      const { data: pack } = await (supabase as any)
-        .from("designpro_entice_packs")
-        .select("source_visualization_id")
-        .eq("designiq_generation_id", generationId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      return pack?.source_visualization_id
-        ? String(pack.source_visualization_id)
-        : null;
-    },
-  });
+  // ONE IDENTITY. In RestylePro this resolver walked a card's id through three
+  // stores -- visualization, panelizer job, entice pack -- because a design had
+  // three ids and a QC-queue card carried the wrong one for this dialog. The
+  // run tables give a design exactly one id, and it is the id the card carries,
+  // so the resolution is identity. The variable stays so the code below reads
+  // unchanged, and the loading flag stays false because nothing is fetched.
+  const resolvedVizId = render?.id ? String(render.id) : null;
+  const resolvingVizId = false;
   const { data: enticeWorkflowStatus } = useQuery({
     queryKey: ["revstudio-entice-proof-status", resolvedVizId],
     enabled: !!resolvedVizId,
     queryFn: async () => {
       try {
-        return await getEnticeRevisionStatus({
+        return await getDesignBuildStatus({
           visualizationId: String(resolvedVizId),
         });
       } catch (error: any) {
@@ -1157,7 +1131,7 @@ function StoredOrGenerated2DProof({
         status?.workflowRun?.workflow_status || "",
       );
       if (!workflowStatus) {
-        return status?.activeEnticePack?.proof_artifact?.url
+        return status?.activePack?.proof_artifact?.url
           ? false
           : 3_000;
       }
@@ -1184,36 +1158,26 @@ function StoredOrGenerated2DProof({
         try { notes = JSON.parse(render.admin_notes); } catch { /* not JSON */ }
       }
 
-      // 1. Authoritative cache — re-fetch the freshest admin_notes for this
-      // visualization straight from the DB by id, so a proof saved after the
-      // list loaded is always found. Falls back to the in-memory notes if the
-      // row can't be read (e.g. synthetic bridge ids that aren't real rows).
+      // Re-read the freshest projection for this design from the server, so a
+      // proof Call 8 published after the list loaded is always found. Falls back
+      // to the in-memory notes when the run can't be read.
       let freshNotes: Record<string, any> = notes;
       const notesVizId = resolvedVizId || render?.id;
       if (notesVizId) {
-        try {
-          const { data: vizRow } = await supabase
-            .from("color_visualizations")
-            .select("admin_notes")
-            .eq("id", notesVizId)
-            .maybeSingle();
-          if ((vizRow as any)?.admin_notes) {
-            try { freshNotes = JSON.parse((vizRow as any).admin_notes); } catch { freshNotes = notes; }
-          }
-        } catch { /* keep in-memory notes */ }
+        const fresh = await readRevisionStudioDesign(String(notesVizId)).catch(() => null);
+        if (fresh?.admin_notes) {
+          try { freshNotes = JSON.parse(fresh.admin_notes); } catch { freshNotes = notes; }
+        }
       }
 
-      // A stored value only counts as a REAL saved proof if it looks like a 2D
-      // proof asset (the generator saves to ".../2d-proofs/..._2d-proof.png").
-      // A raw 3D render URL wrongly saved as flat_proof_url (bad/legacy data)
-      // must NOT be shown as the proof — treat it as "not there" so the sheet
-      // regenerates a correct multi-view proof (with dims) and re-saves it.
-      const isProofUrl = (u: any) => typeof u === "string" && /proof/i.test(u);
-      const cachedUrl = isProofUrl(freshNotes.flat_proof_url)
-        ? freshNotes.flat_proof_url
-        : (isProofUrl(notes.flat_proof_url) ? notes.flat_proof_url : null);
-      const resolvedGenId: string | null =
-        freshNotes.designiq_generation_id || notes.designiq_generation_id || null;
+      // The projected proof is the Call-8 customer artifact the server selected
+      // by role. There is no second store to fall back to, and no class of wrong
+      // value to screen out: absent means Call 8 has not published one yet, and
+      // the sheet's own build action is what produces it.
+      const cachedUrl =
+        (typeof freshNotes.flat_proof_url === "string" && freshNotes.flat_proof_url)
+        || (typeof notes.flat_proof_url === "string" && notes.flat_proof_url)
+        || null;
 
       if (cachedUrl) {
         if (!cancelled) {
@@ -1221,23 +1185,6 @@ function StoredOrGenerated2DProof({
           setLoading(false);
         }
         return;
-      }
-
-      // 2. DesignIQ fallback — check the linked designiq_generations row.
-      if (resolvedGenId) {
-        try {
-          const { data } = await supabase
-            .from("designiq_generations" as any)
-            .select("flat_proof_url")
-            .eq("id", resolvedGenId)
-            .maybeSingle();
-
-          if (!cancelled && isProofUrl((data as any)?.flat_proof_url)) {
-            setInitialProofUrl((data as any).flat_proof_url);
-            setLoading(false);
-            return;
-          }
-        } catch { /* ignore — fall through to auto-generate */ }
       }
 
       if (!cancelled) {
@@ -1260,43 +1207,20 @@ function StoredOrGenerated2DProof({
       return;
     }
     try {
-      // maybeSingle, not single. `.single()` turns "no such row" into PostgREST's
-      // "Cannot coerce the result to a single JSON object", which the catch below
-      // then reports as "The server did not accept this revision: ..." -- naming
-      // the server for a row this browser asked for and blaming a rejection that
-      // never happened, because this read runs BEFORE anything is submitted.
-      // That string is what sent several sessions hunting a non-existent RPC bug.
-      //
-      // resolvedVizId first: a QC-queue card's render.id is a panelizer job id,
-      // which the resolver above has already mapped to the real visualization.
+      // Re-read the design from the server before submitting anything. A run
+      // the gateway does not own answers null, which is the honest "there is
+      // nothing to build from" -- and saying so here, before the submit, is
+      // what stops the catch below reporting a server rejection that never
+      // happened. That wrong string is what sent several sessions hunting a
+      // non-existent RPC bug.
       const buildVizId = String(resolvedVizId || render.id);
-      const { data: frozen, error } = await supabase
-        .from("color_visualizations")
-        .select("id, updated_at, admin_notes, render_urls")
-        .eq("id", buildVizId)
-        .maybeSingle();
-      if (error) throw error;
+      const frozen = await readRevisionStudioDesign(buildVizId);
       if (!frozen) {
         throw new Error(
           `this design (${buildVizId}) is not a saved revision, so there is nothing to build from — reopen it from the Designs list`,
         );
       }
-      if (!frozen.updated_at) {
-        throw new Error("the saved revision has no timestamp to freeze against");
-      }
-      let generationId: string | undefined;
-      try {
-        const notes =
-          typeof frozen.admin_notes === "string"
-            ? JSON.parse(frozen.admin_notes)
-            : frozen.admin_notes || {};
-        generationId =
-          typeof notes.designiq_generation_id === "string"
-            ? notes.designiq_generation_id
-            : undefined;
-      } catch {
-        generationId = undefined;
-      }
+      const generationId = frozen.id;
       const currentRunId = String(
         enticeWorkflowStatus?.workflowRun?.id || "",
       ).trim();
@@ -1314,8 +1238,8 @@ function StoredOrGenerated2DProof({
         currentStatus !== "completed" &&
         currentStatus !== "cancelled";
       const accepted = resumable
-        ? await resumeEnticeRevision(currentRunId, currentStatus === "failed")
-        : await submitEnticeRevision({
+        ? await resumeDesignBuild(currentRunId, currentStatus === "failed")
+        : await requestDesignBuild({
             visualizationId: frozen.id,
             expectedUpdatedAt: frozen.updated_at,
             generationId,
@@ -1369,8 +1293,8 @@ function StoredOrGenerated2DProof({
     );
     if (["completed", "cancelled"].includes(status)) return;
     const proofUrl = String(
-      enticeWorkflowStatus?.previewProofUrl ||
-        enticeWorkflowStatus?.activeEnticePack?.proof_artifact?.url ||
+      enticeWorkflowStatus?.proofUrl ||
+        enticeWorkflowStatus?.activePack?.proof_artifact?.url ||
         "",
     ).trim();
     if (proofUrl) return;
@@ -1401,8 +1325,8 @@ function StoredOrGenerated2DProof({
     enticeWorkflowStatus?.workflowRun?.workflow_status || "",
   );
   const workflowProofUrl = String(
-    enticeWorkflowStatus?.previewProofUrl ||
-      enticeWorkflowStatus?.activeEnticePack?.proof_artifact?.url ||
+    enticeWorkflowStatus?.proofUrl ||
+      enticeWorkflowStatus?.activePack?.proof_artifact?.url ||
       "",
   ).trim();
   // A rebuilding workflow must not hide a previously verified proof. The new
@@ -1746,19 +1670,10 @@ export default function RevisionStudioIQ() {
       ].map((v) => (typeof v === "string" ? v.trim() : "")).find(Boolean);
       if (direct) { if (!cancelled) setResolvedPrompt(direct); return; }
 
-      // Canonical DesignIQ row — the same back-link the panel slicer uses.
-      const gid = notes.designiq_generation_id;
-      if (gid) {
-        try {
-          const { data } = await (supabase as any)
-            .from("designiq_generations")
-            .select("raw_prompt")
-            .eq("id", gid)
-            .maybeSingle();
-          const raw = String((data as any)?.raw_prompt || "").trim();
-          if (raw && !cancelled) { setResolvedPrompt(raw); return; }
-        } catch { /* fall through to the honest empty state */ }
-      }
+      // No second lookup. The brief a design was authored from lives on the run
+      // the server owns, and the projection above already carries whatever it
+      // recorded. A design whose brief the server did not keep shows the honest
+      // empty state rather than a prompt reconstructed from somewhere else.
       if (!cancelled) setResolvedPrompt("");
     };
     resolve();
@@ -1975,95 +1890,48 @@ export default function RevisionStudioIQ() {
     }
     const toastId = toast.loading("Loading the clean base + your logo…", { duration: Infinity });
     try {
-      // Assets live on designiq_generations, keyed by the canonical DesignIQ id.
-      let canonical = String(render.id);
-      let proofUrl: string | null = null; // the 2D PROOF — the sanctioned logo-extract source
-      try {
-        const { data } = await supabase.from("color_visualizations").select("admin_notes").eq("id", render.id).maybeSingle();
-        const raw = (data as any)?.admin_notes;
-        const n = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : {};
-        if (n?.designiq_generation_id) canonical = String(n.designiq_generation_id);
-        if (typeof n?.flat_proof_url === "string" && /proof/i.test(n.flat_proof_url)) proofUrl = n.flat_proof_url;
-      } catch { /* use render id */ }
-
-      const { data: dg } = await (supabase as any)
-        .from("designiq_generations")
-        .select("master_artboard_clean_url, master_artboard_url, flat_proof_url")
-        .eq("id", canonical).maybeSingle();
-      const cleanUrl: string | null = (dg as any)?.master_artboard_clean_url || null;
-      const brandedUrl: string | null = (dg as any)?.master_artboard_url || null;
-      if (!proofUrl && (dg as any)?.flat_proof_url) proofUrl = String((dg as any).flat_proof_url);
-      if (!cleanUrl) {
+      // THE SERVER ALREADY SEPARATED THESE. This used to send the 2D proof to
+      // `extract-logo-elements`, have an AI guess bounding boxes, alpha-key a
+      // slice out of each guess, upload the slices, and write them back into a
+      // design row as the logo pack -- a second producer of production assets,
+      // running in a tab, on boxes nobody verified.
+      //
+      // Call 10 separates the logo inventory server-side and Call 11 publishes
+      // the de-logoed duplicate of each panel. The clean base and the liftable
+      // elements both already exist, hashed and bound to the accepted master.
+      // So this reads them. Nothing is uploaded, nothing is written back, and
+      // the editing experience is identical: a clean floor plus draggable
+      // elements.
+      const surfaceKey = SURFACE_KEY_FOR_VIEW[viewKey] || null;
+      const sources = surfaceKey
+        ? await loadLayeredEditSources(String(render.id), surfaceKey)
+        : { cleanUrl: null, logos: [] };
+      if (!sources.cleanUrl) {
         toast.error(LAYERED_EDIT_UNAVAILABLE_MESSAGE, { id: toastId, duration: 12000 });
         return false;
       }
 
-      // LAYER 0 — swap the canvas to the clean, logo-free artboard (no smear).
-      setCleanBackgroundsByView((prev) => ({ ...prev, [viewKey]: cleanUrl }));
+      // LAYER 0 — floor the canvas on the de-logoed panel the server published.
+      setCleanBackgroundsByView((prev) => ({ ...prev, [viewKey]: sources.cleanUrl! }));
 
-      // LAYER 1 — lift the REAL logo/lettering as wrap-keyed transparent overlays.
-      // SOURCE = the 2D PROOF (the sanctioned logo-extract source, same as DesignPro
-      // — the dimensioned proof already shows every side's design). Falls back to
-      // the branded artboard, then the clean base. extractTransparentSlice alpha-keys
-      // the surrounding wrap so we lift the element, not a rectangle; no heal (the
-      // clean base is whole underneath).
-      const src = proofUrl || brandedUrl || cleanUrl;
-      const newLayers: LogoLayer[] = [];
-      try {
-        const { data: det } = await renderClient.functions.invoke("extract-logo-elements", {
-          body: { approved_render_url: src, job_id: canonical, user_id: currentUserId },
-        });
-        const raw: any[] = Array.isArray((det as any)?.elements) ? (det as any).elements : [];
-        const boxes = raw
-          .map((e) => {
-            const bb = e?.bounding_box || {};
-            const x = bb.x ?? bb.x_percent, y = bb.y ?? bb.y_percent, w = bb.width ?? bb.width_percent, h = bb.height ?? bb.height_percent;
-            return [x, y, w, h].every((n: any) => typeof n === "number") ? { e, box: { xPct: x, yPct: y, wPct: w, hPct: h } } : null;
-          })
-          .filter((o: any) => o && (o.e.confidence ?? 1) >= 0.5 && o.box.wPct * o.box.hPct <= 0.4 && o.box.wPct * o.box.hPct > 0.0003)
-          .slice(0, 8) as Array<{ e: any; box: { xPct: number; yPct: number; wPct: number; hPct: number } }>;
-        for (let i = 0; i < boxes.length; i++) {
-          const { e, box } = boxes[i];
-          try {
-            const { blob } = await extractTransparentSlice(src, box);
-            const url = await uploadLiftedAsset(blob, currentUserId);
-            const cx = box.xPct + box.wPct / 2, cy = box.yPct + box.hPct / 2;
-            newLayers.push({
-              id: `lay_${Date.now().toString(36)}_${i}_${Math.random().toString(36).slice(2, 5)}`,
-              kind: "extracted",
-              sourceUrl: url,
-              name: e.label || e.content || e.type || "Element",
-              origin: { xPct: cx, yPct: cy, wPct: box.wPct, hPct: box.hPct },
-              placement: { xPct: cx, yPct: cy, size: "md", sizePercent: Math.min(0.6, Math.max(0.03, box.wPct)) },
-            });
-          } catch { /* skip this element */ }
-        }
-      } catch { /* detection failed — the clean base is still loaded */ }
+      // LAYER 1 — the separated logos, dropped in centred and resizable. They
+      // arrive with true alpha because the server cut them, so there is no
+      // keying step and no heal anywhere.
+      const newLayers: LogoLayer[] = sources.logos.map((logo, index) => ({
+        id: `lay_${index}_${logo.label.replace(/\W+/g, "-").toLowerCase()}`,
+        kind: "extracted",
+        sourceUrl: logo.url,
+        name: logo.label,
+        origin: { xPct: 0.5, yPct: 0.5, wPct: 0.25, hPct: 0.25 },
+        placement: { xPct: 0.5, yPct: 0.5, size: "md", sizePercent: 0.25 },
+      }));
 
       if (newLayers.length > 0) {
         setLogoLayersByView((prev) => ({ ...prev, [viewKey]: [...(prev[viewKey] || []), ...newLayers] }));
-        // Save the lifted elements to the order LOGO PACK — the value-add shown
-        // under the panels in RevisionStudio and downloaded/resized by the design
-        // team in PanelPro. Persisted onto THIS render row's admin_notes.logo_pack
-        // (the buyer owns it) — the same store ProductionFlowLayersCard / PanelPro
-        // read across the order family. Direct client write (the project is at the
-        // edge-function cap, so no dedicated function); fire-and-forget, non-fatal.
-        void (async () => {
-          try {
-            const { data: cur } = await supabase.from("color_visualizations").select("admin_notes").eq("id", render.id).maybeSingle();
-            let notes: Record<string, any> = {};
-            try { notes = typeof (cur as any)?.admin_notes === "string" ? JSON.parse((cur as any).admin_notes) : ((cur as any)?.admin_notes || {}); } catch { notes = {}; }
-            const byUrl = new Map<string, any>();
-            for (const e of (Array.isArray(notes.logo_pack) ? notes.logo_pack : [])) if (e?.url) byUrl.set(e.url, e);
-            for (const l of newLayers) byUrl.set(l.sourceUrl, { url: l.sourceUrl, label: l.name, widthPct: l.origin?.wPct, heightPct: l.origin?.hPct });
-            notes.logo_pack = Array.from(byUrl.values());
-            await supabase.from("color_visualizations").update({ admin_notes: JSON.stringify(notes) }).eq("id", render.id);
-          } catch { /* non-fatal — canvas edit still works */ }
-        })();
       }
       toast.success(
         newLayers.length
-          ? `Clean base loaded + ${newLayers.length} element(s) lifted → saved to your Logo Pack. Drag to move, delete to remove, then Revise & Clone to save.`
+          ? `Clean base loaded + ${newLayers.length} separated element(s) from your Logo Pack. Drag to move, delete to remove, then Revise & Clone to save.`
           : `Clean base loaded (logo removed). Revise & Clone to save.`,
         { id: toastId, duration: 10000 },
       );
@@ -2244,33 +2112,33 @@ export default function RevisionStudioIQ() {
       } else {
         setLogoLayersByView(existingLayers);
         if (handoff) clearLayer2Handoff(deepLinkId || selectedRender.id);
-        // DB FALLBACK: sessionStorage handoff is same-tab only, so across reloads/
-        // tabs (e.g. reopening the plumbing van) the Layer-2 overlays vanish. If
-        // nothing is placed yet, pull the persisted overlay_pngs from
-        // design_generation_assets and seed them as editable layers.
+        // SERVER FALLBACK: the sessionStorage handoff is same-tab only, so
+        // across reloads and tabs the Layer-2 overlays vanish. If nothing is
+        // placed yet, seed from the logo inventory Call 10 separated for this
+        // design -- the same assets the Logo Pack and PanelPro are served,
+        // rather than a browser-written copy of them.
         if (!alreadyHasLayers) {
           const genId = deepLinkId || selectedRender.id;
           (async () => {
             try {
-              const { data: asset } = await supabase
-                .from("design_generation_assets")
-                .select("overlay_pngs")
-                .eq("generation_id", genId)
-                .eq("is_current", true)
-                .order("iteration_index", { ascending: false })
-                .limit(1)
-                .maybeSingle();
-              const overlays = (asset?.overlay_pngs as { url?: string; text?: string; role?: string }[] | null) || [];
-              const logos = overlays.filter((o) => o?.url).map((o) => ({ url: o.url as string, name: o.role || o.text }));
-              if (logos.length) {
-                const heroKey = getViewOrderForVehicle(selectedRender)[0] || VIEW_ORDER[0];
-                setLogoLayersByView((prev) => {
-                  const hasAny = Object.values(prev).some((arr) => arr.length > 0);
-                  return hasAny ? prev : { ...prev, [heroKey]: seedLogoLayersFromHandoff(logos) };
-                });
-              }
+              const heroKey = getViewOrderForVehicle(selectedRender)[0] || VIEW_ORDER[0];
+              const surfaceKey = SURFACE_KEY_FOR_VIEW[heroKey];
+              if (!surfaceKey) return;
+              const { logos } = await loadLayeredEditSources(String(genId), surfaceKey);
+              if (!logos.length) return;
+              setLogoLayersByView((prev) => {
+                const hasAny = Object.values(prev).some((arr) => arr.length > 0);
+                return hasAny
+                  ? prev
+                  : {
+                      ...prev,
+                      [heroKey]: seedLogoLayersFromHandoff(
+                        logos.map((logo) => ({ url: logo.url, name: logo.label })),
+                      ),
+                    };
+              });
             } catch (e) {
-              console.warn("[RevisionStudio] overlay DB fallback failed (non-fatal):", e);
+              console.warn("[RevisionStudio] logo inventory seed failed (non-fatal):", e);
             }
           })();
         }
@@ -2282,145 +2150,40 @@ export default function RevisionStudioIQ() {
     setArmedLayerId(null);
   }, [selectedRender?.id]);
 
-  // Auto-save logo layers + clean backgrounds to admin_notes.logo_layers
-  // so extracted elements persist across sessions. Reads on hydration (above),
-  // writes on every change to logoLayersByView or cleanBackgroundsByView.
-  // ALSO syncs to linked panelizer_jobs.concept_json.extracted_elements
-  // so QC Artboard can pick them up for redeployment edits.
+  // THE BROWSER DOES NOT WRITE PRODUCTION ASSETS.
+  //
+  // This effect used to persist the canvas state three ways at once: into a
+  // design row's admin_notes, into the legacy asset table via the legacy
+  // persist function as the deterministic slicer's Layer-1 input, and into
+  // every linked panelizer job's concept for the QC page to pick up. The middle
+  // one is the serious part -- it made a tab's canvas the source the production
+  // slicer cut from, which is exactly the second producer the one sanctioned
+  // chain forbids.
+  //
+  // Here the clean base and the separated logos are server artifacts (Calls 10
+  // and 11), published from the accepted master, and the six panels are cut
+  // deterministically from that same master. There is nothing for a browser to
+  // contribute to production, so the canvas is what it always should have been:
+  // a working surface for composing a revision instruction. It survives within
+  // the session and is submitted with the revision, not written behind it.
   useEffect(() => {
     if (!selectedRender?.id) return;
-    const hasLayers = Object.values(logoLayersByView).some(arr => arr.length > 0);
+    const hasLayers = Object.values(logoLayersByView).some((arr) => arr.length > 0);
     const hasBgs = Object.keys(cleanBackgroundsByView).length > 0;
-    if (!hasLayers && !hasBgs) return; // nothing to save
-
+    if (!hasLayers && !hasBgs) return;
     const payload: RenderLogoLayers = {
       backgrounds: cleanBackgroundsByView,
       layers: logoLayersByView,
     };
-
-    (async () => {
-      try {
-        // 1. Save to color_visualizations.admin_notes.logo_layers
-        const existingNotes = (() => { try { return JSON.parse(selectedRender.admin_notes || "{}"); } catch { return {}; } })();
-        await supabase
-          .from("color_visualizations")
-          .update({ admin_notes: JSON.stringify({ ...existingNotes, logo_layers: payload }) })
-          .eq("id", selectedRender.id);
-
-        // 1b. Persist the CLEAN (text/logo-free) background produced by the
-        // Layer Lift tool to design_generation_assets.background_url for this
-        // generation. This is what the deterministic slicer
-        // (api/process-production-pack.js) consumes as Layer-1 input — without
-        // it the slicer falls back to the raw 3D/baked render. Reuses the
-        // existing persist path (designpro-persist-assets); MERGE-only on the
-        // current iteration row. Best-effort: never block the layer save.
-        const cleanBgForProduction = cleanBackgroundsByView["side"]
-          || cleanBackgroundsByView["driver-side"]
-          || Object.values(cleanBackgroundsByView)[0]
-          || null;
-        const genIdForPersist = existingNotes.designiq_generation_id || null;
-        if (cleanBgForProduction && genIdForPersist) {
-          try {
-            const { data: { user: authedUser } } = await supabase.auth.getUser();
-            // Persist the clean per-view background as the text-free Layer-1
-            // (background_url = primary clean view; view_urls = all clean
-            // views) and the separated layers as Layer-2 overlay PNGs.
-            const overlayPngs: { id: string; kind: string; role: string; url: string }[] = [];
-            for (const viewLayers of Object.values(logoLayersByView)) {
-              for (const l of viewLayers) {
-                if (l?.sourceUrl) {
-                  overlayPngs.push({
-                    // Both uploaded + extracted layers are branding (logo/text);
-                    // persist them as "logo" overlays (Layer 2) so the slicer's
-                    // Layer-1 text-free guard stays satisfied.
-                    id: l.id,
-                    kind: "logo",
-                    role: l.name,
-                    url: l.sourceUrl,
-                  });
-                }
-              }
-            }
-            await renderClient.functions.invoke("designpro-persist-assets", {
-              body: {
-                generation_id: genIdForPersist,
-                background_url: cleanBgForProduction,
-                view_urls: cleanBackgroundsByView,
-                ...(overlayPngs.length ? { overlay_pngs: overlayPngs } : {}),
-                user_id: authedUser?.id || null,
-                source: "revision-studio-layerlift",
-              },
-            });
-            console.log("[RevisionIQ] Persisted clean text-free background to design_generation_assets:", genIdForPersist);
-          } catch (persistErr) {
-            console.warn("[RevisionIQ] persist clean background failed (non-fatal):", persistErr);
-          }
-        }
-
-        // 2. Sync to linked panelizer_jobs so QC Artboard has the data
-        // Flatten all layers across views for the QC extracted_elements format
-        const allLayers: LogoLayer[] = [];
-        for (const viewLayers of Object.values(logoLayersByView)) {
-          allLayers.push(...viewLayers);
-        }
-        // Use the first clean background as the primary clean artboard URL
-        const cleanArtboardUrl = cleanBackgroundsByView["side"]
-          || cleanBackgroundsByView["driver-side"]
-          || Object.values(cleanBackgroundsByView)[0]
-          || null;
-
-        if (allLayers.length > 0 || cleanArtboardUrl) {
-          const extractedPayload = {
-            layers: allLayers,
-            cleanArtboardUrl,
-            perViewBackgrounds: cleanBackgroundsByView,
-            perViewLayers: logoLayersByView,
-            savedAt: new Date().toISOString(),
-            source: "revision-studio",
-            sourceRenderId: selectedRender.id,
-          };
-
-          // Find linked panelizer_jobs by generation_id
-          const { data: linkedJobs } = await supabase
-            .from("panelizer_jobs" as any)
-            .select("id, concept_json")
-            .eq("generation_id", selectedRender.id)
-            .limit(5);
-
-          // Also check parent IDs in version chain
-          const parentId = existingNotes.version?.parent_id;
-          let parentJobs: any[] = [];
-          if (parentId && (!linkedJobs || linkedJobs.length === 0)) {
-            const { data: pJobs } = await supabase
-              .from("panelizer_jobs" as any)
-              .select("id, concept_json")
-              .eq("generation_id", parentId)
-              .limit(5);
-            if (pJobs) parentJobs = pJobs;
-          }
-
-          const allJobs = [...(linkedJobs || []), ...parentJobs];
-          const uniqueJobs = allJobs.filter((j, i, arr) => arr.findIndex(x => x.id === j.id) === i);
-
-          for (const pJob of uniqueJobs) {
-            const existingCj = pJob.concept_json || {};
-            await supabase
-              .from("panelizer_jobs" as any)
-              .update({
-                concept_json: {
-                  ...existingCj,
-                  extracted_elements: extractedPayload,
-                },
-              })
-              .eq("id", pJob.id);
-            console.log(`[RevisionIQ] Synced extracted_elements to panelizer_job ${pJob.id}`);
-          }
-        }
-      } catch (err) {
-        console.error("[RevisionIQ] Failed to save logo_layers:", err);
-      }
-    })();
-  }, [logoLayersByView, cleanBackgroundsByView]);
+    try {
+      window.sessionStorage.setItem(
+        `revstudio:layers:${selectedRender.id}`,
+        JSON.stringify(payload),
+      );
+    } catch {
+      /* storage unavailable (private mode / quota) -- the canvas still works */
+    }
+  }, [logoLayersByView, cleanBackgroundsByView, selectedRender?.id]);
 
   // Missing renders generation state
   const [isGeneratingMissing, setIsGeneratingMissing] = useState(false);
@@ -2463,7 +2226,26 @@ export default function RevisionStudioIQ() {
   const [showProofSheet, setShowProofSheet] = useState(false);
   const [show2DProofSheet, setShow2DProofSheet] = useState(false);
   const { isGeneratingCutFiles, handleGenerateCutFiles } = useCutFiles();
-  const [showProductionDialog, setShowProductionDialog] = useState(false);
+  // Ordering the production pack. The price, the product and the entitlement
+  // live on the server; this sends WHICH product and follows the checkout URL
+  // it returns. Buying the Production Pack authorizes production fulfilment and
+  // nothing else -- the Logo Pack is its own purchase, on its own card.
+  const [orderingPack, setOrderingPack] = useState(false);
+  const orderProductionPack = useCallback(async () => {
+    if (!selectedRender?.id) { toast.error("Open a design first."); return; }
+    setOrderingPack(true);
+    try {
+      const session = await dpApi.createCheckoutSession({
+        generationId: String(selectedRender.id),
+        product: "print_pack_entitlement",
+        returnPath: "/revision-studio",
+      });
+      window.location.href = session.url;
+    } catch (error: any) {
+      toast.error(`Checkout could not be opened: ${error?.message || error}`);
+      setOrderingPack(false);
+    }
+  }, [selectedRender?.id]);
 
   // ── Cut Production Sheet ──────────────────────────────────────────────────
   // The dimensioned cut sheet: every graphic specced FLAT at its real cut size
@@ -2487,17 +2269,21 @@ export default function RevisionStudioIQ() {
     let sideW: number | undefined;
     let sideH: number | undefined;
     let sqft: number | null = null;
-    if (r.vehicle_make && r.vehicle_model) {
-      try {
-        const { data } = await renderClient.functions.invoke("panelizer-step-validate", {
-          body: { vehicleMake: r.vehicle_make, vehicleModel: r.vehicle_model, vehicleYear: r.vehicle_year ? Number(r.vehicle_year) : null, estimateOnly: true },
-        });
-        const d = (data?.estimatedDimensions || {}) as Record<string, number>;
-        sideW = d.bodyLengthInches;
-        sideH = d.bodyHeightInches;
-        sqft = typeof d.totalSqFt === "number" ? d.totalSqFt : null;
-      } catch { /* fall through */ }
-    }
+    // GENIE GEOMETRY IS THE SERVER'S. The dimensions this sheet specs against
+    // are the ones Call 1 already resolved and stamped on the design's own
+    // panels, so they are read from the panel the customer will actually print
+    // rather than re-estimated in the browser from a make and model. That is
+    // also what makes the sheet agree with the panel by construction instead of
+    // by coincidence -- two independent estimates of one vehicle are two
+    // numbers waiting to disagree.
+    try {
+      const geometry = await loadDriverPanelGeometry(String(r.id));
+      if (geometry) {
+        sideW = geometry.trimWidthIn;
+        sideH = geometry.trimHeightIn;
+        sqft = geometry.surfaceSqFt;
+      }
+    } catch { /* fall through to the honest refusal below */ }
     if (!sideW || !sideH) {
       toast.error("Couldn't resolve vehicle dimensions — set a real year/make/model on this design so graphics can be specced to scale.");
       setCutProofOpen(false);
@@ -2575,7 +2361,7 @@ export default function RevisionStudioIQ() {
   } = useInfiniteQuery({
     queryKey: ["revision-studio-renders", modeFilter, searchQuery, isAdmin, showTeamRenders],
     queryFn: async ({ pageParam = 0 }) => {
-      // SERVER-OWNED SOURCE. This used to select color_visualizations -- a
+      // SERVER-OWNED SOURCE. This used to select a legacy design table -- a
       // RestylePro table that holds zero rows in DesignProAI, and a name the
       // customer-path seam gate forbids precisely because it is a second door
       // onto a design. The designs live in the run tables the gateway owns, so
@@ -2626,233 +2412,30 @@ export default function RevisionStudioIQ() {
     refetchOnMount: "always",
   });
 
-  // ── GraphicsPro renders live in a separate table (graphics_pro_jobs).
-  // Pull them in their own query and union them with the color_visualizations
-  // feed so RevisionStudioIQ shows GraphicsPro past renders alongside every
-  // other tool. Volume is low, so a single non-paginated fetch is fine.
-  const { data: graphicsProRows } = useQuery({
-    queryKey: ["revision-studio-graphicspro", modeFilter, searchQuery, isAdmin, showTeamRenders],
-    queryFn: async () => {
-      let q = (supabase as any)
-        .from("graphics_pro_jobs")
-        .select(
-          "id,user_id,shop_id,vehicle_year,vehicle_make,vehicle_model,vehicle_area,design_prompt,design_style,business_name,vinyl_finish,surface_type,surface_subcategory,mockup_render_url,detail_render_url,closeup_render_url,uploaded_artwork_urls,business_logo_url,surface_image_url,status,created_at",
-        )
-        // GraphicsPro jobs sit at "mockup_ready" right after the AI mockup
-        // step and only transition to "completed"/"approved" once the user
-        // pushes them through ProductionFlow. Without including these
-        // statuses the customer's fresh mockup would never appear in
-        // RevisionStudio until they finished the cut-file flow.
-        .in("status", ["completed", "complete", "mockup_ready", "approved"])
-        .order("created_at", { ascending: false })
-        .limit(100);
-
-      if (!isAdmin) {
-        const { data: { session } } = await supabase.auth.getSession();
-        const uid = session?.user?.id;
-        if (!uid) return [];
-        q = q.eq("user_id", uid);
-      }
-
-      if (searchQuery) {
-        q = q.or(
-          `vehicle_make.ilike.%${searchQuery}%,vehicle_model.ilike.%${searchQuery}%,design_prompt.ilike.%${searchQuery}%,business_name.ilike.%${searchQuery}%,design_style.ilike.%${searchQuery}%,surface_type.ilike.%${searchQuery}%`,
-        );
-      }
-
-      const { data, error } = await q;
-      if (error) {
-        console.warn("[RevisionStudioIQ] graphics_pro_jobs fetch failed", error);
-        return [];
-      }
-
-      // Map graphics_pro_jobs → the shape RevisionStudioIQ expects from
-      // color_visualizations so the existing render cards / merge / open
-      // logic all work without a special case at every render site.
-      return (data ?? [])
-        .map((row: any) => {
-          const renderUrls: Record<string, string> = {};
-          if (row.mockup_render_url) renderUrls.hero = row.mockup_render_url;
-          if (row.detail_render_url) renderUrls.detail = row.detail_render_url;
-          if (row.closeup_render_url) renderUrls.closeup = row.closeup_render_url;
-          if (Object.keys(renderUrls).length === 0) return null;
-
-          const designLabel =
-            row.business_name ||
-            row.design_style ||
-            (row.design_prompt ? row.design_prompt.slice(0, 60) : "GraphicsPro Design");
-
-          // Surface the customer's uploaded EXAMPLE/logo so RevisionStudio can
-          // show it (and so an "exact_reference" revision can match it). Without
-          // this the uploaded reference was invisible in the revision UI.
-          const uploadedRefs: string[] = Array.isArray(row.uploaded_artwork_urls)
-            ? row.uploaded_artwork_urls.filter(Boolean)
-            : [];
-          const referenceUrl =
-            uploadedRefs[0] || row.business_logo_url || null;
-
-          return {
-            id: row.id,
-            render_urls: renderUrls,
-            reference_image_urls: uploadedRefs,
-            vehicle_year: row.vehicle_year ? String(row.vehicle_year) : null,
-            vehicle_make: row.vehicle_make,
-            vehicle_model: row.vehicle_model,
-            vehicle_type: row.vehicle_area || null,
-            mode_type: "GraphicsPro",
-            design_file_name: designLabel,
-            color_name: row.business_name || null,
-            color_hex: null,
-            finish_type: row.vinyl_finish || null,
-            created_at: row.created_at,
-            custom_design_url: referenceUrl,
-            custom_swatch_url: null,
-            custom_styling_prompt_key: row.design_style || null,
-            uses_custom_design: !!referenceUrl,
-            admin_notes: null,
-            customer_email: null,
-            subscription_tier: null,
-            organization_id: null,
-            infusion_color_id: null,
-            generation_status: "completed",
-            // Marker so push-to-tool / lookup paths can branch back to the
-            // graphics_pro_jobs route if they ever need the original row.
-            __source: "graphics_pro_jobs",
-          };
-        })
-        .filter(Boolean) as any[];
-    },
-    enabled:
-      isRoleLoading === false &&
-      (modeFilter === "all" || modeFilter === "graphicspro"),
-    staleTime: 2 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
-  // ── Production / QC jobs live in panelizer_jobs (the table QC Artboard
-  // reads). Historically a panelizer job's generation_id often points to a
-  // color_visualizations row that no longer exists (or was never written),
-  // so those jobs showed up in QC but were invisible in RevisionStudio.
-  // Pull them in their own query and union them with the feed (same approach
-  // as graphics_pro_jobs) so every job a shop can see in QC is also revisable
-  // here. Rows whose generation_id already matches a loaded CV record are
-  // dropped in the merge below so designs never appear twice.
-  const { data: panelizerRows } = useQuery({
-    queryKey: ["revision-studio-panelizer", modeFilter, searchQuery, isAdmin, showTeamRenders],
-    queryFn: async () => {
-      let q = (supabase as any)
-        .from("panelizer_jobs")
-        .select(
-          "id,user_id,generation_id,order_number,vehicle_year,vehicle_make,vehicle_model,vehicle_trim,approved_render_url,all_view_urls,concept_json,status,created_at",
-        )
-        .order("created_at", { ascending: false })
-        .limit(100);
-
-      if (!isAdmin) {
-        const { data: { session } } = await supabase.auth.getSession();
-        const uid = session?.user?.id;
-        if (!uid) return [];
-        q = q.eq("user_id", uid);
-      }
-
-      if (searchQuery) {
-        // No vehicle_year here — it's an integer column and ilike against it
-        // would 400 the whole request.
-        q = q.or(
-          `vehicle_make.ilike.%${searchQuery}%,vehicle_model.ilike.%${searchQuery}%,order_number.ilike.%${searchQuery}%`,
-        );
-      }
-
-      const { data, error } = await q;
-      if (error) {
-        console.warn("[RevisionStudioIQ] panelizer_jobs fetch failed", error);
-        return [];
-      }
-
-      return (data ?? [])
-        .map((row: any) => {
-          const cj = (row.concept_json && typeof row.concept_json === "object") ? row.concept_json : {};
-
-          // Prefer the multi-view render_urls kept in sync on the concept,
-          // then the job's all_view_urls, then the single approved render.
-          let renderUrls: Record<string, string> = {};
-          const cjUrls = cj.render_urls;
-          if (cjUrls && typeof cjUrls === "object" && !Array.isArray(cjUrls)) {
-            renderUrls = { ...cjUrls };
-          } else if (row.all_view_urls && typeof row.all_view_urls === "object" && !Array.isArray(row.all_view_urls)) {
-            renderUrls = { ...row.all_view_urls };
-          }
-          if (Object.keys(renderUrls).length === 0 && row.approved_render_url) {
-            renderUrls.hero = row.approved_render_url;
-          }
-          // Strip empty/non-string values so the phantom-render filter and
-          // the card view never choke on a blank URL.
-          renderUrls = Object.fromEntries(
-            Object.entries(renderUrls).filter(([, v]) => typeof v === "string" && v.length > 0),
-          ) as Record<string, string>;
-          if (Object.keys(renderUrls).length === 0) return null;
-
-          const designLabel =
-            cj.design_name ||
-            cj.designName ||
-            (cj.prompt ? String(cj.prompt).slice(0, 60) : null) ||
-            (row.order_number ? `Order ${row.order_number}` : "Production Job");
-
-          return {
-            // Use the panelizer job id as the card id. Revising clones into a
-            // fresh color_visualizations row, so a non-CV id here is fine.
-            id: row.id,
-            // Carry the linked generation id so the merge step can drop jobs
-            // whose CV row is already in the feed.
-            _generationId: row.generation_id || null,
-            render_urls: renderUrls,
-            vehicle_year: row.vehicle_year ?? null,
-            vehicle_make: row.vehicle_make,
-            vehicle_model: row.vehicle_model,
-            vehicle_type: row.vehicle_trim || null,
-            mode_type: "designpanelpro",
-            design_file_name: designLabel,
-            color_name: cj.design_name || null,
-            color_hex: null,
-            finish_type: cj.finish || null,
-            created_at: row.created_at,
-            custom_design_url: null,
-            custom_swatch_url: null,
-            custom_styling_prompt_key: null,
-            uses_custom_design: false,
-            admin_notes: null,
-            customer_email: null,
-            subscription_tier: null,
-            organization_id: null,
-            infusion_color_id: null,
-            generation_status: "completed",
-            __source: "panelizer_jobs",
-          };
-        })
-        .filter(Boolean) as any[];
-    },
-    enabled:
-      isRoleLoading === false &&
-      (modeFilter === "all" || modeFilter === "designpanelpro"),
-    staleTime: 2 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
+  // ONE TOOL, ONE FEED.
+  //
+  // In RestylePro this page unioned three tables: the design rows, a separate
+  // GraphicsPro job table, and the panelizer job table -- because a design
+  // could exist in any of them and a job's link back to its design was often
+  // missing, so a job visible in QC was invisible here. DesignProAI has one
+  // tool and one design identity: a run IS the design, and the gateway returns
+  // every run the caller owns. There is nothing to union and nothing that can
+  // go missing between stores, so the two extra feeds are gone rather than
+  // reimplemented against tables this system does not have.
+  //
+  // They are kept as empty constants so the merge below reads unchanged.
+  const graphicsProRows: any[] = EMPTY_LEGACY_FEED;
+  const panelizerRows: any[] = EMPTY_LEGACY_FEED;
 
   // Flatten all pages and merge duplicates
   const renders = useMemo(() => {
     if (!rendersPages?.pages) return undefined;
-    // Blend color_visualizations and graphics_pro_jobs records together — the
-    // mergeKey below dedupes any rows that represent the same design across
-    // both tables, so we don't need to suppress one or the other up front.
-    // (Earlier this branch wiped CV rows whenever modeFilter === "graphicspro",
-    // which silently hid every render the new GraphicsPro tool produced —
-    // that tool writes to color_visualizations, not graphics_pro_jobs.)
+    // The design feed, plus the two legacy feeds that are now empty. The merge
+    // and its dedupe stay exactly as written: with one feed there is nothing to
+    // blend, and leaving the shape intact is what keeps this a data-seam change
+    // rather than a rewrite of the grid.
     const cvRecords = rendersPages.pages.flat();
     const gpRecords = graphicsProRows ?? [];
-    // Drop panelizer jobs whose linked color_visualizations row is already in
-    // the feed so the same design never shows twice (once as a CV card, once
-    // as a QC-job card). Jobs with an orphaned/missing generation_id pass
-    // through — they're exactly the ones that were invisible before.
     const cvIds = new Set(cvRecords.map((r: any) => r.id));
     const pzRecords = (panelizerRows ?? []).filter(
       (r: any) => !(r._generationId && cvIds.has(r._generationId)),
@@ -2919,48 +2502,17 @@ export default function RevisionStudioIQ() {
     return merged;
   }, [rendersPages, graphicsProRows, panelizerRows, modeFilter]);
 
-  // Resolve the WePrintWraps order number for each design so the card + detail
-  // header can show it. color_visualizations rows carry no order number of
-  // their own — the link lives on the customer's approval
-  // (proof_approvals.source_visualization_id → metadata.wpw_order_number),
-  // exactly the same join the order-number SEARCH uses. Build a map keyed by
-  // every render id currently in the feed (including merged sibling ids).
-  const orderLookupIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const r of renders || []) {
-      if (r?.id) ids.add(r.id);
-      for (const mid of (r?._mergedIds || [])) if (mid) ids.add(mid);
-    }
-    return Array.from(ids).slice(0, 300);
-  }, [renders]);
+  // THE ORDER NUMBER IS ON THE DESIGN.
+  //
+  // A legacy design row carried no order number of its own, so this resolved it
+  // by joining the customer's approval row and reading a metadata key off it --
+  // three spellings of that key, best-effort, for every card in the feed. Here
+  // the run mints and owns the order number, `businessIdentityForRun` projects
+  // it from the same frozen snapshot as the design id, and the adapter puts it
+  // on the row. So there is no lookup: the map is empty and every card reads
+  // its own value below.
+  const orderNumberByRenderId: Record<string, string> = EMPTY_ORDER_NUMBERS;
 
-  const { data: orderNumberByRenderId } = useQuery({
-    queryKey: ["revision-studio-order-numbers", orderLookupIds],
-    enabled: orderLookupIds.length > 0,
-    queryFn: async () => {
-      const map: Record<string, string> = {};
-      try {
-        const { data } = await (supabase as any)
-          .from("proof_approvals")
-          .select("source_visualization_id, metadata")
-          .in("source_visualization_id", orderLookupIds)
-          .not("source_visualization_id", "is", null);
-        for (const row of data || []) {
-          const md = (row.metadata && typeof row.metadata === "object") ? row.metadata : {};
-          const on = md.wpw_order_number || md.woo_order_number || md.wpw_woo_order_id;
-          const sid = row.source_visualization_id;
-          if (sid && on && !map[sid]) map[sid] = String(on);
-        }
-      } catch (e) {
-        // Best-effort — the order badge is additive, never block the feed.
-        console.warn("[RevisionStudioIQ] order-number resolve failed", e);
-      }
-      return map;
-    },
-  });
-
-  // Resolve a single render's WPW order number (panelizer jobs carry it
-  // directly; CV designs resolve through the approval map above).
   const orderNumberFor = (r: any): string | null => {
     if (!r) return null;
     if (r.order_number) return String(r.order_number);
@@ -2969,9 +2521,6 @@ export default function RevisionStudioIQ() {
     for (const mid of (r._mergedIds || [])) {
       if (orderNumberByRenderId?.[mid]) return orderNumberByRenderId[mid];
     }
-    // Fallback: the purchase webhooks stamp the order number into the design's
-    // admin_notes (wpw_order_number / order_number) at production-pack purchase
-    // time, so the badge shows even before/without a proof_approvals link.
     try {
       const notes = JSON.parse(r.admin_notes || "{}");
       const on = notes.wpw_order_number || notes.order_number;
@@ -3046,58 +2595,15 @@ export default function RevisionStudioIQ() {
     // before the deep-link match had a chance.
     if (deepLinkId && !renders) return;
     proofBridgeTriedRef.current = true;
-    (async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke("approvepro-versions", {
-          body: { proof_id: bridgeProofId },
-        });
-        if (error) throw error;
-        const versions = (data?.versions || []) as any[];
-        const active = versions.find((v) => v.is_active) || versions[0];
-        const urls = (active?.render_urls || {}) as Record<string, unknown>;
-        // Keep only string URLs — render_urls also carries non-view keys like
-        // panel_dimensions (an object) which getViews already ignores.
-        const cleanUrls: Record<string, string> = {};
-        for (const [k, v] of Object.entries(urls)) {
-          if (typeof v === "string" && v) cleanUrls[k] = v;
-        }
-        if (!active || Object.keys(cleanUrls).length === 0) {
-          toast.error("Couldn't load this proof's current design to edit.");
-          return;
-        }
-        // Carry the CUSTOMER-UPLOADED reference items (logos, example photos the
-        // customer submitted) into the editor. approvepro-versions returns them as
-        // signed URLs in `customer_uploads` / `context_assets`; seed them onto the
-        // synthetic render's admin_notes so getVisionBoardImageUrls() returns them
-        // and revise-render edits WITH the customer's references instead of without.
-        // Previously this bridge read only render_urls, so the uploads were dropped.
-        const refUrls: string[] = [
-          ...((data?.customer_uploads || []) as any[]).map((u) => u?.url),
-          ...((data?.context_assets || []) as any[]).map((u) => u?.url),
-        ].filter((u): u is string => typeof u === "string" && !!u);
-        const synthetic = {
-          id: deepLinkId || `proof-${bridgeProofId}`,
-          render_urls: cleanUrls,
-          vehicle_year: Number(searchParams.get("v_year")) || 0,
-          vehicle_make: searchParams.get("v_make") || "",
-          vehicle_model: searchParams.get("v_model") || "",
-          vehicle_type: "",
-          mode_type: "designpanelpro",
-          color_name: searchParams.get("v_name") || active?.prompt_text || "Customer Design",
-          finish_type: "gloss",
-          created_at: active?.created_at || new Date().toISOString(),
-          ...(refUrls.length > 0
-            ? { admin_notes: JSON.stringify({ visionboard_image_urls: refUrls }) }
-            : {}),
-        };
-        setSelectedRender(synthetic);
-        setCurrentViewIndex(0);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      } catch (e: any) {
-        console.warn("[RevisionIQ] ApprovePro bridge load failed:", e?.message || e);
-        toast.error("Couldn't load this proof's design — try reopening from ApprovePro.");
-      }
-    })();
+    // APPROVEPRO IS NOT A DESIGNPROAI SURFACE. This bridge synthesized a design
+    // from an ApprovePro proof's active version so a shop could open a customer
+    // order here. That product is not part of DesignProAI -- /approvemode says
+    // so directly -- and the function it called is on the customer-path seam
+    // gate's forbidden list. A deep link that names a proof this system has
+    // never had is told the truth rather than left spinning.
+    toast.error(
+      "This link points at an ApprovePro order, which DesignProAI does not serve. Open the design from your Designs list.",
+    );
   }, [bridgeProofId, deepLinkId, renders, selectedRender, searchParams]);
 
   // When opened from an ApprovePro order (?proof_id=...), pre-fill the revision
@@ -3108,64 +2614,37 @@ export default function RevisionStudioIQ() {
   useEffect(() => {
     if (!bridgeProofId || notePrefilledRef.current) return;
     notePrefilledRef.current = true;
-    (async () => {
-      try {
-        const { data } = await supabase
-          .from("proof_approvals" as any)
-          .select("metadata")
-          .eq("id", bridgeProofId)
-          .maybeSingle();
-        const md = ((data as any)?.metadata || {}) as Record<string, any>;
-        const note =
-          (typeof md.order_customer_note === "string" && md.order_customer_note) ||
-          (typeof md.customer_note === "string" && md.customer_note) ||
-          (typeof md.line_item_brief === "string" && md.line_item_brief) ||
-          "";
-        if (note) setRevisionNotes((prev) => (prev && prev.trim() ? prev : note));
-      } catch {
-        /* best-effort — leave the box empty if the note can't be read */
-      }
-    })();
+    // Nothing to pre-fill: the customer note lived on the ApprovePro approval
+    // row this system does not have. The revision box stays empty, which is the
+    // honest state -- a box pre-filled from nowhere would read as the
+    // customer's words.
   }, [bridgeProofId]);
 
   // ---------------------------------------------------------------------------
-  // Hydrate missing views from the linked design generation + sibling rows.
-  // A design can have several color_visualizations rows (hero-only siblings,
-  // "restored" rows, the full-set row). If RevisionStudio opens a row that's
-  // missing angles, it would show "7/7 missing" and wastefully regenerate views
-  // that already exist on a sibling. This pulls the existing angles in for
-  // DISPLAY (never deletes/overwrites) so the user sees what's really there.
+  // Re-read the selected design's views from the server when it looks short.
+  //
+  // In RestylePro a design could be spread across several rows -- a hero-only
+  // sibling, a "restored" row, the full-set row -- so an incomplete card meant
+  // hunting the missing angles across siblings and a linked generation row. A
+  // run holds its own seven views, so there is nothing to hunt: a short set
+  // means the remaining views have not been accepted yet, and the fix is to ask
+  // the server again. Display only; nothing is written, and a view already in
+  // hand is never replaced.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     const r = selectedRender;
-    if (!r) return;
+    if (!r?.id) return;
     const urls = (r.render_urls || {}) as Record<string, string>;
     if (Object.keys(urls).length >= 7) return; // already complete
-    let genId: string | null = null;
-    try { genId = JSON.parse(r.admin_notes || "{}")?.designiq_generation_id || null; } catch { /* not JSON */ }
-    if (!genId) return;
     let cancelled = false;
     (async () => {
+      const fresh = await readRevisionStudioDesign(String(r.id)).catch(() => null);
+      if (!fresh || cancelled) return;
       const merged: Record<string, string> = { ...urls };
-      // a) the linked design generation's saved angles
-      const { data: g } = await supabase
-        .from("designiq_generations")
-        .select("render_urls")
-        .eq("id", genId)
-        .maybeSingle();
-      const gUrls = ((g as any)?.render_urls || {}) as Record<string, string>;
-      for (const [k, v] of Object.entries(gUrls)) if (!merged[k] && v) merged[k] = v as string;
-      // b) sibling color_visualizations rows for the same generation
-      const { data: sibs } = await supabase
-        .from("color_visualizations")
-        .select("render_urls, admin_notes")
-        .filter("admin_notes", "ilike", `%${genId}%`)
-        .limit(15);
-      for (const s of sibs || []) {
-        const sUrls = ((s as any)?.render_urls || {}) as Record<string, string>;
-        for (const [k, v] of Object.entries(sUrls)) if (!merged[k] && v) merged[k] = v as string;
+      for (const [key, value] of Object.entries(fresh.render_urls)) {
+        if (!merged[key] && value) merged[key] = value;
       }
-      if (!cancelled && Object.keys(merged).length > Object.keys(urls).length) {
-        console.log(`[RevisionStudioIQ] Hydrated ${Object.keys(merged).length - Object.keys(urls).length} missing view(s) from generation ${genId}`);
+      if (Object.keys(merged).length > Object.keys(urls).length) {
         setSelectedRender((prev: any) => (prev?.id === r.id ? { ...prev, render_urls: merged } : prev));
       }
     })();
@@ -3175,140 +2654,24 @@ export default function RevisionStudioIQ() {
   // ---------------------------------------------------------------------------
   // Fetch version chain for selected render
   // ---------------------------------------------------------------------------
+  // FOUR HEURISTICS, REPLACED BY THE RECORD.
+  //
+  // This used to assemble a design's version history by guessing: rows with a
+  // similar name on the same make and model, a parent_id chain walked thirty
+  // levels up, six rounds of an admin_notes ilike sweep looking for children,
+  // and finally a lineage_root_id union -- four overlapping searches for a
+  // relationship nobody had written down, over a table that holds no rows here.
+  //
+  // The server writes it down. A revision is a revision OF this generation, so
+  // the history is the run's own revisions and there is nothing to infer. Today
+  // that is commonly one entry, which is the truthful shape and the one the
+  // timeline below already renders.
   const { data: versionChain } = useQuery({
     queryKey: ["version-chain", selectedRender?.id],
     queryFn: async () => {
-      if (!selectedRender) return [];
-
-      const baseName = (selectedRender.design_file_name || selectedRender.color_name || "")
-        .replace(/\s*\(V\d+\)$/, "");
-
-      // Accumulate every related render by id. Two independent signals feed it:
-      //   1. NAME match (legacy behavior — kept as a base/fallback).
-      //   2. STABLE-ID lineage — walk admin_notes.version.parent_id up to the
-      //      root and back down through descendants. This is what makes "pull
-      //      past renders" reliable: it follows the actual parent→child chain,
-      //      so versions whose NAME drifted ("Cyber" vs "Cybertruck") or were
-      //      saved under the order number ("Order RP-100926") still link up.
-      const byId = new Map<string, any>();
-      const add = (r: any) => { if (r?.id && !byId.has(r.id)) byId.set(r.id, r); };
-      add(selectedRender);
-
-      // (1) Name-matched candidates — SKIPPED when baseName is empty (an empty
-      // ilike %% matches EVERY completed render of the make/model — a pure
-      // same-vehicle fallback that polluted chains).
-      const { data: nameData, error } = !baseName.trim()
-        ? { data: [], error: null as any }
-        : await supabase
-        .from("color_visualizations")
-        .select("*")
-        .eq("vehicle_make", selectedRender.vehicle_make)
-        .eq("vehicle_model", selectedRender.vehicle_model)
-        // Accept BOTH status spellings — legacy rows use "complete", new ones
-        // "completed". Requiring exact "completed" silently emptied the whole
-        // version timeline (missing history cards/prompts/timestamps).
-        .in("generation_status", ["completed", "complete"])
-        .or(`design_file_name.ilike.%${baseName}%,color_name.ilike.%${baseName}%`)
-        .order("created_at", { ascending: true });
-      if (error && byId.size === 1) return [selectedRender];
-      (nameData || []).forEach(add);
-
-      // (2) Stable-ID lineage walk (parent_id chain) — additive, bounded.
-      try {
-        // a) Ancestors: follow parent_id up from the selected render, fetching
-        //    any ancestor we don't already have.
-        let cur: any = selectedRender;
-        const seenUp = new Set<string>();
-        for (let i = 0; i < 30 && cur && !seenUp.has(cur.id); i++) {
-          seenUp.add(cur.id);
-          const parentId = parseVersionInfo(cur).parentId;
-          if (!parentId) break;
-          let parent = byId.get(parentId);
-          if (!parent) {
-            const { data: p } = await supabase
-              .from("color_visualizations").select("*").eq("id", parentId).maybeSingle();
-            if (!p) break;
-            add(p);
-            parent = p;
-          }
-          cur = parent;
-        }
-        // b) Descendants: rows whose admin_notes reference a KNOWN lineage id.
-        //    The ilike can match other fields, so we only keep rows whose actual
-        //    parent_id resolves into the lineage. Loop a few rounds for
-        //    grandchildren; stop as soon as a round adds nothing.
-        for (let round = 0; round < 6; round++) {
-          const ids = Array.from(byId.keys()).slice(-25); // cap OR length
-          const orFilter = ids.map((id) => `admin_notes.ilike.%${id}%`).join(",");
-          if (!orFilter) break;
-          const { data: kids } = await supabase
-            .from("color_visualizations").select("*")
-            .in("generation_status", ["completed", "complete"])
-            .or(orFilter)
-            .limit(100);
-          const before = byId.size;
-          (kids || []).forEach((k: any) => {
-            const pid = parseVersionInfo(k).parentId;
-            if (pid && byId.has(pid)) add(k);
-          });
-          if (byId.size === before) break;
-        }
-      } catch { /* non-fatal — keep whatever the name match + ancestors found */ }
-
-      // (3) Stable lineage_root_id — the authoritative grouping. Every version of
-      // a design shares it (DB trigger + backfill), so this pulls the WHOLE
-      // lineage by one id regardless of name drift or order-number naming. The
-      // root resolves from the selected render, or from the topmost ancestor the
-      // parent-walk reached. Additive — unioned into the same id map.
-      try {
-        const rootId =
-          selectedRender.lineage_root_id ||
-          Array.from(byId.values()).map((r: any) => r.lineage_root_id).find(Boolean) ||
-          null;
-        if (rootId) {
-          const { data: byRoot } = await supabase
-            .from("color_visualizations")
-            .select("*")
-            .in("generation_status", ["completed", "complete"])
-            .or(`lineage_root_id.eq.${rootId},id.eq.${rootId}`)
-            .limit(100);
-          (byRoot || []).forEach(add);
-        }
-      } catch { /* non-fatal */ }
-
-      const all = Array.from(byId.values())
-        .sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-
-      // When the selected design has a durable root, it is authoritative.
-      // Do not keep additive same-name matches from another customer's design.
-      const selectedRootId = selectedRender.lineage_root_id || null;
-      if (selectedRootId) {
-        const exactLineage = all.filter(
-          (row: any) => row.id === selectedRootId || row.lineage_root_id === selectedRootId,
-        );
-        return exactLineage.length > 0 ? exactLineage : [selectedRender];
-      }
-
-      // Legacy rows without lineage_root_id still have parent_id. Keep only
-      // the selected row's connected parent tree for every product; a shared
-      // vehicle/name is presentation text, never evidence of version lineage.
-      const lineageMap = new Map(all.map((row: any) => [row.id, row]));
-      const parentRootOf = (row: any): string => {
-        let current = row;
-        const seen = new Set<string>();
-        while (current && !seen.has(current.id)) {
-          seen.add(current.id);
-          const parentId = parseVersionInfo(current).parentId;
-          if (parentId && lineageMap.has(parentId)) current = lineageMap.get(parentId);
-          else break;
-        }
-        return current?.id ?? row.id;
-      };
-      const selectedParentRoot = parentRootOf(selectedRender);
-      const exactLegacyLineage = all.filter(
-        (row: any) => parentRootOf(row) === selectedParentRoot,
-      );
-      return exactLegacyLineage.length > 0 ? exactLegacyLineage : [selectedRender];
+      if (!selectedRender?.id) return [];
+      const versions = await listRevisionStudioVersions(String(selectedRender.id));
+      return versions.length ? versions : [selectedRender];
     },
     enabled: !!selectedRender,
     staleTime: 2 * 60 * 1000,
@@ -3317,7 +2680,7 @@ export default function RevisionStudioIQ() {
 
   // Revision Studio (Option B) shared timeline. design_version_commits is the
   // linear source-of-truth timeline, keyed by the DesignIQ generation id — the
-  // SAME job_id production_flow_assets and the /design-assets admin page use.
+  // SAME job id the legacy production asset store and admin page used.
   // We resolve each lineage render's generation id from its admin_notes and read
   // every commit across the chain, so this page surfaces the SAME version data
   // any other surface records/reads via @/lib/revision-commits. RevisionStudioIQ
@@ -3335,7 +2698,7 @@ export default function RevisionStudioIQ() {
    * gateway understand.
    */
   const productionLayersId = useMemo(() => (
-    ((selectedRender as any)?.__source === "panelizer_jobs"
+    ((selectedRender as any)?.__source === LEGACY_PANELIZER_SOURCE
       ? (selectedRender as any)?._generationId
       : null)
     || selectedRender?.id
@@ -3355,7 +2718,7 @@ export default function RevisionStudioIQ() {
     change,
   }: {
     render: any;
-    trigger: EnticeRevisionTrigger;
+    trigger: DesignBuildTrigger;
     change: {
       type: "generate" | "edit" | "revision";
       prompt?: string | null;
@@ -3363,31 +2726,16 @@ export default function RevisionStudioIQ() {
     };
   }) => {
     if (!render?.id) throw new Error("No saved design is selected");
-    const { data: frozen, error } = await supabase
-      .from("color_visualizations")
-      .select("id, updated_at, admin_notes")
-      .eq("id", render.id)
-      .single();
-    if (error || !frozen?.updated_at) {
-      throw error || new Error("The saved revision could not be frozen");
-    }
-    let generationId: string | undefined;
-    try {
-      const notes =
-        typeof frozen.admin_notes === "string"
-          ? JSON.parse(frozen.admin_notes)
-          : frozen.admin_notes || {};
-      generationId =
-        typeof notes.designiq_generation_id === "string"
-          ? notes.designiq_generation_id
-          : undefined;
-    } catch {
-      generationId = undefined;
-    }
-    return await submitEnticeRevision({
+    // Re-read the design from the server before submitting. There is no
+    // optimistic-lock timestamp to freeze against any more: the run's state is
+    // the truth and the server refuses work that does not fit it, so this read
+    // exists to fail early and honestly on a design the gateway does not own.
+    const frozen = await readRevisionStudioDesign(String(render.id));
+    if (!frozen) throw new Error("The saved revision could not be frozen");
+    return await requestDesignBuild({
       visualizationId: frozen.id,
+      generationId: frozen.id,
       expectedUpdatedAt: frozen.updated_at,
-      generationId,
       trigger,
       change,
     });
@@ -3402,7 +2750,7 @@ export default function RevisionStudioIQ() {
   }: {
     render: any;
     renderUrls: Record<string, string>;
-    trigger: EnticeRevisionTrigger;
+    trigger: DesignBuildTrigger;
     change: {
       type: "generate" | "edit" | "revision";
       prompt?: string | null;
@@ -3411,37 +2759,24 @@ export default function RevisionStudioIQ() {
     patch?: Record<string, unknown>;
   }) => {
     if (!render?.id) throw new Error("No saved design is selected");
-    // ALWAYS re-read updated_at, never trust the caller's copy (2026-07-30).
+    // Re-read the design from the server before persisting anything.
     //
-    // This used to re-read ONLY when render.updated_at was blank. Every other
-    // call passed the render object held in React state / the query cache,
-    // whose updated_at was captured when the job was opened — before the hero
-    // and the six view renders each rewrote that same color_visualizations row.
-    // save_and_enqueue_designpro_revision locks FOR UPDATE and compares, so the
-    // stale value raised revision_source_changed and the ENTIRE commit rolled
-    // back.
+    // This mattered enormously in the old world: the caller passed a render
+    // object held in React state whose updated_at was captured when the job was
+    // opened, before the hero and six view renders each rewrote the same row,
+    // and the enqueue RPC compared timestamps under a FOR UPDATE lock. A stale
+    // value rolled the entire commit back, which is how "it had all 7 angles"
+    // became "6 of 7 views missing" on reopen -- six rendered images lost with
+    // the tab because one timestamp was old.
     //
-    // That is why "it had all 7 angles" became "6 of 7 views missing" on
-    // reopen: generateMissingViews accumulates every rendered view in React
-    // state (mergedRenderUrls) and persists them in exactly ONE commit here.
-    // When this commit is refused, all six views are lost with the tab — the
-    // pixels were rendered and paid for, and nothing was written. Live
-    // 2026-07-30: color_visualizations 80560ba1 held 1 view ("side") while two
-    // uninterrupted jobs from the same day held all 7.
-    //
-    // Re-reading does not weaken the guard: the RPC still locks FOR UPDATE and
-    // re-checks. It only stops us submitting a value we can already see is out
-    // of date.
+    // The views are server-owned now, so that failure mode is gone with the
+    // write it protected. The re-read stays because the rest of this function
+    // needs the design's current state, and because a design the gateway does
+    // not own should fail here rather than three steps later.
     let source = render;
     {
-      const { data: current, error } = await supabase
-        .from("color_visualizations")
-        .select("id, updated_at, admin_notes, render_urls")
-        .eq("id", render.id)
-        .single();
-      if (error || !current?.updated_at) {
-        throw error || new Error("The edited revision could not be resolved");
-      }
+      const current = await readRevisionStudioDesign(String(render.id));
+      if (!current) throw new Error("The edited revision could not be resolved");
       source = { ...render, ...current };
     }
 
@@ -3495,28 +2830,22 @@ export default function RevisionStudioIQ() {
     } catch {
       generationId = undefined;
     }
-    const accepted = await saveEnticeRevision({
-      visualizationId: source.id,
-      expectedUpdatedAt: source.updated_at,
+    const accepted = await readDesignAfterEdit({
+      render: source,
       renderUrls,
-      adminNotesPatch,
-      vehicleType:
-        patch.vehicle_type === undefined
-          ? undefined
-          : String(patch.vehicle_type || ""),
-      finishType:
-        patch.finish_type === undefined
-          ? undefined
-          : String(patch.finish_type || ""),
-      generationId,
       trigger,
       change,
+      patch,
     });
     const mergedNotes = { ...existingNotes, ...adminNotesPatch };
+    // The server's answer wins on the views, because it owns them. The notes
+    // are the page's own working metadata for this session, so the local merge
+    // stands -- it is what the revision instruction is composed from, not
+    // something the pipeline reads.
     const saved = {
       id: source.id,
-      updated_at: accepted.updatedAt,
-      render_urls: renderUrls,
+      updated_at: accepted.updated_at,
+      render_urls: accepted.render_urls,
       admin_notes: JSON.stringify(mergedNotes),
     };
     setSelectedRender((previous: any) =>
@@ -3524,7 +2853,7 @@ export default function RevisionStudioIQ() {
         ? {
             ...previous,
             render_urls: renderUrls,
-            updated_at: accepted.updatedAt,
+            updated_at: accepted.updated_at,
             admin_notes: saved.admin_notes,
             ...(patch.finish_type !== undefined
               ? { finish_type: patch.finish_type }
@@ -3572,7 +2901,7 @@ export default function RevisionStudioIQ() {
   // sessionStorage `buildctx` stash (the same mechanism ApprovePro's "Build print
   // panels" uses). The Design Assets page is often opened on the DesignIQ
   // generation id, whose DB row is near-empty; its reverse admin_notes link to
-  // the color_visualizations row can miss (RecreatePro clones), and then Build
+  // the legacy design row can miss (RecreatePro clones), and then Build
   // Assets reports "no continuous clean artboard to slice / generate the 2D
   // proof first" even though the proof is sitting right here. The stash makes
   // the handoff carry the assets instead of hoping the DB linkage resolves.
@@ -3640,104 +2969,17 @@ export default function RevisionStudioIQ() {
 
     setPushing(true);
     try {
-      // a/b. Resolve the target proof: most-recent row matching the order # under
-      // any of the metadata keys ApprovePro uses, tried in order.
-      const metaKeys = ["wpw_order_number", "wpw_woo_order_id", "order_number"];
-      let foundProof: { id: string; mode: string; status: string } | null = null;
-      for (const key of metaKeys) {
-        const { data, error } = await supabase
-          .from("proof_approvals" as any)
-          .select("id, mode, status")
-          .ilike(`metadata->>${key}`, `%${digits}%`)
-          .order("created_at", { ascending: false })
-          .limit(1);
-        if (!error && data && data.length) {
-          foundProof = data[0] as any;
-          break;
-        }
-      }
-      if (!foundProof) {
-        toast.error(`No ApprovePro order found for #${digits}`);
-        return;
-      }
-
-      // c. Clone the current design's render set.
-      const render_urls: Record<string, string> = { ...((selectedRender.render_urls as Record<string, string>) || {}) };
-      if (!render_urls || Object.keys(render_urls).length === 0) {
-        toast.error("This design has no renders to push");
-        return;
-      }
-
-      // Resolve this design's 2D proof URL the SAME way InlineStoredProof does:
-      // admin_notes.flat_proof_url first (re-read fresh from the DB), then the
-      // linked designiq_generations.flat_proof_url. Only accept a real proof URL.
-      const isProofUrl = (u: any) => typeof u === "string" && /proof/i.test(u);
-      let proofUrl: string | null = null;
-      try {
-        let notes: Record<string, any> = {};
-        try { notes = selectedRender.admin_notes ? JSON.parse(selectedRender.admin_notes) : {}; } catch { /* not JSON */ }
-        if (selectedRender.id) {
-          const { data: vizRow } = await supabase
-            .from("color_visualizations")
-            .select("admin_notes")
-            .eq("id", selectedRender.id)
-            .maybeSingle();
-          if ((vizRow as any)?.admin_notes) {
-            try { notes = JSON.parse((vizRow as any).admin_notes); } catch { /* keep in-memory */ }
-          }
-        }
-        if (isProofUrl(notes?.flat_proof_url)) {
-          proofUrl = notes.flat_proof_url as string;
-        } else {
-          const genId: string | null = notes?.designiq_generation_id || null;
-          if (genId) {
-            const { data } = await supabase
-              .from("designiq_generations" as any)
-              .select("flat_proof_url")
-              .eq("id", genId)
-              .maybeSingle();
-            if (isProofUrl((data as any)?.flat_proof_url)) proofUrl = (data as any).flat_proof_url as string;
-          }
-        }
-      } catch { /* proof resolution is best-effort; fall back to existing key */ }
-
-      // Prefer a freshly resolved proof; else keep any production_proof already
-      // on the render set.
-      if (proofUrl) render_urls.production_proof = proofUrl;
-      // Mirror a hero from the side view if the set has no hero.
-      if (!render_urls.hero && render_urls.side) render_urls.hero = render_urls.side;
-
-      // d. Source visualization id for this design.
-      const vizId = genIdOf(selectedRender) || selectedRender.id;
-
-      // e. Set it as the proof's active version.
-      const { error: saveErr } = await supabase.functions.invoke("proof-save-version", {
-        body: {
-          proof_id: foundProof.id,
-          render_urls,
-          shop_message: "Pushed from Revision Studio",
-        },
-        headers: { "Idempotency-Key": `rspush-${foundProof.id}-${Date.now()}` },
-      });
-      if (saveErr) {
-        let msg = (saveErr as any)?.message || "Failed to save version";
-        try {
-          const body = await (saveErr as any)?.context?.json?.();
-          if (body?.error) msg = body.error;
-        } catch { /* keep generic message */ }
-        toast.error(msg);
-        return;
-      }
-
-      // f. Point the proof's source visualization at this design.
-      await supabase
-        .from("proof_approvals" as any)
-        .update({ source_visualization_id: vizId })
-        .eq("id", foundProof.id);
-
-      // g. Done.
-      toast.success(`Pushed design to ApprovePro order #${digits}`);
-      setPushOrderNo("");
+      // APPROVEPRO IS NOT A DESIGNPROAI SURFACE. This pushed the open design's
+      // render set and 2D proof onto an ApprovePro order's proof as its active
+      // version. That product is not part of DesignProAI -- /approvemode says
+      // so directly -- and both the approval table and the save function it
+      // used are on the customer-path seam gate's forbidden list. The button is
+      // only rendered behind the APPROVEPRO_UI_LIVE flag, which is off, so this
+      // says why rather than silently doing nothing.
+      toast.error(
+        "ApprovePro is not part of DesignProAI, so there is no order to push this design onto.",
+      );
+      return;
     } catch (e: any) {
       toast.error(e?.message || "Failed to push to ApprovePro");
     } finally {
@@ -4047,513 +3289,68 @@ export default function RevisionStudioIQ() {
           : undefined,
       };
 
-      // Pre-validate: ensure source has render URLs before cloning
-      const isMyVehicle = isMyVehicleRender(sourceRender);
-      const sourceUrls = (sourceRender.render_urls || {}) as Record<string, string>;
-      const revisionViewKey = currentViewKey || "side";
-      const sourceOriginalUrl = (currentViewKey && sourceUrls[currentViewKey]) || sourceUrls.side || sourceUrls.hero || sourceUrls["driver-side"] || Object.values(sourceUrls)[0] || null;
-
-      if (!sourceOriginalUrl && !isMyVehicle) {
-        throw new Error("No render image found for this design - cannot revise. Try generating a fresh render first.");
-      }
-
-      // Step 1: Clone the record.
-      // color_visualizations has several NOT NULL columns (customer_email,
-      // color_hex, color_name, finish_type, vehicle_year/make/model). Synthesized
-      // rows (GraphicsPro / designiq jobs surfaced in the grid) and pre-fix
-      // recreates can have nulls there, which made the clone insert fail with
-      // "null value ... violates not-null constraint". Fall back to safe values
-      // (and the logged-in user's email) so any design can be revised.
-      const { data: { user: cloneUser } } = await supabase.auth.getUser();
-      const safeCloneYear = parseInt(resolvedVehicle.year) || sourceRender.vehicle_year || 2024;
-      const { data: clonedRecord, error } = await supabase
-        .from("color_visualizations")
-        .insert({
-          customer_email: sourceRender.customer_email || cloneUser?.email || null,
-          vehicle_year: safeCloneYear,
-          vehicle_make: resolvedVehicle.make || sourceRender.vehicle_make || "",
-          vehicle_model: resolvedVehicle.model || sourceRender.vehicle_model || "",
-          vehicle_type: sourceRender.vehicle_type,
-          color_hex: sourceRender.color_hex || "#000000",
-          color_name: sourceRender.color_name || sourceRender.design_file_name || "Custom",
-          finish_type: sourceRender.finish_type || "Gloss",
-          mode_type: sourceRender.mode_type,
-          render_urls: sourceRender.render_urls,
-          custom_design_url: sourceRender.custom_design_url,
-          custom_swatch_url: sourceRender.custom_swatch_url,
-          custom_styling_prompt_key: sourceRender.custom_styling_prompt_key,
-          uses_custom_design: sourceRender.uses_custom_design,
-          design_file_name: `${baseName} (V${newVersion})`,
-          // Keep this browser-created shell out of completed galleries until
-          // the atomic save+enqueue transaction accepts the final frozen
-          // pixels. A closed tab can leave only a hidden processing shell,
-          // never a visible completed revision without its workflow.
-          generation_status: "processing",
-          subscription_tier: sourceRender.subscription_tier,
-          organization_id: sourceRender.organization_id,
-          admin_notes: JSON.stringify(versionMeta),
-        } as any)
-        .select()
-        .single();
-
-      if (error) {
-        console.error("[RevisionIQ] Clone insert failed:", error.message, error);
-        throw error;
-      }
-      console.log(`[RevisionIQ] Clone created: ${clonedRecord.id} as V${newVersion}`);
-
-      // Step 2: Re-render with the effective prompt
-      // Determine the effective prompt for the render:
-      // - If user typed revision notes, use those
-      // - If Restyle on New Vehicle (vehicleOverride + empty notes), use originalPrompt
+      // Determine the effective prompt for the revision:
+      // - typed revision notes win, prefixed with any panel targeting;
+      // - a Restyle on New Vehicle with no notes re-uses the original brief.
       const isRestyleOnNewVehicle = !!vehicleOverride && !notes.trim();
       const panelPrefix = panelTargets && panelTargets.length > 0
         ? `Apply ONLY to ${panelTargets.map(k => PANEL_TARGETS.find(p => p.key === k)?.label || k).join(", ")}. `
         : "";
       const effectivePrompt = notes.trim()
         ? panelPrefix + notes
-        : (isRestyleOnNewVehicle ? (originalPrompt || `Restyle this wrap design on a ${resolvedVehicle.year} ${resolvedVehicle.make} ${resolvedVehicle.model}`) : "");
-
-      // A pure logo/element reposition (Canva-style drag, no typed note) has an
-      // EMPTY effectivePrompt. Without this it skipped the whole composite+save
-      // block below, so moving the logo "didn't save" — the #1 edit complaint.
-      // The non-MyVehicle branch already composites the placed layers and falls
-      // back to revisionPrompt "Place logos as marked", so entering the block
-      // with no text but placed layers correctly renders and versions the move.
-      // MyVehicle edits go through edit-vehicle-photo (needs a text prompt), not
-      // the layer-compositing path — so only treat placed layers as a saveable
-      // edit on the standard render path.
-      const hasPlacedLayersForView = !isMyVehicle && (logoLayersArg?.[revisionViewKey] || []).some((l) => l.placement);
-
-      console.log(`[RevisionIQ] cloneAndRevise step 2 - notes: "${notes.substring(0, 40)}" | isRestyle: ${isRestyleOnNewVehicle} | layerOnly: ${!effectivePrompt && hasPlacedLayersForView} | effectivePrompt: "${effectivePrompt.substring(0, 80)}..." | originalPrompt: "${(originalPrompt || "").substring(0, 40)}..."`);
-
-      if (effectivePrompt || hasPlacedLayersForView) {
-        let newRenderUrl: string | null = null;
-        let revisionError: string | null = null;
-        // Plain-English "here's what I changed" the AI reports back (designer
-        // work-order readback). Captured from revise-render and shown to the user.
-        let aiEditSummary: string | null = null;
-
-        try {
-          if (isMyVehicle) {
-            // MyVehicle: Re-edit the previous render image via edit-vehicle-photo
-            const { data: { user: currentUser } } = await supabase.auth.getUser();
-            const email = currentUser?.email || sourceRender.customer_email;
-            const previousUrl = sourceUrls.myvehicle_edit || null;
-            const colorData = buildColorDataFromRender(sourceRender);
-            colorData.revisionPrompt = effectivePrompt;
-
-            const { data: renderData, error: renderError } = await invokeWithFreshAuth("edit-vehicle-photo", {
-              userEmail: email,
-              uploadedPhotoUrl: previousUrl,
-              colorData,
-              vehicleInfo: {
-                year: resolvedVehicle.year,
-                make: resolvedVehicle.make,
-                model: resolvedVehicle.model,
-              },
-              // The clone row below is the versioned record — don't let the
-              // edge function insert a second, un-versioned duplicate.
-              persistRender: false,
-            });
-            if (renderError) {
-              revisionError = renderError.message || "edit-vehicle-photo failed";
-            } else {
-              newRenderUrl = renderData?.renderUrl || null;
-            }
-          } else if (isRestyleOnNewVehicle) {
-            // Restyle on New Vehicle: Re-generate using the original tool (not revise-render)
-            // This produces a fresh render of the same design on the new vehicle
-            const isDesignPro = sourceRender.mode_type === "designpanelpro" || sourceRender.mode_type === "designpro";
-            console.log(`[RevisionIQ] Restyle on New Vehicle: ${resolvedVehicle.year} ${resolvedVehicle.make} ${resolvedVehicle.model} | isDesignPro: ${isDesignPro} | prompt: "${effectivePrompt.substring(0, 80)}..."`);
-            if (isDesignPro) {
-              const designIQ = await getDesignIQModeAndDetails(sourceRender);
-              const { data: renderData, error: renderError } = await invokeWithFreshAuth("design-panel-ai-generate", {
-                mode: designIQ.mode,
-                prompt: effectivePrompt,
-                finish: sourceRender.finish_type || "Gloss",
-                viewType: revisionViewKey,
-                vehicleYear: resolvedVehicle.year,
-                vehicleMake: resolvedVehicle.make,
-                vehicleModel: resolvedVehicle.model,
-                ...(designIQ.mode === "commercial" ? {
-                  companyName: designIQ.companyName,
-                  phone: designIQ.phone,
-                  mascot: designIQ.mascot,
-                  industryType: designIQ.industryType,
-                  bulletPoints: designIQ.bulletPoints,
-                } : {}),
-              });
-              console.log(`[RevisionIQ] design-panel-ai-generate response:`, { hasData: !!renderData, renderUrl: renderData?.renderUrl?.substring(0, 60), panelUrl: renderData?.panel?.media_url?.substring(0, 60), error: renderError?.message });
-              if (renderError) {
-                revisionError = renderError.message || "design-panel-ai-generate failed";
-              } else {
-                newRenderUrl = renderData?.renderUrl || renderData?.panel?.media_url || null;
-              }
-            } else {
-              // ColorPro, FadeWraps, WBTY, etc. - use generate-color-render
-              const { data: { user: currentUser2 } } = await supabase.auth.getUser();
-              const email = currentUser2?.email || sourceRender.customer_email || "";
-              const colorData = buildColorDataFromRender(sourceRender);
-              const { data: renderData, error: renderError } = await invokeWithFreshAuth("generate-color-render", {
-                vehicleYear: resolvedVehicle.year,
-                vehicleMake: resolvedVehicle.make,
-                vehicleModel: resolvedVehicle.model,
-                modeType: sourceRender.mode_type || "colorpro",
-                viewType: revisionViewKey,
-                userEmail: email,
-                customStylingPrompt: effectivePrompt,
-                colorData,
-              });
-              console.log(`[RevisionIQ] generate-color-render response:`, { hasData: !!renderData, renderUrl: renderData?.renderUrl?.substring(0, 60), error: renderError?.message });
-              if (renderError) {
-                revisionError = renderError.message || "generate-color-render failed";
-              } else {
-                newRenderUrl = renderData?.renderUrl || null;
-              }
-            }
-          } else {
-            // All non-MyVehicle modes: Use dedicated revise-render function.
-            //
-            // IMPORTANT: We do NOT pass previousRevisions. Gemini has the
-            // current image attached and can see the current state. Sending
-            // prior-version prompts as text causes cross-view token pollution
-            // (a text edit made on the front view was bleeding onto rear-view
-            // revisions because "OPTIMIZE HUMANS" appeared in the history
-            // string). The SCOPE LOCK in buildCondensedRevisionPrompt handles
-            // preservation visually, not textually.
-            const storedVbUrls = await getVisionBoardImageUrls(sourceRender);
-            // Freshly-uploaded "example / supporting edit" images (from the
-            // inline upload at the revision box) take priority — the customer
-            // attached them FOR this specific revision. Put them first and
-            // flag the revision so the AI matches them even if the typed words
-            // don't explicitly say "like this picture".
-            const uploadedVbUrls = (visionBoardImages || []).map((v) => v.storageUrl).filter(Boolean);
-            const vbImageUrls = [...uploadedVbUrls, ...storedVbUrls.filter((u) => !uploadedVbUrls.includes(u))];
-            const hasUploadedExample = uploadedVbUrls.length > 0;
-            // Collect sibling view URLs so Gemini can see AI-generated assets from other angles
-            const siblingViewUrls: string[] = Object.entries(sourceUrls)
-              .filter(([key, url]) => key !== revisionViewKey && url)
-              .slice(0, 2) // Max 2 siblings to avoid payload bloat
-              .map(([, url]) => url);
-
-            // ── Logo placement branch ────────────────────────────────
-            // If the user placed any logo layers on the current view (uploaded
-            // or extracted), composite the (clean background or original) +
-            // every placed layer into a single PNG and use logo-placement mode.
-            const placedLayersForView = (logoLayersArg?.[revisionViewKey] || [])
-              .filter((l) => l.placement)
-              .map<PlacedLayer>((l) => ({
-                id: l.id,
-                cleanedUrl: l.sourceUrl,
-                xPct: l.placement!.xPct,
-                yPct: l.placement!.yPct,
-                size: l.placement!.size,
-                sizePercent: l.placement!.sizePercent,
-                rotationDeg: l.placement!.rotationDeg,
-              }));
-            const baseRenderUrl = cleanBgsArg?.[revisionViewKey] || sourceOriginalUrl;
-            const useLogoPlacement = placedLayersForView.length > 0;
-
-            let compositeUrl: string | null = null;
-            if (useLogoPlacement) {
-              if (!currentUserId || !baseRenderUrl) {
-                throw new Error(
-                  "The exact layer composite could not be prepared. Reopen the design and retry. No AI redesign was started.",
-                );
-              }
-              try {
-                const blob = await composeRenderWithLayers(baseRenderUrl, placedLayersForView);
-                compositeUrl = await uploadCompositeRender(blob, currentUserId);
-                console.log(`[RevisionIQ] Logo composite uploaded: ${compositeUrl?.substring(0, 80)}...`);
-              } catch (compErr) {
-                console.error("[RevisionIQ] Exact logo composite failed:", compErr);
-                throw new Error(
-                  "The exact layer composite could not be saved. Your design was left unchanged and no AI redesign was started.",
-                );
-              }
-              if (!compositeUrl) {
-                throw new Error(
-                  "The exact layer composite returned no image. Your design was left unchanged and no AI redesign was started.",
-                );
-              }
-            }
-
-            // A pure Move/Delete layer save is already complete once the exact
-            // clean-base + overlay composite is uploaded. Never send those
-            // customer-approved pixels through the full-image revise-render
-            // producer. Text-driven design revisions retain their existing AI
-            // path, but a missing exact composite always fails closed above.
-            const isExactLayerOnlyEdit = useLogoPlacement && !effectivePrompt;
-            if (isExactLayerOnlyEdit) {
-              newRenderUrl = compositeUrl;
-              aiEditSummary = "Applied the exact layer placement without an AI redesign.";
-            } else {
-              const reviseSourceUrl = compositeUrl || baseRenderUrl;
-              console.log(`[RevisionIQ] Calling revise-render for ${revisionViewKey} | mode: ${useLogoPlacement && compositeUrl ? "logo-placement" : "standard"} | layers: ${placedLayersForView.length} | sourceUrl: ${reviseSourceUrl?.substring(0, 60)}...`);
-              const { data: renderData, error: renderError } = await invokeWithFreshAuth("revise-render", {
-                originalRenderUrl: reviseSourceUrl,
-                revisionPrompt: effectivePrompt,
-                toolType: sourceRender.mode_type || "colorpro",
-                viewType: revisionViewKey,
-                vehicleYear: resolvedVehicle.year,
-                vehicleMake: resolvedVehicle.make,
-                vehicleModel: resolvedVehicle.model,
-                originalPrompt: originalPrompt || undefined,
-                visionBoardImageUrls: vbImageUrls.length > 0 ? vbImageUrls : undefined,
-                siblingViewUrls: siblingViewUrls.length > 0 ? siblingViewUrls : undefined,
-                // The customer explicitly uploaded an example for this edit →
-                // attach it as the reference to match, regardless of wording.
-                ...(hasUploadedExample ? { forceReferenceMatch: true } : {}),
-                ...(useLogoPlacement && compositeUrl
-                  ? { mode: "logo-placement", logoLayerCount: placedLayersForView.length }
-                  : {}),
-              }, VIEW_RENDER_TIMEOUT_MS);
-              console.log(`[RevisionIQ] revise-render response:`, { hasData: !!renderData, renderUrl: renderData?.renderUrl?.substring(0, 60), error: renderError?.message });
-              if (renderError) {
-                revisionError = renderError.message || "revise-render revision failed";
-              } else {
-                newRenderUrl = renderData?.renderUrl || null;
-                aiEditSummary = renderData?.editSummary || null;
-                if (!newRenderUrl) {
-                  revisionError = "Edge function returned success but no renderUrl in response";
-                  console.error("[RevisionIQ] Response data missing renderUrl:", JSON.stringify(renderData)?.substring(0, 200));
-                }
-              }
-            }
-          }
-        } catch (renderErr) {
-          revisionError = renderErr instanceof Error ? renderErr.message : String(renderErr);
-          console.error("Revision re-render failed:", revisionError);
-        }
-
-        // Update the cloned record with the new render
-        if (newRenderUrl) {
-          const existingUrls = (clonedRecord.render_urls || {}) as Record<string, any>;
-          const updatedUrls = isMyVehicle
-            ? { ...existingUrls, myvehicle_edit: newRenderUrl }
-            : { ...existingUrls, [revisionViewKey]: newRenderUrl };
-
-          const updatedNotes = { ...versionMeta, revised: true, revision_render_date: new Date().toISOString(), ...(aiEditSummary ? { ai_edit_summary: aiEditSummary } : {}) };
-          let finalRevisionUrls = { ...updatedUrls };
-          let finalRevisionNotes = { ...updatedNotes };
-
-          // Apply revision to remaining views if "Apply to All Views" is on
-          if (applyToAll && !isMyVehicle) {
-            // When the caller hand-picks a scope (targetViewKeys), only the
-            // chosen angles get revised — so a hood edit can reach hood_detail +
-            // front WITHOUT dragging the rear along. With no explicit scope we
-            // fall back to every view (legacy "All Views" behavior).
-            const explicitTargets = Array.isArray(targetViewKeys) && targetViewKeys.length > 0
-              ? targetViewKeys
-              : null;
-            const otherViewKeys = Object.keys(existingUrls).filter(
-              (k) => k !== revisionViewKey && existingUrls[k] && VIEW_ORDER.includes(k)
-                && (explicitTargets ? explicitTargets.includes(k) : true)
-            // Driver first, so the passenger mirror below reads the REVISED driver.
-            ).sort((a, b) => (a === "side" ? -1 : b === "side" ? 1 : 0));
-            if (otherViewKeys.length > 0) {
-              console.log(`[RevisionIQ] Apply to All Views: revising ${otherViewKeys.length} additional views`);
-              toast.info(`Applying revision to ${otherViewKeys.length} more view${otherViewKeys.length > 1 ? "s" : ""}...`);
-              let allViewUrls = { ...updatedUrls };
-              for (const viewKey of otherViewKeys) {
-                try {
-                  // PASSENGER SIDE has exactly ONE producer — producePassengerView,
-                  // a deterministic flip of the (just-revised) driver. It NEVER goes
-                  // through revise-render: that AI pass keeps returning the driver
-                  // orientation ("two driver sides"), and there is no check that can
-                  // catch it (a wrong-facing result always comes back under a fresh
-                  // URL). A failed mirror is an HONEST GAP — the passenger key is
-                  // left untouched for the mirror button / missing-views pass to
-                  // recover. Never substitute a generative passenger render here.
-                  if (viewKey === "passenger-side") {
-                    // Driver is the coupled-pair owner. Its passenger is built
-                    // once, after the AI loop, from the final approved Driver.
-                    if (revisionViewKey === "side") continue;
-                    const driverUrl = allViewUrls["side"] || allViewUrls["hero"] || allViewUrls["driver-side"];
-                    const mirrorUrl = driverUrl
-                      ? await producePassengerView({
-                          driverUrl,
-                          uploadDataUrl: uploadDataUrlToStorage,
-                          textDetection: {
-                            modeType: sourceRender.mode_type || "",
-                            prompt: `${originalPrompt || ""} ${effectivePrompt || ""}`,
-                          },
-                          vehicleYear: resolvedVehicle.year,
-                          vehicleMake: resolvedVehicle.make,
-                          vehicleModel: resolvedVehicle.model,
-                          toolType: sourceRender.mode_type || "designpanelpro",
-                          invokeEdgeFunction: invokeWithFreshAuth,
-                          logLabel: "RevisionIQ Apply-all",
-                        })
-                      : null;
-                    if (mirrorUrl) {
-                      allViewUrls[viewKey] = mirrorUrl;
-                      console.log(`[RevisionIQ] Apply-all: passenger-side mirrored from revised driver`);
-                    }
-                    continue;
-                  }
-                  const viewSourceUrl = existingUrls[viewKey];
-                  const siblingUrls: string[] = Object.entries(allViewUrls)
-                    .filter(([k, url]) => k !== viewKey && url)
-                    .slice(0, 2)
-                    .map(([, url]) => url as string);
-                  // See note above — previousRevisions intentionally omitted
-                  // to prevent cross-view token pollution in Apply-to-All mode.
-                  const { data: viewRenderData, error: viewRenderError } = await invokeWithFreshAuth("revise-render", {
-                    originalRenderUrl: viewSourceUrl,
-                    revisionPrompt: effectivePrompt,
-                    toolType: sourceRender.mode_type || "colorpro",
-                    viewType: viewKey,
-                    vehicleYear: resolvedVehicle.year,
-                    vehicleMake: resolvedVehicle.make,
-                    vehicleModel: resolvedVehicle.model,
-                    originalPrompt: originalPrompt || undefined,
-                    visionBoardImageUrls: (await getVisionBoardImageUrls(sourceRender)).length > 0 ? await getVisionBoardImageUrls(sourceRender) : undefined,
-                    siblingViewUrls: siblingUrls.length > 0 ? siblingUrls : undefined,
-                  });
-                  if (viewRenderError) {
-                    console.warn(`[RevisionIQ] Apply-all: ${viewKey} failed:`, viewRenderError.message);
-                  } else if (viewRenderData?.renderUrl) {
-                    allViewUrls[viewKey] = viewRenderData.renderUrl;
-                    console.log(`[RevisionIQ] Apply-all: ${viewKey} revised successfully`);
-                  }
-                } catch (e) {
-                  console.warn(`[RevisionIQ] Apply-all: ${viewKey} error:`, e);
-                }
-              }
-              finalRevisionUrls = allViewUrls;
-              finalRevisionNotes = {
-                ...updatedNotes,
-                revised_view_key: "all",
-              };
-            }
-          }
-
-          // DRIVER + PASSENGER ARE A COUPLED APPROVAL PAIR. A driver revision
-          // cannot leave the prior passenger image behind under "This view
-          // only"; that stale image may carry the old artwork or even face the
-          // driver direction. Rebuild it from the newly approved driver through
-          // the one passenger producer. A failure removes the passenger key so
-          // the durable workflow sees an honest gap and Build Assets fails
-          // closed instead of substituting Driver pixels.
-          if (revisionViewKey === "side" && !isMyVehicle) {
-            const rebuiltPassenger = await producePassengerView({
-              driverUrl: newRenderUrl,
-              uploadDataUrl: uploadDataUrlToStorage,
-              textDetection: {
-                modeType: sourceRender.mode_type || "",
-                prompt: `${originalPrompt || ""} ${effectivePrompt || ""}`,
-              },
-              vehicleYear: resolvedVehicle.year,
-              vehicleMake: resolvedVehicle.make,
-              vehicleModel: resolvedVehicle.model,
-              toolType: sourceRender.mode_type || "designpanelpro",
-              invokeEdgeFunction: invokeWithFreshAuth,
-              logLabel: "RevisionIQ Driver-pair",
-            });
-            if (rebuiltPassenger) {
-              finalRevisionUrls["passenger-side"] = rebuiltPassenger;
-              finalRevisionNotes = {
-                ...finalRevisionNotes,
-                passenger_rebuilt_from_driver_revision: true,
-              };
-            } else {
-              delete finalRevisionUrls["passenger-side"];
-              finalRevisionNotes = {
-                ...finalRevisionNotes,
-                passenger_honest_gap: true,
-              };
-            }
-          }
-
-          // Freeze what ACTUALLY changed, not every URL present on the row and
-          // not the view tab the browser happened to remember. Driver revisions
-          // include the coupled Passenger output; unchanged Hood/Roof/etc. are
-          // excluded. The server independently recomputes this diff before it
-          // hashes and records the immutable revision snapshot.
-          const changedViewKeys = changedRevisionSurfaceKeys(sourceUrls, finalRevisionUrls);
-          const primaryChangedViewKey = changedViewKeys.includes(revisionViewKey as any)
-            ? revisionViewKey
-            : changedViewKeys[0] || revisionViewKey;
-          finalRevisionNotes = {
-            ...finalRevisionNotes,
-            revised_view_key: primaryChangedViewKey,
-            primary_changed_view_key: primaryChangedViewKey,
-            changed_view_keys: changedViewKeys,
-            version: {
-              ...(finalRevisionNotes.version || {}),
-              revised_view_key: primaryChangedViewKey,
-              primary_changed_view_key: primaryChangedViewKey,
-              changed_view_keys: changedViewKeys,
-            },
-          };
-
-          // The server workflow now owns every downstream proof, panel, logo,
-          // and active-pack transition. Paid jobs are pinned only after that
-          // revision verifies, so Revision Studio must not mutate them here.
-          // Commit the final view set, metadata, and durable workflow in one
-          // authenticated facade call. No intermediate browser update can
-          // leave a revised clone saved without its matching workflow.
-          const revisionRecord = {
-            ...clonedRecord,
-            generation_status: "completed",
-            render_urls: finalRevisionUrls,
-            admin_notes: JSON.stringify(finalRevisionNotes),
-          };
-          const { saved } = await persistViewRevision({
-            render: revisionRecord,
-            renderUrls: finalRevisionUrls,
-            trigger: "revision_saved",
-            change: {
-              type: notes.trim() ? "revision" : "edit",
-              prompt: effectivePrompt || null,
-              viewKeys: changedViewKeys,
-            },
-            patch: {
-              admin_notes: JSON.stringify(finalRevisionNotes),
-            },
-          });
-          return {
-            ...revisionRecord,
-            render_urls: saved.render_urls,
-            admin_notes: saved.admin_notes,
-            updated_at: saved.updated_at,
-          };
-        } else {
-          // Revision render failed - delete the clone and throw so onError fires
-          await supabase.from("color_visualizations").delete().eq("id", clonedRecord.id);
-          const failMsg = revisionError || "Revision render returned no image";
-          throw new Error(`Revision failed: ${failMsg}. No clone was created - please try again.`);
-        }
-      } else {
-        // No effectivePrompt - this is a clone-only (no revision or restyle)
-        // For restyle, this should NEVER happen
-        if (isRestyleOnNewVehicle) {
-          console.error("[RevisionIQ] BUG: Restyle on New Vehicle reached clone-only path - effectivePrompt was empty");
-          // Still try to render even if effectivePrompt was somehow empty
-          toast.warning("Restyle prompt was empty - generating with default prompt");
-        }
-        console.log("[RevisionIQ] Clone-only (no revision render)");
+        : (isRestyleOnNewVehicle
+            ? (originalPrompt || `Restyle this wrap design on a ${resolvedVehicle.year} ${resolvedVehicle.make} ${resolvedVehicle.model}`)
+            : "");
+      if (!effectivePrompt.trim()) {
+        throw new Error(
+          "Type what you want changed. A revision is authored from the brief, so an empty note has nothing to act on.",
+        );
       }
 
-      const cloneUrls = {
-        ...((clonedRecord.render_urls || {}) as Record<string, string>),
-      };
-      const { saved } = await persistViewRevision({
-        render: clonedRecord,
-        renderUrls: cloneUrls,
-        trigger: "revision_saved",
-        change: {
-          type: "edit",
-          prompt: effectivePrompt || null,
-          viewKeys: Object.keys(cloneUrls).sort(),
-        },
+      // THE SERVER AUTHORS THE REVISION. A.T.L.A.S. AUTHORS THE DESIGN.
+      //
+      // This used to clone the design row in the browser, then repaint the
+      // CURRENT VIEW'S IMAGE: `revise-render` for a normal edit,
+      // `edit-vehicle-photo` for a MyVehicle shot, `design-panel-ai-generate`
+      // or `generate-color-render` for a restyle -- four generative producers
+      // driven from a tab, each editing a 3D proof as though the proof were the
+      // design, and then writing the result back as the new version.
+      //
+      // A.T.L.A.S. authors one flattened master and every one of the seven
+      // views is a projection of it. Repainting a projection cannot change the
+      // design; it can only make one view disagree with the master the panels
+      // are cut from. The gateway already refuses the browser's version of this
+      // outright -- a per-view regenerate against a flat-first request comes
+      // back as "a new run is required".
+      //
+      // So a revision is submitted as what it actually is: a new A.T.L.A.S.
+      // design authored from this design's own brief plus the change the
+      // customer asked for, on the same vehicle. The original design, its
+      // master, its proofs and its panels are untouched -- which is exactly
+      // what "original preserved" has always meant on this button.
+      const designName = `${baseName} (V${newVersion})`;
+      const revised = await submitDesignRevision({
+        source: sourceRender,
+        instruction: effectivePrompt,
+        vehicle: resolvedVehicle,
+        designName,
       });
+
+      // The card the page selects while the server works. Its views are empty
+      // because none exist yet -- the seven proofs arrive as the run accepts
+      // them, and the page's own re-read fills them in. An optimistic copy of
+      // the old design's renders here would show the customer the PREVIOUS
+      // design labelled as the new version.
       return {
-        ...clonedRecord,
-        generation_status: "completed",
-        updated_at: saved.updated_at,
+        ...sourceRender,
+        id: revised.generationId,
+        design_file_name: designName,
+        color_name: designName,
+        render_urls: {},
+        admin_notes: JSON.stringify(versionMeta),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        generation_status: "processing",
       };
     },
     onSuccess: (newRender) => {
@@ -4642,220 +3439,54 @@ export default function RevisionStudioIQ() {
         : "";
       const targetedNotes = panelPrefix + notes;
 
-      // Refresh session before any DB/edge-function calls to prevent Invalid JWT
-      const freshToken = await getFreshAccessToken();
-      if (!freshToken) {
-        throw new Error("Session expired - please log in again and retry.");
-      }
-
-      const isMyVehicle = isMyVehicleRender(render);
-      const isDesignPro = render.mode_type === "designpanelpro" || render.mode_type === "designpro";
-      const sourceUrls = (render.render_urls || {}) as Record<string, string>;
-      const revisionViewKey = currentViewKey || "side";
-      const sourceOriginalUrl = (currentViewKey && sourceUrls[currentViewKey]) || sourceUrls.side || sourceUrls.hero || sourceUrls["driver-side"] || Object.values(sourceUrls)[0] || null;
-
-      if (!sourceOriginalUrl && !isMyVehicle) {
-        throw new Error("No render image found for this design - cannot revise. Try generating a fresh render first.");
-      }
-
-      const resolvedVehicle = {
-        year: String(render.vehicle_year),
-        make: render.vehicle_make,
-        model: render.vehicle_model,
-      };
-
-      let newRenderUrl: string | null = null;
-
-      if (isMyVehicle) {
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        const email = currentUser?.email || render.customer_email;
-        const previousUrl = sourceUrls.myvehicle_edit || null;
-        const colorData = buildColorDataFromRender(render);
-        colorData.revisionPrompt = notes;
-
-        const { data: renderData, error: renderError } = await invokeWithFreshAuth("edit-vehicle-photo", {
-          userEmail: email,
-          uploadedPhotoUrl: previousUrl,
-          colorData,
-          vehicleInfo: resolvedVehicle,
-          // In-place revision updates the existing row — don't let the edge
-          // function insert a separate duplicate.
-          persistRender: false,
-        });
-        if (renderError) throw new Error(renderError.message || "edit-vehicle-photo failed");
-        newRenderUrl = renderData?.renderUrl || null;
-      } else {
-        // All non-MyVehicle modes: Use dedicated revise-render function.
-        // previousRevisions intentionally omitted — see note in the clone path
-        // above for the cross-view token pollution rationale.
-        const existingNotesParsed = (() => {
-          try { return JSON.parse(render.admin_notes || "{}"); } catch { return {}; }
-        })();
-        const origPrompt = existingNotesParsed.original_prompt || render.custom_styling_prompt_key || "";
-
-        // Fetch VisionBoard image URLs so reference images persist across revisions
-        const vbImageUrls = await getVisionBoardImageUrls(render);
-        // Collect sibling view URLs so Gemini can see AI-generated assets from other angles
-        const siblingViewUrls: string[] = Object.entries(sourceUrls)
-          .filter(([key, url]) => key !== revisionViewKey && url)
-          .slice(0, 2)
-          .map(([, url]) => url);
-        console.log(`[RevisionIQ] Calling revise-render (in-place) for ${revisionViewKey} | prompt: "${targetedNotes.substring(0, 60)}..." | visionBoard: ${vbImageUrls.length} | siblingViews: ${siblingViewUrls.length}`);
-        const { data: renderData, error: renderError } = await invokeWithFreshAuth("revise-render", {
-          originalRenderUrl: sourceOriginalUrl,
-          revisionPrompt: targetedNotes,
-          toolType: render.mode_type || "colorpro",
-          viewType: revisionViewKey,
-          vehicleYear: resolvedVehicle.year,
-          vehicleMake: resolvedVehicle.make,
-          vehicleModel: resolvedVehicle.model,
-          originalPrompt: origPrompt || undefined,
-          visionBoardImageUrls: vbImageUrls.length > 0 ? vbImageUrls : undefined,
-          siblingViewUrls: siblingViewUrls.length > 0 ? siblingViewUrls : undefined,
-        }, VIEW_RENDER_TIMEOUT_MS);
-        console.log(`[RevisionIQ] revise-render (in-place) response:`, { hasData: !!renderData, renderUrl: renderData?.renderUrl?.substring(0, 60), error: renderError?.message });
-        if (renderError) throw new Error(renderError.message || "revise-render revision failed");
-        newRenderUrl = renderData?.renderUrl || null;
-      }
-
-      if (!newRenderUrl) {
-        throw new Error("Revision render returned no image - check browser console for details");
-      }
-
-      // Update the SAME record with the new render URL
-      const existingUrls = { ...sourceUrls };
-      let updatedUrls: Record<string, string> = isMyVehicle
-        ? { ...existingUrls, myvehicle_edit: newRenderUrl }
-        : { ...existingUrls, [revisionViewKey]: newRenderUrl };
-
-      // Apply revision to remaining views if "Apply to All Views" is on
-      if (applyToAll && !isMyVehicle) {
-        const otherViewKeys = Object.keys(existingUrls).filter(
-          (k) => k !== revisionViewKey && existingUrls[k] && VIEW_ORDER.includes(k)
-        // Driver first, so the passenger mirror below reads the REVISED driver.
-        ).sort((a, b) => (a === "side" ? -1 : b === "side" ? 1 : 0));
-        if (otherViewKeys.length > 0) {
-          console.log(`[RevisionIQ] Apply-all (in-place): revising ${otherViewKeys.length} additional views`);
-          toast.info(`Applying revision to ${otherViewKeys.length} more view${otherViewKeys.length > 1 ? "s" : ""}...`);
-          const origPrompt = (() => { try { return JSON.parse(render.admin_notes || "{}").original_prompt; } catch { return ""; } })() || render.custom_styling_prompt_key || "";
-          for (const viewKey of otherViewKeys) {
-            try {
-              // PASSENGER SIDE has exactly ONE producer — producePassengerView, a
-              // deterministic flip of the (just-revised) driver. It NEVER goes
-              // through revise-render (that AI pass returns the driver orientation
-              // and no check can catch it). A failed mirror is an HONEST GAP.
-              if (viewKey === "passenger-side") {
-                const driverUrl = updatedUrls["side"] || updatedUrls["hero"] || updatedUrls["driver-side"];
-                const mirrorUrl = driverUrl
-                  ? await producePassengerView({
-                      driverUrl,
-                      uploadDataUrl: uploadDataUrlToStorage,
-                      textDetection: {
-                        modeType: render.mode_type || "",
-                        prompt: `${origPrompt || ""} ${targetedNotes || ""}`,
-                      },
-                      vehicleYear: resolvedVehicle.year,
-                      vehicleMake: resolvedVehicle.make,
-                      vehicleModel: resolvedVehicle.model,
-                      toolType: render.mode_type || "designpanelpro",
-                      invokeEdgeFunction: invokeWithFreshAuth,
-                      logLabel: "RevisionIQ Apply-all in-place",
-                    })
-                  : null;
-                if (mirrorUrl) {
-                  updatedUrls[viewKey] = mirrorUrl;
-                  console.log(`[RevisionIQ] Apply-all in-place: passenger-side mirrored from revised driver`);
-                }
-                continue;
-              }
-              const viewSourceUrl = existingUrls[viewKey];
-              const siblingUrls: string[] = Object.entries(updatedUrls)
-                .filter(([k, url]) => k !== viewKey && url)
-                .slice(0, 2)
-                .map(([, url]) => url);
-              const { data: viewRenderData, error: viewRenderError } = await invokeWithFreshAuth("revise-render", {
-                originalRenderUrl: viewSourceUrl,
-                revisionPrompt: targetedNotes,
-                toolType: render.mode_type || "colorpro",
-                viewType: viewKey,
-                vehicleYear: resolvedVehicle.year,
-                vehicleMake: resolvedVehicle.make,
-                vehicleModel: resolvedVehicle.model,
-                originalPrompt: origPrompt || undefined,
-              });
-              if (viewRenderError) {
-                console.warn(`[RevisionIQ] Apply-all in-place: ${viewKey} failed:`, viewRenderError.message);
-              } else if (viewRenderData?.renderUrl) {
-                updatedUrls[viewKey] = viewRenderData.renderUrl;
-                console.log(`[RevisionIQ] Apply-all in-place: ${viewKey} revised successfully`);
-              }
-            } catch (e) {
-              console.warn(`[RevisionIQ] Apply-all in-place: ${viewKey} error:`, e);
-            }
-          }
-        }
-      }
-
-      // Preserve and update admin_notes with revision info + prompt history
-      const existingNotes = (() => {
-        try { return JSON.parse(render.admin_notes || "{}"); } catch { return {}; }
-      })();
-      const parentHistory: Array<{ version: number; prompt: string; timestamp: string; view_key: string; type: string }> =
-        existingNotes.prompt_history || [];
-      const currentVersion = parseVersionInfo(render).version;
-      const inPlaceHistory = [
-        ...parentHistory,
-        { version: currentVersion, prompt: targetedNotes, timestamp: new Date().toISOString(), view_key: applyToAll ? "all" : revisionViewKey, type: "in-place-revision" },
-      ];
-      const changedViewKeys = changedRevisionSurfaceKeys(sourceUrls, updatedUrls);
-      const primaryChangedViewKey = changedViewKeys.includes(revisionViewKey as any)
-        ? revisionViewKey
-        : changedViewKeys[0] || revisionViewKey;
-      const updatedNotes = {
-        ...existingNotes,
-        revised: true,
-        last_revision_prompt: targetedNotes,
-        revised_view_key: primaryChangedViewKey,
-        primary_changed_view_key: primaryChangedViewKey,
-        changed_view_keys: changedViewKeys,
-        revision_render_date: new Date().toISOString(),
-        prompt_history: inPlaceHistory,
-        // Keep version.revision_notes in sync so parseVersionInfo + filmstrip see the prompt
-        version: {
-          ...(existingNotes.version || {}),
-          revision_notes: targetedNotes,
-          revised_view_key: primaryChangedViewKey,
-          primary_changed_view_key: primaryChangedViewKey,
-          changed_view_keys: changedViewKeys,
+      // THERE IS NO IN-PLACE REVISION OF AN A.T.L.A.S. DESIGN.
+      //
+      // "Revise in place" repainted the current view's image and wrote it back
+      // onto the same design, so the customer kept one row and one version. That
+      // is coherent when a design IS its renders. It is not coherent here: the
+      // seven views are projections of one accepted master, the six print panels
+      // are cut from that same master, and a repainted view would leave the
+      // design saying one thing and the panels printing another -- silently,
+      // because nothing downstream re-reads a proof.
+      //
+      // So this does what the button has always meant -- apply my change to this
+      // design -- through the only mechanism that keeps proofs and panels
+      // agreeing: A.T.L.A.S. authors the change, and the previous version is
+      // preserved rather than overwritten. The version history is the record of
+      // that, and it is the reason nothing is lost.
+      const version = parseVersionInfo(render);
+      const lineageMaxVersion = Math.max(
+        version.version,
+        ...((versionChain || []).map((r: any) => parseVersionInfo(r).version)),
+      );
+      const baseName = (render.design_file_name || render.color_name || "Design")
+        .replace(/\s*\(V\d+\)$/, "");
+      const designName = `${baseName} (V${lineageMaxVersion + 1})`;
+      const revised = await submitDesignRevision({
+        source: render,
+        instruction: targetedNotes,
+        vehicle: {
+          year: String(render.vehicle_year || ""),
+          make: String(render.vehicle_make || ""),
+          model: String(render.vehicle_model || ""),
         },
-      };
-
-      console.log(`[RevisionIQ] Updating record ${render.id} in-place with revised URL for ${applyToAll ? "all views" : revisionViewKey}`);
-      await persistViewRevision({
-        render,
-        renderUrls: updatedUrls,
-        trigger: "revision_saved",
-        change: {
-          type: "revision",
-          prompt: targetedNotes,
-          viewKeys: changedViewKeys,
-        },
-        patch: { admin_notes: JSON.stringify(updatedNotes) },
+        designName,
       });
-
-      // Fetch the updated record
-      const { data: refreshed } = await supabase
-        .from("color_visualizations")
-        .select("*")
-        .eq("id", render.id)
-        .single();
-
-      return refreshed || { ...render, render_urls: updatedUrls };
+      return {
+        ...render,
+        id: revised.generationId,
+        design_file_name: designName,
+        color_name: designName,
+        render_urls: {},
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        generation_status: "processing",
+      };
     },
     onSuccess: (updatedRender) => {
       queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
       queryClient.invalidateQueries({ queryKey: ["version-chain"] });
-      toast.success("Render revised in place - no clone created");
+      toast.success("Revision submitted — A.T.L.A.S. is authoring it. The previous version is preserved.");
       setSelectedRender(updatedRender);
       // Stay on the revised view so user sees the edit (don't reset to 0)
       const newViews = getViews(updatedRender);
@@ -4899,523 +3530,49 @@ export default function RevisionStudioIQ() {
   // ---------------------------------------------------------------------------
   // Generate Missing Views
   // ---------------------------------------------------------------------------
+  // MISSING VIEWS ARE THE SERVER'S WORK, NOT THE TAB'S.
+  //
+  // This used to fan the missing angles out from the browser: resolve GENIE
+  // dimensions, downscale a hero anchor, call the render function once per view
+  // with its own retry ladder, accumulate the results in React state, then
+  // persist all six in a single commit at the end. Backgrounding the tab on a
+  // phone suspended it mid-run, and a refused final commit threw away every
+  // image it had already paid for.
+  //
+  // The runtime owns this now. A.T.L.A.S. renders Driver first, hash-verifies
+  // it, then projects the remaining six from the same accepted master
+  // concurrently -- so the views cannot drift apart, nothing is lost to a
+  // closed tab, and there is no per-view budget for a browser to spend. All a
+  // click here can honestly do is ask the server to pick pending work back up.
   const generateMissingViews = async (render: any) => {
     const missing = getMissingViews(render);
     if (missing.length === 0) {
       toast.success("All views already exist!");
       return;
     }
-
-    // Get current user email
-    const { data: { user } } = await supabase.auth.getUser();
-    const userEmail = user?.email;
-    if (!userEmail) {
-      toast.error("Please log in to generate renders.");
+    if (!render?.id) {
+      toast.error("Open a design first.");
       return;
     }
-
     setIsGeneratingMissing(true);
     setGeneratingViews([...missing]);
     setCompletedMissingViews([]);
     setFailedMissingViews([]);
-
-    // GUARD: wrap the whole run so an unhandled throw (a dimension lookup, a
-    // network hiccup, the proof step, the final refetch, etc.) can never strand
-    // isGeneratingMissing=true — which permanently disables the button and makes
-    // every later click silently do nothing. finally ALWAYS re-enables it.
     try {
-    const colorData = buildColorDataFromRender(render);
-
-    toast.info(`Generating ${missing.length} missing view${missing.length > 1 ? "s" : ""}...`, {
-      description: missing.map((v) => VIEW_LABELS[v]).join(", "),
-    });
-
-    // Track results locally to avoid stale closure issues with state
-    let localCompleted: string[] = [];
-    let localFailed: string[] = [];
-    // First real edge error from a failed view — surfaced in the toast so the
-    // operator sees WHY (e.g. "print_required", "Missing required fields",
-    // "Invalid JWT") instead of a generic "some views failed".
-    let firstViewError = "";
-
-    // Accumulate new render URLs to merge into the record directly
-    let mergedRenderUrls: Record<string, string> = {
-      ...(render.render_urls as Record<string, string> || {}),
-    };
-    // Adopt an existing hero/driver image into the canonical "side" key so it is
-    // NOT regenerated (it's the customer's approved driver view) and so it anchors
-    // every other angle. Matches the alias set in getMissingViews.
-    if (!mergedRenderUrls["side"]) {
-      const existingSide = mergedRenderUrls["hero"] || mergedRenderUrls["driver-side"] || mergedRenderUrls["driver_side"] || mergedRenderUrls["primary"] || mergedRenderUrls["mockup"] || null;
-      if (existingSide) mergedRenderUrls["side"] = existingSide;
-    }
-
-    // Extract original prompt for DesignProAI renders (stored in admin_notes)
-    // recreatepro routes through the design pipeline like designpanelpro — it
-    // reproduces an artistic wrap from a reference, so its missing views must
-    // be generated by design-panel-ai-generate (with the hero render as the
-    // design reference), NOT generate-color-render which would paint a generic
-    // colored vehicle and lose the design entirely.
-    const isDesignPro = (render.mode_type === "designpanelpro" || render.mode_type === "designpro" || render.mode_type === "recreatepro");
-    let originalPrompt = "";
-    let recoveredAdminNotesPatch: Record<string, unknown> = {};
-    let designIQInfo: { mode: "commercial" | "restyle"; companyName?: string; phone?: string; mascot?: string; industryType?: string; bulletPoints?: string[] } = { mode: "restyle" };
-    if (isDesignPro) {
-      try {
-        const notes = JSON.parse(render.admin_notes || "{}");
-        originalPrompt = notes.original_prompt || render.custom_styling_prompt_key || "";
-
-        // Fallback 1: query designiq_generations by designiq_generation_id
-        if (!originalPrompt && notes.designiq_generation_id) {
-          const { data: genRow } = await supabase
-            .from("designiq_generations")
-            .select("raw_prompt")
-            .eq("id", notes.designiq_generation_id)
-            .maybeSingle();
-          if (genRow?.raw_prompt) {
-            originalPrompt = genRow.raw_prompt;
-            recoveredAdminNotesPatch = {
-              original_prompt: originalPrompt,
-            };
-          }
-        }
-
-        // Fallback 2: query designiq_generations by panel URL (custom_design_url)
-        if (!originalPrompt && render.custom_design_url) {
-          const { data: genRow } = await supabase
-            .from("designiq_generations")
-            .select("raw_prompt")
-            .eq("panel_url", render.custom_design_url)
-            .limit(1)
-            .maybeSingle();
-          if (genRow?.raw_prompt) {
-            originalPrompt = genRow.raw_prompt;
-            recoveredAdminNotesPatch = {
-              original_prompt: originalPrompt,
-            };
-          }
-        }
-
-        // Fallback 3: query designiq_generations by matching hero render URL
-        if (!originalPrompt) {
-          const heroUrls = render.render_urls as Record<string, string> | null;
-          const heroUrl = heroUrls?.side || heroUrls?.hero;
-          if (heroUrl) {
-            const { data: genRow } = await supabase
-              .from("designiq_generations")
-              .select("raw_prompt")
-              .eq("render_url", heroUrl)
-              .limit(1)
-              .maybeSingle();
-            if (genRow?.raw_prompt) {
-              originalPrompt = genRow.raw_prompt;
-              recoveredAdminNotesPatch = {
-                original_prompt: originalPrompt,
-              };
-            }
-          }
-        }
-      } catch {}
-      // Pre-fetch DesignIQ mode + commercial details
-      designIQInfo = await getDesignIQModeAndDetails(render);
-
-      // Fallback: if no prompt found but we have a design name, reconstruct a prompt
-      // so we still route through design-panel-ai-generate instead of 400-ing on generate-color-render
-      if (!originalPrompt) {
-        // NEVER fall back to the order-number/placeholder name here — it would
-        // be sent verbatim as the render prompt and Gemini paints it onto the
-        // wrap ("Order RP-100926" text on the body). Only use a REAL design name.
-        const designLabel = designNameForPrompt(render.design_file_name || render.color_name);
-        if (designLabel) {
-          originalPrompt = designLabel;
-          console.log(`[RevisionStudioIQ] No stored prompt - using design name as prompt: "${originalPrompt}"`);
-        }
-      }
-    }
-
-    // ── Get the hero/side render URL for design consistency across views ──
-    // When re-generating a missing view (especially "side"), we need ANY existing view
-    // as a visual reference so the AI maintains design consistency. Try side first,
-    // then fall through to any available view.
-    let heroReferenceUrl = mergedRenderUrls["side"] || mergedRenderUrls["hero"] || mergedRenderUrls["driver-side"] || mergedRenderUrls["passenger-side"] || mergedRenderUrls["front"] || mergedRenderUrls["rear"] || mergedRenderUrls["hood_detail"] || mergedRenderUrls["close-up"] || mergedRenderUrls["roof"] || null;
-
-    // ANCHOR FIX (two-different-designs / different sky): when this row carries no
-    // views — e.g. an order opened in RevisionStudio with empty render_urls — the
-    // regeneration below would run UNANCHORED and the AI would invent a brand-new
-    // background/sky, producing a second, different design. Resolve the original
-    // hero from the LINKED design generation (admin_notes.designiq_generation_id)
-    // so every regenerated view anchors to the real design. Additive: only runs
-    // when no view reference exists.
-    if (!heroReferenceUrl) {
-      try {
-        const linkedGenId = (() => {
-          try { return JSON.parse(render.admin_notes || "{}")?.designiq_generation_id || null; } catch { return null; }
-        })();
-        if (linkedGenId) {
-          const { data: g } = await supabase
-            .from("designiq_generations")
-            .select("hero_render_url, render_urls")
-            .eq("id", linkedGenId)
-            .maybeSingle();
-          const gUrls = (g?.render_urls || {}) as Record<string, string>;
-          heroReferenceUrl =
-            g?.hero_render_url || gUrls["side"] || gUrls["driver-side"] || Object.values(gUrls)[0] || null;
-          if (heroReferenceUrl) {
-            console.log(`[RevisionStudioIQ] Anchored regeneration to design generation hero (${linkedGenId}) — prevents new-sky drift`);
-          }
-        }
-      } catch { /* non-fatal — falls back to unanchored */ }
-    }
-
-    // ── Render a single view with timeout + retry ──
-    // Uses invokeWithFreshAuth (raw fetch) instead of supabase.functions.invoke
-    // to bypass SDK header merging bugs that cause "Invalid JWT" on parallel calls.
-    const renderSingleView = async (viewType: string): Promise<{ type: string; url: string | null; error?: string }> => {
-      const MAX_RETRIES = 2;
-      const RETRY_DELAY_MS = 3000;
-      let lastError = "";
-      // DOWNSCALE the hero anchor (a ~8MB 4K JPG) to a 2048px reference. The edge
-      // worker fetches originalRenderUrl RAW and base64-encodes it; fanning several
-      // raw-8MB clones concurrently OOM'd the 256MB worker (HTTP 546) so the missing
-      // views never generated. 2048px (~1MB) anchors the design fine and removes the
-      // OOM; the rendered output is still full-res. See lib/storage-image.ts.
-      const heroRefForRender = downscaleStorageImage(heroReferenceUrl);
-
-      for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
-        try {
-          console.log(`[RevisionStudioIQ] View "${viewType}" attempt ${attempt}/${MAX_RETRIES + 1}`);
-          let data: any, error: any;
-
-          // GraphicsPro reproduces a FINISHED wrap from its hero render — the same
-          // job as DesignPro/recreatepro. Route it through design-panel-ai-generate
-          // (which PRESERVES the design + the exact vehicle) instead of
-          // generate-color-render, which — per this file's own note — "would paint a
-          // generic colored vehicle and lose the design entirely" (the wrong-vehicle /
-          // generic-SUV bug, and why it never matched DesignPro). Needs a hero anchor.
-          // RecreatePro / DesignPro reproduce a FINISHED wrap from the approved
-          // hero render — never a generic color change. Route them through
-          // design-panel-ai-generate whenever a hero anchor exists, even if the
-          // stored prompt is empty (a neutral reproduction line is used below).
-          // Falling through to generate-color-render here is the documented
-          // "paint a generic colored vehicle and lose the design entirely" bug —
-          // for a RecreatePro job that means the recreated wrap vanishes on the
-          // extra angles (only the side + proof survive). The hero carries the
-          // design, so design pipeline + hero anchor is always the right producer.
-          const isGraphicsPro = (render.mode_type || "").toLowerCase().includes("graphic");
-          const useDesignPipeline = (isDesignPro && (!!originalPrompt || !!heroReferenceUrl)) || (isGraphicsPro && !!heroReferenceUrl);
-          if (useDesignPipeline) {
-            const { mode: dpModeRaw, ...commercial } = designIQInfo;
-            const dpMode = isGraphicsPro ? "restyle" : dpModeRaw;
-            const vehName = [render.vehicle_year, render.vehicle_make, render.vehicle_model].filter(Boolean).join(" ") || "the vehicle";
-            // The reference image carries the design — do NOT name it in the
-            // prompt unless the name is a REAL design name. Embedding the raw
-            // name made Gemini paint order numbers ("Order RP-100926") onto the
-            // wrap. designNameForPrompt() returns "" for order numbers/generic
-            // labels, so those are dropped and only the reference image is used.
-            const cleanName = designNameForPrompt(render.design_file_name || render.color_name);
-            const namePhrase = cleanName ? ` — "${cleanName}"` : "";
-            // Neutral, print-keyword-free reproduction line. Used for GraphicsPro
-            // AND as the fallback for a DesignPro/RecreatePro row whose stored
-            // prompt is empty — the design comes from the hero reference image, so
-            // this only tells Gemini to reproduce it at the new angle without
-            // inventing artwork or baking in order numbers/filenames.
-            const reproLine = `Reproduce this EXACT existing vehicle wrap${namePhrase} on ${vehName} at the requested camera angle. Match every graphic, logo, color and letter from the reference image exactly. Do NOT redesign, recolor, or change the vehicle body/type. Do NOT add any order numbers, file names, captions, labels, or text that is not already part of the wrap artwork in the reference image.`;
-            const dpPrompt = isGraphicsPro
-              ? reproLine
-              : (originalPrompt || reproLine);
-            ({ data, error } = await invokeWithFreshAuth("design-panel-ai-generate", {
-              mode: dpMode,
-              prompt: dpPrompt,
-              finish: render.finish_type || "Gloss",
-              vehicleYear: String(render.vehicle_year || ""),
-              vehicleMake: render.vehicle_make || "",
-              vehicleModel: render.vehicle_model || "",
-              viewType,
-              forceNew: true,
-              ...(heroReferenceUrl ? { originalRenderUrl: heroRefForRender } : {}),
-              ...(dpMode === "commercial" ? commercial : {}),
-            }, VIEW_RENDER_TIMEOUT_MS));
-            // Normalize - design-panel-ai-generate returns renderUrl or panel.media_url
-            if (data && !data.renderUrl && data.panel?.media_url) {
-              data = { ...data, renderUrl: data.panel.media_url };
-            }
-          } else {
-            // All other modes (ColorPro, FadeWraps, DesignPro without prompt fallback)
-            // ALWAYS pass heroReferenceUrl for design consistency — even for side view re-gen
-            // GraphicsPro: pass the hero render as a design-consistency anchor
-            // (colorData.heroReferenceUrl) so generate-color-render reproduces the
-            // SAME wrap from the new angle instead of inventing a different design.
-            // CRITICAL: also OVERRIDE customStylingPrompt with a print-keyword-free
-            // reproduction instruction. The stored prompt (custom_styling_prompt_key)
-            // for a commercial wrap routinely contains words like "graphic design",
-            // "print", "photo", "logo" — every one of which makes generate-color-render
-            // 400 with `print_required`, so EVERY missing view silently failed. The
-            // actual design comes from the hero reference, not this text, so a neutral
-            // reproduction prompt is both safe and faithful (same approach the
-            // GraphicsPro tool uses for its studio angles).
-            // Other modes keep their existing behavior untouched.
-            const REPRO_INSTRUCTION =
-              "Reproduce this exact cut vinyl wrap on the vehicle at the requested camera angle. " +
-              "Match every shape, color, logo, and lettering exactly as shown in the reference — do not redesign, reinterpret, or omit any element.";
-            // GraphicsPro WITHOUT a hero falls here (the design pipeline above needs
-            // an anchor). Keep the print-safe color-render reproduction as a fallback.
-            // isGraphicsPro is already declared above (shared with the design-pipeline route).
-            // PRESERVE the original design context (business name, colors, layout)
-            // when the row has it — earlier we replaced it wholesale with a generic
-            // reproduction line, which threw the design away and produced "duplicates
-            // of the wrong vehicle". Keep the stored prompt but STRIP only the
-            // print-only keywords that trip generate-color-render's `print_required`
-            // guard. Fall back to the bare reproduction line when the row truly has
-            // no prompt ("original prompt missing").
-            const PRINT_KW = /\b(photo|picture|image|galaxy|marble|camo|camouflage|printed|print|texture|realistic flames|photo wrap|forest|ocean|sunset|landscape|portrait|graphic design|artwork|illustration|digital print|full print)\b/gi;
-            const origPrompt = String((colorData as any)?.customStylingPrompt || "")
-              .replace(PRINT_KW, "").replace(/\s+/g, " ").trim();
-            const graphicsProPrompt = origPrompt.length > 8 ? `${REPRO_INSTRUCTION} ${origPrompt}` : REPRO_INSTRUCTION;
-            const colorDataForCall = isGraphicsPro
-              ? { ...colorData, ...(heroReferenceUrl ? { heroReferenceUrl } : {}), customStylingPrompt: graphicsProPrompt, colorLibrary: "graphicspro" }
-              : colorData;
-            ({ data, error } = await invokeWithFreshAuth("generate-color-render", {
-              // generate-color-render hard-requires year/make/model and 400s on
-              // "Missing required fields" otherwise — a GraphicsPro row saved
-              // without a picked vehicle would fail every view. Fall back to safe
-              // placeholders (the vehicle shape is carried by the hero reference).
-              vehicleYear: isGraphicsPro ? (render.vehicle_year ? String(render.vehicle_year) : "2020") : String(render.vehicle_year),
-              vehicleMake: isGraphicsPro ? (render.vehicle_make || "Custom") : render.vehicle_make,
-              vehicleModel: isGraphicsPro ? (render.vehicle_model || "Vehicle") : render.vehicle_model,
-              colorData: colorDataForCall,
-              // Normalize so generate-color-render's GraphicsPro branch (hero anchor,
-              // reproduction) fires even when the row stored a different casing.
-              modeType: isGraphicsPro ? "GraphicsPro" : (render.mode_type || "colorpro"),
-              viewType,
-              userEmail,
-              skipLookups: true,
-              skipCacheStorage: true,
-              // Force the LIGHT studio for GraphicsPro reproductions. Without it the
-              // GraphicsPro prompt falls to SOFT_DIFFUSION_STUDIO, whose "very
-              // dark/black background" reads as a nighttime shot — the customer's
-              // "it's forcing a nighttime view". studioMode:'light' swaps it to the
-              // bright seamless-gray studio the proofs use.
-              ...(isGraphicsPro ? { studioMode: "light" } : {}),
-              ...(heroReferenceUrl ? { originalRenderUrl: heroRefForRender } : {}),
-            }, VIEW_RENDER_TIMEOUT_MS));
-          }
-
-          if (error) throw new Error(error.message || "Edge function error");
-          if (data?.renderUrl) {
-            console.log(`[RevisionStudioIQ] View "${viewType}" OK on attempt ${attempt}`);
-            return { type: viewType, url: data.renderUrl };
-          }
-          throw new Error("No renderUrl in response");
-        } catch (viewError: any) {
-          lastError = viewError?.message || String(viewError) || "unknown error";
-          console.error(`[RevisionStudioIQ] View "${viewType}" attempt ${attempt} failed:`, lastError);
-          if (attempt <= MAX_RETRIES) {
-            console.log(`[RevisionStudioIQ] Retrying "${viewType}" in ${RETRY_DELAY_MS}ms...`);
-            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-          }
-        }
-      }
-
-      // NO generate-color-render fallback for DesignPro. That renderer paints a
-      // DIFFERENT wrap (it's the color-change path, not the DesignPro art), which
-      // is exactly the "close-up / hood comes back a different design" regression.
-      // design-panel-ai-generate already retried MAX_RETRIES times above with the
-      // hero as the anchor; if it still couldn't hold the design, fail the view
-      // (it shows as failed + retryable) rather than substitute a wrong design.
-      return { type: viewType, url: null, error: lastError };
-    };
-
-    // ── Passenger side is NEVER an AI render ──
-    // passenger-side is a scaleX(-1) flip of the driver hero, NOT an AI call
-    // (per view-angles-os.ts). The old AI fallback kept returning a straight
-    // DUPLICATE of the driver (same orientation) — "two driver sides" — so it
-    // was removed (same fix as RecreatePro/ProductionFlow). If the driver view
-    // itself is still being generated, the mirror runs AFTER the AI fan-out.
-    const missingPassenger = missing.includes("passenger-side");
-    const aiViews = missing.filter((v) => v !== "passenger-side");
-
-    const mirrorPassengerFromDriver = async (): Promise<boolean> => {
-      const driverSideUrl = mergedRenderUrls["side"] || mergedRenderUrls["hero"] || mergedRenderUrls["driver-side"];
-      if (!driverSideUrl) return false;
-      try {
-        console.log("[RevisionStudioIQ] Generating passenger-side via INSTANT_MIRROR");
-        const mirrorDataUrl = await generatePassengerMirror(driverSideUrl);
-        let mirrorUrl = await uploadDataUrlToStorage(mirrorDataUrl);
-
-        // Check if design has text that needs fixing after mirror
-        const modeType = render.mode_type || "";
-        let designPrompt = "";
-        try { designPrompt = JSON.parse(render.admin_notes || "{}").original_prompt || ""; } catch {}
-        const hasText = designLikelyHasText({ modeType, prompt: designPrompt });
-        if (hasText) {
-          console.log("[RevisionStudioIQ] Design has text - sending mirror to AI for text correction");
-          mirrorUrl = await fixMirrorText(mirrorUrl, {
-            vehicleYear: String(render.vehicle_year || ""),
-            vehicleMake: render.vehicle_make || "",
-            vehicleModel: render.vehicle_model || "",
-            toolType: modeType,
-            invokeEdgeFunction: invokeWithFreshAuth,
-          });
-        }
-
-        mergedRenderUrls["passenger-side"] = mirrorUrl;
-        setSelectedRender((prev: any) => prev?.id === render.id
-          ? { ...prev, render_urls: { ...mergedRenderUrls } }
-          : prev
-        );
-        localCompleted.push("passenger-side");
-        setCompletedMissingViews((prev) => [...prev, "passenger-side"]);
-        setGeneratingViews((prev) => prev.filter((v) => v !== "passenger-side"));
-        console.log("[RevisionStudioIQ] passenger-side mirror OK");
-        return true;
-      } catch (mirrorErr) {
-        console.error("[RevisionStudioIQ] passenger-side mirror failed:", mirrorErr);
-        return false;
-      }
-    };
-
-    // Mirror the passenger CONCURRENTLY with the AI fan-out — never block on it.
-    // It used to be `await`ed here BEFORE the AI views, so a slow/hung passenger
-    // mirror (its fixMirrorText → revise-render call) froze the whole run at
-    // "Generating Passenger Side… 0/6" and the other 5 views never started. Now it
-    // runs as its own promise alongside them (and fixMirrorText has a hard timeout),
-    // so the AI views always make progress regardless of the mirror. When the driver
-    // hero is itself a missing view we still defer the mirror until after the fan-out
-    // produces it (handled below).
-    let passengerDone = !missingPassenger;
-    const passengerPromise: Promise<void> =
-      (missingPassenger && !missing.includes("side"))
-        ? (async () => { passengerDone = await mirrorPassengerFromDriver(); })()
-        : Promise.resolve();
-
-    // ── Fire remaining AI views in parallel with 200ms stagger ──
-    console.log(`[RevisionStudioIQ] Parallel fan-out: ${aiViews.length} AI views (isDesignPro=${isDesignPro}, hasPrompt=${!!originalPrompt})`);
-
-    const parallelPromises = aiViews.map((viewType, index) => {
-      return new Promise<{ type: string; url: string | null }>((resolve) => {
-        setTimeout(async () => {
-          const result = await renderSingleView(viewType);
-          // Update the UI progressively; the final complete map is committed
-          // once with its durable workflow below.
-          if (result.url) {
-            mergedRenderUrls[viewType] = result.url;
-            setSelectedRender((prev: any) => prev?.id === render.id
-              ? { ...prev, render_urls: { ...mergedRenderUrls } }
-              : prev
-            );
-            localCompleted.push(viewType);
-            setCompletedMissingViews((prev) => [...prev, viewType]);
-          } else {
-            localFailed.push(viewType);
-            if (result.error && !firstViewError) firstViewError = result.error;
-            setFailedMissingViews((prev) => [...prev, viewType]);
-          }
-          setGeneratingViews((prev) => prev.filter((v) => v !== viewType));
-          resolve(result);
-        }, index * 200);
+      await requestDesignBuild({
+        generationId: String(render.id),
+        trigger: "missing_views_completed",
+        change: { type: "generate", viewKeys: missing },
       });
-    });
-
-    await Promise.allSettled(parallelPromises);
-
-    // Passenger mirror was deferred until the driver hero finished generating —
-    // run it now. It is a deterministic flip, never an AI render: if the driver
-    // failed (or the mirror itself fails) the passenger view is marked failed
-    // and stays retryable, instead of an AI pass shipping a duplicate driver.
-    if (!passengerDone) {
-      passengerDone = await mirrorPassengerFromDriver();
-      if (!passengerDone) {
-        localFailed.push("passenger-side");
-        setFailedMissingViews((prev) => [...prev, "passenger-side"]);
-        setGeneratingViews((prev) => prev.filter((v) => v !== "passenger-side"));
-      }
-    }
-
-    // A total rendering failure produced no new pixels and therefore is not a
-    // design version. Do not append a metadata-only "Vn" card that appears to
-    // be a successful Driver revision; leave every failed view retryable.
-    if (localCompleted.length === 0) {
-      toast.error(`All views failed: ${firstViewError || "unknown error"}`, { duration: 12000 });
-      return;
-    }
-
-    // Persist one authoritative view set, then submit exactly one durable
-    // revision workflow. Proof/panel/logo production is server-owned.
-    await persistViewRevision({
-      render,
-      renderUrls: { ...mergedRenderUrls },
-      trigger: "missing_views_completed",
-      change: {
-        type: "edit",
-        prompt: originalPrompt || null,
-        // Failed views produced no pixels and are not OS history.
-        viewKeys: Array.from(new Set(localCompleted)).sort(),
-      },
-      ...(Object.keys(recoveredAdminNotesPatch).length
-        ? {
-            patch: {
-              admin_notes: JSON.stringify(recoveredAdminNotesPatch),
-            },
-          }
-        : {}),
-    });
-
-    // Refresh the render data to get updated render_urls.
-    //
-    // BUG FIX ("it says it generated the sides but I don't see them"): views are
-    // NOT written per-view — they accumulate in React state (mergedRenderUrls)
-    // and are persisted by the single persistViewRevision commit above, so this
-    // read can lag that write (read-replica) or error. The client already
-    // KNOWS what it generated (`mergedRenderUrls`), so never depend solely on the
-    // re-fetch: always merge the freshly-generated views into the displayed
-    // render so every completed view shows immediately. If the re-fetch lagged,
-    // mergedRenderUrls backfills the rest; if it succeeded, the merge is a no-op.
-    const { data: updatedRender, error: fetchError } = await supabase
-      .from("color_visualizations")
-      .select("*")
-      .eq("id", render.id)
-      .single();
-
-    if (!fetchError && updatedRender) {
-      setSelectedRender({
-        ...updatedRender,
-        render_urls: { ...(updatedRender.render_urls as Record<string, string> || {}), ...mergedRenderUrls },
-      });
-    } else {
-      // Re-fetch failed — fall back to the locally-accumulated view set so the UI
-      // still shows what we generated instead of staying on the stale set.
-      setSelectedRender((prev: any) =>
-        prev?.id === render.id ? { ...prev, render_urls: { ...mergedRenderUrls } } : prev,
+      toast.success(
+        `${missing.length} view(s) queued on the server. They appear here as each one is accepted — you can close this page safely.`,
+        { duration: 10000 },
       );
-    }
-
-    queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
-    queryClient.invalidateQueries({ queryKey: ["version-chain"] });
-
-    // Use local tracking vars instead of stale state closure
-    if (localFailed.length === 0) {
-      toast.success(`All ${missing.length} missing views generated!`);
-    } else {
-      toast.warning(`${localCompleted.length} of ${missing.length} views generated. Failed: ${firstViewError || "unknown error"}`, { duration: 10000 });
-    }
-
-    // Auto-build the Cut Production Sheet (graphics specced flat at real cut sizes,
-    // off the truck) the moment the view set is ready — the customer shouldn't have
-    // to hunt for the button. Only when at least one view landed (it needs a hero).
-    // NOT for full-wrap classes (RecreatePro / DesignPro): those are printed wraps,
-    // not plotter-cut vinyl, so auto-popping a cut-graphics proof just shows a
-    // false "no cut graphics detected" (Trish 2026-07-23: RecreatePro should not
-    // show this). The manual "Build Cut Sheet" button still works for any job.
-    const fullWrapMode = /recreatepro|designpanelpro|designpro/i.test(String(render.mode_type || ""));
-    if (!fullWrapMode && (localCompleted.length > 0 || Object.keys(mergedRenderUrls).length > 0)) {
-      handleBuildCutSheet().catch(() => { /* its own toast surfaces any error */ });
-    }
-    } catch (fatalErr: any) {
-      console.error("[RevisionStudioIQ] generateMissingViews fatal:", fatalErr?.message || fatalErr);
-      toast.error("Couldn't generate the missing views — please try again.");
+      queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
+    } catch (error: any) {
+      setFailedMissingViews([...missing]);
+      toast.error(`The server did not accept the request: ${error?.message || error}`);
     } finally {
-      // ALWAYS re-enable the button, even if the run threw partway through, so a
-      // single failed run can never leave it stuck-disabled ("nothing happens").
       setIsGeneratingMissing(false);
       setGeneratingViews([]);
     }
@@ -5457,46 +3614,22 @@ export default function RevisionStudioIQ() {
   // ---------------------------------------------------------------------------
   const deleteRender = useMutation({
     mutationFn: async ({ id, source }: { id: string; source?: string }) => {
-      // RevisionStudio lists cards from THREE tables (color_visualizations,
-      // graphics_pro_jobs, panelizer_jobs); each card's id is the PK of the
-      // table it came from. Delete from THAT table — deleting a GraphicsPro or
-      // Panelizer card from color_visualizations matched 0 rows and surfaced as
-      // the bogus "Delete blocked - you may not have permission" error.
-      const table =
-        source === "graphics_pro_jobs" ? "graphics_pro_jobs"
-        : source === "panelizer_jobs" ? "panelizer_jobs"
-        : "color_visualizations";
-      console.log("[RevisionIQ] Deleting render:", id, "from", table);
-      // Ensure a valid auth token before an RLS-protected delete. If we can't
-      // get one, bail with a clear message instead of running the delete as
-      // `anon` (which the DELETE policy rejects → 0 rows → confusing
-      // "permission" error).
-      const token = await ensureFreshSession();
-      if (!token) {
-        throw new Error("Your session expired — please refresh the page (or sign in again) and try deleting.");
-      }
-      const { data, error, status } = await supabase
-        .from(table as any)
-        .delete()
-        .eq("id", id)
-        .select("id");
-      console.log("[RevisionIQ] Delete response:", { table, data, error, status });
-      if (error) throw error;
-      // RLS can silently block deletes - no error but 0 rows affected.
-      if (!data || data.length === 0) {
-        // Distinguish a lost/anon session (the common cause) from a genuine
-        // permission gap so the user gets an actionable message.
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          throw new Error("Your session expired — please refresh the page (or sign in again) and try deleting.");
-        }
-        throw new Error("Delete blocked - you may not have permission to delete this render");
-      }
-      return id;
+      // A DESIGN IS AN IMMUTABLE RUN, AND A RUN IS NOT DELETABLE FROM A TAB.
+      //
+      // This deleted the card's own row from whichever of three tables it came
+      // from. Here a design is a workflow run whose proofs and panels are
+      // content-addressed and referenced by receipts, purchases and delivered
+      // packs -- deleting it from the browser would break bindings the server
+      // is still asserting. The gateway exposes no delete for that reason, so
+      // the honest answer is to say so rather than fail with a permission
+      // message that implies the right role would work.
+      throw new Error(
+        "A design cannot be deleted here. Its proofs, panels and receipts are immutable server records — ask support to retire it.",
+      );
     },
     onMutate: async ({ id }: { id: string; source?: string }) => {
       // Optimistic: immediately remove the card from EVERY feed it could live in
-      // (color_visualizations + the GraphicsPro / Panelizer feeds) while the DB
+      // (the design feed plus the two retired legacy feeds) while the
       // delete happens. Snapshot all three so onError can roll back.
       const feedKeys = [
         "revision-studio-renders",
@@ -5601,148 +3734,38 @@ export default function RevisionStudioIQ() {
   // ---------------------------------------------------------------------------
   // Regenerate a single view (delete it, then re-render just that one view)
   // ---------------------------------------------------------------------------
+  // ONE MASTER OWNS THE WHOLE PROOF SET.
+  //
+  // Regenerating a single angle in the browser made sense when each view was
+  // its own design decision. Under A.T.L.A.S. every view is a projection of one
+  // accepted master, so replacing one of them cannot improve the design -- it
+  // can only leave that view disagreeing with the master the six print panels
+  // were cut from. The gateway refuses the browser's version of this outright:
+  // a per-view regenerate against a flat-first request comes back as "a new run
+  // is required".
+  //
+  // So this asks the server to finish or retry the run, which is what a missing
+  // or failed angle actually needs, and says plainly that changing what a view
+  // shows is a revision.
   const regenerateSingleView = async (render: any, viewKey: string) => {
-    // PASSENGER SIDE is never AI-regenerated — the AI pass keeps returning a
-    // straight DUPLICATE of the driver (same orientation), i.e. "two driver
-    // sides". It is always a deterministic horizontal mirror of the driver hero
-    // (same fix as RecreatePro/ProductionFlow); flipPassengerSide also runs the
-    // text-direction fix for lettered designs.
-    const regenUrls = (render?.render_urls || {}) as Record<string, string>;
-    if (viewKey === "passenger-side" && (regenUrls.side || regenUrls.hero || regenUrls["driver-side"])) {
-      setRegeneratingView(viewKey);
-      try {
-        await flipPassengerSide(render);
-      } finally {
-        setRegeneratingView(null);
-      }
+    if (!render?.id) {
+      toast.error("Open a design first.");
       return;
     }
-
-    const { data: { user } } = await supabase.auth.getUser();
-    const userEmail = user?.email;
-    if (!userEmail) {
-      toast.error("Please log in to regenerate views.");
-      return;
-    }
-
     setRegeneratingView(viewKey);
-    toast.info(`Regenerating ${VIEW_LABELS[viewKey] || viewKey}...`);
-
-    // GUARD: same reasoning as generateMissingViews — an unhandled throw here
-    // would strand regeneratingView and permanently disable the regenerate
-    // buttons. finally ALWAYS clears it.
     try {
-    // Reuse the same rendering logic from generateMissingViews
-    const colorData = buildColorDataFromRender(render);
-    // recreatepro routes through the design pipeline like designpanelpro — it
-    // reproduces an artistic wrap from a reference, so its missing views must
-    // be generated by design-panel-ai-generate (with the hero render as the
-    // design reference), NOT generate-color-render which would paint a generic
-    // colored vehicle and lose the design entirely.
-    const isDesignPro = (render.mode_type === "designpanelpro" || render.mode_type === "designpro" || render.mode_type === "recreatepro");
-    let originalPrompt = "";
-    let designIQInfo: { mode: "commercial" | "restyle"; companyName?: string; phone?: string; mascot?: string; industryType?: string; bulletPoints?: string[] } = { mode: "restyle" };
-
-    if (isDesignPro) {
-      try {
-        const notes = JSON.parse(render.admin_notes || "{}");
-        originalPrompt = notes.original_prompt || render.custom_styling_prompt_key || "";
-        if (!originalPrompt) {
-          const designLabel = render.design_file_name || render.color_name || "";
-          if (designLabel) originalPrompt = designLabel;
-        }
-      } catch {}
-      designIQInfo = await getDesignIQModeAndDetails(render);
-    }
-
-    const urls = { ...(render.render_urls as Record<string, string> || {}) };
-
-    // Pick a reference from a DIFFERENT view — never use the same messed-up
-    // view being regenerated as its own reference.  Fall through the canonical
-    // order until we find an alternative.
-    const heroReferenceUrl = (() => {
-      const preferredOrder = ["side", "passenger-side", "front", "rear", "hood_detail", "close-up", "roof", "hero"];
-      for (const k of preferredOrder) {
-        if (k !== viewKey && urls[k]) return urls[k];
-      }
-      return null;
-    })();
-
-    // Render the single view
-    const MAX_RETRIES = 2;
-    const RETRY_DELAY_MS = 3000;
-    let resultUrl: string | null = null;
-
-    for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
-      try {
-        let data: any, error: any;
-
-        if (isDesignPro && originalPrompt) {
-          const { mode, ...commercial } = designIQInfo;
-          ({ data, error } = await invokeWithFreshAuth("design-panel-ai-generate", {
-            mode,
-            prompt: originalPrompt,
-            finish: render.finish_type || "Gloss",
-            vehicleYear: String(render.vehicle_year),
-            vehicleMake: render.vehicle_make,
-            vehicleModel: render.vehicle_model,
-            viewType: viewKey,
-            forceNew: true,
-            ...(heroReferenceUrl ? { originalRenderUrl: heroReferenceUrl } : {}),
-            ...(mode === "commercial" ? commercial : {}),
-          }, VIEW_RENDER_TIMEOUT_MS));
-          if (data && !data.renderUrl && data.panel?.media_url) {
-            data = { ...data, renderUrl: data.panel.media_url };
-          }
-        } else {
-          ({ data, error } = await invokeWithFreshAuth("generate-color-render", {
-            vehicleYear: String(render.vehicle_year),
-            vehicleMake: render.vehicle_make,
-            vehicleModel: render.vehicle_model,
-            colorData,
-            modeType: render.mode_type || "colorpro",
-            viewType: viewKey,
-            userEmail,
-            skipLookups: true,
-            skipCacheStorage: true,
-            ...(heroReferenceUrl ? { originalRenderUrl: heroReferenceUrl } : {}),
-          }, VIEW_RENDER_TIMEOUT_MS));
-        }
-
-        if (error) throw new Error(error.message || "Edge function error");
-        if (data?.renderUrl) {
-          resultUrl = data.renderUrl;
-          break;
-        }
-        throw new Error("No renderUrl in response");
-      } catch (err: any) {
-        if (attempt <= MAX_RETRIES) {
-          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-        }
-      }
-    }
-
-    if (resultUrl) {
-      urls[viewKey] = resultUrl;
-      await persistViewRevision({
-        render,
-        renderUrls: urls,
+      await requestDesignBuild({
+        generationId: String(render.id),
         trigger: "view_regenerated",
-        change: { type: "edit", viewKeys: [viewKey] },
+        change: { type: "generate", viewKeys: [viewKey] },
       });
-
-      setSelectedRender((prev: any) =>
-        prev?.id === render.id ? { ...prev, render_urls: urls } : prev
+      toast.success(
+        `${VIEW_LABELS[viewKey] || viewKey} re-queued on the server. To change what this view SHOWS, use Revise — one master owns all seven angles.`,
+        { duration: 10000 },
       );
       queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
-      queryClient.invalidateQueries({ queryKey: ["version-chain"] });
-      toast.success(`${VIEW_LABELS[viewKey] || viewKey} regenerated!`);
-    } else {
-      toast.error(`Failed to regenerate ${VIEW_LABELS[viewKey] || viewKey}`);
-    }
-    } catch (fatalErr: any) {
-      console.error("[RevisionStudioIQ] regenerateSingleView fatal:", fatalErr?.message || fatalErr);
-      toast.error(`Couldn't regenerate ${VIEW_LABELS[viewKey] || viewKey} — please try again.`);
+    } catch (error: any) {
+      toast.error(`Couldn't re-queue ${VIEW_LABELS[viewKey] || viewKey}: ${error?.message || error}`);
     } finally {
       setRegeneratingView(null);
     }
@@ -5761,118 +3784,74 @@ export default function RevisionStudioIQ() {
     "Satin": "satin semi-gloss finish with subtle soft sheen, muted reflections, silk-like surface",
   };
 
+  // FINISH IS PART OF THE DESIGN, SO IT IS A REVISION.
+  //
+  // This used to send the current view's image to `revise-render` with a
+  // finish-only instruction and write the returned image back over that one
+  // angle. Under A.T.L.A.S. that repaints a projection: the master keeps the
+  // old finish, the other six views keep the old finish, and the panels print
+  // the old finish. Routing it through A.T.L.A.S. changes the design once, for
+  // every view and every panel at the same time.
   const fixViewFinish = async (render: any, viewKey: string, targetFinish: string) => {
-    const heroUrl = render.render_urls?.[viewKey];
-    if (!heroUrl) { toast.error("No image to fix"); return; }
-
+    if (!render?.id) { toast.error("Open a design first."); return; }
+    const finishDesc = FINISH_DESCRIPTIONS[targetFinish] || targetFinish;
     setIsFixingFinish(true);
-    toast.info(`Fixing ${VIEW_LABELS[viewKey]} to ${targetFinish}...`);
-
     try {
-      const finishDesc = FINISH_DESCRIPTIONS[targetFinish] || targetFinish;
-      const { data, error } = await supabase.functions.invoke("revise-render", {
-        body: {
-          originalRenderUrl: heroUrl,
-          revisionPrompt: `Fix the vinyl wrap finish on this vehicle. The wrap MUST have a ${finishDesc}. Keep the exact same design, colors, patterns, vehicle, and camera angle. Only change the surface finish/sheen to be clearly ${targetFinish}.`,
-          toolType: render.mode_type || "designpanelpro",
-          viewType: viewKey,
-          vehicleYear: String(render.vehicle_year || ""),
-          vehicleMake: render.vehicle_make || "",
-          vehicleModel: render.vehicle_model || "",
+      const version = parseVersionInfo(render);
+      const lineageMaxVersion = Math.max(
+        version.version,
+        ...((versionChain || []).map((r: any) => parseVersionInfo(r).version)),
+      );
+      const baseName = (render.design_file_name || render.color_name || "Design")
+        .replace(/\s*\(V\d+\)$/, "");
+      await submitDesignRevision({
+        source: render,
+        instruction: `Change the vinyl wrap finish to a ${finishDesc}. Keep the design, colours and artwork exactly as they are; change only the surface finish.`,
+        vehicle: {
+          year: String(render.vehicle_year || ""),
+          make: String(render.vehicle_make || ""),
+          model: String(render.vehicle_model || ""),
         },
+        designName: `${baseName} (V${lineageMaxVersion + 1})`,
       });
-
-      if (error) throw error;
-      if (data?.renderUrl) {
-        const updatedUrls = { ...(render.render_urls || {}), [viewKey]: data.renderUrl };
-        await persistViewRevision({
-          render,
-          renderUrls: updatedUrls,
-          trigger: "finish_fixed",
-          change: {
-            type: "edit",
-            prompt: `Change ${viewKey} finish to ${targetFinish}`,
-            viewKeys: [viewKey],
-          },
-          patch: { finish_type: targetFinish },
-        });
-
-        setSelectedRender((prev: any) =>
-          prev?.id === render.id ? { ...prev, render_urls: updatedUrls } : prev
-        );
-        queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
-        toast.success(`${VIEW_LABELS[viewKey]} updated to ${targetFinish}`);
-      } else {
-        toast.error("No image returned");
-      }
-    } catch (err: any) {
-      console.error("Fix finish error:", err);
-      toast.error(`Failed: ${err.message || "Unknown error"}`);
+      toast.success(
+        `${targetFinish} finish submitted as a revision — it applies to all seven views and every panel, not just this angle.`,
+        { duration: 10000 },
+      );
+      queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
+      queryClient.invalidateQueries({ queryKey: ["version-chain"] });
+    } catch (error: any) {
+      toast.error(`Couldn't submit the finish change: ${error?.message || error}`);
     } finally {
       setIsFixingFinish(false);
     }
   };
 
+  // THE PASSENGER SIDE IS ALREADY THE DRIVER'S TWIN, CUT BY THE SERVER.
+  //
+  // This mirrored the driver render in the browser and ran an AI text-direction
+  // repair over the result, because the passenger view used to be a separate
+  // generation that kept coming back as a second driver side. A.T.L.A.S. cuts
+  // the passenger surface from the same master as the driver and renders its
+  // proof from that surface, so the twin relationship is structural and the
+  // lettering reads forward without a repair pass. A browser mirror on top of
+  // that would replace a hash-bound proof with an unverified image.
   const flipPassengerSide = async (render: any) => {
-    const urls = render.render_urls || {};
-    const driverUrl = urls.side || urls.hero || urls["driver-side"];
-    if (!driverUrl) {
-      toast.error("No driver side image to mirror — generate the driver side view first");
-      return;
-    }
-
+    if (!render?.id) { toast.error("Open a design first."); return; }
     setIsFlippingPassenger(true);
     try {
-      toast.info("Mirroring driver side...");
-
-      // ONE producer: deterministic flip + the shared text-direction repair.
-      // This used to inline its own revise-render text fix, duplicating
-      // fixMirrorText without its 90s timeout (a hang froze the whole flow).
-      const hasText = designLikelyHasText({
-        prompt: designNameForPrompt(render.design_file_name || render.color_name),
-        modeType: render.mode_type || "",
-      });
-      if (hasText) toast.info("Fixing text direction on passenger side...");
-
-      const finalUrl = await producePassengerView({
-        driverUrl,
-        uploadDataUrl: uploadDataUrlToStorage,
-        textDetection: {
-          prompt: designNameForPrompt(render.design_file_name || render.color_name),
-          modeType: render.mode_type || "",
-        },
-        vehicleYear: String(render.vehicle_year || ""),
-        vehicleMake: render.vehicle_make || "",
-        vehicleModel: render.vehicle_model || "",
-        toolType: render.mode_type || "designpanelpro",
-        invokeEdgeFunction: async (fnName, body) => {
-          const { data, error } = await renderClient.functions.invoke(fnName, { body });
-          return { data, error };
-        },
-        logLabel: "RevisionIQ flipPassenger",
-      });
-
-      if (!finalUrl) {
-        toast.error("Passenger mirror failed — nothing was changed");
-        return;
-      }
-
-      const updatedUrls = { ...(render.render_urls || {}), "passenger-side": finalUrl };
-      await persistViewRevision({
-        render,
-        renderUrls: updatedUrls,
+      await requestDesignBuild({
+        generationId: String(render.id),
         trigger: "passenger_mirrored",
-        change: { type: "edit", viewKeys: ["passenger-side"] },
+        change: { type: "generate", viewKeys: ["passenger-side"] },
       });
-
-      setSelectedRender((prev: any) =>
-        prev?.id === render.id ? { ...prev, render_urls: updatedUrls } : prev
+      toast.success(
+        "Passenger side re-queued on the server. A.T.L.A.S. cuts it from the same master as the driver, so it is the driver's twin by construction.",
+        { duration: 10000 },
       );
       queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
-      toast.success(hasText ? "Passenger mirrored + text corrected" : "Passenger side mirrored");
-    } catch (err: any) {
-      console.error("Flip error:", err);
-      toast.error(`Flip failed: ${err.message || "Unknown error"}`);
+    } catch (error: any) {
+      toast.error(`Couldn't re-queue the passenger side: ${error?.message || error}`);
     } finally {
       setIsFlippingPassenger(false);
     }
@@ -5889,108 +3868,19 @@ export default function RevisionStudioIQ() {
     wbty: "wbty_carousel",
   };
 
+  // RATING IS A GALLERY FEATURE, AND THE GALLERY IS NOT THIS SYSTEM'S.
+  //
+  // A five-star rating used to flag the design row as saved and featured, then
+  // insert the hero image into one of five per-tool carousel tables and the
+  // landing page's hero carousel. Those are RestylePro marketing surfaces; the
+  // run tables carry no rating and DesignProAI publishes no carousel, so there
+  // is nowhere for this to land. It records the rating for the session, which
+  // is what the stars in the UI reflect, and claims nothing further.
   const submitRating = async (render: any, rating: number) => {
     setIsRating(true);
     try {
-      // Always mark as saved for My Renders; 5 stars also sets is_featured_hero
-      const updatePayload = { is_saved: true, ...(rating === 5 ? { is_featured_hero: true } : {}) };
-      console.log("[submitRating] Updating color_visualizations id:", render.id, "payload:", updatePayload);
-      const { data: updateData, error: updateErr } = await supabase
-        .from("color_visualizations")
-        .update(updatePayload)
-        .eq("id", render.id)
-        .select("id, is_featured_hero, is_saved");
-      if (updateErr) {
-        console.error("[5-star] color_visualizations update FAILED:", updateErr.message, updateErr.code, updateErr.details);
-        toast.error(`Rating save failed: ${updateErr.message}`);
-      } else {
-        console.log("[5-star] color_visualizations updated OK:", updateData);
-        // Verify the update actually took effect (RLS can silently return empty array)
-        if (!updateData || updateData.length === 0) {
-          console.error("[5-star] UPDATE returned 0 rows! RLS is likely blocking the update.");
-          toast.error("Rating saved but is_featured_hero may not have been set (RLS issue). Check Supabase Dashboard.");
-        } else if (rating === 5 && updateData[0] && !updateData[0].is_featured_hero) {
-          console.error("[5-star] UPDATE succeeded but is_featured_hero is still false!");
-          toast.error("is_featured_hero did not get set. Check RLS policies.");
-        }
-      }
-
-      // Double-check: re-read the row to verify is_featured_hero
-      if (rating === 5) {
-        const { data: verifyData } = await supabase
-          .from("color_visualizations")
-          .select("id, is_featured_hero")
-          .eq("id", render.id)
-          .single();
-        console.log("[5-star] VERIFY read-back:", verifyData);
-        if (verifyData && !verifyData.is_featured_hero) {
-          toast.error("CONFIRMED: is_featured_hero is NOT being saved. RLS UPDATE policy is blocking it.");
-        }
-      }
-
-      // 5 stars → push hero image to the appropriate gallery carousel table
-      if (rating === 5) {
-        // DesignProAI: prefer side (original branded render with logos/text)
-        const isDesignProRender = render.mode_type === "designpanelpro" || render.mode_type === "designpro";
-        const heroUrl = isDesignProRender
-          ? (render.render_urls?.side || render.render_urls?.hero || Object.values(render.render_urls || {})[0])
-          : (render.render_urls?.hero || render.render_urls?.side || Object.values(render.render_urls || {})[0]);
-        if (heroUrl) {
-          const carouselTable = CAROUSEL_TABLE_MAP[render.mode_type] || "inkfusion_carousel";
-          const title = `${render.vehicle_year} ${render.vehicle_make} ${render.vehicle_model}`;
-          const insertData: any = {
-            name: title,
-            media_url: heroUrl,
-            title,
-            subtitle: `${render.color_name || render.design_file_name || ""} - ${render.finish_type || ""}`,
-            vehicle_name: `${render.vehicle_make} ${render.vehicle_model}`,
-            is_active: true,
-            sort_order: 0,
-          };
-          // Add tool-specific fields
-          if (carouselTable === "inkfusion_carousel") {
-            insertData.color_name = render.color_name;
-          }
-          if (["designpanelpro_carousel", "fadewraps_carousel", "wbty_carousel"].includes(carouselTable)) {
-            insertData.pattern_name = render.design_file_name || render.color_name;
-          }
-          if (carouselTable === "approvemode_carousel" && render.custom_design_url) {
-            insertData.before_url = render.custom_design_url;
-          }
-          console.log(`[5-star] Inserting into ${carouselTable}:`, insertData);
-          const { error: carouselErr } = await supabase.from(carouselTable as any).insert(insertData as any);
-          if (carouselErr) {
-            console.error(`[5-star] ${carouselTable} insert FAILED:`, carouselErr.message, carouselErr.code);
-            toast.error(`Carousel insert failed: ${carouselErr.message}`);
-          } else {
-            console.log(`[5-star] ${carouselTable} insert OK`);
-          }
-
-          // Also push to hero_carousel (landing page) and DesignProAI showcase
-          const heroInsert = {
-            image_url: heroUrl,
-            title: title,
-            subtitle: `${render.color_name || render.design_file_name || ""} - ${render.finish_type || ""}`.trim(),
-            is_active: true,
-            sort_order: 0,
-          };
-          console.log("[5-star] Inserting into hero_carousel:", heroInsert);
-          const { error: heroErr } = await supabase.from("hero_carousel" as any).insert(heroInsert as any);
-          if (heroErr) {
-            console.error("[5-star] hero_carousel insert FAILED:", heroErr.message, heroErr.code);
-          } else {
-            console.log("[5-star] hero_carousel insert OK");
-          }
-        }
-        toast.success("5-star render pushed to Gallery, My Renders, Hero Carousel & DesignProAI!");
-      } else {
-        toast.success(`Rated ${rating} star${rating !== 1 ? "s" : ""} - saved to My Renders`);
-      }
-
       setCurrentRating(rating);
-      queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
-    } catch (err: any) {
-      toast.error(`Rating failed: ${err.message}`);
+      toast.success(`Rated ${rating} star${rating !== 1 ? "s" : ""}`);
     } finally {
       setIsRating(false);
     }
@@ -6045,57 +3935,11 @@ export default function RevisionStudioIQ() {
         prompt = render.custom_styling_prompt_key || "";
       }
 
-      // Fallback: query designiq_generations for prompt + visionboard
-      if (!prompt || visionboardUrls.length === 0) {
-        const heroUrls = render.render_urls as Record<string, string> | null;
-        const heroUrl = heroUrls?.side || heroUrls?.hero;
-
-        // Try by panel_url first
-        if (render.custom_design_url) {
-          const { data: genRow } = await supabase
-            .from("designiq_generations")
-            .select("raw_prompt, visionboard_image_refs, mode, company_name, phone, mascot, industry_type, brand_keywords")
-            .eq("panel_url", render.custom_design_url)
-            .limit(1)
-            .maybeSingle();
-          if (genRow) {
-            if (!prompt && genRow.raw_prompt) prompt = genRow.raw_prompt;
-            if (visionboardUrls.length === 0 && genRow.visionboard_image_refs) {
-              visionboardUrls = (genRow.visionboard_image_refs as any[])
-                .map((ref: any) => typeof ref === "string" ? ref : ref?.storageUrl)
-                .filter(Boolean);
-            }
-            if (genRow.mode === "commercial" && Object.keys(commercialDetails).length === 0) {
-              mode = "commercial";
-              commercialDetails = {
-                companyName: genRow.company_name,
-                phone: genRow.phone,
-                mascot: genRow.mascot,
-                industryType: genRow.industry_type,
-                brandKeywords: genRow.brand_keywords,
-              };
-            }
-          }
-        }
-
-        // Try by render URL
-        if (!prompt && heroUrl) {
-          const { data: genRow } = await supabase
-            .from("designiq_generations")
-            .select("raw_prompt, visionboard_image_refs")
-            .eq("render_url", heroUrl)
-            .limit(1)
-            .maybeSingle();
-          if (genRow) {
-            if (!prompt && genRow.raw_prompt) prompt = genRow.raw_prompt;
-            if (visionboardUrls.length === 0 && genRow.visionboard_image_refs) {
-              visionboardUrls = (genRow.visionboard_image_refs as any[])
-                .map((ref: any) => typeof ref === "string" ? ref : ref?.storageUrl)
-                .filter(Boolean);
-            }
-          }
-        }
-      }
+      // No second lookup. The brief and any references a design was authored
+      // from live on the run the server owns, and the projection above already
+      // carries whatever it recorded. Matching a design row by its hero image
+      // URL was how two stores with no shared key found each other; there is
+      // one store now, so an absent brief is honestly absent.
 
       // If still no prompt, use design name as fallback — but only a REAL design
       // name, never the order-number/placeholder label (it would otherwise be
@@ -6163,7 +4007,7 @@ export default function RevisionStudioIQ() {
   const missingViews = selectedRender ? getMissingViews(selectedRender) : [];
 
   // ── Immutable OS version projection ──────────────────────────────────────
-  // color_visualizations is the mutable working row. Every immutable ledger
+  // The design row is the mutable working row. Every immutable ledger
   // commit is its own version-history entry—even when several commits point to
   // the same visualization row. Legacy rows are used only when the lineage has
   // no durable commits at all.
@@ -6791,7 +4635,7 @@ export default function RevisionStudioIQ() {
                         // Push this existing design to its Design Assets page,
                         // where the artboard + print files get built (Build Assets).
                         // Pass the row's OWN id — gallery cards are always real
-                        // color_visualizations rows, so the page resolves views +
+                        // real design rows, so the page resolves views +
                         // stored proof + artboards with a direct lookup on any
                         // device (the DesignIQ id's row is near-empty and its
                         // reverse link misses in production). The page maps the
@@ -8102,7 +5946,7 @@ export default function RevisionStudioIQ() {
 
                 {/* Production Layers — the SEPARATED background + transparent
                     design overlay PNGs that production-flow-engine already authored
-                    into production_flow_assets (keyed by the DesignIQ generation id,
+                    into the legacy production asset store (keyed by generation id,
                     the SAME job_id the QC / ProductionFlow pages read). Surfaced
                     here for FAST edits: drop the transparent overlay onto the canvas
                     as an editable layer instead of regenerating the whole render.
@@ -8117,9 +5961,9 @@ export default function RevisionStudioIQ() {
                     the PanelPro Studio Board; this only unmounts it here. */}
 
                 <ProductionFlowLayersCard
-                  // A panelizer-sourced card's `id` is the panelizer_jobs id —
+                  // A panelizer-sourced card's `id` was a job id —
                   // an id class NONE of the resolver's three lookups can match,
-                  // by construction (it is not a color_visualizations row, no
+                  // by construction (it is not a design row, no
                   // admin_notes back-link ever names a job id, and no entice
                   // pack is keyed by one). Live 2026-08-04 15:44:51Z: the
                   // resolver's direct + back-link queries both ran against
@@ -8230,14 +6074,14 @@ export default function RevisionStudioIQ() {
                       observes and can explicitly retry the durable server workflow.
                       Resolve the CANONICAL generation id so it never lands on a
                       blank "No assets" page: panelizer-job rows carry it as
-                      _generationId; color_visualizations rows via admin_notes
+                      _generationId; design rows via admin_notes
                       (genIdOf); else the render id (the page resolver handles it).
                       Passing the panelizer-job id was what opened the blank page. */}
                   <Button
                     variant="outline"
                     className="w-full border-blue-600 text-blue-400 hover:bg-blue-900/30 h-11"
                     onClick={() => {
-                      // Prefer the REAL color_visualizations row id — it's the row
+                      // Prefer the REAL design row id — it's the row
                       // this page is displaying (views + stored proof + artboards),
                       // so the Design Assets page resolves it with a DIRECT lookup
                       // on ANY device and maps it to the canonical generation id
@@ -8266,7 +6110,7 @@ export default function RevisionStudioIQ() {
                       Gemini side over the real 2D proof to compare + approve before
                       the GENIE panelizer runs. Deep-links by order number when we
                       have it, else the canonical generation id (Studio Board's
-                      search resolves a UUID via panelizer_jobs.generation_id). */}
+                      search resolves a UUID via the job's generation id). */}
                   <Button
                     variant="outline"
                     className="w-full border-fuchsia-600 text-fuchsia-400 hover:bg-fuchsia-900/30 h-11"
@@ -8378,13 +6222,21 @@ export default function RevisionStudioIQ() {
                     </Button>
                   </div>
 
-                  {/* Generate Production Pack - route to ProductionFlow */}
+                  {/* ORDER THE PRODUCTION PACK, THROUGH THE SERVER'S CHECKOUT.
+                      This opened a dialog that detected the vehicle's panel
+                      dimensions in the browser and kicked its own pack build.
+                      The price and the entitlement are the server's, and the
+                      panels are already cut from the accepted master, so the
+                      only thing left for a click to do is open the purchase.
+                      Disabled until the run is one the gateway owns. */}
                   <Button
                     className="w-full bg-blue-600 hover:bg-blue-700 h-11"
-                    onClick={() => setShowProductionDialog(true)}
-                    disabled={!selectedRender}
+                    onClick={() => { void orderProductionPack(); }}
+                    disabled={!selectedRender || orderingPack}
                   >
-                    <Package className="w-4 h-4 mr-2" /> Generate Production Pack
+                    {orderingPack
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Opening checkout…</>
+                      : <><Package className="w-4 h-4 mr-2" /> Order Production Pack</>}
                   </Button>
 
                   {/* Build Files — flatten each side OFF THE APPROVED 2D PROOF
@@ -8442,37 +6294,13 @@ export default function RevisionStudioIQ() {
                           toast.error("This design has no render images to save.");
                           return;
                         }
-                        setSavingToProof(true);
-                        try {
-                          const { data: { session } } = await supabase.auth.getSession();
-                          const { error } = await supabase.functions.invoke("proof-save-version", {
-                            body: {
-                              proof_id: bridgeProofId,
-                              render_urls: renderUrls,
-                              prompt_text: "Shop edit via RevisionStudio",
-                            },
-                            headers: {
-                              Authorization: `Bearer ${session?.access_token || ""}`,
-                              "Idempotency-Key": (globalThis.crypto?.randomUUID?.() || `rs-${bridgeProofId}-${Date.now()}`),
-                            },
-                          });
-                          if (error) throw error;
-                          toast.success("Saved to the proof & customer notified.");
-                          if (isEmbed && window.parent !== window) {
-                            // Embedded in ApprovePro — tell the workbench to close
-                            // this editor and refresh the version list in place.
-                            window.parent.postMessage(
-                              { type: "revisionstudio:saved", proofId: bridgeProofId },
-                              window.location.origin,
-                            );
-                          } else {
-                            navigate(`/approvepro?id=${bridgeProofId}`);
-                          }
-                        } catch (e: any) {
-                          toast.error(e?.message || "Could not save to the proof.");
-                        } finally {
-                          setSavingToProof(false);
-                        }
+                        // ApprovePro is not a DesignProAI surface, so there is
+                        // no proof to save a version onto. This button only
+                        // renders behind the APPROVEPRO_UI_LIVE flag, which is
+                        // off; it says why rather than appearing to work.
+                        toast.error(
+                          "ApprovePro is not part of DesignProAI, so there is no proof to save this design onto.",
+                        );
                       }}
                       disabled={!selectedRender || savingToProof}
                       className="w-full h-11 gap-2 bg-gradient-to-r from-[#3b82f6] to-[#ec4899] text-white hover:brightness-110 disabled:opacity-50"
@@ -8602,79 +6430,22 @@ export default function RevisionStudioIQ() {
                       }
 
                       // --- DesignPro / DesignPanelPro path ---
-                      // Read cached prompt/visionboard synchronously from admin_notes
-                      // so the click navigates instantly. The 3-level designiq_generations
-                      // fallback runs in the background and writes results back to
-                      // admin_notes so the next push hits the synchronous path.
+                      // The brief and any references come off the design's own
+                      // projection. The three background lookups that used to
+                      // follow -- by generation id, by panel URL, by hero render
+                      // URL, each writing its result back as a cache -- existed
+                      // because two stores had no shared key. One store now, so
+                      // what is here is what there is.
                       let originalPrompt = "";
                       let visionBoardUrls: string[] = [];
-                      let notes: any = {};
                       try {
-                        notes = JSON.parse(selectedRender.admin_notes || "{}");
+                        const notes = JSON.parse(selectedRender.admin_notes || "{}");
                         originalPrompt = notes.original_prompt || selectedRender.custom_styling_prompt_key || "";
-                        if (notes.visionboard_image_urls && Array.isArray(notes.visionboard_image_urls)) {
+                        if (Array.isArray(notes.visionboard_image_urls)) {
                           visionBoardUrls = notes.visionboard_image_urls;
                         }
                       } catch {
                         originalPrompt = selectedRender.custom_styling_prompt_key || "";
-                      }
-
-                      // Background hydration — no await, never blocks navigation.
-                      if (!originalPrompt || visionBoardUrls.length === 0) {
-                        const renderId = selectedRender.id;
-                        const customDesignUrl = selectedRender.custom_design_url;
-                        const designiqGenerationId = notes.designiq_generation_id;
-                        (async () => {
-                          try {
-                            let prompt = originalPrompt;
-                            let urls = visionBoardUrls;
-                            const apply = (genRow: any) => {
-                              if (!genRow) return;
-                              if (!prompt && genRow.raw_prompt) prompt = genRow.raw_prompt;
-                              if (urls.length === 0 && Array.isArray(genRow.visionboard_image_refs)) {
-                                urls = (genRow.visionboard_image_refs as any[])
-                                  .map((ref: any) => typeof ref === "string" ? ref : ref?.storageUrl)
-                                  .filter(Boolean);
-                              }
-                            };
-                            if ((!prompt || urls.length === 0) && designiqGenerationId) {
-                              const { data } = await supabase
-                                .from("designiq_generations")
-                                .select("raw_prompt, visionboard_image_refs")
-                                .eq("id", designiqGenerationId)
-                                .maybeSingle();
-                              apply(data);
-                            }
-                            if ((!prompt || urls.length === 0) && customDesignUrl) {
-                              const { data } = await supabase
-                                .from("designiq_generations")
-                                .select("raw_prompt, visionboard_image_refs")
-                                .eq("panel_url", customDesignUrl)
-                                .limit(1)
-                                .maybeSingle();
-                              apply(data);
-                            }
-                            if ((!prompt || urls.length === 0) && heroUrl) {
-                              const { data } = await supabase
-                                .from("designiq_generations")
-                                .select("raw_prompt, visionboard_image_refs")
-                                .eq("hero_render_url", heroUrl)
-                                .limit(1)
-                                .maybeSingle();
-                              apply(data);
-                            }
-                            if (prompt || urls.length > 0) {
-                              const patched = { ...notes };
-                              if (prompt && !notes.original_prompt) patched.original_prompt = prompt;
-                              if (urls.length > 0 && !notes.visionboard_image_urls) patched.visionboard_image_urls = urls;
-                              await supabase.from("color_visualizations").update({
-                                admin_notes: JSON.stringify(patched),
-                              } as any).eq("id", renderId);
-                            }
-                          } catch {
-                            /* best-effort cache; ignore */
-                          }
-                        })();
                       }
 
                       navigate(`/designpro?quickQuote=1`, {
@@ -8787,22 +6558,6 @@ export default function RevisionStudioIQ() {
       {/* ================================================================== */}
       {/* CLONE & REVISE DIALOG                                              */}
       {/* ================================================================== */}
-      {/* Production Pack Dialog */}
-      <ProductionPackDialog
-        open={showProductionDialog}
-        onOpenChange={setShowProductionDialog}
-        render={selectedRender ? {
-          id: selectedRender.id,
-          render_urls: selectedRender.render_urls as Record<string, string> | undefined,
-          vehicle_year: selectedRender.vehicle_year,
-          vehicle_make: selectedRender.vehicle_make,
-          vehicle_model: selectedRender.vehicle_model,
-          design_file_name: selectedRender.design_file_name,
-          color_name: selectedRender.color_name,
-          finish_type: selectedRender.finish_type,
-        } : null}
-      />
-
       {/* Cut Production Sheet — dimensioned flat cut sizes (designs off the truck) */}
       <Dialog open={cutProofOpen} onOpenChange={setCutProofOpen}>
         <DialogContent className="max-w-[95vw] md:max-w-4xl max-h-[92vh] overflow-y-auto p-0">

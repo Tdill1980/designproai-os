@@ -5,11 +5,12 @@
  * render, and everything inside the box is removed and placed in the layer
  * strip as a reusable layer.
  *
- * Server pipeline (remove-element-clipdrop edge function):
- *   1. ClipDrop Cleanup inpaints the bbox area on the full render → clean bg
- *   2. ClipDrop Remove-Background knocks alpha from a crop of the bbox → layer
- *   3. Both files are uploaded to Supabase Storage (render-backgrounds &
- *      extracted-elements buckets) and a row is written to extracted_elements.
+ * The lift is local pixel work: the boxed region is alpha-keyed against the
+ * surrounding wrap in this tab and uploaded as a transparent PNG. It does NOT
+ * repaint the render behind the element. A browser-repainted proof is an
+ * unverified image that disagrees with the master the six print panels are cut
+ * from, and the clean, logo-free base is already published by the server as the
+ * de-logoed duplicate of that surface's panel.
  */
 import {
   forwardRef,
@@ -20,7 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Square, Loader2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { extractTransparentSlice, uploadLiftedAsset } from "@/lib/precise-erase-composite";
 import type { LogoLayer } from "@/types/revision-logo";
 
 /**
@@ -63,29 +64,6 @@ async function downscaleRenderForRemoval(
   } catch {
     return null;
   }
-}
-
-/** Pull a human-readable message out of a supabase.functions.invoke error.
- * FunctionsHttpError carries the real JSON/text body on `error.context`
- * (a Response); `error.message` is only the generic "non-2xx status code". */
-async function extractEdgeErrorMessage(error: any): Promise<string> {
-  const ctx = error?.context;
-  if (ctx && typeof ctx.text === "function") {
-    try {
-      const raw = await ctx.text();
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed?.message) return parsed.message;
-        } catch {
-          return raw.substring(0, 300);
-        }
-      }
-    } catch {
-      /* fall through to generic message */
-    }
-  }
-  return error?.message || "edge function error";
 }
 
 export interface RenderElementSeparatorHandle {
@@ -176,35 +154,25 @@ export const RenderElementSeparator = forwardRef<
       const sourceImage =
         (await downscaleRenderForRemoval(currentViewUrl)) || currentViewUrl;
 
-      const { data, error } = await supabase.functions.invoke(
-        // In-house $0 LayerLift engine (no ClipDrop credits). Same response
-        // contract { cleanBackgroundUrl, transparentPngUrl, boundingBox }.
-        "layerlift-engine",
-        {
-          body: {
-            imageUrl: sourceImage,
-            boundingBox: { xPct, yPct, wPct, hPct },
-            elementType: "logo",
-            renderId: currentViewKey,
-          },
-        },
-      );
-
-      if (error) {
-        throw new Error(await extractEdgeErrorMessage(error));
-      }
-      if (!data?.cleanBackgroundUrl || !data?.transparentPngUrl) {
-        throw new Error("Edge function returned no URLs");
-      }
-
-      const bbox = data.boundingBox as {
-        xPct: number; yPct: number; wPct: number; hPct: number;
-      };
+      // BOXED LIFT, LOCALLY. This used to hand the box to a heal service that
+      // returned two images: a transparent cutout AND a repainted background
+      // with the element erased. The repaint is the part that cannot exist
+      // here -- a browser-repainted proof is an unverified image that disagrees
+      // with the master the six print panels are cut from, and every generative
+      // heal this product has shipped left a visible smear.
+      //
+      // The cutout is kept, because it is pure pixel work: the slice is
+      // alpha-keyed against the surrounding wrap in this tab. The clean,
+      // logo-free base it used to be paired with is the de-logoed panel the
+      // server publishes for that surface.
+      const { blob } = await extractTransparentSlice(sourceImage, { xPct, yPct, wPct, hPct });
+      const transparentPngUrl = await uploadLiftedAsset(blob, userId);
+      const bbox = { xPct, yPct, wPct, hPct };
 
       const layer: LogoLayer = {
         id: `box_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
         kind: "extracted",
-        sourceUrl: data.transparentPngUrl,
+        sourceUrl: transparentPngUrl,
         name: `Element ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
         origin: {
           xPct: bbox.xPct + bbox.wPct / 2,
@@ -215,8 +183,10 @@ export const RenderElementSeparator = forwardRef<
         placement: null,
       };
 
-      onLayerExtracted(currentViewKey, layer, data.cleanBackgroundUrl);
-      toast.success("Element removed and saved to layers.");
+      // No healed background. The clean, logo-free base for this surface is
+      // the de-logoed panel the server publishes -- see the note above.
+      onLayerExtracted(currentViewKey, layer, null);
+      toast.success("Element lifted and saved to layers.");
     } catch (err) {
       console.error("[RenderElementSeparator] box extract failed:", err);
       const msg = err instanceof Error ? err.message : String(err);

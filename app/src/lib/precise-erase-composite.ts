@@ -514,35 +514,24 @@ export async function runLayerLift(opts: LayerLiftOpts): Promise<LayerLiftResult
   })();
 
   const patchPromise = (async () => {
-    // DETERMINISTIC heal via the in-house layerlift-engine ($0, no ClipDrop
-    // credits, no Gemini drift). It reconstructs the bbox hole from its clean
-    // surroundings and composites onto the FULL-RES original, so the surrounding
-    // wrap design stays pixel-identical — the clean, non-warping separation we
-    // want. Same response contract as the Separate Elements tool.
-    const { data, error } = await supabase.functions.invoke("layerlift-engine", {
-      body: {
-        imageUrl: renderUrl,
-        boundingBox: { xPct: box.xPct, yPct: box.yPct, wPct: box.wPct, hPct: box.hPct },
-        elementType: "logo",
-      },
-    });
-    if (error) {
-      const ctx = (error as any)?.context || {};
-      const refunded = !!(ctx.refunded || (data as any)?.refunded);
-      const msg = ctx.message || ctx.error || error.message || "layerlift-engine failed";
-      throw Object.assign(new Error(msg), { refunded });
-    }
-    if (!data?.cleanBackgroundUrl) {
-      throw new Error("layerlift-engine returned no cleanBackgroundUrl");
-    }
-    // ClipDrop returns BOTH: the healed background AND a TRUE transparent cutout
-    // of the lifted element (Remove-Background). Carry the transparent cutout so
-    // the saved lifted PNG comes back on REAL transparency — not Engine 1's
-    // rectangular slice (logo + surrounding wrap in a box).
-    return {
-      healedUrl: data.cleanBackgroundUrl as string,
-      transparentUrl: (data.transparentPngUrl as string) || null,
-    };
+    // NO HEAL. THE CLEAN BASE IS AUTHORED, NOT REPAIRED.
+    //
+    // This asked an in-house heal service to reconstruct the hole the lifted
+    // element left and composite it back onto the original render. Every
+    // generative heal this product has shipped left a permanent smear, which is
+    // why the clean base has been an AUTHORED asset ever since -- and under
+    // A.T.L.A.S. it is authored twice over: Call 11 publishes the de-logoed
+    // duplicate of each panel, cut from the accepted master, hashed and bound
+    // to it.
+    //
+    // Repainting a proof in the browser could not improve on that. It could
+    // only produce an unverified image that disagrees with the master the
+    // panels print from. So the lift still happens -- that is the useful half,
+    // and it is pure pixel work -- and the caller is told there is no healed
+    // background to pair with it.
+    throw new Error(
+      "There is no browser-side background heal. The clean, logo-free base is the de-logoed panel the server publishes for this surface.",
+    );
   })();
 
   // allSettled — Engine 2 failure must NOT discard Engine 1's lifted asset.

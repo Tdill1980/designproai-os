@@ -129,6 +129,7 @@ const AdminDesignProV2Test = lazyWithRetry(() => import("./pages/AdminDesignProV
 const PanelSizer = lazyWithRetry(() => import("./pages/PanelSizer"));
 const DesignStudio = lazyWithRetry(() => import("./pages/DesignStudio"));
 const DesignProStudio = lazyWithRetry(() => import("./pages/DesignProStudio"));
+const RevisionStudioIQ = lazyWithRetry(() => import("./pages/RevisionStudioIQ"));
 const ProductionProof = lazyWithRetry(() => import("./pages/ProductionProof"));
 
 // ── Lazy imports - User pages ────────────────────────────────────
@@ -322,11 +323,15 @@ const App = () => {
           {/* WPW-tenant Engine Room — scoped to WePrintWraps internal team */}
           <Route path="/admin/print-production" element={<RequireAdmin><AdminPrintProduction /></RequireAdmin>} />
           {/* Builder removed — it cropped the vehicle proof (distorted output). Use the deterministic export. */}
-          {/* RevisionStudio is now a section of the job it belongs to, built
-              from the approved flat wrap layout the server cut the panels
-              from. The standalone page drove revise-render / proof-save-version
-              / panelizer-step-validate in the browser; the runtime owns those. */}
-          <Route path="/revision-studio" element={<Navigate to="/designpro/jobs" replace />} />
+          {/* THE CANONICAL REVISIONSTUDIO. `RevisionStudioIQ.tsx` is the
+              migrated product editor -- the design grid, the seven-view
+              carousel, GalleryMode, the layered canvas, the revision box and
+              Production Layers. It was unrouted while its data layer still
+              read RestylePro tables, and this route redirected away to the job
+              list instead, which is how a status page came to stand in for the
+              product. The data layer is now `dpApi` end to end, so the page it
+              was always meant to be is what /revision-studio renders. */}
+          <Route path="/revision-studio" element={<RequireAuth><RevisionStudioIQ /></RequireAuth>} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/printpro/designpanelpro" element={<DesignPanelProPrintedProductPage />} />
           <Route path="/printpro/production" element={<PrintProductionPipeline />} />
