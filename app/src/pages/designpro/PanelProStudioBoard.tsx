@@ -465,6 +465,53 @@ export default function PanelProStudioBoard() {
     await load();
   }, [generationId, job?.revisionId, load]);
 
+  /**
+   * The dimension sheet, read off the panels rather than recomputed.
+   *
+   * Every number here is one the server stamped on the artifact when it cut the
+   * panel. Deriving them again in the browser -- from the GENIE manifest, or
+   * from the image, or from a vehicle table -- would produce a second set of
+   * numbers that agrees with the first only by luck, and a designer checking a
+   * template against the wrong one has no way to tell.
+   */
+  const dimensionSheet = useMemo(() => {
+    const surfaces = PRODUCTION_SURFACES.map((side) => {
+      const correction = (correctionsBySide.get(side) || [])[0];
+      const active = correction || panelBySide.get(side);
+      if (!active) return null;
+      const source = panelBySide.get(side);
+      const metadata = (source?.metadata || {}) as Record<string, unknown>;
+      const trimWidth = inches(metadata.trimWidthIn ?? metadata.widthInches);
+      const trimHeight = inches(metadata.trimHeightIn ?? metadata.heightInches);
+      const printWidth = inches(metadata.printWidthIn);
+      const printHeight = inches(metadata.printHeightIn);
+      const sqft = Number(metadata.surfaceSqFt);
+      return {
+        surfaceKey: side,
+        label: SURFACE_LABEL[side] || side,
+        trim: trimWidth && trimHeight ? `${trimWidth}″ × ${trimHeight}″` : null,
+        print: printWidth && printHeight ? `${printWidth}″ × ${printHeight}″` : null,
+        surfaceSqFt: Number.isFinite(sqft) && sqft > 0 ? Math.round(sqft * 100) / 100 : null,
+        bleedInches: Number(metadata.bleedInches) || null,
+        humanCorrected: Boolean(correction),
+        contentHash: active.contentHash,
+        sourceMasterHash: typeof metadata.sourceMasterHash === "string" ? metadata.sourceMasterHash : null,
+      };
+    }).filter(Boolean) as Array<Record<string, unknown> & { surfaceKey: string; trim: string | null; print: string | null; surfaceSqFt: number | null; humanCorrected: boolean; contentHash: string }>;
+    const document = {
+      contract: "designpro.dimension-sheet.v1",
+      generationId,
+      designId: job?.designId || null,
+      orderNumber: job?.orderNumber || null,
+      revision: job?.revision ?? null,
+      surfaces,
+    };
+    return {
+      surfaces,
+      href: `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(document, null, 2))}`,
+    };
+  }, [correctionsBySide, panelBySide, generationId, job?.designId, job?.orderNumber, job?.revision]);
+
   const logos = useMemo(() => artifacts.filter((a) => a.kind === "logo"), [artifacts]);
   const upscaledBySide = useMemo(() => {
     const rows = new Map<string, WorkflowArtifact>();
@@ -776,6 +823,60 @@ export default function PanelProStudioBoard() {
           ))}
         </div>
       </Panel>
+
+      {/* THE METADATA / DIMENSION SHEET, NOT HIDDEN INSIDE THE ZIP.
+          The ZIP carries this as designpro-genie-dimension-manifest.json, which
+          is the right place for it at delivery -- but a designer validating a
+          panel against a template needs the numbers now, and every one of them
+          is already stamped on the panel artifact the server produced. This
+          renders exactly those values and serializes exactly those values; it
+          computes nothing, so the sheet cannot drift from the panels. */}
+      {panelBySide.size > 0 && (
+        <Panel
+          eyebrow="Metadata"
+          title="Dimension sheet"
+          description="Per surface, as the server stamped it on the panel: trim, print with the 5″ bleed, square footage, and the content hash of the artwork itself."
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[46rem] text-left text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="pb-2 pr-4">Surface</th>
+                  <th className="pb-2 pr-4">Trim</th>
+                  <th className="pb-2 pr-4">Print (+5″ bleed)</th>
+                  <th className="pb-2 pr-4">Sq ft</th>
+                  <th className="pb-2 pr-4">Active artwork</th>
+                  <th className="pb-2">Content hash</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PRODUCTION_SURFACES.map((side) => {
+                  const row = dimensionSheet.surfaces.find((item) => item.surfaceKey === side);
+                  return (
+                    <tr key={side} className="border-t border-border">
+                      <td className="py-1.5 pr-4 font-semibold">{SURFACE_LABEL[side] || side}</td>
+                      <td className="py-1.5 pr-4">{row?.trim || "—"}</td>
+                      <td className="py-1.5 pr-4">{row?.print || "—"}</td>
+                      <td className="py-1.5 pr-4">{row?.surfaceSqFt ?? "—"}</td>
+                      <td className="py-1.5 pr-4">
+                        {row?.humanCorrected ? "human corrected" : row ? "Call 9 panel" : "—"}
+                      </td>
+                      <td className="py-1.5 font-mono text-[10px]">
+                        {row?.contentHash ? row.contentHash.slice(0, 16) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Button asChild size="sm" variant="outline" className="mt-3">
+            <a href={dimensionSheet.href} download={`${job?.designId || "design"}-dimension-sheet.json`}>
+              <Download className="mr-1 h-4 w-4" /> Download dimension sheet
+            </a>
+          </Button>
+        </Panel>
+      )}
 
       {qcPanelBySide.size > 0 && (
         <Panel
