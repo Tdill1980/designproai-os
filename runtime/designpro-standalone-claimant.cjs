@@ -687,16 +687,15 @@ async function withHeavyOutputLease(sb, stage, work) {
   }
 }
 
-async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runtimeConfig) {
-  const input = requiredObject(run.input, "workflow input");
-  if (stage.stage_key === "revision.freeze") {
-    const { data, error } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
-    if (error || !data || data.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("revision_source_drift", "Immutable revision source does not match workflow", false);
-    const views = exactSevenViews(data.snapshot, run.tenant_key, run.revision_id);
-    const viewIdentities = await fingerprintSevenViews(views, sb, run.tenant_key, run.revision_id);
-    return complete(sb, stage, run, { verified: true, receiptKind: "views.seven-source", revisionSnapshotHash: data.snapshot_hash, requiredViewCount: 7, viewReceipts: viewIdentities, distinctViewsVerified: true });
-  }
-  if (stage.stage_key === "proof.build") {
+/**
+ * Draw the 2D Production Proof for this run.
+ *
+ * Unchanged in behaviour -- the same request, the same contract checks, the
+ * same receipt. It is a function now only so its caller can decide what a
+ * failure MEANS, which differs by run: fatal where the proof is the source Call
+ * 9 cuts from, recorded-and-deferred where A.T.L.A.S. already cut the panels.
+ */
+async function buildCall8Proof(sb, run, stage, runtimeConfig, input) {
     const rebound = await getRun(sb, run.id);
     // GENIE deploys on order, so the free run has no bound production manifest.
     // Call 8 draws a dimensioned proof either way: pre-purchase it uses the
@@ -812,6 +811,67 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       surfaceFields,
       surfacePanels: result.surfacePanels,
     }, null, [proofArtifact]);
+}
+
+async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runtimeConfig) {
+  const input = requiredObject(run.input, "workflow input");
+  if (stage.stage_key === "revision.freeze") {
+    const { data, error } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
+    if (error || !data || data.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("revision_source_drift", "Immutable revision source does not match workflow", false);
+    const views = exactSevenViews(data.snapshot, run.tenant_key, run.revision_id);
+    const viewIdentities = await fingerprintSevenViews(views, sb, run.tenant_key, run.revision_id);
+    return complete(sb, stage, run, { verified: true, receiptKind: "views.seven-source", revisionSnapshotHash: data.snapshot_hash, requiredViewCount: 7, viewReceipts: viewIdentities, distinctViewsVerified: true });
+  }
+  if (stage.stage_key === "proof.build") {
+    // CALL 8 IS A VALUE-ADD ARTIFACT, NOT THE MANUFACTURING AUTHORITY.
+    //
+    // A.T.L.A.S. is the single design and production authority: the accepted
+    // master is cut into the six panels at Call 1, and those panels -- bound to
+    // that master's hash, at GENIE dimensions with the five-inch bleed -- are
+    // what gets printed. The 2D Production Proof is drawn LATER, from that same
+    // accepted lineage, as documentation the customer signs.
+    //
+    // It sat second in the stage list, so it gated everything. In production it
+    // failed 8 of its 11 attempts -- call8_design_master_input_missing,
+    // call8_proof_font_missing, render_master_invalid -- and because a failed
+    // stage stops the run, NOTHING downstream had ever executed: not the
+    // PanelPro gate, not the enhancement, not one output file, not a ZIP, not a
+    // WrapBox delivery. A documentation artifact was holding the entire
+    // manufacturing chain hostage.
+    //
+    // So on a run whose panels came from A.T.L.A.S., a Call 8 failure is
+    // RECORDED and the stage completes as deferred. The failure is not hidden:
+    // the receipt says the proof is missing and why, PanelPro shows it, and the
+    // proof can be rebuilt. What it no longer does is stop production.
+    //
+    // A run with no A.T.L.A.S. panel set still fails hard, because there the 2D
+    // proof genuinely is the source Call 9 cuts from and a run without one has
+    // nothing to manufacture.
+    const atlasPanels = await callOnePanelSet(sb, run).catch(() => null);
+    if (atlasPanels) {
+      try {
+        return await buildCall8Proof(sb, run, stage, runtimeConfig, input);
+      } catch (error) {
+        // A lost lease is not a Call 8 defect -- the stage was aborted before
+        // it could persist anything, and swallowing it would record a deferral
+        // that never happened.
+        if (error?.code === "stage_lease_lost" || error?.retryable === true) throw error;
+        const code = String(error?.code || error?.stageCode || "call8_proof_unavailable");
+        const message = String(error?.message || error);
+        console.error(`[DESIGNPRO-OS] Call 8 deferred for run ${run.id}: ${code}: ${message}`);
+        return complete(sb, stage, await getRun(sb, run.id), {
+          verified: false,
+          deferred: true,
+          receiptKind: "call8.flat-proof",
+          call: 8,
+          proofKind: "flattened-2d-proof",
+          productionAuthority: "atlas-master",
+          note: "The 2D Production Proof is a later value-add artifact. A.T.L.A.S. is the manufacturing authority, so this failure is recorded and production continues.",
+          failure: { code, message },
+        }, null, []);
+      }
+    }
+    return buildCall8Proof(sb, run, stage, runtimeConfig, input);
   }
   if (stage.stage_key === "panels.build") {
     // CALL 1 ALREADY CUT THESE PANELS. Promote those exact bytes.
@@ -1484,27 +1544,117 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     return complete(sb, stage, rebound, { verified: true, ...data, dimensionBasisHash: basisHash });
   }
   if (stage.stage_key === "source.verify") {
-    const call8 = await receipt(sb, sourceRunId, "call8.flat-proof");
+    // WHAT "PRODUCTION SOURCE COMPLETE" MEANS UNDER A.T.L.A.S.
+    //
+    // This gate used to demand the 2D Production Proof, the six Call 9 cuts and
+    // the Call 10 inventory, and refuse without all three. That was right when
+    // the proof WAS the source -- Call 9 cropped its regions, so a run without
+    // one had nothing to cut from.
+    //
+    // A.T.L.A.S. inverted that. The accepted master is the manufacturing
+    // authority; Call 1 cuts the six panels straight from it at GENIE
+    // dimensions with the five-inch bleed, each stamped with the master hash it
+    // came from. The 2D proof is drawn afterwards, from that same lineage, as
+    // documentation. Requiring documentation to verify the thing it documents
+    // is backwards, and in production it was fatal: this stage failed
+    // `production_source_set_incomplete` on the only run that ever reached it,
+    // and nothing past it has ever executed.
+    //
+    // So for an A.T.L.A.S. run the requirement is the actual authority --
+    // an accepted master, six panels, correct surface keys, every one bound to
+    // that master's hash, GENIE trim and print inches, exactly five inches of
+    // bleed on all four edges, and bytes that still hash to what was recorded.
+    // The proof is carried when it exists and its absence is stated, never
+    // fatal.
     const call9 = await receipt(sb, sourceRunId, "call9.surface-panels");
     const call10 = await receipt(sb, sourceRunId, "call10.logo-inventory");
     const sourceProofs = await artifacts(sb, sourceRunId, ["flat-proof"]);
     const sourcePanels = await artifacts(sb, sourceRunId, ["panel"]);
     const sourceLogos = await artifacts(sb, sourceRunId, ["logo"]);
-    const customerProof = sourceProofs.find((item) => String(item.surface_key || "") === "");
-    if (!customerProof || sourceProofs.length !== 1 || sourcePanels.length !== SURFACE_KEYS.length || new Set(sourcePanels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
-      throw new StageError("production_source_set_incomplete", "The dimensioned 2D proof and exact six own-surface Call 9 gridslices are required", false);
+    const customerProof = sourceProofs.find((item) => String(item.surface_key || "") === "") || null;
+    const atlasRun = String(call9.receipt?.promotedFrom || "") === "atlas-call1";
+
+    if (sourcePanels.length !== SURFACE_KEYS.length
+      || new Set(sourcePanels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
+      throw new StageError("production_source_set_incomplete", "The exact six own-surface production panels are required", false);
     }
-    if (customerProof.content_hash !== call8.receipt?.sourceProofHash) throw new StageError("production_call8_receipt_mismatch", "Call 8 receipt and 2D production proof differ", false);
     for (const surface of SURFACE_KEYS) {
       const row = sourcePanels.find((item) => item.surface_key === surface);
       if (!row || row.content_hash !== call9.receipt?.panelHashes?.[surface]) throw new StageError("production_call9_receipt_mismatch", `Call 9 ${surface} receipt differs`, false);
+    }
+
+    if (atlasRun) {
+      // Every panel has to name the SAME master, and it has to be the master
+      // this revision accepted. Six panels from two masters would be six
+      // panels of two different designs.
+      const masters = new Set(sourcePanels.map((row) => String(row.metadata?.sourceMasterHash || "").toLowerCase()));
+      if (masters.size !== 1 || !HASH_RE.test([...masters][0])) {
+        throw new StageError("production_atlas_master_binding_invalid", "The six panels are not all bound to one A.T.L.A.S. master", false);
+      }
+      const boundMaster = [...masters][0];
+      // WHICH MASTER THIS REVISION ACCEPTED, READ ACROSS THE SEAM.
+      //
+      // Not from the generation-side revision table: manufacturing never reaches
+      // across into the generation tables, and the seam freeze is what keeps the
+      // two halves independently changeable. The immutable revision snapshot is the
+      // interface, and it already carries every Call 1 panel with the master it
+      // was cut from -- so comparing the artifacts against the snapshot is both
+      // the sanctioned read and the stronger check: it proves the stored panels
+      // still agree with what the customer was shown, not merely with a row.
+      const snapshotPanels = await callOnePanelSet(sb, run);
+      const acceptedMasters = new Set((snapshotPanels || [])
+        .map((panel) => String(panel?.sourceMasterHash || "").toLowerCase())
+        .filter((hash) => HASH_RE.test(hash)));
+      if (acceptedMasters.size === 1 && ![...acceptedMasters][0].startsWith(boundMaster.slice(0, 64))) {
+        throw new StageError("production_atlas_master_mismatch", "The panels were cut from a different master than this revision accepted", false);
+      }
+      for (const row of sourcePanels) {
+        const meta = row.metadata || {};
+        const trimW = Number(meta.trimWidthIn ?? meta.trimWidthInches);
+        const trimH = Number(meta.trimHeightIn ?? meta.trimHeightInches);
+        const printW = Number(meta.printWidthIn ?? meta.printWidthInches);
+        const printH = Number(meta.printHeightIn ?? meta.printHeightInches);
+        if (!(trimW > 0 && trimH > 0 && printW > 0 && printH > 0)) {
+          throw new StageError("production_atlas_dimensions_missing", `${row.surface_key} carries no GENIE trim and print dimensions`, false);
+        }
+        // Five inches on every edge, stated two ways in the artifact record.
+        const bleed = meta.bleed && typeof meta.bleed === "object" ? meta.bleed : null;
+        const bleedInches = Number(meta.bleedInches);
+        const edgesFive = bleed
+          ? ["top", "right", "bottom", "left"].every((edge) => Number(bleed[edge]) === 5)
+          : bleedInches === 5;
+        if (!edgesFive) throw new StageError("production_atlas_bleed_invalid", `${row.surface_key} does not carry exactly 5 inches of bleed on all four edges`, false);
+        if (Math.abs((printW - trimW) - 10) > 0.51 || Math.abs((printH - trimH) - 10) > 0.51) {
+          throw new StageError("production_atlas_bleed_geometry_invalid", `${row.surface_key} print size is not its trim plus 5 inches per edge`, false);
+        }
+      }
+      // The bytes still are what the record says they are.
+      for (const row of sourcePanels) {
+        const bytes = await storageBytes(sb, row.storage_path);
+        if (hashBytes(bytes) !== row.content_hash) {
+          throw new StageError("production_atlas_panel_changed", `${row.surface_key} panel bytes changed since Call 9`, false);
+        }
+      }
+    } else if (!customerProof || sourceProofs.length !== 1) {
+      // A non-A.T.L.A.S. run still cuts from the proof, so it is still required.
+      throw new StageError("production_source_set_incomplete", "The dimensioned 2D proof and exact six own-surface Call 9 gridslices are required", false);
+    }
+
+    const call8 = customerProof ? await receipt(sb, sourceRunId, "call8.flat-proof").catch(() => null) : null;
+    if (customerProof && call8?.receipt?.sourceProofHash && customerProof.content_hash !== call8.receipt.sourceProofHash) {
+      throw new StageError("production_call8_receipt_mismatch", "Call 8 receipt and 2D production proof differ", false);
     }
     const receiptPlacements = Array.isArray(call10.receipt?.inventory) ? [...call10.receipt.inventory].sort((a, b) => String(a.placementKey).localeCompare(String(b.placementKey))) : [];
     const observedPlacements = sourceLogos.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, targetSurfaceKey: row.metadata?.targetSurfaceKey, contentHash: row.content_hash })).sort((a, b) => String(a.placementKey).localeCompare(String(b.placementKey)));
     if (JSON.stringify(receiptPlacements) !== JSON.stringify(observedPlacements)) throw new StageError("production_logo_evidence_mismatch", "Call 10 logo placement receipt and immutable logo bytes differ", false);
 
     const produced = [];
-    produced.push(await copyPinnedSourceArtifact(sb, run, customerProof, "flat-proof", "call8-2d-production-proof.png", "image/png", { sourceReceiptHash: call8.receipt_hash }));
+    // Carried when it exists. Its absence on an A.T.L.A.S. run is stated in the
+    // receipt below rather than pretended away, and it is not a reason to hold
+    // the panels back -- they are the thing that prints.
+    if (customerProof) {
+      produced.push(await copyPinnedSourceArtifact(sb, run, customerProof, "flat-proof", "call8-2d-production-proof.png", "image/png", { sourceReceiptHash: call8?.receipt_hash || null }));
+    }
     for (const row of [...sourcePanels].sort((a, b) => a.surface_key.localeCompare(b.surface_key))) {
       produced.push(await copyPinnedSourceArtifact(sb, run, row, "panel", `panels/${row.surface_key}.png`, "image/png", { sourceReceiptHash: call9.receipt_hash }));
     }
@@ -1516,7 +1666,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     }
     return complete(sb, stage, run, {
       verified: true,
-      call8: { receiptKind: "call8.flat-proof", receiptHash: call8.receipt_hash },
+      productionAuthority: atlasRun ? "atlas-master" : "call8-2d-proof",
+      call8: customerProof
+        ? { receiptKind: "call8.flat-proof", receiptHash: call8?.receipt_hash || null }
+        : { present: false, note: "The 2D Production Proof is a later value-add artifact and does not gate production source verification on an A.T.L.A.S. run." },
       call9: { receiptKind: "call9.surface-panels", receiptHash: call9.receipt_hash },
       call10: { receiptKind: "call10.logo-inventory", receiptHash: call10.receipt_hash },
       sourceArtifactCount: produced.length, logoPlacements: receiptPlacements,

@@ -249,3 +249,68 @@ test("the dormant Design Master cluster stays out of the active runtime", () => 
     );
   }
 });
+
+/**
+ * THE 2D PRODUCTION PROOF MAY NEVER GATE MANUFACTURING AGAIN.
+ *
+ * A.T.L.A.S. is the manufacturing authority: the accepted master is cut into
+ * the six panels at Call 1, each bound to that master's hash at GENIE
+ * dimensions with the five-inch bleed, and those panels are what prints. The 2D
+ * Production Proof is drawn afterwards from the same lineage, as documentation
+ * the customer signs.
+ *
+ * It sat second in the stage list, so it gated everything. The production
+ * database showed what that cost: proof.build failed 8 of 11 attempts, and
+ * because a failed stage stops the run, NOTHING downstream had ever executed --
+ * no PanelPro gate, no enhancement, not one output file, no ZIP, no WrapBox
+ * delivery, in the entire history of the system. A documentation artifact held
+ * the whole manufacturing chain hostage, and source.verify demanded that same
+ * artifact to certify the panels it documents, which is backwards.
+ *
+ * This pins both halves of the correction. A Call 8 failure on an A.T.L.A.S.
+ * run is recorded and deferred, never fatal. And production source
+ * completeness is the actual authority -- master, six panels, surface keys,
+ * master binding, GENIE trim and print inches, exactly five inches of bleed,
+ * byte integrity -- with the proof carried when present and never required.
+ *
+ * A run with no A.T.L.A.S. panel set still fails hard on both, because there
+ * the proof genuinely is the source Call 9 cuts from.
+ */
+test("the 2D Production Proof never gates A.T.L.A.S. manufacturing", () => {
+  const claimant = readFileSync(
+    resolve(import.meta.dirname, "..", "runtime", "designpro-standalone-claimant.cjs"),
+    "utf8",
+  );
+
+  // Call 8 defers rather than failing, and only for a run A.T.L.A.S. cut.
+  assert.match(claimant, /const atlasPanels = await callOnePanelSet\(sb, run\)\.catch\(\(\) => null\)/);
+  assert.match(claimant, /deferred: true/);
+  assert.match(claimant, /productionAuthority: "atlas-master"/);
+  // A lost lease is still a lease loss, not a deferred proof.
+  assert.match(claimant, /error\?\.code === "stage_lease_lost" \|\| error\?\.retryable === true\) throw error/);
+  // A run with no atlas panels still runs Call 8 fatally.
+  assert.match(claimant, /return buildCall8Proof\(sb, run, stage, runtimeConfig, input\);/);
+
+  // source.verify certifies the manufacturing authority, not the documentation.
+  const verify = claimant.slice(claimant.indexOf('stage.stage_key === "source.verify"'));
+  assert.match(verify, /const atlasRun = String\(call9\.receipt\?\.promotedFrom \|\| ""\) === "atlas-call1"/);
+  for (const check of [
+    "production_atlas_master_binding_invalid",   // one master behind all six
+    "production_atlas_master_mismatch",          // and it is the accepted one
+    "production_atlas_dimensions_missing",       // GENIE trim + print inches
+    "production_atlas_bleed_invalid",            // exactly 5" on four edges
+    "production_atlas_bleed_geometry_invalid",   // print == trim + 5" per edge
+    "production_atlas_panel_changed",            // bytes still hash true
+  ]) {
+    assert.ok(verify.includes(check), `source.verify must enforce ${check}`);
+  }
+  // The proof is optional on an atlas run and carried when present.
+  assert.match(verify, /const customerProof = sourceProofs\.find[\s\S]{0,90}\|\| null;/);
+  assert.match(verify, /if \(customerProof\) \{/);
+  assert.match(verify, /\} else if \(!customerProof \|\| sourceProofs\.length !== 1\) \{/);
+
+  // And the seam still holds: manufacturing reads the snapshot, never the
+  // generation-side tables, for the master it must verify against.
+  assert.match(verify, /const snapshotPanels = await callOnePanelSet\(sb, run\);/);
+  assert.doesNotMatch(claimant, /designpro_flat_atlas_revisions/);
+});
