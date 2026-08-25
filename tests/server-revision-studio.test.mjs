@@ -171,12 +171,22 @@ test("PanelPro pairs a proof with a panel only when they share one master", () =
   // And it is a gate, not a label: this approval releases artwork to print.
   assert.match(board, /disabled=\{!panel \|\| \(lineageKnown && !lineageMatches\)\}/);
 
-  // The board stays a validator. The browser-era producer controls must not
-  // come back -- the server already holds the panel bytes from the master.
+  // The board stays a validator: no browser-era panel GENERATION. The server
+  // already holds the panel bytes cut from the accepted master, so a control
+  // that makes a panel in the browser is a second producer.
   //
-  // Checked against CODE lines only. The file's own header names those controls
-  // while explaining that it deliberately does not carry them, and a gate that
-  // cannot tell a comment from a button would forbid documenting the decision.
+  // "Upload panel" is deliberately NOT on this list. A designer who checks a
+  // panel against the real vehicle template and finds it does not fit must be
+  // able to correct it and upload the corrected production artifact back into
+  // the same surface/revision lineage. That is an authorized human production
+  // correction with an audit trail, not a second AI producer, and forbidding it
+  // would strip a required production function -- which an earlier version of
+  // this very test did.
+  //
+  // Checked against CODE lines only. The file's own header names the generation
+  // controls while explaining that it deliberately does not carry them, and a
+  // gate that cannot tell a comment from a button would forbid documenting the
+  // decision.
   const boardCode = board
     .split("\n")
     .filter((line) => {
@@ -184,10 +194,10 @@ test("PanelPro pairs a proof with a panel only when they share one master", () =
       return trimmed && !trimmed.startsWith("//") && !trimmed.startsWith("*") && !trimmed.startsWith("/*");
     })
     .join("\n");
-  for (const producerControl of ["Pull panel", "Mirror from driver", "Upload panel"]) {
+  for (const generationControl of ["Pull panel", "Mirror from driver"]) {
     assert.ok(
-      !boardCode.includes(producerControl),
-      `PanelPro must not reintroduce the browser-era producer control: ${producerControl}`,
+      !boardCode.includes(generationControl),
+      `PanelPro must not reintroduce browser-era panel generation: ${generationControl}`,
     );
   }
   assert.match(board, /The server produces this panel at Call 9\. It is never hand-built here\./);

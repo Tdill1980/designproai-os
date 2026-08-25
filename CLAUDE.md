@@ -382,6 +382,100 @@ matches `surfaceForProofView()`; the panel artifact publishes
 PanelPro compares them per side and **refuses to approve** a pair that provably
 came from different masters — locked by `tests/server-revision-studio.test.mjs`.
 
+## 🏭 RULE 0.22 — PANELPRO STUDIO IS THE PRODUCTION CONTROL ROOM, NOT A SIX-CARD VALIDATOR (Trish 2026-08-25)
+
+**PanelPro Studio already existed as a working product page. Restore it; do not
+rebuild a smaller replacement.** The working implementation is
+`app/src/pages/AdminGeminiCompareStudio.tsx` (present in this repo from the
+RestylePro import, currently unrouted, routed in RestylePro at
+`/admin/studio-board`). Migrate its data seams to the server-owned A.T.L.A.S.
+lineage exactly as `RevisionStudioIQ.tsx` is being migrated — **preserve the
+UI/UX and its asset-management capability**, and reuse the newer server
+verification/binding logic underneath it.
+
+`PanelProStudioBoard.tsx` holds useful server-backed validation, but it is **not
+permission to replace the full studio.**
+
+It is the design team's complete production workspace for one order, keyed by
+`generationId` · Design Order ID / order number · Design ID (DID), and it must
+preserve the whole chronological lineage.
+
+### A.T.L.A.S. version history — every revision, never only the newest
+
+V1, V2, V3, V4… all remain inspectable and downloadable. **Never silently
+replace V1 when V2 is created.** Each revision shows: revision number · Design
+ID · Design Order ID · date · exact timestamp · **the customer revision/prompt
+text that produced it** · the A.T.L.A.S. master · master hash / lineage
+identity · its 3D proofs · its production proof · its deterministic surface
+panels.
+
+### The complete asset set, each individually downloadable
+
+Flattened A.T.L.A.S. master · every saved A.T.L.A.S. version · driver ·
+passenger · hood · roof · front · rear panels · 5″ bleed versions · all
+canonical 3D proofs · 2D Production Proof · logos / extracted branding ·
+metadata + dimension sheet · panel dimensions · square footage / GENIE geometry
+· production PNG · production TIFF · required production derivatives · QC and
+approval metadata.
+
+**Do not hide files behind only a final ZIP.**
+
+### PanelPro QC is HUMAN design-team QC, not AI scoring
+
+The team verifies each output against the **actual vehicle template** and
+confirms the panel will physically fit the real vehicle. Per surface: correct
+vehicle/template · correct surface · correct dimensions · 5″ bleed · correct
+design/revision · proof and panel from the same A.T.L.A.S. master · graphics
+aligned to the real template · text/logo placement safe · nothing important
+falling into openings or cut areas · production resolution and file integrity.
+
+### ⚠️ THE MANUAL CORRECTION PATH MUST REMAIN — DO NOT STRIP IT
+
+**No manual/browser panel GENERATION. Yes to controlled human production
+CORRECTION and upload, with lineage and audit history preserved.**
+
+That distinction is the whole rule. `Pull panel` and `Mirror from driver` were
+browser-era *producers* and stay gone — the server already holds the panel bytes
+cut from the accepted master. But when a deterministic panel does not fit the
+real template, the designer must be able to:
+
+1. download the panel;
+2. correct/re-output it against the real vehicle template;
+3. **upload the corrected production panel back into the SAME surface/revision
+   lineage**;
+4. retain BOTH the original system artifact and the corrected human-approved
+   artifact, for audit history;
+5. mark the corrected artifact as the active production artifact;
+6. click Approved only after physical/template QC passes.
+
+An agent reading "no Upload panel" out of context will delete a required
+production function. One already did: a lock in
+`tests/server-revision-studio.test.mjs` forbade the string outright and had to be
+corrected. Forbid *generation*, never *correction*.
+
+### Approval → Production Pack → WrapBox
+
+Once the human QC checks pass: freeze the approved revision and panel
+identities · stamp the Production Pack Proof approved · record approver, date,
+time, hashes and metadata · assemble the Production Pack · generate the
+metadata/dimension sheet · ZIP the approved deliverable.
+
+The ZIP carries at minimum the approved 3D proof set, approved 2D Production
+Proof, metadata/panel-dimension sheet, approved production panels, TIFF and PNG
+outputs, and the production/approval metadata — **plus any pack assets the
+working implementation already supports.** After the ZIP is built and verified,
+publish it to **WrapBox**, where the customer downloads it.
+
+### Final acceptance
+
+For one fresh generation, PanelPro Studio must show the whole lineage:
+
+> Design Order → Design ID → V1/V2/V3… → prompt + timestamp → A.T.L.A.S. master
+> → 3D proofs → 2D Production Proof → six panels → human/template QC →
+> corrected upload if needed → approved Production Pack → ZIP → WrapBox
+
+**Nothing in that lineage may be silently replaced, disconnected, or lost.**
+
 ## ⛔ RULE 0 — OPTIMIZE FOR BEHAVIORAL PARITY, NOT ARCHITECTURE (Trish 2026-08-17)
 
 **The screenshots in `docs/LAST-WORKING-STATE-2026-07-24.md` are the spec.**
