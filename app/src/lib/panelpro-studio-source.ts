@@ -37,7 +37,9 @@ import {
 } from "@/lib/designpro-api";
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
 import {
+  assetsForVersion,
   designVersionsFrom,
+  type DesignVersion,
   type DesignVersionHistory,
 } from "@/lib/design-version-history";
 
@@ -142,6 +144,14 @@ export type PanelProStudioJob = {
    * an earlier revision left it behind, and those are not the same fact.
    */
   stages: WorkflowStatus["stages"];
+  /**
+   * The unscoped sets this job was built from, kept so a surface can re-derive
+   * itself for a DIFFERENT version without another round trip. Switching from
+   * V3 to V1 has to change the panels and proofs on screen, not just the
+   * version badge, and re-deriving from these is what makes that true.
+   */
+  raw_views: ApprovedGenerationView[];
+  raw_artifacts: WorkflowArtifact[];
 };
 
 /**
@@ -328,6 +338,8 @@ export function studioJobFrom(input: {
     current_stage: input.job.currentStage,
     revision_id: input.job.revisionId,
     stages: input.job.stages,
+    raw_views: [...input.views],
+    raw_artifacts: [...input.artifacts],
   };
 }
 
@@ -402,4 +414,47 @@ export async function findPanelProStudioJob(query: string): Promise<string | nul
     || job.generation_id === needle
     || (digits.length >= 4 && job.order_number.replace(/[^0-9]/g, "").includes(digits)));
   return match?.generation_id || null;
+}
+
+
+/**
+ * THE SAME JOB, SHOWN AT A DIFFERENT VERSION.
+ *
+ * Selecting V1 on a design that is now at V3 has to show V1's proofs, V1's
+ * panels and V1's logos -- not the current set with an older label on it. The
+ * binding to do that already exists on every artifact, so this re-derives the
+ * whole job from the sets it was built with, scoped by that version's master.
+ *
+ * An artifact carrying no master binding is kept rather than dropped: it
+ * predates the binding or came from a Standard run, and an empty board would be
+ * a worse answer than an honest one. It is never counted as belonging to the
+ * selected version -- the surface reports it as unbound.
+ */
+export function panelProJobAtVersion(
+  job: PanelProStudioJob,
+  version: DesignVersion | null,
+  approvedSides?: ReadonlySet<string>,
+): PanelProStudioJob {
+  if (!version) return job;
+  const scoped = assetsForVersion(version, job.raw_artifacts, job.raw_views);
+  return studioJobFrom({
+    job: {
+      ...({} as WorkflowStatus),
+      generationId: job.generation_id,
+      designId: job.design_id,
+      orderNumber: job.order_number,
+      state: job.state,
+      currentStage: job.current_stage,
+      revisionId: job.revision_id,
+      revision: job.revision,
+      brief: job.brief,
+      createdAt: job.created_at,
+      vehicle: { year: job.vehicle_year, make: job.vehicle_make, model: job.vehicle_model },
+      stages: job.stages,
+    } as unknown as WorkflowStatus,
+    views: [...scoped.views, ...scoped.unboundViews],
+    artifacts: [...scoped.artifacts, ...scoped.unboundArtifacts],
+    atlasRevisions: job.atlas_versions,
+    approvedSides,
+  });
 }

@@ -26,9 +26,14 @@ import {
   STAGE_LABEL,
 } from "@/lib/designpro-stages";
 import {
+  exactTimestamp,
+  type DesignVersion,
+} from "@/lib/design-version-history";
+import {
   findPanelProStudioJob,
   listPanelProStudioJobs,
   loadPanelProStudioJob,
+  panelProJobAtVersion,
   SURFACE_FOR_SIDE_KEY,
   type PanelProStudioJob,
 } from "@/lib/panelpro-studio-source";
@@ -581,6 +586,114 @@ function StudioBoardCanvas({ jobId, items, onEnlarge, onEdit, onUploadToSide, on
 const STUDIO_RENDER_ACE_ENABLED = false;
 
 /**
+ * THE JOB, AND EVERY VERSION IT HAS BEEN THROUGH.
+ *
+ * Requirement one and two of the production control room: who this order is
+ * for and what exactly was asked for, at every version, in the customer's own
+ * words.
+ *
+ * The history is NOT this page's own. It is the same canonical A.T.L.A.S.
+ * revision lineage RevisionStudio reads, through the same function, so V2 here
+ * is V2 there -- same number, same prompt text, same timestamp, same master.
+ * A revision created in RevisionStudio appears here because both surfaces read
+ * one record, not because anything is copied between them.
+ *
+ * V1 is never replaced when V2 is made. Every version stays selectable, and
+ * selecting one is what switches the workspace below to that revision's assets.
+ */
+function JobHeader({
+  job,
+  selectedVersion,
+  onSelectVersion,
+}: {
+  job: PanelProStudioJob;
+  selectedVersion: DesignVersion | null;
+  onSelectVersion: (version: number) => void;
+}) {
+  const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ");
+  const history = job.version_history;
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <dl className="grid gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
+        {[
+          ["Design Order #", job.order_number || "—"],
+          ["Design ID", job.design_id || "—"],
+          ["generationId", job.generation_id || "—"],
+          ["Customer vehicle", vehicle || "—"],
+          ["Current A.T.L.A.S. version", history.current ? `V${history.current.version}` : "—"],
+          ["Job status", `${job.state}${job.current_stage ? ` · ${job.current_stage}` : ""}`],
+          ["Created", exactTimestamp(job.created_at)],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-gray-500">{label}</dt>
+            <dd className="truncate font-mono text-[11px] font-semibold text-gray-900" title={String(value)}>
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-4 border-t border-gray-100 pt-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+            Version + prompt history · {history.versions.length}
+          </span>
+          <span className="text-[10px] text-gray-400">
+            The same history RevisionStudio shows
+          </span>
+        </div>
+        {history.versions.length === 0 ? (
+          <p className="text-[11px] text-gray-500">
+            No A.T.L.A.S. revision has been recorded for this design yet.
+          </p>
+        ) : (
+          <ol className="space-y-1.5">
+            {history.versions.map((entry) => {
+              const active = entry.revisionId === selectedVersion?.revisionId;
+              return (
+                <li key={entry.revisionId}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectVersion(entry.version)}
+                    className={`flex w-full items-start gap-3 rounded-lg border p-2 text-left transition ${
+                      active
+                        ? "border-blue-500 bg-blue-50/60 ring-1 ring-blue-300"
+                        : "border-gray-200 hover:border-gray-400"
+                    }`}
+                  >
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                        active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700"
+                      }`}
+                    >
+                      V{entry.version}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-500">
+                        <span className="font-mono">{exactTimestamp(entry.createdAt)}</span>
+                        <span className="uppercase tracking-wider">
+                          {entry.promptKind === "original-brief" ? "original brief" : "revision"}
+                        </span>
+                        <span className="font-mono">rev {entry.revisionId.slice(0, 8)}</span>
+                        <span className="font-mono">master {entry.masterContentHash.slice(0, 12)}</span>
+                      </div>
+                      {/* Verbatim, exactly as the customer typed it. */}
+                      <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-snug text-gray-800">
+                        {entry.prompt || <span className="text-gray-400">No prompt recorded for this version.</span>}
+                      </p>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * PRODUCTION PACK — the back half of one job, from the server's own record.
  *
  * This replaces RestylePro's ProductionPackQCCard, which read `panelizer_jobs`,
@@ -885,6 +998,14 @@ export default function AdminGeminiCompareStudio() {
   const [cmpB, setCmpB] = useState<string>("");
   const [editTarget, setEditTarget] = useState<StudioBoardEditTarget | null>(null);
   const [view, setView] = useState<"grid" | "board">("grid");
+  /**
+   * WHICH VERSION THIS WORKSPACE IS SHOWING. Null means the newest, which is
+   * what an unqualified reference to "the design" means. Selecting an older one
+   * switches the whole board to that revision's assets rather than layering it
+   * over the current set -- two versions on screen at once is how the wrong
+   * panel gets approved.
+   */
+  const [selectedVersionNumber, setSelectedVersionNumber] = useState<number | null>(null);
   const [runningPanelPro, setRunningPanelPro] = useState(false);
   const [panelProProgress, setPanelProProgress] = useState<{ done: number; total: number; label: string } | null>(null);
   const [buildingPrint, setBuildingPrint] = useState<{ done: number; total: number } | null>(null);
@@ -1767,6 +1888,37 @@ export default function AdminGeminiCompareStudio() {
     }
   };
 
+  /**
+   * The version on screen, and the assets that belong to it.
+   *
+   * Membership is the master hash a panel or proof already records, so
+   * switching versions actually changes what is shown instead of relabelling
+   * the same files. An artifact with no binding is not attributed to the
+   * selected version -- it is reported separately rather than mislabelled.
+   */
+  const versionHistory = (job as unknown as PanelProStudioJob | null)?.version_history;
+  const selectedVersion = useMemo(() => {
+    const versions = versionHistory?.versions || [];
+    if (!versions.length) return null;
+    if (selectedVersionNumber == null) return versions[versions.length - 1];
+    return versions.find((entry) => entry.version === selectedVersionNumber) || versions[versions.length - 1];
+  }, [versionHistory, selectedVersionNumber]);
+
+  /**
+   * The job as it was at the selected version. Switching versions changes the
+   * panels, proofs and logos on screen, never just the badge -- two versions on
+   * one board is how the wrong panel gets approved.
+   */
+  const versionedJob = useMemo(() => {
+    const current = job as unknown as PanelProStudioJob | null;
+    if (!current || !selectedVersion) return current;
+    try {
+      return panelProJobAtVersion(current, selectedVersion, approvedSidesRef.current);
+    } catch {
+      return current;
+    }
+  }, [job, selectedVersion]);
+
   const vehicleName = job
     ? [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ")
     : "";
@@ -1874,6 +2026,12 @@ export default function AdminGeminiCompareStudio() {
 
         {job && (
           <div className="space-y-6">
+            <JobHeader
+              job={job as unknown as PanelProStudioJob}
+              selectedVersion={selectedVersion}
+              onSelectVersion={setSelectedVersionNumber}
+            />
+
             {/* Compact top row: job card (half) + action buttons next to it */}
             <div className="grid gap-4 md:grid-cols-2">
               {/* Job card */}
@@ -1999,7 +2157,7 @@ export default function AdminGeminiCompareStudio() {
                 files, and the stamp/ZIP/WrapBox artifacts it produced. */}
             {job && (
               <ProductionPackSection
-                job={job as unknown as PanelProStudioJob}
+                job={(versionedJob || job) as unknown as PanelProStudioJob}
                 approvedSides={approvedSidesRef.current}
                 onApproved={async () => { await loadJob(String(job.id)); }}
               />
