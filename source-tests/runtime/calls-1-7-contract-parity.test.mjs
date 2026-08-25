@@ -152,7 +152,9 @@ test("A.T.L.A.S. master prompt honors rich controls and exact-reference intent",
     "confident pink flamingo wearing safety glasses", "bold condensed sans serif",
     "Desert Luxury, Built to Last", "EXACT CUSTOMER REFERENCE",
   ]) assert.match(prompt, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
-  assert.match(prompt, /Custom Vehicle Wrap Designer at WePrintWraps\.com/);
+  // RULE 0.20: this call is the design ORIGIN, so it opens with the reference's
+  // COMMERCIAL authoring persona, not the artboard branch's projection framing.
+  assert.match(prompt, /senior graphic designer at a sign and wrap company/);
   assert.match(prompt, /verified approved artwork faithfully in one continuous FLAT unwrapped artboard/);
   assert.match(prompt, /FIRST attached deterministic A\.T\.L\.A\.S\. guide is the sole authority/);
   assert.match(prompt, /Do not redesign, restyle, recolor, simplify, correct, or invent/);
@@ -182,7 +184,7 @@ test("flat DesignIQ carries the Edge artboard-mode quality contract without came
   const direction = ace.buildAtlasArtboardDesignIQDirection({
     ...RICH_INPUT, visionBoardImages: undefined, visionboardIntent: undefined,
   });
-  assert.match(direction, /Custom Vehicle Wrap Designer at WePrintWraps\.com/);
+  assert.match(direction, /senior graphic designer at a sign and wrap company/);
   assert.match(direction, /Design ONE flat vehicle-wrap ARTBOARD/);
   assert.match(direction, /Fill every supplied exterior-panel zone edge-to-edge/);
   assert.match(direction, /SAME cohesive design flowing across every zone/);
