@@ -22,6 +22,7 @@
 import {
   Brain,
   FileStack,
+  Layers,
   Factory,
   Ruler,
   Package,
@@ -60,6 +61,19 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     tier: "starter",
     description: "Describe your wrap — vehicle photos, brand colours and your logo — and get seven photoreal views",
     brandAnchor: true,
+  },
+  {
+    // The product editor itself -- design library, proof/panel review,
+    // revisions, Production Pack entice. This surface shipped with a route and
+    // an access tier but no registry entry, so the only way to open it was to
+    // type /revision-studio by hand; the owner found that out on a phone.
+    key: "revisionstudio",
+    label: "RevisionStudioIQ",
+    route: "/revision-studio",
+    icon: Layers,
+    pillar: "design",
+    tier: "advanced",
+    description: "Browse your designs, review every proof beside its print panel, revise and order",
   },
   {
     key: "revisionsource",
