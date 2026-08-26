@@ -853,6 +853,40 @@ Two facts, learned together, because the second hides behind the first.
    drifted one. `designpro_private.caller_owns_generation_path(text,text)` is
    that in-history twin.
 
+## 🚦 THE MERGE DOES NOT DEPLOY ITSELF, AND DISPATCHING THE GATE ON `main` KILLS THE ONE THAT WOULD (2026-08-26)
+
+Two facts, learned in the same five minutes, and the second is invisible until
+you go looking for it.
+
+1. **`release.yml`'s concurrency group is `designpro-release-<ref>`, with
+   `cancel-in-progress: true`.** A `workflow_dispatch` on `main` and the push
+   gate from a merge to `main` resolve to the SAME group, because neither has a
+   pull-request number. So dispatching the protected production migration right
+   after merging **cancels the merge's own gate run** — and
+   `deploy-production.yml` only auto-fires on
+   `workflow_run.conclusion == success && workflow_run.event == push`, so a
+   cancelled gate means the deploy is skipped, silently. Live on 2026-08-26:
+   gate `32936283425` cancelled, deploy `32936295705` skipped.
+
+2. **The auto-deploy path also requires an opt-in marker in the merge commit.**
+   Its "Prove exact protected main intent" step runs
+   `git log -1 --format=%B | grep -Fq '[dark-deploy]'` on the `workflow_run`
+   branch. A merge commit without that literal string never deploys, however
+   green its gate. This is deliberate: merging is not the same act as putting
+   an artifact on the droplet.
+
+**So the order that actually works** is: merge → dispatch `release.yml` on
+`main` with `APPLY_DESIGNPRO_PRODUCTION` (it must be `main`; the job asserts
+`test "$GITHUB_REF" = "refs/heads/main"`, which is why dispatching it on the
+feature branch fails at the guard) → then dispatch `deploy-production.yml` on
+`main` with `exact_sha` = main's head and
+`DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3`. The dispatch path asserts
+`GITHUB_SHA == EXACT_SHA`, so it can only ever deploy the head of main.
+
+Put `[dark-deploy]` in the merge commit message only when the merge itself
+should ship — and note that dispatching the migration afterwards will still
+cancel that gate, so the two mechanisms do not compose. Pick one.
+
 ## Where things are
 
 | | |
