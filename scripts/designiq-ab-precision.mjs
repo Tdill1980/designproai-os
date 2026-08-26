@@ -275,6 +275,14 @@ async function main() {
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
     ["B", { parts: bParts, model: provider.models[0], cfg: requests.B.generationConfig, file: "B-atlas-master.png" }],
+    // The droplet resolves GOOGLE_IMAGE_MODEL=gemini-3-pro-image while the
+    // control pins gemini-3-pro-image-preview, so A and B differ by model as
+    // well as by request. Running B's exact parts on the control's model too
+    // costs one call and removes the confound: if B-preview and B agree, the
+    // model is not the variable and the request is.
+    ...(provider.models[0] === CONTROL_MODEL ? [] : [["B-preview", {
+      parts: bParts, model: CONTROL_MODEL, cfg: requests.B.generationConfig, file: "B-atlas-master-preview-model.png",
+    }]]),
   ]) {
     try {
       const out = await callGemini({
