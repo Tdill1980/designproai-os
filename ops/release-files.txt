@@ -41,6 +41,7 @@ runtime/mesh-warp.cjs
 runtime/opentype-outline.cjs
 runtime/designpro-master-cycle.cjs
 runtime/view-angles.cjs
+runtime/visionboard-iq.cjs
 runtime/photorealism-prompt.cjs
 runtime/generation-provider.cjs
 runtime/designpanel-server-provider.cjs

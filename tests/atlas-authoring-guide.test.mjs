@@ -143,8 +143,17 @@ test("reintroducing text on the authoring path fails the run instead of authorin
 
 test("the prompt states full bleed positively and no longer enumerates guide furniture", () => {
   const prompt = atlasPrompt({ designBrief: "a clean geometric livery" }, manifest);
-  assert.match(prompt, /FULL BLEED PER ZONE/);
-  assert.match(prompt, /no transparent pixel/i);
+  // FULL BLEED IS STATED ONCE, POSITIVELY, IN THE PROTECTED BLOCK.
+  //
+  // It used to be stated twice: a "FULL BLEED PER ZONE" heading and then SOLID
+  // PANELS immediately below it, which RULE 0.15 protects verbatim and which
+  // already says every zone is one solid rectangle of continuous artwork,
+  // opaque corner to corner and edge to edge. The heading carried one clause
+  // SOLID PANELS does not — what happens OUTSIDE the rectangles — so that
+  // clause survives on its own and the restatement is gone.
+  assert.match(prompt, /SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL/);
+  assert.match(prompt, /opaque corner to corner and edge to edge/i);
+  assert.match(prompt, /canvas stays empty/i, "the outside-the-zones rule must survive the dedupe");
   // Zone identity still reaches the model as text, which is why the glyphs were
   // never load-bearing.
   for (const zone of manifest.zones) {

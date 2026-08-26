@@ -20,6 +20,7 @@
 
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
+const { analyzeVisionBoardStyles } = require("./visionboard-iq.cjs");
 const {
   DESIGNPANEL_ARTBOARD_PORT_VERSION,
   buildAtlasArtboardDesignIQDirection,
@@ -950,7 +951,7 @@ TOPOLOGY LOCK:
 ZONE MAP -- each box is a real printed surface at the size stated; scale lettering, motif and hierarchy to those inches:
 ${map}
 
-FULL BLEED PER ZONE: fill every rectangle listed in the ZONE MAP with opaque artwork from corner to corner. Each listed box is 100% covered: no gap, no empty region, no transparent pixel and no unpainted area anywhere inside it, on any surface. Outside the rectangles the canvas stays empty.
+OUTSIDE THE ZONES: the canvas stays empty. Every rectangle listed in the ZONE MAP is artwork; nothing else on the sheet is.
 
 SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL: every zone is ONE SOLID RECTANGLE of continuous printed artwork, opaque corner to corner and edge to edge. The design runs straight through every place a windshield, side window, door glass, wheel arch, tyre, pickup-bed opening, headlight, tail light, handle or trim piece will later sit, exactly as if those parts were not there. THE INSTALLER CUTS THE WHEEL AND WINDOW OPENINGS OUT OF THE FINISHED PANEL, so the panel must have artwork in those places for them to cut. Paint the wrap graphic across the whole rectangle. Each zone reads as a flat sheet of printed vinyl, never as a picture of a vehicle.
 
@@ -1396,11 +1397,37 @@ async function generateOrReuseFlatAtlas(options) {
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
   const manifest = buildAtlasManifest(surfaces, geometryAuthority);
+
+  // VISIONBOARDIQ RUNS BEFORE THE DESIGN CALL, AND ITS RESULT GOES INTO IT.
+  //
+  // The reference derives style DNA from the customer's reference images and
+  // hands it to the authoring prompt (index.ts:661). The runtime consumed
+  // `styleDescriptors` in four places and produced it in none, so across all 11
+  // real A.T.L.A.S. runs it was populated on zero: the STYLE INSPIRATION branch
+  // could never fire and reference images arrived as pictures with no extracted
+  // intelligence.
+  //
+  // The bytes are downloaded and hash-verified ONCE here and the same parts are
+  // reused in the request below, so adding the pre-pass costs no extra storage
+  // reads. A caller-supplied `styleDescriptors` wins — the pre-pass fills a gap,
+  // it never overrides an answer the caller already has.
+  //
+  // It supplements the persona and never gates it: on failure, on refusal, on
+  // timeout and when no references were supplied at all, this is null and the
+  // design call proceeds on the brief with its full professional-design
+  // behaviour intact.
+  const customerReferenceParts = await verifiedCustomerReferenceParts(supabase, input);
+  const visionBoardStyleDna = String(input?.styleDescriptors || "").trim()
+    || await analyzeVisionBoardStyles({ provider, referenceParts: customerReferenceParts });
+  const authoringInput = visionBoardStyleDna
+    ? { ...input, styleDescriptors: visionBoardStyleDna }
+    : input;
+
   // The creative half states the quality bar against the gold-standard
   // artboards only when they are actually in the request. On the live droplet
   // the bucket holds none, and the sentence was pointing at attachments that
   // were never sent.
-  const prompt = atlasPrompt(input, manifest, {
+  const prompt = atlasPrompt(authoringInput, manifest, {
     artboardQualityExampleCount: artboardQualityExamples.length,
   });
   const promptHash = sha256(Buffer.from(prompt, "utf8"));
@@ -1462,7 +1489,7 @@ async function generateOrReuseFlatAtlas(options) {
     ...(await topologyExampleParts(topologyExamples)),
     ...(await artboardQualityExampleParts(artboardQualityExamples)),
     ...(await verifiedCustomerLogoPart(supabase, input)),
-    ...(await verifiedCustomerReferenceParts(supabase, input)),
+    ...customerReferenceParts,
   ];
   if (typeof masterValidatorFactory !== "function") {
     throw new FlatAtlasError(

@@ -297,11 +297,31 @@ SIDE-TWIN CONTRACT: DRIVER and PASSENGER are opposite-facing installations of th
 THE CONCEPT — the heart of this design; build every connected atlas zone around it:
 DESIGN BRIEF: "${prompt}"`;
 
-  if (!exactReference) {
-    assembled += mode === "restyle"
-      ? `\n\nDESIGN AMPLIFICATION: Elevate and enhance the brief. Fill decisions the customer left open with depth, flow, layered thematic elements, texture, color harmony and dimension. The result must feel custom-designed, never like generic filler or a reusable template.\n${PROFESSIONAL_JUDGMENT}`
+  // A REFERENCE NEVER TURNS THE DESIGNER OFF. (Owner contract, 2026-08-26.)
+  //
+  // This block — the elevation, the layered depth, the texture, the brand
+  // composition and the professional judgment — used to be skipped entirely
+  // whenever the intent was `exact_reference`. Measured: with one reference
+  // image attached, a commercial brief lost both COMMERCIAL_DEPTH and
+  // COMMERCIAL_TRANSLATION, so attaching a picture silently downgraded the
+  // design behaviour of every other surface of the wrap.
+  //
+  // VisionBoardIQ SUPPLEMENTS the professional designer persona; it does not
+  // replace it. So the craft always fires, and what `exact_reference` changes is
+  // stated as PRECEDENCE rather than as absence: the reference governs the
+  // artwork it actually covers, and the designer's judgment governs everything
+  // it does not — layout across the atlas, the surfaces the reference says
+  // nothing about, and the depth and finish quality of the whole sheet.
+  //
+  // COMMERCIAL_TRANSLATION is the one clause held back under an exact
+  // reference, and only because it instructs the model to invent geometry from
+  // words: under a reproduce-faithfully intent that is the one thing that would
+  // contradict the reference itself.
+  assembled += mode === "restyle"
+    ? `\n\nDESIGN AMPLIFICATION: Elevate and enhance the brief. Fill decisions the customer left open with depth, flow, layered thematic elements, texture, color harmony and dimension. The result must feel custom-designed, never like generic filler or a reusable template.\n${PROFESSIONAL_JUDGMENT}`
+    : exactReference
+      ? `\n${COMMERCIAL_DEPTH} ${COMMERCIAL_BRAND_COMPOSITION}\n${PROFESSIONAL_JUDGMENT}`
       : `\n${COMMERCIAL_TRANSLATION}\n${COMMERCIAL_DEPTH} ${COMMERCIAL_BRAND_COMPOSITION}\n${PROFESSIONAL_JUDGMENT}`;
-  }
 
   assembled += "\n\nCUSTOMER IDENTITY AND DESIGN LOCKS:";
   if (companyName) {
@@ -321,11 +341,11 @@ DESIGN BRIEF: "${prompt}"`;
     // business name exactly." - the same instruction twice, which carries no
     // creative value and dilutes the sentence that does.
     assembled += `\nBRAND: ${companyName} — integrate the company name + logo + a clean contact bar into the design, legible at a glance. Spell the business name exactly.`;
-    assembled += input.logoAsset
+    assembled += logoCondition(input) === "supplied"
       ? " The attached verified customer-owned logo is the logo authority; preserve its form, spelling, proportions and palette exactly and never invent a substitute."
-      : ` ${LOGO_REQUIREMENT}`;
+      : ` ${LOGO_REQUIREMENT} ${LOGO_AUTHORING_RULE}`;
   } else if (mode === "commercial") {
-    assembled += `\nIdentify the business name only from the customer's creative direction and spell it exactly. ${LOGO_REQUIREMENT}`;
+    assembled += `\nIdentify the business name only from the customer's creative direction and spell it exactly. ${LOGO_REQUIREMENT} ${LOGO_AUTHORING_RULE}`;
   }
   // PER-FIELD PAIRED GUARDS. Each contact field decides its own instruction and
   // nothing else can suppress it:
@@ -369,6 +389,15 @@ DESIGN BRIEF: "${prompt}"`;
   if (references.length) {
     if (exactReference) {
       assembled += "\n\nEXACT CUSTOMER REFERENCE: The verified customer reference images attached after the topology examples are the artwork authority. Reproduce their graphics, palette, typography, logos, composition, coverage density and visual hierarchy faithfully across the flat atlas. Installer-map examples remain topology-only and must never influence style.";
+      // The intents stay distinct and the DNA still travels. Under an exact
+      // reference the images themselves are the authority, so the extracted
+      // style DNA is stated as a reading of them rather than as a second brief
+      // — it helps carry the reference onto the surfaces the reference does not
+      // itself cover, and it is explicitly subordinate to the reproduction rule
+      // above so the two can never compete.
+      if (input.styleDescriptors) {
+        assembled += `\nThe reference's extracted style DNA, for carrying it consistently across zones it does not itself show: ${String(input.styleDescriptors)}. Where this reading and the reference images differ, the images win.`;
+      }
     } else if (input.styleDescriptors) {
       assembled += `\n\nSTYLE INSPIRATION: Create original artwork using this verified reference style DNA: ${String(input.styleDescriptors)}. Do not copy the reference composition or branding.`;
     } else {
@@ -527,6 +556,46 @@ DESIGN BRIEF: "${prompt}"`;
 // use the explicit artboard name so this cannot be mistaken for a proof prompt.
 function buildFlatDesignIQDirection(input = {}, options = {}) {
   return buildAtlasArtboardDesignIQDirection(input, options);
+}
+
+/**
+ * THE LOGO CONDITION IS STRUCTURAL, NOT A HOPE. (Owner persona contract, 2026-08-26.)
+ *
+ * Three states, decided by the INPUT and nothing else:
+ *
+ *   supplied  a verified customer logo is attached -> it is the authority
+ *   auto      a business brief with no usable logo -> DESIGN one
+ *   none      not a business brief                 -> no logo demand at all
+ *
+ * WHY THE SECOND STATE NEEDED MORE THAN LOGO_REQUIREMENT. That literal — "This
+ * business needs its own logo — decide its form from this brief alone" — is the
+ * reference's own wording and stays byte-identical, because the reference
+ * deleted every FORM prescription after all of them converged ("custom,
+ * distinctive lettering" handed three trades the same lockup; replacing it with
+ * a menu was the same pressure in different clothes).
+ *
+ * But requiring that a logo EXIST does not rule out the degenerate way to
+ * satisfy it, and the reference's own history records that exact failure: live
+ * 2026-08-03, Ridgeline Roofing & Exteriors came back with "company name set in
+ * a typeface, no logo mark anywhere on the vehicle". Set type is not a mark, and
+ * a brief that asks for a business wrap has not been designed until it has one.
+ *
+ * So this names the degenerate OUTCOME without naming a form to replace it with.
+ * The mark's shape, register and construction stay the designer's call and the
+ * brief's; what is refused is answering "make a logo" with the company name in a
+ * font. That is the whole of the addition.
+ */
+const LOGO_AUTHORING_RULE =
+  "Design an actual brand mark for it — the company name set in a typeface is not a logo, "
+  + "however well it is set. The name may lock up with the mark, sit beside it or be built "
+  + "into it; the mark's form, register and construction are your call and the brief's.";
+
+/** supplied | auto | none — decided by the input, never by the prose. */
+function logoCondition(input = {}) {
+  if (input?.logoAsset) return "supplied";
+  const mode = String(input?.mode || "commercial");
+  const isBusiness = mode !== "restyle";
+  return isBusiness ? "auto" : "none";
 }
 
 function buildLogoArchitecture() {
@@ -916,6 +985,8 @@ module.exports = {
   COMMERCIAL_TRANSLATION,
   FINISH_SPECS,
   LOGO_REQUIREMENT,
+  LOGO_AUTHORING_RULE,
+  logoCondition,
   PHOTO_REALISM_LOCK,
   PROFESSIONAL_JUDGMENT,
   SUBSTRATE_CONTEXT,
