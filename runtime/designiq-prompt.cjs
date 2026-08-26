@@ -321,11 +321,11 @@ DESIGN BRIEF: "${prompt}"`;
     // business name exactly." - the same instruction twice, which carries no
     // creative value and dilutes the sentence that does.
     assembled += `\nBRAND: ${companyName} — integrate the company name + logo + a clean contact bar into the design, legible at a glance. Spell the business name exactly.`;
-    assembled += input.logoAsset
+    assembled += logoCondition(input) === "supplied"
       ? " The attached verified customer-owned logo is the logo authority; preserve its form, spelling, proportions and palette exactly and never invent a substitute."
-      : ` ${LOGO_REQUIREMENT}`;
+      : ` ${LOGO_REQUIREMENT} ${LOGO_AUTHORING_RULE}`;
   } else if (mode === "commercial") {
-    assembled += `\nIdentify the business name only from the customer's creative direction and spell it exactly. ${LOGO_REQUIREMENT}`;
+    assembled += `\nIdentify the business name only from the customer's creative direction and spell it exactly. ${LOGO_REQUIREMENT} ${LOGO_AUTHORING_RULE}`;
   }
   // PER-FIELD PAIRED GUARDS. Each contact field decides its own instruction and
   // nothing else can suppress it:
@@ -527,6 +527,46 @@ DESIGN BRIEF: "${prompt}"`;
 // use the explicit artboard name so this cannot be mistaken for a proof prompt.
 function buildFlatDesignIQDirection(input = {}, options = {}) {
   return buildAtlasArtboardDesignIQDirection(input, options);
+}
+
+/**
+ * THE LOGO CONDITION IS STRUCTURAL, NOT A HOPE. (Owner persona contract, 2026-08-26.)
+ *
+ * Three states, decided by the INPUT and nothing else:
+ *
+ *   supplied  a verified customer logo is attached -> it is the authority
+ *   auto      a business brief with no usable logo -> DESIGN one
+ *   none      not a business brief                 -> no logo demand at all
+ *
+ * WHY THE SECOND STATE NEEDED MORE THAN LOGO_REQUIREMENT. That literal — "This
+ * business needs its own logo — decide its form from this brief alone" — is the
+ * reference's own wording and stays byte-identical, because the reference
+ * deleted every FORM prescription after all of them converged ("custom,
+ * distinctive lettering" handed three trades the same lockup; replacing it with
+ * a menu was the same pressure in different clothes).
+ *
+ * But requiring that a logo EXIST does not rule out the degenerate way to
+ * satisfy it, and the reference's own history records that exact failure: live
+ * 2026-08-03, Ridgeline Roofing & Exteriors came back with "company name set in
+ * a typeface, no logo mark anywhere on the vehicle". Set type is not a mark, and
+ * a brief that asks for a business wrap has not been designed until it has one.
+ *
+ * So this names the degenerate OUTCOME without naming a form to replace it with.
+ * The mark's shape, register and construction stay the designer's call and the
+ * brief's; what is refused is answering "make a logo" with the company name in a
+ * font. That is the whole of the addition.
+ */
+const LOGO_AUTHORING_RULE =
+  "Design an actual brand mark for it — the company name set in a typeface is not a logo, "
+  + "however well it is set. The name may lock up with the mark, sit beside it or be built "
+  + "into it; the mark's form, register and construction are your call and the brief's.";
+
+/** supplied | auto | none — decided by the input, never by the prose. */
+function logoCondition(input = {}) {
+  if (input?.logoAsset) return "supplied";
+  const mode = String(input?.mode || "commercial");
+  const isBusiness = mode !== "restyle";
+  return isBusiness ? "auto" : "none";
 }
 
 function buildLogoArchitecture() {
@@ -916,6 +956,8 @@ module.exports = {
   COMMERCIAL_TRANSLATION,
   FINISH_SPECS,
   LOGO_REQUIREMENT,
+  LOGO_AUTHORING_RULE,
+  logoCondition,
   PHOTO_REALISM_LOCK,
   PROFESSIONAL_JUDGMENT,
   SUBSTRATE_CONTEXT,
