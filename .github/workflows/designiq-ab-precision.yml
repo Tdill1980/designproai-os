@@ -160,7 +160,29 @@ jobs:
           release=/opt/designproai-os/current
           test -d "$release" || { echo "no deployed release at $release — dark deploy first"; exit 40; }
           test -f /opt/designproai-os/shared/runtime.env || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
-          test -d "$release/runtime/node_modules/@supabase" || { echo "release dependencies missing"; exit 42; }
+
+          # WHERE THE RELEASE KEEPS ITS DEPENDENCIES IS NOT A CONSTANT.
+          #
+          # calls-1-7-seam.yml asserts $release/runtime/node_modules/@supabase and
+          # exits 42 with the words "release dependencies missing" if it is not
+          # there — which says nothing about what IS there, so the first run of
+          # this workflow died on it with no way to tell whether the release was
+          # broken or merely laid out differently. Look in both plausible places,
+          # and when neither has them, print the layout instead of a verdict.
+          deps=""
+          for candidate in "$release/runtime/node_modules" "$release/node_modules"; do
+            if [ -d "$candidate/@supabase" ] && [ -d "$candidate/sharp" ]; then deps=$candidate; break; fi
+          done
+          if [ -z "$deps" ]; then
+            echo "no node_modules with @supabase and sharp under $release"
+            echo "--- $release"; ls -la "$release" || true
+            echo "--- $release/runtime"; ls -la "$release/runtime" 2>/dev/null | head -40 || true
+            for candidate in "$release/runtime/node_modules" "$release/node_modules"; do
+              echo "--- $candidate"; ls "$candidate" 2>/dev/null | head -20 || true
+            done
+            exit 42
+          fi
+          echo "release dependencies: $deps"
 
           work=$(mktemp -d /tmp/designpro-ab.XXXXXX)
           out="$work/ab-evidence"
@@ -172,8 +194,8 @@ jobs:
           # Borrow the DEPLOYED release's runtime modules and dependencies. The
           # A.T.L.A.S. half of this comparison must be the code that is actually
           # live, not the checkout.
-          ln -s "$release/runtime/node_modules" "$work/runtime/node_modules"
-          ln -s "$release/runtime/node_modules" "$work/node_modules"
+          ln -s "$deps" "$work/runtime/node_modules"
+          ln -s "$deps" "$work/node_modules"
           for module in flat-first-atlas.cjs genie-universal-resolver.cjs flat-atlas-topology-examples.cjs \
                         generation-provider.cjs designiq-prompt.cjs studio-os.cjs view-angles.cjs \
                         atlas-cutout-fill.cjs atlas-master-qc.cjs photorealism-prompt.cjs \
