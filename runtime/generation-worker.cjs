@@ -647,6 +647,25 @@ async function runAtlasProofStages({
     // it from the immutable master instead of adopting anonymous bytes.
     allowOrphanReconciliation: false,
     maxProviderAttempts: provider.maxProviderAttempts,
+    // THE REJECTION BUDGET MATCHES THE ATTEMPT BUDGET, DELIBERATELY.
+    //
+    // The engine default of two judged tries predates the corrective loop. On
+    // the first full acceptance run (fb63e76f, 2026-08-26) hood, roof and
+    // close-up each died at exactly two rejections -- and the attempt records
+    // show the loop CONVERGING, not thrashing: hood's second frame fixed the
+    // first frame's 80%-fill finding and failed on a new, smaller fault. Each
+    // rejection now feeds the inspector's own findings into the next attempt
+    // (verified end-to-end: correctedParts -> call.parts ->
+    // resolveAtlasConditioningParts preserves text parts), so a third and
+    // fourth judged try are corrective cycles, not re-rolls of the same dice.
+    //
+    // This widens nothing about acceptance: every accepted proof still passes
+    // the same inspector at the same thresholds, and a view that exhausts four
+    // judged tries still fails to semantic_review_required for a human. The
+    // overall call budget is unchanged -- four attempts per slot was already
+    // the ceiling; rejections simply no longer end the slot two attempts
+    // before it.
+    maxRegenerations: provider.maxProviderAttempts,
   });
   return proofs;
 }
