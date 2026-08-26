@@ -14,10 +14,10 @@ import { enticePanelsFromProof } from "@/lib/enticePanelsFromProof";
  *      buyer's GENIE dims (buildProductionPanels → panelize-artboard). Pure
  *      geometric crop of the actual design at the buyer's per-side sizes, keyed
  *      to THIS order's job id (no cross-buyer vault collisions).
- *   2. CUSTOMER 3D PROOF (best-effort) — when the buyer's vehicle differs from
- *      the design's original, RecreatePro (designpro-recreate-3d) projects the
- *      artboard onto the buyer's actual vehicle so the ProductionFlow proof
- *      shows THEIR truck. Non-fatal — the print files never depend on it.
+ *   2. CUSTOMER 3D PROOF — RETIRED. This used to call designpro-recreate-3d,
+ *      which does not exist on this project; the invoke 404'd inside a
+ *      catch-block on every run. The proofs belong to the server-native
+ *      Calls 1-7 runtime now. The print files never depended on it.
  *   3. Hand the vault to activate-print-worker (Railway hi-res) keyed to the JOB
  *      id so the files stamp on this order and the Admin QC card appears.
  *
@@ -80,33 +80,25 @@ export async function creatorMarketAutoBuild(listingId: string): Promise<AutoBui
     // Admin QC board for the team to resolve (regenerate the design's artboard).
     if (!artboardUrl && !proofUrl) return { status: "no_source", jobId: job.id };
 
-    // ── CUSTOMER 3D PROOF (best-effort) — recreate the design on the BUYER's
-    // actual vehicle so ProductionFlow shows their truck. Files never depend on
-    // this; a failure just leaves the design's original render set on the job.
+    // ── CUSTOMER 3D PROOF — RETIRED, NOT SILENTLY BROKEN ──
+    //
+    // This block invoked `designpro-recreate-3d` to re-render the design on the
+    // BUYER's vehicle. That function was never ported to this project and has
+    // never been deployed here, so the invoke 404'd on every run — and because
+    // the whole thing sat inside `catch {}` as "best-effort", it looked like a
+    // feature that sometimes did not fire rather than one that never could.
+    //
+    // The seven views are produced by the server-native Calls 1-7 runtime now
+    // (RULE 0.16), which needs a generation request rather than a fire-and-
+    // forget Edge call, so re-pointing this at the runtime is a separate piece
+    // of work with its own contract. Until then the job keeps the design's
+    // original render set, which is exactly what the old catch-block delivered
+    // in practice — the difference is that this no longer pretends otherwise.
     if (recreateNeeded && artboardUrl) {
-      try {
-        const { data: r3d } = await supabase.functions.invoke("designpro-recreate-3d", {
-          body: {
-            artboardUrl,
-            designDescription: concept.business_name || job.vehicle_make || "wrap design",
-            vehicleYear: year,
-            vehicleMake: make,
-            vehicleModel: model,
-            finish: finish || "Gloss",
-          },
-        });
-        const recreatedViews = (r3d as any)?.renderUrls;
-        if (recreatedViews && typeof recreatedViews === "object" && Object.keys(recreatedViews).length) {
-          // Surface the buyer-vehicle views on the job (ProductionFlow reads these).
-          await (supabase as any)
-            .from("panelizer_jobs")
-            .update({
-              all_view_urls: recreatedViews,
-              concept_json: { ...concept, render_urls: recreatedViews, recreated_on_buyer_vehicle: true },
-            })
-            .eq("id", job.id);
-        }
-      } catch { /* non-fatal — the deterministic panels below are the deliverable */ }
+      console.info(
+        `[creatorMarketAutoBuild] job ${job.id}: buyer-vehicle 3D recreate skipped — `
+        + "designpro-recreate-3d is retired; the job keeps the design's original views.",
+      );
     }
 
     // ── PANELS (the deliverable) — slice the flat master artboard at the buyer's
