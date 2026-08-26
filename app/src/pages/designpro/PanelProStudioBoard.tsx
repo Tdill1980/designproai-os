@@ -997,6 +997,22 @@ export default function PanelProStudioBoard() {
         aside={job ? <StatePill state={job.state} /> : undefined}
       />
 
+      {/* THE PARALLEL CONSUMER OF THE SAME LINEAGE.
+          RULE 0.21: RevisionStudioIQ and PanelPro Studio are two consumers of
+          one server-owned lineage, never two workflows. The board validates and
+          releases the panels; the studio is where the design is revised. This
+          is the route between them, on the same generation id, so a reviewer
+          who finds a problem here can reach the surface that fixes it without
+          knowing a URL. */}
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span>Same design, revision workspace:</span>
+        <Button asChild size="sm" variant="outline" className="h-7">
+          <Link to={`/revision-studio?id=${encodeURIComponent(generationId)}`}>
+            Open in RevisionStudioIQ
+          </Link>
+        </Button>
+      </div>
+
       {error && <Notice tone="warning">{error}</Notice>}
 
       {job && producedCount < PRODUCTION_SURFACES.length && (

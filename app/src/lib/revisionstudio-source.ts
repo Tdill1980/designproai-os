@@ -26,16 +26,26 @@
  * read rather than stored: they are a projection of server state, so there is
  * nothing to write back and nothing that can drift.
  *
- * A.T.L.A.S. INTERNALS ARE NOT IN HERE. The flattened master, its content hash,
- * the guide, the topology and the prompt version are admin/design-team material
- * (canonical contract, "ATLAS visibility"). RevisionStudio is the customer's
- * surface, so it gets the seven proofs, the production proof and the panels --
- * never the master. PanelPro Studio is where the lineage is inspected.
+ * ⛔ THE A.T.L.A.S. MASTER IS NEVER IN HERE, AND NEVER ON THIS SURFACE.
+ * (Trish 2026-08-26, restated after a session put it there.)
+ *
+ * The flattened master, its content hash, the guide, the topology and the
+ * prompt version are the production authority, and they belong to PanelPro
+ * Studio -- the internal control room -- under the A.T.L.A.S. generation id.
+ * RevisionStudio is the customer's surface: it gets the seven proofs, the six
+ * surface panels as the Production Pack preview, the version and prompt record,
+ * and the assets. Never the master.
+ *
+ * This note was briefly rewritten to say the opposite, on the reading that a
+ * person deciding what to change needs to see the sheet the change is made to.
+ * It is recorded here rather than quietly reverted, because the argument is
+ * plausible enough that someone will make it again.
  */
 import {
   dpApi,
   ROLE_FOR_SOURCE_VIEW_TYPE,
   type ApprovedGenerationView,
+  type DesignLibraryEntry,
   type WorkflowArtifact,
   type WorkflowStatus,
 } from "@/lib/designpro-api";
@@ -63,6 +73,13 @@ export type RevisionStudioDesignRow = {
   color_hex: string | null;
   finish_type: string | null;
   mode_type: string;
+  /**
+   * A.T.L.A.S. or Standard, as the REQUEST asked for it -- not as inferred
+   * from what it has produced so far. Null when the source could not say: a
+   * run status carries no pipeline field, and "unknown" must never be filtered
+   * as though it were "not A.T.L.A.S.".
+   */
+  pipeline: "atlas" | "standard" | null;
   created_at: string | null;
   updated_at: string | null;
   generation_status: "completed";
@@ -176,6 +193,8 @@ export function designRowFromJob(
     color_hex: null,
     finish_type: text(job.finish),
     mode_type: DESIGNPRO_MODE,
+    // A run status reports no pipeline, so this says so rather than guessing.
+    pipeline: null,
     created_at: job.createdAt,
     updated_at: job.updatedAt,
     generation_status: "completed",
@@ -197,6 +216,65 @@ export function designRowFromJob(
     revision: job.revision,
     state: job.state,
     current_stage: job.currentStage,
+  };
+}
+
+/**
+ * Project one library entry into the row shape the existing cards read.
+ *
+ * Same field names as `designRowFromJob` because they are the contract the UI
+ * is written against. What differs is only what the server could tell us: a
+ * design with no workflow run has no order number and no production state, and
+ * those are reported as absent rather than invented.
+ */
+export function designRowFromLibraryEntry(
+  entry: DesignLibraryEntry,
+  views: readonly ApprovedGenerationView[],
+  artifacts: readonly WorkflowArtifact[] = [],
+): RevisionStudioDesignRow {
+  const name = text(entry.companyName) || text(entry.designName);
+  return {
+    id: entry.generationId,
+    render_urls: renderUrlsFromViews(views),
+    vehicle_year: entry.vehicle?.year || null,
+    vehicle_make: entry.vehicle?.make || null,
+    vehicle_model: entry.vehicle?.model || null,
+    vehicle_type: entry.vehicle?.type || null,
+    design_file_name: name,
+    color_name: name,
+    color_hex: null,
+    finish_type: text(entry.finish),
+    mode_type: DESIGNPRO_MODE,
+    pipeline: entry.pipeline,
+    created_at: entry.createdAt,
+    updated_at: entry.updatedAt || entry.createdAt,
+    generation_status: "completed",
+    admin_notes: adminNotesFor({
+      job: {
+        generationId: entry.generationId,
+        designId: entry.designId,
+        orderNumber: entry.production?.orderNumber || "",
+        brief: entry.brief || "",
+      } as unknown as WorkflowStatus,
+      artifacts: [...artifacts],
+    }),
+    custom_design_url: null,
+    custom_swatch_url: null,
+    custom_styling_prompt_key: text(entry.brief),
+    uses_custom_design: false,
+    customer_email: null,
+    subscription_tier: null,
+    organization_id: null,
+    infusion_color_id: null,
+    lineage_root_id: entry.generationId,
+    design_id: entry.designId,
+    order_number: entry.production?.orderNumber || "",
+    // The server's own revision sequence IS the version number. A Standard run
+    // has no A.T.L.A.S. revision to number, and 1 is the truthful answer for
+    // "the original design" there.
+    revision: entry.currentRevision || 1,
+    state: (entry.production?.status || entry.state) as WorkflowStatus["state"],
+    current_stage: entry.production?.workflowType || `calls_1_7_${entry.state}`,
   };
 }
 
@@ -222,11 +300,19 @@ async function detailFor(generationId: string) {
  * would be a second, weaker copy of a rule the server already enforces.
  */
 export async function listRevisionStudioDesigns(): Promise<RevisionStudioDesignRow[]> {
-  const jobs = await dpApi.listJobs();
+  // THE GRID USED TO LIST WORKFLOW RUNS, AND A RUN IS THE PRODUCTION HANDOFF.
+  //
+  // `listJobs` reads `designpro_workflow_runs`, which a design only acquires
+  // once it is handed off to manufacturing. Measured over the last four months:
+  // 48 real generations, 8 with a run. So the grid could not show a design
+  // still in Calls 1-7, or one that failed there -- forty of them -- and the
+  // studio's own library and its card grid would have disagreed about what
+  // exists. They read the same list now.
+  const library = await dpApi.listDesignLibrary();
   const rows = await Promise.all(
-    jobs.map(async (job) => {
-      const { views, artifacts } = await detailFor(job.generationId);
-      return designRowFromJob(job, views, artifacts);
+    library.map(async (entry) => {
+      const { views, artifacts } = await detailFor(entry.generationId);
+      return designRowFromLibraryEntry(entry, views, artifacts);
     }),
   );
   return rows.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));

@@ -262,10 +262,32 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   // cannot reach Order Production Pack.
   const printReady = isVerifiedPack && packState.productionEligible;
 
+  /**
+   * THE PRODUCTION PACK CONVERSION SURFACE.
+   *
+   * `entice` is the pre-purchase half: the six surfaces A.T.L.A.S. Call 1 cut
+   * from the accepted master, shown as a controlled preview. They are the
+   * actual panels -- not a mock, not a regeneration -- at design-time geometry,
+   * and they are the whole commercial argument: the design is already mapped
+   * across the vehicle, and the Production Pack is what turns those approved
+   * surfaces into print-ready files.
+   *
+   * Before this existed the card read the entice set as an UNVERIFIED PACK,
+   * because "not the activated pack" was the only state it had. So it stamped
+   * six real A.T.L.A.S. surfaces "production blocked", withheld the CTA, and
+   * turned the conversion surface into a defect report. The distinction is not
+   * verified-vs-unverified; it is before-purchase vs after.
+   *
+   * What stays withheld either way: the production-resolution asset. Preview
+   * downloads are off, and the paid artifact is the same lineage -- the same
+   * accepted master -- reached through purchase rather than a second producer.
+   */
+  const entice = injected.stage === "entice";
+
   // Comparison thumbnails come from the exact frozen revision that produced the
   // panels ON SCREEN — not from the activated pack, which may not exist yet.
-  // Without this the "[Print-ready panel] | [Your approved design]" pair loses
-  // its right-hand side for every preview pack.
+  // Without this the "[Your approved design] | [Print-ready panel]" pair loses
+  // its left-hand side for every preview pack.
   const displayRevisionId = String(
     latestBySide[0]?.revision_id || (activePack as any)?.revision_id || "",
   );
@@ -345,7 +367,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
    * button that can start or restart production work is a second conductor.
    */
   const orderProductionPack =
-    injected.onOrderProductionPack && isVerifiedPack && packState.productionEligible
+    injected.onOrderProductionPack && (entice || (isVerifiedPack && packState.productionEligible))
       ? async () => {
         if (ordering) return;
         setOrdering(true);
@@ -423,10 +445,14 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           <Layers className="w-4 h-4 text-blue-400" />
           <span className="text-sm font-bold text-zinc-200">Production Layers</span>
         </div>
+        {/* Honest about WHICH nothing this is. A.T.L.A.S. cuts the six surfaces
+            at Call 1, so a design whose master has been accepted has them
+            already and never reaches here; reaching here means the design
+            itself is still being made. Saying "not uploaded" would be both
+            untrue and the wrong instruction -- nobody uploads these. */}
         <p className="text-[11px] text-amber-300 leading-snug">
-          No complete panel set exists for this design yet. The six branded
-          panels appear here as soon as the server finishes cutting them from
-          the approved proof.
+          The six surfaces appear here as soon as the design is accepted — they
+          are cut from that master by the server, never uploaded.
         </p>
       </div>
     );
@@ -437,26 +463,66 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
       <div className="flex items-center gap-2">
         <Layers className="w-4 h-4 text-blue-400" />
         <span className="text-sm font-bold text-zinc-200">
-          {printReady ? "Print Ready Files" : isVerifiedPack ? "Panel previews — production blocked" : "Panel previews — awaiting verification"}
+          {entice
+            ? "Production Pack"
+            : printReady
+              ? "Print Ready Files"
+              : isVerifiedPack ? "Panel previews — production blocked" : "Panel previews — awaiting verification"}
         </span>
         <span className="ml-auto text-[10px] text-zinc-500">{latestBySide.length} side{latestBySide.length === 1 ? "" : "s"}</span>
       </div>
-      {printReady ? (
-        <p className="text-[11px] text-zinc-300 leading-snug">
-          Every side is verified and print-ready.{" "}
-          <span className="font-semibold text-emerald-300">
-            Click Order Production Pack
-          </span>{" "}
-          for the full-resolution print files.
-        </p>
-      ) : null}
-      <p className="text-[11px] text-zinc-500 leading-snug">
-        Active revision only — every side, proof, and logo is pinned to pack {String((activePack as any)?.id || "").slice(0, 8)}.
-      </p>
-      {!printReady && (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] font-semibold text-amber-300">
-          Preview only — the panels themselves are not production eligible. Downloads and paid production are blocked.
-        </p>
+
+      {/* THE CONVERSION MESSAGE. What the customer already has, and what the
+          Production Pack adds to it. Every word of it is true of the panels
+          above: those ARE their design's own surfaces, cut from the master they
+          approved -- which is exactly why this argument works and why a mocked
+          preview would have been both a lie and a weaker sell. */}
+      {entice ? (
+        <>
+          <p className="text-[12px] leading-snug text-zinc-200">
+            Your design is already mapped across the vehicle.{" "}
+            <span className="font-semibold text-blue-300">
+              Production Pack turns these approved surfaces into final print-ready production files.
+            </span>
+          </p>
+          <p className="text-[11px] leading-snug text-zinc-400">
+            Unlocked with the Production Pack: final production geometry from GENIE,
+            the 5″ bleed on every edge, full-resolution upscale, and the print-ready
+            output pack delivered to WrapBox.
+          </p>
+          {orderProductionPack && (
+            <button
+              type="button"
+              onClick={orderProductionPack}
+              disabled={ordering}
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-fuchsia-600 text-sm font-bold text-white hover:brightness-110 disabled:opacity-60"
+            >
+              {ordering
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening checkout…</>
+                : <><ShoppingBag className="h-4 w-4" /> GET PRODUCTION PACK</>}
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          {printReady ? (
+            <p className="text-[11px] text-zinc-300 leading-snug">
+              Every side is verified and print-ready.{" "}
+              <span className="font-semibold text-emerald-300">
+                Click Order Production Pack
+              </span>{" "}
+              for the full-resolution print files.
+            </p>
+          ) : null}
+          <p className="text-[11px] text-zinc-500 leading-snug">
+            Active revision only — every side, proof, and logo is pinned to pack {String((activePack as any)?.id || "").slice(0, 8)}.
+          </p>
+          {!printReady && (
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] font-semibold text-amber-300">
+              Preview only — the panels themselves are not production eligible. Downloads and paid production are blocked.
+            </p>
+          )}
+        </>
       )}
       {activeProofUrl && (
         // The 2D proof is the source every panel below was extracted from, so it
@@ -502,9 +568,18 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           // as "the print-ready panel" when it was actually the secondary,
           // AI-edited blank asset (unreliable — half-erased vehicle, ghosting).
           const panelUrl = p.branding_url || p.background_url;
-          const panelLabel = printReady
-            ? "Print ready · QC passed"
-            : "Preview only · production blocked";
+          // WHAT THIS PANEL IS, SAID PLAINLY.
+          //
+          // In the entice half it is the Production Pack panel for this
+          // surface, shown at design-time geometry. Never "not uploaded" and
+          // never "production blocked": A.T.L.A.S. has already produced this
+          // design surface, and telling the customer otherwise is both untrue
+          // and the opposite of the sale.
+          const panelLabel = entice
+            ? "Production Pack panel · preview"
+            : printReady
+              ? "Print ready · QC passed"
+              : "Preview only · production blocked";
           const di: any = p.dimensions_inches || {};
           const w = di.w ?? di.width;
           const h = di.h ?? di.height;
@@ -543,7 +618,17 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                   master {masterHash.slice(0, 16)}
                 </div>
               )}
+              {/* REAL DESIGN PROOF ∥ PRINT PANEL — proof LEFT, panel RIGHT.
+                  RULE 0.21 states the row in those words: "Left is that
+                  surface's 3D proof. Right is the deterministic A.T.L.A.S.
+                  extraction for that exact surfaceKey." This card had them the
+                  other way round, which reads as the panel being the thing and
+                  the render being a footnote. It is the reverse: the customer
+                  approved the design on the vehicle, and the panel is what that
+                  approval produced -- so the eye lands on what was approved and
+                  then on what will print. Do not swap these back. */}
               <div className={cn("grid gap-2", cols)}>
+                {showApproved && <Thumb url={brandedView} label="Your approved design" onOpen={() => setPreview({ url: brandedView, label: `${p.side} — your approved design` })} />}
                 {panelUrl && (
                   <div className="relative">
                     <Thumb
@@ -553,7 +638,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                       onOpen={() => setPreview({ url: panelUrl, label: `${p.side} — ${panelLabel}` })}
                     />
                     {/* Where the bleed ends and the vehicle side begins. Drawn,
-                        never cropped -- the panel must stay full-bleed. */}
+                        never cropped -- the panel must stay full-bleed. The
+                        overlay travels with the panel, so it stays correct
+                        whichever column the panel sits in. */}
                     {trimInsetPct && (
                       <div
                         aria-hidden
@@ -568,7 +655,6 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                     )}
                   </div>
                 )}
-                {showApproved && <Thumb url={brandedView} label="Your approved design" onOpen={() => setPreview({ url: brandedView, label: `${p.side} — your approved design` })} />}
               </div>
             </div>
           );
@@ -667,7 +753,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
       {latestBySide.length > 0 && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
           <p className="text-[10.5px] text-amber-200/90 leading-snug">
-            <span className="font-bold">Working-resolution previews.</span> These panels show the exact design, dimensions and layout for approval. When you purchase the Production Pack, every panel is processed to <span className="font-semibold">full print resolution</span> and the complete pack is saved to <span className="font-semibold">WrapBox</span> to download — track processing on the <span className="font-semibold">GENIE Universal Panelizer</span> page.
+            <span className="font-bold">Working-resolution previews.</span> These are your design&apos;s own surfaces, cut from the master you approved — they show the exact design, dimensions and layout. When you purchase the Production Pack, every panel is resolved to <span className="font-semibold">final production geometry</span>, given its <span className="font-semibold">5″ bleed</span>, processed to <span className="font-semibold">full print resolution</span>, and the complete pack is saved to <span className="font-semibold">WrapBox</span> to download — track processing on the <span className="font-semibold">GENIE Universal Panelizer</span> page.
           </p>
         </div>
       )}
@@ -676,7 +762,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           url={preview.url}
           label={preview.label}
           onClose={() => setPreview(null)}
-          onOrder={printReady ? orderProductionPack : undefined}
+          onOrder={entice || printReady ? orderProductionPack : undefined}
         />
       )}
     </div>

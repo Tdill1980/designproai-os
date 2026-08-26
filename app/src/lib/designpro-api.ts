@@ -38,6 +38,33 @@ async function accessToken(): Promise<string | null> {
   }
 }
 
+/**
+ * Some reads carry a verdict in a header rather than in the body, because the
+ * body is a list and the verdict is about why the list is the length it is. An
+ * empty proof set means one of two very different things -- still rendering, or
+ * withheld because the server superseded it -- and a surface that cannot tell
+ * them apart shows a spinner forever.
+ */
+async function requestWithHeaders<T>(
+  path: string, init?: RequestInit,
+): Promise<{ payload: T; headers: Headers }> {
+  const token = await accessToken();
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new ApiError(response.status, String((payload as { error?: string }).error || `designpro_api_${response.status}`));
+  }
+  return { payload: payload as T, headers: response.headers };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await accessToken();
   const response = await fetch(`${API_BASE}${path}`, {
@@ -93,6 +120,80 @@ export type FlatAtlasPanelMapEntry = {
 };
 
 /**
+ * ONE DESIGN, AS THE LIBRARY LISTS IT.
+ *
+ * Every field is read from the generation record itself. `thumbnailUrl` is
+ * absent for a design that produced no image -- which is a real and common
+ * state, and one a designer needs to be able to find, so the row is published
+ * without a tile rather than dropped.
+ */
+export type DesignLibraryEntry = {
+  generationId: string;
+  /** DID-XXXXXXXX, from the one canonical helper. */
+  designId: string;
+  designName: string | null;
+  companyName: string | null;
+  brief: string | null;
+  finish: string | null;
+  vehicle: { year: string; make: string; model: string; type: string } | null;
+  /** The generation's own state: queued, leased, retryable, outputs_ready, failed, cancelled. */
+  state: string;
+  /** Which pipeline the request asked for, not what it happened to produce. */
+  pipeline: "atlas" | "standard";
+  createdAt: string | null;
+  updatedAt: string | null;
+  completedAt: string | null;
+  /** A.T.L.A.S. revisions authored for this design. Zero on a Standard run. */
+  revisionCount: number;
+  /** The version this design stands at — the server's own revision sequence. */
+  currentRevision: number | null;
+  viewCount: number;
+  /** True when the server withholds this design's proofs pending a new run. */
+  viewsSuperseded: boolean;
+  /** Manufacturing, once it has started. Null for a design nobody has ordered. */
+  production: {
+    runId: string;
+    status: string;
+    workflowType: string;
+    orderNumber: string | null;
+    startedAt: string | null;
+  } | null;
+  thumbnailUrl?: string;
+  expiresIn?: 300;
+};
+
+/**
+ * One deterministically cut Call-1 print panel, as the server stamped it.
+ *
+ * `signedUrl` is absent while the object cannot be signed; the geometry and
+ * the hash are still the truth about that surface, so the row is published
+ * either way rather than disappearing.
+ */
+export type FlatAtlasCallOnePanel = {
+  surfaceKey: GenieSurfaceKey;
+  contentHash: string;
+  contentType: string;
+  byteSize: number;
+  pixelWidth: number;
+  pixelHeight: number;
+  /** The vehicle side itself, in inches. */
+  trimWidthIn: number;
+  trimHeightIn: number;
+  /** Trim plus the physical bleed on every edge -- what actually prints. */
+  printWidthIn: number;
+  printHeightIn: number;
+  bleedInches: number;
+  surfaceSqFt: number;
+  /** Pixels over print inches. The number that decides whether it can print. */
+  effectivePpi: number;
+  geometryPurpose: string;
+  /** The canonical master this panel's lineage is published under. */
+  sourceMasterHash: string;
+  signedUrl?: string;
+  expiresIn?: 300;
+};
+
+/**
  * One immutable canonical-atlas revision. Storage paths remain server-private;
  * the gateway returns short-lived signed URLs only for the two images the UI
  * can inspect. The manifest is represented by identity because it is consumed
@@ -134,8 +235,74 @@ export type FlatAtlasRevision = {
   expiresIn?: 300;
   model: string;
   promptVersion: string;
+  /**
+   * THE FORENSIC RECORD — PanelPro Studio only.
+   *
+   * The master's own QC verdict, how many authoring attempts it took, and
+   * whether the sheet arrived with cut-outs that were filled before the panels
+   * were cut. These are the first questions asked when a panel looks wrong, and
+   * they were persisted at authoring time and never surfaced.
+   */
+  qc?: {
+    masterQcPassed?: boolean | null;
+    masterQcConfidence?: number | null;
+    masterQcModel?: string | null;
+    masterQcContract?: string | null;
+    masterQcReview?: unknown;
+    masterQcDeterministic?: unknown;
+    masterAuthoringAttempts?: number | null;
+    /** Surfaces whose panels arrived holed and must not print un-reviewed. */
+    masterCutoutSurfaces?: string[];
+    masterCutoutFindings?: unknown[];
+    /**
+     * One record per surface the fill repaired: how much was punched out and
+     * in how many components. `zoneFraction` is the share of that surface's
+     * zone -- 0.27 is a vehicle silhouette, 0.04 is a wheel arch, and the
+     * difference decides whether the proof was safe.
+     */
+    cutoutFillApplied?: Array<{
+      surfaceKey?: string;
+      pixels?: number;
+      components?: number;
+      zoneFraction?: number;
+      unresolvedPixels?: number;
+    }> | null;
+    cutoutFillContract?: string | null;
+    /** What the panels were cut from; equals the master on a clean sheet. */
+    panelSourceHash?: string | null;
+    canonicalMasterHash?: string | null;
+  } | null;
+  /** How this master was produced: pipeline, contracts, provider, delivery. */
+  provenance?: {
+    pipelineMode?: string | null;
+    inputContract?: string | null;
+    contract?: string | null;
+    topology?: string | null;
+    providerContract?: string | null;
+    promptHash?: string | null;
+    requestedImageSize?: string | null;
+    deliveredWidthPx?: number | null;
+    deliveredHeightPx?: number | null;
+    nativelyFourK?: boolean | null;
+    artboardPortVersion?: string | null;
+  } | null;
   affectedSurfaces: GenieSurfaceKey[];
   panelMap: FlatAtlasPanelMapEntry[];
+  /**
+   * THE SIX PRINT PANELS CALL 1 CUT FROM THIS MASTER.
+   *
+   * Not `panelMap` -- that is the atlas LAYOUT, and a layout has no content
+   * hash a customer's file can be identified by. These are the panels
+   * themselves, cut deterministically at authoring time and stamped with the
+   * side's trim and print inches, its 5" bleed, its square footage and the
+   * master it descends from. They exist from Call 1, which is what makes them
+   * the entice set: RULE 0.21 says the accepted master fans out immediately,
+   * and this is the half of that fan-out RevisionStudio consumes.
+   *
+   * Empty for a revision authored before the record existed, which is the
+   * honest answer and reads as "panels still building" rather than as zero.
+   */
+  callOnePanels: FlatAtlasCallOnePanel[];
   instruction: string | null;
   productionEligible: boolean;
   exampleUsed: boolean;
@@ -339,6 +506,8 @@ export type ApprovedGenerationView = {
     zoneSurfaceKey: string | null;
     anchoredToDriver: boolean;
     deterministicMirror: boolean;
+    /** The exact A.T.L.A.S. revision this proof was rendered from. */
+    revisionId?: string | null;
   } | null;
 };
 
@@ -896,8 +1065,51 @@ export const dpApi = {
    * Layers pairs each panel with its own view, which is the whole point of the
    * surface -- a panel is only checkable next to the design it came from.
    */
+  /**
+   * THE DESIGN LIBRARY — every DesignPro generation in a window, newest first.
+   *
+   * Not `listJobs`. That lists workflow runs, and a run exists only after the
+   * production handoff: over the last four months it represents 8 of 48 real
+   * designs. Everything still in Calls 1-7, and everything that failed there,
+   * has no run at all and was therefore unreachable from the studio built to
+   * revise it. This reads the generation records, which exist from the moment
+   * Create Design is pressed.
+   *
+   * `since` is omitted by default so the server applies its own four-month
+   * window in one place. It is a window, not a page: the limit is far above the
+   * volume it selects, because a page smaller than the window is exactly how
+   * recent work goes missing.
+   */
+  listDesignLibrary: (options?: { since?: Date | string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.since) {
+      const since = options.since instanceof Date ? options.since.toISOString() : String(options.since);
+      params.set("since", since);
+    }
+    if (options?.limit) params.set("limit", String(options.limit));
+    const query = params.toString();
+    return request<DesignLibraryEntry[]>(`/design-library${query ? `?${query}` : ""}`);
+  },
   listApprovedViews: (generationId: string) =>
     request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
+  /**
+   * The same read, plus the reason the list may be empty.
+   *
+   * `superseded` is true when the server refuses to serve this design's proofs
+   * because they were authored under an architecture it no longer serves --
+   * the flat-first sibling-surface fence. The design, its master and its panels
+   * are unaffected and still readable; only the proofs are withheld, and a
+   * customer is owed that sentence rather than a blank carousel.
+   */
+  listApprovedViewsWithVerdict: async (generationId: string) => {
+    const { payload, headers } = await requestWithHeaders<ApprovedGenerationView[]>(
+      `/jobs/${encodeURIComponent(generationId)}/approved-views`,
+    );
+    return {
+      views: Array.isArray(payload) ? payload : [],
+      superseded: headers.get("x-designpro-views-superseded") === "flat_first_atlas_new_run_required",
+    };
+  },
   /**
    * Every A.T.L.A.S. version this design has been through, oldest first.
    *

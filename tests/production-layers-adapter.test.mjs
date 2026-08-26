@@ -73,8 +73,12 @@ test("a proof carries the master it was rendered from, all the way to the board"
   const gateway = readFileSync(new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
   const board = readFileSync(new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url), "utf8");
 
-  // The metadata has to be selected, or there is nothing to project.
-  assert.match(gateway, /content_type,metadata/);
+  // The binding has to be read, or there is nothing to project. It comes from
+  // the SECURITY DEFINER workspace read now: the view table itself is
+  // service-role only, so the direct select this used to assert was refused for
+  // every caller and the whole proof set was invisible in the studio.
+  assert.match(gateway, /designpro_generation_workspace/);
+  assert.match(gateway, /atlasMasterContentHash/);
   assert.match(gateway, /atlasBinding:/);
   for (const field of ["masterContentHash", "zoneContentHash", "zoneSurfaceKey", "anchoredToDriver", "deterministicMirror"]) {
     assert.match(gateway, new RegExp(field), `the gateway must project ${field}`);
@@ -121,4 +125,191 @@ test("the live RevisionStudio resolves the standalone source through one hook", 
   // The two products stay two checkouts.
   assert.match(hook, /checkout\("print_pack_entitlement"\)/);
   assert.match(hook, /checkout\("logo_pack"\)/);
+});
+
+/**
+ * THE RIGHT COLUMN BEFORE ANYONE HAS PAID.
+ *
+ * `panels.build` is Call 9 and Call 9 lives after `await_purchase`, so reading
+ * only that stage meant the customer's own six-panel column was empty for every
+ * design nobody had ordered -- which is every design at the moment it matters.
+ * Call 1 has already cut all six from the accepted master (RULE 0.21), and this
+ * is the half of that fan-out RevisionStudio consumes.
+ */
+test("the entice column is fed by the Call-1 panels, not by an empty Call 9", () => {
+  assert.match(adapter, /export function toAtlasEnticeLayers/);
+  assert.match(adapter, /input\.revision\.callOnePanels/);
+  // Six sides or nothing: five shown as a set is how a customer finds the
+  // sixth at print time.
+  assert.match(adapter, /SURFACE_ORDER\.some\(\(surface\) => !panels\.has\(surface\)\)\) return null/);
+  // Every number is the one the server stamped. Nothing is recomputed here.
+  for (const field of [
+    "panel.trimWidthIn", "panel.trimHeightIn", "panel.printWidthIn",
+    "panel.printHeightIn", "panel.bleedInches", "panel.surfaceSqFt",
+    "panel.effectivePpi", "panel.sourceMasterHash",
+  ]) {
+    assert.ok(adapter.includes(field), `the entice row must publish ${field}`);
+  }
+  // Call 9 still wins when it exists: after purchase the branded panels are the
+  // production artwork and the design-time cut is history, never a merge.
+  assert.match(adapter, /if \(call9 && call9\.state === "complete"\)/);
+  assert.match(adapter, /listJobFlatAtlasRevisions\(generationId\)/);
+});
+
+test("the entice set never claims production eligibility or a clean panel", () => {
+  const enticeBlock = adapter.slice(adapter.indexOf("export function toAtlasEnticeLayers"));
+  // GENIE resolves the validated production dimensions after purchase. Call 1's
+  // geometry is the design size and says so.
+  assert.match(enticeBlock, /production_eligible: false/);
+  // Call 11 has not run, so there is no de-logoed duplicate. Reported as the
+  // reasoned gap the card already knows how to display, never invented.
+  assert.match(enticeBlock, /background_url: ""/);
+  assert.match(enticeBlock, /separation_qc: \{/);
+  assert.match(enticeBlock, /Call 11 has not run yet/);
+  // Call 8 has not run either, so there is no 2D production proof to show.
+  assert.match(enticeBlock, /proofUrl: null/);
+  // The identity is the MASTER these six were cut from -- not a proof that does
+  // not exist, and not an activated production pack this design has never had.
+  assert.match(enticeBlock, /designpro:\/\/atlas-master\//);
+  assert.match(enticeBlock, /activePack: null/);
+});
+
+/**
+ * The six panels only reach the browser if the server publishes them, and only
+ * safely if it proves them first. This pins the whole path: the RPC returns the
+ * record, the gateway validates every panel against its own master and its own
+ * arithmetic before signing, and the client type carries the geometry through.
+ */
+test("the Call-1 panels are published, validated and typed end to end", () => {
+  const gateway = readFileSync(new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
+  const migration = readFileSync(new URL(
+    "../supabase/migrations/20260826030000_designpro_revision_studio_surface.sql",
+    import.meta.url,
+  ), "utf8");
+
+  assert.match(migration, /'callOnePanels',COALESCE\(r\.metadata->'callOnePanels','\[\]'::jsonb\)/);
+  assert.match(gateway, /function validatedCallOnePanels/);
+  // Print is trim plus the bleed on both edges. A panel that fails its own
+  // arithmetic is one the installer cannot cut to.
+  assert.match(gateway, /printWidthIn\) - \(Number\(panel\.trimWidthIn\) \+ 2 \* Number\(panel\.bleedInches\)\)/);
+  // A panel cut from another master is the exact pairing failure PanelPro
+  // exists to catch, so it must not reach a customer's screen either.
+  assert.match(gateway, /sourceMasterHash \|\| ""\)\.toLowerCase\(\) !== masterContentHash/);
+  // The private path never leaves the gateway.
+  assert.match(gateway, /callOnePanels, \.\.\.base/);
+  assert.match(api, /callOnePanels: FlatAtlasCallOnePanel\[\]/);
+});
+
+/**
+ * REAL DESIGN PROOF ∥ PRINT PANEL — PROOF LEFT, PANEL RIGHT.
+ *
+ * RULE 0.21 states the row in those words: "Left is that surface's 3D proof.
+ * Right is the deterministic A.T.L.A.S. extraction for that exact surfaceKey."
+ * The card had them reversed, which reads as the panel being the thing and the
+ * render a footnote. It is the other way round: the customer approved a design
+ * on the vehicle, and the panel is what that approval produced -- so the eye
+ * lands on what was approved, then on what will print. Both surfaces that draw
+ * this pair must agree, or one order teaches a habit the other breaks.
+ */
+test("the approved proof is drawn before the panel, on both surfaces", () => {
+  const card = readFileSync(
+    new URL("../app/src/components/revisioniq/ProductionFlowLayersCard.tsx", import.meta.url),
+    "utf8",
+  );
+  const board = readFileSync(
+    new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  // Production Layers: inside the two-column pair, the approved view comes
+  // first in source order, which is what puts it in the left column.
+  const pair = card.slice(card.indexOf('<div className={cn("grid gap-2", cols)}>'));
+  const proofAt = pair.indexOf("Your approved design");
+  const panelAt = pair.indexOf("url={panelUrl}");
+  assert.ok(proofAt > -1 && panelAt > -1, "the pair must draw both halves");
+  assert.ok(proofAt < panelAt, "the approved 3D proof must be the left column");
+
+  // PanelPro Studio board: same order, same reason.
+  const boardPair = board.slice(board.indexOf('<div className="grid gap-3 sm:grid-cols-2">'));
+  const boardProofAt = boardPair.indexOf("Real design proof");
+  const boardPanelAt = boardPair.indexOf("Panel with 5″ bleed");
+  assert.ok(boardProofAt > -1 && boardPanelAt > -1);
+  assert.ok(boardProofAt < boardPanelAt, "the board must draw the proof first too");
+
+  // And the page actually routed at /designpro/jobs/:id/panelpro, which is the
+  // third surface that draws this pair and the one the operator opens most.
+  const routedBoard = readFileSync(
+    new URL("../app/src/pages/AdminGeminiCompareStudio.tsx", import.meta.url),
+    "utf8",
+  );
+  const routedPair = routedBoard.slice(
+    routedBoard.indexOf('<div className="grid grid-cols-2 gap-3">'),
+  );
+  const routedProofAt = routedPair.indexOf("<span>Real design proof");
+  const routedPanelAt = routedPair.indexOf("<span>Print Panel</span>");
+  assert.ok(routedProofAt > -1 && routedPanelAt > -1);
+  assert.ok(routedProofAt < routedPanelAt, "the routed board must draw the proof first too");
+
+  // The trim overlay belongs to the panel, so it travels with it rather than
+  // being positioned against a column that moved.
+  assert.match(card, /overlay travels with the panel/);
+});
+
+/**
+ * THE PRODUCTION PACK CONVERSION SURFACE.
+ *
+ * RevisionStudioIQ's surface panels ARE the entice UI. Before this the card had
+ * exactly one way to describe "not the activated pack" -- unverified -- so it
+ * stamped six real A.T.L.A.S. surfaces "production blocked", withheld the CTA,
+ * and turned the conversion surface into a defect report. The distinction is
+ * not verified-vs-unverified; it is before-purchase vs after.
+ */
+test("the entice half asks for the sale instead of reporting a defect", () => {
+  const card = readFileSync(
+    new URL("../app/src/components/revisioniq/ProductionFlowLayersCard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  // The stage is what the card branches on, carried from the source that knows.
+  assert.match(adapter, /stage\?: "entice" \| "production"/);
+  assert.match(adapter, /stage: "entice"/);
+  assert.match(adapter, /stage: "production"/);
+  assert.match(card, /const entice = injected\.stage === "entice"/);
+
+  // The CTA is live before purchase. That is the whole point of the surface.
+  assert.match(card, /injected\.onOrderProductionPack && \(entice \|\| \(isVerifiedPack && packState\.productionEligible\)\)/);
+  assert.match(card, /GET PRODUCTION PACK/);
+
+  // The conversion message, in the owner's own words.
+  assert.match(card, /Your design is already mapped across the vehicle/);
+  assert.match(card, /turns these approved surfaces into final print-ready production files/);
+  // And what the money unlocks.
+  for (const unlock of ["final production geometry", "bleed", "upscale", "WrapBox"]) {
+    assert.ok(card.includes(unlock), `the entice copy must name ${unlock}`);
+  }
+
+  // The panel is labelled as what it is. Never "not uploaded", never
+  // "production blocked" -- A.T.L.A.S. already produced this design surface.
+  assert.match(card, /Production Pack panel · preview/);
+  assert.ok(!card.includes("Not uploaded"), "never tell a customer their surface was not uploaded");
+
+  // The production-resolution asset stays withheld: downloads remain gated on
+  // printReady, which the entice half never satisfies.
+  assert.match(card, /downloadable=\{printReady\}/);
+});
+
+/**
+ * ONE LINEAGE, NOT A MOCK. The preview and the paid artifact must descend from
+ * the same accepted master -- the entice rows are the real Call-1 surfaces,
+ * bound to the master they were cut from, never a fabricated stand-in.
+ */
+test("the entice preview is the real surface, bound to the accepted master", () => {
+  const enticeBlock = adapter.slice(adapter.indexOf("export function toAtlasEnticeLayers"));
+  assert.match(enticeBlock, /branding_url: panel\.signedUrl \|\| ""/);
+  assert.match(enticeBlock, /source_master_hash: String\(panel\.sourceMasterHash/);
+  assert.match(enticeBlock, /designpro:\/\/atlas-master\//);
+  // No second producer and no placeholder imagery anywhere in that path.
+  for (const banned of ["placeholder", "mock", "/sample", "generate("]) {
+    assert.ok(!enticeBlock.includes(banned), `the entice source must not carry ${banned}`);
+  }
 });

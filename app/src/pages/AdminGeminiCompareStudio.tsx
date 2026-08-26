@@ -14,6 +14,7 @@ import StudioBoardEditor, { StudioBoardEditTarget } from "@/components/studioboa
 import {
   dpApi,
   type FinalQc,
+  type FlatAtlasRevision,
   type GenieSurfaceKey,
   type PreflightQc,
   PRODUCTION_SURFACES,
@@ -758,6 +759,197 @@ function AtlasProgressCard({
           </p>
         </div>
       )}
+
+      {/* THE MASTER'S OWN RECORD.
+          Every value below was written by Call 1 at authoring time and sat on
+          the revision unread. They are the first questions asked when a panel
+          looks wrong -- did the master pass its own QC, which model drew it,
+          which prompt version, how many attempts, and did the sheet arrive
+          holed. PanelPro is the source-of-truth inspection surface, so they
+          belong in its UI rather than in a diagnostic log. */}
+      {atlas && <AtlasForensicRecord atlas={atlas} />}
+    </div>
+  );
+}
+
+/** Rows that render only when the server actually stated a value. */
+function Fact({ label, value }: { label: string; value: React.ReactNode }) {
+  if (value === null || value === undefined || value === "" ) return null;
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] text-gray-500">{label}</dt>
+      <dd className="truncate text-[11px] font-semibold text-gray-900" title={typeof value === "string" ? value : undefined}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function AtlasForensicRecord({ atlas }: { atlas: FlatAtlasRevision }) {
+  const qc = atlas.qc || null;
+  const provenance = atlas.provenance || null;
+  const cutoutSurfaces = Array.isArray(qc?.masterCutoutSurfaces) ? qc!.masterCutoutSurfaces : [];
+  const findings = Array.isArray(qc?.masterCutoutFindings) ? qc!.masterCutoutFindings : [];
+  const fills = Array.isArray(qc?.cutoutFillApplied) ? qc!.cutoutFillApplied! : [];
+  // Equal on a clean sheet; different when cut-outs were filled before the
+  // panels were cut. Saying which is the difference between "the panel came
+  // from another design" and "the sheet was repaired first".
+  const repaired = Boolean(
+    qc?.panelSourceHash
+    && qc.canonicalMasterHash
+    && qc.panelSourceHash !== qc.canonicalMasterHash,
+  );
+  if (!qc && !provenance) return null;
+
+  return (
+    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+        Master QC &amp; provenance
+      </div>
+
+      <dl className="mt-2 grid gap-x-5 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
+        <Fact
+          label="Master QC"
+          value={
+            qc?.masterQcPassed === true ? "Passed"
+              : qc?.masterQcPassed === false ? "Failed"
+                : qc ? "Not recorded" : null
+          }
+        />
+        <Fact
+          label="QC confidence"
+          value={typeof qc?.masterQcConfidence === "number" ? qc.masterQcConfidence.toFixed(2) : null}
+        />
+        <Fact label="QC model" value={qc?.masterQcModel || null} />
+        <Fact label="QC contract" value={qc?.masterQcContract || null} />
+        <Fact
+          label="Authoring attempts"
+          value={typeof qc?.masterAuthoringAttempts === "number" ? String(qc.masterAuthoringAttempts) : null}
+        />
+        <Fact label="Authoring model" value={atlas.model} />
+        <Fact label="Prompt version" value={atlas.promptVersion} />
+        <Fact label="Prompt hash" value={provenance?.promptHash ? provenance.promptHash.slice(0, 16) : null} />
+        <Fact label="Pipeline mode" value={provenance?.pipelineMode || null} />
+        <Fact label="Input contract" value={provenance?.inputContract || null} />
+        <Fact label="Topology" value={provenance?.topology || null} />
+        <Fact label="Provider contract" value={provenance?.providerContract || null} />
+        <Fact label="Requested size" value={provenance?.requestedImageSize || null} />
+        <Fact
+          label="Delivered"
+          value={
+            provenance?.deliveredWidthPx && provenance?.deliveredHeightPx
+              ? `${provenance.deliveredWidthPx}×${provenance.deliveredHeightPx}${provenance.nativelyFourK ? " · native 4K" : ""}`
+              : null
+          }
+        />
+        <Fact label="Artboard port" value={provenance?.artboardPortVersion || null} />
+        <Fact
+          label="Canonical master"
+          value={qc?.canonicalMasterHash ? qc.canonicalMasterHash.slice(0, 16) : null}
+        />
+        <Fact
+          label="Panels cut from"
+          value={qc?.panelSourceHash ? `${qc.panelSourceHash.slice(0, 16)}${repaired ? " · repaired sheet" : " · same as master"}` : null}
+        />
+      </dl>
+
+      {/* A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN. The design and its
+          proofs are unaffected; the hole only becomes real at the panel cut, so
+          these surfaces must not print until a human has seen them on a
+          template. Naming them is the whole point of the flag. */}
+      {(cutoutSurfaces.length > 0 || fills.length > 0) && (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2.5">
+          <div className="text-[11px] font-bold text-amber-900">
+            Cut-outs {fills.length > 0 ? "found and filled" : "recorded"}
+            {cutoutSurfaces.length > 0 ? ` · ${cutoutSurfaces.length} surface${cutoutSurfaces.length === 1 ? "" : "s"}` : ""}
+          </div>
+          {/* HOW MUCH WAS MISSING, PER SURFACE. `zoneFraction` is the share of
+              that surface's zone that arrived absent: a wheel arch is a few
+              percent, a quarter of the zone is a vehicle silhouette, and that
+              difference is what decides whether the proofs were safe. It is the
+              number the 2026-08-26 canary turned on, so it is stated rather
+              than summarised. */}
+          {fills.length > 0 && (
+            <div className="mt-1.5 overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead className="text-amber-800">
+                  <tr>
+                    <th className="pr-3 font-semibold">Surface</th>
+                    <th className="pr-3 font-semibold">Share of zone</th>
+                    <th className="pr-3 font-semibold">Pixels</th>
+                    <th className="pr-3 font-semibold">Shapes</th>
+                    <th className="font-semibold">Unresolved</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono text-amber-950">
+                  {fills.map((fill, index) => (
+                    <tr key={`${fill?.surfaceKey || index}`}>
+                      <td className="pr-3">{String(fill?.surfaceKey || "—")}</td>
+                      <td className="pr-3">
+                        {typeof fill?.zoneFraction === "number"
+                          ? `${(fill.zoneFraction * 100).toFixed(1)}%`
+                          : "—"}
+                      </td>
+                      <td className="pr-3">
+                        {typeof fill?.pixels === "number" ? fill.pixels.toLocaleString() : "—"}
+                      </td>
+                      <td className="pr-3">
+                        {typeof fill?.components === "number" ? fill.components : "—"}
+                      </td>
+                      <td>
+                        {typeof fill?.unresolvedPixels === "number" ? fill.unresolvedPixels : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {cutoutSurfaces.length > 0 && fills.length === 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {cutoutSurfaces.map((surface) => (
+                <span
+                  key={String(surface)}
+                  className="rounded border border-amber-400 bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-900"
+                >
+                  {String(surface)}
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="mt-1.5 text-[10px] leading-snug text-amber-800">
+            The sheet arrived with openings rendered as absent. They were closed
+            deterministically before the panels were cut, and the 3D proofs are
+            unaffected — but these surfaces must be checked on the real vehicle
+            template before they print.
+            {qc?.cutoutFillContract ? ` (${qc.cutoutFillContract})` : ""}
+          </p>
+          {findings.length > 0 && (
+            <details className="mt-1.5">
+              <summary className="cursor-pointer text-[10px] font-semibold text-amber-900">
+                {findings.length} finding{findings.length === 1 ? "" : "s"}
+              </summary>
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-white/70 p-2 text-[10px] text-amber-950">
+                {JSON.stringify(findings, null, 2)}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* The semantic reviewer's own words about this sheet. */}
+      {qc?.masterQcReview ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[10px] font-semibold text-gray-600">
+            Master QC review
+          </summary>
+          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-2 text-[10px] text-gray-800">
+            {typeof qc.masterQcReview === "string"
+              ? qc.masterQcReview
+              : JSON.stringify(qc.masterQcReview, null, 2)}
+          </pre>
+        </details>
+      ) : null}
     </div>
   );
 }

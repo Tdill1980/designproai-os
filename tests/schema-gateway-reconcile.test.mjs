@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-40), [
+  assert.deepEqual(names.slice(-42), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -123,6 +123,13 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // v8 authoring prompt: patches the live gate's pinned version in place, so
     // the sibling-surface body it sits on is preserved rather than restated.
     "20260826020000_designpro_atlas_authoring_prompt_v8.sql",
+    // The RevisionStudioIQ read path: one generation-keyed workspace RPC, the
+    // six Call-1 panels on the atlas read, and design-staff visibility of a
+    // generation they do not own -- on the QC membership that already gated
+    // the request row.
+    "20260826030000_designpro_revision_studio_surface.sql",
+    // Every DesignPro generation in a window, newest first, from one table.
+    "20260826040000_designpro_generation_library.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

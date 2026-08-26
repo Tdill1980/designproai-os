@@ -325,21 +325,44 @@ function publicState(raw) {
  * missing identity and it is not a second id; it is the same generationId,
  * looked up in the table that already has it.
  */
+/**
+ * One generation request, by the generation id.
+ *
+ * This selected `designpro_generation_requests` directly, which the Calls 1-7
+ * adapter revokes from `authenticated` -- so it returned null for every caller,
+ * and every path that depends on it (the pre-handoff job state, the empty
+ * artifact list, the pre-run proofs) answered 404 for designs that plainly
+ * exist. The SECURITY DEFINER workspace read is the sanctioned door, and it
+ * authorizes the owner and the design team alike. The row shape below is the
+ * one the existing callers already read, so nothing downstream changes.
+ */
 async function generationRequestByGenerationId(fetchImpl, token, cfg, generationIdValue) {
   const id = String(generationIdValue || "").trim().toLowerCase();
   if (!UUID_PATTERN.test(id)) return null;
-  const fields = encodeURIComponent(
-    "id,generation_id,state,request_input,error,created_at,updated_at,completed_at",
-  );
-  const response = await upstream(
-    fetchImpl,
-    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${fields}`
-      + `&generation_id=eq.${encodeURIComponent(id)}&order=created_at.desc&limit=1`,
-    { method: "GET" }, token, cfg,
-  );
-  if (!response.ok) return null;
-  const rows = await response.json().catch(() => []);
-  return Array.isArray(rows) && rows[0] ? rows[0] : null;
+  const workspace = await rpc(fetchImpl, token, cfg, "designpro_generation_workspace", {
+    p_generation_id: id,
+  }).catch(() => null);
+  if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return null;
+  if (String(workspace.generationId || "").toLowerCase() !== id) return null;
+  return {
+    id: workspace.requestId,
+    generation_id: workspace.generationId,
+    owner_id: workspace.ownerId,
+    state: workspace.state,
+    request_input: {
+      brief: workspace.brief,
+      designName: workspace.designName,
+      companyName: workspace.companyName,
+      finish: workspace.finish,
+      vehicle: workspace.vehicle,
+      pipelineMode: workspace.pipelineMode,
+      contractVersion: workspace.contractVersion,
+    },
+    error: workspace.error ?? null,
+    created_at: workspace.createdAt,
+    updated_at: workspace.updatedAt,
+    completed_at: workspace.completedAt,
+  };
 }
 
 /**
@@ -727,6 +750,99 @@ function validatedFlatFirstGate(value) {
  * bound storage paths, content hashes, byte sizes, content types, the zone
  * manifest -- is identical in both scopes.
  */
+/**
+ * The Call-1 panel records, validated before any of them is signed.
+ *
+ * Every field here was stamped by `cutCallOnePanels` at authoring time and has
+ * been sitting on the revision ever since. The checks are the same ones the
+ * panel map gets: exactly the six canonical surfaces, once each, each path
+ * inside this revision's own immutable prefix and named by its own content
+ * hash, and each one naming the master it was cut from. A revision authored
+ * before the record existed carries an empty list, which is honest and is what
+ * the UI already reports as panels still building.
+ *
+ * `sourceMasterHash` is LINEAGE. On a sheet whose cut-outs were filled it names
+ * the canonical master rather than the repaired duplicate the bytes came from,
+ * which is exactly what PanelPro pairs a panel with its proof by -- so it is
+ * compared against the master hash and a mismatch is refused.
+ */
+function validatedCallOnePanels(value, ownerId, generationId, revisionSequence, masterContentHash) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw Object.assign(new Error("flat_atlas_call_one_panels_invalid"), { status: 502 });
+  }
+  if (value.length === 0) return [];
+  if (value.length !== PRODUCTION_SURFACES.length) {
+    throw Object.assign(new Error("flat_atlas_call_one_panels_invalid"), { status: 502 });
+  }
+  const prefix = `designpro/user_${ownerId}/${generationId}`
+    + `/flat-first/v1/revisions/${revisionSequence}/panels/`;
+  const extensionFor = new Map([
+    ["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"],
+  ]);
+  const seen = new Set();
+  const panels = value.map((panel) => {
+    const surfaceKey = String(panel?.surfaceKey || "");
+    const contentHash = String(panel?.contentHash || "").toLowerCase();
+    const contentType = String(panel?.contentType || "");
+    const storagePath = String(panel?.storagePath || "");
+    const extension = extensionFor.get(contentType);
+    const positive = (candidate) => Number.isFinite(Number(candidate)) && Number(candidate) > 0;
+    if (!PRODUCTION_SURFACES.includes(surfaceKey)
+      || seen.has(surfaceKey)
+      || !SHA256_PATTERN.test(contentHash)
+      || !extension
+      || storagePath !== `${prefix}${contentHash}.${extension}`
+      || !Number.isSafeInteger(Number(panel?.byteSize)) || Number(panel.byteSize) < 1
+      || !Number.isInteger(Number(panel?.pixelWidth)) || Number(panel.pixelWidth) < 1
+      || !Number.isInteger(Number(panel?.pixelHeight)) || Number(panel.pixelHeight) < 1
+      || !positive(panel?.trimWidthIn) || !positive(panel?.trimHeightIn)
+      || !positive(panel?.printWidthIn) || !positive(panel?.printHeightIn)
+      || !positive(panel?.surfaceSqFt) || !positive(panel?.effectivePpi)
+      || !Number.isFinite(Number(panel?.bleedInches)) || Number(panel.bleedInches) < 0
+      // Trim plus the bleed on both edges IS the print size. A panel that does
+      // not satisfy its own arithmetic is one the installer cannot cut to.
+      || Math.abs(Number(panel.printWidthIn) - (Number(panel.trimWidthIn) + 2 * Number(panel.bleedInches))) > 0.05
+      || Math.abs(Number(panel.printHeightIn) - (Number(panel.trimHeightIn) + 2 * Number(panel.bleedInches))) > 0.05
+      || String(panel?.sourceMasterHash || "").toLowerCase() !== masterContentHash) {
+      throw Object.assign(new Error("flat_atlas_call_one_panels_invalid"), { status: 502 });
+    }
+    seen.add(surfaceKey);
+    return {
+      surfaceKey,
+      storagePath,
+      contentHash,
+      contentType,
+      byteSize: Number(panel.byteSize),
+      pixelWidth: Number(panel.pixelWidth),
+      pixelHeight: Number(panel.pixelHeight),
+      trimWidthIn: Number(panel.trimWidthIn),
+      trimHeightIn: Number(panel.trimHeightIn),
+      printWidthIn: Number(panel.printWidthIn),
+      printHeightIn: Number(panel.printHeightIn),
+      bleedInches: Number(panel.bleedInches),
+      surfaceSqFt: Number(panel.surfaceSqFt),
+      effectivePpi: Number(panel.effectivePpi),
+      geometryPurpose: String(panel?.geometryPurpose || ""),
+      sourceMasterHash: masterContentHash,
+    };
+  });
+  // The order the six surfaces are always named in, so the card never has to
+  // sort and two surfaces can never swap places between reads.
+  return PRODUCTION_SURFACES.map(
+    (surfaceKey) => panels.find((panel) => panel.surfaceKey === surfaceKey),
+  );
+}
+
+/**
+ * `userId` is the id the storage prefix is built from -- the generation's
+ * OWNER, not necessarily the caller. The row states its own `ownerId`, and it
+ * wins when present: the SECURITY DEFINER read has already decided whether this
+ * caller may see the design, and checking the prefix against the caller's id
+ * would refuse a design-team member every row they were just cleared for. A row
+ * with no stated owner falls back to the caller, which is the pre-existing
+ * behaviour for every owner-read.
+ */
 function validatedFlatAtlasRevisions(value, requestId, userId) {
   if (value === null) return null;
   if (!Array.isArray(value) || value.length > 100) {
@@ -735,6 +851,7 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
   const surfaceAllowlist = new Set(["driver", "passenger", "hood", "roof", "front", "rear"]);
   let previousSequence = 0;
   return value.map((row) => {
+    const ownerId = UUID_PATTERN.test(String(row?.ownerId || "")) ? String(row.ownerId) : userId;
     const id = String(row?.id || "");
     const rowRequestId = String(row?.requestId || "");
     const generationId = String(row?.generationId || "");
@@ -752,7 +869,7 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
     const masterExtension = new Map([
       ["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"],
     ]).get(row?.masterContentType);
-    const atlasPrefix = `designpro/user_${userId}/${generationId}/flat-first/v1`;
+    const atlasPrefix = `designpro/user_${ownerId}/${generationId}/flat-first/v1`;
     const affectedSurfaces = row?.affectedSurfaces;
     const exampleGuideHash = row?.exampleGuideHash == null ? null : String(row.exampleGuideHash);
     const exampleMasterHash = row?.exampleMasterHash == null ? null : String(row.exampleMasterHash);
@@ -782,13 +899,13 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
       || !Number.isSafeInteger(Number(row?.masterByteSize)) || Number(row.masterByteSize) < 1
       || !Number.isSafeInteger(Number(row?.projectionByteSize))
       || Number(row.projectionByteSize) < 1 || Number(row.projectionByteSize) > 12 * 1024 * 1024
-      || !authorizedFlatAtlasPath(guideStoragePath, userId, generationId)
-      || !authorizedFlatAtlasPath(masterStoragePath, userId, generationId)
-      || !authorizedFlatAtlasPath(projectionStoragePath, userId, generationId)
+      || !authorizedFlatAtlasPath(guideStoragePath, ownerId, generationId)
+      || !authorizedFlatAtlasPath(masterStoragePath, ownerId, generationId)
+      || !authorizedFlatAtlasPath(projectionStoragePath, ownerId, generationId)
       || guideStoragePath !== `${atlasPrefix}/guide/${guideContentHash}.png`
       || masterStoragePath !== `${atlasPrefix}/revisions/${revisionSequence}`
         + `/master/${masterContentHash}.${masterExtension || "invalid"}`
-      || projectionStoragePath !== `designpro/user_${userId}/${generationId}`
+      || projectionStoragePath !== `designpro/user_${ownerId}/${generationId}`
         + `/flat-first/v1/revisions/${revisionSequence}/projection/${projectionContentHash}.jpg`
       || !Array.isArray(affectedSurfaces) || affectedSurfaces.length < 1
       || affectedSurfaces.length > 6
@@ -805,6 +922,15 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
     const panelMap = validatedFlatAtlasPanelMap(
       row.panelMap, widthPx, heightPx, effectivePpi,
     );
+    // THE SIX PRINT PANELS CALL 1 CUT FROM THIS EXACT MASTER.
+    //
+    // Not the manifest's zones -- those are the atlas layout, and a layout has
+    // no content hash a customer's file can be identified by. These are the
+    // panels themselves, and they are what RULE 0.21 says RevisionStudio
+    // entices with long before anything is purchased.
+    const callOnePanels = validatedCallOnePanels(
+      row.callOnePanels, ownerId, generationId, revisionSequence, masterContentHash,
+    );
     previousSequence = revisionSequence;
     return {
       id,
@@ -814,6 +940,7 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
       guideStoragePath,
       masterStoragePath,
       projectionStoragePath,
+      callOnePanels,
       guide: {
         contentHash: guideContentHash,
         contentType: String(row.guideContentType),
@@ -841,6 +968,14 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
       },
       model: String(row.model),
       promptVersion: String(row.promptVersion),
+      // THE FORENSIC RECORD. Passed through as the database stated it, for the
+      // control room only -- PanelPro reads this route, the customer's library
+      // and workspace read different ones. Shapes are not re-asserted here
+      // because they are diagnostic prose and numbers rather than identities
+      // anything is bound by; the identities above are the ones validated.
+      qc: row.qc && typeof row.qc === "object" && !Array.isArray(row.qc) ? row.qc : null,
+      provenance: row.provenance && typeof row.provenance === "object" && !Array.isArray(row.provenance)
+        ? row.provenance : null,
       affectedSurfaces: affectedSurfaces.map(String),
       panelMap,
       instruction: row.instruction == null ? null : String(row.instruction).slice(0, 4000),
@@ -858,7 +993,91 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
 // the generation id comes from THIS run's own immutable revision snapshot, the
 // request row must be owned by the caller, and the storage path must sit
 // inside that same owner/generation prefix.
-async function approvedViewsForRun(fetchImpl, token, cfg, run, userId) {
+/**
+ * THE SEVEN APPROVED PROOFS OF ONE GENERATION.
+ *
+ * This used to select `designpro_generation_requests` and then
+ * `designpro_generation_views` directly, with the caller's own token. Both
+ * tables are service-role only -- the Calls 1-7 adapter revokes them from
+ * `PUBLIC, anon, authenticated` on purpose -- so PostgREST refused that select
+ * for every caller alive, owner and operator alike, and the endpoint answered
+ * an error every time it was asked. RevisionStudio catches that, publishes an
+ * empty `render_urls`, and its own "a card needs an image" rule then drops the
+ * design out of the grid: a job with seven correct proofs was invisible in the
+ * studio built to revise it.
+ *
+ * `designpro_generation_workspace` is the sanctioned SECURITY DEFINER read --
+ * the generation-keyed twin of `designpro_generation_view_paths` -- and it
+ * carries the same flat-first fence, reported rather than raised. So a view
+ * set the server has superseded stays withheld, and the caller is told which
+ * of the two empty answers they are looking at instead of guessing.
+ */
+async function approvedViewsForGeneration(fetchImpl, token, cfg, generationIdValue) {
+  const generation = String(generationIdValue || "").toLowerCase();
+  if (!UUID_PATTERN.test(generation)) return { views: [], superseded: false, found: false };
+  const workspace = await rpc(fetchImpl, token, cfg, "designpro_generation_workspace", {
+    p_generation_id: generation,
+  });
+  if (workspace === null || typeof workspace !== "object" || Array.isArray(workspace)) {
+    return { views: [], superseded: false, found: false };
+  }
+  if (String(workspace.generationId || "").toLowerCase() !== generation) {
+    throw Object.assign(new Error("generation_workspace_response_invalid"), { status: 502 });
+  }
+  // Paths embed the OWNER's id, not the caller's. A design-team member reading
+  // a customer's job is authorized by the read above; checking the prefix
+  // against their own id would refuse every row they were just cleared to see.
+  const ownerId = String(workspace.ownerId || "");
+  if (!UUID_PATTERN.test(ownerId)) {
+    throw Object.assign(new Error("generation_workspace_response_invalid"), { status: 502 });
+  }
+  const superseded = workspace.viewsSuperseded === true;
+  const rows = Array.isArray(workspace.views) ? workspace.views : [];
+  const views = [];
+  for (const row of rows) {
+    const surfaceKey = String(row.consumerRole || "");
+    if (!PRODUCTION_SURFACES.includes(surfaceKey)) continue;
+    const storagePath = String(row.storagePath || "");
+    if (!authorizedGenerationViewPath(storagePath, ownerId, generation)) continue;
+    const hashOrNull = (value) => (SHA256_PATTERN.test(String(value || "")) ? String(value).toLowerCase() : null);
+    const masterContentHash = hashOrNull(row.atlasMasterContentHash);
+    views.push({
+      // The view's own row id when the server states one. A view is a record,
+      // and giving it a synthesized name here would make it a different thing
+      // depending on which route it came through.
+      id: UUID_PATTERN.test(String(row.id || ""))
+        ? String(row.id)
+        : `${generation}:${String(row.sourceViewType || "")}`,
+      generationId: generation,
+      surfaceKey,
+      sourceViewType: String(row.sourceViewType || ""),
+      storagePath,
+      contentHash: String(row.contentHash || ""),
+      byteSize: row.byteSize == null ? null : Number(row.byteSize),
+      contentType: String(row.contentType || ""),
+      signedUrl: await signedArtifactUrl(fetchImpl, token, cfg, storagePath),
+      expiresIn: 300,
+      // Null on a Standard run, which has no master to be bound to. Present on
+      // A.T.L.A.S., where the runtime already refuses to render a proof whose
+      // conditioning bytes do not hash to the master zone -- this only reports
+      // that fact so a human can see it rather than trust it.
+      atlasBinding: masterContentHash
+        ? {
+          masterContentHash,
+          zoneContentHash: hashOrNull(row.atlasZoneContentHash),
+          zoneSurfaceKey: typeof row.atlasZoneSurfaceKey === "string" ? row.atlasZoneSurfaceKey : null,
+          anchoredToDriver: row.atlasAnchoredToDriver === true,
+          deterministicMirror: row.atlasDeterministicMirror === true,
+          revisionId: UUID_PATTERN.test(String(row.atlasRevisionId || ""))
+            ? String(row.atlasRevisionId) : null,
+        }
+        : null,
+    });
+  }
+  return { views, superseded, found: true, ownerId, workspace };
+}
+
+async function approvedViewsForRun(fetchImpl, token, cfg, run) {
   const revisionId = String(run?.revision_id || "").toLowerCase();
   const snapshotHash = String(run?.revision_snapshot_hash || "").toLowerCase();
   if (!UUID_PATTERN.test(revisionId) || !SHA256_PATTERN.test(snapshotHash)) {
@@ -874,62 +1093,7 @@ async function approvedViewsForRun(fetchImpl, token, cfg, run, userId) {
   }
   const generation = String(revisionRows[0].generation_id || "").toLowerCase();
   if (!UUID_PATTERN.test(generation)) throw Object.assign(new Error("immutable_revision_identity_missing"), { status: 409 });
-
-  const requestResponse = await upstream(fetchImpl,
-    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${encodeURIComponent("id")}&generation_id=eq.${encodeURIComponent(generation)}&owner_id=eq.${encodeURIComponent(userId)}&limit=1`,
-    { method: "GET" }, token, cfg);
-  if (!requestResponse.ok) throw Object.assign(new Error(`generation_request_query_${requestResponse.status}`), { status: requestResponse.status });
-  const requestRows = await requestResponse.json();
-  if (!Array.isArray(requestRows) || requestRows.length !== 1) return [];
-
-  // `metadata` is selected only to project the read-only A.T.L.A.S. binding
-  // below. It proves, per proof, WHICH master that proof was rendered from --
-  // the one thing the design team could never see, and the failure they were
-  // burned by most: proofs that were not actually fed the master. Nothing about
-  // the view's identity, storage contract or semantics changes.
-  const fields = encodeURIComponent("id,consumer_role,source_view_type,storage_path,content_hash,byte_size,content_type,metadata");
-  const viewResponse = await upstream(fetchImpl,
-    `${cfg.supabaseUrl}/rest/v1/designpro_generation_views?select=${fields}&request_id=eq.${encodeURIComponent(String(requestRows[0].id))}&order=consumer_role.asc`,
-    { method: "GET" }, token, cfg);
-  if (!viewResponse.ok) throw Object.assign(new Error(`generation_views_query_${viewResponse.status}`), { status: viewResponse.status });
-  const rows = await viewResponse.json();
-  if (!Array.isArray(rows)) return [];
-
-  const views = [];
-  for (const row of rows) {
-    const surfaceKey = String(row.consumer_role || "");
-    if (!PRODUCTION_SURFACES.includes(surfaceKey)) continue;
-    const storagePath = String(row.storage_path || "");
-    if (!authorizedGenerationViewPath(storagePath, userId, generation)) continue;
-    const provider = row?.metadata?.provider;
-    const hashOrNull = (value) => (SHA256_PATTERN.test(String(value || "")) ? String(value).toLowerCase() : null);
-    views.push({
-      id: String(row.id),
-      generationId: generation,
-      surfaceKey,
-      sourceViewType: String(row.source_view_type || ""),
-      storagePath,
-      contentHash: String(row.content_hash),
-      byteSize: row.byte_size == null ? null : Number(row.byte_size),
-      contentType: String(row.content_type || ""),
-      signedUrl: await signedArtifactUrl(fetchImpl, token, cfg, storagePath),
-      expiresIn: 300,
-      // Null on a Standard run, which has no master to be bound to. Present on
-      // A.T.L.A.S., where the runtime already refuses to render a proof whose
-      // conditioning bytes do not hash to the master zone -- this only reports
-      // that fact so a human can see it rather than trust it.
-      atlasBinding: provider && typeof provider === "object"
-        ? {
-          masterContentHash: hashOrNull(provider.atlasMasterContentHash),
-          zoneContentHash: hashOrNull(provider.atlasZoneContentHash),
-          zoneSurfaceKey: typeof provider.atlasZoneSurfaceKey === "string" ? provider.atlasZoneSurfaceKey : null,
-          anchoredToDriver: provider.anchoredToView1 === true,
-          deterministicMirror: provider.deterministicMirror === true,
-        }
-        : null,
-    });
-  }
-  return views;
+  return approvedViewsForGeneration(fetchImpl, token, cfg, generation);
 }
 
 async function resolveRun(fetchImpl, token, cfg, requestedGenerationId) {
@@ -2246,6 +2410,93 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 200, await publicWrapboxDetail(fetchImpl, token, cfg, rows[0]));
       }
 
+      // THE DESIGN LIBRARY. Every DesignPro generation in a window, newest
+      // first, from the generation records themselves rather than from the
+      // workflow runs `/api/jobs` lists. A run exists only after the production
+      // handoff, so that list represents 8 of the last four months' 48 designs
+      // and cannot be the library. See the migration for the measurement.
+      if (req.method === "GET" && url.pathname === "/api/design-library") {
+        const sinceParam = url.searchParams.get("since");
+        const since = sinceParam && !Number.isNaN(Date.parse(sinceParam))
+          ? new Date(sinceParam).toISOString()
+          : null;
+        const limitParam = Number(url.searchParams.get("limit"));
+        const limit = Number.isFinite(limitParam) && limitParam > 0
+          ? Math.min(Math.floor(limitParam), 1000)
+          : null;
+        const rows = await rpc(fetchImpl, token, cfg, "designpro_generation_library", {
+          // Null lets the database apply its own four-month default, so the
+          // window is defined in one place rather than in every caller.
+          p_since: since,
+          p_limit: limit,
+        });
+        if (!Array.isArray(rows)) {
+          throw Object.assign(new Error("design_library_response_invalid"), { status: 502 });
+        }
+        const entries = await Promise.all(rows.map(async (row) => {
+          const generationId = String(row?.generationId || "").toLowerCase();
+          const ownerId = String(row?.ownerId || "");
+          if (!UUID_PATTERN.test(generationId) || !UUID_PATTERN.test(ownerId)) {
+            throw Object.assign(new Error("design_library_response_invalid"), { status: 502 });
+          }
+          const storagePath = String(row?.thumbnailStoragePath || "");
+          // The tile is signed only when its path is one of this design's own
+          // approved proofs. ⛔ NOT the A.T.L.A.S. subtree: the library is the
+          // customer's surface and the master is never shown to a client, so
+          // the flat-first prefix is deliberately NOT accepted here even though
+          // the caller may be allowed to read it elsewhere. A design with no
+          // servable proof is published without a tile -- those are the
+          // failures a designer most needs to find, so they stay in the library
+          // rather than being filtered out of it.
+          const signable = storagePath
+            && authorizedGenerationViewPath(storagePath, ownerId, generationId);
+          const thumbnailUrl = signable
+            ? await signedArtifactUrl(fetchImpl, token, cfg, storagePath).catch(() => null)
+            : null;
+          const vehicle = row?.vehicle && typeof row.vehicle === "object" && !Array.isArray(row.vehicle)
+            ? {
+              year: String(row.vehicle.year || ""),
+              make: String(row.vehicle.make || ""),
+              model: String(row.vehicle.model || ""),
+              type: String(row.vehicle.type || ""),
+            }
+            : null;
+          const production = row?.production && typeof row.production === "object"
+            ? {
+              runId: String(row.production.runId || ""),
+              status: String(row.production.status || ""),
+              workflowType: String(row.production.workflowType || ""),
+              orderNumber: row.production.orderNumber ? String(row.production.orderNumber) : null,
+              startedAt: row.production.startedAt || null,
+            }
+            : null;
+          return {
+            generationId,
+            // The Design ID is derived from the generation id itself, by the one
+            // canonical helper, so the library labels a design exactly as the
+            // studio and the board do.
+            designId: canonicalDesignId(generationId),
+            designName: row?.designName ? String(row.designName) : null,
+            companyName: row?.companyName ? String(row.companyName) : null,
+            brief: row?.brief ? String(row.brief) : null,
+            finish: row?.finish ? String(row.finish) : null,
+            vehicle,
+            state: String(row?.state || ""),
+            pipeline: row?.pipeline === "atlas" ? "atlas" : "standard",
+            createdAt: row?.created_at || null,
+            updatedAt: row?.updatedAt || null,
+            completedAt: row?.completedAt || null,
+            revisionCount: Number(row?.revisionCount || 0),
+            currentRevision: row?.currentRevision == null ? null : Number(row.currentRevision),
+            viewCount: Number(row?.viewCount || 0),
+            viewsSuperseded: row?.viewsSuperseded === true,
+            production,
+            ...(thumbnailUrl ? { thumbnailUrl, expiresIn: 300 } : {}),
+          };
+        }));
+        return json(res, 200, entries);
+      }
+
       if (req.method === "GET" && url.pathname === "/api/jobs") {
         const runs = await listRuns(fetchImpl, token, cfg);
         const states = await Promise.all(runs.map(async (run) => ({
@@ -2414,16 +2665,27 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const requestedViewId = decodeURIComponent(approvedViewMatch[1]);
         const runs = await listRuns(fetchImpl, token, cfg);
         const run = requestedRun(runs, requestedViewId);
-        if (!run) {
-          // The proofs a run freezes are the seven Calls 1-7 views. Before the
-          // handoff they exist on the generation request instead, and the
-          // request-scoped /views route already serves them to their owner --
-          // so an empty list here is the honest pre-handoff answer, not a 404.
-          const request = await generationRequestByGenerationId(fetchImpl, token, cfg, requestedViewId);
-          if (request) return json(res, 200, []);
-          return json(res, 404, { error: "job_not_found" });
+        // A RUN IS NOT REQUIRED TO HAVE PROOFS.
+        //
+        // Calls 1-7 produce the seven views long before the production handoff
+        // creates a run, and the entice half never creates one at all for a
+        // design nobody has ordered. Resolving only through runs meant the
+        // proofs were invisible for the whole time they were the only thing
+        // there was to look at -- the same mistake the /atlas route already
+        // corrected for the master. So the generation is the address, and the
+        // run only supplies it when the caller passed a run id.
+        const result = run
+          ? await approvedViewsForRun(fetchImpl, token, cfg, run)
+          : await approvedViewsForGeneration(fetchImpl, token, cfg, requestedViewId);
+        if (!result.found) return json(res, 404, { error: "job_not_found" });
+        // A superseded flat-first view set is withheld deliberately, and saying
+        // so is the difference between "this design has no proofs yet" and
+        // "these proofs came from an architecture the server no longer serves".
+        // A page that cannot tell those apart shows a spinner forever.
+        if (result.superseded) {
+          res.setHeader("x-designpro-views-superseded", "flat_first_atlas_new_run_required");
         }
-        return json(res, 200, await approvedViewsForRun(fetchImpl, token, cfg, run, user.id));
+        return json(res, 200, result.views);
       }
 
       // The A.T.L.A.S. master and its version history, for the design team.
@@ -2456,14 +2718,26 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         }
         const publicRevisions = await Promise.all(revisions.map(async (revision) => {
           const {
-            guideStoragePath, masterStoragePath, projectionStoragePath, ...base
+            guideStoragePath, masterStoragePath, projectionStoragePath,
+            callOnePanels, ...base
           } = revision;
           const [guideUrl, masterUrl] = await Promise.all([
             signedArtifactUrl(fetchImpl, token, cfg, guideStoragePath).catch(() => null),
             signedArtifactUrl(fetchImpl, token, cfg, masterStoragePath).catch(() => null),
           ]);
+          // A panel whose signature fails is published without a URL rather
+          // than dropped: its dimensions, square footage and hash are still the
+          // truth about that surface, and a row that states them and says the
+          // image is still arriving beats a row that is simply missing.
+          const panels = await Promise.all(callOnePanels.map(async (panel) => {
+            const { storagePath, ...panelBase } = panel;
+            const signedUrl = await signedArtifactUrl(fetchImpl, token, cfg, storagePath)
+              .catch(() => null);
+            return { ...panelBase, ...(signedUrl ? { signedUrl, expiresIn: 300 } : {}) };
+          }));
           return {
             ...base,
+            callOnePanels: panels,
             ...(guideUrl ? { guideUrl } : {}),
             ...(masterUrl ? { masterUrl } : {}),
             ...((guideUrl || masterUrl) ? { expiresIn: 300 } : {}),

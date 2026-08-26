@@ -54,6 +54,8 @@ import {
   type RenderElementSeparatorHandle,
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
+import { DesignVersionRecordCard } from "@/components/revisioniq/DesignVersionRecordCard";
+import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
 import { dpApi } from "@/lib/designpro-api";
 import {
@@ -1622,7 +1624,18 @@ export default function RevisionStudioIQ() {
   const [savingToProof, setSavingToProof] = useState(false);
 
   // UI state
-  const [modeFilter, setModeFilter] = useState<string>("all");
+  // ⛔ THIS WAS A FIFTEEN-OPTION TOOL FILTER, AND FOURTEEN OF THEM WERE EMPTY.
+  //
+  // It came over from RestylePro, where one grid served ColorPro, FadeWraps,
+  // GraphicsPro, ApprovePro, WBTY, MyVehiclePro and WallPro. DesignPro OS has
+  // exactly one tool: every row this page can load is projected with
+  // `mode_type: "designpanelpro"`, so picking any of the other options emptied
+  // GalleryMode and picking DesignProAI did the same thing as "All Tools".
+  //
+  // The real distinction between two designs here is which pipeline authored
+  // them, which is also what the brief asked to be able to filter on. So the
+  // control keeps its place and answers a question that has two real answers.
+  const [pipelineFilter, setPipelineFilter] = useState<"all" | "atlas" | "standard">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showTeamRenders, setShowTeamRenders] = useState(false);
   const [selectedRender, setSelectedRender] = useState<any | null>(null);
@@ -2360,7 +2373,7 @@ export default function RevisionStudioIQ() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["revision-studio-renders", modeFilter, searchQuery, isAdmin, showTeamRenders],
+    queryKey: ["revision-studio-renders", pipelineFilter, searchQuery, isAdmin, showTeamRenders],
     queryFn: async ({ pageParam = 0 }) => {
       // SERVER-OWNED SOURCE. This used to select a legacy design table -- a
       // RestylePro table that holds zero rows in DesignProAI, and a name the
@@ -2378,8 +2391,9 @@ export default function RevisionStudioIQ() {
       // keystroke.
       const needle = searchQuery.trim().toLowerCase();
       const matches = all.filter((row) => {
-        if (modeFilter !== "all"
-          && !String(row.mode_type || "").toLowerCase().startsWith(modeFilter.toLowerCase())) return false;
+        // A row whose pipeline the server could not report passes both
+        // filters: "unknown" is not "the other one".
+        if (pipelineFilter !== "all" && row.pipeline && row.pipeline !== pipelineFilter) return false;
         if (!needle) return true;
         return [
           row.vehicle_year, row.vehicle_make, row.vehicle_model, row.vehicle_type,
@@ -2501,7 +2515,7 @@ export default function RevisionStudioIQ() {
     }
 
     return merged;
-  }, [rendersPages, graphicsProRows, panelizerRows, modeFilter]);
+  }, [rendersPages, graphicsProRows, panelizerRows, pipelineFilter]);
 
   // THE ORDER NUMBER IS ON THE DESIGN.
   //
@@ -2547,10 +2561,70 @@ export default function RevisionStudioIQ() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // ---------------------------------------------------------------------------
-  // Deep link: auto-select render from ?id= param
+  // DEEP LINK: /revision-studio?id=<generationId> OPENS THAT DESIGN.
+  //
+  // This used to resolve only against `renders` -- the caller's own feed, one
+  // page at a time, already filtered by the grid's "a card needs an image"
+  // rule. Three ordinary situations therefore opened a blank studio on a design
+  // that plainly exists:
+  //
+  //   * a design-team member following a link to a customer's job, which is
+  //     never in their own feed at all;
+  //   * a design past the first page, whose row had not been fetched yet;
+  //   * a design whose proofs are still rendering or were withheld, which the
+  //     phantom-row rule drops from the feed by design.
+  //
+  // The feed match stays first, because when the row is already in hand it is
+  // the same object the grid is rendering and reusing it keeps selection and
+  // list in sync. Only when the feed genuinely cannot answer does this ask the
+  // server for that one design -- the same read the grid uses, addressed by id.
   // ---------------------------------------------------------------------------
+  const deepLinkFetchedRef = useRef<string | null>(null);
+  const [deepLinkMissing, setDeepLinkMissing] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  /**
+   * OPEN ONE DESIGN, BY ITS GENERATION ID.
+   *
+   * The library hands this a generation id and the workspace fills in: master,
+   * proofs, panels, revisions and assets all key off the selected design, so
+   * selecting it is the whole action. The feed is consulted first when the row
+   * is already in hand -- that keeps the grid's own selection in sync -- and
+   * the server answers for everything else, which is most of the library: a
+   * design still in Calls 1-7, one that failed there, or one belonging to a
+   * customer whose work this operator is reviewing was never in the feed.
+   */
+  const openDesignById = useCallback(async (generationId: string) => {
+    const id = String(generationId || "").trim();
+    if (!id) return;
+    const found = (renders || []).find((r: any) =>
+      r.id === id || (r._mergedIds && r._mergedIds.includes(id))
+    );
+    if (found) {
+      setSelectedRender(found);
+      setCurrentViewIndex(0);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setOpeningId(id);
+    try {
+      const row = await readRevisionStudioDesign(id);
+      if (!row) {
+        toast.error("That design could not be opened from this account.");
+        return;
+      }
+      setSelectedRender(row as any);
+      setCurrentViewIndex(0);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      toast.error("That design could not be opened.");
+    } finally {
+      setOpeningId(null);
+    }
+  }, [renders]);
   useEffect(() => {
-    if (deepLinkId && renders && !selectedRender) {
+    if (!deepLinkId || selectedRender) return;
+    if (renders) {
       // Direct ID match first, then check _mergedIds for renders that were merged
       const found = renders.find((r: any) =>
         r.id === deepLinkId || (r._mergedIds && r._mergedIds.includes(deepLinkId))
@@ -2559,8 +2633,30 @@ export default function RevisionStudioIQ() {
         setSelectedRender(found);
         setCurrentViewIndex(0);
         window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
       }
     }
+    // Wait for the first page before deciding the feed cannot answer, so an
+    // in-feed design is never fetched twice.
+    if (!renders) return;
+    if (deepLinkFetchedRef.current === deepLinkId) return;
+    deepLinkFetchedRef.current = deepLinkId;
+    let live = true;
+    readRevisionStudioDesign(deepLinkId)
+      .then((row) => {
+        if (!live) return;
+        if (!row) {
+          // The honest answer: this account cannot open that design, or it does
+          // not exist. Never a spinner that never resolves.
+          setDeepLinkMissing(true);
+          return;
+        }
+        setSelectedRender(row as any);
+        setCurrentViewIndex(0);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      })
+      .catch(() => { if (live) setDeepLinkMissing(true); });
+    return () => { live = false; };
   }, [deepLinkId, renders, selectedRender]);
 
   // ---------------------------------------------------------------------------
@@ -4358,27 +4454,14 @@ export default function RevisionStudioIQ() {
             />
           </div>
 
-          <Select value={modeFilter} onValueChange={setModeFilter}>
+          <Select value={pipelineFilter} onValueChange={(v) => setPipelineFilter(v as typeof pipelineFilter)}>
             <SelectTrigger className="w-36 sm:w-48 bg-zinc-900 border-zinc-700">
-              <SelectValue placeholder="Tool" />
+              <SelectValue placeholder="Pipeline" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Tools</SelectItem>
-              <SelectItem value="colorpro">ColorPro</SelectItem>
-              <SelectItem value="designpanelpro">DesignProAI™</SelectItem>
-              <SelectItem value="recreatepro">RecreatePro™</SelectItem>
-              <SelectItem value="fadewraps">FadeWraps</SelectItem>
-              <SelectItem value="graphicspro">GraphicsPro</SelectItem>
-              <SelectItem value="approvemode">ApprovePro</SelectItem>
-              <SelectItem value="wbty">WBTY</SelectItem>
-              <SelectItem value="myvehicle">MyVehiclePro (all)</SelectItem>
-              <SelectItem value="myvehicle_colorpro">↳ MV × ColorPro</SelectItem>
-              <SelectItem value="myvehicle_designpanelpro">↳ MV × DesignPro</SelectItem>
-              <SelectItem value="myvehicle_fadewraps">↳ MV × FadeWraps</SelectItem>
-              <SelectItem value="myvehicle_graphicspro">↳ MV × GraphicsPro</SelectItem>
-              <SelectItem value="myvehicle_wbty">↳ MV × WBTY</SelectItem>
-              <SelectItem value="wallpro">WallPro</SelectItem>
-              <SelectItem value="myvehicle_wallpro">↳ MV × WallPro</SelectItem>
+              <SelectItem value="all">All Designs</SelectItem>
+              <SelectItem value="atlas">A.T.L.A.S.</SelectItem>
+              <SelectItem value="standard">Standard</SelectItem>
             </SelectContent>
           </Select>
 
@@ -4428,20 +4511,10 @@ export default function RevisionStudioIQ() {
         {/* ================================================================ */}
         {layoutMode === "gallery" && !selectedRender && (() => {
           const galleryRenders = (renders || []).filter((r: any) => {
-            // MyVehiclePro renders are tagged `myvehicle_<tool>` (e.g.
-            // `myvehicle_graphicspro`), so the "myvehicle" filter has to match
-            // by prefix rather than equality — otherwise every MVP render gets
-            // filtered out of the gallery. Other tool filters stay on
-            // case-insensitive equality and explicitly exclude MVP rows so
-            // they only surface under their own filter.
-            if (modeFilter !== "all") {
-              const mt = (r.mode_type || "").toLowerCase();
-              if (modeFilter === "myvehicle") {
-                if (!mt.startsWith("myvehicle_")) return false;
-              } else {
-                if (mt !== modeFilter.toLowerCase()) return false;
-              }
-            }
+            // The same pipeline filter the header control drives, so
+            // GalleryMode and the library never disagree about what is on
+            // screen. A row with no reported pipeline is shown either way.
+            if (pipelineFilter !== "all" && r.pipeline && r.pipeline !== pipelineFilter) return false;
             if (searchQuery) {
               const q = searchQuery.toLowerCase();
               const label = `${r.vehicle_year || ""} ${r.vehicle_make || ""} ${r.vehicle_model || ""} ${r.color_name || ""} ${r.design_file_name || ""} ${r.admin_notes || ""} ${r.mode_type || ""} ${r.id || ""}`.toLowerCase();
@@ -4553,144 +4626,68 @@ export default function RevisionStudioIQ() {
         {/* ================================================================ */}
         {/* RENDER GRID (hidden when a render is selected OR gallery mode)   */}
         {/* ================================================================ */}
+        {/* A deep link this account cannot open is answered, not left spinning.
+            The two reasons are indistinguishable from the browser and the
+            server deliberately keeps them that way, so the message names both
+            rather than guessing which one applies. */}
+        {!selectedRender && deepLinkId && deepLinkMissing && (
+          <div className="w-full mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+            <p className="text-sm font-semibold text-amber-300 font-poppins">
+              That design could not be opened
+            </p>
+            <p className="text-xs text-amber-200/80 mt-1">
+              Design <span className="font-mono">{formatDid(deepLinkId)}</span> either does not
+              exist or is not one this account can open. Your own designs are below.
+            </p>
+          </div>
+        )}
+
+        {!selectedRender && deepLinkId && !deepLinkMissing && renders === undefined && (
+          <div className="w-full mb-4 text-xs text-zinc-500 font-poppins">
+            Opening design <span className="font-mono">{formatDid(deepLinkId)}</span>…
+          </div>
+        )}
+
+        {/* THE DESIGN LIBRARY — the last four months of real DesignPro work.
+            It is above the legacy card grid rather than replacing it, because
+            the two answer different questions: the library lists every
+            generation the server has a record of, and the grid below groups the
+            subset that already carries imagery by vehicle. The library is the
+            one that can show a design still in Calls 1-7, one that failed
+            there, or one whose proofs are withheld -- which between them are
+            most of the work, and all of it was unreachable before. */}
         {!selectedRender && layoutMode === "studio" && (
-          <div className="w-full">
-            {/* Only show the bouncer on the very first fetch — once any page
-                of data is in we render the grid (with SproketTipsSlideshow
-                covering the empty state) so a stalled background refetch
-                can't trap users behind the loading screen. */}
-            {renders === undefined && !rendersError ? (
-              <div className="flex flex-col items-center justify-center py-20 gap-4">
-                <img
-                  src="/characters/sproket/sproket-rocket-launch.png"
-                  alt="Loading"
-                  className="w-14 h-14 sm:w-20 sm:h-20 md:w-32 md:h-32 object-contain animate-bounce"
-                />
-                <p className="text-zinc-500 text-sm font-poppins">Loading your Custom Wrap Designs...</p>
-              </div>
-            ) : rendersError ? (
-              <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-                <img
-                  src="/characters/sproket/sproket-clipboard.png"
-                  alt=""
-                  className="w-16 h-16 md:w-24 md:h-24 object-contain opacity-80"
-                />
-                <div>
-                  <p className="text-white font-semibold font-poppins mb-1">We couldn't load your designs</p>
-                  <p className="text-zinc-400 text-sm max-w-md">Something went wrong fetching your Custom Wrap Designs. Check your connection and try again.</p>
-                </div>
-                <Button
-                  variant="outline"
-                  className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                  onClick={() => refetchRenders()}
-                >
-                  <RefreshCw className="w-4 h-4 mr-1.5" />
-                  Retry
-                </Button>
-              </div>
-            ) : (
-              <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {(() => {
-                  // Group renders by VEHICLE (year|make|model) so all designs/revisions
-                  // for the same vehicle appear inside one card with a slider.
-                  // MyVehiclePro renders are the exception — each one is a distinct
-                  // photo edit the shop showed a customer, so it always gets its own
-                  // card (keyed by id) and never collapses into the vehicle group.
-                  const grouped = new Map<string, any[]>();
-                  for (const render of renders || []) {
-                    const isMvp = (render.mode_type || "").startsWith("myvehicle_");
-                    if (isMvp) {
-                      grouped.set(render.id, [render]);
-                      continue;
-                    }
-                    const mk = (render.vehicle_make || "").toLowerCase().trim();
-                    const md = (render.vehicle_model || "").toLowerCase().trim();
-                    const yr = render.vehicle_year || 0;
-                    const groupKey = `${yr}|${mk}|${md}`;
-                    if (!grouped.has(groupKey)) grouped.set(groupKey, []);
-                    grouped.get(groupKey)!.push(render);
-                  }
-
-                  // For each group, sort by newest first
-                  const cards: any[] = [];
-                  for (const group of grouped.values()) {
-                    group.sort((a: any, b: any) => {
-                      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-                    });
-                    cards.push({ allVersions: group });
-                  }
-
-                  return cards.map(({ allVersions }) => (
-                    <VehicleGroupCard
-                      key={allVersions[0].id}
-                      allVersions={allVersions}
-                      orderNumberByRenderId={orderNumberByRenderId}
-                      failedImages={failedImages}
-                      setFailedImages={setFailedImages}
-                      getMissingViews={getMissingViews}
-                      getViews={getViews}
-                      formatVehicleInfo={formatVehicleInfo}
-                      formatDesignName={formatDesignName}
-                      deleteRender={deleteRender}
-                      onSelect={(render) => {
-                        setSelectedRender(render);
-                        setCurrentViewIndex(0);
-                        setCompletedMissingViews([]);
-                        setFailedMissingViews([]);
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      }}
-                      onSendProof={(render) => {
-                        setSelectedRender(render);
-                        setShowSendForApproval(true);
-                      }}
-                      onDownloadAll={handleDownloadAllRenders}
-                      onBuildFiles={(render) => {
-                        // Push this existing design to its Design Assets page,
-                        // where the artboard + print files get built (Build Assets).
-                        // Pass the row's OWN id — gallery cards are always real
-                        // real design rows, so the page resolves views +
-                        // stored proof + artboards with a direct lookup on any
-                        // device (the DesignIQ id's row is near-empty and its
-                        // reverse link misses in production). The page maps the
-                        // row id to the canonical generation id internally. Stash
-                        // the buildctx as a belt-and-suspenders extra.
-                        const gid = render?.id || genIdOf(render);
-                        stashBuildCtx(render, gid);
-                        navigate(`/design-assets/${gid}`);
-                      }}
-                    />
-                  ));
-                })()}
-
-                {renders?.length === 0 && !isFetchingNextPage && (
-                  <SproketTipsSlideshow />
-                )}
-              </div>
-
-              {/* Infinite scroll sentinel + manual Load More fallback */}
-              <div ref={loadMoreRef} className="h-1" />
-              {isFetchingNextPage && (
-                <div className="flex items-center justify-center py-6 gap-2">
-                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                  <span className="text-zinc-500 text-sm">Loading more designs...</span>
-                </div>
-              )}
-              {hasNextPage && !isFetchingNextPage && (
-                <div className="flex justify-center mt-6">
-                  <Button
-                    variant="outline"
-                    className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                    onClick={() => fetchNextPage()}
-                  >
-                    Load More
-                  </Button>
-                </div>
-              )}
-              </>
+          <div className="mb-6 w-full">
+            {/* THE one browse surface. The search box above drives it, so there
+                is a single field over a single list. */}
+            <DesignLibrary
+              onOpen={openDesignById}
+              query={searchQuery}
+              pipeline={pipelineFilter}
+              emptySlot={<SproketTipsSlideshow />}
+            />
+            {openingId && (
+              <p className="mt-2 text-[11px] text-zinc-500">Opening {formatDid(openingId)}…</p>
             )}
           </div>
         )}
+
+        {/* ⛔ THE DUPLICATE VEHICLE-GROUPED GRID IS GONE. ONE LIBRARY.
+
+            This surface rendered two grids over the same designs: the Design
+            Library above, and a vehicle-grouped card feed here. Two answers to
+            "what designs exist" is worse than either -- and this was the weaker
+            answer, because it dropped every design that had no image yet and
+            grouped the rest by vehicle, which hid exactly the failures a
+            designer most needs to find.
+
+            Nothing it did uniquely was lost. Its search box, its tool filter,
+            its Team/Mine toggle and GalleryMode are the page chrome above and
+            drive the library now; its per-design actions live in the design
+            workspace, which is where they always acted. The feed query itself
+            stays -- `renders` is what the workspace, the deep link and the
+            version chain resolve against -- it simply no longer draws a second
+            grid of its own. */}
 
         {/* ================================================================ */}
         {/* DETAIL VIEW - takes over when a render is selected               */}
@@ -5986,6 +5983,20 @@ export default function RevisionStudioIQ() {
                     (Trish 2026-07-24): the production-pack QC surface does not
                     belong in the customer-facing revision view. It still lives on
                     the PanelPro Studio Board; this only unmounts it here. */}
+
+                {/* THE DESIGN'S VERSION RECORD — versions, the customer's own
+                    words for each, timestamps, and the identity trio that also
+                    appears in PanelPro.
+
+                    ⛔ NOT THE A.T.L.A.S. MASTER. The flattened sheet is never
+                    shown to a client; it lives in PanelPro Studio under the
+                    A.T.L.A.S. generation id, because that is the internal
+                    control room where the authority everything descends from is
+                    inspected. This surface is review / revise / approve / buy. */}
+                <DesignVersionRecordCard
+                  generationId={productionLayersId}
+                  orderNumber={orderNumberFor(selectedRender)}
+                />
 
                 <ProductionFlowLayersCard
                   // A panelizer-sourced card's `id` was a job id —

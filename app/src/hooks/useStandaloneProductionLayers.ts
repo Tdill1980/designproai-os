@@ -51,6 +51,10 @@ export function useStandaloneProductionLayers(
     };
     return {
       canonicalId: id,
+      // Entice or production. The card asks for the sale on one and reports
+      // production state on the other, and it cannot tell them apart from the
+      // rows alone.
+      stage: layers.stage,
       rows: layers.rows,
       designViews: layers.designViews,
       activePack: layers.activePack,
