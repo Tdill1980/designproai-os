@@ -19,7 +19,7 @@
 -- any check on the migration's text. Only execution over data separates "this
 -- parsed" from "this runs".
 begin;
-select plan(13);
+select plan(16);
 
 select has_function(
   'public','designpro_generation_workspace',ARRAY['uuid'],
@@ -210,6 +210,92 @@ select ok(
   public.designpro_generation_workspace(
     '32000000-0000-4000-8000-0000000000a1') is null,
   'an authenticated stranger is refused: staff access widened nothing else'
+);
+
+-- A PARTIAL A.T.L.A.S. SET SHOWS ITS SOUND VIEWS, AND ONLY THOSE.
+--
+-- Run 04cc0b29 finished with five accepted proofs and RevisionStudioIQ showed
+-- none of them: the read treated the fence's completeness verdict as
+-- "withhold everything". The owner's report was two words: "It's broken."
+-- Presentation now judges each flat-first view on its own shape -- projected
+-- directly from the master, none of the four retired anchor/mirror keys --
+-- while viewsSuperseded still reports that a revision needs a new run.
+with input(value) as (values(jsonb_build_object(
+  'contractVersion','designpro.calls-1-7-input.v3',
+  'pipelineMode','flat-first-atlas-v1',
+  'vehicle',jsonb_build_object(
+    'year','2023','make','Ford','model','Transit','type','van'
+  ),
+  'brief','Partial atlas set must present its sound views',
+  'designName','Partial Atlas',
+  'mode','commercial',
+  'companyName','Partial Atlas'
+))), identity as (
+  select value,
+    encode(extensions.digest(convert_to(value::text,'UTF8'),'sha256'),'hex')
+      input_hash,
+    designpro_private.calls_1_7_engine_contract() engine_contract
+  from input
+)
+insert into public.designpro_generation_requests(
+  id,generation_id,owner_id,tenant_key,idempotency_key,state,request_input,
+  input_hash,engine_contract,engine_contract_hash
+)
+select
+  '31000000-0000-4000-8000-0000000000b1',
+  '32000000-0000-4000-8000-0000000000b1',
+  '11000000-0000-4000-8000-0000000000a1',
+  'user_11000000-0000-4000-8000-0000000000a1',
+  'calls17:32000000-0000-4000-8000-0000000000b1:'||input_hash,
+  'failed',value,input_hash,engine_contract,
+  encode(extensions.digest(convert_to(engine_contract::text,'UTF8'),'sha256'),'hex')
+from identity;
+
+-- Two sibling-shaped views, one retired-shape view.
+with plan(source_view_type,consumer_role,ordinal,provider) as (
+  values
+    ('side','driver',1,jsonb_build_object('anchoredToView1',false)),
+    ('hood_detail','hood',2,jsonb_build_object(
+      'anchoredToView1',false,
+      'atlasDriverContinuityOnly',true,
+      'atlasDriverContinuityReferenceHash',repeat('c',64))),
+    ('front','front',3,jsonb_build_object(
+      'anchoredToView1',true,'driverContentHash',repeat('d',64)))
+)
+insert into public.designpro_generation_views(
+  request_id,source_view_type,consumer_role,storage_path,content_hash,
+  byte_size,content_type,metadata
+)
+select
+  '31000000-0000-4000-8000-0000000000b1',source_view_type,consumer_role,
+  'designpro/user_11000000-0000-4000-8000-0000000000a1/'
+    ||'32000000-0000-4000-8000-0000000000b1/calls-1-7/'
+    ||source_view_type||'/'||repeat(ordinal::text,64)||'.png',
+  repeat(ordinal::text,64),3000+ordinal,'image/png',
+  jsonb_build_object('provider',provider)
+from plan;
+
+set local request.jwt.claims = '{"sub":"11000000-0000-4000-8000-0000000000a1","role":"authenticated"}';
+select is(
+  jsonb_array_length(
+    public.designpro_generation_workspace(
+      '32000000-0000-4000-8000-0000000000b1')->'views'),
+  2,
+  'the sibling-shaped views are presented; the retired-shape view is withheld'
+);
+select is(
+  (select string_agg(v->>'consumerRole', ',' order by v->>'consumerRole')
+     from jsonb_array_elements(
+       public.designpro_generation_workspace(
+         '32000000-0000-4000-8000-0000000000b1')->'views') v),
+  'driver,hood',
+  'exactly driver and hood survive -- the anchored front does not'
+);
+select is(
+  public.designpro_generation_workspace(
+    '32000000-0000-4000-8000-0000000000b1')->'viewsSuperseded',
+  'true'::jsonb,
+  'the fence verdict is still reported: a revision needs a new run'
 );
 
 select * from finish();

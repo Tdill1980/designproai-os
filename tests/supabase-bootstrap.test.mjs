@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered sixty-migration chain', () => {
-  assert.equal(migrationNames.length, 60);
+test('fresh bootstrap contains one ordered sixty-one-migration chain', () => {
+  assert.equal(migrationNames.length, 61);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -135,6 +135,9 @@ test('fresh bootstrap contains one ordered sixty-migration chain', () => {
       // only compiles its expressions when it has a row, so the qualified form
       // passed every apply and failed every generation that had proofs.
       '20260826060000',
+      // A partial A.T.L.A.S. set presents its individually sound views; the
+      // fence still gates revisions and production on a complete set.
+      '20260826070000',
     ],
   );
 });
