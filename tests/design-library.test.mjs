@@ -164,7 +164,14 @@ test("the library filters by name, id, vehicle, pipeline and status", () => {
 test("the library opens a design in the studio and in PanelPro", () => {
   assert.match(library, /\/designpro\/jobs\/\$\{encodeURIComponent\(entry\.generationId\)\}\/panelpro/);
   assert.match(library, /onOpen\?\.\(entry\.generationId\)/);
-  assert.match(studio, /<DesignLibrary onOpen=\{openDesignById\} \/>/);
+  // One mount, and it is the ONLY browse grid on the page now -- the
+  // vehicle-grouped feed it replaced no longer renders.
+  assert.match(studio, /<DesignLibrary\s+onOpen=\{openDesignById\}/);
+  assert.match(studio, /THE DUPLICATE VEHICLE-GROUPED GRID IS GONE\. ONE LIBRARY\./);
+  // The page's own search box drives it, so there is one field over one list.
+  assert.match(studio, /query=\{searchQuery\}/);
+  // And the SPROKET tips the old grid carried are preserved in its empty state.
+  assert.match(studio, /emptySlot=\{<SproketTipsSlideshow \/>\}/);
   // Opening resolves against the server when the feed cannot answer, which is
   // most of the library.
   assert.match(studio, /readRevisionStudioDesign\(id\)/);
