@@ -6,7 +6,7 @@
 // It reads. It never writes to Storage, never writes to the database, and never
 // touches bucket visibility -- looking at the artwork must not re-expose it.
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
 const flag = (name) => {
@@ -105,6 +105,25 @@ if (generationId) {
     files,
   }, null, 2));
   console.error(`exported ${files.filter((f) => f.file).length} A.T.L.A.S. files`);
+
+  // A base64 thumbnail of the master, on the workflow's own log. The full
+  // export is a 30 MB workflow artifact, which needs a browser and a GitHub
+  // session to open -- so an automated caller that can read the log still
+  // cannot see the sheet, which is the one thing a cut-out or wrong-vehicle
+  // diagnosis turns on. 640px is enough to tell continuous livery from a
+  // punched vehicle silhouette, and small enough to sit in a log.
+  const master = files.find((f) => f.file === "atlas-master.png");
+  if (master?.hashMatches) {
+    const { default: sharp } = await import("sharp");
+    const thumb = await sharp(readFileSync(`${outDir}/atlas-master.png`))
+      .resize({ width: 640, height: 640, fit: "inside" })
+      .jpeg({ quality: 55, chromaSubsampling: "4:2:0" })
+      .toBuffer();
+    writeFileSync(`${outDir}/atlas-master-preview.jpg`, thumb);
+    console.error(`ATLAS_MASTER_PREVIEW_JPEG_BASE64_BEGIN ${thumb.length}`);
+    console.error(thumb.toString("base64"));
+    console.error("ATLAS_MASTER_PREVIEW_JPEG_BASE64_END");
+  }
   process.exit(0);
 }
 
