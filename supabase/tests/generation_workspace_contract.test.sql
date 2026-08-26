@@ -19,7 +19,7 @@
 -- any check on the migration's text. Only execution over data separates "this
 -- parsed" from "this runs".
 begin;
-select plan(9);
+select plan(13);
 
 select has_function(
   'public','designpro_generation_workspace',ARRAY['uuid'],
@@ -35,8 +35,21 @@ insert into auth.users(
 ) values
   ('00000000-0000-0000-0000-000000000000',
    '11000000-0000-4000-8000-0000000000a1','authenticated','authenticated',
-   'workspace-owner@designproai.test','',now(),'{}'::jsonb,'{}'::jsonb,now(),now())
+   'workspace-owner@designproai.test','',now(),'{}'::jsonb,'{}'::jsonb,now(),now()),
+  ('00000000-0000-0000-0000-000000000000',
+   '11000000-0000-4000-8000-0000000000a2','authenticated','authenticated',
+   'workspace-staff@designproai.test','',now(),'{}'::jsonb,'{}'::jsonb,now(),now()),
+  ('00000000-0000-0000-0000-000000000000',
+   '11000000-0000-4000-8000-0000000000a3','authenticated','authenticated',
+   'workspace-stranger@designproai.test','',now(),'{}'::jsonb,'{}'::jsonb,now(),now())
 on conflict(id) do nothing;
+
+-- A design-team member who owns nothing. The brief's access rule in one row:
+-- QC staff open a customer's generation through the membership contract, never
+-- by weakening the customer's own row security.
+insert into public.designpro_qc_members(user_id,can_preflight)
+values('11000000-0000-4000-8000-0000000000a2',true)
+on conflict(user_id) do update set can_preflight=excluded.can_preflight;
 
 with input(value) as (values(jsonb_build_object(
   'contractVersion','designpro.calls-1-7-input.v2',
@@ -99,11 +112,27 @@ select
   ))
 from plan;
 
--- The service role reads it the way the gateway does.
+-- WITH NO IDENTITY THERE IS NO READ.
+--
+-- pg_prove runs as a bare superuser carrying no JWT, so it is neither the
+-- owner, the service role, nor a design-team member. NULL is the correct
+-- answer, and asserting it here is what stops the rest of this file passing
+-- vacuously: an earlier draft counted elements of a NULL result, got 0, and
+-- reported a green check for a function that had refused it.
+select ok(
+  public.designpro_generation_workspace(
+    '32000000-0000-4000-8000-0000000000a1') is null,
+  'a caller with no identity is refused, and refusal is NULL not an empty view set'
+);
+
+-- THE OWNER.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"11000000-0000-4000-8000-0000000000a1","role":"authenticated"}';
+
 select ok(
   public.designpro_generation_workspace(
     '32000000-0000-4000-8000-0000000000a1') is not null,
-  'the workspace read returns a record for a generation that has proofs'
+  'the owner reads a generation that has proofs'
 );
 select is(
   jsonb_array_length(
@@ -125,8 +154,9 @@ select is(
   'the customer brief is carried verbatim'
 );
 
--- The two booleans whose COALESCE was the defect. Reading them at all forces
--- the expression that used to fail.
+-- The two booleans whose COALESCE was the defect. Each is counted in the
+-- POSITIVE, so a NULL result scores zero and fails rather than matching an
+-- expected zero by accident.
 select is(
   (select count(*) from jsonb_array_elements(
      public.designpro_generation_workspace(
@@ -139,9 +169,9 @@ select is(
   (select count(*) from jsonb_array_elements(
      public.designpro_generation_workspace(
        '32000000-0000-4000-8000-0000000000a1')->'views') v
-   where (v->>'atlasAnchoredToDriver')::boolean),
-  0::bigint,
-  'an absent anchoredToView1 defaults to false rather than raising'
+   where NOT (v->>'atlasAnchoredToDriver')::boolean),
+  7::bigint,
+  'an absent anchoredToView1 resolves to false on every view rather than raising'
 );
 select is(
   (select count(*) from jsonb_array_elements(
@@ -152,5 +182,30 @@ select is(
   'every view states which master it was rendered from'
 );
 
+-- DESIGN STAFF, WHO OWN NOTHING.
+set local request.jwt.claims = '{"sub":"11000000-0000-4000-8000-0000000000a2","role":"authenticated"}';
+select is(
+  jsonb_array_length(
+    public.designpro_generation_workspace(
+      '32000000-0000-4000-8000-0000000000a1')->'views'),
+  7,
+  'a design-team member opens a generation they do not own'
+);
+select is(
+  public.designpro_generation_workspace(
+    '32000000-0000-4000-8000-0000000000a1')->>'ownerId',
+  '11000000-0000-4000-8000-0000000000a1',
+  'and the record still names the real owner, not the reader'
+);
+
+-- EVERYONE ELSE.
+set local request.jwt.claims = '{"sub":"11000000-0000-4000-8000-0000000000a3","role":"authenticated"}';
+select ok(
+  public.designpro_generation_workspace(
+    '32000000-0000-4000-8000-0000000000a1') is null,
+  'an authenticated stranger is refused: staff access widened nothing else'
+);
+
+reset role;
 select * from finish();
 rollback;
