@@ -17,7 +17,7 @@
 -- carried across the seam from the accepted A.T.L.A.S. revision's metadata.
 
 begin;
-select plan(31);
+select plan(33);
 
 select has_function(
   'designpro_private','workflow_run_is_atlas',
@@ -474,6 +474,27 @@ select is(
    where id=(select atlas_panels_stage from panel_leases)),
   'running|5c000000-0000-4000-8000-000000000001',
   'the A.T.L.A.S. panels.build stage is still running under its lease'
+);
+
+-- Every input to the A.T.L.A.S. branch is proven correct above, and it still
+-- takes the legacy branch. The remaining variable is the SHAPE of the patched
+-- function itself, so assert that directly: the branch condition must be
+-- present verbatim, and it must come BEFORE the legacy branch in the ELSIF
+-- chain, because an ELSIF chain is decided by order.
+select ok(
+  position($atlascond$ELSIF v_stage.stage_key='panels.build'
+    AND v_atlas AND p_receipt->>'promotedFrom'='atlas-call1' THEN$atlascond$
+    in pg_get_functiondef(
+      'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure
+    ))>0,
+  'the A.T.L.A.S. panels.build branch condition survived the patch verbatim'
+);
+select ok(
+  position('call9_atlas_panel_promotion_contract_failed' in pg_get_functiondef(
+    'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure))
+  < position('call9_unique_proof_region_contract_failed' in pg_get_functiondef(
+    'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)),
+  'the A.T.L.A.S. branch precedes the legacy branch in the ELSIF chain'
 );
 
 -- A. The clean promotion advances on A.T.L.A.S. evidence alone.
