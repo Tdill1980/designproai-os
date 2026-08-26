@@ -72,16 +72,16 @@ BEGIN
   v_patched := pg_catalog.replace(v_definition, v_old, v_new);
 
   -- Inspect what the substitution produced, not only what it searched for.
-  IF pg_catalog.position(v_new IN v_patched) = 0
-    OR pg_catalog.position(v_old IN v_patched) > 0
+  IF pg_catalog.strpos(v_patched, v_new) = 0
+    OR pg_catalog.strpos(v_patched, v_old) > 0
   THEN
     RAISE EXCEPTION 'designpro_atlas_prompt_v8_substitution_failed';
   END IF;
   -- The sibling-surface refusals must survive verbatim. If a future body ever
   -- loses them, this migration refuses rather than shipping a Driver
   -- hard-dependency back into production under a new version string.
-  IF pg_catalog.position(
-       'NOT ((v.metadata->''provider'') ? ''driverContentHash'')' IN v_patched
+  IF pg_catalog.strpos(
+       v_patched, 'NOT ((v.metadata->''provider'') ? ''driverContentHash'')'
      ) = 0
   THEN
     RAISE EXCEPTION 'designpro_atlas_prompt_v8_sibling_refusal_missing';
