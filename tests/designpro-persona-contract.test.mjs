@@ -185,11 +185,11 @@ test("neither the presence nor the absence of references changes the core design
   // carries the DNA only to the zones they do not show.
   const withRefs = (extra) => authored({ ...base, visionBoardImages: [{}], styleDescriptors: "ART STYLE: bold", ...extra });
   const inspiration = withRefs({ visionboardIntent: "style_inspiration" });
-  assert.match(inspiration, /STYLE INSPIRATION: Create original artwork using this verified reference style DNA/);
+  assert.match(inspiration, /STYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design/);
   assert.match(inspiration, /ART STYLE: bold/);
 
   const exact = withRefs({ visionboardIntent: "exact_reference" });
-  assert.match(exact, /EXACT CUSTOMER REFERENCE/, "the reproduction rule governs");
+  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer\'s own approved wrap design/, "the reproduction rule governs");
   assert.match(exact, /ART STYLE: bold/, "and the derived DNA still reaches the call");
   assert.match(exact, /the images win/, "subordinate to the reference, never competing with it");
 

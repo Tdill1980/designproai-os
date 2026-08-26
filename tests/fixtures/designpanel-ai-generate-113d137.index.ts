@@ -43,12 +43,11 @@ import { buildLayer1CleanPrompt } from "../_shared/layer1-clean-prompt.ts";
 // touches it. Must be render-tested before enabling.
 import { buildFlatMasterPrompt } from "../_shared/flat-master-prompt.ts";
 import { resolveArtboardPanels, loadArtboardExamples } from "../_shared/artboard-template-os.ts";
-import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-designpro-owner-id",
+    "authorization, x-client-info, apikey, content-type",
 };
 
 // ---------------------------------------------------------------------------
@@ -221,42 +220,6 @@ function briefWantsPhoto(raw: string): boolean {
 // designed vector art.
 const PHOTO_REALISM_LOCK = `PHOTOGRAPHIC IMAGERY: the scene in this brief is an actual photograph — a real camera image with natural light, true-to-life colour, real depth of field, and real surface texture — occupying its own area of the wrap. Type and logo sit over it as crisp vector art.`;
 
-// ── ATLAS-MODE HOISTS (owner directive 2026-08-26) ──────────────────────────
-// These four literals are byte-for-byte the values that previously lived inside
-// buildDesignIQPrompt, hoisted to module scope so the artboard branch — which
-// returns before their old declaration point — can interpolate the SAME consts
-// instead of a re-typed copy. No text changed; commercial/restyle output is
-// byte-identical (locked by tests/designpanel-vendor-parity.test.mjs).
-const COMMERCIAL_PERSONA = `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.`;
-
-const PROFESSIONAL_JUDGMENT = `When the brief names a real subject (a home, building, product, landscape, or scene), render it with rich photographic realism — lifelike detail, natural light, depth, and dimension, crisp and high-resolution as if professionally photographed, then printed cleanly onto the vinyl.`;
-
-const FINISH_SPECS: Record<string, string> = {
-  gloss: 'GLOSS — wet-look surface, mirror-sharp specular highlights, deep saturated color, visible reflections in the body panels.',
-  matte: 'MATTE — flat, light-absorbing, no reflections or shine; soft diffuse shading only, chalky and velvety like a matte print.',
-  satin: 'SATIN — soft feathered sheen between matte and gloss; low reflection, studio lights show as soft glowing patches, never mirror-bright.',
-  chrome: 'CHROME — mirror-like reflections, maximum specularity, the body panel reflects the surroundings like a polished mirror.',
-  brushed: 'BRUSHED METAL — directional grain texture, anisotropic reflections that stretch along the brush direction.',
-};
-
-// Owner persona contract (Trish 2026-08-26, and the canonical directive's
-// "plain company-name typography alone does not satisfy the logo requirement"):
-// LOGO_REQUIREMENT demands a logo EXIST; this names the degenerate way to
-// satisfy it and refuses it, without prescribing a form. ATLAS mode only —
-// no authority prose exists for it at 113d137, so the literal matches
-// runtime/designiq-prompt.cjs LOGO_AUTHORING_RULE byte for byte (locked by
-// tests/designpro-persona-contract.test.mjs) so the two can never drift apart.
-const ATLAS_LOGO_AUTHORING_RULE =
-  "Design an actual brand mark for it — the company name set in a typeface is not a logo, "
-  + "however well it is set. The name may lock up with the mark, sit beside it or be built "
-  + "into it; the mark's form, register and construction are your call and the brief's.";
-
-const SUBSTRATE_CONTEXT: Record<string, string> = {
-  color_change_film: 'SPECIALTY SUBSTRATE: This design is printed on a color-change specialty base film (metallic, pearl, or color-shift vinyl). The metallic/pearl base film shows through the printed ink layer, creating a luminous, color-shifting effect. Lighter print areas reveal more of the pearl/metallic base. Dark print areas remain opaque. This is printed vinyl with a specialty base layer — NOT chrome paint or automotive metallic paint.',
-  chrome_film: 'SPECIALTY SUBSTRATE: This design is printed on a mirror chrome base film. The chrome substrate shows through lighter and transparent areas of the printed design, creating a chrome-through-ink effect. Dark printed areas remain opaque over the chrome. This is printed vinyl on chrome film — NOT chrome paint.',
-  satin_film: 'SPECIALTY SUBSTRATE: This design is printed on a satin base film. The satin substrate provides a soft, silk-like sheen underneath the printed design, giving the artwork depth and luminosity. This is printed vinyl on satin film — NOT satin automotive paint.',
-};
-
 // VisionBoardIQ image reference type
 interface VisionBoardImage {
   slotLabel: string;
@@ -394,118 +357,6 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
     // text feeds the Layer-2 overlay engine as transparent PNGs.
     const { stylePrompt: abStylePrompt } = splitStyleAndText(prompt, companyName);
     const briefForArtboard = abClean ? abStylePrompt : prompt;
-
-    // ═══ ATLAS MODE — THE CANONICAL DESIGNPROAI CALL 1 (owner directive,
-    // Trish 2026-08-26: "ONE CANONICAL DESIGNPROAI CALL 1: DESIGNPANELAI +
-    // ATLAS IN THE SAME AUTHORING CALL"). ═══
-    //
-    // Fires ONLY on `atlasTopology: true`. Every other artboard request — the
-    // legacy labeled-panel sheet below, RecreatePro projection inputs, the A2
-    // harness arm — is byte-for-byte untouched (locked by
-    // tests/designpanel-vendor-parity.test.mjs).
-    //
-    // WHAT THIS BLOCK IS: the SAME artboard authoring branch, carrying the
-    // commercial/restyle creative intelligence the commercial branch already
-    // has, interpolated from the SAME consts and the same lifted sentences —
-    // never re-typed copies. The topology (zone map, solid panels, paired
-    // Houdini lesson, square canvas) is supplied by the A.T.L.A.S. half of the
-    // caller's prompt; this block deliberately emits NO panel list, NO
-    // "labeled panels" instruction and NO example-format reference, because
-    // the deterministic guide is the sole topology authority and labels drawn
-    // by the model would land inside print panels.
-    //
-    // DELIBERATE EXCLUSIONS (not omissions):
-    //  - getCameraAngle / STUDIO_ENVIRONMENT / scene sentences / Canon lines —
-    //    3D-proof presentation; contaminating the flat call with them is the
-    //    documented flank-silhouette failure.
-    //  - truckBedClause + the factory-glass coverage line — they instruct
-    //    leaving openings bare, which on a flat master is a punched-out hole
-    //    (RULE 0.15). The seven proof calls still carry both.
-    // The only sentences here not lifted verbatim from this file are the
-    // per-field website guard pair and the supplied-logo authority sentence,
-    // which mirror the phone-guard wording; each is noted inline.
-    if ((params as any).atlasTopology === true) {
-      const authoringMode = (params as any).authoringMode === 'restyle' ? 'restyle' : 'commercial';
-      const atlasQualityExampleCount = Number((params as any).artboardQualityExampleCount) || 0;
-      const atlasWebsite = String((params as any).website || '').trim();
-      const atlasLogoSupplied = (params as any).logoSupplied === true;
-      const atlasFinishSpec = FINISH_SPECS[(finish || 'gloss').toLowerCase()] || FINISH_SPECS.gloss;
-      const atlasSubstrate = substrate && substrate !== 'standard' ? SUBSTRATE_CONTEXT[substrate] || '' : '';
-      let atlas = `${COMMERCIAL_PERSONA} Design ONE flat, print-ready vehicle-wrap ARTBOARD for a ${vehicle} — the full wrap laid out FLAT, the SAME cohesive design flowing across every panel as one connected wrap unwrapped flat. The output is flat print artwork on a 2D sheet.
-
-DESIGN BRIEF: "${briefForArtboard}"`;
-      atlas += authoringMode === 'restyle'
-        ? `\n\nDESIGN AMPLIFICATION: Elevate and enhance the brief — fill in every decision the client left open with depth, flow, and layered thematic elements. A named subject (for example a vintage B-52 with a 1940s painted pin-up, or an anime hero) becomes a rich, multi-element composition with distressed texture, color harmony, and dimension, custom-designed at a $5,000 studio level — whether the client wrote two words or two paragraphs.\n\n${PROFESSIONAL_JUDGMENT}`
-        : `\n${COMMERCIAL_TRANSLATION}\n${COMMERCIAL_DEPTH}\n\n${PROFESSIONAL_JUDGMENT}`;
-      if (companyName) {
-        atlas += `\nBRAND: ${companyName} — integrate the company name + logo + a clean contact bar into the design, legible at a glance.`;
-        atlas += atlasLogoSupplied
-          // Owner persona contract (2026-08-26): a supplied logo is used
-          // faithfully — never redesigned, never substituted — and the auto-logo
-          // demand must NOT also fire beside it.
-          ? ` Spell the business name exactly. The attached verified customer-owned logo is the logo authority; preserve its form, spelling, proportions and palette exactly and never invent a substitute.`
-          : `${buildLogoArchitecture(companyName, industryType)} ${ATLAS_LOGO_AUTHORING_RULE}`;
-      } else if (authoringMode === 'commercial') {
-        atlas += `\nIdentify the business name from the creative direction above. Spell it exactly as written in the brief. ${LOGO_REQUIREMENT} ${ATLAS_LOGO_AUTHORING_RULE}`;
-      }
-      if (phone) {
-        atlas += `\nContact info (place in the contact bar): ${phone} — display this EXACT number, digit for digit. Never alter or invent any digits.`;
-      } else {
-        // The commercial branch's no-invention clause, split per field so a
-        // supplied website can no longer suppress the phone guard.
-        atlas += `\nNo phone number was provided — do NOT invent, fabricate, or display any phone number anywhere on the design.`;
-      }
-      if (atlasWebsite) {
-        // Not lifted (DesignIQParams had no website field): the owner-approved
-        // per-field website guard, wording pinned by
-        // tests/designpro-reference-authority.test.mjs.
-        atlas += `\nWebsite (place in the contact bar): ${atlasWebsite} — display this EXACT URL, character for character. Never alter or invent it.`;
-      } else {
-        atlas += `\nNo website was supplied — invent no website, email address or street address, and display none anywhere on the design.`;
-      }
-      // Not lifted (no source prose exists): customer-authored exact text is
-      // an owner-contract MUST ("exact customer text preservation") and the
-      // per-field guard follows the phone/website pattern.
-      const atlasTextLayer = String((params as any).textLayerPrompt || '').trim();
-      if (atlasTextLayer) atlas += `\nTEXT LAYER DIRECTION (customer-authored): ${atlasTextLayer} Preserve every supplied name, slogan, service and contact string exactly; do not invent replacement copy.`;
-      if (industryType) atlas += `\nIndustry: ${industryType}`;
-      if (brandColors) atlas += `\nBrand colors: ${brandColors} — build the entire design from this palette and do not introduce unrelated colors.`;
-      if (fontStyle) atlas += `\nTypography preference: ${fontStyle}.`;
-      const atlasKeywords = bulletPoints?.filter((b: string) => b?.trim());
-      if (atlasKeywords?.length) atlas += `\nBrand keywords (guide tone — not literal on-vehicle text): ${atlasKeywords.map((k: string) => k.trim()).join(', ')}`;
-      if (mascot) {
-        atlas += `\n\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${mascot} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Anchor the mascot as a hero graphic on the rear quarter panel, sized to complement the company name without crowding it.`;
-      }
-      if (qrEnabled) {
-        atlas += `\n\nQR CODE ZONE: Reserve one clean, flat, evenly-lit rectangular area (roughly 10x10 inches) low on the rear quarter panel — free of graphics, text, and busy color — as space for a scannable QR code added in production. Do not draw a QR code yourself.`;
-        const atlasQrUrl = String((params as any).qrUrl || '').trim();
-        if (atlasQrUrl) atlas += ` The production QR destination is ${atlasQrUrl}; this is placement identity only, not permission to print or rewrite the URL.`;
-      }
-      if (visionBoardImages && visionBoardImages.length > 0) {
-        if (visionboard_intent === 'exact_reference') {
-          atlas += `\n\nEXACT REFERENCE: The provided reference is the customer's own approved wrap design for their vehicle. Recreate it faithfully on the ${vehicle} — keep the colors, patterns, typography, logos, layout, and composition true to the reference, adapting only to fit the ${vehicle}'s body lines and preserving the design's identity, proportions, and visual hierarchy. Installer-map examples remain topology-only and must never influence style.`;
-          // RULE 0.24: the derived style DNA still travels under an exact
-          // reference — subordinate to the images, to carry the design onto
-          // zones the reference does not itself show.
-          if (styleDescriptors) {
-            atlas += `\nThe reference's extracted style DNA, for carrying it consistently across zones it does not itself show: ${styleDescriptors}. Where this reading and the reference images differ, the images win.`;
-          }
-        } else if (styleDescriptors) {
-          atlas += `\n\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA extracted from references:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the reference images directly.`;
-        } else {
-          atlas += `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new that captures their energy.`;
-        }
-      }
-      if (wantsPhoto) atlas += `\n\n${PHOTO_REALISM_LOCK}`;
-      atlas += `\n\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${atlasFinishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
-      if (atlasSubstrate) atlas += `\n${atlasSubstrate}`;
-      atlas += `\n\nGallery-grade custom artwork with real depth, movement, and a wow factor — never generic AI filler, never a template.`
-        + (atlasQualityExampleCount > 0 ? ` Match the production quality of the provided gold-standard DesignPanel artboards.` : ``)
-        + ` Output ONE flat 2D artboard sheet filled with the branded wrap design, drawn straight-on and flat for printing.`;
-      return atlas;
-    }
-    // ═══ END ATLAS MODE — everything below is the legacy artboard sheet,
-    // byte-for-byte unchanged. ═══
     let ab = `You are a Custom Vehicle Wrap Designer at WePrintWraps.com. Design ONE flat, print-ready vehicle-wrap ARTBOARD for a ${vehicle} — the full wrap laid out FLAT as labeled rectangular PANELS on a neutral artboard sheet, one panel per vehicle side, exactly in the format of the EXAMPLE ARTBOARDS provided (a clean-background version and a branded version). The output is flat print artwork on a 2D sheet.
 
 Lay out these panels, each labeled with its name, the wrap artwork filling each panel edge-to-edge, and the SAME cohesive design flowing across every panel as one connected wrap unwrapped flat:
@@ -539,11 +390,21 @@ DESIGN BRIEF: "${briefForArtboard}"`;
   }
 
 
-  // FINISH_SPECS / SUBSTRATE_CONTEXT are module-scope (ATLAS-MODE HOISTS above)
-  // so the artboard branch can read them too; the values are unchanged.
+  const FINISH_SPECS: Record<string, string> = {
+    gloss: 'GLOSS — wet-look surface, mirror-sharp specular highlights, deep saturated color, visible reflections in the body panels.',
+    matte: 'MATTE — flat, light-absorbing, no reflections or shine; soft diffuse shading only, chalky and velvety like a matte print.',
+    satin: 'SATIN — soft feathered sheen between matte and gloss; low reflection, studio lights show as soft glowing patches, never mirror-bright.',
+    chrome: 'CHROME — mirror-like reflections, maximum specularity, the body panel reflects the surroundings like a polished mirror.',
+    brushed: 'BRUSHED METAL — directional grain texture, anisotropic reflections that stretch along the brush direction.',
+  };
   const finishSpec = FINISH_SPECS[(finish || 'gloss').toLowerCase()] || FINISH_SPECS.gloss;
 
   // Substrate context — tells the AI what base film the design is printed on
+  const SUBSTRATE_CONTEXT: Record<string, string> = {
+    color_change_film: 'SPECIALTY SUBSTRATE: This design is printed on a color-change specialty base film (metallic, pearl, or color-shift vinyl). The metallic/pearl base film shows through the printed ink layer, creating a luminous, color-shifting effect. Lighter print areas reveal more of the pearl/metallic base. Dark print areas remain opaque. This is printed vinyl with a specialty base layer — NOT chrome paint or automotive metallic paint.',
+    chrome_film: 'SPECIALTY SUBSTRATE: This design is printed on a mirror chrome base film. The chrome substrate shows through lighter and transparent areas of the printed design, creating a chrome-through-ink effect. Dark printed areas remain opaque over the chrome. This is printed vinyl on chrome film — NOT chrome paint.',
+    satin_film: 'SPECIALTY SUBSTRATE: This design is printed on a satin base film. The satin substrate provides a soft, silk-like sheen underneath the printed design, giving the artwork depth and luminosity. This is printed vinyl on satin film — NOT satin automotive paint.',
+  };
   const substrateContext = substrate && substrate !== 'standard' ? SUBSTRATE_CONTEXT[substrate] || '' : '';
 
   // Studio environment from shared studio-os.ts — same studio as RecreatePro/ColorPro
@@ -575,8 +436,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
   // What stays: the quality floor, the photographic-realism instruction for real
   // subjects (the reference trucks' pool and patio scenes depend on it), and the
   // anti-clipart line.
-  // PROFESSIONAL_JUDGMENT is module-scope now (ATLAS-MODE HOISTS above) — the
-  // artboard branch reads it too; the value is unchanged.
+  const PROFESSIONAL_JUDGMENT = `When the brief names a real subject (a home, building, product, landscape, or scene), render it with rich photographic realism — lifelike detail, natural light, depth, and dimension, crisp and high-resolution as if professionally photographed, then printed cleanly onto the vinyl.`;
 
   // ── COMMERCIAL MODE ──────────────────────────────────────────
   // Identity: Elite vehicle wrap designer (NOT photographer, NOT
@@ -606,7 +466,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // standard. The second sentence restores the bar inside the identity Trish
     // chose, in the same terms the restyle persona still uses ("amplify each
     // customer's vision… creates something uniquely RIGHT").
-    let assembled = `${COMMERCIAL_PERSONA}
+    let assembled = `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.
 
 CAMERA ANGLE (LOCKED — read this FIRST):
 ${cameraAngle}
@@ -880,14 +740,7 @@ serve(async (req) => {
   // quota we 402 before spending any Gemini cost. Trish's tokens
   // decision (predates this file), gate-only insertion respects the
   // CLAUDE.md prompt lock.
-  const internalCaller = await resolveDesignProInternalCaller(req);
-  if (internalCaller.rejection) return internalCaller.rejection;
-  const gate = await tokenGate(req, {
-    reason: "design_panel_ai_generate",
-    // The authenticated standalone request spends at request admission. Calls
-    // 1-7 must not hit the legacy browser token tables once per camera angle.
-    skip: internalCaller.internal,
-  });
+  const gate = await tokenGate(req, { reason: "design_panel_ai_generate" });
   if (!gate.ok) return gate.response!;
 
   const WALL_CLOCK_START = Date.now();
@@ -961,10 +814,10 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    let userId: string | null = internalCaller.userId;
-    let userEmailFromAuth: string | null = internalCaller.userEmail;
+    let userId: string | null = null;
+    let userEmailFromAuth: string | null = null;
 
-    if (!internalCaller.internal && authHeader) {
+    if (authHeader) {
       const authClient = createClient(supabaseUrl, supabaseAnonKey, {
         global: { headers: { Authorization: authHeader } },
       });
@@ -1945,11 +1798,6 @@ Output a single structured paragraph that another AI could use to recreate this 
     return new Response(
       JSON.stringify({
         renderUrl: publicUrl,
-        // Private object identity is returned only to the authenticated
-        // standalone runtime. Browser callers retain the historical response.
-        ...(internalCaller.internal
-          ? { storagePath: fileName, contentType: imageMimeType }
-          : {}),
         panel: null,
         directRender: true,
         layer1Clean: layer1Clean === true,

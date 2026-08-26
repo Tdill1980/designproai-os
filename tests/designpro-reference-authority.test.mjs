@@ -67,7 +67,7 @@ test("a customer reference declares artwork authority and distinguishes itself f
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     visionboardIntent: "exact_reference", visionBoardImages: [{}],
   });
-  assert.match(exact, /EXACT CUSTOMER REFERENCE/);
+  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's own approved wrap design/);
   assert.match(exact, /Installer-map examples remain topology-only and must never influence style/);
 
   const inspiration = authored({
@@ -152,12 +152,12 @@ test("a 3D proof's artwork authority is the atlas master and nothing else can su
 // matters — a single combined guard only fired when BOTH were missing.
 test("contact information is preserved exactly when supplied and never invented when not", () => {
   const none = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(none, /invent no phone number/);
+  assert.match(none, /do NOT invent, fabricate, or display any phone number/);
   assert.match(none, /invent no website/);
   assert.match(none, /display none anywhere/);
 
   const phoneOnly = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme", phone: "555-0142" });
-  assert.match(phoneOnly, /555-0142 — preserve every digit exactly/);
+  assert.match(phoneOnly, /555-0142 — display this EXACT number, digit for digit/);
   assert.match(phoneOnly, /invent no website/, "the website guard must still fire when only the phone is supplied");
 
   const both = authored({
@@ -165,5 +165,5 @@ test("contact information is preserved exactly when supplied and never invented 
     phone: "555-0142", website: "acme.com",
   });
   assert.match(both, /display this EXACT URL, character for character/);
-  assert.doesNotMatch(both, /invent no phone number|invent no website/);
+  assert.doesNotMatch(both, /invent, fabricate, or display any phone number|invent no website/);
 });

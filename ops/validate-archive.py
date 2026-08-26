@@ -52,7 +52,7 @@ def allowed_file(name: str) -> bool:
 
 
 def allowed_directory(name: str) -> bool:
-    if name in {"runtime", "runtime/atlas-examples", "gateway", "gateway/src", "web", "web/dist", "ops"}:
+    if name in {"runtime", "runtime/atlas-examples", "runtime/vendor", "gateway", "gateway/src", "web", "web/dist", "ops"}:
         return True
     # The served application is the branded operator shell, which references
     # its images by absolute path, so its public tree lands beside the hashed

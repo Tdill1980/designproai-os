@@ -23,9 +23,16 @@ const sharp = require("sharp");
 const { analyzeVisionBoardStyles } = require("./visionboard-iq.cjs");
 const {
   DESIGNPANEL_ARTBOARD_PORT_VERSION,
-  buildAtlasArtboardDesignIQDirection,
   DESIGNPANEL_AUTHORING_MODEL,
 } = require("./designiq-prompt.cjs");
+// THE CANONICAL DESIGNPANELAI CREATIVE BUILDER (owner directive 2026-08-26:
+// "invoke the real DesignPanelAI creative builder from the server-native ATLAS
+// authoring path without duplicating/reimplementing it"). This module is the
+// vendored design-panel-ai-generate source, mechanically transpiled by
+// scripts/build-designpanel-authoring.mjs — never a re-typed port. The
+// reconstructed buildAtlasArtboardDesignIQDirection copy is deleted; there is
+// exactly ONE creative implementation and this is it.
+const designPanelAuthoring = require("./vendor/designpanel-authoring.cjs");
 const {
   MASTER_QC_CONTRACT,
   createAtlasMasterValidator,
@@ -45,10 +52,32 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // call, and the sheet is described as printed vinyl on the roll rather than as
 // vehicle flanks. v5 masters are refused rather than migrated, and this string
 // is the mechanism that refuses them.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260826.v8";
+// v9-dpag (2026-08-26, owner directive): the creative half is no longer the
+// reconstructed buildAtlasArtboardDesignIQDirection — it is the REAL
+// design-panel-ai-generate builder (vendored, transpiled, atlasTopology mode),
+// so DesignPanelAI and A.T.L.A.S. are ONE authoring call. The SIDE-TWIN
+// "photographic scene / landmarks" framing — the only flank-specific language,
+// prime suspect for the vehicle-silhouette flanks broken since v4 — does not
+// exist in this prompt. VERSION FENCE SCOPE (owner protection #1): this string
+// refuses REUSING an older master for NEW authoring/regeneration only
+// (assertAtlasReuseContract, authoring paths). Existing generations stay
+// readable, viewable and downloadable everywhere — no read path checks it,
+// locked by tests/atlas-historical-read.test.mjs.
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260826.v9-dpag";
 // Bounded QC-corrective re-rolls inside the one claimed authoring fence. Three
-// is the proof QC's budget for the same generate/inspect/correct loop.
+// is the proof QC's budget for the same generate/inspect/correct loop. The
+// OWNER ACCEPTANCE RUN pins this to exactly ONE via
+// DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS=1 (or the maxAuthoringAttempts
+// option): one revision = one DesignPanelAI creative call = one Gemini image
+// request, and the exact request count is reported on the revision as
+// metadata.geminiImageRequestCount.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
+function resolveMaxAuthoringAttempts(explicit) {
+  const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) return MAX_MASTER_AUTHORING_ATTEMPTS;
+  return Math.min(value, MAX_MASTER_AUTHORING_ATTEMPTS);
+}
 const MASTER_PROVIDER_CONTRACT = "designpro.flat-first-master-provider.v1";
 const TOPOLOGY = "rectangular-preview-v1";
 const EXAMPLE_PURPOSE = "topology-only";
@@ -891,7 +920,50 @@ function customerCreativeBrief(input) {
 }
 
 function atlasCreativeRules(input, options = {}) {
-  return buildAtlasArtboardDesignIQDirection(input, options);
+  // ONE CANONICAL CALL 1 (owner directive 2026-08-26). The creative direction
+  // is the REAL design-panel-ai-generate builder running its artboard branch in
+  // atlasTopology mode — the vendored source, not a port. This function only
+  // MAPS the v3 flat-first input onto DesignIQParams; it adds no prompt text.
+  const vehicle = input?.vehicle || {};
+  const brandColors = String(input?.brandColors || "").trim()
+    || (Array.isArray(input?.colors) ? input.colors.map(String).filter(Boolean).join(", ") : String(input?.colors || "").trim());
+  const references = Array.isArray(input?.visionBoardImages) ? input.visionBoardImages : [];
+  const intent = String(input?.visionboardIntent || input?.visionboard_intent || "").trim();
+  return designPanelAuthoring.buildDesignIQPrompt({
+    mode: "artboard",
+    atlasTopology: true,
+    authoringMode: String(input?.mode || "commercial").toLowerCase() === "restyle" ? "restyle" : "commercial",
+    artboardQualityExampleCount: Number(options.artboardQualityExampleCount) || 0,
+    prompt: String(input?.brief || "").trim(),
+    finish: String(input?.finish || "Gloss"),
+    substrate: input?.substrate || "standard",
+    companyName: String(input?.companyName || input?.businessName || "").trim() || undefined,
+    mascot: String(input?.mascot || "").trim() || undefined,
+    bulletPoints: Array.isArray(input?.bulletPoints) ? input.bulletPoints.map(String) : undefined,
+    industryType: String(input?.industry || "").trim() || undefined,
+    phone: String(input?.phone || "").trim() || undefined,
+    website: String(input?.website || "").trim() || undefined,
+    logoSupplied: Boolean(input?.logoAsset),
+    brandColors: brandColors || undefined,
+    fontStyle: String(input?.fontStyle || "").trim() || undefined,
+    qrEnabled: input?.qrEnabled === true,
+    qrUrl: String(input?.qrUrl || "").trim() || undefined,
+    textLayerPrompt: String(input?.textLayerPrompt || "").trim() || undefined,
+    vehicleYear: String(vehicle.year || "").trim() || undefined,
+    vehicleMake: String(vehicle.make || "").trim() || undefined,
+    vehicleModel: String(vehicle.model || "").trim() || undefined,
+    // The builder reads only the COUNT of references (and the extracted style
+    // DNA); the entries are never interpolated. Storage identity stays out of
+    // the prompt by construction — locked by tests/atlas-designiq-artboard.
+    visionBoardImages: references.map((asset, index) => ({
+      slotLabel: `reference-${index + 1}`,
+      storageUrl: String(asset?.storagePath || ""),
+    })),
+    visionboard_intent: intent === "exact_reference" || intent === "artboard_projection"
+      ? "exact_reference"
+      : "style_inspiration",
+    styleDescriptors: String(input?.styleDescriptors || "").trim() || undefined,
+  });
 }
 
 function atlasPrompt(input, manifest, options = {}) {
@@ -926,11 +998,12 @@ function atlasPrompt(input, manifest, options = {}) {
   // their real inches, states the brief, and closes with a short output-format
   // instruction -- 1,516 characters in total (index.ts:340-390).
   //
-  // Nothing creative is rewritten here. `atlasCreativeRules(input)` is the same
-  // DesignIQ direction, byte for byte; it now leads instead of trailing, and
-  // the atlas half is stated once each instead of twice. The three blocks RULE
-  // 0.15 protects -- SOLID PANELS, the PAIRED FLAT-TO-FINISHED LESSON and ONE
-  // COHESIVE WRAP -- are reproduced verbatim and in full.
+  // Nothing creative is written here. `atlasCreativeRules(input)` IS the real
+  // design-panel-ai-generate builder (vendored + transpiled, atlasTopology
+  // mode); it leads, and the atlas half below is the OUTPUT CONTRACT only. The
+  // three blocks RULE 0.15 protects -- SOLID PANELS, the PAIRED
+  // FLAT-TO-FINISHED LESSON and ONE COHESIVE WRAP -- are reproduced verbatim
+  // and in full.
   return `${atlasCreativeRules(input, options)}
 
 ━━━ OUTPUT FORMAT: ONE FLATTENED A.T.L.A.S. MASTER ━━━
@@ -944,7 +1017,7 @@ TOPOLOGY LOCK:
 - center column is REAR, ROOF, HOOD, FRONT from top to bottom (vehicle rear to front)
 - maintain one coherent design language and intentional graphic continuity across related panel edges
 - do not swap driver and passenger
-- make PASSENGER the opposite-facing, mirror-compatible twin of DRIVER: same motif, scene, hierarchy, scale, landmarks and flow, reversed for the opposite flank, while every word/logo/URL/number remains forward-reading on both zones
+- make PASSENGER the opposite-facing, mirror-compatible twin of DRIVER: the same flat artwork -- same motif, palette, hierarchy, scale and flow -- reversed for the opposite flank, while every word/logo/URL/number remains forward-reading on both zones
 - semantic continuity pairs are: ${continuity}
 - these are design-intent joins only; do not invent contour lines or claim exact PVO seam geometry
 
@@ -952,6 +1025,8 @@ ZONE MAP -- each box is a real printed surface at the size stated; scale letteri
 ${map}
 
 OUTSIDE THE ZONES: the canvas stays empty. Every rectangle listed in the ZONE MAP is artwork; nothing else on the sheet is.
+
+MASTER APPLICATION BOUNDARY: The A.T.L.A.S. master stays FULL-BLEED inside every supplied exterior-panel zone. Paint the livery continuously THROUGH every place a window, glass panel, pickup-bed opening, wheel, wheel arch, lamp or trim piece will later sit - those positions carry artwork just like the rest of the panel, because the installer cuts them out of the printed vinyl afterwards. Keep essential logos, lettering and contact copy anchored to solid painted body area rather than to an opening, so a later cut never takes a word with it.
 
 SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL: every zone is ONE SOLID RECTANGLE of continuous printed artwork, opaque corner to corner and edge to edge. The design runs straight through every place a windshield, side window, door glass, wheel arch, tyre, pickup-bed opening, headlight, tail light, handle or trim piece will later sit, exactly as if those parts were not there. THE INSTALLER CUTS THE WHEEL AND WINDOW OPENINGS OUT OF THE FINISHED PANEL, so the panel must have artwork in those places for them to cut. Paint the wrap graphic across the whole rectangle. Each zone reads as a flat sheet of printed vinyl, never as a picture of a vehicle.
 
@@ -1393,6 +1468,10 @@ async function generateOrReuseFlatAtlas(options) {
     masterRequestMaxBytes = MASTER_REQUEST_MAX_BYTES,
     logger = () => {},
   } = options;
+  // Owner protection #5: the acceptance run spends EXACTLY one image call —
+  // maxAuthoringAttempts (or DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS) pins the
+  // re-roll budget to 1, and the exact count is reported on the revision.
+  const maxAuthoringAttempts = resolveMaxAuthoringAttempts(options.maxAuthoringAttempts);
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
@@ -1525,7 +1604,7 @@ async function generateOrReuseFlatAtlas(options) {
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
   const correctiveParts = [];
-  for (let attempt = 1; attempt <= MAX_MASTER_AUTHORING_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
     masterAuthoringAttempts = attempt;
     const attemptParts = [...parts, ...correctiveParts];
     masterRequestByteSize = assertMasterRequestWithinLimit(attemptParts, masterRequestMaxBytes);
@@ -1581,7 +1660,7 @@ async function generateOrReuseFlatAtlas(options) {
       masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
       break;
     }
-    if (attempt === MAX_MASTER_AUTHORING_ATTEMPTS) {
+    if (attempt === maxAuthoringAttempts) {
       // Only a broken DESIGN can reach here -- a cut-out broke out above on its
       // first appearance. A blank zone, no contrast, or a passenger flank that
       // is not the driver's twin leaves nothing worth showing the customer, and
@@ -1605,7 +1684,7 @@ async function generateOrReuseFlatAtlas(options) {
     correctiveParts.push({
       text: `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}. Author a NEW sheet. `
         + (mirrorBroken
-          ? "The refusal above means the PASSENGER flank was NOT the DRIVER flank's twin: the two tall side rectangles read as two different designs. Draw ONE side composition and install it on BOTH flanks: PASSENGER is the opposite-facing, mirror-compatible twin of DRIVER -- same motif, scene, palette, hierarchy, scale, landmarks and flow, reversed for the opposite flank -- while every word, logo, URL and number remains forward-reading on both zones. Only the text and logos read forward on each side; everything else in the two flanks mirrors."
+          ? "The refusal above means the PASSENGER flank was NOT the DRIVER flank's twin: the two tall side rectangles read as two different designs. Draw ONE side composition and install it on BOTH flanks: PASSENGER is the opposite-facing, mirror-compatible twin of DRIVER -- the same flat artwork, same motif, palette, hierarchy, scale and flow, reversed for the opposite flank -- while every word, logo, URL and number remains forward-reading on both zones. Only the text and logos read forward on each side; everything else in the two flanks mirrors."
           : "Every zone is one SOLID rectangle of continuous artwork, "
             + "opaque corner to corner: paint the livery straight through every position where "
             + "a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece will "
@@ -1795,6 +1874,13 @@ async function generateOrReuseFlatAtlas(options) {
       masterRequestByteSize,
       masterRequestMaxBytes: MASTER_REQUEST_MAX_BYTES,
       masterAuthoringAttempts,
+      // Owner protection #5: the exact number of Gemini IMAGE requests this
+      // authoring spent (the VisionBoardIQ pre-pass is a text call and is
+      // reported separately by its own receipt). Equal to
+      // masterAuthoringAttempts by construction; named so an acceptance run
+      // can prove "one call" without inference.
+      geminiImageRequestCount: masterAuthoringAttempts,
+      maxAuthoringAttemptsAllowed: maxAuthoringAttempts,
       proofExecution: "driver-first-sequential-generate-color-render",
     },
   };

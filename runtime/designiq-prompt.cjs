@@ -35,7 +35,7 @@ const angles = require("./view-angles.cjs");
 // Versioned independently from the A.T.L.A.S. topology prompt so an immutable
 // master authored with an older/partial DesignPanel port can never be reused
 // after the proven artboard implementation changes.
-const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.20260826.v2";
+const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.20260826.v3-vendored";
 
 // THE MODEL THE AUTHORITY AUTHORS ON, BY NAME.
 //
@@ -182,30 +182,17 @@ function supplementalBrandDirection({ website, qrEnabled, qrUrl, textLayerPrompt
   return text;
 }
 
-function flatAtlasVehicle(input = {}) {
-  const nested = input.vehicle && typeof input.vehicle === "object" ? input.vehicle : {};
-  const year = String(input.vehicleYear || nested.year || "").trim();
-  const make = String(input.vehicleMake || nested.make || "").trim();
-  const model = String(input.vehicleModel || nested.model || "").trim();
-  const type = String(input.vehicleType || nested.type || "").trim();
-  const canonicalMakeModel = canonicalizeVehicle(make, model, year);
-  const makeModel = canonicalMakeModel || [make, model].filter(Boolean).join(" ");
-  const base = [year, makeModel].filter(Boolean).join(" ").trim();
-  if (!type || base.toLowerCase().includes(type.toLowerCase())) return base || type || "selected vehicle";
-  return [base, type].filter(Boolean).join(" ");
-}
-
-/**
- * The DesignProAI artboard-mode creative brain for the one flat A.T.L.A.S.
- * authoring call.
- *
- * This is a direct server-runtime port of the existing `mode === "artboard"`
- * branch in design-panel-ai-generate. The only intentional adaptation is that
- * A.T.L.A.S.'s deterministic first-image guide, rather than the Edge Function's
- * example-artboard panel list, is the sole topology authority. Camera, studio,
- * lighting and vehicle photography remain downstream generate-color-render
- * concerns; putting them here would ask the master call to render a mockup.
- */
+// THE RECONSTRUCTED A.T.L.A.S. CREATIVE BRANCH IS DELETED (owner directive,
+// Trish 2026-08-26: "stop splitting the creative system across reconstructed
+// helpers"). buildAtlasArtboardDesignIQDirection was a re-typed copy of the
+// design-panel-ai-generate artboard branch, and it drifted — its SIDE-TWIN
+// "photographic scene / landmarks" sentence was the only flank-specific
+// language in Call 1 and the prime suspect for the vehicle-silhouette flanks
+// broken since v4. The ONE canonical creative implementation is the vendored
+// real builder: runtime/vendor/designpanel-authoring.cjs (built from
+// supabase/functions/design-panel-ai-generate/index.ts by
+// scripts/build-designpanel-authoring.mjs), invoked by
+// runtime/flat-first-atlas.cjs atlasCreativeRules(). Do not re-add a port.
 /**
  * The proven commercial authoring persona, copied byte for byte from
  * design-panel-ai-generate/index.ts:470 -- the branch that authored the
@@ -219,226 +206,6 @@ const COMMERCIAL_AUTHORING_PERSONA =
   + "business \u2014 premium, readable at a glance from across a parking lot, and worth what "
   + "the customer paid.";
 
-function buildAtlasArtboardDesignIQDirection(input = {}, options = {}) {
-  // HOW MANY GOLD-STANDARD ARTBOARDS ARE ACTUALLY ATTACHED.
-  //
-  // The closing line used to say "Match the production quality of the provided
-  // gold-standard DesignPanel artboards" unconditionally. On the live droplet,
-  // 2026-08-26, `loadDesignPanelArtboardExamples` returned ZERO: the bucket the
-  // reference reads them from ("wrap-files flat panel") is not populated on this
-  // project, and it fails soft by design. So the one sentence that sets the
-  // quality bar for the sheet pointed at attachments that were not in the
-  // request — the model was told to match something it had never been shown.
-  //
-  // The clause now follows the attachments. When examples are loaded it reads
-  // exactly as before; when none are, the bar is stated without the dangling
-  // reference rather than dropped.
-  const qualityExampleCount = Number(options.artboardQualityExampleCount) || 0;
-  const prompt = String(input.brief || "").trim();
-  const mode = String(input.mode || "commercial").toLowerCase();
-  const vehicle = flatAtlasVehicle(input);
-  const companyName = String(input.companyName || input.businessName || "").trim();
-  const phone = String(input.phone || "").trim();
-  const website = String(input.website || "").trim();
-  const brandColors = String(input.brandColors || "").trim()
-    || (Array.isArray(input.colors) ? input.colors.map(String).join(", ") : String(input.colors || "").trim());
-  const keywords = Array.isArray(input.bulletPoints)
-    ? input.bulletPoints.map((value) => String(value || "").trim()).filter(Boolean) : [];
-  const references = Array.isArray(input.visionBoardImages) ? input.visionBoardImages : [];
-  const exactReference = references.length > 0
-    && ["exact_reference", "artboard_projection"].includes(String(input.visionboardIntent || ""));
-  const finish = String(input.finish || "Gloss");
-  const finishSpec = FINISH_SPECS[finish.toLowerCase()] || FINISH_SPECS.gloss;
-
-  const assignment = exactReference
-    ? "Reproduce the customer's verified approved artwork faithfully in one continuous FLAT unwrapped artboard. Do not redesign, restyle, recolor, simplify, correct, or invent; adapt only to the locked A.T.L.A.S. zones."
-    : mode === "restyle"
-    ? "Create an original artistic vehicle wrap as one continuous FLAT unwrapped artboard. Amplify the customer's vision while staying true to it; make every open design decision with the judgment of a senior custom-wrap designer."
-    : "Create one original, readable-at-a-glance commercial vehicle-wrap design as one continuous FLAT unwrapped artboard, worth a professional custom-wrap budget.";
-
-  // Source parity: the role, one-flat-artboard framing, edge-to-edge fill,
-  // same-cohesive-design rule and final gallery-grade quality floor all come
-  // from design-panel-ai-generate's existing artboard branch.
-  // THE DESIGNER PERSONA, NOT THE PROJECTION HELPER'S.
-  //
-  // This branch opened with the reference's ARTBOARD persona -- "You are a
-  // Custom Vehicle Wrap Designer at WePrintWraps.com." -- which was correct in
-  // the architecture it came from: there the artboard was a PROJECTION of a
-  // design the commercial branch had already authored, so its opening line only
-  // had to name the output format. The commercial branch, the one that actually
-  // authored commercial designs, opens with a designer of stated seniority,
-  // budget and audience (design-panel-ai-generate/index.ts:470).
-  //
-  // Under A.T.L.A.S. that relationship inverted. RULE 0.20: "A.T.L.A.S. CALL 1
-  // IS THE INITIAL DESIGN GENERATION ... Not a preview." This call IS the design
-  // origin now, and it inherited the projection helper's framing while doing the
-  // designer's job -- so the sentence that sets the standard for the work was
-  // the one sentence that did not travel.
-  //
-  // Live evidence 2026-08-25, generation 02e83eb3 (Pro-Tech Automotive): a
-  // technically perfect run -- master QC confidence 1.0, 7/7 proofs, 6 panels --
-  // that came back generic blue/silver template-feeling work with no brand
-  // system beyond a centred wordmark and a phone number.
-  //
-  // This is a parity restoration, not new creative direction: the literal below
-  // is the reference's own, byte for byte, and RULE 0.1 is explicit that quality
-  // below baseline means the port is incomplete and never that A.C.E. needs
-  // something invented for it. Every other creative block in this function is
-  // untouched, and no typography, negative-space, focal-point or colour-strategy
-  // instruction is added, because the proven source contains none to restore.
-  let assembled = `${COMMERCIAL_AUTHORING_PERSONA} ${assignment}
-
-Design ONE flat vehicle-wrap ARTBOARD for a ${vehicle}. The output is flat print artwork on a 2D sheet.
-
-TOPOLOGY AUTHORITY: The caller's FIRST attached deterministic A.T.L.A.S. guide is the sole authority for panel count, position, size, rotation and surface identity. Fill every supplied exterior-panel zone edge-to-edge with artwork. Use the SAME cohesive design flowing across every zone as one connected wrap unwrapped flat. Never invent, move, resize, relabel, replace or add panels, and never copy the guide's neutral colors, outlines, labels or background into the artwork.
-
-SIDE-TWIN CONTRACT: DRIVER and PASSENGER are opposite-facing installations of the same side composition. Build PASSENGER as the mirror-compatible twin of DRIVER with the same motif, photographic scene, palette, hierarchy, scale, landmarks and flow reversed for the opposite flank. Every business name, logo lettering, URL, phone number and other readable glyph must still be drawn forward-reading on BOTH zones; never mirror-reverse text.
-
-THE CONCEPT — the heart of this design; build every connected atlas zone around it:
-DESIGN BRIEF: "${prompt}"`;
-
-  // A REFERENCE NEVER TURNS THE DESIGNER OFF. (Owner contract, 2026-08-26.)
-  //
-  // This block — the elevation, the layered depth, the texture, the brand
-  // composition and the professional judgment — used to be skipped entirely
-  // whenever the intent was `exact_reference`. Measured: with one reference
-  // image attached, a commercial brief lost both COMMERCIAL_DEPTH and
-  // COMMERCIAL_TRANSLATION, so attaching a picture silently downgraded the
-  // design behaviour of every other surface of the wrap.
-  //
-  // VisionBoardIQ SUPPLEMENTS the professional designer persona; it does not
-  // replace it. So the craft always fires, and what `exact_reference` changes is
-  // stated as PRECEDENCE rather than as absence: the reference governs the
-  // artwork it actually covers, and the designer's judgment governs everything
-  // it does not — layout across the atlas, the surfaces the reference says
-  // nothing about, and the depth and finish quality of the whole sheet.
-  //
-  // COMMERCIAL_TRANSLATION is the one clause held back under an exact
-  // reference, and only because it instructs the model to invent geometry from
-  // words: under a reproduce-faithfully intent that is the one thing that would
-  // contradict the reference itself.
-  assembled += mode === "restyle"
-    ? `\n\nDESIGN AMPLIFICATION: Elevate and enhance the brief. Fill decisions the customer left open with depth, flow, layered thematic elements, texture, color harmony and dimension. The result must feel custom-designed, never like generic filler or a reusable template.\n${PROFESSIONAL_JUDGMENT}`
-    : exactReference
-      ? `\n${COMMERCIAL_DEPTH} ${COMMERCIAL_BRAND_COMPOSITION}\n${PROFESSIONAL_JUDGMENT}`
-      : `\n${COMMERCIAL_TRANSLATION}\n${COMMERCIAL_DEPTH} ${COMMERCIAL_BRAND_COMPOSITION}\n${PROFESSIONAL_JUDGMENT}`;
-
-  assembled += "\n\nCUSTOMER IDENTITY AND DESIGN LOCKS:";
-  if (companyName) {
-    // THE BRAND LINE, RESTORED (2026-08-24). The reference artboard branch
-    // (design-panel-ai-generate/index.ts:376) asks for a COMPOSED identity:
-    // "BRAND: <name> - integrate the company name + logo + a clean contact bar
-    // into the design, legible at a glance." The port replaced that entire
-    // direction with "Spell it exactly", which is a spelling lock and not a
-    // design instruction - so the one call that authors the design was told
-    // how to render the name and never told to build an identity out of it.
-    // That is the branding half of the reported quality regression, and it is
-    // why a commercial sheet comes back with set type instead of a lockup.
-    //
-    // Spelling is still locked; it just no longer stands in for the design
-    // direction. The duplicate that followed it is gone too: this said "Spell
-    // it exactly." and then buildLogoArchitecture() immediately said "Spell the
-    // business name exactly." - the same instruction twice, which carries no
-    // creative value and dilutes the sentence that does.
-    assembled += `\nBRAND: ${companyName} — integrate the company name + logo + a clean contact bar into the design, legible at a glance. Spell the business name exactly.`;
-    assembled += logoCondition(input) === "supplied"
-      ? " The attached verified customer-owned logo is the logo authority; preserve its form, spelling, proportions and palette exactly and never invent a substitute."
-      : ` ${LOGO_REQUIREMENT} ${LOGO_AUTHORING_RULE}`;
-  } else if (mode === "commercial") {
-    assembled += `\nIdentify the business name only from the customer's creative direction and spell it exactly. ${LOGO_REQUIREMENT} ${LOGO_AUTHORING_RULE}`;
-  }
-  // PER-FIELD PAIRED GUARDS. Each contact field decides its own instruction and
-  // nothing else can suppress it:
-  //   supplied     -> preserve it exactly
-  //   not supplied -> invent nothing for THAT field
-  //
-  // This was gated on `!phone && !website`, which only fires when BOTH are
-  // absent — so a populated website suppressed the phone guard entirely and a
-  // website-without-phone brief reached the model with nothing forbidding an
-  // invented number. Coupling two independent fields into one condition is the
-  // defect; the fields are separated here, and the website half is emitted by
-  // supplementalBrandDirection() below so the supplied/absent pair stays
-  // together in one place per field.
-  if (phone) assembled += `\nPhone: ${phone} — preserve every digit exactly.`;
-  else assembled += "\nNo phone number was supplied — invent no phone number, and display none anywhere on the design.";
-  assembled += supplementalBrandDirection({
-    website,
-    qrEnabled: input.qrEnabled === true,
-    qrUrl: input.qrUrl,
-    textLayerPrompt: input.textLayerPrompt,
-  });
-  if (input.industry) assembled += `\nIndustry: ${String(input.industry)}.`;
-  if (brandColors) assembled += `\nBrand colors: ${brandColors}. Build the design from this palette and introduce no unrelated colors.`;
-  if (input.fontStyle) assembled += `\nTypography preference: ${String(input.fontStyle)}.`;
-  if (keywords.length) assembled += `\nBrand keywords (tone, not automatic literal copy): ${keywords.join(", ")}.`;
-  // THE MASCOT DIRECTION, RESTORED (2026-08-24). The reference
-  // (design-panel-ai-generate/index.ts:514) and this file's own downstream
-  // commercial builder both carry the full premium-emblem brief; only the
-  // A.T.L.A.S. branch was reduced to "render one distinctive, polished
-  // character identity", which asks for a character without saying what makes
-  // one good. A mascot is a logo, so the same quality bar that applies to the
-  // logo applies here - and the master call is the ONLY call that draws it.
-  //
-  // The reference's trailing placement clause ("anchor the mascot as a hero
-  // graphic on the rear quarter panel") is deliberately NOT carried over: where
-  // a graphic sits on the sheet is A.T.L.A.S. zone topology, which this file
-  // does not get to direct. Only the craft half is restored; the consistency
-  // requirement across related zones is kept.
-  if (input.mascot) assembled += `\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${String(input.mascot)} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Keep it one consistent character wherever it crosses related atlas zones.`;
-
-  if (references.length) {
-    if (exactReference) {
-      assembled += "\n\nEXACT CUSTOMER REFERENCE: The verified customer reference images attached after the topology examples are the artwork authority. Reproduce their graphics, palette, typography, logos, composition, coverage density and visual hierarchy faithfully across the flat atlas. Installer-map examples remain topology-only and must never influence style.";
-      // The intents stay distinct and the DNA still travels. Under an exact
-      // reference the images themselves are the authority, so the extracted
-      // style DNA is stated as a reading of them rather than as a second brief
-      // — it helps carry the reference onto the surfaces the reference does not
-      // itself cover, and it is explicitly subordinate to the reproduction rule
-      // above so the two can never compete.
-      if (input.styleDescriptors) {
-        assembled += `\nThe reference's extracted style DNA, for carrying it consistently across zones it does not itself show: ${String(input.styleDescriptors)}. Where this reading and the reference images differ, the images win.`;
-      }
-    } else if (input.styleDescriptors) {
-      assembled += `\n\nSTYLE INSPIRATION: Create original artwork using this verified reference style DNA: ${String(input.styleDescriptors)}. Do not copy the reference composition or branding.`;
-    } else {
-      assembled += "\n\nSTYLE INSPIRATION: Use the verified customer references only for mood, palette and artistic language; create an original wrap composition and do not copy their branding.";
-    }
-  }
-
-  if (briefWantsPhoto(prompt)) assembled += `\n\n${PHOTO_REALISM_LOCK}`;
-  assembled += `\n\nFINISH LOCK: ${finish.toUpperCase()} — ${finishSpec} Keep this finish intent consistent across every connected atlas zone.`;
-  const substrateSpec = substrateContext(input.substrate);
-  if (substrateSpec) assembled += `\n${substrateSpec}`;
-  // THE 3D PROJECTION RULES DO NOT BELONG IN THE FLAT CALL.
-  //
-  // This paragraph used to end with the downstream-proof coverage rule — "the
-  // wrap covers painted body panels; windows, glass, lights, wheels and trim
-  // stay factory" — plus truckBedClause() and a restatement of its bed half.
-  // Three sentences describing a VEHICLE, handed to the one call that draws no
-  // vehicle.
-  //
-  // It is not merely inert here, it contradicts the sentence directly above it.
-  // That sentence tells the model to paint the livery straight THROUGH every
-  // window, wheel arch, lamp and bed opening because the installer cuts them
-  // out later; the removed sentences then told it those same surfaces carry no
-  // artwork. RULE 0.15 is the reason the first one exists, and a flat atlas has
-  // no window, lamp or bed-interior ZONE for the second one to describe — the
-  // six zones are driver, passenger, hood, roof, front and rear, and every one
-  // of them is a solid rectangle.
-  //
-  // Nothing downstream loses the rule. buildDesignIQPrompt and
-  // buildRestylePrompt in this same file — the builders that actually render a
-  // vehicle — each carry the factory-glass line and call truckBedClause()
-  // themselves, so Calls 2-7 are byte-for-byte unchanged. What remains here is
-  // the one instruction that IS this call's: keep the words off the cut lines.
-  assembled += `\n\nMASTER APPLICATION BOUNDARY: The A.T.L.A.S. master stays FULL-BLEED inside every supplied exterior-panel zone. Paint the livery continuously THROUGH every place a window, glass panel, pickup-bed opening, wheel, wheel arch, lamp or trim piece will later sit - those positions carry artwork just like the rest of the panel, because the installer cuts them out of the printed vinyl afterwards. Keep essential logos, lettering and contact copy anchored to solid painted body area rather than to an opening, so a later cut never takes a word with it.`;
-  assembled += "\n\nGallery-grade custom artwork with real depth, movement, and a wow factor — never generic AI filler, never a template. "
-    + (qualityExampleCount > 0
-      ? "Match the production quality of the provided gold-standard DesignPanel artboards, while the deterministic A.T.L.A.S. guide alone controls this sheet's topology. "
-      : "The deterministic A.T.L.A.S. guide alone controls this sheet's topology. ")
-    + "Output ONE flat 2D artboard sheet with the branded wrap artwork filling the deterministic A.T.L.A.S. zones, drawn straight-on and flat. No camera, studio, vehicle photograph, mockup, shadows, annotations or template graphics.";
-  return assembled;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THE ARTWORK CALL — DesignIQ craft, aimed at ONE flat banner.
@@ -554,9 +321,9 @@ DESIGN BRIEF: "${prompt}"`;
 
 // Compatibility export for the already-shipped caller. New Atlas wiring should
 // use the explicit artboard name so this cannot be mistaken for a proof prompt.
-function buildFlatDesignIQDirection(input = {}, options = {}) {
-  return buildAtlasArtboardDesignIQDirection(input, options);
-}
+// buildFlatDesignIQDirection (the compatibility alias for the reconstructed
+// branch) is deleted with it — the canonical Call 1 creative path is
+// runtime/flat-first-atlas.cjs atlasCreativeRules() over the vendored builder.
 
 /**
  * THE LOGO CONDITION IS STRUCTURAL, NOT A HOPE. (Owner persona contract, 2026-08-26.)
@@ -993,9 +760,7 @@ module.exports = {
   DESIGNPANEL_ARTBOARD_PORT_VERSION,
   briefWantsPhoto,
   COMMERCIAL_AUTHORING_PERSONA,
-  buildAtlasArtboardDesignIQDirection,
   buildDesignIQPrompt,
-  buildFlatDesignIQDirection,
   buildLogoArchitecture,
   buildRestylePrompt,
   canonicalizeVehicle,
