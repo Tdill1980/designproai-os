@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-five-migration chain', () => {
-  assert.equal(migrationNames.length, 55);
+test('fresh bootstrap contains one ordered fifty-six-migration chain', () => {
+  assert.equal(migrationNames.length, 56);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -116,6 +116,9 @@ test('fresh bootstrap contains one ordered fifty-five-migration chain', () => {
       // the stage logic emitted it and the CHECK refused it, so the insert died
       // before any later assertion could run.
       '20260826010100',
+      // v8: Call 1 opens as the designer and the atlas is its output contract.
+      // Patches the live gate's pinned prompt version; never restates the body.
+      '20260826020000',
     ],
   );
 });
