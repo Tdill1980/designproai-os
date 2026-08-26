@@ -44,7 +44,7 @@ insert into public.designpro_generation_requests(
     'contractVersion','designpro.calls-1-7-input.v3',
     'pipelineMode','flat-first-atlas-v1','brief','atlas stage contract'
   ),
-  repeat('1',64),'{}'::jsonb,repeat('2',64),'outputs_ready'
+  repeat('1',64),'{}'::jsonb,repeat('2',64),'queued'
 );
 
 insert into public.designpro_flat_atlas_revisions(
