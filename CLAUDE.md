@@ -813,6 +813,29 @@ Two rules, and the second was learned the expensive way.
    structural locks in `supabase/tests/atlas_stage_contract.test.sql` — A.T.L.A.S.
    arm present verbatim, legacy arm present verbatim, A.T.L.A.S. before legacy —
    are what that costs to prevent.
+3. **And then RUN it, over a row that exercises the expression.** `20260826030000`
+   wrote `pg_catalog.coalesce(...)` inside the `jsonb_agg` that projects each
+   approved view. **COALESCE is SQL grammar, not a function in any schema** — the
+   parser resolves it before a search path is consulted, so a qualified form
+   cannot exist. It applied clean in shadow, applied clean in production, and
+   passed every check, because **PL/pgSQL compiles an expression the first time
+   it is EVALUATED, and an aggregate over zero rows evaluates nothing.** So the
+   read returned a flawless `[]` for every generation whose proofs the sibling
+   fence withholds — including the acceptance generation I verified against —
+   and raised `function pg_catalog.coalesce(jsonb, jsonb) does not exist` for
+   every generation that actually had proofs, which is the only case
+   RevisionStudio exists to serve.
+
+   `SET search_path = ''` is why qualifying is the right reflex, and it stays
+   right for functions, operators and types. It does not apply to the grammar:
+   COALESCE, NULLIF, GREATEST, LEAST, CASE, EXTRACT and the aggregate syntax
+   forms take no qualifier and reject one. `grep -n "pg_catalog\.\(coalesce\|nullif\|greatest\|least\)" supabase/migrations/`
+   finds this class in one command.
+
+   Fixed by `20260826050000`; locked by
+   `supabase/tests/generation_workspace_contract.test.sql`, which seeds SEVEN
+   view rows and CALLS the function — a fixture with an empty view set
+   reproduces nothing at all.
 
 ## 🪞 A POLICY RUNS AS THE CALLER, AND PRODUCTION HAS OBJECTS THE HISTORY NEVER CREATED (2026-08-26)
 

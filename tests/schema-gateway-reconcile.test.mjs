@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-42), [
+  assert.deepEqual(names.slice(-43), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -130,6 +130,10 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     "20260826030000_designpro_revision_studio_surface.sql",
     // Every DesignPro generation in a window, newest first, from one table.
     "20260826040000_designpro_generation_library.sql",
+    // COALESCE is grammar, not a pg_catalog function -- and the aggregate that
+    // carried the qualified form only evaluates it when there are views to
+    // project, so it passed everywhere except the case the studio is for.
+    "20260826050000_designpro_generation_workspace_coalesce.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
