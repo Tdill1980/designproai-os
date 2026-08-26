@@ -40,7 +40,7 @@ jobs:
       - name: Add canonical reference clauses contact integrity and arm filter
         shell: bash
         run: |
-          echo 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKcCA9IFBhdGgoInJ1bnRpbWUvZmxhdC1maXJzdC1hdGxhcy5janMiKQpzID0gcC5yZWFkX3RleHQoKQpzdGFydCA9IHMu<BASE64_TRUNCATED_PLACEHOLDER>' >/tmp/patch.b64
+          echo 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKcCA9IFBhdGgoInJ1bnRpbWUvZmxhdC1maXJzdC1hdGxhcy5janMiKQpzID0gcC5yZWFkX3RleHQoKQpzdGFydCA9IHMu<BASE64_REPLACED_IN_NEXT_TURN>' >/tmp/patch.b64
           base64 -d /tmp/patch.b64 >/tmp/patch.py
           python3 /tmp/patch.py
 
