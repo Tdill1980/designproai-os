@@ -1,0 +1,32 @@
+name: Inspect canonical Call 1 stale locks
+
+on:
+  push:
+    branches:
+      - claude/atlas-generation-pipeline-awtekz
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/atlas-generation-pipeline-awtekz
+          fetch-depth: 0
+      - name: Print stale tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in tests/atlas-server-port.test.mjs tests/designiq-source-parity.test.mjs tests/flat-first-atlas.test.mjs; do
+            echo "===== $f ====="
+            if [[ -f "$f" ]]; then
+              nl -ba "$f"
+            else
+              echo "MISSING"
+              find . -name "$(basename "$f")" -print
+            fi
+          done
