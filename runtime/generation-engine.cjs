@@ -302,6 +302,23 @@ async function runSlot(options) {
           signal,
         });
       }
+      if (!verdict?.accepted && verdict?.retryable === true) {
+        // The inspector could not answer -- an outage or timeout on the QC
+        // model, not an opinion about the render. Counting it as a rejection
+        // spent regenerations on re-asking an unanswered question and ended
+        // slots `semantic_review_required` during provider incidents (live:
+        // close-up on generation 9dd6d43c, 2026-08-26). It consumes one
+        // provider attempt, exactly like any other transport fault, and the
+        // render is retried with the prompt unchanged.
+        const record = {
+          requestId, sourceViewType, attempt, model: result.model, keyFingerprint: result.keyFingerprint,
+          outcome: OUTCOME.HTTP_ERROR, durationMs, errorCode: verdict?.code || "validator_unavailable",
+          detail: String(verdict?.reason || "proof inspector unavailable").slice(0, 500), winnerHash: null,
+        };
+        await store.recordAttemptFinished(record);
+        attempts.push(record);
+        continue;
+      }
       if (!verdict?.accepted) {
         rejections += 1;
         const correction = typeof verdict?.correction === "string" ? verdict.correction.trim() : "";

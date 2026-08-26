@@ -618,9 +618,25 @@ function createAtlasProofValidator({
       };
     } catch (error) {
       const known = error instanceof AtlasProofQcError;
+      // AN INSPECTOR OUTAGE IS NOT A DESIGN VERDICT. Live on generation
+      // 9dd6d43c (2026-08-26): gemini-2.5-flash answered 503 UNAVAILABLE, this
+      // catch converted it into accepted:false, the engine counted it as a
+      // semantic REJECTION, and Close-Up ended `semantic_review_required` -- a
+      // Google outage recorded as "the design failed review", spending the last
+      // regeneration on a question that was never asked. The engine's own rule
+      // (generation-engine.cjs): "a real provider fault must never be laundered
+      // into a semantic rejection." A transport/provider fault is therefore
+      // returned marked retryable, and only a genuine inspection outcome --
+      // a contract violation or a parsed refusal -- remains a verdict.
+      const transient = !known && (
+        error?.retryable === true
+        || /\b(429|5\d\d)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded|timed? ?out|abort|fetch failed|network|ECONNRESET|socket/i
+          .test(String(error?.message || error))
+      );
       return {
         accepted: false,
-        code: known ? error.code : "atlas_qc_analyzer_failed",
+        ...(transient ? { retryable: true } : {}),
+        code: known ? error.code : (transient ? "atlas_qc_unavailable" : "atlas_qc_analyzer_failed"),
         reason: cleanText(known ? error.message : `A.T.L.A.S. proof inspector failed: ${error?.message || error}`, 500),
       };
     }
