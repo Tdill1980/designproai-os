@@ -135,6 +135,26 @@ export function proofBinding(proofContentHash: string | null | undefined): strin
  */
 export type ProductionLayersSource = {
   canonicalId: string;
+  /**
+   * WHICH HALF OF THE PRODUCT THIS IS.
+   *
+   * `entice` means the six panels A.T.L.A.S. Call 1 already cut, shown before
+   * anyone has bought anything. They are real -- the actual surfaces of the
+   * accepted master, at design-time geometry -- and they are the whole
+   * commercial argument: the design is already mapped across the vehicle, and
+   * the Production Pack is what turns those approved surfaces into print-ready
+   * files. So the card shows them, states their dimensions, withholds the
+   * production-resolution asset, and asks for the sale.
+   *
+   * `production` means Call 9 has run and these are the branded production
+   * panels themselves.
+   *
+   * The distinction is NOT "verified vs unverified". Reading the entice set as
+   * an unverified pack is what made the card call real A.T.L.A.S. surfaces
+   * "production blocked" and hide the CTA -- turning the conversion surface
+   * into a defect report.
+   */
+  stage?: "entice" | "production";
   rows: ProductionFlowAssetRow[];
   designViews: Record<string, string>;
   /**
@@ -158,6 +178,7 @@ export type ProductionLayersSource = {
 };
 
 export type ProductionLayers = {
+  stage: "entice" | "production";
   rows: ProductionFlowAssetRow[];
   /** The approved 3D view per side, so each panel shows beside its own render. */
   designViews: Record<string, string>;
@@ -295,6 +316,7 @@ export function toProductionLayers(input: {
   });
 
   return {
+    stage: "production",
     rows,
     designViews,
     proofUrl: proof?.signedUrl || null,
@@ -413,6 +435,7 @@ export function toAtlasEnticeLayers(input: {
   });
 
   return {
+    stage: "entice",
     rows,
     designViews,
     // Call 8 has not run, so there is no 2D production proof to show above the

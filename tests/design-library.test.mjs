@@ -146,3 +146,29 @@ test("the library generates nothing", () => {
     assert.ok(!library.includes(producer), `the library must not carry ${producer}`);
   }
 });
+
+/**
+ * THE LIBRARY CARD READS THE WAY THE STUDIO'S CARDS READ.
+ *
+ * RevisionStudioIQ names a design by its VEHICLE and subtitles it with the
+ * company and the finish -- "2020 ford f 150" over "Flamingo Pools · Gloss" --
+ * stamps the version on the image, and dates it in words. Matching that is what
+ * keeps the library part of the product instead of an admin table bolted to the
+ * top of it, and it is the difference a person notices first.
+ */
+test("the library card follows the studio's own card conventions", () => {
+  // Vehicle is the title; company and finish are the subtitle.
+  assert.match(library, /function titleOf/);
+  assert.match(library, /entry\.vehicle\?\.year, entry\.vehicle\?\.make, entry\.vehicle\?\.model/);
+  assert.match(library, /function subtitleOf/);
+  assert.match(library, /entry\.companyName \|\| entry\.designName/);
+  // The version is stamped on the image, as the studio's cards stamp it -- and
+  // a Standard run carries no badge rather than a fabricated V1.
+  assert.match(library, /entry\.currentRevision \? \(/);
+  assert.match(library, /V\{entry\.currentRevision\}/);
+  // Dated in words, with the exact timestamp kept as the title attribute.
+  assert.match(library, /function relativeAge/);
+  assert.match(library, /title=\{`\$\{shortDate\(entry\.createdAt\)\}/);
+  // The tool badge every DesignProAI card carries.
+  assert.ok(library.includes("DesignProAI"), "the card must carry the tool badge");
+});

@@ -81,15 +81,31 @@ function StatusIcon({ status }: { status: Exclude<StatusFilter, "all"> }) {
   return <Loader2 className="h-3 w-3 animate-spin" />;
 }
 
-/** The design's own name for itself, never a placeholder. */
+/**
+ * THE CARD READS THE WAY THE PRODUCT READS.
+ *
+ * RevisionStudioIQ names a design by its VEHICLE and subtitles it with the
+ * company and the finish -- "2020 ford f 150" over "Flamingo Pools · Gloss".
+ * That is the existing card's convention and this surface follows it, so the
+ * library looks like part of the studio rather than an admin table bolted to
+ * the top of it. The vehicle string is shown exactly as it was recorded,
+ * lower-case and all: it is what the customer typed.
+ */
 function titleOf(entry: DesignLibraryEntry): string {
-  const named = (entry.companyName || entry.designName || "").trim();
-  if (named) return named;
   const vehicle = [entry.vehicle?.year, entry.vehicle?.make, entry.vehicle?.model]
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(" ");
-  return vehicle || entry.designId;
+  if (vehicle) return vehicle;
+  return (entry.companyName || entry.designName || "").trim() || entry.designId;
+}
+
+/** "Flamingo Pools · Gloss", and only the halves that exist. */
+function subtitleOf(entry: DesignLibraryEntry): string {
+  const named = (entry.companyName || entry.designName || "").trim();
+  return [named, String(entry.finish || "").trim()].filter(Boolean).join(" · ")
+    || String(entry.vehicle?.type || "").trim()
+    || "No company recorded";
 }
 
 function vehicleLine(entry: DesignLibraryEntry): string {
@@ -104,6 +120,30 @@ function shortDate(value: string | null): string {
   const parsed = Date.parse(String(value || ""));
   if (!Number.isFinite(parsed)) return "—";
   return new Date(parsed).toISOString().slice(0, 10);
+}
+
+/**
+ * "5 days ago" — the card's own way of stating age.
+ *
+ * The exact date is kept as the element's title, because "5 days ago" is what
+ * a person scans by and the timestamp is what they need when it matters.
+ */
+function relativeAge(value: string | null): string {
+  const parsed = Date.parse(String(value || ""));
+  if (!Number.isFinite(parsed)) return "—";
+  const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  const units: Array<[number, string]> = [
+    [60, "second"], [60, "minute"], [24, "hour"], [7, "day"], [4.35, "week"], [12, "month"],
+  ];
+  let amount = seconds;
+  let unit = "second";
+  for (const [size, nextUnit] of units) {
+    if (amount < size) break;
+    amount = Math.floor(amount / size);
+    unit = nextUnit;
+  }
+  if (unit === "second" && amount < 45) return "just now";
+  return `${amount} ${unit}${amount === 1 ? "" : "s"} ago`;
 }
 
 /**
@@ -305,10 +345,15 @@ export function DesignLibrary({
               key={entry.generationId}
               className="flex flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900"
             >
+              {/* THE HERO IMAGE, AS THE STUDIO SHOWS IT: the design large, the
+                  version stamped top-right, the pipeline top-left. Same card
+                  language as the existing RevisionStudioIQ grid, so the library
+                  reads as part of the product rather than a table bolted above
+                  it. */}
               <button
                 type="button"
                 onClick={() => onOpen?.(entry.generationId)}
-                className="group relative block aspect-[4/3] w-full bg-zinc-950"
+                className="group relative block aspect-video w-full bg-zinc-950"
                 title={`Open ${titleOf(entry)}`}
               >
                 {entry.thumbnailUrl ? (
@@ -316,7 +361,7 @@ export function DesignLibrary({
                     src={entry.thumbnailUrl}
                     alt={titleOf(entry)}
                     loading="lazy"
-                    className="h-full w-full object-contain transition-transform group-hover:scale-[1.02]"
+                    className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
                   />
                 ) : (
                   // Honest, and specific about which of the two reasons it is.
@@ -333,52 +378,67 @@ export function DesignLibrary({
                 )}
                 <span
                   className={cn(
-                    "absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                    "absolute left-2 top-2 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide backdrop-blur",
+                    entry.pipeline === "atlas"
+                      ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-200"
+                      : "border-zinc-500/50 bg-zinc-900/70 text-zinc-300",
+                  )}
+                >
+                  {entry.pipeline === "atlas" ? "A.T.L.A.S." : "Standard"}
+                </span>
+                {/* The version the design stands at, where the studio's own
+                    cards put it. A Standard run has no A.T.L.A.S. revision to
+                    number, so it carries no badge rather than a fake V1. */}
+                {entry.currentRevision ? (
+                  <span className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-bold text-zinc-100 backdrop-blur">
+                    V{entry.currentRevision}
+                    {entry.revisionCount > 1 ? ` · ${entry.revisionCount} designs` : ""}
+                  </span>
+                ) : null}
+                <span
+                  className={cn(
+                    "absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide backdrop-blur",
                     STATUS_TONE[state],
                   )}
                 >
                   <StatusIcon status={state} />
                   {STATUS_LABEL[state]}
                 </span>
-                <span
-                  className={cn(
-                    "absolute right-1.5 top-1.5 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-                    entry.pipeline === "atlas"
-                      ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-300"
-                      : "border-zinc-600 bg-zinc-800/80 text-zinc-300",
-                  )}
-                >
-                  {entry.pipeline === "atlas" ? "A.T.L.A.S." : "Standard"}
-                </span>
               </button>
 
-              <div className="flex flex-1 flex-col gap-1.5 p-3">
-                <p className="truncate font-poppins text-[13px] font-bold text-zinc-100" title={titleOf(entry)}>
+              <div className="flex flex-1 flex-col gap-1 p-3">
+                <p className="truncate font-poppins text-[15px] font-bold text-zinc-100" title={titleOf(entry)}>
                   {titleOf(entry)}
                 </p>
-                <p className="truncate text-[11px] text-zinc-400" title={vehicleLine(entry)}>
-                  {vehicleLine(entry)}
+                <p className="truncate text-[12px] text-zinc-400" title={subtitleOf(entry)}>
+                  {subtitleOf(entry)}
                 </p>
-                <dl className="mt-0.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
+                    DesignProAI™
+                  </span>
+                  <span
+                    className="ml-auto text-[10px] text-zinc-500"
+                    title={`${shortDate(entry.createdAt)} · ${entry.createdAt || ""}`}
+                  >
+                    <Clock className="mr-1 inline h-2.5 w-2.5" />
+                    {relativeAge(entry.createdAt)}
+                  </span>
+                </div>
+
+                {/* The identities a designer quotes on the phone. Small, but
+                    never hidden behind a hover: a Design ID you cannot read is
+                    a Design ID you cannot give anyone. */}
+                <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
                   <dt className="text-zinc-500">Design ID</dt>
                   <dd className="truncate font-mono text-zinc-300">{entry.designId}</dd>
                   <dt className="text-zinc-500">Generation</dt>
                   <dd className="truncate font-mono text-zinc-400" title={entry.generationId}>
                     {entry.generationId.slice(0, 8)}…
                   </dd>
-                  <dt className="text-zinc-500">Created</dt>
-                  <dd className="text-zinc-300">
-                    <Clock className="mr-1 inline h-2.5 w-2.5 text-zinc-500" />
-                    {shortDate(entry.createdAt)}
-                  </dd>
-                  <dt className="text-zinc-500">Version</dt>
-                  <dd className="text-zinc-300">
-                    {/* The server's own revision sequence, which IS the version
-                        number. A Standard run has no A.T.L.A.S. revision to
-                        number, and says so instead of claiming V1. */}
-                    {entry.currentRevision
-                      ? `V${entry.currentRevision}${entry.revisionCount > 1 ? ` of ${entry.revisionCount}` : ""}`
-                      : "—"}
+                  <dt className="text-zinc-500">Vehicle</dt>
+                  <dd className="truncate text-zinc-400" title={vehicleLine(entry)}>
+                    {String(entry.vehicle?.type || "").trim() || "—"}
                   </dd>
                   {entry.production?.orderNumber ? (
                     <>
@@ -388,11 +448,11 @@ export function DesignLibrary({
                   ) : null}
                 </dl>
 
-                <div className="mt-auto flex gap-1.5 pt-2">
+                <div className="mt-auto flex gap-1.5 pt-2.5">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 flex-1 border-blue-500/40 bg-blue-500/5 text-[11px] text-blue-200 hover:bg-blue-500/10"
+                    className="h-8 flex-1 border-cyan-500/40 bg-cyan-500/5 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/10"
                     onClick={() => onOpen?.(entry.generationId)}
                   >
                     Open design
@@ -401,7 +461,7 @@ export function DesignLibrary({
                     asChild
                     size="sm"
                     variant="outline"
-                    className="h-7 border-fuchsia-500/40 bg-fuchsia-500/5 text-[11px] text-fuchsia-200 hover:bg-fuchsia-500/10"
+                    className="h-8 border-fuchsia-500/40 bg-fuchsia-500/5 text-[11px] font-semibold text-fuchsia-200 hover:bg-fuchsia-500/10"
                   >
                     <Link
                       to={`/designpro/jobs/${encodeURIComponent(entry.generationId)}/panelpro`}

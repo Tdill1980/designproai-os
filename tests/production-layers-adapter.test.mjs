@@ -254,3 +254,62 @@ test("the approved proof is drawn before the panel, on both surfaces", () => {
   // being positioned against a column that moved.
   assert.match(card, /overlay travels with the panel/);
 });
+
+/**
+ * THE PRODUCTION PACK CONVERSION SURFACE.
+ *
+ * RevisionStudioIQ's surface panels ARE the entice UI. Before this the card had
+ * exactly one way to describe "not the activated pack" -- unverified -- so it
+ * stamped six real A.T.L.A.S. surfaces "production blocked", withheld the CTA,
+ * and turned the conversion surface into a defect report. The distinction is
+ * not verified-vs-unverified; it is before-purchase vs after.
+ */
+test("the entice half asks for the sale instead of reporting a defect", () => {
+  const card = readFileSync(
+    new URL("../app/src/components/revisioniq/ProductionFlowLayersCard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  // The stage is what the card branches on, carried from the source that knows.
+  assert.match(adapter, /stage\?: "entice" \| "production"/);
+  assert.match(adapter, /stage: "entice"/);
+  assert.match(adapter, /stage: "production"/);
+  assert.match(card, /const entice = injected\.stage === "entice"/);
+
+  // The CTA is live before purchase. That is the whole point of the surface.
+  assert.match(card, /injected\.onOrderProductionPack && \(entice \|\| \(isVerifiedPack && packState\.productionEligible\)\)/);
+  assert.match(card, /GET PRODUCTION PACK/);
+
+  // The conversion message, in the owner's own words.
+  assert.match(card, /Your design is already mapped across the vehicle/);
+  assert.match(card, /turns these approved surfaces into final print-ready production files/);
+  // And what the money unlocks.
+  for (const unlock of ["final production geometry", "bleed", "upscale", "WrapBox"]) {
+    assert.ok(card.includes(unlock), `the entice copy must name ${unlock}`);
+  }
+
+  // The panel is labelled as what it is. Never "not uploaded", never
+  // "production blocked" -- A.T.L.A.S. already produced this design surface.
+  assert.match(card, /Production Pack panel · preview/);
+  assert.ok(!card.includes("Not uploaded"), "never tell a customer their surface was not uploaded");
+
+  // The production-resolution asset stays withheld: downloads remain gated on
+  // printReady, which the entice half never satisfies.
+  assert.match(card, /downloadable=\{printReady\}/);
+});
+
+/**
+ * ONE LINEAGE, NOT A MOCK. The preview and the paid artifact must descend from
+ * the same accepted master -- the entice rows are the real Call-1 surfaces,
+ * bound to the master they were cut from, never a fabricated stand-in.
+ */
+test("the entice preview is the real surface, bound to the accepted master", () => {
+  const enticeBlock = adapter.slice(adapter.indexOf("export function toAtlasEnticeLayers"));
+  assert.match(enticeBlock, /branding_url: panel\.signedUrl \|\| ""/);
+  assert.match(enticeBlock, /source_master_hash: String\(panel\.sourceMasterHash/);
+  assert.match(enticeBlock, /designpro:\/\/atlas-master\//);
+  // No second producer and no placeholder imagery anywhere in that path.
+  for (const banned of ["placeholder", "mock", "/sample", "generate("]) {
+    assert.ok(!enticeBlock.includes(banned), `the entice source must not carry ${banned}`);
+  }
+});
