@@ -96,6 +96,9 @@ const CONTROL_PARAMS = {
 
 // design-panel-ai-generate/index.ts:1320 — one pinned model, no fallback.
 const CONTROL_MODEL = "gemini-3-pro-image-preview";
+// What Call 1 pins for authoring. Read from the runtime rather than repeated
+// here, so the harness cannot report a model production no longer uses.
+const AUTHORING_MODEL = require_("./designiq-prompt.cjs").DESIGNPANEL_AUTHORING_MODEL;
 const CONTROL_ENDPOINT = (model, key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
@@ -246,8 +249,8 @@ async function main() {
       notes: ["the control's own flat branch — the apples-to-apples flattened control"],
     }),
     B: describe("B — SERVER A.T.L.A.S. Call 1", {
-      model: provider.models[0],
-      modelFallback: "none — Call 1 passes lockModel:true",
+      model: AUTHORING_MODEL,
+      modelFallback: "none — Call 1 pins the model by name and passes lockModel:true",
       parts: bParts,
       generationConfig: { temperature: 1, responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "1:1", imageSize: "4K" } },
       attempts: "MAX_MASTER_AUTHORING_ATTEMPTS = 3 (corrective re-roll on QC refusal)",
@@ -274,14 +277,13 @@ async function main() {
   for (const [name, spec] of [
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
-    ["B", { parts: bParts, model: provider.models[0], cfg: requests.B.generationConfig, file: "B-atlas-master.png" }],
-    // The droplet resolves GOOGLE_IMAGE_MODEL=gemini-3-pro-image while the
-    // control pins gemini-3-pro-image-preview, so A and B differ by model as
-    // well as by request. Running B's exact parts on the control's model too
-    // costs one call and removes the confound: if B-preview and B agree, the
-    // model is not the variable and the request is.
-    ...(provider.models[0] === CONTROL_MODEL ? [] : [["B-preview", {
-      parts: bParts, model: CONTROL_MODEL, cfg: requests.B.generationConfig, file: "B-atlas-master-preview-model.png",
+    ["B", { parts: bParts, model: AUTHORING_MODEL, cfg: requests.B.generationConfig, file: "B-atlas-master.png" }],
+    // B IS THE PRODUCTION PATH, so it uses the model Call 1 actually pins.
+    // The droplet still resolves GOOGLE_IMAGE_MODEL=gemini-3-pro-image for the
+    // projections, so when the two differ the configured id gets its own arm --
+    // one extra call, and the model stops being a confound in either direction.
+    ...(provider.models[0] === AUTHORING_MODEL ? [] : [["B-configured", {
+      parts: bParts, model: provider.models[0], cfg: requests.B.generationConfig, file: "B-atlas-master-configured-model.png",
     }]]),
   ]) {
     try {
