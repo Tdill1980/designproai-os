@@ -39,26 +39,38 @@ const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.2026
 
 // THE MODEL THE AUTHORITY AUTHORS ON, BY NAME.
 //
-// design-panel-ai-generate builds this exact id into its endpoint and carries
-// no fallback (index.ts:1320). The reference repository's own locked note says
-// the GA id `gemini-3-pro-image` is the same model and that they stay on the
-// `-preview` alias regardless, because it is the one verified working there.
+// PINNED BY NAME STAYS. THE NAME CHANGES. (Corrected 2026-08-26, same day.)
 //
-// The droplet writes GOOGLE_IMAGE_MODEL=gemini-3-pro-image (ops/configure-env.sh),
-// so Call 1 -- which only asked for "the first configured model" -- was
-// authoring the customer's design on a different id than the authority does.
+// The reason for naming a model at all is unchanged and still right: the
+// droplet writes GOOGLE_IMAGE_MODEL=gemini-3-pro-image (ops/configure-env.sh),
+// and `lockModel` alone pins THE FIRST OF WHATEVER IS CONFIGURED rather than a
+// name, so the call that authors the customer's design followed config drift.
+// Do not replace this with an env lookup; the projections may follow
+// GOOGLE_IMAGE_MODEL, the design authority may not.
 //
-// That is not a nicety. Measured 2026-08-26 on the Precision Climate Solutions
-// payload, one key, one assembled request sent to both ids: the configured GA
-// id returned a three-quarter VAN drawn in three views with mirrored roof
-// lettering and no relationship to the deterministic guide; the `-preview` id
-// returned the guide's six-zone layout with forward-reading text on both
-// flanks. The prompt, the parts, the temperature and the aspect were identical.
+// The VALUE was wrong, and it was wrong on evidence I gathered myself. It was
+// set to the `-preview` alias because design-panel-ai-generate builds that id
+// into its endpoint (index.ts:1320), and because ONE A/B pair on the Precision
+// Climate Solutions payload had the GA id return a three-quarter van and the
+// `-preview` id return the guide's six-zone layout.
 //
-// Kept beside the port version because it is part of the same port: pinned by
-// name, asserted against the vendored reference, and independent of whatever
-// the projection calls are configured to use.
-const DESIGNPANEL_AUTHORING_MODEL = "gemini-3-pro-image-preview";
+// Eleven real production runs say the opposite, and they are the stronger
+// evidence because they are the actual customer payloads:
+//
+//   5b2eb96c  22 Aug  v2  GA       all six zones FULL BLEED, seven good proofs
+//   87c481ca  23 Aug  v4  GA       centre four full bleed (flanks broken at v4)
+//   9dd6d43c  26 Aug  v8  GA       centre four full bleed (flanks still broken)
+//   04cc0b29  26 Aug  v8  preview  ALL SIX a picture of a van
+//
+// Measured as border-vs-interior luminance on the real masters pulled from
+// storage: the GA runs hold a border median of 135-177 across the centre four
+// on every prompt version from v2 to v8; the first `-preview` run drops it to
+// 18-23 with 63-83% of each border dark. The Flamingo master the product is
+// judged against was authored on the GA id.
+//
+// One A/B pair is not eleven production runs, and a single sample on one
+// payload is exactly the kind of measurement that should lose to the fleet.
+const DESIGNPANEL_AUTHORING_MODEL = "gemini-3-pro-image";
 
 // Names no form. Every version that prescribed one converged - "custom,
 // distinctive lettering" handed three trades the same lockup, and replacing it
