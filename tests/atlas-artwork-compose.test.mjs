@@ -9,7 +9,7 @@ const {
   COMPOSE_CONTRACT,
   composeAtlasFromArtwork,
   detectArtworkBox,
-  _test: { BANNER_SPAN, bannerRegion, naturalZoneSize },
+  _test: { BANNER_SPAN, bannerRegion, naturalZoneSize, zoneLayer },
 } = require("../runtime/atlas-artwork-compose.cjs");
 const { ATLAS_ARTWORK_SYSTEM_INSTRUCTION, buildAtlasArtworkDirection } = require("../runtime/designiq-prompt.cjs");
 
@@ -114,6 +114,45 @@ test("passenger is the driver mirrored, exactly", async () => {
   let total = 0;
   for (let i = 0; i < driver.data.length; i += 1) total += Math.abs(driver.data[i] - flipped[i]);
   assert.equal(total / driver.data.length, 0, "passengerMirrorMae must be 0, not merely small");
+});
+
+// AND EXACT AT THE ZONE THE LIVE MANIFEST ACTUALLY PRODUCES.
+//
+// The test above composes through buildAtlasManifest, whose round fixture
+// inches land the flanks on a pixel size where a mirror composed the wrong way
+// round still measures zero. Live GENIE geometry does not oblige: on the real
+// Precision Climate Solutions manifest the flanks came out 1153x2848, and there
+// a `.flop()` chained onto the resize — which sharp applies BEFORE it, exactly
+// as it does `.rotate()` — measured passengerMirrorMae 1.282 in a deployed run.
+//
+// So the exactness is asserted against that rectangle directly, at the layer,
+// rather than through inches that may or may not reproduce it.
+// The banner size matters as much as the zone: a cover crop only rounds
+// asymmetrically when the scaled source does not centre on a whole pixel.
+// 4859x1780 into 1153x2848 is the pair the live run produced, and it does —
+// measured 0.1611 on flat fixture colours, 1.282 on the real artwork. Round
+// sizes like 3840x2160 come out exact either way and prove nothing.
+test("the mirror is exact at the flank rectangle live GENIE geometry produces", async () => {
+  const artwork = await sharp(await testBanner())
+    .resize({ width: 4859, height: 1780, fit: "fill" }).png().toBuffer();
+  const meta = await sharp(artwork).metadata();
+  const region = bannerRegion("driver", meta.width, meta.height);
+  const zone = { surfaceKey: "driver", x: 0, y: 0, w: 1153, h: 2848, rotationDegrees: -90 };
+
+  const plain = await zoneLayer(artwork, zone, { mirror: false, region });
+  const mirrored = await zoneLayer(artwork, { ...zone, rotationDegrees: 90 }, { mirror: true, region });
+
+  // Un-rotate both the way the panel cut does, then compare.
+  const cut = async (bytes, rotation) => sharp(bytes).rotate(rotation).raw().toBuffer({ resolveWithObject: true });
+  const driver = await cut(plain, 90);
+  const passenger = await cut(mirrored, -90);
+  const flipped = await sharp(passenger.data, {
+    raw: { width: passenger.info.width, height: passenger.info.height, channels: passenger.info.channels },
+  }).flop().raw().toBuffer();
+
+  let total = 0;
+  for (let i = 0; i < driver.data.length; i += 1) total += Math.abs(driver.data[i] - flipped[i]);
+  assert.equal(total / driver.data.length, 0, "the flop must follow the resize, not ride inside its chain");
 });
 
 // THE FLANKS ARE COMPOSED LANDSCAPE AND ROTATED IN.

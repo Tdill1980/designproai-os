@@ -244,11 +244,19 @@ async function zoneLayer(artwork, zone, { mirror, region }) {
   // so chaining them cropped the flanks to the wrong shape (driver came out
   // 2088x1074 against the zone's 1074x3712). Resizing to the surface's natural
   // landscape proportion and rotating the RESULT is what the geometry means.
-  let flat = sharp(artwork, { limitInputPixels: false })
+  let bytes = await sharp(artwork, { limitInputPixels: false })
     .extract(region)
-    .resize({ width: natural.width, height: natural.height, fit: "cover", position: "centre", kernel: "lanczos3" });
-  if (mirror) flat = flat.flop();
-  let bytes = await flat.png(PNG_OPTIONS).toBuffer();
+    .resize({ width: natural.width, height: natural.height, fit: "cover", position: "centre", kernel: "lanczos3" })
+    .png(PNG_OPTIONS).toBuffer();
+  // THE FLOP IS ITS OWN PASS TOO, and for the same reason as the rotation.
+  // Chained, sharp applies it BEFORE the resize, so the mirrored flank is a
+  // resize of the flipped region rather than a flip of the resized one. Those
+  // differ whenever the cover crop's offset does not land on an even pixel:
+  // measured on the live GENIE geometry, passengerMirrorMae was 1.282 instead
+  // of 0, and the fixture missed it because its flanks were even-sized.
+  if (mirror) {
+    bytes = await sharp(bytes, { limitInputPixels: false }).flop().png(PNG_OPTIONS).toBuffer();
+  }
   if (zone.rotationDegrees !== 0) {
     bytes = await sharp(bytes, { limitInputPixels: false })
       .rotate(zone.rotationDegrees).png(PNG_OPTIONS).toBuffer();
