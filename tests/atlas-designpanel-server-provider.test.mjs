@@ -209,7 +209,24 @@ test("Atlas renders every surface from its own master-zone authority, with no Dr
   // atlas-generation-worker-wiring.test.mjs; this harness stubs the prompt, so
   // what matters here is that Passenger got the canonical projection prompt for
   // its OWN view rather than a mirror-repair instruction.
-  assert.match(passengerParts.at(-1).text, /canonical Atlas projection instructions for passenger-side/);
+  assert.ok(
+    passengerParts.some((part) => /canonical Atlas projection instructions for passenger-side/.test(part?.text || "")),
+    "Passenger got the canonical projection prompt for its OWN view",
+  );
+  // THE CONTINUITY-ONLY DRIVER PHOTOGRAPH (owner decision, 2026-08-26).
+  // Driver is accepted by now, so the sibling's request carries a SECOND
+  // image: the compacted Driver proof, labelled continuity-only and placed
+  // AFTER the zone authority. It provides vehicle/studio/camera context and
+  // never artwork -- the metadata says so under its own name, and the four
+  // retired-path keys the fence refuses stay absent.
+  assert.equal(passengerParts.filter((part) => part?.inlineData).length, 2,
+    "sibling carries its zone authority plus the continuity photograph");
+  assert.ok(
+    passengerParts.some((part) => /CONTINUITY ONLY/.test(part?.text || "")),
+    "the continuity image is labelled for what it is",
+  );
+  assert.equal(passenger.metadata.atlasDriverContinuityOnly, true);
+  assert.match(passenger.metadata.atlasDriverContinuityReferenceHash, /^[0-9a-f]{64}$/);
 
   const roof = await provider.generateImage({
     sourceViewType: "roof",
@@ -224,15 +241,21 @@ test("Atlas renders every surface from its own master-zone authority, with no Dr
   // nothing else. The bounded Driver continuity anchor is gone: cross-view
   // identity comes from the shared frozen master, hash-verified per surface,
   // rather than from injecting one render into the others.
-  assert.equal(roofCall.parts.filter((part) => part.inlineData).length, 1,
-    "Roof must receive exactly its own Atlas authority, with no Driver anchor");
+  // Zone authority FIRST image, continuity photograph last: the authority
+  // position the proof QC verifies is untouched by the continuity reference.
+  assert.equal(roofCall.parts.filter((part) => part.inlineData).length, 2,
+    "Roof carries its own Atlas authority plus the continuity photograph");
+  assert.equal(
+    hash(Buffer.from(roofCall.parts.find((part) => part?.inlineData).inlineData.data, "base64")),
+    f.projectionContentHash,
+    "the FIRST image remains the zone authority",
+  );
   assert.match(roofCall.parts[0].text, /CAB ROOF ONLY/);
   assert.match(roofCall.parts[0].text, /cargo bed\/box.*must be outside the frame/is);
   assert.match(roofCall.parts[0].text, /open bed interior stays bare factory bedliner/i);
-  // "the Atlas wins" existed only to arbitrate between the Atlas authority and
-  // the injected Driver anchor. With no anchor there is no conflict to resolve,
-  // and the Atlas is simply the sole authority.
-  assert.doesNotMatch(roofCall.parts[0].text, /accepted Driver proof/i);
+  // The prompt may name the Driver photograph, but only as continuity: the
+  // Atlas stays the sole artwork authority and wins any conflict.
+  assert.match(roofCall.parts[0].text, /where the Driver proof and Atlas could be read differently, the Atlas wins/i);
   assert.equal(roof.metadata.stage, "generate-color-render");
   assert.equal(roof.metadata.anchoredToFlatAtlas, true);
   assert.equal(roof.metadata.anchoredToView1, false);

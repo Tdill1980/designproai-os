@@ -1257,6 +1257,60 @@ function createAtlasDesignPanelProvider(options = {}) {
   // to trust or download accepted Driver bytes.
   const driverStore = createDesignPanelServerProvider(options);
 
+  // CONTINUITY-ONLY DRIVER REFERENCE — OWNER DECISION, 2026-08-26.
+  //
+  // The sibling-surface change (8576619a, owner-approved) removed the retired
+  // artwork/mirror anchor: no sibling may inherit design from Driver, and the
+  // fence refuses any view carrying that path's keys. It ALSO removed the one
+  // thing the anchor was quietly providing -- a photographic reference for the
+  // studio, vehicle anatomy and camera language. The anchor-free runs then
+  // went 0-for-8 on hood and close-up across fb63e76f and 13bdc331, every
+  // verdict the same: the renderer apes its flat zone crop's framing instead
+  // of the locked camera contract, while the four flank/overhead views that
+  // resemble a flat elevation kept passing.
+  //
+  // So the accepted Driver photograph returns as CONTINUITY ONLY, and three
+  // properties keep it from becoming the retired path again:
+  //   1. OPPORTUNISTIC, NEVER A GATE. The seven slots still launch together;
+  //      each sibling ATTEMPT asks whether an accepted Driver exists at that
+  //      moment (hydrateDriver returns null until one does) and renders
+  //      without it when none is there. A failed or slow Driver blocks
+  //      nothing, exactly as the sibling architecture requires -- in practice
+  //      attempt 1 usually runs bare and the corrective re-attempts carry it.
+  //   2. ARTWORK STAYS WITH THE ATLAS. The prompt scopes the reference to
+  //      vehicle anatomy, studio, lighting and installed scale, and states
+  //      that where the two could be read differently, the Atlas wins. The
+  //      zone crop remains the sole artwork authority the proof QC judges
+  //      against.
+  //   3. NAMED FOR WHAT IT IS. The view records atlasDriverContinuityOnly and
+  //      the compacted reference's own hash -- never driverContentHash,
+  //      deterministicMirror, passengerProducer or
+  //      atlasZonePassedToPassengerRepair, the four keys that mark the
+  //      retired path and stay refused by the fence.
+  let continuityReference = null;
+  async function driverContinuityReference() {
+    let accepted = null;
+    try {
+      accepted = await driverStore.hydrateHero();
+    } catch {
+      // Continuity is opportunistic: a transient hero lookup failure must
+      // never fail a sibling render that is valid without it.
+      return null;
+    }
+    if (!accepted?.bytes) return null;
+    if (!continuityReference || continuityReference.driverContentHash !== accepted.contentHash) {
+      const compact = await compactAtlasDriverReference(accepted.bytes);
+      continuityReference = Object.freeze({
+        driverContentHash: accepted.contentHash,
+        mimeType: compact.mimeType,
+        data: compact.data,
+        byteSize: compact.byteSize,
+        contentHash: compact.contentHash,
+      });
+    }
+    return continuityReference;
+  }
+
   function atlasMetadata(extra = {}) {
     return {
       stage: "generate-color-render",
@@ -1308,11 +1362,13 @@ function createAtlasDesignPanelProvider(options = {}) {
     //
     // Driver keeps scheduling priority: it is what the customer sees first
     // (RULE 0.23). Priority is not the same as prerequisite.
+    const driverReference = sourceViewType === "side" ? null : await driverContinuityReference();
     const request = await buildAtlasProjectionRequest({
       atlas,
       input,
       sourceViewType,
       call,
+      driverReference,
     });
     const generated = await provider.generateImage({
       ...call,
@@ -1331,6 +1387,14 @@ function createAtlasDesignPanelProvider(options = {}) {
           // Stated, not computed: no A.T.L.A.S. view is anchored to another
           // view, and the seam refuses any that claims to be.
           anchoredToView1: false,
+          // Continuity only, named so it can never be confused with artwork
+          // authority: the hash recorded here is the COMPACTED photograph's
+          // own, not the Driver view's content hash, and the four retired-path
+          // keys the fence refuses are never written.
+          ...(driverReference ? {
+            atlasDriverContinuityOnly: true,
+            atlasDriverContinuityReferenceHash: driverReference.contentHash,
+          } : {}),
           atlasConditioningVerified: true,
           atlasZoneContract: request.authorityIdentity.contract,
           atlasZoneContentHash: request.authorityIdentity.contentHash,
