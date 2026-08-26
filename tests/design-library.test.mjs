@@ -55,7 +55,7 @@ test("four months is the default window, and the window is not a page size", () 
 test("a library row carries what a designer needs to identify the job", () => {
   for (const field of [
     '"generationId"', '"designName"', '"companyName"', "vehicle", "state",
-    "pipeline", '"revisionCount"', '"currentRevision"', '"masterContentHash"',
+    "pipeline", '"revisionCount"', '"currentRevision"',
     '"thumbnailStoragePath"', "production",
   ]) {
     assert.ok(migration.includes(field), `the library row must publish ${field}`);
@@ -79,7 +79,7 @@ test("a design with no image is published, not filtered out", () => {
   // No image-presence filter anywhere in the query.
   assert.ok(!migration.includes("thumbnailStoragePath IS NOT NULL"));
   // The gateway publishes the row with no URL rather than omitting it.
-  assert.match(gateway, /A design with no image is published without one/);
+  assert.match(gateway, /published without a tile/);
   assert.match(gateway, /\.\.\.\(thumbnailUrl \? \{ thumbnailUrl, expiresIn: 300 \} : \{\}\)/);
   // And the card says which of the two reasons it is.
   assert.match(library, /This design produced no image/);
@@ -94,12 +94,45 @@ test("a design with no image is published, not filtered out", () => {
  */
 test("a superseded proof set is not used as a preview", () => {
   assert.match(migration, /AND NOT designpro_private\.flat_first_atlas_requires_new_run\(r\.id\)/);
-  assert.match(migration, /a\.master_storage_path/, "the master is the fallback tile");
+});
+
+/**
+ * ⛔ THE A.T.L.A.S. MASTER IS NEVER SHOWN TO A CLIENT.
+ *
+ * The library lives in RevisionStudioIQ, which is the customer's surface. The
+ * flattened master is the production authority and belongs to PanelPro Studio,
+ * under the A.T.L.A.S. generation id. The tile briefly fell back to the master
+ * for a design with no servable proof, which would have put that authority on a
+ * customer's screen; a design with nothing servable now shows no tile and says
+ * why. The master's own content hash is not published to this surface either.
+ */
+test("the library never serves the A.T.L.A.S. master to a customer", () => {
+  // Comments stripped: the prose names the master in order to explain why it
+  // is NOT the fallback, and a rule must not fail on its own statement.
+  const tile = migration
+    .slice(
+      migration.indexOf("THE TILE IS A 3D PROOF"),
+      migration.indexOf('AS "thumbnailStoragePath"'),
+    )
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n");
+  assert.ok(tile.length > 0, "the tile expression must be findable");
+  assert.ok(
+    !tile.includes("master_storage_path"),
+    "the tile must never fall back to the A.T.L.A.S. master",
+  );
+  assert.ok(
+    !migration.includes("masterContentHash"),
+    "the master's identity is PanelPro's, not the library's",
+  );
+  // The gateway refuses to sign anything outside this design's approved proofs
+  // -- the flat-first subtree is deliberately not accepted here.
+  assert.match(gateway, /const signable = storagePath\s*\n?\s*&& authorizedGenerationViewPath\(storagePath, ownerId, generationId\);/);
 });
 
 test("the tile is signed only inside the design's own prefix, and paths never leave", () => {
   assert.match(gateway, /authorizedGenerationViewPath\(storagePath, ownerId, generationId\)/);
-  assert.match(gateway, /authorizedFlatAtlasPath\(storagePath, ownerId, generationId\)/);
   // The row is rebuilt field by field, so a storage path cannot ride along.
   assert.ok(!gateway.includes("...row,"), "the library must not spread the raw row");
 });

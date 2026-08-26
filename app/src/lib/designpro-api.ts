@@ -147,7 +147,6 @@ export type DesignLibraryEntry = {
   revisionCount: number;
   /** The version this design stands at — the server's own revision sequence. */
   currentRevision: number | null;
-  masterContentHash: string | null;
   viewCount: number;
   /** True when the server withholds this design's proofs pending a new run. */
   viewsSuperseded: boolean;

@@ -620,8 +620,8 @@ const revisionStudio = readFileSync(
   new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url),
   "utf8",
 );
-const lineageCard = readFileSync(
-  new URL("../app/src/components/revisioniq/AtlasLineageCard.tsx", import.meta.url),
+const versionCard = readFileSync(
+  new URL("../app/src/components/revisioniq/DesignVersionRecordCard.tsx", import.meta.url),
   "utf8",
 );
 const panelProBoard = readFileSync(
@@ -652,33 +652,81 @@ test("a RevisionStudio deep link opens a design the feed cannot answer for", () 
 });
 
 /**
- * The design authority belongs in the surface the design is revised from. Every
- * version stays inspectable -- a new one never replaces the one before it.
+ * ⛔ THE A.T.L.A.S. MASTER IS NEVER SHOWN TO A CLIENT. (Trish 2026-08-26)
+ *
+ * RevisionStudioIQ is review / revise / approve / buy. The flattened master is
+ * the production authority and lives in PanelPro Studio, under the A.T.L.A.S.
+ * generation id, because PanelPro is the internal control room where the thing
+ * everything else descends from is inspected and QC'd.
+ *
+ * A session rendered the master in the customer's workspace, on the reading
+ * that a person deciding what to change needs to see the sheet the change is
+ * made to. That argument is plausible enough to be made again, which is why
+ * this is a test and not a comment.
+ *
+ * What DOES stay on the customer surface is the design's own history -- every
+ * version, the words that produced it, when -- and the identity trio.
  */
-test("RevisionStudio shows the A.T.L.A.S. master and every version of it", () => {
-  assert.match(revisionStudio, /import \{ AtlasLineageCard \}/);
-  assert.match(revisionStudio, /<AtlasLineageCard generationId=\{productionLayersId\} \/>/);
+test("RevisionStudio shows the version record and never the A.T.L.A.S. master", () => {
+  assert.match(revisionStudio, /import \{ DesignVersionRecordCard \}/);
+  assert.match(revisionStudio, /<DesignVersionRecordCard/);
+
+  // The master, its hash and its guide are absent from the customer surface.
+  for (const atlasInternal of ["masterUrl", "guideUrl", "masterContentHash", "master.contentHash"]) {
+    assert.ok(
+      !versionCard.includes(atlasInternal),
+      `the customer's surface must never carry ${atlasInternal}`,
+    );
+  }
+  assert.match(versionCard, /NEVER SHOWN HERE/);
 
   // One canonical history, the same one PanelPro reads. No second numbering
   // and no prompt store of its own.
-  assert.match(lineageCard, /loadDesignVersionHistory/);
-  assert.ok(!lineageCard.includes("design_version_commits"));
-  assert.ok(!lineageCard.includes("supabase.from"));
+  assert.match(versionCard, /loadDesignVersionHistory/);
+  assert.ok(!versionCard.includes("design_version_commits"));
+  assert.ok(!versionCard.includes("supabase.from"));
 
   // Every version, never only the newest.
-  assert.match(lineageCard, /versions\.map\(\(version\) => \{/);
-  assert.match(lineageCard, /Flattened A\.T\.L\.A\.S\. master/);
-  assert.match(lineageCard, /selected\.masterContentHash/);
-  assert.match(lineageCard, /exactTimestamp\(selected\.createdAt\)/);
+  assert.match(versionCard, /versions\.map\(\(version\) => \{/);
+  assert.match(versionCard, /exactTimestamp\(selected\.createdAt\)/);
   // The customer's own words, labelled for which kind they are: reading the
   // original brief as a revision instruction is how a design gets rebuilt
   // against text nobody typed.
-  assert.match(lineageCard, /promptKind === "original-brief"/);
-  assert.match(lineageCard, /Original customer brief/);
+  assert.match(versionCard, /promptKind === "original-brief"/);
+  assert.match(versionCard, /Original customer brief/);
   // Not a producer. Selecting a version changes what is displayed, nothing else.
   for (const producer of ["Pull panel", "Mirror from driver", "regenerate", "generate("]) {
-    assert.ok(!lineageCard.includes(producer), `the lineage card must not offer ${producer}`);
+    assert.ok(!versionCard.includes(producer), `the version card must not offer ${producer}`);
   }
+});
+
+/**
+ * ONE JOB, NAMEABLE FROM EITHER SCREEN.
+ *
+ * The A.T.L.A.S. generation id, the Design ID and the Design Order number must
+ * appear in RevisionStudioIQ AND in PanelPro Studio, so a person on the phone
+ * can identify the same job from whichever surface they are looking at.
+ */
+test("the identity trio appears on both surfaces", () => {
+  const routedBoard = readFileSync(
+    new URL("../app/src/pages/AdminGeminiCompareStudio.tsx", import.meta.url),
+    "utf8",
+  );
+
+  // The customer's surface.
+  assert.match(versionCard, /Generation ID/);
+  assert.match(versionCard, /Design ID/);
+  assert.match(versionCard, /Order number/);
+
+  // The QC board.
+  assert.match(panelProBoard, /job\?\.designId/);
+  assert.match(panelProBoard, /job\.orderNumber/);
+  assert.match(panelProBoard, /generationId/);
+
+  // And the board actually routed at /designpro/jobs/:id/panelpro.
+  assert.match(routedBoard, /Generation ID/);
+  assert.match(routedBoard, /"Design ID", job\.design_id/);
+  assert.match(routedBoard, /"Design Order #", job\.order_number/);
 });
 
 /**
@@ -689,5 +737,5 @@ test("RevisionStudio shows the A.T.L.A.S. master and every version of it", () =>
 test("RevisionStudio and PanelPro reach each other on the same generation", () => {
   assert.match(panelProBoard, /\/revision-studio\?id=\$\{encodeURIComponent\(generationId\)\}/);
   assert.match(studio, /\/revision-studio\?id=\$\{encodeURIComponent\(generationId\)\}/);
-  assert.match(lineageCard, /\/designpro\/jobs\/\$\{encodeURIComponent\(id\)\}\/panelpro/);
+  assert.match(versionCard, /\/designpro\/jobs\/\$\{encodeURIComponent\(id\)\}\/panelpro/);
 });

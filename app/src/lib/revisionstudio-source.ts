@@ -26,16 +26,20 @@
  * read rather than stored: they are a projection of server state, so there is
  * nothing to write back and nothing that can drift.
  *
- * THE MASTER IS IN THE WORKSPACE NOW, AND NOT IN HERE. This note used to read
- * "A.T.L.A.S. internals are not in here ... never the master", on the reading
- * that the flattened master was admin material and PanelPro was where lineage
- * is inspected. The owner has corrected that: a person deciding what to change
- * needs to see the sheet the change will be made to. So the master, its hash,
- * every version and each version's verbatim prompt are shown -- by
- * `AtlasLineageCard`, reading `loadDesignVersionHistory`, which is the same
- * canonical history PanelPro reads. It is deliberately not projected into the
- * row shape below: these fields are the legacy card contract, and widening them
- * would mean editing the page, which this seam exists to avoid.
+ * ⛔ THE A.T.L.A.S. MASTER IS NEVER IN HERE, AND NEVER ON THIS SURFACE.
+ * (Trish 2026-08-26, restated after a session put it there.)
+ *
+ * The flattened master, its content hash, the guide, the topology and the
+ * prompt version are the production authority, and they belong to PanelPro
+ * Studio -- the internal control room -- under the A.T.L.A.S. generation id.
+ * RevisionStudio is the customer's surface: it gets the seven proofs, the six
+ * surface panels as the Production Pack preview, the version and prompt record,
+ * and the assets. Never the master.
+ *
+ * This note was briefly rewritten to say the opposite, on the reading that a
+ * person deciding what to change needs to see the sheet the change is made to.
+ * It is recorded here rather than quietly reverted, because the argument is
+ * plausible enough that someone will make it again.
  */
 import {
   dpApi,

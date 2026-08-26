@@ -2432,13 +2432,16 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
             throw Object.assign(new Error("design_library_response_invalid"), { status: 502 });
           }
           const storagePath = String(row?.thumbnailStoragePath || "");
-          // The tile is signed only when its path sits inside this design's own
-          // immutable prefix. A design with no image is published without one
-          // -- those are the failures a designer most needs to find, so they
-          // stay in the library rather than being filtered out of it.
+          // The tile is signed only when its path is one of this design's own
+          // approved proofs. ⛔ NOT the A.T.L.A.S. subtree: the library is the
+          // customer's surface and the master is never shown to a client, so
+          // the flat-first prefix is deliberately NOT accepted here even though
+          // the caller may be allowed to read it elsewhere. A design with no
+          // servable proof is published without a tile -- those are the
+          // failures a designer most needs to find, so they stay in the library
+          // rather than being filtered out of it.
           const signable = storagePath
-            && (authorizedGenerationViewPath(storagePath, ownerId, generationId)
-              || authorizedFlatAtlasPath(storagePath, ownerId, generationId));
+            && authorizedGenerationViewPath(storagePath, ownerId, generationId);
           const thumbnailUrl = signable
             ? await signedArtifactUrl(fetchImpl, token, cfg, storagePath).catch(() => null)
             : null;
@@ -2477,8 +2480,6 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
             completedAt: row?.completedAt || null,
             revisionCount: Number(row?.revisionCount || 0),
             currentRevision: row?.currentRevision == null ? null : Number(row.currentRevision),
-            masterContentHash: SHA256_PATTERN.test(String(row?.masterContentHash || ""))
-              ? String(row.masterContentHash).toLowerCase() : null,
             viewCount: Number(row?.viewCount || 0),
             viewsSuperseded: row?.viewsSuperseded === true,
             production,

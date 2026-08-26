@@ -98,37 +98,31 @@ BEGIN
         WHERE a.request_id=r.id
       ) AS "currentRevision",
       (
-        SELECT a.master_content_hash
-        FROM public.designpro_flat_atlas_revisions a
-        WHERE a.request_id=r.id
-        ORDER BY a.revision_sequence DESC LIMIT 1
-      ) AS "masterContentHash",
-      (
         SELECT pg_catalog.count(*)::int
         FROM public.designpro_generation_views v
         WHERE v.request_id=r.id AND v.superseded_at IS NULL
       ) AS "viewCount",
       designpro_private.flat_first_atlas_requires_new_run(r.id) AS "viewsSuperseded",
-      -- THE TILE. The Driver proof when this design has one the server will
-      -- still serve, otherwise the flattened master, otherwise nothing. A
-      -- superseded view set is not used as a preview either: the same fence
+      -- THE TILE IS A 3D PROOF, OR NOTHING.
+      --
+      -- ⛔ NEVER THE A.T.L.A.S. MASTER. The library lives in RevisionStudioIQ,
+      -- which is the customer's surface, and the flattened master is never
+      -- shown to a client -- it belongs to PanelPro Studio under the A.T.L.A.S.
+      -- generation id. This briefly fell back to `master_storage_path` for a
+      -- design with no servable proof, which would have put the production
+      -- authority on a customer's screen. A design with nothing servable shows
+      -- no tile and says why, which is both honest and the rule.
+      --
+      -- A superseded view set is not used as a preview either: the same fence
       -- that withholds those proofs in the workspace withholds them here, so
-      -- one design cannot look current in the library and refused inside it.
-      COALESCE(
-        (
-          SELECT v.storage_path
-          FROM public.designpro_generation_views v
-          WHERE v.request_id=r.id AND v.superseded_at IS NULL
-            AND v.consumer_role='driver'
-            AND NOT designpro_private.flat_first_atlas_requires_new_run(r.id)
-          LIMIT 1
-        ),
-        (
-          SELECT a.master_storage_path
-          FROM public.designpro_flat_atlas_revisions a
-          WHERE a.request_id=r.id
-          ORDER BY a.revision_sequence DESC LIMIT 1
-        )
+      -- one design cannot look current in the library and be refused inside it.
+      (
+        SELECT v.storage_path
+        FROM public.designpro_generation_views v
+        WHERE v.request_id=r.id AND v.superseded_at IS NULL
+          AND v.consumer_role='driver'
+          AND NOT designpro_private.flat_first_atlas_requires_new_run(r.id)
+        LIMIT 1
       ) AS "thumbnailStoragePath",
       -- Manufacturing, when it has started. Null is the honest answer for a
       -- design nobody has ordered, which is most of them.

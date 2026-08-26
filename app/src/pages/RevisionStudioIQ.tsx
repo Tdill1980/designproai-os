@@ -54,7 +54,7 @@ import {
   type RenderElementSeparatorHandle,
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
-import { AtlasLineageCard } from "@/components/revisioniq/AtlasLineageCard";
+import { DesignVersionRecordCard } from "@/components/revisioniq/DesignVersionRecordCard";
 import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
 import { dpApi } from "@/lib/designpro-api";
@@ -6110,14 +6110,19 @@ export default function RevisionStudioIQ() {
                     belong in the customer-facing revision view. It still lives on
                     the PanelPro Studio Board; this only unmounts it here. */}
 
-                {/* THE DESIGN AUTHORITY, ABOVE THE PANELS CUT FROM IT.
-                    Every version of the flattened A.T.L.A.S. master, its hash,
-                    the customer's words for each one and their timestamps --
-                    read from the same canonical history PanelPro reads, so V2
-                    means one thing on both surfaces. It sits above Production
-                    Layers because the panels below are extractions OF it, and
-                    a panel only makes sense beside the sheet it came from. */}
-                <AtlasLineageCard generationId={productionLayersId} />
+                {/* THE DESIGN'S VERSION RECORD — versions, the customer's own
+                    words for each, timestamps, and the identity trio that also
+                    appears in PanelPro.
+
+                    ⛔ NOT THE A.T.L.A.S. MASTER. The flattened sheet is never
+                    shown to a client; it lives in PanelPro Studio under the
+                    A.T.L.A.S. generation id, because that is the internal
+                    control room where the authority everything descends from is
+                    inspected. This surface is review / revise / approve / buy. */}
+                <DesignVersionRecordCard
+                  generationId={productionLayersId}
+                  orderNumber={orderNumberFor(selectedRender)}
+                />
 
                 <ProductionFlowLayersCard
                   // A panelizer-sourced card's `id` was a job id —
