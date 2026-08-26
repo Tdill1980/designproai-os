@@ -1,0 +1,238 @@
+name: DesignPanelAI vs A.T.L.A.S. Call 1 — Precision A/B
+
+# Answers one question and nothing else: what does the proven
+# design-panel-ai-generate implementation send to Gemini for the Precision
+# Climate Solutions payload, what does A.T.L.A.S. Call 1 send for the SAME
+# creative inputs, and what is the factual difference between the two.
+#
+# It runs on the droplet because that is where the key pool, the GENIE
+# geometry and the storage-loaded examples actually are. It changes nothing:
+# no deploy, no env write, no service restart, and no generation, revision,
+# view or artifact row. The harness is staged into a temp directory at run
+# time and removed afterwards, exactly like calls-1-7-seam.yml, so the
+# deployed release stays the artifact that was acceptance-tested.
+#
+# It spends three real Gemini image calls.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Protected live-provider action — spends three real Gemini image calls"
+        required: true
+        type: choice
+        default: DO_NOT_RUN
+        options:
+          - DO_NOT_RUN
+          - RUN_DESIGNIQ_AB
+      capture_only:
+        description: "Capture both pre-Gemini requests and stop — no provider calls"
+        required: true
+        type: boolean
+        default: false
+      brief:
+        description: "Design brief — defaults to the exact Precision Climate Solutions canary brief"
+        required: false
+        type: string
+        default: >-
+          Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with
+          sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif
+          company name, high contrast and legible at highway distance.
+      vehicle_year:
+        required: true
+        type: string
+        default: "2022"
+      vehicle_make:
+        required: true
+        type: string
+        default: Ford
+      vehicle_model:
+        required: true
+        type: string
+        default: F250 Crew Cab
+      vehicle_type:
+        required: true
+        type: string
+        default: truck
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-designiq-ab
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+  # The control prompt hash captured from the restylepro-os checkout for the
+  # Precision payload. The harness refuses to run if the vendored control no
+  # longer reproduces it — a drifted control is not a control.
+  EXPECT_CONTROL_HASH: 54dcfef81321c3ec
+
+jobs:
+  ab:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'RUN_DESIGNIQ_AB'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Prove protected live-provider intent
+        run: |
+          set +x
+          test "${{ inputs.confirmation }}" = "RUN_DESIGNIQ_AB"
+          test -n "$SSH_PRIVATE_KEY"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+
+      - name: Transpile the control creative engine
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          npm i --no-audit --no-fund --no-save esbuild
+          ESBUILD_BIN="$PWD/node_modules/.bin/esbuild" node scripts/build-control-prompt.mjs control-build
+          test -s control-build/control-prompt.mjs
+
+      - name: Pin the droplet SSH identity
+        id: ssh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          public_key="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          fail() { printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$1"; }
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$public_key" 2>/dev/null || fail 31 "automation private key could not be parsed"
+          observed=$(ssh-keygen -lf "$public_key" -E sha256 2>/dev/null | awk 'NR == 1 {print $2}')
+          [[ $observed == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || fail 38 "automation key fingerprint does not match the protected pin"
+
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts" || fail 33 "host-key scan failed"
+          [[ -s $known_hosts ]] || fail 34 "host-key scan returned nothing"
+          mapfile -t host_fingerprints < <(ssh-keygen -lf "$known_hosts" -E sha256 2>/dev/null | awk '{print $2}' | sort -u)
+          [[ ${#host_fingerprints[@]} -eq 1 ]] || fail 35 "ambiguous host key"
+          [[ ${host_fingerprints[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || fail 36 "host fingerprint does not match the protected pin"
+
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Run the A/B on the droplet
+        id: run
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+          AB_BRIEF: ${{ inputs.brief }}
+          AB_YEAR: ${{ inputs.vehicle_year }}
+          AB_MAKE: ${{ inputs.vehicle_make }}
+          AB_MODEL: ${{ inputs.vehicle_model }}
+          AB_TYPE: ${{ inputs.vehicle_type }}
+          AB_CAPTURE_ONLY: ${{ inputs.capture_only }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+          # The brief travels as base64 so quoting cannot mangle the exact text
+          # the two requests are compared on.
+          brief_b64=$(printf '%s' "$AB_BRIEF" | base64 -w0)
+
+          payload=$(tar -cz \
+            scripts/designiq-ab-precision.mjs \
+            control-build/control-prompt.mjs | base64 -w0)
+
+          set +e
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' EXPECT_CONTROL_HASH='$EXPECT_CONTROL_HASH' AB_PAYLOAD='$payload' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+          set -Eeuo pipefail
+          release=/opt/designproai-os/current
+          test -d "$release" || { echo "no deployed release at $release — dark deploy first"; exit 40; }
+          test -f /opt/designproai-os/shared/runtime.env || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
+          test -d "$release/runtime/node_modules/@supabase" || { echo "release dependencies missing"; exit 42; }
+
+          work=$(mktemp -d /tmp/designpro-ab.XXXXXX)
+          out="$work/ab-evidence"
+          mkdir -p "$out" "$work/runtime" "$work/scripts" "$work/control-build"
+          cleanup() { rm -rf "$work"; }
+          trap cleanup EXIT
+
+          printf '%s' "$AB_PAYLOAD" | base64 -d | tar -C "$work" -xz
+          # Borrow the DEPLOYED release's runtime modules and dependencies. The
+          # A.T.L.A.S. half of this comparison must be the code that is actually
+          # live, not the checkout.
+          ln -s "$release/runtime/node_modules" "$work/runtime/node_modules"
+          ln -s "$release/runtime/node_modules" "$work/node_modules"
+          for module in flat-first-atlas.cjs genie-universal-resolver.cjs flat-atlas-topology-examples.cjs \
+                        generation-provider.cjs designiq-prompt.cjs studio-os.cjs view-angles.cjs \
+                        atlas-cutout-fill.cjs atlas-master-qc.cjs photorealism-prompt.cjs \
+                        runtime-contract.cjs; do
+            [ -f "$release/runtime/$module" ] && ln -s "$release/runtime/$module" "$work/runtime/$module"
+          done
+          if [ -d "$release/runtime/atlas-examples" ]; then ln -s "$release/runtime/atlas-examples" "$work/runtime/atlas-examples"; fi
+
+          set -a; . /opt/designproai-os/shared/runtime.env; set +a
+          brief=$(printf '%s' "$AB_BRIEF_B64" | base64 -d)
+
+          cd "$work"
+          node scripts/designiq-ab-precision.mjs \
+            --out "$out" \
+            --control ./control-build/control-prompt.mjs \
+            --expect-control-hash "$EXPECT_CONTROL_HASH" \
+            --capture-only "$AB_CAPTURE_ONLY" \
+            --brief "$brief" \
+            --vehicle-year "$AB_YEAR" --vehicle-make "$AB_MAKE" \
+            --vehicle-model "$AB_MODEL" --vehicle-type "$AB_TYPE"
+          status=$?
+
+          echo "---AB-EVIDENCE-TAR---"
+          tar -C "$out" -cz . | base64 -w0
+          exit $status
+          REMOTE
+          ssh_status=$?
+          set -e
+
+          mkdir -p ab-evidence
+          if grep -q -- '---AB-EVIDENCE-TAR---' "$RUNNER_TEMP/ab.log"; then
+            sed -n '1,/---AB-EVIDENCE-TAR---/p' "$RUNNER_TEMP/ab.log" | sed '$d' > ab-evidence/ab-run.log
+            sed -n '/---AB-EVIDENCE-TAR---/,$p' "$RUNNER_TEMP/ab.log" | tail -n +2 | tr -d '\n' | base64 -d | tar -C ab-evidence -xz
+          else
+            cp "$RUNNER_TEMP/ab.log" ab-evidence/ab-run.log
+          fi
+          cat ab-evidence/ab-run.log
+          exit "$ssh_status"
+
+      - name: Upload the A/B evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: designiq-ab-precision-${{ github.run_id }}
+          path: ab-evidence/**
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Restate what a human still has to judge
+        if: always()
+        run: |
+          cat <<'NOTE'
+          Green is not a pass. This run produces evidence, not a verdict.
+
+            requests.json               the two complete pre-Gemini requests
+            A-control-commercial.png    what design-panel-ai-generate produced
+            A2-control-artboard.png     the control's own FLAT branch
+            B-atlas-master.png          what A.T.L.A.S. Call 1 produced
+
+          Design quality is judged by the owner, on the images. No gate in this
+          workflow asserts creative parity and none can.
+          NOTE
