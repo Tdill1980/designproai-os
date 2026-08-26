@@ -321,15 +321,24 @@ returns jsonb language sql as $prom$
                    from atlas_panels, lateral jsonb_array_elements(panels) c)
   )) || p_overrides;
 $prom$;
-create or replace function pg_temp.promotion_artifacts()
+-- enforce_artifact_storage_identity binds every artifact path to its OWN run:
+-- designpro/<tenant_key>/<run_id>/... So the artifacts must be built for the
+-- run being completed. Handing the Standard run the A.T.L.A.S. run's artifacts
+-- tripped that trigger first, and test D never reached the legacy contract it
+-- exists to prove.
+create or replace function pg_temp.promotion_artifacts(p_run uuid)
 returns jsonb language sql as $art$
   select jsonb_agg(jsonb_build_object(
     'kind','panel','surfaceKey',c->>'surfaceKey',
-    'storagePath',c->>'storagePath','contentHash',c->>'contentHash',
-    'byteSize',1024,
+    'storagePath','designpro/'||r.tenant_key||'/'||r.id::text
+      ||'/panels/'||(c->>'contentHash')||'.png',
+    'contentHash',c->>'contentHash','byteSize',1024,
     'metadata',jsonb_build_object(
       'sourceMasterHash',c->>'sourceMasterHash','bleedInches',5)
-  )) from atlas_panels, lateral jsonb_array_elements(panels) c;
+  ))
+  from public.designpro_workflow_runs r, atlas_panels,
+    lateral jsonb_array_elements(panels) c
+  where r.id=p_run;
 $art$;
 
 create temporary table panel_leases on commit drop as
@@ -353,7 +362,7 @@ select throws_ok($tb$
       (select jsonb_agg(case when c->>'surfaceKey'='driver'
          then c || '{"trimWidthIn":1}'::jsonb else c end)
        from atlas_panels, lateral jsonb_array_elements(panels) c))),
-    repeat('8',64),pg_temp.promotion_artifacts())
+    repeat('8',64),pg_temp.promotion_artifacts((select atlas_run from runs)))
 $tb$,'call9_atlas_panel_promotion_contract_failed',
   'a panel reporting geometry Call 1 did not cut is refused');
 
@@ -368,7 +377,7 @@ select throws_ok($tc$
          case when c->>'surfaceKey'='rear' then repeat('7',64)
               else c->>'contentHash' end)
        from atlas_panels, lateral jsonb_array_elements(panels) c))),
-    repeat('8',64),pg_temp.promotion_artifacts())
+    repeat('8',64),pg_temp.promotion_artifacts((select atlas_run from runs)))
 $tc$,'call9_atlas_panel_promotion_contract_failed',
   'a promoted hash that is not the Call 1 panel on the frozen snapshot is refused');
 
@@ -382,7 +391,7 @@ select throws_ok($tc2$
     (select jsonb_agg(case when a->>'surfaceKey'='hood'
        then jsonb_set(a,'{metadata,sourceMasterHash}',to_jsonb(repeat('0',64)))
        else a end)
-     from jsonb_array_elements(pg_temp.promotion_artifacts()) a))
+     from jsonb_array_elements(pg_temp.promotion_artifacts((select atlas_run from runs))) a))
 $tc2$,'call9_atlas_panel_promotion_contract_failed',
   'a panel artifact naming a different master is refused');
 
@@ -392,7 +401,8 @@ select throws_ok($td$
     (select standard_panels_stage from panel_leases),
     '64000000-0000-4000-8000-000000000001',
     pg_temp.identity_for((select standard_run from runs)),
-    pg_temp.promotion(),repeat('8',64),pg_temp.promotion_artifacts())
+    pg_temp.promotion(),repeat('8',64),
+    pg_temp.promotion_artifacts((select standard_run from runs)))
 $td$,'call9_unique_proof_region_contract_failed',
   'a run with no Call 1 panels still faces the proof-region contract');
 
@@ -402,7 +412,7 @@ select is(
     (select atlas_panels_stage from panel_leases),
     '5c000000-0000-4000-8000-000000000001',
     pg_temp.identity_for((select atlas_run from runs)),
-    pg_temp.promotion(),repeat('8',64),pg_temp.promotion_artifacts()
+    pg_temp.promotion(),repeat('8',64),pg_temp.promotion_artifacts((select atlas_run from runs))
   ),true,
   'six panels bound to the accepted master advance without any Call 8 proof'
 );
