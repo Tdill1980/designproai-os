@@ -4669,151 +4669,35 @@ export default function RevisionStudioIQ() {
             most of the work, and all of it was unreachable before. */}
         {!selectedRender && layoutMode === "studio" && (
           <div className="mb-6 w-full">
-            <DesignLibrary onOpen={openDesignById} />
+            {/* THE one browse surface. The search box above drives it, so there
+                is a single field over a single list. */}
+            <DesignLibrary
+              onOpen={openDesignById}
+              query={searchQuery}
+              emptySlot={<SproketTipsSlideshow />}
+            />
             {openingId && (
               <p className="mt-2 text-[11px] text-zinc-500">Opening {formatDid(openingId)}…</p>
             )}
           </div>
         )}
 
-        {!selectedRender && layoutMode === "studio" && (
-          <div className="w-full">
-            {/* Only show the bouncer on the very first fetch — once any page
-                of data is in we render the grid (with SproketTipsSlideshow
-                covering the empty state) so a stalled background refetch
-                can't trap users behind the loading screen. */}
-            {renders === undefined && !rendersError ? (
-              <div className="flex flex-col items-center justify-center py-20 gap-4">
-                <img
-                  src="/characters/sproket/sproket-rocket-launch.png"
-                  alt="Loading"
-                  className="w-14 h-14 sm:w-20 sm:h-20 md:w-32 md:h-32 object-contain animate-bounce"
-                />
-                <p className="text-zinc-500 text-sm font-poppins">Loading your Custom Wrap Designs...</p>
-              </div>
-            ) : rendersError ? (
-              <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-                <img
-                  src="/characters/sproket/sproket-clipboard.png"
-                  alt=""
-                  className="w-16 h-16 md:w-24 md:h-24 object-contain opacity-80"
-                />
-                <div>
-                  <p className="text-white font-semibold font-poppins mb-1">We couldn't load your designs</p>
-                  <p className="text-zinc-400 text-sm max-w-md">Something went wrong fetching your Custom Wrap Designs. Check your connection and try again.</p>
-                </div>
-                <Button
-                  variant="outline"
-                  className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                  onClick={() => refetchRenders()}
-                >
-                  <RefreshCw className="w-4 h-4 mr-1.5" />
-                  Retry
-                </Button>
-              </div>
-            ) : (
-              <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {(() => {
-                  // Group renders by VEHICLE (year|make|model) so all designs/revisions
-                  // for the same vehicle appear inside one card with a slider.
-                  // MyVehiclePro renders are the exception — each one is a distinct
-                  // photo edit the shop showed a customer, so it always gets its own
-                  // card (keyed by id) and never collapses into the vehicle group.
-                  const grouped = new Map<string, any[]>();
-                  for (const render of renders || []) {
-                    const isMvp = (render.mode_type || "").startsWith("myvehicle_");
-                    if (isMvp) {
-                      grouped.set(render.id, [render]);
-                      continue;
-                    }
-                    const mk = (render.vehicle_make || "").toLowerCase().trim();
-                    const md = (render.vehicle_model || "").toLowerCase().trim();
-                    const yr = render.vehicle_year || 0;
-                    const groupKey = `${yr}|${mk}|${md}`;
-                    if (!grouped.has(groupKey)) grouped.set(groupKey, []);
-                    grouped.get(groupKey)!.push(render);
-                  }
+        {/* ⛔ THE DUPLICATE VEHICLE-GROUPED GRID IS GONE. ONE LIBRARY.
 
-                  // For each group, sort by newest first
-                  const cards: any[] = [];
-                  for (const group of grouped.values()) {
-                    group.sort((a: any, b: any) => {
-                      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-                    });
-                    cards.push({ allVersions: group });
-                  }
+            This surface rendered two grids over the same designs: the Design
+            Library above, and a vehicle-grouped card feed here. Two answers to
+            "what designs exist" is worse than either -- and this was the weaker
+            answer, because it dropped every design that had no image yet and
+            grouped the rest by vehicle, which hid exactly the failures a
+            designer most needs to find.
 
-                  return cards.map(({ allVersions }) => (
-                    <VehicleGroupCard
-                      key={allVersions[0].id}
-                      allVersions={allVersions}
-                      orderNumberByRenderId={orderNumberByRenderId}
-                      failedImages={failedImages}
-                      setFailedImages={setFailedImages}
-                      getMissingViews={getMissingViews}
-                      getViews={getViews}
-                      formatVehicleInfo={formatVehicleInfo}
-                      formatDesignName={formatDesignName}
-                      deleteRender={deleteRender}
-                      onSelect={(render) => {
-                        setSelectedRender(render);
-                        setCurrentViewIndex(0);
-                        setCompletedMissingViews([]);
-                        setFailedMissingViews([]);
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      }}
-                      onSendProof={(render) => {
-                        setSelectedRender(render);
-                        setShowSendForApproval(true);
-                      }}
-                      onDownloadAll={handleDownloadAllRenders}
-                      onBuildFiles={(render) => {
-                        // Push this existing design to its Design Assets page,
-                        // where the artboard + print files get built (Build Assets).
-                        // Pass the row's OWN id — gallery cards are always real
-                        // real design rows, so the page resolves views +
-                        // stored proof + artboards with a direct lookup on any
-                        // device (the DesignIQ id's row is near-empty and its
-                        // reverse link misses in production). The page maps the
-                        // row id to the canonical generation id internally. Stash
-                        // the buildctx as a belt-and-suspenders extra.
-                        const gid = render?.id || genIdOf(render);
-                        stashBuildCtx(render, gid);
-                        navigate(`/design-assets/${gid}`);
-                      }}
-                    />
-                  ));
-                })()}
-
-                {renders?.length === 0 && !isFetchingNextPage && (
-                  <SproketTipsSlideshow />
-                )}
-              </div>
-
-              {/* Infinite scroll sentinel + manual Load More fallback */}
-              <div ref={loadMoreRef} className="h-1" />
-              {isFetchingNextPage && (
-                <div className="flex items-center justify-center py-6 gap-2">
-                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-                  <span className="text-zinc-500 text-sm">Loading more designs...</span>
-                </div>
-              )}
-              {hasNextPage && !isFetchingNextPage && (
-                <div className="flex justify-center mt-6">
-                  <Button
-                    variant="outline"
-                    className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                    onClick={() => fetchNextPage()}
-                  >
-                    Load More
-                  </Button>
-                </div>
-              )}
-              </>
-            )}
-          </div>
-        )}
+            Nothing it did uniquely was lost. Its search box, its tool filter,
+            its Team/Mine toggle and GalleryMode are the page chrome above and
+            drive the library now; its per-design actions live in the design
+            workspace, which is where they always acted. The feed query itself
+            stays -- `renders` is what the workspace, the deep link and the
+            version chain resolve against -- it simply no longer draws a second
+            grid of its own. */}
 
         {/* ================================================================ */}
         {/* DETAIL VIEW - takes over when a render is selected               */}

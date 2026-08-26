@@ -324,6 +324,51 @@ BEGIN
     -- carries an empty list, which is the honest answer and the one the UI
     -- already reports as "panels still building".
     'callOnePanels',COALESCE(r.metadata->'callOnePanels','[]'::jsonb),
+    -- THE FORENSIC RECORD, FOR THE CONTROL ROOM.
+    --
+    -- Every value here was written by Call 1 at authoring time and has sat on
+    -- the revision unread ever since. PanelPro Studio is the source-of-truth
+    -- inspection surface for DesignPro production, and it could not show the
+    -- master's own QC verdict, which model produced it, which prompt version,
+    -- how many authoring attempts it took, or whether the sheet arrived with
+    -- cut-outs that had to be filled -- all of which are the first questions
+    -- asked when a panel looks wrong.
+    --
+    -- Kept out of the customer's surface: this is admin material, and the
+    -- library and the studio read different routes.
+    'qc',pg_catalog.jsonb_build_object(
+      'masterQcPassed',r.metadata->'masterQcPassed',
+      'masterQcConfidence',r.metadata->'masterQcConfidence',
+      'masterQcModel',r.metadata->>'masterQcModel',
+      'masterQcContract',r.metadata->>'masterQcContract',
+      'masterQcReview',r.metadata->'masterQcReview',
+      'masterQcDeterministic',r.metadata->'masterQcDeterministic',
+      'masterAuthoringAttempts',r.metadata->'masterAuthoringAttempts',
+      -- A cut-out is a PANEL defect, not a broken design: the sheet is repaired
+      -- deterministically and the affected surfaces are flagged for human QC.
+      -- Which surfaces, and what was found, is exactly what that human needs.
+      'masterCutoutSurfaces',COALESCE(r.metadata->'masterCutoutSurfaces','[]'::jsonb),
+      'masterCutoutFindings',COALESCE(r.metadata->'masterCutoutFindings','[]'::jsonb),
+      'cutoutFillApplied',r.metadata->'cutoutFillApplied',
+      'cutoutFillContract',r.metadata->>'cutoutFillContract',
+      -- What the panels were actually cut from. Equals the canonical master on
+      -- a clean sheet; differs when cut-outs were filled first.
+      'panelSourceHash',r.metadata->>'panelSourceHash',
+      'canonicalMasterHash',r.metadata->>'canonicalMasterHash'
+    ),
+    'provenance',pg_catalog.jsonb_build_object(
+      'pipelineMode',r.metadata->>'pipelineMode',
+      'inputContract',r.metadata->>'inputContract',
+      'contract',r.metadata->>'contract',
+      'topology',r.metadata->>'topology',
+      'providerContract',r.metadata->>'masterProviderContract',
+      'promptHash',r.metadata->>'masterPromptHash',
+      'requestedImageSize',r.metadata->>'requestedImageSize',
+      'deliveredWidthPx',r.metadata->'masterDeliveredWidthPx',
+      'deliveredHeightPx',r.metadata->'masterDeliveredHeightPx',
+      'nativelyFourK',r.metadata->'masterNativelyFourK',
+      'artboardPortVersion',r.metadata->>'designPanelArtboardPortVersion'
+    ),
     'exampleUsed',r.example_used,
     'exampleGuideHash',r.example_guide_hash,
     'exampleMasterHash',r.example_master_hash,

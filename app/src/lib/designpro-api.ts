@@ -235,6 +235,57 @@ export type FlatAtlasRevision = {
   expiresIn?: 300;
   model: string;
   promptVersion: string;
+  /**
+   * THE FORENSIC RECORD — PanelPro Studio only.
+   *
+   * The master's own QC verdict, how many authoring attempts it took, and
+   * whether the sheet arrived with cut-outs that were filled before the panels
+   * were cut. These are the first questions asked when a panel looks wrong, and
+   * they were persisted at authoring time and never surfaced.
+   */
+  qc?: {
+    masterQcPassed?: boolean | null;
+    masterQcConfidence?: number | null;
+    masterQcModel?: string | null;
+    masterQcContract?: string | null;
+    masterQcReview?: unknown;
+    masterQcDeterministic?: unknown;
+    masterAuthoringAttempts?: number | null;
+    /** Surfaces whose panels arrived holed and must not print un-reviewed. */
+    masterCutoutSurfaces?: string[];
+    masterCutoutFindings?: unknown[];
+    /**
+     * One record per surface the fill repaired: how much was punched out and
+     * in how many components. `zoneFraction` is the share of that surface's
+     * zone -- 0.27 is a vehicle silhouette, 0.04 is a wheel arch, and the
+     * difference decides whether the proof was safe.
+     */
+    cutoutFillApplied?: Array<{
+      surfaceKey?: string;
+      pixels?: number;
+      components?: number;
+      zoneFraction?: number;
+      unresolvedPixels?: number;
+    }> | null;
+    cutoutFillContract?: string | null;
+    /** What the panels were cut from; equals the master on a clean sheet. */
+    panelSourceHash?: string | null;
+    canonicalMasterHash?: string | null;
+  } | null;
+  /** How this master was produced: pipeline, contracts, provider, delivery. */
+  provenance?: {
+    pipelineMode?: string | null;
+    inputContract?: string | null;
+    contract?: string | null;
+    topology?: string | null;
+    providerContract?: string | null;
+    promptHash?: string | null;
+    requestedImageSize?: string | null;
+    deliveredWidthPx?: number | null;
+    deliveredHeightPx?: number | null;
+    nativelyFourK?: boolean | null;
+    artboardPortVersion?: string | null;
+  } | null;
   affectedSurfaces: GenieSurfaceKey[];
   panelMap: FlatAtlasPanelMapEntry[];
   /**

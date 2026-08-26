@@ -431,11 +431,23 @@ other.** The canonical contract (2026-08-24, §6) names both:
 | The branded studio — tool rail, canvas, seven view tabs, upload/text/logo/adjust/layers/move/scale/rotate/arrange | `/designpro/jobs/:generationId/panel-studio` | `app/src/pages/DesignProStudio.tsx` |
 | The production/QC board — proof ∥ panel per side, dimensions, hashes, human preflight, downstream artifacts | `/designpro/jobs/:generationId/panelpro` | `app/src/pages/designpro/PanelProStudioBoard.tsx` |
 
-Both are routed and both bind to the same generation. An earlier revision of
-this rule named `AdminGeminiCompareStudio.tsx` as the restore target; the
-canonical contract names `DesignProStudio.tsx`, and that is what is routed.
-`AdminGeminiCompareStudio.tsx` is unrouted RestylePro import weight, not the
-DesignProAI studio.
+**⚠️ THAT TABLE IS STALE AT `/panelpro`. THE ROUTE IS THE ANSWER. (2026-08-26)**
+
+`3bc41b6` moved `/designpro/jobs/:generationId/panelpro` onto
+`AdminGeminiCompareStudio.tsx` deliberately, and said why in its own message:
+*"The PanelPro route mounts the full Admin Studio, which opens the job the URL
+names; the per-surface validator keeps its own path one level down."* So:
+
+| Surface | Route | File |
+|---|---|---|
+| **PanelPro Studio — the internal QC/lineage control room** | `/designpro/jobs/:generationId/panelpro` | `pages/AdminGeminiCompareStudio.tsx` |
+| The per-surface validator | `/designpro/jobs/:generationId/panelpro/surfaces` | `pages/designpro/PanelProStudioBoard.tsx` |
+
+An earlier revision of this rule called `AdminGeminiCompareStudio.tsx` "unrouted
+RestylePro import weight". It is routed, and it is the control room. **Determine
+this from the route and its history, not from this table** — the table has now
+been wrong in both directions, and `git log -L` on the route line settles it in
+one command.
 
 The board is a validator, not a second producer — but it IS the design team's
 complete production workspace for one order, keyed by `generationId` · Design

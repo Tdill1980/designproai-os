@@ -172,17 +172,32 @@ export function matchesQuery(entry: DesignLibraryEntry, needle: string): boolean
 
 export function DesignLibrary({
   onOpen,
+  query: externalQuery,
+  emptySlot,
   className,
 }: {
   /** Open this design in the studio, in place. */
   onOpen?: (generationId: string) => void;
+  /**
+   * The studio's own search box drives this when it is supplied, and the
+   * library renders no second one. Two search fields over one list is the
+   * duplication this surface exists to remove.
+   */
+  query?: string;
+  /**
+   * Rendered inside the empty state. The studio's SPROKET tips slideshow lived
+   * in the grid this library replaced, so it is carried here rather than lost
+   * with it -- the empty shelf is exactly where a tip is worth reading.
+   */
+  emptySlot?: React.ReactNode;
   className?: string;
 }) {
   const [entries, setEntries] = useState<DesignLibraryEntry[] | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [windowKey, setWindowKey] = useState<WindowKey>("4m");
-  const [query, setQuery] = useState("");
+  const [ownQuery, setOwnQuery] = useState("");
+  const query = externalQuery === undefined ? ownQuery : externalQuery;
   const [pipeline, setPipeline] = useState<PipelineFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [reloadKey, setReloadKey] = useState(0);
@@ -247,15 +262,17 @@ export function DesignLibrary({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Company, design name, vehicle, generation id or DID…"
-            className="h-8 border-zinc-700 bg-zinc-950 pl-8 text-[12px] text-zinc-200 placeholder:text-zinc-600"
-          />
-        </div>
+        {externalQuery === undefined && (
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+            <Input
+              value={ownQuery}
+              onChange={(event) => setOwnQuery(event.target.value)}
+              placeholder="Company, design name, vehicle, generation id or DID…"
+              className="h-8 border-zinc-700 bg-zinc-950 pl-8 text-[12px] text-zinc-200 placeholder:text-zinc-600"
+            />
+          </div>
+        )}
         {/* The window is a real query parameter, not a client-side slice: a
             wider window asks the server for more rows. */}
         <div className="flex items-center gap-1">
@@ -326,9 +343,12 @@ export function DesignLibrary({
       )}
 
       {entries && entries.length === 0 && !error && (
-        <p className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-3 text-[11px] text-zinc-400">
-          No DesignPro generations in this window. Widen it, or create a design.
-        </p>
+        <div className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-3">
+          <p className="text-[11px] text-zinc-400">
+            No DesignPro generations in this window. Widen it, or create a design.
+          </p>
+          {emptySlot}
+        </div>
       )}
 
       {entries && entries.length > 0 && visible.length === 0 && (

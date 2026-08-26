@@ -968,6 +968,14 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
       },
       model: String(row.model),
       promptVersion: String(row.promptVersion),
+      // THE FORENSIC RECORD. Passed through as the database stated it, for the
+      // control room only -- PanelPro reads this route, the customer's library
+      // and workspace read different ones. Shapes are not re-asserted here
+      // because they are diagnostic prose and numbers rather than identities
+      // anything is bound by; the identities above are the ones validated.
+      qc: row.qc && typeof row.qc === "object" && !Array.isArray(row.qc) ? row.qc : null,
+      provenance: row.provenance && typeof row.provenance === "object" && !Array.isArray(row.provenance)
+        ? row.provenance : null,
       affectedSurfaces: affectedSurfaces.map(String),
       panelMap,
       instruction: row.instruction == null ? null : String(row.instruction).slice(0, 4000),
