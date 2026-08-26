@@ -54,3 +54,4 @@ jobs:
             /tmp/full.log
             /tmp/full.rc
           retention-days: 1
+# trigger: 2026-08-26T22:09Z
