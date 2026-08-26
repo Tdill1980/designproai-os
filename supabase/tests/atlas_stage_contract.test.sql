@@ -17,7 +17,7 @@
 -- carried across the seam from the accepted A.T.L.A.S. revision's metadata.
 
 begin;
-select plan(27);
+select plan(31);
 
 select has_function(
   'designpro_private','workflow_run_is_atlas',
@@ -431,6 +431,24 @@ select throws_ok($tc2$
 $tc2$,'call9_atlas_panel_promotion_contract_failed',
   'a panel artifact naming a different master is refused');
 
+-- complete_designpro_stage RETURNS FALSE, without raising, when the stage is not
+-- found running under the exact lease. "caught: no exception" is therefore
+-- ambiguous between "the contract allowed it" and "the lease was not matched",
+-- and I cannot tell those apart from the outside. These state the lease.
+select is(
+  (select status||'|'||lease_token::text
+   from public.designpro_workflow_stages
+   where id=(select standard_panels_stage from panel_leases)),
+  'running|64000000-0000-4000-8000-000000000001',
+  'the Standard panels.build stage is running under the exact lease D uses'
+);
+select ok(
+  (select lease_expires_at>clock_timestamp()
+   from public.designpro_workflow_stages
+   where id=(select standard_panels_stage from panel_leases)),
+  'that lease has not expired'
+);
+
 -- D. A Standard run cannot borrow the A.T.L.A.S. branch by wording alone.
 select throws_ok($td$
   select public.complete_designpro_stage(
@@ -441,6 +459,22 @@ select throws_ok($td$
     pg_temp.promotion_artifacts((select standard_run from runs)))
 $td$,'call9_unique_proof_region_contract_failed',
   'a run with no Call 1 panels still faces the proof-region contract');
+
+-- A raised the LEGACY contract error on a clean A.T.L.A.S. receipt, which is
+-- only possible if v_atlas was false for it at that moment -- even though B, C
+-- and C2 had just proven the A.T.L.A.S. branch was being taken for this exact
+-- stage. State both facts here so the next failure names which one moved.
+select is(
+  designpro_private.workflow_run_is_atlas((select atlas_run from runs)),
+  true,'the A.T.L.A.S. run is still A.T.L.A.S. immediately before the clean promotion'
+);
+select is(
+  (select status||'|'||lease_token::text
+   from public.designpro_workflow_stages
+   where id=(select atlas_panels_stage from panel_leases)),
+  'running|5c000000-0000-4000-8000-000000000001',
+  'the A.T.L.A.S. panels.build stage is still running under its lease'
+);
 
 -- A. The clean promotion advances on A.T.L.A.S. evidence alone.
 select is(
