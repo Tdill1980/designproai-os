@@ -44,6 +44,23 @@ const viewSetGuardFile = readdirSync(migrationsDir)
   .at(-1);
 assert.ok(viewSetGuardFile, "no migration defines flat_first_atlas_view_set_valid");
 const viewSetGuardSql = readFileSync(new URL(viewSetGuardFile, migrationsDir), "utf8");
+// THE CURRENT PROMPT VERSION MAY LIVE IN A PATCH, NOT IN THE DEFINING BODY.
+//
+// A migration that bumps the pinned authoring prompt version PATCHES the live
+// body rather than restating it -- restating reproduces an older definition and
+// silently reverts whatever the migrations in between changed, which is exactly
+// how the sibling-surface fan-out could be lost. So the newest migration that
+// DEFINES the function is not necessarily the one that carries the current
+// version string. Structural assertions still read the defining body; the
+// version literal is asserted across every migration that touches the function,
+// newest last.
+const viewSetContractSql = readdirSync(migrationsDir)
+  .filter((name) => name.endsWith(".sql"))
+  .filter((name) => readFileSync(new URL(name, migrationsDir), "utf8")
+    .includes("designpro_private.flat_first_atlas_view_set_valid"))
+  .sort()
+  .map((name) => readFileSync(new URL(name, migrationsDir), "utf8"))
+  .join("\n");
 const closeupBoundarySql = readFileSync(new URL(
   "../supabase/migrations/20260822090000_designpro_closeup_schema_boundaries.sql",
   import.meta.url,
@@ -79,6 +96,14 @@ test("the owner-callable regeneration RPC refuses exact Atlas v3 before any muta
 
 test("terminal Atlas owner reads require exact seven current roles and one audited lineage", () => {
   assert.match(viewSetGuardSql, /flat_first_atlas_view_set_valid/);
+  // Pinned across the defining body and every later patch, newest last, so a
+  // version bump that patches in place satisfies it and a stale pin does not.
+  assert.match(viewSetContractSql, /designpro-flat-first-atlas-20260826\.v8/);
+  assert.ok(
+    viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260826.v8")
+      > viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260825.v7"),
+    "the newest migration touching the gate must pin the current prompt version",
+  );
   assert.match(
     viewSetGuardSql,
     /OR NOT \(CASE[\s\S]*masterQcConfidence[\s\S]*END\)/,
@@ -97,7 +122,6 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
     "producePassengerView",
     "deterministicMirror",
     "driverContentHash",
-    "designpro-flat-first-atlas-20260825.v7",
     "designpro.atlas-master-semantic-qc.v1",
     "designpro.flat-first-master-provider.v1",
     "designpanel-ai-generate.artboard.20260822.v1",

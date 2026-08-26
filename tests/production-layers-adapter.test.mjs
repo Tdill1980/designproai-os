@@ -183,7 +183,7 @@ test("the entice set never claims production eligibility or a clean panel", () =
 test("the Call-1 panels are published, validated and typed end to end", () => {
   const gateway = readFileSync(new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
   const migration = readFileSync(new URL(
-    "../supabase/migrations/20260826020000_designpro_revision_studio_surface.sql",
+    "../supabase/migrations/20260826030000_designpro_revision_studio_surface.sql",
     import.meta.url,
   ), "utf8");
 

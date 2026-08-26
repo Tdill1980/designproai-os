@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-six-migration chain', () => {
-  assert.equal(migrationNames.length, 56);
+test('fresh bootstrap contains one ordered fifty-seven-migration chain', () => {
+  assert.equal(migrationNames.length, 57);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -116,11 +116,14 @@ test('fresh bootstrap contains one ordered fifty-six-migration chain', () => {
       // the stage logic emitted it and the CHECK refused it, so the insert died
       // before any later assertion could run.
       '20260826010100',
+      // v8: Call 1 opens as the designer and the atlas is its output contract.
+      // Patches the live gate's pinned prompt version; never restates the body.
+      '20260826020000',
       // RevisionStudioIQ's own read: the generation-keyed workspace, the six
       // Call-1 panels published through the atlas path, and the design team's
       // existing QC membership extended from the request row to the rest of
       // one design's record.
-      '20260826020000',
+      '20260826030000',
     ],
   );
 });

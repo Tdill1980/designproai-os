@@ -43,7 +43,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // call, and the sheet is described as printed vinyl on the roll rather than as
 // vehicle flanks. v5 masters are refused rather than migrated, and this string
 // is the mechanism that refuses them.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260825.v7";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260826.v8";
 // Bounded QC-corrective re-rolls inside the one claimed authoring fence. Three
 // is the proof QC's budget for the same generate/inspect/correct loop.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
@@ -893,17 +893,48 @@ function atlasCreativeRules(input) {
 }
 
 function atlasPrompt(input, manifest) {
-  const map = manifest.zones.map((zone) => (
-    `${zone.surfaceKey}: box [${zone.x},${zone.y},${zone.w},${zone.h}], rotation ${zone.rotationDegrees} degrees`
-  )).join("\n");
+  // THE REFERENCE STAMPS REAL INCHES INTO THE PANEL LIST.
+  //
+  // design-panel-ai-generate's artboard branch renders each side as
+  // `• DRIVER SIDE — 153" x 56"` (index.ts:348-350, from resolveArtboardPanels).
+  // Call 1's zone map carried pixel boxes and rotations only, so the design call
+  // knew where each surface sat on the canvas but never how large it is in the
+  // real world -- and a designer scales lettering, motif and hierarchy to the
+  // physical panel, not to a pixel box.
+  const map = manifest.zones.map((zone) => {
+    const inches = Number.isFinite(Number(zone.trimWidthIn)) && Number.isFinite(Number(zone.trimHeightIn))
+      ? ` — ${Number(zone.trimWidthIn)}" x ${Number(zone.trimHeightIn)}" of real printed vinyl`
+      : "";
+    return `${zone.surfaceKey}: box [${zone.x},${zone.y},${zone.w},${zone.h}], rotation ${zone.rotationDegrees} degrees${inches}`;
+  }).join("\n");
   const continuity = manifest.seamContinuity.relationships
     .map((relationship) => relationship.surfaces.join(" <-> ")).join(", ");
   const geometryDescription = manifest.geometryAuthority.status === "provisional"
     ? "cited Google-grounded, deterministic PROVISIONAL proof-layout rectangles"
     : "operator-validated GENIE rectangles";
-  return `You are DesignPro's flat vehicle-wrap atlas artist. Create ONE continuous unwrapped livery atlas, not a vehicle photograph and not six unrelated designs.
+  // THE DESIGNER LEADS. THE TOPOLOGY IS THE OUTPUT CONTRACT.
+  //
+  // A.T.L.A.S. is the output topology of the proven design engine, not a
+  // replacement for it. This prompt used to open with ~4,600 characters of
+  // atlas instruction and append the DesignIQ direction underneath it as a
+  // trailing "DESIGNIQ FLAT CREATIVE DIRECTION:" section -- so the call that
+  // authors the customer's design read as a topology brief with a designer
+  // footnote. The reference inverts that: design-panel-ai-generate's artboard
+  // branch opens as the designer, names the vehicle, lists the panels with
+  // their real inches, states the brief, and closes with a short output-format
+  // instruction -- 1,516 characters in total (index.ts:340-390).
+  //
+  // Nothing creative is rewritten here. `atlasCreativeRules(input)` is the same
+  // DesignIQ direction, byte for byte; it now leads instead of trailing, and
+  // the atlas half is stated once each instead of twice. The three blocks RULE
+  // 0.15 protects -- SOLID PANELS, the PAIRED FLAT-TO-FINISHED LESSON and ONE
+  // COHESIVE WRAP -- are reproduced verbatim and in full.
+  return `${atlasCreativeRules(input)}
 
-The FIRST attached image is a neutral monochrome deterministic installer-map guide generated from ${geometryDescription}. Treat its rectangles as masks and topology only. Its gray/black/white values have ZERO palette or style meaning. Paint the requested livery inside those exact rectangles. Return a square artwork canvas in exactly the same layout. Leave everything outside the rectangles blank/transparent. These rectangles establish Calls 1-7 proof topology only; they are never authorization for print production.
+━━━ OUTPUT FORMAT: ONE FLATTENED A.T.L.A.S. MASTER ━━━
+Deliver that design as ONE continuous unwrapped livery atlas -- a single square artwork canvas -- not a vehicle photograph and not six unrelated designs.
+
+That guide is generated from ${geometryDescription}. Its grays and outlines carry ZERO palette or style meaning. Return the same layout on a square canvas and leave everything outside the rectangles blank/transparent. These rectangles establish Calls 1-7 proof topology only; they are never authorization for print production.
 
 TOPOLOGY LOCK:
 - passenger flank is the tall rotated rectangle on the LEFT (clockwise 90 degrees)
@@ -915,10 +946,8 @@ TOPOLOGY LOCK:
 - semantic continuity pairs are: ${continuity}
 - these are design-intent joins only; do not invent contour lines or claim exact PVO seam geometry
 
-ZONE MAP:
+ZONE MAP -- each box is a real printed surface at the size stated; scale lettering, motif and hierarchy to those inches:
 ${map}
-
-OUTPUT CLEANLINESS: The guide carries geometry only -- rectangle positions, sizes and rotations. Its grays, outlines and background state where each surface sits and carry no palette, style or content meaning. Output your own artwork inside those rectangles.
 
 FULL BLEED PER ZONE: fill every rectangle listed in the ZONE MAP with opaque artwork from corner to corner. Each listed box is 100% covered: no gap, no empty region, no transparent pixel and no unpainted area anywhere inside it, on any surface. Outside the rectangles the canvas stays empty.
 
@@ -931,9 +960,6 @@ ONE COHESIVE WRAP, FLATTENED FROM DIRECTLY ABOVE: this is an EXACT flattened top
 REFERENCE FIREWALL: Any attached installer-map, flattened top-view or finished-vehicle examples are TOPOLOGY/LAYOUT references only. Extract only panel arrangement, orientation, surface correspondence, masks and seam-continuity intent. IGNORE their palette, imagery, text, logos, brand and style. The customer's brief and verified customer-owned assets are the sole style source.
 
 FIDELITY: This atlas will condition seven downstream 3D proofs. Do not invent unrelated graphics between zones. Preserve supplied customer identity faithfully. This v1 atlas is design-proof authority only; exact typography/logo overlays and true PVO contours remain deterministic prepress concerns.
-
-DESIGNIQ FLAT CREATIVE DIRECTION:
-${atlasCreativeRules(input)}
 `;
 }
 
@@ -1473,6 +1499,14 @@ async function generateOrReuseFlatAtlas(options) {
       parts: attemptParts,
       aspectRatio: "1:1",
       imageSize: "4K",
+      // PARITY WITH THE AUTHORITY. design-panel-ai-generate sets temperature
+      // 1.0 explicitly on every image call (index.ts:1334) and pins one model
+      // with no fallback (index.ts:1320). Call 1 omitted the temperature
+      // entirely -- so the design was authored at whatever the API defaulted to
+      // -- and inherited a Flash-image fallback that could author the customer's
+      // design on a different model than the locked one.
+      temperature: 1,
+      lockModel: true,
       label: attempt === 1
         ? "flat-first canonical atlas"
         : `flat-first canonical atlas (corrective re-roll ${attempt})`,
