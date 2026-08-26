@@ -41,6 +41,8 @@ const atlas = require_("./flat-first-atlas.cjs");
 const genie = require_("./genie-universal-resolver.cjs");
 const examples = require_("./flat-atlas-topology-examples.cjs");
 const { createProvider } = require_("./generation-provider.cjs");
+const ace = require_("./designiq-prompt.cjs");
+const { composeAtlasFromArtwork } = require_("./atlas-artwork-compose.cjs");
 
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) => (a.startsWith("--") ? [[a.slice(2), all[i + 1]]] : [])),
@@ -128,13 +130,19 @@ function describe(label, { model, modelFallback, parts, generationConfig, system
   };
 }
 
-async function callGemini({ label, model, key, parts, generationConfig, file }) {
+async function callGemini({ label, model, key, parts, generationConfig, file, systemInstruction }) {
   log(`${label}: calling ${model} …`);
   const started = Date.now();
   const response = await fetch(CONTROL_ENDPOINT(model, key), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts }], generationConfig }),
+    body: JSON.stringify({
+      // designpro-artboard delivers its persona as a real system instruction
+      // (index.ts:110). A.T.L.A.S. Call 1 has never sent one at all.
+      ...(systemInstruction ? { system_instruction: { parts: [{ text: systemInstruction }] } } : {}),
+      contents: [{ parts }],
+      generationConfig,
+    }),
     signal: AbortSignal.timeout(300_000),
   });
   if (!response.ok) {
@@ -199,6 +207,18 @@ async function main() {
     ...(await atlas._test.artboardQualityExampleParts(artboardQualityExamples)),
   ];
 
+  // ── C: THE ARTWORK+COMPOSE PATH ────────────────────────────────────────
+  // DPAG craft aimed at ONE flat banner; code owns the geometry afterwards.
+  // No topology guide, no zone map, and a real system instruction.
+  const artworkPrompt = ace.buildAtlasArtworkDirection(V3_INPUT, {
+    artboardQualityExampleCount: artboardQualityExamples.length,
+  });
+  const cParts = [
+    { text: artworkPrompt },
+    ...(await atlas._test.artboardQualityExampleParts(artboardQualityExamples)),
+  ];
+  log(`artwork prompt ${artworkPrompt.length} chars + ${ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION.length}-char system instruction`);
+
   // A2 attaches the control's own example artboards — the same bucket
   // `loadArtboardExamples` reads — as raw image parts after the prompt, which
   // is the control's own ordering.
@@ -259,8 +279,23 @@ async function main() {
         `atlas prompt version ${atlas.PROMPT_VERSION}`,
       ],
     }),
+    C: describe("C — ARTWORK+COMPOSE (DPAG craft, code geometry)", {
+      model: AUTHORING_MODEL,
+      modelFallback: "none",
+      parts: cParts,
+      systemInstruction: ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION,
+      generationConfig: { temperature: 1, responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "16:9", imageSize: "4K" } },
+      attempts: "1 (harness)",
+      notes: [
+        "the model is never told there is a vehicle, a panel, an opening or a zone",
+        "the six zones are composed by runtime/atlas-artwork-compose.cjs after the call",
+        "branding is NOT composited yet - that is the next deterministic layer",
+      ],
+    }),
   };
   writeFileSync(join(OUT, "requests.json"), JSON.stringify(requests, null, 2));
+  writeFileSync(join(OUT, "C-artwork.prompt.txt"), artworkPrompt);
+  writeFileSync(join(OUT, "C-artwork.system.txt"), ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION);
   writeFileSync(join(OUT, "A-control-commercial.prompt.txt"), controlCommercialPrompt);
   writeFileSync(join(OUT, "A2-control-artboard.prompt.txt"), controlArtboardPrompt);
   writeFileSync(join(OUT, "B-atlas-call1.prompt.txt"), atlasPromptText);
@@ -282,6 +317,7 @@ async function main() {
     // The droplet still resolves GOOGLE_IMAGE_MODEL=gemini-3-pro-image for the
     // projections, so when the two differ the configured id gets its own arm --
     // one extra call, and the model stops being a confound in either direction.
+    ["C", { parts: cParts, model: AUTHORING_MODEL, cfg: requests.C.generationConfig, file: "C-artwork-banner.png", systemInstruction: ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION, compose: true }],
     ...(provider.models[0] === AUTHORING_MODEL ? [] : [["B-configured", {
       parts: bParts, model: provider.models[0], cfg: requests.B.generationConfig, file: "B-atlas-master-configured-model.png",
     }]]),
@@ -290,9 +326,23 @@ async function main() {
       const out = await callGemini({
         label: name, model: spec.model, key, parts: spec.parts,
         generationConfig: spec.cfg, file: join(OUT, spec.file),
+        systemInstruction: spec.systemInstruction,
       });
       results[name] = { ok: true, file: spec.file, contentHash: out.contentHash, bytes: out.bytes.length, model: out.model, elapsedMs: out.elapsedMs };
       produced.push(spec.file);
+      if (spec.compose) {
+        const composed = await composeAtlasFromArtwork({ artworkBytes: out.bytes, manifest });
+        writeFileSync(join(OUT, "C-atlas-composed.png"), composed.bytes);
+        results[name].composed = {
+          file: "C-atlas-composed.png",
+          contract: composed.contract,
+          zones: composed.zonesComposed,
+          bytes: composed.bytes.length,
+          contentHash: sha(composed.bytes),
+        };
+        produced.push("C-atlas-composed.png");
+        log(`${name}: composed ${composed.zonesComposed} zones -> C-atlas-composed.png`);
+      }
     } catch (error) {
       log(`${name}: FAILED — ${error.message}`);
       results[name] = { ok: false, error: String(error.message).slice(0, 500) };
@@ -311,7 +361,7 @@ async function finish(supabase, manifestValue, produced) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const prefix = `designiq-ab/${stamp}`;
   const urls = {};
-  for (const file of [...produced, "requests.json", "A-control-commercial.prompt.txt", "A2-control-artboard.prompt.txt", "B-atlas-call1.prompt.txt"]) {
+  for (const file of [...produced, "requests.json", "A-control-commercial.prompt.txt", "A2-control-artboard.prompt.txt", "B-atlas-call1.prompt.txt", "C-artwork.prompt.txt"]) {
     try {
       const path = `${prefix}/${file}`;
       const body = readFileSync(join(OUT, file));
