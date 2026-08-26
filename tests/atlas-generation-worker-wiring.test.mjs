@@ -88,8 +88,7 @@ const LABEL_BY_VIEW = Object.freeze({
   front: "Front", rear: "Rear", "close-up": "Close-Up", roof: "Roof",
 });
 
-function atlasView(sourceViewType, contentHash, driverHash = null) {
-  const dependent = sourceViewType !== "side";
+function atlasView(sourceViewType, contentHash, extraProvider = {}) {
   const zone = VIEW_AUTHORITIES[sourceViewType];
   return {
     sourceViewType,
@@ -100,7 +99,7 @@ function atlasView(sourceViewType, contentHash, driverHash = null) {
       provider: {
         contract: "designpro.generation-artifact-audit.v1",
         sourceViewType,
-        renderMethod: sourceViewType === "passenger-side" ? "producePassengerView" : "generate-color-render",
+        renderMethod: "generate-color-render",
         promptHash: "9".repeat(64),
         promptLength: 4000,
         studioContractVersion: "designpro.studio-os.port-ab0f0638.v1",
@@ -118,15 +117,11 @@ function atlasView(sourceViewType, contentHash, driverHash = null) {
         atlasZoneContract: zone.contract,
         atlasZoneContentHash: zone.contentHash,
         atlasZoneSurfaceKey: zone.surfaceKey,
-        anchoredToView1: dependent,
-        ...(dependent ? { driverContentHash: driverHash } : {}),
-        ...(sourceViewType === "passenger-side"
-          ? {
-              passengerProducer: "producePassengerView",
-              deterministicMirror: true,
-              atlasZonePassedToPassengerRepair: true,
-            }
-          : {}),
+        // SIX SIBLING SURFACES (8576619a, owner-approved): every view is
+        // projected directly from the flat master. The four retired-path keys
+        // are injected only by the refusal tests below, via extraProvider.
+        anchoredToView1: false,
+        ...extraProvider,
       },
       validation: {
         contract: "designpro.atlas-proof-semantic-qc.v1",
@@ -215,12 +210,17 @@ test("A.T.L.A.S. fans all six surfaces out together, with Driver dispatched firs
   assert.equal(result.results.length, 7);
 });
 
-test("Atlas accepts only seven proofs from one immutable master and active Driver", () => {
-  const driverHash = "d".repeat(64);
+test("Atlas accepts seven sibling proofs, continuity-only reference included", () => {
   const views = angles.viewOrder().map((sourceViewType, index) => atlasView(
     sourceViewType,
-    index === 0 ? driverHash : String(index + 1).repeat(64).slice(0, 64),
-    driverHash,
+    index === 0 ? "d".repeat(64) : String(index + 1).repeat(64).slice(0, 64),
+    // The continuity-only Driver photograph (owner decision 2026-08-26) is a
+    // different mechanism from the retired anchor, named so it can never be
+    // confused with artwork authority -- and it must pass this gate.
+    sourceViewType === "side" ? {} : {
+      atlasDriverContinuityOnly: true,
+      atlasDriverContinuityReferenceHash: "c".repeat(64),
+    },
   ));
   assert.equal(assertAtlasViewLineage({ views, flatAtlas: FLAT_ATLAS, requireComplete: true }), true);
 });
@@ -235,21 +235,42 @@ test("Atlas refuses generic accepted rows and dependents from a previous Driver"
     (error) => error.code === "generation_atlas_lineage_invalid" && /server Atlas projection/.test(error.message),
   );
 
-  const driver = atlasView("side", driverHash);
-  const stalePassenger = atlasView("passenger-side", "e".repeat(64), "f".repeat(64));
-  assert.throws(
-    () => assertAtlasViewLineage({ views: [driver, stalePassenger], flatAtlas: FLAT_ATLAS }),
-    (error) => error.code === "generation_atlas_lineage_invalid" && /active Driver/.test(error.message),
-  );
+  // Any of the four retired anchor/mirror keys is refused on ANY view --
+  // byte-for-byte the database fence's rule, so the worker assert and
+  // designpro_private.flat_first_atlas_view_set_valid can no longer
+  // contradict each other. (They did: the fence refused driverContentHash
+  // while this assert REQUIRED it, so no seven-view set could satisfy both
+  // and no 7/7 run could ever have completed.)
+  for (const retired of [
+    { driverContentHash: "f".repeat(64) },
+    { deterministicMirror: true },
+    { passengerProducer: "producePassengerView" },
+    { atlasZonePassedToPassengerRepair: true },
+    { anchoredToView1: true },
+  ]) {
+    const poisoned = atlasView("passenger-side", "e".repeat(64), retired);
+    assert.throws(
+      () => assertAtlasViewLineage({ views: [poisoned], flatAtlas: FLAT_ATLAS }),
+      (error) => error.code === "generation_atlas_lineage_invalid"
+        && /projected directly from the flat master/.test(error.message),
+      `a view carrying ${Object.keys(retired)[0]} must be refused`,
+    );
+  }
 });
 
-test("Atlas refuses a dependent proof without Driver and any Hero slot", () => {
+test("Atlas accepts a partial sibling set mid-flight, and refuses any Hero slot", () => {
+  // The seven slots launch together, so a sibling can legitimately persist
+  // before Driver; a crash-recovery claim must not convict it. A COMPLETE set
+  // still requires all seven, Driver included.
+  assert.equal(
+    assertAtlasViewLineage({ views: [atlasView("roof", "e".repeat(64))], flatAtlas: FLAT_ATLAS }),
+    true,
+  );
   assert.throws(
     () => assertAtlasViewLineage({
-      views: [atlasView("roof", "e".repeat(64), "d".repeat(64))],
-      flatAtlas: FLAT_ATLAS,
+      views: [atlasView("roof", "e".repeat(64))], flatAtlas: FLAT_ATLAS, requireComplete: true,
     }),
-    /without an active Driver/,
+    /expected exactly seven active proofs/,
   );
   assert.throws(
     () => assertAtlasViewLineage({

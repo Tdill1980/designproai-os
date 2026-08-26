@@ -536,26 +536,36 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
     byView.set(sourceViewType, view);
   }
 
-  const driver = byView.get("side");
-  if (views.length && !driver) throw atlasLineageError("dependent proofs exist without an active Driver proof");
-  if (driver) {
-    const driverProvider = driver.metadata.provider;
-    if (driverProvider.anchoredToView1 !== false || driverProvider.driverContentHash) {
-      throw atlasLineageError("Driver must be projected directly from the flat master");
-    }
-    for (const [sourceViewType, view] of byView) {
-      if (sourceViewType === "side") continue;
-      const providerMetadata = view.metadata.provider;
-      if (providerMetadata.anchoredToView1 !== true
-        || providerMetadata.driverContentHash !== driver.contentHash) {
-        throw atlasLineageError(`${sourceViewType} is not anchored to the active Driver proof`);
-      }
-      if (sourceViewType === "passenger-side"
-        && (providerMetadata.passengerProducer !== "producePassengerView"
-          || providerMetadata.deterministicMirror !== true
-          || providerMetadata.atlasZonePassedToPassengerRepair !== true)) {
-        throw atlasLineageError("Passenger was not produced by the deterministic passenger-side code");
-      }
+  // SIX SIBLING SURFACES — THE WORKER ASSERT MATCHES THE DATABASE FENCE.
+  //
+  // This block used to demand the retired shape: every non-Driver view
+  // anchored to Driver's content hash, Passenger carrying the mirror keys.
+  // The owner-approved sibling change (8576619a) INVERTED those requirements
+  // in designpro_private.flat_first_atlas_view_set_valid -- a view carrying
+  // any of the four retired keys is REFUSED -- but this assert kept the old
+  // demands, so the two gates contradicted each other and a complete
+  // seven-view set could satisfy neither: the fence refused what this
+  // required, and this required what the fence refused. No 7/7 run could
+  // ever have completed; the contradiction stayed invisible only because
+  // every run since the change failed earlier, at proof QC.
+  //
+  // Now every view, Driver included, must be projected directly from the flat
+  // master, and the four retired-path keys are refused on all of them --
+  // byte-for-byte the fence's own rule. The continuity-only Driver photograph
+  // (atlasDriverContinuityOnly) is a different mechanism with its own name
+  // and is not an anchor: artwork authority stays with the Atlas zone crop.
+  //
+  // A partial set without Driver is valid mid-flight: the seven slots launch
+  // together, so a sibling can legitimately persist first and a crash-recovery
+  // claim must not convict it. requireComplete still demands all seven below.
+  for (const [sourceViewType, view] of byView) {
+    const providerMetadata = view.metadata.provider;
+    if (providerMetadata.anchoredToView1 !== false
+      || providerMetadata.driverContentHash !== undefined
+      || providerMetadata.deterministicMirror !== undefined
+      || providerMetadata.passengerProducer !== undefined
+      || providerMetadata.atlasZonePassedToPassengerRepair !== undefined) {
+      throw atlasLineageError(`${sourceViewType} must be projected directly from the flat master`);
     }
   }
 
