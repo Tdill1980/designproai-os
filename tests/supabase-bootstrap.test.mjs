@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-seven-migration chain', () => {
-  assert.equal(migrationNames.length, 57);
+test('fresh bootstrap contains one ordered fifty-eight-migration chain', () => {
+  assert.equal(migrationNames.length, 58);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -124,6 +124,10 @@ test('fresh bootstrap contains one ordered fifty-seven-migration chain', () => {
       // existing QC membership extended from the request row to the rest of
       // one design's record.
       '20260826030000',
+      // The design library: every generation in a window, read from the
+      // generation records rather than from the workflow runs the studio's feed
+      // was keyed on -- which represented 8 of the last four months' 48.
+      '20260826040000',
     ],
   );
 });

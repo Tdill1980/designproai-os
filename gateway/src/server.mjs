@@ -2402,6 +2402,92 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 200, await publicWrapboxDetail(fetchImpl, token, cfg, rows[0]));
       }
 
+      // THE DESIGN LIBRARY. Every DesignPro generation in a window, newest
+      // first, from the generation records themselves rather than from the
+      // workflow runs `/api/jobs` lists. A run exists only after the production
+      // handoff, so that list represents 8 of the last four months' 48 designs
+      // and cannot be the library. See the migration for the measurement.
+      if (req.method === "GET" && url.pathname === "/api/design-library") {
+        const sinceParam = url.searchParams.get("since");
+        const since = sinceParam && !Number.isNaN(Date.parse(sinceParam))
+          ? new Date(sinceParam).toISOString()
+          : null;
+        const limitParam = Number(url.searchParams.get("limit"));
+        const limit = Number.isFinite(limitParam) && limitParam > 0
+          ? Math.min(Math.floor(limitParam), 1000)
+          : null;
+        const rows = await rpc(fetchImpl, token, cfg, "designpro_generation_library", {
+          // Null lets the database apply its own four-month default, so the
+          // window is defined in one place rather than in every caller.
+          p_since: since,
+          p_limit: limit,
+        });
+        if (!Array.isArray(rows)) {
+          throw Object.assign(new Error("design_library_response_invalid"), { status: 502 });
+        }
+        const entries = await Promise.all(rows.map(async (row) => {
+          const generationId = String(row?.generationId || "").toLowerCase();
+          const ownerId = String(row?.ownerId || "");
+          if (!UUID_PATTERN.test(generationId) || !UUID_PATTERN.test(ownerId)) {
+            throw Object.assign(new Error("design_library_response_invalid"), { status: 502 });
+          }
+          const storagePath = String(row?.thumbnailStoragePath || "");
+          // The tile is signed only when its path sits inside this design's own
+          // immutable prefix. A design with no image is published without one
+          // -- those are the failures a designer most needs to find, so they
+          // stay in the library rather than being filtered out of it.
+          const signable = storagePath
+            && (authorizedGenerationViewPath(storagePath, ownerId, generationId)
+              || authorizedFlatAtlasPath(storagePath, ownerId, generationId));
+          const thumbnailUrl = signable
+            ? await signedArtifactUrl(fetchImpl, token, cfg, storagePath).catch(() => null)
+            : null;
+          const vehicle = row?.vehicle && typeof row.vehicle === "object" && !Array.isArray(row.vehicle)
+            ? {
+              year: String(row.vehicle.year || ""),
+              make: String(row.vehicle.make || ""),
+              model: String(row.vehicle.model || ""),
+              type: String(row.vehicle.type || ""),
+            }
+            : null;
+          const production = row?.production && typeof row.production === "object"
+            ? {
+              runId: String(row.production.runId || ""),
+              status: String(row.production.status || ""),
+              workflowType: String(row.production.workflowType || ""),
+              orderNumber: row.production.orderNumber ? String(row.production.orderNumber) : null,
+              startedAt: row.production.startedAt || null,
+            }
+            : null;
+          return {
+            generationId,
+            // The Design ID is derived from the generation id itself, by the one
+            // canonical helper, so the library labels a design exactly as the
+            // studio and the board do.
+            designId: canonicalDesignId(generationId),
+            designName: row?.designName ? String(row.designName) : null,
+            companyName: row?.companyName ? String(row.companyName) : null,
+            brief: row?.brief ? String(row.brief) : null,
+            finish: row?.finish ? String(row.finish) : null,
+            vehicle,
+            state: String(row?.state || ""),
+            pipeline: row?.pipeline === "atlas" ? "atlas" : "standard",
+            createdAt: row?.created_at || null,
+            updatedAt: row?.updatedAt || null,
+            completedAt: row?.completedAt || null,
+            revisionCount: Number(row?.revisionCount || 0),
+            currentRevision: row?.currentRevision == null ? null : Number(row.currentRevision),
+            masterContentHash: SHA256_PATTERN.test(String(row?.masterContentHash || ""))
+              ? String(row.masterContentHash).toLowerCase() : null,
+            viewCount: Number(row?.viewCount || 0),
+            viewsSuperseded: row?.viewsSuperseded === true,
+            production,
+            ...(thumbnailUrl ? { thumbnailUrl, expiresIn: 300 } : {}),
+          };
+        }));
+        return json(res, 200, entries);
+      }
+
       if (req.method === "GET" && url.pathname === "/api/jobs") {
         const runs = await listRuns(fetchImpl, token, cfg);
         const states = await Promise.all(runs.map(async (run) => ({

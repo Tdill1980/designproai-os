@@ -120,6 +120,50 @@ export type FlatAtlasPanelMapEntry = {
 };
 
 /**
+ * ONE DESIGN, AS THE LIBRARY LISTS IT.
+ *
+ * Every field is read from the generation record itself. `thumbnailUrl` is
+ * absent for a design that produced no image -- which is a real and common
+ * state, and one a designer needs to be able to find, so the row is published
+ * without a tile rather than dropped.
+ */
+export type DesignLibraryEntry = {
+  generationId: string;
+  /** DID-XXXXXXXX, from the one canonical helper. */
+  designId: string;
+  designName: string | null;
+  companyName: string | null;
+  brief: string | null;
+  finish: string | null;
+  vehicle: { year: string; make: string; model: string; type: string } | null;
+  /** The generation's own state: queued, leased, retryable, outputs_ready, failed, cancelled. */
+  state: string;
+  /** Which pipeline the request asked for, not what it happened to produce. */
+  pipeline: "atlas" | "standard";
+  createdAt: string | null;
+  updatedAt: string | null;
+  completedAt: string | null;
+  /** A.T.L.A.S. revisions authored for this design. Zero on a Standard run. */
+  revisionCount: number;
+  /** The version this design stands at — the server's own revision sequence. */
+  currentRevision: number | null;
+  masterContentHash: string | null;
+  viewCount: number;
+  /** True when the server withholds this design's proofs pending a new run. */
+  viewsSuperseded: boolean;
+  /** Manufacturing, once it has started. Null for a design nobody has ordered. */
+  production: {
+    runId: string;
+    status: string;
+    workflowType: string;
+    orderNumber: string | null;
+    startedAt: string | null;
+  } | null;
+  thumbnailUrl?: string;
+  expiresIn?: 300;
+};
+
+/**
  * One deterministically cut Call-1 print panel, as the server stamped it.
  *
  * `signedUrl` is absent while the object cannot be signed; the geometry and
@@ -971,6 +1015,31 @@ export const dpApi = {
    * Layers pairs each panel with its own view, which is the whole point of the
    * surface -- a panel is only checkable next to the design it came from.
    */
+  /**
+   * THE DESIGN LIBRARY — every DesignPro generation in a window, newest first.
+   *
+   * Not `listJobs`. That lists workflow runs, and a run exists only after the
+   * production handoff: over the last four months it represents 8 of 48 real
+   * designs. Everything still in Calls 1-7, and everything that failed there,
+   * has no run at all and was therefore unreachable from the studio built to
+   * revise it. This reads the generation records, which exist from the moment
+   * Create Design is pressed.
+   *
+   * `since` is omitted by default so the server applies its own four-month
+   * window in one place. It is a window, not a page: the limit is far above the
+   * volume it selects, because a page smaller than the window is exactly how
+   * recent work goes missing.
+   */
+  listDesignLibrary: (options?: { since?: Date | string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.since) {
+      const since = options.since instanceof Date ? options.since.toISOString() : String(options.since);
+      params.set("since", since);
+    }
+    if (options?.limit) params.set("limit", String(options.limit));
+    const query = params.toString();
+    return request<DesignLibraryEntry[]>(`/design-library${query ? `?${query}` : ""}`);
+  },
   listApprovedViews: (generationId: string) =>
     request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
   /**

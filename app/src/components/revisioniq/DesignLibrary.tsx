@@ -1,0 +1,422 @@
+/**
+ * THE DESIGNPRO DESIGN LIBRARY — the last four months of real work.
+ *
+ * RevisionStudioIQ could open one design and could not tell you which designs
+ * exist. Its card feed was keyed on `designpro_workflow_runs`, and a run is
+ * created by the PRODUCTION HANDOFF -- so over the last four months that feed
+ * represented 8 of 48 real generations. Everything still in Calls 1-7 and
+ * everything that failed there had no run and so no row, and the grid then
+ * dropped whatever survived that had no image yet. That is the "recent work
+ * crowded out of the window" defect, and it was not a sort order: it was an
+ * entirely wrong table.
+ *
+ * So this reads `dpApi.listDesignLibrary`, which reads the generation records
+ * themselves -- the one table with a row for every design from the moment
+ * Create Design is pressed. ONE table: no union with a featured list, no legacy
+ * render table, no ColorPro visualizations. There is nothing here to curate and
+ * nothing that can take a recent design's place.
+ *
+ * NOTHING IS INVENTED. Every value on a card is one the server stated. A design
+ * with no thumbnail shows the reason it has none; a design with no company name
+ * shows its vehicle instead of a placeholder; a failed design appears as a
+ * failed design rather than being hidden to make the grid look healthier than
+ * the work.
+ *
+ * NOT A PRODUCER. The two actions are navigation -- open this design here, or
+ * open it in PanelPro. Nothing on this surface generates, re-cuts or mutates.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  Search, RefreshCw, ImageOff, Layers, ExternalLink, Clock, AlertTriangle,
+  CheckCircle2, Loader2, PackageCheck,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { dpApi, type DesignLibraryEntry } from "@/lib/designpro-api";
+import { cn } from "@/lib/utils";
+
+/** The default window the product promises, and the two a designer asks for. */
+const WINDOWS = [
+  { key: "4m", label: "Last 4 months", months: 4 },
+  { key: "1m", label: "Last 30 days", months: 1 },
+  { key: "12m", label: "Last 12 months", months: 12 },
+] as const;
+
+type WindowKey = (typeof WINDOWS)[number]["key"];
+type PipelineFilter = "all" | "atlas" | "standard";
+type StatusFilter = "all" | "completed" | "failed" | "working" | "production";
+
+/**
+ * One design's status, as one word.
+ *
+ * `production` wins over `completed` because it is the later fact about the
+ * same design: a job whose pack is being built is not merely finished designing.
+ */
+export function statusOf(entry: DesignLibraryEntry): StatusFilter {
+  if (entry.production) return "production";
+  if (entry.state === "outputs_ready") return "completed";
+  if (entry.state === "failed" || entry.state === "cancelled") return "failed";
+  return "working";
+}
+
+const STATUS_LABEL: Record<Exclude<StatusFilter, "all">, string> = {
+  completed: "Completed",
+  failed: "Failed",
+  working: "In progress",
+  production: "In production",
+};
+
+const STATUS_TONE: Record<Exclude<StatusFilter, "all">, string> = {
+  completed: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+  failed: "border-red-500/40 bg-red-500/10 text-red-300",
+  working: "border-blue-500/40 bg-blue-500/10 text-blue-300",
+  production: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300",
+};
+
+function StatusIcon({ status }: { status: Exclude<StatusFilter, "all"> }) {
+  if (status === "completed") return <CheckCircle2 className="h-3 w-3" />;
+  if (status === "failed") return <AlertTriangle className="h-3 w-3" />;
+  if (status === "production") return <PackageCheck className="h-3 w-3" />;
+  return <Loader2 className="h-3 w-3 animate-spin" />;
+}
+
+/** The design's own name for itself, never a placeholder. */
+function titleOf(entry: DesignLibraryEntry): string {
+  const named = (entry.companyName || entry.designName || "").trim();
+  if (named) return named;
+  const vehicle = [entry.vehicle?.year, entry.vehicle?.make, entry.vehicle?.model]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return vehicle || entry.designId;
+}
+
+function vehicleLine(entry: DesignLibraryEntry): string {
+  if (!entry.vehicle) return "Vehicle not recorded";
+  const { year, make, model, type } = entry.vehicle;
+  const ymm = [year, make, model].map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+  const kind = String(type || "").trim();
+  return [ymm || "Vehicle not recorded", kind].filter(Boolean).join(" · ");
+}
+
+function shortDate(value: string | null): string {
+  const parsed = Date.parse(String(value || ""));
+  if (!Number.isFinite(parsed)) return "—";
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+/**
+ * Does this design match what was typed.
+ *
+ * Company and design name, the generation id and the Design ID, and the
+ * vehicle. All four are what a person actually has in hand when they are
+ * looking for a job, so all four match.
+ */
+export function matchesQuery(entry: DesignLibraryEntry, needle: string): boolean {
+  const query = needle.trim().toLowerCase();
+  if (!query) return true;
+  return [
+    entry.companyName,
+    entry.designName,
+    entry.generationId,
+    entry.designId,
+    entry.vehicle?.year,
+    entry.vehicle?.make,
+    entry.vehicle?.model,
+    entry.vehicle?.type,
+    entry.finish,
+    entry.production?.orderNumber,
+  ].some((field) => String(field || "").toLowerCase().includes(query));
+}
+
+export function DesignLibrary({
+  onOpen,
+  className,
+}: {
+  /** Open this design in the studio, in place. */
+  onOpen?: (generationId: string) => void;
+  className?: string;
+}) {
+  const [entries, setEntries] = useState<DesignLibraryEntry[] | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [windowKey, setWindowKey] = useState<WindowKey>("4m");
+  const [query, setQuery] = useState("");
+  const [pipeline, setPipeline] = useState<PipelineFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setError("");
+    const months = WINDOWS.find((entry) => entry.key === windowKey)?.months ?? 4;
+    const since = new Date();
+    since.setMonth(since.getMonth() - months);
+    dpApi.listDesignLibrary({ since })
+      .then((rows) => { if (live) setEntries(rows); })
+      .catch((cause) => {
+        if (!live) return;
+        setEntries([]);
+        setError(cause instanceof Error ? cause.message : "The design library could not be read.");
+      })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [windowKey, reloadKey]);
+
+  // Filtering happens in memory on purpose: this is one shop's work over a
+  // window, not a volume worth a round trip per keystroke, and every field the
+  // filters read is already on the row.
+  const visible = useMemo(() => {
+    if (!entries) return [];
+    return entries.filter((entry) => {
+      if (pipeline !== "all" && entry.pipeline !== pipeline) return false;
+      if (status !== "all" && statusOf(entry) !== status) return false;
+      return matchesQuery(entry, query);
+    });
+  }, [entries, pipeline, status, query]);
+
+  const counts = useMemo(() => {
+    const total = entries?.length ?? 0;
+    const atlas = entries?.filter((entry) => entry.pipeline === "atlas").length ?? 0;
+    return { total, atlas, standard: total - atlas };
+  }, [entries]);
+
+  return (
+    <div className={cn("w-full space-y-3", className)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Layers className="h-4 w-4 text-blue-400" />
+        <span className="font-poppins text-sm font-bold text-zinc-200">Design Library</span>
+        <span className="text-[11px] text-zinc-500">
+          {loading && !entries
+            ? "reading…"
+            : `${visible.length} of ${counts.total} design${counts.total === 1 ? "" : "s"}`}
+          {entries && counts.total > 0 ? ` · ${counts.atlas} A.T.L.A.S. · ${counts.standard} Standard` : ""}
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto h-7 border-zinc-700 text-[11px] text-zinc-300"
+          onClick={() => setReloadKey((key) => key + 1)}
+          disabled={loading}
+        >
+          <RefreshCw className={cn("mr-1.5 h-3 w-3", loading && "animate-spin")} />
+          Refresh
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Company, design name, vehicle, generation id or DID…"
+            className="h-8 border-zinc-700 bg-zinc-950 pl-8 text-[12px] text-zinc-200 placeholder:text-zinc-600"
+          />
+        </div>
+        {/* The window is a real query parameter, not a client-side slice: a
+            wider window asks the server for more rows. */}
+        <div className="flex items-center gap-1">
+          {WINDOWS.map((entry) => (
+            <button
+              key={entry.key}
+              type="button"
+              onClick={() => setWindowKey(entry.key)}
+              className={cn(
+                "rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors",
+                windowKey === entry.key
+                  ? "border-blue-500 bg-blue-500/15 text-blue-200"
+                  : "border-zinc-700 bg-zinc-950/60 text-zinc-400 hover:text-zinc-200",
+              )}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          {([["all", "All"], ["atlas", "A.T.L.A.S."], ["standard", "Standard"]] as const).map(
+            ([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPipeline(key)}
+                className={cn(
+                  "rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors",
+                  pipeline === key
+                    ? "border-cyan-500 bg-cyan-500/15 text-cyan-200"
+                    : "border-zinc-700 bg-zinc-950/60 text-zinc-400 hover:text-zinc-200",
+                )}
+              >
+                {label}
+              </button>
+            ),
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {([
+            ["all", "Any status"],
+            ["completed", "Completed"],
+            ["production", "In production"],
+            ["working", "In progress"],
+            ["failed", "Failed"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setStatus(key)}
+              className={cn(
+                "rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors",
+                status === key
+                  ? "border-zinc-400 bg-zinc-700/40 text-zinc-100"
+                  : "border-zinc-700 bg-zinc-950/60 text-zinc-400 hover:text-zinc-200",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-semibold text-amber-300">
+          {error}
+        </p>
+      )}
+
+      {entries && entries.length === 0 && !error && (
+        <p className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-3 text-[11px] text-zinc-400">
+          No DesignPro generations in this window. Widen it, or create a design.
+        </p>
+      )}
+
+      {entries && entries.length > 0 && visible.length === 0 && (
+        <p className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-3 text-[11px] text-zinc-400">
+          No design in this window matches those filters.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {visible.map((entry) => {
+          const state = statusOf(entry);
+          return (
+            <div
+              key={entry.generationId}
+              className="flex flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900"
+            >
+              <button
+                type="button"
+                onClick={() => onOpen?.(entry.generationId)}
+                className="group relative block aspect-[4/3] w-full bg-zinc-950"
+                title={`Open ${titleOf(entry)}`}
+              >
+                {entry.thumbnailUrl ? (
+                  <img
+                    src={entry.thumbnailUrl}
+                    alt={titleOf(entry)}
+                    loading="lazy"
+                    className="h-full w-full object-contain transition-transform group-hover:scale-[1.02]"
+                  />
+                ) : (
+                  // Honest, and specific about which of the two reasons it is.
+                  <span className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-zinc-600">
+                    <ImageOff className="h-6 w-6" />
+                    <span className="px-3 text-center text-[10px] leading-tight">
+                      {entry.viewsSuperseded
+                        ? "Proofs withheld — superseded architecture"
+                        : state === "failed"
+                          ? "This design produced no image"
+                          : "Still rendering"}
+                    </span>
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    "absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                    STATUS_TONE[state],
+                  )}
+                >
+                  <StatusIcon status={state} />
+                  {STATUS_LABEL[state]}
+                </span>
+                <span
+                  className={cn(
+                    "absolute right-1.5 top-1.5 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                    entry.pipeline === "atlas"
+                      ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-300"
+                      : "border-zinc-600 bg-zinc-800/80 text-zinc-300",
+                  )}
+                >
+                  {entry.pipeline === "atlas" ? "A.T.L.A.S." : "Standard"}
+                </span>
+              </button>
+
+              <div className="flex flex-1 flex-col gap-1.5 p-3">
+                <p className="truncate font-poppins text-[13px] font-bold text-zinc-100" title={titleOf(entry)}>
+                  {titleOf(entry)}
+                </p>
+                <p className="truncate text-[11px] text-zinc-400" title={vehicleLine(entry)}>
+                  {vehicleLine(entry)}
+                </p>
+                <dl className="mt-0.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
+                  <dt className="text-zinc-500">Design ID</dt>
+                  <dd className="truncate font-mono text-zinc-300">{entry.designId}</dd>
+                  <dt className="text-zinc-500">Generation</dt>
+                  <dd className="truncate font-mono text-zinc-400" title={entry.generationId}>
+                    {entry.generationId.slice(0, 8)}…
+                  </dd>
+                  <dt className="text-zinc-500">Created</dt>
+                  <dd className="text-zinc-300">
+                    <Clock className="mr-1 inline h-2.5 w-2.5 text-zinc-500" />
+                    {shortDate(entry.createdAt)}
+                  </dd>
+                  <dt className="text-zinc-500">Version</dt>
+                  <dd className="text-zinc-300">
+                    {/* The server's own revision sequence, which IS the version
+                        number. A Standard run has no A.T.L.A.S. revision to
+                        number, and says so instead of claiming V1. */}
+                    {entry.currentRevision
+                      ? `V${entry.currentRevision}${entry.revisionCount > 1 ? ` of ${entry.revisionCount}` : ""}`
+                      : "—"}
+                  </dd>
+                  {entry.production?.orderNumber ? (
+                    <>
+                      <dt className="text-zinc-500">Order</dt>
+                      <dd className="truncate font-mono text-zinc-300">{entry.production.orderNumber}</dd>
+                    </>
+                  ) : null}
+                </dl>
+
+                <div className="mt-auto flex gap-1.5 pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 flex-1 border-blue-500/40 bg-blue-500/5 text-[11px] text-blue-200 hover:bg-blue-500/10"
+                    onClick={() => onOpen?.(entry.generationId)}
+                  >
+                    Open design
+                  </Button>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-7 border-fuchsia-500/40 bg-fuchsia-500/5 text-[11px] text-fuchsia-200 hover:bg-fuchsia-500/10"
+                  >
+                    <Link
+                      to={`/designpro/jobs/${encodeURIComponent(entry.generationId)}/panelpro`}
+                      title="Open in PanelPro Studio"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      PanelPro
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

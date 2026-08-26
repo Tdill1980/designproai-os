@@ -55,6 +55,7 @@ import {
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
 import { AtlasLineageCard } from "@/components/revisioniq/AtlasLineageCard";
+import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
 import { dpApi } from "@/lib/designpro-api";
 import {
@@ -2568,6 +2569,47 @@ export default function RevisionStudioIQ() {
   // ---------------------------------------------------------------------------
   const deepLinkFetchedRef = useRef<string | null>(null);
   const [deepLinkMissing, setDeepLinkMissing] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  /**
+   * OPEN ONE DESIGN, BY ITS GENERATION ID.
+   *
+   * The library hands this a generation id and the workspace fills in: master,
+   * proofs, panels, revisions and assets all key off the selected design, so
+   * selecting it is the whole action. The feed is consulted first when the row
+   * is already in hand -- that keeps the grid's own selection in sync -- and
+   * the server answers for everything else, which is most of the library: a
+   * design still in Calls 1-7, one that failed there, or one belonging to a
+   * customer whose work this operator is reviewing was never in the feed.
+   */
+  const openDesignById = useCallback(async (generationId: string) => {
+    const id = String(generationId || "").trim();
+    if (!id) return;
+    const found = (renders || []).find((r: any) =>
+      r.id === id || (r._mergedIds && r._mergedIds.includes(id))
+    );
+    if (found) {
+      setSelectedRender(found);
+      setCurrentViewIndex(0);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setOpeningId(id);
+    try {
+      const row = await readRevisionStudioDesign(id);
+      if (!row) {
+        toast.error("That design could not be opened from this account.");
+        return;
+      }
+      setSelectedRender(row as any);
+      setCurrentViewIndex(0);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      toast.error("That design could not be opened.");
+    } finally {
+      setOpeningId(null);
+    }
+  }, [renders]);
   useEffect(() => {
     if (!deepLinkId || selectedRender) return;
     if (renders) {
@@ -4614,6 +4656,23 @@ export default function RevisionStudioIQ() {
         {!selectedRender && deepLinkId && !deepLinkMissing && renders === undefined && (
           <div className="w-full mb-4 text-xs text-zinc-500 font-poppins">
             Opening design <span className="font-mono">{formatDid(deepLinkId)}</span>…
+          </div>
+        )}
+
+        {/* THE DESIGN LIBRARY — the last four months of real DesignPro work.
+            It is above the legacy card grid rather than replacing it, because
+            the two answer different questions: the library lists every
+            generation the server has a record of, and the grid below groups the
+            subset that already carries imagery by vehicle. The library is the
+            one that can show a design still in Calls 1-7, one that failed
+            there, or one whose proofs are withheld -- which between them are
+            most of the work, and all of it was unreachable before. */}
+        {!selectedRender && layoutMode === "studio" && (
+          <div className="mb-6 w-full">
+            <DesignLibrary onOpen={openDesignById} />
+            {openingId && (
+              <p className="mt-2 text-[11px] text-zinc-500">Opening {formatDid(openingId)}…</p>
+            )}
           </div>
         )}
 
