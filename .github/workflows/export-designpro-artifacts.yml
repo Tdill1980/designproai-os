@@ -27,8 +27,14 @@ on:
           - DO_NOT_RUN
           - RUN_READ_ONLY_EXPORT
       run_id:
-        description: "designpro_workflow_runs.id to export"
-        required: true
+        description: "designpro_workflow_runs.id to export (leave blank when exporting an A.T.L.A.S. generation)"
+        required: false
+        default: ""
+        type: string
+      atlas_generation_id:
+        description: "generation id whose A.T.L.A.S. guide, master and six Call 1 panels to export"
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -53,6 +59,7 @@ jobs:
     env:
       SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
       RUN_ID: ${{ inputs.run_id }}
+      ATLAS_GENERATION_ID: ${{ inputs.atlas_generation_id }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -67,7 +74,19 @@ jobs:
             printf '::error title=Environment secret withheld::DESIGNPROAI_SSH_PRIVATE_KEY is empty for ref %s.\n' "$GITHUB_REF" >&2
             exit 39
           fi
-          [[ $RUN_ID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]
+          uuid='^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+          # Exactly one selector. Two would silently export the run and ignore
+          # the generation; neither would export nothing and read as success.
+          if [[ -n $RUN_ID && -n $ATLAS_GENERATION_ID ]]; then
+            printf '::error title=Ambiguous selector::pass run_id or atlas_generation_id, never both.\n' >&2
+            exit 43
+          fi
+          if [[ -z $RUN_ID && -z $ATLAS_GENERATION_ID ]]; then
+            printf '::error title=No selector::pass run_id or atlas_generation_id.\n' >&2
+            exit 44
+          fi
+          [[ -z $RUN_ID ]] || [[ $RUN_ID =~ $uuid ]]
+          [[ -z $ATLAS_GENERATION_ID ]] || [[ $ATLAS_GENERATION_ID =~ $uuid ]]
 
       - name: Pin the droplet SSH identity
         id: ssh
@@ -108,7 +127,7 @@ jobs:
           payload=$(tar -cz scripts/export-designpro-artifacts.mjs | base64 -w0)
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "PAYLOAD='$payload' RUN_ID='$RUN_ID' bash -s" \
+            "PAYLOAD='$payload' RUN_ID='$RUN_ID' ATLAS_GENERATION_ID='$ATLAS_GENERATION_ID' bash -s" \
             > "$RUNNER_TEMP/export.b64" 2>"$RUNNER_TEMP/export.log" <<'REMOTE'
           set -Eeuo pipefail
           release=/opt/designproai-os/current
@@ -124,11 +143,17 @@ jobs:
           printf '%s' "$PAYLOAD" | base64 -d | tar -C "$work" -xz
           chmod -R 0777 "$work"
 
+          if [[ -n ${RUN_ID:-} ]]; then
+            selector=(--run "$RUN_ID")
+          else
+            selector=(--generation "$ATLAS_GENERATION_ID")
+          fi
+
           docker run --rm --network host \
             --env-file /opt/designproai-os/shared/runtime.env \
             -v "$work/scripts/export-designpro-artifacts.mjs:/app/export.mjs:ro" \
             -v "$work/out:/out" \
-            "$image" node /app/export.mjs --run "$RUN_ID" --out /out >&2
+            "$image" node /app/export.mjs "${selector[@]}" --out /out >&2
 
           tar -C "$work/out" -cz . | base64 -w0
           REMOTE
@@ -143,7 +168,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: designpro-run-artifacts-${{ inputs.run_id }}
+          name: designpro-run-artifacts-${{ inputs.run_id }}${{ inputs.atlas_generation_id }}
           path: ${{ runner.temp }}/artifacts
           if-no-files-found: error
           retention-days: 30

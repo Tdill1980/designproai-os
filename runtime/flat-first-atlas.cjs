@@ -662,7 +662,7 @@ function surfaceForProofView(sourceViewType) {
   return VIEW_SURFACE[sourceViewType];
 }
 
-async function viewAuthorityDerivative(masterBytes, manifest, sourceViewType) {
+async function viewAuthorityDerivative(surfaceSourceBytes, manifest, sourceViewType) {
   const surfaceKey = surfaceForProofView(sourceViewType);
   const zone = manifest?.zones?.find((candidate) => candidate.surfaceKey === surfaceKey);
   if (!zone?.extraction) {
@@ -688,7 +688,7 @@ async function viewAuthorityDerivative(masterBytes, manifest, sourceViewType) {
   }
   const rotationDegrees = Number(zone.extraction.outputRotationDegrees || 0);
   for (const quality of PROJECTION_QUALITY_LADDER) {
-    const bytes = await sharp(masterBytes, { limitInputPixels: false })
+    const bytes = await sharp(surfaceSourceBytes, { limitInputPixels: false })
       .extract(extract)
       .rotate(rotationDegrees)
       .flatten({ background: "#ffffff" })
@@ -720,7 +720,7 @@ async function viewAuthorityDerivative(masterBytes, manifest, sourceViewType) {
         heightPx: Number(metadata.height),
         quality,
         chromaSubsampling: "4:4:4",
-        sourceMasterHash: sha256(masterBytes),
+        sourceMasterHash: sha256(surfaceSourceBytes),
         sourceZone: Object.freeze({
           x: extract.left,
           y: extract.top,
@@ -754,8 +754,19 @@ async function viewAuthorityDerivative(masterBytes, manifest, sourceViewType) {
  * evidence for another model; a panel is print artwork, and print artwork is
  * never handed a lossy round trip.
  */
-async function cutCallOnePanels(masterBytes, manifest) {
+async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
+  // LINEAGE, NOT PROVENANCE. `sourceMasterHash` is the identity PanelPro pairs
+  // a panel with its proof by, so it has to be the CANONICAL master hash the
+  // proof also publishes -- not the hash of the repaired duplicate the pixels
+  // were cut from. Those are equal on a clean sheet and differ on a repaired
+  // one, and publishing the repaired hash here made a correct pair report as
+  // "the proof and the panel came from different masters". The repaired sheet
+  // is still recorded, per panel, as `surfaceSourceHash`.
+  const surfaceSourceHash = sha256(surfaceSourceBytes);
+  const lineageHash = HASH_RE.test(String(canonicalMasterHash || ""))
+    ? String(canonicalMasterHash)
+    : surfaceSourceHash;
   return Promise.all(SURFACE_KEYS.map(async (surfaceKey) => {
     const zone = zones.find((candidate) => candidate.surfaceKey === surfaceKey);
     if (!zone?.extraction) {
@@ -773,7 +784,7 @@ async function cutCallOnePanels(masterBytes, manifest) {
       || extract.top + extract.height > CANVAS.heightPx) {
       throw new FlatAtlasError("flat_atlas_panel_zone_invalid", `${surfaceKey} extraction is outside the canonical master`);
     }
-    const bytes = await sharp(masterBytes, { limitInputPixels: false })
+    const bytes = await sharp(surfaceSourceBytes, { limitInputPixels: false })
       .extract(extract)
       .rotate(Number(zone.extraction.outputRotationDegrees || 0))
       .flatten({ background: "#ffffff" })
@@ -801,17 +812,27 @@ async function cutCallOnePanels(masterBytes, manifest) {
       bleedInches: BLEED_INCHES,
       effectivePpi: Number(zone.effectivePpi),
       geometryPurpose: "calls-1-7-layout-only",
-      sourceMasterHash: sha256(masterBytes),
+      sourceMasterHash: lineageHash,
+      surfaceSourceHash,
     });
   }));
 }
 
-async function buildViewAuthorities(masterBytes, manifest) {
+async function buildViewAuthorities(surfaceSourceBytes, manifest) {
   const entries = await Promise.all(PROOF_VIEWS.map(async (sourceViewType) => [
     sourceViewType,
-    await viewAuthorityDerivative(masterBytes, manifest, sourceViewType),
+    await viewAuthorityDerivative(surfaceSourceBytes, manifest, sourceViewType),
   ]));
   return Object.freeze(Object.fromEntries(entries));
+}
+
+// The one sheet both halves of the fan-out derive from. On a clean master this
+// IS the master hash; on a sheet that arrived with cut-outs it is the hash of
+// the deterministic repair, which is what the panels were cut from and what the
+// proofs are conditioned on.
+function surfaceSourceHashOf(atlas) {
+  const recorded = atlas?.metadata?.panelSourceHash;
+  return HASH_RE.test(String(recorded || "")) ? String(recorded) : atlas?.master?.contentHash;
 }
 
 function viewAuthorityFor(atlas, sourceViewType) {
@@ -825,7 +846,10 @@ function viewAuthorityFor(atlas, sourceViewType) {
     || authority.bytes.length !== Number(authority.byteSize)
     || authority.bytes.length > VIEW_AUTHORITY_MAX_BYTES
     || sha256(authority.bytes) !== authority.contentHash
-    || authority.sourceMasterHash !== atlas?.master?.contentHash) {
+    // Bound to the SURFACE SOURCE -- the repaired sheet the panels are cut
+    // from, which equals the canonical master byte for byte whenever the sheet
+    // arrived without cut-outs.
+    || authority.sourceMasterHash !== surfaceSourceHashOf(atlas)) {
     throw new FlatAtlasError(
       "flat_atlas_view_authority_identity_mismatch",
       `${sourceViewType}: exact ${expectedSurface} authority is not bound to the immutable master`,
@@ -1123,8 +1147,8 @@ async function downloadVerified(supabase, storagePath, expectedHash, expectedByt
   return bytes;
 }
 
-async function rowIdentity(row, manifest, masterBytes, projectionBytes, { reused }) {
-  const viewAuthorities = await buildViewAuthorities(masterBytes, manifest);
+async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projectionBytes, { reused }) {
+  const viewAuthorities = await buildViewAuthorities(surfaceSourceBytes, manifest);
   return {
     contract: ATLAS_CONTRACT,
     revisionId: row.id,
@@ -1171,7 +1195,7 @@ async function rowIdentity(row, manifest, masterBytes, projectionBytes, { reused
       byteSize: Number(row.projection_byte_size),
       contentType: row.projection_content_type,
       bytes: projectionBytes,
-      sourceMasterHash: row.master_content_hash,
+      sourceMasterHash: sha256(surfaceSourceBytes),
       quality: Number(row.metadata?.projectionQuality),
       chromaSubsampling: "4:4:4",
       widthPx: Number(row.width_px),
@@ -1215,12 +1239,28 @@ async function loadLatestAtlasRevision(supabase, requestId) {
   if (row.projection_content_type !== "image/jpeg" || projectionBytes.length > PROJECTION_MAX_BYTES) {
     throw new FlatAtlasError("flat_atlas_projection_identity_mismatch", "Stored proof-conditioning derivative violates its JPEG byte budget");
   }
-  const expectedProjection = await projectionDerivative(masterBytes);
+  // The repaired sheet is recomputed, never stored: `fillMasterCutouts` is
+  // deterministic, so a resumed run rebuilds exactly the bytes the first pass
+  // cut and conditioned from, and the recorded `panelSourceHash` proves it.
+  const surfaceFill = await fillMasterCutouts(
+    masterBytes, manifest,
+    Array.isArray(row.metadata?.masterCutoutSurfaces) ? row.metadata.masterCutoutSurfaces : [],
+  );
+  const surfaceSourceBytes = surfaceFill.bytes;
+  const surfaceSourceHash = surfaceFill.changed ? sha256(surfaceSourceBytes) : row.master_content_hash;
+  const recordedSurfaceSourceHash = row.metadata?.panelSourceHash || row.master_content_hash;
+  if (surfaceSourceHash !== recordedSurfaceSourceHash) {
+    throw new FlatAtlasError(
+      "flat_atlas_surface_source_mismatch",
+      "The deterministic cut-out repair no longer reproduces the surface source this revision recorded",
+    );
+  }
+  const expectedProjection = await projectionDerivative(surfaceSourceBytes);
   if (expectedProjection.contentHash !== row.projection_content_hash
     || expectedProjection.byteSize !== Number(row.projection_byte_size)) {
     throw new FlatAtlasError("flat_atlas_projection_source_mismatch", "Stored proof-conditioning derivative is not the deterministic child of the canonical PNG master");
   }
-  return rowIdentity(row, manifest, masterBytes, projectionBytes, { reused: true });
+  return rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projectionBytes, { reused: true });
 }
 
 function atlasReceipt(atlas) {
@@ -1488,23 +1528,38 @@ async function generateOrReuseFlatAtlas(options) {
     });
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
-  // THE PANELS ARE CUT FROM A FILLED DUPLICATE, THE PROOFS FROM THE MASTER.
+  // ONE REPAIRED SHEET FEEDS BOTH HALVES OF THE FAN-OUT.
   //
-  // `masterBytes` is never touched: it is persisted as authored and remains the
-  // authority the seven proofs are conditioned on and hash-bound to. When the
-  // sheet arrived with a wheel arch punched through it, the panel source is a
-  // duplicate whose holes are closed by continuing the artwork that borders
-  // them -- deterministic pixel work, no AI, no second producer of design.
+  // `masterBytes` is never touched: it is persisted as authored and stays the
+  // lineage identity (`canonicalMasterHash`, the revision's `master_content_hash`
+  // and every UI binding). When the sheet arrives with a wheel arch or a glass
+  // band punched through it, the SURFACE SOURCE is a duplicate whose holes are
+  // closed by continuing the artwork that borders them -- deterministic pixel
+  // work, no AI, no second producer of design. The six panels are cut from it
+  // AND the seven proofs are conditioned on it.
   //
-  // The two differ only inside the holes, which is precisely the region the 3D
-  // proof masks away, so proof and panel still agree everywhere either of them
-  // asserts anything. Nothing is filled on a clean master: `fillMasterCutouts`
-  // returns the same buffer and `panelSourceHash` equals `masterHash`.
+  // THE PROOFS USED TO BE CONDITIONED ON THE HOLED ORIGINAL, on the stated
+  // theory that a hole "lands in the region the proof masks away". Canary
+  // 6667efac-6d62-4e8f-bf3c-39aa805ed352 (2026-08-26) disproved that: the driver
+  // and passenger flanks came back with 26.7% of each zone punched out in four
+  // components, which is a vehicle SILHOUETTE, not a wheel arch. The proof QC
+  // is shown that exact surface crop, and refused every view conditioned on it
+  // -- "The candidate proof shows a Ford F250 Crew Cab truck, but the authority
+  // image shows a cargo van" (side, passenger-side, close-up). Three of seven
+  // proofs survived, and the three that survived were the ones whose surfaces
+  // had no cut-out. Meanwhile the repaired duplicate -- a solid rectangle of
+  // continuous livery -- sat unused by the proof half.
+  //
+  // Conditioning both halves on the repaired sheet is also what RULE 0.21
+  // already states: "those SAME surface regions condition the matching 3D proof
+  // views". Nothing changes on a clean master: `fillMasterCutouts` returns the
+  // same buffer, `panelSourceHash` equals `masterHash`, and the projection and
+  // view authorities are byte-identical to what they were before.
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
-  const panelSourceBytes = cutoutFill.bytes;
-  const panelSourceHash = cutoutFill.changed ? sha256(panelSourceBytes) : masterHash;
-  const callOnePanels = await cutCallOnePanels(panelSourceBytes, manifest);
-  const projection = await projectionDerivative(masterBytes);
+  const surfaceSourceBytes = cutoutFill.bytes;
+  const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
+  const callOnePanels = await cutCallOnePanels(surfaceSourceBytes, manifest, masterHash);
+  const projection = await projectionDerivative(surfaceSourceBytes);
   const projectionStoragePath = atlasStoragePath({
     tenantKey, generationId, revisionSequence, kind: "projection", contentHash: projection.contentHash,
   });
@@ -1674,7 +1729,7 @@ async function generateOrReuseFlatAtlas(options) {
     throw new FlatAtlasError("flat_atlas_revision_insert_failed", error.message, true);
   }
   logger(`persisted immutable atlas revision 1 ${masterHash}`);
-  return rowIdentity(row, manifest, masterBytes, projection.bytes, { reused: false });
+  return rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projection.bytes, { reused: false });
 }
 
 function atlasProjectionParts(atlas, sourceViewType) {

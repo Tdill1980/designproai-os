@@ -186,23 +186,60 @@ customer saw a single image*. Call 1 now breaks on a cut-out's first
 appearance. Re-rolls remain only for a broken **design**, where another throw is
 genuinely the only remedy.
 
-**The proofs use the authored master; the panels use a filled duplicate.**
+**BOTH halves use the filled duplicate — the proofs too. (Corrected 2026-08-26.)**
 `runtime/atlas-cutout-fill.cjs` closes each convicted hole by repeatedly
 averaging its boundary pixels from the artwork they already touch, growing the
 surrounding design inward from every side. Deterministic, ~100ms, no AI, **no
 second producer of design**.
 
+This section used to read *"the proofs use the authored master; the panels use a
+filled duplicate"*, justified by "the two differ only inside the holes, which is
+precisely the region the 3D proof masks away." **Production canary
+`6667efac-6d62-4e8f-bf3c-39aa805ed352` (2026-08-26) disproved that with a
+measurement.** Driver and passenger each came back with **26.7% of the zone
+punched out across four components** — a vehicle silhouette, not a wheel arch.
+The proof QC is handed that exact surface crop as "the sole artwork authority",
+and refused every view conditioned on it, verbatim:
+
+> "The candidate proof shows a Ford F250 Crew Cab truck, but the authority image
+> shows a cargo van."  — `side`, and the same finding on `passenger-side` and
+> `close-up`
+
+Three of seven proofs survived, and they were the three whose surfaces had the
+smallest cut-outs or none. Meanwhile the repaired duplicate — a solid rectangle
+of continuous livery — sat unused by the proof half.
+
+So `projectionDerivative` and `buildViewAuthorities` now take
+`surfaceSourceBytes`, the same bytes `cutCallOnePanels` takes. **On a clean
+master nothing changes at all**: the fill returns the same buffer, so the
+projection and all six surface crops are byte-identical to before. This is also
+what RULE 0.21 already states — *"those SAME surface regions condition the
+matching 3D proof views"*.
+
+**`sourceMasterHash` is LINEAGE, not provenance.** A panel publishes the
+CANONICAL master hash, because that is the identity PanelPro pairs it with its
+proof by; the repaired sheet it was actually cut from is recorded separately as
+`surfaceSourceHash` (and on the revision as `panelSourceHash`). Publishing the
+repaired hash as the lineage made a correct pair report *"the proof and the panel
+came from different masters"*. Locked by
+`tests/atlas-repaired-sheet-conditions-proofs.test.mjs`.
+
 - The master is **never mutated** — same rule as the Call 11 de-logo set:
   duplicate, modify the duplicate, preserve the original byte for byte. It stays
-  the authority the seven proofs are conditioned on and hash-bound to.
+  the persisted lineage identity (`canonicalMasterHash`, the revision's
+  `master_content_hash`, every UI binding); the repaired duplicate is what both
+  the panels and the proofs are derived from.
 - The fill reads its mask from `atlas-master-qc.cjs`'s **own exported
   thresholds** (`CUTOUT_ALPHA_MAX`, `FLAT_BLACK_CHANNEL_MAX`,
   `MIN_CUTOUT_COMPONENT_RATIO`). Two definitions of "hole" would let the fill
   miss a shape the gate convicted, or erase artwork it never objected to.
-- Master and duplicate differ **only inside the holes** — exactly the region the
-  proof masks away — so proof and panel still agree everywhere either asserts
-  anything. `panelSourceHash` records what the panels were actually cut from;
-  it equals `canonicalMasterHash` on a clean master.
+- Master and duplicate differ **only inside the holes**, and both halves of the
+  fan-out read the duplicate, so proof and panel agree everywhere either asserts
+  anything. `panelSourceHash` records what the panels were cut from and the
+  proofs were conditioned on; it equals `canonicalMasterHash` on a clean master.
+  It is **not stored as bytes** — `fillMasterCutouts` is deterministic, so a
+  resumed revision rebuilds it and `flat_atlas_surface_source_mismatch` refuses
+  a rebuild that no longer reproduces the recorded hash.
 - **Mirroring is not used.** It is well defined across a straight outer edge,
   which is why the 5″ bleed uses it, and undefined across an interior hole.
 
@@ -743,6 +780,27 @@ Then re-run the failed dark-deploy job; nothing needs rebuilding.
 
 Live on 2026-08-25: 116 GiB free blocked the deploy; the reclaim took the host
 from 194 GiB used to 58 GiB, and the same artifact deployed unchanged.
+
+## 🧬 PATCHING LIVE PL/pgSQL: VALIDATE THE RESULT, NOT ONLY THE SEARCH STRINGS (2026-08-26)
+
+Two rules, and the second was learned the expensive way.
+
+1. **Patch the live body; never restate it.** `20260822090000` text-patches
+   `complete_designpro_stage` rather than re-emitting it. A migration that
+   `CREATE OR REPLACE`s the whole function silently reverts every earlier patch —
+   the shadow gate caught exactly that on the Close-Up boundary.
+2. **Then parse what you produced.** `20260826010000` asserted each of its six
+   search fragments appeared EXACTLY ONCE — and every assertion passed — while
+   one replacement deleted the legacy `ELSIF v_stage.stage_key='panels.build'`
+   header it was supposed to keep. Three symptoms followed and all three read as
+   something else: a clean A.T.L.A.S. promotion fell into the orphaned legacy
+   body, a mutated one still raised (masking the shape problem), and **a Standard
+   run matched no `panels.build` arm at all and completed with no contract
+   enforced.** Validating the inputs proves you found the right text; only
+   inspecting the generated body proves you left valid code behind. The
+   structural locks in `supabase/tests/atlas_stage_contract.test.sql` — A.T.L.A.S.
+   arm present verbatim, legacy arm present verbatim, A.T.L.A.S. before legacy —
+   are what that costs to prevent.
 
 ## Where things are
 

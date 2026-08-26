@@ -301,7 +301,12 @@ async function atlasTransport(atlas, sourceViewType) {
   if (!authority || authority.contract !== "designpro.flat-first-atlas-view-authority.v1"
     || authority.sourceViewType !== sourceViewType
     || authority.surfaceKey !== expectedSurface
-    || authority.sourceMasterHash !== atlas?.master?.contentHash) {
+    // The surface source: the cut-out-repaired sheet the panels are cut from,
+    // which is the canonical master itself whenever the sheet arrived clean.
+    || authority.sourceMasterHash !== (
+      /^[0-9a-f]{64}$/.test(String(atlas?.metadata?.panelSourceHash || ""))
+        ? String(atlas.metadata.panelSourceHash)
+        : atlas?.master?.contentHash)) {
     throw new AtlasProofQcError(
       "atlas_qc_view_authority_invalid",
       `${sourceViewType}: exact ${expectedSurface || "unknown"} Atlas authority is missing or stale`,

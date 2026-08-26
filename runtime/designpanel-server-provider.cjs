@@ -313,6 +313,13 @@ function atlasIdentity(atlas = {}) {
     : {};
   return Object.freeze({
     masterContentHash: String(atlas.masterContentHash || authority.masterContentHash || "").toLowerCase(),
+    // The sheet the six surface crops are actually taken from. Equal to the
+    // canonical master unless the authored sheet arrived with cut-outs, in
+    // which case it is the deterministic repair the panels are cut from too.
+    surfaceSourceHash: String(
+      atlas.surfaceSourceHash || authority.surfaceSourceHash
+      || atlas.masterContentHash || authority.masterContentHash || "",
+    ).toLowerCase(),
     projectionContentHash: String(atlas.projectionContentHash || authority.projectionContentHash || "").toLowerCase(),
     manifestContentHash: String(atlas.manifestContentHash || authority.manifestContentHash || "").toLowerCase(),
     revisionId: atlas.revisionId || authority.revisionId || null,
@@ -337,7 +344,7 @@ async function atlasViewIdentity(atlas, sourceViewType) {
   if (!candidate || candidate.contract !== "designpro.flat-first-atlas-view-authority.v1"
     || candidate.sourceViewType !== sourceViewType
     || candidate.surfaceKey !== expectedSurface
-    || candidate.sourceMasterHash !== identity.masterContentHash) {
+    || candidate.sourceMasterHash !== identity.surfaceSourceHash) {
     throw new DesignPanelServerError(
       "designpanel_atlas_view_authority_invalid",
       `${sourceViewType}: exact ${expectedSurface} authority is not bound to this master`,
@@ -350,7 +357,7 @@ async function atlasViewIdentity(atlas, sourceViewType) {
     sourceViewType,
     surfaceKey: expectedSurface,
     contentHash: String(candidate.contentHash).toLowerCase(),
-    sourceMasterHash: identity.masterContentHash,
+    sourceMasterHash: identity.surfaceSourceHash,
   });
 }
 

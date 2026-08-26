@@ -400,6 +400,10 @@ function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imagePa
             revisionId: flatAtlas.revisionId,
             revisionSequence: flatAtlas.revisionSequence,
             masterContentHash: flatAtlas.master.contentHash,
+            // What the proof was actually conditioned on: the canonical master
+            // on a clean sheet, its deterministic cut-out repair otherwise --
+            // the same bytes the six panels were cut from.
+            surfaceSourceHash: flatAtlas.projection.sourceMasterHash,
             projectionContentHash: flatAtlas.projection.contentHash,
             projectionSourceMasterHash: flatAtlas.projection.sourceMasterHash,
             manifestContentHash: flatAtlas.manifestAsset.contentHash,
@@ -520,7 +524,7 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
     if (authority.contract !== flatAtlas.contract
       || authority.masterContentHash !== flatAtlas.master.contentHash
       || authority.projectionContentHash !== flatAtlas.projection.contentHash
-      || authority.projectionSourceMasterHash !== flatAtlas.master.contentHash
+      || authority.projectionSourceMasterHash !== flatAtlas.projection.sourceMasterHash
       || authority.manifestContentHash !== flatAtlas.manifestAsset.contentHash
       || authority.revisionId !== flatAtlas.revisionId
       || Number(authority.revisionSequence) !== Number(flatAtlas.revisionSequence)
@@ -787,6 +791,7 @@ function createGenerationWorker({
           conditioningIdentityFor: (sourceViewType) => viewAuthorityFor(flatAtlas, sourceViewType),
           authorityMetadata: {
             masterContentHash: flatAtlas.master.contentHash,
+            surfaceSourceHash: flatAtlas.projection.sourceMasterHash,
             projectionContentHash: flatAtlas.projection.contentHash,
             manifestContentHash: flatAtlas.manifestAsset.contentHash,
             revisionId: flatAtlas.revisionId,
