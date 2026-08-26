@@ -300,10 +300,14 @@ function parseGroundedJson(text, raw = {}) {
 }
 
 function groundingPrompt(vehicle, strictRetry = false) {
-  const retryInstruction = strictRetry
-    ? " Your prior answer could not be parsed. Return exactly ONE complete JSON object, with no Markdown fence, prose, comments, trailing text, or alternative objects."
-    : "";
-  return `Find exact OEM exterior dimensions for ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.vehicleClass}). Use primary manufacturer spec pages or official PDFs. Where the named cab has multiple bed lengths, use the standard single-rear-wheel short-bed configuration and name that exact configuration in sub_type; never return alternative objects. Return JSON only: {"vehicle_class":"${vehicle.vehicleClass}","overall_length_in":number,"overall_width_in":number,"overall_height_in":number,"wheelbase_in":number|null,"sub_type":string|null,"confidence":"high|medium|low","source_urls":["https://..."]}. This is a candidate for human validation; do not invent missing values.${retryInstruction}`;
+  // A parse retry and a sanity retry ask for different corrections, so the
+  // second attempt names the actual defect instead of a generic "try again".
+  const retryInstruction = typeof strictRetry === "string"
+    ? ` Your prior answer was rejected: ${strictRetry} Re-check the manufacturer specification and return corrected values; report body dimensions excluding mirrors.`
+    : strictRetry
+      ? " Your prior answer could not be parsed. Return exactly ONE complete JSON object, with no Markdown fence, prose, comments, trailing text, or alternative objects."
+      : "";
+  return `Find exact OEM exterior dimensions for ${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.vehicleClass}). Use primary manufacturer spec pages or official PDFs. Where the named cab has multiple bed lengths, use the standard single-rear-wheel short-bed configuration and name that exact configuration in sub_type; never return alternative objects. overall_width_in is the vehicle BODY width EXCLUDING side mirrors -- manufacturers publish both, and the with-mirrors figure is wrong here because these dimensions size wrap panels for the painted body. Return JSON only: {"vehicle_class":"${vehicle.vehicleClass}","overall_length_in":number,"overall_width_in":number,"overall_height_in":number,"wheelbase_in":number|null,"sub_type":string|null,"confidence":"high|medium|low","source_urls":["https://..."]}. This is a candidate for human validation; do not invent missing values.${retryInstruction}`;
 }
 
 async function groundedCandidate(vehicle, provider) {
@@ -322,13 +326,14 @@ async function groundedCandidate(vehicle, provider) {
   }
 
   let lastParseError = null;
+  let strictInstruction = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let rawResult;
     try {
       rawResult = await transport.generateRaw({
         model: "gemini-2.5-flash",
         body: {
-          contents: [{ parts: [{ text: groundingPrompt(vehicle, attempt === 1) }] }],
+          contents: [{ parts: [{ text: groundingPrompt(vehicle, strictInstruction || attempt === 1) }] }],
           tools: [{ googleSearch: {} }],
           // Do not add responseMimeType here: the deployed model combines
           // Gemini 2.5 Flash with Google Search, while structured output plus
@@ -368,9 +373,29 @@ async function groundedCandidate(vehicle, provider) {
     const groundingUrls = candidate?.groundingMetadata?.groundingChunks
       ?.map((chunk) => chunk.web?.uri).filter(Boolean) || [];
     parsed.source_urls = [...(Array.isArray(parsed.source_urls) ? parsed.source_urls : []), ...groundingUrls];
-    return { ...assertGroundedCandidate(parsed, vehicle.vehicleClass), raw };
+    // A SANITY FAILURE EARNS ONE CORRECTIVE RE-ASK, EXACTLY LIKE A PARSE
+    // FAILURE. The first live acceptance run died here in one shot: Gemini
+    // reported the Ford Transit's real published 97.4" WITH-MIRRORS width,
+    // the van range (65-90) rightly refused it, and the run was killed with
+    // no second question -- the same one-noise-event-kills-the-run shape as
+    // convicting a proof because its judge returned 503. The range is not
+    // widened: the retry tells the model exactly what was rejected and why,
+    // and a second out-of-range answer still fails closed.
+    try {
+      return { ...assertGroundedCandidate(parsed, vehicle.vehicleClass), raw };
+    } catch (error) {
+      if (error?.code !== "genie_grounding_sanity_failed") throw error;
+      if (attempt === 1) {
+        throw new UniversalDimensionError(
+          error.code, `${error.message}; two bounded grounding attempts were exhausted`,
+        );
+      }
+      strictInstruction = `${error.message}.`;
+      continue;
+    }
   }
-  throw lastParseError || new UniversalDimensionError("genie_grounding_parse_failed", "Grounding response JSON was invalid", true);
+  throw lastParseError
+    || new UniversalDimensionError("genie_grounding_parse_failed", "Grounding response JSON was invalid", true);
 }
 
 async function queueValidationRequest(sb, stage, runId, candidateId) {
@@ -554,6 +579,8 @@ module.exports = {
   resolveOrQueueUniversalDimensions,
   _test: {
     assertGroundedCandidate,
+    groundedCandidate,
+    groundingPrompt,
     attachVehicleClassResolution,
     groundedInsertPayload,
     normalizedVehicle,

@@ -302,6 +302,26 @@ async function runSlot(options) {
           signal,
         });
       }
+      // A verdict that never happened is neither acceptance nor rejection.
+      // The inspector reports its own failures (every key 503, malformed
+      // response, undeliverable image) as analyzerUnavailable; convicting on
+      // one spends the two-slot regeneration budget on infrastructure noise,
+      // which is exactly how 9dd6d43c close-up died. The attempt is recorded
+      // and consumed -- the bounded loop still ends -- but the rejection
+      // budget stays for verdicts a judge actually issued, and an unjudged
+      // proof is still never persisted.
+      if (!verdict?.accepted && verdict?.analyzerUnavailable === true) {
+        const record = {
+          requestId, sourceViewType, attempt, model: result.model, keyFingerprint: result.keyFingerprint,
+          outcome: OUTCOME.HTTP_ERROR, durationMs,
+          errorCode: verdict?.code || "qc_analyzer_unavailable",
+          detail: String(verdict?.reason || "proof inspector unavailable").slice(0, 500), winnerHash: null,
+        };
+        await store.recordAttemptFinished(record);
+        attempts.push(record);
+        continue;
+      }
+
       if (!verdict?.accepted) {
         rejections += 1;
         const correction = typeof verdict?.correction === "string" ? verdict.correction.trim() : "";
