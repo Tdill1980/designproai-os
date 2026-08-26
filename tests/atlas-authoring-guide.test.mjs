@@ -158,7 +158,7 @@ test("the prompt states full bleed positively and no longer enumerates guide fur
 });
 
 test("the prompt version moved off v6, so masters authored with the labelled guide are refused", () => {
-  assert.equal(PROMPT_VERSION, "designpro-flat-first-atlas-20260825.v7");
+  assert.equal(PROMPT_VERSION, "designpro-flat-first-atlas-20260826.v8");
 });
 
 // ---------------------------------------------------------------------------

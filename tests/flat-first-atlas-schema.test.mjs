@@ -97,7 +97,7 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
     "producePassengerView",
     "deterministicMirror",
     "driverContentHash",
-    "designpro-flat-first-atlas-20260825.v7",
+    "designpro-flat-first-atlas-20260826.v8",
     "designpro.atlas-master-semantic-qc.v1",
     "designpro.flat-first-master-provider.v1",
     "designpanel-ai-generate.artboard.20260822.v1",
