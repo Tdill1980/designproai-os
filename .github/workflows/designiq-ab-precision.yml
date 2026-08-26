@@ -177,16 +177,25 @@ jobs:
           if [ "$AB_RUNTIME_SOURCE" = "checkout" ]; then
             runtime_paths=(runtime)
           fi
-          payload=$(tar -cz \
+          # The payload streams over SSH STDIN, never as an argument or an
+          # environment value: with runtime_source=checkout the tarball is
+          # megabytes, and a payload passed inside the remote env string dies
+          # at exec time with "Argument list too long" before anything runs
+          # (live, run 33021800743).
+          tar -cz \
             --exclude runtime/node_modules \
             scripts/designiq-ab-precision.mjs \
             control-build/control-prompt.mjs \
             control-build/control-prompt.ts \
-            "${runtime_paths[@]}" | base64 -w0)
+            "${runtime_paths[@]}" > "$RUNNER_TEMP/ab-payload.tgz"
+          payload_file=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            'f=$(mktemp /tmp/designpro-ab-payload.XXXXXX) && cat > "$f" && echo "$f"' \
+            < "$RUNNER_TEMP/ab-payload.tgz")
+          test -n "$payload_file"
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_ARMS='$AB_ARMS' AB_RUNTIME_SOURCE='$AB_RUNTIME_SOURCE' EXPECT_CONTROL_HASH='$EXPECT_CONTROL_HASH' AB_PAYLOAD='$payload' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_ARMS='$AB_ARMS' AB_RUNTIME_SOURCE='$AB_RUNTIME_SOURCE' EXPECT_CONTROL_HASH='$EXPECT_CONTROL_HASH' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -216,13 +225,14 @@ jobs:
           fi
           echo "runtime image: $image"
 
+          test -f "$AB_PAYLOAD_FILE" || { echo "payload file missing on host"; exit 43; }
           work=$(mktemp -d /tmp/designpro-ab.XXXXXX)
           out="$work/ab-evidence"
           mkdir -p "$out" "$work/scripts" "$work/control-build"
-          cleanup() { rm -rf "$work"; }
+          cleanup() { rm -rf "$work" "$AB_PAYLOAD_FILE"; }
           trap cleanup EXIT
 
-          printf '%s' "$AB_PAYLOAD" | base64 -d | tar -C "$work" -xz
+          tar -C "$work" -xzf "$AB_PAYLOAD_FILE"
           if [ -d "$work/runtime" ]; then
             # THE ISOLATED ACCEPTANCE ROUTE (runtime_source=checkout). The
             # candidate ref's runtime modules run inside the EXACT deployed
