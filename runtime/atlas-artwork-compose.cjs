@@ -36,6 +36,58 @@ const sharp = require("sharp");
 const COMPOSE_CONTRACT = "designpro.atlas-artwork-compose.v1";
 const PNG_OPTIONS = Object.freeze({ compressionLevel: 6, adaptiveFiltering: false, palette: false, force: true });
 
+/**
+ * THE MODEL PRESENTS ITS ARTWORK; THE PRESENTATION IS NOT ARTWORK.
+ *
+ * Measured on the live canary, 2026-08-26: asked for a flat banner of pure wrap
+ * artwork, Gemini returned the artwork MOUNTED — a rectangle of livery hung on a
+ * grey wall, with a lit bevel along the top edge and a soft drop shadow at the
+ * bottom right. The prompt already says "no mockup, no shadow, no frame"; it
+ * came back framed anyway, which is what RULE 0.1 means by not answering a pixel
+ * defect with new creative direction.
+ *
+ * Composed as-is, that mount lands in every zone and prints as a grey border on
+ * six panels. So the frame is removed in code, before composition, the same way
+ * every other geometry decision here is: deterministic, no AI, no second
+ * producer of design.
+ *
+ * WHAT COUNTS AS SURROUND. Two things, together, because the frame is two
+ * things. A pixel near the agreed corner colour is the flat mount. A pixel with
+ * almost no chroma is the bevel highlight and the shadow — both are grey ramps,
+ * so a colour-distance test alone stops at them (measured: it kept 89.3% of the
+ * canary, removing the left and right mount and neither the bevel nor the
+ * shadow; with the chroma test, 50.4%, and the residue is the artwork's own
+ * edge).
+ *
+ * WHAT STOPS IT EATING A DESIGN. Three refusals, in order:
+ *   - the four corners must agree on one colour, or there is no surround to
+ *     remove and nothing is trimmed;
+ *   - a line is only surround when nearly all of it is, so artwork touching the
+ *     edge halts the scan on its first row;
+ *   - and a detection that would keep less than MIN_KEPT_AREA of the banner is
+ *     discarded rather than applied — a monochrome or near-monochrome design
+ *     reads as low chroma everywhere, and on that input the honest answer is to
+ *     compose the banner untouched rather than to trust the measurement.
+ *
+ * On a clean edge-to-edge banner every one of those paths returns the full
+ * rectangle, so this is a no-op on the input it is supposed to be a no-op on.
+ */
+const TRIM = Object.freeze({
+  TOLERANCE: 26,      // per-channel distance that still counts as the mount colour
+  CHROMA_FLOOR: 28,   // below this a pixel is grey: bevel, shadow, wall
+  LINE_SHARE: 0.96,   // share of a line that must be surround before it is cut
+  SAMPLE_WIDTH: 320,  // the scan runs on a downsample; the box scales back up
+  MIN_KEPT_AREA: 0.2, // below this the detection is discarded, not applied
+  // The scan runs on a downsample, so its edge lands within one sampled pixel of
+  // the true boundary — and the boundary itself is anti-aliased, with the mount's
+  // colour blended into the outermost row of artwork. Composed, that surviving
+  // hairline reads as a frame line on every centre zone, because they all
+  // cover-crop the banner's full height. A trimmed box therefore steps this far
+  // further in. Applied ONLY after a detected frame: on a clean banner there is
+  // no boundary to clear and nothing is cut.
+  EDGE_INSET: 0.006,
+});
+
 class AtlasComposeError extends Error {
   constructor(code, message) {
     super(message);
@@ -81,6 +133,82 @@ function bannerRegion(surfaceKey, artworkWidth, artworkHeight) {
   const left = Math.round(artworkWidth * start);
   const width = Math.max(1, Math.round(artworkWidth * (end - start)));
   return { left, top: 0, width: Math.min(width, artworkWidth - left), height: artworkHeight };
+}
+
+/**
+ * The artwork rectangle inside a banner the model may have mounted or framed.
+ * Returns the full rectangle whenever there is nothing to remove, or whenever
+ * the measurement cannot be trusted — never a guess.
+ */
+async function detectArtworkBox(bytes, options = {}) {
+  const { TOLERANCE, CHROMA_FLOOR, LINE_SHARE, SAMPLE_WIDTH, MIN_KEPT_AREA, EDGE_INSET } = { ...TRIM, ...options };
+  const meta = await sharp(bytes, { limitInputPixels: false }).metadata();
+  const full = { left: 0, top: 0, width: meta.width, height: meta.height, trimmed: false, reason: "clean" };
+
+  const sampleHeight = Math.max(1, Math.round((meta.height / meta.width) * SAMPLE_WIDTH));
+  const { data, info } = await sharp(bytes, { limitInputPixels: false })
+    .resize({ width: SAMPLE_WIDTH, height: sampleHeight, fit: "fill" })
+    .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+  const px = (x, y) => {
+    const i = (y * info.width + x) * info.channels;
+    return [data[i], data[i + 1], data[i + 2]];
+  };
+  const corners = [px(0, 0), px(info.width - 1, 0), px(0, info.height - 1), px(info.width - 1, info.height - 1)];
+  const ref = [0, 1, 2].map((c) => Math.round(corners.reduce((sum, p) => sum + p[c], 0) / corners.length));
+  const spread = Math.max(...corners.map((p) => Math.max(...p.map((v, c) => Math.abs(v - ref[c])))));
+  // Four corners that disagree are four corners of a design, not of a wall.
+  if (spread > TOLERANCE) return { ...full, reason: "corners_disagree" };
+
+  const isSurround = (p) =>
+    (Math.abs(p[0] - ref[0]) <= TOLERANCE && Math.abs(p[1] - ref[1]) <= TOLERANCE && Math.abs(p[2] - ref[2]) <= TOLERANCE)
+    || Math.max(...p) - Math.min(...p) < CHROMA_FLOOR;
+  const rowIsSurround = (y) => {
+    let n = 0;
+    for (let x = 0; x < info.width; x += 1) if (isSurround(px(x, y))) n += 1;
+    return n / info.width > LINE_SHARE;
+  };
+  const colIsSurround = (x) => {
+    let n = 0;
+    for (let y = 0; y < info.height; y += 1) if (isSurround(px(x, y))) n += 1;
+    return n / info.height > LINE_SHARE;
+  };
+
+  let top = 0;
+  while (top < info.height - 1 && rowIsSurround(top)) top += 1;
+  let bottom = info.height - 1;
+  while (bottom > top && rowIsSurround(bottom)) bottom -= 1;
+  let left = 0;
+  while (left < info.width - 1 && colIsSurround(left)) left += 1;
+  let right = info.width - 1;
+  while (right > left && colIsSurround(right)) right -= 1;
+  if (top === 0 && left === 0 && bottom === info.height - 1 && right === info.width - 1) return full;
+
+  const scaleX = meta.width / info.width;
+  const scaleY = meta.height / info.height;
+  const box = {
+    left: Math.round(left * scaleX),
+    top: Math.round(top * scaleY),
+    width: Math.round((right - left + 1) * scaleX),
+    height: Math.round((bottom - top + 1) * scaleY),
+  };
+  box.width = Math.min(box.width, meta.width - box.left);
+  box.height = Math.min(box.height, meta.height - box.top);
+
+  const insetX = Math.round(box.width * EDGE_INSET);
+  const insetY = Math.round(box.height * EDGE_INSET);
+  if (box.width > insetX * 2 + 1 && box.height > insetY * 2 + 1) {
+    box.left += insetX;
+    box.top += insetY;
+    box.width -= insetX * 2;
+    box.height -= insetY * 2;
+  }
+
+  const kept = (box.width * box.height) / (meta.width * meta.height);
+  // A detector that would throw away most of the banner is likelier to be wrong
+  // about the design than right about the frame. Compose it untouched and say so.
+  if (kept < MIN_KEPT_AREA) return { ...full, reason: "implausible_trim" };
+  return { ...box, trimmed: true, reason: "frame_removed", keptAreaRatio: kept };
 }
 
 function naturalZoneSize(zone) {
@@ -155,6 +283,19 @@ async function composeAtlasFromArtwork({ artworkBytes, manifest, branding = [] }
     throw new AtlasComposeError("atlas_compose_artwork_unreadable", "The artwork banner could not be read");
   }
 
+  // Strip any mount/frame the model presented its artwork on, BEFORE anything is
+  // cropped out of it — every zone reads the same trimmed rectangle, so a frame
+  // left here would land on all six panels.
+  const artworkBox = await detectArtworkBox(artworkBytes);
+  const artwork = artworkBox.trimmed
+    ? await sharp(artworkBytes, { limitInputPixels: false })
+      .extract({ left: artworkBox.left, top: artworkBox.top, width: artworkBox.width, height: artworkBox.height })
+      .png(PNG_OPTIONS).toBuffer()
+    : artworkBytes;
+  const artworkSize = artworkBox.trimmed
+    ? { width: artworkBox.width, height: artworkBox.height }
+    : { width: artworkMeta.width, height: artworkMeta.height };
+
   const driverZone = manifest.zones.find((zone) => zone.surfaceKey === "driver");
   const overlayBySurface = new Map(
     branding.filter((entry) => Buffer.isBuffer(entry?.bytes)).map((entry) => [entry.surfaceKey, entry.bytes]),
@@ -166,9 +307,9 @@ async function composeAtlasFromArtwork({ artworkBytes, manifest, branding = [] }
     // are the same composition reversed even when their rectangles differ.
     const source = zone.surfaceKey === "passenger" && driverZone ? { ...driverZone, ...pick(zone, ["x", "y", "w", "h", "rotationDegrees", "surfaceKey"]) } : zone;
     composites.push({
-      input: await zoneLayer(artworkBytes, source, {
+      input: await zoneLayer(artwork, source, {
         mirror: zone.surfaceKey === "passenger",
-        region: bannerRegion(zone.surfaceKey, artworkMeta.width, artworkMeta.height),
+        region: bannerRegion(zone.surfaceKey, artworkSize.width, artworkSize.height),
       }),
       left: zone.x,
       top: zone.y,
@@ -192,7 +333,13 @@ async function composeAtlasFromArtwork({ artworkBytes, manifest, branding = [] }
   return {
     contract: COMPOSE_CONTRACT,
     bytes,
-    artwork: { width: artworkMeta.width, height: artworkMeta.height, bytes: artworkBytes.length },
+    artwork: {
+      width: artworkMeta.width,
+      height: artworkMeta.height,
+      bytes: artworkBytes.length,
+      // What was actually composed from, and why it differs when it differs.
+      composedFrom: { ...artworkSize, trimmed: artworkBox.trimmed, reason: artworkBox.reason },
+    },
     zonesComposed: manifest.zones.length,
     brandingSurfaces: [...overlayBySurface.keys()].sort(),
   };
@@ -208,5 +355,6 @@ module.exports = {
   COMPOSE_CONTRACT,
   AtlasComposeError,
   composeAtlasFromArtwork,
-  _test: { naturalZoneSize, zoneLayer, bannerRegion, BANNER_SPAN },
+  detectArtworkBox,
+  _test: { naturalZoneSize, zoneLayer, bannerRegion, BANNER_SPAN, TRIM },
 };

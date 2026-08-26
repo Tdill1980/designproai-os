@@ -8,6 +8,7 @@ const { buildAtlasManifest } = require("../runtime/flat-first-atlas.cjs");
 const {
   COMPOSE_CONTRACT,
   composeAtlasFromArtwork,
+  detectArtworkBox,
   _test: { BANNER_SPAN, bannerRegion, naturalZoneSize },
 } = require("../runtime/atlas-artwork-compose.cjs");
 const { ATLAS_ARTWORK_SYSTEM_INSTRUCTION, buildAtlasArtworkDirection } = require("../runtime/designiq-prompt.cjs");
@@ -30,6 +31,21 @@ async function testBanner() {
     <path d="M0 1500 C 1200 900 2400 1900 3840 1100 L3840 2160 L0 2160 Z" fill="#e8621f"/>
     <circle cx="500" cy="450" r="240" fill="#ffd9a0"/>
     <circle cx="3300" cy="600" r="200" fill="#7fd4ff"/></svg>`)).png().toBuffer();
+}
+
+// What the model actually returned on the live canary, 2026-08-26: the artwork
+// hung on a grey wall, with a lit bevel along its top edge and a soft drop
+// shadow below and right of it. Every element here is one the real banner had.
+async function mountedBanner({ wall = "#d8d8d6", left = 292, top = 640 } = {}) {
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2160">
+    <rect width="3840" height="2160" fill="${wall}"/>
+    <rect x="${left + 40}" y="${top + 40}" width="3260" height="900" fill="#9a9a98"/>
+    <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#0d2f63"/><stop offset="1" stop-color="#1a4f9c"/></linearGradient></defs>
+    <rect x="${left}" y="${top}" width="3260" height="900" fill="url(#g)"/>
+    <path d="M${left} ${top + 700} C ${left + 1000} ${top + 300} ${left + 2200} ${top + 850} ${left + 3260} ${top + 400} L${left + 3260} ${top + 900} L${left} ${top + 900} Z" fill="#e8621f"/>
+    <circle cx="${left + 600}" cy="${top + 250}" r="140" fill="#ffd9a0"/>
+    <rect x="${left}" y="${top}" width="3260" height="14" fill="#f4f4f2"/>
+  </svg>`)).png().toBuffer();
 }
 
 async function zoneAlpha(atlasBytes, zone) {
@@ -142,6 +158,64 @@ test("each surface is cut from the span of the banner it occupies on the vehicle
   const region = bannerRegion("rear", 4000, 2000);
   assert.equal(region.left + region.width <= 4000, true, "a span never reads past the banner");
   assert.equal(region.height, 2000);
+});
+
+// A MOUNT IS NOT ARTWORK.
+//
+// Asked for a flat banner of pure artwork with "no mockup, no shadow, no
+// frame", the live model returned it hung on a grey wall with a bevel and a
+// drop shadow (canary, 2026-08-26). Composed as-is that frame prints as a grey
+// border on all six panels, so it is removed in code before anything is cropped.
+test("a banner the model mounted on a wall is composed from the artwork, not the wall", async () => {
+  const banner = await mountedBanner();
+  const box = await detectArtworkBox(banner);
+
+  assert.equal(box.trimmed, true, "the mount must be detected");
+  assert.equal(box.reason, "frame_removed");
+  // The wall, the bevel highlight and the shadow are all gone; the artwork is not.
+  assert.ok(Math.abs(box.left - 292) < 40, `left edge found at ${box.left}, artwork starts at 292`);
+  assert.ok(box.top > 640 && box.top < 700, `top edge found at ${box.top}, artwork starts at 640 under a 14px bevel`);
+  assert.ok(box.width > 3100 && box.width <= 3300, `width ${box.width} should be about the artwork's 3260`);
+  assert.ok(box.height > 800 && box.height <= 900, `height ${box.height} should be under the artwork's 900`);
+
+  // And the composed atlas carries none of it: every zone is still full bleed,
+  // and the result records what it was actually composed from.
+  const manifest = buildAtlasManifest(SURFACES);
+  const { bytes, artwork } = await composeAtlasFromArtwork({ artworkBytes: banner, manifest });
+  assert.equal(artwork.composedFrom.trimmed, true);
+  assert.equal(artwork.composedFrom.width, box.width);
+  for (const zone of manifest.zones) {
+    assert.equal(await zoneAlpha(bytes, zone), 1, `${zone.surfaceKey} stays opaque after the trim`);
+  }
+});
+
+// AND IT LEAVES A CLEAN BANNER ALONE.
+//
+// The no-op case is the one that matters most: edge-to-edge artwork has four
+// corners that disagree, so there is no surround to agree on and nothing is cut.
+test("an edge-to-edge banner is composed untouched", async () => {
+  const box = await detectArtworkBox(await testBanner());
+  assert.equal(box.trimmed, false);
+  assert.equal(box.reason, "corners_disagree");
+  assert.deepEqual([box.left, box.top], [0, 0]);
+});
+
+// A DETECTOR THAT WOULD EAT THE DESIGN REFUSES INSTEAD.
+//
+// A near-monochrome wrap reads as low chroma everywhere, which is the same
+// signal the bevel and the shadow give. On that input the measurement cannot be
+// trusted, so the banner is composed whole and the reason is recorded rather
+// than a guess being applied.
+test("a near-monochrome design is not mistaken for a frame", async () => {
+  const greyscale = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2160">
+    <rect width="3840" height="2160" fill="#3a3a3a"/>
+    <path d="M0 1400 C 1200 800 2400 1800 3840 1000 L3840 2160 L0 2160 Z" fill="#6e6e6e"/>
+    <circle cx="900" cy="500" r="260" fill="#8f8f8f"/></svg>`)).png().toBuffer();
+
+  const box = await detectArtworkBox(greyscale);
+  assert.equal(box.trimmed, false, "a monochrome design must survive whole");
+  assert.equal(box.reason, "implausible_trim");
+  assert.deepEqual([box.width, box.height], [3840, 2160]);
 });
 
 // THE CRAFT TRAVELS; THE TOPOLOGY DOES NOT.
