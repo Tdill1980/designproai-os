@@ -164,9 +164,13 @@ test("the library filters by name, id, vehicle, pipeline and status", () => {
   assert.match(library, /statusOf\(entry\) !== status\) return false/);
 });
 
-/** Browse, then open — in the studio, and through to PanelPro. */
-test("the library opens a design in the studio and in PanelPro", () => {
-  assert.match(library, /\/designpro\/jobs\/\$\{encodeURIComponent\(entry\.generationId\)\}\/panelpro/);
+/** Browse, then open. The PanelPro link left the customer card with the rest
+ * of the production identity (owner, 2026-08-26); staff reach the control room
+ * from the Production jobs cards. */
+test("the library opens a design in the studio and carries no production identity", () => {
+  assert.ok(!library.includes("/panelpro"), "no PanelPro link on the customer card");
+  assert.ok(!/Design ID|Order\b.*number/i.test(library.replace(/\/\*[^]*?\*\/|^\s*\/\/.*$/gm, "")),
+    "no identity facts on the customer card");
   assert.match(library, /onOpen\?\.\(entry\.generationId\)/);
   // One mount, and it is the ONLY browse grid on the page now -- the
   // vehicle-grouped feed it replaced no longer renders.
