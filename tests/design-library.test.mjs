@@ -16,6 +16,10 @@ const studio = readFileSync(
   new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url),
   "utf8",
 );
+const source = readFileSync(
+  new URL("../app/src/lib/revisionstudio-source.ts", import.meta.url),
+  "utf8",
+);
 
 /**
  * THE LIBRARY READS THE GENERATION RECORDS, NOT THE WORKFLOW RUNS.
@@ -172,9 +176,49 @@ test("the library opens a design in the studio and in PanelPro", () => {
   assert.match(studio, /query=\{searchQuery\}/);
   // And the SPROKET tips the old grid carried are preserved in its empty state.
   assert.match(studio, /emptySlot=\{<SproketTipsSlideshow \/>\}/);
+  // ONE CONTROL PER QUESTION. The page's header control drives the library's
+  // pipeline filter, and the library then renders no second set of pipeline
+  // buttons -- otherwise two controls on screen answer the same question and
+  // can disagree.
+  assert.match(studio, /pipeline=\{pipelineFilter\}/);
+  assert.match(library, /externalPipeline === undefined && \(/);
   // Opening resolves against the server when the feed cannot answer, which is
   // most of the library.
   assert.match(studio, /readRevisionStudioDesign\(id\)/);
+});
+
+/**
+ * THE HEADER CONTROL FILTERS BY PIPELINE, NOT BY A TOOL THIS OS DOES NOT HAVE.
+ *
+ * It arrived from RestylePro as a fifteen-option tool picker -- ColorPro,
+ * FadeWraps, GraphicsPro, ApprovePro, WBTY, MyVehiclePro, WallPro. DesignPro OS
+ * projects every row it can load with `mode_type: "designpanelpro"`, so those
+ * options could only ever empty GalleryMode, and "DesignProAI" did exactly what
+ * "All Tools" did. A control whose only real settings are "everything" and
+ * "nothing" reads as broken, because it is.
+ */
+test("the studio's header filter offers the two answers that exist", () => {
+  assert.ok(!studio.includes("modeFilter"), "the dead tool filter must be gone");
+  for (const ghost of ["ColorPro", "FadeWraps", "GraphicsPro", "WBTY", "MyVehiclePro"]) {
+    assert.ok(
+      !studio.includes(`<SelectItem value="${ghost.toLowerCase()}"`),
+      `the header must not offer ${ghost}: this OS holds no such row`,
+    );
+  }
+  assert.match(studio, /<SelectItem value="atlas">A\.T\.L\.A\.S\.<\/SelectItem>/);
+  assert.match(studio, /<SelectItem value="standard">Standard<\/SelectItem>/);
+  // GalleryMode reads the same filter, so the two surfaces cannot disagree...
+  assert.match(
+    studio,
+    /pipelineFilter !== "all" && r\.pipeline && r\.pipeline !== pipelineFilter/,
+  );
+  // ...and an unreported pipeline is never treated as "the other one".
+  assert.match(
+    source,
+    /pipeline: "atlas" \| "standard" \| null;/,
+  );
+  assert.match(source, /pipeline: entry\.pipeline,/);
+  assert.match(source, /pipeline: null,/);
 });
 
 /** Not a producer. Browsing changes nothing. */

@@ -1624,7 +1624,18 @@ export default function RevisionStudioIQ() {
   const [savingToProof, setSavingToProof] = useState(false);
 
   // UI state
-  const [modeFilter, setModeFilter] = useState<string>("all");
+  // ⛔ THIS WAS A FIFTEEN-OPTION TOOL FILTER, AND FOURTEEN OF THEM WERE EMPTY.
+  //
+  // It came over from RestylePro, where one grid served ColorPro, FadeWraps,
+  // GraphicsPro, ApprovePro, WBTY, MyVehiclePro and WallPro. DesignPro OS has
+  // exactly one tool: every row this page can load is projected with
+  // `mode_type: "designpanelpro"`, so picking any of the other options emptied
+  // GalleryMode and picking DesignProAI did the same thing as "All Tools".
+  //
+  // The real distinction between two designs here is which pipeline authored
+  // them, which is also what the brief asked to be able to filter on. So the
+  // control keeps its place and answers a question that has two real answers.
+  const [pipelineFilter, setPipelineFilter] = useState<"all" | "atlas" | "standard">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showTeamRenders, setShowTeamRenders] = useState(false);
   const [selectedRender, setSelectedRender] = useState<any | null>(null);
@@ -2362,7 +2373,7 @@ export default function RevisionStudioIQ() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["revision-studio-renders", modeFilter, searchQuery, isAdmin, showTeamRenders],
+    queryKey: ["revision-studio-renders", pipelineFilter, searchQuery, isAdmin, showTeamRenders],
     queryFn: async ({ pageParam = 0 }) => {
       // SERVER-OWNED SOURCE. This used to select a legacy design table -- a
       // RestylePro table that holds zero rows in DesignProAI, and a name the
@@ -2380,8 +2391,9 @@ export default function RevisionStudioIQ() {
       // keystroke.
       const needle = searchQuery.trim().toLowerCase();
       const matches = all.filter((row) => {
-        if (modeFilter !== "all"
-          && !String(row.mode_type || "").toLowerCase().startsWith(modeFilter.toLowerCase())) return false;
+        // A row whose pipeline the server could not report passes both
+        // filters: "unknown" is not "the other one".
+        if (pipelineFilter !== "all" && row.pipeline && row.pipeline !== pipelineFilter) return false;
         if (!needle) return true;
         return [
           row.vehicle_year, row.vehicle_make, row.vehicle_model, row.vehicle_type,
@@ -2503,7 +2515,7 @@ export default function RevisionStudioIQ() {
     }
 
     return merged;
-  }, [rendersPages, graphicsProRows, panelizerRows, modeFilter]);
+  }, [rendersPages, graphicsProRows, panelizerRows, pipelineFilter]);
 
   // THE ORDER NUMBER IS ON THE DESIGN.
   //
@@ -4442,27 +4454,14 @@ export default function RevisionStudioIQ() {
             />
           </div>
 
-          <Select value={modeFilter} onValueChange={setModeFilter}>
+          <Select value={pipelineFilter} onValueChange={(v) => setPipelineFilter(v as typeof pipelineFilter)}>
             <SelectTrigger className="w-36 sm:w-48 bg-zinc-900 border-zinc-700">
-              <SelectValue placeholder="Tool" />
+              <SelectValue placeholder="Pipeline" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Tools</SelectItem>
-              <SelectItem value="colorpro">ColorPro</SelectItem>
-              <SelectItem value="designpanelpro">DesignProAI™</SelectItem>
-              <SelectItem value="recreatepro">RecreatePro™</SelectItem>
-              <SelectItem value="fadewraps">FadeWraps</SelectItem>
-              <SelectItem value="graphicspro">GraphicsPro</SelectItem>
-              <SelectItem value="approvemode">ApprovePro</SelectItem>
-              <SelectItem value="wbty">WBTY</SelectItem>
-              <SelectItem value="myvehicle">MyVehiclePro (all)</SelectItem>
-              <SelectItem value="myvehicle_colorpro">↳ MV × ColorPro</SelectItem>
-              <SelectItem value="myvehicle_designpanelpro">↳ MV × DesignPro</SelectItem>
-              <SelectItem value="myvehicle_fadewraps">↳ MV × FadeWraps</SelectItem>
-              <SelectItem value="myvehicle_graphicspro">↳ MV × GraphicsPro</SelectItem>
-              <SelectItem value="myvehicle_wbty">↳ MV × WBTY</SelectItem>
-              <SelectItem value="wallpro">WallPro</SelectItem>
-              <SelectItem value="myvehicle_wallpro">↳ MV × WallPro</SelectItem>
+              <SelectItem value="all">All Designs</SelectItem>
+              <SelectItem value="atlas">A.T.L.A.S.</SelectItem>
+              <SelectItem value="standard">Standard</SelectItem>
             </SelectContent>
           </Select>
 
@@ -4512,20 +4511,10 @@ export default function RevisionStudioIQ() {
         {/* ================================================================ */}
         {layoutMode === "gallery" && !selectedRender && (() => {
           const galleryRenders = (renders || []).filter((r: any) => {
-            // MyVehiclePro renders are tagged `myvehicle_<tool>` (e.g.
-            // `myvehicle_graphicspro`), so the "myvehicle" filter has to match
-            // by prefix rather than equality — otherwise every MVP render gets
-            // filtered out of the gallery. Other tool filters stay on
-            // case-insensitive equality and explicitly exclude MVP rows so
-            // they only surface under their own filter.
-            if (modeFilter !== "all") {
-              const mt = (r.mode_type || "").toLowerCase();
-              if (modeFilter === "myvehicle") {
-                if (!mt.startsWith("myvehicle_")) return false;
-              } else {
-                if (mt !== modeFilter.toLowerCase()) return false;
-              }
-            }
+            // The same pipeline filter the header control drives, so
+            // GalleryMode and the library never disagree about what is on
+            // screen. A row with no reported pipeline is shown either way.
+            if (pipelineFilter !== "all" && r.pipeline && r.pipeline !== pipelineFilter) return false;
             if (searchQuery) {
               const q = searchQuery.toLowerCase();
               const label = `${r.vehicle_year || ""} ${r.vehicle_make || ""} ${r.vehicle_model || ""} ${r.color_name || ""} ${r.design_file_name || ""} ${r.admin_notes || ""} ${r.mode_type || ""} ${r.id || ""}`.toLowerCase();
@@ -4674,6 +4663,7 @@ export default function RevisionStudioIQ() {
             <DesignLibrary
               onOpen={openDesignById}
               query={searchQuery}
+              pipeline={pipelineFilter}
               emptySlot={<SproketTipsSlideshow />}
             />
             {openingId && (

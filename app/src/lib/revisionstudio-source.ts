@@ -73,6 +73,13 @@ export type RevisionStudioDesignRow = {
   color_hex: string | null;
   finish_type: string | null;
   mode_type: string;
+  /**
+   * A.T.L.A.S. or Standard, as the REQUEST asked for it -- not as inferred
+   * from what it has produced so far. Null when the source could not say: a
+   * run status carries no pipeline field, and "unknown" must never be filtered
+   * as though it were "not A.T.L.A.S.".
+   */
+  pipeline: "atlas" | "standard" | null;
   created_at: string | null;
   updated_at: string | null;
   generation_status: "completed";
@@ -186,6 +193,8 @@ export function designRowFromJob(
     color_hex: null,
     finish_type: text(job.finish),
     mode_type: DESIGNPRO_MODE,
+    // A run status reports no pipeline, so this says so rather than guessing.
+    pipeline: null,
     created_at: job.createdAt,
     updated_at: job.updatedAt,
     generation_status: "completed",
@@ -236,6 +245,7 @@ export function designRowFromLibraryEntry(
     color_hex: null,
     finish_type: text(entry.finish),
     mode_type: DESIGNPRO_MODE,
+    pipeline: entry.pipeline,
     created_at: entry.createdAt,
     updated_at: entry.updatedAt || entry.createdAt,
     generation_status: "completed",

@@ -173,6 +173,7 @@ export function matchesQuery(entry: DesignLibraryEntry, needle: string): boolean
 export function DesignLibrary({
   onOpen,
   query: externalQuery,
+  pipeline: externalPipeline,
   emptySlot,
   className,
 }: {
@@ -184,6 +185,11 @@ export function DesignLibrary({
    * duplication this surface exists to remove.
    */
   query?: string;
+  /**
+   * A.T.L.A.S. / Standard, when the page's own control drives it. The library
+   * then renders no second set of pipeline buttons -- one control per question.
+   */
+  pipeline?: "all" | "atlas" | "standard";
   /**
    * Rendered inside the empty state. The studio's SPROKET tips slideshow lived
    * in the grid this library replaced, so it is carried here rather than lost
@@ -198,7 +204,8 @@ export function DesignLibrary({
   const [windowKey, setWindowKey] = useState<WindowKey>("4m");
   const [ownQuery, setOwnQuery] = useState("");
   const query = externalQuery === undefined ? ownQuery : externalQuery;
-  const [pipeline, setPipeline] = useState<PipelineFilter>("all");
+  const [ownPipeline, setOwnPipeline] = useState<PipelineFilter>("all");
+  const pipeline = externalPipeline === undefined ? ownPipeline : externalPipeline;
   const [status, setStatus] = useState<StatusFilter>("all");
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -292,25 +299,27 @@ export function DesignLibrary({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1">
-          {([["all", "All"], ["atlas", "A.T.L.A.S."], ["standard", "Standard"]] as const).map(
-            ([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setPipeline(key)}
-                className={cn(
-                  "rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors",
-                  pipeline === key
-                    ? "border-cyan-500 bg-cyan-500/15 text-cyan-200"
-                    : "border-zinc-700 bg-zinc-950/60 text-zinc-400 hover:text-zinc-200",
-                )}
-              >
-                {label}
-              </button>
-            ),
-          )}
-        </div>
+        {externalPipeline === undefined && (
+          <div className="flex items-center gap-1">
+            {([["all", "All"], ["atlas", "A.T.L.A.S."], ["standard", "Standard"]] as const).map(
+              ([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setOwnPipeline(key)}
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors",
+                    pipeline === key
+                      ? "border-cyan-500 bg-cyan-500/15 text-cyan-200"
+                      : "border-zinc-700 bg-zinc-950/60 text-zinc-400 hover:text-zinc-200",
+                  )}
+                >
+                  {label}
+                </button>
+              ),
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-1">
           {([
             ["all", "Any status"],
