@@ -364,6 +364,56 @@ Two things about it that are load-bearing:
   the value captured from the restylepro-os checkout. A drifted control is not a
   control.
 
+## 🎭 RULE 0.24 — THREE REFERENCE CLASSES, THREE AUTHORITIES (Trish 2026-08-26)
+
+Mixing these roles is a design-drift mechanism, so they are locked in tests
+rather than left to prose — `tests/designpro-reference-authority.test.mjs`.
+
+| class | what it is | what it may teach | what it may NEVER do |
+|---|---|---|---|
+| **STRUCTURAL** | the bundled Houdini flattened-top-view pair | how ONE cohesive wrap is represented across a flattened master — layout, orientation, surface correspondence, seam intent | contribute artwork, wording, logo, colour, brand or style |
+| **CREATIVE** | the customer's own VisionBoard images | artwork authority under `exact_reference`; style authority under `style_inspiration` | — |
+| **PRESENTATION** | the 3D proof example + Studio OS | vehicle presentation, camera, studio, photorealism, wrap realism | contribute artwork or redesign the customer's wrap |
+
+**The Houdini sheet is NOT a creative-style reference** unless the customer
+explicitly supplies it as one. It is attached to teach the output format.
+
+**Authority order for a 3D proof:**
+
+1. the accepted A.T.L.A.S. source design — **ARTWORK** authority
+2. YMM + the angle contract — **VEHICLE/VIEW** authority
+3. the 3D example + Studio OS — **PRESENTATION** authority
+
+`viewAuthorityFor` enforces (1) by hash: an authority not bound to the surface
+source, or bound to the wrong surface, throws
+`flat_atlas_view_authority_identity_mismatch`. A presentation example can never
+pass that gate, which is what stops a render reference redesigning the wrap.
+
+The classes stay apart in metadata too — `topologyExamplesApplied` /
+`topologyExampleIdentities` versus `verifiedCustomerReferenceCount` — so a later
+reader cannot mistake one for the other.
+
+## 📐 THE PERSONA WILL BE MEDIUM-AWARE. NOT YET, AND NEVER VIA AN AI CALL. (Trish 2026-08-26)
+
+DesignProAI's professional persona ultimately applies to vehicle wraps, WallPro /
+wall wraps, window graphics and GraphicsPro. The creative layer today is
+vehicle-hardcoded: 55 `vehicle` references in `runtime/designiq-prompt.cjs`, no
+medium abstraction, and no wall/window/graphics authoring path in the runtime.
+
+**Do not generalise those 55 references yet.** Vehicle DesignPro is what is
+blocking, and it must be proven first.
+
+**When it is done, two constraints are already fixed:**
+
+- **Medium selection is deterministic and local.** Assemble the correct
+  professional persona for the medium in code. Do NOT add an LLM
+  classification or persona-selection stage — that is latency on the critical
+  path before the customer sees anything, and RULE 0.20's one-source-design
+  contract does not get a second AI call to decide who is designing.
+- **One source-design AI authoring call stays one call.** VisionBoardIQ runs
+  only when reference images exist, and it is the only additional AI stage the
+  authoring path may carry.
+
 ## 🔗 RULE 0.17 — ONE PIPELINE. A.T.L.A.S. IS NOT A SIDE EXPERIMENT. (Trish 2026-08-23)
 
 A.T.L.A.S. runs the **same** file-output chain as Standard. It was excluded from
