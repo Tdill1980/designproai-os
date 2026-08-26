@@ -2746,6 +2746,63 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 200, publicRevisions);
       }
 
+      // PER-VIEW PROOF QC, for the PanelPro control room.
+      //
+      // The master half of this evidence already crosses the seam on the atlas
+      // route above. This is the per-camera half: each view's terminal state
+      // and retry counts, and every inspector verdict verbatim -- the camera
+      // and framing contract failures, the atlas/vehicle continuity findings,
+      // the invented-text and logo call-outs. The runtime has always recorded
+      // them; nothing has ever read them.
+      //
+      // Read model only. The database proves ownership through the same
+      // predicate the atlas paths use, the shapes are bounded here, and no
+      // response field can carry a storage path.
+      const proofQcMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/proof-qc$/);
+      if (req.method === "GET" && proofQcMatch) {
+        const requestedProofQcId = decodeURIComponent(proofQcMatch[1]);
+        const proofQcRun = await resolveRun(fetchImpl, token, cfg, requestedProofQcId);
+        const proofQcGenerationId = (proofQcRun
+          ? generationId(proofQcRun)
+          : String((await generationRequestByGenerationId(fetchImpl, token, cfg, requestedProofQcId))?.generation_id || "")
+        ).toLowerCase();
+        if (!UUID_PATTERN.test(proofQcGenerationId)) return json(res, 404, { error: "job_not_found" });
+        const locatedQc = await rpc(fetchImpl, token, cfg, "designpro_generation_proof_qc", {
+          p_generation_id: proofQcGenerationId,
+        });
+        if (locatedQc === null) return json(res, 404, { error: "job_not_found" });
+        if (!Array.isArray(locatedQc)) {
+          throw Object.assign(new Error("proof_qc_response_invalid"), { status: 502 });
+        }
+        const bounded = (value, max) => (value == null ? null : String(value).slice(0, max));
+        return json(res, 200, locatedQc.slice(0, 20).map((entry) => ({
+          requestId: String(entry?.requestId || ""),
+          state: String(entry?.state || ""),
+          attempt: Number(entry?.attempt) || 0,
+          createdAt: entry?.createdAt || null,
+          completedAt: entry?.completedAt || null,
+          error: entry?.error && typeof entry.error === "object" && !Array.isArray(entry.error) ? entry.error : null,
+          views: (Array.isArray(entry?.views) ? entry.views : []).slice(0, 8).map((view) => ({
+            sourceViewType: String(view?.sourceViewType || ""),
+            state: String(view?.state || ""),
+            reason: bounded(view?.reason, 200),
+            rejections: Number(view?.rejections) || 0,
+            providerCalls: Number(view?.providerCalls) || 0,
+            regenerations: Number(view?.regenerations) || 0,
+            updatedAt: view?.updatedAt || null,
+            attempts: (Array.isArray(view?.attempts) ? view.attempts : []).slice(0, 12).map((item) => ({
+              attempt: Number(item?.attempt) || 0,
+              model: bounded(item?.model, 80),
+              outcome: String(item?.outcome || ""),
+              httpStatus: item?.httpStatus == null ? null : Number(item.httpStatus),
+              detail: bounded(item?.detail, 1000),
+              durationMs: item?.durationMs == null ? null : Number(item.durationMs),
+              createdAt: item?.createdAt || null,
+            })),
+          })),
+        })));
+      }
+
       const artifactMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/artifacts$/);
       // RECORD A CORRECTED PANEL. The bytes are already stored and hash-verified
       // through /assets/upload-intents + /assets/verify, exactly like a logo; this

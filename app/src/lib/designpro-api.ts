@@ -199,6 +199,41 @@ export type FlatAtlasCallOnePanel = {
  * can inspect. The manifest is represented by identity because it is consumed
  * by the server-side slicer, not interpreted in the browser.
  */
+/** One recorded proof-inspection attempt for one view. */
+export type ProofQcAttempt = {
+  attempt: number;
+  model: string | null;
+  outcome: string;
+  httpStatus: number | null;
+  /** The inspector's finding, verbatim. Null when the attempt was accepted. */
+  detail: string | null;
+  durationMs: number | null;
+  createdAt: string | null;
+};
+
+/** One view's terminal state plus its full inspection/retry history. */
+export type ProofQcView = {
+  sourceViewType: string;
+  state: string;
+  reason: string | null;
+  rejections: number;
+  providerCalls: number;
+  regenerations: number;
+  updatedAt: string | null;
+  attempts: ProofQcAttempt[];
+};
+
+/** Per-request proof QC evidence for a generation, newest request first. */
+export type ProofQcRequest = {
+  requestId: string;
+  state: string;
+  attempt: number;
+  createdAt: string | null;
+  completedAt: string | null;
+  error: Record<string, unknown> | null;
+  views: ProofQcView[];
+};
+
 export type FlatAtlasRevision = {
   id: string;
   generationId: string;
@@ -1121,6 +1156,14 @@ export const dpApi = {
    */
   listJobFlatAtlasRevisions: (generationId: string) =>
     request<FlatAtlasRevision[]>(`/jobs/${encodeURIComponent(generationId)}/atlas`),
+  /**
+   * Per-view proof QC for one generation: each request's slots with their
+   * terminal state, retry counts, and every inspector verdict verbatim. The
+   * master half of this evidence rides on the atlas revisions; this is the
+   * per-camera half. Read model over the existing evidence tables.
+   */
+  listProofQc: (generationId: string) =>
+    request<ProofQcRequest[]>(`/jobs/${encodeURIComponent(generationId)}/proof-qc`),
   submitRevision: (submission: RevisionSubmission) =>
     request<{ runId: string; accepted: true }>("/revisions", {
       method: "POST",

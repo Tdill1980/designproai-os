@@ -1164,6 +1164,42 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
 
       const located = await locateLogosForPanel(duplicate, surface);
       const rects = logoBoxesToPixelRects(located, width, height);
+
+      // THE LOGO PACK IS THE LIFTED REAL PIXELS, NOT A REGENERATION.
+      //
+      // The proven reference Logo Pack (`extract-logo-elements` boxes →
+      // real-pixel lift, never the generative `separate` pass) is what
+      // RevisionStudioIQ's Logo Pack section and PanelPro's brand-asset list
+      // consume — and for an A.C.E.-designed brand nothing else produces it:
+      // Call 10 registers only customer-UPLOADED logo files, so a brief with no
+      // upload left `kind="logo"` empty forever (live: zero logo artifacts in
+      // all of production, 2026-08-26). The regions this stage has ALREADY
+      // located for removal are those exact brand marks, so each one is cropped
+      // out of the branded duplicate — real pixels, zero AI beyond the one
+      // sanctioned detection — and published as a non-authoritative `logo`
+      // artifact bound to its surface, source panel hash and master lineage.
+      // Never printed, never Topaz/output/ZIP input.
+      const lifts = isHonestNoOp(rects) ? [] : rects.slice(0, 8);
+      for (let liftIndex = 0; liftIndex < lifts.length; liftIndex += 1) {
+        const rect = lifts[liftIndex];
+        const liftedBytes = await sharp(duplicate, { limitInputPixels: false })
+          .extract({ left: rect.x, top: rect.y, width: rect.w, height: rect.h })
+          .png().toBuffer();
+        const liftPath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/logo-pack/${surface}-${liftIndex + 1}.png`;
+        const storedLift = await uploadProducedBytes(sb, run, stage, runtimeConfig, liftPath, liftedBytes, "image/png");
+        if (storedLift.spool) spools.push(storedLift.spool);
+        produced.push(artifact("logo", storedLift.storagePath, storedLift.hash, storedLift.bytes, surface, {
+          call: 11, role: "brand-lift", authoritative: false, printable: false,
+          identityKey: `${surface}-lift-${liftIndex + 1}`,
+          displayName: String(rect.label || "Brand mark"),
+          targetSurfaceKey: surface,
+          sourcePanelHash: expectedHash,
+          sourceMasterHash: String(row.metadata?.sourceMasterHash || "") || null,
+          liftRect: { x: rect.x, y: rect.y, w: rect.w, h: rect.h },
+          separationContract: "designpro.call11-brand-lift.v1",
+        }));
+      }
+
       // HONEST NO-OP: a panel with no logo mark still produces its duplicate so
       // the side is present for template QC, and records removedCount 0 so "no
       // logos found" is never read as "removal succeeded".
@@ -1202,17 +1238,27 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
         throw new StageError("call11_branded_panel_mutated", `${surface} branded panel was modified by Call 11`, false);
       }
     }
-    const qcHashes = Object.fromEntries(produced.map((item) => [item.surfaceKey, item.contentHash]));
-    if (new Set(Object.values(qcHashes)).size !== produced.length) {
+    // Two kinds leave this stage now: the six qc-panel duplicates, and the
+    // brand lifts published as `logo`. The exactly-six assertions below are
+    // about the DUPLICATES, so they count that subset rather than everything
+    // produced — a lift must never be mistaken for a seventh QC panel.
+    const qcPanels = produced.filter((item) => item.kind === "qc-panel");
+    const liftedLogos = produced.filter((item) => item.kind === "logo");
+    const qcHashes = Object.fromEntries(qcPanels.map((item) => [item.surfaceKey, item.contentHash]));
+    if (new Set(Object.values(qcHashes)).size !== qcPanels.length) {
       throw new StageError("call11_qc_panel_reuse", "Every QC duplicate must be its own image", false);
     }
     const completed = await complete(sb, stage, run, {
       verified: true, receiptKind: "call11.qc-panels", call: 11,
       role: "panelpro-qc-duplicate", authoritative: false,
-      sides: produced.map((item) => item.surfaceKey),
+      sides: qcPanels.map((item) => item.surfaceKey),
       qcPanelHashes: qcHashes, sourcePanelHashes: call9.panelHashes || {},
       removedLogoCounts: removals, brandedSetPreserved: true,
       removalContract: "designpro.call11-delogo-duplicate.v1",
+      // The Logo Pack this stage lifted: real pixels cropped from the branded
+      // duplicates at the exact regions the de-logo removal painted out.
+      liftedLogoHashes: liftedLogos.map((item) => item.contentHash),
+      liftContract: "designpro.call11-brand-lift.v1",
     }, null, produced);
     for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 11 QC panel spool cleanup failed: ${error.message}`));
     return completed;
@@ -1712,7 +1758,13 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       throw new StageError("production_call8_receipt_mismatch", "Call 8 receipt and 2D production proof differ", false);
     }
     const receiptPlacements = Array.isArray(call10.receipt?.inventory) ? [...call10.receipt.inventory].sort((a, b) => String(a.placementKey).localeCompare(String(b.placementKey))) : [];
-    const observedPlacements = sourceLogos.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, targetSurfaceKey: row.metadata?.targetSurfaceKey, contentHash: row.content_hash })).sort((a, b) => String(a.placementKey).localeCompare(String(b.placementKey)));
+    // Only Call 10's REGISTERED logos answer to the Call 10 inventory receipt.
+    // Call 11 also publishes `logo` artifacts -- the brand-lift Logo Pack
+    // cropped from the branded duplicates -- and those are placement-free by
+    // design: they were detected, not attested, so holding them against the
+    // frozen inventory would fail every A.C.E.-designed brand here.
+    const registeredLogos = sourceLogos.filter((row) => row.metadata?.placementKey);
+    const observedPlacements = registeredLogos.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, targetSurfaceKey: row.metadata?.targetSurfaceKey, contentHash: row.content_hash })).sort((a, b) => String(a.placementKey).localeCompare(String(b.placementKey)));
     if (JSON.stringify(receiptPlacements) !== JSON.stringify(observedPlacements)) throw new StageError("production_logo_evidence_mismatch", "Call 10 logo placement receipt and immutable logo bytes differ", false);
 
     const produced = [];
@@ -1728,7 +1780,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     for (const row of [...sourceLogos].sort((a, b) => String(a.surface_key).localeCompare(String(b.surface_key)))) {
       const extension = String(row.storage_path).split(".").pop().toLowerCase();
       const contentType = row.metadata?.contentType || ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", svg: "image/svg+xml", pdf: "application/pdf" })[extension];
-      const slug = String(row.surface_key).replace(/[^A-Za-z0-9_-]+/g, "-");
+      // Call 10 rows carry the placement key in surface_key; Call 11 brand
+      // lifts share a plain surface key across several crops, so the unique
+      // identityKey names the copy instead of colliding on `logos/driver.png`.
+      const slug = String(row.metadata?.placementKey || row.metadata?.identityKey || row.surface_key).replace(/[^A-Za-z0-9_-]+/g, "-");
       produced.push(await copyPinnedSourceArtifact(sb, run, row, "logo", `logos/${slug}.${extension}`, contentType, { sourceReceiptHash: call10.receipt_hash }));
     }
     return complete(sb, stage, run, {

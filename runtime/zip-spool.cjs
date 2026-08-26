@@ -269,7 +269,7 @@ async function uploadSpoolWithTus({
   // vehicle is large enough to cross the line the stage fails closed. The six
   // surface keys are spelled out rather than matched loosely so a new
   // directory still has to be added deliberately.
-  const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof-masters\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png|proof\/(?:flat-wrap-layout|call8-2d-production-proof)-[0-9a-f]{24}\.png|surfaces\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png|panels\/(?:driver|passenger|hood|roof|front|rear)\.png|qc-panels\/(?:driver|passenger|hood|roof|front|rear)\.png|enhanced\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png)$/);
+  const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof-masters\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png|proof\/(?:flat-wrap-layout|call8-2d-production-proof)-[0-9a-f]{24}\.png|surfaces\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png|panels\/(?:driver|passenger|hood|roof|front|rear)\.png|qc-panels\/(?:driver|passenger|hood|roof|front|rear)\.png|logo-pack\/(?:driver|passenger|hood|roof|front|rear)-[1-8]\.png|enhanced\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png)$/);
   if (!targetMatch) fail("tus_storage_path_invalid", "Resumable artifact path is outside the exact DesignPro run allowlist", false);
   const extension = target.split(".").pop().toLowerCase();
   const expectedType = ({ zip: "application/zip", png: "image/png", tiff: "image/tiff", eps: "application/postscript" })[extension];
