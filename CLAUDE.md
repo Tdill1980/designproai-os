@@ -969,9 +969,26 @@ feature branch fails at the guard) → then dispatch `deploy-production.yml` on
 `DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3`. The dispatch path asserts
 `GITHUB_SHA == EXACT_SHA`, so it can only ever deploy the head of main.
 
-Put `[dark-deploy]` in the merge commit message only when the merge itself
-should ship — and note that dispatching the migration afterwards will still
-cancel that gate, so the two mechanisms do not compose. Pick one.
+**WAIT FOR THE PUSH GATE TO FINISH BEFORE DISPATCHING.** The cancellation is
+symmetric — whichever run enters the group second kills the first — so the
+order of the two mistakes is the only thing that varies. Both happened here
+within half an hour:
+
+| | dispatched | push gate | cancelled |
+|---|---|---|---|
+| `1cd0163` | 06:00:13 | 06:00:10 | the **push gate**, so the deploy had no artifact to consume |
+| `1e9e29f5` | 07:28:27 | 07:28:35 | the **dispatch**, so the migration never ran |
+
+A cancelled push gate is the more expensive of the two, because
+`deploy-production.yml` selects its artifact with
+`event=push&status=success` and asserts **exactly one** — cancel that run and
+the dispatch deploy fails at *"Select the one successful exact-main release
+run"* with a count of zero. Re-running the cancelled push gate restores the
+count; nothing else does.
+
+So: merge → **let the push gate go green** → dispatch the migration → dispatch
+the deploy. Put `[dark-deploy]` in the merge commit only when the merge itself
+should ship, and then do not dispatch anything until that gate has finished.
 
 ## Where things are
 

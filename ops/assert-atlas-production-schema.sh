@@ -355,7 +355,7 @@ SELECT
     )>0
     AND pg_catalog.strpos(
       atlas_valid_definition,
-      '''designpanel-ai-generate.artboard.20260822.v1'''
+      '''__ARTBOARD_PORT_VERSION__'''
     )>0
     AND pg_catalog.strpos(atlas_valid_definition,'''masterQcPassed''')>0
     AND pg_catalog.strpos(atlas_valid_definition,'''masterQcConfidence''')>0
@@ -429,6 +429,25 @@ ATLAS_PROMPT_VERSION=$(grep -rho 'designpro-flat-first-atlas-[0-9]\{8\}\.v[0-9]\
   exit 2
 }
 query=${query//__ATLAS_PROMPT_VERSION__/$ATLAS_PROMPT_VERSION}
+
+# THE SAME TREATMENT FOR THE DESIGNPANEL ARTBOARD PORT, FOR THE SAME REASON.
+#
+# This one was pinned as a literal, and went stale the moment
+# 20260826050000 patched the live predicate from
+# designpanel-ai-generate.artboard.20260822.v1 to ...20260826.v2 -- a migration
+# whose OWN check refuses to ship unless v1 is gone. So the assertion demanded a
+# string its sibling migration is designed to remove, and every production
+# migration after it failed here, after applying cleanly, with a message about
+# the Close-Up contract that named nothing of the sort.
+#
+# Deriving it removes the class rather than the instance: bump the port in a
+# migration and this follows, exactly as the prompt version above does.
+ARTBOARD_PORT_VERSION=$(grep -rho 'designpanel-ai-generate\.artboard\.[0-9]\{8\}\.v[0-9]\+' "$ATLAS_MIGRATIONS_DIR"/*.sql | sort -V | tail -1)
+[[ $ARTBOARD_PORT_VERSION =~ ^designpanel-ai-generate\.artboard\.[0-9]{8}\.v[0-9]+$ ]] || {
+  echo "::error::no DesignPanel artboard port version found in supabase/migrations" >&2
+  exit 2
+}
+query=${query//__ARTBOARD_PORT_VERSION__/$ARTBOARD_PORT_VERSION}
 
 payload=$(jq -cn --arg query "$query" '{query: $query, parameters: []}')
 curl --fail --silent --show-error \
