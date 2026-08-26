@@ -18,6 +18,7 @@ import {
   type GenieSurfaceKey,
   type PreflightQc,
   PRODUCTION_SURFACES,
+  type ProofQcRequest,
   SURFACE_QC_CHECKLIST,
   type SurfaceQcRecord,
   type WorkflowArtifact,
@@ -636,6 +637,119 @@ const STUDIO_RENDER_ACE_ENABLED = false;
  * rule requires V1/V2/V3 to stay inspectable and forbids silently replacing V1
  * when V2 is created.
  */
+/**
+ * PER-VIEW PROOF QC -- the inspection record for every camera of this
+ * generation: which views were refused and WHY, in the inspector's own words,
+ * and how many retries each verdict consumed.
+ *
+ * The master half of the QC evidence rides on the atlas revision and is drawn
+ * above. This is the half RULE 0.22 lists separately -- "proof QC / semantic
+ * QC / vehicle continuity / text-logo QC / retry history" -- and it was
+ * recorded by the runtime from the beginning while nothing ever read it. The
+ * verdicts are shown verbatim and never re-scored in the browser.
+ */
+function ProofQcCard({ generationId }: { generationId: string }) {
+  const [requests, setRequests] = useState<ProofQcRequest[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRequests(null);
+    setFailed(false);
+    dpApi.listProofQc(generationId)
+      .then((rows) => { if (!cancelled) setRequests(rows); })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [generationId]);
+
+  if (failed) {
+    return (
+      <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3 text-[10px] text-gray-500">
+        Proof QC evidence could not be loaded for this generation.
+      </div>
+    );
+  }
+  const latest = requests?.[0] || null;
+  if (!latest) return null;
+
+  // Everything a human would want explained: refused views, and any view that
+  // needed more than one render to be accepted.
+  const notable = (latest.views || []).filter(
+    (view) => view.state !== "accepted" || view.rejections > 0 || view.providerCalls > 1,
+  );
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+          Proof QC &middot; latest request
+        </span>
+        <span className="text-[10px] text-gray-400">
+          {latest.state}
+          {requests && requests.length > 1 ? ` · ${requests.length} requests recorded` : ""}
+        </span>
+      </div>
+
+      {latest.error && (
+        <div className="mb-2 rounded border border-red-200 bg-red-50/60 p-2 text-[10px] text-red-700">
+          {String(
+            (latest.error as { message?: string }).message || JSON.stringify(latest.error),
+          ).slice(0, 300)}
+        </div>
+      )}
+
+      {notable.length === 0 ? (
+        <p className="text-[10px] text-gray-500">
+          Every view was accepted on its first attempt &mdash; the inspector raised no findings.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {notable.map((view) => {
+            const findings = view.attempts.filter((item) => item.detail);
+            return (
+              <div key={view.sourceViewType} className="rounded border border-gray-200 bg-white p-2">
+                <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                  <span className="font-semibold text-gray-900">{view.sourceViewType}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 font-semibold ${
+                      view.state === "accepted"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : view.state === "failed"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {view.state}{view.reason ? ` · ${view.reason}` : ""}
+                  </span>
+                  <span className="text-gray-500">
+                    {view.providerCalls} render call{view.providerCalls === 1 ? "" : "s"}
+                    {" · "}
+                    {view.rejections} rejection{view.rejections === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {findings.length > 0 && (
+                  <ul className="mt-1 space-y-1">
+                    {findings.map((item) => (
+                      <li
+                        key={`${view.sourceViewType}-${item.attempt}-${item.createdAt}`}
+                        className="text-[10px] text-gray-600"
+                      >
+                        <span className="font-mono text-gray-400">#{item.attempt}</span>{" "}
+                        <span className="font-mono text-gray-400">{item.outcome}</span>{" "}
+                        {item.detail}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AtlasProgressCard({
   job, selectedVersion,
 }: { job: PanelProStudioJob; selectedVersion: DesignVersion | null }) {
@@ -1010,6 +1124,8 @@ function JobHeader({
       </dl>
 
       <AtlasProgressCard job={job} selectedVersion={selectedVersion} />
+
+      <ProofQcCard generationId={String(job.generation_id || job.id)} />
 
       <div className="mt-4 border-t border-gray-100 pt-3">
         <div className="mb-2 flex items-center justify-between">
