@@ -495,3 +495,63 @@ test("a passenger zone that is not actually driver's twin still fails", async ()
   const mae = await passengerMirrorMae(bytes, sideBySideManifest);
   assert.ok(mae > MAX_PASSENGER_MIRROR_MAE, `expected an unrelated flank to still fail, saw ${mae}`);
 });
+
+// A ZONE THAT PAINTS A TRANSPARENCY CHECKERBOARD IS A PICTURE OF A CUT-OUT PNG.
+//
+// Live evidence 2026-08-26, the Precision Climate Solutions canary: the master
+// came back as a truck silhouette with flat-black wheel arches and, filling
+// everything the truck did not occupy, a PAINTED grey-and-white checkerboard —
+// the pattern a design tool shows to mean "transparent". The image carried no
+// alpha at all, so CUTOUT_ALPHA_MAX measured 0.0%; the checkerboard is light, so
+// FLAT_BLACK_CHANNEL_MAX never looked at it. Only the black arches were seen,
+// and those are the non-fatal cut-out class — so the sheet would have been
+// accepted, the arches filled, and a fifth of each flank printed as a grey
+// checkerboard on real vinyl.
+//
+// It is blocking rather than a cut-out because the fill cannot repair it: it
+// masks from those same two thresholds and trips neither, and outside the
+// silhouette there is no surrounding livery to grow inward.
+test("a painted transparency checkerboard convicts, and light artwork does not", async () => {
+  const { paintedCheckerboardSignature } = await import("../runtime/atlas-master-qc.cjs")
+    .then((m) => m.default ?? m);
+
+  const zone = { surfaceKey: "driver", x: 0, y: 0, w: 1200, h: 800 };
+  const cell = 80;
+  const squares = [];
+  for (let y = 0; y < 800; y += cell) {
+    for (let x = 0; x < 1200; x += cell) {
+      const light = ((x / cell) + (y / cell)) % 2 === 0;
+      squares.push(`<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${light ? "#ffffff" : "#e5e5e5"}"/>`);
+    }
+  }
+  const checkerboard = await sharp(Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800">${squares.join("")}
+     <path d="M150 250 L1050 250 L1050 650 L150 650 Z" fill="#0d2f63"/>
+     <path d="M150 520 C 400 380 700 600 1050 430 L1050 650 L150 650 Z" fill="#e8621f"/></svg>`,
+  )).png().toBuffer();
+
+  const convicted = await paintedCheckerboardSignature(checkerboard, zone);
+  assert.equal(convicted.convicted, true, "a painted checkerboard must be blocking");
+  assert.ok(convicted.alternation >= 0.8, `alternation ${convicted.alternation} must read as a grid`);
+
+  // THE FALSE POSITIVE THAT MATTERS. A design whose light neutral region is a
+  // SOLID panel, not a grid — one tone, no alternation. design-panel-ai-generate's
+  // own artboard sheet is 56.6% light neutral grey and measures alternation 0.08.
+  const solidLightPanel = await sharp(Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800">
+     <rect width="1200" height="800" fill="#f2f2f2"/>
+     <path d="M0 520 C 400 380 700 600 1200 430 L1200 800 L0 800 Z" fill="#e8621f"/>
+     <circle cx="300" cy="260" r="150" fill="#0d2f63"/></svg>`,
+  )).png().toBuffer();
+  const light = await paintedCheckerboardSignature(solidLightPanel, zone);
+  assert.equal(light.convicted, false, "a solid light panel is artwork, not a checkerboard");
+
+  // And a smooth neutral gradient, which is light and colourless everywhere.
+  const gradient = await sharp(Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800">
+     <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c8c8c8"/></linearGradient></defs>
+     <rect width="1200" height="800" fill="url(#g)"/></svg>`,
+  )).png().toBuffer();
+  assert.equal((await paintedCheckerboardSignature(gradient, zone)).convicted, false,
+    "a neutral gradient is not a grid");
+});
