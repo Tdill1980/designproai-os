@@ -39,6 +39,47 @@ const MAX_PASSENGER_MIRROR_MAE = 0.26;
 // actually the driver's twin still differs across nearly the whole zone and
 // still fails on the trimmed mean.
 const PASSENGER_MIRROR_TRIM_FRACTION = 0.25;
+// A ZONE THAT PAINTS A TRANSPARENCY CHECKERBOARD IS A PICTURE OF A CUT-OUT PNG.
+//
+// Live evidence 2026-08-26, the Precision Climate Solutions canary: the master
+// came back as a truck silhouette with flat-black wheel arches AND, filling
+// every part of the rectangle the truck did not occupy, a PAINTED grey-and-white
+// checkerboard -- the pattern a design tool shows to mean "transparent". Asked
+// for a flat sheet of printed vinyl, the model drew a picture of a cut-out file.
+//
+// Nothing already here sees it. The image carries no alpha at all, so
+// CUTOUT_ALPHA_MAX measured 0.0% on every zone; the checkerboard is light, so
+// FLAT_BLACK_CHANNEL_MAX never looks at it. The black arches WERE convicted --
+// 23.8% concentrated flat black on driver, 24.0% on passenger, 39.3% on rear --
+// but those land in the non-fatal cut-out class, so the sheet would have been
+// accepted as a design, the arches filled, and roughly a fifth of each flank
+// printed as a grey checkerboard on real vinyl.
+//
+// THIS IS BLOCKING, NOT A CUT-OUT, and the distinction is the one RULE 0.15
+// already draws. A cut-out is a panel defect the proofs mask away and
+// `atlas-cutout-fill.cjs` repairs by growing the surrounding livery inward. This
+// is not repairable that way: the fill masks from the two thresholds above and
+// trips neither, and there is no surrounding livery to grow -- outside the
+// silhouette the design does not exist. A zone that reads as a picture of a
+// vehicle is a failed master, which is the class another authoring pass is the
+// only remedy for.
+//
+// WHAT MAKES IT SAFE TO CONVICT. The signature is a regular two-tone light
+// NEUTRAL grid, which is not a thing wrap artwork contains. All three parts have
+// to hold at once: the region is light and near-colourless; BOTH tones are well
+// represented, so a solid white panel (one tone) is untouched; and the two tones
+// alternate on a fixed pitch in BOTH axes, which a panel, a gradient or a
+// photographic sky does not do. Measured -- arm B's flanks alternate at 0.85,
+// and design-panel-ai-generate's own artboard sheet, which is 56.6% light
+// neutral grey, alternates at 0.08 and stays clean.
+const CHECKERBOARD_CHROMA_MAX = 10;
+const CHECKERBOARD_MIN_LEVEL = 185;
+const CHECKERBOARD_SAMPLE_WIDTH = 256;
+const MIN_CHECKERBOARD_ZONE_SHARE = 0.02;
+const MIN_CHECKERBOARD_MINORITY_SHARE = 0.25;
+const CHECKERBOARD_TONE_GAP = Object.freeze({ min: 8, max: 70 });
+const MIN_CHECKERBOARD_ALTERNATION = 0.8;
+const CHECKERBOARD_PITCH_RANGE = Object.freeze({ min: 2, max: 40 });
 // A punched-out wheel arch or window is a flat, near-black blob sitting inside
 // otherwise bright artwork -- opaque, so opaqueRatio never saw it. Live evidence
 // 2026-08-23 (Becky's Bakery): the master came back as a van silhouette with
@@ -344,6 +385,84 @@ async function passengerMirrorMae(masterBytes, manifest) {
  * `accepted` still means "clean on every count" -- the strict path is unchanged
  * and callers that want it keep it.
  */
+/**
+ * The painted-transparency-checkerboard signature for one zone.
+ *
+ * Runs on a downsample: the pattern is a large-cell grid, so 256px across is
+ * ample and keeps the pitch search cheap. Returns the measurements as well as
+ * the verdict, because a finding a human cannot check is a finding they have to
+ * take on trust.
+ */
+async function paintedCheckerboardSignature(masterBytes, zone) {
+  const { data, info } = await sharp(masterBytes, { limitInputPixels: false })
+    .extract({ left: zone.x, top: zone.y, width: zone.w, height: zone.h })
+    .resize({ width: CHECKERBOARD_SAMPLE_WIDTH, fit: "inside" })
+    .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+  const width = info.width;
+  const height = info.height;
+  const tone = new Int16Array(width * height).fill(-1);
+  let masked = 0;
+  for (let i = 0, pixel = 0; i < data.length; i += info.channels, pixel += 1) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max - min <= CHECKERBOARD_CHROMA_MAX && min >= CHECKERBOARD_MIN_LEVEL) {
+      tone[pixel] = Math.round((r + g + b) / 3);
+      masked += 1;
+    }
+  }
+  const zoneShare = masked / (width * height);
+  const clean = { zoneShare, minorityShare: 0, toneGap: 0, pitch: 0, alternation: 0, convicted: false };
+  if (zoneShare < MIN_CHECKERBOARD_ZONE_SHARE) return clean;
+
+  // Two tones, both well represented. A solid white panel is one tone and stops here.
+  const values = [];
+  for (let pixel = 0; pixel < tone.length; pixel += 1) if (tone[pixel] >= 0) values.push(tone[pixel]);
+  values.sort((a, b) => a - b);
+  const low = values[Math.floor(values.length * 0.15)];
+  const high = values[Math.floor(values.length * 0.85)];
+  const split = (low + high) / 2;
+  let below = 0;
+  for (const value of values) if (value < split) below += 1;
+  const minorityShare = Math.min(below, values.length - below) / values.length;
+  const toneGap = high - low;
+
+  // Alternation: at the grid's own pitch a masked pixel differs from the pixel
+  // that far away along BOTH axes. That is what a checkerboard is and what a
+  // panel, a gradient or a sky is not.
+  let pitch = 0;
+  let alternation = 0;
+  for (let candidate = CHECKERBOARD_PITCH_RANGE.min; candidate <= CHECKERBOARD_PITCH_RANGE.max; candidate += 1) {
+    let pairs = 0;
+    let flips = 0;
+    for (let y = 0; y + candidate < height; y += 1) {
+      for (let x = 0; x + candidate < width; x += 1) {
+        const here = tone[y * width + x];
+        if (here < 0) continue;
+        const acrossX = tone[y * width + x + candidate];
+        const acrossY = tone[(y + candidate) * width + x];
+        if (acrossX < 0 || acrossY < 0) continue;
+        pairs += 1;
+        const side = here < split;
+        if (side !== (acrossX < split) && side !== (acrossY < split)) flips += 1;
+      }
+    }
+    if (pairs > 200 && flips / pairs > alternation) {
+      alternation = flips / pairs;
+      pitch = candidate;
+    }
+  }
+
+  const convicted = minorityShare >= MIN_CHECKERBOARD_MINORITY_SHARE
+    && toneGap >= CHECKERBOARD_TONE_GAP.min
+    && toneGap <= CHECKERBOARD_TONE_GAP.max
+    && alternation >= MIN_CHECKERBOARD_ALTERNATION;
+  return { zoneShare, minorityShare, toneGap, pitch, alternation, convicted };
+}
+
 async function deterministicMasterChecks(masterBytes, manifest) {
   const zones = await zonePixelMetrics(masterBytes, manifest);
   const passengerMae = await passengerMirrorMae(masterBytes, manifest);
@@ -388,6 +507,18 @@ async function deterministicMasterChecks(masterBytes, manifest) {
           + `(wheel/glass/bed shapes cut out of the panel)`,
         );
       }
+    }
+  }
+  for (const zone of manifest.zones) {
+    const checkerboard = await paintedCheckerboardSignature(masterBytes, zone);
+    if (checkerboard.convicted) {
+      blocking(
+        `${zone.surfaceKey} paints a transparency checkerboard over `
+        + `${(checkerboard.zoneShare * 100).toFixed(1)}% of the zone `
+        + `(two light neutral tones ${checkerboard.toneGap} apart alternating at pitch `
+        + `${checkerboard.pitch}, alternation=${checkerboard.alternation.toFixed(2)}) `
+        + `-- the zone is a picture of a cut-out file, not a sheet of printed vinyl`,
+      );
     }
   }
   if (passengerMae > MAX_PASSENGER_MIRROR_MAE) {
@@ -725,8 +856,12 @@ module.exports = {
   CUTOUT_ALPHA_MAX,
   FLAT_BLACK_CHANNEL_MAX,
   MIN_CUTOUT_COMPONENT_RATIO,
+  paintedCheckerboardSignature,
   _test: {
     DEFAULT_CONFIDENCE_THRESHOLD,
+    MIN_CHECKERBOARD_ALTERNATION,
+    MIN_CHECKERBOARD_MINORITY_SHARE,
+    MIN_CHECKERBOARD_ZONE_SHARE,
     MIN_ZONE_EDGE_OPAQUE_RATIO,
     MIN_ZONE_LUMA_STDDEV,
     MIN_ZONE_OPAQUE_RATIO,

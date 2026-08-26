@@ -14,7 +14,7 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 51);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 52);
   for (const name of [
     // stamp.build requires it at module load, so a release without it dies at
     // require time rather than merely shipping a pack with no certificate.
@@ -27,6 +27,10 @@ test("one canonical policy includes every required runtime file and five deploy 
     "runtime/view-angles.cjs", "runtime/photorealism-prompt.cjs", "runtime/generation-provider.cjs",
     "runtime/designpanel-server-provider.cjs", "runtime/designpanel-edge-provider.cjs",
     "runtime/atlas-master-qc.cjs", "runtime/atlas-proof-qc.cjs", "runtime/generation-store.cjs",
+    // Code owns the atlas geometry. The A/B harness loads this from /app inside
+    // the live image, so it ships before Call 1 adopts it -- and the first run
+    // without it died on MODULE_NOT_FOUND in an otherwise correct release.
+    "runtime/atlas-artwork-compose.cjs",
     // The vehicle silhouettes Call 8 shows the approved artwork through. A
     // release without them composes the proof as bare rectangles, which is not
     // the 2D Production Proof the customer approves.

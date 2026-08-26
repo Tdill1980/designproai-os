@@ -1,17 +1,28 @@
 /**
- * designpro-orchestrate — THE backend tool: artboard-first → 3D for the customer
+ * designpro-orchestrate — the flat artboard, and an honest handoff for the 3D
  *
- * One call. The customer UI sends the prompt + vehicle; this function runs the
- * whole sequence SERVER-SIDE and returns the 3D for the customer to see:
+ * STEP 2 USED TO POST TO A FUNCTION THAT DOES NOT EXIST HERE.
  *
- *   1. designpro-artboard   → flat panel artboard FIRST (backend source of truth)
- *   2. designpro-recreate-3d → 3D views recreated FROM the artboard (RecreatePro)
- *   3. persist master_artboard_url + render_urls + hero on the generation
+ * `designpro-recreate-3d` was never ported from restylepro-os and has never been
+ * deployed on this project, so every call 404'd and this function reported it as
+ * `3D recreate failed (HTTP 404)` — a step pointing at nothing, dressed up as a
+ * downstream outage. Nothing called this function, so nothing surfaced it.
  *
- * The orchestration logic lives HERE in the backend, not in the frontend. The
- * customer UI calls this and renders `renderUrls`; the artboard is kept for the
- * admin/production side. Forwards the caller's user JWT (design-panel-ai-generate
- * requires a real user session).
+ * It is obsolete, not missing. What it did — Driver from the flat artboard by
+ * `artboard_projection`, then each remaining camera cloned from the accepted
+ * Driver — is exactly what `runAtlasProofStages` does in
+ * runtime/generation-worker.cjs today, and RULE 0.16 puts Calls 1-7 in that
+ * runtime rather than in an Edge Function. Restoring the Edge copy would be a
+ * second producer of the same seven views, which the one-sanctioned-chain rule
+ * forbids. So the step is removed rather than repaired.
+ *
+ * What remains is the half this function can actually do, and it says so:
+ *
+ *   1. designpro-artboard → the flat artboard, its clean design, its panels
+ *   2. a handoff naming the runtime that owns the proofs
+ *
+ * The caller's user JWT is still forwarded, because designpro-artboard resolves
+ * the owner from it.
  *
  * POST /designpro-orchestrate
  * {
@@ -19,13 +30,9 @@
  *   "vehicleYear": "2022", "vehicleMake": "Cadillac", "vehicleModel": "Escalade ESV",
  *   "bodyType": "suv", "finish": "Gloss",
  *   "panelDims": {...}, "styleReferenceUrl": "...", "logoUrl": "...",
- *   "nonStandard": false
+ *   "generationId": "uuid"
  * }
- * → { success, artboardUrl, generationId, driverUrl, renderUrls, failed }
- *
- * NOTE: synchronous — artboard (~90s) + 7 renders (~100s). If this bumps the
- * edge wall-clock limit, the next step is an async job row + polling; the
- * sub-functions already persist, so a poller can read partial progress.
+ * → { success, artboardUrl, designUrl, panels, proofs: { produced, owner, reason } }
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -75,13 +82,12 @@ serve(async (req) => {
     const vehicleModel: string = (body.vehicleModel || body.model || "").trim();
     const bodyType: string = body.bodyType || "suv";
     const finish: string = body.finish || "Gloss";
-    const nonStandard: boolean = !!body.nonStandard;
 
     if (!designDescription) return json({ success: false, error: "designDescription (or prompt) is required" }, 400);
     if (!vehicleMake || !vehicleModel) return json({ success: false, error: "vehicleMake and vehicleModel are required" }, 400);
-    if (!authHeader) return json({ success: false, error: "Authorization (user session) required for the 3D step" }, 401);
+    if (!authHeader) return json({ success: false, error: "Authorization (user session) required" }, 401);
 
-    console.log(`[ORCHESTRATE] ${vehicleYear} ${vehicleMake} ${vehicleModel} — artboard-first → 3D`);
+    console.log(`[ORCHESTRATE] ${vehicleYear} ${vehicleMake} ${vehicleModel} — artboard-first`);
 
     // ── STEP 1: artboard FIRST ──
     const ab = await callFn("designpro-artboard", {
@@ -98,26 +104,15 @@ serve(async (req) => {
     const artboardUrl: string = ab.data.artboardUrl;
     console.log(`[ORCHESTRATE] artboard ready`);
 
-    // ── STEP 2: 3D from the artboard (RecreatePro recipe) ──
-    const r3d = await callFn("designpro-recreate-3d", {
-      artboardUrl, designDescription, vehicleYear, vehicleMake, vehicleModel, finish, nonStandard,
-    }, authHeader, 280_000);
-
-    if (!r3d.ok || !r3d.data?.success) {
-      // Artboard succeeded; surface it even if 3D failed so it's not lost.
-      return json({
-        success: false, stage: "recreate-3d",
-        error: r3d.data?.error || `3D recreate failed (HTTP ${r3d.status})`,
-        artboardUrl,
-      }, 502);
-    }
-
-    const generationId: string | null = r3d.data.generationId || null;
-    const renderUrls: Record<string, string> = r3d.data.renderUrls || {};
-    const driverUrl: string = r3d.data.driverUrl || renderUrls.side || "";
-    const failed: string[] = r3d.data.failed || [];
-
-    // ── STEP 3: persist the artboard as source-of-truth on the generation ──
+    // ── STEP 2: the proofs belong to the server-native runtime ──
+    //
+    // Deliberately NOT a call. See the header: the function this used to POST to
+    // does not exist on this project, and the runtime already produces the same
+    // seven views from the same frozen master.
+    //
+    // The artboard is still persisted as the generation's source of truth, which
+    // is the one piece of STEP 3 that did not depend on the missing call.
+    const generationId: string | null = (body.generationId || "").trim() || null;
     if (generationId) {
       const { error: persistErr } = await sb()
         .from("designiq_generations")
@@ -126,8 +121,22 @@ serve(async (req) => {
       if (persistErr) console.warn(`[ORCHESTRATE] persist master_artboard_url failed: ${persistErr.message}`);
     }
 
-    console.log(`[ORCHESTRATE] done — ${Object.keys(renderUrls).length} views, gen ${generationId || "n/a"}`);
-    return json({ success: true, artboardUrl, generationId, driverUrl, renderUrls, failed });
+    console.log(`[ORCHESTRATE] artboard complete — proofs are the Calls 1-7 runtime's`);
+    return json({
+      success: true,
+      artboardUrl,
+      designUrl: ab.data?.designUrl || "",
+      panels: ab.data?.panels || [],
+      generationId,
+      proofs: {
+        produced: false,
+        owner: "server-native Calls 1-7 runtime (runAtlasProofStages)",
+        reason:
+          "designpro-recreate-3d is retired on this project. Submit a flat-first "
+          + "generation request so the runtime renders Driver first and projects "
+          + "the remaining six from the same frozen master.",
+      },
+    });
   } catch (err: any) {
     console.error("[ORCHESTRATE] error:", err?.message || err);
     return json({ success: false, error: err?.message || "orchestrate error" }, 500);

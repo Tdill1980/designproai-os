@@ -22,6 +22,47 @@ test("all local CommonJS imports are closed", () => {
   }
 });
 
+// A MODULE THAT RESOLVES ON DISK IS NOT A MODULE THAT SHIPS.
+//
+// The release is packaged from the explicit list in ops/release-files.txt, not
+// from the directory, so a new runtime file can be required by a shipped module,
+// pass every test here, build a green image — and then throw MODULE_NOT_FOUND in
+// production because it was never copied in.
+//
+// That is not hypothetical. `runtime/atlas-artwork-compose.cjs` did exactly this
+// on 2026-08-26: green gate, successful dark deploy, and the first live call
+// died on `Cannot find module './atlas-artwork-compose.cjs'` inside the correct
+// image. Only the closure knows which files are load-bearing, so the closure is
+// what checks the manifest.
+test("every module the runtime requires is in the release manifest", () => {
+  const manifest = new Set(
+    readFileSync(join(root, "ops/release-files.txt"), "utf8")
+      .split(/\r?\n/).map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#")),
+  );
+
+  const seen = new Set();
+  const queue = ["index.js", "designpro-standalone-claimant.cjs"];
+  while (queue.length) {
+    const file = queue.pop();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const absolute = join(runtime, file);
+    if (!existsSync(absolute)) continue;
+    for (const match of readFileSync(absolute, "utf8").matchAll(/require\(["'](\.\.?\/[^"']+)["']\)/g)) {
+      const resolved = resolve(dirname(absolute), match[1]);
+      if (!resolved.startsWith(runtime)) continue;
+      queue.push(resolved.slice(runtime.length + 1));
+    }
+  }
+
+  const missing = [...seen]
+    .filter((file) => existsSync(join(runtime, file)))
+    .filter((file) => !manifest.has(`runtime/${file}`))
+    .sort();
+  assert.deepEqual(missing, [], `required but never packaged: ${missing.join(", ")}`);
+});
+
 test("contains Calls 7/8/9 and all paid late-stage gates", () => {
   for (const stage of ["revision.freeze", "proof.build", "panels.build", "logos.extract", "pack.verify", "pack.activate", "source.verify", "await_panelpro_preflight_qc", "output.build", "output.verify", "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver"]) assert.ok(claimant.includes(stage), `missing stage ${stage}`);
   assert.match(entry, /renderProofSheet/);

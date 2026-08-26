@@ -39,26 +39,38 @@ const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.2026
 
 // THE MODEL THE AUTHORITY AUTHORS ON, BY NAME.
 //
-// design-panel-ai-generate builds this exact id into its endpoint and carries
-// no fallback (index.ts:1320). The reference repository's own locked note says
-// the GA id `gemini-3-pro-image` is the same model and that they stay on the
-// `-preview` alias regardless, because it is the one verified working there.
+// PINNED BY NAME STAYS. THE NAME CHANGES. (Corrected 2026-08-26, same day.)
 //
-// The droplet writes GOOGLE_IMAGE_MODEL=gemini-3-pro-image (ops/configure-env.sh),
-// so Call 1 -- which only asked for "the first configured model" -- was
-// authoring the customer's design on a different id than the authority does.
+// The reason for naming a model at all is unchanged and still right: the
+// droplet writes GOOGLE_IMAGE_MODEL=gemini-3-pro-image (ops/configure-env.sh),
+// and `lockModel` alone pins THE FIRST OF WHATEVER IS CONFIGURED rather than a
+// name, so the call that authors the customer's design followed config drift.
+// Do not replace this with an env lookup; the projections may follow
+// GOOGLE_IMAGE_MODEL, the design authority may not.
 //
-// That is not a nicety. Measured 2026-08-26 on the Precision Climate Solutions
-// payload, one key, one assembled request sent to both ids: the configured GA
-// id returned a three-quarter VAN drawn in three views with mirrored roof
-// lettering and no relationship to the deterministic guide; the `-preview` id
-// returned the guide's six-zone layout with forward-reading text on both
-// flanks. The prompt, the parts, the temperature and the aspect were identical.
+// The VALUE was wrong, and it was wrong on evidence I gathered myself. It was
+// set to the `-preview` alias because design-panel-ai-generate builds that id
+// into its endpoint (index.ts:1320), and because ONE A/B pair on the Precision
+// Climate Solutions payload had the GA id return a three-quarter van and the
+// `-preview` id return the guide's six-zone layout.
 //
-// Kept beside the port version because it is part of the same port: pinned by
-// name, asserted against the vendored reference, and independent of whatever
-// the projection calls are configured to use.
-const DESIGNPANEL_AUTHORING_MODEL = "gemini-3-pro-image-preview";
+// Eleven real production runs say the opposite, and they are the stronger
+// evidence because they are the actual customer payloads:
+//
+//   5b2eb96c  22 Aug  v2  GA       all six zones FULL BLEED, seven good proofs
+//   87c481ca  23 Aug  v4  GA       centre four full bleed (flanks broken at v4)
+//   9dd6d43c  26 Aug  v8  GA       centre four full bleed (flanks still broken)
+//   04cc0b29  26 Aug  v8  preview  ALL SIX a picture of a van
+//
+// Measured as border-vs-interior luminance on the real masters pulled from
+// storage: the GA runs hold a border median of 135-177 across the centre four
+// on every prompt version from v2 to v8; the first `-preview` run drops it to
+// 18-23 with 63-83% of each border dark. The Flamingo master the product is
+// judged against was authored on the GA id.
+//
+// One A/B pair is not eleven production runs, and a single sample on one
+// payload is exactly the kind of measurement that should lose to the fleet.
+const DESIGNPANEL_AUTHORING_MODEL = "gemini-3-pro-image";
 
 // Names no form. Every version that prescribed one converged - "custom,
 // distinctive lettering" handed three trades the same lockup, and replacing it
@@ -396,6 +408,118 @@ DESIGN BRIEF: "${prompt}"`;
       ? "Match the production quality of the provided gold-standard DesignPanel artboards, while the deterministic A.T.L.A.S. guide alone controls this sheet's topology. "
       : "The deterministic A.T.L.A.S. guide alone controls this sheet's topology. ")
     + "Output ONE flat 2D artboard sheet with the branded wrap artwork filling the deterministic A.T.L.A.S. zones, drawn straight-on and flat. No camera, studio, vehicle photograph, mockup, shadows, annotations or template graphics.";
+  return assembled;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE ARTWORK CALL — DesignIQ craft, aimed at ONE flat banner.
+//
+// designpro-artboard is the proven flat-first producer on this project: one
+// Gemini call makes a wide banner of pure wrap artwork, and CODE composes the
+// labelled dimensioned panels from it. Nothing in that call mentions a vehicle,
+// a panel, an opening or a zone, which is why it cannot return the die-cut
+// silhouettes A.T.L.A.S. Call 1 still produces.
+//
+// But its prompt is thin — designDescription, finish, "bold cohesive graphics",
+// about 450 characters. It carries no COMMERCIAL_DEPTH, no
+// COMMERCIAL_TRANSLATION, no photo intent, no brand colours, no industry, no
+// substrate, no reference handling. Adopting its architecture as-is would trade
+// the die-cut defect for a thin creative brief, which is the other half of the
+// same mistake.
+//
+// So this is the composition the owner asked for, in one function: the FLAT
+// ARTWORK OUTPUT CONTRACT from designpro-artboard, carrying the DESIGNIQ
+// CREATIVE INTELLIGENCE from design-panel-ai-generate. Every craft block below
+// is the same literal the artboard direction already interpolates; what is gone
+// is the topology half, because code owns geometry now and none of it needs
+// saying.
+//
+// WHAT IS DELIBERATELY ABSENT, AND WHERE IT WENT INSTEAD:
+//
+//   LOGO_REQUIREMENT / buildLogoArchitecture / the BRAND composition line ask
+//   the MODEL to design and place a mark. They cannot live in this call: the
+//   banner is cover-cropped six ways, so any lettering painted into it would be
+//   sliced across zones at arbitrary offsets. Branding is composited per zone
+//   after the crop -- the `buildOverlay` layer in designpro-artboard, fed by
+//   designpro-parse-brief -> designpro-text-layer-generate. Those literals move
+//   to that layer rather than being dropped.
+//
+//   The camera, the studio contract and the coverage rule stay downstream with
+//   the 3D proofs, exactly as they already do.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// The persona travels as a real system instruction, which is how
+// designpro-artboard delivers its own (`system_instruction` at index.ts:110)
+// and which A.T.L.A.S. Call 1 has never used at all.
+const ATLAS_ARTWORK_SYSTEM_INSTRUCTION = COMMERCIAL_AUTHORING_PERSONA;
+
+function buildAtlasArtworkDirection(input = {}, options = {}) {
+  const qualityExampleCount = Number(options.artboardQualityExampleCount) || 0;
+  const prompt = String(input.brief || "").trim();
+  const mode = String(input.mode || "commercial").toLowerCase();
+  const brandColors = String(input.brandColors || "").trim()
+    || (Array.isArray(input.colors) ? input.colors.map(String).join(", ") : String(input.colors || "").trim());
+  const keywords = Array.isArray(input.bulletPoints)
+    ? input.bulletPoints.map((value) => String(value || "").trim()).filter(Boolean) : [];
+  const references = Array.isArray(input.visionBoardImages) ? input.visionBoardImages : [];
+  const exactReference = references.length > 0
+    && ["exact_reference", "artboard_projection"].includes(String(input.visionboardIntent || ""));
+  const finish = String(input.finish || "Gloss");
+  const finishSpec = FINISH_SPECS[finish.toLowerCase()] || FINISH_SPECS.gloss;
+
+  const assignment = exactReference
+    ? "Reproduce the customer's verified approved artwork faithfully as one flat wrap ARTWORK. Do not redesign, restyle, recolor, simplify, correct, or invent."
+    : mode === "restyle"
+    ? "Create an original artistic vehicle-wrap ARTWORK. Amplify the customer's vision while staying true to it; make every open design decision with the judgment of a senior custom-wrap designer."
+    : "Create one original commercial vehicle-wrap ARTWORK worth a professional custom-wrap budget.";
+
+  // The output contract, from designpro-artboard's own artworkPrompt: one wide
+  // flat composition, edge to edge, no text and no vehicle.
+  let assembled = `${assignment}
+
+Create ONE wide flat vehicle-wrap ARTWORK — a single horizontal banner-style composition. Bold, cohesive graphics that flow left to right with depth and movement, filling the whole frame edge to edge.
+
+THE CONCEPT — the heart of this design; build everything around it:
+DESIGN BRIEF: "${prompt}"`;
+
+  if (!exactReference) {
+    assembled += mode === "restyle"
+      ? `\n\nDESIGN AMPLIFICATION: Elevate and enhance the brief. Fill decisions the customer left open with depth, flow, layered thematic elements, texture, color harmony and dimension. The result must feel custom-designed, never like generic filler or a reusable template.\n${PROFESSIONAL_JUDGMENT}`
+      : `\n${COMMERCIAL_TRANSLATION}\n${COMMERCIAL_DEPTH}\n${PROFESSIONAL_JUDGMENT}`;
+  }
+
+  if (brandColors) assembled += `\n\nBrand colors: ${brandColors}. Build the design from this palette and introduce no unrelated colors.`;
+  if (input.industry) assembled += `\nIndustry: ${String(input.industry)}. The design should read as this trade's work at a glance.`;
+  if (keywords.length) assembled += `\nBrand keywords (tone, not literal copy): ${keywords.join(", ")}.`;
+
+  if (references.length) {
+    if (exactReference) {
+      assembled += "\n\nEXACT CUSTOMER REFERENCE: The verified customer reference images attached are the artwork authority. Reproduce their graphics, palette, composition, coverage density and visual hierarchy faithfully.";
+    } else if (input.styleDescriptors) {
+      assembled += `\n\nSTYLE INSPIRATION: Create original artwork using this verified reference style DNA: ${String(input.styleDescriptors)}. Do not copy the reference composition or branding.`;
+    } else {
+      assembled += "\n\nSTYLE INSPIRATION: Use the verified customer references only for mood, palette and artistic language; create an original composition and do not copy their branding.";
+    }
+  }
+
+  if (briefWantsPhoto(prompt)) assembled += `\n\n${PHOTO_REALISM_LOCK}`;
+  assembled += `\n\nFINISH: ${finish.toUpperCase()} — ${finishSpec}`;
+  const substrateSpec = substrateContext(input.substrate);
+  if (substrateSpec) assembled += `\n${substrateSpec}`;
+
+  // THE ONE THING THIS CALL MUST NOT DRAW.
+  //
+  // The banner is cover-cropped into six surfaces, so lettering painted here
+  // would be sliced across zones at arbitrary offsets. Branding is a composited
+  // layer, which is also what makes the passenger flank a safe deterministic
+  // mirror of the driver.
+  assembled += "\n\nPURE ARTWORK ONLY: no text, no letters, no words, no numbers, no logos, no signage — and no vehicle, no panels, no mockup, no shadows. This is flat wrap graphics on its own, nothing else. The company name and contact details are added afterwards as a separate layer.";
+
+  assembled += "\n\nGallery-grade custom artwork with real depth, movement, and a wow factor — never generic AI filler, never a template. "
+    + (qualityExampleCount > 0
+      ? "Match the production quality of the provided gold-standard DesignPanel artboards. "
+      : "")
+    + "Output ONE flat wide 2D artwork image.";
   return assembled;
 }
 
@@ -784,6 +908,8 @@ CLIENT BRIEF:`;
 }
 
 module.exports = {
+  ATLAS_ARTWORK_SYSTEM_INSTRUCTION,
+  buildAtlasArtworkDirection,
   COMMERCIAL_BRAND_COMPOSITION,
   DESIGNPANEL_AUTHORING_MODEL,
   COMMERCIAL_DEPTH,

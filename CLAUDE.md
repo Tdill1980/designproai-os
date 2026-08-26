@@ -272,33 +272,62 @@ It was the default on 2026-08-23 and cost six of seven views to
 exactly **one** fast flattened AI call for the canonical top-view master; every
 camera after it is a projection, and the panel cut is pure geometry.
 
-### 🎛️ THE AUTHORING MODEL IS PINNED BY NAME. `gemini-3-pro-image` IS NOT THE SAME AS `gemini-3-pro-image-preview`. (2026-08-26)
+### 🎛️ THE AUTHORING MODEL IS PINNED BY NAME — AND THE NAME IS THE **GA** ID (2026-08-26, corrected same day)
 
-The reference builds `gemini-3-pro-image-preview` into its endpoint and carries
-no fallback (`index.ts:1320`), and restylepro-os's own locked note says they stay
-on the `-preview` alias *because it is the one verified working there*. The
-droplet writes `GOOGLE_IMAGE_MODEL=gemini-3-pro-image` (`ops/configure-env.sh`),
-and Call 1 asked only for `lockModel`, which pins **the first of whatever is
-configured** — not a name.
-
-**Measured, not inferred.** `scripts/designiq-ab-precision.mjs` sent the SAME
-assembled request, the same parts, the same temperature, the same aspect and the
-same key to both ids for the Precision Climate Solutions payload:
-
-| model | what came back |
-|---|---|
-| `gemini-3-pro-image` (configured) | a three-quarter **van** drawn in three views, mirrored roof lettering, no relationship to the deterministic guide |
-| `gemini-3-pro-image-preview` (authority) | the guide's **six-zone** layout, forward-reading text on both flanks |
-
-The vehicle was a 2022 Ford F250 Crew Cab in both. So a run can fail topology,
-vehicle identity and the side-twin contract on the model id alone, and the
-master QC then spends all three authoring attempts on it.
-
-`DESIGNPANEL_AUTHORING_MODEL` in `runtime/designiq-prompt.cjs` names it, Call 1
-passes it as `model:` alongside `lockModel: true`, and
-`tests/atlas-designiq-artboard.test.mjs` pins it to the vendored reference's own
-endpoint literal. **Do not replace it with an env lookup**; the projections may
+**Pinning by name stays. The value was wrong, and it was wrong on my own
+evidence.** The droplet writes `GOOGLE_IMAGE_MODEL=gemini-3-pro-image`
+(`ops/configure-env.sh`), and `lockModel` alone pins **the first of whatever is
+configured** — config drift, not a pin. That half of the rule is unchanged:
+`DESIGNPANEL_AUTHORING_MODEL` names it, Call 1 passes it as `model:` alongside
+`lockModel: true`, and **it must not become an env lookup** — the projections may
 follow `GOOGLE_IMAGE_MODEL`, the design authority may not.
+
+It was briefly set to `gemini-3-pro-image-preview`, because the reference builds
+that id into its endpoint (`index.ts:1320`) and because **one** A/B pair on the
+Precision Climate Solutions payload preferred it. **Eleven real production runs
+say the opposite**, measured as border-vs-interior luminance on the actual
+masters pulled from storage:
+
+| generation | date | prompt | model | flanks | centre four |
+|---|---|---|---|---|---|
+| `5b2eb96c` | 22 Aug | v2 | GA | **full bleed** (border 147) | **full bleed** (141–167) |
+| `87c481ca` | 23 Aug | v4 | GA | picture of a vehicle (0) | full bleed (135–177) |
+| `9dd6d43c` | 26 Aug | v8 | GA | picture of a vehicle (0) | full bleed (137–175) |
+| `04cc0b29` | 26 Aug | v8 | **preview** | picture of a vehicle (18) | **picture of a vehicle (20–23)** |
+
+Every GA run holds a border median of 135–177 across the centre four on every
+prompt version from v2 to v8. The first `-preview` run drops it to 18–23 with
+63–83% of each border dark. **The Flamingo master this product is judged against
+(`5b2eb96c`) was authored on the GA id**, and so were its seven good proofs.
+
+**One A/B pair is not eleven production runs.** A single sample on one payload is
+exactly the measurement that should lose to the fleet, and this one did.
+
+### ⚠️ THE FLANKS HAVE BEEN BROKEN SINCE v4 — AND THAT IS A SEPARATE BUG
+
+Same table, different column. `driver` and `passenger` come back as a vehicle
+silhouette on a dark surround from **v4 onward, on every model**, while the
+centre four stayed clean. v4 (`5b8f75d`) is the commit that created
+`runtime/flat-first-atlas.cjs`, and it added the **only flank-specific sentence
+in the whole prompt** — the SIDE-TWIN CONTRACT, which tells the model those two
+zones share a *"scene"*, *"landmarks"* and a viewpoint *"reversed for the
+opposite flank"*. That describes a photographed vehicle side. The centre four are
+never mentioned by it and never broke.
+
+The same commit added the negative block — *"Do not draw or punch out vehicle
+windows/glass, wheel arches… Do not draw a vehicle, camera scene, shadows"* —
+which is the prompt shape this file already warns Gemini over-indexes on.
+
+**This is not yet fixed and must not be "fixed" by guesswork.** RULE 0.15
+records what happened the last time a session rewrote the vehicle framing to
+chase a pixel defect. The controlled test is the A/B harness with one variable:
+same payload, same model, the side-twin sentence with and without the
+scene/landmarks framing.
+
+**v2's prompt text is not in this repository.** `flat-first-atlas.cjs` was created
+at v4, so the Aug-22 code was never committed here — the v2 evidence is
+behavioural, measured on the stored artifact, not a text diff. Do not go looking
+for a v2 source file; there isn't one.
 
 ### 🖼️ A PROMPT MAY NOT CITE ATTACHMENTS THE REQUEST DOES NOT CARRY (2026-08-26)
 
