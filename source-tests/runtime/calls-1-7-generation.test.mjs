@@ -152,10 +152,20 @@ test("only explicit Gemini image models are accepted", () => {
   assert.deepEqual(provider.imageModels({ DESIGNPRO_IMAGE_MODELS: "gemini-3-pro-image" }), ["gemini-3-pro-image"]);
   assert.deepEqual(provider.imageModels({ GOOGLE_IMAGE_MODEL: "gemini-3-pro-image" }), ["gemini-3-pro-image"]);
   assert.deepEqual(provider.imageModels({
-    DESIGNPRO_IMAGE_MODELS: "gemini-3.1-flash-image",
+    DESIGNPRO_IMAGE_MODELS: "gemini-3-pro-image-preview,gemini-3-pro-image",
     GOOGLE_IMAGE_MODEL: "gemini-3-pro-image",
-  }), ["gemini-3.1-flash-image"], "the DesignPro override wins over the deployment default");
+  }), ["gemini-3-pro-image-preview", "gemini-3-pro-image"], "the DesignPro override wins over the deployment default");
   assert.throws(() => provider.imageModels({ DESIGNPRO_IMAGE_MODELS: "gemini-2.5-flash" }), /not an explicit Gemini image model/);
+  // MODEL-LOCK PARITY (validator hot-fix 2026-08-26). The proven RestylePro
+  // stack pins gemini-3-pro-image-preview and forbids any Flash downgrade.
+  // These assertions are the regression lock: the preview alias leads the
+  // default chain, the GA alias of the SAME model is the only fallback, and a
+  // Flash-class model is refused even when an env override asks for it.
+  assert.throws(
+    () => provider.imageModels({ DESIGNPRO_IMAGE_MODELS: "gemini-3.1-flash-image" }),
+    /Flash-class model/,
+    "a Flash image model must be refused anywhere in the chain",
+  );
   assert.deepEqual(provider.imageModels({}), [...provider.DEFAULT_IMAGE_MODELS]);
-  assert.deepEqual(provider.DEFAULT_IMAGE_MODELS, ["gemini-3-pro-image", "gemini-3.1-flash-image"]);
+  assert.deepEqual(provider.DEFAULT_IMAGE_MODELS, ["gemini-3-pro-image-preview", "gemini-3-pro-image"]);
 });

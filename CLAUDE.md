@@ -301,7 +301,8 @@ None of these may be re-implemented against `supabase.functions` or
 | RevisionStudioIQ — the product editor: design grid, seven-view carousel, GalleryMode, layered canvas, revision box, Production Layers, Logo Pack entice | `/revision-studio` | `pages/RevisionStudioIQ.tsx` + `ProductionFlowLayersCard.tsx`, sourced by `lib/revisionstudio-source.ts` and `lib/revisionstudio-flow.ts` |
 | The job's server-artifact status view (NOT the product RevisionStudio) | `/designpro/jobs/:generationId` | `components/revisioniq/ServerRevisionStudio.tsx` |
 | PanelPro branded studio — tool rail, canvas, seven view tabs | `/designpro/jobs/:generationId/panel-studio` | `pages/DesignProStudio.tsx` |
-| PanelPro Studio board — per-side REAL DESIGN PROOF ∥ PRINT PANEL, approve side, preflight gate | `/designpro/jobs/:generationId/panelpro` | `pages/designpro/PanelProStudioBoard.tsx` |
+| PanelPro Admin control room (canonical `/panelpro`, RULE 0.22) — lineage, master, QC evidence, panels, preflight, pack state | `/designpro/jobs/:generationId/panelpro` | `pages/AdminGeminiCompareStudio.tsx` |
+| PanelPro surface-validator board — per-side REAL DESIGN PROOF ∥ PRINT PANEL, approve side, preflight gate | `/designpro/jobs/:generationId/panelpro/surfaces` | `pages/designpro/PanelProStudioBoard.tsx` |
 | GENIE Universal Panelizer progress — step rail, glowing 7 sides, "when all panels glow it's a go" | `/designpro/jobs/:generationId/progress`, `/productionflow/:generationId` | `pages/designpro/GenieProgress.tsx` |
 
 **The board is not a producer.** RestylePro's "Pull panel" / "Mirror from driver"
@@ -423,19 +424,24 @@ came from different masters — locked by `tests/server-revision-studio.test.mjs
 
 ## 🏭 RULE 0.22 — PANELPRO STUDIO IS THE PRODUCTION CONTROL ROOM, NOT A SIX-CARD VALIDATOR (Trish 2026-08-25)
 
-**PanelPro is TWO surfaces, and confusing them is how one gets rebuilt as the
-other.** The canonical contract (2026-08-24, §6) names both:
+**PanelPro is THREE surfaces, and confusing them is how one gets rebuilt as
+another.** Owner decision (Trish, 2026-08-26, relayed through the independent
+validation session): `AdminGeminiCompareStudio.tsx` was **intentionally
+upgraded into the full PanelPro Admin control room** and is the canonical
+`/panelpro` surface. This supersedes the earlier revision of this rule that
+called it "unrouted RestylePro import weight" — that description predated the
+upgrade. Do not revert `/panelpro` to the reduced board.
 
 | Surface | Route | File |
 |---|---|---|
 | The branded studio — tool rail, canvas, seven view tabs, upload/text/logo/adjust/layers/move/scale/rotate/arrange | `/designpro/jobs/:generationId/panel-studio` | `app/src/pages/DesignProStudio.tsx` |
-| The production/QC board — proof ∥ panel per side, dimensions, hashes, human preflight, downstream artifacts | `/designpro/jobs/:generationId/panelpro` | `app/src/pages/designpro/PanelProStudioBoard.tsx` |
+| **The PanelPro Admin control room (canonical)** — lineage header, A.T.L.A.S. master + version/prompt history, master QC + proof QC evidence, per-side panels, human preflight, corrections, pack/WrapBox state | `/designpro/jobs/:generationId/panelpro` | `app/src/pages/AdminGeminiCompareStudio.tsx` |
+| The per-surface validator board — proof ∥ panel per side, dimensions, hashes, approve-side (secondary surface under the control room) | `/designpro/jobs/:generationId/panelpro/surfaces` | `app/src/pages/designpro/PanelProStudioBoard.tsx` |
 
-Both are routed and both bind to the same generation. An earlier revision of
-this rule named `AdminGeminiCompareStudio.tsx` as the restore target; the
-canonical contract names `DesignProStudio.tsx`, and that is what is routed.
-`AdminGeminiCompareStudio.tsx` is unrouted RestylePro import weight, not the
-DesignProAI studio.
+All three are routed and all bind to the same generation.
+`PanelProStudioBoard.tsx` remains the surface-validator component and keeps its
+per-side proof∥panel semantics; it is subordinate to, never a replacement for,
+the Admin control room.
 
 The board is a validator, not a second producer — but it IS the design team's
 complete production workspace for one order, keyed by `generationId` · Design

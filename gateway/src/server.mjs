@@ -805,6 +805,13 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
     const panelMap = validatedFlatAtlasPanelMap(
       row.panelMap, widthPx, heightPx, effectivePpi,
     );
+    // THE QC EVIDENCE CROSSES THE SEAM, SANITIZED, NEVER STRIPPED. The runtime
+    // records the master's semantic review, the deterministic zone metrics,
+    // the cut-out findings and fill telemetry, and the authoring attempt count
+    // on the revision row; PanelPro is the design team's control room and has
+    // to show them (independent validation, 2026-08-26: all of it existed and
+    // none of it was readable). Known keys only, bounded, no storage paths.
+    const qc = validatedFlatAtlasQc(row.qc);
     previousSequence = revisionSequence;
     return {
       id,
@@ -849,8 +856,47 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
       exampleGuideHash,
       exampleMasterHash,
       createdAt: row.createdAt,
+      ...(qc ? { qc } : {}),
     };
   });
+}
+
+/**
+ * The revision's recorded QC evidence, projected onto an exact allowlist.
+ *
+ * This is read-model sanitation, not validation of the QC itself: an absent or
+ * malformed block yields null rather than failing the whole atlas response,
+ * because a pre-QC-era revision legitimately has none, and a control room that
+ * loses the master preview over a QC-shape surprise helps nobody. Strings are
+ * bounded; only known keys survive; nothing here can carry a storage path.
+ */
+function validatedFlatAtlasQc(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const boundedText = (value, max) => (value == null ? null : String(value).slice(0, max));
+  const boundedList = (value, max, textMax) => (Array.isArray(value)
+    ? value.slice(0, max).map((entry) => boundedText(
+      typeof entry === "object" ? JSON.stringify(entry) : entry, textMax,
+    ))
+    : null);
+  const plainObject = (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : null);
+  const qc = {
+    masterQcPassed: typeof raw.masterQcPassed === "boolean" ? raw.masterQcPassed : null,
+    masterQcModel: boundedText(raw.masterQcModel, 80),
+    masterQcContract: boundedText(raw.masterQcContract, 120),
+    masterQcConfidence: Number.isFinite(Number(raw.masterQcConfidence)) ? Number(raw.masterQcConfidence) : null,
+    masterQcReview: plainObject(raw.masterQcReview),
+    masterQcDeterministic: plainObject(raw.masterQcDeterministic),
+    masterAuthoringAttempts: Number.isInteger(Number(raw.masterAuthoringAttempts)) ? Number(raw.masterAuthoringAttempts) : null,
+    masterCutoutSurfaces: boundedList(raw.masterCutoutSurfaces, 6, 40),
+    masterCutoutFindings: boundedList(raw.masterCutoutFindings, 24, 500),
+    cutoutFillApplied: Array.isArray(raw.cutoutFillApplied) ? raw.cutoutFillApplied.slice(0, 6).map(plainObject).filter(Boolean) : null,
+    cutoutFillContract: boundedText(raw.cutoutFillContract, 120),
+    panelSourceHash: SHA256_PATTERN.test(String(raw.panelSourceHash || "")) ? String(raw.panelSourceHash) : null,
+    providerKeyFingerprint: boundedText(raw.providerKeyFingerprint, 16),
+    pipelineMode: boundedText(raw.pipelineMode, 60),
+    masterProviderContract: boundedText(raw.masterProviderContract, 120),
+  };
+  return Object.values(qc).some((value) => value !== null) ? qc : null;
 }
 
 // Ownership is enforced three times over, because a render from another
@@ -2470,6 +2516,59 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           };
         }));
         return json(res, 200, publicRevisions);
+      }
+
+      // PER-VIEW PROOF QC EVIDENCE, for the PanelPro control room. Every
+      // inspector verdict the runtime recorded — camera/framing contract
+      // failures, atlas-continuity and vehicle-continuity findings, invented
+      // text/logo call-outs — plus each view's terminal state and retry
+      // counts, per request of this generation. Read model only: the database
+      // proves ownership, the shapes are bounded here, and nothing in the
+      // response carries a storage path.
+      const proofQcMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/proof-qc$/);
+      if (req.method === "GET" && proofQcMatch) {
+        const requestedProofQcId = decodeURIComponent(proofQcMatch[1]);
+        const proofQcRun = await resolveRun(fetchImpl, token, cfg, requestedProofQcId);
+        const proofQcGenerationId = (proofQcRun
+          ? generationId(proofQcRun)
+          : String((await generationRequestByGenerationId(fetchImpl, token, cfg, requestedProofQcId))?.generation_id || "")
+        ).toLowerCase();
+        if (!UUID_PATTERN.test(proofQcGenerationId)) return json(res, 404, { error: "job_not_found" });
+        const located = await rpc(fetchImpl, token, cfg, "designpro_generation_proof_qc", {
+          p_generation_id: proofQcGenerationId,
+        });
+        if (located === null) return json(res, 404, { error: "job_not_found" });
+        if (!Array.isArray(located)) {
+          throw Object.assign(new Error("proof_qc_response_invalid"), { status: 502 });
+        }
+        const boundedDetail = (value) => (value == null ? null : String(value).slice(0, 1000));
+        const requests = located.slice(0, 20).map((entry) => ({
+          requestId: String(entry?.requestId || ""),
+          state: String(entry?.state || ""),
+          attempt: Number(entry?.attempt) || 0,
+          createdAt: entry?.createdAt || null,
+          completedAt: entry?.completedAt || null,
+          error: entry?.error && typeof entry.error === "object" ? entry.error : null,
+          views: (Array.isArray(entry?.views) ? entry.views : []).slice(0, 8).map((view) => ({
+            sourceViewType: String(view?.sourceViewType || ""),
+            state: String(view?.state || ""),
+            reason: view?.reason == null ? null : String(view.reason).slice(0, 200),
+            rejections: Number(view?.rejections) || 0,
+            providerCalls: Number(view?.providerCalls) || 0,
+            regenerations: Number(view?.regenerations) || 0,
+            updatedAt: view?.updatedAt || null,
+            attempts: (Array.isArray(view?.attempts) ? view.attempts : []).slice(0, 12).map((item) => ({
+              attempt: Number(item?.attempt) || 0,
+              model: item?.model == null ? null : String(item.model).slice(0, 80),
+              outcome: String(item?.outcome || ""),
+              httpStatus: item?.httpStatus == null ? null : Number(item.httpStatus),
+              detail: boundedDetail(item?.detail),
+              durationMs: item?.durationMs == null ? null : Number(item.durationMs),
+              createdAt: item?.createdAt || null,
+            })),
+          })),
+        }));
+        return json(res, 200, requests);
       }
 
       const artifactMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/artifacts$/);

@@ -237,8 +237,26 @@ test("analyzer errors, malformed JSON, identity mismatch and incomplete answers 
       const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
       assert.equal(verdict.accepted, false);
       assert.equal(verdict.code, code);
+      // None of these produced a completed QC verdict, so none of them may
+      // consume the design-rejection budget. The engine reads this flag and
+      // retries the inspection as an infrastructure failure instead.
+      assert.equal(verdict.verdictUnavailable, true,
+        `${name} must be flagged verdictUnavailable so it cannot spend a design rejection`);
     });
   }
+});
+
+test("a completed rejection verdict is NOT flagged verdictUnavailable", async () => {
+  const f = await fixture();
+  const generateRaw = async ({ body }) => {
+    const review = passingReview(responseIdentity(body), { atlasContinuityContract: "fail", reasons: ["invented text"] });
+    return { payload: payload(review) };
+  };
+  const validate = createAtlasProofValidator({ provider: { generateRaw }, atlas: f.atlas, input: f.input });
+  const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
+  assert.equal(verdict.accepted, false);
+  assert.notEqual(verdict.verdictUnavailable, true,
+    "a real completed rejection must consume the design-rejection budget");
 });
 
 test("unknown Hero requests, corrupt pixels and oversized requests are rejected before analyzer transport", async (t) => {

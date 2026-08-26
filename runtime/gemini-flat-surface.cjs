@@ -13,7 +13,8 @@ const sharp = require("sharp");
 
 const FLAT_SURFACE_CONTRACT = "designpro.gemini-flat-surface.server.v4";
 const PROMPT_VERSION = "designproai-sidefield-generate-qc-retry-server-20260821.v1";
-const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image";
+// Locked to the proven RestylePro model alias (validator hot-fix, 2026-08-26).
+const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 // The seventh immutable proof is the locked Close-Up view. It is evidence and
 // proof-sheet content, not a production surface; the six SURFACE_KEYS remain

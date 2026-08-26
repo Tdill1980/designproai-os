@@ -21,7 +21,15 @@ const ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const PROVIDER_CONTRACT = "designpro.generation-provider.v1";
 // Stable image chain: Pro first, Flash Image as the explicit fallback when Pro
 // is unavailable or over capacity. A deployment may pin/override this below.
-const DEFAULT_IMAGE_MODELS = Object.freeze(["gemini-3-pro-image", "gemini-3.1-flash-image"]);
+// PARITY WITH THE PROVEN RESTYLEPRO STACK (validator hot-fix, 2026-08-26).
+// The RP control that defines the design-quality baseline is locked to
+// gemini-3-pro-image-preview; it authored every accepted view this system
+// produced through 2026-08-21 (74 accepted attempts). The GA id is the SAME
+// model published under a different alias — it stays as the sole availability
+// fallback for projections because the droplet's current key pool has never
+// been proven against the preview alias. The Flash-image fallback is removed:
+// RestylePro's model lock forbids any Flash downgrade, for proofs included.
+const DEFAULT_IMAGE_MODELS = Object.freeze(["gemini-3-pro-image-preview", "gemini-3-pro-image"]);
 const DEFAULT_SPEC_MODELS = Object.freeze(["gemini-2.5-flash"]);
 // A thinking model charges its deliberation against the same budget as its
 // answer. genie-universal-resolver lost whole responses at 2048 and settled on
@@ -77,6 +85,12 @@ function imageModels(env = process.env) {
   for (const model of models) {
     if (!/^gemini-[a-z0-9.-]*image[a-z0-9.-]*$/.test(model)) {
       throw new ProviderError("provider_model_invalid", `${model} is not an explicit Gemini image model`);
+    }
+    // The RestylePro model lock forbids a Flash downgrade anywhere in the
+    // chain — a proof drawn by a weaker model is a weaker proof of the design.
+    // Refused here so no env override can quietly reintroduce it.
+    if (/flash/.test(model)) {
+      throw new ProviderError("provider_model_invalid", `${model} is a Flash-class model, which the model lock forbids`);
     }
   }
   return models;

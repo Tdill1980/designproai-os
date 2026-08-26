@@ -111,7 +111,8 @@ trap cleanup EXIT
   printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$service_key"
   printf 'WORKER_SECRET=%s\n' "$worker_secret"
   printf 'GOOGLE_AI_API_KEY=%s\n' "$google_key"
-  printf 'GOOGLE_IMAGE_MODEL=gemini-3-pro-image\n'
+  printf 'GOOGLE_IMAGE_MODEL=gemini-3-pro-image-preview\n'
+  printf 'DESIGNPRO_IMAGE_MODELS=gemini-3-pro-image-preview,gemini-3-pro-image\n'
   printf 'DESIGNPRO_APP_ORIGIN=https://os.designproai.com\n'
   printf 'DESIGNPRO_SPOOL_DIR=/var/lib/designproai/spool\n'
   printf 'SUPABASE_TUS_ENDPOINT=%s\n' "$TUS_ENDPOINT"

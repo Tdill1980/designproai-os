@@ -618,8 +618,17 @@ function createAtlasProofValidator({
       };
     } catch (error) {
       const known = error instanceof AtlasProofQcError;
+      // NO VERDICT WAS PRODUCED. Everything on this path — a provider 5xx or
+      // 429 from the judge, a network fault, a timeout, an unparseable judge
+      // response — means the inspection never completed. That is an
+      // INFRASTRUCTURE failure, not a design rejection: live run 9dd6d43c
+      // (2026-08-26) lost its close-up because a Gemini 503 from the judge was
+      // counted as the view's second and final semantic rejection. The
+      // `verdictUnavailable` flag is the contract with the engine: only an
+      // actual completed QC verdict may consume the design-rejection budget.
       return {
         accepted: false,
+        verdictUnavailable: true,
         code: known ? error.code : "atlas_qc_analyzer_failed",
         reason: cleanText(known ? error.message : `A.T.L.A.S. proof inspector failed: ${error?.message || error}`, 500),
       };

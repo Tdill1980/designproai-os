@@ -17,6 +17,7 @@ import {
   type GenieSurfaceKey,
   type PreflightQc,
   PRODUCTION_SURFACES,
+  type ProofQcRequest,
   SURFACE_QC_CHECKLIST,
   type SurfaceQcRecord,
   type WorkflowArtifact,
@@ -758,6 +759,166 @@ function AtlasProgressCard({
           </p>
         </div>
       )}
+
+      {/* MASTER QC EVIDENCE. The runtime records the semantic review, the
+          cut-out convictions and the deterministic fill on every revision;
+          this is the design team's read of that record, per RULE 0.22's
+          "master QC / cut-out findings" requirement. Absent on pre-QC-era
+          revisions, and that absence is stated rather than hidden. */}
+      {atlas?.qc && (
+        <div className="mt-3 border-t border-gray-200 pt-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+              Master QC · V{atlas.revisionSequence}
+            </span>
+            <span className="text-[10px] text-gray-400">
+              {atlas.qc.masterQcContract || "—"}
+              {atlas.qc.masterQcModel ? ` · judged by ${atlas.qc.masterQcModel}` : ""}
+              {atlas.qc.providerKeyFingerprint ? ` · key ${atlas.qc.providerKeyFingerprint}` : ""}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[10px]">
+            <span className={`rounded-full px-2 py-0.5 font-semibold ${
+              atlas.qc.masterQcPassed === true
+                ? "bg-emerald-50 text-emerald-700"
+                : atlas.qc.masterQcPassed === false
+                  ? "bg-red-50 text-red-700"
+                  : "bg-gray-100 text-gray-500"
+            }`}>
+              {atlas.qc.masterQcPassed === true ? "Design accepted" : atlas.qc.masterQcPassed === false ? "Design refused" : "Not judged"}
+            </span>
+            {typeof atlas.qc.masterQcConfidence === "number" && (
+              <span className="text-gray-500">confidence {(atlas.qc.masterQcConfidence * 100).toFixed(0)}%</span>
+            )}
+            {typeof atlas.qc.masterAuthoringAttempts === "number" && (
+              <span className="text-gray-500">{atlas.qc.masterAuthoringAttempts} authoring attempt{atlas.qc.masterAuthoringAttempts === 1 ? "" : "s"}</span>
+            )}
+          </div>
+          {atlas.qc.masterQcReview && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {Object.entries(atlas.qc.masterQcReview)
+                .filter(([, value]) => value === "pass" || value === "fail" || value === "not_applicable")
+                .map(([contract, value]) => (
+                  <span
+                    key={contract}
+                    className={`rounded px-1.5 py-0.5 font-mono text-[9px] ${
+                      value === "pass" ? "bg-emerald-50 text-emerald-700"
+                        : value === "fail" ? "bg-red-50 text-red-700"
+                        : "bg-gray-100 text-gray-400"
+                    }`}
+                    title={`${contract}: ${String(value)}`}
+                  >
+                    {contract.replace(/Contract$/, "")} {value === "pass" ? "✓" : value === "fail" ? "✗" : "–"}
+                  </span>
+                ))}
+            </div>
+          )}
+          {(atlas.qc.masterCutoutSurfaces?.length || 0) > 0 && (
+            <div className="mt-2 rounded border border-amber-200 bg-amber-50/60 p-2">
+              <div className="text-[10px] font-semibold text-amber-800">
+                Cut-outs convicted on {atlas.qc.masterCutoutSurfaces!.join(" · ")} — filled deterministically before the panel cut
+                {atlas.qc.panelSourceHash ? ` (repaired sheet ${atlas.qc.panelSourceHash.slice(0, 12)})` : ""}
+              </div>
+              <ul className="mt-1 list-inside list-disc text-[10px] text-amber-800/90">
+                {(atlas.qc.masterCutoutFindings || []).map((finding, index) => (
+                  <li key={index}>{finding}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * PER-VIEW PROOF QC — the inspection record for every camera of this
+ * generation: which views were accepted, which were refused and WHY, in the
+ * inspector's own words, and how many retries each verdict consumed. This is
+ * the evidence half of "proof QC / semantic QC / vehicle continuity /
+ * text-logo QC / retry history" in RULE 0.22 — read straight from the
+ * runtime's own attempt records, never re-scored in the browser.
+ */
+function ProofQcCard({ generationId }: { generationId: string }) {
+  const [requests, setRequests] = useState<ProofQcRequest[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setRequests(null);
+    setFailed(false);
+    dpApi.listProofQc(generationId)
+      .then((rows) => { if (!cancelled) setRequests(rows); })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [generationId]);
+
+  const latest = requests?.[0] || null;
+  const interesting = (latest?.views || []).filter(
+    (view) => view.rejections > 0 || view.state !== "accepted" || view.providerCalls > 1,
+  );
+  if (failed) {
+    return (
+      <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3 text-[10px] text-gray-500">
+        Proof QC evidence could not be loaded for this generation.
+      </div>
+    );
+  }
+  if (!latest) return null;
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+          Proof QC · latest request
+        </span>
+        <span className="text-[10px] text-gray-400">
+          {latest.state}
+          {requests && requests.length > 1 ? ` · ${requests.length} requests recorded` : ""}
+        </span>
+      </div>
+      {latest.error && (
+        <div className="mb-2 rounded border border-red-200 bg-red-50/60 p-2 text-[10px] text-red-700">
+          {String((latest.error as { message?: string }).message || JSON.stringify(latest.error)).slice(0, 300)}
+        </div>
+      )}
+      {interesting.length === 0 ? (
+        <p className="text-[10px] text-gray-500">
+          Every view was accepted on its first attempt — no inspector findings to show.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {interesting.map((view) => {
+            const findings = view.attempts.filter((item) => item.detail);
+            return (
+              <div key={view.sourceViewType} className="rounded border border-gray-200 bg-white p-2">
+                <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                  <span className="font-semibold text-gray-900">{view.sourceViewType}</span>
+                  <span className={`rounded-full px-1.5 py-0.5 font-semibold ${
+                    view.state === "accepted" ? "bg-emerald-50 text-emerald-700"
+                      : view.state === "failed" ? "bg-red-50 text-red-700"
+                      : "bg-gray-100 text-gray-500"
+                  }`}>{view.state}{view.reason ? ` · ${view.reason}` : ""}</span>
+                  <span className="text-gray-500">
+                    {view.providerCalls} render call{view.providerCalls === 1 ? "" : "s"} · {view.rejections} rejection{view.rejections === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {findings.length > 0 && (
+                  <ul className="mt-1 space-y-1">
+                    {findings.map((item) => (
+                      <li key={`${view.sourceViewType}-${item.attempt}-${item.createdAt}`} className="text-[10px] text-gray-600">
+                        <span className="font-mono text-gray-400">#{item.attempt}</span>{" "}
+                        <span className="font-mono text-gray-400">{item.outcome}</span>{" "}
+                        {item.detail}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -818,6 +979,8 @@ function JobHeader({
       </dl>
 
       <AtlasProgressCard job={job} selectedVersion={selectedVersion} />
+
+      <ProofQcCard generationId={String(job.generation_id || job.id)} />
 
       <div className="mt-4 border-t border-gray-100 pt-3">
         <div className="mb-2 flex items-center justify-between">

@@ -30,7 +30,21 @@ const { createHash } = require("node:crypto");
 
 // Literal ceilings. Changing these is a deliberate act, not a tuning knob.
 const MAX_PROVIDER_ATTEMPTS_PER_SLOT = 4;
-const MAX_SLOT_REGENERATIONS = 2;
+// Deliberate change (validator hot-fix, 2026-08-26): raised from 2 to 3 so the
+// proof generate/inspect/correct loop carries the same budget the master
+// authoring loop already documents ("Three is the proof QC's budget"). Live
+// evidence for the third throw: run 9dd6d43c's front view fixed its first
+// finding on attempt 2 and was refused for a NEW invention — the corrective
+// loop was converging and ran out of budget. Still strictly inside the
+// provider-attempt ceiling of 4.
+const MAX_SLOT_REGENERATIONS = 3;
+// How many times the engine re-asks the proof inspector when the inspection
+// itself could not complete (judge 5xx/429, network fault, unparseable judge
+// response). These retries re-run the QC over the SAME candidate bytes — the
+// render is not thrown away because the judge was briefly down — and they
+// never touch the design-rejection budget.
+const MAX_QC_VERDICT_ATTEMPTS = 3;
+const QC_VERDICT_RETRY_DELAY_MS = 2_000;
 const PROVIDER_TIMEOUT_MS = 180_000;
 const SLOT_LEASE_SECONDS = 600;
 const ENGINE_CONTRACT = "designpro.calls-1-7-engine-runner.v1";
@@ -153,6 +167,7 @@ async function runSlot(options) {
     maxProviderAttempts = MAX_PROVIDER_ATTEMPTS_PER_SLOT,
     maxRegenerations = MAX_SLOT_REGENERATIONS,
     timeoutMs = PROVIDER_TIMEOUT_MS,
+    qcVerdictRetryDelayMs = QC_VERDICT_RETRY_DELAY_MS,
   } = options;
 
   if (!Number.isSafeInteger(maxProviderAttempts) || maxProviderAttempts < 1 || maxProviderAttempts > MAX_PROVIDER_ATTEMPTS_PER_SLOT) {
@@ -292,15 +307,44 @@ async function runSlot(options) {
       // A render that is structurally or semantically wrong is a rejection, not
       // a success. Passenger side is where this matters most: its text must
       // read forwards, and no hash comparison can tell you that.
+      //
+      // ONLY A COMPLETED VERDICT MAY CONSUME A DESIGN REJECTION. A validator
+      // that could not obtain a verdict at all (judge 5xx, network fault,
+      // unparseable judge response) reports `verdictUnavailable`, and that is
+      // an infrastructure failure: the inspection is retried over the same
+      // candidate bytes, and if it still cannot complete, the attempt is
+      // recorded as an infrastructure outcome and the regeneration budget is
+      // left untouched. Live proof of the defect this closes: generation
+      // 9dd6d43c (2026-08-26), close-up — a Gemini 503 from the QC judge was
+      // counted as the view's second and final semantic rejection and the
+      // whole request failed.
       let verdict = { accepted: true };
       if (typeof validate === "function") {
-        verdict = await validate({
-          bytes: result.bytes,
-          contentType: result.contentType,
-          sourceViewType,
-          consumerRole,
-          signal,
-        });
+        for (let verdictAttempt = 1; verdictAttempt <= MAX_QC_VERDICT_ATTEMPTS; verdictAttempt += 1) {
+          verdict = await validate({
+            bytes: result.bytes,
+            contentType: result.contentType,
+            sourceViewType,
+            consumerRole,
+            signal,
+          });
+          if (verdict?.verdictUnavailable !== true) break;
+          if (signal?.aborted || verdictAttempt === MAX_QC_VERDICT_ATTEMPTS) break;
+          if (qcVerdictRetryDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, qcVerdictRetryDelayMs));
+          }
+        }
+      }
+      if (verdict?.verdictUnavailable === true) {
+        const record = {
+          requestId, sourceViewType, attempt, model: result.model, keyFingerprint: result.keyFingerprint,
+          outcome: OUTCOME.HTTP_ERROR, durationMs: now() - startedAt,
+          errorCode: verdict?.code || "qc_verdict_unavailable",
+          detail: String(verdict?.reason || "proof inspection could not complete").slice(0, 500), winnerHash: null,
+        };
+        await store.recordAttemptFinished(record);
+        attempts.push(record);
+        continue;
       }
       if (!verdict?.accepted) {
         rejections += 1;

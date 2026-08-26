@@ -142,6 +142,65 @@ export type FlatAtlasRevision = {
   exampleGuideHash: string | null;
   exampleMasterHash: string | null;
   createdAt: string;
+  /**
+   * The QC evidence the runtime recorded at authoring time — master semantic
+   * review, deterministic zone metrics, cut-out findings + fill telemetry,
+   * authoring attempts, provider identity. Absent on pre-QC-era revisions.
+   */
+  qc?: FlatAtlasQc | null;
+};
+
+/** Master-QC evidence carried on an A.T.L.A.S. revision. All fields optional. */
+export type FlatAtlasQc = {
+  masterQcPassed: boolean | null;
+  masterQcModel: string | null;
+  masterQcContract: string | null;
+  masterQcConfidence: number | null;
+  masterQcReview: Record<string, unknown> | null;
+  masterQcDeterministic: Record<string, unknown> | null;
+  masterAuthoringAttempts: number | null;
+  masterCutoutSurfaces: string[] | null;
+  masterCutoutFindings: string[] | null;
+  cutoutFillApplied: Array<Record<string, unknown>> | null;
+  cutoutFillContract: string | null;
+  panelSourceHash: string | null;
+  providerKeyFingerprint: string | null;
+  pipelineMode: string | null;
+  masterProviderContract: string | null;
+};
+
+/** One recorded proof-inspection attempt for one view. */
+export type ProofQcAttempt = {
+  attempt: number;
+  model: string | null;
+  outcome: string;
+  httpStatus: number | null;
+  detail: string | null;
+  durationMs: number | null;
+  createdAt: string | null;
+};
+
+/** One view's terminal state plus its full inspection/retry history. */
+export type ProofQcView = {
+  sourceViewType: string;
+  state: string;
+  reason: string | null;
+  rejections: number;
+  providerCalls: number;
+  regenerations: number;
+  updatedAt: string | null;
+  attempts: ProofQcAttempt[];
+};
+
+/** Per-request proof QC evidence for a generation, newest request first. */
+export type ProofQcRequest = {
+  requestId: string;
+  state: string;
+  attempt: number;
+  createdAt: string | null;
+  completedAt: string | null;
+  error: Record<string, unknown> | null;
+  views: ProofQcView[];
 };
 
 /** The six printed surfaces, in the order the production layers are cut. */
@@ -909,6 +968,13 @@ export const dpApi = {
    */
   listJobFlatAtlasRevisions: (generationId: string) =>
     request<FlatAtlasRevision[]>(`/jobs/${encodeURIComponent(generationId)}/atlas`),
+  /**
+   * Per-view proof QC evidence for one generation: each request's slots with
+   * their terminal state, rejection counts and every inspector verdict
+   * verbatim. Read model over the existing evidence tables — never a new store.
+   */
+  listProofQc: (generationId: string) =>
+    request<ProofQcRequest[]>(`/jobs/${encodeURIComponent(generationId)}/proof-qc`),
   submitRevision: (submission: RevisionSubmission) =>
     request<{ runId: string; accepted: true }>("/revisions", {
       method: "POST",

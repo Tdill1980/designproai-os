@@ -436,7 +436,7 @@ test("the engine contains no unbounded loop and no recursion", () => {
   assert.doesNotMatch(runSlotBody, /\brunSlot\s*\(/, "runSlot must not recurse");
   // The ceiling is a literal, not a computed or configurable value.
   assert.match(engineSource, /const MAX_PROVIDER_ATTEMPTS_PER_SLOT = 4;/);
-  assert.match(engineSource, /const MAX_SLOT_REGENERATIONS = 2;/);
+  assert.match(engineSource, /const MAX_SLOT_REGENERATIONS = 3;/);
   assert.match(engineSource, /attempt <= maxProviderAttempts/);
 });
 
@@ -573,4 +573,65 @@ test("Genuine provider failures still take the transport path", async () => {
   assert.equal(isSemanticQualityRejection({ message: "designpanel_quality_rejected" }), false);
   assert.equal(isSemanticQualityRejection(new Error("boom")), false);
   assert.equal(isSemanticQualityRejection(null), false);
+});
+
+test("A QC judge outage never consumes the design-rejection budget (validator hot-fix 2026-08-26)", async () => {
+  // Live defect this locks: generation 9dd6d43c, close-up — the semantic-QC
+  // judge returned HTTP 503 and that infrastructure error was counted as the
+  // view's second and final design rejection, failing the whole request.
+  //
+  // Contract: a validator that could not produce a verdict reports
+  // `verdictUnavailable: true`; the engine retries the inspection over the
+  // SAME candidate bytes, and only a completed verdict may spend a rejection.
+  const provider = okProvider();
+  let inspections = 0;
+  const validate = async () => {
+    inspections += 1;
+    if (inspections < 3) {
+      return { accepted: false, verdictUnavailable: true, code: "atlas_qc_analyzer_failed", reason: "judge 503" };
+    }
+    return { accepted: true };
+  };
+  const store = makeStore();
+  const result = await engine.runSlot({ ...base, provider, store, validate, qcVerdictRetryDelayMs: 0 });
+
+  assert.equal(result.state, "accepted", "the render must survive a transient judge outage");
+  assert.equal(provider.calls, 1, "the good render is never regenerated because the judge was down");
+  assert.equal(inspections, 3, "the inspection itself is what gets retried");
+  assert.ok(
+    store.state.finished.every((row) => row.outcome !== "rejected"),
+    "no design rejection may be recorded for an incomplete inspection",
+  );
+});
+
+test("A persistent QC judge outage fails as infrastructure, never as semantic review", async () => {
+  const provider = okProvider();
+  let inspections = 0;
+  const validate = async () => {
+    inspections += 1;
+    return { accepted: false, verdictUnavailable: true, code: "atlas_qc_analyzer_failed", reason: "judge down" };
+  };
+  const store = makeStore();
+  const result = await engine.runSlot({ ...base, provider, store, validate, qcVerdictRetryDelayMs: 0 });
+
+  assert.equal(result.state, "failed");
+  assert.equal(result.reason, "provider_attempts_exhausted",
+    "an unreachable judge is an infrastructure state a retry can heal — never semantic_review_required");
+  assert.equal(store.state.failures[0].rejections, 0, "the design-rejection budget is untouched");
+  for (const row of store.state.finished) {
+    assert.notEqual(row.outcome, "rejected");
+  }
+  // Bounded: each provider attempt re-asks the judge at most three times.
+  assert.equal(inspections, engine.MAX_PROVIDER_ATTEMPTS_PER_SLOT * 3);
+});
+
+test("A completed rejection verdict still spends the budget exactly as before", async () => {
+  const provider = okProvider();
+  const validate = async () => ({ accepted: false, code: "atlas_qc_view_mismatch", reason: "wrong view" });
+  const store = makeStore();
+  const result = await engine.runSlot({ ...base, provider, store, validate, qcVerdictRetryDelayMs: 0 });
+
+  assert.equal(result.state, "failed");
+  assert.equal(result.reason, "semantic_review_required");
+  assert.equal(store.state.failures[0].rejections, engine.MAX_SLOT_REGENERATIONS);
 });

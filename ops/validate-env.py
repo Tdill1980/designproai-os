@@ -15,11 +15,16 @@ APP_ORIGIN = "https://os.designproai.com"
 TUS_ENDPOINT = "https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable"
 SPOOL_DIR = "/var/lib/designproai/spool"
 INTERNAL_RUNTIME_URL = "http://runtime-1:3001"
-IMAGE_MODEL = "gemini-3-pro-image"
+# Parity with the proven RestylePro stack: the locked design model is the
+# -preview alias (the one every accepted control render used). The GA id is the
+# same model and is permitted ONLY as a trailing availability fallback in the
+# projection chain; Flash-class models are refused outright.
+IMAGE_MODEL = "gemini-3-pro-image-preview"
+IMAGE_MODEL_CHAIN = "gemini-3-pro-image-preview,gemini-3-pro-image"
 
 RUNTIME_BASE_KEYS = {
     "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "WORKER_SECRET",
-    "GOOGLE_AI_API_KEY", "GOOGLE_IMAGE_MODEL", "DESIGNPRO_APP_ORIGIN",
+    "GOOGLE_AI_API_KEY", "GOOGLE_IMAGE_MODEL", "DESIGNPRO_IMAGE_MODELS", "DESIGNPRO_APP_ORIGIN",
     "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED",
     "DESIGNPRO_TOPAZ_ENABLED",
 }
@@ -136,6 +141,10 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
         raise ValidationError("runtime TUS endpoint must use the direct isolated Storage host")
     if runtime["GOOGLE_IMAGE_MODEL"] != IMAGE_MODEL:
         raise ValidationError("runtime image model must be the approved 4K model")
+    if runtime["DESIGNPRO_IMAGE_MODELS"] != IMAGE_MODEL_CHAIN:
+        raise ValidationError("runtime image model chain must be the approved locked chain")
+    if "flash" in runtime["DESIGNPRO_IMAGE_MODELS"]:
+        raise ValidationError("Flash-class image models are forbidden in the projection chain")
     if gateway["DESIGNPRO_RUNTIME_INTERNAL_URL"] != INTERNAL_RUNTIME_URL:
         raise ValidationError("gateway may call only the Docker-internal runtime endpoint")
     if runtime["WORKER_SECRET"] != gateway["WORKER_SECRET"]:
