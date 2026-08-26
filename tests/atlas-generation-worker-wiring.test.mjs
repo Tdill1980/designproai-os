@@ -18,6 +18,10 @@ const angles = require("../runtime/view-angles.cjs");
 // supposed to invalidate stale masters, so pinning the string here turns that
 // working mechanism into a fixture failure on every legitimate bump.
 const { PROMPT_VERSION } = require("../runtime/flat-first-atlas.cjs");
+// Same reason for the DesignPanel creative port: it carries its own version so
+// the creative half and the topology half can move independently, and a bump on
+// either is meant to retire stale masters rather than to break this fixture.
+const { DESIGNPANEL_ARTBOARD_PORT_VERSION } = require("../runtime/designiq-prompt.cjs");
 
 const WORKER_SOURCE = readFileSync(new URL("../runtime/generation-worker.cjs", import.meta.url), "utf8");
 const PROVIDER_SOURCE = readFileSync(new URL("../runtime/designpanel-server-provider.cjs", import.meta.url), "utf8");
@@ -71,7 +75,7 @@ const FLAT_ATLAS = Object.freeze({
     confidence: 0.98,
     promptHash: "8".repeat(64),
     providerContract: "designpro.flat-first-master-provider.v1",
-    artboardPortVersion: "designpanel-ai-generate.artboard.20260822.v1",
+    artboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
   }),
 });
 

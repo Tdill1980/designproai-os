@@ -272,6 +272,69 @@ It was the default on 2026-08-23 and cost six of seven views to
 exactly **one** fast flattened AI call for the canonical top-view master; every
 camera after it is a projection, and the panel cut is pure geometry.
 
+### 🎛️ THE AUTHORING MODEL IS PINNED BY NAME. `gemini-3-pro-image` IS NOT THE SAME AS `gemini-3-pro-image-preview`. (2026-08-26)
+
+The reference builds `gemini-3-pro-image-preview` into its endpoint and carries
+no fallback (`index.ts:1320`), and restylepro-os's own locked note says they stay
+on the `-preview` alias *because it is the one verified working there*. The
+droplet writes `GOOGLE_IMAGE_MODEL=gemini-3-pro-image` (`ops/configure-env.sh`),
+and Call 1 asked only for `lockModel`, which pins **the first of whatever is
+configured** — not a name.
+
+**Measured, not inferred.** `scripts/designiq-ab-precision.mjs` sent the SAME
+assembled request, the same parts, the same temperature, the same aspect and the
+same key to both ids for the Precision Climate Solutions payload:
+
+| model | what came back |
+|---|---|
+| `gemini-3-pro-image` (configured) | a three-quarter **van** drawn in three views, mirrored roof lettering, no relationship to the deterministic guide |
+| `gemini-3-pro-image-preview` (authority) | the guide's **six-zone** layout, forward-reading text on both flanks |
+
+The vehicle was a 2022 Ford F250 Crew Cab in both. So a run can fail topology,
+vehicle identity and the side-twin contract on the model id alone, and the
+master QC then spends all three authoring attempts on it.
+
+`DESIGNPANEL_AUTHORING_MODEL` in `runtime/designiq-prompt.cjs` names it, Call 1
+passes it as `model:` alongside `lockModel: true`, and
+`tests/atlas-designiq-artboard.test.mjs` pins it to the vendored reference's own
+endpoint literal. **Do not replace it with an env lookup**; the projections may
+follow `GOOGLE_IMAGE_MODEL`, the design authority may not.
+
+### 🖼️ A PROMPT MAY NOT CITE ATTACHMENTS THE REQUEST DOES NOT CARRY (2026-08-26)
+
+The same run measured `0 gold-standard artboard(s)` on the live droplet:
+`loadDesignPanelArtboardExamples` reads bucket `wrap-files flat panel`, which is
+**not populated on this project**, and it fails soft by design. Meanwhile the
+closing line of every A.T.L.A.S. prompt said *"Match the production quality of
+the provided gold-standard DesignPanel artboards"* — pointing the model at
+images that were never in the request.
+
+The clause now follows the attachment count. Populating that bucket would be a
+real improvement and is a separate piece of work; until it is populated, the
+quality bar is stated without the dangling reference. **When you add examples,
+check the prompt still cites them** — the count is threaded through
+`atlasPrompt(input, manifest, { artboardQualityExampleCount })`.
+
+### 📏 REPRODUCING THE A/B
+
+`.github/workflows/designiq-ab-precision.yml` (dispatch, `RUN_DESIGNIQ_AB`) is
+the harness. It captures the COMPLETE assembled request for both calls before
+Gemini and then executes them, so a design-quality argument can be settled on
+the request rather than on impressions of the output.
+
+Two things about it that are load-bearing:
+
+- **It runs in the live runtime image, not on a host path.**
+  `ops/Dockerfile.runtime` installs into `/app` inside the image, so the host
+  release directory has no `node_modules` at all. `calls-1-7-seam.yml` still
+  asserts `$release/runtime/node_modules/@supabase` and will fail the same way.
+- **The control is transpiled from the vendored source, never re-described.**
+  `scripts/build-control-prompt.mjs` slices the pure prompt half of
+  `supabase/functions/design-panel-ai-generate/index.ts` and swaps only the Deno
+  import header; the harness refuses to run unless the result still hashes to
+  the value captured from the restylepro-os checkout. A drifted control is not a
+  control.
+
 ## 🔗 RULE 0.17 — ONE PIPELINE. A.T.L.A.S. IS NOT A SIDE EXPERIMENT. (Trish 2026-08-23)
 
 A.T.L.A.S. runs the **same** file-output chain as Standard. It was excluded from

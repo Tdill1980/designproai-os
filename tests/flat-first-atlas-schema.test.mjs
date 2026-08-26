@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import test from "node:test";
 
 const sql = readFileSync(new URL(
@@ -104,6 +105,21 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
       > viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260825.v7"),
     "the newest migration touching the gate must pin the current prompt version",
   );
+  // The DesignPanel creative port carries its own version, so the creative half
+  // and the topology half can move independently. It is pinned the same way,
+  // and against the shipped constant rather than a literal, so the gate and the
+  // runtime cannot disagree about which port authored a qualifying master.
+  assert.match(viewSetContractSql, /designpanel-ai-generate\.artboard\.20260826\.v2/);
+  assert.ok(
+    viewSetContractSql.lastIndexOf("designpanel-ai-generate.artboard.20260826.v2")
+      > viewSetContractSql.lastIndexOf("designpanel-ai-generate.artboard.20260822.v1"),
+    "the newest migration touching the gate must pin the current DesignPanel port version",
+  );
+  assert.equal(
+    createRequire(import.meta.url)("../runtime/designiq-prompt.cjs").DESIGNPANEL_ARTBOARD_PORT_VERSION,
+    "designpanel-ai-generate.artboard.20260826.v2",
+    "the runtime must emit the port version the gate accepts",
+  );
   assert.match(
     viewSetGuardSql,
     /OR NOT \(CASE[\s\S]*masterQcConfidence[\s\S]*END\)/,
@@ -124,7 +140,12 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
     "driverContentHash",
     "designpro.atlas-master-semantic-qc.v1",
     "designpro.flat-first-master-provider.v1",
-    "designpanel-ai-generate.artboard.20260822.v1",
+    // The port-version LITERAL is asserted below across every migration that
+    // touches the gate, newest last, for the same reason the prompt version is:
+    // a bump patches the live body in place rather than restating it, so the
+    // defining body keeps the older string and pinning it here would grade the
+    // previous contract forever.
+    "designPanelArtboardPortVersion",
     "masterQcPassed",
     "masterQcConfidence",
     "masterPromptHash",

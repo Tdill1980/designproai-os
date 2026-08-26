@@ -145,9 +145,29 @@ function createProvider(options = {}) {
     // model than the locked one. Call 1 passes `lockModel` so it either gets the
     // locked model or fails; every projection keeps the fallback.
     lockModel = false,
+    // ...AND `lockModel` ALONE ONLY PINS THE FIRST OF WHATEVER IS CONFIGURED.
+    //
+    // It takes models[0], which resolves from GOOGLE_IMAGE_MODEL on the droplet.
+    // That is the right default for a projection and the wrong one for the call
+    // that authors the design: the authority pins a model by NAME, and "the
+    // first entry of whatever this deployment happens to be configured with" is
+    // not that name. `model` names it, so the authoring call cannot drift with
+    // an env file.
+    //
+    // Measured, 2026-08-26, one payload and one key through the SAME assembled
+    // request: on the droplet's configured gemini-3-pro-image the sheet came
+    // back as a three-quarter VAN in three views with mirrored roof lettering,
+    // ignoring the deterministic guide completely; on the authority's
+    // gemini-3-pro-image-preview the same bytes produced the guide's six-zone
+    // layout with forward-reading text on both flanks. Same prompt, same parts,
+    // same config, same key -- only the model id differed.
+    model = null,
   }) {
+    if (model != null && !/^gemini-[a-z0-9.-]*image[a-z0-9.-]*$/.test(String(model))) {
+      throw new ProviderError("provider_model_invalid", `${model} is not an explicit Gemini image model`);
+    }
     const attempts = [];
-    const modelChain = lockModel ? models.slice(0, 1) : models;
+    const modelChain = model != null ? [String(model)] : lockModel ? models.slice(0, 1) : models;
     for (const model of modelChain) {
       for (const key of availableKeys()) {
         const fingerprint = keyFingerprint(key);

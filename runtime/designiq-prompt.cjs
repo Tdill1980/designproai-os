@@ -35,7 +35,30 @@ const angles = require("./view-angles.cjs");
 // Versioned independently from the A.T.L.A.S. topology prompt so an immutable
 // master authored with an older/partial DesignPanel port can never be reused
 // after the proven artboard implementation changes.
-const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.20260822.v1";
+const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.20260826.v2";
+
+// THE MODEL THE AUTHORITY AUTHORS ON, BY NAME.
+//
+// design-panel-ai-generate builds this exact id into its endpoint and carries
+// no fallback (index.ts:1320). The reference repository's own locked note says
+// the GA id `gemini-3-pro-image` is the same model and that they stay on the
+// `-preview` alias regardless, because it is the one verified working there.
+//
+// The droplet writes GOOGLE_IMAGE_MODEL=gemini-3-pro-image (ops/configure-env.sh),
+// so Call 1 -- which only asked for "the first configured model" -- was
+// authoring the customer's design on a different id than the authority does.
+//
+// That is not a nicety. Measured 2026-08-26 on the Precision Climate Solutions
+// payload, one key, one assembled request sent to both ids: the configured GA
+// id returned a three-quarter VAN drawn in three views with mirrored roof
+// lettering and no relationship to the deterministic guide; the `-preview` id
+// returned the guide's six-zone layout with forward-reading text on both
+// flanks. The prompt, the parts, the temperature and the aspect were identical.
+//
+// Kept beside the port version because it is part of the same port: pinned by
+// name, asserted against the vendored reference, and independent of whatever
+// the projection calls are configured to use.
+const DESIGNPANEL_AUTHORING_MODEL = "gemini-3-pro-image-preview";
 
 // Names no form. Every version that prescribed one converged - "custom,
 // distinctive lettering" handed three trades the same lockup, and replacing it
@@ -73,6 +96,30 @@ const COMMERCIAL_DEPTH =
 // list of aesthetics handed to every customer.
 const COMMERCIAL_TRANSLATION =
   "Translate anything the brief names into concrete design — color story, layout, graphic motifs, focal treatment (\"stealth bomber\" becomes angular faceted panels with sharp swept edges). What the client named should be obvious at a glance.";
+
+// THE BRANDING IS THE DESIGNER'S TO COMPOSE.
+//
+// The commercial scene sentence in design-panel-ai-generate ends on this, and
+// it is the only place in the whole reference that hands the branding LAYOUT
+// decision back to the designer (index.ts:475, and again in its wantsPhoto
+// twin). It states the one hard requirement — the name reads at a glance — and
+// then explicitly declines to say where the name goes, how big it is, or what
+// sits beside it.
+//
+// It did not travel. The A.T.L.A.S. branch replaced the whole scene sentence
+// with "Design ONE flat vehicle-wrap ARTBOARD for a <vehicle>", which is a
+// format instruction, and nothing took over the half that was creative
+// direction. So the one call that authors the design was told the output
+// shape, the topology, the zone geometry and every contact-field lock, and was
+// never told that composing the identity is its own call to make.
+//
+// That is the shape of the reported regression: a technically perfect sheet
+// with set type where a designed lockup belongs. RULE 0.1 is explicit that a
+// design below baseline means the port is incomplete and never that A.C.E.
+// needs something invented for it, so this is the reference's literal, byte
+// for byte, and nothing else is added with it.
+const COMMERCIAL_BRAND_COMPOSITION =
+  "The company name reads clearly at a glance; how the branding is composed is your creative call.";
 
 const PHOTO_REALISM_LOCK = `PHOTOGRAPHIC IMAGERY: the scene in this brief is an actual photograph — a real camera image with natural light, true-to-life colour, real depth of field, and real surface texture — occupying its own area of the wrap. Type and logo sit over it as crisp vector art.`;
 
@@ -160,7 +207,21 @@ const COMMERCIAL_AUTHORING_PERSONA =
   + "business \u2014 premium, readable at a glance from across a parking lot, and worth what "
   + "the customer paid.";
 
-function buildAtlasArtboardDesignIQDirection(input = {}) {
+function buildAtlasArtboardDesignIQDirection(input = {}, options = {}) {
+  // HOW MANY GOLD-STANDARD ARTBOARDS ARE ACTUALLY ATTACHED.
+  //
+  // The closing line used to say "Match the production quality of the provided
+  // gold-standard DesignPanel artboards" unconditionally. On the live droplet,
+  // 2026-08-26, `loadDesignPanelArtboardExamples` returned ZERO: the bucket the
+  // reference reads them from ("wrap-files flat panel") is not populated on this
+  // project, and it fails soft by design. So the one sentence that sets the
+  // quality bar for the sheet pointed at attachments that were not in the
+  // request — the model was told to match something it had never been shown.
+  //
+  // The clause now follows the attachments. When examples are loaded it reads
+  // exactly as before; when none are, the bar is stated without the dangling
+  // reference rather than dropped.
+  const qualityExampleCount = Number(options.artboardQualityExampleCount) || 0;
   const prompt = String(input.brief || "").trim();
   const mode = String(input.mode || "commercial").toLowerCase();
   const vehicle = flatAtlasVehicle(input);
@@ -227,7 +288,7 @@ DESIGN BRIEF: "${prompt}"`;
   if (!exactReference) {
     assembled += mode === "restyle"
       ? `\n\nDESIGN AMPLIFICATION: Elevate and enhance the brief. Fill decisions the customer left open with depth, flow, layered thematic elements, texture, color harmony and dimension. The result must feel custom-designed, never like generic filler or a reusable template.\n${PROFESSIONAL_JUDGMENT}`
-      : `\n${COMMERCIAL_TRANSLATION}\n${COMMERCIAL_DEPTH}\n${PROFESSIONAL_JUDGMENT}`;
+      : `\n${COMMERCIAL_TRANSLATION}\n${COMMERCIAL_DEPTH} ${COMMERCIAL_BRAND_COMPOSITION}\n${PROFESSIONAL_JUDGMENT}`;
   }
 
   assembled += "\n\nCUSTOMER IDENTITY AND DESIGN LOCKS:";
@@ -307,16 +368,41 @@ DESIGN BRIEF: "${prompt}"`;
   assembled += `\n\nFINISH LOCK: ${finish.toUpperCase()} — ${finishSpec} Keep this finish intent consistent across every connected atlas zone.`;
   const substrateSpec = substrateContext(input.substrate);
   if (substrateSpec) assembled += `\n${substrateSpec}`;
-  const pickupCoverage = truckBedClause(vehicle);
-  assembled += `\n\nMASTER/PROOF APPLICATION BOUNDARY: The A.T.L.A.S. master stays FULL-BLEED inside every supplied exterior-panel zone. Paint the livery continuously THROUGH every place a window, glass panel, pickup-bed opening, wheel, wheel arch, lamp or trim piece will later sit - those positions carry artwork just like the rest of the panel, because the installer cuts them out of the printed vinyl afterwards. Keep essential logos, lettering and contact copy anchored to solid painted body area rather than to an opening, so a later cut never takes a word with it. During downstream 3D proof projection only, the wrap covers painted body panels; windows, glass, lights, wheels and trim stay factory.${pickupCoverage}${pickupCoverage ? " The open bed interior is not an artwork surface and must never receive generated wrap graphics." : ""}`;
-  assembled += "\n\nGallery-grade custom artwork with real depth, movement, and a wow factor — never generic AI filler, never a template. Match the production quality of the provided gold-standard DesignPanel artboards, while the deterministic A.T.L.A.S. guide alone controls this sheet's topology. Output ONE flat 2D artboard sheet with the branded wrap artwork filling the deterministic A.T.L.A.S. zones, drawn straight-on and flat. No camera, studio, vehicle photograph, mockup, shadows, annotations or template graphics.";
+  // THE 3D PROJECTION RULES DO NOT BELONG IN THE FLAT CALL.
+  //
+  // This paragraph used to end with the downstream-proof coverage rule — "the
+  // wrap covers painted body panels; windows, glass, lights, wheels and trim
+  // stay factory" — plus truckBedClause() and a restatement of its bed half.
+  // Three sentences describing a VEHICLE, handed to the one call that draws no
+  // vehicle.
+  //
+  // It is not merely inert here, it contradicts the sentence directly above it.
+  // That sentence tells the model to paint the livery straight THROUGH every
+  // window, wheel arch, lamp and bed opening because the installer cuts them
+  // out later; the removed sentences then told it those same surfaces carry no
+  // artwork. RULE 0.15 is the reason the first one exists, and a flat atlas has
+  // no window, lamp or bed-interior ZONE for the second one to describe — the
+  // six zones are driver, passenger, hood, roof, front and rear, and every one
+  // of them is a solid rectangle.
+  //
+  // Nothing downstream loses the rule. buildDesignIQPrompt and
+  // buildRestylePrompt in this same file — the builders that actually render a
+  // vehicle — each carry the factory-glass line and call truckBedClause()
+  // themselves, so Calls 2-7 are byte-for-byte unchanged. What remains here is
+  // the one instruction that IS this call's: keep the words off the cut lines.
+  assembled += `\n\nMASTER APPLICATION BOUNDARY: The A.T.L.A.S. master stays FULL-BLEED inside every supplied exterior-panel zone. Paint the livery continuously THROUGH every place a window, glass panel, pickup-bed opening, wheel, wheel arch, lamp or trim piece will later sit - those positions carry artwork just like the rest of the panel, because the installer cuts them out of the printed vinyl afterwards. Keep essential logos, lettering and contact copy anchored to solid painted body area rather than to an opening, so a later cut never takes a word with it.`;
+  assembled += "\n\nGallery-grade custom artwork with real depth, movement, and a wow factor — never generic AI filler, never a template. "
+    + (qualityExampleCount > 0
+      ? "Match the production quality of the provided gold-standard DesignPanel artboards, while the deterministic A.T.L.A.S. guide alone controls this sheet's topology. "
+      : "The deterministic A.T.L.A.S. guide alone controls this sheet's topology. ")
+    + "Output ONE flat 2D artboard sheet with the branded wrap artwork filling the deterministic A.T.L.A.S. zones, drawn straight-on and flat. No camera, studio, vehicle photograph, mockup, shadows, annotations or template graphics.";
   return assembled;
 }
 
 // Compatibility export for the already-shipped caller. New Atlas wiring should
 // use the explicit artboard name so this cannot be mistaken for a proof prompt.
-function buildFlatDesignIQDirection(input = {}) {
-  return buildAtlasArtboardDesignIQDirection(input);
+function buildFlatDesignIQDirection(input = {}, options = {}) {
+  return buildAtlasArtboardDesignIQDirection(input, options);
 }
 
 function buildLogoArchitecture() {
@@ -698,6 +784,8 @@ CLIENT BRIEF:`;
 }
 
 module.exports = {
+  COMMERCIAL_BRAND_COMPOSITION,
+  DESIGNPANEL_AUTHORING_MODEL,
   COMMERCIAL_DEPTH,
   COMMERCIAL_TRANSLATION,
   FINISH_SPECS,
