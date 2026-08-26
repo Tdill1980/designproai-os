@@ -58,7 +58,11 @@ const FLAT_ATLAS = Object.freeze({
   revisionId: "11111111-1111-4111-8111-111111111111",
   revisionSequence: 1,
   master: { contentHash: "a".repeat(64) },
-  projection: { contentHash: "b".repeat(64) },
+  // A clean sheet: the proof-conditioning derivative is the child of the
+  // canonical master itself, so the surface source and the master agree. On a
+  // sheet that arrived with cut-outs this is the repaired duplicate's hash --
+  // the same bytes the six panels are cut from.
+  projection: { contentHash: "b".repeat(64), sourceMasterHash: "a".repeat(64) },
   manifestAsset: { contentHash: "c".repeat(64) },
   viewAuthorities: VIEW_AUTHORITIES,
   masterAcceptance: Object.freeze({
