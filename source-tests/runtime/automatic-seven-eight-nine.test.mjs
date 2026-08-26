@@ -43,7 +43,12 @@ test("seven distinct views automatically precede flat proof, panels and logos", 
     STAGES.indexOf("manifest.resolve") < STAGES.indexOf("source.verify"),
     "every paid stage is cut and verified against the dimensions GENIE produces",
   );
-  assert.deepEqual(RECEIPTS.slice(0, 4), ["views.seven-source", "call8.flat-proof", "call9.surface-panels", "call10.logo-inventory"]);
+  // A deferred Call 8 is its OWN receipt kind and never "call8.flat-proof", so
+  // no later reader can mistake a recorded failure for a proof that was built.
+  assert.deepEqual(RECEIPTS.slice(0, 5), [
+    "views.seven-source", "call8.flat-proof", "call8.flat-proof-deferred",
+    "call9.surface-panels", "call10.logo-inventory",
+  ]);
   assert.ok(RECEIPTS.includes("final.human-qc"));
   assert.equal(new Set(Object.values(_test.exactSevenViews({ renderAssets: views }, tenantKey, revisionId)).map((asset) => asset.contentHash)).size, 7);
 });
