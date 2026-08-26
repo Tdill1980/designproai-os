@@ -89,9 +89,8 @@ AS $fn$
   );
 $fn$;
 
--- EXECUTE stays with `authenticated`, exactly as
--- `designpro_private.caller_owns_generation` carries it, because the storage
--- and table policies below evaluate this in the caller's own context. It
+-- EXECUTE stays with `authenticated`, because the storage and table policies
+-- below evaluate this in the caller's own context. It
 -- discloses one fact about the caller themselves -- whether they are on the
 -- design team -- and nothing about any design.
 REVOKE ALL ON FUNCTION designpro_private.caller_is_design_staff()
@@ -101,6 +100,51 @@ GRANT EXECUTE ON FUNCTION designpro_private.caller_is_design_staff()
 
 COMMENT ON FUNCTION designpro_private.caller_is_design_staff() IS
   'True for a designpro_qc_members member with can_preflight. Never true for a customer.';
+
+-- DOES THE CALLER OWN THE GENERATION THIS STORAGE PATH BELONGS TO.
+--
+-- 20260814160000 asked this with an inline EXISTS over
+-- `designpro_generation_requests`. That worked then and cannot work now, and
+-- the reason is worth stating because it is not obvious: a policy expression is
+-- evaluated with the PRIVILEGES OF THE QUERYING USER, and
+-- `designpro_generation_requests` is service-role only -- so the moment that
+-- table's own policy (which references `designpro_qc_members`, also service-role
+-- only) is reached, an `authenticated` caller gets
+-- `permission denied for table designpro_qc_members` and the whole read dies.
+-- It never fired before because nothing else ever reached that table from a
+-- policy.
+--
+-- A SECURITY DEFINER function is the standard answer: its body runs as the
+-- owner, so the tables it consults are the owner's to read. Production already
+-- refactored the same predicate into `designpro_private.caller_owns_generation`
+-- for exactly this reason -- but that function was created outside the
+-- migration history, so a fresh database does not have it and the shadow apply
+-- refuses a policy that calls it. This is that function, inside the history,
+-- with the same body.
+CREATE OR REPLACE FUNCTION designpro_private.caller_owns_generation_path(
+  p_tenant_segment text, p_generation_id text
+) RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.designpro_generation_requests g
+    WHERE g.owner_id = (SELECT auth.uid())
+      AND p_tenant_segment = 'user_' || g.owner_id::text
+      AND p_generation_id = g.generation_id::text
+  );
+$fn$;
+
+REVOKE ALL ON FUNCTION designpro_private.caller_owns_generation_path(text,text)
+  FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION designpro_private.caller_owns_generation_path(text,text)
+  TO authenticated,service_role;
+
+COMMENT ON FUNCTION designpro_private.caller_owns_generation_path(text,text) IS
+  'Whether the caller owns the generation a designpro/<tenant>/<generation>/ storage path belongs to. SECURITY DEFINER because the request table is service-role only and a policy expression runs with the caller''s own privileges.';
 
 -- THE GENERATION-KEYED TWIN OF designpro_generation_view_paths.
 --
@@ -146,6 +190,7 @@ BEGIN
     v_views := '[]'::jsonb;
   ELSE
     SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+      'id',v.id,
       'sourceViewType',v.source_view_type,
       'consumerRole',v.consumer_role,
       'storagePath',v.storage_path,
@@ -356,7 +401,7 @@ CREATE POLICY designpro_owner_read_generation_views
     AND (storage.foldername(name))[4]='calls-1-7'
     AND array_length(storage.foldername(name),1)=5
     AND (
-      designpro_private.caller_owns_generation(
+      designpro_private.caller_owns_generation_path(
         (storage.foldername(name))[2],(storage.foldername(name))[3]
       )
       OR designpro_private.caller_is_design_staff()
@@ -433,47 +478,49 @@ CREATE POLICY designpro_owner_read_flat_atlas_revisions
 -- uploaded against it. Same membership, same read-only shape.
 DROP POLICY IF EXISTS designpro_owner_read_wrap_files ON storage.objects;
 CREATE POLICY designpro_owner_read_wrap_files
-  ON storage.objects
-  FOR SELECT
-  TO authenticated
-  USING (
-    bucket_id='wrap-files'
-    AND (
-      (
-        (storage.foldername(name))[1]='users'
-        AND (storage.foldername(name))[2]=((SELECT auth.uid()))::text
-        AND (storage.foldername(name))[3]='revisions'
-        AND (storage.foldername(name))[4] ~
-          '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-        AND (storage.foldername(name))[5]='inputs'
-        AND (storage.foldername(name))[6]=ANY(ARRAY[
-          'driver','passenger','hood','roof','front','rear','closeup','hero3d','logo'
-        ])
-        AND array_length(storage.foldername(name),1)=6
-        AND storage.filename(name) ~ '^[0-9a-f]{64}\.(png|jpg|jpeg|webp|svg|pdf)$'
+ON storage.objects
+FOR SELECT
+TO authenticated
+USING (
+  bucket_id='wrap-files'
+  AND (
+    (
+      (storage.foldername(name))[1]='users'
+      AND (storage.foldername(name))[2]=(SELECT auth.uid())::text
+      AND (storage.foldername(name))[3]='revisions'
+      AND (storage.foldername(name))[4] ~
+        '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      AND (storage.foldername(name))[5]='inputs'
+      AND (storage.foldername(name))[6] IN (
+        'driver','passenger','hood','roof','front','rear','closeup','hero3d','logo'
       )
-      OR EXISTS (
-        SELECT 1 FROM public.designpro_workflow_runs r
-        WHERE (
-            r.owner_id=(SELECT auth.uid())
-            OR designpro_private.caller_is_design_staff()
-          )
-          AND (
-            (
-              (storage.foldername(objects.name))[1]='designpro'
-              AND (storage.foldername(objects.name))[2]=r.tenant_key
-              AND (storage.foldername(objects.name))[3]=(r.id)::text
-            )
-            OR (
-              (storage.foldername(objects.name))[1]='wrapbox'
-              AND (storage.foldername(objects.name))[2]=r.tenant_key
-              AND (storage.foldername(objects.name))[3]=(r.entice_pack_id)::text
-              AND (storage.foldername(objects.name))[4]=(r.id)::text
-            )
-          )
-      )
+      AND pg_catalog.array_length(storage.foldername(name),1)=6
+      AND storage.filename(name) ~
+        '^[0-9a-f]{64}\.(png|jpg|jpeg|webp|svg|pdf)$'
     )
-  );
+    OR EXISTS (
+      SELECT 1
+      FROM public.designpro_workflow_runs r
+      WHERE (
+          r.owner_id=(SELECT auth.uid())
+          OR designpro_private.caller_is_design_staff()
+        )
+        AND (
+          (
+            (storage.foldername(name))[1]='designpro'
+            AND (storage.foldername(name))[2]=r.tenant_key
+            AND (storage.foldername(name))[3]=r.id::text
+          )
+          OR (
+            (storage.foldername(name))[1]='wrapbox'
+            AND (storage.foldername(name))[2]=r.tenant_key
+            AND (storage.foldername(name))[3]=r.entice_pack_id::text
+            AND (storage.foldername(name))[4]=r.id::text
+          )
+        )
+    )
+  )
+);
 
 COMMENT ON POLICY designpro_owner_read_wrap_files ON storage.objects IS
   'A run''s own produced artifacts and the caller''s own uploaded revision inputs, for the run owner or design staff.';

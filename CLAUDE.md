@@ -802,6 +802,45 @@ Two rules, and the second was learned the expensive way.
    arm present verbatim, legacy arm present verbatim, A.T.L.A.S. before legacy —
    are what that costs to prevent.
 
+## 🪞 A POLICY RUNS AS THE CALLER, AND PRODUCTION HAS OBJECTS THE HISTORY NEVER CREATED (2026-08-26)
+
+Two facts, learned together, because the second hides behind the first.
+
+1. **A row-security policy expression is evaluated with the PRIVILEGES OF THE
+   QUERYING USER.** So an inline `EXISTS` inside a policy can only read tables
+   the caller could read directly. `designpro_generation_requests` and
+   `designpro_qc_members` are service-role only, so a policy that reaches either
+   of them from an `authenticated` session dies with
+   `permission denied for table designpro_qc_members` — and it takes the whole
+   read down, not just that branch. The remedy is the idiom the codebase already
+   uses: a `SECURITY DEFINER` helper in `designpro_private`, whose body runs as
+   its owner, granted `EXECUTE` to `authenticated`.
+
+   Note what this means for `designpro_generation_requests`' own SELECT policy:
+   its `designpro_qc_members` clause can never fire for a real caller, because
+   nothing can select that table as `authenticated` in the first place. It is
+   reachable only from a definer function.
+
+2. **`designpro_private.caller_owns_generation(text,text)` exists in production
+   and in NO migration.** `20260814160000` wrote that predicate inline; someone
+   later refactored it into a function directly against the database. So a new
+   policy that calls it passes every check against production and dies in the
+   shadow apply — which is exactly what happened, on the first attempt at the
+   RevisionStudio migration:
+
+   ```
+   ERROR: function designpro_private.caller_owns_generation(text, text) does not exist
+   At statement: 18   CREATE POLICY designpro_owner_read_generation_views
+   ```
+
+   **Validating against production is necessary and not sufficient.** Production
+   is a superset of the migration history, so it will accept references a fresh
+   database refuses. Before depending on any function, check it is CREATEd in
+   `supabase/migrations/` — `grep -rn "FUNCTION <name>" supabase/migrations/` —
+   and if it is not, define your own in your migration rather than borrowing the
+   drifted one. `designpro_private.caller_owns_generation_path(text,text)` is
+   that in-history twin.
+
 ## Where things are
 
 | | |

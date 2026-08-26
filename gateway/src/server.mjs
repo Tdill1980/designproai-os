@@ -1034,7 +1034,12 @@ async function approvedViewsForGeneration(fetchImpl, token, cfg, generationIdVal
     const hashOrNull = (value) => (SHA256_PATTERN.test(String(value || "")) ? String(value).toLowerCase() : null);
     const masterContentHash = hashOrNull(row.atlasMasterContentHash);
     views.push({
-      id: `${generation}:${String(row.sourceViewType || "")}`,
+      // The view's own row id when the server states one. A view is a record,
+      // and giving it a synthesized name here would make it a different thing
+      // depending on which route it came through.
+      id: UUID_PATTERN.test(String(row.id || ""))
+        ? String(row.id)
+        : `${generation}:${String(row.sourceViewType || "")}`,
       generationId: generation,
       surfaceKey,
       sourceViewType: String(row.sourceViewType || ""),
