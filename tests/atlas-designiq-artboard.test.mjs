@@ -162,18 +162,29 @@ test("the gold-standard quality bar follows the attachments", () => {
 //
 // design-panel-ai-generate builds one model id into its endpoint and carries no
 // fallback (index.ts:1320). Call 1 passed `lockModel: true`, which pins the
-// FIRST of whatever GOOGLE_IMAGE_MODEL configures — on the droplet, the GA id.
+// FIRST of whatever GOOGLE_IMAGE_MODEL configures, which is config drift, not a
+// pin. That half of the rule is unchanged: the projections may follow
+// GOOGLE_IMAGE_MODEL, the design authority may not.
 //
-// Measured 2026-08-26, the SAME assembled request and key sent to both ids: the
-// GA id returned a three-quarter van in three views with mirrored roof
-// lettering and no relationship to the deterministic guide; the authority's
-// -preview id returned the guide's six-zone layout with forward-reading text on
-// both flanks. "The first configured model" is not a pin.
-test("Call 1 authors on the authority's model, by name and not by position", () => {
-  assert.equal(DESIGNPANEL_AUTHORING_MODEL, "gemini-3-pro-image-preview");
+// THE VALUE IS THE GA ID, AND THAT IS DELIBERATE (corrected 2026-08-26).
+//
+// It was briefly the `-preview` alias, because the reference builds that id into
+// its endpoint and because ONE A/B pair on the Precision payload preferred it.
+// Eleven production runs disagree, measured as border-vs-interior luminance on
+// the real masters: every GA run holds a border median of 135-177 across the
+// centre four surfaces on every prompt version from v2 through v8, and the first
+// `-preview` run drops it to 18-23 with 63-83% of each border dark — a picture of
+// a vehicle instead of a sheet of vinyl. The Flamingo master this product is
+// judged against was authored on the GA id.
+//
+// So this asserts the id by name AND that the reference still knows it, without
+// requiring the two to be the same string — the reference pinning `-preview` is
+// a fact about the reference, not a reason to author on it here.
+test("Call 1 authors on a named model, and on the one the fleet actually works on", () => {
+  assert.equal(DESIGNPANEL_AUTHORING_MODEL, "gemini-3-pro-image");
   assert.ok(
-    edgeSource.includes(`models/${DESIGNPANEL_AUTHORING_MODEL}:generateContent`),
-    "the reference must still build this exact model id into its endpoint",
+    edgeSource.includes("models/gemini-3-pro-image-preview:generateContent"),
+    "the reference must still build its own model id into its endpoint",
   );
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   assert.match(
