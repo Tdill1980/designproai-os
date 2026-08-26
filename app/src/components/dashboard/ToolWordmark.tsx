@@ -28,7 +28,6 @@ export interface WordmarkSplit {
 const TOOL_WORDMARKS: Record<string, WordmarkSplit> = {
   designpro:        { base: "Design",     suffix: "Pro", subSuffix: "AI" },
   revisionstudio:   { base: "RevisionStudio", suffix: "IQ" },
-  revisionsource:   { base: "Revision\u00A0",   suffix: "source" },
   productionjobs:   { base: "Production\u00A0", suffix: "jobs" },
   genieqc:          { base: "GENIE\u00A0",      suffix: "QC" },
   wrapbox:          { base: "Wrap",       suffix: "Box" },

@@ -21,7 +21,6 @@
 
 import {
   Brain,
-  FileStack,
   Layers,
   Factory,
   Ruler,
@@ -75,15 +74,11 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     tier: "advanced",
     description: "Browse your designs, review every proof beside its print panel, revise and order",
   },
-  {
-    key: "revisionsource",
-    label: "Revision source",
-    route: "/designpro/revisions/new",
-    icon: FileStack,
-    pillar: "design",
-    tier: "starter",
-    description: "Already have seven views? Freeze them as immutable production inputs",
-  },
+  // "Revision source" (the immutable seven-file upload at
+  // /designpro/revisions/new) was removed from navigation by the owner
+  // (2026-08-26): in the menu it read as the way into RevisionStudioIQ, which
+  // it is not, and the upload surface is an operator path reached from the
+  // production pages, not a headline tool. The route still serves.
   {
     key: "gallery",
     label: "Gallery",
@@ -203,7 +198,7 @@ export const DASHBOARD_PILLARS: DashboardPillar[] = [
     claim: "We eliminate the design bottleneck.",
     accent: "bg-gradient-to-r from-blue-500 to-purple-500",
     primaryAnchor: "designpro",
-    secondaryAnchor: "revisionsource",
+    secondaryAnchor: "revisionstudio",
   },
   {
     id: "output",
