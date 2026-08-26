@@ -1,35 +1,34 @@
 "use strict";
 
 /**
- * CODE OWNS THE GEOMETRY. THE MODEL OWNS THE ARTWORK.
+ * A MEASUREMENT ARM. NOT THE ARCHITECTURE. (Owner correction, 2026-08-26.)
  *
- * This is the composition half of the proven flat-first architecture in
- * supabase/functions/designpro-artboard/index.ts. There, ONE Gemini call
- * produces a wide flat banner of pure wrap artwork — no text, no logos, no
- * vehicle, no panels — and `composeArtboard` then lays out the labelled,
- * dimensioned panels in code, cover-fitting that artwork into each window.
- * `slicePanel` cuts the print files from the same pixels, so every panel is a
- * native-resolution crop of one image and generative drift is structurally
- * impossible.
+ * ⛔ THIS IS NOT A CANDIDATE FOR CALL 1 AND MUST NOT BE WIRED INTO IT.
  *
- * A.T.L.A.S. Call 1 does the inverse today: it hands Gemini a topology guide
- * and thousands of characters of zone instruction and asks it to paint the
- * whole six-zone sheet itself. Measured on the Precision Climate Solutions
- * payload, 2026-08-26, that returns zones die-cut to the vehicle silhouette —
- * wheel arches and glass punched out against bare canvas — which is exactly the
- * failure RULE 0.15 exists to forbid, and which no amount of prompt wording has
- * moved.
+ * A.T.L.A.S. Call 1 authors the actual cohesive SOURCE wrap design directly
+ * into the flattened top-view vehicle master, carrying the DesignPanelAI /
+ * DesignIQ creative intelligence: the wrap concept, brand identity, the custom
+ * mark where one is required, visual hierarchy, layered depth, motifs, colour
+ * story, industry read and the intentional relationships between driver,
+ * passenger, hood, roof, front and rear. GENIE and code then own vehicle
+ * geometry, surface boundaries, dimensions, deterministic extraction, the 5"
+ * bleed and lineage. The source design is not something added after A.T.L.A.S.;
+ * it is what A.T.L.A.S. is authoring.
  *
- * It cannot happen here. The model is never told there is a vehicle, a panel,
- * an opening or a zone, so it has nothing to cut a hole in; and every zone is
- * filled by a cover-crop of an opaque banner, so full bleed is a property of
- * the compositor rather than a request.
+ * This module was written for the opposite arrangement — one Gemini call makes a
+ * generic banner of textless artwork, code cover-crops six zones out of it, and
+ * identity arrives later as a composited layer. That defers the design, and the
+ * owner's ruling is explicit: do not replace the working flattened A.T.L.A.S.
+ * with a banner/crop architecture.
  *
- * WHAT THIS DOES NOT CHANGE. The manifest, the zone rectangles, the trim and
- * print inches, the extraction rotations, `cutCallOnePanels`, the view
- * authorities and every hash in the lineage are untouched — they consume a
- * 4096x4096 atlas exactly as before. This only changes who paints its pixels.
+ * It stays for one reason: it is arm C of `scripts/designiq-ab-precision.mjs`,
+ * and it is how full bleed and the side twin were measured as code properties
+ * (every zone 100.00% opaque, passengerMirrorMae 0.000 on live GENIE geometry)
+ * rather than as prompt requests. That measurement is worth keeping and is
+ * cited in the master QC. Nothing in the shipped kernel requires this file, and
+ * nothing should start.
  */
+
 
 const sharp = require("sharp");
 
