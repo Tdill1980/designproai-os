@@ -32,6 +32,12 @@ insert into auth.users(
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 
 -- One A.T.L.A.S. generation: request, accepted master, frozen snapshot.
+--
+-- The request row is built from the database's own rules rather than by hand:
+-- engine_contract must equal calls_1_7_engine_contract(), idempotency_key must
+-- be 'calls17:'||generation_id||':'||input_hash, and request_input must satisfy
+-- calls_1_7_input_v3_valid -- which allows only a fixed key set and requires a
+-- brief, a designName and a complete vehicle.
 insert into public.designpro_generation_requests(
   id,generation_id,owner_id,tenant_key,idempotency_key,request_input,
   input_hash,engine_contract,engine_contract_hash,state
@@ -39,12 +45,19 @@ insert into public.designpro_generation_requests(
   '42000000-0000-4000-8000-000000000001',
   '43000000-0000-4000-8000-000000000001',
   '41000000-0000-4000-8000-000000000001',
-  'user_41000000-0000-4000-8000-000000000001','atlas-stage-contract',
+  'user_41000000-0000-4000-8000-000000000001',
+  'calls17:43000000-0000-4000-8000-000000000001:'||repeat('1',64),
   jsonb_build_object(
     'contractVersion','designpro.calls-1-7-input.v3',
-    'pipelineMode','flat-first-atlas-v1','brief','atlas stage contract'
+    'pipelineMode','flat-first-atlas-v1',
+    'brief','atlas stage contract fixture',
+    'designName','Atlas Stage Contract',
+    'vehicle',jsonb_build_object(
+      'year','2022','make','Ford','model','F250 Crew Cab','type','truck'
+    )
   ),
-  repeat('1',64),'{}'::jsonb,repeat('2',64),'queued'
+  repeat('1',64),designpro_private.calls_1_7_engine_contract(),
+  repeat('2',64),'queued'
 );
 
 insert into public.designpro_flat_atlas_revisions(
@@ -90,6 +103,23 @@ from (values
   ('roof','4'),('front','5'),('rear','6')
 ) as s(surface_key,hex);
 
+-- designpro_revision_sources carries a trigger requiring seven distinct,
+-- owner-bound render-asset identities on every snapshot, so the fixture builds
+-- them the way the trigger demands rather than asserting they are optional.
+create or replace function pg_temp.render_assets(
+  p_owner uuid,p_revision uuid,p_seed text
+) returns jsonb language sql as $$
+  select jsonb_object_agg(role, jsonb_build_object(
+    'storagePath','users/'||p_owner::text||'/revisions/'||p_revision::text
+      ||'/inputs/'||role||'/'||encode(extensions.digest(
+        convert_to(p_seed||role,'UTF8'),'sha256'),'hex')||'.png',
+    'contentHash',encode(extensions.digest(
+      convert_to(p_seed||role,'UTF8'),'sha256'),'hex'),
+    'byteSize',2048,'contentType','image/png'
+  ))
+  from unnest(ARRAY['driver','passenger','hood','roof','front','rear','closeup']) role;
+$$;
+
 insert into public.designpro_revision_sources(
   revision_id,owner_id,tenant_key,generation_id,visualization_id,
   expected_updated_at,snapshot,snapshot_hash,idempotency_key
@@ -99,8 +129,11 @@ insert into public.designpro_revision_sources(
   'user_41000000-0000-4000-8000-000000000001',
   '43000000-0000-4000-8000-000000000001',
   '46000000-0000-4000-8000-000000000001',
-  now(),jsonb_build_object('callOnePanels',panels),repeat('e',64),
-  'atlas-stage-snapshot'
+  now(),jsonb_build_object('callOnePanels',panels,'renderAssets',
+    pg_temp.render_assets(
+      '41000000-0000-4000-8000-000000000001',
+      '45000000-0000-4000-8000-000000000001','atlas')),
+  repeat('e',64),'atlas-stage-snapshot'
 from atlas_panels;
 
 insert into public.designpro_workflow_runs(
@@ -124,7 +157,10 @@ insert into public.designpro_revision_sources(
   'user_41000000-0000-4000-8000-000000000001',
   '53000000-0000-4000-8000-000000000001',
   '56000000-0000-4000-8000-000000000001',
-  now(),'{}'::jsonb,repeat('f',64),'standard-stage-snapshot'
+  now(),jsonb_build_object('renderAssets',pg_temp.render_assets(
+    '41000000-0000-4000-8000-000000000001',
+    '55000000-0000-4000-8000-000000000001','standard')),
+  repeat('f',64),'standard-stage-snapshot'
 );
 insert into public.designpro_workflow_runs(
   id,workflow_type,owner_id,tenant_key,idempotency_key,status,
