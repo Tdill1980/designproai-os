@@ -16,23 +16,18 @@ const ResetPasswordRequest = () => {
     setLoading(true);
 
     try {
-      // Use our custom edge function (Resend on verified restyleproai.com
-      // domain) instead of supabase.auth.resetPasswordForEmail, which relies
-      // on Supabase's rate-limited built-in SMTP and frequently fails to
-      // deliver. The edge function mints a recovery link via the admin API
-      // and emails it reliably.
-      const { data, error } = await supabase.functions.invoke(
-        "send-password-reset",
-        {
-          body: {
-            email: email.trim().toLowerCase(),
-            redirectTo: `${window.location.origin}/reset-password`,
-          },
-        }
+      // The RestylePro original invoked a custom send-password-reset edge
+      // function on the theory that Supabase's built-in mailer was unreliable
+      // THERE. That function was never deployed to this project, so the call
+      // could only ever fail -- while this project's built-in auth mailer is
+      // proven by every magic-link sign-in it delivers. Native recovery is
+      // the working path here.
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        { redirectTo: `${window.location.origin}/reset-password` },
       );
 
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
 
       setSent(true);
       toast.success("Password reset email sent! Check your inbox.");

@@ -27,7 +27,7 @@ export interface WordmarkSplit {
 // reached the sidebar in lowercase and unspaced.
 const TOOL_WORDMARKS: Record<string, WordmarkSplit> = {
   designpro:        { base: "Design",     suffix: "Pro", subSuffix: "AI" },
-  revisionsource:   { base: "Revision\u00A0",   suffix: "source" },
+  revisionstudio:   { base: "RevisionStudio", suffix: "IQ" },
   productionjobs:   { base: "Production\u00A0", suffix: "jobs" },
   genieqc:          { base: "GENIE\u00A0",      suffix: "QC" },
   wrapbox:          { base: "Wrap",       suffix: "Box" },

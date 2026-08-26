@@ -76,6 +76,34 @@ export default function ProductionJobs() {
             <p className="text-sm text-muted-foreground">
               Order # {job.orderNumber} · Revision {job.revision}
             </p>
+            {/* The two workspaces for this job, side by side: the customer
+                editor and the internal QC/lineage control room. Nested
+                interactive elements are illegal inside the card's own Link,
+                so these stop the card navigation and route themselves. */}
+            <span className="mt-1 flex gap-4 text-xs font-semibold text-primary">
+              <span
+                role="link"
+                tabIndex={0}
+                className="hover:underline"
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.location.assign(`/revision-studio?id=${encodeURIComponent(job.generationId)}`);
+                }}
+              >
+                RevisionStudioIQ
+              </span>
+              <span
+                role="link"
+                tabIndex={0}
+                className="hover:underline"
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.location.assign(`/designpro/jobs/${encodeURIComponent(job.generationId)}/panelpro`);
+                }}
+              >
+                PanelPro Studio
+              </span>
+            </span>
           </Link>
         ))}
       </div>

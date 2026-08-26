@@ -137,6 +137,7 @@ const ProductionProof = lazyWithRetry(() => import("./pages/ProductionProof"));
 const RestyleDashboard = lazyWithRetry(() => import("./pages/RestyleDashboard"));
 const Pricing = lazyWithRetry(() => import("./pages/PricingColorPro"));
 const ResetPassword = lazyWithRetry(() => import("./pages/ResetPassword"));
+const ResetPasswordRequest = lazyWithRetry(() => import("./pages/ResetPasswordRequest"));
 const VehicleGallery = lazyWithRetry(() => import("./pages/VehicleGallery"));
 
 
@@ -373,6 +374,10 @@ const App = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          {/* The login page has linked here since the shell was copied, but
+              the route was never served -- "set a password" landed on the
+              404, which is why password login looked impossible. */}
+          <Route path="/reset-password-request" element={<ResetPasswordRequest />} />
           <Route path="/auth" element={<Navigate to="/login" replace />} />
           {/* /wpw-offer, /wpw-offer-vertical, /launch, /launch-vertical retired —
               redirect any inbound traffic (old emails, SMS, ads) to /pricing */}

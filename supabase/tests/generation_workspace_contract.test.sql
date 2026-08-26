@@ -19,7 +19,7 @@
 -- any check on the migration's text. Only execution over data separates "this
 -- parsed" from "this runs".
 begin;
-select plan(16);
+select plan(17);
 
 select has_function(
   'public','designpro_generation_workspace',ARRAY['uuid'],
@@ -296,6 +296,25 @@ select is(
     '32000000-0000-4000-8000-0000000000b1')->'viewsSuperseded',
   'true'::jsonb,
   'the fence verdict is still reported: a revision needs a new run'
+);
+
+-- A STANDARD DRIVER WITH NO PROVIDER OBJECT STILL TILES THE LIBRARY.
+--
+-- `? key` on a NULL provider object is NULL, and NOT NULL is NULL, so the
+-- first version of the tile's shape test silently dropped every older
+-- Standard driver whose view predates provider metadata -- fifteen of them,
+-- live. The workspace fixture request 'a1' is Standard-shaped; strip one of
+-- its metadata objects down to nothing and the library must still tile it.
+update public.designpro_generation_views
+set metadata='{}'::jsonb
+where request_id='31000000-0000-4000-8000-0000000000a1'
+  and source_view_type='side';
+select is(
+  (select e->>'thumbnailStoragePath' is not null
+     from jsonb_array_elements(public.designpro_generation_library(NULL,500)) e
+     where e->>'generationId'='32000000-0000-4000-8000-0000000000a1'),
+  true,
+  'a driver view with no provider object still provides the library tile'
 );
 
 select * from finish();
