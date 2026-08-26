@@ -60,6 +60,10 @@ insert into public.designpro_generation_requests(
   repeat('2',64),'queued'
 );
 
+-- designpro_flat_atlas_revision_paths pins every storage path to
+-- designpro/<tenant>/<generation>/flat-first/v1/..., with master and projection
+-- addressed by their own content hash and extension. The fixture derives them
+-- from that rule rather than inventing paths.
 insert into public.designpro_flat_atlas_revisions(
   id,request_id,generation_id,owner_id,tenant_key,revision_sequence,
   guide_storage_path,guide_content_hash,guide_byte_size,guide_content_type,
@@ -67,22 +71,27 @@ insert into public.designpro_flat_atlas_revisions(
   master_storage_path,master_content_hash,master_byte_size,master_content_type,
   projection_storage_path,projection_content_hash,projection_byte_size,projection_content_type,
   manifest,model,prompt_version,width_px,height_px,effective_ppi,metadata
-) values(
+)
+select
   '44000000-0000-4000-8000-000000000001',
   '42000000-0000-4000-8000-000000000001',
   '43000000-0000-4000-8000-000000000001',
   '41000000-0000-4000-8000-000000000001',
-  'user_41000000-0000-4000-8000-000000000001',1,
-  'designpro/guide.png',repeat('a',64),10,'image/png',
-  'designpro/manifest.json',repeat('b',64),10,'application/json',
-  'designpro/master.png',repeat('c',64),10,'image/png',
-  'designpro/projection.png',repeat('d',64),10,'image/png',
+  base.tenant_key,1,
+  base.prefix||'guide/'||repeat('a',64)||'.png',repeat('a',64),10,'image/png',
+  base.prefix||'manifest/'||repeat('b',64)||'.json',repeat('b',64),10,'application/json',
+  base.prefix||'revisions/1/master/'||repeat('c',64)||'.png',repeat('c',64),10,'image/png',
+  base.prefix||'revisions/1/projection/'||repeat('d',64)||'.jpg',repeat('d',64),10,'image/jpeg',
   '{}'::jsonb,'gemini','designpro-flat-first-atlas-20260825.v7',4096,4096,17.94,
   jsonb_build_object(
     'masterQcPassed',true,
     'masterQcContract','designpro.atlas-master-semantic-qc.v1'
   )
-);
+from (select
+  'user_41000000-0000-4000-8000-000000000001' as tenant_key,
+  'designpro/user_41000000-0000-4000-8000-000000000001'
+    ||'/43000000-0000-4000-8000-000000000001/flat-first/v1/' as prefix
+) base;
 
 -- Six Call 1 panels, each bound to that accepted master.
 create temporary table atlas_panels on commit drop as
@@ -103,9 +112,12 @@ from (values
   ('roof','4'),('front','5'),('rear','6')
 ) as s(surface_key,hex);
 
--- designpro_revision_sources carries a trigger requiring seven distinct,
--- owner-bound render-asset identities on every snapshot, so the fixture builds
--- them the way the trigger demands rather than asserting they are optional.
+-- designpro_revision_sources is the most heavily constrained table in the
+-- fixture: a trigger demanding seven distinct owner-bound render-asset
+-- identities, plus designpro_revision_snapshot_contract, which pins the
+-- snapshot's contract version, its DID derivation, the six surface roles,
+-- exactly one of closeup/hero3d, the vehicle, and an unbound design-first
+-- fulfillment block. The snapshot is therefore BUILT from those rules.
 create or replace function pg_temp.render_assets(
   p_owner uuid,p_revision uuid,p_seed text
 ) returns jsonb language sql as $$
@@ -120,6 +132,31 @@ create or replace function pg_temp.render_assets(
   from unnest(ARRAY['driver','passenger','hood','roof','front','rear','closeup']) role;
 $$;
 
+create or replace function pg_temp.snapshot(
+  p_owner uuid,p_revision uuid,p_generation uuid,p_visualization uuid,
+  p_seed text,p_extra jsonb default '{}'::jsonb
+) returns jsonb language sql as $$
+  select jsonb_build_object(
+    'contractVersion','designpro.revision-snapshot.v1',
+    'generationId',p_generation::text,
+    'designId','DID-'||upper(substr(replace(p_generation::text,'-',''),1,8)),
+    'visualizationId',p_visualization::text,
+    'sourceInputContract','designpro.calls-1-7-input.v3',
+    'designName','Atlas Stage Contract',
+    'renderAssets',pg_temp.render_assets(p_owner,p_revision,p_seed),
+    'vehicle',jsonb_build_object(
+      'year','2022','make','Ford','model','F250 Crew Cab','type','truck'),
+    'surfaceOptions','{}'::jsonb,
+    'finish','gloss',
+    'bodyText','',
+    'change','{}'::jsonb,
+    'expectedLogoInventory','[]'::jsonb,
+    'logoInventoryAttestation',jsonb_build_object('mode','none','attested',true),
+    'fulfillment',jsonb_build_object(
+      'contractVersion','designpro.fulfillment-state.v1','state','unbound')
+  ) || p_extra;
+$$;
+
 insert into public.designpro_revision_sources(
   revision_id,owner_id,tenant_key,generation_id,visualization_id,
   expected_updated_at,snapshot,snapshot_hash,idempotency_key
@@ -129,10 +166,12 @@ insert into public.designpro_revision_sources(
   'user_41000000-0000-4000-8000-000000000001',
   '43000000-0000-4000-8000-000000000001',
   '46000000-0000-4000-8000-000000000001',
-  now(),jsonb_build_object('callOnePanels',panels,'renderAssets',
-    pg_temp.render_assets(
-      '41000000-0000-4000-8000-000000000001',
-      '45000000-0000-4000-8000-000000000001','atlas')),
+  now(),pg_temp.snapshot(
+    '41000000-0000-4000-8000-000000000001',
+    '45000000-0000-4000-8000-000000000001',
+    '43000000-0000-4000-8000-000000000001',
+    '46000000-0000-4000-8000-000000000001','atlas',
+    jsonb_build_object('callOnePanels',panels)),
   repeat('e',64),'atlas-stage-snapshot'
 from atlas_panels;
 
@@ -157,9 +196,11 @@ insert into public.designpro_revision_sources(
   'user_41000000-0000-4000-8000-000000000001',
   '53000000-0000-4000-8000-000000000001',
   '56000000-0000-4000-8000-000000000001',
-  now(),jsonb_build_object('renderAssets',pg_temp.render_assets(
+  now(),pg_temp.snapshot(
     '41000000-0000-4000-8000-000000000001',
-    '55000000-0000-4000-8000-000000000001','standard')),
+    '55000000-0000-4000-8000-000000000001',
+    '53000000-0000-4000-8000-000000000001',
+    '56000000-0000-4000-8000-000000000001','standard'),
   repeat('f',64),'standard-stage-snapshot'
 );
 insert into public.designpro_workflow_runs(
