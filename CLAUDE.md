@@ -876,6 +876,29 @@ Two rules, and the second was learned the expensive way.
    structural locks in `supabase/tests/atlas_stage_contract.test.sql` — A.T.L.A.S.
    arm present verbatim, legacy arm present verbatim, A.T.L.A.S. before legacy —
    are what that costs to prevent.
+3. **And then RUN it, over a row that exercises the expression.** `20260826030000`
+   wrote `pg_catalog.coalesce(...)` inside the `jsonb_agg` that projects each
+   approved view. **COALESCE is SQL grammar, not a function in any schema** — the
+   parser resolves it before a search path is consulted, so a qualified form
+   cannot exist. It applied clean in shadow, applied clean in production, and
+   passed every check, because **PL/pgSQL compiles an expression the first time
+   it is EVALUATED, and an aggregate over zero rows evaluates nothing.** So the
+   read returned a flawless `[]` for every generation whose proofs the sibling
+   fence withholds — including the acceptance generation I verified against —
+   and raised `function pg_catalog.coalesce(jsonb, jsonb) does not exist` for
+   every generation that actually had proofs, which is the only case
+   RevisionStudio exists to serve.
+
+   `SET search_path = ''` is why qualifying is the right reflex, and it stays
+   right for functions, operators and types. It does not apply to the grammar:
+   COALESCE, NULLIF, GREATEST, LEAST, CASE, EXTRACT and the aggregate syntax
+   forms take no qualifier and reject one. `grep -n "pg_catalog\.\(coalesce\|nullif\|greatest\|least\)" supabase/migrations/`
+   finds this class in one command.
+
+   Fixed by `20260826060000`; locked by
+   `supabase/tests/generation_workspace_contract.test.sql`, which seeds SEVEN
+   view rows and CALLS the function — a fixture with an empty view set
+   reproduces nothing at all.
 
 ## 🪞 A POLICY RUNS AS THE CALLER, AND PRODUCTION HAS OBJECTS THE HISTORY NEVER CREATED (2026-08-26)
 
@@ -915,6 +938,40 @@ Two facts, learned together, because the second hides behind the first.
    and if it is not, define your own in your migration rather than borrowing the
    drifted one. `designpro_private.caller_owns_generation_path(text,text)` is
    that in-history twin.
+
+## 🚦 THE MERGE DOES NOT DEPLOY ITSELF, AND DISPATCHING THE GATE ON `main` KILLS THE ONE THAT WOULD (2026-08-26)
+
+Two facts, learned in the same five minutes, and the second is invisible until
+you go looking for it.
+
+1. **`release.yml`'s concurrency group is `designpro-release-<ref>`, with
+   `cancel-in-progress: true`.** A `workflow_dispatch` on `main` and the push
+   gate from a merge to `main` resolve to the SAME group, because neither has a
+   pull-request number. So dispatching the protected production migration right
+   after merging **cancels the merge's own gate run** — and
+   `deploy-production.yml` only auto-fires on
+   `workflow_run.conclusion == success && workflow_run.event == push`, so a
+   cancelled gate means the deploy is skipped, silently. Live on 2026-08-26:
+   gate `32936283425` cancelled, deploy `32936295705` skipped.
+
+2. **The auto-deploy path also requires an opt-in marker in the merge commit.**
+   Its "Prove exact protected main intent" step runs
+   `git log -1 --format=%B | grep -Fq '[dark-deploy]'` on the `workflow_run`
+   branch. A merge commit without that literal string never deploys, however
+   green its gate. This is deliberate: merging is not the same act as putting
+   an artifact on the droplet.
+
+**So the order that actually works** is: merge → dispatch `release.yml` on
+`main` with `APPLY_DESIGNPRO_PRODUCTION` (it must be `main`; the job asserts
+`test "$GITHUB_REF" = "refs/heads/main"`, which is why dispatching it on the
+feature branch fails at the guard) → then dispatch `deploy-production.yml` on
+`main` with `exact_sha` = main's head and
+`DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3`. The dispatch path asserts
+`GITHUB_SHA == EXACT_SHA`, so it can only ever deploy the head of main.
+
+Put `[dark-deploy]` in the merge commit message only when the merge itself
+should ship — and note that dispatching the migration afterwards will still
+cancel that gate, so the two mechanisms do not compose. Pick one.
 
 ## Where things are
 
