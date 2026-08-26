@@ -71,6 +71,22 @@
 -- a panel artifact carrying that same hash, the accepted master as its source
 -- and the five-inch bleed. None of that can be fabricated by the run.
 --
+-- THE REPLACEMENT MUST RE-EMIT THE BRANCH IT REPLACES. The first version of
+-- this fragment swapped the legacy panels.build header for the A.T.L.A.S.
+-- branch and stopped there, which DELETED the legacy branch: its contract body
+-- was left dangling inside the A.T.L.A.S. branch, and the ELSIF chain lost its
+-- panels.build arm entirely. The shadow suite showed all three consequences at
+-- once and it took four wrong guesses to read them properly --
+--   * a clean A.T.L.A.S. promotion passed the A.T.L.A.S. contract and then fell
+--     into the orphaned legacy body, raising the LEGACY error;
+--   * a mutated A.T.L.A.S. promotion failed the A.T.L.A.S. contract first and
+--     raised the right one, which made the branch look correct;
+--   * and a Standard run matched NO panels.build arm at all, so it completed
+--     with no contract enforced whatsoever. That last one is the dangerous one:
+--     it silently removed Call 9's protection from every non-A.T.L.A.S. run.
+-- The fragment now ends by restoring the legacy header verbatim, so the chain
+-- reads: A.T.L.A.S. arm, then legacy arm, then everything else untouched.
+--
 -- Nothing else in this function moves, and that is structural rather than
 -- promised: the patch below edits six named fragments of the LIVE definition
 -- and leaves every other byte untouched, so revision.freeze, logos.extract,
@@ -295,6 +311,9 @@ $frag$,$frag$  ELSIF v_stage.stage_key='panels.build'
       OR EXISTS(SELECT 1 FROM jsonb_array_elements(v_snapshot->'callOnePanels') c
         WHERE c->>'geometryPurpose' IS DISTINCT FROM 'calls-1-7-layout-only')
     THEN RAISE EXCEPTION 'call9_atlas_panel_promotion_contract_failed'; END IF;
+  ELSIF v_stage.stage_key='panels.build' THEN
+    v_kind:='call9.surface-panels';
+    v_manifest:=v_run.results->'dimensionManifest';
 $frag$],
     ARRAY[$frag$  IF v_stage.stage_key='panels.build' AND EXISTS($frag$,$frag$  IF v_stage.stage_key='panels.build'
     AND NOT (v_atlas AND p_receipt->>'promotedFrom'='atlas-call1') AND EXISTS($frag$]

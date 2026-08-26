@@ -17,7 +17,7 @@
 -- carried across the seam from the accepted A.T.L.A.S. revision's metadata.
 
 begin;
-select plan(33);
+select plan(34);
 
 select has_function(
   'designpro_private','workflow_run_is_atlas',
@@ -488,6 +488,19 @@ select ok(
       'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure
     ))>0,
   'the A.T.L.A.S. panels.build branch condition survived the patch verbatim'
+);
+-- The legacy arm must still EXIST. A fragment replacement that swaps the branch
+-- header for a new branch and forgets to re-emit it deletes the old arm, and
+-- the ELSIF chain then has no panels.build arm for a non-A.T.L.A.S. run at all
+-- -- which is how a Standard run completed Call 9 with no contract enforced.
+select ok(
+  position($legacyarm$  ELSIF v_stage.stage_key='panels.build' THEN
+    v_kind:='call9.surface-panels';
+    v_manifest:=v_run.results->'dimensionManifest';$legacyarm$
+    in pg_get_functiondef(
+      'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure
+    ))>0,
+  'the legacy panels.build arm still exists for non-A.T.L.A.S. runs'
 );
 select ok(
   position('call9_atlas_panel_promotion_contract_failed' in pg_get_functiondef(
