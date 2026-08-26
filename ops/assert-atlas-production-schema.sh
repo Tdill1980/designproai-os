@@ -305,9 +305,41 @@ SELECT
       atlas_valid_definition,
       '''designpro.atlas-proof-semantic-qc.v1'''
     )>0
+    -- THE SIBLING-SURFACE REFUSALS, ASSERTED AS REFUSALS.
+    --
+    -- These four keys used to be REQUIREMENTS: a non-Driver proof had to carry
+    -- the Driver's content hash, and Passenger had to be a deterministic mirror
+    -- repaired from the Driver zone. The owner-approved fan-out inverted them --
+    -- six sibling surface authorities, each feeding its own proof, Driver
+    -- keeping scheduling priority only -- so the live function now REFUSES every
+    -- one of them.
+    --
+    -- The fence was not moved with it, and asserted the old path-literal
+    -- '{provider,atlasZonePassedToPassengerRepair}'. That literal disappeared
+    -- when the clause became a `?` key test, so the fence started refusing the
+    -- CORRECT schema: deploy of 6e108ea8 died 8 seconds in, at this step, on a
+    -- database that was exactly right. Same failure mode as the hand-pinned
+    -- prompt version above -- a guard that is not updated with the thing it
+    -- guards is out of date exactly when it matters.
+    --
+    -- Asserted as the refusals themselves, not merely as "the old requirement is
+    -- absent": deleting the clause entirely would pass a mere-absence check and
+    -- silently restore the Driver hard-dependency.
     AND pg_catalog.strpos(
       atlas_valid_definition,
-      '''driverContentHash'''
+      'ANDNOT((v.metadata->''provider'')?''driverContentHash'')'
+    )>0
+    AND pg_catalog.strpos(
+      atlas_valid_definition,
+      'ANDNOT((v.metadata->''provider'')?''deterministicMirror'')'
+    )>0
+    AND pg_catalog.strpos(
+      atlas_valid_definition,
+      'ANDNOT((v.metadata->''provider'')?''passengerProducer'')'
+    )>0
+    AND pg_catalog.strpos(
+      atlas_valid_definition,
+      'v.metadata#>''{provider,anchoredToView1}''=''false'''
     )>0
     AND pg_catalog.strpos(
       atlas_valid_definition,
@@ -339,7 +371,7 @@ SELECT
     AND pg_catalog.strpos(atlas_valid_definition,'''{authority,zoneContentHash}''')>0
     AND pg_catalog.strpos(
       atlas_valid_definition,
-      '''{provider,atlasZonePassedToPassengerRepair}'''
+      'ANDNOT((v.metadata->''provider'')?''atlasZonePassedToPassengerRepair'')'
     )>0
     AND pg_catalog.strpos(
       atlas_new_run_definition,

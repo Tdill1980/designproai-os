@@ -218,9 +218,36 @@ test("dark deploy requires live Atlas schema evidence instead of migration histo
     "{validation,zoneSurfaceKey}",
     "{authority,zoneContract}",
     "{authority,zoneContentHash}",
-    "{provider,atlasZonePassedToPassengerRepair}",
   ]) {
     assert.ok(atlasSchemaAssertion.includes(`'''${path}'''`), `missing exact JSON path ${path}`);
+  }
+
+  // THE SIBLING-SURFACE REFUSALS, LOCKED AS REFUSALS.
+  //
+  // `driverContentHash`, `deterministicMirror`, `passengerProducer` and
+  // `atlasZonePassedToPassengerRepair` were REQUIREMENTS of every non-Driver
+  // proof until the owner-approved fan-out inverted them: six sibling surface
+  // authorities, each feeding its own proof, Driver keeping scheduling priority
+  // only. This list pinned the path literal
+  // '{provider,atlasZonePassedToPassengerRepair}', which ceased to exist the
+  // moment the clause became a `?` key test -- so the lock kept the fence
+  // pinned to a schema the migration had already replaced, and the fence
+  // refused the deploy of 6e108ea8 against a database that was exactly right.
+  //
+  // Pinned as the refusals, never as "the old requirement is absent": deleting
+  // these clauses outright would satisfy a mere-absence check and silently
+  // restore the Driver hard-dependency the fence exists to stop.
+  for (const refusal of [
+    "ANDNOT((v.metadata->''provider'')?''driverContentHash'')",
+    "ANDNOT((v.metadata->''provider'')?''deterministicMirror'')",
+    "ANDNOT((v.metadata->''provider'')?''passengerProducer'')",
+    "ANDNOT((v.metadata->''provider'')?''atlasZonePassedToPassengerRepair'')",
+    "v.metadata#>''{provider,anchoredToView1}''=''false''",
+  ]) {
+    assert.ok(
+      atlasSchemaAssertion.includes(`'${refusal}'`),
+      `fence must assert the sibling-surface refusal ${refusal}`,
+    );
   }
   assert.doesNotMatch(atlasSchemaAssertion, /strpos\(atlas_valid_definition,'''atlasZoneContract'''\)/);
   assert.match(atlasSchemaAssertion, /flat_first_atlas_requires_new_run/);
