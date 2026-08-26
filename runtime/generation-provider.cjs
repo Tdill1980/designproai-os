@@ -135,9 +135,20 @@ function createProvider(options = {}) {
   async function generateImage({
     parts, aspectRatio, imageSize, signal, timeoutMs = 180_000, label = "render",
     responseModalities = ["TEXT", "IMAGE"], temperature, systemInstruction,
+    // DESIGN AUTHORING IS MODEL-LOCKED. THE PROOFS ARE NOT.
+    //
+    // design-panel-ai-generate pins one image model and carries no fallback at
+    // all (index.ts:1320). This runtime added a Flash-image fallback, which is
+    // right for a PROJECTION -- a proof that renders on Flash is a weaker proof
+    // of a design that already exists -- and wrong for AUTHORING, where it means
+    // the customer's design itself can silently be drawn by a different, weaker
+    // model than the locked one. Call 1 passes `lockModel` so it either gets the
+    // locked model or fails; every projection keeps the fallback.
+    lockModel = false,
   }) {
     const attempts = [];
-    for (const model of models) {
+    const modelChain = lockModel ? models.slice(0, 1) : models;
+    for (const model of modelChain) {
       for (const key of availableKeys()) {
         const fingerprint = keyFingerprint(key);
         try {
