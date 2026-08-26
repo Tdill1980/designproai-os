@@ -17,7 +17,7 @@
 -- carried across the seam from the accepted A.T.L.A.S. revision's metadata.
 
 begin;
-select plan(24);
+select plan(27);
 
 select has_function(
   'designpro_private','workflow_run_is_atlas',
@@ -341,12 +341,48 @@ returns jsonb language sql as $art$
   where r.id=p_run;
 $art$;
 
+-- Address the stages directly rather than through a function in a SELECT list,
+-- so which stage belongs to which run is a fact the test states rather than a
+-- property of evaluation order -- and then ASSERT that mapping, because the
+-- previous failure was only explicable if it had gone wrong somewhere.
 create temporary table panel_leases on commit drop as
 select
-  pg_temp.lease((select atlas_run from runs),'panels.build',
-    '5c000000-0000-4000-8000-000000000001') as atlas_panels_stage,
-  pg_temp.lease((select standard_run from runs),'panels.build',
-    '64000000-0000-4000-8000-000000000001') as standard_panels_stage;
+  (select id from public.designpro_workflow_stages
+   where run_id=(select atlas_run from runs) and stage_key='panels.build')
+    as atlas_panels_stage,
+  (select id from public.designpro_workflow_stages
+   where run_id=(select standard_run from runs) and stage_key='panels.build')
+    as standard_panels_stage;
+
+update public.designpro_workflow_stages
+set status='running',lease_owner='pgtap',
+  lease_token='5c000000-0000-4000-8000-000000000001',
+  lease_expires_at=now()+interval '10 minutes',started_at=now()
+where id=(select atlas_panels_stage from panel_leases);
+
+update public.designpro_workflow_stages
+set status='running',lease_owner='pgtap',
+  lease_token='64000000-0000-4000-8000-000000000001',
+  lease_expires_at=now()+interval '10 minutes',started_at=now()
+where id=(select standard_panels_stage from panel_leases);
+
+select is(
+  (select s.run_id from public.designpro_workflow_stages s
+   where s.id=(select atlas_panels_stage from panel_leases)),
+  (select atlas_run from runs),
+  'the leased A.T.L.A.S. panels.build stage belongs to the A.T.L.A.S. run'
+);
+select is(
+  (select s.run_id from public.designpro_workflow_stages s
+   where s.id=(select standard_panels_stage from panel_leases)),
+  (select standard_run from runs),
+  'the leased Standard panels.build stage belongs to the Standard run'
+);
+select is(
+  designpro_private.workflow_run_is_atlas((select standard_run from runs)),
+  false,
+  'the Standard run is still not A.T.L.A.S. at the moment panels.build runs'
+);
 
 -- B. Geometry Call 1 did not cut is refused. This is the owner's "missing
 --    manifest blocks" test, corrected: requiring the GENIE manifest would block
