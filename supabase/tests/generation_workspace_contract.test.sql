@@ -12,7 +12,7 @@
 --   ERROR: function pg_catalog.coalesce(jsonb, jsonb) does not exist
 --
 -- which is the only case RevisionStudio exists to serve. Fixed by
--- `20260826050000`.
+-- `20260826060000`.
 --
 -- Every assertion below therefore runs the function against a request carrying
 -- SEVEN real view rows. `has_function` would have passed throughout; so would

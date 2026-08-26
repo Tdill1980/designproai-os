@@ -23,6 +23,7 @@ const sharp = require("sharp");
 const {
   DESIGNPANEL_ARTBOARD_PORT_VERSION,
   buildAtlasArtboardDesignIQDirection,
+  DESIGNPANEL_AUTHORING_MODEL,
 } = require("./designiq-prompt.cjs");
 const {
   MASTER_QC_CONTRACT,
@@ -888,11 +889,11 @@ function customerCreativeBrief(input) {
   return JSON.stringify(values);
 }
 
-function atlasCreativeRules(input) {
-  return buildAtlasArtboardDesignIQDirection(input);
+function atlasCreativeRules(input, options = {}) {
+  return buildAtlasArtboardDesignIQDirection(input, options);
 }
 
-function atlasPrompt(input, manifest) {
+function atlasPrompt(input, manifest, options = {}) {
   // THE REFERENCE STAMPS REAL INCHES INTO THE PANEL LIST.
   //
   // design-panel-ai-generate's artboard branch renders each side as
@@ -929,7 +930,7 @@ function atlasPrompt(input, manifest) {
   // the atlas half is stated once each instead of twice. The three blocks RULE
   // 0.15 protects -- SOLID PANELS, the PAIRED FLAT-TO-FINISHED LESSON and ONE
   // COHESIVE WRAP -- are reproduced verbatim and in full.
-  return `${atlasCreativeRules(input)}
+  return `${atlasCreativeRules(input, options)}
 
 ━━━ OUTPUT FORMAT: ONE FLATTENED A.T.L.A.S. MASTER ━━━
 Deliver that design as ONE continuous unwrapped livery atlas -- a single square artwork canvas -- not a vehicle photograph and not six unrelated designs.
@@ -1395,7 +1396,13 @@ async function generateOrReuseFlatAtlas(options) {
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
   const manifest = buildAtlasManifest(surfaces, geometryAuthority);
-  const prompt = atlasPrompt(input, manifest);
+  // The creative half states the quality bar against the gold-standard
+  // artboards only when they are actually in the request. On the live droplet
+  // the bucket holds none, and the sentence was pointing at attachments that
+  // were never sent.
+  const prompt = atlasPrompt(input, manifest, {
+    artboardQualityExampleCount: artboardQualityExamples.length,
+  });
   const promptHash = sha256(Buffer.from(prompt, "utf8"));
   const currentExampleSetHash = exampleSetHash(topologyExamples, artboardQualityExamples);
   const existing = await loadLatestAtlasRevision(supabase, requestId);
@@ -1506,6 +1513,13 @@ async function generateOrReuseFlatAtlas(options) {
       // -- and inherited a Flash-image fallback that could author the customer's
       // design on a different model than the locked one.
       temperature: 1,
+      // The authority pins its model by NAME and carries no fallback
+      // (index.ts:1320). `lockModel` alone would only pin the FIRST of whatever
+      // GOOGLE_IMAGE_MODEL happens to configure, which on the droplet is the GA
+      // id -- and the same request sent to the two ids does not produce the same
+      // kind of sheet at all (see DESIGNPANEL_AUTHORING_MODEL). Both are passed:
+      // the name decides, and lockModel keeps the no-fallback contract explicit.
+      model: DESIGNPANEL_AUTHORING_MODEL,
       lockModel: true,
       label: attempt === 1
         ? "flat-first canonical atlas"

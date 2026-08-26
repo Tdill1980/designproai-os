@@ -19,8 +19,8 @@ test("the Standard standalone worker executes Calls 1-7 on this server", () => {
   assert.match(atlas, /buildAtlasArtboardDesignIQDirection/);
   assert.match(
     prompt,
-    /function buildFlatDesignIQDirection[\s\S]*?return buildAtlasArtboardDesignIQDirection\(input\)/,
-    "the historical flat prompt API remains a compatibility alias",
+    /function buildFlatDesignIQDirection[\s\S]*?return buildAtlasArtboardDesignIQDirection\(input, options\)/,
+    "the historical flat prompt API remains a compatibility alias, options and all",
   );
   assert.match(worker, /buildDesignIQPrompt/);
   // Calls 1-7 run in this process. The Edge transport survives only as the

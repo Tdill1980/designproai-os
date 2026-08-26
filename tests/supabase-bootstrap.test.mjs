@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-nine-migration chain', () => {
-  assert.equal(migrationNames.length, 59);
+test('fresh bootstrap contains one ordered sixty-migration chain', () => {
+  assert.equal(migrationNames.length, 60);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -128,10 +128,13 @@ test('fresh bootstrap contains one ordered fifty-nine-migration chain', () => {
       // generation records rather than from the workflow runs the studio's feed
       // was keyed on -- which represented 8 of the last four months' 48.
       '20260826040000',
+      // The DesignPanel creative port moves to v2, so masters authored while
+      // the flat call was still being told about factory glass stop qualifying.
+      '20260826050000',
       // COALESCE unqualified: the aggregate that projects each approved view
       // only compiles its expressions when it has a row, so the qualified form
       // passed every apply and failed every generation that had proofs.
-      '20260826050000',
+      '20260826060000',
     ],
   );
 });

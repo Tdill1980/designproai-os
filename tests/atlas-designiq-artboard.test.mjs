@@ -6,7 +6,9 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const {
   COMMERCIAL_AUTHORING_PERSONA,
+  COMMERCIAL_BRAND_COMPOSITION,
   COMMERCIAL_DEPTH,
+  DESIGNPANEL_AUTHORING_MODEL,
   COMMERCIAL_TRANSLATION,
   LOGO_REQUIREMENT,
   PHOTO_REALISM_LOCK,
@@ -56,7 +58,28 @@ test("Atlas reuses the DesignPanelAI artboard quality contract with its guide as
   assert.doesNotMatch(prompt, /bare factory bedliner/);
 });
 
-test("Atlas keeps a pickup master full-bleed but preserves factory glass and the open bed in 3D proofs", () => {
+// THE FLAT CALL IS TOLD ABOUT THE SHEET. THE 3D CALLS ARE TOLD ABOUT THE
+// VEHICLE.
+//
+// This used to assert the opposite of its last four lines: that the A.T.L.A.S.
+// master prompt carried "downstream 3D proof projection only", "windows, glass,
+// lights, wheels and trim stay factory", truckBedClause()'s bare-bedliner
+// sentence, and a restatement of its bed half. Three sentences describing a
+// VEHICLE, handed to the one call that draws no vehicle.
+//
+// They were not merely inert. They contradicted the sentence directly above
+// them, which is asserted here and is the whole point of RULE 0.15: paint the
+// livery straight THROUGH every window, wheel arch, lamp and bed opening,
+// because the installer cuts them out of the printed vinyl afterwards. A flat
+// atlas has no window, lamp or bed-interior ZONE for the removed sentences to
+// describe — the six zones are driver, passenger, hood, roof, front and rear,
+// and every one of them is a solid rectangle.
+//
+// Nothing downstream lost the rule, which is what the second half of this test
+// now proves: buildDesignIQPrompt and buildRestylePrompt — the builders that
+// actually render a vehicle — each still carry the factory-glass line and call
+// truckBedClause() themselves, so Calls 2-7 are unchanged.
+test("the flat master call is told to paint through openings, and only the 3D builders are told about factory glass", () => {
   const input = {
     brief: "A true-to-life photographic pool and patio scene",
     companyName: "Flamingo Pools",
@@ -73,12 +96,139 @@ test("Atlas keeps a pickup master full-bleed but preserves factory glass and the
   assert.match(prompt, /the installer cuts them out of the printed vinyl afterwards/);
   assert.match(prompt, /Keep essential logos, lettering and contact copy anchored to solid painted body area rather than to an opening/);
   assert.doesNotMatch(prompt, /punch out/i);
-  assert.match(prompt, /downstream 3D proof projection only/);
-  assert.match(prompt, /windows, glass, lights, wheels and trim stay factory/);
-  assert.match(prompt, /open bed interior stays bare factory bedliner/);
-  assert.match(prompt, /open bed interior is not an artwork surface/);
+
+  // The vehicle-coverage half must be gone from the FLAT call.
+  assert.doesNotMatch(prompt, /downstream 3D proof projection/);
+  assert.doesNotMatch(prompt, /lights, wheels and trim stay factory/);
+  assert.doesNotMatch(prompt, /bare factory bedliner/);
+  assert.doesNotMatch(prompt, /open bed interior/);
+
   assert.match(prompt, new RegExp(PHOTO_REALISM_LOCK.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.equal(buildFlatDesignIQDirection(input), prompt, "the shipped compatibility API must use the same builder");
+
+  // …and must still reach the calls that render the vehicle, unchanged.
+  const { buildDesignIQPrompt } = require("../runtime/designiq-prompt.cjs");
+  const vehicleFields = {
+    viewType: "side", vehicleYear: "2024", vehicleMake: "Ford", vehicleModel: "F250 Crew Cab",
+  };
+  for (const [name, proof] of Object.entries({
+    commercial: buildDesignIQPrompt({
+      prompt: input.brief, mode: "commercial", companyName: input.companyName, ...vehicleFields,
+    }),
+    restyle: buildDesignIQPrompt({ prompt: input.brief, mode: "restyle", ...vehicleFields }),
+  })) {
+    assert.match(proof, /Windows, lights, wheels, and trim stay factory/, `${name} keeps the factory-glass rule`);
+    assert.match(proof, /bare factory bedliner/, `${name} keeps the open-bed rule`);
+  }
+});
+
+// THE QUALITY BAR MAY NOT CITE ATTACHMENTS THAT ARE NOT IN THE REQUEST.
+//
+// The closing line said "Match the production quality of the provided
+// gold-standard DesignPanel artboards" on every brief. On the live droplet,
+// 2026-08-26, loadDesignPanelArtboardExamples returned ZERO — the bucket the
+// reference reads them from is not populated on this project, and it fails soft
+// by design. So the one sentence that sets the sheet's quality bar pointed at
+// images that were never sent, on every run.
+//
+// The bar is still stated when there is nothing to cite; only the dangling
+// reference goes.
+test("the gold-standard quality bar follows the attachments", () => {
+  const input = {
+    brief: "Bold commercial HVAC wrap, deep blue with sunrise-orange airflow ribbons",
+    mode: "commercial",
+    vehicle: { year: "2022", make: "Ford", model: "F250 Crew Cab" },
+  };
+  const withExamples = buildAtlasArtboardDesignIQDirection(input, { artboardQualityExampleCount: 2 });
+  const without = buildAtlasArtboardDesignIQDirection(input);
+
+  assert.match(withExamples, /Match the production quality of the provided gold-standard DesignPanel artboards/);
+  assert.doesNotMatch(without, /gold-standard DesignPanel artboards/);
+  assert.doesNotMatch(without, /provided/);
+
+  for (const prompt of [withExamples, without]) {
+    assert.match(prompt, /Gallery-grade custom artwork with real depth, movement, and a wow factor/);
+    assert.match(prompt, /deterministic A\.T\.L\.A\.S\. guide alone controls this sheet's topology/);
+    assert.match(prompt, /Output ONE flat 2D artboard sheet/);
+  }
+  assert.equal(
+    buildFlatDesignIQDirection(input, { artboardQualityExampleCount: 2 }),
+    withExamples,
+    "the compatibility API must pass the options through",
+  );
+});
+
+// THE AUTHORING CALL PINS ITS MODEL BY NAME, LIKE THE AUTHORITY DOES.
+//
+// design-panel-ai-generate builds one model id into its endpoint and carries no
+// fallback (index.ts:1320). Call 1 passed `lockModel: true`, which pins the
+// FIRST of whatever GOOGLE_IMAGE_MODEL configures — on the droplet, the GA id.
+//
+// Measured 2026-08-26, the SAME assembled request and key sent to both ids: the
+// GA id returned a three-quarter van in three views with mirrored roof
+// lettering and no relationship to the deterministic guide; the authority's
+// -preview id returned the guide's six-zone layout with forward-reading text on
+// both flanks. "The first configured model" is not a pin.
+test("Call 1 authors on the authority's model, by name and not by position", () => {
+  assert.equal(DESIGNPANEL_AUTHORING_MODEL, "gemini-3-pro-image-preview");
+  assert.ok(
+    edgeSource.includes(`models/${DESIGNPANEL_AUTHORING_MODEL}:generateContent`),
+    "the reference must still build this exact model id into its endpoint",
+  );
+  const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  assert.match(
+    atlasSource,
+    /model: DESIGNPANEL_AUTHORING_MODEL,\s*\n\s*lockModel: true,/,
+    "the master authoring call must name its model and keep the no-fallback contract",
+  );
+});
+
+// THE BRANDING LAYOUT IS THE DESIGNER'S CALL, AND THE REFERENCE SAYS SO.
+//
+// design-panel-ai-generate's commercial scene sentence ends on this literal
+// (index.ts:475, and again in its wantsPhoto twin). It is the only place in the
+// reference that hands the branding LAYOUT decision back to the designer: it
+// states the one hard requirement — the name reads at a glance — and then
+// explicitly declines to say where the name goes, how big it is, or what sits
+// beside it.
+//
+// It did not survive the port. The A.T.L.A.S. branch replaced the whole scene
+// sentence with "Design ONE flat vehicle-wrap ARTBOARD for a <vehicle>", which
+// is a format instruction, and nothing took over the half that was creative
+// direction — so the call that authors the design was told the output shape,
+// the topology, the zone geometry and every contact-field lock, and was never
+// told that composing the identity is its own call to make.
+//
+// Asserted against the vendored reference AND the generated prompt, like every
+// other creative literal in this file, so neither copy can drift alone.
+test("Atlas keeps the reference's branding-composition freedom", () => {
+  const prompt = buildAtlasArtboardDesignIQDirection({
+    brief: "Bold commercial HVAC wrap, deep blue with sunrise-orange airflow ribbons",
+    mode: "commercial",
+    vehicle: { year: "2022", make: "Ford", model: "F250 Crew Cab" },
+  });
+
+  assert.equal(
+    COMMERCIAL_BRAND_COMPOSITION,
+    "The company name reads clearly at a glance; how the branding is composed is your creative call.",
+  );
+  assert.ok(
+    edgeSource.includes(COMMERCIAL_BRAND_COMPOSITION),
+    "the reference must still carry the branding-composition sentence",
+  );
+  assert.ok(
+    prompt.includes(COMMERCIAL_BRAND_COMPOSITION),
+    "Atlas must hand the branding layout decision back to the designer",
+  );
+  // It belongs to the commercial register, exactly as it does in the reference:
+  // the restyle scene sentence there has no equivalent.
+  assert.ok(
+    !buildAtlasArtboardDesignIQDirection({
+      brief: "distressed martini livery", mode: "restyle",
+      vehicle: { make: "Porsche", model: "911" },
+    }).includes(COMMERCIAL_BRAND_COMPOSITION),
+    "restyle must not acquire a commercial branding instruction",
+  );
 });
 
 test("Atlas exact-reference mode remains reproduction-only", () => {
