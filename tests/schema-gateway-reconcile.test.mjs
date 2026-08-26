@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-38), [
+  assert.deepEqual(names.slice(-39), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -118,6 +118,8 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // contract was not, so proof.build rejected the deferral and the run died
     // before a single panel, logo, pack or QC row existed.
     "20260826010000_designpro_atlas_stage_contract.sql",
+    // A new receipt kind is only real once the receipts table admits it.
+    "20260826010100_designpro_allow_deferred_call8_receipt.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

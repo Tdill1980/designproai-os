@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-four-migration chain', () => {
-  assert.equal(migrationNames.length, 54);
+test('fresh bootstrap contains one ordered fifty-five-migration chain', () => {
+  assert.equal(migrationNames.length, 55);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -112,6 +112,10 @@ test('fresh bootstrap contains one ordered fifty-four-migration chain', () => {
       // The stage machine learns the A.T.L.A.S. manufacturing path: a deferred
       // Call 8 and a Call 1 panel promotion are accepted on their own evidence.
       '20260826010000',
+      // The receipts table's own enum had to learn the deferred Call 8 kind:
+      // the stage logic emitted it and the CHECK refused it, so the insert died
+      // before any later assertion could run.
+      '20260826010100',
     ],
   );
 });
