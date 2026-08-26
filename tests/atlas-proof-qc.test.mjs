@@ -223,7 +223,12 @@ test("wrong view, passenger orientation, Atlas drift, pickup roof leakage and un
 test("analyzer errors, malformed JSON, identity mismatch and incomplete answers can never accept a proof", async (t) => {
   const f = await fixture();
   const cases = [
-    ["transport error", async () => { throw new Error("vision service unavailable"); }, "atlas_qc_analyzer_failed"],
+    // A transport fault stays refused but is marked retryable: the engine
+    // treats it as a provider attempt, never a semantic rejection -- an
+    // inspector outage is not a design verdict (generation 9dd6d43c: a 503
+    // from the QC model ended Close-Up `semantic_review_required`).
+    ["transport error", async () => { throw new Error("vision service unavailable"); }, "atlas_qc_unavailable"],
+    ["analyzer crash", async () => { throw new TypeError("boom"); }, "atlas_qc_analyzer_failed"],
     ["not JSON", async () => ({ payload: { candidates: [{ content: { parts: [{ text: "PASS" }] } }] } }), "atlas_qc_response_malformed"],
     ["wrong hash", async ({ body }) => {
       const review = passingReview(responseIdentity(body), { proofSha256: "f".repeat(64) });
@@ -237,6 +242,9 @@ test("analyzer errors, malformed JSON, identity mismatch and incomplete answers 
       const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
       assert.equal(verdict.accepted, false);
       assert.equal(verdict.code, code);
+      // Only the transport fault is retryable; a real inspection outcome or a
+      // malformed answer must still consume a regeneration.
+      assert.equal(verdict.retryable === true, code === "atlas_qc_unavailable");
     });
   }
 });

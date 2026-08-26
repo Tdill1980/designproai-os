@@ -30,6 +30,33 @@ const EXAMPLE_PURPOSE = "topology-only";
 const DESIGNPANEL_ARTBOARD_EXAMPLE_BUCKET = "wrap-files flat panel";
 const DESIGNPANEL_ARTBOARD_EXAMPLE_MAX_BYTES = 8 * 1024 * 1024;
 const SYSTEM_PREFIX = "designpro/system/flat-first/examples/";
+// THE PRODUCTION-QUALITY EXAMPLE ARTBOARDS THE REFERENCE ATTACHES.
+//
+// design-panel-ai-generate's artboard branch loads two real example sheets from
+// the "wrap-files flat panel" bucket and instructs the model to "match the
+// layout, labeling, and production quality of the example artboards"
+// (index.ts:871, :1302). That bucket exists only in the RestylePro project, so
+// on every DesignProAI run ever made the loader failed silently and
+// `designPanelArtboardQualityExamplesApplied` recorded 0 -- the authoring model
+// had never seen what a finished production artboard looks like. These are the
+// exact two files from that bucket, release-pinned the same way the Houdini
+// topology pair is; the bucket remains authoritative when it exists, and the
+// bundle is the fallback that makes an empty bucket loud instead of silent.
+const BUNDLED_ARTBOARD_EXAMPLES = Object.freeze([
+  Object.freeze({
+    objectName: "designpanel-artboard-clean.png",
+    path: join(__dirname, "atlas-examples", "designpanel-artboard-clean.png"),
+    contentHash: "cf4957d086c0e2ba95cd41309fc31e1df1fd591b21a0ff83ec5288b2bb6c88ca",
+    contentType: "image/png",
+  }),
+  Object.freeze({
+    objectName: "designpanel-artboard-branded.png",
+    path: join(__dirname, "atlas-examples", "designpanel-artboard-branded.png"),
+    contentHash: "d07c9dcd222976f43af008636fab2491a5f2b4962c4f926b6cd6741d0833142c",
+    contentType: "image/png",
+  }),
+]);
+
 const BUNDLED_PAIR = Object.freeze({
   exampleKey: "houdini-flat-to-finished",
   version: 1,
@@ -425,6 +452,41 @@ async function loadDesignPanelArtboardExamples(supabase, max = 2) {
   } catch (_error) {
     // Exact source behavior: examples improve quality but a bucket outage does
     // not silently replace the hash-pinned topology lesson or kill authoring.
+  }
+  // The bucket is authoritative when populated; the release bundle answers
+  // when it is absent or empty, so the authoring call never again runs with
+  // zero quality examples while reporting nothing.
+  if (!out.length) {
+    for (const example of BUNDLED_ARTBOARD_EXAMPLES.slice(0, Math.min(10, Math.max(0, Number(max) || 0)))) {
+      let bytes;
+      try {
+        bytes = readFileSync(example.path);
+      } catch (cause) {
+        throw new FlatAtlasTopologyExampleError(
+          "flat_atlas_bundled_artboard_example_missing",
+          `${example.objectName} is missing from the exact server release: ${cause.message}`,
+        );
+      }
+      if (!bytes.length || sha256(bytes) !== example.contentHash) {
+        throw new FlatAtlasTopologyExampleError(
+          "flat_atlas_bundled_artboard_example_hash_mismatch",
+          `${example.objectName} does not match its release-pinned SHA-256 identity`,
+        );
+      }
+      out.push(Object.freeze({
+        kind: "designpanel-artboard-quality",
+        purpose: "production-quality-only",
+        bytes,
+        contentType: example.contentType,
+        identity: Object.freeze({
+          source: "exact-server-release",
+          bucket: null,
+          objectName: example.objectName,
+          contentHash: example.contentHash,
+          byteSize: bytes.length,
+        }),
+      }));
+    }
   }
   return out;
 }

@@ -61,6 +61,8 @@ runtime/flat-atlas-topology-examples.cjs
 # 3D vehicle proof. Runtime verifies both SHA-256 identities before use.
 runtime/atlas-examples/houdini-flattened-top-view.jpg
 runtime/atlas-examples/houdini-finished-3d-proof.jpg
+runtime/atlas-examples/designpanel-artboard-clean.png
+runtime/atlas-examples/designpanel-artboard-branded.png
 # The authoring boundary. The generation worker requires it to record the
 # canonical design master while Calls 1-7 run, so a release without it dies at
 # require time exactly as the kernel modules above would.
