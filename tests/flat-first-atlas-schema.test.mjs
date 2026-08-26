@@ -99,25 +99,25 @@ test("terminal Atlas owner reads require exact seven current roles and one audit
   assert.match(viewSetGuardSql, /flat_first_atlas_view_set_valid/);
   // Pinned across the defining body and every later patch, newest last, so a
   // version bump that patches in place satisfies it and a stale pin does not.
-  assert.match(viewSetContractSql, /designpro-flat-first-atlas-20260826\.v8/);
+  assert.match(viewSetContractSql, /designpro-flat-first-atlas-20260826\.v9-dpag/);
   assert.ok(
-    viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260826.v8")
-      > viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260825.v7"),
+    viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260826.v9-dpag")
+      > viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260826.v8"),
     "the newest migration touching the gate must pin the current prompt version",
   );
   // The DesignPanel creative port carries its own version, so the creative half
   // and the topology half can move independently. It is pinned the same way,
   // and against the shipped constant rather than a literal, so the gate and the
   // runtime cannot disagree about which port authored a qualifying master.
-  assert.match(viewSetContractSql, /designpanel-ai-generate\.artboard\.20260826\.v2/);
+  assert.match(viewSetContractSql, /designpanel-ai-generate\.artboard\.20260826\.v3-vendored/);
   assert.ok(
-    viewSetContractSql.lastIndexOf("designpanel-ai-generate.artboard.20260826.v2")
-      > viewSetContractSql.lastIndexOf("designpanel-ai-generate.artboard.20260822.v1"),
+    viewSetContractSql.lastIndexOf("designpanel-ai-generate.artboard.20260826.v3-vendored")
+      > viewSetContractSql.lastIndexOf("designpanel-ai-generate.artboard.20260826.v2"),
     "the newest migration touching the gate must pin the current DesignPanel port version",
   );
   assert.equal(
     createRequire(import.meta.url)("../runtime/designiq-prompt.cjs").DESIGNPANEL_ARTBOARD_PORT_VERSION,
-    "designpanel-ai-generate.artboard.20260826.v2",
+    "designpanel-ai-generate.artboard.20260826.v3-vendored",
     "the runtime must emit the port version the gate accepts",
   );
   assert.match(

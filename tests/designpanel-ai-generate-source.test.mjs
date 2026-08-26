@@ -16,12 +16,13 @@ test("the Standard standalone worker executes Calls 1-7 on this server", () => {
 
   assert.match(edge, /\* design-panel-ai-generate/);
   assert.match(prompt, /supabase\/functions\/design-panel-ai-generate\/index\.ts/);
-  assert.match(atlas, /buildAtlasArtboardDesignIQDirection/);
-  assert.match(
-    prompt,
-    /function buildFlatDesignIQDirection[\s\S]*?return buildAtlasArtboardDesignIQDirection\(input, options\)/,
-    "the historical flat prompt API remains a compatibility alias, options and all",
-  );
+  // Canonical directive 2026-08-26: the reconstructed A.T.L.A.S. creative
+  // branch and its compatibility alias are DELETED. The creative half is the
+  // vendored real builder, required by the atlas module.
+  assert.match(atlas, /require\("\.\/vendor\/designpanel-authoring\.cjs"\)/);
+  // (a prose mention in the tombstone comment is fine; an import or call is not)
+  assert.doesNotMatch(atlas, /buildAtlasArtboardDesignIQDirection\s*[,(]/);
+  assert.doesNotMatch(prompt, /function buildAtlasArtboardDesignIQDirection|function buildFlatDesignIQDirection/);
   assert.match(worker, /buildDesignIQPrompt/);
   // Calls 1-7 run in this process. The Edge transport survives only as the
   // explicitly-selected rollback, so an unset or misspelled environment value

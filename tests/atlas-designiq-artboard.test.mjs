@@ -3,185 +3,246 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+// THE CANONICAL CALL 1 — DESIGNPANELAI + ATLAS IN ONE AUTHORING CALL.
+//
+// Owner directive (Trish 2026-08-26): the creative half of A.T.L.A.S. Call 1
+// is the REAL design-panel-ai-generate builder — the vendored source,
+// mechanically transpiled — never a reconstructed port. This file locks:
+//
+//   1. ONE implementation: atlasCreativeRules() is exactly the vendored
+//      builder's atlasTopology output; the reconstructed branch stays deleted.
+//   2. CONTAMINATION (owner protection #3): the finished Call-1 prompt carries
+//      no studio, no camera angle, no vehicle-on-stage presentation, no
+//      photographic-viewpoint flank framing, no 3D-proof instructions.
+//   3. BEHAVIOR: the professional-designer contract — auto-logo, exact
+//      contact data, no invented phone/website, VisionBoardIQ intents that
+//      never disable the persona, depth/translation/judgment, mascot, QR,
+//      finish and substrate — all fire inside the same single call.
+//
+// RULE 0.15's topology blocks (SOLID PANELS, ONE COHESIVE WRAP, the paired
+// Houdini lesson, MASTER APPLICATION BOUNDARY) live in the atlas half and are
+// asserted on the assembled prompt.
+
 const require = createRequire(import.meta.url);
+const vendor = require("../runtime/vendor/designpanel-authoring.cjs");
+const ace = require("../runtime/designiq-prompt.cjs");
+const atlas = require("../runtime/flat-first-atlas.cjs");
+const { atlasCreativeRules, atlasPrompt } = atlas._test;
 const {
-  COMMERCIAL_AUTHORING_PERSONA,
-  COMMERCIAL_BRAND_COMPOSITION,
-  COMMERCIAL_DEPTH,
-  DESIGNPANEL_AUTHORING_MODEL,
-  COMMERCIAL_TRANSLATION,
-  LOGO_REQUIREMENT,
-  PHOTO_REALISM_LOCK,
-  buildAtlasArtboardDesignIQDirection,
-  buildFlatDesignIQDirection,
-} = require("../runtime/designiq-prompt.cjs");
-const {
-  PROMPT_VERSION,
-  PROOF_DEPENDENCIES,
-  PROOF_VIEWS,
-  buildAtlasManifest,
-} = require("../runtime/flat-first-atlas.cjs");
+  PROMPT_VERSION, PROOF_VIEWS, PROOF_DEPENDENCIES, buildAtlasManifest,
+} = atlas;
 
 const edgeSource = readFileSync(
   new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url),
   "utf8",
 );
 
-test("Atlas reuses the DesignPanelAI artboard quality contract with its guide as topology authority", () => {
-  const prompt = buildAtlasArtboardDesignIQDirection({
-    brief: "Angular navy and silver fleet graphics",
-    companyName: "Northstar Electric",
+const SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"].map((surfaceKey) => ({
+  surfaceKey,
+  widthInches: ["driver", "passenger"].includes(surfaceKey) ? 153 : 68,
+  heightInches: ["driver", "passenger"].includes(surfaceKey) ? 56 : 50,
+}));
+
+const BASE_INPUT = {
+  brief: "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons",
+  mode: "commercial",
+  companyName: "Precision Climate Solutions",
+  industry: "HVAC and climate control",
+  brandColors: "deep blue, sunrise orange",
+  finish: "Satin",
+  vehicle: { year: "2022", make: "Ford", model: "F250 Crew Cab", type: "truck" },
+};
+
+function fullPrompt(input = BASE_INPUT, options = {}) {
+  return atlasPrompt(input, buildAtlasManifest(SURFACES, null), options);
+}
+
+test("the creative half IS the vendored real builder — one canonical implementation", () => {
+  const creative = atlasCreativeRules(BASE_INPUT, { artboardQualityExampleCount: 0 });
+  const direct = vendor.buildDesignIQPrompt({
+    mode: "artboard",
+    atlasTopology: true,
+    authoringMode: "commercial",
+    artboardQualityExampleCount: 0,
+    prompt: BASE_INPUT.brief,
     finish: "Satin",
-    vehicle: { year: "2025", make: "Ford", model: "Transit" },
+    substrate: "standard",
+    companyName: BASE_INPUT.companyName,
+    industryType: BASE_INPUT.industry,
+    brandColors: BASE_INPUT.brandColors,
+    qrEnabled: false,
+    logoSupplied: false,
+    vehicleYear: "2022",
+    vehicleMake: "Ford",
+    vehicleModel: "F250 Crew Cab",
+    visionBoardImages: [],
+    visionboard_intent: "style_inspiration",
   });
+  assert.equal(creative, direct, "atlasCreativeRules must be a pure input mapping over the vendored builder");
 
-  const sourceParityPhrases = [
-    // The opening sentence is now the reference's COMMERCIAL authoring persona,
-    // not its artboard branch's. Under RULE 0.20 this call is the design origin
-    // rather than a projection of one, so it takes the designer's framing --
-    // approved 2026-08-25 and pinned byte-for-byte to the vendored source in
-    // the persona parity test below.
-    COMMERCIAL_AUTHORING_PERSONA,
-    "The output is flat print artwork on a 2D sheet.",
-    "the SAME cohesive design",
-    "Gallery-grade custom artwork with real depth, movement, and a wow factor — never generic AI filler, never a template.",
-    "Output ONE flat 2D artboard sheet",
-  ];
-  for (const phrase of sourceParityPhrases) {
-    assert.match(edgeSource, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
-    assert.match(prompt, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
-  }
-
-  assert.match(prompt, /FIRST attached deterministic A\.T\.L\.A\.S\. guide is the sole authority/);
-  assert.match(prompt, /Fill every supplied exterior-panel zone edge-to-edge/);
-  assert.match(prompt, /FINISH LOCK: SATIN — SATIN/);
-  assert.doesNotMatch(prompt, /bare factory bedliner/);
+  // The reconstructed branch stays deleted — no second producer of the
+  // creative direction, and no compatibility alias resurrecting it.
+  assert.ok(!("buildAtlasArtboardDesignIQDirection" in ace));
+  assert.ok(!("buildFlatDesignIQDirection" in ace));
+  const runtimeSource = readFileSync(new URL("../runtime/designiq-prompt.cjs", import.meta.url), "utf8");
+  assert.doesNotMatch(runtimeSource, /function buildAtlasArtboardDesignIQDirection/);
 });
 
-// THE FLAT CALL IS TOLD ABOUT THE SHEET. THE 3D CALLS ARE TOLD ABOUT THE
-// VEHICLE.
-//
-// This used to assert the opposite of its last four lines: that the A.T.L.A.S.
-// master prompt carried "downstream 3D proof projection only", "windows, glass,
-// lights, wheels and trim stay factory", truckBedClause()'s bare-bedliner
-// sentence, and a restatement of its bed half. Three sentences describing a
-// VEHICLE, handed to the one call that draws no vehicle.
-//
-// They were not merely inert. They contradicted the sentence directly above
-// them, which is asserted here and is the whole point of RULE 0.15: paint the
-// livery straight THROUGH every window, wheel arch, lamp and bed opening,
-// because the installer cuts them out of the printed vinyl afterwards. A flat
-// atlas has no window, lamp or bed-interior ZONE for the removed sentences to
-// describe — the six zones are driver, passenger, hood, roof, front and rear,
-// and every one of them is a solid rectangle.
-//
-// Nothing downstream lost the rule, which is what the second half of this test
-// now proves: buildDesignIQPrompt and buildRestylePrompt — the builders that
-// actually render a vehicle — each still carry the factory-glass line and call
-// truckBedClause() themselves, so Calls 2-7 are unchanged.
-test("the flat master call is told to paint through openings, and only the 3D builders are told about factory glass", () => {
-  const input = {
-    brief: "A true-to-life photographic pool and patio scene",
-    companyName: "Flamingo Pools",
-    finish: "Gloss",
-    vehicle: { year: "2024", make: "Ford", model: "F250", type: "Crew Cab" },
-  };
-  const prompt = buildAtlasArtboardDesignIQDirection(input);
+test("the finished Call-1 prompt is free of studio, camera, vehicle-stage and 3D-proof contamination", () => {
+  const prompt = fullPrompt();
+  assert.ok(!prompt.includes(vendor.STUDIO_ENVIRONMENT), "STUDIO_ENVIRONMENT must not reach the flat call");
+  for (const view of ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]) {
+    const angle = String(vendor.getCameraAngle(view)).trim();
+    assert.ok(!prompt.includes(angle.slice(0, 60)), `camera angle for ${view} must not reach the flat call`);
+  }
+  for (const marker of [
+    "CAMERA ANGLE",
+    "Canon EOS",
+    "photorealistic studio photograph",
+    "studio photograph",
+    "photographic scene",
+    "landmarks",
+    "Windows, lights, wheels, and trim stay factory",
+    "bare factory bedliner",
+    "open bed interior",
+    "HOOD/ROOF CONTINUITY",
+  ]) {
+    assert.ok(!prompt.includes(marker), `"${marker}" must not reach the flat call`);
+  }
+});
 
-  assert.match(prompt, /2024 Ford F-250 Crew Cab/);
-  assert.match(prompt, /master stays FULL-BLEED inside every supplied exterior-panel zone/);
-  // Positive framing, not a negation: Gemini over-indexes on negated words, so
-  // the rule that keeps wheels filled in is stated as what to paint.
+test("the persona, translation, depth and judgment fire inside the one call — and per mode", () => {
+  const commercial = fullPrompt();
+  assert.ok(commercial.includes(vendor.COMMERCIAL_PERSONA));
+  assert.ok(commercial.includes(vendor.COMMERCIAL_TRANSLATION));
+  assert.ok(commercial.includes(vendor.COMMERCIAL_DEPTH));
+  assert.ok(commercial.includes(vendor.PROFESSIONAL_JUDGMENT));
+  assert.doesNotMatch(commercial, /DESIGN AMPLIFICATION/);
+
+  const restyle = fullPrompt({ ...BASE_INPUT, mode: "restyle", companyName: "", industry: "" });
+  assert.ok(restyle.includes(vendor.COMMERCIAL_PERSONA));
+  assert.match(restyle, /DESIGN AMPLIFICATION/);
+  assert.ok(restyle.includes(vendor.PROFESSIONAL_JUDGMENT));
+  assert.ok(!restyle.includes(vendor.COMMERCIAL_TRANSLATION));
+});
+
+test("auto-logo: a supplied name gets the composed identity; a brief-only business still gets a designed logo", () => {
+  const named = fullPrompt();
+  assert.match(named, /BRAND: Precision Climate Solutions — integrate the company name \+ logo \+ a clean contact bar/);
+  assert.match(named, /Spell the business name exactly\./);
+
+  const briefOnly = fullPrompt({ ...BASE_INPUT, companyName: "" });
+  assert.match(briefOnly, /Identify the business name from the creative direction above\. Spell it exactly as written in the brief\./);
+  assert.ok(briefOnly.includes(vendor.LOGO_REQUIREMENT));
+
+  const supplied = fullPrompt({ ...BASE_INPUT, logoAsset: { storagePath: "x", contentHash: "0".repeat(64), byteSize: 10 } });
+  assert.match(supplied, /attached verified customer-owned logo is the logo authority; preserve its form, spelling, proportions and palette exactly/);
+  assert.match(supplied, /never invent a substitute/);
+  assert.ok(!supplied.includes(vendor.LOGO_REQUIREMENT), 'a supplied logo must not also demand an invented mark');
+  assert.ok(named.includes(vendor.ATLAS_LOGO_AUTHORING_RULE), 'auto path refuses set-type-as-logo');
+});
+
+test("exact contact data in, no invented contact data out — phone and website guarded independently", () => {
+  const both = fullPrompt({ ...BASE_INPUT, phone: "(555) 010-4477", website: "precisionclimate.com" });
+  assert.match(both, /\(555\) 010-4477 — display this EXACT number, digit for digit\. Never alter or invent any digits\./);
+  assert.match(both, /precisionclimate\.com — display this EXACT URL, character for character\./);
+
+  const neither = fullPrompt();
+  assert.match(neither, /No phone number was provided — do NOT invent, fabricate, or display any phone number/);
+  assert.match(neither, /No website was supplied — invent no website, email address or street address/);
+
+  // A supplied website must not suppress the phone guard (the coupled-guard
+  // defect), and vice versa.
+  const webOnly = fullPrompt({ ...BASE_INPUT, website: "precisionclimate.com" });
+  assert.match(webOnly, /No phone number was provided/);
+  assert.match(webOnly, /precisionclimate\.com — display this EXACT URL/);
+  const phoneOnly = fullPrompt({ ...BASE_INPUT, phone: "(555) 010-4477" });
+  assert.match(phoneOnly, /No website was supplied/);
+  assert.match(phoneOnly, /display this EXACT number/);
+});
+
+test("VisionBoardIQ stays inside the same call and never disables the designer", () => {
+  const refs = [{ storagePath: "tenants/x/ref1.png", contentHash: "a".repeat(64), byteSize: 10 }];
+
+  const exact = fullPrompt({ ...BASE_INPUT, visionBoardImages: refs, visionboardIntent: "exact_reference" });
+  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's own approved wrap design/);
+  assert.ok(exact.includes(vendor.COMMERCIAL_PERSONA), "a reference never turns the designer off");
+  assert.match(exact, /BRAND: Precision Climate Solutions/, "a reference never disables auto-logo/brand behavior");
+
+  const dna = fullPrompt({ ...BASE_INPUT, visionBoardImages: refs, visionboardIntent: "style_inspiration", styleDescriptors: "electric gradients, chrome linework" });
+  assert.match(dna, /STYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design/);
+  assert.match(dna, /electric gradients, chrome linework/);
+
+  const plain = fullPrompt({ ...BASE_INPUT, visionBoardImages: refs, visionboardIntent: "style_inspiration" });
+  assert.match(plain, /STYLE INSPIRATION: Transform the mood, colors, and artistic style/);
+
+  // Storage identity is never interpolated into the prompt.
+  for (const prompt of [exact, dna, plain]) assert.doesNotMatch(prompt, /tenants\/x\/ref1\.png/);
+});
+
+test("mascot, QR, keywords, colors, finish and substrate all ride the one call", () => {
+  const prompt = fullPrompt({
+    ...BASE_INPUT,
+    mascot: "a granite ram",
+    qrEnabled: true,
+    bulletPoints: ["licensed", "24/7"],
+    fontStyle: "bold condensed sans",
+    substrate: "chrome_film",
+  });
+  assert.match(prompt, /BRAND MASCOT: Design an original, custom-illustrated brand character — a granite ram/);
+  assert.match(prompt, /QR CODE ZONE: Reserve one clean, flat, evenly-lit rectangular area/);
+  assert.match(prompt, /Brand keywords \(guide tone — not literal on-vehicle text\): licensed, 24\/7/);
+  assert.match(prompt, /Typography preference: bold condensed sans\./);
+  assert.match(prompt, /Brand colors: deep blue, sunrise orange — build the entire design from this palette/);
+  assert.match(prompt, /Finish: SATIN — SATIN/);
+  assert.match(prompt, /mirror chrome base film/);
+});
+
+test("photo realism fires only on an explicit photographic brief", () => {
+  const photo = fullPrompt({ ...BASE_INPUT, brief: "A true-to-life photographic pool and patio scene, photorealistic" });
+  assert.ok(photo.includes(vendor.PHOTO_REALISM_LOCK));
+  assert.ok(!fullPrompt().includes(vendor.PHOTO_REALISM_LOCK));
+});
+
+test("the gold-standard quality bar follows the attachments", () => {
+  const withExamples = fullPrompt(BASE_INPUT, { artboardQualityExampleCount: 2 });
+  const without = fullPrompt(BASE_INPUT, { artboardQualityExampleCount: 0 });
+  assert.match(withExamples, /Match the production quality of the provided gold-standard DesignPanel artboards/);
+  assert.doesNotMatch(without, /gold-standard DesignPanel artboards/);
+  for (const prompt of [withExamples, without]) {
+    assert.match(prompt, /Gallery-grade custom artwork with real depth, movement, and a wow factor/);
+  }
+});
+
+test("the atlas half keeps RULE 0.15's topology blocks, and paint-through beats punch-out", () => {
+  const prompt = fullPrompt();
+  assert.match(prompt, /SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL/);
+  assert.match(prompt, /ONE COHESIVE WRAP, FLATTENED FROM DIRECTLY ABOVE/);
+  assert.match(prompt, /PAIRED FLAT-TO-FINISHED LESSON/);
+  assert.match(prompt, /REFERENCE FIREWALL/);
+  assert.match(prompt, /MASTER APPLICATION BOUNDARY: The A\.T\.L\.A\.S\. master stays FULL-BLEED/);
   assert.match(prompt, /Paint the livery continuously THROUGH every place a window, glass panel, pickup-bed opening, wheel, wheel arch, lamp or trim piece will later sit/);
-  assert.match(prompt, /the installer cuts them out of the printed vinyl afterwards/);
   assert.match(prompt, /Keep essential logos, lettering and contact copy anchored to solid painted body area rather than to an opening/);
   assert.doesNotMatch(prompt, /punch out/i);
 
-  // The vehicle-coverage half must be gone from the FLAT call.
-  assert.doesNotMatch(prompt, /downstream 3D proof projection/);
-  assert.doesNotMatch(prompt, /lights, wheels and trim stay factory/);
-  assert.doesNotMatch(prompt, /bare factory bedliner/);
-  assert.doesNotMatch(prompt, /open bed interior/);
+  // The flank twin rule survives WITHOUT the scene/landmarks framing — the
+  // only flank-specific language that existed when the flanks broke at v4.
+  assert.match(prompt, /mirror-compatible twin of DRIVER: the same flat artwork/);
+  assert.match(prompt, /forward-reading on both zones/);
 
-  assert.match(prompt, new RegExp(PHOTO_REALISM_LOCK.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.equal(buildFlatDesignIQDirection(input), prompt, "the shipped compatibility API must use the same builder");
-
-  // …and must still reach the calls that render the vehicle, unchanged.
-  const { buildDesignIQPrompt } = require("../runtime/designiq-prompt.cjs");
-  const vehicleFields = {
-    viewType: "side", vehicleYear: "2024", vehicleMake: "Ford", vehicleModel: "F250 Crew Cab",
-  };
+  // …and the vehicle-coverage sentences still reach the calls that render a
+  // vehicle, unchanged.
   for (const [name, proof] of Object.entries({
-    commercial: buildDesignIQPrompt({
-      prompt: input.brief, mode: "commercial", companyName: input.companyName, ...vehicleFields,
-    }),
-    restyle: buildDesignIQPrompt({ prompt: input.brief, mode: "restyle", ...vehicleFields }),
+    commercial: ace.buildDesignIQPrompt({ prompt: BASE_INPUT.brief, mode: "commercial", companyName: BASE_INPUT.companyName, viewType: "side", vehicleYear: "2022", vehicleMake: "Ford", vehicleModel: "F250 Crew Cab" }),
+    restyle: ace.buildDesignIQPrompt({ prompt: BASE_INPUT.brief, mode: "restyle", viewType: "side", vehicleYear: "2022", vehicleMake: "Ford", vehicleModel: "F250 Crew Cab" }),
   })) {
     assert.match(proof, /Windows, lights, wheels, and trim stay factory/, `${name} keeps the factory-glass rule`);
-    assert.match(proof, /bare factory bedliner/, `${name} keeps the open-bed rule`);
+    assert.match(proof, /bare factory bedliner/, `${name} keeps the pickup-bed rule`);
   }
 });
 
-// THE QUALITY BAR MAY NOT CITE ATTACHMENTS THAT ARE NOT IN THE REQUEST.
-//
-// The closing line said "Match the production quality of the provided
-// gold-standard DesignPanel artboards" on every brief. On the live droplet,
-// 2026-08-26, loadDesignPanelArtboardExamples returned ZERO — the bucket the
-// reference reads them from is not populated on this project, and it fails soft
-// by design. So the one sentence that sets the sheet's quality bar pointed at
-// images that were never sent, on every run.
-//
-// The bar is still stated when there is nothing to cite; only the dangling
-// reference goes.
-test("the gold-standard quality bar follows the attachments", () => {
-  const input = {
-    brief: "Bold commercial HVAC wrap, deep blue with sunrise-orange airflow ribbons",
-    mode: "commercial",
-    vehicle: { year: "2022", make: "Ford", model: "F250 Crew Cab" },
-  };
-  const withExamples = buildAtlasArtboardDesignIQDirection(input, { artboardQualityExampleCount: 2 });
-  const without = buildAtlasArtboardDesignIQDirection(input);
-
-  assert.match(withExamples, /Match the production quality of the provided gold-standard DesignPanel artboards/);
-  assert.doesNotMatch(without, /gold-standard DesignPanel artboards/);
-  assert.doesNotMatch(without, /provided/);
-
-  for (const prompt of [withExamples, without]) {
-    assert.match(prompt, /Gallery-grade custom artwork with real depth, movement, and a wow factor/);
-    assert.match(prompt, /deterministic A\.T\.L\.A\.S\. guide alone controls this sheet's topology/);
-    assert.match(prompt, /Output ONE flat 2D artboard sheet/);
-  }
-  assert.equal(
-    buildFlatDesignIQDirection(input, { artboardQualityExampleCount: 2 }),
-    withExamples,
-    "the compatibility API must pass the options through",
-  );
-});
-
-// THE AUTHORING CALL PINS ITS MODEL BY NAME, LIKE THE AUTHORITY DOES.
-//
-// design-panel-ai-generate builds one model id into its endpoint and carries no
-// fallback (index.ts:1320). Call 1 passed `lockModel: true`, which pins the
-// FIRST of whatever GOOGLE_IMAGE_MODEL configures, which is config drift, not a
-// pin. That half of the rule is unchanged: the projections may follow
-// GOOGLE_IMAGE_MODEL, the design authority may not.
-//
-// THE VALUE IS THE GA ID, AND THAT IS DELIBERATE (corrected 2026-08-26).
-//
-// It was briefly the `-preview` alias, because the reference builds that id into
-// its endpoint and because ONE A/B pair on the Precision payload preferred it.
-// Eleven production runs disagree, measured as border-vs-interior luminance on
-// the real masters: every GA run holds a border median of 135-177 across the
-// centre four surfaces on every prompt version from v2 through v8, and the first
-// `-preview` run drops it to 18-23 with 63-83% of each border dark — a picture of
-// a vehicle instead of a sheet of vinyl. The Flamingo master this product is
-// judged against was authored on the GA id.
-//
-// So this asserts the id by name AND that the reference still knows it, without
-// requiring the two to be the same string — the reference pinning `-preview` is
-// a fact about the reference, not a reason to author on it here.
 test("Call 1 authors on a named model, and on the one the fleet actually works on", () => {
-  assert.equal(DESIGNPANEL_AUTHORING_MODEL, "gemini-3-pro-image");
+  assert.equal(ace.DESIGNPANEL_AUTHORING_MODEL, "gemini-3-pro-image");
   assert.ok(
     edgeSource.includes("models/gemini-3-pro-image-preview:generateContent"),
     "the reference must still build its own model id into its endpoint",
@@ -194,77 +255,9 @@ test("Call 1 authors on a named model, and on the one the fleet actually works o
   );
 });
 
-// THE BRANDING LAYOUT IS THE DESIGNER'S CALL, AND THE REFERENCE SAYS SO.
-//
-// design-panel-ai-generate's commercial scene sentence ends on this literal
-// (index.ts:475, and again in its wantsPhoto twin). It is the only place in the
-// reference that hands the branding LAYOUT decision back to the designer: it
-// states the one hard requirement — the name reads at a glance — and then
-// explicitly declines to say where the name goes, how big it is, or what sits
-// beside it.
-//
-// It did not survive the port. The A.T.L.A.S. branch replaced the whole scene
-// sentence with "Design ONE flat vehicle-wrap ARTBOARD for a <vehicle>", which
-// is a format instruction, and nothing took over the half that was creative
-// direction — so the call that authors the design was told the output shape,
-// the topology, the zone geometry and every contact-field lock, and was never
-// told that composing the identity is its own call to make.
-//
-// Asserted against the vendored reference AND the generated prompt, like every
-// other creative literal in this file, so neither copy can drift alone.
-test("Atlas keeps the reference's branding-composition freedom", () => {
-  const prompt = buildAtlasArtboardDesignIQDirection({
-    brief: "Bold commercial HVAC wrap, deep blue with sunrise-orange airflow ribbons",
-    mode: "commercial",
-    vehicle: { year: "2022", make: "Ford", model: "F250 Crew Cab" },
-  });
-
-  assert.equal(
-    COMMERCIAL_BRAND_COMPOSITION,
-    "The company name reads clearly at a glance; how the branding is composed is your creative call.",
-  );
-  assert.ok(
-    edgeSource.includes(COMMERCIAL_BRAND_COMPOSITION),
-    "the reference must still carry the branding-composition sentence",
-  );
-  assert.ok(
-    prompt.includes(COMMERCIAL_BRAND_COMPOSITION),
-    "Atlas must hand the branding layout decision back to the designer",
-  );
-  // It belongs to the commercial register, exactly as it does in the reference:
-  // the restyle scene sentence there has no equivalent.
-  assert.ok(
-    !buildAtlasArtboardDesignIQDirection({
-      brief: "distressed martini livery", mode: "restyle",
-      vehicle: { make: "Porsche", model: "911" },
-    }).includes(COMMERCIAL_BRAND_COMPOSITION),
-    "restyle must not acquire a commercial branding instruction",
-  );
-});
-
-test("Atlas exact-reference mode remains reproduction-only", () => {
-  const prompt = buildAtlasArtboardDesignIQDirection({
-    brief: "Use the approved livery",
-    vehicle: { make: "GMC", model: "Sierra" },
-    visionBoardImages: [{ storagePath: "verified/reference.png" }],
-    visionboardIntent: "exact_reference",
-  });
-
-  assert.match(prompt, /Do not redesign, restyle, recolor, simplify, correct, or invent/);
-  assert.match(prompt, /verified customer reference images .* are the artwork authority/i);
-  assert.doesNotMatch(prompt, /DESIGN AMPLIFICATION/);
-});
-
 test("Atlas freezes Close-Up as proof seven without reintroducing a hero view", () => {
-  const surfaces = ["driver", "passenger", "hood", "roof", "front", "rear"]
-    .map((surfaceKey) => ({
-      surfaceKey,
-      widthInches: ["driver", "passenger"].includes(surfaceKey) ? 240 : 72,
-      heightInches: ["driver", "passenger"].includes(surfaceKey) ? 72 : 60,
-    }));
-  const manifest = buildAtlasManifest(surfaces);
-
-  assert.equal(PROMPT_VERSION, "designpro-flat-first-atlas-20260826.v8");
+  const manifest = buildAtlasManifest(SURFACES, null);
+  assert.equal(PROMPT_VERSION, "designpro-flat-first-atlas-20260826.v9-dpag");
   assert.deepEqual(PROOF_VIEWS, [
     "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
   ]);
@@ -274,191 +267,9 @@ test("Atlas freezes Close-Up as proof seven without reintroducing a hero view", 
   assert.doesNotMatch(JSON.stringify({ manifest, dependencies: PROOF_DEPENDENCIES }), /hero-3d/);
 });
 
-// THE CREATIVE HALF IS HELD TO THE SAME SOURCE PARITY AS THE QUALITY CONTRACT.
-//
-// A.T.L.A.S. topology is protected and is NOT what these assert. They cover the
-// branding/logo/mascot intelligence that the port had quietly weakened while
-// the topology half stayed correct - the regression that made a commercial
-// sheet come back with set type and a template-grade mark instead of a designed
-// identity. Each phrase is asserted against the vendored reference AND the
-// generated prompt, so neither copy can drift alone.
-test("Atlas keeps the proven branding, logo and mascot creative intelligence", () => {
-  const prompt = buildAtlasArtboardDesignIQDirection({
-    brief: "Rugged mountain graphics for a roofing fleet",
-    companyName: "Ridgeline Roofing",
-    phone: "555-0142",
-    mascot: "a granite ram",
-    finish: "Gloss",
-    vehicle: { year: "2024", make: "Ford", model: "Transit" },
-  });
-
-  // The BRAND line is a DESIGN instruction, not a spelling lock. Losing it is
-  // what left the master call with nothing asking for a composed identity.
-  const brandComposition =
-    "integrate the company name + logo + a clean contact bar into the design, legible at a glance";
-  assert.ok(edgeSource.includes(brandComposition), "the reference must still carry the BRAND composition line");
-  assert.ok(prompt.includes(brandComposition), "Atlas must ask for a composed brand identity, not just correct spelling");
-
-  // ONE literal, shared by both producers, matching the reference exactly. The
-  // port had re-added a form prescription and a negative here; both are the
-  // wording the reference deleted after logos converged on one look.
-  assert.equal(
-    LOGO_REQUIREMENT,
-    "This business needs its own logo — decide its form from this brief alone.",
-  );
-  assert.ok(edgeSource.includes(LOGO_REQUIREMENT), "the logo requirement must stay identical to the reference");
-  assert.ok(prompt.includes(LOGO_REQUIREMENT));
-  assert.doesNotMatch(prompt, /must not look like a generic template mark/);
-  assert.doesNotMatch(prompt, /professionally art-directed and distinctive/);
-
-  // A mascot is a logo, and the master call is the only call that draws it.
-  for (const phrase of [
-    "premium mascot logo in the spirit of a pro sports or esports emblem",
-    "clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance",
-    "bespoke illustration a top studio would charge for",
-  ]) {
-    assert.ok(edgeSource.includes(phrase), `the reference must still carry: ${phrase}`);
-    assert.ok(prompt.includes(phrase), `Atlas must carry the proven mascot craft bar: ${phrase}`);
-  }
-  // Placement is A.T.L.A.S. zone topology and is not this file's to direct.
-  assert.doesNotMatch(prompt, /rear quarter panel, sized to complement/);
-
-  // The spelling instruction appeared twice in a row before this. Duplication
-  // carries no creative value and dilutes the sentence that does.
-  assert.equal(prompt.match(/[Ss]pell (?:it|the business name) exactly/g)?.length, 1);
-});
-
-// THE NO-INVENT CONTACT RULE IS UNCONDITIONAL, IN BOTH BUILDERS.
-//
-// It was gated on `!phone && !website`, so a brief that supplied a website but
-// no phone reached the model with nothing forbidding an invented number — while
-// the proof judge is handed "Exact phone: none supplied" and rejects any number
-// it sees. Nothing forbade it and the judge refused it, so the run could not
-// converge and simply burned every attempt.
-//
-// Live proof, generation 2c0fc9f4 (2026-08-24 21:18, a dental brief with a
-// website and no phone): four `side` attempts, every one carrying the same
-// invented 602-555-0184, every one rejected on customerTextPass, then
-// provider_attempts_exhausted. No control guard may decide whether this rule
-// ships.
-test("The contact no-invent rule reaches the model on every brief shape", () => {
-  const { buildDesignIQPrompt } = require("../runtime/designiq-prompt.cjs");
-  const PHONE_GUARD = /do NOT invent, fabricate, or display any phone number|invent no phone number/;
-  const WEBSITE_GUARD = /invent no website/;
-
-  const shapes = [
-    { label: "website only (the shape that failed live)", website: "www.DesertBloomDental.com" },
-    { label: "phone only", phone: "602-555-0184" },
-    { label: "both supplied", phone: "602-555-0184", website: "www.DesertBloomDental.com" },
-    { label: "neither supplied" },
-  ];
-
-  for (const shape of shapes) {
-    const { label, ...contact } = shape;
-    const atlas = buildAtlasArtboardDesignIQDirection({
-      brief: "Bright modern dental wrap",
-      mode: "commercial",
-      companyName: "Desert Bloom Dental",
-      vehicle: { make: "Ford", model: "Transit" },
-      ...contact,
-    });
-    const standard = buildDesignIQPrompt({
-      prompt: "Bright modern dental wrap",
-      mode: "commercial",
-      companyName: "Desert Bloom Dental",
-      viewType: "side",
-      vehicleMake: "Ford",
-      vehicleModel: "Transit",
-      ...contact,
-    });
-
-    // Paired per field: a missing field always gets its own guard, and no other
-    // field's presence can suppress it.
-    if (!contact.phone) {
-      assert.match(atlas, PHONE_GUARD, `Atlas must forbid inventing a phone: ${label}`);
-      assert.match(standard, PHONE_GUARD, `The commercial builder must forbid inventing a phone: ${label}`);
-    }
-    if (!contact.website) {
-      assert.match(atlas, WEBSITE_GUARD, `Atlas must forbid inventing a website: ${label}`);
-      assert.match(standard, WEBSITE_GUARD, `The commercial builder must forbid inventing a website: ${label}`);
-    }
-
-    // A supplied value is still stated exactly; the rule closes the set, it
-    // never suppresses a contact the customer actually gave.
-    if (contact.phone) {
-      assert.ok(atlas.includes(contact.phone), `Atlas must still state the supplied phone: ${label}`);
-      assert.ok(standard.includes(contact.phone), `The commercial builder must still state the supplied phone: ${label}`);
-    }
-    if (contact.website) {
-      assert.ok(atlas.includes(contact.website), `Atlas must still state the supplied website: ${label}`);
-      assert.ok(standard.includes(contact.website), `The commercial builder must still state the supplied website: ${label}`);
-    }
-  }
-});
-
-// THE AUTHORING PERSONA IS PINNED TO THE PROVEN COMMERCIAL SOURCE.
-//
-// The A.T.L.A.S. branch opened with the reference's ARTBOARD persona -- "You are
-// a Custom Vehicle Wrap Designer at WePrintWraps.com." -- which was right in the
-// architecture it came from, where the artboard was a PROJECTION of a design the
-// commercial branch had already authored. Under RULE 0.20 Call 1 IS the design
-// origin, so it was doing the designer's job with the projection helper's
-// framing, and the sentence that sets the standard for the work was the one that
-// did not travel.
-//
-// Live evidence 2026-08-25, generation 02e83eb3 (Pro-Tech Automotive): master QC
-// confidence 1.0, 7/7 proofs, 6 panels -- and generic template-feeling work with
-// no brand system beyond a centred wordmark and a phone number.
-//
-// This asserts parity against the vendored source itself rather than a copy of
-// the string, so the two cannot drift: if the reference is ever re-ported, this
-// fails until the runtime follows it.
-test("the A.T.L.A.S. authoring persona is the proven commercial designer, byte for byte", () => {
-  const reference = readFileSync(
-    new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url),
-    "utf8",
-  );
-  assert.ok(
-    reference.includes(COMMERCIAL_AUTHORING_PERSONA),
-    "the persona must exist verbatim in design-panel-ai-generate/index.ts",
-  );
-  assert.match(COMMERCIAL_AUTHORING_PERSONA, /senior graphic designer at a sign and wrap company/);
-  assert.match(COMMERCIAL_AUTHORING_PERSONA, /20 years of \$5,000-per-vehicle commercial fleet graphics/);
-  assert.match(COMMERCIAL_AUTHORING_PERSONA, /readable at a glance from across a parking lot/);
-
-  const atlas = buildAtlasArtboardDesignIQDirection({
-    brief: "masculine wrap for an automotive business",
-    companyName: "Pro-Tech Automotive",
-    mode: "commercial",
-  });
-  assert.ok(
-    atlas.startsWith(COMMERCIAL_AUTHORING_PERSONA),
-    "the design call must OPEN with the designer persona, not carry it later",
-  );
-  assert.equal(
-    atlas.includes("You are a Custom Vehicle Wrap Designer at WePrintWraps.com."),
-    false,
-    "the projection-helper persona must not remain on the authoring path",
-  );
-
-  // Parity restoration only. Nothing was invented for typography, negative
-  // space, focal point or colour strategy, because the proven source carries no
-  // such block to restore -- inventing one is what RULE 0.1 forbids.
-  for (const invented of [
-    /negative space/i, /focal point/i, /kerning/i, /leading/i,
-    /colou?r strategy/i, /rule of thirds/i, /golden ratio/i,
-  ]) {
-    assert.doesNotMatch(atlas, invented, `no invented creative direction: ${invented}`);
-  }
-
-  // The blocks that were already at parity stay exactly as they were. The
-  // reference is TypeScript source, so its literals carry escaped quotes
-  // (\"stealth bomber\") that the runtime value does not -- unescape before
-  // comparing, or a correct block reads as drifted purely on backslashes.
-  const referenceText = reference.replace(/\\"/g, '"');
-  for (const [name, proven] of Object.entries({
-    LOGO_REQUIREMENT, COMMERCIAL_DEPTH, COMMERCIAL_TRANSLATION,
-  })) {
-    assert.ok(referenceText.includes(proven), `${name} drifted from the reference`);
-  }
+test("owner protection #5: the authoring re-roll budget can be pinned to exactly one", () => {
+  const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  assert.match(atlasSource, /attempt <= maxAuthoringAttempts/, "the loop honors the configurable budget");
+  assert.match(atlasSource, /DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS/, "the acceptance pin exists");
+  assert.match(atlasSource, /geminiImageRequestCount: masterAuthoringAttempts/, "the exact request count is recorded on the revision");
 });

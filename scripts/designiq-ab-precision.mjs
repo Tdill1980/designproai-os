@@ -14,15 +14,31 @@
  *                 authored the designs this system's design quality is judged
  *                 against. Its own pinned model, its own generationConfig.
  *   A2  CONTROL   design-panel-ai-generate, mode "artboard" — the control's own
- *                 FLAT branch, so the flattened comparison is apples to apples.
- *   B   SERVER    A.T.L.A.S. Call 1, assembled by the real runtime: real GENIE
- *                 preview geometry, the real deterministic authoring guide, the
- *                 real storage-loaded topology and gold-standard examples.
+ *                 legacy FLAT branch, so the flattened comparison is apples to
+ *                 apples.
+ *   B   SERVER    A.T.L.A.S. Call 1, assembled by the real runtime — since the
+ *                 owner's 2026-08-26 canonical directive this IS the real
+ *                 design-panel-ai-generate builder in atlasTopology mode: real
+ *                 GENIE preview geometry, the real deterministic authoring
+ *                 guide, the real storage-loaded topology and gold-standard
+ *                 examples.
+ *   C   ARTWORK   DPAG craft aimed at ONE flat banner; code composes the six
+ *                 zones afterwards (atlas-artwork-compose).
+ *   B-configured  only when the droplet's configured image model differs from
+ *                 the pinned authoring model — one extra call so the model is
+ *                 never a confound.
+ *
+ * `--arms A,B` executes only the named arms (all captures are still written).
+ * The OWNER ACCEPTANCE RUN is `--arms B`: exactly ONE Gemini image request,
+ * and the executed request count is printed in the summary.
  *
  * The control implementation is NOT modified. `scripts/build-control-prompt.mjs`
- * transpiles its prompt builders verbatim, and this script fails the run if the
- * assembled control prompt does not hash to the value captured from the
- * restylepro-os checkout.
+ * transpiles its prompt builders verbatim, and this script refuses to run if
+ * the SLICED CONTROL SOURCE does not hash to the pinned value. The guard is
+ * payload-independent on purpose: it used to hash the ASSEMBLED prompt, which
+ * embeds the brief and the vehicle, so pointing the harness at any other
+ * payload tripped "control drift" — conflating "the control code drifted" with
+ * "you changed the payload" and blocking every non-default run.
  *
  * It reads nothing from and writes nothing to the generation tables. No
  * request, revision, view or artifact row is created; the only writes are the
@@ -174,31 +190,52 @@ async function main() {
   const controlPath = args.control || "./control-build/control-prompt.mjs";
   const control = await import(new URL(controlPath, `file://${process.cwd()}/`).href);
 
-  // ── A / A2: THE CONTROL REQUESTS ────────────────────────────────────────
-  const controlCommercialPrompt = control.buildDesignIQPrompt(CONTROL_PARAMS);
-  const controlHash = sha(controlCommercialPrompt);
-  log(`control commercial prompt ${controlCommercialPrompt.length} chars, sha ${controlHash.slice(0, 16)}`);
-  if (args["expect-control-hash"] && !controlHash.startsWith(args["expect-control-hash"])) {
+  // ── CONTROL-DRIFT GUARD — SOURCE-BASED AND UNCONDITIONAL ────────────────
+  // Hash the sliced control SOURCE (`control-prompt.ts`, written beside the
+  // bundle by build-control-prompt.mjs), never the assembled prompt: the
+  // assembled prompt embeds the brief and vehicle, so hashing it made every
+  // non-default payload read as "control drift" while real drift on a
+  // non-default payload went undetected. A drifted control is not a control,
+  // so the expectation is REQUIRED — omitting the flag no longer skips the
+  // guard.
+  const controlSourcePath = controlPath.replace(/control-prompt\.mjs$/, "control-prompt.ts");
+  const controlSourceHash = sha(readFileSync(new URL(controlSourcePath, `file://${process.cwd()}/`)));
+  log(`control sliced source sha ${controlSourceHash.slice(0, 16)}`);
+  if (!args["expect-control-hash"]) {
+    throw new Error("--expect-control-hash is required — a run with no pinned control is not a controlled run");
+  }
+  if (controlSourceHash !== args["expect-control-hash"] && !controlSourceHash.startsWith(args["expect-control-hash"])) {
     throw new Error(
-      `the vendored control no longer reproduces the restylepro-os control prompt `
-      + `(${controlHash.slice(0, 16)} != ${args["expect-control-hash"]}) — the control has drifted and is not a control`,
+      `the vendored control source no longer matches the pinned slice `
+      + `(${controlSourceHash.slice(0, 16)} != ${args["expect-control-hash"]}) — the control has drifted and is not a control`,
     );
   }
+
+  // ── A / A2: THE CONTROL REQUESTS ────────────────────────────────────────
+  const controlCommercialPrompt = control.buildDesignIQPrompt(CONTROL_PARAMS);
+  log(`control commercial prompt ${controlCommercialPrompt.length} chars, sha ${sha(controlCommercialPrompt).slice(0, 16)}`);
 
   // ── B: THE SERVER REQUEST, ASSEMBLED BY THE REAL RUNTIME ────────────────
   log("resolving GENIE preview dimensions …");
   const dimensionRow = await genie.resolveFlatAtlasPreviewDimensions(supabase, VEHICLE, provider);
   const surfaces = genie.expectedSurfacesFromRow(dimensionRow);
   const manifest = atlas.buildAtlasManifest(surfaces, dimensionRow.proofGeometryAuthority);
-  const atlasPromptText = atlas._test.atlasPrompt(V3_INPUT, manifest);
-  const authoringGuideBytes = await atlas.renderAtlasAuthoringGuide(manifest);
-  log(`atlas prompt ${atlasPromptText.length} chars, authoring guide ${(authoringGuideBytes.length / 1024).toFixed(0)}KB`);
 
+  // Examples load BEFORE the prompt is assembled: the prompt's quality-bar
+  // clause follows the gold-standard attachment count, so building it first
+  // reproduced the "prompt cites attachments the request does not carry"
+  // defect inside the harness itself.
   const [topologyExamples, artboardQualityExamples] = await Promise.all([
     examples.loadActiveFlatAtlasTopologyExamples(supabase),
     examples.loadDesignPanelArtboardExamples(supabase),
   ]);
   log(`${topologyExamples.length} topology example(s), ${artboardQualityExamples.length} gold-standard artboard(s)`);
+
+  const atlasPromptText = atlas._test.atlasPrompt(V3_INPUT, manifest, {
+    artboardQualityExampleCount: artboardQualityExamples.length,
+  });
+  const authoringGuideBytes = await atlas.renderAtlasAuthoringGuide(manifest);
+  log(`atlas prompt ${atlasPromptText.length} chars, authoring guide ${(authoringGuideBytes.length / 1024).toFixed(0)}KB`);
 
   const bParts = [
     { inlineData: { mimeType: "image/png", data: authoringGuideBytes.toString("base64") } },
@@ -273,10 +310,11 @@ async function main() {
       modelFallback: "none — Call 1 pins the model by name and passes lockModel:true",
       parts: bParts,
       generationConfig: { temperature: 1, responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "1:1", imageSize: "4K" } },
-      attempts: "MAX_MASTER_AUTHORING_ATTEMPTS = 3 (corrective re-roll on QC refusal)",
+      attempts: "harness executes exactly 1; production re-roll budget MAX_MASTER_AUTHORING_ATTEMPTS = 3, pinned to 1 for owner acceptance (DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS=1)",
       notes: [
         "the deterministic authoring guide is the FIRST part, ahead of the prompt text",
         `atlas prompt version ${atlas.PROMPT_VERSION}`,
+        "the creative half IS the vendored design-panel-ai-generate builder (atlasTopology mode) — one canonical implementation",
       ],
     }),
     C: describe("C — ARTWORK+COMPOSE (DPAG craft, code geometry)", {
@@ -299,16 +337,22 @@ async function main() {
   writeFileSync(join(OUT, "A-control-commercial.prompt.txt"), controlCommercialPrompt);
   writeFileSync(join(OUT, "A2-control-artboard.prompt.txt"), controlArtboardPrompt);
   writeFileSync(join(OUT, "B-atlas-call1.prompt.txt"), atlasPromptText);
-  writeFileSync(join(OUT, "B-atlas-creative-half.txt"), atlas._test.atlasCreativeRules(V3_INPUT));
+  writeFileSync(join(OUT, "B-atlas-creative-half.txt"), atlas._test.atlasCreativeRules(V3_INPUT, {
+    artboardQualityExampleCount: artboardQualityExamples.length,
+  }));
   writeFileSync(join(OUT, "B-authoring-guide.png"), authoringGuideBytes);
   log(`requests captured → ${OUT}/requests.json`);
 
   if (args["capture-only"] === "true") return finish(supabase, requests, []);
 
   // ── EXECUTE ────────────────────────────────────────────────────────────
+  // `--arms B` runs the owner-acceptance shape: one arm, one image request.
+  const armFilter = String(args.arms || "").split(",").map((a) => a.trim()).filter(Boolean);
+  const armAllowed = (name) => !armFilter.length || armFilter.includes(name);
   const key = keyPool[0];
   const results = {};
   const produced = [];
+  let imageRequestsExecuted = 0;
   for (const [name, spec] of [
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
@@ -322,7 +366,12 @@ async function main() {
       parts: bParts, model: provider.models[0], cfg: requests.B.generationConfig, file: "B-atlas-master-configured-model.png",
     }]]),
   ]) {
+    if (!armAllowed(name)) {
+      results[name] = { ok: null, skipped: true, reason: `not in --arms ${armFilter.join(",")}` };
+      continue;
+    }
     try {
+      imageRequestsExecuted += 1;
       const out = await callGemini({
         label: name, model: spec.model, key, parts: spec.parts,
         generationConfig: spec.cfg, file: join(OUT, spec.file),
@@ -348,8 +397,12 @@ async function main() {
       results[name] = { ok: false, error: String(error.message).slice(0, 500) };
     }
   }
+  // Owner protection #5: report exactly how many Gemini image requests this
+  // run actually made — a claimed "one call" is proven by this number, not by
+  // prose.
+  log(`gemini image requests executed: ${imageRequestsExecuted}`);
   writeFileSync(join(OUT, "results.json"), JSON.stringify(results, null, 2));
-  return finish(supabase, { ...requests, results }, produced);
+  return finish(supabase, { ...requests, results, imageRequestsExecuted }, produced);
 }
 
 /**
@@ -382,6 +435,7 @@ async function finish(supabase, manifestValue, produced) {
     A: { chars: manifestValue.A.totalTextChars, parts: manifestValue.A.partCount, images: manifestValue.A.imageParts, model: manifestValue.A.model },
     A2: { chars: manifestValue.A2.totalTextChars, parts: manifestValue.A2.partCount, images: manifestValue.A2.imageParts, model: manifestValue.A2.model },
     B: { chars: manifestValue.B.totalTextChars, parts: manifestValue.B.partCount, images: manifestValue.B.imageParts, model: manifestValue.B.model },
+    imageRequestsExecuted: manifestValue.imageRequestsExecuted ?? null,
     results: manifestValue.results || null,
   }, null, 2));
 }

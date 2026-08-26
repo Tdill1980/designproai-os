@@ -22,3 +22,5 @@ supabase/.temp/
 # belong to that checkout, not to the branch.
 supabase/.branches/
 supabase/.temp/
+control-build/
+/node_modules/

@@ -81,8 +81,10 @@ pixel is opaque, and black is opaque. Two things now stop it:
 
 - **`runtime/flat-first-atlas.cjs`** states the rule positively (SOLID PANELS),
   because negatives make Gemini over-index on the forbidden thing. `PROMPT_VERSION`
-  is `designpro-flat-first-atlas-20260824.v6`; older masters are refused, not
-  migrated, and the version string is the mechanism that refuses them.
+  is `designpro-flat-first-atlas-20260826.v9-dpag`; older masters are refused for
+  NEW authoring/regeneration only, never migrated — and never hidden: existing
+  generations stay readable/viewable/downloadable on every read surface
+  (owner protection #1, locked by `tests/atlas-historical-read.test.mjs`).
 
   **⛔ THE PAIRED EXAMPLE AND THE ORIGINAL PROMPT ARE RESTORED. DO NOT REMOVE
   THEM AGAIN. (Trish 2026-08-24)** A session concluded that showing Call 1 the
@@ -248,6 +250,53 @@ border, not as new design. `masterCutoutSurfaces` still records that the sheet
 arrived holed, and PanelPro's human QC still sees those sides flagged. Locked by
 `tests/atlas-cutout-fill.test.mjs`.
 
+## 🎯 RULE 0.26 — ONE CANONICAL CALL 1: THE REAL DPAG BUILDER + ATLAS, ONE AUTHORING CALL (Trish 2026-08-26)
+
+**Owner directive, verbatim intent: "IMPLEMENT ONE CANONICAL DESIGNPROAI CALL 1:
+DESIGNPANELAI + ATLAS IN THE SAME AUTHORING CALL … There must be one canonical
+creative implementation, not two drifting copies." Behavioral authority =
+`Tdill1980/restylepro-os` at `113d137dbe8813ca3bf70c8d7265ad081ebd4524`.**
+
+How it is implemented — DO NOT re-split it:
+
+- The creative half of Call 1 IS `design-panel-ai-generate`'s own builder. The
+  vendored source (`supabase/functions/design-panel-ai-generate/index.ts` =
+  113d137 + one delimited `ATLAS MODE` patch inside the artboard branch) is
+  mechanically transpiled by `scripts/build-designpanel-authoring.mjs` into the
+  committed `runtime/vendor/designpanel-authoring.cjs`, which
+  `flat-first-atlas.cjs`'s `atlasCreativeRules()` invokes as a PURE INPUT
+  MAPPING (`mode:'artboard', atlasTopology:true`). It adds no prompt text.
+- The reconstructed `buildAtlasArtboardDesignIQDirection` (and its
+  `buildFlatDesignIQDirection` alias) are DELETED. Its SIDE-TWIN "photographic
+  scene / landmarks" sentence — the only flank-specific language and the prime
+  suspect for the flanks broken since v4 — does not exist in v9; the topology
+  half keeps the mirror-twin requirement in flat-sheet terms only.
+- Executed parity, not vibes: `tests/designpanel-vendor-parity.test.mjs` runs
+  the patched builder and a pinned pristine-113d137 twin on locked fixtures and
+  requires BYTE-IDENTICAL output for every non-atlas mode, plus bundle
+  freshness by source hash. `tests/atlas-designiq-artboard.test.mjs` asserts
+  the assembled Call-1 prompt carries no studio, camera, vehicle-stage,
+  flank-viewpoint or 3D-proof language (owner protection #3) and that the whole
+  professional-designer contract (auto-logo with typeface-is-not-a-logo,
+  supplied-logo faithfulness, per-field no-invention guards for phone AND
+  website, VisionBoardIQ intents that never disable the persona, exact
+  customer text) fires inside the one call.
+- Versions moved together and are DB-gated:
+  `designpro-flat-first-atlas-20260826.v9-dpag` +
+  `designpanel-ai-generate.artboard.20260826.v3-vendored`
+  (`supabase/migrations/20260826090000_designpro_atlas_canonical_dpag_v9.sql`).
+- Owner protection #5: `DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS=1` (or the
+  `maxAuthoringAttempts` option) pins the re-roll budget to exactly one for an
+  acceptance run, and the revision records
+  `metadata.geminiImageRequestCount` — a claimed "one call" is proven by that
+  number.
+- The acceptance route is the harness with `runtime_source: checkout` and
+  `arms: B`: this ref's runtime modules run inside the EXACT deployed image's
+  dependencies while production traffic keeps serving the existing release —
+  no deploy, no cutover (owner protection #4). Report such a run only as a
+  "canonical Call-1 candidate for owner review", never as ATLAS
+  migrated/restored/complete (owner protection #6).
+
 ## 🖥️ RULE 0.16 — CALLS 1–7 EXECUTE ON THIS SERVER (2026-08-23)
 
 `design-panel-ai-generate` and `generate-color-render` run **in this runtime**,
@@ -360,9 +409,14 @@ Two things about it that are load-bearing:
 - **The control is transpiled from the vendored source, never re-described.**
   `scripts/build-control-prompt.mjs` slices the pure prompt half of
   `supabase/functions/design-panel-ai-generate/index.ts` and swaps only the Deno
-  import header; the harness refuses to run unless the result still hashes to
-  the value captured from the restylepro-os checkout. A drifted control is not a
+  import header; the harness refuses to run unless the SLICED SOURCE still
+  hashes to the pinned value. (2026-08-26: the guard used to hash the ASSEMBLED
+  prompt, which embeds the brief — so any non-default payload tripped "control
+  drift". It is source-based and unconditional now.) A drifted control is not a
   control.
+- Arms are A / A2 / B / C (+ B-configured when the droplet model differs);
+  `arms:` narrows a dispatch and the summary prints `imageRequestsExecuted`.
+  `runtime_source: checkout` is the isolated acceptance route (RULE 0.26).
 
 ## 🎭 RULE 0.24 — THREE REFERENCE CLASSES, THREE AUTHORITIES (Trish 2026-08-26)
 
