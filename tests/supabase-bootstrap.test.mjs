@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered sixty-one-migration chain', () => {
-  assert.equal(migrationNames.length, 61);
+test('fresh bootstrap contains one ordered sixty-two-migration chain', () => {
+  assert.equal(migrationNames.length, 62);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -138,6 +138,9 @@ test('fresh bootstrap contains one ordered sixty-one-migration chain', () => {
       // A partial A.T.L.A.S. set presents its individually sound views; the
       // fence still gates revisions and production on a complete set.
       '20260826070000',
+      // `? key` on a NULL provider object is NULL; NOT NULL is NULL; fifteen
+      // Standard tiles vanished. Existence tests COALESCE to false.
+      '20260826080000',
     ],
   );
 });
