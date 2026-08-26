@@ -10,8 +10,8 @@
 -- footnote. The reference does the opposite: it opens as the designer, names
 -- the vehicle, lists the panels WITH THEIR REAL INCHES, states the brief, and
 -- closes with a short output-format instruction
--- (restylepro-os supabase/functions/design-panel-ai-generate/index.ts:340-390,
--- 1,516 characters in total).
+-- (the reference design-panel-ai-generate index.ts:340-390, 1,516 characters
+-- in total).
 --
 -- v8 is that inversion, plus two parity restorations measured against the same
 -- authority:
