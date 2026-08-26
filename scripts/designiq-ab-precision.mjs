@@ -41,6 +41,8 @@ const atlas = require_("./flat-first-atlas.cjs");
 const genie = require_("./genie-universal-resolver.cjs");
 const examples = require_("./flat-atlas-topology-examples.cjs");
 const { createProvider } = require_("./generation-provider.cjs");
+const ace = require_("./designiq-prompt.cjs");
+const { composeAtlasFromArtwork } = require_("./atlas-artwork-compose.cjs");
 
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) => (a.startsWith("--") ? [[a.slice(2), all[i + 1]]] : [])),
@@ -96,6 +98,9 @@ const CONTROL_PARAMS = {
 
 // design-panel-ai-generate/index.ts:1320 — one pinned model, no fallback.
 const CONTROL_MODEL = "gemini-3-pro-image-preview";
+// What Call 1 pins for authoring. Read from the runtime rather than repeated
+// here, so the harness cannot report a model production no longer uses.
+const AUTHORING_MODEL = require_("./designiq-prompt.cjs").DESIGNPANEL_AUTHORING_MODEL;
 const CONTROL_ENDPOINT = (model, key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
@@ -125,13 +130,19 @@ function describe(label, { model, modelFallback, parts, generationConfig, system
   };
 }
 
-async function callGemini({ label, model, key, parts, generationConfig, file }) {
+async function callGemini({ label, model, key, parts, generationConfig, file, systemInstruction }) {
   log(`${label}: calling ${model} …`);
   const started = Date.now();
   const response = await fetch(CONTROL_ENDPOINT(model, key), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: [{ parts }], generationConfig }),
+    body: JSON.stringify({
+      // designpro-artboard delivers its persona as a real system instruction
+      // (index.ts:110). A.T.L.A.S. Call 1 has never sent one at all.
+      ...(systemInstruction ? { system_instruction: { parts: [{ text: systemInstruction }] } } : {}),
+      contents: [{ parts }],
+      generationConfig,
+    }),
     signal: AbortSignal.timeout(300_000),
   });
   if (!response.ok) {
@@ -196,6 +207,18 @@ async function main() {
     ...(await atlas._test.artboardQualityExampleParts(artboardQualityExamples)),
   ];
 
+  // ── C: THE ARTWORK+COMPOSE PATH ────────────────────────────────────────
+  // DPAG craft aimed at ONE flat banner; code owns the geometry afterwards.
+  // No topology guide, no zone map, and a real system instruction.
+  const artworkPrompt = ace.buildAtlasArtworkDirection(V3_INPUT, {
+    artboardQualityExampleCount: artboardQualityExamples.length,
+  });
+  const cParts = [
+    { text: artworkPrompt },
+    ...(await atlas._test.artboardQualityExampleParts(artboardQualityExamples)),
+  ];
+  log(`artwork prompt ${artworkPrompt.length} chars + ${ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION.length}-char system instruction`);
+
   // A2 attaches the control's own example artboards — the same bucket
   // `loadArtboardExamples` reads — as raw image parts after the prompt, which
   // is the control's own ordering.
@@ -246,8 +269,8 @@ async function main() {
       notes: ["the control's own flat branch — the apples-to-apples flattened control"],
     }),
     B: describe("B — SERVER A.T.L.A.S. Call 1", {
-      model: provider.models[0],
-      modelFallback: "none — Call 1 passes lockModel:true",
+      model: AUTHORING_MODEL,
+      modelFallback: "none — Call 1 pins the model by name and passes lockModel:true",
       parts: bParts,
       generationConfig: { temperature: 1, responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "1:1", imageSize: "4K" } },
       attempts: "MAX_MASTER_AUTHORING_ATTEMPTS = 3 (corrective re-roll on QC refusal)",
@@ -256,8 +279,23 @@ async function main() {
         `atlas prompt version ${atlas.PROMPT_VERSION}`,
       ],
     }),
+    C: describe("C — ARTWORK+COMPOSE (DPAG craft, code geometry)", {
+      model: AUTHORING_MODEL,
+      modelFallback: "none",
+      parts: cParts,
+      systemInstruction: ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION,
+      generationConfig: { temperature: 1, responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "16:9", imageSize: "4K" } },
+      attempts: "1 (harness)",
+      notes: [
+        "the model is never told there is a vehicle, a panel, an opening or a zone",
+        "the six zones are composed by runtime/atlas-artwork-compose.cjs after the call",
+        "branding is NOT composited yet - that is the next deterministic layer",
+      ],
+    }),
   };
   writeFileSync(join(OUT, "requests.json"), JSON.stringify(requests, null, 2));
+  writeFileSync(join(OUT, "C-artwork.prompt.txt"), artworkPrompt);
+  writeFileSync(join(OUT, "C-artwork.system.txt"), ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION);
   writeFileSync(join(OUT, "A-control-commercial.prompt.txt"), controlCommercialPrompt);
   writeFileSync(join(OUT, "A2-control-artboard.prompt.txt"), controlArtboardPrompt);
   writeFileSync(join(OUT, "B-atlas-call1.prompt.txt"), atlasPromptText);
@@ -274,23 +312,37 @@ async function main() {
   for (const [name, spec] of [
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
-    ["B", { parts: bParts, model: provider.models[0], cfg: requests.B.generationConfig, file: "B-atlas-master.png" }],
-    // The droplet resolves GOOGLE_IMAGE_MODEL=gemini-3-pro-image while the
-    // control pins gemini-3-pro-image-preview, so A and B differ by model as
-    // well as by request. Running B's exact parts on the control's model too
-    // costs one call and removes the confound: if B-preview and B agree, the
-    // model is not the variable and the request is.
-    ...(provider.models[0] === CONTROL_MODEL ? [] : [["B-preview", {
-      parts: bParts, model: CONTROL_MODEL, cfg: requests.B.generationConfig, file: "B-atlas-master-preview-model.png",
+    ["B", { parts: bParts, model: AUTHORING_MODEL, cfg: requests.B.generationConfig, file: "B-atlas-master.png" }],
+    // B IS THE PRODUCTION PATH, so it uses the model Call 1 actually pins.
+    // The droplet still resolves GOOGLE_IMAGE_MODEL=gemini-3-pro-image for the
+    // projections, so when the two differ the configured id gets its own arm --
+    // one extra call, and the model stops being a confound in either direction.
+    ["C", { parts: cParts, model: AUTHORING_MODEL, cfg: requests.C.generationConfig, file: "C-artwork-banner.png", systemInstruction: ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION, compose: true }],
+    ...(provider.models[0] === AUTHORING_MODEL ? [] : [["B-configured", {
+      parts: bParts, model: provider.models[0], cfg: requests.B.generationConfig, file: "B-atlas-master-configured-model.png",
     }]]),
   ]) {
     try {
       const out = await callGemini({
         label: name, model: spec.model, key, parts: spec.parts,
         generationConfig: spec.cfg, file: join(OUT, spec.file),
+        systemInstruction: spec.systemInstruction,
       });
       results[name] = { ok: true, file: spec.file, contentHash: out.contentHash, bytes: out.bytes.length, model: out.model, elapsedMs: out.elapsedMs };
       produced.push(spec.file);
+      if (spec.compose) {
+        const composed = await composeAtlasFromArtwork({ artworkBytes: out.bytes, manifest });
+        writeFileSync(join(OUT, "C-atlas-composed.png"), composed.bytes);
+        results[name].composed = {
+          file: "C-atlas-composed.png",
+          contract: composed.contract,
+          zones: composed.zonesComposed,
+          bytes: composed.bytes.length,
+          contentHash: sha(composed.bytes),
+        };
+        produced.push("C-atlas-composed.png");
+        log(`${name}: composed ${composed.zonesComposed} zones -> C-atlas-composed.png`);
+      }
     } catch (error) {
       log(`${name}: FAILED — ${error.message}`);
       results[name] = { ok: false, error: String(error.message).slice(0, 500) };
@@ -309,7 +361,7 @@ async function finish(supabase, manifestValue, produced) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const prefix = `designiq-ab/${stamp}`;
   const urls = {};
-  for (const file of [...produced, "requests.json", "A-control-commercial.prompt.txt", "A2-control-artboard.prompt.txt", "B-atlas-call1.prompt.txt"]) {
+  for (const file of [...produced, "requests.json", "A-control-commercial.prompt.txt", "A2-control-artboard.prompt.txt", "B-atlas-call1.prompt.txt", "C-artwork.prompt.txt"]) {
     try {
       const path = `${prefix}/${file}`;
       const body = readFileSync(join(OUT, file));
