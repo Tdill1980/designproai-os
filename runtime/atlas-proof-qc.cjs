@@ -618,8 +618,20 @@ function createAtlasProofValidator({
       };
     } catch (error) {
       const known = error instanceof AtlasProofQcError;
+      // AN ANALYZER FAILURE IS NOT A VERDICT. Everything that lands here is
+      // the inspector's own plumbing -- a provider 503 on every key, a
+      // truncated or non-JSON response, an image that could not be shipped to
+      // it -- while every real verdict returns through rejectionFor above,
+      // never a throw. Live proof, generation 9dd6d43c close-up attempt 2:
+      // "semantic QC failed on every key: gemini-2.5-flash:503 UNAVAILABLE"
+      // was counted as a rejection, spent the second of two regeneration
+      // budget slots, and the run died as semantic_review_required -- a state
+      // that asks a human to review a verdict no judge ever issued. The
+      // engine reads this flag and retries within the bounded attempt budget
+      // instead of convicting; the proof is still never accepted unjudged.
       return {
         accepted: false,
+        analyzerUnavailable: true,
         code: known ? error.code : "atlas_qc_analyzer_failed",
         reason: cleanText(known ? error.message : `A.T.L.A.S. proof inspector failed: ${error?.message || error}`, 500),
       };
