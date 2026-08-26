@@ -157,66 +157,67 @@ jobs:
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' EXPECT_CONTROL_HASH='$EXPECT_CONTROL_HASH' AB_PAYLOAD='$payload' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
-          release=/opt/designproai-os/current
-          test -d "$release" || { echo "no deployed release at $release — dark deploy first"; exit 40; }
-          test -f /opt/designproai-os/shared/runtime.env || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
+          env_file=/opt/designproai-os/shared/runtime.env
+          test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
 
-          # WHERE THE RELEASE KEEPS ITS DEPENDENCIES IS NOT A CONSTANT.
+          # THE RUNTIME'S DEPENDENCIES ARE NOT ON THE HOST.
           #
-          # calls-1-7-seam.yml asserts $release/runtime/node_modules/@supabase and
-          # exits 42 with the words "release dependencies missing" if it is not
-          # there — which says nothing about what IS there, so the first run of
-          # this workflow died on it with no way to tell whether the release was
-          # broken or merely laid out differently. Look in both plausible places,
-          # and when neither has them, print the layout instead of a verdict.
-          deps=""
-          for candidate in "$release/runtime/node_modules" "$release/node_modules"; do
-            if [ -d "$candidate/@supabase" ] && [ -d "$candidate/sharp" ]; then deps=$candidate; break; fi
-          done
-          if [ -z "$deps" ]; then
-            echo "no node_modules with @supabase and sharp under $release"
-            echo "--- $release"; ls -la "$release" || true
-            echo "--- $release/runtime"; ls -la "$release/runtime" 2>/dev/null | head -40 || true
-            for candidate in "$release/runtime/node_modules" "$release/node_modules"; do
-              echo "--- $candidate"; ls "$candidate" 2>/dev/null | head -20 || true
-            done
+          # ops/Dockerfile.runtime does `WORKDIR /app`, `npm ci --omit=dev`, then
+          # `COPY runtime/ ./`, so node_modules and every .cjs module live INSIDE
+          # the designproai-runtime image. The host release directory has the
+          # source tree and the compose file and no installed dependencies at
+          # all. The first attempt at this step copied calls-1-7-seam.yml's
+          # assertion on $release/runtime/node_modules/@supabase and died on it
+          # in two seconds — the assertion is wrong about where the runtime is,
+          # not about whether the release is healthy.
+          #
+          # So the harness runs in a throwaway container built from the EXACT
+          # image the live service runs, which is also what the A.T.L.A.S. half
+          # of this comparison has to be: the code that is actually deployed,
+          # never the checkout.
+          image=$(docker ps \
+            --filter label=com.docker.compose.project=designproai-os \
+            --format '{{.Image}}' | grep '^designproai-runtime:' | head -n1)
+          if [ -z "$image" ]; then
+            echo "no running designproai-runtime container to borrow the image from"
+            docker ps --format '{{.Names}}  {{.Image}}  {{.Status}}' || true
             exit 42
           fi
-          echo "release dependencies: $deps"
+          echo "runtime image: $image"
 
           work=$(mktemp -d /tmp/designpro-ab.XXXXXX)
           out="$work/ab-evidence"
-          mkdir -p "$out" "$work/runtime" "$work/scripts" "$work/control-build"
+          mkdir -p "$out" "$work/scripts" "$work/control-build"
           cleanup() { rm -rf "$work"; }
           trap cleanup EXIT
 
           printf '%s' "$AB_PAYLOAD" | base64 -d | tar -C "$work" -xz
-          # Borrow the DEPLOYED release's runtime modules and dependencies. The
-          # A.T.L.A.S. half of this comparison must be the code that is actually
-          # live, not the checkout.
-          ln -s "$deps" "$work/runtime/node_modules"
-          ln -s "$deps" "$work/node_modules"
-          for module in flat-first-atlas.cjs genie-universal-resolver.cjs flat-atlas-topology-examples.cjs \
-                        generation-provider.cjs designiq-prompt.cjs studio-os.cjs view-angles.cjs \
-                        atlas-cutout-fill.cjs atlas-master-qc.cjs photorealism-prompt.cjs \
-                        runtime-contract.cjs; do
-            [ -f "$release/runtime/$module" ] && ln -s "$release/runtime/$module" "$work/runtime/$module"
-          done
-          if [ -d "$release/runtime/atlas-examples" ]; then ln -s "$release/runtime/atlas-examples" "$work/runtime/atlas-examples"; fi
+          # Dangling on the host, correct inside the container: /app IS the
+          # deployed runtime, so `createRequire(cwd + "/runtime/")` in the
+          # harness resolves both the .cjs modules and node_modules from the
+          # live image.
+          ln -s /app "$work/runtime"
+          # The image runs as uid 10001, so the bind mount has to be writable by
+          # it or the evidence has nowhere to land.
+          chmod 0777 "$work" "$out"
 
-          set -a; . /opt/designproai-os/shared/runtime.env; set +a
           brief=$(printf '%s' "$AB_BRIEF_B64" | base64 -d)
 
-          cd "$work"
-          node scripts/designiq-ab-precision.mjs \
-            --out "$out" \
-            --control ./control-build/control-prompt.mjs \
-            --expect-control-hash "$EXPECT_CONTROL_HASH" \
-            --capture-only "$AB_CAPTURE_ONLY" \
-            --brief "$brief" \
-            --vehicle-year "$AB_YEAR" --vehicle-make "$AB_MAKE" \
-            --vehicle-model "$AB_MODEL" --vehicle-type "$AB_TYPE"
+          set +e
+          docker run --rm \
+            --env-file "$env_file" \
+            -v "$work:/work" -w /work \
+            --entrypoint node "$image" \
+            scripts/designiq-ab-precision.mjs \
+              --out /work/ab-evidence \
+              --control ./control-build/control-prompt.mjs \
+              --expect-control-hash "$EXPECT_CONTROL_HASH" \
+              --capture-only "$AB_CAPTURE_ONLY" \
+              --brief "$brief" \
+              --vehicle-year "$AB_YEAR" --vehicle-make "$AB_MAKE" \
+              --vehicle-model "$AB_MODEL" --vehicle-type "$AB_TYPE"
           status=$?
+          set -e
 
           echo "---AB-EVIDENCE-TAR---"
           tar -C "$out" -cz . | base64 -w0
