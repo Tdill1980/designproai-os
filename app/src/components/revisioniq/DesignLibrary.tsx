@@ -254,7 +254,9 @@ export function DesignLibrary({
           {loading && !entries
             ? "reading…"
             : `${visible.length} of ${counts.total} design${counts.total === 1 ? "" : "s"}`}
-          {entries && counts.total > 0 ? ` · ${counts.atlas} A.T.L.A.S. · ${counts.standard} Standard` : ""}
+          {/* No pipeline vocabulary here: which engine authored a design is
+              production-floor language, and this is the customer's shelf of
+              past designs. PanelPro carries the full technical record. */}
         </span>
         <Button
           size="sm"
@@ -301,7 +303,7 @@ export function DesignLibrary({
         </div>
         {externalPipeline === undefined && (
           <div className="flex items-center gap-1">
-            {([["all", "All"], ["atlas", "A.T.L.A.S."], ["standard", "Standard"]] as const).map(
+            {([["all", "All"], ["atlas", "Current"], ["standard", "Classic"]] as const).map(
               ([key, label]) => (
                 <button
                   key={key}
@@ -405,16 +407,10 @@ export function DesignLibrary({
                     </span>
                   </span>
                 )}
-                <span
-                  className={cn(
-                    "absolute left-2 top-2 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide backdrop-blur",
-                    entry.pipeline === "atlas"
-                      ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-200"
-                      : "border-zinc-500/50 bg-zinc-900/70 text-zinc-300",
-                  )}
-                >
-                  {entry.pipeline === "atlas" ? "A.T.L.A.S." : "Standard"}
-                </span>
+                {/* The pipeline badge is deliberately absent (owner,
+                    2026-08-26): a customer's past design is a design, not an
+                    engine name. The pipeline still filters internally and
+                    PanelPro shows the whole lineage. */}
                 {/* The version the design stands at, where the studio's own
                     cards put it. A Standard run has no A.T.L.A.S. revision to
                     number, so it carries no badge rather than a fake V1. */}
@@ -458,24 +454,9 @@ export function DesignLibrary({
                 {/* The identities a designer quotes on the phone. Small, but
                     never hidden behind a hover: a Design ID you cannot read is
                     a Design ID you cannot give anyone. */}
-                <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
-                  <dt className="text-zinc-500">Design ID</dt>
-                  <dd className="truncate font-mono text-zinc-300">{entry.designId}</dd>
-                  <dt className="text-zinc-500">Generation</dt>
-                  <dd className="truncate font-mono text-zinc-400" title={entry.generationId}>
-                    {entry.generationId.slice(0, 8)}…
-                  </dd>
-                  <dt className="text-zinc-500">Vehicle</dt>
-                  <dd className="truncate text-zinc-400" title={vehicleLine(entry)}>
-                    {String(entry.vehicle?.type || "").trim() || "—"}
-                  </dd>
-                  {entry.production?.orderNumber ? (
-                    <>
-                      <dt className="text-zinc-500">Order</dt>
-                      <dd className="truncate font-mono text-zinc-300">{entry.production.orderNumber}</dd>
-                    </>
-                  ) : null}
-                </dl>
+                {/* No identity facts on the customer card (owner, 2026-08-26):
+                    Design ID, generation and order number are the production
+                    record, shown in PanelPro Studio. The card is the design. */}
 
                 <div className="mt-auto flex gap-1.5 pt-2.5">
                   <Button
@@ -492,13 +473,9 @@ export function DesignLibrary({
                     variant="outline"
                     className="h-8 border-fuchsia-500/40 bg-fuchsia-500/5 text-[11px] font-semibold text-fuchsia-200 hover:bg-fuchsia-500/10"
                   >
-                    <Link
-                      to={`/designpro/jobs/${encodeURIComponent(entry.generationId)}/panelpro`}
-                      title="Open in PanelPro Studio"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      PanelPro
-                    </Link>
+                  {/* The PanelPro link left the customer card with the rest
+                      of the production identity; staff reach it from the
+                      Production jobs cards. */}
                   </Button>
                 </div>
               </div>

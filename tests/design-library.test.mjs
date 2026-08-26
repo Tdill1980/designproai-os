@@ -164,9 +164,13 @@ test("the library filters by name, id, vehicle, pipeline and status", () => {
   assert.match(library, /statusOf\(entry\) !== status\) return false/);
 });
 
-/** Browse, then open — in the studio, and through to PanelPro. */
-test("the library opens a design in the studio and in PanelPro", () => {
-  assert.match(library, /\/designpro\/jobs\/\$\{encodeURIComponent\(entry\.generationId\)\}\/panelpro/);
+/** Browse, then open. The PanelPro link left the customer card with the rest
+ * of the production identity (owner, 2026-08-26); staff reach the control room
+ * from the Production jobs cards. */
+test("the library opens a design in the studio and carries no production identity", () => {
+  assert.ok(!library.includes("/panelpro"), "no PanelPro link on the customer card");
+  assert.ok(!/Design ID|Order\b.*number/i.test(library.replace(/\/\*[^]*?\*\/|^\s*\/\/.*$/gm, "")),
+    "no identity facts on the customer card");
   assert.match(library, /onOpen\?\.\(entry\.generationId\)/);
   // One mount, and it is the ONLY browse grid on the page now -- the
   // vehicle-grouped feed it replaced no longer renders.
@@ -205,8 +209,15 @@ test("the studio's header filter offers the two answers that exist", () => {
       `the header must not offer ${ghost}: this OS holds no such row`,
     );
   }
-  assert.match(studio, /<SelectItem value="atlas">A\.T\.L\.A\.S\.<\/SelectItem>/);
-  assert.match(studio, /<SelectItem value="standard">Standard<\/SelectItem>/);
+  // Neutral customer wording (owner, 2026-08-26): the engine's name never
+  // appears on the customer surface. The values stay the internal keys.
+  assert.match(studio, /<SelectItem value="atlas">Current designs<\/SelectItem>/);
+  assert.match(studio, /<SelectItem value="standard">Classic designs<\/SelectItem>/);
+  for (const surface of ["../app/src/components/revisioniq/DesignLibrary.tsx"]) void surface;
+  assert.ok(
+    !/A\.T\.L\.A\.S\./.test(library.replace(/\/\*[^]*?\*\/|^\s*\/\/.*$/gm, "")),
+    "the library renders no A.T.L.A.S. vocabulary to the customer",
+  );
   // GalleryMode reads the same filter, so the two surfaces cannot disagree...
   assert.match(
     studio,

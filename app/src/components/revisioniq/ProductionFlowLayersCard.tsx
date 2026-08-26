@@ -605,19 +605,16 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-bold capitalize text-zinc-300">{p.side}</span>
                 <span className="inline-flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500">
-                    {p.version}
-                    {w && h ? ` · trim ${w}″ × ${h}″` : ""}
-                    {printW && printH ? ` · print ${printW}″ × ${printH}″` : ""}
-                    {bleedIn ? ` · ${bleedIn}″ bleed` : ""}
-                  </span>
+                  {/* RestylePro's tile is the spec (owner, 2026-08-26): an
+                      image and a short label. Trim/print/bleed arithmetic is
+                      the production record and lives in PanelPro Studio. */}
+                  <span className="text-[10px] text-zinc-500">{p.version}</span>
                 </span>
               </div>
-              {masterHash && (
-                <div className="mb-2 font-mono text-[9px] text-zinc-600" title="A.T.L.A.S. master this panel and its proof were both cut from">
-                  master {masterHash.slice(0, 16)}
-                </div>
-              )}
+              {/* The lineage hash is deliberately not rendered here (owner,
+                  2026-08-26): it is the production record, and PanelPro Studio
+                  shows it beside everything else it binds. The binding itself
+                  still travels with the artifacts. */}
               {/* REAL DESIGN PROOF ∥ PRINT PANEL — proof LEFT, panel RIGHT.
                   RULE 0.21 states the row in those words: "Left is that
                   surface's 3D proof. Right is the deterministic A.T.L.A.S.

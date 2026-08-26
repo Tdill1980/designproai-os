@@ -54,7 +54,7 @@ import {
   type RenderElementSeparatorHandle,
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
-import { DesignVersionRecordCard } from "@/components/revisioniq/DesignVersionRecordCard";
+// DesignVersionRecordCard is intentionally not mounted: production identity lives in PanelPro.
 import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
 import { dpApi } from "@/lib/designpro-api";
@@ -3596,7 +3596,7 @@ export default function RevisionStudioIQ() {
     onSuccess: (updatedRender) => {
       queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
       queryClient.invalidateQueries({ queryKey: ["version-chain"] });
-      toast.success("Revision submitted — A.T.L.A.S. is authoring it. The previous version is preserved.");
+      toast.success("Revision submitted — your new version is being designed. The previous version is preserved.");
       setSelectedRender(updatedRender);
       // Stay on the revised view so user sees the edit (don't reset to 0)
       const newViews = getViews(updatedRender);
@@ -3956,7 +3956,7 @@ export default function RevisionStudioIQ() {
         change: { type: "generate", viewKeys: ["passenger-side"] },
       });
       toast.success(
-        "Passenger side re-queued on the server. A.T.L.A.S. cuts it from the same master as the driver, so it is the driver's twin by construction.",
+        "Passenger side re-queued on the server. It is cut from the same design source as the driver, so it is the driver's twin by construction.",
         { duration: 10000 },
       );
       queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
@@ -4460,8 +4460,10 @@ export default function RevisionStudioIQ() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Designs</SelectItem>
-              <SelectItem value="atlas">A.T.L.A.S.</SelectItem>
-              <SelectItem value="standard">Standard</SelectItem>
+              {/* Neutral customer wording. The values stay the internal
+                  pipeline keys; the engine's name stays in PanelPro. */}
+              <SelectItem value="atlas">Current designs</SelectItem>
+              <SelectItem value="standard">Classic designs</SelectItem>
             </SelectContent>
           </Select>
 
@@ -5993,10 +5995,11 @@ export default function RevisionStudioIQ() {
                     A.T.L.A.S. generation id, because that is the internal
                     control room where the authority everything descends from is
                     inspected. This surface is review / revise / approve / buy. */}
-                <DesignVersionRecordCard
-                  generationId={productionLayersId}
-                  orderNumber={orderNumberFor(selectedRender)}
-                />
+                {/* The version record card (Generation ID / Design ID / order number)
+                    was unmounted by owner directive (2026-08-26): those are
+                    production identities, and they live in PanelPro Studio
+                    with the rest of the technical record. RestylePro's studio
+                    -- the spec -- never showed them to the customer. */}
 
                 <ProductionFlowLayersCard
                   // A panelizer-sourced card's `id` was a job id —
