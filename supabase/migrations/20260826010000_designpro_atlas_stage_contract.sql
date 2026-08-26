@@ -27,7 +27,19 @@
 -- faithfully rendering an empty run, because the back half had not produced a
 -- single artifact in a week.
 --
--- THE TWO CONTRADICTIONS, BOTH CLOSED HERE.
+-- THE FOUR CONTRADICTIONS, ALL CLOSED HERE. They are one class of defect, and
+-- they were found by tracing the whole free half rather than one stage at a
+-- time -- because closing only the first moves the death one stage down and
+-- burns another end-to-end run to discover the next.
+--
+-- 3 and 4 live in finalize_designpro_entice_identity and are patched at the
+-- bottom of this file: it demanded a bound GENIE manifest, and a
+-- call8.flat-proof receipt, before a free A.T.L.A.S. run could finalize its own
+-- preview identity. The first is post-purchase production geometry being
+-- required inside the free half, which RULE 0.19 forbids; the second is the
+-- deferral defect again, one stage further along.
+--
+-- THE FIRST TWO:
 --
 -- 1. proof.build. The runtime records a Call 8 failure as a DEFERRAL and
 --    continues, because A.T.L.A.S. is the production authority: the six panels
@@ -311,3 +323,80 @@ END
 $migration$;
 
 GRANT EXECUTE ON FUNCTION public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb) TO service_role;
+
+
+-- THE FREE HALF FINALIZES ITS OWN IDENTITY, AND PRODUCTION GEOMETRY STAYS PAID.
+--
+-- Two more contradictions of the same class as the ones above, found by tracing
+-- the whole free half rather than one stage at a time. Both are patched in
+-- place for the same reason: restating a function silently reverts whatever
+-- earlier migrations patched into it.
+DO $migration$
+DECLARE
+  v_definition text;
+  v_fragment text;
+  v_replacement text;
+  v_index integer;
+  v_target text;
+  v_targets text[]:=ARRAY[
+    'public.finalize_designpro_entice_identity(uuid,uuid,uuid,text,text,jsonb)',
+    'public.finalize_designpro_entice_identity(uuid,uuid,uuid,text,text,jsonb)',
+    'public.bind_designpro_dimension_manifest(uuid,uuid,uuid,uuid,jsonb,text,text)'
+  ];
+  v_pairs text[][]:=ARRAY[
+    ARRAY[$frag$  IF NOT FOUND OR v_run.dimension_manifest_id IS NULL OR v_run.manifest_hash IS NULL THEN RAISE EXCEPTION 'manifest_identity_not_bound'; END IF;$frag$,$frag$  -- THE FREE HALF HAS NO GENIE MANIFEST, AND MUST NOT.
+  --
+  -- manifest.resolve lives after the purchase gate (RULE 0.19), so an
+  -- A.T.L.A.S. entice run reaches here with dimension_manifest_id and
+  -- manifest_hash NULL by design. Demanding them was post-purchase production
+  -- geometry being required inside the free half: the run had already produced
+  -- its master, its six panels and its seven proofs, and still could not
+  -- finalize its own preview identity.
+  --
+  -- The A.T.L.A.S. run is not exempted from having an identity -- it is held to
+  -- the one that exists at this phase. workflow_run_is_atlas proves the frozen
+  -- snapshot carries six canonical Call 1 panels AND that an accepted master
+  -- with passing QC stands behind them. A non-A.T.L.A.S. run still requires the
+  -- bound manifest exactly as before.
+  IF NOT FOUND THEN RAISE EXCEPTION 'manifest_identity_not_bound'; END IF;
+  IF (v_run.dimension_manifest_id IS NULL OR v_run.manifest_hash IS NULL)
+    AND NOT designpro_private.workflow_run_is_atlas(p_run_id)
+  THEN RAISE EXCEPTION 'manifest_identity_not_bound'; END IF;$frag$],
+    ARRAY[$frag$    OR NOT EXISTS(SELECT 1 FROM public.designpro_stage_receipts WHERE run_id=p_run_id AND receipt_kind='call8.flat-proof')$frag$,$frag$    -- Call 8 is either a built proof or a recorded deferral. Requiring only
+    -- the proof kind killed a deferred A.T.L.A.S. run here, one stage past
+    -- where the same defect killed proof.build. A deferral is still a receipt:
+    -- it names the failure and it is only accepted on an A.T.L.A.S. run.
+    OR NOT EXISTS(SELECT 1 FROM public.designpro_stage_receipts
+      WHERE run_id=p_run_id AND (receipt_kind='call8.flat-proof'
+        OR (receipt_kind='call8.flat-proof-deferred'
+          AND designpro_private.workflow_run_is_atlas(p_run_id))))$frag$],
+    ARRAY[$frag$    OR COALESCE((p_manifest->>'genieVerified')::boolean,false) IS DISTINCT FROM true$frag$,$frag$    OR COALESCE((p_manifest->>'genieVerified')::boolean,false) IS DISTINCT FROM true
+    -- DESIGN-TIME GEOMETRY MAY NEVER BECOME PRODUCTION GEOMETRY.
+    -- genieVerified already refused it, but only incidentally -- the design-time
+    -- manifest happens to carry false. These two say it outright, so a
+    -- calls-1-7-layout-only sheet can never be bound as the authority Calls 9+
+    -- cut and verify against, however it is relabelled.
+    OR p_manifest->>'contract' IS DISTINCT FROM 'designpro.genie-dimension-manifest.v1'
+    OR p_manifest->>'geometryPurpose' IS NOT DISTINCT FROM 'calls-1-7-layout-only'$frag$]
+  ];
+BEGIN
+  FOR v_index IN 1..pg_catalog.array_length(v_pairs,1) LOOP
+    v_target:=v_targets[v_index];
+    SELECT pg_catalog.pg_get_functiondef(v_target::pg_catalog.regprocedure)
+    INTO v_definition;
+    v_fragment:=v_pairs[v_index][1];
+    v_replacement:=v_pairs[v_index][2];
+    IF (
+      pg_catalog.length(v_definition)-pg_catalog.length(
+        pg_catalog.replace(v_definition,v_fragment,'')
+      )
+    )/pg_catalog.length(v_fragment)<>1 THEN
+      RAISE EXCEPTION 'designpro_atlas_free_half_fragment_not_unique: %',v_index;
+    END IF;
+    EXECUTE pg_catalog.replace(v_definition,v_fragment,v_replacement);
+  END LOOP;
+END
+$migration$;
+
+GRANT EXECUTE ON FUNCTION public.finalize_designpro_entice_identity(uuid,uuid,uuid,text,text,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.bind_designpro_dimension_manifest(uuid,uuid,uuid,uuid,jsonb,text,text) TO service_role;

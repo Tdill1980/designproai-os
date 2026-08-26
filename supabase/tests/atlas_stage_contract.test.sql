@@ -7,7 +7,7 @@
 -- either half's source said so.
 
 begin;
-select plan(20);
+select plan(27);
 
 select has_function(
   'designpro_private','workflow_run_is_atlas',
@@ -438,6 +438,87 @@ select ok(
     )
   )>0,
   'pack.verify still requires the finalized entice identity'
+);
+
+
+-- 3 + 4. THE PHASE BOUNDARY. Design-time geometry establishes and extracts the
+--        surfaces; GENIE post-purchase geometry is the production authority,
+--        and nothing may blur the two.
+select throws_ok($$
+  select public.bind_designpro_dimension_manifest(
+    '47000000-0000-4000-8000-000000000001',
+    '5b000000-0000-4000-8000-000000000001',
+    '5c000000-0000-4000-8000-000000000001',
+    '80000000-0000-4000-8000-000000000001',
+    jsonb_build_object(
+      'contract','designpro.design-time-dimension-manifest.v1',
+      'genieVerified',false,'geometryPurpose','calls-1-7-layout-only',
+      'dimensionBasisHash',repeat('3',64),'totalSqFt',417.6,
+      'expectedSurfaces',(select jsonb_agg(jsonb_build_object(
+        'surfaceKey',c->>'surfaceKey','widthInches',196.9,'heightInches',50.9,
+        'bleed',jsonb_build_object('top',5,'right',5,'bottom',5,'left',5),
+        'surfaceSqFt',69.6))
+        from atlas_panels, lateral jsonb_array_elements(panels) c)),
+    null,repeat('3',64))
+$$,'genie_manifest_contract_invalid',
+  'design-time calls-1-7-layout-only geometry can never bind as production geometry');
+
+select throws_ok($$
+  select public.bind_designpro_dimension_manifest(
+    '47000000-0000-4000-8000-000000000001',
+    '5b000000-0000-4000-8000-000000000001',
+    '5c000000-0000-4000-8000-000000000001',
+    '80000000-0000-4000-8000-000000000001',
+    jsonb_build_object(
+      'contract','designpro.genie-dimension-manifest.v1',
+      'genieVerified',true,'geometryPurpose','calls-1-7-layout-only',
+      'dimensionBasisHash',repeat('3',64),'totalSqFt',417.6,
+      'expectedSurfaces',(select jsonb_agg(jsonb_build_object(
+        'surfaceKey',c->>'surfaceKey','widthInches',196.9,'heightInches',50.9,
+        'bleed',jsonb_build_object('top',5,'right',5,'bottom',5,'left',5),
+        'surfaceSqFt',69.6))
+        from atlas_panels, lateral jsonb_array_elements(panels) c)),
+    null,repeat('3',64))
+$$,'genie_manifest_contract_invalid',
+  'relabelling design-time geometry as GENIE-verified does not make it production geometry');
+
+-- ...and a free A.T.L.A.S. run finalizes its own preview identity WITHOUT one,
+--    which is the state RULE 0.19 requires it to be in.
+select is(
+  (select dimension_manifest_id is null and manifest_hash is null
+   from public.designpro_workflow_runs
+   where id='47000000-0000-4000-8000-000000000001'),
+  true,'the free A.T.L.A.S. run carries no GENIE manifest, as RULE 0.19 requires'
+);
+select ok(
+  position('workflow_run_is_atlas' in pg_get_functiondef(
+    'public.finalize_designpro_entice_identity(uuid,uuid,uuid,text,text,jsonb)'
+      ::regprocedure
+  ))>0,
+  'the free-half identity gate admits an A.T.L.A.S. run with no bound manifest'
+);
+select ok(
+  position('call8.flat-proof-deferred' in pg_get_functiondef(
+    'public.finalize_designpro_entice_identity(uuid,uuid,uuid,text,text,jsonb)'
+      ::regprocedure
+  ))>0,
+  'a recorded Call 8 deferral satisfies the pack identity, on A.T.L.A.S. only'
+);
+
+-- 8. The exception is bounded to the stages the A.T.L.A.S. design handoff
+--    needs, and cannot become a generic bypass: every paid stage after the
+--    purchase gate still faces its own contract.
+select ok(
+  position('output_artifact_ledger_mismatch' in pg_get_functiondef(
+    'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure
+  ))>0,
+  'output.verify still reconciles its artifact ledger'
+);
+select ok(
+  position('exact_zip_and_wrapbox_manifest_required' in pg_get_functiondef(
+    'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure
+  ))>0,
+  'wrapbox.deliver still requires the exact ZIP and manifest'
 );
 
 select * from finish();

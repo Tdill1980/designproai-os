@@ -57,7 +57,10 @@ const STAGES = Object.freeze([
   "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver",
 ]);
 const RECEIPTS = Object.freeze([
-  "views.seven-source", "call8.flat-proof", "call9.surface-panels", "call10.logo-inventory",
+  // A deferred Call 8 is its own kind and never "call8.flat-proof", so no later
+  // reader can mistake a recorded failure for a proof that was built.
+  "views.seven-source", "call8.flat-proof", "call8.flat-proof-deferred",
+  "call9.surface-panels", "call10.logo-inventory",
   "call11.qc-panels",
   "call12.topaz-upscale", "output.verified", "final.human-qc", "stamp", "zip", "wrapbox.delivery",
 ]);
@@ -1216,11 +1219,26 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
   }
   if (stage.stage_key === "pack.verify") {
     const views = await receipt(sb, run.id, "views.seven-source");
-    const call8 = await receipt(sb, run.id, "call8.flat-proof");
+    // Call 8 is either a built proof or a recorded deferral, and the pack's
+    // identity binds whichever actually happened. Asking only for the proof
+    // kind made a deferred A.T.L.A.S. run die here on receipt_missing --
+    // the same class of defect as proof.build's, one stage further along.
+    const call8 = await receipt(sb, run.id, "call8.flat-proof")
+      .catch(() => receipt(sb, run.id, "call8.flat-proof-deferred"));
     const call9 = await receipt(sb, run.id, "call9.surface-panels");
     const call10 = await receipt(sb, run.id, "call10.logo-inventory");
+    const call8Deferred = call8.receipt?.deferred === true;
     const sourceContract = { revisionSnapshotHash: run.revision_snapshot_hash, manifestHash: run.manifest_hash, views: views.receipt_hash, call8: call8.receipt_hash, call9: call9.receipt_hash, call10: call10.receipt_hash };
-    const packReceipt = { verified: true, exactCallSet: [8, 9, 10], sevenViewsVerified: true, sourceContract };
+    const packReceipt = {
+      verified: true, exactCallSet: [8, 9, 10], sevenViewsVerified: true, sourceContract,
+      // Stated, so the pack's own record says whether the 2D Production Proof
+      // exists rather than leaving a later reader to infer it from a hash.
+      ...(call8Deferred ? {
+        call8Deferred: true,
+        productionAuthority: "atlas-master",
+        call8Failure: call8.receipt?.failure || null,
+      } : {}),
+    };
     const { data, error } = await sb.rpc("finalize_designpro_entice_identity", { p_run_id: run.id, p_stage_id: stage.id, p_lease_token: stage.lease_token, p_source_contract_hash: null, p_artifact_set_hash: null, p_pack_receipt: packReceipt });
     if (error) throw new StageError("pack_identity_finalize_failed", error.message, false);
     return complete(sb, stage, await getRun(sb, run.id), { verified: true, ...packReceipt, ...data });
