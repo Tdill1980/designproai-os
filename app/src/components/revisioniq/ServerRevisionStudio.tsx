@@ -443,6 +443,17 @@ function StudioWorkspace({
             <Button asChild variant="outline" className="w-full border-fuchsia-500/30 bg-fuchsia-500/5 text-fuchsia-200 hover:bg-fuchsia-500/10">
               <Link to={`/designpro/jobs/${generationId}/panelpro`}>Open PanelPro Studio board</Link>
             </Button>
+            {/* THE PRODUCT EDITOR, FROM THE JOB'S STATUS VIEW.
+                This page is the server-artifact view of a job; RevisionStudioIQ
+                is where the design is actually revised. It had no route from
+                here, so an operator looking at a finished generation had no way
+                through to the surface that changes it -- they had to know the
+                URL. Same generation, same lineage, opened by id. */}
+            <Button asChild variant="outline" className="w-full border-blue-500/30 bg-blue-500/5 text-blue-200 hover:bg-blue-500/10">
+              <Link to={`/revision-studio?id=${encodeURIComponent(generationId)}`}>
+                Open in RevisionStudioIQ
+              </Link>
+            </Button>
           </div>
         )}
 

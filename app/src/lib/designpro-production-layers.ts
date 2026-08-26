@@ -30,6 +30,8 @@ import {
   dpApi,
   SOURCE_VIEW_TYPE_FOR_ROLE,
   type ApprovedGenerationView,
+  type FlatAtlasCallOnePanel,
+  type FlatAtlasRevision,
   type WorkflowArtifact,
   type WorkflowStatus,
 } from "@/lib/designpro-api";
@@ -308,14 +310,151 @@ export function toProductionLayers(input: {
   };
 }
 
-/** Fetch one run's production layers through the gateway. */
+/**
+ * THE ENTICE SET: THE SIX PANELS CALL 1 ALREADY CUT.
+ *
+ * `toProductionLayers` above reads the Call 9 artifacts, and Call 9 lives after
+ * `await_purchase` -- so for every A.T.L.A.S. run nobody has ordered yet, which
+ * is the state the whole product entices from, it correctly returns null and
+ * the customer's right column was empty. That is not what the pipeline
+ * produced: RULE 0.21 says the accepted master fans out immediately, and Call 1
+ * has already cut all six panels at the design-time size with the 5" bleed in
+ * the layout, hashed and bound to the master.
+ *
+ * So this is the same card, filled from the panels that exist now. Nothing is
+ * generated, nothing is re-cut, and nothing is invented: every number below --
+ * the trim inches, the print inches, the bleed, the square footage, the
+ * effective PPI, the master hash -- was stamped by `cutCallOnePanels` at
+ * authoring time and validated by the gateway before it was signed.
+ *
+ * WHAT IT DELIBERATELY DOES NOT CLAIM. There is no clean panel, because Call 11
+ * has not run; each side records that as a reasoned separation gap, which is the
+ * shape the card already knows how to display and the same one a genuinely
+ * refused separation uses. There is no 2D production proof, because Call 8 has
+ * not run either. And the pack identity is the MASTER, not a proof -- these
+ * panels are bound to the design authority they were cut from, which is
+ * precisely the binding PanelPro pairs a panel with its proof by.
+ */
+export function toAtlasEnticeLayers(input: {
+  revision: FlatAtlasRevision;
+  approvedViews: readonly ApprovedGenerationView[];
+  createdAt: string;
+}): ProductionLayers | null {
+  const masterHash = String(input.revision?.master?.contentHash || "").toLowerCase();
+  const identity = packIdentity(masterHash);
+  if (!identity) return null;
+  const panels = new Map<string, FlatAtlasCallOnePanel>();
+  for (const panel of input.revision.callOnePanels || []) {
+    const surface = String(panel?.surfaceKey || "");
+    if (SIDE_LABEL_FOR_SURFACE[surface] && !panels.has(surface)) panels.set(surface, panel);
+  }
+  // Six sides or nothing. Five panels shown as a set is how a customer finds
+  // the sixth at print time.
+  if (SURFACE_ORDER.some((surface) => !panels.has(surface))) return null;
+
+  const designViews: Record<string, string> = {};
+  for (const view of input.approvedViews) {
+    const viewType = String(view.sourceViewType || SOURCE_VIEW_TYPE_FOR_ROLE[view.surfaceKey as never] || "");
+    if (viewType && view.signedUrl) designViews[viewType] = view.signedUrl;
+  }
+
+  const expectedSides = SURFACE_ORDER.map((surface) => SIDE_LABEL_FOR_SURFACE[surface]);
+  // Not a signed URL, for the same reason the proof binding is not: a signature
+  // expires in five minutes and every row stamped with one would read as stale
+  // against the next read of the same sheet. The master's content hash changes
+  // exactly when the design does, which is the staleness worth detecting.
+  const masterBinding = `designpro://atlas-master/${identity.sourceHash}`;
+
+  const rows = SURFACE_ORDER.map((surface) => {
+    const panel = panels.get(surface)!;
+    return {
+      id: `${input.revision.id}:${surface}`,
+      entice_pack_id: identity.sourceHash,
+      revision_id: input.revision.id,
+      side: SIDE_LABEL_FOR_SURFACE[surface],
+      version: identity.version,
+      dimensions_inches: {
+        w: panel.trimWidthIn,
+        h: panel.trimHeightIn,
+        print_w: panel.printWidthIn,
+        print_h: panel.printHeightIn,
+        bleed: panel.bleedInches,
+        sq_ft: panel.surfaceSqFt,
+        ppi: panel.effectivePpi,
+      },
+      // Call 11 produces the de-logoed duplicate and has not run. Reported as
+      // the reasoned gap it is, never as a clean panel this design does not
+      // have -- the branded panel the customer is owed is unaffected.
+      background_url: "",
+      branding_url: panel.signedUrl || "",
+      depth_mask_url: null,
+      final_pack_url: null,
+      meta_metrics: {
+        // Design-time geometry, marked as such by Call 1 itself. GENIE resolves
+        // the validated production dimensions after purchase, so claiming
+        // production eligibility here would be claiming a measurement nobody
+        // has taken.
+        production_eligible: false,
+        pack_version: identity.version,
+        source_hash: identity.sourceHash,
+        source_master_hash: String(panel.sourceMasterHash || identity.sourceHash),
+        source_proof_url: masterBinding,
+        expected_sides: expectedSides,
+        logo_pack: [],
+        qc: { known: true, pass: true },
+        separation_qc: {
+          known: true,
+          pass: false,
+          reason: "Call 11 has not run yet — the de-logoed duplicate is produced after purchase",
+        },
+      },
+      created_at: input.createdAt,
+    } satisfies ProductionFlowAssetRow;
+  });
+
+  return {
+    rows,
+    designViews,
+    // Call 8 has not run, so there is no 2D production proof to show above the
+    // panels. Absent, never a stand-in.
+    proofUrl: null,
+    proofBinding: masterBinding,
+    logoPack: [],
+    // The design authority these six were cut from. It is not an activated
+    // production pack and must not read as one, so it is published as the
+    // preview binding it is and the card's own verification gate decides the
+    // rest.
+    activePack: null,
+  };
+}
+
+/**
+ * Fetch one design's production layers through the gateway.
+ *
+ * Call 9's branded set when it exists, and the Call-1 entice set before then.
+ * Never both, and never a merge of the two: after purchase the branded panels
+ * are the production artwork and the design-time cut is history.
+ */
 export async function loadProductionLayers(generationId: string): Promise<ProductionLayers | null> {
   const [status, artifacts] = await Promise.all([
     dpApi.getStatus(generationId) as Promise<WorkflowStatus>,
-    dpApi.listArtifacts(generationId),
+    dpApi.listArtifacts(generationId).catch(() => [] as WorkflowArtifact[]),
   ]);
-  const call9 = status.stages.find((stage) => stage.key === "panels.build");
-  if (!call9 || call9.state !== "complete") return null;
   const approvedViews = await dpApi.listApprovedViews(generationId).catch(() => []);
-  return toProductionLayers({ artifacts, approvedViews, createdAt: new Date().toISOString() });
+  const call9 = status.stages.find((stage) => stage.key === "panels.build");
+  if (call9 && call9.state === "complete") {
+    const built = toProductionLayers({
+      artifacts, approvedViews, createdAt: new Date().toISOString(),
+    });
+    if (built) return built;
+  }
+  // Before manufacturing: the panels A.T.L.A.S. Call 1 cut from the accepted
+  // master. The newest revision is the design as it stands now.
+  const revisions = await dpApi.listJobFlatAtlasRevisions(generationId)
+    .catch(() => [] as FlatAtlasRevision[]);
+  const newest = revisions.length ? revisions[revisions.length - 1] : null;
+  if (!newest) return null;
+  return toAtlasEnticeLayers({
+    revision: newest, approvedViews, createdAt: new Date().toISOString(),
+  });
 }

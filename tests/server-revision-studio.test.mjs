@@ -611,3 +611,83 @@ test("the panel shows its trim and its bleed without producing a second file", (
   assert.doesNotMatch(board, /toDataURL|createElement\("canvas"\)|toBlob/,
     "the board must never author panel pixels in the browser");
 });
+
+// ---------------------------------------------------------------------------
+// REVISIONSTUDIOIQ OPENS ON A GENERATION, AND SHOWS WHAT THAT GENERATION HAS
+// ---------------------------------------------------------------------------
+
+const revisionStudio = readFileSync(
+  new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url),
+  "utf8",
+);
+const lineageCard = readFileSync(
+  new URL("../app/src/components/revisioniq/AtlasLineageCard.tsx", import.meta.url),
+  "utf8",
+);
+const panelProBoard = readFileSync(
+  new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url),
+  "utf8",
+);
+
+/**
+ * A DEEP LINK RESOLVES AGAINST THE SERVER, NOT AGAINST ONE PAGE OF A FEED.
+ *
+ * `?id=` used to match only rows already fetched into the caller's own grid,
+ * after the grid's "a card needs an image" rule had filtered it. So three
+ * ordinary situations opened a blank studio on a design that exists: a design
+ * past the first page, a design whose proofs are still rendering, and -- the
+ * one that was actually reported -- a design-team member following a link to a
+ * customer's job, which is never in their feed at all.
+ */
+test("a RevisionStudio deep link opens a design the feed cannot answer for", () => {
+  assert.match(revisionStudio, /readRevisionStudioDesign\(deepLinkId\)/);
+  // The feed match stays first: when the row is in hand it is the same object
+  // the grid renders, and reusing it keeps selection and list in sync.
+  assert.match(revisionStudio, /const found = renders\.find/);
+  // One fetch per id, never a loop.
+  assert.match(revisionStudio, /deepLinkFetchedRef\.current === deepLinkId/);
+  // An id this account cannot open is answered, never left spinning.
+  assert.match(revisionStudio, /setDeepLinkMissing\(true\)/);
+  assert.match(revisionStudio, /That design could not be opened/);
+});
+
+/**
+ * The design authority belongs in the surface the design is revised from. Every
+ * version stays inspectable -- a new one never replaces the one before it.
+ */
+test("RevisionStudio shows the A.T.L.A.S. master and every version of it", () => {
+  assert.match(revisionStudio, /import \{ AtlasLineageCard \}/);
+  assert.match(revisionStudio, /<AtlasLineageCard generationId=\{productionLayersId\} \/>/);
+
+  // One canonical history, the same one PanelPro reads. No second numbering
+  // and no prompt store of its own.
+  assert.match(lineageCard, /loadDesignVersionHistory/);
+  assert.ok(!lineageCard.includes("design_version_commits"));
+  assert.ok(!lineageCard.includes("supabase.from"));
+
+  // Every version, never only the newest.
+  assert.match(lineageCard, /versions\.map\(\(version\) => \{/);
+  assert.match(lineageCard, /Flattened A\.T\.L\.A\.S\. master/);
+  assert.match(lineageCard, /selected\.masterContentHash/);
+  assert.match(lineageCard, /exactTimestamp\(selected\.createdAt\)/);
+  // The customer's own words, labelled for which kind they are: reading the
+  // original brief as a revision instruction is how a design gets rebuilt
+  // against text nobody typed.
+  assert.match(lineageCard, /promptKind === "original-brief"/);
+  assert.match(lineageCard, /Original customer brief/);
+  // Not a producer. Selecting a version changes what is displayed, nothing else.
+  for (const producer of ["Pull panel", "Mirror from driver", "regenerate", "generate("]) {
+    assert.ok(!lineageCard.includes(producer), `the lineage card must not offer ${producer}`);
+  }
+});
+
+/**
+ * RULE 0.21: two parallel consumers of one lineage, never two workflows. Each
+ * has to be reachable from the other on the same generation id, or a reviewer
+ * who finds a problem on the board has no route to the surface that fixes it.
+ */
+test("RevisionStudio and PanelPro reach each other on the same generation", () => {
+  assert.match(panelProBoard, /\/revision-studio\?id=\$\{encodeURIComponent\(generationId\)\}/);
+  assert.match(studio, /\/revision-studio\?id=\$\{encodeURIComponent\(generationId\)\}/);
+  assert.match(lineageCard, /\/designpro\/jobs\/\$\{encodeURIComponent\(id\)\}\/panelpro/);
+});

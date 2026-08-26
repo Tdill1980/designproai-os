@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered fifty-five-migration chain', () => {
-  assert.equal(migrationNames.length, 55);
+test('fresh bootstrap contains one ordered fifty-six-migration chain', () => {
+  assert.equal(migrationNames.length, 56);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -116,6 +116,11 @@ test('fresh bootstrap contains one ordered fifty-five-migration chain', () => {
       // the stage logic emitted it and the CHECK refused it, so the insert died
       // before any later assertion could run.
       '20260826010100',
+      // RevisionStudioIQ's own read: the generation-keyed workspace, the six
+      // Call-1 panels published through the atlas path, and the design team's
+      // existing QC membership extended from the request row to the rest of
+      // one design's record.
+      '20260826020000',
     ],
   );
 });

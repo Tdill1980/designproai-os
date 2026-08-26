@@ -38,6 +38,33 @@ async function accessToken(): Promise<string | null> {
   }
 }
 
+/**
+ * Some reads carry a verdict in a header rather than in the body, because the
+ * body is a list and the verdict is about why the list is the length it is. An
+ * empty proof set means one of two very different things -- still rendering, or
+ * withheld because the server superseded it -- and a surface that cannot tell
+ * them apart shows a spinner forever.
+ */
+async function requestWithHeaders<T>(
+  path: string, init?: RequestInit,
+): Promise<{ payload: T; headers: Headers }> {
+  const token = await accessToken();
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers || {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new ApiError(response.status, String((payload as { error?: string }).error || `designpro_api_${response.status}`));
+  }
+  return { payload: payload as T, headers: response.headers };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await accessToken();
   const response = await fetch(`${API_BASE}${path}`, {
@@ -93,6 +120,37 @@ export type FlatAtlasPanelMapEntry = {
 };
 
 /**
+ * One deterministically cut Call-1 print panel, as the server stamped it.
+ *
+ * `signedUrl` is absent while the object cannot be signed; the geometry and
+ * the hash are still the truth about that surface, so the row is published
+ * either way rather than disappearing.
+ */
+export type FlatAtlasCallOnePanel = {
+  surfaceKey: GenieSurfaceKey;
+  contentHash: string;
+  contentType: string;
+  byteSize: number;
+  pixelWidth: number;
+  pixelHeight: number;
+  /** The vehicle side itself, in inches. */
+  trimWidthIn: number;
+  trimHeightIn: number;
+  /** Trim plus the physical bleed on every edge -- what actually prints. */
+  printWidthIn: number;
+  printHeightIn: number;
+  bleedInches: number;
+  surfaceSqFt: number;
+  /** Pixels over print inches. The number that decides whether it can print. */
+  effectivePpi: number;
+  geometryPurpose: string;
+  /** The canonical master this panel's lineage is published under. */
+  sourceMasterHash: string;
+  signedUrl?: string;
+  expiresIn?: 300;
+};
+
+/**
  * One immutable canonical-atlas revision. Storage paths remain server-private;
  * the gateway returns short-lived signed URLs only for the two images the UI
  * can inspect. The manifest is represented by identity because it is consumed
@@ -136,6 +194,21 @@ export type FlatAtlasRevision = {
   promptVersion: string;
   affectedSurfaces: GenieSurfaceKey[];
   panelMap: FlatAtlasPanelMapEntry[];
+  /**
+   * THE SIX PRINT PANELS CALL 1 CUT FROM THIS MASTER.
+   *
+   * Not `panelMap` -- that is the atlas LAYOUT, and a layout has no content
+   * hash a customer's file can be identified by. These are the panels
+   * themselves, cut deterministically at authoring time and stamped with the
+   * side's trim and print inches, its 5" bleed, its square footage and the
+   * master it descends from. They exist from Call 1, which is what makes them
+   * the entice set: RULE 0.21 says the accepted master fans out immediately,
+   * and this is the half of that fan-out RevisionStudio consumes.
+   *
+   * Empty for a revision authored before the record existed, which is the
+   * honest answer and reads as "panels still building" rather than as zero.
+   */
+  callOnePanels: FlatAtlasCallOnePanel[];
   instruction: string | null;
   productionEligible: boolean;
   exampleUsed: boolean;
@@ -339,6 +412,8 @@ export type ApprovedGenerationView = {
     zoneSurfaceKey: string | null;
     anchoredToDriver: boolean;
     deterministicMirror: boolean;
+    /** The exact A.T.L.A.S. revision this proof was rendered from. */
+    revisionId?: string | null;
   } | null;
 };
 
@@ -898,6 +973,24 @@ export const dpApi = {
    */
   listApprovedViews: (generationId: string) =>
     request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
+  /**
+   * The same read, plus the reason the list may be empty.
+   *
+   * `superseded` is true when the server refuses to serve this design's proofs
+   * because they were authored under an architecture it no longer serves --
+   * the flat-first sibling-surface fence. The design, its master and its panels
+   * are unaffected and still readable; only the proofs are withheld, and a
+   * customer is owed that sentence rather than a blank carousel.
+   */
+  listApprovedViewsWithVerdict: async (generationId: string) => {
+    const { payload, headers } = await requestWithHeaders<ApprovedGenerationView[]>(
+      `/jobs/${encodeURIComponent(generationId)}/approved-views`,
+    );
+    return {
+      views: Array.isArray(payload) ? payload : [],
+      superseded: headers.get("x-designpro-views-superseded") === "flat_first_atlas_new_run_required",
+    };
+  },
   /**
    * Every A.T.L.A.S. version this design has been through, oldest first.
    *

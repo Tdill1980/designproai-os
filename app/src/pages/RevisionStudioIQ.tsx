@@ -54,6 +54,7 @@ import {
   type RenderElementSeparatorHandle,
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
+import { AtlasLineageCard } from "@/components/revisioniq/AtlasLineageCard";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
 import { dpApi } from "@/lib/designpro-api";
 import {
@@ -2547,10 +2548,29 @@ export default function RevisionStudioIQ() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // ---------------------------------------------------------------------------
-  // Deep link: auto-select render from ?id= param
+  // DEEP LINK: /revision-studio?id=<generationId> OPENS THAT DESIGN.
+  //
+  // This used to resolve only against `renders` -- the caller's own feed, one
+  // page at a time, already filtered by the grid's "a card needs an image"
+  // rule. Three ordinary situations therefore opened a blank studio on a design
+  // that plainly exists:
+  //
+  //   * a design-team member following a link to a customer's job, which is
+  //     never in their own feed at all;
+  //   * a design past the first page, whose row had not been fetched yet;
+  //   * a design whose proofs are still rendering or were withheld, which the
+  //     phantom-row rule drops from the feed by design.
+  //
+  // The feed match stays first, because when the row is already in hand it is
+  // the same object the grid is rendering and reusing it keeps selection and
+  // list in sync. Only when the feed genuinely cannot answer does this ask the
+  // server for that one design -- the same read the grid uses, addressed by id.
   // ---------------------------------------------------------------------------
+  const deepLinkFetchedRef = useRef<string | null>(null);
+  const [deepLinkMissing, setDeepLinkMissing] = useState(false);
   useEffect(() => {
-    if (deepLinkId && renders && !selectedRender) {
+    if (!deepLinkId || selectedRender) return;
+    if (renders) {
       // Direct ID match first, then check _mergedIds for renders that were merged
       const found = renders.find((r: any) =>
         r.id === deepLinkId || (r._mergedIds && r._mergedIds.includes(deepLinkId))
@@ -2559,8 +2579,30 @@ export default function RevisionStudioIQ() {
         setSelectedRender(found);
         setCurrentViewIndex(0);
         window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
       }
     }
+    // Wait for the first page before deciding the feed cannot answer, so an
+    // in-feed design is never fetched twice.
+    if (!renders) return;
+    if (deepLinkFetchedRef.current === deepLinkId) return;
+    deepLinkFetchedRef.current = deepLinkId;
+    let live = true;
+    readRevisionStudioDesign(deepLinkId)
+      .then((row) => {
+        if (!live) return;
+        if (!row) {
+          // The honest answer: this account cannot open that design, or it does
+          // not exist. Never a spinner that never resolves.
+          setDeepLinkMissing(true);
+          return;
+        }
+        setSelectedRender(row as any);
+        setCurrentViewIndex(0);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      })
+      .catch(() => { if (live) setDeepLinkMissing(true); });
+    return () => { live = false; };
   }, [deepLinkId, renders, selectedRender]);
 
   // ---------------------------------------------------------------------------
@@ -4553,6 +4595,28 @@ export default function RevisionStudioIQ() {
         {/* ================================================================ */}
         {/* RENDER GRID (hidden when a render is selected OR gallery mode)   */}
         {/* ================================================================ */}
+        {/* A deep link this account cannot open is answered, not left spinning.
+            The two reasons are indistinguishable from the browser and the
+            server deliberately keeps them that way, so the message names both
+            rather than guessing which one applies. */}
+        {!selectedRender && deepLinkId && deepLinkMissing && (
+          <div className="w-full mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+            <p className="text-sm font-semibold text-amber-300 font-poppins">
+              That design could not be opened
+            </p>
+            <p className="text-xs text-amber-200/80 mt-1">
+              Design <span className="font-mono">{formatDid(deepLinkId)}</span> either does not
+              exist or is not one this account can open. Your own designs are below.
+            </p>
+          </div>
+        )}
+
+        {!selectedRender && deepLinkId && !deepLinkMissing && renders === undefined && (
+          <div className="w-full mb-4 text-xs text-zinc-500 font-poppins">
+            Opening design <span className="font-mono">{formatDid(deepLinkId)}</span>…
+          </div>
+        )}
+
         {!selectedRender && layoutMode === "studio" && (
           <div className="w-full">
             {/* Only show the bouncer on the very first fetch — once any page
@@ -5986,6 +6050,15 @@ export default function RevisionStudioIQ() {
                     (Trish 2026-07-24): the production-pack QC surface does not
                     belong in the customer-facing revision view. It still lives on
                     the PanelPro Studio Board; this only unmounts it here. */}
+
+                {/* THE DESIGN AUTHORITY, ABOVE THE PANELS CUT FROM IT.
+                    Every version of the flattened A.T.L.A.S. master, its hash,
+                    the customer's words for each one and their timestamps --
+                    read from the same canonical history PanelPro reads, so V2
+                    means one thing on both surfaces. It sits above Production
+                    Layers because the panels below are extractions OF it, and
+                    a panel only makes sense beside the sheet it came from. */}
+                <AtlasLineageCard generationId={productionLayersId} />
 
                 <ProductionFlowLayersCard
                   // A panelizer-sourced card's `id` was a job id —
