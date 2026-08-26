@@ -614,7 +614,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                 </span>
               </div>
               {masterHash && (
-                <div className="mb-2 font-mono text-[9px] text-zinc-600" title="A.T.L.A.S. master this panel and its proof were both cut from">
+                <div className="mb-2 font-mono text-[9px] text-zinc-600" title="The design source this panel and its proof were both cut from">
                   master {masterHash.slice(0, 16)}
                 </div>
               )}

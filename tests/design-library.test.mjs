@@ -205,8 +205,15 @@ test("the studio's header filter offers the two answers that exist", () => {
       `the header must not offer ${ghost}: this OS holds no such row`,
     );
   }
-  assert.match(studio, /<SelectItem value="atlas">A\.T\.L\.A\.S\.<\/SelectItem>/);
-  assert.match(studio, /<SelectItem value="standard">Standard<\/SelectItem>/);
+  // Neutral customer wording (owner, 2026-08-26): the engine's name never
+  // appears on the customer surface. The values stay the internal keys.
+  assert.match(studio, /<SelectItem value="atlas">Current designs<\/SelectItem>/);
+  assert.match(studio, /<SelectItem value="standard">Classic designs<\/SelectItem>/);
+  for (const surface of ["../app/src/components/revisioniq/DesignLibrary.tsx"]) void surface;
+  assert.ok(
+    !/A\.T\.L\.A\.S\./.test(library.replace(/\/\*[^]*?\*\/|^\s*\/\/.*$/gm, "")),
+    "the library renders no A.T.L.A.S. vocabulary to the customer",
+  );
   // GalleryMode reads the same filter, so the two surfaces cannot disagree...
   assert.match(
     studio,

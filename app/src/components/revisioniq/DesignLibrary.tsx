@@ -254,7 +254,9 @@ export function DesignLibrary({
           {loading && !entries
             ? "reading…"
             : `${visible.length} of ${counts.total} design${counts.total === 1 ? "" : "s"}`}
-          {entries && counts.total > 0 ? ` · ${counts.atlas} A.T.L.A.S. · ${counts.standard} Standard` : ""}
+          {/* No pipeline vocabulary here: which engine authored a design is
+              production-floor language, and this is the customer's shelf of
+              past designs. PanelPro carries the full technical record. */}
         </span>
         <Button
           size="sm"
@@ -301,7 +303,7 @@ export function DesignLibrary({
         </div>
         {externalPipeline === undefined && (
           <div className="flex items-center gap-1">
-            {([["all", "All"], ["atlas", "A.T.L.A.S."], ["standard", "Standard"]] as const).map(
+            {([["all", "All"], ["atlas", "Current"], ["standard", "Classic"]] as const).map(
               ([key, label]) => (
                 <button
                   key={key}
@@ -405,16 +407,10 @@ export function DesignLibrary({
                     </span>
                   </span>
                 )}
-                <span
-                  className={cn(
-                    "absolute left-2 top-2 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide backdrop-blur",
-                    entry.pipeline === "atlas"
-                      ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-200"
-                      : "border-zinc-500/50 bg-zinc-900/70 text-zinc-300",
-                  )}
-                >
-                  {entry.pipeline === "atlas" ? "A.T.L.A.S." : "Standard"}
-                </span>
+                {/* The pipeline badge is deliberately absent (owner,
+                    2026-08-26): a customer's past design is a design, not an
+                    engine name. The pipeline still filters internally and
+                    PanelPro shows the whole lineage. */}
                 {/* The version the design stands at, where the studio's own
                     cards put it. A Standard run has no A.T.L.A.S. revision to
                     number, so it carries no badge rather than a fake V1. */}
