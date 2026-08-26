@@ -199,3 +199,58 @@ test("the Call-1 panels are published, validated and typed end to end", () => {
   assert.match(gateway, /callOnePanels, \.\.\.base/);
   assert.match(api, /callOnePanels: FlatAtlasCallOnePanel\[\]/);
 });
+
+/**
+ * REAL DESIGN PROOF ∥ PRINT PANEL — PROOF LEFT, PANEL RIGHT.
+ *
+ * RULE 0.21 states the row in those words: "Left is that surface's 3D proof.
+ * Right is the deterministic A.T.L.A.S. extraction for that exact surfaceKey."
+ * The card had them reversed, which reads as the panel being the thing and the
+ * render a footnote. It is the other way round: the customer approved a design
+ * on the vehicle, and the panel is what that approval produced -- so the eye
+ * lands on what was approved, then on what will print. Both surfaces that draw
+ * this pair must agree, or one order teaches a habit the other breaks.
+ */
+test("the approved proof is drawn before the panel, on both surfaces", () => {
+  const card = readFileSync(
+    new URL("../app/src/components/revisioniq/ProductionFlowLayersCard.tsx", import.meta.url),
+    "utf8",
+  );
+  const board = readFileSync(
+    new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url),
+    "utf8",
+  );
+
+  // Production Layers: inside the two-column pair, the approved view comes
+  // first in source order, which is what puts it in the left column.
+  const pair = card.slice(card.indexOf('<div className={cn("grid gap-2", cols)}>'));
+  const proofAt = pair.indexOf("Your approved design");
+  const panelAt = pair.indexOf("url={panelUrl}");
+  assert.ok(proofAt > -1 && panelAt > -1, "the pair must draw both halves");
+  assert.ok(proofAt < panelAt, "the approved 3D proof must be the left column");
+
+  // PanelPro Studio board: same order, same reason.
+  const boardPair = board.slice(board.indexOf('<div className="grid gap-3 sm:grid-cols-2">'));
+  const boardProofAt = boardPair.indexOf("Real design proof");
+  const boardPanelAt = boardPair.indexOf("Panel with 5″ bleed");
+  assert.ok(boardProofAt > -1 && boardPanelAt > -1);
+  assert.ok(boardProofAt < boardPanelAt, "the board must draw the proof first too");
+
+  // And the page actually routed at /designpro/jobs/:id/panelpro, which is the
+  // third surface that draws this pair and the one the operator opens most.
+  const routedBoard = readFileSync(
+    new URL("../app/src/pages/AdminGeminiCompareStudio.tsx", import.meta.url),
+    "utf8",
+  );
+  const routedPair = routedBoard.slice(
+    routedBoard.indexOf('<div className="grid grid-cols-2 gap-3">'),
+  );
+  const routedProofAt = routedPair.indexOf("<span>Real design proof");
+  const routedPanelAt = routedPair.indexOf("<span>Print Panel</span>");
+  assert.ok(routedProofAt > -1 && routedPanelAt > -1);
+  assert.ok(routedProofAt < routedPanelAt, "the routed board must draw the proof first too");
+
+  // The trim overlay belongs to the panel, so it travels with it rather than
+  // being positioned against a column that moved.
+  assert.match(card, /overlay travels with the panel/);
+});

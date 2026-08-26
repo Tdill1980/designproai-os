@@ -264,8 +264,8 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
 
   // Comparison thumbnails come from the exact frozen revision that produced the
   // panels ON SCREEN — not from the activated pack, which may not exist yet.
-  // Without this the "[Print-ready panel] | [Your approved design]" pair loses
-  // its right-hand side for every preview pack.
+  // Without this the "[Your approved design] | [Print-ready panel]" pair loses
+  // its left-hand side for every preview pack.
   const displayRevisionId = String(
     latestBySide[0]?.revision_id || (activePack as any)?.revision_id || "",
   );
@@ -543,7 +543,17 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                   master {masterHash.slice(0, 16)}
                 </div>
               )}
+              {/* REAL DESIGN PROOF ∥ PRINT PANEL — proof LEFT, panel RIGHT.
+                  RULE 0.21 states the row in those words: "Left is that
+                  surface's 3D proof. Right is the deterministic A.T.L.A.S.
+                  extraction for that exact surfaceKey." This card had them the
+                  other way round, which reads as the panel being the thing and
+                  the render being a footnote. It is the reverse: the customer
+                  approved the design on the vehicle, and the panel is what that
+                  approval produced -- so the eye lands on what was approved and
+                  then on what will print. Do not swap these back. */}
               <div className={cn("grid gap-2", cols)}>
+                {showApproved && <Thumb url={brandedView} label="Your approved design" onOpen={() => setPreview({ url: brandedView, label: `${p.side} — your approved design` })} />}
                 {panelUrl && (
                   <div className="relative">
                     <Thumb
@@ -553,7 +563,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                       onOpen={() => setPreview({ url: panelUrl, label: `${p.side} — ${panelLabel}` })}
                     />
                     {/* Where the bleed ends and the vehicle side begins. Drawn,
-                        never cropped -- the panel must stay full-bleed. */}
+                        never cropped -- the panel must stay full-bleed. The
+                        overlay travels with the panel, so it stays correct
+                        whichever column the panel sits in. */}
                     {trimInsetPct && (
                       <div
                         aria-hidden
@@ -568,7 +580,6 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                     )}
                   </div>
                 )}
-                {showApproved && <Thumb url={brandedView} label="Your approved design" onOpen={() => setPreview({ url: brandedView, label: `${p.side} — your approved design` })} />}
               </div>
             </div>
           );
