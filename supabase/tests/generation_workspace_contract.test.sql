@@ -126,7 +126,13 @@ select ok(
 );
 
 -- THE OWNER.
-set local role authenticated;
+--
+-- CLAIMS ONLY -- never a session-role switch. auth.uid() and auth.jwt()
+-- read request.jwt.claims, so the claims alone decide identity. Switching
+-- the session role as well does nothing for the function under test and
+-- takes pgTAP's own ok/is out of the search path, which failed this file
+-- with "function ok(boolean, unknown) does not exist" at the first
+-- assertion after the switch.
 set local request.jwt.claims = '{"sub":"11000000-0000-4000-8000-0000000000a1","role":"authenticated"}';
 
 select ok(
@@ -206,6 +212,5 @@ select ok(
   'an authenticated stranger is refused: staff access widened nothing else'
 );
 
-reset role;
 select * from finish();
 rollback;
