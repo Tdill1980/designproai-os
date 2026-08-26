@@ -1551,14 +1551,25 @@ async function generateOrReuseFlatAtlas(options) {
       );
     }
     correctiveParts.length = 0;
+    // THE CORRECTION NAMES THE ACTUAL DEFECT. This block used to prescribe the
+    // solid-panels remedy for EVERY refusal, so a mirror-broken sheet was told,
+    // three times, to fix cut-outs it did not have -- live on generation
+    // 632642dc (2026-08-26): three attempts, all refused at
+    // passengerMirrorMae~0.35, each re-roll fed the wrong remedy. The gate's
+    // own finding is the corrective direction; no new creative language is
+    // introduced -- the mirror text below is the prompt's own locked side-twin
+    // wording, restated as the correction.
+    const refusalReason = String(masterQc?.reason || "the master was not accepted").slice(0, 600);
+    const mirrorBroken = /passengerMirrorMae/.test(refusalReason);
     correctiveParts.push({
-      text: "CORRECTION -- the previous sheet was refused by production QC and discarded: "
-        + `${String(masterQc?.reason || "the master was not accepted").slice(0, 600)}. `
-        + "Author a NEW sheet. Every zone is one SOLID rectangle of continuous artwork, "
-        + "opaque corner to corner: paint the livery straight through every position where "
-        + "a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece will "
-        + "later sit. The installer cuts those openings out of the printed vinyl; the "
-        + "artwork itself never contains a dark or empty shape standing in for one.",
+      text: `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}. Author a NEW sheet. `
+        + (mirrorBroken
+          ? "The refusal above means the PASSENGER flank was NOT the DRIVER flank's twin: the two tall side rectangles read as two different designs. Draw ONE side composition and install it on BOTH flanks: PASSENGER is the opposite-facing, mirror-compatible twin of DRIVER -- same motif, scene, palette, hierarchy, scale, landmarks and flow, reversed for the opposite flank -- while every word, logo, URL and number remains forward-reading on both zones. Only the text and logos read forward on each side; everything else in the two flanks mirrors."
+          : "Every zone is one SOLID rectangle of continuous artwork, "
+            + "opaque corner to corner: paint the livery straight through every position where "
+            + "a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece will "
+            + "later sit. The installer cuts those openings out of the printed vinyl; the "
+            + "artwork itself never contains a dark or empty shape standing in for one."),
     });
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
