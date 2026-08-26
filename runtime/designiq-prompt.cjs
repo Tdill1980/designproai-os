@@ -297,11 +297,31 @@ SIDE-TWIN CONTRACT: DRIVER and PASSENGER are opposite-facing installations of th
 THE CONCEPT — the heart of this design; build every connected atlas zone around it:
 DESIGN BRIEF: "${prompt}"`;
 
-  if (!exactReference) {
-    assembled += mode === "restyle"
-      ? `\n\nDESIGN AMPLIFICATION: Elevate and enhance the brief. Fill decisions the customer left open with depth, flow, layered thematic elements, texture, color harmony and dimension. The result must feel custom-designed, never like generic filler or a reusable template.\n${PROFESSIONAL_JUDGMENT}`
+  // A REFERENCE NEVER TURNS THE DESIGNER OFF. (Owner contract, 2026-08-26.)
+  //
+  // This block — the elevation, the layered depth, the texture, the brand
+  // composition and the professional judgment — used to be skipped entirely
+  // whenever the intent was `exact_reference`. Measured: with one reference
+  // image attached, a commercial brief lost both COMMERCIAL_DEPTH and
+  // COMMERCIAL_TRANSLATION, so attaching a picture silently downgraded the
+  // design behaviour of every other surface of the wrap.
+  //
+  // VisionBoardIQ SUPPLEMENTS the professional designer persona; it does not
+  // replace it. So the craft always fires, and what `exact_reference` changes is
+  // stated as PRECEDENCE rather than as absence: the reference governs the
+  // artwork it actually covers, and the designer's judgment governs everything
+  // it does not — layout across the atlas, the surfaces the reference says
+  // nothing about, and the depth and finish quality of the whole sheet.
+  //
+  // COMMERCIAL_TRANSLATION is the one clause held back under an exact
+  // reference, and only because it instructs the model to invent geometry from
+  // words: under a reproduce-faithfully intent that is the one thing that would
+  // contradict the reference itself.
+  assembled += mode === "restyle"
+    ? `\n\nDESIGN AMPLIFICATION: Elevate and enhance the brief. Fill decisions the customer left open with depth, flow, layered thematic elements, texture, color harmony and dimension. The result must feel custom-designed, never like generic filler or a reusable template.\n${PROFESSIONAL_JUDGMENT}`
+    : exactReference
+      ? `\n${COMMERCIAL_DEPTH} ${COMMERCIAL_BRAND_COMPOSITION}\n${PROFESSIONAL_JUDGMENT}`
       : `\n${COMMERCIAL_TRANSLATION}\n${COMMERCIAL_DEPTH} ${COMMERCIAL_BRAND_COMPOSITION}\n${PROFESSIONAL_JUDGMENT}`;
-  }
 
   assembled += "\n\nCUSTOMER IDENTITY AND DESIGN LOCKS:";
   if (companyName) {
@@ -369,6 +389,15 @@ DESIGN BRIEF: "${prompt}"`;
   if (references.length) {
     if (exactReference) {
       assembled += "\n\nEXACT CUSTOMER REFERENCE: The verified customer reference images attached after the topology examples are the artwork authority. Reproduce their graphics, palette, typography, logos, composition, coverage density and visual hierarchy faithfully across the flat atlas. Installer-map examples remain topology-only and must never influence style.";
+      // The intents stay distinct and the DNA still travels. Under an exact
+      // reference the images themselves are the authority, so the extracted
+      // style DNA is stated as a reading of them rather than as a second brief
+      // — it helps carry the reference onto the surfaces the reference does not
+      // itself cover, and it is explicitly subordinate to the reproduction rule
+      // above so the two can never compete.
+      if (input.styleDescriptors) {
+        assembled += `\nThe reference's extracted style DNA, for carrying it consistently across zones it does not itself show: ${String(input.styleDescriptors)}. Where this reading and the reference images differ, the images win.`;
+      }
     } else if (input.styleDescriptors) {
       assembled += `\n\nSTYLE INSPIRATION: Create original artwork using this verified reference style DNA: ${String(input.styleDescriptors)}. Do not copy the reference composition or branding.`;
     } else {

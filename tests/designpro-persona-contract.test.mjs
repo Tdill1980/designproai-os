@@ -106,3 +106,93 @@ test("the professional designer persona and its elevation fire on every brief sh
     assert.match(prompt, /amplif|elevat/i, "the brief must be elevated, not restated");
   }
 });
+
+// VISIONBOARDIQ IS PART OF THE PIPELINE, AND IT PRODUCES SOMETHING.
+//
+// The runtime consumed `styleDescriptors` in four places and produced it in
+// none — across all 11 real A.T.L.A.S. runs it was populated on zero, so the
+// STYLE INSPIRATION branch could never fire. The reference's pre-pass
+// (design-panel-ai-generate/index.ts:661) is now ported; the six categories are
+// verbatim and only the transport is adapted to the runtime's key pool.
+test("VisionBoardIQ derives style DNA from the supplied references", async () => {
+  const { analyzeVisionBoardStyles, ANALYSIS_PROMPT } = await import("../runtime/visionboard-iq.cjs")
+    .then((m) => m.default ?? m);
+
+  let sawImages = 0;
+  let sawPrompt = "";
+  const provider = {
+    async generateSpecification({ parts }) {
+      sawPrompt = parts.find((part) => part.text)?.text || "";
+      sawImages = parts.filter((part) => part?.inlineData?.data).length;
+      return {
+        specification: {
+          colorPalette: "#0d2f63, #e8621f", artStyle: "abstract geometric", mood: "confident",
+          composition: "diagonal flow", texture: "smooth gradients", visualWeight: "bottom-anchored",
+        },
+      };
+    },
+  };
+  const referenceParts = [
+    { text: "VERIFIED CUSTOMER-OWNED STYLE REFERENCE. Reference 1 of 2." },
+    { inlineData: { mimeType: "image/png", data: "AAAA" } },
+    { text: "VERIFIED CUSTOMER-OWNED STYLE REFERENCE. Reference 2 of 2." },
+    { inlineData: { mimeType: "image/png", data: "BBBB" } },
+  ];
+  const dna = await analyzeVisionBoardStyles({ provider, referenceParts });
+
+  assert.equal(sawImages, 2, "every reference image must reach the pre-pass");
+  assert.equal(sawPrompt, ANALYSIS_PROMPT, "the reference's own analysis prompt, verbatim");
+  for (const label of ["COLOR PALETTE", "ART STYLE", "MOOD", "COMPOSITION", "TEXTURE", "VISUAL WEIGHT"]) {
+    assert.match(dna, new RegExp(`^${label}: `, "m"), `${label} must survive into the style DNA`);
+  }
+});
+
+// IT FAILS SOFT. A REFERENCE PRE-PASS IS NEVER A PRECONDITION FOR DESIGNING.
+test("VisionBoardIQ failure leaves the design call to the brief, not broken", async () => {
+  const { analyzeVisionBoardStyles } = await import("../runtime/visionboard-iq.cjs").then((m) => m.default ?? m);
+  const parts = [{ inlineData: { mimeType: "image/png", data: "AAAA" } }];
+
+  assert.equal(await analyzeVisionBoardStyles({ provider: {}, referenceParts: parts }), null, "no provider");
+  assert.equal(await analyzeVisionBoardStyles({ provider: { generateSpecification: async () => { throw new Error("429"); } }, referenceParts: parts }), null, "a refusal");
+  assert.equal(await analyzeVisionBoardStyles({ provider: { generateSpecification: async () => ({}) }, referenceParts: parts }), null, "an empty answer");
+  assert.equal(await analyzeVisionBoardStyles({ provider: { generateSpecification: async () => ({ specification: {} }) }, referenceParts: parts }), null, "a blank specification");
+  assert.equal(await analyzeVisionBoardStyles({ provider: { generateSpecification: async () => ({ specification: { artStyle: "x" } }) }, referenceParts: [] }), null, "no references at all");
+});
+
+// A REFERENCE NEVER TURNS THE DESIGNER OFF, AND ITS ABSENCE NEVER TURNS IT OFF.
+//
+// Both directions of the owner's rule. `exact_reference` used to skip the whole
+// elevation block, so attaching one picture silently stripped COMMERCIAL_DEPTH
+// and the professional judgment from a commercial brief.
+test("neither the presence nor the absence of references changes the core design behaviour", () => {
+  const { COMMERCIAL_DEPTH, PROFESSIONAL_JUDGMENT, LOGO_AUTHORING_RULE, LOGO_REQUIREMENT } =
+    require("../runtime/designiq-prompt.cjs");
+  const base = { mode: "commercial", brief: "Wrap for Harbor Point Electric", companyName: "Harbor Point Electric" };
+  const intents = [
+    ["none", {}],
+    ["style_inspiration", { visionboardIntent: "style_inspiration", visionBoardImages: [{}] }],
+    ["exact_reference", { visionboardIntent: "exact_reference", visionBoardImages: [{}] }],
+  ];
+  for (const [label, extra] of intents) {
+    const prompt = authored({ ...base, ...extra });
+    assert.ok(prompt.includes(COMMERCIAL_DEPTH), `${label}: layered depth must survive`);
+    assert.ok(prompt.includes(PROFESSIONAL_JUDGMENT), `${label}: professional judgment must survive`);
+    assert.ok(prompt.includes(LOGO_REQUIREMENT), `${label}: auto-logo must survive`);
+    assert.ok(prompt.includes(LOGO_AUTHORING_RULE), `${label}: the mark rule must survive`);
+  }
+  // Style DNA travels under BOTH intents, and the intents stay distinct: style
+  // inspiration composes from it, an exact reference reproduces the images and
+  // carries the DNA only to the zones they do not show.
+  const withRefs = (extra) => authored({ ...base, visionBoardImages: [{}], styleDescriptors: "ART STYLE: bold", ...extra });
+  const inspiration = withRefs({ visionboardIntent: "style_inspiration" });
+  assert.match(inspiration, /STYLE INSPIRATION: Create original artwork using this verified reference style DNA/);
+  assert.match(inspiration, /ART STYLE: bold/);
+
+  const exact = withRefs({ visionboardIntent: "exact_reference" });
+  assert.match(exact, /EXACT CUSTOMER REFERENCE/, "the reproduction rule governs");
+  assert.match(exact, /ART STYLE: bold/, "and the derived DNA still reaches the call");
+  assert.match(exact, /the images win/, "subordinate to the reference, never competing with it");
+
+  // Style DNA is derived FROM references, so it says nothing without them.
+  assert.doesNotMatch(authored(base), /STYLE INSPIRATION|style DNA/);
+});

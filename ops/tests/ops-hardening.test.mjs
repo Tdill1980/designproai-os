@@ -14,7 +14,7 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 52);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 53);
   for (const name of [
     // stamp.build requires it at module load, so a release without it dies at
     // require time rather than merely shipping a pack with no certificate.
@@ -31,6 +31,8 @@ test("one canonical policy includes every required runtime file and five deploy 
     // the live image, so it ships before Call 1 adopts it -- and the first run
     // without it died on MODULE_NOT_FOUND in an otherwise correct release.
     "runtime/atlas-artwork-compose.cjs",
+    // VisionBoardIQ: the reference pre-pass Call 1 runs before authoring.
+    "runtime/visionboard-iq.cjs",
     // The vehicle silhouettes Call 8 shows the approved artwork through. A
     // release without them composes the proof as bare rectangles, which is not
     // the 2D Production Proof the customer approves.
