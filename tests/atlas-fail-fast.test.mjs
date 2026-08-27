@@ -67,7 +67,32 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
     failure,
     /if \(requiresNewAtlasRun \|\| freshAtlasMasterQcFailure\) clearUntrustedAtlasProofState\(\)/,
   );
-  assert.match(failure, /if \(acceptedRequest && !requiresNewAtlasRun\)/);
+  // RECOVERY NOW RUNS FIRST, AND THE VERDICT DEPENDS ON WHAT IT FOUND.
+  //
+  // The guard used to read `if (acceptedRequest && !requiresNewAtlasRun)`,
+  // which meant a lineage refusal wiped the design and then never looked for
+  // the views. That was right for a genuinely untrusted lineage and wrong for a
+  // run that COMPLETED with a short proof set: canary 990d4b62 (2026-08-27)
+  // had an accepted master, six panels and five accepted views, and the
+  // customer got "cannot be reused" over a blank card.
+  //
+  // The invariant this test exists to protect is unchanged and asserted below:
+  // when the lineage really is untrusted, everything is cleared and NOTHING is
+  // applied. What changed is that "untrusted" is now decided by whether this
+  // generation owns any usable view, instead of assumed from the error alone.
+  assert.match(failure, /if \(acceptedRequest && !freshAtlasMasterQcFailure\)/);
+  assert.match(failure, /const requiresNewAtlasRun = atlasNewRunRequired\(error\) && !usableViews\.length;/);
+  assert.match(failure, /if \(usableViews\.length && !requiresNewAtlasRun && acceptedRequest\)/);
+  // A cleared lineage must never reach the preview setters.
+  const applyBlock = failure.slice(
+    failure.indexOf("if (usableViews.length && !requiresNewAtlasRun && acceptedRequest)"),
+    failure.indexOf("const missingSides"),
+  );
+  assert.ok(applyBlock.includes("applyGeneratedViews(recoveredViews)"));
+  assert.ok(
+    !/requiresNewAtlasRun\s*\?/.test(applyBlock),
+    "the apply block is gated by the flag, never branching inside it",
+  );
   assert.match(hook, /This saved proof set cannot be reused\. Start a new Precision run\./);
   assert.match(hook, /freshAtlasMasterQcFailure/);
   assert.match(hook, /No proof set was saved\. Start a new Precision run\./);

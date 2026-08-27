@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered sixty-seven-migration chain', () => {
-  assert.equal(migrationNames.length, 67);
+test('fresh bootstrap contains one ordered sixty-eight-migration chain', () => {
+  assert.equal(migrationNames.length, 68);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -148,6 +148,8 @@ test('fresh bootstrap contains one ordered sixty-seven-migration chain', () => {
       // The EXECUTE grant on has_role, without which every signed-in customer
       // read of user_roles / user_subscriptions / user_tokens raised 42501.
       '20260827040000',
+      // The second raise site of the same exception, patched to match.
+      '20260827050000',
     ],
   );
 });

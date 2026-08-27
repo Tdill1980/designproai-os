@@ -119,11 +119,29 @@ function assertGroundedCandidate(candidate, vehicleClass) {
 const GENIE_CATALOG_TABLE = "vehicle_dimensions";
 
 function normalizeModelTokens(value) {
-  return String(value || "")
+  const words = String(value || "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .split(" ")
     .filter((token) => token.length > 0);
+  // "F250" AND "F-250" MUST PRODUCE THE SAME SIGNAL.
+  //
+  // The customer types `F250 Crew Cab`; the catalog says
+  // `F-250, 350, 450, 550 - Super Duty - Crew Cab Long Box`. Split on
+  // punctuation alone, those are `f250` versus `f` + `250`, so the model NUMBER
+  // -- the strongest identifier in the whole string -- contributed nothing and
+  // the row scored 2 on `crew` + `cab` alone. `F-650 Crew Cab / Cab Only`
+  // scored exactly the same 2, which is how a medium-duty cab-only row came to
+  // tie a Super Duty pickup. Emitting the letter/digit split alongside the
+  // joined form makes `250` a shared token, so the F-250 row scores 3 and the
+  // F-650 stays at 2.
+  const tokens = new Set();
+  for (const word of words) {
+    tokens.add(word);
+    const parts = word.match(/[a-z]+|[0-9]+/g);
+    if (parts && parts.length > 1) for (const part of parts) tokens.add(part);
+  }
+  return [...tokens];
 }
 
 /**
@@ -211,7 +229,28 @@ async function findGenieCatalogSurfaces(sb, vehicle) {
     if (Number.isFinite(end) && year > end) return false;
     return true;
   });
-  const pool = inYear.length ? inYear : rows;
+  // A ROW MISSING THREE OF ITS FOUR MEASURED SURFACES IS NOT A WEAKER MATCH --
+  // IT IS NOT A MATCH.
+  //
+  // `surfacesFromGenieCatalog` needs side, rear, hood and roof; a row without
+  // them returns null, and that null was indistinguishable from "the catalog has
+  // never seen this vehicle", so the whole lookup fell through to the grounded
+  // estimator in silence. Live: canary 7323fd73 (2026-08-27) resolved
+  // `gemini_grounded` for a 2009 Ford F250 Crew Cab that GENIE measures at
+  // 251x60, because the tie-break below preferred the SHORTEST model string and
+  // `F-650 Crew Cab / Cab Only` (25 chars, back/hood/roof all NULL) beat
+  // `F-250, 350, 450, 550 - Super Duty - Crew Cab Long Box` (53 chars).
+  //
+  // Completeness is therefore a filter, applied before scoring, not something a
+  // tie-break can lose.
+  const measured = (inYear.length ? inYear : rows).filter((row) => (
+    landscape(row.side_width, row.side_height)
+    && landscape(row.back_width, row.back_height)
+    && landscape(row.hood_width, row.hood_length)
+    && landscape(row.roof_width, row.roof_length)
+  ));
+  if (!measured.length) return null;
+  const pool = measured;
 
   let best = null;
   let bestScore = 0;
