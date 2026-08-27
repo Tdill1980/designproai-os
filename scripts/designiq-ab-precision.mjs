@@ -63,6 +63,7 @@ const { composeAtlasFromArtwork } = require_("./atlas-artwork-compose.cjs");
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) => (a.startsWith("--") ? [[a.slice(2), all[i + 1]]] : [])),
 );
+const CANARY_OWNER_ID = "b940320d-cb5a-4b60-b280-32d12ef4d6a6"; // canary-operator@designproai.com
 const OUT = args.out || "./ab-evidence";
 mkdirSync(OUT, { recursive: true });
 
@@ -376,7 +377,11 @@ async function main() {
         // THE PRODUCT PATH: one edge request; the response carries the proof
         // fields (requestId, sourceCommit, promptVersion, model,
         // imageRequestCount, masterSha256).
-        const out = await atlas._test.callAtlasArtboardEdge(bEdgeBody, { logger: log });
+        // The edge function authenticates the server caller by resolving a
+        // real owner id with Auth Admin privilege (designpro-internal-call).
+        // The acceptance run names the canary operator, never a customer.
+        const ownerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
+        const out = await atlas._test.callAtlasArtboardEdge(bEdgeBody, { logger: log, ownerId });
         imageRequestsExecuted += out.provenance.imageRequestCount;
         writeFileSync(join(OUT, spec.file), out.bytes);
         // The owner proof contract: the six deterministic crop hashes, cut by
