@@ -250,6 +250,153 @@ border, not as new design. `masterCutoutSurfaces` still records that the sheet
 arrived holed, and PanelPro's human QC still sees those sides flagged. Locked by
 `tests/atlas-cutout-fill.test.mjs`.
 
+## 📸 RULE 0.29 — THE 3D PROOF STACK IS THE REAL RESTYLEPRO STACK, PINNED (Trish 2026-08-27)
+
+For every extracted A.T.L.A.S. panel, the proof producer is the REAL RestylePro
+photographer stage — not a new generic renderer. Sources, at
+`restylepro-os@113d137dbe8813ca3bf70c8d7265ad081ebd4524`:
+
+| role | file | pinned sha256 (16) |
+|---|---|---|
+| 3D proof producer | `supabase/functions/persona-photographer-render/index.ts` | `7aefea1f1b8ca899` |
+| prompt builder | `supabase/functions/_shared/persona-photographer-prompt.ts` | `11cb76524211e42a` |
+| camera, framing, frame-fill | `supabase/functions/_shared/view-angles-os.ts` | `8890be50c124a2c5` |
+| studio **and lighting** | `supabase/functions/_shared/studio-os.ts` | `7b02814bb1e9e867` |
+
+All four are byte-identical to the pin, asserted by
+`tests/proof-stack-pinned-sources.test.mjs`.
+
+- **`view-angles-os` owns camera angle, framing and frame-fill.**
+- **`studio-os` owns the studio environment AND the lighting** — the LED strips,
+  daylight balance, reflections, wall/floor treatment, and the requirement that
+  the studio stay identical between views. **Do not invent studio or lighting
+  prompts in the server runtime.** The runtime consumes `STUDIO_ENVIRONMENT`; it
+  never restates it.
+- **HERO IS REMOVED (owner, 2026-08-27).** `view-angles-os` had drifted from the
+  pin by one added `hero-3d` shot; it is restored to the pinned bytes and the
+  plan is the canonical seven views. The runtime keeps its legacy `hero-3d` →
+  `hero3d` READ mapping so historical generations stay viewable (owner
+  protection #1) — that is a read path, not a plan entry, and it is not a licence
+  to render one.
+
+**Adapt, do not restore blindly.** The pinned photographer describes a
+historical six-shot sequence and an old `heroRenderUrl` continuity dependency.
+Keep its photographer/studio/view-angle logic; replace the artwork authority
+with the matching extracted A.T.L.A.S. panel for the requested `shotKey`, and
+drop the hero-first dependency. Per surface:
+
+`driver panel → shotKey driver` · `passenger panel → passenger-side` ·
+`hood panel → hood` · `front panel → front` · `rear panel → rear` ·
+`roof panel → roof` · `close-up → the correct selected surface/detail authority`
+
+**The extracted panel is ARTWORK authority. The photographer/view/studio stack
+is PRESENTATION authority only.** Every output must persist `generationId`,
+`atlasRevisionId`, `sourceMasterHash`, `surfaceKey`, the source panel artifact
+id + hash, and `shotKey`, so both UIs can prove a proof came from its matching
+panel.
+
+## 📐 RULE 0.28 — THE ARTBOARD IS LABELED CONTAINERS AT GENIE DIMS + 5″ BLEED, FILLED EDGE TO EDGE, WITH NO BODY LINES (Trish 2026-08-27)
+
+Owner, verbatim: **"ATLAS FLATTENED TOPO VIEW CONTAINER MUST HAVE LABELED
+CONTAINERS AND GENIE DIMS WITH 5\" BLEED — ATLAS FILLS FLATTENED TOP DESIGN
+WITHOUT BODYLINES FILLED TO RECTANGLE CONTAINER EDGES."**
+
+1. **Sizes come from the GENIE Panelizer catalog**, `vehicle_dimensions` (1781
+   measured rows, migrated 2026-08-27). `resolveFlatAtlasPreviewDimensions`
+   reads it FIRST. The class-constant estimator
+   (`provisionalDimensionsFromCandidate`) is only what happens when the catalog
+   has never seen the vehicle. Measured cost of not doing this: GENIE has the
+   F-250 Super Duty Crew Cab side at **251×60**; the estimator produced
+   **153×56** — ninety-eight inches short, on every container.
+2. **The guide IS the artboard.** Labeled rectangles, true GENIE panel
+   dimensions, 5″ bleed already included. The model paints inside them.
+3. **Filled edge to edge.** Artwork runs off all four sides of its rectangle.
+   No blank margin, white gap, letterboxing, rounded corner, frame or border.
+4. **NO BODY LINES.** No door seams, panel gaps, rocker or hood contours, wheel
+   arches, windows, glass, lights, handles, bumpers or vehicle silhouette. The
+   artwork paints straight THROUGH every place one would sit.
+
+### ⚠️ THIS NARROWS RULE 0.15, BY THE OWNER'S OWN DECISION — DO NOT "RESTORE" IT
+
+RULE 0.15 says an A.T.L.A.S. master legitimately carries the vehicle's panel
+geometry (door seams, rocker and hood contours) and warns loudly about a session
+removing that to chase a pixel defect. **That warning still stands for a
+session. It does not bind the owner, and she has now decided the opposite on
+this one point (2026-08-27), looking at the live output.** Holes were already
+forbidden; seams, contours and arches are forbidden now too, because a line
+drawn on the master prints as a line on the wrap.
+
+Everything else in RULE 0.15 is unchanged: a panel is still one solid rectangle,
+still opaque corner to corner, and a zone that returns a picture of a vehicle is
+still a failed master.
+
+5. **Unwrapped regions are masked by CODE, never drawn by the model.** Owner:
+   *"masked truck bed must not have any wrap design."* A pickup's bed opening
+   carries no vinyl — but asking the model to leave a hole for it reintroduces
+   exactly the cut-out class RULE 0.15 convicts, with soft edges and invented
+   placement. The model fills the whole rectangle; geometry applies the mask
+   deterministically afterwards.
+6. **Every 3D proof is built from that side's EXTRACTED PANEL, and nothing
+   waits.** Owner: *"ALL 3d from extracted panels — no waiting. Individual
+   panels fed to 3d sides and duplicated, put in RevisionStudioIQ alongside 3d
+   proofs and in PanelPro with all upscaled assets."* `panel(surface) → 3D
+   proof(surface)` the moment that panel is cut. `buildViewAuthorities` /
+   `viewAuthorityFor` must hash-bind to the persisted Call-9 panel rather than
+   to a fresh crop of the master — same strictness, pointed at the artifact the
+   customer actually buys. Each panel is then duplicated and published without
+   waiting for the set: RevisionStudioIQ beside that side's proof, PanelPro with
+   the upscaled assets.
+
+Enforced by `tests/atlas-artboard-edge-call1.test.mjs` and
+`tests/genie-catalog-sizes.test.mjs`. Contract version
+`atlas-artboard-designiq.20260827.v3`. Items 5 and 6 are SPECIFIED, not yet
+built — see `docs/ATLAS_ONE_ARTIFACT_GRAPH.md` §2.
+
+## 🧬 RULE 0.27 — ONE ARTIFACT GRAPH. CODE OWNS THE ARTBOARD; A.I. OWNS THE DESIGN. (Trish 2026-08-27)
+
+**Full directive: `docs/ATLAS_ONE_ARTIFACT_GRAPH.md`. Read it before touching
+RevisionStudioIQ, PanelPro Studio, panel extraction or the proof fan-out.**
+
+The owner proved the pipeline is still split, from the product's own screens:
+PanelPro reported **Print panels 0/6** while RevisionStudioIQ showed images in
+its Production Pack column; PanelPro reported **3D proofs 8/7**; a roof proof
+existed in one surface and was reported missing by another. Three numbers about
+one design that cannot all be true.
+
+> "Your intended architecture was one source → duplicate publication, whereas
+> the current implementation has become one source → several independently
+> reconstructed representations."
+
+Three rules follow, and they are architectural, not cosmetic:
+
+1. **HARDWIRE THE ARTBOARD SHELL.** Gemini must not be responsible for drawing
+   the A.T.L.A.S. containers. Code/GENIE deterministically builds the six
+   labeled rectangular surface containers, their real GENIE proportions,
+   positions, surface IDs and the master canvas — the Houdini PANEL LAYOUT
+   topology. DesignPanelAI then authors ONE cohesive wrap INSIDE those defined
+   interiors in ONE Call 1. **The A.I. owns the design; the code owns the
+   geometry.** Still one source design, still one authoring call.
+2. **THE MASTER FANS OUT IN PARALLEL, IMMEDIATELY.** Panels (+5" bleed), asset
+   extraction, and the Driver proof all start on master acceptance. The
+   user-facing critical path is ONLY `Call 1 → Driver proof`; on "See All
+   Sides" the remaining six render concurrently. Panels and logos are never
+   behind the proof set.
+3. **ONE LINEAGE, PUBLISHED TWICE — NEVER RECONSTRUCTED TWICE.** The SAME
+   persisted artifacts go to RevisionStudioIQ and PanelPro Studio. No separate
+   RevisionStudio panel producer, no client-side crop, no preview standing in
+   for a production panel. **Neither UI may synthesize its own representation of
+   a missing canonical artifact** — a missing panel is reported missing.
+
+Acceptance: one fresh generation showing 1 master at 4096×4096, 6/6 persisted
+panels with 5" bleed, extracted assets, Driver first, 7 canonical proof slots,
+both UIs populated FROM THE SAME ARTIFACT IDS, all bound to one `generationId`
+/ `DesignID` / `atlasRevisionId` / `masterContentHash`. **Do not report READY
+while either UI is synthesizing a missing artifact.**
+
+Status 2026-08-27: §1 and §2 are NOT built; the five data contradictions in §4
+of the doc are diagnosed, not fixed. Design quality is a SEPARATE failure and a
+graph fix is never licence to rewrite the creative prompt (RULE 0.1).
+
 ## 🎯 RULE 0.26 — ONE CANONICAL CALL 1: THE REAL EDGE FUNCTION EXECUTES THE PERSONA BRAIN (Trish 2026-08-27, supersedes the 08-26 vendored-bridge form)
 
 **Owner directive (PASTE_TO_CLAUDE.md, 2026-08-27): "Call 1 must execute through

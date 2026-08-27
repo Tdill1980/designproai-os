@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v2";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v3";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -315,9 +315,11 @@ function atlasFlatMasterContract(panels: Array<{ label: string; widthInches?: nu
     .map((p) => `\u2022 ${p.label}${p.widthInches && p.heightInches ? ` \u2014 ${p.widthInches}" x ${p.heightInches}"` : ""}`)
     .join("\n");
   return `OUTPUT FORMAT \u2014 ONE FLAT PRODUCTION MASTER on a single square 4K canvas:
-Follow the attached layout guide exactly \u2014 paint each labeled panel inside its outlined rectangle; outside the rectangles the canvas stays blank.
+The attached layout guide is the ARTBOARD. Its labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed already included. Paint inside each labeled rectangle; outside the rectangles the canvas stays blank.
 ${panelLines}
-Each panel is ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner \u2014 paint straight through wherever a window, wheel arch, light or trim piece would sit; the installer cuts those openings from the printed vinyl later. Never draw the vehicle, its silhouette, or any cut-out shape.
+FILL EVERY CONTAINER EDGE TO EDGE. Each panel is ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner, with the design running off all four sides of its rectangle. No blank margin, no white gap, no letterboxing, no rounded corner, no frame or border around a panel.
+NO BODY LINES. Do not draw door seams, panel gaps, rocker or hood contours, wheel arches, windows, glass, lights, handles, bumpers, a vehicle silhouette, or any cut-out shape. The artwork paints straight THROUGH every place one of those would sit \u2014 the installer cuts the openings from the printed vinyl afterwards, and a line drawn here prints as a line on the wrap.
+Paint the FULL rectangle even where the finished vehicle is not wrapped \u2014 a pickup bed opening, for example. Those regions are masked out of the panel by code after you finish, from the vehicle's own geometry. Do not leave a gap, a hole, a dark shape or a soft edge for one, and do not try to draw where it goes.
 PASSENGER SIDE is DRIVER SIDE's mirror twin \u2014 the same artwork reversed \u2014 with every word and logo forward-reading on both.
 ONE cohesive wrap: the same design flows across all panels as a single artwork laid flat.
 Any attached flattened-top-view reference teaches LAYOUT ONLY \u2014 take no artwork, wording, logo, colour or style from it.`;

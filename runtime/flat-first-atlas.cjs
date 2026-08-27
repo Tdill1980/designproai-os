@@ -89,7 +89,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v2";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v3";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 const TARGET_PRINT_PPI = 150;
@@ -924,13 +924,23 @@ function customerCreativeBrief(input) {
   return JSON.stringify(values);
 }
 
+// THE CONTAINER LABELS, EXACTLY AS THE OWNER NAMES THEM (Trish 2026-08-27):
+// "LABELED ATLAS CONTAINER Driver Side, Passenger Side, Hood, Roof, Rear and
+// Front." These are the strings on the labelled installer map and in the
+// GENIE panel list the Call-1 request carries.
+//
+// They are NOT drawn on the authoring guide. renderAtlasAuthoringGuide is
+// geometry only and throws `flat_atlas_authoring_guide_contains_text` if a
+// glyph ever reaches it -- a surface name shown to the image model comes back
+// painted across the wrap as artwork. Labelling the containers and keeping the
+// model's copy text-free are both true at once, by having two guides.
 const SURFACE_LABELS = Object.freeze({
-  driver: "DRIVER SIDE",
-  passenger: "PASSENGER SIDE",
-  hood: "HOOD",
-  roof: "ROOF",
-  front: "FRONT",
-  rear: "REAR",
+  driver: "Driver Side",
+  passenger: "Passenger Side",
+  hood: "Hood",
+  roof: "Roof",
+  front: "Front",
+  rear: "Rear",
 });
 
 // The canonical Call-1 request. Everything creative happens INSIDE the deployed

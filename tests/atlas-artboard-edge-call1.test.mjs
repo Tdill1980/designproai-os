@@ -69,7 +69,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260827\.v2"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260827\.v3"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -142,4 +142,43 @@ test("both halves of the Houdini paired lesson reach Call 1", () => {
     assert.ok(runtimeSource.includes(line), `the runtime lesson must still say: ${line}`);
     assert.ok(handler.includes(line), `the Call-1 request must carry: ${line}`);
   }
+});
+
+test("the flat contract states labeled containers, GENIE dims + 5in bleed, filled to the edges, no body lines", () => {
+  // Owner directive 2026-08-27, verbatim: "ATLAS FLATTENED TOPO VIEW CONTAINER
+  // MUST HAVE LABELED CONTAINERS AND GENIE DIMS WITH 5" BLEED — ATLAS FILLS
+  // FLATTENED TOP DESIGN WITHOUT BODYLINES FILLED TO RECTANGLE CONTAINER EDGES."
+  //
+  // This narrows RULE 0.15 on ONE point, by the owner's own decision: the
+  // master no longer carries the vehicle's panel geometry. It never carried
+  // holes — that was already forbidden — and now it carries no seams, contours
+  // or arches either. A line drawn on the master prints as a line on the wrap.
+  const contract = edgeSource.slice(
+    edgeSource.indexOf("function atlasFlatMasterContract("),
+    edgeSource.indexOf("function buildDesignIQPrompt("),
+  );
+  assert.match(contract, /labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed/);
+  assert.match(contract, /FILL EVERY CONTAINER EDGE TO EDGE/);
+  assert.match(contract, /running off all four sides of its rectangle/);
+  assert.match(contract, /No blank margin, no white gap, no letterboxing/);
+  assert.match(contract, /NO BODY LINES/);
+  for (const forbidden of ["door seams", "panel gaps", "rocker", "wheel arches", "windows", "bumpers", "vehicle silhouette"]) {
+    assert.ok(contract.includes(forbidden), `the contract must name ${forbidden} as forbidden geometry`);
+  }
+  // THE UNWRAPPED REGIONS ARE MASKED BY CODE, NOT DRAWN BY THE MODEL.
+  // Owner 2026-08-27: "masked truck bed must not have any wrap design." A
+  // pickup's bed opening carries no vinyl — but asking the model to leave a
+  // hole for it reintroduces exactly the cut-out class RULE 0.15 convicts, with
+  // soft edges and invented placement. It fills the whole rectangle; geometry
+  // owns the mask, deterministically, afterwards.
+  assert.match(contract, /Paint the FULL rectangle even where the finished vehicle is not wrapped/);
+  assert.match(contract, /pickup bed opening/);
+  assert.match(contract, /masked out of the panel by code after you finish/);
+  assert.match(contract, /Do not leave a gap, a hole, a dark shape or a soft edge for one/);
+
+  // The mirror twin and the one-cohesive-wrap rules survive the rewrite.
+  assert.match(contract, /PASSENGER SIDE is DRIVER SIDE's mirror twin/);
+  assert.match(contract, /ONE cohesive wrap/);
+  // …and the reference-class firewall is still on the reference.
+  assert.match(contract, /teaches LAYOUT ONLY/);
 });
