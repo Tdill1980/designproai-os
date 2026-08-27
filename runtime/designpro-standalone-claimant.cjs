@@ -36,10 +36,26 @@ const HASH_RE = /^[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const stageLeaseContext = new AsyncLocalStorage();
 const STAGES = Object.freeze([
-  "revision.freeze", "proof.build", "panels.build",
+  // THE EXTRACTION BRANCH RUNS AHEAD OF THE 2D PROOF.
+  //
+  // `proof.build` sat second, so `panels.build` -- a pure byte promotion of
+  // panels Call 1 already cut and hashed, with no AI in it -- was queued behind
+  // an AI proof-sheet render, and `logos.extract` behind them both.
+  // `claim_designpro_stage` admits a stage only when every LOWER-sequence stage
+  // has completed, and the claimant is single-flight, so that ordering was a
+  // hard barrier: every panel and every logo in PanelPro waited on a
+  // documentation artifact (owner 2026-08-27: "Nothing in Branch A waits for
+  // Branch B... PanelPro updates on each extraction").
+  //
+  // The real dependencies are preserved exactly. Call 8 needs the frozen
+  // revision, which it still has; `pack.verify` is the first stage that reads
+  // its receipt, and it still runs after it. See
+  // 20260827100000_designpro_panels_do_not_wait_for_the_proof.sql for why this
+  // does not weaken RULE 0.25 -- and for the numbering tension it does create.
+  "revision.freeze", "panels.build",
   // Call 11 sits between Call 10 and the PanelPro gate: its de-logoed
   // duplicates are what that gate validates against vehicle templates.
-  "logos.extract", "panels.delogo", "pack.verify", "pack.activate",
+  "logos.extract", "panels.delogo", "proof.build", "pack.verify", "pack.activate",
   // The purchase gate leads production. Everything after it is paid work, so
   // nothing expensive sits ahead of it.
   //

@@ -277,7 +277,10 @@ test("real atlasProjectionParts passes its exact native crop through the provide
   const guide = await flatFirst.renderAtlasGuide(manifest);
   const masterBytes = (await flatFirst.normalizeAtlasMaster(guide, manifest)).bytes;
   const projection = await flatFirst.projectionDerivative(masterBytes);
-  const viewAuthorities = await flatFirst._test.buildViewAuthorities(masterBytes, manifest);
+  const callOnePanels = await flatFirst.cutCallOnePanels(
+    masterBytes, manifest, flatFirst._test.sha256(masterBytes),
+  );
+  const viewAuthorities = await flatFirst._test.buildViewAuthorities(callOnePanels);
   const masterContentHash = hash(masterBytes);
   const flatAtlas = {
     contract: flatFirst.ATLAS_CONTRACT,

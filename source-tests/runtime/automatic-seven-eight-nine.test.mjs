@@ -32,7 +32,25 @@ test("seven distinct views automatically precede flat proof, panels and logos", 
   // GENIE is NOT here. manifest.resolve deploys only when the production pack is
   // ordered; the free half needs no validated production geometry, because Call
   // 1 resolved the design-time size of every side and cut the six panels to it.
-  assert.deepEqual(STAGES.slice(0, 7), ["revision.freeze", "proof.build", "panels.build", "logos.extract", "panels.delogo", "pack.verify", "pack.activate"]);
+  // THE EXTRACTION BRANCH RUNS AHEAD OF THE 2D PROOF (owner 2026-08-27).
+  // `panels.build` promotes bytes Call 1 already cut and hashed -- no AI at all
+  // -- and it used to sit behind `proof.build`, an AI proof-sheet render,
+  // because `claim_designpro_stage` gates on every lower sequence completing and
+  // the claimant is single-flight. Every panel and logo in PanelPro waited on a
+  // documentation artifact. Call 8 now runs where its receipt is first needed.
+  assert.deepEqual(STAGES.slice(0, 7), ["revision.freeze", "panels.build", "logos.extract", "panels.delogo", "proof.build", "pack.verify", "pack.activate"]);
+  // The dependencies that are REAL, asserted as relations rather than positions
+  // so a future reorder has to keep meaning them.
+  assert.ok(STAGES.indexOf("panels.build") > STAGES.indexOf("revision.freeze"));
+  assert.ok(STAGES.indexOf("logos.extract") > STAGES.indexOf("panels.build"),
+    "Call 10 separates logos from the Call 9 panels");
+  assert.ok(STAGES.indexOf("panels.delogo") > STAGES.indexOf("logos.extract"));
+  assert.ok(STAGES.indexOf("proof.build") > STAGES.indexOf("revision.freeze"),
+    "Call 8 is drawn from the frozen revision");
+  assert.ok(STAGES.indexOf("proof.build") < STAGES.indexOf("pack.verify"),
+    "pack.verify is the first stage that reads the Call 8 receipt");
+  assert.ok(STAGES.indexOf("panels.build") < STAGES.indexOf("proof.build"),
+    "no panel or logo may wait on the 2D proof");
   assert.equal(STAGES[7], "await_purchase", "the purchase gate leads the paid half");
   assert.equal(STAGES[8], "manifest.resolve", "GENIE deploys on order, behind the gate");
   assert.ok(

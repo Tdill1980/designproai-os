@@ -46,14 +46,26 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 test("the projection and the panels are cut from the same repaired sheet", () => {
   // One expression each. If either ever takes `masterBytes` again, the proof
   // half is back on the holed original and the canary failure returns.
-  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash\)/);
+  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash, \{/);
   assert.match(source, /projectionDerivative\(surfaceSourceBytes\)/);
   assert.doesNotMatch(source, /await projectionDerivative\(masterBytes\)/);
 });
 
 test("the six exact surface crops the proof QC judges are built from the repaired sheet", () => {
-  assert.match(source, /const viewAuthorities = await buildViewAuthorities\(surfaceSourceBytes, manifest\);/);
-  assert.doesNotMatch(source, /buildViewAuthorities\(masterBytes, manifest\)/);
+  // THE GUARANTEE IS UNCHANGED; THE SEAM MOVED ONE STEP CLOSER TO THE PANEL.
+  //
+  // The authorities used to be a SECOND crop of the repaired sheet, taken with
+  // the same rects the panels use. They are now an encode OF THE PANELS, and
+  // the panels are cut from `surfaceSourceBytes` -- so the proof half is still
+  // conditioned on the repaired sheet and can no longer diverge from what the
+  // customer buys, because there is one crop instead of two that agree
+  // (owner 2026-08-27: "each proof uses its own extracted panel as immutable
+  // artwork authority").
+  assert.match(source, /await buildViewAuthorities\(authorityPanels\)/);
+  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash/);
+  assert.doesNotMatch(source, /buildViewAuthorities\(masterBytes/);
+  // And a resumed run re-cuts from the repaired sheet, never the authored one.
+  assert.match(source, /await cutCallOnePanels\(surfaceSourceBytes, manifest, row\.master_content_hash\)/);
 });
 
 test("the canonical master is still persisted unmodified and stays the lineage identity", () => {

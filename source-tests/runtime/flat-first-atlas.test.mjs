@@ -326,7 +326,8 @@ test("all seven proof prompts carry their exact master-bound native zone and ide
   const masterBytes = (await atlas.normalizeAtlasMaster(guideBytes, manifest)).bytes;
   const projection = await atlas.projectionDerivative(masterBytes);
   const masterHash = atlas._test.sha256(masterBytes);
-  const viewAuthorities = await atlas._test.buildViewAuthorities(masterBytes, manifest);
+  const callOnePanels = await atlas.cutCallOnePanels(masterBytes, manifest, masterHash);
+  const viewAuthorities = await atlas._test.buildViewAuthorities(callOnePanels);
   const flatAtlas = {
     contract: atlas.ATLAS_CONTRACT,
     revisionId: "44444444-4444-4444-8444-444444444444",
