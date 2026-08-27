@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered seventy-migration chain', () => {
-  assert.equal(migrationNames.length, 70);
+test('fresh bootstrap contains one ordered seventy-one-migration chain', () => {
+  assert.equal(migrationNames.length, 71);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -154,6 +154,8 @@ test('fresh bootstrap contains one ordered seventy-migration chain', () => {
       '20260827060000',
       // The gate reads the acceptance basis, not the judge's confidence.
       '20260827070000',
+      // Driver is priority, not prerequisite.
+      '20260827080000',
     ],
   );
 });
