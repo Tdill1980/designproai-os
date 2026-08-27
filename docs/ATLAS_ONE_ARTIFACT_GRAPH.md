@@ -150,9 +150,47 @@ MASTER
 ```
 
 **No proof waits for another proof.** Driver is prioritised for latency and
-customer experience only — **it is not the design authority.** (This corrects the
-current `hydrateDriver()` shape, where Driver is rendered and hash-verified
-*before* the other six are allowed to start.)
+customer experience only — **it is not the design authority.**
+
+### VERIFIED 2026-08-27: the proof half ALREADY works this way
+
+An earlier revision of this section said this "corrects the current
+`hydrateDriver()` shape, where Driver is rendered and hash-verified before the
+other six are allowed to start." **That was wrong — I wrote it from the rule
+rather than from the code.** Read out of the running source:
+
+- `runAtlasProofStages` passes `parallel: true`, and `runRequest` dispatches
+  `Promise.all(slots.map(runSlot))` — all seven overlap.
+- Driver keeps priority by being **first in the slot array**, so its provider
+  call is issued first and it is still what the customer sees first (RULE 0.23).
+- The code says so in its own words: *"PRIORITY IS NOT PREREQUISITE ... a failed
+  Driver now leaves the other five free to complete."* It was fixed after
+  `a6dd78aa` (passengerMirrorMae 0.29343) and `fc2f2e80` (upside-down passenger
+  lettering), where Passenger was built by mirroring Driver's pixels outright.
+
+And the panels are already ahead of the proofs, not behind them:
+`cutCallOnePanels` runs inside Call 1, on the accepted master, **before any
+proof is dispatched**. So `master → six panels` genuinely happens before and
+independently of proof completion, which is the hard dependency rule.
+
+### WHAT IS STILL NOT TRUE, AND IT IS ONE LINE
+
+`runRequest` computes `state: failed.length ? "failed" : ...`. **One refused
+slot marks the whole request `failed`,** which is what turns a design with five
+good proofs and six good panels into a red FAILED badge across the library
+(`04cc0b29`: five accepted, roof and close-up refused).
+
+The artifacts survive — nothing is deleted, and the handoff gate reads
+`masterQcPassed`, not the proof set — so this is a REPORTING defect, not a
+data-loss one. But it directly contradicts the rule above:
+
+> A failed Close-Up **cannot** cancel the Driver / Passenger / Front / Rear /
+> Roof artifacts.
+
+Fixing it means separating "this slot failed" from "this request failed", and
+`outputs_ready` is what several gates key on — so it is an owner-level decision
+about what a partially-complete run *is*, not a tidy-up. Flagged, not silently
+changed.
 
 ### 3D proof inputs
 
