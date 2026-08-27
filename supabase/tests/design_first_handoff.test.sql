@@ -1,5 +1,5 @@
 begin;
-select plan(31);
+select plan(34);
 
 select has_table(
   'designpro_private','revision_fulfillment_bindings',
@@ -229,15 +229,58 @@ select is(
 -- GENIE deploys on order, so manifest.resolve is no longer one of these. The
 -- free run is asserted by name rather than by count: a stage silently added or
 -- dropped here is the failure mode this test exists to catch.
+--
+-- THE EXTRACTION BRANCH RUNS AHEAD OF THE 2D PROOF (owner 2026-08-27).
+-- `proof.build` sat second, so `panels.build` -- a pure byte promotion of the
+-- panels Call 1 already cut and hashed, with no AI in it -- was queued behind an
+-- AI proof-sheet render, and `logos.extract` behind them both.
+-- `claim_designpro_stage` admits a stage only when every LOWER-sequence stage
+-- has completed, so that ordering was a hard barrier: every panel and every logo
+-- in PanelPro waited on a documentation artifact.
 select results_eq(
   $$select s.stage_key from public.designpro_workflow_stages s
     join public.designpro_workflow_runs r on r.id=s.run_id
     where r.revision_id='33000000-0000-4000-8000-000000000003'
       and r.workflow_type='designpro.entice_pack'
     order by s.sequence$$,
-  $$values ('revision.freeze'),('proof.build'),('panels.build'),
-    ('logos.extract'),('panels.delogo'),('pack.verify'),('pack.activate')$$,
+  $$values ('revision.freeze'),('panels.build'),('logos.extract'),
+    ('panels.delogo'),('proof.build'),('pack.verify'),('pack.activate')$$,
   'the revision-to-Call-11 free run runs without GENIE'
+);
+-- And the dependencies that are REAL, asserted as relations rather than
+-- positions, so a future reorder has to keep meaning them.
+select ok(
+  (select s.sequence from public.designpro_workflow_stages s
+     join public.designpro_workflow_runs r on r.id=s.run_id
+     where r.revision_id='33000000-0000-4000-8000-000000000003'
+       and r.workflow_type='designpro.entice_pack' and s.stage_key='panels.build')
+  < (select s.sequence from public.designpro_workflow_stages s
+     join public.designpro_workflow_runs r on r.id=s.run_id
+     where r.revision_id='33000000-0000-4000-8000-000000000003'
+       and r.workflow_type='designpro.entice_pack' and s.stage_key='proof.build'),
+  'no panel waits on the 2D proof'
+);
+select ok(
+  (select s.sequence from public.designpro_workflow_stages s
+     join public.designpro_workflow_runs r on r.id=s.run_id
+     where r.revision_id='33000000-0000-4000-8000-000000000003'
+       and r.workflow_type='designpro.entice_pack' and s.stage_key='logos.extract')
+  > (select s.sequence from public.designpro_workflow_stages s
+     join public.designpro_workflow_runs r on r.id=s.run_id
+     where r.revision_id='33000000-0000-4000-8000-000000000003'
+       and r.workflow_type='designpro.entice_pack' and s.stage_key='panels.build'),
+  'Call 10 still separates logos from the Call 9 panels'
+);
+select ok(
+  (select s.sequence from public.designpro_workflow_stages s
+     join public.designpro_workflow_runs r on r.id=s.run_id
+     where r.revision_id='33000000-0000-4000-8000-000000000003'
+       and r.workflow_type='designpro.entice_pack' and s.stage_key='proof.build')
+  < (select s.sequence from public.designpro_workflow_stages s
+     join public.designpro_workflow_runs r on r.id=s.run_id
+     where r.revision_id='33000000-0000-4000-8000-000000000003'
+       and r.workflow_type='designpro.entice_pack' and s.stage_key='pack.verify'),
+  'pack.verify is the first stage that reads the Call 8 receipt'
 );
 
 -- Simulate the exact crash window: revision insertion committed, workflow
