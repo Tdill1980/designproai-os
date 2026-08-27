@@ -18,6 +18,7 @@ const {
   findGenieCatalogSurfaces,
   surfacesFromGenieCatalog,
   normalizeModelTokens,
+  catalogDimensionRow,
 } = require("../runtime/genie-universal-resolver.cjs");
 
 // The real row, verbatim from the migrated catalog.
@@ -146,4 +147,47 @@ test("a row missing three of its four measured surfaces is filtered out, not mer
     { make: "Ford", model: "F650 Crew Cab", year: "2009", vehicleClass: "truck" },
   );
   assert.equal(match, null);
+});
+
+// ── THE CATALOG AUTHORITY MUST SURVIVE THE ATLAS VALIDATOR ─────────────────
+//
+// This is the test that was missing, and its absence cost a live failure.
+// tests above prove findGenieCatalogSurfaces returns the right ROW; nothing
+// proved the authority it emits is one flat-first-atlas will accept. It was
+// not: `status: "genie-catalog"` was outside normalizedGeometryAuthority's
+// accepted set, and `productionEligible` was omitted entirely, so the very
+// first request that ever matched the catalog died at 5 seconds with
+// `flat_atlas_geometry_authority_invalid` on the customer's screen
+// (build 91b72f5, 2026-08-27 09:16).
+//
+// A silent fall-through hid it for as long as the match never happened. So the
+// authority is now built by the resolver and validated by the consumer, in one
+// test, across the seam that separates them.
+const atlas = require("../runtime/flat-first-atlas.cjs");
+
+test("the authority the catalog emits is one the A.T.L.A.S. manifest accepts", async () => {
+  const match = await findGenieCatalogSurfaces(
+    stub([F250]),
+    { make: "Ford", model: "F250 Crew Cab", year: "2009", vehicleClass: "truck" },
+  );
+  assert.ok(match);
+  const row = catalogDimensionRow(match, { make: "Ford", model: "F250 Crew Cab", year: "2009" });
+  const authority = row.proofGeometryAuthority;
+
+  // The three fields the validator reads, stated rather than assumed.
+  assert.equal(authority.status, "genie-catalog");
+  assert.equal(authority.operatorValidated, false);
+  assert.equal(authority.productionEligible, false, "layout geometry is never production-eligible");
+  assert.ok(authority.candidateId, "a measured row must say which row");
+
+  // And it must pass, not merely look right.
+  const manifest = atlas._test
+    ? atlas._test.normalizedGeometryAuthority(authority)
+    : null;
+  if (manifest) {
+    assert.equal(manifest.status, "genie-catalog");
+    assert.equal(manifest.source, "genie-panelizer-catalog");
+    assert.equal(manifest.productionEligible, false);
+    assert.equal(manifest.operatorValidated, false);
+  }
 });

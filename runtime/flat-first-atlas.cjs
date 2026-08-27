@@ -229,10 +229,28 @@ function normalizedGeometryAuthority(authority) {
   if (authority.contract !== GEOMETRY_AUTHORITY_CONTRACT) {
     throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "A.T.L.A.S. geometry authority contract is invalid");
   }
+  // THREE PROVENANCE CLASSES, NOT TWO.
+  //
+  // `validated` is a human who measured this vehicle. `provisional` is the
+  // grounded estimator, which owes citations because it is a guess. The GENIE
+  // Panelizer catalog is neither: 1,781 rows a shop MEASURED, keyed by row id,
+  // with no web source to cite and no operator attached.
+  //
+  // It was emitted as `status: "genie-catalog"` and this list accepted only the
+  // first two, so the catalog path threw `flat_atlas_geometry_authority_invalid`
+  // the moment it ever matched -- which is why it took until 2026-08-27 to see:
+  // every earlier run fell through to the estimator before reaching here, and
+  // the fall-through was silent. Fixing the F250 match surfaced it immediately,
+  // at 5 seconds, on the customer's screen.
+  //
+  // It is its own class with its own rules rather than being squeezed into one
+  // of the other two: it is not operator-validated (nobody signed for it) and it
+  // needs a candidate identity (the catalog row) but not sourceUrls.
   const status = String(authority.status || "");
-  if (!["validated", "provisional"].includes(status)
+  if (!["validated", "provisional", "genie-catalog"].includes(status)
     || authority.productionEligible !== false
     || (status === "validated" && authority.operatorValidated !== true)
+    || (status === "genie-catalog" && authority.operatorValidated !== false)
     || (status === "provisional" && (authority.operatorValidated !== false || !authority.estimatorContract))) {
     throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "A.T.L.A.S. geometry authority state is invalid");
   }
@@ -242,15 +260,24 @@ function normalizedGeometryAuthority(authority) {
   if (status === "provisional" && (!authority.candidateId || !sourceUrls.length)) {
     throw new FlatAtlasError("flat_atlas_provisional_authority_incomplete", "Provisional A.T.L.A.S. geometry requires a candidate identity and citations");
   }
+  // A measured row must say WHICH row, or the dimensions on the panels cannot be
+  // traced back to anything.
+  if (status === "genie-catalog" && !authority.candidateId) {
+    throw new FlatAtlasError("flat_atlas_catalog_authority_incomplete", "A GENIE catalog authority requires the measured row identity");
+  }
   return {
     contract: GEOMETRY_AUTHORITY_CONTRACT,
     status,
     purpose: "calls-1-7-layout-only",
     candidateId: authority.candidateId || null,
     candidateHash: authority.candidateHash || null,
-    source: String(authority.source || (status === "validated" ? "operator-validated" : "gemini_grounded")),
+    source: String(authority.source
+      || (status === "validated" ? "operator-validated"
+        : status === "genie-catalog" ? "genie-panelizer-catalog"
+        : "gemini_grounded")),
     sourceUrls,
-    confidence: String(authority.confidence || (status === "validated" ? "high" : "low")),
+    confidence: String(authority.confidence
+      || (status === "provisional" ? "low" : "high")),
     ...(authority.estimatorContract ? { estimatorContract: String(authority.estimatorContract) } : {}),
     operatorValidated: status === "validated",
     validatedBy: status === "validated" ? authority.validatedBy || null : null,
@@ -2256,6 +2283,9 @@ module.exports = {
   viewAuthorityFor,
   _test: {
     activeZoneMaskSvg,
+    // Exported so the GENIE resolver's authority can be validated by its real
+    // consumer in one test, across the seam that separates them.
+    normalizedGeometryAuthority,
     artboardQualityExampleParts,
     assertMasterRequestWithinLimit,
     assertAtlasGeometryBasis,
