@@ -1698,10 +1698,11 @@ async function generateOrReuseFlatAtlas(options) {
       && masterQc.metadata.masterHash === masterHash
       && masterQc.metadata.guideHash === guideHash;
     if (accepted) break;
-    const cutoutOnly = masterQc?.code === "atlas_master_qc_cutouts_present"
-      && masterQc?.metadata?.contract === MASTER_QC_CONTRACT
+    const verdictBound = masterQc?.metadata?.contract === MASTER_QC_CONTRACT
       && masterQc.metadata.masterHash === masterHash
-      && masterQc.metadata.guideHash === guideHash
+      && masterQc.metadata.guideHash === guideHash;
+    const cutoutOnly = masterQc?.code === "atlas_master_qc_cutouts_present"
+      && verdictBound
       && Array.isArray(masterQc?.cutout?.surfaces);
     if (cutoutOnly) {
       // A CUT-OUT IS NOT WORTH RE-ROLLING FOR: the proofs mask that region and
@@ -1709,6 +1710,55 @@ async function generateOrReuseFlatAtlas(options) {
       masterCutoutSurfaces = masterQc.cutout.surfaces.map(String);
       masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
       break;
+    }
+
+    // REPAIR BEFORE YOU RE-ROLL. (Owner directive 2026-08-27.)
+    //
+    // The branch above only fires when cut-outs are the ONLY finding. When the
+    // judge BUNDLES a cut-out with a real creative defect the code is
+    // `atlas_master_qc_semantic_failed`, and the whole candidate was discarded
+    // unrepaired -- spending an authoring attempt on a defect the fill closes
+    // in ~100ms with no AI.
+    //
+    // Live cost, canary 6c1bfae6 (2026-08-27): each attempt was refused for
+    // "one wheel/glass/bed shape cut out of the panel" on driver AND passenger
+    // TOGETHER WITH upside-down hood text, three times over. The cut-outs were
+    // repairable every time; only the text was worth another throw.
+    //
+    // So: fill the holes, re-judge the REPAIRED candidate, and let only what
+    // survives that decide whether an authoring retry is spent. The authored
+    // bytes are never mutated -- `masterBytes` stays the lineage identity.
+    const bundledCutouts = verdictBound && Array.isArray(masterQc?.cutout?.surfaces)
+      ? masterQc.cutout.surfaces.map(String)
+      : [];
+    if (bundledCutouts.length) {
+      const trialFill = await fillMasterCutouts(masterBytes, manifest, bundledCutouts);
+      if (trialFill.changed) {
+        const repairedBytes = trialFill.bytes;
+        const repairedHash = sha256(repairedBytes);
+        const repairedQc = await validateMaster({
+          masterBytes: repairedBytes, guideBytes, manifest, input,
+        });
+        const repairedBound = repairedQc?.metadata?.contract === MASTER_QC_CONTRACT
+          && repairedQc.metadata.masterHash === repairedHash
+          && repairedQc.metadata.guideHash === guideHash;
+        if (repairedQc?.accepted === true && repairedBound) {
+          // The only thing wrong with this master was repairable. Keep it, and
+          // record the surfaces that arrived holed so PanelPro still flags them
+          // for human template QC.
+          masterQc = repairedQc;
+          masterCutoutSurfaces = bundledCutouts;
+          masterCutoutFindings = (masterQc?.cutout?.findings || []).map(String);
+          logger?.info?.("flat_atlas_master_repaired_then_accepted", {
+            surfaces: bundledCutouts, attempt,
+          });
+          break;
+        }
+        // Still refused. The remaining findings are genuine creative defects,
+        // so the retry below is spent on THOSE -- and the corrective note now
+        // describes the repaired candidate rather than a hole already closed.
+        if (repairedBound) masterQc = repairedQc;
+      }
     }
     if (attempt === maxAuthoringAttempts) {
       throw new FlatAtlasError(
