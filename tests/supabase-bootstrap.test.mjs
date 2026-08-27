@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered seventy-one-migration chain', () => {
-  assert.equal(migrationNames.length, 71);
+test('fresh bootstrap contains one ordered seventy-two-migration chain', () => {
+  assert.equal(migrationNames.length, 72);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -156,6 +156,8 @@ test('fresh bootstrap contains one ordered seventy-one-migration chain', () => {
       '20260827070000',
       // Driver is priority, not prerequisite.
       '20260827080000',
+      // The projection is derived from the repaired sheet, not the authored one.
+      '20260827090000',
     ],
   );
 });

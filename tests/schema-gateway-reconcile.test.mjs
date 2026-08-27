@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-55), [
+  assert.deepEqual(names.slice(-56), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -168,6 +168,10 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // The fifth and last all-or-nothing in this contract: Driver is the
     // PRIORITY view, not a prerequisite for the set to be readable.
     "20260827080000_designpro_a_missing_driver_is_not_an_invalid_lineage.sql",
+    // Pre-dates the rest: RULE 0.15's 2026-08-26 correction moved the
+    // projection onto the repaired sheet; this predicate still pinned it to the
+    // authored master, so any cut-out invalidated the whole set.
+    "20260827090000_designpro_projection_comes_from_the_repaired_sheet.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
