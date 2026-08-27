@@ -46,6 +46,23 @@ type RoofSize = "none" | "small" | "medium" | "large";
 
 type GenerationError = 'auth_required' | 'limit_reached' | 'generation_failed';
 
+// The seven canonical proof slots, in the order the customer sees them, with
+// the words a person uses for each. Local rather than imported: this file is on
+// the frozen customer path (RULE 0.18) and its import closure is walked by
+// tests/designpro-customer-path-seam.test.mjs.
+const CANONICAL_PROOF_VIEW_TYPES = [
+  "side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof",
+] as const;
+const PROOF_VIEW_LABELS: Record<string, string> = {
+  side: "Driver side",
+  "passenger-side": "Passenger side",
+  hood_detail: "Hood",
+  front: "Front",
+  rear: "Rear",
+  "close-up": "Close-up",
+  roof: "Roof",
+};
+
 const ATLAS_NEW_RUN_REQUIRED_MESSAGE =
   "This saved proof set cannot be reused. Start a new Precision run.";
 const atlasNewRunRequired = (error: unknown) => {
@@ -682,10 +699,49 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       return { generationId: request.generationId, directRender: true, renderUrl: primary?.signedUrl };
     } catch (error: any) {
       const code = String(error?.code || error?.message || "");
-      const requiresNewAtlasRun = atlasNewRunRequired(error);
       const freshAtlasMasterQcFailure =
         acceptedRequest?.pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-        && code.includes("flat_atlas_master_qc_failed");
+        && (code.includes("flat_atlas_master_qc_failed")
+          || code.includes("flat_atlas_master_deterministic_failed"));
+
+      // A SHORT PROOF SET IS NOT A LOST DESIGN. (Trish 2026-08-27.)
+      //
+      // "A failed Hood 3D proof cannot prevent the Hood production panel from
+      // existing. A failed Close-Up cannot cancel Driver/Passenger/Front/Rear/
+      // Roof artifacts." The server now honours that -- a run with at least one
+      // accepted view completes as a partial set -- but this screen did not.
+      //
+      // Live, canary 990d4b62 (2026-08-27): the master was accepted, six panels
+      // were cut, FIVE of seven proofs were accepted, the request reached
+      // `outputs_ready` -- and the customer saw "Something went wrong. This
+      // saved proof set cannot be reused. Start a new Precision run." over a
+      // blank card. Everything the run produced was on the server and none of
+      // it was on the screen.
+      //
+      // Two causes, both here. The handoff gate still demands seven views, so
+      // the completed run threw `generation_handoff_blocked:
+      // seven_generation_views_required`; and a lineage refusal ran
+      // clearUntrustedAtlasProofState() and then SKIPPED view recovery, so the
+      // design was erased before anything could show it.
+      //
+      // So recovery happens FIRST, and the verdict is decided by what actually
+      // came back. A refusal that says "this lineage cannot be reused" is only
+      // true when there is no usable proof for this generation; when five
+      // accepted views exist, the design is real and the honest report names
+      // the sides that are missing.
+      const handoffShortSet = /seven_generation_views_required|generation_views_incomplete/
+        .test(code);
+      let recoveredViews: Awaited<ReturnType<typeof listDesignPanelViews>> = [];
+      if (acceptedRequest && !freshAtlasMasterQcFailure) {
+        try {
+          recoveredViews = await listDesignPanelViews(acceptedRequest.requestId);
+        } catch {
+          recoveredViews = [];
+        }
+      }
+      const usableViews = recoveredViews.filter((view) => view.signedUrl);
+      // Only now is it fair to say the lineage is unusable.
+      const requiresNewAtlasRun = atlasNewRunRequired(error) && !usableViews.length;
       if (requiresNewAtlasRun || freshAtlasMasterQcFailure) clearUntrustedAtlasProofState();
       // A terminal request can still own byte-verified views. The legacy
       // worker used to discover a missing production manifest only after all
@@ -693,27 +749,27 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       // paid proof set look deleted. Recover owner-scoped signed views before
       // reporting the failure. They remain explicitly legacy and are never
       // represented as an A.T.L.A.S. master.
-      let recoveredViews: Awaited<ReturnType<typeof listDesignPanelViews>> = [];
-      if (acceptedRequest && !requiresNewAtlasRun) {
-        try {
-          recoveredViews = await listDesignPanelViews(acceptedRequest.requestId);
-          if (recoveredViews.some((view) => view.signedUrl)) {
-            applyGeneratedViews(recoveredViews);
-            const primary = pickPrimaryProofView(recoveredViews);
-            setPersonaHeroUrl(primary?.signedUrl || null);
-            setPersonaGenerationId(acceptedRequest.generationId);
-            setPersonaAllViews(Object.fromEntries(
-              recoveredViews
-                .filter((view) => view.signedUrl)
-                .map((view) => [view.sourceViewType, view.signedUrl!]),
-            ));
-          }
-        } catch {
-          recoveredViews = [];
-        }
+      if (usableViews.length && !requiresNewAtlasRun && acceptedRequest) {
+        applyGeneratedViews(recoveredViews);
+        const primary = pickPrimaryProofView(recoveredViews);
+        setPersonaHeroUrl(primary?.signedUrl || null);
+        setPersonaGenerationId(acceptedRequest.generationId);
+        setPersonaAllViews(Object.fromEntries(
+          usableViews.map((view) => [view.sourceViewType, view.signedUrl!]),
+        ));
       }
+      // NAME THE SIDES, DO NOT CRY WOLF. A partial set reports what is missing
+      // and keeps everything that landed on screen.
+      const missingSides = usableViews.length
+        ? CANONICAL_PROOF_VIEW_TYPES
+          .filter((type) => !usableViews.some((view) => view.sourceViewType === type))
+          .map((type) => PROOF_VIEW_LABELS[type] || type)
+        : [];
+      const partialSet = Boolean(usableViews.length) && (handoffShortSet || missingSides.length > 0);
       const friendly =
-        requiresNewAtlasRun
+        partialSet
+          ? `${usableViews.length} of 7 views rendered. ${missingSides.join(" and ")} ${missingSides.length === 1 ? "was" : "were"} refused by proof review — your design, master and print panels are saved. Revise the design or try those views again.`
+          : requiresNewAtlasRun
           ? ATLAS_NEW_RUN_REQUIRED_MESSAGE
           : freshAtlasMasterQcFailure
           ? "The new flattened master was rejected during visual quality inspection. No proof set was saved. Start a new Precision run."
@@ -726,7 +782,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
           : /generation_timeout/.test(code)
             ? "The design is taking longer than expected. You can safely return to this page later."
             : error?.message || "Something went wrong — let's try again!";
-      console.error("[DesignPro] standalone generation failed:", error);
+      if (partialSet) console.warn("[DesignPro] partial proof set:", code, missingSides);
+      else console.error("[DesignPro] standalone generation failed:", error);
       setGenerationError(friendly);
       const recoveredPrimary = pickPrimaryProofView(recoveredViews);
       return {
