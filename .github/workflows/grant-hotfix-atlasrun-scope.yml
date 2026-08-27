@@ -42,7 +42,7 @@ jobs:
           lock = Path('tests/atlas-sole-design-authority.test.mjs')
           x = lock.read_text()
           old_lock = r'assert.match(worker, /const atlasRun = generateOrReuseFlatAtlas\(\{/);'
-          new_lock = r'assert.match(worker, /let atlasRun = null;/);\n  assert.match(worker, /atlasRun = generateOrReuseFlatAtlas\(\{/);\n  assert.doesNotMatch(worker, /const atlasRun = generateOrReuseFlatAtlas\(\{/);'
+          new_lock = 'assert.match(worker, /let atlasRun = null;/);\n  assert.match(worker, /atlasRun = generateOrReuseFlatAtlas\\(\\{/);\n  assert.doesNotMatch(worker, /const atlasRun = generateOrReuseFlatAtlas\\(\\{/);'
           if old_lock in x:
               x = x.replace(old_lock, new_lock, 1)
           if 'assert.match(worker, /let atlasRun = null;/);' not in x:
