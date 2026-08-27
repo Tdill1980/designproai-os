@@ -216,6 +216,85 @@ artifact.** A missing panel is reported as missing.
 
 ---
 
+## 4B. THE SIZES ARE WRONG BECAUSE THE GENIE CATALOG IS EMPTY (2026-08-27)
+
+Owner: *"None of them are the right size. It should be using GENIE Panelizer
+database to get sizes for ATLAS."* Measured, and she is right — with a root
+cause neither of us had named:
+
+| project | table | rows |
+|---|---|---|
+| RestylePro `kfapjdyythzyvnpdeghu` | `vehicle_dimensions` | **1781** |
+| DesignProAI `wozyamlnygaddievzuwn` | `designpro_vehicle_dimensions` | **0** |
+
+The DesignProAI table exists with exactly the right per-surface columns —
+`side_width, side_height, hood_width, hood_length, roof_width, roof_length,
+front_width, front_height, rear_width, rear_height, back_width, back_height,
+total_sqft` — and is **completely empty**. The catalog was never migrated.
+
+### What A.T.L.A.S. does instead
+
+`resolveFlatAtlasPreviewDimensions` finds no validated surface row and falls
+through to `provisionalDimensionsFromCandidate`, which takes a grounded guess at
+overall length/width/height and multiplies by **hardcoded class constants**:
+
+```js
+sideHeightFactor = { car: 0.76, truck: 0.72, suv: 0.78, van: 0.82 }
+roofLengthFactor = { car: 0.60, truck: 0.45, suv: 0.55, van: 0.50 }
+```
+
+Every vehicle therefore gets its CLASS's average proportions, not its own
+measured panel sizes. **That is why none of the containers are the right size**,
+and hardwiring the shell (§1) cannot fix it: perfect containers at guessed sizes
+are still the wrong sizes.
+
+### Two resolvers, opposite policies, same table
+
+- **Call 1 / A.T.L.A.S.** — `resolveFlatAtlasPreviewDimensions`: falls back to
+  the estimator and proceeds **silently**.
+- **The paid path** — `manifest.resolve` → `resolveOrQueueUniversalDimensions`:
+  **refuses** to guess and raises `genie_dimension_validation_required` for a
+  human.
+
+So the proof dims and the panel dims cannot be trusted to agree with GENIE.
+RULE 0.19 moved GENIE after purchase deliberately (runs were parking on human
+validation); the cost of that move was this silent estimator, and the fix is the
+populated catalog, not re-parking the free run.
+
+### The owner's fallback IS implemented — but it inputs the wrong thing
+
+Owner: *"With the fallback, if vehicle not on list it does a Google search for
+wheel well then calculates and inputs dimensions."*
+
+`groundedCandidate()` already does this: `gemini-2.5-flash` with
+`tools: [{ googleSearch: {} }]`, temperature 0.1, fail-closed parsing, retried
+once with a stricter instruction; `insertOrReadGroundedCandidate()` persists it
+so the next job reads the row instead of searching again.
+
+**The gap is WHAT it persists.** The grounded row carries only the bounding box
+— `overall_length_in`, `overall_width_in`, `overall_height_in`, `wheelbase_in`.
+The six panel sizes are never calculated and never stored; they are
+re-approximated from class constants on every read. The owner's spec is that the
+fallback **calculates and inputs the dimensions** — i.e. writes the six real
+per-surface panel sizes into the panelizer catalog, so that vehicle is measured
+once and every later job (and the paid path) reads the same numbers.
+
+### Work items, in order
+
+1. **Run `.github/workflows/migrate-genie-catalog.yml`** (`MIGRATE_GENIE_CATALOG`).
+   It copies the 1,781 rows verbatim and idempotently, upserting by id, touching
+   only that catalog table. One dispatch. Do this first — it is the difference
+   between measured and averaged sizes for every vehicle already known.
+2. **Make the grounded fallback write per-surface panel sizes** into
+   `designpro_vehicle_dimensions`, not just the bounding box, so an unknown
+   vehicle is measured once and then behaves exactly like a catalog vehicle.
+3. **Delete the class-constant estimator as a silent read-time path.** After 1
+   and 2 the only sources are: a catalog row, or a grounded row that was
+   calculated and stored. An unresolvable vehicle is an honest refusal.
+4. Only then does §1's hardwired shell produce correctly sized containers.
+
+---
+
 ## 5. THE 4K MASTER
 
 The canonical Call-1 master must be **stored at its true 4096×4096**. PanelPro
