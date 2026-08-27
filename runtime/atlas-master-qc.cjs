@@ -143,6 +143,20 @@ const RESPONSE_FIELDS = Object.freeze([
   "artifactFreeContract",
   "confidence",
   "reasons",
+  // WHERE THE DRIVER FLANK'S LETTERING SITS.
+  //
+  // Not a verdict — a measurement, returned by the review we already make, so
+  // the passenger flank can be COMPOSED from the driver instead of requested
+  // from the model. Four canaries on one vehicle refused the same way
+  // ("The passenger side text 'FLAMINGO POOLS' is not forward-reading. The
+  // passenger side flamingo is facing the same direction..."), because asking
+  // an image model to author one flattened multi-surface sheet AND orient
+  // every piece of production text on it is brittle by construction.
+  //
+  // With these rects, runtime/atlas-passenger-mirror.cjs flops the driver
+  // flank onto the passenger zone and re-drops the lettering un-flipped: the
+  // mirror contract goes to ~0 and every word reads forward on both flanks.
+  "driverBrandBands",
 ]);
 const STATUS = Object.freeze(["pass", "fail", "uncertain", "not_applicable"]);
 
@@ -581,7 +595,8 @@ ACCEPTANCE CONTRACT:
 5. Every supplied business/contact string that is visibly rendered must be exact and forward-reading. Malformed or invented words, URLs or numbers fail. If no brand strings are required, brandTextContract is not_applicable.
 6. Passenger is the opposite-facing, mirror-compatible twin of Driver in motif, scale, hierarchy and flow, while every readable string on both sides remains forward-reading. Grossly different side compositions fail.
 7. No guide gray, guide labels, outlines, dimensions, legends, browser UI, watermarks, melted artwork or other AI artifacts may survive.
-8. Return only schema-bound JSON. Echo the two sha256 identities exactly.
+8. In driverBrandBands, return the bounding rectangle of EVERY band of readable lettering, logo or contact text on the DRIVER zone -- company name, phone, URL, tagline, logo lockup. Coordinates are fractions of the DRIVER ZONE ITSELF (0-1, origin at that zone's top-left as the guide draws it), not of the whole sheet. Group text that sits together into one band. Return an empty array when the driver zone carries no lettering. These are measurements, not judgements: report them even when every contract passes.
+9. Return only schema-bound JSON. Echo the two sha256 identities exactly.
 `;
 }
 
@@ -605,6 +620,21 @@ function responseSchema({ masterHash, guideHash, brandRequired }) {
       artifactFreeContract: status,
       confidence: { type: "NUMBER", minimum: 0, maximum: 1 },
       reasons: { type: "ARRAY", maxItems: 10, items: { type: "STRING" } },
+      driverBrandBands: {
+        type: "ARRAY",
+        maxItems: 6,
+        items: {
+          type: "OBJECT",
+          propertyOrdering: ["xPct", "yPct", "wPct", "hPct"],
+          properties: {
+            xPct: { type: "NUMBER", minimum: 0, maximum: 1 },
+            yPct: { type: "NUMBER", minimum: 0, maximum: 1 },
+            wPct: { type: "NUMBER", minimum: 0, maximum: 1 },
+            hPct: { type: "NUMBER", minimum: 0, maximum: 1 },
+          },
+          required: ["xPct", "yPct", "wPct", "hPct"],
+        },
+      },
     },
     required: [...RESPONSE_FIELDS],
   };
@@ -650,6 +680,25 @@ function parseMasterQcResponse(payload, expected) {
 // deliberately absent from this list -- see cutoutContractFailed below. Every
 // other contract describes whether this is a usable DESIGN, and those stay
 // fatal: there is nothing worth showing a customer in an incoherent sheet.
+/**
+ * The driver flank's lettering rects, cleaned.
+ *
+ * The compositor clamps too, but a band with a non-finite or zero dimension is
+ * dropped here so a caller counting bands counts usable ones.
+ */
+function brandBandsOf(review) {
+  const bands = Array.isArray(review?.driverBrandBands) ? review.driverBrandBands : [];
+  return bands
+    .map((band) => ({
+      xPct: Number(band?.xPct), yPct: Number(band?.yPct),
+      wPct: Number(band?.wPct), hPct: Number(band?.hPct),
+    }))
+    .filter((band) => [band.xPct, band.yPct, band.wPct, band.hPct].every(Number.isFinite)
+      && band.wPct > 0 && band.hPct > 0
+      && band.xPct >= 0 && band.yPct >= 0
+      && band.xPct < 1 && band.yPct < 1);
+}
+
 function rejectionFor(review, brandRequired, confidenceThreshold) {
   const requiredPass = [
     "outputFormatContract", "topologyContract", "zoneCoverageContract",
@@ -789,12 +838,6 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
       // the cut-out path below, where the design survives and the panel is
       // repaired -- which is what RULE 0.15 already specified and what this
       // return was silently preventing.
-      if (rejection && !coverageFailedOnClassifiedCutoutsOnly(rejection, review, deterministic)) {
-        return {
-          accepted: false, code: "atlas_master_qc_semantic_failed",
-          reason: rejection.reason, review, deterministic,
-        };
-      }
       const cutoutSurfaces = [...new Set(
         deterministic.cutoutFindings.map((item) => String(item.surfaceKey)),
       )].sort();
@@ -810,6 +853,32 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
         guideHash,
         requestByteSize,
       };
+      // A SEMANTIC REFUSAL MUST STILL REPORT ITS REPAIRABLE HALF.
+      //
+      // This return used to carry neither `metadata` nor `cutout`, so a caller
+      // could not tell that a fatal creative verdict ALSO contained classified
+      // cut-outs -- and the authoring loop's repair-then-re-judge step (owner
+      // directive 2026-08-27) was unreachable on exactly the verdict that
+      // needed it.
+      //
+      // Live: canary 6c1bfae6 and cad013e1 both burned all three attempts on
+      // "one wheel/glass/bed shape cut out of the panel" bundled with a text
+      // defect. The holes were classified and repairable each time; only the
+      // text was worth another throw.
+      //
+      // The verdict stays fatal-by-code. It simply now says what part of it the
+      // fill can close, bound to the same hashes as every other verdict so the
+      // caller's contract check still holds.
+      if (rejection && !coverageFailedOnClassifiedCutoutsOnly(rejection, review, deterministic)) {
+        return {
+          accepted: false, code: "atlas_master_qc_semantic_failed",
+          reason: rejection.reason, review, deterministic, metadata,
+          brandBands: brandBandsOf(review),
+          ...(cutoutSurfaces.length || semanticCutout
+            ? { cutout: { surfaces: cutoutSurfaces, findings, semantic: semanticCutout } }
+            : {}),
+        };
+      }
       // The design is sound either way. `accepted` still means spotless, so the
       // authoring loop keeps re-rolling for a clean sheet -- but a cut-out
       // result now carries its full QC record, so the exhausted case can keep
@@ -820,13 +889,14 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
       // to the escape condition cannot turn a refused master into an accepted
       // one without failing this read.
       if (!rejection && !cutoutSurfaces.length && !semanticCutout) {
-        return { accepted: true, review, deterministic, metadata };
+        return { accepted: true, review, deterministic, metadata, brandBands: brandBandsOf(review) };
       }
       return {
         accepted: false,
         code: "atlas_master_qc_cutouts_present",
         reason: findings.join("; ").slice(0, 800),
         cutout: { surfaces: cutoutSurfaces, findings, semantic: semanticCutout },
+        brandBands: brandBandsOf(review),
         review,
         deterministic,
         metadata,
@@ -870,6 +940,7 @@ module.exports = {
     MIN_CUTOUT_COMPONENT_RATIO,
     CUTOUT_BRIGHT_MAJORITY,
     RESPONSE_FIELDS,
+    brandBandsOf,
     STATUS,
     boundedTransport,
     expectedBrandStrings,

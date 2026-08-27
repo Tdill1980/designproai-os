@@ -107,6 +107,7 @@ function review(body, overrides = {}) {
     artifactFreeContract: "pass",
     confidence: 0.98,
     reasons: [],
+    driverBrandBands: [],
     ...overrides,
   };
 }
@@ -146,6 +147,7 @@ test("A: coverage failing on classified cut-outs alone reaches the repair path",
     zoneCoverageContract: "fail",
     fullBleedNoCutoutsContract: "fail",
     reasons: ["the driver zone has a wheel shape cut out of the panel"],
+    driverBrandBands: [],
   });
   const result = await validate({
     masterBytes: await masterWithWheelArches(), guideBytes, manifest, input: INPUT,
@@ -168,6 +170,7 @@ test("B: coverage failing without classified cut-outs stays fatal", async () => 
     zoneCoverageContract: "fail",
     fullBleedNoCutoutsContract: "fail",
     reasons: ["the hood zone contains a transparent area"],
+    driverBrandBands: [],
   });
   const result = await validate({ masterBytes: await cleanMaster(), guideBytes, manifest, input: INPUT });
   assert.equal(result.code, "atlas_master_qc_semantic_failed");
@@ -182,6 +185,7 @@ test("B2: coverage failing while the reviewer reports NO holes stays fatal", asy
     zoneCoverageContract: "fail",
     fullBleedNoCutoutsContract: "pass",
     reasons: ["the hood zone contains a transparent area, violating full bleed"],
+    driverBrandBands: [],
   });
   const result = await validate({
     masterBytes: await masterWithWheelArches(), guideBytes, manifest, input: INPUT,
@@ -203,6 +207,7 @@ test("C: cut-outs alongside any other fatal contract stay fatal", async () => {
       fullBleedNoCutoutsContract: "fail",
       [field]: "fail",
       reasons: [`wheel shape cut out, and ${label} is broken`],
+    driverBrandBands: [],
     });
     const result = await validate({
       masterBytes: await masterWithWheelArches(), guideBytes, manifest, input: INPUT,
@@ -219,6 +224,7 @@ test("C2: low confidence beside cut-outs stays fatal", async () => {
     fullBleedNoCutoutsContract: "fail",
     confidence: 0.4,
     reasons: ["wheel shape cut out"],
+    driverBrandBands: [],
   });
   const result = await validate({
     masterBytes: await masterWithWheelArches(), guideBytes, manifest, input: INPUT,
@@ -238,6 +244,7 @@ test("D: an artifact-free failure stays fatal, cut-outs or not", async () => {
       fullBleedNoCutoutsContract: "fail",
       artifactFreeContract: "fail",
       reasons: ["the hood zone contains the guide label 'HOOD'"],
+    driverBrandBands: [],
     });
     const result = await validate({ masterBytes: master, guideBytes, manifest, input: INPUT });
     assert.equal(result.code, "atlas_master_qc_semantic_failed");

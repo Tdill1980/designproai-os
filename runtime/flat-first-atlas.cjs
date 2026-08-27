@@ -36,6 +36,7 @@ const {
   createAtlasMasterValidator,
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
+const { MIRROR_CONTRACT, mirrorPassengerFromDriver } = require("./atlas-passenger-mirror.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -67,11 +68,31 @@ const PROMPT_VERSION = "designpro-flat-first-atlas-20260827.v10-edge";
 // option): one revision = one DesignPanelAI creative call = one Gemini image
 // request, and the exact request count is reported on the revision as
 // metadata.geminiImageRequestCount.
+// ONE AUTHORING CALL ON THE CUSTOMER'S CRITICAL PATH. (Trish 2026-08-27:
+// "ATLAS SHOULD GENERATE IN LESS THAN 1 MINUTE, then sequential panels and 3D
+// driver in less than 2 min".)
+//
+// An authoring call costs ~60s. Three of them cannot fit a sixty-second budget
+// by construction, and the customer sees NOTHING until the loop ends -- canary
+// cad013e1 spent 181 seconds and showed her a failure page.
+//
+// The re-roll ladder existed because a refused master had no other remedy. It
+// now has two: a cut-out is FILLED deterministically (~100ms, atlas-cutout-fill)
+// and the passenger flank is COMPOSED from the driver deterministically
+// (atlas-passenger-mirror) -- between them, the two defect classes that refused
+// every canary tonight. What is left after those repairs is a genuine creative
+// miss, and the answer to that is a revision the customer asks for, not two
+// more minutes of silence she did not.
+//
+// So the ceiling is ONE attempt by default. The budget is still adjustable --
+// DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS raises it up to the hard cap for a
+// harness or an operator retry -- but the default path is the fast one.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
+const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 1;
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1) return MAX_MASTER_AUTHORING_ATTEMPTS;
+  if (!Number.isInteger(value) || value < 1) return DEFAULT_MASTER_AUTHORING_ATTEMPTS;
   return Math.min(value, MAX_MASTER_AUTHORING_ATTEMPTS);
 }
 const MASTER_PROVIDER_CONTRACT = "designpro.flat-first-master-provider.v1";
@@ -1667,6 +1688,7 @@ async function generateOrReuseFlatAtlas(options) {
   let masterDelivery = null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
+  let passengerComposed = null;
   const edgeProvenance = [];
   let correctiveNote = "";
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
@@ -1710,6 +1732,77 @@ async function generateOrReuseFlatAtlas(options) {
       masterCutoutSurfaces = masterQc.cutout.surfaces.map(String);
       masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
       break;
+    }
+
+    // COMPOSE THE PASSENGER FLANK BEFORE YOU RE-ROLL. (Owner directive
+    // 2026-08-27: "STOP RELYING ON GEMINI TO SOLVE PRODUCTION LETTERING
+    // ORIENTATION.")
+    //
+    // Four canaries on one vehicle refused with the same two findings —
+    // cad013e1 verbatim: "The passenger side text 'FLAMINGO POOLS' is not
+    // forward-reading. The passenger side flamingo is facing the same
+    // direction..." — i.e. the model drew the passenger flank as a SECOND
+    // independent composition and got its lettering backward. Prompting did
+    // not move it, and the QC was right to refuse every attempt.
+    //
+    // So the flank is COMPOSED, not requested: the driver zone flopped onto
+    // the passenger zone, with the review's measured lettering bands re-dropped
+    // un-flipped so words read forward on both sides. That drives
+    // passengerMirrorMae to ~0 and leaves exactly the localized divergence the
+    // trimmed mean was built to absorb.
+    //
+    // It invents nothing: every passenger pixel is a rearrangement of driver
+    // pixels this same creative call authored, under one A.T.L.A.S. revision.
+    // It costs no authoring attempt — the judgement that follows decides that.
+    const mirrorFailed = masterQc?.review?.passengerMirrorContract === "fail"
+      || masterQc?.review?.brandTextContract === "fail";
+    const measuredBands = Array.isArray(masterQc?.brandBands) ? masterQc.brandBands : [];
+    if (verdictBound && mirrorFailed) {
+      const mirrored = await mirrorPassengerFromDriver({
+        masterBytes, manifest, brandBands: measuredBands,
+      }).catch((error) => {
+        logger?.warn?.("flat_atlas_passenger_compose_failed", { message: error?.message });
+        return null;
+      });
+      if (mirrored?.bytes) {
+        const composedHash = sha256(mirrored.bytes);
+        const composedQc = await validateMaster({
+          masterBytes: mirrored.bytes, guideBytes, manifest, input,
+        });
+        const composedBound = composedQc?.metadata?.contract === MASTER_QC_CONTRACT
+          && composedQc.metadata.masterHash === composedHash
+          && composedQc.metadata.guideHash === guideHash;
+        if (composedQc?.accepted === true && composedBound) {
+          // The composed flank IS the master from here: it is what the panels
+          // are cut from and what the proofs are conditioned on, so it must be
+          // the persisted lineage identity too.
+          masterBytes = mirrored.bytes;
+          masterHash = composedHash;
+          masterQc = composedQc;
+          passengerComposed = {
+            contract: MIRROR_CONTRACT,
+            bandsApplied: mirrored.bandsApplied,
+            rotation: mirrored.rotation,
+            attempt,
+          };
+          logger?.info?.("flat_atlas_passenger_flank_composed", passengerComposed);
+          break;
+        }
+        if (composedBound) {
+          // Still refused, but on whatever remains — carry the composed verdict
+          // so the corrective note describes the sheet as it now stands.
+          masterBytes = mirrored.bytes;
+          masterHash = composedHash;
+          masterQc = composedQc;
+          passengerComposed = {
+            contract: MIRROR_CONTRACT,
+            bandsApplied: mirrored.bandsApplied,
+            rotation: mirrored.rotation,
+            attempt,
+            accepted: false,
+          };
+        }
+      }
     }
 
     // REPAIR BEFORE YOU RE-ROLL. (Owner directive 2026-08-27.)
@@ -1770,8 +1863,20 @@ async function generateOrReuseFlatAtlas(options) {
     // gate's own finding is the corrective direction, forwarded to the edge
     // function as a text part on the next attempt.
     const refusalReason = String(masterQc?.reason || "the master was not accepted").slice(0, 600);
+    // ASK FOR THE FULL CANVAS BACK WHEN IT ARRIVED SHORT.
+    //
+    // Owner 2026-08-27: "Make sure atlas is highest possible 4K or more
+    // resolution." The request already pins Gemini's maximum
+    // (imageConfig.imageSize "4K" at 1:1) and the canvas is 4096x4096 -- but a
+    // smaller return is stretched onto it by normalizeAtlasMaster, so the
+    // master reports 4K either way and only `masterNativelyFourK` knows the
+    // difference. Nothing acted on it. Since this attempt is being spent
+    // anyway, spend it asking for the pixels too.
+    const shortDelivery = masterDelivery && masterDelivery.nativelyFourK === false
+      ? ` The previous sheet came back at ${masterDelivery.deliveredWidthPx}x${masterDelivery.deliveredHeightPx}, below the 4096x4096 production canvas -- return the full 4K square so the panels carry real detail rather than an upscale.`
+      : "";
     const mirrorBroken = /passengerMirrorMae/.test(refusalReason);
-    correctiveNote = `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}. Author a NEW sheet. `
+    correctiveNote = `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}.${shortDelivery} Author a NEW sheet. `
       + (mirrorBroken
         ? "The refusal above means the PASSENGER SIDE panel was NOT the DRIVER SIDE panel's mirror twin: the two read as different designs. Draw ONE side composition and install it on BOTH: PASSENGER SIDE is DRIVER SIDE's mirror twin -- the same flat artwork reversed -- while every word and logo remains forward-reading on both."
         : "Every panel is one SOLID rectangle of continuous artwork, opaque corner to corner: paint the artwork straight through every position where a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece would sit. The installer cuts those openings out of the printed vinyl; the artwork itself never contains a dark or empty shape standing in for one.");
@@ -1921,6 +2026,7 @@ async function generateOrReuseFlatAtlas(options) {
       // still must not print until a human has seen them on a template.
       masterCutoutSurfaces,
       masterCutoutFindings,
+      passengerComposed,
       // What the six panels were actually cut from. Equal to canonicalMasterHash
       // on a clean master; on a filled one it addresses the duplicate, so the
       // panel bytes are traceable to their source rather than silently differing

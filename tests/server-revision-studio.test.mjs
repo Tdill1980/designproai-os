@@ -570,7 +570,11 @@ test("the PanelPro Admin Studio carries logos, per-surface verdicts, and an audi
   // enforces: output.build reads upscaled-panel and nothing else.
   assert.match(claimant, /const panels = await artifacts\(sb, run\.id, \["upscaled-panel"\]\)/);
   assert.match(claimant, /enhanced_panel_receipt_mismatch/);
-  assert.match(studio, /corrected panel" : "branded panel"/);
+  // The per-surface row still distinguishes a human correction from the branded
+  // panel — the labels moved onto the download links themselves (2026-08-27),
+  // so assert the distinction rather than one rendering of it.
+  assert.match(studio, /correction \? "corrected" : "branded"/);
+  assert.match(studio, /correction \? "Corrected panel" : "Source panel"/);
 });
 
 /**

@@ -1795,16 +1795,60 @@ function ProductionPackSection({
             panels, hash-verified against the Call 12 receipt. So the file that
             prints is the file the team approved, through the enhancement, never
             around it. */}
+        {/* EVERY CONTAINER IS DOWNLOADABLE, SOURCE AND DERIVATIVE BOTH.
+            RULE 0.22: "The complete asset set, each individually downloadable"
+            and "Do not hide files behind only a final ZIP". This list used to
+            report an upscale state in prose with nothing to click, so a
+            designer could see that a panel existed and still had no way to take
+            it to a vehicle template (owner, 2026-08-27). The source panel is
+            kept beside its upscaled derivative rather than replaced by it, so
+            the team can compare what the enhancement did. */}
         <ul className="mb-2 grid gap-1 sm:grid-cols-2">
           {PRODUCTION_SURFACES.map((side) => {
             const correction = (job.corrections[side] || [])[0];
+            const branded = job.raw_artifacts.find(
+              (artifact) => artifact.kind === "panel" && artifact.surfaceKey === side,
+            );
+            const active = correction || branded;
             const enhanced = job.upscaled.find((row) => row.surfaceKey === side);
+            const dims = (artifact?: { metadata?: Record<string, unknown> }) => {
+              const width = Number(artifact?.metadata?.pixelWidth ?? artifact?.metadata?.widthPx);
+              const height = Number(artifact?.metadata?.pixelHeight ?? artifact?.metadata?.heightPx);
+              return width > 0 && height > 0 ? `${width}×${height}` : "";
+            };
             return (
-              <li key={side} className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="capitalize text-gray-700">{side}</span>
+              <li key={side} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded border border-gray-200 px-2 py-1 text-[11px]">
+                <span className="capitalize font-semibold text-gray-700">{side}</span>
                 <span className="font-mono text-[10px] text-gray-500">
-                  {correction ? "corrected panel" : "branded panel"}
-                  {enhanced ? " → upscaled" : " → not upscaled yet"}
+                  {correction ? "corrected" : "branded"}
+                  {enhanced ? " · upscaled" : " · not upscaled yet"}
+                </span>
+                <span className="flex w-full items-center gap-3">
+                  {active?.signedUrl ? (
+                    <a
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 hover:underline"
+                      href={withDownloadName(active.signedUrl, `${side}-${correction ? "corrected" : "panel"}.png`)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Download className="h-3 w-3" />
+                      {correction ? "Corrected panel" : "Source panel"}
+                      {dims(active) ? ` · ${dims(active)}` : ""}
+                    </a>
+                  ) : (
+                    <span className="text-[10px] text-gray-400">panel not cut yet</span>
+                  )}
+                  {enhanced?.signedUrl ? (
+                    <a
+                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-fuchsia-700 hover:underline"
+                      href={withDownloadName(enhanced.signedUrl, `${side}-upscaled.png`)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Download className="h-3 w-3" />
+                      Upscaled{dims(enhanced) ? ` · ${dims(enhanced)}` : ""}
+                    </a>
+                  ) : null}
                 </span>
               </li>
             );

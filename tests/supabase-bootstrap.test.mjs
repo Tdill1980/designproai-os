@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered sixty-five-migration chain', () => {
-  assert.equal(migrationNames.length, 65);
+test('fresh bootstrap contains one ordered sixty-six-migration chain', () => {
+  assert.equal(migrationNames.length, 66);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -144,7 +144,7 @@ test('fresh bootstrap contains one ordered sixty-five-migration chain', () => {
       // The v9 pin was applied then reverted live (owner halt, 2026-08-26);
       // 010000 captures the revert, 020000 pins v10-edge for the edge-canonical
       // Call 1 cutover.
-      '20260827010000', '20260827020000',
+      '20260827010000', '20260827020000', '20260827030000',
     ],
   );
 });

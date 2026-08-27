@@ -58,3 +58,29 @@ test("the authored master is never mutated", () => {
   assert.ok(!/masterBytes = trialFill/.test(loop), "the authored bytes must never be replaced by the repair");
   assert.ok(!/masterBytes = repairedBytes/.test(loop), "the authored bytes must never be replaced by the repair");
 });
+
+// ── THE VERDICT MUST CARRY WHAT THE REPAIR NEEDS ───────────────────────────
+//
+// The loop fix above is unreachable unless the QC verdict reports BOTH its
+// binding metadata and its classified cut-outs. The semantic-failure return
+// carried neither, which is why canaries 6c1bfae6 and cad013e1 each burned all
+// three attempts on a repairable hole bundled with a text defect.
+const qcSource = readFileSync(join(ROOT, "runtime/atlas-master-qc.cjs"), "utf8");
+const semanticReturn = qcSource.slice(
+  qcSource.indexOf("if (rejection && !coverageFailedOnClassifiedCutoutsOnly"),
+  qcSource.indexOf("if (!rejection && !cutoutSurfaces.length"),
+);
+
+test("a fatal semantic verdict still reports its metadata and classified cut-outs", () => {
+  assert.match(semanticReturn, /code: "atlas_master_qc_semantic_failed"/);
+  // Without metadata the caller's contract/hash check fails and the repair is
+  // skipped even when cut-outs are present.
+  assert.match(semanticReturn, /reason: rejection\.reason, review, deterministic, metadata/);
+  // And the repairable half is named.
+  assert.match(semanticReturn, /cutout: \{ surfaces: cutoutSurfaces, findings, semantic: semanticCutout \}/);
+});
+
+test("the verdict stays fatal by code — reporting cut-outs does not accept it", () => {
+  assert.match(semanticReturn, /accepted: false/);
+  assert.ok(!/accepted: true/.test(semanticReturn), "a semantic refusal must never report accepted");
+});
