@@ -34,7 +34,7 @@ concurrency:
 env:
   EXPECTED_PROJECT_REF: wozyamlnygaddievzuwn
   SITE_URL: https://os.designproai.com
-  URI_ALLOW_LIST: https://os.designproai.com/**
+  URI_ALLOW_LIST: https://os.designproai.com/**,https://designproai.com/**
 
 jobs:
   configure:
@@ -60,6 +60,7 @@ jobs:
           # live project and config.toml cannot drift apart again.
           grep -Fqx 'site_url = "https://os.designproai.com"' supabase/config.toml
           grep -Fq  '"https://os.designproai.com/**"' supabase/config.toml
+          grep -Fq  '"https://designproai.com/**"' supabase/config.toml
 
       - name: Record the current auth URLs
         run: |
@@ -95,8 +96,13 @@ jobs:
           problems = []
           if site != os.environ["SITE_URL"]:
               problems.append(f"site_url is {site!r}, expected {os.environ['SITE_URL']!r}")
-          if os.environ["URI_ALLOW_LIST"] not in (allow or ""):
-              problems.append(f"uri_allow_list is {allow!r}, missing {os.environ['URI_ALLOW_LIST']!r}")
+          # Each entry on its own: the API may reorder or re-render the list,
+          # and a substring test on the whole comma string would then fail an
+          # apply that actually took.
+          live = {entry.strip() for entry in (allow or "").split(",") if entry.strip()}
+          for entry in os.environ["URI_ALLOW_LIST"].split(","):
+              if entry.strip() and entry.strip() not in live:
+                  problems.append(f"uri_allow_list is {allow!r}, missing {entry.strip()!r}")
           # A localhost redirect left in the allow list is the defect this fixes.
           if "localhost" in (site or "") or "127.0.0.1" in (site or ""):
               problems.append("site_url still points at a local address")

@@ -73,12 +73,23 @@ enabled = true
 # fragment, so a dead redirect means the sign-in is recorded server-side and the
 # browser never receives a session.
 #
-# The allow list is the production origin only. A wildcard back to localhost is
+# The allow list is the production origins only. A wildcard back to localhost is
 # how a stolen link turns into a stolen session, and nothing that ships needs it;
 # add it locally if you are working on auth against this project.
+#
+# BOTH production origins are listed. The apex serves the same web artifact and
+# the same /login and /dashboard routes -- the login page's own canonical link
+# is https://designproai.com/login -- and the page builds its magic-link
+# redirect from window.location.origin. With only the OS host allowed, a link
+# requested on the apex carried a redirect GoTrue refuses, so the round trip
+# ended on the site_url origin with no session in the tab the owner started in:
+# "when I click send a magic link it just takes me to log in" (2026-08-27).
+# www is deliberately absent: it 301s to the apex, and a redirect on the
+# callback drops the URL fragment that carries the tokens.
 site_url = "https://os.designproai.com"
 additional_redirect_urls = [
   "https://os.designproai.com/**",
+  "https://designproai.com/**",
 ]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
