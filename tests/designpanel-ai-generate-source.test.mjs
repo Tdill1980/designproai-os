@@ -16,10 +16,11 @@ test("the Standard standalone worker executes Calls 1-7 on this server", () => {
 
   assert.match(edge, /\* design-panel-ai-generate/);
   assert.match(prompt, /supabase\/functions\/design-panel-ai-generate\/index\.ts/);
-  // Canonical directive 2026-08-26: the reconstructed A.T.L.A.S. creative
-  // branch and its compatibility alias are DELETED. The creative half is the
-  // vendored real builder, required by the atlas module.
-  assert.match(atlas, /require\("\.\/vendor\/designpanel-authoring\.cjs"\)/);
+  // Canonical directive 2026-08-27: the reconstructed A.T.L.A.S. creative
+  // branch, its alias AND the transpiled vendor bridge are all DELETED. Call 1
+  // executes through the deployed edge function; the runtime only posts.
+  assert.doesNotMatch(atlas, /designpanel-authoring/);
+  assert.match(atlas, /functions\/v1\/design-panel-ai-generate/);
   // (a prose mention in the tombstone comment is fine; an import or call is not)
   assert.doesNotMatch(atlas, /buildAtlasArtboardDesignIQDirection\s*[,(]/);
   assert.doesNotMatch(prompt, /function buildAtlasArtboardDesignIQDirection|function buildFlatDesignIQDirection/);

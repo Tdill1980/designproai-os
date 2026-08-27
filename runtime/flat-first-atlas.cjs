@@ -25,14 +25,12 @@ const {
   DESIGNPANEL_ARTBOARD_PORT_VERSION,
   DESIGNPANEL_AUTHORING_MODEL,
 } = require("./designiq-prompt.cjs");
-// THE CANONICAL DESIGNPANELAI CREATIVE BUILDER (owner directive 2026-08-26:
-// "invoke the real DesignPanelAI creative builder from the server-native ATLAS
-// authoring path without duplicating/reimplementing it"). This module is the
-// vendored design-panel-ai-generate source, mechanically transpiled by
-// scripts/build-designpanel-authoring.mjs — never a re-typed port. The
-// reconstructed buildAtlasArtboardDesignIQDirection copy is deleted; there is
-// exactly ONE creative implementation and this is it.
-const designPanelAuthoring = require("./vendor/designpanel-authoring.cjs");
+// OWNER DIRECTIVE (Trish 2026-08-27, PASTE_TO_CLAUDE.md): Call 1 executes
+// through the REAL deployed design-panel-ai-generate edge function. This
+// runtime assembles NO creative prompt text and makes NO direct Gemini request
+// for Call 1 — it POSTs the payload, receives the finished flattened master,
+// verifies its hash, and continues with deterministic QC + panel extraction.
+// The transpiled vendor bridge is deleted from the product path.
 const {
   MASTER_QC_CONTRACT,
   createAtlasMasterValidator,
@@ -52,18 +50,16 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // call, and the sheet is described as printed vinyl on the roll rather than as
 // vehicle flanks. v5 masters are refused rather than migrated, and this string
 // is the mechanism that refuses them.
-// v9-dpag (2026-08-26, owner directive): the creative half is no longer the
-// reconstructed buildAtlasArtboardDesignIQDirection — it is the REAL
-// design-panel-ai-generate builder (vendored, transpiled, atlasTopology mode),
-// so DesignPanelAI and A.T.L.A.S. are ONE authoring call. The SIDE-TWIN
-// "photographic scene / landmarks" framing — the only flank-specific language,
-// prime suspect for the vehicle-silhouette flanks broken since v4 — does not
-// exist in this prompt. VERSION FENCE SCOPE (owner protection #1): this string
+// v10-edge (2026-08-27, owner directive): the creative call executes through
+// the REAL deployed design-panel-ai-generate edge function (mode
+// atlas-artboard, executing the pinned Persona-2 buildDesignerPrompt). This
+// runtime assembles no creative text and makes no direct Gemini request for
+// Call 1. The SIDE-TWIN scene framing does not exist anywhere in the chain. VERSION FENCE SCOPE (owner protection #1): this string
 // refuses REUSING an older master for NEW authoring/regeneration only
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260826.v9-dpag";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260827.v10-edge";
 // Bounded QC-corrective re-rolls inside the one claimed authoring fence. Three
 // is the proof QC's budget for the same generate/inspect/correct loop. The
 // OWNER ACCEPTANCE RUN pins this to exactly ONE via
@@ -85,6 +81,9 @@ const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "fron
 const CENTER_ORDER = Object.freeze(["rear", "roof", "hood", "front"]);
 const PROOF_VIEWS = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
 const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
+// Pinned to the edge function's own ATLAS_ARTBOARD_PROMPT_VERSION; the reuse
+// contract folds it into the request identity.
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-persona.20260827.v1";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 const TARGET_PRINT_PPI = 150;
@@ -919,125 +918,124 @@ function customerCreativeBrief(input) {
   return JSON.stringify(values);
 }
 
-function atlasCreativeRules(input, options = {}) {
-  // ONE CANONICAL CALL 1 (owner directive 2026-08-26). The creative direction
-  // is the REAL design-panel-ai-generate builder running its artboard branch in
-  // atlasTopology mode — the vendored source, not a port. This function only
-  // MAPS the v3 flat-first input onto DesignIQParams; it adds no prompt text.
+const SURFACE_LABELS = Object.freeze({
+  driver: "DRIVER SIDE",
+  passenger: "PASSENGER SIDE",
+  hood: "HOOD",
+  roof: "ROOF",
+  front: "FRONT",
+  rear: "REAR",
+});
+
+// The canonical Call-1 request. Everything creative happens INSIDE the deployed
+// design-panel-ai-generate edge function (mode "atlas-artboard", executing the
+// real Persona-2 buildDesignerPrompt). This builder only maps the verified v3
+// input and the GENIE manifest onto that function's request body.
+function atlasEdgeRequestBody(input, manifest, extras = {}) {
   const vehicle = input?.vehicle || {};
   const brandColors = String(input?.brandColors || "").trim()
     || (Array.isArray(input?.colors) ? input.colors.map(String).filter(Boolean).join(", ") : String(input?.colors || "").trim());
-  const references = Array.isArray(input?.visionBoardImages) ? input.visionBoardImages : [];
-  const intent = String(input?.visionboardIntent || input?.visionboard_intent || "").trim();
-  return designPanelAuthoring.buildDesignIQPrompt({
-    mode: "artboard",
-    atlasTopology: true,
+  const styleDna = String(input?.styleDescriptors || "").trim();
+  const brief = [
+    String(input?.brief || "").trim(),
+    brandColors ? `Brand colors: ${brandColors}.` : "",
+    String(input?.style || "").trim() ? `Style direction: ${String(input.style).trim()}.` : "",
+    styleDna ? `Reference style DNA: ${styleDna}` : "",
+  ].filter(Boolean).join("\n");
+  return {
+    mode: "atlas-artboard",
     authoringMode: String(input?.mode || "commercial").toLowerCase() === "restyle" ? "restyle" : "commercial",
-    artboardQualityExampleCount: Number(options.artboardQualityExampleCount) || 0,
-    prompt: String(input?.brief || "").trim(),
+    prompt: brief,
     finish: String(input?.finish || "Gloss"),
-    substrate: input?.substrate || "standard",
     companyName: String(input?.companyName || input?.businessName || "").trim() || undefined,
-    mascot: String(input?.mascot || "").trim() || undefined,
-    bulletPoints: Array.isArray(input?.bulletPoints) ? input.bulletPoints.map(String) : undefined,
-    industryType: String(input?.industry || "").trim() || undefined,
     phone: String(input?.phone || "").trim() || undefined,
     website: String(input?.website || "").trim() || undefined,
+    mascot: String(input?.mascot || "").trim() || undefined,
+    industryType: String(input?.industry || "").trim() || undefined,
+    bulletPoints: Array.isArray(input?.bulletPoints) ? input.bulletPoints.map(String) : undefined,
+    vehicleYear: String(vehicle.year || "").trim(),
+    vehicleMake: String(vehicle.make || "").trim(),
+    vehicleModel: String(vehicle.model || "").trim(),
     logoSupplied: Boolean(input?.logoAsset),
-    brandColors: brandColors || undefined,
-    fontStyle: String(input?.fontStyle || "").trim() || undefined,
-    qrEnabled: input?.qrEnabled === true,
-    qrUrl: String(input?.qrUrl || "").trim() || undefined,
-    textLayerPrompt: String(input?.textLayerPrompt || "").trim() || undefined,
-    vehicleYear: String(vehicle.year || "").trim() || undefined,
-    vehicleMake: String(vehicle.make || "").trim() || undefined,
-    vehicleModel: String(vehicle.model || "").trim() || undefined,
-    // The builder reads only the COUNT of references (and the extracted style
-    // DNA); the entries are never interpolated. Storage identity stays out of
-    // the prompt by construction — locked by tests/atlas-designiq-artboard.
-    visionBoardImages: references.map((asset, index) => ({
-      slotLabel: `reference-${index + 1}`,
-      storageUrl: String(asset?.storagePath || ""),
-    })),
-    visionboard_intent: intent === "exact_reference" || intent === "artboard_projection"
+    visionboard_intent: ["exact_reference", "artboard_projection"].includes(String(input?.visionboardIntent || "").trim())
       ? "exact_reference"
       : "style_inspiration",
-    styleDescriptors: String(input?.styleDescriptors || "").trim() || undefined,
-  });
+    panels: manifest.zones.map((zone) => ({
+      label: SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
+      widthInches: Number(zone.trimWidthIn) || undefined,
+      heightInches: Number(zone.trimHeightIn) || undefined,
+    })),
+    // The two large inputs travel by STORAGE PATH: a 2.2MB inline-base64 body
+    // killed the edge worker twice (2026-08-27). Customer references stay
+    // inline — they are already size-capped at 1600px by the verified loader.
+    guideStoragePath: extras.guideStoragePath,
+    structuralReferenceStoragePath: extras.structuralReferenceStoragePath,
+    structuralReferenceMime: extras.structuralReferenceMime,
+    referenceImagesBase64: extras.referenceImagesBase64,
+    correctiveNote: extras.correctiveNote,
+  };
 }
 
-function atlasPrompt(input, manifest, options = {}) {
-  // THE REFERENCE STAMPS REAL INCHES INTO THE PANEL LIST.
-  //
-  // design-panel-ai-generate's artboard branch renders each side as
-  // `• DRIVER SIDE — 153" x 56"` (index.ts:348-350, from resolveArtboardPanels).
-  // Call 1's zone map carried pixel boxes and rotations only, so the design call
-  // knew where each surface sat on the canvas but never how large it is in the
-  // real world -- and a designer scales lettering, motif and hierarchy to the
-  // physical panel, not to a pixel box.
-  const map = manifest.zones.map((zone) => {
-    const inches = Number.isFinite(Number(zone.trimWidthIn)) && Number.isFinite(Number(zone.trimHeightIn))
-      ? ` — ${Number(zone.trimWidthIn)}" x ${Number(zone.trimHeightIn)}" of real printed vinyl`
-      : "";
-    return `${zone.surfaceKey}: box [${zone.x},${zone.y},${zone.w},${zone.h}], rotation ${zone.rotationDegrees} degrees${inches}`;
-  }).join("\n");
-  const continuity = manifest.seamContinuity.relationships
-    .map((relationship) => relationship.surfaces.join(" <-> ")).join(", ");
-  const geometryDescription = manifest.geometryAuthority.status === "provisional"
-    ? "cited Google-grounded, deterministic PROVISIONAL proof-layout rectangles"
-    : "operator-validated GENIE rectangles";
-  // THE DESIGNER LEADS. THE TOPOLOGY IS THE OUTPUT CONTRACT.
-  //
-  // A.T.L.A.S. is the output topology of the proven design engine, not a
-  // replacement for it. This prompt used to open with ~4,600 characters of
-  // atlas instruction and append the DesignIQ direction underneath it as a
-  // trailing "DESIGNIQ FLAT CREATIVE DIRECTION:" section -- so the call that
-  // authors the customer's design read as a topology brief with a designer
-  // footnote. The reference inverts that: design-panel-ai-generate's artboard
-  // branch opens as the designer, names the vehicle, lists the panels with
-  // their real inches, states the brief, and closes with a short output-format
-  // instruction -- 1,516 characters in total (index.ts:340-390).
-  //
-  // Nothing creative is written here. `atlasCreativeRules(input)` IS the real
-  // design-panel-ai-generate builder (vendored + transpiled, atlasTopology
-  // mode); it leads, and the atlas half below is the OUTPUT CONTRACT only. The
-  // three blocks RULE 0.15 protects -- SOLID PANELS, the PAIRED
-  // FLAT-TO-FINISHED LESSON and ONE COHESIVE WRAP -- are reproduced verbatim
-  // and in full.
-  return `${atlasCreativeRules(input, options)}
-
-━━━ OUTPUT FORMAT: ONE FLATTENED A.T.L.A.S. MASTER ━━━
-Deliver that design as ONE continuous unwrapped livery atlas -- a single square artwork canvas -- not a vehicle photograph and not six unrelated designs.
-
-That guide is generated from ${geometryDescription}. Its grays and outlines carry ZERO palette or style meaning. Return the same layout on a square canvas and leave everything outside the rectangles blank/transparent. These rectangles establish Calls 1-7 proof topology only; they are never authorization for print production.
-
-TOPOLOGY LOCK:
-- passenger flank is the tall rotated rectangle on the LEFT (clockwise 90 degrees)
-- driver flank is the tall rotated rectangle on the RIGHT (counter-clockwise 90 degrees)
-- center column is REAR, ROOF, HOOD, FRONT from top to bottom (vehicle rear to front)
-- maintain one coherent design language and intentional graphic continuity across related panel edges
-- do not swap driver and passenger
-- make PASSENGER the opposite-facing, mirror-compatible twin of DRIVER: the same flat artwork -- same motif, palette, hierarchy, scale and flow -- reversed for the opposite flank, while every word/logo/URL/number remains forward-reading on both zones
-- semantic continuity pairs are: ${continuity}
-- these are design-intent joins only; do not invent contour lines or claim exact PVO seam geometry
-
-ZONE MAP -- each box is a real printed surface at the size stated; scale lettering, motif and hierarchy to those inches:
-${map}
-
-OUTSIDE THE ZONES: the canvas stays empty. Every rectangle listed in the ZONE MAP is artwork; nothing else on the sheet is.
-
-MASTER APPLICATION BOUNDARY: The A.T.L.A.S. master stays FULL-BLEED inside every supplied exterior-panel zone. Paint the livery continuously THROUGH every place a window, glass panel, pickup-bed opening, wheel, wheel arch, lamp or trim piece will later sit - those positions carry artwork just like the rest of the panel, because the installer cuts them out of the printed vinyl afterwards. Keep essential logos, lettering and contact copy anchored to solid painted body area rather than to an opening, so a later cut never takes a word with it.
-
-SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL: every zone is ONE SOLID RECTANGLE of continuous printed artwork, opaque corner to corner and edge to edge. The design runs straight through every place a windshield, side window, door glass, wheel arch, tyre, pickup-bed opening, headlight, tail light, handle or trim piece will later sit, exactly as if those parts were not there. THE INSTALLER CUTS THE WHEEL AND WINDOW OPENINGS OUT OF THE FINISHED PANEL, so the panel must have artwork in those places for them to cut. Paint the wrap graphic across the whole rectangle. Each zone reads as a flat sheet of printed vinyl, never as a picture of a vehicle.
-
-PAIRED FLAT-TO-FINISHED LESSON: The attached flattened top-view example and its corresponding finished 3D vehicle proof teach the direction of this first call. The FLATTENED TOP-VIEW image is the output-format example. The finished vehicle is shown only so you understand how one coherent flat design later wraps across hood, roof, driver, passenger, front and rear surfaces. For this call, output the new flattened top-view design first; never output a vehicle photograph.
-
-ONE COHESIVE WRAP, FLATTENED FROM DIRECTLY ABOVE: this is an EXACT flattened top view of a SINGLE vehicle wrap — one design laid open, the way the attached example is. Not six separate designs sharing a canvas, and not a perspective or three-quarter view. Every zone is the same wrap continuing across the vehicle, so the motif, palette, scale and flow read as one artwork that happens to be laid flat. Where a zone shows the panel's own geometry — a door seam, a rocker or hood contour, the line an installer cuts to — paint the livery straight THROUGH it at full opacity, so the shape reads as printed artwork and never as an opening in the sheet.
-
-REFERENCE FIREWALL: Any attached installer-map, flattened top-view or finished-vehicle examples are TOPOLOGY/LAYOUT references only. Extract only panel arrangement, orientation, surface correspondence, masks and seam-continuity intent. IGNORE their palette, imagery, text, logos, brand and style. The customer's brief and verified customer-owned assets are the sole style source.
-
-FIDELITY: This atlas will condition seven downstream 3D proofs. Do not invent unrelated graphics between zones. Preserve supplied customer identity faithfully. This v1 atlas is design-proof authority only; exact typography/logo overlays and true PVO contours remain deterministic prepress concerns.
-`;
+async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetch, ownerId, supabase } = {}) {
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  if (!supabase?.storage?.from) {
+    throw new FlatAtlasError("flat_atlas_edge_transport_missing", "A server Supabase client is required to read the returned master", true);
+  }
+  if (!supabaseUrl || serviceRoleKey.length < 32) {
+    throw new FlatAtlasError("flat_atlas_edge_transport_missing", "SUPABASE_URL / service key are required for the Call-1 edge request", true);
+  }
+  const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "content-type": "application/json",
+      "x-designpro-owner-id": String(ownerId || ""),
+    },
+    body: JSON.stringify(body),
+  });
+  let payload = null;
+  try { payload = await response.json(); } catch { payload = null; }
+  if (!response.ok || payload?.success !== true) {
+    throw new FlatAtlasError(
+      "flat_atlas_edge_call_failed",
+      `design-panel-ai-generate atlas-artboard failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}`,
+      response.status >= 500,
+    );
+  }
+  if (Number(payload.imageRequestCount) !== 1) {
+    throw new FlatAtlasError("flat_atlas_edge_call_count_invalid", `The edge function reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
+  }
+  // The master comes back by STORAGE PATH and is read with the server client:
+  // wrap-files is private, so a URL fetch 400s (live 2026-08-27).
+  const masterPath = String(payload.masterStoragePath || "").trim();
+  if (!masterPath) {
+    throw new FlatAtlasError("flat_atlas_edge_master_path_missing", "The edge function returned no master storage path");
+  }
+  const { data: masterBlob, error: masterErr } = await supabase.storage.from(BUCKET).download(masterPath);
+  if (masterErr || !masterBlob) {
+    throw new FlatAtlasError("flat_atlas_edge_master_download_failed", masterErr?.message || `Could not read ${masterPath}`, true);
+  }
+  const bytes = Buffer.from(await masterBlob.arrayBuffer());
+  const digest = sha256(bytes);
+  if (digest !== String(payload.masterSha256 || "").toLowerCase()) {
+    throw new FlatAtlasError("flat_atlas_edge_master_hash_mismatch", "Downloaded master bytes do not match the edge function's reported sha256");
+  }
+  logger(`atlas-artboard edge request ${payload.requestId} model=${payload.model} promptChars=${payload.promptChars}`);
+  return {
+    bytes,
+    provenance: {
+      requestId: String(payload.requestId),
+      functionName: String(payload.functionName),
+      sourceCommit: String(payload.sourceCommit),
+      promptVersion: String(payload.promptVersion),
+      model: String(payload.model),
+      imageRequestCount: 1,
+      masterSha256: digest,
+      designText: String(payload.designText || ""),
+    },
+  };
 }
 
 async function verifiedCustomerLogoPart(supabase, input) {
@@ -1506,10 +1504,16 @@ async function generateOrReuseFlatAtlas(options) {
   // artboards only when they are actually in the request. On the live droplet
   // the bucket holds none, and the sentence was pointing at attachments that
   // were never sent.
-  const prompt = atlasPrompt(authoringInput, manifest, {
-    artboardQualityExampleCount: artboardQualityExamples.length,
-  });
-  const promptHash = sha256(Buffer.from(prompt, "utf8"));
+  // The Call-1 creative prompt is assembled INSIDE the deployed
+  // design-panel-ai-generate edge function; the runtime's request identity is
+  // the canonical edge request body (stable fields only) plus that function's
+  // pinned prompt version, so the reuse contract still refuses a request whose
+  // creative inputs changed.
+  const stableEdgeBody = atlasEdgeRequestBody(authoringInput, manifest, {});
+  const promptHash = sha256(Buffer.from(
+    `${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
+    "utf8",
+  ));
   const currentExampleSetHash = exampleSetHash(topologyExamples, artboardQualityExamples);
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
@@ -1560,16 +1564,39 @@ async function generateOrReuseFlatAtlas(options) {
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
-  const parts = [
-    // The deterministic guide is deliberately the first IMAGE in the request,
-    // and it is the glyph-free authoring render -- never the labelled map.
-    { inlineData: { mimeType: "image/png", data: authoringGuideBytes.toString("base64") } },
-    { text: prompt },
-    ...(await topologyExampleParts(topologyExamples)),
-    ...(await artboardQualityExampleParts(artboardQualityExamples)),
+  // The edge function receives: the glyph-free layout guide, the Houdini
+  // flattened structural reference (LAYOUT ONLY — the firewall lives in the
+  // edge prompt), and the verified customer logo/reference images. The
+  // gold-standard artboard examples are loaded by the edge function itself
+  // from its own bucket.
+  const topologyParts = await topologyExampleParts(topologyExamples);
+  const structuralImage = topologyParts.find((part) => part?.inlineData?.data);
+  const customerImageParts = [
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
-  ];
+  ].filter((part) => part?.inlineData?.data);
+  // Stage the two large inputs where the edge function can read them with its
+  // own service client. Content-addressed and upserted, so a retry or a second
+  // revision re-uses the same object instead of writing another copy.
+  const stageEdgeInput = async (bytes, contentType) => {
+    if (!bytes || !bytes.length) return undefined;
+    const path = `atlas-call1-inputs/${sha256(bytes)}.${contentType === "image/jpeg" ? "jpg" : "png"}`;
+    const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, { contentType, upsert: true });
+    if (error) {
+      throw new FlatAtlasError("flat_atlas_edge_input_upload_failed", error.message || `Could not stage ${path}`, true);
+    }
+    return path;
+  };
+  const structuralBytes = structuralImage?.inlineData?.data
+    ? Buffer.from(structuralImage.inlineData.data, "base64")
+    : null;
+  const structuralMime = structuralImage?.inlineData?.mimeType || "image/jpeg";
+  const edgeExtras = {
+    guideStoragePath: await stageEdgeInput(authoringGuideBytes, "image/png"),
+    structuralReferenceStoragePath: await stageEdgeInput(structuralBytes, structuralMime),
+    structuralReferenceMime: structuralMime,
+    referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
+  };
   if (typeof masterValidatorFactory !== "function") {
     throw new FlatAtlasError(
       "flat_atlas_master_qc_runtime_invalid",
@@ -1598,39 +1625,30 @@ async function generateOrReuseFlatAtlas(options) {
   let masterQc;
   let masterRequestByteSize = 0;
   let masterAuthoringAttempts = 0;
-  // Empty unless the re-rolls were exhausted on cut-outs alone. These name the
-  // surfaces whose PANEL carries a hole; the design and its proofs are fine.
   let masterDelivery = null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
-  const correctiveParts = [];
+  const edgeProvenance = [];
+  let correctiveNote = "";
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
     masterAuthoringAttempts = attempt;
-    const attemptParts = [...parts, ...correctiveParts];
-    masterRequestByteSize = assertMasterRequestWithinLimit(attemptParts, masterRequestMaxBytes);
-    generated = await provider.generateImage({
-      parts: attemptParts,
-      aspectRatio: "1:1",
-      imageSize: "4K",
-      // PARITY WITH THE AUTHORITY. design-panel-ai-generate sets temperature
-      // 1.0 explicitly on every image call (index.ts:1334) and pins one model
-      // with no fallback (index.ts:1320). Call 1 omitted the temperature
-      // entirely -- so the design was authored at whatever the API defaulted to
-      // -- and inherited a Flash-image fallback that could author the customer's
-      // design on a different model than the locked one.
-      temperature: 1,
-      // The authority pins its model by NAME and carries no fallback
-      // (index.ts:1320). `lockModel` alone would only pin the FIRST of whatever
-      // GOOGLE_IMAGE_MODEL happens to configure, which on the droplet is the GA
-      // id -- and the same request sent to the two ids does not produce the same
-      // kind of sheet at all (see DESIGNPANEL_AUTHORING_MODEL). Both are passed:
-      // the name decides, and lockModel keeps the no-fallback contract explicit.
-      model: DESIGNPANEL_AUTHORING_MODEL,
-      lockModel: true,
-      label: attempt === 1
-        ? "flat-first canonical atlas"
-        : `flat-first canonical atlas (corrective re-roll ${attempt})`,
+    const attemptBody = atlasEdgeRequestBody(authoringInput, manifest, {
+      ...edgeExtras,
+      correctiveNote: correctiveNote || undefined,
     });
+    masterRequestByteSize = Buffer.byteLength(JSON.stringify(attemptBody), "utf8");
+    if (masterRequestByteSize > masterRequestMaxBytes) {
+      throw new FlatAtlasError(
+        "flat_atlas_master_request_too_large",
+        `The Call-1 edge request is ${masterRequestByteSize} bytes; the cap is ${masterRequestMaxBytes}`,
+      );
+    }
+    // THE ONE CREATIVE NETWORK CALL. The deployed design-panel-ai-generate
+    // edge function executes the real Persona-2 designer brain and makes
+    // exactly one Gemini image request per attempt; this runtime never calls
+    // Gemini for Call 1 (owner directive 2026-08-27).
+    generated = await callAtlasArtboardEdge(attemptBody, { logger, ownerId, supabase });
+    edgeProvenance.push(generated.provenance);
     const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
     masterBytes = normalized.bytes;
     masterDelivery = normalized;
@@ -1641,56 +1659,33 @@ async function generateOrReuseFlatAtlas(options) {
       && masterQc.metadata.masterHash === masterHash
       && masterQc.metadata.guideHash === guideHash;
     if (accepted) break;
-    // A CUT-OUT IS NOT WORTH RE-ROLLING FOR.
-    //
-    // Re-rolling costs a full authoring pass -- about a minute -- and it buys
-    // nothing here: the proofs mask that region away, so the design is already
-    // correct, and the panel is fixed deterministically below by continuing the
-    // artwork that borders the hole. Spending three passes hoping Gemini draws
-    // it solid put two minutes on the critical path before the customer saw a
-    // single image. Re-rolls stay for a broken DESIGN, where another throw is
-    // genuinely the only remedy.
     const cutoutOnly = masterQc?.code === "atlas_master_qc_cutouts_present"
       && masterQc?.metadata?.contract === MASTER_QC_CONTRACT
       && masterQc.metadata.masterHash === masterHash
       && masterQc.metadata.guideHash === guideHash
       && Array.isArray(masterQc?.cutout?.surfaces);
     if (cutoutOnly) {
+      // A CUT-OUT IS NOT WORTH RE-ROLLING FOR: the proofs mask that region and
+      // the panel is repaired deterministically below.
       masterCutoutSurfaces = masterQc.cutout.surfaces.map(String);
       masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
       break;
     }
     if (attempt === maxAuthoringAttempts) {
-      // Only a broken DESIGN can reach here -- a cut-out broke out above on its
-      // first appearance. A blank zone, no contrast, or a passenger flank that
-      // is not the driver's twin leaves nothing worth showing the customer, and
-      // three throws have already failed to produce one.
       throw new FlatAtlasError(
         "flat_atlas_master_qc_failed",
         `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
       );
     }
-    correctiveParts.length = 0;
-    // THE CORRECTION NAMES THE ACTUAL DEFECT. This block used to prescribe the
-    // solid-panels remedy for EVERY refusal, so a mirror-broken sheet was told,
-    // three times, to fix cut-outs it did not have -- live on generation
-    // 632642dc (2026-08-26): three attempts, all refused at
-    // passengerMirrorMae~0.35, each re-roll fed the wrong remedy. The gate's
-    // own finding is the corrective direction; no new creative language is
-    // introduced -- the mirror text below is the prompt's own locked side-twin
-    // wording, restated as the correction.
+    // THE CORRECTION NAMES THE ACTUAL DEFECT (see generation 632642dc): the
+    // gate's own finding is the corrective direction, forwarded to the edge
+    // function as a text part on the next attempt.
     const refusalReason = String(masterQc?.reason || "the master was not accepted").slice(0, 600);
     const mirrorBroken = /passengerMirrorMae/.test(refusalReason);
-    correctiveParts.push({
-      text: `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}. Author a NEW sheet. `
-        + (mirrorBroken
-          ? "The refusal above means the PASSENGER flank was NOT the DRIVER flank's twin: the two tall side rectangles read as two different designs. Draw ONE side composition and install it on BOTH flanks: PASSENGER is the opposite-facing, mirror-compatible twin of DRIVER -- the same flat artwork, same motif, palette, hierarchy, scale and flow, reversed for the opposite flank -- while every word, logo, URL and number remains forward-reading on both zones. Only the text and logos read forward on each side; everything else in the two flanks mirrors."
-          : "Every zone is one SOLID rectangle of continuous artwork, "
-            + "opaque corner to corner: paint the livery straight through every position where "
-            + "a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece will "
-            + "later sit. The installer cuts those openings out of the printed vinyl; the "
-            + "artwork itself never contains a dark or empty shape standing in for one."),
-    });
+    correctiveNote = `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}. Author a NEW sheet. `
+      + (mirrorBroken
+        ? "The refusal above means the PASSENGER SIDE panel was NOT the DRIVER SIDE panel's mirror twin: the two read as different designs. Draw ONE side composition and install it on BOTH: PASSENGER SIDE is DRIVER SIDE's mirror twin -- the same flat artwork reversed -- while every word and logo remains forward-reading on both."
+        : "Every panel is one SOLID rectangle of continuous artwork, opaque corner to corner: paint the artwork straight through every position where a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece would sit. The installer cuts those openings out of the printed vinyl; the artwork itself never contains a dark or empty shape standing in for one.");
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
   // ONE REPAIRED SHEET FEEDS BOTH HALVES OF THE FAN-OUT.
@@ -1881,6 +1876,13 @@ async function generateOrReuseFlatAtlas(options) {
       // can prove "one call" without inference.
       geminiImageRequestCount: masterAuthoringAttempts,
       maxAuthoringAttemptsAllowed: maxAuthoringAttempts,
+      // OWNER PROOF CONTRACT (2026-08-27): every Call-1 creative request went
+      // through the deployed design-panel-ai-generate edge function; zero
+      // direct Gemini Call-1 requests exist in this runtime. One provenance
+      // entry per attempt: requestId, functionName, sourceCommit,
+      // promptVersion, model, masterSha256.
+      atlasEdgeProvenance: edgeProvenance,
+      atlasEdgePromptVersion: ATLAS_ARTBOARD_EDGE_PROMPT_VERSION,
       proofExecution: "driver-first-sequential-generate-color-render",
     },
   };
@@ -1975,14 +1977,14 @@ module.exports = {
     assertMasterRequestWithinLimit,
     assertAtlasGeometryBasis,
     assertAtlasReuseContract,
-    atlasPrompt,
+    atlasEdgeRequestBody,
     buildViewAuthorities,
     canonical,
     canonicalBytes,
     customerCreativeBrief,
     exampleSetHash,
     estimatedMasterRequestBytes,
-    atlasCreativeRules,
+    callAtlasArtboardEdge,
     fitCenterColumn,
     fitRotatedSide,
     authoringGuideSvg,

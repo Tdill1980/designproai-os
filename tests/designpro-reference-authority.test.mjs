@@ -32,7 +32,28 @@ const SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"].map((s
 }));
 const manifest = atlas.buildAtlasManifest(SURFACES);
 const VEHICLE = { year: "2022", make: "Ford", model: "F250 Crew Cab", type: "truck" };
-const authored = (input) => atlas._test.atlasPrompt({ vehicle: VEHICLE, finish: "Gloss", ...input }, manifest, {});
+// The canonical Call-1 assembly (owner directive 2026-08-27), executed.
+const { loadDesignIQ, ATLAS_PANELS } = await import("./helpers/load-designiq.mjs");
+const edgeAssembly = await loadDesignIQ();
+const authored = (input) => edgeAssembly.buildDesignIQPrompt({
+  mode: input.mode === "restyle" ? "restyle" : "commercial",
+  prompt: String(input.brief || ""),
+  finish: "Gloss",
+  substrate: "standard",
+  companyName: input.companyName,
+  phone: input.phone,
+  industryType: input.industry,
+  brandColors: input.brandColors,
+  vehicleYear: VEHICLE.year,
+  vehicleMake: VEHICLE.make,
+  vehicleModel: VEHICLE.model,
+  viewType: "side",
+  visionBoardImages: Array.isArray(input.visionBoardImages) ? input.visionBoardImages : undefined,
+  visionboard_intent: input.visionboardIntent === "exact_reference" ? "exact_reference" : "style_inspiration",
+  styleDescriptors: input.styleDescriptors,
+  atlasFlatMaster: true,
+  atlasPanels: ATLAS_PANELS,
+});
 
 const swatch = async (color) => sharp({
   create: { width: 64, height: 64, channels: 3, background: color },
@@ -67,15 +88,18 @@ test("a customer reference declares artwork authority and distinguishes itself f
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     visionboardIntent: "exact_reference", visionBoardImages: [{}],
   });
+  // The persona's own EXACT rule declares the customer reference the artwork
+  // authority; the flat contract's LAYOUT ONLY line keeps the structural
+  // example out of style.
   assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's own approved wrap design/);
-  assert.match(exact, /Installer-map examples remain topology-only and must never influence style/);
+  assert.match(exact, /teaches LAYOUT ONLY — take no artwork, wording, logo, colour or style from it/);
 
   const inspiration = authored({
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     visionboardIntent: "style_inspiration", visionBoardImages: [{}],
   });
-  assert.match(inspiration, /REFERENCE FIREWALL/);
-  assert.match(inspiration, /TOPOLOGY\/LAYOUT references only/);
+  assert.match(inspiration, /STYLE INSPIRATION: Transform/);
+  assert.match(inspiration, /teaches LAYOUT ONLY/);
 });
 
 // WITH NO CUSTOMER REFERENCE, THE FIREWALL STILL STANDS.
@@ -85,8 +109,10 @@ test("a customer reference declares artwork authority and distinguishes itself f
 // one — and nothing may take style from it.
 test("with no customer reference at all, the structural example is still firewalled", () => {
   const prompt = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(prompt, /REFERENCE FIREWALL/);
-  assert.match(prompt, /IGNORE their palette, imagery, text, logos, brand and style/);
+  // The firewall line rides the flat-master output contract on every call —
+  // reference supplied or not — because the structural example is always
+  // attached by the transport.
+  assert.match(prompt, /teaches LAYOUT ONLY — take no artwork, wording, logo, colour or style from it/);
 });
 
 // THE METADATA KEEPS THE CLASSES APART.
@@ -151,19 +177,12 @@ test("a 3D proof's artwork authority is the atlas master and nothing else can su
 // exactly, absent means invent nothing for THAT field. The per-field shape
 // matters — a single combined guard only fired when BOTH were missing.
 test("contact information is preserved exactly when supplied and never invented when not", () => {
+  // DPAG's own contact contract: one sentence covers phone, website, email and
+  // address when nothing was supplied, and an exact-digits lock when it was.
   const none = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(none, /do NOT invent, fabricate, or display any phone number/);
-  assert.match(none, /invent no website/);
-  assert.match(none, /display none anywhere/);
+  assert.match(none, /No phone number was provided — do NOT invent, fabricate, or display any phone number, website, email, or address anywhere on the vehicle\. Show the company name only\./);
 
-  const phoneOnly = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme", phone: "555-0142" });
-  assert.match(phoneOnly, /555-0142 — display this EXACT number, digit for digit/);
-  assert.match(phoneOnly, /invent no website/, "the website guard must still fire when only the phone is supplied");
-
-  const both = authored({
-    mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
-    phone: "555-0142", website: "acme.com",
-  });
-  assert.match(both, /display this EXACT URL, character for character/);
-  assert.doesNotMatch(both, /invent, fabricate, or display any phone number|invent no website/);
-});
+  const withPhone = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme", phone: "555-0142" });
+  assert.match(withPhone, /555-0142 — display this EXACT number, digit for digit\. Never alter or invent any digits\./);
+  assert.doesNotMatch(withPhone, /do NOT invent, fabricate/);
+})

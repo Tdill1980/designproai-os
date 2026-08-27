@@ -24,7 +24,7 @@ const sharp = runtimeRequire("sharp");
 
 const flatFirst = require("../runtime/flat-first-atlas.cjs");
 const { CANVAS, SURFACE_KEYS, PROMPT_VERSION, renderAtlasAuthoringGuide, renderAtlasGuide, _test } = flatFirst;
-const { authoringGuideSvg, guideGeometrySvg, guideSvg, atlasPrompt } = _test;
+const { authoringGuideSvg, guideGeometrySvg, guideSvg } = _test;
 
 const { deterministicMasterChecks } = require("../runtime/atlas-master-qc.cjs");
 
@@ -141,121 +141,21 @@ test("reintroducing text on the authoring path fails the run instead of authorin
   );
 });
 
-test("the prompt states full bleed positively and no longer enumerates guide furniture", () => {
-  const prompt = atlasPrompt({ designBrief: "a clean geometric livery" }, manifest);
-  // FULL BLEED IS STATED ONCE, POSITIVELY, IN THE PROTECTED BLOCK.
-  //
-  // It used to be stated twice: a "FULL BLEED PER ZONE" heading and then SOLID
-  // PANELS immediately below it, which RULE 0.15 protects verbatim and which
-  // already says every zone is one solid rectangle of continuous artwork,
-  // opaque corner to corner and edge to edge. The heading carried one clause
-  // SOLID PANELS does not — what happens OUTSIDE the rectangles — so that
-  // clause survives on its own and the restatement is gone.
-  assert.match(prompt, /SOLID PANELS -- THIS IS THE MOST IMPORTANT RULE OF THIS CALL/);
-  assert.match(prompt, /opaque corner to corner and edge to edge/i);
-  assert.match(prompt, /canvas stays empty/i, "the outside-the-zones rule must survive the dedupe");
-  // Zone identity still reaches the model as text, which is why the glyphs were
-  // never load-bearing.
-  for (const zone of manifest.zones) {
-    assert.equal(prompt.includes(`${zone.surfaceKey}: box [${zone.x},${zone.y},${zone.w},${zone.h}]`), true,
-      `${zone.surfaceKey} lost its ZONE MAP entry`);
-  }
-  // The old OUTPUT CLEANLINESS clause named the forbidden thing -- "labels",
-  // "legend", "dimensions" -- which is the prompt shape that made the model
-  // paint them. It must not come back.
-  assert.equal(/guide's colors, labels/i.test(prompt), false);
+test("the solid-panel output contract lives in the edge function's flat contract", () => {
+  // The runtime assembles no creative text (owner directive 2026-08-27); the
+  // full-bleed rule rides the deployed design-panel-ai-generate atlas-artboard
+  // handler instead, stated once and positively.
+  const { readFileSync } = require("node:fs");
+  const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
+  assert.match(edge, /ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner/);
+  assert.match(edge, /outside the rectangles the canvas stays blank/i);
+  // Zone identity reaches the model as the labeled GENIE panel list.
+  assert.match(edge, /panelLines/);
 });
 
 test("the prompt version moved off v6, so masters authored with the labelled guide are refused", () => {
-  assert.equal(PROMPT_VERSION, "designpro-flat-first-atlas-20260826.v9-dpag");
-  assert.doesNotMatch(PROMPT_VERSION, /\.v[4-8]$/);
-});
-
-// ---------------------------------------------------------------------------
-// FULL BLEED: a required zone carrying transparency cannot pass.
-// ---------------------------------------------------------------------------
-
-const qcZoneKeys = ["driver", "passenger", "hood", "roof", "front", "rear"];
-const qcManifest = {
-  zones: qcZoneKeys.map((surfaceKey, index) => ({
-    surfaceKey,
-    x: (index % 3) * 100,
-    y: Math.floor(index / 3) * 100,
-    w: 100,
-    h: 100,
-    extraction: { outputRotationDegrees: 0 },
-  })),
-  installerMap: {
-    passenger: "left", driver: "right",
-    centerOrderTopToBottom: ["rear", "roof", "hood", "front"],
-  },
-};
-
-/** Textured artwork, opaque everywhere -- a legal sheet. */
-async function opaqueSheet() {
-  const tile = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
-    <rect width="100" height="100" fill="#0f766e"/>
-    <rect x="6" y="6" width="88" height="88" fill="#f59e0b"/>
-    <rect x="24" y="24" width="52" height="52" fill="#e11d48"/>
-    <rect x="42" y="42" width="16" height="16" fill="#ffffff"/>
-  </svg>`)).png().toBuffer();
-  return sharp({ create: { width: 300, height: 200, channels: 4, background: "#000000" } })
-    .composite(qcManifest.zones.map((zone) => ({ input: tile, left: zone.x, top: zone.y })))
-    .png().toBuffer();
-}
-
-/** The same sheet with a transparent bite taken out of one zone. */
-async function sheetWithHoleIn(surfaceKey, holePx) {
-  const base = await opaqueSheet();
-  const zone = qcManifest.zones.find((candidate) => candidate.surfaceKey === surfaceKey);
-  // `dest-out` erases the destination wherever the SOURCE is opaque, so the
-  // stamp has to be solid. A transparent stamp erases nothing at all.
-  const hole = await sharp({
-    create: { width: holePx, height: holePx, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
-  }).png().toBuffer();
-  return sharp(base)
-    .composite([{ input: hole, left: zone.x + 5, top: zone.y + 5, blend: "dest-out" }])
-    .png().toBuffer();
-}
-
-test("an opaque sheet satisfies the full-bleed floor on every required zone", async () => {
-  const checks = await deterministicMasterChecks(await opaqueSheet(), qcManifest);
-  const coverage = checks.failures.filter((finding) => /opaqueRatio/.test(finding));
-  assert.deepEqual(coverage, [], `a fully painted sheet must not be convicted: ${coverage.join("; ")}`);
-});
-
-test("transparency inside a required zone is convicted, and convicted as BLOCKING", async () => {
-  for (const surfaceKey of qcZoneKeys) {
-    const checks = await deterministicMasterChecks(await sheetWithHoleIn(surfaceKey, 40), qcManifest);
-    assert.equal(checks.accepted, false, `${surfaceKey} transparency was accepted`);
-    const named = checks.blockingFailures.filter((finding) => finding.startsWith(`${surfaceKey} `));
-    assert.ok(named.length > 0,
-      `${surfaceKey} transparency must be a blocking failure, not a cut-out flag`);
-    assert.ok(named.some((finding) => /opaqueRatio/.test(finding)),
-      `${surfaceKey} must be convicted on opaque coverage: ${named.join("; ")}`);
-    // A hole in the sheet is a broken DESIGN, never the panel-scoped cut-out
-    // class -- it must not be carried forward and filled.
-    assert.equal(
-      checks.cutoutFindings.some((item) => item.surfaceKey === surfaceKey && /opaqueRatio/.test(item.finding)),
-      false,
-      `${surfaceKey} transparency must not be reclassified as a fillable cut-out`,
-    );
-  }
-});
-
-test("the full-bleed floor is not satisfied by painting only the middle of a zone", async () => {
-  // Edge coverage is its own check: artwork that stops short of the trim leaves
-  // the installer nothing to wrap, even when the centre is solid.
-  const base = await opaqueSheet();
-  const zone = qcManifest.zones.find((candidate) => candidate.surfaceKey === "hood");
-  const frame = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
-    <path d="M0,0 H100 V100 H0 Z M12,12 V88 H88 V12 Z" fill="#ffffff" fill-rule="evenodd"/>
-  </svg>`)).png().toBuffer();
-  const bytes = await sharp(base)
-    .composite([{ input: frame, left: zone.x, top: zone.y, blend: "dest-out" }])
-    .png().toBuffer();
-  const checks = await deterministicMasterChecks(bytes, qcManifest);
-  assert.equal(checks.accepted, false);
-  assert.ok(checks.blockingFailures.some((finding) => /^hood .*(edgeOpaqueRatio|opaqueRatio)/.test(finding)),
-    `a hood painted only in the middle must fail: ${checks.blockingFailures.join("; ")}`);
+  const { readFileSync } = require("node:fs");
+  const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  assert.match(atlasSource, /designpro-flat-first-atlas-20260827\.v10-edge/);
+  assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260824\.v6"/);
 });

@@ -63,6 +63,7 @@ const { composeAtlasFromArtwork } = require_("./atlas-artwork-compose.cjs");
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) => (a.startsWith("--") ? [[a.slice(2), all[i + 1]]] : [])),
 );
+const CANARY_OWNER_ID = "b940320d-cb5a-4b60-b280-32d12ef4d6a6"; // canary-operator@designproai.com
 const OUT = args.out || "./ab-evidence";
 mkdirSync(OUT, { recursive: true });
 
@@ -231,18 +232,31 @@ async function main() {
   ]);
   log(`${topologyExamples.length} topology example(s), ${artboardQualityExamples.length} gold-standard artboard(s)`);
 
-  const atlasPromptText = atlas._test.atlasPrompt(V3_INPUT, manifest, {
-    artboardQualityExampleCount: artboardQualityExamples.length,
-  });
+  // B IS THE PRODUCT PATH (owner directive 2026-08-27): the runtime assembles
+  // no creative text — it POSTs this body to the deployed
+  // design-panel-ai-generate edge function, which executes the real Persona-2
+  // builder and makes the one Gemini image request itself.
   const authoringGuideBytes = await atlas.renderAtlasAuthoringGuide(manifest);
-  log(`atlas prompt ${atlasPromptText.length} chars, authoring guide ${(authoringGuideBytes.length / 1024).toFixed(0)}KB`);
-
-  const bParts = [
-    { inlineData: { mimeType: "image/png", data: authoringGuideBytes.toString("base64") } },
-    { text: atlasPromptText },
-    ...(await atlas._test.topologyExampleParts(topologyExamples)),
-    ...(await atlas._test.artboardQualityExampleParts(artboardQualityExamples)),
-  ];
+  const topologyParts = await atlas._test.topologyExampleParts(topologyExamples);
+  const structuralImage = topologyParts.find((part) => part?.inlineData?.data);
+  // The harness stages the same two inputs the product stages, so arm B is the
+  // product request byte for byte (owner directive 2026-08-27).
+  const stage = async (bytes, contentType) => {
+    const path = `atlas-call1-inputs/${sha(bytes)}.${contentType === "image/jpeg" ? "jpg" : "png"}`;
+    const { error } = await supabase.storage.from("wrap-files").upload(path, bytes, { contentType, upsert: true });
+    if (error) throw new Error(`staging ${path} failed: ${error.message}`);
+    return path;
+  };
+  const structuralBytes = structuralImage?.inlineData?.data
+    ? Buffer.from(structuralImage.inlineData.data, "base64")
+    : null;
+  const structuralMime = structuralImage?.inlineData?.mimeType || "image/jpeg";
+  const bEdgeBody = atlas._test.atlasEdgeRequestBody(V3_INPUT, manifest, {
+    guideStoragePath: await stage(authoringGuideBytes, "image/png"),
+    structuralReferenceStoragePath: structuralBytes ? await stage(structuralBytes, structuralMime) : undefined,
+    structuralReferenceMime: structuralMime,
+  });
+  log(`atlas edge request ${(JSON.stringify(bEdgeBody).length / 1024).toFixed(0)}KB, authoring guide ${(authoringGuideBytes.length / 1024).toFixed(0)}KB`);
 
   // ── C: THE ARTWORK+COMPOSE PATH ────────────────────────────────────────
   // DPAG craft aimed at ONE flat banner; code owns the geometry afterwards.
@@ -305,18 +319,16 @@ async function main() {
       attempts: "MAX_IMAGE_ATTEMPTS = 2",
       notes: ["the control's own flat branch — the apples-to-apples flattened control"],
     }),
-    B: describe("B — SERVER A.T.L.A.S. Call 1", {
-      model: AUTHORING_MODEL,
-      modelFallback: "none — Call 1 pins the model by name and passes lockModel:true",
-      parts: bParts,
-      generationConfig: { temperature: 1, responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: "1:1", imageSize: "4K" } },
-      attempts: "harness executes exactly 1; production re-roll budget MAX_MASTER_AUTHORING_ATTEMPTS = 3, pinned to 1 for owner acceptance (DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS=1)",
+    B: {
+      label: "B — THE PRODUCT CALL 1: POST /functions/v1/design-panel-ai-generate mode:atlas-artboard",
+      endpoint: "/functions/v1/design-panel-ai-generate",
+      requestBody: bEdgeBody,
+      attempts: "harness executes exactly 1 edge request; the edge function makes exactly 1 Gemini image request (its response proves the count)",
       notes: [
-        "the deterministic authoring guide is the FIRST part, ahead of the prompt text",
-        `atlas prompt version ${atlas.PROMPT_VERSION}`,
-        "the creative half IS the vendored design-panel-ai-generate builder (atlasTopology mode) — one canonical implementation",
+        `runtime prompt-identity version ${atlas.PROMPT_VERSION}`,
+        "the creative prompt is assembled INSIDE the deployed edge function — the real Persona-2 buildDesignerPrompt, executed (owner directive 2026-08-27)",
       ],
-    }),
+    },
     C: describe("C — ARTWORK+COMPOSE (DPAG craft, code geometry)", {
       model: AUTHORING_MODEL,
       modelFallback: "none",
@@ -336,10 +348,7 @@ async function main() {
   writeFileSync(join(OUT, "C-artwork.system.txt"), ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION);
   writeFileSync(join(OUT, "A-control-commercial.prompt.txt"), controlCommercialPrompt);
   writeFileSync(join(OUT, "A2-control-artboard.prompt.txt"), controlArtboardPrompt);
-  writeFileSync(join(OUT, "B-atlas-call1.prompt.txt"), atlasPromptText);
-  writeFileSync(join(OUT, "B-atlas-creative-half.txt"), atlas._test.atlasCreativeRules(V3_INPUT, {
-    artboardQualityExampleCount: artboardQualityExamples.length,
-  }));
+  writeFileSync(join(OUT, "B-atlas-call1.request.json"), JSON.stringify(bEdgeBody, null, 2));
   writeFileSync(join(OUT, "B-authoring-guide.png"), authoringGuideBytes);
   log(`requests captured → ${OUT}/requests.json`);
 
@@ -356,21 +365,44 @@ async function main() {
   for (const [name, spec] of [
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
-    ["B", { parts: bParts, model: AUTHORING_MODEL, cfg: requests.B.generationConfig, file: "B-atlas-master.png" }],
-    // B IS THE PRODUCTION PATH, so it uses the model Call 1 actually pins.
-    // The droplet still resolves GOOGLE_IMAGE_MODEL=gemini-3-pro-image for the
-    // projections, so when the two differ the configured id gets its own arm --
-    // one extra call, and the model stops being a confound in either direction.
+    ["B", { edge: true, file: "B-atlas-master.png" }],
     ["C", { parts: cParts, model: AUTHORING_MODEL, cfg: requests.C.generationConfig, file: "C-artwork-banner.png", systemInstruction: ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION, compose: true }],
-    ...(provider.models[0] === AUTHORING_MODEL ? [] : [["B-configured", {
-      parts: bParts, model: provider.models[0], cfg: requests.B.generationConfig, file: "B-atlas-master-configured-model.png",
-    }]]),
   ]) {
     if (!armAllowed(name)) {
       results[name] = { ok: null, skipped: true, reason: `not in --arms ${armFilter.join(",")}` };
       continue;
     }
     try {
+      if (spec.edge) {
+        // THE PRODUCT PATH: one edge request; the response carries the proof
+        // fields (requestId, sourceCommit, promptVersion, model,
+        // imageRequestCount, masterSha256).
+        // The edge function authenticates the server caller by resolving a
+        // real owner id with Auth Admin privilege (designpro-internal-call).
+        // The acceptance run names the canary operator, never a customer.
+        const ownerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
+        const out = await atlas._test.callAtlasArtboardEdge(bEdgeBody, { logger: log, ownerId, supabase });
+        imageRequestsExecuted += out.provenance.imageRequestCount;
+        writeFileSync(join(OUT, spec.file), out.bytes);
+        // The owner proof contract: the six deterministic crop hashes, cut by
+        // the same cutCallOnePanels geometry production uses (sharp.extract,
+        // no AI), from the same normalized master bytes.
+        const normalized = await atlas.normalizeAtlasMaster(out.bytes, manifest);
+        const crops = await atlas.cutCallOnePanels(normalized.bytes, manifest, out.provenance.masterSha256);
+        const cropHashes = {};
+        for (const crop of crops) {
+          cropHashes[crop.surfaceKey] = crop.contentHash;
+          writeFileSync(join(OUT, `B-panel-${crop.surfaceKey}.png`), crop.bytes);
+          produced.push(`B-panel-${crop.surfaceKey}.png`);
+        }
+        results[name] = {
+          ok: true, file: spec.file, bytes: out.bytes.length,
+          contentHash: out.provenance.masterSha256, ...out.provenance,
+          panelCropHashes: cropHashes,
+        };
+        produced.push(spec.file);
+        continue;
+      }
       imageRequestsExecuted += 1;
       const out = await callGemini({
         label: name, model: spec.model, key, parts: spec.parts,
