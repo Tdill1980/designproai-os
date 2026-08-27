@@ -125,8 +125,13 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   assert.match(worker, /atlasProviderFactory = createAtlasDesignPanelProvider/);
   // Still `viewAuthorityFor` against the same object, still hash-gated -- now
   // behind that surface's own panel.ready gate rather than the whole of Call 1.
-  assert.match(worker, /await awaitSurface\(sourceViewType\);\s*\n\s*return viewAuthorityFor\(flatAtlas, sourceViewType\);/);
-  assert.match(worker, /await awaitSurface\(sourceViewType\);\s*\n\s*return atlasProjectionParts\(flatAtlas, sourceViewType\);/);
+  // Each proof node awaits ONLY its own surface gate, then reads that surface's
+  // authority. Asserted as "awaitSurface then the read, with nothing else
+  // awaited between" rather than as adjacent lines, so the server graph
+  // instrumentation (proof.start logging) sitting between them is not a false
+  // regression -- what must not come back is an await on anything else.
+  assert.match(worker, /await awaitSurface\(sourceViewType\);(?:(?!await )[\s\S])*?return viewAuthorityFor\(flatAtlas, sourceViewType\);/);
+  assert.match(worker, /await awaitSurface\(sourceViewType\);(?:(?!await )[\s\S])*?return atlasProjectionParts\(flatAtlas, sourceViewType\);/);
   // One gate per SURFACE, so Close-Up rides Driver's cut rather than its own.
   // One gate per surface, extracted into `surfaceGateSet()` so it is a
   // testable unit rather than inline state -- Close-Up rides Driver's cut.
