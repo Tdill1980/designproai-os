@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v3";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v4";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -310,12 +310,26 @@ function splitStyleAndText(raw: string, companyName?: string): { stylePrompt: st
 // on-vehicle camera/studio/photograph presentation. Nothing is stripped by a
 // later string replacement and there is no second creative implementation:
 // the presentation half is a branch inside the authority itself.
-function atlasFlatMasterContract(panels: Array<{ label: string; widthInches?: number; heightInches?: number }>): string {
+const ATLAS_PLACEMENT_WORDS: Record<string, string> = {
+  "left-flank": "tall column down the LEFT edge",
+  "right-flank": "tall column down the RIGHT edge",
+  "center-column": "in the CENTRE column, stacked vehicle-rear to vehicle-front",
+};
+
+function atlasFlatMasterContract(
+  panels: Array<{ label: string; surfaceId?: string; placement?: string; widthInches?: number; heightInches?: number }>,
+): string {
   const panelLines = (panels || [])
-    .map((p) => `\u2022 ${p.label}${p.widthInches && p.heightInches ? ` \u2014 ${p.widthInches}" x ${p.heightInches}"` : ""}`)
+    .map((p) => {
+      const id = p.surfaceId ? `${p.surfaceId} \u2014 ` : "";
+      const where = p.placement && ATLAS_PLACEMENT_WORDS[p.placement] ? ` \u2014 ${ATLAS_PLACEMENT_WORDS[p.placement]}` : "";
+      const size = p.widthInches && p.heightInches ? ` \u2014 ${p.widthInches}" x ${p.heightInches}"` : "";
+      return `\u2022 ${id}${p.label}${where}${size}`;
+    })
     .join("\n");
   return `OUTPUT FORMAT \u2014 ONE FLAT PRODUCTION MASTER on a single square 4K canvas:
-The attached layout guide is the ARTBOARD. Its labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed already included. Paint inside each labeled rectangle; outside the rectangles the canvas stays blank.
+The attached layout guide is the ARTBOARD: a flattened TOP-DOWN TOPOLOGY of the vehicle. Its labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed already included \u2014 passenger flank as a tall column down the left, the centre column running vehicle-rear to vehicle-front, driver flank as a tall column down the right. Paint inside each labeled rectangle; outside the rectangles the canvas stays blank.
+Every container is CAPTIONED in the empty gutter beside it with its two-letter Surface ID, its name and its pixel size, and the sheet carries a title band across the top. Those captions, the title band and the container borders are STRUCTURE, not artwork: they live outside the containers and are cropped away, so paint only inside the rectangles and reproduce none of that lettering.
 ${panelLines}
 FILL EVERY CONTAINER EDGE TO EDGE. Each panel is ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner, with the design running off all four sides of its rectangle. No blank margin, no white gap, no letterboxing, no rounded corner, no frame or border around a panel.
 NO BODY LINES. Do not draw door seams, panel gaps, rocker or hood contours, wheel arches, windows, glass, lights, handles, bumpers, a vehicle silhouette, or any cut-out shape. The artwork paints straight THROUGH every place one of those would sit \u2014 the installer cuts the openings from the printed vinyl afterwards, and a line drawn here prints as a line on the wrap.
@@ -1963,11 +1977,13 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // The six labeled panels: caller-supplied GENIE dimensions win; the PVO
     // table (artboard-template-os) is the fallback — the same resolver the
     // legacy artboard mode uses.
-    type PanelIn = { label?: unknown; widthInches?: unknown; heightInches?: unknown };
+    type PanelIn = { label?: unknown; surfaceId?: unknown; placement?: unknown; widthInches?: unknown; heightInches?: unknown };
     const suppliedPanels = Array.isArray(body.panels) ? (body.panels as PanelIn[]) : [];
     const panels = suppliedPanels.length
       ? suppliedPanels.map((p) => ({
           label: String(p.label || "").toUpperCase(),
+          surfaceId: String((p as Record<string, unknown>).surfaceId || "").toUpperCase() || undefined,
+          placement: String((p as Record<string, unknown>).placement || "") || undefined,
           widthInches: Number(p.widthInches) || undefined,
           heightInches: Number(p.heightInches) || undefined,
         }))

@@ -130,7 +130,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v3";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v4";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -566,6 +566,114 @@ function zoneLabelSvg(zone) {
 }
 
 /**
+ * THE CONTAINERS ARE LABELED -- IN THE MARGIN, NEVER INSIDE THE PAINT AREA.
+ *
+ * Owner, 2026-08-27, looking at the live master: "just fix so it's a true
+ * topography flattened view labeled containers", against a spec sheet reading
+ * "A.T.L.A.S. FLATTENED - TOPO TOP VIEW · SINGLE SOURCE MASTER · SIX
+ * DETERMINISTIC PANELS · 1:1 TOPOLOGY" with every container carrying its
+ * Surface ID and its W/H in pixels.
+ *
+ * The topology itself was already right -- passenger flank left, a centre
+ * column running vehicle-rear-to-front, driver flank right, which is what
+ * `buildAtlasManifest` has produced all along. What the ARTBOARD lacked was
+ * identity: the copy handed to the authoring model carried geometry and
+ * nothing else, so six unnamed grey rectangles had to be mapped onto six
+ * surface names carried separately as prose.
+ *
+ * Labels could not simply go back inside the rectangles. That is exactly what
+ * `renderAtlasAuthoringGuide`'s comment records happening on 2026-08-25: a
+ * large bold surface name centred on a rectangle the model was told to paint
+ * came back painted, and three consecutive attempts died on
+ * `artifactFreeContract`.
+ *
+ * So the label sits in the GUTTER BESIDE its container -- the far-left margin
+ * for passenger, the far-right margin for driver, the passenger/centre gutter
+ * for the four centre surfaces -- rotated to read up the sheet. Two things
+ * follow, and both matter:
+ *
+ *   1. No glyph is inside any paintable rectangle, so there is nothing for the
+ *      model to copy INTO the artwork; the 08-25 failure cannot recur.
+ *   2. `normalizeAtlasMaster` masks the delivered sheet to the zone rectangles
+ *      (`activeZoneMaskSvg`), so anything the model paints in a gutter is
+ *      discarded before the master exists. The margin is structurally
+ *      unprintable, not merely discouraged.
+ *
+ * Same labels on both guides, so the design team and the model read one sheet.
+ */
+const SURFACE_IDS = Object.freeze({
+  driver: "DS",
+  passenger: "PS",
+  hood: "HD",
+  roof: "RF",
+  front: "FR",
+  rear: "RR",
+});
+
+const TOPO_TITLE = "A.T.L.A.S. FLATTENED — TOPO TOP VIEW · SINGLE SOURCE MASTER · SIX DETERMINISTIC PANELS · 1:1 TOPOLOGY";
+
+/**
+ * Where each container's caption goes: the horizontal centre of the empty
+ * gutter beside it. Derived from the zones themselves rather than from the
+ * layout constants, so a geometry change moves the labels with it.
+ */
+function labelGutterX(manifest) {
+  const byKey = new Map(manifest.zones.map((zone) => [zone.surfaceKey, zone]));
+  const passenger = byKey.get("passenger");
+  const driver = byKey.get("driver");
+  const centre = CENTER_ORDER.map((key) => byKey.get(key)).filter(Boolean);
+  const centreLeft = Math.min(...centre.map((zone) => zone.x));
+  return {
+    passenger: Math.round(passenger.x / 2),
+    driver: Math.round((driver.x + driver.w + CANVAS.widthPx) / 2),
+    centre: Math.round((passenger.x + passenger.w + centreLeft) / 2),
+  };
+}
+
+/**
+ * TWO LINES, NOT ONE. A single caption carrying identity AND dimensions runs
+ * about 1,400px of rotated text, and the four centre containers are 825-962px
+ * tall -- so one line overflowed its own container and the four smeared into
+ * each other in the shared gutter. Split, each half fits the shortest centre
+ * container with room to spare.
+ */
+function containerCaptionLines(zone) {
+  const id = SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase();
+  const name = String(zone.surfaceKey).toUpperCase();
+  return [
+    `${id} · ${name}`,
+    `${zone.w} × ${zone.h} px · ${zone.trimWidthIn}" × ${zone.trimHeightIn}" + ${BLEED_INCHES}" BLEED`,
+  ];
+}
+
+/**
+ * The labeled-container captions, in the gutters. Shared by both guides.
+ * Every glyph is provably outside every zone -- asserted, not assumed, by
+ * `renderAtlasAuthoringGuide`.
+ */
+function guideLabelsSvg(manifest) {
+  const gutter = labelGutterX(manifest);
+  const captions = manifest.zones.map((zone) => {
+    const centreX = zone.surfaceKey === "passenger" ? gutter.passenger
+      : zone.surfaceKey === "driver" ? gutter.driver
+      : gutter.centre;
+    const y = Math.round(zone.y + zone.h / 2);
+    return containerCaptionLines(zone).map((line, index) => {
+      const x = centreX + (index === 0 ? -26 : 26);
+      const fontSize = index === 0 ? 40 : 30;
+      return `<text x="${x}" y="${y}" transform="rotate(-90 ${x} ${y})" `
+        + `text-anchor="middle" dominant-baseline="central" fill="#d9d9d9" `
+        + `font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="700" `
+        + `letter-spacing="2">${line}</text>`;
+    }).join("");
+  }).join("");
+  const title = `<text x="${Math.round(CANVAS.widthPx / 2)}" y="112" text-anchor="middle" `
+    + `dominant-baseline="central" fill="#d9d9d9" font-family="Arial,sans-serif" `
+    + `font-size="40" font-weight="700" letter-spacing="2">${TOPO_TITLE}</text>`;
+  return `${title}${captions}`;
+}
+
+/**
  * The geometry both guides share. Rectangles, fills, strokes -- the zone
  * authority itself, identical in each, so the two renders can never disagree
  * about where a surface is.
@@ -618,6 +726,7 @@ function authoringGuideSvg(manifest) {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
     ${guideGeometrySvg(manifest)}
+    ${guideLabelsSvg(manifest)}
   </svg>`);
 }
 
@@ -627,6 +736,7 @@ function guideSvg(manifest) {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
     ${guideGeometrySvg(manifest)}
+    ${guideLabelsSvg(manifest)}
     ${zoneLabels}
     <text x="2048" y="4050" text-anchor="middle" fill="#d9d9d9" font-family="Arial,sans-serif" font-size="25">TOPOLOGY GUIDE ONLY · GRAYS AND LABELS MUST NOT APPEAR IN ARTWORK</text>
   </svg>`);
@@ -647,15 +757,40 @@ async function renderAtlasGuide(manifest) {
 /** Geometry authority only. This is the one the authoring model ever sees. */
 async function renderAtlasAuthoringGuide(manifest) {
   const svg = authoringGuideSvg(manifest);
-  // Fail closed rather than ship a glyph to the model. The split above is the
-  // whole defence against `artifactFreeContract`; if a future edit reintroduces
-  // text on this path, the run stops here instead of authoring another sheet
-  // with a surface name painted across it.
-  if (/<text\b/i.test(svg.toString("utf8"))) {
+  // Fail closed rather than ship a glyph INTO a container. The guide is now a
+  // labeled artboard (owner, 2026-08-27), so the guard can no longer be "no
+  // text at all" -- but the thing it was actually protecting against is
+  // unchanged and narrower than the old rule stated: a surface name sitting on
+  // the rectangle the model is told to paint comes back painted
+  // (`artifactFreeContract`, live 2026-08-25).
+  //
+  // So every glyph must be provably outside every zone. A caption lives at the
+  // centre of a gutter and is rotated about its own anchor, so its half-width
+  // is bounded by the font size; the anchor plus that pad is checked against
+  // all six rectangles.
+  const GLYPH_PAD_PX = 64;
+  const anchors = [...svg.toString("utf8").matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"/g)]
+    .map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+  const glyphCount = (svg.toString("utf8").match(/<text\b/gi) || []).length;
+  if (anchors.length !== glyphCount) {
     throw new FlatAtlasError(
-      "flat_atlas_authoring_guide_contains_text",
-      "The authoring guide must carry geometry only; readable text is reproducible as artwork",
+      "flat_atlas_authoring_guide_text_unlocatable",
+      "Every authoring-guide label must declare an x/y anchor so its position can be proven outside the containers",
     );
+  }
+  for (const anchor of anchors) {
+    for (const zone of manifest.zones) {
+      const inside = anchor.x + GLYPH_PAD_PX > zone.x
+        && anchor.x - GLYPH_PAD_PX < zone.x + zone.w
+        && anchor.y + GLYPH_PAD_PX > zone.y
+        && anchor.y - GLYPH_PAD_PX < zone.y + zone.h;
+      if (inside) {
+        throw new FlatAtlasError(
+          "flat_atlas_authoring_guide_contains_text",
+          `An authoring-guide label falls inside the ${zone.surfaceKey} container; text on a paintable rectangle is reproducible as artwork`,
+        );
+      }
+    }
   }
   return rasterizeGuide(svg);
 }
@@ -1111,8 +1246,16 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     visionboard_intent: ["exact_reference", "artboard_projection"].includes(String(input?.visionboardIntent || "").trim())
       ? "exact_reference"
       : "style_inspiration",
+    // `surfaceId` and `placement` are what let the panel list line up with the
+    // ARTBOARD the model is looking at: every container is captioned in the
+    // gutter beside it with the same two-letter id, so "DS" in the list and
+    // "DS" on the sheet are the same rectangle. Before this the model was
+    // handed six unnamed grey boxes and six names in prose, and had to guess
+    // the mapping (owner, 2026-08-27: "true topography ... labeled containers").
     panels: manifest.zones.map((zone) => ({
       label: SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
+      surfaceId: SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
+      placement: zone.placement,
       widthInches: Number(zone.trimWidthIn) || undefined,
       heightInches: Number(zone.trimHeightIn) || undefined,
     })),

@@ -347,9 +347,51 @@ still a failed master.
    waiting for the set: RevisionStudioIQ beside that side's proof, PanelPro with
    the upscaled assets.
 
+### THE CONTAINERS ARE LABELED — IN THE GUTTER, NOT ON THE PAINT AREA (Trish 2026-08-27)
+
+Owner, looking at the live master: **"You almost had it just fix so it's a true
+topography flattened view labeled containers"**, against a spec sheet reading
+*A.T.L.A.S. FLATTENED – TOPO TOP VIEW · SINGLE SOURCE MASTER · SIX
+DETERMINISTIC PANELS · 1:1 TOPOLOGY* with every container carrying its Surface
+ID and its W/H in pixels.
+
+**The topology was already right.** `buildAtlasManifest` has always produced
+passenger flank as a tall left column, a centre column running vehicle-rear to
+vehicle-front, driver flank as a tall right column. What the ARTBOARD lacked
+was identity: the copy handed to the authoring model carried geometry and
+nothing else, so six unnamed grey rectangles had to be mapped onto six names
+carried separately as prose.
+
+So both guides now caption every container — `DS · DRIVER`, its pixel size, its
+GENIE inches + 5″ bleed — plus the topo title band, and the Call-1 panel list
+carries the same Surface ID and placement (`DS — DRIVER SIDE — tall column down
+the RIGHT edge — 251" x 60"`) so the list and the sheet name the same rectangle.
+
+**⚠️ THIS NARROWS THE "NO TEXT AT ALL" GUARD, DELIBERATELY. DO NOT WIDEN IT BACK.**
+`renderAtlasAuthoringGuide` used to throw on ANY `<text>`. That was a proxy for
+the 2026-08-25 `artifactFreeContract` disaster, and the proxy was wider than
+the defect: what came back painted was a surface name centred **ON** the
+rectangle the model was told to paint. A caption in the empty gutter is a
+different object, and it is safe twice over — no glyph is inside a paintable
+rectangle, and `normalizeAtlasMaster` masks the delivered sheet to the zone
+rectangles (`activeZoneMaskSvg`), so anything painted in a gutter is discarded
+before a master exists. The margin is structurally unprintable.
+
+The guard is therefore **positional**, and still fail-closed: every `<text>`
+must declare an x/y anchor (`flat_atlas_authoring_guide_text_unlocatable`
+otherwise) and every anchor must lie outside all six zones
+(`flat_atlas_authoring_guide_contains_text`). The prose telling the model what
+NOT to paint still never reaches it — that footer stays on the human map only.
+Locked by `tests/atlas-authoring-guide.test.mjs`, whose fixture is now built by
+the real `buildAtlasManifest` rather than hand-placed rectangles.
+
 Enforced by `tests/atlas-artboard-edge-call1.test.mjs` and
 `tests/genie-catalog-sizes.test.mjs`. Contract version
-`atlas-artboard-designiq.20260827.v3`. Items 5 and 6 are SPECIFIED, not yet
+`atlas-artboard-designiq.20260827.v4` — it is folded into the Call-1
+`promptHash`, so masters authored against the unlabeled artboard are not
+reused. The DB-pinned `PROMPT_VERSION` is unchanged at
+`designpro-flat-first-atlas-20260827.v10-edge`, so this needs no migration
+cutover. Items 5 and 6 are SPECIFIED, not yet
 built — see `docs/ATLAS_ONE_ARTIFACT_GRAPH.md` §2.
 
 ## 🧬 RULE 0.27 — ONE ARTIFACT GRAPH. CODE OWNS THE ARTBOARD; A.I. OWNS THE DESIGN. (Trish 2026-08-27)

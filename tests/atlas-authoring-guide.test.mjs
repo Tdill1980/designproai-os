@@ -28,21 +28,25 @@ const { authoringGuideSvg, guideGeometrySvg, guideSvg } = _test;
 
 const { deterministicMasterChecks } = require("../runtime/atlas-master-qc.cjs");
 
-/** A manifest shaped like the real one: six zones, two of them rotated flanks. */
+/**
+ * THE REAL BUILDER, NOT A HAND-DRAWN APPROXIMATION.
+ *
+ * This fixture used to hand-place six rectangles, and it put the passenger
+ * flank 40px from the canvas edge -- a layout `buildAtlasManifest` cannot
+ * produce (it reserves OUTER_PADDING_PX on every side) and one with no gutter
+ * to caption a container in. Once the containers became labeled, that
+ * impossible geometry was the only thing failing. Build the manifest the
+ * product builds, so the guides are tested against the geometry they ship.
+ */
 function manifestFixture() {
-  const zones = [
-    { surfaceKey: "passenger", x: 40, y: 300, w: 700, h: 3400, rotationDegrees: 90 },
-    { surfaceKey: "driver", x: 3356, y: 300, w: 700, h: 3400, rotationDegrees: -90 },
-    { surfaceKey: "rear", x: 1200, y: 200, w: 1700, h: 780, rotationDegrees: 0 },
-    { surfaceKey: "roof", x: 1200, y: 1030, w: 1700, h: 1000, rotationDegrees: 0 },
-    { surfaceKey: "hood", x: 1200, y: 2080, w: 1700, h: 1000, rotationDegrees: 0 },
-    { surfaceKey: "front", x: 1200, y: 3130, w: 1700, h: 780, rotationDegrees: 0 },
-  ].map((zone) => ({ ...zone, guideFill: "#4a4a4a" }));
-  return {
-    zones,
-    seamContinuity: { relationships: [{ surfaces: ["hood", "roof"] }] },
-    geometryAuthority: { status: "provisional" },
-  };
+  return flatFirst.buildAtlasManifest([
+    { surfaceKey: "driver", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "passenger", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "hood", widthInches: 70, heightInches: 60 },
+    { surfaceKey: "roof", widthInches: 80, heightInches: 60 },
+    { surfaceKey: "front", widthInches: 70, heightInches: 50 },
+    { surfaceKey: "rear", widthInches: 70, heightInches: 60 },
+  ], null);
 }
 
 const manifest = manifestFixture();
@@ -57,28 +61,56 @@ const GUIDE_ANNOTATIONS = [
   "GRAYS AND LABELS",
 ];
 
-test("the authoring guide contains no text element at all", () => {
+/**
+ * ⚠️ THE RULE NARROWED ON 2026-08-27, BY THE OWNER, LOOKING AT THE LIVE MASTER:
+ * "just fix so it's a true topography flattened view labeled containers."
+ *
+ * It used to be "the authoring guide carries no text at all". That was a proxy
+ * for the thing that actually broke on 08-25, and the proxy was wider than the
+ * defect: what came back painted was a surface name centred ON the rectangle
+ * the model was told to paint. A caption in the empty gutter beside a
+ * container is a different object, and it is doubly safe --
+ * `normalizeAtlasMaster` masks the delivered sheet to the zone rectangles, so
+ * anything painted in a gutter is discarded before a master exists.
+ *
+ * So the invariant is now positional, and it is the one worth locking: NO
+ * GLYPH MAY SIT INSIDE A CONTAINER. The containers are labeled; the paint area
+ * stays clean.
+ */
+test("every authoring-guide label sits outside every container", () => {
   const svg = authoringGuideSvg(manifest).toString("utf8");
-  assert.equal(/<text\b/i.test(svg), false, "the model's guide must not carry a <text> element");
-  assert.equal(/<tspan\b/i.test(svg), false);
-  assert.equal(/font-family|font-size|letter-spacing/i.test(svg), false,
-    "typography attributes mean glyphs are being drawn for the model to copy");
+  const anchors = [...svg.matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"/g)];
+  assert.equal(anchors.length, (svg.match(/<text\b/gi) || []).length,
+    "every label must declare an x/y anchor so its position can be proven");
+  assert.ok(anchors.length > 0, "the containers must actually be labeled");
+  for (const [, rawX, rawY] of anchors) {
+    const x = Number(rawX);
+    const y = Number(rawY);
+    for (const zone of manifest.zones) {
+      const inside = x > zone.x && x < zone.x + zone.w && y > zone.y && y < zone.y + zone.h;
+      assert.equal(inside, false,
+        `a label at ${x},${y} sits inside the ${zone.surfaceKey} container`);
+    }
+  }
 });
 
-test("no surface name, dimension or annotation can reach the authoring model", () => {
+test("the authoring guide names its containers, and never the instructions about them", () => {
   const svg = authoringGuideSvg(manifest).toString("utf8");
-  for (const annotation of GUIDE_ANNOTATIONS) {
+  // The Surface IDs and names ARE on the model's sheet now -- that is the
+  // point of a labeled container, and it is what lets the panel list in the
+  // prompt ("DS — DRIVER SIDE") refer to a specific rectangle.
+  for (const key of SURFACE_KEYS) {
+    assert.ok(svg.includes(key.toUpperCase()),
+      `the authoring artboard must caption its ${key} container`);
+  }
+  assert.match(svg, /TOPO TOP VIEW/, "the sheet must declare what it is");
+  // What still may NEVER reach the model is the prose telling it what not to
+  // paint -- a negative instruction rendered as pixels inside the image it is
+  // warning about, which is the one prompt shape Gemini over-indexes on.
+  for (const annotation of ["TOPOLOGY GUIDE ONLY", "MUST NOT APPEAR IN ARTWORK", "GRAYS AND LABELS"]) {
     assert.equal(svg.includes(annotation), false,
       `the authoring guide leaked the annotation ${JSON.stringify(annotation)}`);
   }
-  // Inch marks, square footage and PPI callouts are the other things a human map
-  // carries. Nothing renders as glyphs at all here, so read every text node the
-  // document actually has and assert the set is empty -- that covers dimensions,
-  // resolutions and any annotation a later edit might invent.
-  const renderedText = [...svg.matchAll(/<(?:text|tspan)\b[^>]*>([\s\S]*?)<\/(?:text|tspan)>/gi)]
-    .map((match) => match[1].trim()).filter(Boolean);
-  assert.deepEqual(renderedText, [],
-    `the authoring guide renders text the model can copy: ${renderedText.join(" | ")}`);
 });
 
 test("the labelled admin guide keeps every annotation the design team reads", () => {
@@ -128,16 +160,42 @@ test("the two renders differ only by the annotations, and the authoring one is t
     "the labelled guide should carry more tonal variation than the glyph-free one");
 });
 
-test("reintroducing text on the authoring path fails the run instead of authoring", async () => {
-  // The renderer's own fail-closed guard. A future edit that puts a glyph back
-  // must stop the run here, not produce another sheet with HOOD painted on it.
+test("a glyph put back INSIDE a container fails the run instead of authoring", async () => {
+  // The renderer's own fail-closed guard, aimed at the real 08-25 defect: a
+  // surface name sitting ON the rectangle the model is told to paint. The
+  // injected label is anchored at the centre of the hood container, which is
+  // exactly where "HOOD" was when three attempts died on artifactFreeContract.
+  const hood = manifest.zones.find((zone) => zone.surfaceKey === "hood");
+  const x = Math.round(hood.x + hood.w / 2);
+  const y = Math.round(hood.y + hood.h / 2);
   const withText = {
     ...manifest,
-    zones: manifest.zones.map((zone) => ({ ...zone, guideFill: '#4a4a4a"/><text x="10" y="10">HOOD</text><rect fill="#4a4a4a' })),
+    zones: manifest.zones.map((zone) => ({
+      ...zone,
+      guideFill: `#4a4a4a"/><text x="${x}" y="${y}">HOOD</text><rect fill="#4a4a4a`,
+    })),
   };
   await assert.rejects(
     () => renderAtlasAuthoringGuide(withText),
     (error) => error?.code === "flat_atlas_authoring_guide_contains_text",
+  );
+});
+
+test("a label whose position cannot be read is refused rather than trusted", async () => {
+  // The positional guard is only as good as its ability to LOCATE every glyph.
+  // A text node that declares no x/y anchor -- or declares them in another
+  // order -- cannot be proven outside a container, so it stops the run rather
+  // than passing unchecked.
+  const unlocatable = {
+    ...manifest,
+    zones: manifest.zones.map((zone) => ({
+      ...zone,
+      guideFill: '#4a4a4a"/><text dx="10">HOOD</text><rect fill="#4a4a4a',
+    })),
+  };
+  await assert.rejects(
+    () => renderAtlasAuthoringGuide(unlocatable),
+    (error) => error?.code === "flat_atlas_authoring_guide_text_unlocatable",
   );
 });
 

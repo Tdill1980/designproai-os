@@ -113,17 +113,23 @@ test("corrective notes and inputs ride only through extras", () => {
   assert.equal(b.structuralReferenceBase64, undefined);
 });
 
-test("the labelled map names the containers; the model's guide stays text-free", async () => {
-  // Both are true at once, and they must be: a surface name shown to the image
-  // model comes back PAINTED ACROSS THE WRAP as artwork. renderAtlasGuide is
-  // the labelled installer map for humans and QC; renderAtlasAuthoringGuide is
-  // geometry only and throws flat_atlas_authoring_guide_contains_text if a
-  // glyph ever reaches it.
+test("the containers are labeled, and no label sits inside one", async () => {
+  // Owner 2026-08-27: "just fix so it's a true topography flattened view
+  // labeled containers." Both halves must hold at once. The Surface IDs and
+  // names ARE on the artboard the model paints into -- otherwise six unnamed
+  // grey rectangles have to be mapped onto six names carried separately as
+  // prose -- but every caption lives in the gutter beside its container, so a
+  // surface name is never sitting on a rectangle the model is told to paint.
+  // That distinction is the whole defence against artifactFreeContract, and
+  // renderAtlasAuthoringGuide throws if a future edit crosses it.
   const { readFileSync } = await import("node:fs");
   const source = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   for (const label of ["Driver Side", "Passenger Side", "Hood", "Roof", "Front", "Rear"]) {
     assert.ok(source.includes(`"${label}"`), `the container label ${label} must be declared`);
   }
+  for (const id of ["DS", "PS", "HD", "RF", "FR", "RR"]) {
+    assert.match(source, new RegExp(`"${id}"`), `the ${id} Surface ID must be declared`);
+  }
   assert.match(source, /flat_atlas_authoring_guide_contains_text/);
-  assert.match(source, /The authoring guide must carry geometry only/);
+  assert.match(source, /every glyph must be provably outside every zone/);
 });
