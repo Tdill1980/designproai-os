@@ -381,7 +381,7 @@ async function main() {
         // real owner id with Auth Admin privilege (designpro-internal-call).
         // The acceptance run names the canary operator, never a customer.
         const ownerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
-        const out = await atlas._test.callAtlasArtboardEdge(bEdgeBody, { logger: log, ownerId });
+        const out = await atlas._test.callAtlasArtboardEdge(bEdgeBody, { logger: log, ownerId, supabase });
         imageRequestsExecuted += out.provenance.imageRequestCount;
         writeFileSync(join(OUT, spec.file), out.bytes);
         // The owner proof contract: the six deterministic crop hashes, cut by

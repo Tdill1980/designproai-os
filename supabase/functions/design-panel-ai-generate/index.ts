@@ -2018,7 +2018,10 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       upsert: false,
     });
     if (upErr) throw new Error(`atlas_artboard_upload_failed: ${upErr.message}`);
-    const { data: pub } = svc.storage.from("wrap-files").getPublicUrl(storagePath);
+    // wrap-files is PRIVATE: a public URL 400s (live 2026-08-27, run
+    // 33028608748 — the master was written, the caller could not read it).
+    // The path is the contract; the signed URL is a convenience for humans.
+    const { data: signed } = await svc.storage.from("wrap-files").createSignedUrl(storagePath, 60 * 60 * 24 * 7);
     console.log(`atlas-artboard ${requestId}: decode+upload ${Date.now() - tDecode}ms, total ${Date.now() - t0}ms, master ${masterBytes.length} bytes`);
 
     return new Response(
@@ -2031,7 +2034,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         model,
         imageRequestCount: 1,
         promptChars: prompt.length,
-        masterUrl: pub.publicUrl,
+        masterUrl: signed?.signedUrl || null,
         masterStoragePath: storagePath,
         masterSha256,
         masterBytes: masterBytes.length,

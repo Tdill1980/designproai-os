@@ -976,9 +976,12 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
   };
 }
 
-async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetch, ownerId } = {}) {
+async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetch, ownerId, supabase } = {}) {
   const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  if (!supabase?.storage?.from) {
+    throw new FlatAtlasError("flat_atlas_edge_transport_missing", "A server Supabase client is required to read the returned master", true);
+  }
   if (!supabaseUrl || serviceRoleKey.length < 32) {
     throw new FlatAtlasError("flat_atlas_edge_transport_missing", "SUPABASE_URL / service key are required for the Call-1 edge request", true);
   }
@@ -1004,11 +1007,17 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   if (Number(payload.imageRequestCount) !== 1) {
     throw new FlatAtlasError("flat_atlas_edge_call_count_invalid", `The edge function reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
   }
-  const masterRes = await fetchImpl(String(payload.masterUrl));
-  if (!masterRes.ok) {
-    throw new FlatAtlasError("flat_atlas_edge_master_download_failed", `HTTP ${masterRes.status} downloading the returned master`, true);
+  // The master comes back by STORAGE PATH and is read with the server client:
+  // wrap-files is private, so a URL fetch 400s (live 2026-08-27).
+  const masterPath = String(payload.masterStoragePath || "").trim();
+  if (!masterPath) {
+    throw new FlatAtlasError("flat_atlas_edge_master_path_missing", "The edge function returned no master storage path");
   }
-  const bytes = Buffer.from(await masterRes.arrayBuffer());
+  const { data: masterBlob, error: masterErr } = await supabase.storage.from(BUCKET).download(masterPath);
+  if (masterErr || !masterBlob) {
+    throw new FlatAtlasError("flat_atlas_edge_master_download_failed", masterErr?.message || `Could not read ${masterPath}`, true);
+  }
+  const bytes = Buffer.from(await masterBlob.arrayBuffer());
   const digest = sha256(bytes);
   if (digest !== String(payload.masterSha256 || "").toLowerCase()) {
     throw new FlatAtlasError("flat_atlas_edge_master_hash_mismatch", "Downloaded master bytes do not match the edge function's reported sha256");
@@ -1638,7 +1647,7 @@ async function generateOrReuseFlatAtlas(options) {
     // edge function executes the real Persona-2 designer brain and makes
     // exactly one Gemini image request per attempt; this runtime never calls
     // Gemini for Call 1 (owner directive 2026-08-27).
-    generated = await callAtlasArtboardEdge(attemptBody, { logger, ownerId });
+    generated = await callAtlasArtboardEdge(attemptBody, { logger, ownerId, supabase });
     edgeProvenance.push(generated.provenance);
     const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
     masterBytes = normalized.bytes;
