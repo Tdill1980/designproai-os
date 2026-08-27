@@ -63,11 +63,13 @@ test("contact data is never invented — absent fields stay absent", () => {
 test("the six GENIE panels ride the request with their real inches", () => {
   const b = body();
   assert.equal(b.panels.length, 6);
-  const driver = b.panels.find((p) => p.label === "DRIVER SIDE");
+  const driver = b.panels.find((p) => p.label === "Driver Side");
   assert.equal(driver.widthInches, 153);
   assert.equal(driver.heightInches, 56);
   const labels = b.panels.map((p) => p.label).sort();
-  assert.deepEqual(labels, ["DRIVER SIDE", "FRONT", "HOOD", "PASSENGER SIDE", "REAR", "ROOF"]);
+  // The owner's exact container names (2026-08-27): "Driver Side, Passenger
+  // Side, Hood, Roof, Rear and Front."
+  assert.deepEqual(labels, ["Driver Side", "Front", "Hood", "Passenger Side", "Rear", "Roof"]);
 });
 
 test("restyle maps to restyle; unknown modes fall back to commercial", () => {
@@ -109,4 +111,19 @@ test("corrective notes and inputs ride only through extras", () => {
   // And no inline blob field survives on the request.
   assert.equal(b.guideImageBase64, undefined);
   assert.equal(b.structuralReferenceBase64, undefined);
+});
+
+test("the labelled map names the containers; the model's guide stays text-free", async () => {
+  // Both are true at once, and they must be: a surface name shown to the image
+  // model comes back PAINTED ACROSS THE WRAP as artwork. renderAtlasGuide is
+  // the labelled installer map for humans and QC; renderAtlasAuthoringGuide is
+  // geometry only and throws flat_atlas_authoring_guide_contains_text if a
+  // glyph ever reaches it.
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  for (const label of ["Driver Side", "Passenger Side", "Hood", "Roof", "Front", "Rear"]) {
+    assert.ok(source.includes(`"${label}"`), `the container label ${label} must be declared`);
+  }
+  assert.match(source, /flat_atlas_authoring_guide_contains_text/);
+  assert.match(source, /The authoring guide must carry geometry only/);
 });

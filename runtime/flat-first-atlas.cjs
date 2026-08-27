@@ -924,13 +924,23 @@ function customerCreativeBrief(input) {
   return JSON.stringify(values);
 }
 
+// THE CONTAINER LABELS, EXACTLY AS THE OWNER NAMES THEM (Trish 2026-08-27):
+// "LABELED ATLAS CONTAINER Driver Side, Passenger Side, Hood, Roof, Rear and
+// Front." These are the strings on the labelled installer map and in the
+// GENIE panel list the Call-1 request carries.
+//
+// They are NOT drawn on the authoring guide. renderAtlasAuthoringGuide is
+// geometry only and throws `flat_atlas_authoring_guide_contains_text` if a
+// glyph ever reaches it -- a surface name shown to the image model comes back
+// painted across the wrap as artwork. Labelling the containers and keeping the
+// model's copy text-free are both true at once, by having two guides.
 const SURFACE_LABELS = Object.freeze({
-  driver: "DRIVER SIDE",
-  passenger: "PASSENGER SIDE",
-  hood: "HOOD",
-  roof: "ROOF",
-  front: "FRONT",
-  rear: "REAR",
+  driver: "Driver Side",
+  passenger: "Passenger Side",
+  hood: "Hood",
+  roof: "Roof",
+  front: "Front",
+  rear: "Rear",
 });
 
 // The canonical Call-1 request. Everything creative happens INSIDE the deployed
