@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-50), [
+  assert.deepEqual(names.slice(-51), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -151,6 +151,10 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     "20260827010000_designpro_atlas_revert_v9_pin.sql",
     "20260827020000_designpro_atlas_v10_edge_pin.sql",
     "20260827030000_designpro_partial_view_completion.sql",
+    // A policy helper is useless to the role that evaluates the policy without
+    // an EXECUTE grant: has_role had none, so user_roles, user_subscriptions
+    // and user_tokens all returned 42501 to every signed-in customer.
+    "20260827040000_grant_has_role_execute.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

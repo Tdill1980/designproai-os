@@ -56,5 +56,13 @@ test("the DB is what actually enforced it, and the patch tightens the receipt", 
 
 test("the migration is in the ordered chain", () => {
   const names = readdirSync(join(ROOT, "supabase/migrations")).filter((n) => n.endsWith(".sql")).sort();
-  assert.equal(names[names.length - 1], "20260827030000_designpro_partial_view_completion.sql");
+  // Position, not "last". Asserting the tail made every subsequent migration
+  // fail this test for no reason of its own; what matters is that this one
+  // lands after the function it patches and before nothing in particular.
+  const index = names.indexOf("20260827030000_designpro_partial_view_completion.sql");
+  assert.ok(index > 0, "the partial-completion migration is in the chain");
+  assert.ok(
+    names.slice(0, index).some((name) => name.includes("designpro_functions_contract")),
+    "it lands after the function contract that creates what it patches",
+  );
 });

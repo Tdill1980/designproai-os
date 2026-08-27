@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered sixty-six-migration chain', () => {
-  assert.equal(migrationNames.length, 66);
+test('fresh bootstrap contains one ordered sixty-seven-migration chain', () => {
+  assert.equal(migrationNames.length, 67);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -145,6 +145,9 @@ test('fresh bootstrap contains one ordered sixty-six-migration chain', () => {
       // 010000 captures the revert, 020000 pins v10-edge for the edge-canonical
       // Call 1 cutover.
       '20260827010000', '20260827020000', '20260827030000',
+      // The EXECUTE grant on has_role, without which every signed-in customer
+      // read of user_roles / user_subscriptions / user_tokens raised 42501.
+      '20260827040000',
     ],
   );
 });

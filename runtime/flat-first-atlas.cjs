@@ -34,6 +34,7 @@ const {
 const {
   MASTER_QC_CONTRACT,
   createAtlasMasterValidator,
+  deterministicMasterChecks,
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { MIRROR_CONTRACT, mirrorPassengerFromDriver } = require("./atlas-passenger-mirror.cjs");
@@ -1682,15 +1683,28 @@ async function generateOrReuseFlatAtlas(options) {
   let generated;
   let masterBytes;
   let masterHash;
-  let masterQc;
   let masterRequestByteSize = 0;
   let masterAuthoringAttempts = 0;
   let masterDelivery = null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
   let passengerComposed = null;
+  // The semantic judge, in flight. It is created inside the loop the moment a
+  // master exists and is resolved once, below, alongside the panel cut -- so it
+  // overlaps the deterministic work instead of preceding it.
+  let semanticQc = null;
+  let semanticQcMasterHash = null;
+  // The pixel measurements that actually decided acceptance, kept for the row.
+  let masterDeterministic = null;
   const edgeProvenance = [];
   let correctiveNote = "";
+  // OPTIMIZE TIME TO DRIVER, AND MEASURE IT. (Owner, 2026-08-27: "click->master,
+  // master->Driver, click->Driver ... those are the primary latency metrics.")
+  // Call 1 owns the first of those three, so it records its own segments on the
+  // immutable revision -- an argument about latency is then a query, not a
+  // stopwatch held against a browser tab.
+  const callOneStartedAt = Date.now();
+  const timings = { authoringMs: 0, deterministicMs: 0, repairMs: 0, semanticWaitMs: 0 };
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
     masterAuthoringAttempts = attempt;
     const attemptBody = atlasEdgeRequestBody(authoringInput, manifest, {
@@ -1708,77 +1722,111 @@ async function generateOrReuseFlatAtlas(options) {
     // edge function executes the real Persona-2 designer brain and makes
     // exactly one Gemini image request per attempt; this runtime never calls
     // Gemini for Call 1 (owner directive 2026-08-27).
+    const authoringStartedAt = Date.now();
     generated = await callEdge(attemptBody, { logger, ownerId, supabase });
+    timings.authoringMs += Date.now() - authoringStartedAt;
     edgeProvenance.push(generated.provenance);
     const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
     masterBytes = normalized.bytes;
     masterDelivery = normalized;
     masterHash = sha256(masterBytes);
-    masterQc = await validateMaster({ masterBytes, guideBytes, manifest, input });
-    const accepted = masterQc?.accepted === true
-      && masterQc?.metadata?.contract === MASTER_QC_CONTRACT
-      && masterQc.metadata.masterHash === masterHash
-      && masterQc.metadata.guideHash === guideHash;
-    if (accepted) break;
-    const verdictBound = masterQc?.metadata?.contract === MASTER_QC_CONTRACT
-      && masterQc.metadata.masterHash === masterHash
-      && masterQc.metadata.guideHash === guideHash;
-    const cutoutOnly = masterQc?.code === "atlas_master_qc_cutouts_present"
-      && verdictBound
-      && Array.isArray(masterQc?.cutout?.surfaces);
-    if (cutoutOnly) {
-      // A CUT-OUT IS NOT WORTH RE-ROLLING FOR: the proofs mask that region and
-      // the panel is repaired deterministically below.
-      masterCutoutSurfaces = masterQc.cutout.surfaces.map(String);
-      masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
-      break;
-    }
+    // ─────────────────────────────────────────────────────────────────────
+    // THE CUSTOMER'S CRITICAL PATH IS DETERMINISTIC. (Owner, 2026-08-27.)
+    //
+    // "Do deterministic master validation immediately … don't make the customer
+    // wait for Flash to philosophically judge the artwork before starting
+    // Driver. If semantic QC finds something catastrophic, flag the job. But
+    // don't automatically make every customer wait through three judge cycles."
+    //
+    // Measured cost of the old arrangement, canary a3e15054 (2026-08-27):
+    // ONE authoring attempt took 180 seconds and ended on a failure page. The
+    // image itself is ~50-70s of that. The rest was the Flash judge, run up to
+    // three times over one candidate -- judge, compose the passenger flank,
+    // judge again, fill the cut-outs, judge again -- with the customer looking
+    // at a spinner for every cycle.
+    //
+    // So the judge no longer gates anything the customer waits on. It is
+    // dispatched the instant the master exists and runs CONCURRENTLY with the
+    // work that follows: the cut-out fill, the six panel cuts, the projection
+    // derivative and every storage write. Its verdict is still recorded on the
+    // immutable revision, and a catastrophic one still flags the affected
+    // surfaces for PanelPro's human QC -- it simply no longer decides whether
+    // the design is allowed to exist.
+    //
+    // WHAT DECIDES THAT NOW: `deterministicMasterChecks`, which is pure pixel
+    // measurement over the six known zones -- opacity, edge opacity, contrast,
+    // the painted-checkerboard signature, concentrated flat-black cut-outs, and
+    // the passenger mirror MAE. No model, no network, ~1s. Those are exactly
+    // the failures that mean the sheet cannot be used at all.
+    //
+    // This is the trade the owner named, stated plainly: a master whose only
+    // defect is one a MODEL can see (an incoherent composition, a silhouette
+    // that survives the pixel checks, a misread phone number) now reaches the
+    // customer and is flagged, rather than costing them three minutes and a
+    // failure page. Hardwired GENIE containers are what make that trade sound --
+    // the model no longer decides geometry, so the geometry failures the judge
+    // used to catch are the ones code now prevents.
+    semanticQc = Promise.resolve()
+      .then(() => validateMaster({ masterBytes: masterBytes, guideBytes, manifest, input }))
+      .catch((cause) => ({
+        accepted: false,
+        code: "atlas_master_qc_analyzer_failed",
+        reason: String(cause?.message || cause).slice(0, 400),
+      }));
+    // A rejected promise with no synchronous consumer is an unhandled rejection
+    // that can take the worker down; the catch above is attached here, at
+    // creation, precisely so the detached window is never unguarded.
+    semanticQcMasterHash = masterHash;
 
-    // COMPOSE THE PASSENGER FLANK BEFORE YOU RE-ROLL. (Owner directive
-    // 2026-08-27: "STOP RELYING ON GEMINI TO SOLVE PRODUCTION LETTERING
-    // ORIENTATION.")
+    const deterministicStartedAt = Date.now();
+    let deterministic = await deterministicMasterChecks(masterBytes, manifest);
+    timings.deterministicMs += Date.now() - deterministicStartedAt;
+    masterDeterministic = deterministic;
+    const cutoutSurfacesOf = (result) => [...new Set(
+      (result?.cutoutFindings || []).map((item) => String(item.surfaceKey)),
+    )].sort();
+    const mirrorFailed = (result) => (result?.blockingFailures || [])
+      .some((finding) => /passengerMirrorMae/.test(String(finding)));
+
+    // ── REPAIR 1: THE PASSENGER FLANK IS COMPOSED, NOT REQUESTED ──────────
     //
-    // Four canaries on one vehicle refused with the same two findings —
-    // cad013e1 verbatim: "The passenger side text 'FLAMINGO POOLS' is not
-    // forward-reading. The passenger side flamingo is facing the same
-    // direction..." — i.e. the model drew the passenger flank as a SECOND
-    // independent composition and got its lettering backward. Prompting did
-    // not move it, and the QC was right to refuse every attempt.
+    // Owner directive 2026-08-27: "STOP RELYING ON GEMINI TO SOLVE PRODUCTION
+    // LETTERING ORIENTATION." Four canaries on one vehicle refused with the
+    // same finding -- cad013e1 verbatim, "The passenger side text 'FLAMINGO
+    // POOLS' is not forward-reading. The passenger side flamingo is facing the
+    // same direction as the driver side flamingo" -- i.e. the model drew the
+    // passenger flank as a SECOND, independent composition. Prompting never
+    // moved it.
     //
-    // So the flank is COMPOSED, not requested: the driver zone flopped onto
-    // the passenger zone, with the review's measured lettering bands re-dropped
-    // un-flipped so words read forward on both sides. That drives
-    // passengerMirrorMae to ~0 and leaves exactly the localized divergence the
-    // trimmed mean was built to absorb.
-    //
-    // It invents nothing: every passenger pixel is a rearrangement of driver
-    // pixels this same creative call authored, under one A.T.L.A.S. revision.
-    // It costs no authoring attempt — the judgement that follows decides that.
-    const mirrorFailed = masterQc?.review?.passengerMirrorContract === "fail"
-      || masterQc?.review?.brandTextContract === "fail";
-    const measuredBands = Array.isArray(masterQc?.brandBands) ? masterQc.brandBands : [];
-    if (verdictBound && mirrorFailed) {
+    // `passengerMirrorMae` is deterministic, so the DECISION to compose is made
+    // here with no model in the loop. The lettering bands that get re-dropped
+    // un-flipped are the one genuinely ambiguous input ("where is the text"),
+    // and they come from the semantic pass already in flight -- so this is the
+    // ONLY path that ever waits on it, and only on a master that is already
+    // known to be wrong. A good master never touches this branch and never
+    // waits for the judge at all.
+    if (mirrorFailed(deterministic)) {
+      const repairStartedAt = Date.now();
+      const bandVerdict = await semanticQc;
+      timings.semanticWaitMs += Date.now() - repairStartedAt;
+      const bands = Array.isArray(bandVerdict?.brandBands) ? bandVerdict.brandBands : [];
       const mirrored = await mirrorPassengerFromDriver({
-        masterBytes, manifest, brandBands: measuredBands,
+        masterBytes, manifest, brandBands: bands,
       }).catch((error) => {
         logger?.warn?.("flat_atlas_passenger_compose_failed", { message: error?.message });
         return null;
       });
       if (mirrored?.bytes) {
         const composedHash = sha256(mirrored.bytes);
-        const composedQc = await validateMaster({
-          masterBytes: mirrored.bytes, guideBytes, manifest, input,
-        });
-        const composedBound = composedQc?.metadata?.contract === MASTER_QC_CONTRACT
-          && composedQc.metadata.masterHash === composedHash
-          && composedQc.metadata.guideHash === guideHash;
-        if (composedQc?.accepted === true && composedBound) {
+        const composedChecks = await deterministicMasterChecks(mirrored.bytes, manifest);
+        if (!mirrorFailed(composedChecks)) {
           // The composed flank IS the master from here: it is what the panels
           // are cut from and what the proofs are conditioned on, so it must be
           // the persisted lineage identity too.
           masterBytes = mirrored.bytes;
           masterHash = composedHash;
-          masterQc = composedQc;
+          deterministic = composedChecks;
+          masterDeterministic = composedChecks;
           passengerComposed = {
             contract: MIRROR_CONTRACT,
             bandsApplied: mirrored.bandsApplied,
@@ -1786,83 +1834,56 @@ async function generateOrReuseFlatAtlas(options) {
             attempt,
           };
           logger?.info?.("flat_atlas_passenger_flank_composed", passengerComposed);
-          break;
-        }
-        if (composedBound) {
-          // Still refused, but on whatever remains — carry the composed verdict
-          // so the corrective note describes the sheet as it now stands.
-          masterBytes = mirrored.bytes;
-          masterHash = composedHash;
-          masterQc = composedQc;
-          passengerComposed = {
-            contract: MIRROR_CONTRACT,
-            bandsApplied: mirrored.bandsApplied,
-            rotation: mirrored.rotation,
-            attempt,
-            accepted: false,
-          };
+          // The judge graded the pre-composition bytes, so its verdict no
+          // longer describes this master. Re-dispatch it against what will
+          // actually be persisted -- still concurrent, still not a gate.
+          semanticQc = Promise.resolve()
+            .then(() => validateMaster({ masterBytes, guideBytes, manifest, input }))
+            .catch((cause) => ({
+              accepted: false,
+              code: "atlas_master_qc_analyzer_failed",
+              reason: String(cause?.message || cause).slice(0, 400),
+            }));
+          semanticQcMasterHash = masterHash;
         }
       }
+      timings.repairMs += Date.now() - repairStartedAt;
     }
 
-    // REPAIR BEFORE YOU RE-ROLL. (Owner directive 2026-08-27.)
+    // ── REPAIR 2: A CUT-OUT IS FILLED, NEVER RE-ROLLED FOR ────────────────
     //
-    // The branch above only fires when cut-outs are the ONLY finding. When the
-    // judge BUNDLES a cut-out with a real creative defect the code is
-    // `atlas_master_qc_semantic_failed`, and the whole candidate was discarded
-    // unrepaired -- spending an authoring attempt on a defect the fill closes
-    // in ~100ms with no AI.
+    // RULE 0.15 / the 2026-08-24 owner ruling: re-rolling for a hole costs ~60s
+    // and buys nothing, because `atlas-cutout-fill` closes it in ~100ms by
+    // growing the surrounding livery inward. The surfaces that arrived holed
+    // are still recorded so PanelPro's human QC sees them flagged.
     //
-    // Live cost, canary 6c1bfae6 (2026-08-27): each attempt was refused for
-    // "one wheel/glass/bed shape cut out of the panel" on driver AND passenger
-    // TOGETHER WITH upside-down hood text, three times over. The cut-outs were
-    // repairable every time; only the text was worth another throw.
+    // The fill itself is applied once, below, to the SURFACE SOURCE duplicate --
+    // the authored master is never mutated. This only classifies.
+    masterCutoutSurfaces = cutoutSurfacesOf(deterministic);
+    masterCutoutFindings = (deterministic.cutoutFindings || []).map((item) => String(item.finding));
+
+    // ── THE GATE ─────────────────────────────────────────────────────────
     //
-    // So: fill the holes, re-judge the REPAIRED candidate, and let only what
-    // survives that decide whether an authoring retry is spent. The authored
-    // bytes are never mutated -- `masterBytes` stays the lineage identity.
-    const bundledCutouts = verdictBound && Array.isArray(masterQc?.cutout?.surfaces)
-      ? masterQc.cutout.surfaces.map(String)
-      : [];
-    if (bundledCutouts.length) {
-      const trialFill = await fillMasterCutouts(masterBytes, manifest, bundledCutouts);
-      if (trialFill.changed) {
-        const repairedBytes = trialFill.bytes;
-        const repairedHash = sha256(repairedBytes);
-        const repairedQc = await validateMaster({
-          masterBytes: repairedBytes, guideBytes, manifest, input,
-        });
-        const repairedBound = repairedQc?.metadata?.contract === MASTER_QC_CONTRACT
-          && repairedQc.metadata.masterHash === repairedHash
-          && repairedQc.metadata.guideHash === guideHash;
-        if (repairedQc?.accepted === true && repairedBound) {
-          // The only thing wrong with this master was repairable. Keep it, and
-          // record the surfaces that arrived holed so PanelPro still flags them
-          // for human template QC.
-          masterQc = repairedQc;
-          masterCutoutSurfaces = bundledCutouts;
-          masterCutoutFindings = (masterQc?.cutout?.findings || []).map(String);
-          logger?.info?.("flat_atlas_master_repaired_then_accepted", {
-            surfaces: bundledCutouts, attempt,
-          });
-          break;
-        }
-        // Still refused. The remaining findings are genuine creative defects,
-        // so the retry below is spent on THOSE -- and the corrective note now
-        // describes the repaired candidate rather than a hole already closed.
-        if (repairedBound) masterQc = repairedQc;
-      }
-    }
+    // Everything still blocking after the two deterministic repairs is a sheet
+    // that cannot be used: a blank or transparent zone, no contrast, a painted
+    // transparency checkerboard, or two flanks that are still not twins. Those
+    // are worth another throw; nothing else is.
+    // `deterministic` is the post-repair measurement: when the passenger flank
+    // was composed above it was re-measured, so a mirror finding surviving here
+    // means the composition did not fix it and another throw is the remedy.
+    const stillBlocking = deterministic.blockingFailures || [];
+    if (!stillBlocking.length) break;
     if (attempt === maxAuthoringAttempts) {
       throw new FlatAtlasError(
-        "flat_atlas_master_qc_failed",
-        `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times (${String(masterQc?.code || "invalid_qc_receipt")}): ${String(masterQc?.reason || "master was not accepted").slice(0, 700)}`,
+        "flat_atlas_master_deterministic_failed",
+        `The flattened A.T.L.A.S. design call failed deterministic acceptance ${attempt} times: ${stillBlocking.join("; ").slice(0, 700)}`,
       );
     }
     // THE CORRECTION NAMES THE ACTUAL DEFECT (see generation 632642dc): the
     // gate's own finding is the corrective direction, forwarded to the edge
-    // function as a text part on the next attempt.
-    const refusalReason = String(masterQc?.reason || "the master was not accepted").slice(0, 600);
+    // function as a text part on the next attempt. It is now the DETERMINISTIC
+    // finding, which is the one that refused the sheet.
+    const refusalReason = stillBlocking.join("; ").slice(0, 600);
     // ASK FOR THE FULL CANVAS BACK WHEN IT ARRIVED SHORT.
     //
     // Owner 2026-08-27: "Make sure atlas is highest possible 4K or more
@@ -1909,11 +1930,57 @@ async function generateOrReuseFlatAtlas(options) {
   // views". Nothing changes on a clean master: `fillMasterCutouts` returns the
   // same buffer, `panelSourceHash` equals `masterHash`, and the projection and
   // view authorities are byte-identical to what they were before.
+  // THE FILL, THE SIX PANEL CUTS AND THE PROJECTION ALL RUN WHILE THE JUDGE IS
+  // STILL THINKING. `semanticQc` was dispatched the instant the master existed;
+  // nothing between there and here awaits it, so its latency is spent against
+  // this deterministic work rather than added to it.
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
   const surfaceSourceBytes = cutoutFill.bytes;
   const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
-  const callOnePanels = await cutCallOnePanels(surfaceSourceBytes, manifest, masterHash);
-  const projection = await projectionDerivative(surfaceSourceBytes);
+  const [callOnePanels, projection] = await Promise.all([
+    cutCallOnePanels(surfaceSourceBytes, manifest, masterHash),
+    projectionDerivative(surfaceSourceBytes),
+  ]);
+
+  // ── THE JUDGE'S VERDICT IS COLLECTED HERE, AND IT DECIDES NOTHING ────────
+  //
+  // Only its RECORD matters now: the review is persisted on the immutable
+  // revision so PanelPro's human QC and the admin studio can read what a model
+  // thought of this sheet, and a catastrophic verdict FLAGS the affected
+  // surfaces rather than destroying the design (owner, 2026-08-27: "If semantic
+  // QC finds something catastrophic, flag the job").
+  //
+  // Bound to the master hash like every other verdict in this file. A review
+  // graded against superseded bytes -- the passenger composition replaces the
+  // master mid-loop -- is discarded rather than recorded against the wrong
+  // image, which is the mistake `sourceMasterHash` exists to prevent elsewhere.
+  const semanticVerdict = semanticQc ? await semanticQc : null;
+  const semanticBound = semanticVerdict?.metadata?.contract === MASTER_QC_CONTRACT
+    && semanticVerdict.metadata.masterHash === masterHash
+    && semanticVerdict.metadata.masterHash === semanticQcMasterHash
+    && semanticVerdict.metadata.guideHash === guideHash;
+  const masterQc = semanticBound ? semanticVerdict : null;
+  // A surface the judge convicted joins the cut-out flag list: both mean "a
+  // human must look at this panel on a real template before it prints", which
+  // is exactly what `await_panelpro_preflight_qc` gates on. The design ships
+  // either way; the flag is what stops a bad panel reaching a printer.
+  const semanticFlagged = masterQc && masterQc.accepted !== true;
+  if (semanticFlagged) {
+    const judged = [...new Set([
+      ...masterCutoutSurfaces,
+      ...(masterQc.cutout?.surfaces || []).map(String),
+    ])].sort();
+    masterCutoutSurfaces = judged;
+    masterCutoutFindings = [...new Set([
+      ...masterCutoutFindings,
+      `semantic review (non-blocking, recorded for human QC): ${String(masterQc.reason || masterQc.code || "not accepted").slice(0, 400)}`,
+    ])];
+    logger?.warn?.("flat_atlas_master_semantic_flagged", {
+      generationId,
+      code: masterQc.code || null,
+      surfaces: judged,
+    });
+  }
   const projectionStoragePath = atlasStoragePath({
     tenantKey, generationId, revisionSequence, kind: "projection", contentHash: projection.contentHash,
   });
@@ -2042,12 +2109,33 @@ async function generateOrReuseFlatAtlas(options) {
       masterDeliveredHeightPx: masterDelivery?.deliveredHeightPx ?? null,
       masterNativelyFourK: masterDelivery?.nativelyFourK ?? null,
       masterQcContract: MASTER_QC_CONTRACT,
-      masterQcConfidence: masterQc.metadata.confidence,
-      masterQcModel: masterQc.metadata.model,
-      masterQcKeyFingerprint: masterQc.metadata.keyFingerprint,
-      masterQcRequestByteSize: masterQc.metadata.requestByteSize,
-      masterQcDeterministic: masterQc.deterministic,
-      masterQcReview: masterQc.review,
+      // NULL when the judge errored or graded superseded bytes. It is a record,
+      // not a gate, so an absent one is stated honestly rather than faked.
+      masterQcConfidence: masterQc?.metadata?.confidence ?? null,
+      masterQcModel: masterQc?.metadata?.model ?? null,
+      masterQcKeyFingerprint: masterQc?.metadata?.keyFingerprint ?? null,
+      masterQcRequestByteSize: masterQc?.metadata?.requestByteSize ?? null,
+      // The deterministic measurements ARE the gate, so they are always present:
+      // the judge's own copy when it returned one, the loop's otherwise.
+      masterQcDeterministic: masterQc?.deterministic || masterDeterministic,
+      masterQcReview: masterQc?.review ?? null,
+      // What actually decided this master was allowed to exist, and what the
+      // judge said about it afterwards. Distinguishable at a glance in PanelPro.
+      masterAcceptance: "deterministic",
+      // click -> master, in segments, on the immutable revision.
+      callOneTimings: {
+        ...timings,
+        totalMs: Date.now() - callOneStartedAt,
+        // The judge overlapped this work rather than preceding it; a non-zero
+        // semanticWaitMs means one master needed its lettering bands, which is
+        // the only path that ever blocks on it.
+        semanticOverlapped: timings.semanticWaitMs === 0,
+      },
+      masterSemanticVerdict: masterQc
+        ? { accepted: masterQc.accepted === true, code: masterQc.code || null,
+            reason: String(masterQc.reason || "").slice(0, 600) || null }
+        : { accepted: null, code: semanticVerdict?.code || "semantic_qc_unbound", reason: null },
+      masterSemanticBlocking: false,
       providerKeyFingerprint: generated.keyFingerprint || null,
       providerResponseContentType: generated.contentType,
       rawProviderResponseHash: sha256(generated.bytes),

@@ -46,8 +46,8 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 test("the projection and the panels are cut from the same repaired sheet", () => {
   // One expression each. If either ever takes `masterBytes` again, the proof
   // half is back on the holed original and the canary failure returns.
-  assert.match(source, /const callOnePanels = await cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash\);/);
-  assert.match(source, /const projection = await projectionDerivative\(surfaceSourceBytes\);/);
+  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash\)/);
+  assert.match(source, /projectionDerivative\(surfaceSourceBytes\)/);
   assert.doesNotMatch(source, /await projectionDerivative\(masterBytes\)/);
 });
 
