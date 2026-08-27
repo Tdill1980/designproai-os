@@ -188,3 +188,46 @@ test("the verdict stays fatal by code — reporting cut-outs does not accept it"
   assert.match(semanticReturn, /accepted: false/);
   assert.ok(!/accepted: true/.test(semanticReturn), "a semantic refusal must never report accepted");
 });
+
+// ── THE GATE AND THE RUNNER MUST READ THE SAME BASIS ───────────────────────
+//
+// Taking the judge off the critical path left its CONFIDENCE gating in TWO
+// places, and fixing one did not fix the other:
+//
+//   * designpro_private.flat_first_atlas_view_set_valid (database)
+//   * assertAtlasViewLineage (runtime/generation-worker.cjs)
+//
+// Live: canary 1a424bf5 died at the database copy (10:01), and after that was
+// patched canary 4efeda23 died at the runtime copy (10:29) -- Call 1 finished in
+// 91 seconds with an accepted master and ZERO proofs rendered. Same defect,
+// twice, an hour apart.
+//
+// CLAUDE.md names this exact class: "the DB gate must learn <the contract> in
+// the same cutover as the runtime that emits it -- runner and gate may not
+// diverge across a customer-visible window again."
+const worker = readFileSync(join(ROOT, "runtime/generation-worker.cjs"), "utf8");
+const lineage = worker.slice(
+  worker.indexOf("function assertAtlasViewLineage"),
+  worker.indexOf("const byView = new Map();"),
+);
+
+test("the runtime lineage gate accepts the deterministic acceptance basis", () => {
+  assert.match(lineage, /masterAcceptance\.basis === "deterministic"/);
+  assert.match(lineage, /gatedDeterministically \|\| gatedBySemanticConfidence/);
+  // The legacy path survives, because revisions authored before the basis was
+  // recorded carry a real semantic confidence and must stay readable.
+  assert.match(lineage, /masterAcceptance\.confidence >= 0\.92/);
+  // And confidence alone may no longer be the sole gate.
+  assert.ok(
+    !/\|\|\s*masterAcceptance\.confidence < 0\.92/.test(lineage),
+    "a low-confidence judge must not by itself invalidate a deterministically accepted master",
+  );
+});
+
+test("the basis actually reaches the gate from the persisted revision", () => {
+  // assertAtlasViewLineage reads flatAtlas.masterAcceptance, which rowIdentity
+  // builds from the revision metadata. If the field is not carried across, the
+  // gate silently falls back to the confidence branch and the fix is inert.
+  assert.match(source, /basis: row\.metadata\?\.masterAcceptance \|\| null,/);
+  assert.match(afterLoop, /masterAcceptance: "deterministic"/);
+});
