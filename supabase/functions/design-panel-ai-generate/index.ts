@@ -44,14 +44,13 @@ import { buildLayer1CleanPrompt } from "../_shared/layer1-clean-prompt.ts";
 import { buildFlatMasterPrompt } from "../_shared/flat-master-prompt.ts";
 import { resolveArtboardPanels, loadArtboardExamples } from "../_shared/artboard-template-os.ts";
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
-// ATLAS-ARTBOARD (owner directive 2026-08-27): the canonical Call-1 prompt
-// assembly — it EXECUTES the real Persona-2 designer brain. See the module.
-import {
-  ATLAS_ARTBOARD_AUTHORING_MODEL,
-  ATLAS_ARTBOARD_PROMPT_VERSION,
-  ATLAS_ARTBOARD_SOURCE_COMMIT,
-  buildAtlasArtboardPrompt,
-} from "../_shared/atlas-artboard-prompt.ts";
+// ATLAS-ARTBOARD (owner directive 2026-08-27): Call 1 executes THIS file's own
+// buildDesignIQPrompt — the real DPAG commercial/restyle creative assembly —
+// with atlasFlatMaster:true. No separate creative module, no string-replacement
+// path: the reconstructed persona bridge is deleted.
+const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v2";
+const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -299,6 +298,29 @@ function splitStyleAndText(raw: string, companyName?: string): { stylePrompt: st
 // connected via studio-environments.ts (single source of truth).
 // ---------------------------------------------------------------------------
 
+// ═══ ATLAS FLAT-MASTER MODE (owner directive, Trish 2026-08-27) ═══
+// When `atlasFlatMaster` is true this SAME assembly — the real commercial /
+// restyle creative branch, with LOGO_REQUIREMENT, buildLogoArchitecture,
+// COMMERCIAL_DEPTH, COMMERCIAL_TRANSLATION, PROFESSIONAL_JUDGMENT, the
+// VisionBoard branches, brand colours, finish/substrate, exact customer text
+// and the photo-intent lock all firing exactly as they do for a 3D view —
+// emits the A.T.L.A.S. flattened-master OUTPUT CONTRACT in place of the
+// on-vehicle camera/studio/photograph presentation. Nothing is stripped by a
+// later string replacement and there is no second creative implementation:
+// the presentation half is a branch inside the authority itself.
+function atlasFlatMasterContract(panels: Array<{ label: string; widthInches?: number; heightInches?: number }>): string {
+  const panelLines = (panels || [])
+    .map((p) => `\u2022 ${p.label}${p.widthInches && p.heightInches ? ` \u2014 ${p.widthInches}" x ${p.heightInches}"` : ""}`)
+    .join("\n");
+  return `OUTPUT FORMAT \u2014 ONE FLAT PRODUCTION MASTER on a single square 4K canvas:
+Follow the attached layout guide exactly \u2014 paint each labeled panel inside its outlined rectangle; outside the rectangles the canvas stays blank.
+${panelLines}
+Each panel is ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner \u2014 paint straight through wherever a window, wheel arch, light or trim piece would sit; the installer cuts those openings from the printed vinyl later. Never draw the vehicle, its silhouette, or any cut-out shape.
+PASSENGER SIDE is DRIVER SIDE's mirror twin \u2014 the same artwork reversed \u2014 with every word and logo forward-reading on both.
+ONE cohesive wrap: the same design flows across all panels as a single artwork laid flat.
+Any attached flattened-top-view reference teaches LAYOUT ONLY \u2014 take no artwork, wording, logo, colour or style from it.`;
+}
+
 function buildDesignIQPrompt(params: DesignIQParams): string {
   const {
     mode,
@@ -331,6 +353,8 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   // Canonicalize make/model so Gemini sees the proper-noun model name
   // ("Tesla Cybertruck", not "tesla cyber truck") and locks geometry correctly.
   const canonicalMakeModel = canonicalizeVehicle(vehicleMake, vehicleModel, vehicleYear);
+  const atlasFlatMaster = (params as any).atlasFlatMaster === true;
+  const atlasPanels = Array.isArray((params as any).atlasPanels) ? (params as any).atlasPanels : [];
   const vehicle = [vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(' ');
@@ -466,6 +490,11 @@ DESIGN BRIEF: "${briefForArtboard}"`;
       ? `A photorealistic studio photograph of a ${vehicle} with a premium commercial vehicle wrap fully installed — real printed vinyl, physically applied. Any real-world scene in the brief is a printed photograph on the vinyl, alongside the graphic elements. The company name reads clearly at a glance; how the branding is composed is your creative call.`
       : `A photorealistic studio photograph of a ${vehicle} with a premium commercial vehicle wrap fully installed — real printed vinyl, physically applied. ${COMMERCIAL_DEPTH} The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
+    // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
+    // depth requirement and the branding-composition call survive verbatim;
+    // only the on-vehicle photograph framing changes.
+    const atlasScene = `Design the printed wrap artwork for a ${vehicle} as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. ${COMMERCIAL_DEPTH} The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
     // the sign-and-wrap-company framing below is unchanged and the SEMA wording
@@ -475,14 +504,18 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // standard. The second sentence restores the bar inside the identity Trish
     // chose, in the same terms the restyle persona still uses ("amplify each
     // customer's vision… creates something uniquely RIGHT").
-    let assembled = `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.
-
-CAMERA ANGLE (LOCKED — read this FIRST):
+    const commercialPresentation = atlasFlatMaster
+      ? atlasScene
+      : `CAMERA ANGLE (LOCKED — read this FIRST):
 ${cameraAngle}
 
 ${commercialScene}
 
-${studioEnvironment}
+${studioEnvironment}`;
+
+    let assembled = `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.
+
+${commercialPresentation}
 
 THE CONCEPT — the heart of this design; build everything around it:
 Client's creative direction: "${prompt}"
@@ -545,6 +578,11 @@ CLIENT BRIEF:`;
 
     assembled += `\n\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
     if (substrateContext) assembled += `\n${substrateContext}`;
+    if (atlasFlatMaster) {
+      assembled += `\nThe artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.`;
+      assembled += `\n\n${atlasFlatMasterContract(atlasPanels)}`;
+      return assembled;
+    }
     assembled += `\nThe wrap covers painted body panels only. Windows, lights, wheels, and trim stay factory.${truckBedClause(vehicle)}`;
     assembled += viewType === 'close-up'
       ? `\nCanon EOS R5, 35mm f/4, moderate depth of field. Razor-sharp focus on vinyl surface texture showing depth, material quality, and body curves. Vibrant colors.`
@@ -587,17 +625,25 @@ CLIENT BRIEF:`;
     ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com. Your job is to reproduce an existing, approved wrap design EXACTLY as shown in the reference image, re-fitted onto a different vehicle. You do NOT redesign, restyle, recolor, simplify, or invent — you copy the reference faithfully, including every logo and line of text, and change only the vehicle it sits on. If the reference image contains anything besides the design itself (a browser window, app interface, dark panels, menus, thumbnails, captions), IGNORE all of that completely — reproduce ONLY the wrap design shown on the vehicle within it, at FULL fidelity. Copy EVERY design element at its true relative size and position: colored panels, swooshes, and shapes behind or around the logo are part of the design — never drop, shrink, or simplify them, and never shrink the logo lockup.`
     : `You are WePrintWraps.com Lead Vehicle Wrap Designer. You create both restyle and commercial wraps with depth and texture — your designs are seen in car shows around the world. You take a customer's order and create amazing, modern vehicle wrap designs that we sell to wrap shops who then print and install them on real vehicles. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`;
 
+  // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
+  // requirement, flat print-production output. Camera + studio are 3D-proof
+  // presentation and belong to Calls 2-7, never to the flat master.
+  const atlasRestyleScene = `Design the printed wrap artwork for a ${vehicle} as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. The design elevates the brief into a bold, cohesive wrap built from multiple layered thematic elements — a hero focal point across the door panels, with supporting background atmosphere, mid-ground motion, and foreground accent detail — rich with distressed depth and texture.`;
+  const restylePresentation = atlasFlatMaster
+    ? atlasRestyleScene
+    : `CAMERA ANGLE (LOCKED — read this FIRST):
+${cameraAngle}
+
+${restyleScene}
+
+${studioEnvironment}`;
+
   let assembled = `${restyleIdentity}
 
 FINISH LOCK (LOCKED — read this FIRST, applies to every body panel):
 ${(finish || 'Gloss').toUpperCase()} — ${finishSpec}
 
-CAMERA ANGLE (LOCKED — read this FIRST):
-${cameraAngle}
-
-${restyleScene}
-
-${studioEnvironment}
+${restylePresentation}
 
 Wrap request: "${prompt}"`;
 
@@ -652,6 +698,11 @@ ${PROFESSIONAL_JUDGMENT}`;
 
   assembled += `\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
   if (substrateContext) assembled += `\n${substrateContext}`;
+  if (atlasFlatMaster) {
+    assembled += `\nThe artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.`;
+    assembled += `\n\n${atlasFlatMasterContract(atlasPanels)}`;
+    return assembled;
+  }
   assembled += `\nThe wrap covers painted body panels only. Windows, lights, wheels, and trim stay factory.${truckBedClause(vehicle)}`;
   assembled += viewType === 'close-up'
     ? `\nCanon EOS R5, 85mm f/2.8, shallow depth of field with rich bokeh. Razor-sharp focus on vinyl surface texture showing depth, material quality, and fine detail. Vibrant colors.`
@@ -1864,24 +1915,20 @@ Output a single structured paragraph that another AI could use to recreate this 
 // ═══════════════════════════════════════════════════════════════════════════
 // ATLAS-ARTBOARD MODE — THE CANONICAL DESIGNPROAI CALL 1
 //
-// Owner directive (Trish 2026-08-26/27, PASTE_TO_CLAUDE.md): this deployed
-// function is the SOLE Call-1 network endpoint. It EXECUTES the real
-// buildDesignerPrompt from ../_shared/persona-designer-prompt.ts — the
-// Persona-2 designer brain the source audit identifies as the working creative
-// system — and combines it with the DPAG artboard mechanics: the caller's six
-// labeled GENIE panel dimensions (artboard-template-os fallback), the Houdini
-// structural reference, solid full-bleed rectangular zones, one cohesive wrap,
-// and the flat-master output contract. Exactly ONE Gemini image request. No
-// banner, no vehicle hero, no separate logo stage — when no logo is supplied
-// the designer creates the brand mark inside this same master.
+// Owner directive (Trish 2026-08-27): this deployed function is the SOLE Call-1
+// network endpoint AND the sole creative implementation. The handler calls THIS
+// FILE's own buildDesignIQPrompt with atlasFlatMaster:true — the real DPAG
+// commercial/restyle assembly — so LOGO_REQUIREMENT, buildLogoArchitecture,
+// COMMERCIAL_DEPTH, COMMERCIAL_TRANSLATION, PROFESSIONAL_JUDGMENT, the
+// VisionBoard/styleDescriptors branches, exact contact handling, brand colours,
+// industry, finish/substrate and the photo-intent lock all fire in the one
+// call. The flat-master output contract is a BRANCH INSIDE that assembly, never
+// a post-hoc string replacement, and the reconstructed persona bridge
+// is deleted so it cannot come back.
 //
-// THE PERSONA PROMPT IS EXECUTED, NOT RE-TYPED. Its creative core passes
-// through verbatim. Only its PRESENTATION tail — the studio scene, the side
-// camera angle, the on-vehicle photograph lines, which the owner's authority
-// split sends downstream to the proofs — is swapped for the flat-master output
-// contract. Every swap is an EXACT-MATCH replacement that throws if the persona
-// source ever drifts, so this block can never silently rewrite the designer's
-// words.
+// Exactly ONE Gemini image request. No banner, no vehicle hero, no separate
+// logo stage — when no logo is supplied the designer creates the brand mark
+// inside this same master.
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Response> {
@@ -1907,27 +1954,37 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         }))
       : await resolveArtboardPanels(svc, vehicleYear, vehicleMake, vehicleModel);
 
-    // 1+2 — the canonical assembly: the real Persona-2 brain, presentation
-    // tail swapped for the flat-master contract, owner logo contract applied.
+    // THE REAL DPAG CREATIVE ASSEMBLY. buildDesignIQPrompt is this file's own
+    // commercial/restyle branch — LOGO_REQUIREMENT, buildLogoArchitecture,
+    // COMMERCIAL_DEPTH, COMMERCIAL_TRANSLATION, PROFESSIONAL_JUDGMENT, the
+    // VisionBoard/styleDescriptors branches, exact contact handling, brand
+    // colours, industry, finish/substrate and the photo-intent lock — invoked
+    // with atlasFlatMaster:true so the SAME assembly emits the A.T.L.A.S.
+    // flattened-master output contract instead of camera/studio presentation.
     const references = Array.isArray(body.referenceImagesBase64) ? (body.referenceImagesBase64 as string[]) : [];
-    const prompt = buildAtlasArtboardPrompt({
-      brief: String(body.enrichedBrief || body.prompt || "").trim(),
-      authoringMode,
+    const prompt = buildDesignIQPrompt({
+      mode: authoringMode,
+      prompt: String(body.enrichedBrief || body.prompt || "").trim(),
+      finish: String(body.finish || "Gloss"),
+      substrate: String(body.substrate || "standard"),
+      companyName: String(body.companyName || "").trim() || undefined,
+      mascot: String(body.mascot || "").trim() || undefined,
+      bulletPoints: Array.isArray(body.bulletPoints) ? (body.bulletPoints as string[]) : undefined,
+      industryType: String(body.industryType || "").trim() || undefined,
+      phone: String(body.phone || "").trim() || undefined,
+      brandColors: String(body.brandColors || "").trim() || undefined,
+      fontStyle: String(body.fontStyle || "").trim() || undefined,
+      qrEnabled: body.qrEnabled === true,
       vehicleYear,
       vehicleMake,
       vehicleModel,
-      finish: String(body.finish || "Gloss"),
-      companyName: String(body.companyName || "").trim() || undefined,
-      phone: String(body.phone || "").trim() || undefined,
-      website: String(body.website || "").trim() || undefined,
-      mascot: String(body.mascot || "").trim() || undefined,
-      industryType: String(body.industryType || "").trim() || undefined,
-      bulletPoints: Array.isArray(body.bulletPoints) ? (body.bulletPoints as string[]) : undefined,
-      logoSupplied: body.logoSupplied === true,
-      hasVisionBoardImages: references.length > 0,
-      visionboardIntent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
-      panels,
-    });
+      viewType: "side",
+      visionBoardImages: references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
+      visionboard_intent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
+      styleDescriptors: String(body.styleDescriptors || "").trim() || undefined,
+      atlasFlatMaster: true,
+      atlasPanels: panels,
+    } as any);
 
     // 3 — parts: designer prompt, layout guide, structural reference, the
     // gold-standard artboard examples, then verified customer references.

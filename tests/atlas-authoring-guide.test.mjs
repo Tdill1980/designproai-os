@@ -146,7 +146,7 @@ test("the solid-panel output contract lives in the edge function's flat contract
   // full-bleed rule rides the deployed design-panel-ai-generate atlas-artboard
   // handler instead, stated once and positively.
   const { readFileSync } = require("node:fs");
-  const edge = readFileSync(new URL("../supabase/functions/_shared/atlas-artboard-prompt.ts", import.meta.url), "utf8");
+  const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
   assert.match(edge, /ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner/);
   assert.match(edge, /outside the rectangles the canvas stays blank/i);
   // Zone identity reaches the model as the labeled GENIE panel list.

@@ -13,7 +13,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { loadPersonaDesigner } from "./helpers/load-persona-designer.mjs";
 
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
 const edgeSource = readFileSync(
@@ -21,33 +20,34 @@ const edgeSource = readFileSync(
   "utf8",
 );
 const runtimeSource = readFileSync(join(ROOT, "runtime", "flat-first-atlas.cjs"), "utf8");
-const assembly = readFileSync(join(ROOT, "supabase", "functions", "_shared", "atlas-artboard-prompt.ts"), "utf8");
+const assembly = edgeSource; // the real assembly lives IN the edge function now
 const handler = edgeSource.slice(edgeSource.indexOf("async function handleAtlasArtboard"));
 
-test("the edge function executes the real Persona-2 designer brain", () => {
-  assert.match(assembly, /import \{ buildDesignerPrompt \} from "\.\/persona-designer-prompt\.ts"/);
-  assert.match(assembly, /buildDesignerPrompt\(\{/);
-  assert.match(edgeSource, /buildAtlasArtboardPrompt,\n\} from "\.\.\/_shared\/atlas-artboard-prompt\.ts"/);
-  // Executed, never re-typed: neither file may contain the persona's own
-  // identity sentence as a literal.
-  assert.ok(!assembly.includes("elite vehicle wrap graphic designer"));
-  assert.ok(!handler.includes("elite vehicle wrap graphic designer"));
+test("Call 1 executes DPAG's own commercial/restyle creative assembly", () => {
+  // Owner directive 2026-08-27: no separate creative module, no string
+  // replacement — the handler calls this file's own buildDesignIQPrompt with
+  // atlasFlatMaster:true, so LOGO_REQUIREMENT, buildLogoArchitecture,
+  // COMMERCIAL_DEPTH, COMMERCIAL_TRANSLATION, PROFESSIONAL_JUDGMENT and the
+  // VisionBoard branches all fire inside the one call.
+  assert.match(handler, /buildDesignIQPrompt\(\{/);
+  assert.match(handler, /atlasFlatMaster: true/);
+  assert.match(handler, /atlasPanels: panels/);
+  assert.ok(!edgeSource.includes("atlas-artboard-prompt.ts"), "the reconstructed module is deleted");
+  assert.ok(!handler.includes("buildDesignerPrompt"), "the Persona-2 string-replacement path is deleted from Call 1");
+  assert.ok(!edgeSource.includes("atlasSwap"), "no string surgery on the creative prompt");
+  // The flat contract is a branch inside the authority, not a post-hoc edit.
+  assert.match(edgeSource, /function atlasFlatMasterContract\(/);
+  assert.match(edgeSource, /const commercialPresentation = atlasFlatMaster/);
+  assert.match(edgeSource, /const restylePresentation = atlasFlatMaster/);
 });
 
-test("presentation swaps are exact-match and throw on persona drift", () => {
-  assert.match(assembly, /function atlasSwap\(/);
-  assert.match(assembly, /atlas_artboard_persona_drift/);
-  // The studio scene and the side camera leave the flat call; the flat-master
-  // output contract replaces the on-vehicle photograph lines.
-  assert.match(assembly, /atlasSwap\(prompt, `\\n\\n\$\{STUDIO_ENVIRONMENT\}`, ""\)/);
-  assert.match(assembly, /atlasSwap\(prompt, `\\n\$\{getCameraAngle\("side"\)\}`, ""\)/);
-  assert.match(assembly, /ONE SOLID RECTANGLE of continuous wrap artwork/);
-  assert.match(assembly, /mirror twin/);
-  assert.match(assembly, /LAYOUT ONLY/);
-  // The DESIGN ANCHOR request is a 3D-proof/camera instruction and is removed
-  // for the flat call — it is also what made the model answer in text and draw
-  // nothing (measured twice on the deployed function, 2026-08-27).
-  assert.match(assembly, /This anchor ensures consistency across all camera angles\.",\n\s*"",/);
+test("the flat call keeps every creative block and drops only presentation", () => {
+  const commercial = edgeSource.slice(edgeSource.indexOf("if (mode === 'commercial')"), edgeSource.indexOf("// ── RESTYLE MODE"));
+  for (const block of ["COMMERCIAL_DEPTH", "COMMERCIAL_TRANSLATION", "PROFESSIONAL_JUDGMENT", "buildLogoArchitecture", "LOGO_REQUIREMENT", "styleDescriptors", "PHOTO_REALISM_LOCK"]) {
+    assert.ok(commercial.includes(block), `${block} must stay in the commercial assembly`);
+  }
+  // Camera + studio are the only things the flat branch omits.
+  assert.match(commercial, /atlasFlatMaster\n\s*\? atlasScene/);
 });
 
 test("exactly one Gemini image request lives in the atlas-artboard handler", () => {
@@ -69,7 +69,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-persona\.20260827\.v1"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260827\.v2"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -95,28 +95,4 @@ test("the runtime enforces the one-image-call contract and records provenance", 
   assert.match(runtimeSource, /atlasEdgeProvenance: edgeProvenance/);
   assert.match(runtimeSource, /x-designpro-owner-id/);
   assert.match(runtimeSource, /functions\/v1\/design-panel-ai-generate/);
-});
-
-test("the real persona builder still carries the creative core the swaps preserve", async () => {
-  const { buildDesignerPrompt } = await loadPersonaDesigner();
-  const prompt = buildDesignerPrompt({
-    enrichedBrief: "Bold commercial HVAC wrap with airflow ribbons.",
-    mode: "commercial",
-    vehicleYear: "2022",
-    vehicleMake: "Ford",
-    vehicleModel: "F250 Crew Cab",
-    companyName: "Precision Climate Solutions",
-    phone: "(520) 555-0192",
-    industryType: "HVAC",
-    hasVisionBoardImages: false,
-  });
-  assert.match(prompt, /elite vehicle wrap graphic designer/);
-  assert.match(prompt, /Precision Climate Solutions/);
-  assert.match(prompt, /\(520\) 555-0192/);
-  assert.match(prompt, /thematically relevant/);
-  // The swap targets the handler depends on must exist verbatim in the real
-  // builder's output — this is the drift alarm's other half.
-  assert.ok(prompt.includes("Render it ON the vehicle in a studio — photorealistic, not a flat panel."));
-  assert.ok(prompt.includes("16:9 landscape, 4K. REAL PRINTED VINYL on the vehicle. Canon EOS R5 at 35mm f/8. INDISTINGUISHABLE from a real photograph."));
-  assert.ok(prompt.includes("Wrap covers painted body panels only. Windows, lights, wheels, trim stay factory."));
 });
