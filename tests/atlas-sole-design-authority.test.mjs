@@ -110,7 +110,9 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   // tail finishes. Both halves are pinned: the call, and the join that makes a
   // Call 1 failure still fatal. (Owner 2026-08-27: "Nodes run when their inputs
   // exist. Nothing waits unless it truly depends on it.")
-  assert.match(worker, /const atlasRun = generateOrReuseFlatAtlas\(\{/);
+  assert.match(worker, /let atlasRun = null;/);
+  assert.match(worker, /atlasRun = generateOrReuseFlatAtlas\(\{/);
+  assert.doesNotMatch(worker, /const atlasRun = generateOrReuseFlatAtlas\(\{/);
   assert.match(worker, /flatAtlas = await atlasRun;/);
   assert.ok(!/generateOrReuseFlatAtlas\([\s\S]{0,80}\)\s*;\s*\n\s*\/\/ *no join/.test(worker));
   assert.match(atlas, /require\("\.\/designiq-prompt\.cjs"\)/);

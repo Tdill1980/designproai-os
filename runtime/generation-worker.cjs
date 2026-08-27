@@ -834,6 +834,7 @@ function createGenerationWorker({
       let openSurfaceGate = null;
       let awaitSurface = null;
       let releaseAllGates = null;
+      let atlasRun = null;
       // THE SERVER LOG IS THE PROOF THE GRAPH STREAMS.
       //
       // A local test asserting "Driver's proof can start before Passenger
@@ -896,7 +897,7 @@ function createGenerationWorker({
         // which is the timeline the graph specifies, with no engine change.
         ({ openSurfaceGate, awaitSurface, releaseAllGates } = surfaceGateSet());
         let progressiveAtlas = null;
-        const atlasRun = generateOrReuseFlatAtlas({
+        atlasRun = generateOrReuseFlatAtlas({
           supabase,
           store,
           provider: imageProvider,
