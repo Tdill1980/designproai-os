@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered sixty-nine-migration chain', () => {
-  assert.equal(migrationNames.length, 69);
+test('fresh bootstrap contains one ordered seventy-migration chain', () => {
+  assert.equal(migrationNames.length, 70);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -152,6 +152,8 @@ test('fresh bootstrap contains one ordered sixty-nine-migration chain', () => {
       '20260827050000',
       // A short proof set is not an invalid lineage.
       '20260827060000',
+      // The gate reads the acceptance basis, not the judge's confidence.
+      '20260827070000',
     ],
   );
 });
