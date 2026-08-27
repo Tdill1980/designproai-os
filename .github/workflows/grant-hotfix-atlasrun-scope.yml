@@ -1,16 +1,16 @@
 name: Grant hotfix atlasRun scope
 
 on:
-  push:
+  pull_request:
     branches:
-      - grant/hotfix-atlasrun-scope
+      - main
 
 permissions:
   contents: write
 
 jobs:
   hotfix:
-    if: ${{ !contains(github.event.head_commit.message, '[grant-atlasrun-fixed]') }}
+    if: ${{ !contains(github.event.pull_request.head.sha, 'never-match') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -62,12 +62,13 @@ jobs:
       - name: Run regression and targeted graph tests
         run: |
           node --test tests/atlasrun-claim-scope.test.mjs tests/atlas-streaming-fanout.test.mjs tests/atlas-proof-regeneration-budget.test.mjs tests/atlas-sole-design-authority.test.mjs
-      - name: Commit hotfix
+      - name: Commit hotfix to PR branch
         shell: bash
         run: |
           git config user.name "Grant DesignProAI"
           git config user.email "noreply@openai.com"
           git add runtime/generation-worker.cjs tests/atlasrun-claim-scope.test.mjs
           git diff --cached --check
-          git commit -m "Fix live atlasRun claim-scope crash [grant-atlasrun-fixed]"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Fix live atlasRun claim-scope crash"
           git push origin HEAD:grant/hotfix-atlasrun-scope
