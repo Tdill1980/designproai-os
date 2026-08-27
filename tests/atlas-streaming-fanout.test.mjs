@@ -133,6 +133,66 @@ test("each proof's artwork authority IS its own extracted panel", async () => {
   assert.notEqual(authorities.roof.panelContentHash, authorities.side.panelContentHash);
 });
 
+test("the chain is dead: a stage declares its own edges", () => {
+  // Owner, 2026-08-27: "the claim_designpro_stage predecessor chain is precisely
+  // what needs to die because it is implementing a linear state machine where
+  // you designed a dependency graph."
+  const migration = read("supabase/migrations/20260827110000_designpro_the_chain_dies.sql");
+
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS depends_on text\[\]/);
+  // The claim reads NAMED edges...
+  assert.match(migration, /pg_catalog\.unnest\(s\.depends_on\)/);
+  // ...and a named stage that is absent fails CLOSED rather than vacuously
+  // releasing the node.
+  assert.match(migration, /p\.status IN \(''completed'',''skipped''\)/);
+  // The legacy arm survives ONLY as a drain path for rows already in flight.
+  assert.match(migration, /array_length\(s\.depends_on,1\) IS NULL/);
+
+  // The guards that must NOT die with the chain.
+  for (const guard of ["production-heavy", "FOR UPDATE OF s SKIP LOCKED LIMIT 1",
+    "await_panelpro_preflight_qc'',''await_final_human_qc", "s.attempt < s.max_attempts"]) {
+    assert.ok(migration.includes(guard), `the chain removal must preserve: ${guard}`);
+  }
+
+  // Patch the live body, never restate it.
+  assert.match(migration, /pg_get_functiondef/);
+  assert.ok(!/CREATE OR REPLACE FUNCTION public\.claim_designpro_stage/.test(migration),
+    "the claim predicate must be text-patched, not re-emitted");
+
+  // No probe rows are written into a live table. The behavioural proof is in
+  // pgTAP, on a disposable database with real stage keys -- the live table has
+  // a stage_key CHECK and a completion-integrity CHECK that an invented probe
+  // row would have violated, failing the apply.
+  assert.ok(!/INSERT INTO public\.designpro_workflow_stages/i.test(migration),
+    "a migration must not write probe rows into the production stage table");
+  assert.match(migration, /stage_dependency_graph\.test\.sql/);
+});
+
+test("a worker runs independent nodes concurrently", () => {
+  const claimant = read("runtime/designpro-standalone-claimant.cjs");
+  // `busy` was a single boolean: one stage per worker, which is a linear state
+  // machine wearing a different hat once the chain is gone.
+  assert.ok(!/let busy = false;/.test(claimant), "the single-flight guard must be gone");
+  assert.match(claimant, /const inFlight = new Set\(\);/);
+  assert.match(claimant, /if \(stopped \|\| inFlight\.size >= stageConcurrency\) return;/);
+  assert.match(claimant, /DESIGNPRO_STAGE_CONCURRENCY/);
+
+  // The fleet-wide sweep stays single-flight -- two of them would race to
+  // enqueue the same production workflow.
+  assert.match(claimant, /if \(reconciling \|\| Date\.now\(\) - lastReconcileAt < 15_000\) return;/);
+
+  // Shutdown aborts EVERY in-flight node, not just the newest.
+  assert.match(claimant, /for \(const guard of inFlight\)/);
+  // Comment lines excluded deliberately: the runtime comment NAMES the slot it
+  // replaced, and a naive scan convicts the explanation. (Same trap the
+  // seven-view lock hit.)
+  const executable = claimant.split("\n").filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line));
+  assert.deepEqual(
+    executable.filter((line) => line.includes("activeStageGuard")), [],
+    "the single active-guard slot silently abandoned siblings once concurrency existed",
+  );
+});
+
 test("no panel or logo waits on the 2D proof", () => {
   // The scheduler, not the extractor, is what made PanelPro wait: a stage is
   // claimable only when every LOWER-sequence stage has completed, and the

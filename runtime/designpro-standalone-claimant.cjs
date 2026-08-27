@@ -2626,36 +2626,63 @@ async function failCalls1To7Generation(sb, rawClaim, errorValue) {
 function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, serviceRoleKey, workerSecret, workerId, port, spoolDir, tusEndpoint }) {
   const id = requiredString(workerId, "workerId");
   const baseUrl = `http://127.0.0.1:${Number(port || 3001)}`;
-  let busy = false;
+  // INDEPENDENT NODES EXECUTE CONCURRENTLY. (Owner, 2026-08-27.)
+  //
+  // `busy` was a single boolean, so a worker ran exactly ONE stage at a time --
+  // and with the global predecessor chain gone (20260827110000), that guard
+  // becomes the next thing implementing a linear state machine over a
+  // dependency graph. Two runnable siblings on one worker would still have run
+  // one after the other.
+  //
+  // The cap is deliberate and small. Every guard the chain removal preserves is
+  // still doing its job underneath this: the shared `production-heavy` lease
+  // keeps output.build / output.verify / zip.build mutually exclusive across
+  // the whole fleet however many slots exist here, the human gates are
+  // unclaimable, and `SKIP LOCKED` means two workers never contend for one row.
+  // What this bounds is memory: the container is capped at 6g and a stage can
+  // hold a 4K master, so slots are cheap to add and expensive to get wrong.
+  const stageConcurrency = Math.min(4, Math.max(1,
+    Number.parseInt(process.env.DESIGNPRO_STAGE_CONCURRENCY || "2", 10) || 2));
+  const inFlight = new Set();
   let timer = null;
   let lastReconcileAt = 0;
-  let activeStageGuard = null;
+  let reconciling = false;
   let stopped = false;
 
+  // The reconcile is a whole-fleet sweep, not a node. It stays single-flight:
+  // running two of them concurrently would have them race to enqueue the same
+  // production workflow.
+  async function reconcileIfDue() {
+    if (reconciling || Date.now() - lastReconcileAt < 15_000) return;
+    reconciling = true;
+    lastReconcileAt = Date.now();
+    try {
+      try { await reconcileAutomaticProduction(supabase); }
+      catch (error) { console.error(`[DESIGNPRO-OS] automatic production reconciliation failed: ${error.message}`); }
+      // The worker's half of the purchase: an entitlement recorded while this
+      // process was down, or delivered twice, is noticed here rather than
+      // needing to be caught as it happens.
+      try { await reconcilePurchaseGates(supabase); }
+      catch (error) { console.error(`[DESIGNPRO-OS] purchase gate reconciliation failed: ${error.message}`); }
+    } finally {
+      reconciling = false;
+    }
+  }
+
   async function tick() {
-    if (busy || stopped) return;
-    busy = true;
+    if (stopped || inFlight.size >= stageConcurrency) return;
     let stage = null;
     let heartbeat = null;
     let stageGuard = null;
     try {
-      if (Date.now() - lastReconcileAt >= 15_000) {
-        lastReconcileAt = Date.now();
-        try { await reconcileAutomaticProduction(supabase); }
-        catch (error) { console.error(`[DESIGNPRO-OS] automatic production reconciliation failed: ${error.message}`); }
-        // The worker's half of the purchase: an entitlement recorded while this
-        // process was down, or delivered twice, is noticed here rather than
-        // needing to be caught as it happens.
-        try { await reconcilePurchaseGates(supabase); }
-        catch (error) { console.error(`[DESIGNPRO-OS] purchase gate reconciliation failed: ${error.message}`); }
-      }
+      await reconcileIfDue();
       const { data, error } = await supabase.rpc("claim_designpro_stage", { p_worker: id, p_lease_seconds: CLAIM_SECONDS });
       if (error) throw error;
       stage = Array.isArray(data) ? data[0] : data;
       if (!stage) return;
       const run = await getRun(supabase, stage.run_id);
       stageGuard = { lost: false, controller: new AbortController(), stageId: stage.id, leaseToken: stage.lease_token };
-      activeStageGuard = stageGuard;
+      inFlight.add(stageGuard);
       heartbeat = setInterval(async () => {
         const { data: current, error: beatError } = await supabase.rpc("heartbeat_designpro_stage", { p_stage_id: stage.id, p_lease_token: stage.lease_token, p_lease_seconds: CLAIM_SECONDS });
         if (beatError || current !== true) {
@@ -2679,12 +2706,15 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
     } finally {
       if (heartbeat) clearInterval(heartbeat);
       if (stageGuard && !stageGuard.controller.signal.aborted) stageGuard.controller.abort(new Error("stage work ended"));
-      if (activeStageGuard === stageGuard) activeStageGuard = null;
-      busy = false;
+      if (stageGuard) inFlight.delete(stageGuard);
     }
   }
 
-  app.get("/designpro-os/claimant", (_req, res) => res.json({ ready: true, contract: CLAIMANT_CONTRACT, workerId: id, stages: STAGES }));
+  app.get("/designpro-os/claimant", (_req, res) => res.json({
+    ready: true, contract: CLAIMANT_CONTRACT, workerId: id, stages: STAGES,
+    // Observable, so "why did only one node run" is a query rather than a guess.
+    stageConcurrency, inFlight: inFlight.size,
+  }));
   timer = setInterval(() => void tick(), 1_000);
   timer.unref?.();
   void tick();
@@ -2693,7 +2723,11 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
     stop: () => {
       stopped = true;
       clearInterval(timer);
-      if (activeStageGuard && !activeStageGuard.controller.signal.aborted) activeStageGuard.controller.abort(new Error("claimant stopped because runtime readiness was lost"));
+      // Every in-flight node, not just the newest one. A single `activeStageGuard`
+      // slot silently abandoned the others the moment concurrency existed.
+      for (const guard of inFlight) {
+        if (!guard.controller.signal.aborted) guard.controller.abort(new Error("claimant stopped because runtime readiness was lost"));
+      }
     },
   };
 }
