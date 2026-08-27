@@ -68,11 +68,31 @@ const PROMPT_VERSION = "designpro-flat-first-atlas-20260827.v10-edge";
 // option): one revision = one DesignPanelAI creative call = one Gemini image
 // request, and the exact request count is reported on the revision as
 // metadata.geminiImageRequestCount.
+// ONE AUTHORING CALL ON THE CUSTOMER'S CRITICAL PATH. (Trish 2026-08-27:
+// "ATLAS SHOULD GENERATE IN LESS THAN 1 MINUTE, then sequential panels and 3D
+// driver in less than 2 min".)
+//
+// An authoring call costs ~60s. Three of them cannot fit a sixty-second budget
+// by construction, and the customer sees NOTHING until the loop ends -- canary
+// cad013e1 spent 181 seconds and showed her a failure page.
+//
+// The re-roll ladder existed because a refused master had no other remedy. It
+// now has two: a cut-out is FILLED deterministically (~100ms, atlas-cutout-fill)
+// and the passenger flank is COMPOSED from the driver deterministically
+// (atlas-passenger-mirror) -- between them, the two defect classes that refused
+// every canary tonight. What is left after those repairs is a genuine creative
+// miss, and the answer to that is a revision the customer asks for, not two
+// more minutes of silence she did not.
+//
+// So the ceiling is ONE attempt by default. The budget is still adjustable --
+// DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS raises it up to the hard cap for a
+// harness or an operator retry -- but the default path is the fast one.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
+const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 1;
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1) return MAX_MASTER_AUTHORING_ATTEMPTS;
+  if (!Number.isInteger(value) || value < 1) return DEFAULT_MASTER_AUTHORING_ATTEMPTS;
   return Math.min(value, MAX_MASTER_AUTHORING_ATTEMPTS);
 }
 const MASTER_PROVIDER_CONTRACT = "designpro.flat-first-master-provider.v1";
