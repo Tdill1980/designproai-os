@@ -826,6 +826,14 @@ function createGenerationWorker({
       let flatAtlas = null;
       let dimensionRow = null;
       let executionInput = claim.input;
+      // Hoisted out of the `isFlatFirst` block below: `awaitSurface` is called
+      // from `atlasProviderFactory`'s conditioning callbacks, which are wired
+      // AFTER that block closes -- a `const` declared inside it goes out of
+      // scope there and throws "awaitSurface is not defined" the instant any
+      // proof node calls it, before a single API call is made.
+      let openSurfaceGate = null;
+      let awaitSurface = null;
+      let releaseAllGates = null;
       const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
       const standardProvider = isFlatFirst ? null : standardProviderFactory({
         supabase,
@@ -872,7 +880,7 @@ function createGenerationWorker({
         // `Promise.all(slots.map(runSlot))` with no cross-slot state, so all
         // seven nodes start together and each blocks only on its own gate --
         // which is the timeline the graph specifies, with no engine change.
-        const { openSurfaceGate, awaitSurface, releaseAllGates } = surfaceGateSet();
+        ({ openSurfaceGate, awaitSurface, releaseAllGates } = surfaceGateSet());
         let progressiveAtlas = null;
         const atlasRun = generateOrReuseFlatAtlas({
           supabase,
