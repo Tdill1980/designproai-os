@@ -133,6 +133,82 @@ test("each proof's artwork authority IS its own extracted panel", async () => {
   assert.notEqual(authorities.roof.panelContentHash, authorities.side.panelContentHash);
 });
 
+test("the root node is published before its branches, and filled as they land", async () => {
+  // "Nodes run when their inputs exist. Nothing waits unless it truly depends
+  // on it." A proof node's input is ITS OWN panel -- not the set, and not Call
+  // 1's tail (the storage joins, the judge's record, the revision row), which
+  // is an input to no proof at all.
+  const surfaces = [
+    { surfaceKey: "driver", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "passenger", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "hood", widthInches: 68, heightInches: 39 },
+    { surfaceKey: "roof", widthInches: 55, heightInches: 72 },
+    { surfaceKey: "front", widthInches: 76, heightInches: 56 },
+    { surfaceKey: "rear", widthInches: 76, heightInches: 56 },
+  ];
+  const manifest = atlas.buildAtlasManifest(surfaces);
+  const guide = await atlas.renderAtlasGuide(manifest);
+  const master = (await atlas.normalizeAtlasMaster(guide, manifest)).bytes;
+  const masterHash = atlas._test.sha256(master);
+
+  // Rebuild what Call 1 hands out, in the order it hands it out.
+  const progressive = {
+    revisionSequence: 1, manifest,
+    master: { contentHash: masterHash, bytes: master },
+    metadata: { panelSourceHash: masterHash },
+    callOnePanels: [], viewAuthorities: {},
+  };
+  const conditionableAfter = [];
+  await atlas.cutCallOnePanels(master, manifest, masterHash, {
+    onPanel: async (panel) => {
+      progressive.callOnePanels.push(panel);
+      for (const view of ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]) {
+        if (atlas.surfaceForProofView(view) !== panel.surfaceKey) continue;
+        progressive.viewAuthorities[view] = await atlas._test.viewAuthorityFromPanel(panel, view);
+      }
+      // Which proof nodes could START now, with nothing else cut?
+      conditionableAfter.push([panel.surfaceKey, Object.keys(progressive.viewAuthorities).sort()]);
+    },
+  });
+
+  // Driver's cut releases TWO nodes, because Close-Up photographs the driver
+  // surface. And it releases them while five panels do not yet exist.
+  assert.deepEqual(conditionableAfter[0], ["driver", ["close-up", "side"]]);
+  assert.deepEqual(conditionableAfter[1][1], ["close-up", "passenger-side", "side"]);
+  assert.equal(conditionableAfter.at(-1)[1].length, 7, "all seven nodes are conditionable by the last cut");
+
+  // And the gate is real: the same hash-gated function the proof path uses
+  // succeeds for Driver after Driver's cut, and REFUSES roof before roof's.
+  const afterDriverOnly = {
+    ...progressive,
+    callOnePanels: [progressive.callOnePanels[0]],
+    viewAuthorities: { side: progressive.viewAuthorities.side },
+  };
+  assert.equal(atlas.viewAuthorityFor(afterDriverOnly, "side").surfaceKey, "driver");
+  assert.throws(() => atlas.viewAuthorityFor(afterDriverOnly, "roof"),
+    (error) => error?.code === "flat_atlas_view_authority_identity_mismatch",
+    "a node whose panel does not exist yet must not be conditionable");
+});
+
+test("no global barrier between extraction and proofs", () => {
+  const worker = read("runtime/generation-worker.cjs");
+  // Call 1 is STARTED, not awaited, so the proof branch runs against the root
+  // node while Call 1's tail finishes.
+  assert.match(worker, /const atlasRun = generateOrReuseFlatAtlas\(\{/);
+  assert.match(worker, /onMasterReady: \(atlas\) => \{ progressiveAtlas = atlas; \}/);
+  assert.match(worker, /onSurfaceReady: \(\{ surfaceKey \}\) => \{ openSurfaceGate\(surfaceKey\); \}/);
+  // ...but it is still JOINED, so a Call 1 failure is still fatal and its
+  // rejection is never swallowed.
+  assert.match(worker, /flatAtlas = await atlasRun;/);
+  assert.match(worker, /atlasRun\.catch\(\(cause\) => \{/);
+  // A rejected Call 1 releases every gate, so a node waiting on a panel that
+  // will never exist fails with a reason instead of hanging to lease expiry.
+  assert.match(worker, /for \(const \{ release \} of surfaceGates\.values\(\)\) release\(\);/);
+  // The old shape must not come back.
+  assert.ok(!/flatAtlas = await generateOrReuseFlatAtlas\(/.test(worker),
+    "awaiting all of Call 1 before any proof is the global barrier the graph forbids");
+});
+
 test("the chain is dead: a stage declares its own edges", () => {
   // Owner, 2026-08-27: "the claim_designpro_stage predecessor chain is precisely
   // what needs to die because it is implementing a linear state machine where
