@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-52), [
+  assert.deepEqual(names.slice(-53), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -159,6 +159,9 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // post-insert re-count that 20260827030000 could not see, because it shares
     // the exception name and nothing else.
     "20260827050000_designpro_partial_completion_second_predicate.sql",
+    // The FOURTH hardcoded seven, and the one that reached the customer: a
+    // short view set was judged an invalid lineage, so the view READ raised.
+    "20260827060000_designpro_partial_view_set_is_valid.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

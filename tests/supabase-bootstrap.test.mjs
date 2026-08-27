@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered sixty-eight-migration chain', () => {
-  assert.equal(migrationNames.length, 68);
+test('fresh bootstrap contains one ordered sixty-nine-migration chain', () => {
+  assert.equal(migrationNames.length, 69);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -150,6 +150,8 @@ test('fresh bootstrap contains one ordered sixty-eight-migration chain', () => {
       '20260827040000',
       // The second raise site of the same exception, patched to match.
       '20260827050000',
+      // A short proof set is not an invalid lineage.
+      '20260827060000',
     ],
   );
 });
