@@ -250,6 +250,51 @@ border, not as new design. `masterCutoutSurfaces` still records that the sheet
 arrived holed, and PanelPro's human QC still sees those sides flagged. Locked by
 `tests/atlas-cutout-fill.test.mjs`.
 
+## 🧬 RULE 0.27 — ONE ARTIFACT GRAPH. CODE OWNS THE ARTBOARD; A.I. OWNS THE DESIGN. (Trish 2026-08-27)
+
+**Full directive: `docs/ATLAS_ONE_ARTIFACT_GRAPH.md`. Read it before touching
+RevisionStudioIQ, PanelPro Studio, panel extraction or the proof fan-out.**
+
+The owner proved the pipeline is still split, from the product's own screens:
+PanelPro reported **Print panels 0/6** while RevisionStudioIQ showed images in
+its Production Pack column; PanelPro reported **3D proofs 8/7**; a roof proof
+existed in one surface and was reported missing by another. Three numbers about
+one design that cannot all be true.
+
+> "Your intended architecture was one source → duplicate publication, whereas
+> the current implementation has become one source → several independently
+> reconstructed representations."
+
+Three rules follow, and they are architectural, not cosmetic:
+
+1. **HARDWIRE THE ARTBOARD SHELL.** Gemini must not be responsible for drawing
+   the A.T.L.A.S. containers. Code/GENIE deterministically builds the six
+   labeled rectangular surface containers, their real GENIE proportions,
+   positions, surface IDs and the master canvas — the Houdini PANEL LAYOUT
+   topology. DesignPanelAI then authors ONE cohesive wrap INSIDE those defined
+   interiors in ONE Call 1. **The A.I. owns the design; the code owns the
+   geometry.** Still one source design, still one authoring call.
+2. **THE MASTER FANS OUT IN PARALLEL, IMMEDIATELY.** Panels (+5" bleed), asset
+   extraction, and the Driver proof all start on master acceptance. The
+   user-facing critical path is ONLY `Call 1 → Driver proof`; on "See All
+   Sides" the remaining six render concurrently. Panels and logos are never
+   behind the proof set.
+3. **ONE LINEAGE, PUBLISHED TWICE — NEVER RECONSTRUCTED TWICE.** The SAME
+   persisted artifacts go to RevisionStudioIQ and PanelPro Studio. No separate
+   RevisionStudio panel producer, no client-side crop, no preview standing in
+   for a production panel. **Neither UI may synthesize its own representation of
+   a missing canonical artifact** — a missing panel is reported missing.
+
+Acceptance: one fresh generation showing 1 master at 4096×4096, 6/6 persisted
+panels with 5" bleed, extracted assets, Driver first, 7 canonical proof slots,
+both UIs populated FROM THE SAME ARTIFACT IDS, all bound to one `generationId`
+/ `DesignID` / `atlasRevisionId` / `masterContentHash`. **Do not report READY
+while either UI is synthesizing a missing artifact.**
+
+Status 2026-08-27: §1 and §2 are NOT built; the five data contradictions in §4
+of the doc are diagnosed, not fixed. Design quality is a SEPARATE failure and a
+graph fix is never licence to rewrite the creative prompt (RULE 0.1).
+
 ## 🎯 RULE 0.26 — ONE CANONICAL CALL 1: THE REAL EDGE FUNCTION EXECUTES THE PERSONA BRAIN (Trish 2026-08-27, supersedes the 08-26 vendored-bridge form)
 
 **Owner directive (PASTE_TO_CLAUDE.md, 2026-08-27): "Call 1 must execute through
