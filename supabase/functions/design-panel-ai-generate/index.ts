@@ -228,30 +228,6 @@ function briefWantsPhoto(raw: string): boolean {
 // designed vector art.
 const PHOTO_REALISM_LOCK = `PHOTOGRAPHIC IMAGERY: the scene in this brief is an actual photograph — a real camera image with natural light, true-to-life colour, real depth of field, and real surface texture — occupying its own area of the wrap. Type and logo sit over it as crisp vector art.`;
 
-// ── ATLAS-MODE HOISTS (owner directive 2026-08-26) ──────────────────────────
-// These four literals are byte-for-byte the values that previously lived inside
-// buildDesignIQPrompt, hoisted to module scope so the artboard branch — which
-// returns before their old declaration point — can interpolate the SAME consts
-// instead of a re-typed copy. No text changed; commercial/restyle output is
-// byte-identical (locked by tests/designpanel-vendor-parity.test.mjs).
-const COMMERCIAL_PERSONA = `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.`;
-
-const PROFESSIONAL_JUDGMENT = `When the brief names a real subject (a home, building, product, landscape, or scene), render it with rich photographic realism — lifelike detail, natural light, depth, and dimension, crisp and high-resolution as if professionally photographed, then printed cleanly onto the vinyl.`;
-
-const FINISH_SPECS: Record<string, string> = {
-  gloss: 'GLOSS — wet-look surface, mirror-sharp specular highlights, deep saturated color, visible reflections in the body panels.',
-  matte: 'MATTE — flat, light-absorbing, no reflections or shine; soft diffuse shading only, chalky and velvety like a matte print.',
-  satin: 'SATIN — soft feathered sheen between matte and gloss; low reflection, studio lights show as soft glowing patches, never mirror-bright.',
-  chrome: 'CHROME — mirror-like reflections, maximum specularity, the body panel reflects the surroundings like a polished mirror.',
-  brushed: 'BRUSHED METAL — directional grain texture, anisotropic reflections that stretch along the brush direction.',
-};
-
-const SUBSTRATE_CONTEXT: Record<string, string> = {
-  color_change_film: 'SPECIALTY SUBSTRATE: This design is printed on a color-change specialty base film (metallic, pearl, or color-shift vinyl). The metallic/pearl base film shows through the printed ink layer, creating a luminous, color-shifting effect. Lighter print areas reveal more of the pearl/metallic base. Dark print areas remain opaque. This is printed vinyl with a specialty base layer — NOT chrome paint or automotive metallic paint.',
-  chrome_film: 'SPECIALTY SUBSTRATE: This design is printed on a mirror chrome base film. The chrome substrate shows through lighter and transparent areas of the printed design, creating a chrome-through-ink effect. Dark printed areas remain opaque over the chrome. This is printed vinyl on chrome film — NOT chrome paint.',
-  satin_film: 'SPECIALTY SUBSTRATE: This design is printed on a satin base film. The satin substrate provides a soft, silk-like sheen underneath the printed design, giving the artwork depth and luminosity. This is printed vinyl on satin film — NOT satin automotive paint.',
-};
-
 // VisionBoardIQ image reference type
 interface VisionBoardImage {
   slotLabel: string;
@@ -389,7 +365,6 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
     // text feeds the Layer-2 overlay engine as transparent PNGs.
     const { stylePrompt: abStylePrompt } = splitStyleAndText(prompt, companyName);
     const briefForArtboard = abClean ? abStylePrompt : prompt;
-
     let ab = `You are a Custom Vehicle Wrap Designer at WePrintWraps.com. Design ONE flat, print-ready vehicle-wrap ARTBOARD for a ${vehicle} — the full wrap laid out FLAT as labeled rectangular PANELS on a neutral artboard sheet, one panel per vehicle side, exactly in the format of the EXAMPLE ARTBOARDS provided (a clean-background version and a branded version). The output is flat print artwork on a 2D sheet.
 
 Lay out these panels, each labeled with its name, the wrap artwork filling each panel edge-to-edge, and the SAME cohesive design flowing across every panel as one connected wrap unwrapped flat:
@@ -423,11 +398,21 @@ DESIGN BRIEF: "${briefForArtboard}"`;
   }
 
 
-  // FINISH_SPECS / SUBSTRATE_CONTEXT are module-scope (ATLAS-MODE HOISTS above)
-  // so the artboard branch can read them too; the values are unchanged.
+  const FINISH_SPECS: Record<string, string> = {
+    gloss: 'GLOSS — wet-look surface, mirror-sharp specular highlights, deep saturated color, visible reflections in the body panels.',
+    matte: 'MATTE — flat, light-absorbing, no reflections or shine; soft diffuse shading only, chalky and velvety like a matte print.',
+    satin: 'SATIN — soft feathered sheen between matte and gloss; low reflection, studio lights show as soft glowing patches, never mirror-bright.',
+    chrome: 'CHROME — mirror-like reflections, maximum specularity, the body panel reflects the surroundings like a polished mirror.',
+    brushed: 'BRUSHED METAL — directional grain texture, anisotropic reflections that stretch along the brush direction.',
+  };
   const finishSpec = FINISH_SPECS[(finish || 'gloss').toLowerCase()] || FINISH_SPECS.gloss;
 
   // Substrate context — tells the AI what base film the design is printed on
+  const SUBSTRATE_CONTEXT: Record<string, string> = {
+    color_change_film: 'SPECIALTY SUBSTRATE: This design is printed on a color-change specialty base film (metallic, pearl, or color-shift vinyl). The metallic/pearl base film shows through the printed ink layer, creating a luminous, color-shifting effect. Lighter print areas reveal more of the pearl/metallic base. Dark print areas remain opaque. This is printed vinyl with a specialty base layer — NOT chrome paint or automotive metallic paint.',
+    chrome_film: 'SPECIALTY SUBSTRATE: This design is printed on a mirror chrome base film. The chrome substrate shows through lighter and transparent areas of the printed design, creating a chrome-through-ink effect. Dark printed areas remain opaque over the chrome. This is printed vinyl on chrome film — NOT chrome paint.',
+    satin_film: 'SPECIALTY SUBSTRATE: This design is printed on a satin base film. The satin substrate provides a soft, silk-like sheen underneath the printed design, giving the artwork depth and luminosity. This is printed vinyl on satin film — NOT satin automotive paint.',
+  };
   const substrateContext = substrate && substrate !== 'standard' ? SUBSTRATE_CONTEXT[substrate] || '' : '';
 
   // Studio environment from shared studio-os.ts — same studio as RecreatePro/ColorPro
@@ -459,8 +444,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
   // What stays: the quality floor, the photographic-realism instruction for real
   // subjects (the reference trucks' pool and patio scenes depend on it), and the
   // anti-clipart line.
-  // PROFESSIONAL_JUDGMENT is module-scope now (ATLAS-MODE HOISTS above) — the
-  // artboard branch reads it too; the value is unchanged.
+  const PROFESSIONAL_JUDGMENT = `When the brief names a real subject (a home, building, product, landscape, or scene), render it with rich photographic realism — lifelike detail, natural light, depth, and dimension, crisp and high-resolution as if professionally photographed, then printed cleanly onto the vinyl.`;
 
   // ── COMMERCIAL MODE ──────────────────────────────────────────
   // Identity: Elite vehicle wrap designer (NOT photographer, NOT
@@ -490,7 +474,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // standard. The second sentence restores the bar inside the identity Trish
     // chose, in the same terms the restyle persona still uses ("amplify each
     // customer's vision… creates something uniquely RIGHT").
-    let assembled = `${COMMERCIAL_PERSONA}
+    let assembled = `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.
 
 CAMERA ANGLE (LOCKED — read this FIRST):
 ${cameraAngle}
@@ -1875,7 +1859,6 @@ Output a single structured paragraph that another AI could use to recreate this 
     );
   }
 });
-
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ATLAS-ARTBOARD MODE — THE CANONICAL DESIGNPROAI CALL 1

@@ -88,7 +88,7 @@ env:
   # to run if the slice no longer hashes to this — a drifted control is not a
   # control. Recompute after any legitimate change to the vendored source:
   #   node scripts/build-control-prompt.mjs control-build && sha256sum control-build/control-prompt.ts
-  EXPECT_CONTROL_HASH: 2b34a2165baafad06d3bd9368fccbfd8b5c859e032a1aa86c30ed044550f189e
+  EXPECT_CONTROL_HASH: 9492eae44a700bddbfd2815c224cb1fc985c43592b6cf4fa0c0f1d60e6a4805d
 
 jobs:
   ab:
