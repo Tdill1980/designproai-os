@@ -17,6 +17,23 @@ const OWNER = "33333333-3333-4333-8333-333333333333";
 const TENANT = `user_${OWNER}`;
 const CLAIM_TOKEN = "44444444-4444-4444-8444-444444444444";
 
+/**
+ * The GENIE manifest identity a cut now requires. `cutCallOnePanels` fails
+ * closed without it (owner, 2026-08-27: "Fail closed if those provenance
+ * fields are absent"), so a test that cuts panels has to state it.
+ */
+const FIXTURE_GEOMETRY_RESOLUTION = Object.freeze({
+  contract: "designpro.genie-manifest.v1",
+  genieManifestId: "0".repeat(32),
+  genieManifestHash: "0".repeat(64),
+  state: "derived",
+  derivationContract: "designpro.genie-front-derived.v1",
+  derivedSurfaces: ["front"],
+  geometrySourceRowId: "row-fixture",
+  productionEligible: false,
+  operatorValidated: false,
+});
+
 const surfaces = [
   ["driver", 190, 66],
   ["passenger", 190, 66],
@@ -322,6 +339,7 @@ test("content-addressed before/after storage stays inside the isolated flat-firs
 
 test("all seven proof prompts carry their exact master-bound native zone and identity", async () => {
   const manifest = atlas.buildAtlasManifest(surfaces);
+  manifest.geometryResolution = FIXTURE_GEOMETRY_RESOLUTION;
   const guideBytes = await atlas.renderAtlasGuide(manifest);
   const masterBytes = (await atlas.normalizeAtlasMaster(guideBytes, manifest)).bytes;
   const projection = await atlas.projectionDerivative(masterBytes);
@@ -427,6 +445,7 @@ test("proof-conditioning JPEG is deterministic, 4096px, white-flattened and belo
 
 test("reusing an atlas verifies the stored projection is the deterministic child of its PNG master", async () => {
   const manifest = atlas.buildAtlasManifest(surfaces);
+  manifest.geometryResolution = FIXTURE_GEOMETRY_RESOLUTION;
   const manifestBytes = atlas._test.canonicalBytes(manifest);
   const guideBytes = await atlas.renderAtlasGuide(manifest);
   const masterBytes = (await atlas.normalizeAtlasMaster(guideBytes, manifest)).bytes;
@@ -570,6 +589,24 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
     requestId: REQUEST, claimToken: CLAIM_TOKEN,
     generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
     input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
+    // THE GENIE MANIFEST IDENTITY IS NOW REQUIRED TO CUT A PANEL.
+    //
+    // Owner, 2026-08-27: "Bind genieManifestId, genieManifestHash,
+    // geometryAuthority, geometrySourceRowId, derivationContract to every
+    // panel... Fail closed if those provenance fields are absent." So a run
+    // that cannot name the manifest its containers were built from refuses to
+    // cut, and these fixtures state it exactly as the resolver does.
+    geometryResolution: {
+      contract: "designpro.genie-manifest.v1",
+      genieManifestId: "0".repeat(32),
+      genieManifestHash: "0".repeat(64),
+      state: "derived",
+      derivationContract: "designpro.genie-front-derived.v1",
+      derivedSurfaces: ["front"],
+      geometrySourceRowId: "row-fixture",
+      productionEligible: false,
+      operatorValidated: false,
+    },
     topologyExamples: [pairedExample],
     masterValidatorFactory: () => async ({ masterBytes, guideBytes }) => {
       events.push("master-qc");
@@ -709,6 +746,24 @@ test("an interrupted Atlas authoring fence prevents a duplicate provider call", 
     supabase, store, provider, callEdge, requestId: REQUEST, claimToken: CLAIM_TOKEN,
     generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
     input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
+    // THE GENIE MANIFEST IDENTITY IS NOW REQUIRED TO CUT A PANEL.
+    //
+    // Owner, 2026-08-27: "Bind genieManifestId, genieManifestHash,
+    // geometryAuthority, geometrySourceRowId, derivationContract to every
+    // panel... Fail closed if those provenance fields are absent." So a run
+    // that cannot name the manifest its containers were built from refuses to
+    // cut, and these fixtures state it exactly as the resolver does.
+    geometryResolution: {
+      contract: "designpro.genie-manifest.v1",
+      genieManifestId: "0".repeat(32),
+      genieManifestHash: "0".repeat(64),
+      state: "derived",
+      derivationContract: "designpro.genie-front-derived.v1",
+      derivedSurfaces: ["front"],
+      geometrySourceRowId: "row-fixture",
+      productionEligible: false,
+      operatorValidated: false,
+    },
   };
 
   await assert.rejects(() => atlas.generateOrReuseFlatAtlas(options), /simulated worker interruption/);

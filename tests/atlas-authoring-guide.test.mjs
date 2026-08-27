@@ -95,7 +95,7 @@ test("every authoring-guide label sits outside every printable region", () => {
   }
 });
 
-test("the authoring guide names its containers, and never the instructions about them", () => {
+test("the authoring guide names every container, and never the instructions about them", () => {
   const svg = authoringGuideSvg(manifest).toString("utf8");
   // The Surface IDs and names ARE on the model's sheet now -- that is the
   // point of a labeled container, and it is what lets the panel list in the
@@ -104,7 +104,6 @@ test("the authoring guide names its containers, and never the instructions about
     assert.ok(svg.includes(key.toUpperCase()),
       `the authoring artboard must caption its ${key} container`);
   }
-  assert.match(svg, /TOPO TOP VIEW/, "the sheet must declare what it is");
   // What still may NEVER reach the model is the prose telling it what not to
   // paint -- a negative instruction rendered as pixels inside the image it is
   // warning about, which is the one prompt shape Gemini over-indexes on.

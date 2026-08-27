@@ -1,5 +1,7 @@
 "use strict";
 
+const { createHash } = require("node:crypto");
+
 /**
  * Standalone extraction of the DP-owned universal vehicle lookup.
  * The upstream resolver's panel values are estimates. This extraction may
@@ -118,6 +120,61 @@ function assertGroundedCandidate(candidate, vehicleClass) {
  */
 const GENIE_CATALOG_TABLE = "vehicle_dimensions";
 
+/**
+ * FRONT IS DERIVED, AND IT SAYS SO. (Trish 2026-08-27)
+ *
+ * The 1,781-row catalog measures four surfaces -- side, back, hood, roof --
+ * and carries NO front column at all. So `front` can never be measured today,
+ * and the honest thing is to name the derivation rather than let a class
+ * constant masquerade as a measurement. Every derived front records this
+ * contract, the exact catalog fields it came from, and their values.
+ *
+ * The exception is meant to disappear: populate real front_width/front_height
+ * in GENIE and `front` becomes `measured` like the other five, with no code
+ * change beyond deleting the derivation branch.
+ */
+const FRONT_DERIVATION_CONTRACT = "designpro.genie-front-derived.v1";
+
+/**
+ * FOUR CORRUPT ROWS PASS THE YEAR FILTER AND WOULD MATCH ANYTHING.
+ *
+ * Live, 2026-08-27: four Ford rows carry an entire TSV line in `model` --
+ * `"F150 SuperCrew 5'5 box\t2018-2020\t227.1\t57.0\t..."` -- with every
+ * dimension column NULL and both year columns NULL. Null years passed the year
+ * filter (it treated "no years" as "covers every year"), so a 2024 lookup drew
+ * them into the candidate pool, where only the completeness filter happened to
+ * drop them.
+ *
+ * A row that cannot state which vehicle or which years it measures is not a
+ * weaker match; it is not a row. Quarantine is applied BEFORE matching so it
+ * cannot be reached by a tie-break.
+ */
+function catalogRowIsIntact(row) {
+  const model = String(row?.model || "");
+  if (!model.trim()) return false;
+  // Embedded tabs mean the spreadsheet column split failed and the whole line
+  // landed in one field.
+  if (/[\t\n\r]/.test(model)) return false;
+  const start = Number(row?.year_start);
+  const end = Number(row?.year_end);
+  // A year range is mandatory: it is the only thing that stops a 2017-2020
+  // record answering for a 2024 vehicle.
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+  if (start < 1950 || end > 2100 || end < start) return false;
+  // Sane numeric ranges on the four measured surfaces. A vehicle surface is
+  // between a foot and forty feet on its long edge.
+  for (const [a, b] of [
+    [row.side_width, row.side_height], [row.back_width, row.back_height],
+    [row.hood_width, row.hood_length], [row.roof_width, row.roof_length],
+  ]) {
+    const first = Number(a);
+    const second = Number(b);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) return false;
+    if (first <= 6 || second <= 6 || first > 480 || second > 480) return false;
+  }
+  return true;
+}
+
 function normalizeModelTokens(value) {
   const words = String(value || "")
     .toLowerCase()
@@ -190,10 +247,27 @@ function surfacesFromGenieCatalog(row, vehicleClass) {
   // assumes. FRONT is the one surface the catalog does not carry, so it is
   // derived from the measured rear width and hood depth and LABELLED derived;
   // it is never presented as a measured value.
-  const front = {
-    widthInches: rear.widthInches,
-    heightInches: Math.max(12, Math.round(hood.heightInches * 0.75 * 10) / 10),
+  const frontHeight = Math.max(12, Math.round(hood.heightInches * 0.75 * 10) / 10);
+  const front = { widthInches: rear.widthInches, heightInches: frontHeight };
+  // The derivation, stated so a reader can reproduce it from the row.
+  const frontDerivation = {
+    contract: FRONT_DERIVATION_CONTRACT,
+    authority: "derived",
+    surfaceKey: "front",
+    derivedFrom: {
+      backWidthIn: rear.widthInches,
+      hoodDepthIn: hood.heightInches,
+      catalogRowId: row.id || null,
+    },
+    rule: "widthInches = back long edge; heightInches = max(12, hood short edge x 0.75)",
+    trimWidthIn: front.widthInches,
+    trimHeightIn: front.heightInches,
+    operatorValidated: false,
   };
+  // A derivation that cannot produce a physically valid front is a failure, not
+  // a smaller number: fail closed and let an operator state the dimension.
+  if (!(front.widthInches > 12 && front.heightInches > 12
+    && front.widthInches <= 200 && front.heightInches <= 200)) return null;
   return {
     surfaces: {
       driver: side,
@@ -204,6 +278,7 @@ function surfacesFromGenieCatalog(row, vehicleClass) {
       rear,
     },
     derivedSurfaces: ["front"],
+    frontDerivation,
     mirroredSurfaces: ["passenger"],
     totalSqft: positiveNumber(row.total_sqft),
     vehicleClass,
@@ -220,15 +295,21 @@ async function findGenieCatalogSurfaces(sb, vehicle) {
   // failure must not take down an authoring run that could still proceed.
   if (error || !Array.isArray(rows) || !rows.length) return null;
 
-  const inYear = rows.filter((row) => {
-    const start = Number(row.year_start);
-    const end = Number(row.year_end);
-    if (!Number.isFinite(year)) return true;
-    if (!Number.isFinite(start) && !Number.isFinite(end)) return true;
-    if (Number.isFinite(start) && year < start) return false;
-    if (Number.isFinite(end) && year > end) return false;
-    return true;
-  });
+  // QUARANTINE FIRST. A malformed row may not participate in matching at all.
+  const intact = rows.filter(catalogRowIsIntact);
+  if (!intact.length) return null;
+
+  // YEAR IS MANDATORY, AND A MISS IS A MISS. (Trish 2026-08-27)
+  //
+  // This used to treat an unparseable year as "covers every year", and the
+  // caller below fell back to the WHOLE make when nothing matched the year --
+  // so a 2024 F-250 was one scoring point away from being cut to a 2017-2020
+  // record. A record that does not cover the customer's year is not a weaker
+  // match for that vehicle; it is a different vehicle.
+  if (!Number.isFinite(year)) return null;
+  const inYear = intact.filter((row) => (
+    year >= Number(row.year_start) && year <= Number(row.year_end)
+  ));
   // A ROW MISSING THREE OF ITS FOUR MEASURED SURFACES IS NOT A WEAKER MATCH --
   // IT IS NOT A MATCH.
   //
@@ -243,7 +324,8 @@ async function findGenieCatalogSurfaces(sb, vehicle) {
   //
   // Completeness is therefore a filter, applied before scoring, not something a
   // tie-break can lose.
-  const measured = (inYear.length ? inYear : rows).filter((row) => (
+  // ...and never widen back to the whole make. `inYear` only, or nothing.
+  const measured = inYear.filter((row) => (
     landscape(row.side_width, row.side_height)
     && landscape(row.back_width, row.back_height)
     && landscape(row.hood_width, row.hood_length)
@@ -271,6 +353,8 @@ async function findGenieCatalogSurfaces(sb, vehicle) {
   const mapped = surfacesFromGenieCatalog(best, vehicle.vehicleClass);
   if (!mapped) return null;
   return { row: best, ...mapped, matchedTokens: bestScore, modelTokenCount: modelTokens.length };
+  // NOTE: five surfaces here are `measured` and `front` is `derived`; the split
+  // is carried on the manifest by `derivedSurfaces` + `frontDerivation`.
 }
 
 function catalogDimensionRow(match, vehicle) {
@@ -313,6 +397,41 @@ function catalogDimensionRow(match, vehicle) {
       mirroredSurfaces: match.mirroredSurfaces,
     },
   };
+}
+
+/**
+ * ONE IMMUTABLE MANIFEST IDENTITY, BOUND TO EVERY CONSUMER. (Trish 2026-08-27)
+ *
+ * "The exact same immutable GENIE manifest must drive ATLAS container geometry
+ * -> master QC -> six deterministic panel crops -> 3D proof surface authority
+ * -> PanelPro -> RevisionStudioIQ -> ProductionFlow."
+ *
+ * The hash is taken over the six resolved surfaces plus the authority state, so
+ * two runs that resolved the same vehicle the same way share an id, and any
+ * change of dimension, source row or authority produces a different one. It is
+ * computed here, at the single resolver, because a manifest identity minted
+ * downstream would be an identity for the copy rather than the source.
+ */
+function stampGeometryResolution(row, resolution) {
+  const surfaces = {};
+  for (const surfaceKey of SURFACES) {
+    surfaces[surfaceKey] = expectedSurfacesFromRow(row)?.[surfaceKey] || null;
+  }
+  const material = JSON.stringify({
+    contract: "designpro.genie-manifest.v1",
+    state: resolution.state,
+    sourceRowId: resolution.geometrySourceRowId || null,
+    derivationContract: resolution.derivationContract || null,
+    surfaces,
+  });
+  const genieManifestHash = createHash("sha256").update(material, "utf8").digest("hex");
+  row.geometryResolution = {
+    contract: "designpro.genie-manifest.v1",
+    genieManifestId: genieManifestHash.slice(0, 32),
+    genieManifestHash,
+    ...resolution,
+  };
+  return row;
 }
 
 function validatedSurfaces(row) {
@@ -712,29 +831,108 @@ async function resolveFlatAtlasPreviewDimensions(sb, rawVehicle, provider) {
   const vehicle = normalizedVehicle(rawVehicle);
 
   // THE MEASURED CATALOG WINS. Owner directive 2026-08-27: "It should be using
-  // GENIE Panelizer database to get sizes for ATLAS." Everything below this is
-  // what happens when the catalog has never seen the vehicle.
-  const catalogMatch = await findGenieCatalogSurfaces(sb, vehicle).catch(() => null);
+  // GENIE Panelizer database to get sizes for ATLAS."
+  //
+  // ⛔ A LOOKUP FAILURE IS NOT A CATALOG MISS. It used to be
+  // `.catch(() => null)`, which made a broken query, a permission error and
+  // "this vehicle has never been measured" the same event -- and all three
+  // then produced a Gemini guess wearing the same shape as a measurement.
+  // A thrown error is now a thrown error.
+  const catalogMatch = await findGenieCatalogSurfaces(sb, vehicle);
   if (catalogMatch) {
-    return attachVehicleClassResolution(catalogDimensionRow(catalogMatch, vehicle), vehicle);
+    return stampGeometryResolution(
+      attachVehicleClassResolution(catalogDimensionRow(catalogMatch, vehicle), vehicle),
+      {
+        // Five measured surfaces and one formally derived front. It is not
+        // "measured" outright, because one of the six is not.
+        state: "derived",
+        measuredSurfaces: ["driver", "passenger", "hood", "roof", "rear"],
+        derivedSurfaces: catalogMatch.derivedSurfaces || ["front"],
+        derivationContract: FRONT_DERIVATION_CONTRACT,
+        frontDerivation: catalogMatch.frontDerivation || null,
+        geometrySourceRowId: catalogMatch.row?.id || null,
+        catalogModel: catalogMatch.row?.model || null,
+        catalogYearRange: catalogMatch.row?.year_range || null,
+        productionEligible: true,
+        operatorValidated: false,
+      },
+    );
   }
 
   const { data: rows, error } = await findCandidates(sb, vehicle);
   if (error) throw new UniversalDimensionError("genie_universal_cache_failed", error.message, true);
   if ((rows || []).length > 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", "Multiple universal GENIE candidates matched");
   if (rows?.length === 1) {
-    return attachVehicleClassResolution(
-      validatedSurfaces(rows[0]) || provisionalDimensionsFromCandidate(rows[0], vehicle.vehicleClass),
-      vehicle,
+    const validated = validatedSurfaces(rows[0]);
+    if (validated) {
+      // An operator measured this vehicle. That is the only thing in the system
+      // that outranks the catalog.
+      return stampGeometryResolution(attachVehicleClassResolution(validated, vehicle), {
+        state: "measured",
+        measuredSurfaces: [...SURFACES],
+        derivedSurfaces: [],
+        geometrySourceRowId: rows[0].id,
+        productionEligible: true,
+        operatorValidated: true,
+      });
+    }
+    return stampGeometryResolution(
+      attachVehicleClassResolution(
+        provisionalDimensionsFromCandidate(rows[0], vehicle.vehicleClass), vehicle,
+      ),
+      {
+        state: "provisional",
+        productionEligible: false,
+        operatorValidated: false,
+        reason: "cached_grounded_candidate_awaiting_operator_validation",
+        geometrySourceRowId: rows[0].id,
+      },
     );
   }
 
+  // ⛔ FAIL CLOSED ON A YEAR / CONFIGURATION MISS. (Trish 2026-08-27, locked)
+  //
+  // "Do not silently fall back to Gemini for production geometry. That is what
+  // created the 122\" front and poisoned the panel chain."
+  //
+  // Measured, on the owner's own vehicle: a 2024 Ford F-250 has NO row in the
+  // catalog -- the newest Super Duty ends at 2020 -- so the year-eligible pool
+  // was a Bronco and a Transit 250 van. Scoring `F-250` against `transit 250`
+  // shares the token `250`, one point below the threshold. A single point
+  // stood between that truck's six panels and a cargo van's dimensions.
+  // Behind it, the estimator produced a 132.4" front on a truck whose front is
+  // about eighty inches wide, and every panel downstream inherited it.
+  //
+  // The estimator is still allowed to describe a PREVIEW, but it may never
+  // present itself as authority: the caller receives `unresolved` with the
+  // grounded candidate attached, marks the geometry provisional and
+  // production-ineligible, and PanelPro shows that plainly. Production unlocks
+  // on an operator validation or a real catalog row, never on a guess.
+  if (!provider) {
+    throw new UniversalDimensionError(
+      "genie_dimensions_unresolved",
+      `GENIE has no authoritative row covering ${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+      false,
+    );
+  }
   const grounded = await groundedCandidate(vehicle, provider);
   const row = await insertOrReadGroundedCandidate(sb, vehicle, grounded);
-  return attachVehicleClassResolution(
-    validatedSurfaces(row) || provisionalDimensionsFromCandidate(row, vehicle.vehicleClass),
+  const validated = validatedSurfaces(row);
+  if (validated) return attachVehicleClassResolution(validated, vehicle);
+  const provisional = attachVehicleClassResolution(
+    provisionalDimensionsFromCandidate(row, vehicle.vehicleClass),
     vehicle,
   );
+  // The state travels WITH the geometry, so no downstream stage has to infer it
+  // from the shape of the object.
+  return stampGeometryResolution(provisional, {
+    state: "unresolved",
+    productionEligible: false,
+    operatorValidated: false,
+    reason: "no_authoritative_genie_row_for_year_and_configuration",
+    vehicle: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+    geometrySourceRowId: row.id,
+  });
 }
 
 async function resolveOrQueueUniversalDimensions(sb, rawVehicle, stage, runId, provider) {
@@ -802,6 +1000,7 @@ module.exports = {
   normalizeModelTokens,
   PROOF_GEOMETRY_CONTRACT,
   PROVISIONAL_ESTIMATOR_CONTRACT,
+  FRONT_DERIVATION_CONTRACT,
   SURFACES,
   UniversalDimensionError,
   expectedSurfacesFromRow,
@@ -817,5 +1016,7 @@ module.exports = {
     parseGroundedJson,
     provisionalDimensionsFromCandidate,
     validatedSurfaces,
+    catalogRowIsIntact,
+    stampGeometryResolution,
   },
 };

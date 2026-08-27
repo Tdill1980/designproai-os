@@ -81,16 +81,64 @@ test("one coincidental token is not a match", async () => {
   assert.equal(match, null, "sharing only the word 'van' must not resolve a size");
 });
 
-test("a year outside every range still resolves rather than blocking the run", async () => {
+/**
+ * ⛔ A YEAR MISS IS A MISS. THE OPPOSITE OF WHAT THIS ONCE ASSERTED.
+ *
+ * This test used to require that a year outside every range fall back to the
+ * whole make/model pool "rather than blocking the run". The owner reversed that
+ * on 2026-08-27, on measured evidence: a 2024 Ford F-250 has NO row in the
+ * catalog -- the newest Super Duty ends at 2020 -- so the year-eligible pool
+ * was a Bronco and a `transit 250` van. Scoring `F-250` against `transit 250`
+ * shares the token `250`, one point under the threshold. A single point stood
+ * between that truck's six panels and a cargo van's dimensions, and behind it
+ * the estimator produced a 132.4" front on a truck whose front is ~80".
+ *
+ * "Do not silently fall back to Gemini for production geometry. That is what
+ * created the 122" front and poisoned the panel chain."
+ */
+test("a year outside every range is a miss, never a widened search", async () => {
   const match = await findGenieCatalogSurfaces(stub([F250]), {
     make: "Ford", model: "F250 Crew Cab", year: 2023, vehicleClass: "truck",
   });
-  assert.ok(match, "no in-year row must fall back to the make/model pool, not to nothing");
+  assert.equal(match, null, "a 2017-2020 record may not answer for a 2023 vehicle");
 });
 
+test("a vehicle with no stated year cannot match any row", async () => {
+  assert.equal(await findGenieCatalogSurfaces(stub([F250]), {
+    make: "Ford", model: "F250 Crew Cab", year: null, vehicleClass: "truck",
+  }), null);
+});
+
+/**
+ * A LOOKUP FAILURE IS NOT A CATALOG MISS -- and it used to be indistinguishable
+ * from one, because the caller wrapped this in `.catch(() => null)`. A broken
+ * query, a permission error and "never measured" all produced a Gemini guess
+ * wearing the shape of a measurement. The read error still surfaces as no match
+ * HERE, but the caller no longer swallows a throw.
+ */
 test("a catalog read failure never takes the run down", async () => {
   const broken = { from: () => ({ select: () => ({ ilike: () => ({ limit: async () => ({ data: null, error: { message: "boom" } }) }) }) }) };
-  assert.equal(await findGenieCatalogSurfaces(broken, { make: "Ford", model: "F250 Crew Cab", year: 2023, vehicleClass: "truck" }), null);
+  assert.equal(await findGenieCatalogSurfaces(broken, { make: "Ford", model: "F250 Crew Cab", year: 2019, vehicleClass: "truck" }), null);
+});
+
+/**
+ * THE FOUR CORRUPT ROWS, AND WHY THEY ARE QUARANTINED BEFORE MATCHING.
+ *
+ * Live: four Ford rows carry an entire TSV line in `model` with every dimension
+ * column and both year columns NULL. Null years passed the year filter, so a
+ * 2024 lookup drew them into the candidate pool.
+ */
+test("a row with a TSV line in its model never participates in matching", async () => {
+  const corrupt = {
+    id: "row-corrupt", make: "Ford",
+    model: "F250 SuperCrew 5'5 box\t2018-2020\t227.1\t57.0\t102.0",
+    year_range: null, year_start: null, year_end: null,
+    side_width: null, side_height: null, back_width: null, back_height: null,
+    hood_width: null, hood_length: null, roof_width: null, roof_length: null,
+  };
+  assert.equal(await findGenieCatalogSurfaces(stub([corrupt]), {
+    make: "Ford", model: "F250 Crew Cab", year: 2019, vehicleClass: "truck",
+  }), null);
 });
 
 test("model tokens normalise shop punctuation away", () => {

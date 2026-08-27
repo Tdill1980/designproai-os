@@ -100,13 +100,19 @@ const MASTER_PROVIDER_CONTRACT = "designpro.flat-first-master-provider.v1";
 const TOPOLOGY = "rectangular-preview-v1";
 const EXAMPLE_PURPOSE = "topology-only";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
-// THE OWNER'S SHEET ORDER (A.T.L.A.S. FLATTENED - TOPO TOP VIEW, 2026-08-27):
-// the centre column reads ROOF, HOOD, FRONT, REAR from the top. It was
-// rear/roof/hood/front, which is a physical front-to-back unroll -- correct as
-// geometry, and not what the spec draws. The panels follow `manifest.zones`, so
-// this constant IS the layout; changing it moves every centre rect, which moves
-// the manifest hash, which is what stops an old master being reused against it.
-const CENTER_ORDER = Object.freeze(["roof", "hood", "front", "rear"]);
+// ⛔ DO NOT REORDER THIS AGAIN. (Trish 2026-08-27, after it was reordered.)
+//
+// rear -> roof -> hood -> front is the layout that produced every good master
+// this product has made -- Flamingo Pools, Harbor Point. It was briefly changed
+// to roof/hood/front/rear to match the ordering drawn in an example sheet, and
+// the owner's verdict on the result was immediate: "you have the ATLAS
+// container showing the WRONG incorrect flattened design... you almost had it
+// right yesterday. All you were supposed to do was name the containers."
+//
+// The container ORDER is the flattened vehicle. The container NAMES are what
+// Gemini needed. Those are different problems, and only the second one was
+// ever open.
+const CENTER_ORDER = Object.freeze(["rear", "roof", "hood", "front"]);
 const PROOF_VIEWS = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
 /**
  * THE ORDER PANELS ARE CUT IN, WHICH IS NOT `SURFACE_KEYS`.
@@ -508,7 +514,7 @@ function buildAtlasManifest(surfaces, geometryAuthorityInput) {
       passenger: "left",
       driver: "right",
       centerOrderTopToBottom: [...CENTER_ORDER],
-      longitudinalOrder: "topo-top-view-roof-hood-front-rear",
+      longitudinalOrder: "vehicle-rear-to-front",
     },
     seamContinuity: {
       mode: "semantic-preview-only",
@@ -616,7 +622,6 @@ const SURFACE_IDS = Object.freeze({
   rear: "RR",
 });
 
-const TOPO_TITLE = "A.T.L.A.S. FLATTENED — TOPO TOP VIEW";
 
 /**
  * THE CONTAINERS ARE LABELED INSIDE THEIR OWN STRUCTURAL MARGIN.
@@ -646,103 +651,49 @@ const TOPO_TITLE = "A.T.L.A.S. FLATTENED — TOPO TOP VIEW";
 const LABEL_REACH = 0.7;
 
 /**
- * WHERE A LEGIBLE CAPTION CAN ACTUALLY GO.
+ * NAME THE CONTAINERS. THAT WAS THE WHOLE TASK. (Trish 2026-08-27)
  *
- * The sheet draws its captions inside a generous structural border. Real GENIE
- * geometry has no such border: 5" of bleed on a 251" flank is 2% of the
- * container, about 70px on the 4096 canvas -- four stacked lines would render
- * at 10px, which is not a label, it is a smudge.
+ * Owner, pointing at the bundled Houdini PANEL LAYOUT: "All you were supposed
+ * to do was name the containers so Gemini could understand what the flattened
+ * topo panels are. Like Lamborghini, like truck -- except truck didn't have
+ * labels so impossible to understand, no truck bed and what was what."
  *
- * The room that does exist is the vertical gutter beside each container: the
- * canvas margin outside the flanks, and the channel between the passenger
- * column and the centre stack. Those are 230-270px wide, which carries the
- * sheet's own four lines UPRIGHT at ~28px. So the caption sits there, level
- * with the container it names, in the sheet's blue.
+ * The Houdini sheet prints REAR BUMPER, HATCH, PASSENGER, DRIVER, ROOF, HOOD,
+ * FRONT BUMPER on the panels themselves. Ours handed the model six unnamed grey
+ * rectangles, so it had to infer which was which -- and on a truck it inferred
+ * wrong, because nothing told it there was a bed.
  *
- * It is outside every container, so it is outside every printable region by
- * construction, and `normalizeAtlasMaster` masks it away before a master
- * exists.
+ * So the name goes ON its container, exactly as the reference does it, in the
+ * BLEED BAND at the top: inside the container, outside `zone.trim`. That band
+ * is 5" of bleed -- about 70px on the 4096 canvas -- which carries one word at
+ * ~48px, and it is trimmed off every panel by construction.
+ *
+ * This is the ONE thing that was open. The container ORDER was already right
+ * and is not touched: see CENTER_ORDER.
  */
-function labelGutters(manifest) {
-  const byKey = new Map(manifest.zones.map((zone) => [zone.surfaceKey, zone]));
-  const passenger = byKey.get("passenger");
-  const driver = byKey.get("driver");
-  const centreLeft = Math.min(...CENTER_ORDER.map((key) => byKey.get(key).x));
-  const span = (left, right) => ({
-    x: Math.round((left + right) / 2),
-    width: Math.max(0, right - left),
-  });
-  return {
-    passenger: span(0, passenger.x),
-    centre: span(passenger.x + passenger.w, centreLeft),
-    driver: span(driver.x + driver.w, CANVAS.widthPx),
-  };
-}
 
-/** The sheet's four caption lines, in its own wording. */
-function containerCaptionLines(zone) {
-  const id = SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase();
-  return [
-    (SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey)).toUpperCase(),
-    `Surface ID: ${id}`,
-    `W: ${zone.w} px`,
-    `H: ${zone.h} px`,
-  ];
-}
-
-/**
- * Upright, stacked, level with its container. Type is sized so the longest
- * line fits the gutter with margin to spare -- Arial averages about 0.58em per
- * character at these weights, and the 0.9 factor is the safety on that.
- */
-function containerLabelSvg(zone, gutter) {
-  const lines = containerCaptionLines(zone);
-  const longest = Math.max(...lines.map((line) => line.length));
-  // Bold caps plus letter-spacing run about 0.72em per character -- measured,
-  // after 0.58 let "PASSENGER SIDE" overrun the canvas edge. The 0.86 keeps a
-  // margin on top of that.
-  const size = Math.max(9, Math.min(34, Math.floor((gutter.width * 0.86) / (longest * 0.72))));
-  const leading = Math.round(size * 1.45);
-  const centreY = Math.round(zone.y + zone.h / 2);
-  const top = centreY - Math.round((leading * (lines.length - 1)) / 2);
-  return lines.map((line, index) => {
-    const y = top + leading * index;
-    const fontSize = index === 0 ? size : Math.round(size * 0.82);
-    const weight = index === 0 ? 800 : 500;
-    const fill = index === 0 ? "#4a7dff" : "#c7d0dd";
-    return `<text x="${gutter.x}" y="${y}" text-anchor="middle" `
-      + `dominant-baseline="central" fill="${fill}" `
-      + `font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="${weight}" `
-      + `letter-spacing="1">${line}</text>`;
-  }).join("");
+function containerLabelSvg(zone) {
+  const trim = zone.trim || zone;
+  const band = Math.max(0, Number(trim.y) - Number(zone.y));
+  if (band < 14) return "";
+  const name = (SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey)).toUpperCase();
+  const size = Math.max(11, Math.min(56, Math.floor(band * 0.62)));
+  const centreX = Math.round(Number(zone.x) + Number(zone.w) / 2);
+  const y = Math.round(Number(zone.y) + band / 2);
+  return `<text x="${centreX}" y="${y}" text-anchor="middle" `
+    + `dominant-baseline="central" fill="#1a1a1a" `
+    + `font-family="Arial,sans-serif" font-size="${size}" font-weight="700" `
+    + `letter-spacing="${Math.max(1, Math.round(size * 0.06))}">${name}</text>`;
 }
 
 /**
  * The sheet's bands: what this artifact IS, and that it is not printable.
  * Both sit in the canvas margin, outside every container.
  */
-function guideBandsSvg(manifest) {
-  const centreX = Math.round(CANVAS.widthPx / 2);
-  const band = (y, size, fill, weight, text) => `<text x="${centreX}" y="${y}" `
-    + `text-anchor="middle" dominant-baseline="central" fill="${fill}" `
-    + `font-family="Arial,sans-serif" font-size="${size}" font-weight="${weight}" `
-    + `letter-spacing="3">${text}</text>`;
-  const lowest = Math.max(...manifest.zones.map((zone) => zone.y + zone.h));
-  const footerY = Math.min(CANVAS.heightPx - 30, Math.round((lowest + CANVAS.heightPx) / 2));
-  return band(58, 46, "#ffffff", 800, TOPO_TITLE)
-    + band(112, 30, "#9aa4b2", 600, "SINGLE SOURCE MASTER · SIX DETERMINISTIC PANELS · 1:1 TOPOLOGY")
-    + band(footerY, 26, "#9aa4b2", 600,
-      `ATLAS MASTER SHELL · ${CANVAS.widthPx} x ${CANVAS.heightPx} px · TOPOLOGY VIEW · NOT PRINTABLE`);
-}
 
-/** Every caption and band on the sheet. Shared by both guides. */
+/** The container names. Shared by both guides. */
 function guideLabelsSvg(manifest) {
-  const gutters = labelGutters(manifest);
-  const gutterFor = (surfaceKey) => (surfaceKey === "passenger" ? gutters.passenger
-    : surfaceKey === "driver" ? gutters.driver
-    : gutters.centre);
-  return guideBandsSvg(manifest)
-    + manifest.zones.map((zone) => containerLabelSvg(zone, gutterFor(zone.surfaceKey))).join("");
+  return manifest.zones.map(containerLabelSvg).join("");
 }
 
 /**
@@ -753,46 +704,6 @@ function guideLabelsSvg(manifest) {
  * grid the sheet draws. Structural, non-printable, and painted UNDER
  * everything so it can never be mistaken for artwork.
  */
-function topologyUnderlaySvg(manifest) {
-  const zones = new Map(manifest.zones.map((zone) => [zone.surfaceKey, zone]));
-  const passenger = zones.get("passenger");
-  const driver = zones.get("driver");
-  const left = passenger.x;
-  const right = driver.x + driver.w;
-  const top = Math.min(...manifest.zones.map((zone) => zone.y));
-  const bottom = Math.max(...manifest.zones.map((zone) => zone.y + zone.h));
-  const width = right - left;
-  const height = bottom - top;
-  // A plan-view body: nose rounded, cabin waisted, tail squared -- drawn from
-  // the extents so it tracks whatever GENIE resolved for this vehicle.
-  const noseY = top + height * 0.06;
-  const tailY = bottom - height * 0.04;
-  const inset = width * 0.06;
-  const body = [
-    `M ${left + inset} ${noseY + height * 0.06}`,
-    `Q ${left + inset} ${noseY} ${left + inset + width * 0.12} ${noseY}`,
-    `L ${right - inset - width * 0.12} ${noseY}`,
-    `Q ${right - inset} ${noseY} ${right - inset} ${noseY + height * 0.06}`,
-    `L ${right - inset} ${tailY - height * 0.03}`,
-    `Q ${right - inset} ${tailY} ${right - inset - width * 0.08} ${tailY}`,
-    `L ${left + inset + width * 0.08} ${tailY}`,
-    `Q ${left + inset} ${tailY} ${left + inset} ${tailY - height * 0.03}`,
-    "Z",
-  ].join(" ");
-  const cabin = `<rect x="${Math.round(left + width * 0.2)}" y="${Math.round(top + height * 0.22)}" `
-    + `width="${Math.round(width * 0.6)}" height="${Math.round(height * 0.42)}" rx="${Math.round(width * 0.05)}" `
-    + `fill="none" stroke="#4a5563" stroke-width="5"/>`;
-  const gridStep = 128;
-  const lines = [];
-  for (let x = gridStep; x < CANVAS.widthPx; x += gridStep) {
-    lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${CANVAS.heightPx}"/>`);
-  }
-  for (let y = gridStep; y < CANVAS.heightPx; y += gridStep) {
-    lines.push(`<line x1="0" y1="${y}" x2="${CANVAS.widthPx}" y2="${y}"/>`);
-  }
-  return `<g stroke="#242a33" stroke-width="2">${lines.join("")}</g>`
-    + `<path d="${body}" fill="#1b222c" stroke="#4a5563" stroke-width="6"/>${cabin}`;
-}
 
 /**
  * The geometry both guides share. Rectangles, fills, strokes -- the zone
@@ -808,7 +719,7 @@ function guideGeometrySvg(manifest) {
     return `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="10" `
       + `fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
       + `<rect x="${trim.x}" y="${trim.y}" width="${trim.w}" height="${trim.h}" `
-      + `fill="none" stroke="#1f4fd8" stroke-width="5" stroke-dasharray="26 18"/>`;
+      + `fill="none" stroke="#9a9a9a" stroke-width="5" stroke-dasharray="26 18"/>`;
   }).join("");
 }
 
@@ -853,7 +764,6 @@ function guideGeometrySvg(manifest) {
 function authoringGuideSvg(manifest) {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
-    ${topologyUnderlaySvg(manifest)}
     ${guideGeometrySvg(manifest)}
     ${guideLabelsSvg(manifest)}
   </svg>`);
@@ -864,9 +774,7 @@ function guideSvg(manifest) {
   const zoneLabels = manifest.zones.map(zoneLabelSvg).join("");
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
-    ${topologyUnderlaySvg(manifest)}
     ${guideGeometrySvg(manifest)}
-    ${guideLabelsSvg(manifest)}
     ${zoneLabels}
     <text x="2048" y="4050" text-anchor="middle" fill="#d9d9d9" font-family="Arial,sans-serif" font-size="25">TOPOLOGY GUIDE ONLY · GRAYS AND LABELS MUST NOT APPEAR IN ARTWORK</text>
   </svg>`);
@@ -1157,6 +1065,20 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
   const lineageHash = HASH_RE.test(String(canonicalMasterHash || ""))
     ? String(canonicalMasterHash)
     : surfaceSourceHash;
+  // FAIL CLOSED IF THE MANIFEST IDENTITY IS ABSENT. (Trish 2026-08-27, locked)
+  //
+  // "Fail closed if those provenance fields are absent." A panel that cannot
+  // name the GENIE manifest its container was built from cannot be proven to
+  // share geometry with its own proof, and an unprovable panel is exactly the
+  // artifact this whole chain exists to make impossible. Cutting six of them
+  // and discovering it at the board is the expensive order to find out.
+  const geometry = manifest?.geometryResolution || null;
+  if (!geometry || !HASH_RE.test(String(geometry.genieManifestHash || ""))) {
+    throw new FlatAtlasError(
+      "flat_atlas_geometry_manifest_identity_missing",
+      "Call-1 panels require the GENIE manifest identity that built their containers",
+    );
+  }
   // SEQUENTIAL, IN THE OWNER'S ORDER, RELEASING EACH PANEL AS IT LANDS.
   //
   // This was `Promise.all(SURFACE_KEYS.map(...))`. Six concurrent 4096x4096
@@ -1247,6 +1169,33 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
       geometryPurpose: "calls-1-7-layout-only",
       sourceMasterHash: lineageHash,
       surfaceSourceHash,
+      // ── PROVENANCE. PANELPRO MUST BE ABLE TO PROVE WHAT MADE THIS PANEL. ──
+      //
+      // Owner, 2026-08-27: "`method` is NULL. `deterministic` is NULL... those
+      // fields being null means PanelPro cannot currently prove what produced
+      // those panel artifacts." They were never written, so every panel on the
+      // board was unattributable -- indistinguishable from an AI re-render.
+      //
+      // A Call-1 panel is a `sharp.extract` of the accepted master and nothing
+      // else, so it is deterministic by construction and says so. The GENIE
+      // identity that built the container is carried through unchanged, which
+      // is what makes "the same manifest drove the container and the crop" a
+      // checkable fact rather than an assumption.
+      method: "deterministic_atlas_crop",
+      deterministic: true,
+      genieManifestId: geometry.genieManifestId,
+      genieManifestHash: geometry.genieManifestHash,
+      // NAMED `geometryAuthorityState`, not `geometryAuthority`. The manifest
+      // already publishes `geometryAuthority` as an OBJECT (contract, status,
+      // candidateId, operatorValidated...), and `viewAuthorityFor` reads
+      // `.status` off it. A string of the same name on the panel shadowed that
+      // object downstream and turned a validated authority into "derived".
+      geometryAuthorityState: geometry.state,
+      geometrySourceRowId: geometry.geometrySourceRowId,
+      derivationContract: geometry.derivedSurfaces?.includes(surfaceKey)
+        ? geometry.derivationContract
+        : null,
+      productionEligible: geometry.productionEligible === true,
     });
   }
 }
@@ -1951,7 +1900,7 @@ function assertAtlasReuseContract(atlas, {
 async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
-    claimToken, input, surfaces, geometryAuthority, topologyExamples = [],
+    claimToken, input, surfaces, geometryAuthority, geometryResolution = null, topologyExamples = [],
     // panel.ready(surfaceKey). Called with that surface's identity and
     // dimensions the moment its panel exists, before the next cut starts, so a
     // consumer can publish it and release its 3D proof without waiting for the
@@ -1979,6 +1928,9 @@ async function generateOrReuseFlatAtlas(options) {
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
   const manifest = buildAtlasManifest(surfaces, geometryAuthority);
+  // The resolver's manifest identity rides on the built manifest, so
+  // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
+  if (geometryResolution) manifest.geometryResolution = geometryResolution;
 
   // VISIONBOARDIQ RUNS BEFORE THE DESIGN CALL, AND ITS RESULT GOES INTO IT.
   //

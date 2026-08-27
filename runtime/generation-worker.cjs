@@ -813,6 +813,11 @@ function createGenerationWorker({
           input: executionInput,
           surfaces: expectedSurfacesFromRow(dimensionRow),
           geometryAuthority: dimensionRow.proofGeometryAuthority,
+          // ONE MANIFEST IDENTITY, FROM THE SINGLE RESOLVER, ALL THE WAY DOWN.
+          // The containers, the crops, the proof surface authority and both
+          // UIs must all be able to name the same GENIE manifest -- so it
+          // travels with the geometry rather than being re-derived per stage.
+          geometryResolution: dimensionRow.geometryResolution,
           topologyExamples,
           artboardQualityExamples,
           logger: (line) => console.log(`[DESIGNPRO-OS] flat-first ${requestId}: ${line}`),
