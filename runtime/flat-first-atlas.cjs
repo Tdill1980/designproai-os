@@ -650,12 +650,21 @@ function labelGutters(manifest) {
  */
 const LABEL_REACH = 0.7;
 
+/**
+ * Each line gets its own offset, CLAMPED so that `offset + ceil(size * REACH)`
+ * is strictly inside the slot -- for every slot, including one too narrow for
+ * the sizes we would prefer. A minimum type size with no clamp is what broke
+ * this the first time: the floor kept the glyph big while the slot shrank, and
+ * the two stopped being related.
+ */
 function fittedLabelType(slot) {
-  const primary = Math.max(16, Math.min(40, Math.floor(slot * 0.55)));
-  return {
-    offset: Math.round(slot * 0.45),
-    sizes: [primary, Math.max(14, Math.round(primary * 0.75))],
-  };
+  const primary = Math.max(8, Math.min(40, Math.floor(slot * 0.55)));
+  const sizes = [primary, Math.max(8, Math.round(primary * 0.75))];
+  const offsets = sizes.map((size) => Math.max(
+    0,
+    Math.min(Math.round(slot * 0.45), slot - Math.ceil(size * LABEL_REACH) - 1),
+  ));
+  return { offsets, sizes };
 }
 
 /**
@@ -685,10 +694,10 @@ function guideLabelsSvg(manifest) {
     const gutter = zone.surfaceKey === "passenger" ? gutters.passenger
       : zone.surfaceKey === "driver" ? gutters.driver
       : gutters.centre;
-    const { offset, sizes } = fittedLabelType(gutter.slot);
+    const { offsets, sizes } = fittedLabelType(gutter.slot);
     const y = Math.round(zone.y + zone.h / 2);
     return containerCaptionLines(zone).map((line, index) => {
-      const x = gutter.x + (index === 0 ? -offset : offset);
+      const x = gutter.x + (index === 0 ? -offsets[index] : offsets[index]);
       const fontSize = sizes[index];
       return `<text x="${x}" y="${y}" transform="rotate(-90 ${x} ${y})" `
         + `text-anchor="middle" dominant-baseline="central" fill="#d9d9d9" `
@@ -798,14 +807,29 @@ async function renderAtlasAuthoringGuide(manifest) {
   // is bounded by the font size; the anchor plus that pad is checked against
   // all six rectangles.
   const markup = svg.toString("utf8");
-  const anchors = [...markup.matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"[^>]*?(?:font-size="(\d+)")?[^>]*>/g)]
-    .map((match) => ({
-      x: Number(match[1]),
-      y: Number(match[2]),
+  // READ THE WHOLE TAG, THEN PULL THE THREE ATTRIBUTES OUT OF IT.
+  //
+  // The first version tried to do it in one expression, with an OPTIONAL
+  // font-size group behind a lazy `[^>]*?`. A regex engine satisfies that by
+  // leaving the optional group unmatched, so the size never captured and every
+  // label was padded as if it were the largest type on the sheet. On a layout
+  // whose gutters are narrower than the fixture's, that over-pad reached into
+  // the neighbouring container and refused a run that was correctly laid out
+  // (live, 2026-08-27).
+  const anchors = [...markup.matchAll(/<text\s[^>]*>/g)].map(([tag]) => {
+    const attribute = (name) => {
+      const found = tag.match(new RegExp(`\\b${name}="(-?\\d+(?:\\.\\d+)?)"`));
+      return found ? Number(found[1]) : null;
+    };
+    const size = attribute("font-size");
+    return {
+      x: attribute("x"),
+      y: attribute("y"),
       // No declared size means an inherited one, which cannot be bounded from
       // the markup -- assume the largest glyph the sheet ever draws.
-      pad: Math.ceil((Number(match[3]) || 40) * LABEL_REACH),
-    }));
+      pad: Math.ceil((size || 40) * LABEL_REACH),
+    };
+  }).filter((anchor) => anchor.x !== null && anchor.y !== null);
   const glyphCount = (markup.match(/<text\b/gi) || []).length;
   if (anchors.length !== glyphCount) {
     throw new FlatAtlasError(

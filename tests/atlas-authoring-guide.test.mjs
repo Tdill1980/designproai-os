@@ -181,6 +181,40 @@ test("a glyph put back INSIDE a container fails the run instead of authoring", a
   );
 });
 
+/**
+ * THE GUTTERS ARE NOT A FIXED WIDTH, AND THE GUARD MUST MEASURE, NOT ASSUME.
+ *
+ * Two live refusals came out of this, both on correctly laid-out sheets. The
+ * first sized the captions for one vehicle's proportions: a 190x66 side leaves
+ * 74px between the passenger column and the centre stack where a 251x60 side
+ * leaves 115px. The second was subtler -- the guard read each label's pad from
+ * an OPTIONAL font-size capture sitting behind a lazy `[^>]*?`, which a regex
+ * engine satisfies by leaving unmatched, so every caption was padded as the
+ * largest type on the sheet however small it actually was.
+ *
+ * So this walks a spread of real vehicle proportions, wide flanks to narrow,
+ * and asserts the sheet renders for all of them.
+ */
+test("captions fit the gutter on every vehicle proportion, not just the fixture's", async () => {
+  const build = (rows) => flatFirst.buildAtlasManifest(rows.map(([surfaceKey, widthInches, heightInches]) => ({
+    surfaceKey, widthInches, heightInches, bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+  })), null);
+  const proportions = {
+    "long flanks, small centre": [["driver", 300, 40], ["passenger", 300, 40], ["hood", 40, 40], ["roof", 40, 40], ["front", 40, 30], ["rear", 40, 40]],
+    "short flanks, wide centre": [["driver", 120, 50], ["passenger", 120, 50], ["hood", 95, 90], ["roof", 95, 120], ["front", 95, 60], ["rear", 95, 70]],
+    "the 190x66 van": [["driver", 190, 66], ["passenger", 190, 66], ["hood", 68, 62], ["roof", 76, 96], ["front", 84, 34], ["rear", 82, 48]],
+    "the 251x60 F-250": [["driver", 251, 60], ["passenger", 251, 60], ["hood", 70, 60], ["roof", 80, 60], ["front", 70, 50], ["rear", 70, 60]],
+  };
+  for (const [name, rows] of Object.entries(proportions)) {
+    await flatFirst.renderAtlasAuthoringGuide(build(rows));
+    // And the pad the guard uses must come from the label's OWN declared size.
+    const svg = flatFirst._test.authoringGuideSvg(build(rows)).toString("utf8");
+    const sizes = [...svg.matchAll(/<text\s[^>]*font-size="(\d+)"/g)].map((m) => Number(m[1]));
+    assert.equal(sizes.length, (svg.match(/<text\b/gi) || []).length,
+      `${name}: every label must declare a font-size the guard can read`);
+  }
+});
+
 test("a label whose position cannot be read is refused rather than trusted", async () => {
   // The positional guard is only as good as its ability to LOCATE every glyph.
   // A text node that declares no x/y anchor -- or declares them in another
