@@ -36,6 +36,7 @@ const {
   createAtlasMasterValidator,
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
+const { MIRROR_CONTRACT, mirrorPassengerFromDriver } = require("./atlas-passenger-mirror.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -1667,6 +1668,7 @@ async function generateOrReuseFlatAtlas(options) {
   let masterDelivery = null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
+  let passengerComposed = null;
   const edgeProvenance = [];
   let correctiveNote = "";
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
@@ -1710,6 +1712,77 @@ async function generateOrReuseFlatAtlas(options) {
       masterCutoutSurfaces = masterQc.cutout.surfaces.map(String);
       masterCutoutFindings = (masterQc.cutout.findings || []).map(String);
       break;
+    }
+
+    // COMPOSE THE PASSENGER FLANK BEFORE YOU RE-ROLL. (Owner directive
+    // 2026-08-27: "STOP RELYING ON GEMINI TO SOLVE PRODUCTION LETTERING
+    // ORIENTATION.")
+    //
+    // Four canaries on one vehicle refused with the same two findings —
+    // cad013e1 verbatim: "The passenger side text 'FLAMINGO POOLS' is not
+    // forward-reading. The passenger side flamingo is facing the same
+    // direction..." — i.e. the model drew the passenger flank as a SECOND
+    // independent composition and got its lettering backward. Prompting did
+    // not move it, and the QC was right to refuse every attempt.
+    //
+    // So the flank is COMPOSED, not requested: the driver zone flopped onto
+    // the passenger zone, with the review's measured lettering bands re-dropped
+    // un-flipped so words read forward on both sides. That drives
+    // passengerMirrorMae to ~0 and leaves exactly the localized divergence the
+    // trimmed mean was built to absorb.
+    //
+    // It invents nothing: every passenger pixel is a rearrangement of driver
+    // pixels this same creative call authored, under one A.T.L.A.S. revision.
+    // It costs no authoring attempt — the judgement that follows decides that.
+    const mirrorFailed = masterQc?.review?.passengerMirrorContract === "fail"
+      || masterQc?.review?.brandTextContract === "fail";
+    const measuredBands = Array.isArray(masterQc?.brandBands) ? masterQc.brandBands : [];
+    if (verdictBound && mirrorFailed) {
+      const mirrored = await mirrorPassengerFromDriver({
+        masterBytes, manifest, brandBands: measuredBands,
+      }).catch((error) => {
+        logger?.warn?.("flat_atlas_passenger_compose_failed", { message: error?.message });
+        return null;
+      });
+      if (mirrored?.bytes) {
+        const composedHash = sha256(mirrored.bytes);
+        const composedQc = await validateMaster({
+          masterBytes: mirrored.bytes, guideBytes, manifest, input,
+        });
+        const composedBound = composedQc?.metadata?.contract === MASTER_QC_CONTRACT
+          && composedQc.metadata.masterHash === composedHash
+          && composedQc.metadata.guideHash === guideHash;
+        if (composedQc?.accepted === true && composedBound) {
+          // The composed flank IS the master from here: it is what the panels
+          // are cut from and what the proofs are conditioned on, so it must be
+          // the persisted lineage identity too.
+          masterBytes = mirrored.bytes;
+          masterHash = composedHash;
+          masterQc = composedQc;
+          passengerComposed = {
+            contract: MIRROR_CONTRACT,
+            bandsApplied: mirrored.bandsApplied,
+            rotation: mirrored.rotation,
+            attempt,
+          };
+          logger?.info?.("flat_atlas_passenger_flank_composed", passengerComposed);
+          break;
+        }
+        if (composedBound) {
+          // Still refused, but on whatever remains — carry the composed verdict
+          // so the corrective note describes the sheet as it now stands.
+          masterBytes = mirrored.bytes;
+          masterHash = composedHash;
+          masterQc = composedQc;
+          passengerComposed = {
+            contract: MIRROR_CONTRACT,
+            bandsApplied: mirrored.bandsApplied,
+            rotation: mirrored.rotation,
+            attempt,
+            accepted: false,
+          };
+        }
+      }
     }
 
     // REPAIR BEFORE YOU RE-ROLL. (Owner directive 2026-08-27.)
@@ -1921,6 +1994,7 @@ async function generateOrReuseFlatAtlas(options) {
       // still must not print until a human has seen them on a template.
       masterCutoutSurfaces,
       masterCutoutFindings,
+      passengerComposed,
       // What the six panels were actually cut from. Equal to canonicalMasterHash
       // on a clean master; on a filled one it addresses the duplicate, so the
       // panel bytes are traceable to their source rather than silently differing

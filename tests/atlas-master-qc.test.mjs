@@ -61,6 +61,7 @@ function passingReview(body) {
     artifactFreeContract: "pass",
     confidence: 0.98,
     reasons: [],
+    driverBrandBands: [],
   };
 }
 
@@ -137,6 +138,7 @@ test("master QC parser is identity-bound and rejects extra fields", () => {
     artifactFreeContract: "pass",
     confidence: 0.98,
     reasons: [],
+    driverBrandBands: [],
     commentary: "unbound prose",
   };
   assert.throws(
