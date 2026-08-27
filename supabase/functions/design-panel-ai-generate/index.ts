@@ -1937,6 +1937,30 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         parts.push({ inlineData: { mimeType: mime, data: b64 } });
       }
     };
+    // THE BIG INPUTS TRAVEL BY STORAGE PATH, NOT INSIDE THE JSON BODY.
+    //
+    // Live 2026-08-27: a 2.2MB request (guide + structural reference as inline
+    // base64) killed the worker 25s in — it booted, shut down, and the gateway
+    // hung to its 160s ceiling with a bodiless 504, twice. Downloading the same
+    // bytes here with the service client keeps the request a few KB and the
+    // peak memory to one copy of each image.
+    const downloadPart = async (path: unknown, mime: string) => {
+      const key = String(path || "").trim();
+      if (!key) return;
+      const { data, error } = await svc.storage.from("wrap-files").download(key);
+      if (error || !data) throw new Error(`atlas_artboard_input_download_failed:${key}:${error?.message || "missing"}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      parts.push({ inlineData: { mimeType: mime, data: btoa(binary) } });
+    };
+    await downloadPart(body.guideStoragePath, "image/png");
+    await downloadPart(body.structuralReferenceStoragePath, String(body.structuralReferenceMime || "image/jpeg"));
+    // Legacy inline path kept for callers that still send bytes (harness
+    // capture-only, tests); production sends paths.
     pushImage(body.guideImageBase64);
     pushImage(body.structuralReferenceBase64, String(body.structuralReferenceMime || "image/jpeg"));
     for (const ex of await loadArtboardExamples(svc)) parts.push(ex);

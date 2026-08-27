@@ -965,8 +965,11 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       widthInches: Number(zone.trimWidthIn) || undefined,
       heightInches: Number(zone.trimHeightIn) || undefined,
     })),
-    guideImageBase64: extras.guideImageBase64,
-    structuralReferenceBase64: extras.structuralReferenceBase64,
+    // The two large inputs travel by STORAGE PATH: a 2.2MB inline-base64 body
+    // killed the edge worker twice (2026-08-27). Customer references stay
+    // inline — they are already size-capped at 1600px by the verified loader.
+    guideStoragePath: extras.guideStoragePath,
+    structuralReferenceStoragePath: extras.structuralReferenceStoragePath,
     structuralReferenceMime: extras.structuralReferenceMime,
     referenceImagesBase64: extras.referenceImagesBase64,
     correctiveNote: extras.correctiveNote,
@@ -1563,10 +1566,26 @@ async function generateOrReuseFlatAtlas(options) {
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
+  // Stage the two large inputs where the edge function can read them with its
+  // own service client. Content-addressed and upserted, so a retry or a second
+  // revision re-uses the same object instead of writing another copy.
+  const stageEdgeInput = async (bytes, contentType) => {
+    if (!bytes || !bytes.length) return undefined;
+    const path = `atlas-call1-inputs/${sha256(bytes)}.${contentType === "image/jpeg" ? "jpg" : "png"}`;
+    const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, { contentType, upsert: true });
+    if (error) {
+      throw new FlatAtlasError("flat_atlas_edge_input_upload_failed", error.message || `Could not stage ${path}`, true);
+    }
+    return path;
+  };
+  const structuralBytes = structuralImage?.inlineData?.data
+    ? Buffer.from(structuralImage.inlineData.data, "base64")
+    : null;
+  const structuralMime = structuralImage?.inlineData?.mimeType || "image/jpeg";
   const edgeExtras = {
-    guideImageBase64: authoringGuideBytes.toString("base64"),
-    structuralReferenceBase64: structuralImage?.inlineData?.data,
-    structuralReferenceMime: structuralImage?.inlineData?.mimeType || "image/jpeg",
+    guideStoragePath: await stageEdgeInput(authoringGuideBytes, "image/png"),
+    structuralReferenceStoragePath: await stageEdgeInput(structuralBytes, structuralMime),
+    structuralReferenceMime: structuralMime,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   if (typeof masterValidatorFactory !== "function") {

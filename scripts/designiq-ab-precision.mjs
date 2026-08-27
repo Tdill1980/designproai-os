@@ -238,10 +238,22 @@ async function main() {
   const authoringGuideBytes = await atlas.renderAtlasAuthoringGuide(manifest);
   const topologyParts = await atlas._test.topologyExampleParts(topologyExamples);
   const structuralImage = topologyParts.find((part) => part?.inlineData?.data);
+  // The harness stages the same two inputs the product stages, so arm B is the
+  // product request byte for byte (owner directive 2026-08-27).
+  const stage = async (bytes, contentType) => {
+    const path = `atlas-call1-inputs/${sha(bytes)}.${contentType === "image/jpeg" ? "jpg" : "png"}`;
+    const { error } = await supabase.storage.from("wrap-files").upload(path, bytes, { contentType, upsert: true });
+    if (error) throw new Error(`staging ${path} failed: ${error.message}`);
+    return path;
+  };
+  const structuralBytes = structuralImage?.inlineData?.data
+    ? Buffer.from(structuralImage.inlineData.data, "base64")
+    : null;
+  const structuralMime = structuralImage?.inlineData?.mimeType || "image/jpeg";
   const bEdgeBody = atlas._test.atlasEdgeRequestBody(V3_INPUT, manifest, {
-    guideImageBase64: authoringGuideBytes.toString("base64"),
-    structuralReferenceBase64: structuralImage?.inlineData?.data,
-    structuralReferenceMime: structuralImage?.inlineData?.mimeType || "image/jpeg",
+    guideStoragePath: await stage(authoringGuideBytes, "image/png"),
+    structuralReferenceStoragePath: structuralBytes ? await stage(structuralBytes, structuralMime) : undefined,
+    structuralReferenceMime: structuralMime,
   });
   log(`atlas edge request ${(JSON.stringify(bEdgeBody).length / 1024).toFixed(0)}KB, authoring guide ${(authoringGuideBytes.length / 1024).toFixed(0)}KB`);
 
@@ -309,7 +321,7 @@ async function main() {
     B: {
       label: "B — THE PRODUCT CALL 1: POST /functions/v1/design-panel-ai-generate mode:atlas-artboard",
       endpoint: "/functions/v1/design-panel-ai-generate",
-      requestBody: { ...bEdgeBody, guideImageBase64: `<${authoringGuideBytes.length} bytes>`, structuralReferenceBase64: structuralImage ? "<attached>" : null },
+      requestBody: bEdgeBody,
       attempts: "harness executes exactly 1 edge request; the edge function makes exactly 1 Gemini image request (its response proves the count)",
       notes: [
         `runtime prompt-identity version ${atlas.PROMPT_VERSION}`,
@@ -335,7 +347,7 @@ async function main() {
   writeFileSync(join(OUT, "C-artwork.system.txt"), ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION);
   writeFileSync(join(OUT, "A-control-commercial.prompt.txt"), controlCommercialPrompt);
   writeFileSync(join(OUT, "A2-control-artboard.prompt.txt"), controlArtboardPrompt);
-  writeFileSync(join(OUT, "B-atlas-call1.request.json"), JSON.stringify({ ...bEdgeBody, guideImageBase64: undefined, structuralReferenceBase64: undefined }, null, 2));
+  writeFileSync(join(OUT, "B-atlas-call1.request.json"), JSON.stringify(bEdgeBody, null, 2));
   writeFileSync(join(OUT, "B-authoring-guide.png"), authoringGuideBytes);
   log(`requests captured → ${OUT}/requests.json`);
 
