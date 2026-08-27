@@ -77,7 +77,7 @@ const GUIDE_ANNOTATIONS = [
  * GLYPH MAY SIT INSIDE A CONTAINER. The containers are labeled; the paint area
  * stays clean.
  */
-test("every authoring-guide label sits outside every container", () => {
+test("every authoring-guide label sits outside every printable region", () => {
   const svg = authoringGuideSvg(manifest).toString("utf8");
   const anchors = [...svg.matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"/g)];
   assert.equal(anchors.length, (svg.match(/<text\b/gi) || []).length,
@@ -87,9 +87,10 @@ test("every authoring-guide label sits outside every container", () => {
     const x = Number(rawX);
     const y = Number(rawY);
     for (const zone of manifest.zones) {
-      const inside = x > zone.x && x < zone.x + zone.w && y > zone.y && y < zone.y + zone.h;
+      const trim = zone.trim || zone;
+      const inside = x > trim.x && x < trim.x + trim.w && y > trim.y && y < trim.y + trim.h;
       assert.equal(inside, false,
-        `a label at ${x},${y} sits inside the ${zone.surfaceKey} container`);
+        `a label at ${x},${y} sits inside the ${zone.surfaceKey} printable region`);
     }
   }
 });
@@ -166,8 +167,8 @@ test("a glyph put back INSIDE a container fails the run instead of authoring", a
   // injected label is anchored at the centre of the hood container, which is
   // exactly where "HOOD" was when three attempts died on artifactFreeContract.
   const hood = manifest.zones.find((zone) => zone.surfaceKey === "hood");
-  const x = Math.round(hood.x + hood.w / 2);
-  const y = Math.round(hood.y + hood.h / 2);
+  const x = Math.round(hood.trim.x + hood.trim.w / 2);
+  const y = Math.round(hood.trim.y + hood.trim.h / 2);
   const withText = {
     ...manifest,
     zones: manifest.zones.map((zone) => ({
