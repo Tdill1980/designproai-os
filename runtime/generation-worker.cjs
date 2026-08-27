@@ -901,8 +901,32 @@ function createGenerationWorker({
         }
       }
 
-      if (result.state !== "outputs_ready") {
-        const failed = result.results.filter((item) => item.state === "failed");
+      // A REFUSED VIEW DOES NOT CANCEL THE OTHERS. (Trish 2026-08-27.)
+      //
+      // "A failed Hood 3D proof cannot prevent the Hood production panel from
+      // existing. A failed Close-Up cannot cancel Driver/Passenger/Front/Rear/
+      // Roof artifacts."
+      //
+      // The engine marks the whole request failed when ANY slot fails, which is
+      // right for Standard and wrong for A.T.L.A.S.: its six panels were cut
+      // from the accepted master inside Call 1, before a single proof was
+      // dispatched, and the surviving proofs are each independently valid and
+      // hash-bound to that same master. Live cost, 04cc0b29: five accepted
+      // proofs and six good panels reported `failed` and painted red across the
+      // library.
+      //
+      // So an A.T.L.A.S. run with at least one accepted view completes as a
+      // PARTIAL set. It never pretends to be whole: the refusals are named on
+      // the receipt, and `callsCompleted` now equals the views actually
+      // delivered (the DB predicate was tightened to check exactly that), so a
+      // short set cannot be recorded as a full one.
+      const acceptedSlots = result.results.filter((item) => item.state === "accepted");
+      const refusedSlots = result.results.filter((item) => item.state === "failed");
+      const atlasPartial = isFlatFirst
+        && result.state !== "outputs_ready"
+        && acceptedSlots.length > 0;
+      if (result.state !== "outputs_ready" && !atlasPartial) {
+        const failed = refusedSlots;
         const reasons = failed.map((item) => `${item.sourceViewType}:${item.reason}`).join(", ");
         // runRequest has already spent its complete bounded slot budget and
         // explicitly requires a human resume. Re-queueing the request here
@@ -922,13 +946,19 @@ function createGenerationWorker({
 
       const views = await viewsPayload(requestId);
       if (isFlatFirst) {
-        assertAtlasViewLineage({ views, flatAtlas, requireComplete: true });
+        // Every view present must still prove its lineage to this master; only
+        // the completeness of the SET is relaxed, and only for a partial run.
+        assertAtlasViewLineage({ views, flatAtlas, requireComplete: !atlasPartial });
       }
-      if (views.length !== 7) {
+      if (atlasPartial
+        ? (views.length !== acceptedSlots.length || views.length < 1 || views.length > 7)
+        : views.length !== 7) {
         await rpc("fail_designpro_generation_request", {
           p_request_id: requestId, p_claim_token: claimToken,
           p_error_code: "generation_views_incomplete",
-          p_error_message: `Expected seven persisted views, found ${views.length}`,
+          p_error_message: atlasPartial
+            ? `Expected ${acceptedSlots.length} persisted views for the accepted slots, found ${views.length}`
+            : `Expected seven persisted views, found ${views.length}`,
           // Seven successful provider outputs with an incomplete durable
           // readback is an integrity incident. Never pay to regenerate them
           // automatically; a human must inspect/resume.
@@ -963,7 +993,18 @@ function createGenerationWorker({
           frozenContractHash: claim.engineContractHash,
           inputHash: claim.inputHash,
           byteVerified: "true",
-          callsCompleted: "7",
+          // The number actually delivered, never a constant. The DB predicate
+          // now matches this against jsonb_array_length(p_views), so an
+          // overstatement is refused rather than recorded.
+          callsCompleted: String(views.length),
+          ...(atlasPartial
+            ? {
+                refusedViews: refusedSlots.map((item) => ({
+                  sourceViewType: String(item.sourceViewType || ""),
+                  reason: String(item.reason || "").slice(0, 240),
+                })),
+              }
+            : {}),
           engineContract: engine.ENGINE_CONTRACT,
           providerCalls: result.providerCalls,
           handoffRevisionId: revisionId,
@@ -986,6 +1027,13 @@ function createGenerationWorker({
         state: "outputs_ready",
         revisionId,
         completion,
+        ...(atlasPartial
+          ? {
+              partial: true,
+              acceptedViewCount: acceptedSlots.length,
+              refusedViews: refusedSlots.map((item) => String(item.sourceViewType || "")),
+            }
+          : {}),
         ...(isFlatFirst ? { flatAtlas: atlasReceipt(flatAtlas) } : {}),
       };
     } catch (error) {
