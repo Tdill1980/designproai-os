@@ -1843,8 +1843,20 @@ async function generateOrReuseFlatAtlas(options) {
     // gate's own finding is the corrective direction, forwarded to the edge
     // function as a text part on the next attempt.
     const refusalReason = String(masterQc?.reason || "the master was not accepted").slice(0, 600);
+    // ASK FOR THE FULL CANVAS BACK WHEN IT ARRIVED SHORT.
+    //
+    // Owner 2026-08-27: "Make sure atlas is highest possible 4K or more
+    // resolution." The request already pins Gemini's maximum
+    // (imageConfig.imageSize "4K" at 1:1) and the canvas is 4096x4096 -- but a
+    // smaller return is stretched onto it by normalizeAtlasMaster, so the
+    // master reports 4K either way and only `masterNativelyFourK` knows the
+    // difference. Nothing acted on it. Since this attempt is being spent
+    // anyway, spend it asking for the pixels too.
+    const shortDelivery = masterDelivery && masterDelivery.nativelyFourK === false
+      ? ` The previous sheet came back at ${masterDelivery.deliveredWidthPx}x${masterDelivery.deliveredHeightPx}, below the 4096x4096 production canvas -- return the full 4K square so the panels carry real detail rather than an upscale.`
+      : "";
     const mirrorBroken = /passengerMirrorMae/.test(refusalReason);
-    correctiveNote = `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}. Author a NEW sheet. `
+    correctiveNote = `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}.${shortDelivery} Author a NEW sheet. `
       + (mirrorBroken
         ? "The refusal above means the PASSENGER SIDE panel was NOT the DRIVER SIDE panel's mirror twin: the two read as different designs. Draw ONE side composition and install it on BOTH: PASSENGER SIDE is DRIVER SIDE's mirror twin -- the same flat artwork reversed -- while every word and logo remains forward-reading on both."
         : "Every panel is one SOLID rectangle of continuous artwork, opaque corner to corner: paint the artwork straight through every position where a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece would sit. The installer cuts those openings out of the printed vinyl; the artwork itself never contains a dark or empty shape standing in for one.");
