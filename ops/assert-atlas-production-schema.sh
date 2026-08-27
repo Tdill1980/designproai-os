@@ -423,8 +423,17 @@ SQL
 # workflow, the migration job and the test fixture all invoke it from different
 # directories, and a relative glob silently finds nothing in two of the three.
 ATLAS_MIGRATIONS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../supabase/migrations" && pwd)
-ATLAS_PROMPT_VERSION=$(grep -rho 'designpro-flat-first-atlas-[0-9]\{8\}\.v[0-9]\+' "$ATLAS_MIGRATIONS_DIR"/*.sql | sort -V | tail -1)
-[[ $ATLAS_PROMPT_VERSION =~ ^designpro-flat-first-atlas-[0-9]{8}\.v[0-9]+$ ]] || {
+# The version may carry a trailing build suffix (`.v9-dpag`, `.v10-edge`), and
+# it must be captured WITH it: the SQL below looks for the version as a quoted
+# literal, so an extraction that stops at `v10` searches for
+# 'designpro-flat-first-atlas-20260827.v10' and never matches the live
+# 'designpro-flat-first-atlas-20260827.v10-edge'. That is what failed the
+# 2026-08-26 23:39 production-migrate run: the v9 pin applied cleanly, then this
+# fence refused the database it had just written, reporting the Close-Up
+# contract. Same class as the two hand-pinned literals above — one more way for
+# the guard to go stale against the thing it guards.
+ATLAS_PROMPT_VERSION=$(grep -rho 'designpro-flat-first-atlas-[0-9]\{8\}\.v[0-9]\+\(-[a-z0-9]\+\)*' "$ATLAS_MIGRATIONS_DIR"/*.sql | sort -V | tail -1)
+[[ $ATLAS_PROMPT_VERSION =~ ^designpro-flat-first-atlas-[0-9]{8}\.v[0-9]+(-[a-z0-9]+)*$ ]] || {
   echo "::error::no A.T.L.A.S. prompt version found in supabase/migrations" >&2
   exit 2
 }
@@ -442,8 +451,8 @@ query=${query//__ATLAS_PROMPT_VERSION__/$ATLAS_PROMPT_VERSION}
 #
 # Deriving it removes the class rather than the instance: bump the port in a
 # migration and this follows, exactly as the prompt version above does.
-ARTBOARD_PORT_VERSION=$(grep -rho 'designpanel-ai-generate\.artboard\.[0-9]\{8\}\.v[0-9]\+' "$ATLAS_MIGRATIONS_DIR"/*.sql | sort -V | tail -1)
-[[ $ARTBOARD_PORT_VERSION =~ ^designpanel-ai-generate\.artboard\.[0-9]{8}\.v[0-9]+$ ]] || {
+ARTBOARD_PORT_VERSION=$(grep -rho 'designpanel-ai-generate\.artboard\.[0-9]\{8\}\.v[0-9]\+\(-[a-z0-9]\+\)*' "$ATLAS_MIGRATIONS_DIR"/*.sql | sort -V | tail -1)
+[[ $ARTBOARD_PORT_VERSION =~ ^designpanel-ai-generate\.artboard\.[0-9]{8}\.v[0-9]+(-[a-z0-9]+)*$ ]] || {
   echo "::error::no DesignPanel artboard port version found in supabase/migrations" >&2
   exit 2
 }

@@ -2034,7 +2034,21 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       parts.push({ inlineData: { mimeType: mime, data: btoa(binary) } });
     };
     await downloadPart(body.guideStoragePath, "image/png");
+    // THE HOUDINI LESSON IS A PAIR: the flattened top-view PANEL LAYOUT sheet
+    // AND its corresponding finished 3D proof. RULE 0.15 records what removing
+    // the second half cost the last time, and says not to repeat it. Each half
+    // is framed here — reference-class firewall included (RULE 0.24: structural
+    // teaches layout, never artwork) — because prompt text belongs in this
+    // function, not in the runtime that stages the bytes.
+    if (String(body.structuralReferenceStoragePath || "").trim()) {
+      parts.push({ text: "PAIRED TOPOLOGY EXAMPLE — FLATTENED TOP-VIEW OUTPUT FORMAT. Study how all visible vehicle surfaces are intentionally composed into one unwrapped design. Copy no artwork, wording, logo, color or brand." });
+    }
     await downloadPart(body.structuralReferenceStoragePath, String(body.structuralReferenceMime || "image/jpeg"));
+    if (String(body.structuralPairedProofStoragePath || "").trim()) {
+      parts.push({ text: "PAIRED TOPOLOGY EXAMPLE — CORRESPONDING FINISHED 3D PROOF. This shows how the preceding flat design reads after projection onto the vehicle. It is context only; do not return a vehicle image in Call 1 and copy no style." });
+      await downloadPart(body.structuralPairedProofStoragePath, String(body.structuralPairedProofMime || "image/png"));
+      parts.push({ text: "CALL 1 TARGET: create the customer's NEW flattened top-view design in the deterministic guide layout. The seven finished 3D proof views are downstream projections of that saved master." });
+    }
     // Legacy inline path kept for callers that still send bytes (harness
     // capture-only, tests); production sends paths.
     pushImage(body.guideImageBase64);

@@ -19,7 +19,7 @@
  * copy fails the run rather than quietly becoming "the control".
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,8 +74,26 @@ export function buildControlPrompt({ outDir, esbuild = "esbuild" }) {
   return out;
 }
 
+// WHICH esbuild — the release gate installs no root node_modules.
+//
+// It runs `npm ci` for runtime, gateway, web and app only, then `npm test`.
+// So `esbuild` is not on PATH there and a bare spawn dies with ENOENT, which
+// is what failed push gate 33032007788: two contract-parity tests that execute
+// the real DPAG assembly, red in CI and green on any machine that happens to
+// have installed the root dev dependencies. Look through every workspace the
+// gate does install, and say which ones were searched when none has it.
+export function resolveEsbuild() {
+  if (process.env.ESBUILD_BIN) return process.env.ESBUILD_BIN;
+  const candidates = ["", "app", "web", "runtime", "gateway"].map((prefix) =>
+    join(REPO, prefix, "node_modules", ".bin", "esbuild"),
+  );
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return "esbuild"; // PATH, and a clear ENOENT naming it if it is not there
+}
+
 if (process.argv[1] && process.argv[1].endsWith("build-control-prompt.mjs")) {
   const outDir = process.argv[2] || join(REPO, ".control-build");
-  const esbuild = process.env.ESBUILD_BIN || "esbuild";
-  console.log(buildControlPrompt({ outDir, esbuild }));
+  console.log(buildControlPrompt({ outDir, esbuild: resolveEsbuild() }));
 }

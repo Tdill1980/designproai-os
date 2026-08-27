@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const script = readFileSync(
   new URL("../ops/assert-atlas-production-schema.sh", import.meta.url),
   "utf8",
 );
 const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+const migrationsPath = fileURLToPath(migrationsDir);
 const migrations = readdirSync(migrationsDir)
   .filter((name) => name.endsWith(".sql"))
   .map((name) => readFileSync(new URL(name, migrationsDir), "utf8"))
@@ -66,5 +69,52 @@ test("both derived versions exist in the migrations the script reads", () => {
     /designpanel-ai-generate\.artboard\.\d{8}\.v\d+/,
   ]) {
     assert.match(migrations, pattern);
+  }
+});
+
+/**
+ * AND THE DERIVED VALUE MUST BE A WHOLE VERSION, SUFFIX INCLUDED.
+ *
+ * The query looks the version up as a QUOTED literal, so a truncated
+ * extraction is not a near miss — it is a guaranteed no-match. Both live
+ * versions carry a build suffix (`.v9-dpag`, `.v10-edge`, `.v3-vendored`,
+ * `.v4-edge`) and the extraction pattern stopped at the digits, so it searched
+ * the live definition for 'designpro-flat-first-atlas-20260826.v9' while the
+ * migration had just written '...v9-dpag'.
+ *
+ * That is what failed production-migrate run 33023852051 (2026-08-26 23:39):
+ * the v9 pin applied cleanly and this fence then refused the database it had
+ * itself produced, again reporting the Close-Up contract.
+ *
+ * Stated without naming any version: whatever the script extracts must be a
+ * literal that appears in the migrations, and must not be a strict prefix of a
+ * longer literal there — which is exactly what a dropped suffix looks like.
+ */
+test("the derived versions are complete literals, not prefixes of longer ones", () => {
+  const run = (assignment) =>
+    execFileSync(
+      "bash",
+      ["-c", `set -e; ATLAS_MIGRATIONS_DIR=${JSON.stringify(migrationsPath)}\n${assignment}\necho "$V"`],
+      { encoding: "utf8" },
+    ).trim();
+
+  for (const [name, family] of [
+    ["ATLAS_PROMPT_VERSION", /designpro-flat-first-atlas-\d{8}\.v[0-9][A-Za-z0-9.-]*/g],
+    ["ARTBOARD_PORT_VERSION", /designpanel-ai-generate\.artboard\.\d{8}\.v[0-9][A-Za-z0-9.-]*/g],
+  ]) {
+    const line = script
+      .split(/\r?\n/)
+      .find((l) => l.startsWith(`${name}=$(`));
+    assert.ok(line, `${name} must be derived by a shell pipeline`);
+    const derived = run(line.replace(`${name}=`, "V="));
+
+    const present = new Set(migrations.match(family) || []);
+    assert.ok(present.has(derived), `${name} derived "${derived}", which no migration writes`);
+    for (const literal of present) {
+      assert.ok(
+        literal === derived || !literal.startsWith(derived),
+        `${name} derived "${derived}", a truncation of "${literal}" — the quoted lookup can never match`,
+      );
+    }
   }
 });
