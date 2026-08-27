@@ -100,7 +100,13 @@ const MASTER_PROVIDER_CONTRACT = "designpro.flat-first-master-provider.v1";
 const TOPOLOGY = "rectangular-preview-v1";
 const EXAMPLE_PURPOSE = "topology-only";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
-const CENTER_ORDER = Object.freeze(["rear", "roof", "hood", "front"]);
+// THE OWNER'S SHEET ORDER (A.T.L.A.S. FLATTENED - TOPO TOP VIEW, 2026-08-27):
+// the centre column reads ROOF, HOOD, FRONT, REAR from the top. It was
+// rear/roof/hood/front, which is a physical front-to-back unroll -- correct as
+// geometry, and not what the spec draws. The panels follow `manifest.zones`, so
+// this constant IS the layout; changing it moves every centre rect, which moves
+// the manifest hash, which is what stops an old master being reused against it.
+const CENTER_ORDER = Object.freeze(["roof", "hood", "front", "rear"]);
 const PROOF_VIEWS = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
 /**
  * THE ORDER PANELS ARE CUT IN, WHICH IS NOT `SURFACE_KEYS`.
@@ -130,7 +136,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v4";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v5";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -502,7 +508,7 @@ function buildAtlasManifest(surfaces, geometryAuthorityInput) {
       passenger: "left",
       driver: "right",
       centerOrderTopToBottom: [...CENTER_ORDER],
-      longitudinalOrder: "vehicle-rear-to-front",
+      longitudinalOrder: "topo-top-view-roof-hood-front-rear",
     },
     seamContinuity: {
       mode: "semantic-preview-only",
@@ -610,28 +616,61 @@ const SURFACE_IDS = Object.freeze({
   rear: "RR",
 });
 
-const TOPO_TITLE = "A.T.L.A.S. FLATTENED — TOPO TOP VIEW · SINGLE SOURCE MASTER · SIX DETERMINISTIC PANELS · 1:1 TOPOLOGY";
+const TOPO_TITLE = "A.T.L.A.S. FLATTENED — TOPO TOP VIEW";
 
 /**
- * Where each container's caption goes: the centre of the empty gutter beside
- * it, plus HOW MUCH ROOM that gutter actually has. Derived from the zones
- * themselves rather than from the layout constants, so a geometry change moves
- * the labels with it -- and the room matters, because the gutters are not a
- * fixed width. A 190x66 side leaves 74px between the passenger column and the
- * centre stack where a 251x60 side leaves 115px, and a caption sized for the
- * wide case reaches into the neighbouring container in the narrow one.
+ * THE CONTAINERS ARE LABELED INSIDE THEIR OWN STRUCTURAL MARGIN.
+ *
+ * Owner's sheet, 2026-08-27 ("A.T.L.A.S. FLATTENED - TOPO TOP VIEW · SINGLE
+ * SOURCE MASTER · SIX DETERMINISTIC PANELS · 1:1 TOPOLOGY"): every container
+ * carries its name, its Surface ID and its W/H in pixels, set upright on the
+ * container itself -- and each container shows an OUTER structural boundary
+ * with an INNER dashed printable region, which the sheet's own legend calls
+ * "Printable Area (Design Region) · Exact panel crop area".
+ *
+ * That inner/outer split is what makes a label on the container safe, and it
+ * is not a new idea here: `trimRectangle()` has always computed the trim box
+ * inside the 5" bleed. The label goes in the margin BETWEEN the container edge
+ * and that trim box.
+ *
+ * Why this is not the 2026-08-25 failure returning: those deaths
+ * (`artifactFreeContract`, "The hood zone contains the guide label 'HOOD'")
+ * were a surface name set 180px bold DEAD CENTRE on the area the model was
+ * told to paint. Here the paint area is the dashed trim box and no glyph is
+ * inside it -- asserted, not assumed, by `renderAtlasAuthoringGuide`.
+ *
+ * A caption is also physically unable to reach a customer: the master is
+ * masked to the zone rectangles, then each panel is cut to the container and
+ * finished to trim, so the structural margin is discarded twice over.
+ */
+const LABEL_REACH = 0.7;
+
+/**
+ * WHERE A LEGIBLE CAPTION CAN ACTUALLY GO.
+ *
+ * The sheet draws its captions inside a generous structural border. Real GENIE
+ * geometry has no such border: 5" of bleed on a 251" flank is 2% of the
+ * container, about 70px on the 4096 canvas -- four stacked lines would render
+ * at 10px, which is not a label, it is a smudge.
+ *
+ * The room that does exist is the vertical gutter beside each container: the
+ * canvas margin outside the flanks, and the channel between the passenger
+ * column and the centre stack. Those are 230-270px wide, which carries the
+ * sheet's own four lines UPRIGHT at ~28px. So the caption sits there, level
+ * with the container it names, in the sheet's blue.
+ *
+ * It is outside every container, so it is outside every printable region by
+ * construction, and `normalizeAtlasMaster` masks it away before a master
+ * exists.
  */
 function labelGutters(manifest) {
   const byKey = new Map(manifest.zones.map((zone) => [zone.surfaceKey, zone]));
   const passenger = byKey.get("passenger");
   const driver = byKey.get("driver");
-  const centre = CENTER_ORDER.map((key) => byKey.get(key)).filter(Boolean);
-  const centreLeft = Math.min(...centre.map((zone) => zone.x));
+  const centreLeft = Math.min(...CENTER_ORDER.map((key) => byKey.get(key).x));
   const span = (left, right) => ({
     x: Math.round((left + right) / 2),
-    // Half the gap: how far a glyph may reach from the caption's own centre
-    // before it touches whichever container bounds this gutter.
-    slot: Math.max(0, Math.floor((right - left) / 2)),
+    width: Math.max(0, right - left),
   });
   return {
     passenger: span(0, passenger.x),
@@ -640,75 +679,119 @@ function labelGutters(manifest) {
   };
 }
 
-/**
- * A caption's two lines and their type sizes, fitted to the gutter it is going
- * into. `LABEL_REACH` is what the fail-closed guard uses to prove the result
- * sits outside every container: a rotated line anchored at its own centre
- * extends about 0.7 of its type size perpendicular to the baseline, so
- * `offset + fontSize * LABEL_REACH` is the worst case, and both are chosen as
- * fractions of the slot so that worst case is always inside it.
- */
-const LABEL_REACH = 0.7;
-
-/**
- * Each line gets its own offset, CLAMPED so that `offset + ceil(size * REACH)`
- * is strictly inside the slot -- for every slot, including one too narrow for
- * the sizes we would prefer. A minimum type size with no clamp is what broke
- * this the first time: the floor kept the glyph big while the slot shrank, and
- * the two stopped being related.
- */
-function fittedLabelType(slot) {
-  const primary = Math.max(8, Math.min(40, Math.floor(slot * 0.55)));
-  const sizes = [primary, Math.max(8, Math.round(primary * 0.75))];
-  const offsets = sizes.map((size) => Math.max(
-    0,
-    Math.min(Math.round(slot * 0.45), slot - Math.ceil(size * LABEL_REACH) - 1),
-  ));
-  return { offsets, sizes };
-}
-
-/**
- * TWO LINES, NOT ONE. A single caption carrying identity AND dimensions runs
- * about 1,400px of rotated text, and the four centre containers are 825-962px
- * tall -- so one line overflowed its own container and the four smeared into
- * each other in the shared gutter. Split, each half fits the shortest centre
- * container with room to spare.
- */
+/** The sheet's four caption lines, in its own wording. */
 function containerCaptionLines(zone) {
   const id = SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase();
-  const name = String(zone.surfaceKey).toUpperCase();
   return [
-    `${id} · ${name}`,
-    `${zone.w} × ${zone.h} px · ${zone.trimWidthIn}" × ${zone.trimHeightIn}" + ${BLEED_INCHES}" BLEED`,
+    (SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey)).toUpperCase(),
+    `Surface ID: ${id}`,
+    `W: ${zone.w} px`,
+    `H: ${zone.h} px`,
   ];
 }
 
 /**
- * The labeled-container captions, in the gutters. Shared by both guides.
- * Every glyph is provably outside every zone -- asserted, not assumed, by
- * `renderAtlasAuthoringGuide`.
+ * Upright, stacked, level with its container. Type is sized so the longest
+ * line fits the gutter with margin to spare -- Arial averages about 0.58em per
+ * character at these weights, and the 0.9 factor is the safety on that.
  */
+function containerLabelSvg(zone, gutter) {
+  const lines = containerCaptionLines(zone);
+  const longest = Math.max(...lines.map((line) => line.length));
+  // Bold caps plus letter-spacing run about 0.72em per character -- measured,
+  // after 0.58 let "PASSENGER SIDE" overrun the canvas edge. The 0.86 keeps a
+  // margin on top of that.
+  const size = Math.max(9, Math.min(34, Math.floor((gutter.width * 0.86) / (longest * 0.72))));
+  const leading = Math.round(size * 1.45);
+  const centreY = Math.round(zone.y + zone.h / 2);
+  const top = centreY - Math.round((leading * (lines.length - 1)) / 2);
+  return lines.map((line, index) => {
+    const y = top + leading * index;
+    const fontSize = index === 0 ? size : Math.round(size * 0.82);
+    const weight = index === 0 ? 800 : 500;
+    const fill = index === 0 ? "#4a7dff" : "#c7d0dd";
+    return `<text x="${gutter.x}" y="${y}" text-anchor="middle" `
+      + `dominant-baseline="central" fill="${fill}" `
+      + `font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="${weight}" `
+      + `letter-spacing="1">${line}</text>`;
+  }).join("");
+}
+
+/**
+ * The sheet's bands: what this artifact IS, and that it is not printable.
+ * Both sit in the canvas margin, outside every container.
+ */
+function guideBandsSvg(manifest) {
+  const centreX = Math.round(CANVAS.widthPx / 2);
+  const band = (y, size, fill, weight, text) => `<text x="${centreX}" y="${y}" `
+    + `text-anchor="middle" dominant-baseline="central" fill="${fill}" `
+    + `font-family="Arial,sans-serif" font-size="${size}" font-weight="${weight}" `
+    + `letter-spacing="3">${text}</text>`;
+  const lowest = Math.max(...manifest.zones.map((zone) => zone.y + zone.h));
+  const footerY = Math.min(CANVAS.heightPx - 30, Math.round((lowest + CANVAS.heightPx) / 2));
+  return band(58, 46, "#ffffff", 800, TOPO_TITLE)
+    + band(112, 30, "#9aa4b2", 600, "SINGLE SOURCE MASTER · SIX DETERMINISTIC PANELS · 1:1 TOPOLOGY")
+    + band(footerY, 26, "#9aa4b2", 600,
+      `ATLAS MASTER SHELL · ${CANVAS.widthPx} x ${CANVAS.heightPx} px · TOPOLOGY VIEW · NOT PRINTABLE`);
+}
+
+/** Every caption and band on the sheet. Shared by both guides. */
 function guideLabelsSvg(manifest) {
   const gutters = labelGutters(manifest);
-  const captions = manifest.zones.map((zone) => {
-    const gutter = zone.surfaceKey === "passenger" ? gutters.passenger
-      : zone.surfaceKey === "driver" ? gutters.driver
-      : gutters.centre;
-    const { offsets, sizes } = fittedLabelType(gutter.slot);
-    const y = Math.round(zone.y + zone.h / 2);
-    return containerCaptionLines(zone).map((line, index) => {
-      const x = gutter.x + (index === 0 ? -offsets[index] : offsets[index]);
-      const fontSize = sizes[index];
-      return `<text x="${x}" y="${y}" transform="rotate(-90 ${x} ${y})" `
-        + `text-anchor="middle" dominant-baseline="central" fill="#d9d9d9" `
-        + `font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="700" `
-        + `letter-spacing="2">${line}</text>`;
-    }).join("");
-  }).join("");
-  const title = `<text x="${Math.round(CANVAS.widthPx / 2)}" y="112" text-anchor="middle" `
-    + `dominant-baseline="central" fill="#d9d9d9" font-family="Arial,sans-serif" `
-    + `font-size="40" font-weight="700" letter-spacing="2">${TOPO_TITLE}</text>`;
-  return `${title}${captions}`;
+  const gutterFor = (surfaceKey) => (surfaceKey === "passenger" ? gutters.passenger
+    : surfaceKey === "driver" ? gutters.driver
+    : gutters.centre);
+  return guideBandsSvg(manifest)
+    + manifest.zones.map((zone) => containerLabelSvg(zone, gutterFor(zone.surfaceKey))).join("");
+}
+
+/**
+ * THE TOPOLOGY UNDERLAY -- what makes this read as a vehicle seen from above
+ * rather than three columns of boxes.
+ *
+ * A faint top-view silhouette scaled to the container extents, plus the light
+ * grid the sheet draws. Structural, non-printable, and painted UNDER
+ * everything so it can never be mistaken for artwork.
+ */
+function topologyUnderlaySvg(manifest) {
+  const zones = new Map(manifest.zones.map((zone) => [zone.surfaceKey, zone]));
+  const passenger = zones.get("passenger");
+  const driver = zones.get("driver");
+  const left = passenger.x;
+  const right = driver.x + driver.w;
+  const top = Math.min(...manifest.zones.map((zone) => zone.y));
+  const bottom = Math.max(...manifest.zones.map((zone) => zone.y + zone.h));
+  const width = right - left;
+  const height = bottom - top;
+  // A plan-view body: nose rounded, cabin waisted, tail squared -- drawn from
+  // the extents so it tracks whatever GENIE resolved for this vehicle.
+  const noseY = top + height * 0.06;
+  const tailY = bottom - height * 0.04;
+  const inset = width * 0.06;
+  const body = [
+    `M ${left + inset} ${noseY + height * 0.06}`,
+    `Q ${left + inset} ${noseY} ${left + inset + width * 0.12} ${noseY}`,
+    `L ${right - inset - width * 0.12} ${noseY}`,
+    `Q ${right - inset} ${noseY} ${right - inset} ${noseY + height * 0.06}`,
+    `L ${right - inset} ${tailY - height * 0.03}`,
+    `Q ${right - inset} ${tailY} ${right - inset - width * 0.08} ${tailY}`,
+    `L ${left + inset + width * 0.08} ${tailY}`,
+    `Q ${left + inset} ${tailY} ${left + inset} ${tailY - height * 0.03}`,
+    "Z",
+  ].join(" ");
+  const cabin = `<rect x="${Math.round(left + width * 0.2)}" y="${Math.round(top + height * 0.22)}" `
+    + `width="${Math.round(width * 0.6)}" height="${Math.round(height * 0.42)}" rx="${Math.round(width * 0.05)}" `
+    + `fill="none" stroke="#4a5563" stroke-width="5"/>`;
+  const gridStep = 128;
+  const lines = [];
+  for (let x = gridStep; x < CANVAS.widthPx; x += gridStep) {
+    lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${CANVAS.heightPx}"/>`);
+  }
+  for (let y = gridStep; y < CANVAS.heightPx; y += gridStep) {
+    lines.push(`<line x1="0" y1="${y}" x2="${CANVAS.widthPx}" y2="${y}"/>`);
+  }
+  return `<g stroke="#242a33" stroke-width="2">${lines.join("")}</g>`
+    + `<path d="${body}" fill="#1b222c" stroke="#4a5563" stroke-width="6"/>${cabin}`;
 }
 
 /**
@@ -717,9 +800,16 @@ function guideLabelsSvg(manifest) {
  * about where a surface is.
  */
 function guideGeometrySvg(manifest) {
-  return manifest.zones.map((zone) => (
-    `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="10" fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
-  )).join("");
+  return manifest.zones.map((zone) => {
+    const trim = zone.trim || zone;
+    // OUTER = the container, structural. INNER dashed = the printable area,
+    // which the sheet's legend calls the exact panel crop. Two rectangles per
+    // container, so a human and the model can both see where the bleed ends.
+    return `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="10" `
+      + `fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
+      + `<rect x="${trim.x}" y="${trim.y}" width="${trim.w}" height="${trim.h}" `
+      + `fill="none" stroke="#1f4fd8" stroke-width="5" stroke-dasharray="26 18"/>`;
+  }).join("");
 }
 
 /**
@@ -763,6 +853,7 @@ function guideGeometrySvg(manifest) {
 function authoringGuideSvg(manifest) {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
+    ${topologyUnderlaySvg(manifest)}
     ${guideGeometrySvg(manifest)}
     ${guideLabelsSvg(manifest)}
   </svg>`);
@@ -773,6 +864,7 @@ function guideSvg(manifest) {
   const zoneLabels = manifest.zones.map(zoneLabelSvg).join("");
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
+    ${topologyUnderlaySvg(manifest)}
     ${guideGeometrySvg(manifest)}
     ${guideLabelsSvg(manifest)}
     ${zoneLabels}
@@ -839,14 +931,22 @@ async function renderAtlasAuthoringGuide(manifest) {
   }
   for (const anchor of anchors) {
     for (const zone of manifest.zones) {
-      const inside = anchor.x + anchor.pad > zone.x
-        && anchor.x - anchor.pad < zone.x + zone.w
-        && anchor.y + anchor.pad > zone.y
-        && anchor.y - anchor.pad < zone.y + zone.h;
+      // THE PAINT AREA IS THE TRIM BOX, NOT THE CONTAINER.
+      //
+      // The containers are labeled now (owner's sheet, 2026-08-27), so the
+      // guard protects the region the model is actually told to fill and the
+      // panel is actually finished to. A caption in the bleed margin is
+      // discarded twice -- by the finish to trim, and by the fact that it is
+      // never inside the printable rectangle in the first place.
+      const trim = zone.trim || zone;
+      const inside = anchor.x + anchor.pad > trim.x
+        && anchor.x - anchor.pad < trim.x + trim.w
+        && anchor.y + anchor.pad > trim.y
+        && anchor.y - anchor.pad < trim.y + trim.h;
       if (inside) {
         throw new FlatAtlasError(
           "flat_atlas_authoring_guide_contains_text",
-          `An authoring-guide label falls inside the ${zone.surfaceKey} container; text on a paintable rectangle is reproducible as artwork`,
+          `An authoring-guide label falls inside the ${zone.surfaceKey} printable region; text on a paintable rectangle is reproducible as artwork`,
         );
       }
     }

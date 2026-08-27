@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v4";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v5";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -313,7 +313,7 @@ function splitStyleAndText(raw: string, companyName?: string): { stylePrompt: st
 const ATLAS_PLACEMENT_WORDS: Record<string, string> = {
   "left-flank": "tall column down the LEFT edge",
   "right-flank": "tall column down the RIGHT edge",
-  "center-column": "in the CENTRE column, stacked vehicle-rear to vehicle-front",
+  "center-column": "in the CENTRE column, stacked ROOF then HOOD then FRONT then REAR from the top",
 };
 
 function atlasFlatMasterContract(
@@ -328,8 +328,9 @@ function atlasFlatMasterContract(
     })
     .join("\n");
   return `OUTPUT FORMAT \u2014 ONE FLAT PRODUCTION MASTER on a single square 4K canvas:
-The attached layout guide is the ARTBOARD: a flattened TOP-DOWN TOPOLOGY of the vehicle. Its labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed already included \u2014 passenger flank as a tall column down the left, the centre column running vehicle-rear to vehicle-front, driver flank as a tall column down the right. Paint inside each labeled rectangle; outside the rectangles the canvas stays blank.
-Every container is CAPTIONED in the empty gutter beside it with its two-letter Surface ID, its name and its pixel size, and the sheet carries a title band across the top. Those captions, the title band and the container borders are STRUCTURE, not artwork: they live outside the containers and are cropped away, so paint only inside the rectangles and reproduce none of that lettering.
+The attached layout guide is the ARTBOARD: a flattened TOP-DOWN TOPOLOGY of the vehicle \u2014 passenger flank as a tall column down the left, the centre column stacked ROOF then HOOD then FRONT then REAR from the top, driver flank as a tall column down the right. Its labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed already included. Paint inside each labeled rectangle; outside the rectangles the canvas stays blank.
+Each container shows a DASHED BLUE outline \u2014 that is the printable area, the exact panel crop. Fill it corner to corner and run the artwork past it to the container edge, which is the bleed.
+Every container is CAPTIONED beside it with its name, its Surface ID and its pixel size, and the sheet carries a title band, a footer, a faint vehicle silhouette and a grid. All of that is STRUCTURE, not artwork: it lives outside the containers and is cropped away, so paint only inside the rectangles and reproduce none of that lettering.
 ${panelLines}
 FILL EVERY CONTAINER EDGE TO EDGE. Each panel is ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner, with the design running off all four sides of its rectangle. No blank margin, no white gap, no letterboxing, no rounded corner, no frame or border around a panel.
 NO BODY LINES. Do not draw door seams, panel gaps, rocker or hood contours, wheel arches, windows, glass, lights, handles, bumpers, a vehicle silhouette, or any cut-out shape. The artwork paints straight THROUGH every place one of those would sit \u2014 the installer cuts the openings from the printed vinyl afterwards, and a line drawn here prints as a line on the wrap.

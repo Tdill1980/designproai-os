@@ -111,7 +111,12 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
 
   // accepted master → deterministic surface extraction. Pure geometry: the six
   // panels are cut, never re-authored.
-  assert.match(atlas, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash\)/);
+  // The three positional arguments are the load-bearing part -- the repaired
+  // sheet's bytes, the manifest, and the CANONICAL master hash as lineage. The
+  // call also takes per-panel callbacks now (the streaming graph publishes each
+  // panel as it lands), so the assertion pins the arguments, not the closing
+  // parenthesis.
+  assert.match(atlas, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash[,)]/);
   assert.match(atlas, /async function cutCallOnePanels\(/);
 
   // → server-native 3D proof provider, conditioned on the master's own bytes.

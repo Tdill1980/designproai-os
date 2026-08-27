@@ -347,7 +347,48 @@ still a failed master.
    waiting for the set: RevisionStudioIQ beside that side's proof, PanelPro with
    the upscaled assets.
 
-### THE CONTAINERS ARE LABELED — IN THE GUTTER, NOT ON THE PAINT AREA (Trish 2026-08-27)
+### THE SHELL IS THE OWNER'S TOPO SHEET (Trish 2026-08-27)
+
+Spec: **"A.T.L.A.S. FLATTENED – TOPO TOP VIEW · SINGLE SOURCE MASTER · SIX
+DETERMINISTIC PANELS · 1:1 TOPOLOGY"**. The shell renders exactly that:
+
+- **Centre column reads ROOF → HOOD → FRONT → REAR from the top.** `CENTER_ORDER`
+  IS the layout; the panels follow `manifest.zones`. It was rear/roof/hood/front,
+  a physical front-to-back unroll — correct as geometry, not what the sheet draws.
+- **Two rectangles per container.** Outer = the container (structural). Inner
+  **dashed blue** = the printable area, the exact panel crop, drawn at `zone.trim`
+  — the box `trimRectangle()` has always computed inside the 5″ bleed.
+  `cutCallOnePanels` still crops the full container; the dash is what the model
+  fills corner to corner and runs past.
+- **Every container captioned** with its name, `Surface ID: XX`, `W: n px`,
+  `H: n px`, upright, level with the container.
+- **Faint top-view vehicle silhouette + grid** under everything, so the sheet
+  reads as topography rather than three columns of boxes.
+- **Header band + footer** (`ATLAS MASTER SHELL · 4096 x 4096 px · TOPOLOGY VIEW ·
+  NOT PRINTABLE`), both in the canvas margin.
+
+**Why the captions are beside the containers and not on them.** The sheet draws
+them inside a generous structural border. Real GENIE geometry has no such border:
+5″ of bleed on a 251″ flank is ~70px on the 4096 canvas, so four stacked lines
+render at 10px — a smudge, not a label. The room that exists is the gutter, which
+carries the same four lines upright at ~28px.
+
+**⚠️ THE GUARD NOW PROTECTS `zone.trim`, NOT THE WHOLE CONTAINER. DO NOT WIDEN IT.**
+`renderAtlasAuthoringGuide` used to throw on any `<text>` at all. That was a proxy
+for the 2026-08-25 `artifactFreeContract` deaths, and the proxy was wider than the
+defect: what came back painted was a surface name centred **ON** the area the model
+was told to fill. The paint area is the dashed trim box. Every `<text>` must
+declare an x/y anchor (`flat_atlas_authoring_guide_text_unlocatable` otherwise) and
+every anchor must lie outside every `zone.trim`
+(`flat_atlas_authoring_guide_contains_text`). A caption is also physically unable
+to reach a customer: the master is masked to the zone rectangles and each panel is
+finished to trim.
+
+Contract `atlas-artboard-designiq.20260827.v5`, folded into the Call-1 `promptHash`
+so masters authored against the old shell are not reused. `PROMPT_VERSION` stays
+`designpro-flat-first-atlas-20260827.v10-edge` — **no migration cutover.**
+
+### SUPERSEDED — the gutter-caption form (2026-08-27, earlier the same day)
 
 Owner, looking at the live master: **"You almost had it just fix so it's a true
 topography flattened view labeled containers"**, against a spec sheet reading
