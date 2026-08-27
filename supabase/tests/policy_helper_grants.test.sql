@@ -30,18 +30,32 @@ select plan(4);
 -- 1. The specific regression, by name and signature.
 select ok(
   has_function_privilege('authenticated', 'public.has_role(uuid, public.app_role)', 'EXECUTE'),
-  'authenticated may execute public.has_role -- the helper three RLS policies call'
+  'authenticated may execute public.has_role -- the helper the plan/role/token policies call'
 );
 
--- 2. The three policies that depend on it still exist and still call it. A
---    later edit that drops the helper call would make assertion 1 vacuous.
+-- 2. WHERE THOSE POLICIES EXIST, EVERY ONE OF THEM IS COVERED.
+--
+--    The count is NOT asserted, and that is deliberate. user_roles_read_own,
+--    user_subscriptions_read_own and user_tokens_read_own exist in production
+--    and in NO migration -- `grep -rln user_roles_read_own supabase/migrations/`
+--    returns only this feature's own migration. They are the same
+--    production-drift class CLAUDE.md records for
+--    designpro_private.caller_owns_generation: created directly against the
+--    database, so a fresh replay has zero of them and a hardcoded 3 fails in the
+--    shadow apply while passing against production. (It did, on the first run.)
+--
+--    So this asserts the invariant that holds in BOTH environments: whatever
+--    policies reference the helper, all of them are reachable by the role that
+--    evaluates them. Zero policies satisfies it vacuously in a fresh database;
+--    three satisfy it in production.
 select is(
-  (select count(*)::int
+  (select coalesce(pg_catalog.string_agg(tablename || '.' || policyname, ', '), '')
      from pg_catalog.pg_policies
     where schemaname = 'public'
-      and (qual like '%has_role%' or coalesce(with_check, '') like '%has_role%')),
-  3,
-  'user_roles, user_subscriptions and user_tokens still gate reads through has_role'
+      and (qual like '%has_role%' or coalesce(with_check, '') like '%has_role%')
+      and not has_function_privilege('authenticated', 'public.has_role(uuid, public.app_role)', 'EXECUTE')),
+  '',
+  'no policy calls has_role from a role that cannot execute it'
 );
 
 -- 3. THE GENERAL RULE. Any SECURITY DEFINER function a public policy calls must
