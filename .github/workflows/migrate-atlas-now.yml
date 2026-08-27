@@ -1,0 +1,77 @@
+name: Migrate ATLAS production now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/migrate-atlas-now.yml
+
+permissions:
+  contents: read
+
+env:
+  EXACT_SHA: ${{ github.sha }}
+  SUPABASE_CLI_VERSION: 2.111.0
+
+jobs:
+  production-migrate-now:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: designproai-production
+    env:
+      EXPECTED_PROJECT_REF: wozyamlnygaddievzuwn
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.DESIGNPRO_SUPABASE_DB_PASSWORD }}
+      PRODUCTION_APPROVAL_TOKEN: ${{ secrets.DESIGNPRO_PRODUCTION_APPROVAL_TOKEN }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.EXACT_SHA }}
+          persist-credentials: false
+      - name: Prove exact production target
+        run: |
+          set +x
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_DB_PASSWORD"
+          test "$PRODUCTION_APPROVAL_TOKEN" = "APPROVED_DESIGNPRO_PRODUCTION_MIGRATION"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Link isolated DesignProAI production project
+        run: |
+          set +x
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" link --project-ref "$EXPECTED_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+          test "$(cat supabase/.temp/project-ref)" = "$EXPECTED_PROJECT_REF"
+      - name: Repair known orphan migration history
+        run: |
+          set +x
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status reverted \
+            20260814031135 20260814031155 20260814031413 20260814032058 \
+            20260814043013 20260814043106 20260814043415 20260814051500 \
+            20260814051533 20260814052016 20260814052253 20260814052343 \
+            20260814061303 20260814062621 20260814062701 20260814062735 \
+            20260814160419 20260814161907 20260814162002 20260814162704 \
+            20260814162744 20260814200406 || true
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status reverted \
+            20260827065636 20260827081247 20260827095554 \
+            20260827100307 20260827101228 20260827102412 || true
+          ALREADY_LIVE_BELOW=20260817230000
+          applied=$(ls supabase/migrations/*.sql | xargs -n1 basename | cut -d_ -f1 \
+            | awk -v floor="$ALREADY_LIVE_BELOW" '$1 < floor')
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status applied $applied || true
+      - name: Apply production migrations now
+        run: |
+          set +x
+          test "$(cat supabase/.temp/project-ref)" = "$EXPECTED_PROJECT_REF"
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" db push --linked --include-all --yes
+      - name: Verify remote migration history
+        run: |
+          set +x
+          missing=$(npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration list --linked \
+            | awk -F'|' '{ gsub(/ /,"",$1); gsub(/ /,"",$2); if ($1 ~ /^[0-9]{14}$/ && $2 == "") print $1 }')
+          test -z "$missing" || { echo "::error::local migrations absent from remote history: $missing"; exit 1; }
+      - name: Prove live ATLAS schema
+        run: bash ops/assert-atlas-production-schema.sh
