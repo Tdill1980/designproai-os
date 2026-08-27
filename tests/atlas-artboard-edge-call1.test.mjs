@@ -44,6 +44,10 @@ test("presentation swaps are exact-match and throw on persona drift", () => {
   assert.match(assembly, /ONE SOLID RECTANGLE of continuous wrap artwork/);
   assert.match(assembly, /mirror twin/);
   assert.match(assembly, /LAYOUT ONLY/);
+  // The DESIGN ANCHOR request is a 3D-proof/camera instruction and is removed
+  // for the flat call — it is also what made the model answer in text and draw
+  // nothing (measured twice on the deployed function, 2026-08-27).
+  assert.match(assembly, /This anchor ensures consistency across all camera angles\.",\n\s*"",/);
 });
 
 test("exactly one Gemini image request lives in the atlas-artboard handler", () => {

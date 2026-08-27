@@ -160,6 +160,23 @@ Any attached flattened-top-view reference teaches LAYOUT ONLY — take no artwor
     flatContract,
   );
 
+  // THE DESIGN-ANCHOR TEXT REQUEST IS A 3D-PROOF INSTRUCTION, AND IT MUST GO.
+  //
+  // The persona closes by asking for a design name and a DESIGN ANCHOR whose
+  // stated purpose is "consistency across all camera angles" — the cross-view
+  // contract for the seven proofs, not for a flat print master. Left in, it is
+  // also the reason this call returned no image: measured twice on the
+  // deployed function (2026-08-27, runs 33028387845 and 33028475640), Gemini
+  // answered with finishReason STOP and the anchor text alone — it did the
+  // writing it was asked for and drew nothing. The anchor belongs to the proof
+  // stage, which has its own authority; here the last instruction must be the
+  // output contract.
+  prompt = atlasSwap(
+    prompt,
+    "\nBefore the image, output: 1) A creative design name (2-4 words, no trademarked names) 2) DESIGN ANCHOR: A detailed 3-sentence description of the design — colors with hex values, element positions relative to vehicle panels, flow direction, and key design features. This anchor ensures consistency across all camera angles.",
+    "",
+  );
+
   // 3 — the owner logo contract: commercial briefs with no supplied logo get a
   // DESIGNED mark, and set type never satisfies it. A supplied logo is the
   // authority and gets no competing demand; restyle carries no logo demand at
