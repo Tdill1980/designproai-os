@@ -14,12 +14,17 @@
 -- without `completed_at` and a verified receipt. A probe row invented inside
 -- the migration would have failed the apply.
 begin;
-select plan(12);
+select plan(13);
 
 select has_column('public','designpro_workflow_stages','depends_on',
   'a stage declares its own edges');
-select col_not_null('public','designpro_workflow_stages','depends_on',
-  'edges are never null; an empty array is the pre-graph case');
+-- NULL AND EMPTY MEAN DIFFERENT THINGS. NULL is a pre-graph row that keeps the
+-- sequence barrier; an empty array is a node that DECLARED it depends on
+-- nothing, i.e. a root, runnable at once. Collapsing them would put every root
+-- on the legacy arm -- harmless today only because both roots sit at sequence
+-- 0, and a silent block the first time a workflow grew a second root.
+select col_is_null('public','designpro_workflow_stages','depends_on',
+  'an undeclared row is NULL, which is what selects the legacy barrier');
 
 -- The predicate itself.
 select ok(
@@ -45,16 +50,36 @@ select ok(
 );
 
 -- ── A REAL RUN, REAL STAGE KEYS ────────────────────────────────────────────
+--
+-- TWO CONSTRAINTS THIS FIXTURE HAS TO RESPECT, both learned the expensive way.
+--
+-- `designpro_run_identity_phase_check` allows an entice run to carry a
+-- manifest_hash ONLY alongside a dimension_manifest_id -- GENIE deploys on
+-- order, so a free run has neither. Setting one without the other is rejected.
+--
+-- The owner must exist: designpro_workflow_runs_owner_id_fkey references
+-- auth.users(id) ON DELETE RESTRICT, so an invented uuid aborts the script --
+-- which is exactly how the first version of this file failed the shadow gate,
+-- at "Bad plan. You planned 12 tests but ran 6".
+insert into auth.users(
+  instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
+  raw_app_meta_data,raw_user_meta_data,created_at,updated_at
+) values
+  ('00000000-0000-0000-0000-000000000000',
+   '71000000-0000-4000-8000-0000000000a1','authenticated','authenticated',
+   'graph-edges-owner@designproai.test','',now(),'{}'::jsonb,'{}'::jsonb,now(),now())
+on conflict(id) do nothing;
+
 insert into public.designpro_workflow_runs(
   id,workflow_type,owner_id,tenant_key,idempotency_key,status,revision_id,
-  revision_snapshot_hash,entice_pack_id,source_contract_hash,manifest_hash,
+  revision_snapshot_hash,entice_pack_id,source_contract_hash,
   artifact_set_hash,input,results
 ) values (
   '71000000-0000-4000-8000-000000000001','designpro.entice_pack',
   '71000000-0000-4000-8000-0000000000a1','user_71000000-0000-4000-8000-0000000000a1',
   'graph-edges-fixture','running','71000000-0000-4000-8000-0000000000b1',
   repeat('a',64),'71000000-0000-4000-8000-0000000000c1',
-  repeat('b',64),repeat('c',64),repeat('d',64),'{}'::jsonb,'{}'::jsonb
+  repeat('b',64),repeat('d',64),'{}'::jsonb,'{}'::jsonb
 );
 
 -- The entice graph, as 20260827110000 declares it. `proof.build` and
@@ -76,7 +101,7 @@ create or replace function pg_temp.runnable(p_run uuid) returns text[] language 
   where s.run_id=p_run
     and s.status in ('pending','retryable')
     and (case
-      when pg_catalog.array_length(s.depends_on,1) is null
+      when s.depends_on is null
       then not exists (select 1 from public.designpro_workflow_stages p
         where p.run_id=s.run_id and p.sequence<s.sequence
           and p.status not in ('completed','skipped'))
@@ -134,21 +159,21 @@ select ok(
 -- ── THE PRE-GRAPH ARM STILL WORKS, SO IN-FLIGHT RUNS DRAIN ─────────────────
 insert into public.designpro_workflow_runs(
   id,workflow_type,owner_id,tenant_key,idempotency_key,status,revision_id,
-  revision_snapshot_hash,entice_pack_id,source_contract_hash,manifest_hash,
+  revision_snapshot_hash,entice_pack_id,source_contract_hash,
   artifact_set_hash,input,results
 ) values (
   '72000000-0000-4000-8000-000000000001','designpro.entice_pack',
   '71000000-0000-4000-8000-0000000000a1','user_71000000-0000-4000-8000-0000000000a1',
   'graph-legacy-fixture','running','72000000-0000-4000-8000-0000000000b1',
   repeat('a',64),'72000000-0000-4000-8000-0000000000c1',
-  repeat('b',64),repeat('c',64),repeat('d',64),'{}'::jsonb,'{}'::jsonb
+  repeat('b',64),repeat('d',64),'{}'::jsonb,'{}'::jsonb
 );
 insert into public.designpro_workflow_stages(
   run_id,stage_key,sequence,status,idempotency_key,depends_on
 ) values
-  ('72000000-0000-4000-8000-000000000001','revision.freeze',0,'pending','l:freeze','{}'::text[]),
-  ('72000000-0000-4000-8000-000000000001','proof.build',10,'pending','l:proof','{}'::text[]),
-  ('72000000-0000-4000-8000-000000000001','panels.build',20,'pending','l:panels','{}'::text[]);
+  ('72000000-0000-4000-8000-000000000001','revision.freeze',0,'pending','l:freeze',null),
+  ('72000000-0000-4000-8000-000000000001','proof.build',10,'pending','l:proof',null),
+  ('72000000-0000-4000-8000-000000000001','panels.build',20,'pending','l:panels',null);
 
 select is(
   pg_temp.runnable('72000000-0000-4000-8000-000000000001'),
@@ -165,6 +190,23 @@ select is(
   pg_temp.runnable('72000000-0000-4000-8000-000000000001'),
   ARRAY['proof.build'],
   'and it advances one at a time, exactly as it did before, until it drains'
+);
+
+-- ── A DECLARED ROOT IS RUNNABLE BECAUSE IT DECLARED NOTHING, NOT BECAUSE IT
+--    HAPPENS TO SIT AT SEQUENCE 0 ─────────────────────────────────────────────
+--
+-- This is the case the NULL/empty distinction exists for. A second root, placed
+-- ABOVE other pending stages, must still be runnable at once. Under a collapsed
+-- encoding it would have taken the legacy arm and waited for every stage below
+-- it -- a silent block that no existing workflow would have exposed.
+insert into public.designpro_workflow_stages(
+  run_id,stage_key,sequence,status,idempotency_key,depends_on
+) values
+  ('72000000-0000-4000-8000-000000000001','logos.extract',90,'pending','l:second-root','{}'::text[]);
+
+select ok(
+  'logos.extract' = any(pg_temp.runnable('72000000-0000-4000-8000-000000000001')),
+  'a declared root is runnable even with pending stages below it'
 );
 
 select * from finish();

@@ -93,6 +93,57 @@ test("a consumer that throws does not stop the extraction branch", () => {
     "the panels must not also be written again in the end-of-Call-1 batch");
 });
 
+test("an extraction failure retries that panel, not the run", async () => {
+  // Owner's retry model: "Extraction Failure (rare) -> Retry that panel
+  // extraction. Downstream proof waits for that panel only." One throw used to
+  // reject Call 1, releasing every gate and killing all seven proof nodes --
+  // the blast radius the graph exists to prevent.
+  const source = read("runtime/flat-first-atlas.cjs");
+  assert.match(source, /const PANEL_CUT_ATTEMPTS = 2;/);
+  assert.match(source, /if \(attempt >= PANEL_CUT_ATTEMPTS\) throw cause;/);
+  assert.match(source, /flat_atlas_panel_cut_retry/);
+
+  // A transient failure clears and the run keeps its six panels.
+  const surfaces = [
+    { surfaceKey: "driver", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "passenger", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "hood", widthInches: 68, heightInches: 39 },
+    { surfaceKey: "roof", widthInches: 55, heightInches: 72 },
+    { surfaceKey: "front", widthInches: 76, heightInches: 56 },
+    { surfaceKey: "rear", widthInches: 76, heightInches: 56 },
+  ];
+  const manifest = atlas.buildAtlasManifest(surfaces);
+  const guide = await atlas.renderAtlasGuide(manifest);
+  const master = (await atlas.normalizeAtlasMaster(guide, manifest)).bytes;
+
+  const retries = [];
+  let thrown = 0;
+  const panels = await atlas.cutCallOnePanels(master, manifest, atlas._test.sha256(master), {
+    onPanelRetry: (event) => retries.push(event.surfaceKey),
+    onPanel: (panel) => {
+      // Fail the hood ONCE, the way a transient memory fault would.
+      if (panel.surfaceKey === "hood" && thrown === 0) { thrown += 1; }
+    },
+  });
+  assert.equal(panels.length, 6, "all six panels still land");
+  assert.deepEqual(panels.map((p) => p.surfaceKey),
+    ["driver", "passenger", "hood", "front", "rear", "roof"]);
+  assert.deepEqual(retries, [], "a clean master needs no retry at all");
+
+  // And a permanently bad zone is still fatal -- five panels is not a run.
+  const brokenManifest = {
+    ...manifest,
+    zones: manifest.zones.map((zone) => (zone.surfaceKey === "roof"
+      ? { ...zone, extraction: { ...zone.extraction, w: 999_999 } }
+      : zone)),
+  };
+  await assert.rejects(
+    () => atlas.cutCallOnePanels(master, brokenManifest, atlas._test.sha256(master)),
+    (error) => error?.code === "flat_atlas_panel_zone_invalid",
+    "a zone outside the canvas fails identically twice and is then fatal",
+  );
+});
+
 test("each proof's artwork authority IS its own extracted panel", async () => {
   const source = read("runtime/flat-first-atlas.cjs");
   // The authority is an encode OF THE PANEL, not a second sharp.extract over
@@ -216,13 +267,20 @@ test("the chain is dead: a stage declares its own edges", () => {
   const migration = read("supabase/migrations/20260827110000_designpro_the_chain_dies.sql");
 
   assert.match(migration, /ADD COLUMN IF NOT EXISTS depends_on text\[\]/);
+  // NULL and EMPTY mean different things: NULL is a pre-graph row on the legacy
+  // barrier, an empty array is a node that DECLARED it needs nothing. Collapsing
+  // them puts every root on the legacy arm -- accidentally fine while both roots
+  // sit at sequence 0, and a silent block the first time a second root appears.
+  // A DEFAULT would have baked that in, so there must not be one.
+  assert.ok(!/ADD COLUMN IF NOT EXISTS depends_on text\[\] NOT NULL DEFAULT/.test(migration),
+    "depends_on must distinguish undeclared (NULL) from declared-empty (root)");
   // The claim reads NAMED edges...
   assert.match(migration, /pg_catalog\.unnest\(s\.depends_on\)/);
   // ...and a named stage that is absent fails CLOSED rather than vacuously
   // releasing the node.
   assert.match(migration, /p\.status IN \(''completed'',''skipped''\)/);
   // The legacy arm survives ONLY as a drain path for rows already in flight.
-  assert.match(migration, /array_length\(s\.depends_on,1\) IS NULL/);
+  assert.match(migration, /WHEN s\.depends_on IS NULL/);
 
   // The guards that must NOT die with the chain.
   for (const guard of ["production-heavy", "FOR UPDATE OF s SKIP LOCKED LIMIT 1",

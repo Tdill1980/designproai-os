@@ -133,6 +133,10 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v3";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
+// Two, not three: a deterministic crop that fails the same way twice is not
+// going to succeed on a third, and each attempt is ~40ms of the customer's
+// wait. This is a transient-fault filter, never a way to make a bad zone pass.
+const PANEL_CUT_ATTEMPTS = 2;
 const TARGET_PRINT_PPI = 150;
 const PROJECTION_CONTRACT = "designpro.flat-first-atlas-projection.v1";
 const VIEW_AUTHORITY_CONTRACT = "designpro.flat-first-atlas-view-authority.v1";
@@ -846,7 +850,7 @@ async function viewAuthorityFromPanel(panel, sourceViewType) {
   );
 }
 
-async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash, { onPanel = null } = {}) {
+async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash, { onPanel = null, onPanelRetry = null } = {}) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
   // LINEAGE, NOT PROVENANCE. `sourceMasterHash` is the identity PanelPro pairs
   // a panel with its proof by, so it has to be the CANONICAL master hash the
@@ -873,9 +877,30 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
   // before the next one starts. The caller uses that to persist it, publish it
   // to PanelPro, and release that surface's 3D proof. Driver is first, so the
   // Driver panel and its proof are unblocked while Roof has not been touched.
+  // AN EXTRACTION FAILURE RETRIES THAT PANEL, NOT THE RUN.
+  //
+  // Owner's retry model: "Extraction Failure (rare) -> Retry that panel
+  // extraction. Downstream proof waits for that panel only." A single throw
+  // here used to reject Call 1 outright, which released every gate and took all
+  // seven proof nodes with it -- the blast radius the graph exists to prevent.
+  //
+  // The cut is deterministic pixel work, so a failure is transient (memory, IO)
+  // or permanent (a zone genuinely outside the canvas). Retrying separates
+  // them: a transient one clears, a permanent one fails identically twice and
+  // is then allowed to be fatal, because a run cannot ship five panels and call
+  // itself complete -- `source.verify` asserts exactly six.
   const panels = [];
   for (const surfaceKey of PANEL_EXTRACTION_ORDER) {
-    const panel = await cutOnePanel(surfaceKey);
+    let panel = null;
+    for (let attempt = 1; attempt <= PANEL_CUT_ATTEMPTS; attempt += 1) {
+      try {
+        panel = await cutOnePanel(surfaceKey);
+        break;
+      } catch (cause) {
+        if (attempt >= PANEL_CUT_ATTEMPTS) throw cause;
+        onPanelRetry?.({ surfaceKey, attempt, reason: String(cause?.message || cause || "unknown") });
+      }
+    }
     panels.push(panel);
     if (typeof onPanel === "function") await onPanel(panel, panels.length - 1);
   }
@@ -2125,6 +2150,9 @@ async function generateOrReuseFlatAtlas(options) {
   const panelReleaseErrors = [];
   const [callOnePanels, projection] = await Promise.all([
     cutCallOnePanels(surfaceSourceBytes, manifest, masterHash, {
+      onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
+        "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },
+      ),
       onPanel: async (panel) => {
         // THE PANEL IS THE PROOF'S ARTWORK AUTHORITY, so the authority is built
         // HERE -- the instant the panel exists -- rather than in one batch after

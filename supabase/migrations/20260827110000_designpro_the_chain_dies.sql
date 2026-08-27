@@ -42,11 +42,24 @@
 -- its own edges and the chain never applies to it.
 
 -- ── 1. THE EDGES GET A HOME ────────────────────────────────────────────────
+-- NULL AND EMPTY MEAN DIFFERENT THINGS, DELIBERATELY.
+--
+--   NULL  -- this row predates the graph. Nothing declared its edges, and
+--            inferring them for a run already in flight would be guessing, so
+--            it keeps the sequence barrier until it drains.
+--   '{}'  -- this row DECLARED that it depends on nothing. It is a root, and it
+--            is runnable immediately.
+--
+-- Collapsing the two would have made every root take the legacy arm. That is
+-- accidentally correct today, because both roots happen to sit at sequence 0
+-- and a sequence-0 stage has nothing below it -- and it would silently block a
+-- SECOND root the first time a workflow grew one. A default of '{}' would have
+-- baked that in, so there is no default.
 ALTER TABLE public.designpro_workflow_stages
-  ADD COLUMN IF NOT EXISTS depends_on text[] NOT NULL DEFAULT '{}'::text[];
+  ADD COLUMN IF NOT EXISTS depends_on text[];
 
 COMMENT ON COLUMN public.designpro_workflow_stages.depends_on IS
-  'Stage keys in the same run that must be completed or skipped before this node is runnable. Empty means the legacy sequence barrier applies (pre-2026-08-27 rows only).';
+  'Stage keys in the same run that must be completed or skipped before this node is runnable. An empty array means this node declared no dependencies and is a root. NULL means the row predates the dependency graph and keeps the legacy sequence barrier.';
 
 -- ── 2. THE ENTICE GRAPH DECLARES ITS EDGES ─────────────────────────────────
 --
@@ -72,7 +85,7 @@ DECLARE
   v_patched text;
   v_anchor constant text :=
     E'  RETURN jsonb_build_object(''workflowRunId'',v_run.id,''revisionId'',v_run.revision_id,''enticePackId'',v_run.entice_pack_id,''status'',v_run.status);';
-  v_edges constant text := E'  UPDATE public.designpro_workflow_stages s\n  SET depends_on=d.depends_on\n  FROM (VALUES\n    (''revision.freeze'',''{}''::text[]),\n    (''panels.build'',ARRAY[''revision.freeze'']),\n    (''logos.extract'',ARRAY[''panels.build'']),\n    (''panels.delogo'',ARRAY[''logos.extract'']),\n    (''proof.build'',ARRAY[''revision.freeze'']),\n    (''pack.verify'',ARRAY[''proof.build'',''panels.build'',''logos.extract'',''panels.delogo'']),\n    (''pack.activate'',ARRAY[''pack.verify''])\n  ) AS d(stage_key,depends_on)\n  WHERE s.run_id=v_run.id AND s.stage_key=d.stage_key\n    AND s.status=''pending'' AND s.depends_on=''{}''::text[];\n';
+  v_edges constant text := E'  UPDATE public.designpro_workflow_stages s\n  SET depends_on=d.depends_on\n  FROM (VALUES\n    (''revision.freeze'',''{}''::text[]),\n    (''panels.build'',ARRAY[''revision.freeze'']),\n    (''logos.extract'',ARRAY[''panels.build'']),\n    (''panels.delogo'',ARRAY[''logos.extract'']),\n    (''proof.build'',ARRAY[''revision.freeze'']),\n    (''pack.verify'',ARRAY[''proof.build'',''panels.build'',''logos.extract'',''panels.delogo'']),\n    (''pack.activate'',ARRAY[''pack.verify''])\n  ) AS d(stage_key,depends_on)\n  WHERE s.run_id=v_run.id AND s.stage_key=d.stage_key\n    AND s.status=''pending'' AND s.depends_on IS NULL;\n';
   v_occurrences int;
 BEGIN
   v_definition := pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
@@ -123,7 +136,7 @@ DECLARE
   v_patched text;
   v_anchor constant text :=
     E'  RETURN jsonb_build_object(''workflowRunId'',v_run.id,''sourceEnticeRunId'',v_entice.id,''status'',v_run.status);';
-  v_edges constant text := E'  UPDATE public.designpro_workflow_stages s\n  SET depends_on=d.depends_on\n  FROM (VALUES\n    (''await_purchase'',''{}''::text[]),\n    (''manifest.resolve'',ARRAY[''await_purchase'']),\n    (''source.verify'',ARRAY[''manifest.resolve'']),\n    (''await_panelpro_preflight_qc'',ARRAY[''source.verify'']),\n    (''enhance.upscale'',ARRAY[''await_panelpro_preflight_qc'']),\n    (''output.build'',ARRAY[''enhance.upscale'']),\n    (''output.verify'',ARRAY[''output.build'']),\n    (''await_final_human_qc'',ARRAY[''output.verify'']),\n    (''stamp.build'',ARRAY[''await_final_human_qc'']),\n    (''zip.build'',ARRAY[''stamp.build'']),\n    (''wrapbox.deliver'',ARRAY[''zip.build''])\n  ) AS d(stage_key,depends_on)\n  WHERE s.run_id=v_run.id AND s.stage_key=d.stage_key\n    AND s.status=''pending'' AND s.depends_on=''{}''::text[];\n';
+  v_edges constant text := E'  UPDATE public.designpro_workflow_stages s\n  SET depends_on=d.depends_on\n  FROM (VALUES\n    (''await_purchase'',''{}''::text[]),\n    (''manifest.resolve'',ARRAY[''await_purchase'']),\n    (''source.verify'',ARRAY[''manifest.resolve'']),\n    (''await_panelpro_preflight_qc'',ARRAY[''source.verify'']),\n    (''enhance.upscale'',ARRAY[''await_panelpro_preflight_qc'']),\n    (''output.build'',ARRAY[''enhance.upscale'']),\n    (''output.verify'',ARRAY[''output.build'']),\n    (''await_final_human_qc'',ARRAY[''output.verify'']),\n    (''stamp.build'',ARRAY[''await_final_human_qc'']),\n    (''zip.build'',ARRAY[''stamp.build'']),\n    (''wrapbox.deliver'',ARRAY[''zip.build''])\n  ) AS d(stage_key,depends_on)\n  WHERE s.run_id=v_run.id AND s.stage_key=d.stage_key\n    AND s.status=''pending'' AND s.depends_on IS NULL;\n';
   v_occurrences int;
 BEGIN
   v_definition := pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
@@ -170,7 +183,7 @@ DECLARE
   v_old constant text :=
     E'    AND NOT EXISTS (SELECT 1 FROM public.designpro_workflow_stages p WHERE p.run_id=s.run_id AND p.sequence<s.sequence AND p.status NOT IN (''completed'',''skipped''))';
   v_new constant text :=
-    E'    AND (CASE\n      WHEN pg_catalog.array_length(s.depends_on,1) IS NULL\n      -- Pre-graph rows only: a run already in flight keeps the semantics it\n      -- started under, because inferring its edges after the fact is guessing.\n      THEN NOT EXISTS (SELECT 1 FROM public.designpro_workflow_stages p WHERE p.run_id=s.run_id AND p.sequence<s.sequence AND p.status NOT IN (''completed'',''skipped''))\n      -- The graph: only the nodes this one names, and each of them must EXIST\n      -- and be finished. A named stage that is absent fails closed.\n      ELSE NOT EXISTS (\n        SELECT 1 FROM pg_catalog.unnest(s.depends_on) AS dep(stage_key)\n        WHERE NOT EXISTS (\n          SELECT 1 FROM public.designpro_workflow_stages p\n          WHERE p.run_id=s.run_id AND p.stage_key=dep.stage_key\n            AND p.status IN (''completed'',''skipped'')\n        )\n      )\n    END)';
+    E'    AND (CASE\n      WHEN s.depends_on IS NULL\n      -- Pre-graph rows ONLY -- NULL, not empty. A run already in flight keeps\n      -- the semantics it started under; a declared root with no edges takes\n      -- the graph arm below and is runnable at once.\n      THEN NOT EXISTS (SELECT 1 FROM public.designpro_workflow_stages p WHERE p.run_id=s.run_id AND p.sequence<s.sequence AND p.status NOT IN (''completed'',''skipped''))\n      -- The graph: only the nodes this one names, and each of them must EXIST\n      -- and be finished. A named stage that is absent fails closed.\n      ELSE NOT EXISTS (\n        SELECT 1 FROM pg_catalog.unnest(s.depends_on) AS dep(stage_key)\n        WHERE NOT EXISTS (\n          SELECT 1 FROM public.designpro_workflow_stages p\n          WHERE p.run_id=s.run_id AND p.stage_key=dep.stage_key\n            AND p.status IN (''completed'',''skipped'')\n        )\n      )\n    END)';
   v_occurrences int;
 BEGIN
   v_definition := pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
@@ -236,7 +249,7 @@ BEGIN
   -- anything: the same two predicates the claim uses, run as a plain read.
   SELECT pg_catalog.count(*) INTO v_legacy
   FROM public.designpro_workflow_stages s
-  WHERE pg_catalog.array_length(s.depends_on,1) IS NULL
+  WHERE s.depends_on IS NULL
     AND NOT EXISTS (
       SELECT 1 FROM public.designpro_workflow_stages p
       WHERE p.run_id=s.run_id AND p.sequence<s.sequence
@@ -245,7 +258,7 @@ BEGIN
 
   SELECT pg_catalog.count(*) INTO v_graph
   FROM public.designpro_workflow_stages s
-  WHERE pg_catalog.array_length(s.depends_on,1) IS NOT NULL
+  WHERE s.depends_on IS NOT NULL
     AND NOT EXISTS (
       SELECT 1 FROM pg_catalog.unnest(s.depends_on) AS dep(stage_key)
       WHERE NOT EXISTS (
