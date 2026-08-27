@@ -890,26 +890,41 @@ function createGenerationWorker({
         // Releasing twice is a no-op; a resolved promise stays resolved. The
         // failure branch swallows nothing -- `await atlasRun` below re-throws.
         atlasRun.then(releaseAllGates, releaseAllGates);
-        // The master must exist before ANY branch starts -- it is the graph's
-        // one real dependency. Beyond that, Call 1's tail overlaps the proofs.
-        await Promise.race([
-          atlasRun.then(() => {}),
-          new Promise((resolve) => {
-            const poll = setInterval(() => {
-              if (progressiveAtlas) { clearInterval(poll); resolve(); }
-            }, 10);
-            poll.unref?.();
-          }),
-        ]);
-        flatAtlas = progressiveAtlas || await atlasRun;
-        // A resumed Atlas request may already contain accepted rows. Admit
-        // them only when they prove this exact master/provider/Driver lineage;
-        // old generic rows must never short-circuit the corrected pipeline.
-        assertAtlasViewLineage({
-          views: await viewsPayload(requestId),
-          flatAtlas,
-          requireComplete: false,
-        });
+        // HOTFIX -- LIVE OUTAGE, confirmed on a real production canary
+        // (b7f18baa/16ee00aa, 2026-08-27): every flat-first request failed at
+        // ~40s with generation_atlas_lineage_invalid.
+        //
+        // The race that substituted the PROGRESSIVE root node for the fully
+        // joined `flatAtlas` here was wrong for a reason deeper than the one
+        // assertion it broke first. THREE separate places between here and the
+        // old `flatAtlas = await atlasRun` read identity fields that plainly do
+        // not exist until Call 1's tail persists the revision row --
+        // `revisionId` in particular is assigned by the DATABASE on insert, so
+        // no amount of restructuring the progressive object can populate it
+        // earlier without minting a client-side id, which is a real change to
+        // how the revision is persisted, not a one-line fix:
+        //
+        //   1. `assertAtlasViewLineage`'s unconditional identity/masterAcceptance
+        //      check (the first crash observed).
+        //   2. `createAtlasDesignPanelProvider` itself calls
+        //      `assertHash(identity.projectionContentHash, ...)` SYNCHRONOUSLY
+        //      at construction -- the provider cannot be built at all against
+        //      an incomplete atlas, let alone conditioned per surface.
+        //   3. `slotsFrom`'s eager per-slot IIFE calls `viewAuthorityFor` and
+        //      reads `flatAtlas.projection`/`.manifestAsset` for EVERY slot at
+        //      `.map()` time -- before a single panel has been cut.
+        //
+        // So this reverts to what is actually safe: wait for the real object.
+        // The panel-extraction streaming this was trying to feed (PR #215/#216
+        // -- ordered per-panel persistence, panel.ready events, each proof fed
+        // its own extracted panel rather than a fresh crop) is UNCHANGED and
+        // still correct; only the worker's attempt to start proof CONSTRUCTION
+        // before Call 1's tail landed is undone. Pre-minting `revisionId` and
+        // moving `projection`/`manifestAsset` identity into the progressive
+        // object earlier is the real fix for the remaining latency and is a
+        // change to `generateOrReuseFlatAtlas`'s persistence order, not this
+        // call site -- tracked as follow-up, not attempted again blind.
+        flatAtlas = await atlasRun;
       }
 
       const atlasProvider = isFlatFirst ? atlasProviderFactory({
