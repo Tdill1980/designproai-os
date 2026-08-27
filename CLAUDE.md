@@ -250,6 +250,45 @@ border, not as new design. `masterCutoutSurfaces` still records that the sheet
 arrived holed, and PanelPro's human QC still sees those sides flagged. Locked by
 `tests/atlas-cutout-fill.test.mjs`.
 
+## 📐 RULE 0.28 — THE ARTBOARD IS LABELED CONTAINERS AT GENIE DIMS + 5″ BLEED, FILLED EDGE TO EDGE, WITH NO BODY LINES (Trish 2026-08-27)
+
+Owner, verbatim: **"ATLAS FLATTENED TOPO VIEW CONTAINER MUST HAVE LABELED
+CONTAINERS AND GENIE DIMS WITH 5\" BLEED — ATLAS FILLS FLATTENED TOP DESIGN
+WITHOUT BODYLINES FILLED TO RECTANGLE CONTAINER EDGES."**
+
+1. **Sizes come from the GENIE Panelizer catalog**, `vehicle_dimensions` (1781
+   measured rows, migrated 2026-08-27). `resolveFlatAtlasPreviewDimensions`
+   reads it FIRST. The class-constant estimator
+   (`provisionalDimensionsFromCandidate`) is only what happens when the catalog
+   has never seen the vehicle. Measured cost of not doing this: GENIE has the
+   F-250 Super Duty Crew Cab side at **251×60**; the estimator produced
+   **153×56** — ninety-eight inches short, on every container.
+2. **The guide IS the artboard.** Labeled rectangles, true GENIE panel
+   dimensions, 5″ bleed already included. The model paints inside them.
+3. **Filled edge to edge.** Artwork runs off all four sides of its rectangle.
+   No blank margin, white gap, letterboxing, rounded corner, frame or border.
+4. **NO BODY LINES.** No door seams, panel gaps, rocker or hood contours, wheel
+   arches, windows, glass, lights, handles, bumpers or vehicle silhouette. The
+   artwork paints straight THROUGH every place one would sit.
+
+### ⚠️ THIS NARROWS RULE 0.15, BY THE OWNER'S OWN DECISION — DO NOT "RESTORE" IT
+
+RULE 0.15 says an A.T.L.A.S. master legitimately carries the vehicle's panel
+geometry (door seams, rocker and hood contours) and warns loudly about a session
+removing that to chase a pixel defect. **That warning still stands for a
+session. It does not bind the owner, and she has now decided the opposite on
+this one point (2026-08-27), looking at the live output.** Holes were already
+forbidden; seams, contours and arches are forbidden now too, because a line
+drawn on the master prints as a line on the wrap.
+
+Everything else in RULE 0.15 is unchanged: a panel is still one solid rectangle,
+still opaque corner to corner, and a zone that returns a picture of a vehicle is
+still a failed master.
+
+Enforced by `tests/atlas-artboard-edge-call1.test.mjs` and
+`tests/genie-catalog-sizes.test.mjs`. Contract version
+`atlas-artboard-designiq.20260827.v3`.
+
 ## 🧬 RULE 0.27 — ONE ARTIFACT GRAPH. CODE OWNS THE ARTBOARD; A.I. OWNS THE DESIGN. (Trish 2026-08-27)
 
 **Full directive: `docs/ATLAS_ONE_ARTIFACT_GRAPH.md`. Read it before touching
