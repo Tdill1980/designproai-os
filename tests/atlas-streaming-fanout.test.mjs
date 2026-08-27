@@ -251,10 +251,12 @@ test("no global barrier between extraction and proofs", () => {
   // ...but it is still JOINED, so a Call 1 failure is still fatal and its
   // rejection is never swallowed.
   assert.match(worker, /flatAtlas = await atlasRun;/);
-  assert.match(worker, /atlasRun\.catch\(\(cause\) => \{/);
-  // A rejected Call 1 releases every gate, so a node waiting on a panel that
-  // will never exist fails with a reason instead of hanging to lease expiry.
-  assert.match(worker, /for \(const \{ release \} of surfaceGates\.values\(\)\) release\(\);/);
+  // EVERY gate opens when Call 1 SETTLES, whichever way it settles -- not only
+  // on failure. A reused/resumed revision returns without cutting anything, so
+  // `onSurfaceReady` never fires; a gate that only opened on failure would
+  // leave every proof node blocked on the resume path until its lease expired.
+  assert.match(worker, /atlasRun\.then\(releaseAllGates, releaseAllGates\);/);
+  assert.match(worker, /releaseAllGates: \(\) => \{ for \(const \{ release \} of gates\.values\(\)\) release\(\); \}/);
   // The old shape must not come back.
   assert.ok(!/flatAtlas = await generateOrReuseFlatAtlas\(/.test(worker),
     "awaiting all of Call 1 before any proof is the global barrier the graph forbids");

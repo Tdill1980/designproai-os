@@ -128,7 +128,10 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   assert.match(worker, /await awaitSurface\(sourceViewType\);\s*\n\s*return viewAuthorityFor\(flatAtlas, sourceViewType\);/);
   assert.match(worker, /await awaitSurface\(sourceViewType\);\s*\n\s*return atlasProjectionParts\(flatAtlas, sourceViewType\);/);
   // One gate per SURFACE, so Close-Up rides Driver's cut rather than its own.
-  assert.match(worker, /surfaceGates\.get\(surfaceForProofView\(sourceViewType\)\)/);
+  // One gate per surface, extracted into `surfaceGateSet()` so it is a
+  // testable unit rather than inline state -- Close-Up rides Driver's cut.
+  assert.match(worker, /gates\.get\(surfaceForProofView\(sourceViewType\)\)/);
+  assert.match(worker, /function surfaceGateSet\(surfaceKeys = ATLAS_SURFACE_KEYS\) \{/);
   // The gate that makes "conditioned on the master" a fact rather than a claim.
   assert.match(atlas, /function viewAuthorityFor\(/);
 

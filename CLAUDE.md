@@ -1088,6 +1088,42 @@ is what makes implicit mirroring impossible.
 Enforcement points, the full frozen list, and what counts as a breaking change:
 **`docs/SEAM-FREEZE.md`.**
 
+### ⛔ AMENDMENT — SCHEDULING IS NOT PART OF THE FROZEN SEAM (Trish 2026-08-27)
+
+RULE 0.5 freezes the **artifact contract** — shape, naming, identity, storage,
+`source.verify`'s exactly-six/exactly-two counts. It does **not** freeze *when*
+a downstream workflow stage is scheduled, and a session reading "the seam is
+frozen" as "do not touch stage sequencing without asking" stalled real
+orchestration work on that misreading.
+
+**Owner directive, final: "The graph contract is already decided... Do not
+stop again because an old rule describes the obsolete serial architecture.
+Update the rule/contract to the graph architecture and continue."**
+
+So, explicitly: **workflow stage dependencies, scheduling and the conditions
+under which a workflow row is created are NOT an owner-level stop.** Wire them
+to the graph model — each node's real data dependency, nothing more — and keep
+going. What remains frozen is only what RULE 0.5 actually names above:
+`SURFACE_KEYS`, storage paths, content hashes, receipt shape, the exactly-six
+panel / exactly-two proof counts. Changing *those* is still an owner-level
+stop. Changing *when a stage may run* is not, and never was — it was read into
+the rule, not written into it.
+
+**Applied immediately**, per the graph contract:
+`handoff_designpro_generation_to_production` used to require the generation's
+overall engine state to be `outputs_ready` — every one of the seven proof slots
+accepted — before it would create the entice workflow at all. That gated
+`panels.build` **and** `logos.extract` behind the slowest of seven independent
+AI calls, which is exactly the global barrier the graph forbids, one layer
+above the `claim_designpro_stage` predecessor chain already removed. A
+flat-first (ATLAS) request now hands off on **master acceptance alone** — the
+same evidence `designpro_flat_first_handoff_gate` already reported as
+production-eligible on a read-only path that disagreed with the write path
+gating it. See
+`supabase/migrations/20260827120000_designpro_logo_extraction_does_not_wait_for_proofs.sql`.
+A Standard (non-flat-first) request is unchanged: it has no master and no
+panels, so `outputs_ready` remains its only gate.
+
 ## ⛔ RULE 1 — RESTYLEPRO IS THE REFERENCE IMPLEMENTATION. RECOVER BEFORE YOU INVENT.
 
 **Applies to every session in this repository.** If a capability worked in
