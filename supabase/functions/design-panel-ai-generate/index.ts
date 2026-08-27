@@ -319,6 +319,7 @@ The attached layout guide is the ARTBOARD. Its labeled rectangles are fixed cont
 ${panelLines}
 FILL EVERY CONTAINER EDGE TO EDGE. Each panel is ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner, with the design running off all four sides of its rectangle. No blank margin, no white gap, no letterboxing, no rounded corner, no frame or border around a panel.
 NO BODY LINES. Do not draw door seams, panel gaps, rocker or hood contours, wheel arches, windows, glass, lights, handles, bumpers, a vehicle silhouette, or any cut-out shape. The artwork paints straight THROUGH every place one of those would sit \u2014 the installer cuts the openings from the printed vinyl afterwards, and a line drawn here prints as a line on the wrap.
+Paint the FULL rectangle even where the finished vehicle is not wrapped \u2014 a pickup bed opening, for example. Those regions are masked out of the panel by code after you finish, from the vehicle's own geometry. Do not leave a gap, a hole, a dark shape or a soft edge for one, and do not try to draw where it goes.
 PASSENGER SIDE is DRIVER SIDE's mirror twin \u2014 the same artwork reversed \u2014 with every word and logo forward-reading on both.
 ONE cohesive wrap: the same design flows across all panels as a single artwork laid flat.
 Any attached flattened-top-view reference teaches LAYOUT ONLY \u2014 take no artwork, wording, logo, colour or style from it.`;

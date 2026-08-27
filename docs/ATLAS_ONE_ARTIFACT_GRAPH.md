@@ -129,20 +129,104 @@ artifact standing in for a production panel.**
 Publish **the same persisted extracted assets** to RevisionStudioIQ (below the
 panels) and PanelPro Studio's asset gallery.
 
-### C — CUSTOMER PROOF
-`same master → Driver 3D FIRST → display Driver the moment it returns`
+### C — 3D PROOFS, ONE PER EXTRACTED PANEL (owner spec, 2026-08-27)
 
-Then ask: **"Revise this design, or see all sides?"**
+> **ALL 3D PROOFS ARE RENDERED FROM THE EXTRACTED A.T.L.A.S. PANELS — NOT FROM A
+> SEPARATE DESIGN GENERATION, AND NOT WAITING ON OTHER SIDES.**
 
-On *See All Sides*: Passenger, Hood, Front, Rear, Close-Up and Roof run
-**concurrently** and populate the DesignPro page as each finishes. They are
-presentation calls only, and every one carries the accepted master's lineage.
+```text
+MASTER
+  → deterministic extraction of Driver / Passenger / Hood / Front / Rear / Roof
+  → each panel persisted immediately with trim + 5" bleed + lineage
+        │
+        ├── DRIVER PANEL     → Driver 3D proof
+        ├── PASSENGER PANEL  → Passenger 3D proof
+        ├── HOOD PANEL       → Hood 3D proof
+        ├── FRONT PANEL      → Front 3D proof
+        ├── REAR PANEL       → Rear 3D proof
+        ├── ROOF PANEL       → Roof 3D proof
+        └── CLOSE-UP         → the appropriate extracted panel / detail authority
+                               from the same accepted A.T.L.A.S. revision
+```
 
-**The user-facing critical path is only `Call 1 → Driver proof`.** Everything
-else is already in flight behind it. That is why the Flamingo run felt like
-magic: master under a minute, driver under two, then all sides appearing at
-once. Any implementation that puts panels or assets *after* the proof set on the
-critical path has broken this.
+**No proof waits for another proof.** Driver is prioritised for latency and
+customer experience only — **it is not the design authority.** (This corrects the
+current `hydrateDriver()` shape, where Driver is rendered and hash-verified
+*before* the other six are allowed to start.)
+
+### 3D proof inputs
+
+Every 3D proof receives:
+
+- the exact extracted A.T.L.A.S. panel for that surface as **ARTWORK AUTHORITY**;
+- exact YMM / configuration;
+- the canonical RestylePro **3D vehicle / view-angle edge-function logic**;
+- **`studio-os`** for the professional studio and lighting;
+- the 3D proof example / reference, **presentation only**.
+
+The proof renderer may change camera, vehicle perspective, lighting, studio and
+physical vinyl presentation. **It may NOT redesign the artwork.** (Already true
+and locked — `buildAtlasProjectionPrompt` carries none of the creative blocks,
+`tests/atlas-proof-presentation-only.test.mjs`.)
+
+**What changes in code:** `buildViewAuthorities` / `viewAuthorityFor` hash-bind
+each view to a surface crop of the repaired master (`surfaceSourceBytes`). They
+must bind to the persisted Call-9 **panel** for that `surfaceKey`, so the hash a
+proof carries is the panel's hash. The identity check stays exactly as strict —
+`flat_atlas_view_authority_identity_mismatch` still throws — it simply points at
+the artifact the customer is actually buying.
+
+### Parallel publication
+
+As each pair becomes available, publish it immediately to **both**:
+
+| surface | shows |
+|---|---|
+| **RevisionStudioIQ** | `3D PROOF ∥ MATCHING EXTRACTED PANEL`, plus trim/bleed downloads and logo assets |
+| **PanelPro Admin Studio** | the same proof/panel pair plus technical metadata, lineage, dimensions, hashes, QC, versions and downloadable assets |
+
+**Do not duplicate or regenerate the panel for either UI. Both consume the same
+persisted artifact.**
+
+### Upscale
+
+Every raster production asset that requires upscale creates a **derivative while
+preserving the source**. PanelPro must retain and display all three:
+
+```
+SOURCE PANEL  ·  UPSCALED DERIVATIVE  ·  ACTIVE PRODUCTION DERIVATIVE
+```
+
+each with dimensions, effective DPI, upscale factor, hash, timestamp and QC
+state.
+
+### HARD DEPENDENCY RULE
+
+```
+accepted master → six extracted panels
+```
+
+must happen **before, and independently of, proof completion.**
+
+- A failed Hood 3D proof **cannot** prevent the Hood production panel existing.
+- A failed Close-Up **cannot** cancel the Driver / Passenger / Front / Rear /
+  Roof artifacts.
+- Each surface is independently renderable from its own extracted panel.
+
+**This is the direct fix for `generation_slots_failed`**, where two refused views
+(roof, close-up) marked an entire design FAILED although five views and six
+panels were correct.
+
+### AUTHORITY
+
+| layer | authority |
+|---|---|
+| A.T.L.A.S. master | the ONE source design |
+| extracted panel | per-surface **artwork** authority |
+| 3D edge functions + view angles + `studio-os` | **presentation** authority |
+| RevisionStudioIQ + PanelPro | **consumers** — never producers |
+
+**No downstream design generation exists.**
 
 ---
 

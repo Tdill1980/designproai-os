@@ -285,9 +285,27 @@ Everything else in RULE 0.15 is unchanged: a panel is still one solid rectangle,
 still opaque corner to corner, and a zone that returns a picture of a vehicle is
 still a failed master.
 
+5. **Unwrapped regions are masked by CODE, never drawn by the model.** Owner:
+   *"masked truck bed must not have any wrap design."* A pickup's bed opening
+   carries no vinyl — but asking the model to leave a hole for it reintroduces
+   exactly the cut-out class RULE 0.15 convicts, with soft edges and invented
+   placement. The model fills the whole rectangle; geometry applies the mask
+   deterministically afterwards.
+6. **Every 3D proof is built from that side's EXTRACTED PANEL, and nothing
+   waits.** Owner: *"ALL 3d from extracted panels — no waiting. Individual
+   panels fed to 3d sides and duplicated, put in RevisionStudioIQ alongside 3d
+   proofs and in PanelPro with all upscaled assets."* `panel(surface) → 3D
+   proof(surface)` the moment that panel is cut. `buildViewAuthorities` /
+   `viewAuthorityFor` must hash-bind to the persisted Call-9 panel rather than
+   to a fresh crop of the master — same strictness, pointed at the artifact the
+   customer actually buys. Each panel is then duplicated and published without
+   waiting for the set: RevisionStudioIQ beside that side's proof, PanelPro with
+   the upscaled assets.
+
 Enforced by `tests/atlas-artboard-edge-call1.test.mjs` and
 `tests/genie-catalog-sizes.test.mjs`. Contract version
-`atlas-artboard-designiq.20260827.v3`.
+`atlas-artboard-designiq.20260827.v3`. Items 5 and 6 are SPECIFIED, not yet
+built — see `docs/ATLAS_ONE_ARTIFACT_GRAPH.md` §2.
 
 ## 🧬 RULE 0.27 — ONE ARTIFACT GRAPH. CODE OWNS THE ARTBOARD; A.I. OWNS THE DESIGN. (Trish 2026-08-27)
 

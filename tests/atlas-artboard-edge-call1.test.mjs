@@ -165,6 +165,17 @@ test("the flat contract states labeled containers, GENIE dims + 5in bleed, fille
   for (const forbidden of ["door seams", "panel gaps", "rocker", "wheel arches", "windows", "bumpers", "vehicle silhouette"]) {
     assert.ok(contract.includes(forbidden), `the contract must name ${forbidden} as forbidden geometry`);
   }
+  // THE UNWRAPPED REGIONS ARE MASKED BY CODE, NOT DRAWN BY THE MODEL.
+  // Owner 2026-08-27: "masked truck bed must not have any wrap design." A
+  // pickup's bed opening carries no vinyl — but asking the model to leave a
+  // hole for it reintroduces exactly the cut-out class RULE 0.15 convicts, with
+  // soft edges and invented placement. It fills the whole rectangle; geometry
+  // owns the mask, deterministically, afterwards.
+  assert.match(contract, /Paint the FULL rectangle even where the finished vehicle is not wrapped/);
+  assert.match(contract, /pickup bed opening/);
+  assert.match(contract, /masked out of the panel by code after you finish/);
+  assert.match(contract, /Do not leave a gap, a hole, a dark shape or a soft edge for one/);
+
   // The mirror twin and the one-cohesive-wrap rules survive the rewrite.
   assert.match(contract, /PASSENGER SIDE is DRIVER SIDE's mirror twin/);
   assert.match(contract, /ONE cohesive wrap/);
