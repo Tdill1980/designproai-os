@@ -789,12 +789,6 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
       // the cut-out path below, where the design survives and the panel is
       // repaired -- which is what RULE 0.15 already specified and what this
       // return was silently preventing.
-      if (rejection && !coverageFailedOnClassifiedCutoutsOnly(rejection, review, deterministic)) {
-        return {
-          accepted: false, code: "atlas_master_qc_semantic_failed",
-          reason: rejection.reason, review, deterministic,
-        };
-      }
       const cutoutSurfaces = [...new Set(
         deterministic.cutoutFindings.map((item) => String(item.surfaceKey)),
       )].sort();
@@ -810,6 +804,31 @@ function createAtlasMasterValidator({ provider, model = DEFAULT_MODEL, timeoutMs
         guideHash,
         requestByteSize,
       };
+      // A SEMANTIC REFUSAL MUST STILL REPORT ITS REPAIRABLE HALF.
+      //
+      // This return used to carry neither `metadata` nor `cutout`, so a caller
+      // could not tell that a fatal creative verdict ALSO contained classified
+      // cut-outs -- and the authoring loop's repair-then-re-judge step (owner
+      // directive 2026-08-27) was unreachable on exactly the verdict that
+      // needed it.
+      //
+      // Live: canary 6c1bfae6 and cad013e1 both burned all three attempts on
+      // "one wheel/glass/bed shape cut out of the panel" bundled with a text
+      // defect. The holes were classified and repairable each time; only the
+      // text was worth another throw.
+      //
+      // The verdict stays fatal-by-code. It simply now says what part of it the
+      // fill can close, bound to the same hashes as every other verdict so the
+      // caller's contract check still holds.
+      if (rejection && !coverageFailedOnClassifiedCutoutsOnly(rejection, review, deterministic)) {
+        return {
+          accepted: false, code: "atlas_master_qc_semantic_failed",
+          reason: rejection.reason, review, deterministic, metadata,
+          ...(cutoutSurfaces.length || semanticCutout
+            ? { cutout: { surfaces: cutoutSurfaces, findings, semantic: semanticCutout } }
+            : {}),
+        };
+      }
       // The design is sound either way. `accepted` still means spotless, so the
       // authoring loop keeps re-rolling for a clean sheet -- but a cut-out
       // result now carries its full QC record, so the exhausted case can keep
