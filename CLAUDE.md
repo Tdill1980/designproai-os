@@ -250,6 +250,51 @@ border, not as new design. `masterCutoutSurfaces` still records that the sheet
 arrived holed, and PanelPro's human QC still sees those sides flagged. Locked by
 `tests/atlas-cutout-fill.test.mjs`.
 
+## 📸 RULE 0.29 — THE 3D PROOF STACK IS THE REAL RESTYLEPRO STACK, PINNED (Trish 2026-08-27)
+
+For every extracted A.T.L.A.S. panel, the proof producer is the REAL RestylePro
+photographer stage — not a new generic renderer. Sources, at
+`restylepro-os@113d137dbe8813ca3bf70c8d7265ad081ebd4524`:
+
+| role | file | pinned sha256 (16) |
+|---|---|---|
+| 3D proof producer | `supabase/functions/persona-photographer-render/index.ts` | `7aefea1f1b8ca899` |
+| prompt builder | `supabase/functions/_shared/persona-photographer-prompt.ts` | `11cb76524211e42a` |
+| camera, framing, frame-fill | `supabase/functions/_shared/view-angles-os.ts` | `8890be50c124a2c5` |
+| studio **and lighting** | `supabase/functions/_shared/studio-os.ts` | `7b02814bb1e9e867` |
+
+All four are byte-identical to the pin, asserted by
+`tests/proof-stack-pinned-sources.test.mjs`.
+
+- **`view-angles-os` owns camera angle, framing and frame-fill.**
+- **`studio-os` owns the studio environment AND the lighting** — the LED strips,
+  daylight balance, reflections, wall/floor treatment, and the requirement that
+  the studio stay identical between views. **Do not invent studio or lighting
+  prompts in the server runtime.** The runtime consumes `STUDIO_ENVIRONMENT`; it
+  never restates it.
+- **HERO IS REMOVED (owner, 2026-08-27).** `view-angles-os` had drifted from the
+  pin by one added `hero-3d` shot; it is restored to the pinned bytes and the
+  plan is the canonical seven views. The runtime keeps its legacy `hero-3d` →
+  `hero3d` READ mapping so historical generations stay viewable (owner
+  protection #1) — that is a read path, not a plan entry, and it is not a licence
+  to render one.
+
+**Adapt, do not restore blindly.** The pinned photographer describes a
+historical six-shot sequence and an old `heroRenderUrl` continuity dependency.
+Keep its photographer/studio/view-angle logic; replace the artwork authority
+with the matching extracted A.T.L.A.S. panel for the requested `shotKey`, and
+drop the hero-first dependency. Per surface:
+
+`driver panel → shotKey driver` · `passenger panel → passenger-side` ·
+`hood panel → hood` · `front panel → front` · `rear panel → rear` ·
+`roof panel → roof` · `close-up → the correct selected surface/detail authority`
+
+**The extracted panel is ARTWORK authority. The photographer/view/studio stack
+is PRESENTATION authority only.** Every output must persist `generationId`,
+`atlasRevisionId`, `sourceMasterHash`, `surfaceKey`, the source panel artifact
+id + hash, and `shotKey`, so both UIs can prove a proof came from its matching
+panel.
+
 ## 📐 RULE 0.28 — THE ARTBOARD IS LABELED CONTAINERS AT GENIE DIMS + 5″ BLEED, FILLED EDGE TO EDGE, WITH NO BODY LINES (Trish 2026-08-27)
 
 Owner, verbatim: **"ATLAS FLATTENED TOPO VIEW CONTAINER MUST HAVE LABELED
