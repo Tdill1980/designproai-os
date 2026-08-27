@@ -98,6 +98,179 @@ function assertGroundedCandidate(candidate, vehicleClass) {
   };
 }
 
+/**
+ * THE GENIE PANELIZER CATALOG IS THE SIZE AUTHORITY. (Trish 2026-08-27)
+ *
+ * `vehicle_dimensions` is the measured GENIE catalog -- 1781 rows migrated from
+ * the predecessor project, the same sheet the shop has always cut from. Until
+ * 2026-08-27 nothing in the A.T.L.A.S. path read it: the catalog was empty on
+ * this project, and `resolveFlatAtlasPreviewDimensions` fell through to
+ * `provisionalDimensionsFromCandidate`, which scales a grounded bounding box by
+ * hardcoded per-class constants.
+ *
+ * The cost, measured on the owner's own vehicle: GENIE has the F-250 Super Duty
+ * Crew Cab at a 251x60 side. The estimator produced 153x56 -- ninety-eight
+ * inches short. Every container in the flattened master was therefore its
+ * CLASS's average, never that truck's. "None of them are the right size."
+ *
+ * So the catalog is consulted FIRST, and the estimator is what happens only
+ * when the catalog has never seen the vehicle.
+ */
+const GENIE_CATALOG_TABLE = "vehicle_dimensions";
+
+function normalizeModelTokens(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((token) => token.length > 0);
+}
+
+/**
+ * Catalog model strings are shop language -- "F-250, 350, 450, 550 - Super Duty
+ * - Crew Cab Long Box" -- and customers type "F250 Crew Cab". Score by how much
+ * of what the CUSTOMER said the catalog row accounts for, so a row that covers
+ * more of their words wins, and ties go to the least specific row rather than
+ * an arbitrary one.
+ */
+function scoreCatalogRow(row, modelTokens) {
+  const rowTokens = new Set(normalizeModelTokens(row.model));
+  let score = 0;
+  for (const token of modelTokens) if (rowTokens.has(token)) score += 1;
+  return score;
+}
+
+function positiveNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * A panel is stated long-edge first. Some catalog rows carry the side
+ * transposed (49x172 where the neighbouring row says 175x48), and a flank
+ * container built from the transposed pair is a portrait rectangle on a vehicle
+ * that is obviously landscape. Order by magnitude rather than trusting the
+ * column name, for the two surfaces where the distinction is unambiguous.
+ */
+function landscape(a, b) {
+  const first = positiveNumber(a);
+  const second = positiveNumber(b);
+  if (!first || !second) return null;
+  return { widthInches: Math.max(first, second), heightInches: Math.min(first, second) };
+}
+
+function surfacesFromGenieCatalog(row, vehicleClass) {
+  const side = landscape(row.side_width, row.side_height);
+  const rear = landscape(row.back_width, row.back_height);
+  const hood = landscape(row.hood_width, row.hood_length);
+  const roof = landscape(row.roof_width, row.roof_length);
+  if (!side || !rear || !hood || !roof) return null;
+
+  // GENIE measures four surfaces, because those are the four a shop cuts from
+  // the sheet. PASSENGER is the driver flank mirrored -- identical geometry by
+  // construction, which is exactly what the deterministic mirror already
+  // assumes. FRONT is the one surface the catalog does not carry, so it is
+  // derived from the measured rear width and hood depth and LABELLED derived;
+  // it is never presented as a measured value.
+  const front = {
+    widthInches: rear.widthInches,
+    heightInches: Math.max(12, Math.round(hood.heightInches * 0.75 * 10) / 10),
+  };
+  return {
+    surfaces: {
+      driver: side,
+      passenger: side,
+      hood,
+      roof,
+      front,
+      rear,
+    },
+    derivedSurfaces: ["front"],
+    mirroredSurfaces: ["passenger"],
+    totalSqft: positiveNumber(row.total_sqft),
+    vehicleClass,
+  };
+}
+
+async function findGenieCatalogSurfaces(sb, vehicle) {
+  const modelTokens = normalizeModelTokens(vehicle.model);
+  if (!modelTokens.length) return null;
+  const year = Number(vehicle.year);
+  let query = sb.from(GENIE_CATALOG_TABLE).select("*").ilike("make", vehicle.make).limit(400);
+  const { data: rows, error } = await query;
+  // The catalog is a convenience over the estimator, never a gate: a lookup
+  // failure must not take down an authoring run that could still proceed.
+  if (error || !Array.isArray(rows) || !rows.length) return null;
+
+  const inYear = rows.filter((row) => {
+    const start = Number(row.year_start);
+    const end = Number(row.year_end);
+    if (!Number.isFinite(year)) return true;
+    if (!Number.isFinite(start) && !Number.isFinite(end)) return true;
+    if (Number.isFinite(start) && year < start) return false;
+    if (Number.isFinite(end) && year > end) return false;
+    return true;
+  });
+  const pool = inYear.length ? inYear : rows;
+
+  let best = null;
+  let bestScore = 0;
+  for (const row of pool) {
+    const score = scoreCatalogRow(row, modelTokens);
+    if (score < bestScore) continue;
+    if (score > bestScore
+      || (best && String(row.model || "").length < String(best.model || "").length)) {
+      best = row;
+      bestScore = score;
+    }
+  }
+  // One shared token is coincidence ("van", "4 door"). Require either most of
+  // what the customer typed, or two independent tokens.
+  const required = Math.min(2, modelTokens.length);
+  if (!best || bestScore < required) return null;
+
+  const mapped = surfacesFromGenieCatalog(best, vehicle.vehicleClass);
+  if (!mapped) return null;
+  return { row: best, ...mapped, matchedTokens: bestScore, modelTokenCount: modelTokens.length };
+}
+
+function catalogDimensionRow(match, vehicle) {
+  const s = match.surfaces;
+  return {
+    id: match.row.id,
+    make: match.row.make,
+    model: match.row.model,
+    side_width: s.driver.widthInches,
+    side_height: s.driver.heightInches,
+    passenger_width: s.passenger.widthInches,
+    passenger_height: s.passenger.heightInches,
+    hood_width: s.hood.widthInches,
+    hood_length: s.hood.heightInches,
+    roof_width: s.roof.widthInches,
+    roof_length: s.roof.heightInches,
+    front_width: s.front.widthInches,
+    front_height: s.front.heightInches,
+    rear_width: s.rear.widthInches,
+    rear_height: s.rear.heightInches,
+    proofGeometryAuthority: {
+      contract: PROOF_GEOMETRY_CONTRACT,
+      status: "genie-catalog",
+      purpose: "calls-1-7-layout-only",
+      candidateId: match.row.id,
+      source: "genie-panelizer-catalog",
+      sourceUrls: [],
+      confidence: "high",
+      operatorValidated: false,
+      catalogModel: match.row.model,
+      catalogYearRange: match.row.year_range || null,
+      catalogTotalSqft: match.totalSqft,
+      matchedModelTokens: `${match.matchedTokens}/${match.modelTokenCount}`,
+      derivedSurfaces: match.derivedSurfaces,
+      mirroredSurfaces: match.mirroredSurfaces,
+    },
+  };
+}
+
 function validatedSurfaces(row) {
   if (row.requires_validation !== false || !row.validated_by || !row.validated_at) return null;
   const manifest = row.validated_surfaces;
@@ -493,6 +666,15 @@ async function insertOrReadGroundedCandidate(sb, vehicle, candidate) {
  */
 async function resolveFlatAtlasPreviewDimensions(sb, rawVehicle, provider) {
   const vehicle = normalizedVehicle(rawVehicle);
+
+  // THE MEASURED CATALOG WINS. Owner directive 2026-08-27: "It should be using
+  // GENIE Panelizer database to get sizes for ATLAS." Everything below this is
+  // what happens when the catalog has never seen the vehicle.
+  const catalogMatch = await findGenieCatalogSurfaces(sb, vehicle).catch(() => null);
+  if (catalogMatch) {
+    return attachVehicleClassResolution(catalogDimensionRow(catalogMatch, vehicle), vehicle);
+  }
+
   const { data: rows, error } = await findCandidates(sb, vehicle);
   if (error) throw new UniversalDimensionError("genie_universal_cache_failed", error.message, true);
   if ((rows || []).length > 1) throw new UniversalDimensionError("genie_universal_identity_ambiguous", "Multiple universal GENIE candidates matched");
@@ -570,6 +752,10 @@ function expectedSurfacesFromRow(row) {
 }
 
 module.exports = {
+  findGenieCatalogSurfaces,
+  surfacesFromGenieCatalog,
+  catalogDimensionRow,
+  normalizeModelTokens,
   PROOF_GEOMETRY_CONTRACT,
   PROVISIONAL_ESTIMATOR_CONTRACT,
   SURFACES,
