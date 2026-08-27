@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-57), [
+  assert.deepEqual(names.slice(-59), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -177,6 +177,13 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // render because the claim predicate gates on every lower sequence
     // completing.
     "20260827100000_designpro_panels_do_not_wait_for_the_proof.sql",
+    // And then the chain itself dies: a stage declares its own edges, and the
+    // claim reads those instead of every lower line number.
+    "20260827110000_designpro_the_chain_dies.sql",
+    // And logo/asset extraction stops waiting on the seventh proof: the
+    // workflow that carries panels.build/logos.extract may be created on
+    // A.T.L.A.S. master acceptance alone, not on all seven proofs accepted.
+    "20260827120000_designpro_logo_extraction_does_not_wait_for_proofs.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

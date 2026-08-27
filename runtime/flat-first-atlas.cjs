@@ -133,6 +133,10 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v3";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
+// Two, not three: a deterministic crop that fails the same way twice is not
+// going to succeed on a third, and each attempt is ~40ms of the customer's
+// wait. This is a transient-fault filter, never a way to make a bad zone pass.
+const PANEL_CUT_ATTEMPTS = 2;
 const TARGET_PRINT_PPI = 150;
 const PROJECTION_CONTRACT = "designpro.flat-first-atlas-projection.v1";
 const VIEW_AUTHORITY_CONTRACT = "designpro.flat-first-atlas-view-authority.v1";
@@ -846,7 +850,7 @@ async function viewAuthorityFromPanel(panel, sourceViewType) {
   );
 }
 
-async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash, { onPanel = null } = {}) {
+async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash, { onPanel = null, onPanelRetry = null } = {}) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
   // LINEAGE, NOT PROVENANCE. `sourceMasterHash` is the identity PanelPro pairs
   // a panel with its proof by, so it has to be the CANONICAL master hash the
@@ -873,9 +877,30 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
   // before the next one starts. The caller uses that to persist it, publish it
   // to PanelPro, and release that surface's 3D proof. Driver is first, so the
   // Driver panel and its proof are unblocked while Roof has not been touched.
+  // AN EXTRACTION FAILURE RETRIES THAT PANEL, NOT THE RUN.
+  //
+  // Owner's retry model: "Extraction Failure (rare) -> Retry that panel
+  // extraction. Downstream proof waits for that panel only." A single throw
+  // here used to reject Call 1 outright, which released every gate and took all
+  // seven proof nodes with it -- the blast radius the graph exists to prevent.
+  //
+  // The cut is deterministic pixel work, so a failure is transient (memory, IO)
+  // or permanent (a zone genuinely outside the canvas). Retrying separates
+  // them: a transient one clears, a permanent one fails identically twice and
+  // is then allowed to be fatal, because a run cannot ship five panels and call
+  // itself complete -- `source.verify` asserts exactly six.
   const panels = [];
   for (const surfaceKey of PANEL_EXTRACTION_ORDER) {
-    const panel = await cutOnePanel(surfaceKey);
+    let panel = null;
+    for (let attempt = 1; attempt <= PANEL_CUT_ATTEMPTS; attempt += 1) {
+      try {
+        panel = await cutOnePanel(surfaceKey);
+        break;
+      } catch (cause) {
+        if (attempt >= PANEL_CUT_ATTEMPTS) throw cause;
+        onPanelRetry?.({ surfaceKey, attempt, reason: String(cause?.message || cause || "unknown") });
+      }
+    }
     panels.push(panel);
     if (typeof onPanel === "function") await onPanel(panel, panels.length - 1);
   }
@@ -1631,6 +1656,12 @@ async function generateOrReuseFlatAtlas(options) {
     // set. Failures are logged and never propagate: Branch A does not stop for
     // Branch B.
     onSurfaceReady = null,
+    // The root node, handed over the instant the master is accepted and the
+    // repaired sheet exists -- before a single panel is cut. Its `viewAuthorities`
+    // and `callOnePanels` fill in as the extraction stream runs, so a consumer
+    // that gates on `onSurfaceReady` can condition that surface's proof against
+    // it immediately.
+    onMasterReady = null,
     artboardQualityExamples = [], masterValidatorFactory = createAtlasMasterValidator,
     // The Call-1 transport is injectable so a unit test can drive the authoring
     // loop without a live edge function. Production always uses the real POST.
@@ -2065,6 +2096,43 @@ async function generateOrReuseFlatAtlas(options) {
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
   const surfaceSourceBytes = cutoutFill.bytes;
   const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
+
+  // ── THE PROGRESSIVE ATLAS: THE ROOT NODE, PUBLISHED BEFORE ITS BRANCHES ────
+  //
+  // Owner, 2026-08-27: "Nodes run when their inputs exist. Nothing waits unless
+  // it truly depends on it." A 3D proof node's input is ITS OWN panel, not the
+  // set, and not the tail of Call 1 -- the storage joins, the judge's verdict
+  // and the revision row that follow the last cut are inputs to nobody's proof.
+  //
+  // So the same object every conditioning function already takes is handed out
+  // NOW and filled as each panel lands. `atlasProjectionParts` and
+  // `viewAuthorityFor` run against it unchanged -- same hash gates, same
+  // surface check, same refusal on a mismatch. Nothing is bypassed to go
+  // earlier; the object simply exists sooner.
+  //
+  // `revisionId` is the one field that cannot exist yet: it is the primary key
+  // of a row written after the panels. It is not read by any conditioning path
+  // (`atlasProjectionParts` never mentions it), and it is filled in below the
+  // moment the row lands -- long before a ~30s proof reaches its persist step.
+  const progressiveAtlas = {
+    contract: ATLAS_CONTRACT,
+    promptVersion: PROMPT_VERSION,
+    revisionId: null,
+    revisionSequence,
+    manifest,
+    master: { contentHash: masterHash, bytes: masterBytes },
+    metadata: { panelSourceHash },
+    callOnePanels: [],
+    viewAuthorities: {},
+  };
+  if (typeof onMasterReady === "function") {
+    try { onMasterReady(progressiveAtlas); }
+    catch (cause) {
+      logger?.warn?.("flat_atlas_master_ready_consumer_failed", {
+        generationId, reason: String(cause?.message || cause || "unknown"),
+      });
+    }
+  }
   // ── BRANCH A: ORDERED EXTRACTION, EACH PANEL RELEASED THE MOMENT IT EXISTS ──
   //
   // Owner, 2026-08-27: "Each completed panel is immediately persisted and
@@ -2082,7 +2150,21 @@ async function generateOrReuseFlatAtlas(options) {
   const panelReleaseErrors = [];
   const [callOnePanels, projection] = await Promise.all([
     cutCallOnePanels(surfaceSourceBytes, manifest, masterHash, {
-      onPanel: (panel) => {
+      onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
+        "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },
+      ),
+      onPanel: async (panel) => {
+        // THE PANEL IS THE PROOF'S ARTWORK AUTHORITY, so the authority is built
+        // HERE -- the instant the panel exists -- rather than in one batch after
+        // the last cut. Every proof view that photographs this surface becomes
+        // conditionable now. (Close-Up shares Driver's surface, so Driver's cut
+        // releases two nodes.)
+        progressiveAtlas.callOnePanels.push(panel);
+        for (const sourceViewType of PROOF_VIEWS) {
+          if (surfaceForProofView(sourceViewType) !== panel.surfaceKey) continue;
+          progressiveAtlas.viewAuthorities[sourceViewType] =
+            await viewAuthorityFromPanel(panel, sourceViewType);
+        }
         panelWrites.push(store.putImmutableBytes({
           storagePath: atlasStoragePath({
             tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
@@ -2443,6 +2525,7 @@ module.exports = {
   SEMANTIC_CONTINUITY,
   SURFACE_KEYS,
   PANEL_EXTRACTION_ORDER,
+  surfaceForProofView,
   TARGET_PRINT_PPI,
   TOPOLOGY,
   VIEW_AUTHORITY_CONTRACT,

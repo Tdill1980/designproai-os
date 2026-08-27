@@ -105,7 +105,14 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   assert.match(worker, /const isFlatFirst = flatFirstRequested\(claim\.input\)/);
 
   // worker → A.T.L.A.S. authoring → master QC.
-  assert.match(worker, /flatAtlas = await generateOrReuseFlatAtlas\(\{/);
+  // THE ROOT NODE IS STILL THE ONLY DESIGN AUTHORITY -- it is simply STARTED
+  // rather than awaited, so the proof branches can run against it while its
+  // tail finishes. Both halves are pinned: the call, and the join that makes a
+  // Call 1 failure still fatal. (Owner 2026-08-27: "Nodes run when their inputs
+  // exist. Nothing waits unless it truly depends on it.")
+  assert.match(worker, /const atlasRun = generateOrReuseFlatAtlas\(\{/);
+  assert.match(worker, /flatAtlas = await atlasRun;/);
+  assert.ok(!/generateOrReuseFlatAtlas\([\s\S]{0,80}\)\s*;\s*\n\s*\/\/ *no join/.test(worker));
   assert.match(atlas, /require\("\.\/designiq-prompt\.cjs"\)/);
   assert.match(atlas, /require\("\.\/atlas-master-qc\.cjs"\)/);
 
@@ -116,7 +123,15 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
 
   // → server-native 3D proof provider, conditioned on the master's own bytes.
   assert.match(worker, /atlasProviderFactory = createAtlasDesignPanelProvider/);
-  assert.match(worker, /conditioningIdentityFor: \(sourceViewType\) => viewAuthorityFor\(flatAtlas, sourceViewType\)/);
+  // Still `viewAuthorityFor` against the same object, still hash-gated -- now
+  // behind that surface's own panel.ready gate rather than the whole of Call 1.
+  assert.match(worker, /await awaitSurface\(sourceViewType\);\s*\n\s*return viewAuthorityFor\(flatAtlas, sourceViewType\);/);
+  assert.match(worker, /await awaitSurface\(sourceViewType\);\s*\n\s*return atlasProjectionParts\(flatAtlas, sourceViewType\);/);
+  // One gate per SURFACE, so Close-Up rides Driver's cut rather than its own.
+  // One gate per surface, extracted into `surfaceGateSet()` so it is a
+  // testable unit rather than inline state -- Close-Up rides Driver's cut.
+  assert.match(worker, /gates\.get\(surfaceForProofView\(sourceViewType\)\)/);
+  assert.match(worker, /function surfaceGateSet\(surfaceKeys = ATLAS_SURFACE_KEYS\) \{/);
   // The gate that makes "conditioned on the master" a fact rather than a claim.
   assert.match(atlas, /function viewAuthorityFor\(/);
 

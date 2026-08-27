@@ -84,6 +84,8 @@ const {
   generateOrReuseFlatAtlas,
   MASTER_PROVIDER_CONTRACT,
   PROMPT_VERSION: ATLAS_PROMPT_VERSION,
+  SURFACE_KEYS: ATLAS_SURFACE_KEYS,
+  surfaceForProofView,
   viewAuthorityFor,
 } = require("./flat-first-atlas.cjs");
 
@@ -610,6 +612,39 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
  * Keeping the staging in one exported helper makes that ordering executable in
  * tests instead of relying on comments or prompt wording.
  */
+/**
+ * ONE GATE PER SURFACE. A proof node waits for its own panel and nothing else.
+ *
+ * Keyed by SURFACE rather than by view, because Close-Up photographs the driver
+ * surface: Driver's cut releases both Driver and Close-Up.
+ *
+ * `releaseAllGates` is called when Call 1 SETTLES, either way, and that is not
+ * belt-and-braces -- it is required. A REUSED or RESUMED revision returns
+ * without cutting anything (its panels already exist), so `onSurfaceReady`
+ * never fires; a gate that only opened on `panel.ready` would never open at
+ * all, and all seven proof nodes would block until their leases expired -- on
+ * exactly the resume path that exists to recover a run. Releasing on settle
+ * makes the fresh path open gates early, per panel, and the reuse path open
+ * them precisely where the old code did.
+ */
+function surfaceGateSet(surfaceKeys = ATLAS_SURFACE_KEYS) {
+  const gates = new Map(surfaceKeys.map((surfaceKey) => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    return [surfaceKey, { gate, release }];
+  }));
+  return {
+    openSurfaceGate: (surfaceKey) => gates.get(surfaceKey)?.release?.(),
+    // Resolving twice is a no-op; a resolved promise stays resolved.
+    releaseAllGates: () => { for (const { release } of gates.values()) release(); },
+    awaitSurface: async (sourceViewType) => {
+      const entry = gates.get(surfaceForProofView(sourceViewType));
+      if (entry) await entry.gate;
+    },
+    _openSurfaces: () => [...gates.keys()],
+  };
+}
+
 async function runAtlasProofStages({
   runRequest = engine.runRequest,
   requestId,
@@ -801,7 +836,25 @@ function createGenerationWorker({
             vehicle: { ...claim.input.vehicle, type: dimensionRow.resolvedVehicleClass },
           };
         }
-        flatAtlas = await generateOrReuseFlatAtlas({
+        // ── THE STREAMING GRAPH, WIRED AT ITS ONE REAL SEAM ──────────────
+        //
+        // Owner, 2026-08-27: "Each panel.ready(surfaceKey) event immediately
+        // enables the PanelPro publication for that panel AND the 3D proof node
+        // for that same surface... No global barrier between extraction and
+        // proofs. No waiting for all panels before any proof."
+        //
+        // A proof node's input is ITS OWN panel. Awaiting all of Call 1 first
+        // made every node wait for the last cut, the ten storage joins and the
+        // revision row -- none of which any proof depends on.
+        //
+        // One gate per SURFACE, not per view: Close-Up photographs the driver
+        // surface, so Driver's cut releases both. `engine.runRequest` is already
+        // `Promise.all(slots.map(runSlot))` with no cross-slot state, so all
+        // seven nodes start together and each blocks only on its own gate --
+        // which is the timeline the graph specifies, with no engine change.
+        const { openSurfaceGate, awaitSurface, releaseAllGates } = surfaceGateSet();
+        let progressiveAtlas = null;
+        const atlasRun = generateOrReuseFlatAtlas({
           supabase,
           store,
           provider: imageProvider,
@@ -816,7 +869,39 @@ function createGenerationWorker({
           topologyExamples,
           artboardQualityExamples,
           logger: (line) => console.log(`[DESIGNPRO-OS] flat-first ${requestId}: ${line}`),
+          onMasterReady: (atlas) => { progressiveAtlas = atlas; },
+          onSurfaceReady: ({ surfaceKey }) => { openSurfaceGate(surfaceKey); },
         });
+        // A CALL 1 FAILURE MUST STILL KILL THE RUN. The promise is started
+        // rather than awaited, so nothing may swallow its rejection: every gate
+        // is rejected with the same cause, so a proof node waiting on a panel
+        // that will never exist fails with the reason it never arrived instead
+        // of hanging until its lease expires.
+        // EVERY GATE OPENS WHEN CALL 1 SETTLES, WHICHEVER WAY IT SETTLES.
+        //
+        // Not only on failure. A REUSED or RESUMED revision returns without
+        // cutting anything -- the panels already exist, so `onSurfaceReady`
+        // never fires -- and a gate that only opened on `panel.ready` would
+        // then never open at all: all seven proof nodes would block until their
+        // leases expired, on precisely the resume path that exists to recover a
+        // run. Releasing on settle makes the fresh path open gates EARLY, per
+        // panel, and the reuse path open them exactly where the old code did.
+        //
+        // Releasing twice is a no-op; a resolved promise stays resolved. The
+        // failure branch swallows nothing -- `await atlasRun` below re-throws.
+        atlasRun.then(releaseAllGates, releaseAllGates);
+        // The master must exist before ANY branch starts -- it is the graph's
+        // one real dependency. Beyond that, Call 1's tail overlaps the proofs.
+        await Promise.race([
+          atlasRun.then(() => {}),
+          new Promise((resolve) => {
+            const poll = setInterval(() => {
+              if (progressiveAtlas) { clearInterval(poll); resolve(); }
+            }, 10);
+            poll.unref?.();
+          }),
+        ]);
+        flatAtlas = progressiveAtlas || await atlasRun;
         // A resumed Atlas request may already contain accepted rows. Admit
         // them only when they prove this exact master/provider/Driver lineage;
         // old generic rows must never short-circuit the corrected pipeline.
@@ -835,8 +920,19 @@ function createGenerationWorker({
         requestId,
         input: executionInput,
         atlas: {
-          conditioningPartsFor: (sourceViewType) => atlasProjectionParts(flatAtlas, sourceViewType),
-          conditioningIdentityFor: (sourceViewType) => viewAuthorityFor(flatAtlas, sourceViewType),
+          // EACH NODE WAITS FOR ITS OWN PANEL AND NOTHING ELSE. The gate opens
+          // on that surface's `panel.ready`; after it, the same hash-gated
+          // functions run against the same object they always did, so a proof
+          // still cannot be conditioned on the wrong surface or an unbound
+          // master -- it just stops waiting for five panels it never needed.
+          conditioningPartsFor: async (sourceViewType) => {
+            await awaitSurface(sourceViewType);
+            return atlasProjectionParts(flatAtlas, sourceViewType);
+          },
+          conditioningIdentityFor: async (sourceViewType) => {
+            await awaitSurface(sourceViewType);
+            return viewAuthorityFor(flatAtlas, sourceViewType);
+          },
           authorityMetadata: {
             masterContentHash: flatAtlas.master.contentHash,
             surfaceSourceHash: flatAtlas.projection.sourceMasterHash,
@@ -883,6 +979,13 @@ function createGenerationWorker({
           store,
           slots,
         });
+        // CALL 1 STILL HAS TO FINISH, AND ITS FAILURE STILL HAS TO BE FATAL.
+        // Its tail -- the storage joins, the judge's record and the revision row
+        // -- overlapped the proofs instead of preceding them, but the run is not
+        // complete until it lands, and a rejection here must surface rather than
+        // be swallowed by the catch that only unblocked the gates. By now it has
+        // long since resolved; this is the join, not a wait.
+        flatAtlas = await atlasRun;
       } else {
         await standardProvider.hydrateHero();
         const designer = await engine.runRequest({
@@ -1124,5 +1227,6 @@ module.exports = {
   referenceImageParts,
   runAtlasProofStages,
   slotsFrom,
+  surfaceGateSet,
   standardProviderFactoryFor,
 };

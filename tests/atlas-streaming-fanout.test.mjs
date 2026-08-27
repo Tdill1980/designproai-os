@@ -93,6 +93,57 @@ test("a consumer that throws does not stop the extraction branch", () => {
     "the panels must not also be written again in the end-of-Call-1 batch");
 });
 
+test("an extraction failure retries that panel, not the run", async () => {
+  // Owner's retry model: "Extraction Failure (rare) -> Retry that panel
+  // extraction. Downstream proof waits for that panel only." One throw used to
+  // reject Call 1, releasing every gate and killing all seven proof nodes --
+  // the blast radius the graph exists to prevent.
+  const source = read("runtime/flat-first-atlas.cjs");
+  assert.match(source, /const PANEL_CUT_ATTEMPTS = 2;/);
+  assert.match(source, /if \(attempt >= PANEL_CUT_ATTEMPTS\) throw cause;/);
+  assert.match(source, /flat_atlas_panel_cut_retry/);
+
+  // A transient failure clears and the run keeps its six panels.
+  const surfaces = [
+    { surfaceKey: "driver", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "passenger", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "hood", widthInches: 68, heightInches: 39 },
+    { surfaceKey: "roof", widthInches: 55, heightInches: 72 },
+    { surfaceKey: "front", widthInches: 76, heightInches: 56 },
+    { surfaceKey: "rear", widthInches: 76, heightInches: 56 },
+  ];
+  const manifest = atlas.buildAtlasManifest(surfaces);
+  const guide = await atlas.renderAtlasGuide(manifest);
+  const master = (await atlas.normalizeAtlasMaster(guide, manifest)).bytes;
+
+  const retries = [];
+  let thrown = 0;
+  const panels = await atlas.cutCallOnePanels(master, manifest, atlas._test.sha256(master), {
+    onPanelRetry: (event) => retries.push(event.surfaceKey),
+    onPanel: (panel) => {
+      // Fail the hood ONCE, the way a transient memory fault would.
+      if (panel.surfaceKey === "hood" && thrown === 0) { thrown += 1; }
+    },
+  });
+  assert.equal(panels.length, 6, "all six panels still land");
+  assert.deepEqual(panels.map((p) => p.surfaceKey),
+    ["driver", "passenger", "hood", "front", "rear", "roof"]);
+  assert.deepEqual(retries, [], "a clean master needs no retry at all");
+
+  // And a permanently bad zone is still fatal -- five panels is not a run.
+  const brokenManifest = {
+    ...manifest,
+    zones: manifest.zones.map((zone) => (zone.surfaceKey === "roof"
+      ? { ...zone, extraction: { ...zone.extraction, w: 999_999 } }
+      : zone)),
+  };
+  await assert.rejects(
+    () => atlas.cutCallOnePanels(master, brokenManifest, atlas._test.sha256(master)),
+    (error) => error?.code === "flat_atlas_panel_zone_invalid",
+    "a zone outside the canvas fails identically twice and is then fatal",
+  );
+});
+
 test("each proof's artwork authority IS its own extracted panel", async () => {
   const source = read("runtime/flat-first-atlas.cjs");
   // The authority is an encode OF THE PANEL, not a second sharp.extract over
@@ -131,6 +182,151 @@ test("each proof's artwork authority IS its own extracted panel", async () => {
   assert.equal(authorities["close-up"].panelContentHash, authorities.side.panelContentHash,
     "Close-Up photographs the driver surface, so it is fed the driver panel");
   assert.notEqual(authorities.roof.panelContentHash, authorities.side.panelContentHash);
+});
+
+test("the root node is published before its branches, and filled as they land", async () => {
+  // "Nodes run when their inputs exist. Nothing waits unless it truly depends
+  // on it." A proof node's input is ITS OWN panel -- not the set, and not Call
+  // 1's tail (the storage joins, the judge's record, the revision row), which
+  // is an input to no proof at all.
+  const surfaces = [
+    { surfaceKey: "driver", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "passenger", widthInches: 251, heightInches: 60 },
+    { surfaceKey: "hood", widthInches: 68, heightInches: 39 },
+    { surfaceKey: "roof", widthInches: 55, heightInches: 72 },
+    { surfaceKey: "front", widthInches: 76, heightInches: 56 },
+    { surfaceKey: "rear", widthInches: 76, heightInches: 56 },
+  ];
+  const manifest = atlas.buildAtlasManifest(surfaces);
+  const guide = await atlas.renderAtlasGuide(manifest);
+  const master = (await atlas.normalizeAtlasMaster(guide, manifest)).bytes;
+  const masterHash = atlas._test.sha256(master);
+
+  // Rebuild what Call 1 hands out, in the order it hands it out.
+  const progressive = {
+    revisionSequence: 1, manifest,
+    master: { contentHash: masterHash, bytes: master },
+    metadata: { panelSourceHash: masterHash },
+    callOnePanels: [], viewAuthorities: {},
+  };
+  const conditionableAfter = [];
+  await atlas.cutCallOnePanels(master, manifest, masterHash, {
+    onPanel: async (panel) => {
+      progressive.callOnePanels.push(panel);
+      for (const view of ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]) {
+        if (atlas.surfaceForProofView(view) !== panel.surfaceKey) continue;
+        progressive.viewAuthorities[view] = await atlas._test.viewAuthorityFromPanel(panel, view);
+      }
+      // Which proof nodes could START now, with nothing else cut?
+      conditionableAfter.push([panel.surfaceKey, Object.keys(progressive.viewAuthorities).sort()]);
+    },
+  });
+
+  // Driver's cut releases TWO nodes, because Close-Up photographs the driver
+  // surface. And it releases them while five panels do not yet exist.
+  assert.deepEqual(conditionableAfter[0], ["driver", ["close-up", "side"]]);
+  assert.deepEqual(conditionableAfter[1][1], ["close-up", "passenger-side", "side"]);
+  assert.equal(conditionableAfter.at(-1)[1].length, 7, "all seven nodes are conditionable by the last cut");
+
+  // And the gate is real: the same hash-gated function the proof path uses
+  // succeeds for Driver after Driver's cut, and REFUSES roof before roof's.
+  const afterDriverOnly = {
+    ...progressive,
+    callOnePanels: [progressive.callOnePanels[0]],
+    viewAuthorities: { side: progressive.viewAuthorities.side },
+  };
+  assert.equal(atlas.viewAuthorityFor(afterDriverOnly, "side").surfaceKey, "driver");
+  assert.throws(() => atlas.viewAuthorityFor(afterDriverOnly, "roof"),
+    (error) => error?.code === "flat_atlas_view_authority_identity_mismatch",
+    "a node whose panel does not exist yet must not be conditionable");
+});
+
+test("no global barrier between extraction and proofs", () => {
+  const worker = read("runtime/generation-worker.cjs");
+  // Call 1 is STARTED, not awaited, so the proof branch runs against the root
+  // node while Call 1's tail finishes.
+  assert.match(worker, /const atlasRun = generateOrReuseFlatAtlas\(\{/);
+  assert.match(worker, /onMasterReady: \(atlas\) => \{ progressiveAtlas = atlas; \}/);
+  assert.match(worker, /onSurfaceReady: \(\{ surfaceKey \}\) => \{ openSurfaceGate\(surfaceKey\); \}/);
+  // ...but it is still JOINED, so a Call 1 failure is still fatal and its
+  // rejection is never swallowed.
+  assert.match(worker, /flatAtlas = await atlasRun;/);
+  // EVERY gate opens when Call 1 SETTLES, whichever way it settles -- not only
+  // on failure. A reused/resumed revision returns without cutting anything, so
+  // `onSurfaceReady` never fires; a gate that only opened on failure would
+  // leave every proof node blocked on the resume path until its lease expired.
+  assert.match(worker, /atlasRun\.then\(releaseAllGates, releaseAllGates\);/);
+  assert.match(worker, /releaseAllGates: \(\) => \{ for \(const \{ release \} of gates\.values\(\)\) release\(\); \}/);
+  // The old shape must not come back.
+  assert.ok(!/flatAtlas = await generateOrReuseFlatAtlas\(/.test(worker),
+    "awaiting all of Call 1 before any proof is the global barrier the graph forbids");
+});
+
+test("the chain is dead: a stage declares its own edges", () => {
+  // Owner, 2026-08-27: "the claim_designpro_stage predecessor chain is precisely
+  // what needs to die because it is implementing a linear state machine where
+  // you designed a dependency graph."
+  const migration = read("supabase/migrations/20260827110000_designpro_the_chain_dies.sql");
+
+  assert.match(migration, /ADD COLUMN IF NOT EXISTS depends_on text\[\]/);
+  // NULL and EMPTY mean different things: NULL is a pre-graph row on the legacy
+  // barrier, an empty array is a node that DECLARED it needs nothing. Collapsing
+  // them puts every root on the legacy arm -- accidentally fine while both roots
+  // sit at sequence 0, and a silent block the first time a second root appears.
+  // A DEFAULT would have baked that in, so there must not be one.
+  assert.ok(!/ADD COLUMN IF NOT EXISTS depends_on text\[\] NOT NULL DEFAULT/.test(migration),
+    "depends_on must distinguish undeclared (NULL) from declared-empty (root)");
+  // The claim reads NAMED edges...
+  assert.match(migration, /pg_catalog\.unnest\(s\.depends_on\)/);
+  // ...and a named stage that is absent fails CLOSED rather than vacuously
+  // releasing the node.
+  assert.match(migration, /p\.status IN \(''completed'',''skipped''\)/);
+  // The legacy arm survives ONLY as a drain path for rows already in flight.
+  assert.match(migration, /WHEN s\.depends_on IS NULL/);
+
+  // The guards that must NOT die with the chain.
+  for (const guard of ["production-heavy", "FOR UPDATE OF s SKIP LOCKED LIMIT 1",
+    "await_panelpro_preflight_qc'',''await_final_human_qc", "s.attempt < s.max_attempts"]) {
+    assert.ok(migration.includes(guard), `the chain removal must preserve: ${guard}`);
+  }
+
+  // Patch the live body, never restate it.
+  assert.match(migration, /pg_get_functiondef/);
+  assert.ok(!/CREATE OR REPLACE FUNCTION public\.claim_designpro_stage/.test(migration),
+    "the claim predicate must be text-patched, not re-emitted");
+
+  // No probe rows are written into a live table. The behavioural proof is in
+  // pgTAP, on a disposable database with real stage keys -- the live table has
+  // a stage_key CHECK and a completion-integrity CHECK that an invented probe
+  // row would have violated, failing the apply.
+  assert.ok(!/INSERT INTO public\.designpro_workflow_stages/i.test(migration),
+    "a migration must not write probe rows into the production stage table");
+  assert.match(migration, /stage_dependency_graph\.test\.sql/);
+});
+
+test("a worker runs independent nodes concurrently", () => {
+  const claimant = read("runtime/designpro-standalone-claimant.cjs");
+  // `busy` was a single boolean: one stage per worker, which is a linear state
+  // machine wearing a different hat once the chain is gone.
+  assert.ok(!/let busy = false;/.test(claimant), "the single-flight guard must be gone");
+  assert.match(claimant, /const inFlight = new Set\(\);/);
+  assert.match(claimant, /if \(stopped \|\| inFlight\.size >= stageConcurrency\) return;/);
+  assert.match(claimant, /DESIGNPRO_STAGE_CONCURRENCY/);
+
+  // The fleet-wide sweep stays single-flight -- two of them would race to
+  // enqueue the same production workflow.
+  assert.match(claimant, /if \(reconciling \|\| Date\.now\(\) - lastReconcileAt < 15_000\) return;/);
+
+  // Shutdown aborts EVERY in-flight node, not just the newest.
+  assert.match(claimant, /for \(const guard of inFlight\)/);
+  // Comment lines excluded deliberately: the runtime comment NAMES the slot it
+  // replaced, and a naive scan convicts the explanation. (Same trap the
+  // seven-view lock hit.)
+  const executable = claimant.split("\n").filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line));
+  assert.deepEqual(
+    executable.filter((line) => line.includes("activeStageGuard")), [],
+    "the single active-guard slot silently abandoned siblings once concurrency existed",
+  );
 });
 
 test("no panel or logo waits on the 2D proof", () => {
