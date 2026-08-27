@@ -613,20 +613,48 @@ const SURFACE_IDS = Object.freeze({
 const TOPO_TITLE = "A.T.L.A.S. FLATTENED — TOPO TOP VIEW · SINGLE SOURCE MASTER · SIX DETERMINISTIC PANELS · 1:1 TOPOLOGY";
 
 /**
- * Where each container's caption goes: the horizontal centre of the empty
- * gutter beside it. Derived from the zones themselves rather than from the
- * layout constants, so a geometry change moves the labels with it.
+ * Where each container's caption goes: the centre of the empty gutter beside
+ * it, plus HOW MUCH ROOM that gutter actually has. Derived from the zones
+ * themselves rather than from the layout constants, so a geometry change moves
+ * the labels with it -- and the room matters, because the gutters are not a
+ * fixed width. A 190x66 side leaves 74px between the passenger column and the
+ * centre stack where a 251x60 side leaves 115px, and a caption sized for the
+ * wide case reaches into the neighbouring container in the narrow one.
  */
-function labelGutterX(manifest) {
+function labelGutters(manifest) {
   const byKey = new Map(manifest.zones.map((zone) => [zone.surfaceKey, zone]));
   const passenger = byKey.get("passenger");
   const driver = byKey.get("driver");
   const centre = CENTER_ORDER.map((key) => byKey.get(key)).filter(Boolean);
   const centreLeft = Math.min(...centre.map((zone) => zone.x));
+  const span = (left, right) => ({
+    x: Math.round((left + right) / 2),
+    // Half the gap: how far a glyph may reach from the caption's own centre
+    // before it touches whichever container bounds this gutter.
+    slot: Math.max(0, Math.floor((right - left) / 2)),
+  });
   return {
-    passenger: Math.round(passenger.x / 2),
-    driver: Math.round((driver.x + driver.w + CANVAS.widthPx) / 2),
-    centre: Math.round((passenger.x + passenger.w + centreLeft) / 2),
+    passenger: span(0, passenger.x),
+    centre: span(passenger.x + passenger.w, centreLeft),
+    driver: span(driver.x + driver.w, CANVAS.widthPx),
+  };
+}
+
+/**
+ * A caption's two lines and their type sizes, fitted to the gutter it is going
+ * into. `LABEL_REACH` is what the fail-closed guard uses to prove the result
+ * sits outside every container: a rotated line anchored at its own centre
+ * extends about 0.7 of its type size perpendicular to the baseline, so
+ * `offset + fontSize * LABEL_REACH` is the worst case, and both are chosen as
+ * fractions of the slot so that worst case is always inside it.
+ */
+const LABEL_REACH = 0.7;
+
+function fittedLabelType(slot) {
+  const primary = Math.max(16, Math.min(40, Math.floor(slot * 0.55)));
+  return {
+    offset: Math.round(slot * 0.45),
+    sizes: [primary, Math.max(14, Math.round(primary * 0.75))],
   };
 }
 
@@ -652,15 +680,16 @@ function containerCaptionLines(zone) {
  * `renderAtlasAuthoringGuide`.
  */
 function guideLabelsSvg(manifest) {
-  const gutter = labelGutterX(manifest);
+  const gutters = labelGutters(manifest);
   const captions = manifest.zones.map((zone) => {
-    const centreX = zone.surfaceKey === "passenger" ? gutter.passenger
-      : zone.surfaceKey === "driver" ? gutter.driver
-      : gutter.centre;
+    const gutter = zone.surfaceKey === "passenger" ? gutters.passenger
+      : zone.surfaceKey === "driver" ? gutters.driver
+      : gutters.centre;
+    const { offset, sizes } = fittedLabelType(gutter.slot);
     const y = Math.round(zone.y + zone.h / 2);
     return containerCaptionLines(zone).map((line, index) => {
-      const x = centreX + (index === 0 ? -26 : 26);
-      const fontSize = index === 0 ? 40 : 30;
+      const x = gutter.x + (index === 0 ? -offset : offset);
+      const fontSize = sizes[index];
       return `<text x="${x}" y="${y}" transform="rotate(-90 ${x} ${y})" `
         + `text-anchor="middle" dominant-baseline="central" fill="#d9d9d9" `
         + `font-family="Arial,sans-serif" font-size="${fontSize}" font-weight="700" `
@@ -768,10 +797,16 @@ async function renderAtlasAuthoringGuide(manifest) {
   // centre of a gutter and is rotated about its own anchor, so its half-width
   // is bounded by the font size; the anchor plus that pad is checked against
   // all six rectangles.
-  const GLYPH_PAD_PX = 64;
-  const anchors = [...svg.toString("utf8").matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"/g)]
-    .map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
-  const glyphCount = (svg.toString("utf8").match(/<text\b/gi) || []).length;
+  const markup = svg.toString("utf8");
+  const anchors = [...markup.matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"[^>]*?(?:font-size="(\d+)")?[^>]*>/g)]
+    .map((match) => ({
+      x: Number(match[1]),
+      y: Number(match[2]),
+      // No declared size means an inherited one, which cannot be bounded from
+      // the markup -- assume the largest glyph the sheet ever draws.
+      pad: Math.ceil((Number(match[3]) || 40) * LABEL_REACH),
+    }));
+  const glyphCount = (markup.match(/<text\b/gi) || []).length;
   if (anchors.length !== glyphCount) {
     throw new FlatAtlasError(
       "flat_atlas_authoring_guide_text_unlocatable",
@@ -780,10 +815,10 @@ async function renderAtlasAuthoringGuide(manifest) {
   }
   for (const anchor of anchors) {
     for (const zone of manifest.zones) {
-      const inside = anchor.x + GLYPH_PAD_PX > zone.x
-        && anchor.x - GLYPH_PAD_PX < zone.x + zone.w
-        && anchor.y + GLYPH_PAD_PX > zone.y
-        && anchor.y - GLYPH_PAD_PX < zone.y + zone.h;
+      const inside = anchor.x + anchor.pad > zone.x
+        && anchor.x - anchor.pad < zone.x + zone.w
+        && anchor.y + anchor.pad > zone.y
+        && anchor.y - anchor.pad < zone.y + zone.h;
       if (inside) {
         throw new FlatAtlasError(
           "flat_atlas_authoring_guide_contains_text",
