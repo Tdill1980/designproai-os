@@ -136,6 +136,7 @@ test("the two reference classes are recorded under separate metadata keys", () =
 // from redesigning the wrap.
 test("a 3D proof's artwork authority is the atlas master and nothing else can substitute", () => {
   const surfaceHash = "b".repeat(64);
+  const panelHash = "d".repeat(64);
   const bytes = Buffer.from("proof-authority-bytes");
   const good = {
     // The authority is bound to the SURFACE SOURCE — the repaired sheet the
@@ -149,8 +150,14 @@ test("a 3D proof's artwork authority is the atlas master and nothing else can su
         contentType: "image/jpeg", bytes, byteSize: bytes.length,
         contentHash: require("node:crypto").createHash("sha256").update(bytes).digest("hex"),
         sourceMasterHash: surfaceHash,
+        // AND to the extracted panel it IS. The proof's artwork authority is
+        // this surface's Call 1 panel, not a second crop of the master
+        // (owner 2026-08-27), so it carries that panel's hash.
+        panelContentHash: panelHash,
+        panelByteSize: 2048,
       },
     },
+    callOnePanels: [{ surfaceKey: "driver", contentHash: panelHash }],
   };
   assert.equal(atlas.viewAuthorityFor(good, "side").surfaceKey, "driver");
 
@@ -168,6 +175,17 @@ test("a 3D proof's artwork authority is the atlas master and nothing else can su
     viewAuthorities: { side: { ...good.viewAuthorities.side, surfaceKey: "roof" } },
   };
   assert.throws(() => atlas.viewAuthorityFor(wrongSurface, "side"),
+    (error) => error?.code === "flat_atlas_view_authority_identity_mismatch");
+
+  // AND the panel binding is a real gate, not a recorded field. An authority
+  // whose bytes came from some other panel is refused even though it is bound
+  // to the right master and the right surface -- which is the whole point of
+  // feeding each proof its own extracted panel.
+  const otherPanel = {
+    ...good,
+    viewAuthorities: { side: { ...good.viewAuthorities.side, panelContentHash: "e".repeat(64) } },
+  };
+  assert.throws(() => atlas.viewAuthorityFor(otherPanel, "side"),
     (error) => error?.code === "flat_atlas_view_authority_identity_mismatch");
 });
 

@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered seventy-two-migration chain', () => {
-  assert.equal(migrationNames.length, 72);
+test('fresh bootstrap contains one ordered seventy-three-migration chain', () => {
+  assert.equal(migrationNames.length, 73);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -158,6 +158,7 @@ test('fresh bootstrap contains one ordered seventy-two-migration chain', () => {
       '20260827080000',
       // The projection is derived from the repaired sheet, not the authored one.
       '20260827090000',
+      '20260827100000',
     ],
   );
 });

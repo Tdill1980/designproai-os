@@ -53,6 +53,11 @@ const VIEW_AUTHORITIES = Object.freeze(Object.fromEntries(Object.entries(ZONE_SU
       contentType: "image/jpeg",
       contentHash: createHash("sha256").update(bytes).digest("hex"),
       sourceMasterHash: "a".repeat(64),
+      // The proof's artwork authority IS this surface's extracted panel, so it
+      // carries that panel's hash and `viewAuthorityFor` checks it against the
+      // revision's own panel record (owner 2026-08-27).
+      panelContentHash: createHash("sha256").update(`panel-${surfaceKey}`).digest("hex"),
+      panelByteSize: 4096,
     })];
   })));
 
@@ -69,6 +74,10 @@ const FLAT_ATLAS = Object.freeze({
   projection: { contentHash: "b".repeat(64), sourceMasterHash: "a".repeat(64) },
   manifestAsset: { contentHash: "c".repeat(64) },
   viewAuthorities: VIEW_AUTHORITIES,
+  callOnePanels: Object.freeze([...new Set(Object.values(ZONE_SURFACE_BY_VIEW))].map((surfaceKey) => Object.freeze({
+    surfaceKey,
+    contentHash: createHash("sha256").update(`panel-${surfaceKey}`).digest("hex"),
+  }))),
   masterAcceptance: Object.freeze({
     passed: true,
     contract: "designpro.atlas-master-semantic-qc.v1",

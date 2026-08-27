@@ -191,6 +191,29 @@ jobs:
             20260814061303 20260814062621 20260814062701 20260814062735 \
             20260814160419 20260814161907 20260814162002 20260814162704 \
             20260814162744 20260814200406 || true
+          # And six more on 2026-08-27, same cause: the four all-or-nothing
+          # gate predicates plus the has_role grant and the second
+          # partial-completion predicate were applied through the management
+          # API while the customer-visible window was open, so production's
+          # history carries the API's own wall-clock versions and this repo
+          # carries the same SQL under 20260827040000-090000. Live evidence,
+          # this workflow, run 33090852455:
+          #
+          #   Remote migration versions not found in local migrations directory.
+          #   supabase migration repair --status reverted 20260827065636
+          #     20260827081247 20260827095554 20260827100307 20260827101228
+          #     20260827102412
+          #
+          # Marking them reverted is bookkeeping: the local files that replace
+          # them are each guarded (`IF strpos(v_definition, ...) > 0 THEN
+          # RETURN`) or are a bare GRANT, so `db push` re-runs them as no-ops
+          # against the schema they already produced. Verified file by file
+          # before this list was written -- an orphan whose local twin is NOT
+          # idempotent must never be added here, because the push would then
+          # replay it for real against live objects.
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status reverted \
+            20260827065636 20260827081247 20260827095554 \
+            20260827100307 20260827101228 20260827102412 || true
           # The schema those orphans carried IS the repo's own 202608* chain,
           # applied under management-API version numbers. Replaying the local
           # files therefore collides on live objects (duplicate policies), so

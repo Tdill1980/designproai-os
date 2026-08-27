@@ -234,7 +234,11 @@ test("A.T.L.A.S. projections carry exact studio constants but no customer refere
     manifestAsset: { contentHash: atlas._test.sha256(Buffer.from("manifest")) },
     master: { bytes: masterBytes, contentType: "image/png", contentHash: masterHash },
     projection,
-    viewAuthorities: await atlas._test.buildViewAuthorities(masterBytes, manifest),
+    // The proof authorities ARE the extracted panels now, so the fixture cuts
+    // them the same way Call 1 does rather than re-cropping the master.
+    viewAuthorities: await atlas._test.buildViewAuthorities(
+      await atlas.cutCallOnePanels(masterBytes, manifest, masterHash),
+    ),
   };
   const forbiddenReference = { inlineData: { mimeType: "image/png", data: "customer-reference-must-not-project" } };
   const slots = worker.slotsFrom(undefined, RICH_INPUT, {}, flatAtlas, [forbiddenReference]);

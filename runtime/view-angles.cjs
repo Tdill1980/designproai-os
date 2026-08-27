@@ -141,6 +141,83 @@ const VIEW_RESOLUTION = Object.freeze({
   "roof":           "4K",     // Roof panel extract
 });
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * VIEW-ANGLES-OS IS THE ONLY CAMERA AUTHORITY. (Trish 2026-08-27)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Owner, verbatim: "The surface-specific camera contract must be the
+ * final/highest-priority camera instruction and must override generic Studio
+ * OS / Canon / automotive-photography composition language... If generic DPAG,
+ * Studio OS and view-angles-os are each independently specifying
+ * composition/camera, collapse camera authority to view-angles-os."
+ *
+ * They were. A single A.T.L.A.S. proof request carried FOUR independent voices
+ * on camera geometry:
+ *
+ *   1. `cameraAngle(viewType)` -- this file, the legitimate authority. FIRST.
+ *   2. `VIEW_REINFORCEMENT` -- authored in designpanel-server-provider.cjs,
+ *      restating the angle in its own words. MIDDLE.
+ *   3. the pickup cab-roof override -- also authored in the provider. MIDDLE.
+ *   4. STUDIO_ENVIRONMENT's `FRAMING:` block, plus its opening line "You are a
+ *      professional automotive photographer shooting for a luxury car brand
+ *      campaign", and "Canon EOS R5, 4K capture, studio editorial quality".
+ *      LAST.
+ *
+ * Voice 4 is generic whole-vehicle glamour composition and it held the last
+ * word, which is the strongest position in the prompt. "read this FIRST" on
+ * voice 1 is a hint, not precedence. That is the mechanism behind the
+ * intermittent ROOF and HOOD failures: the contracts for those two views are
+ * ALREADY correct here -- roof is "camera centered above the vehicle looking
+ * straight down", hood is "straight down at 90 degrees... Zero tilt. Perfectly
+ * flat" -- so nothing about them needed rewriting. They were being outvoted.
+ *
+ * 2 and 3 move here so there is exactly ONE camera voice, and the provider
+ * emits `cameraAuthority()` once, LAST, as an explicit override. STUDIO OS is
+ * untouched (RULE 0.29: the runtime consumes it and never restates it); it
+ * keeps lighting, floor, walls, materials and lens realism, and is explicitly
+ * denied camera geometry.
+ *
+ * THE VALIDATOR IS NOT WEAKENED. `atlas-proof-qc.cjs`'s cameraContract and
+ * framingContract grade the same requirements they always did.
+ */
+const VIEW_CAMERA_REINFORCEMENT = Object.freeze({
+  // Keep the DesignPanel detail treatment, but never contradict the locked
+  // 18-inch camera above with either historical 12-inch or 3-5-foot duplicate
+  // framing.
+  "close-up": "This is a CLOSE-UP design-detail photograph at the locked camera distance above. Show the vinyl texture grain, laminate sheen, ink depth, printed pattern, color transitions or artwork conforming to the body curve. A body line, panel edge or door handle may provide scale. The wrap design fills 90%+ of frame. This is NOT a full vehicle shot and NOT a three-quarter vehicle view.",
+  "passenger-side": "This is the PASSENGER SIDE of the vehicle — the opposite side from the driver. The vehicle faces RIGHT in frame (nose pointing right). All text and lettering reads correctly left-to-right, NEVER mirrored. Show the passenger-side wheels.",
+  roof: "This is a TOP-DOWN ROOF view — the camera is DIRECTLY ABOVE the vehicle pointing straight down at 90 degrees, its optical axis perpendicular to the roof panel. ZERO front, rear or side perspective. Orthographic flat top-down, NOT tilted and NOT angled. The roof is the dominant visible surface. Frame only the roof/cab-top panel between windshield and rear glass. Crop tightly so that panel fills the frame. Exclude hood, front end, cargo bed, tailgate, wheels, mirrors, vehicle sides, floor and walls.",
+  hood_detail: "This is a TOP-DOWN HOOD view — the camera is DIRECTLY ABOVE the hood pointing straight down at 90 degrees. ZERO perspective tilt. Orthographic flat overhead, NOT a 3/4 glamour shot. Frame only the hood between windshield base and front bumper edge, with the hood filling at least 80% of the frame.",
+  front: "This is a STRAIGHT-ON FRONT view — camera is DIRECTLY in front at grille/bumper height, perpendicular and perfectly symmetrical. NOT a 3/4 angle, rotated or tilted view. Frame grille, both headlights, hood edge, front bumper and windshield head-on, with the front filling the frame.",
+  rear: "This is a STRAIGHT-ON REAR view — camera is DIRECTLY behind at tailgate/bumper height, perpendicular and perfectly symmetrical. NOT a 3/4 angle, rotated or tilted view. Frame rear glass/tailgate, both tail lights and rear bumper head-on, with the rear filling the frame.",
+});
+
+/**
+ * A pickup has no "trunk", so the generalized roof phrase "A-pillars to trunk"
+ * reads as the whole vehicle top including the cargo bed. This qualifies it.
+ * It is camera framing, so it lives with the camera, not in the producer.
+ */
+const PICKUP_ROOF_QUALIFICATION = "PICKUP CAB-ROOF QUALIFICATION: for this pickup, CAB ROOF ONLY between windshield and rear cab glass — this qualifies the generalized phrase \u2018A-pillars to trunk\u2019 above. The hood, complete front end, cargo bed/box, bedliner, tailgate, wheels, mirrors, body sides, floor and walls must be outside the frame.";
+
+/**
+ * THE ONE CAMERA INSTRUCTION for a proof request, assembled from this file
+ * alone. The producer emits this exactly once, as the final block of the
+ * prompt. Its own header states the precedence, because a model resolves a
+ * conflict by position and by explicit instruction, not by our intentions.
+ */
+function cameraAuthority(viewType, { pickup = false } = {}) {
+  const segments = [
+    "CAMERA GEOMETRY \u2014 FINAL AUTHORITY. THIS IS THE LAST WORD ON THE SHOT.",
+    "This block alone decides camera position, angle, tilt, perspective and frame fill, and it OVERRIDES every earlier line in this prompt. The studio/photography section above governs lighting, floor, walls, background, material appearance and lens realism ONLY \u2014 it does not choose, soften or reinterpret camera geometry, and its generic composition language (\u201cprofessional automotive photographer\u201d, \u201cluxury car brand campaign\u201d, \u201cclean, uncluttered composition\u201d, \u201cstudio editorial quality\u201d) describes a look, never an angle. If anything above implies a different camera, IGNORE IT and shoot exactly this:",
+    cameraAngle(viewType).trim(),
+    VIEW_CAMERA_REINFORCEMENT[viewType] || "",
+    pickup && viewType === "roof" ? PICKUP_ROOF_QUALIFICATION : "",
+    "Shoot the frame described in this block and no other.",
+  ];
+  return segments.filter((segment) => typeof segment === "string" && segment.trim()).join("\n\n");
+}
+
 /** Seven immutable source slots, in the locked production order. */
 function viewOrder() { return [...VIEW_ORDER]; }
 
@@ -180,6 +257,7 @@ function assertTextDirectionGuard(viewType) {
 module.exports = {
   CAMERA_ANGLES, VIEW_ASPECT_RATIOS, VIEW_LABELS, VIEW_ORDER, VIEW_RESOLUTION,
   VIEW_ANGLE_CONTRACT_VERSION,
-  aspectRatio, assertTextDirectionGuard, cameraAngle, requiresOwnGeneration,
-  resolutionTier, viewLabel, viewOrder,
+  VIEW_CAMERA_REINFORCEMENT, PICKUP_ROOF_QUALIFICATION,
+  aspectRatio, assertTextDirectionGuard, cameraAngle, cameraAuthority,
+  requiresOwnGeneration, resolutionTier, viewLabel, viewOrder,
 };

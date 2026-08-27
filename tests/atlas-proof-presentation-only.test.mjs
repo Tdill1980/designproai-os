@@ -49,8 +49,22 @@ test("the accepted A.T.L.A.S. surface crop is the sole artwork authority", () =>
 });
 
 test("the proof applies the real RestylePro view-angle and studio authorities", () => {
-  assert.match(proofPrompt, /CAMERA ANGLE \(LOCKED — read this FIRST\)/);
-  assert.match(proofPrompt, /angles\.cameraAngle\(sourceViewType\)/);
+  // THE AUTHORITIES ARE THE SAME. THEIR ORDER CHANGED, ON PURPOSE.
+  //
+  // This used to assert `CAMERA ANGLE (LOCKED — read this FIRST)` at the top of
+  // the prompt. That header was a hint, and it lost: STUDIO_ENVIRONMENT's own
+  // `FRAMING:` block and its "professional automotive photographer... luxury
+  // car brand campaign" opening sat AFTER it, in the position a model actually
+  // weights, which is how roof and hood intermittently came back as generic
+  // three-quarter glamour shots (owner, 2026-08-27).
+  //
+  // view-angles-os is now the single camera voice and speaks LAST, via
+  // `angles.cameraAuthority`. Nothing is weakened: the camera contract, the
+  // studio, the photorealism lock and the coverage rules are all still applied,
+  // and the ordering itself is pinned by tests/proof-camera-authority.test.mjs.
+  assert.match(proofPrompt, /angles\.cameraAuthority\(sourceViewType, \{ pickup: pickupVehicle\(input\) \}\)/);
+  assert.ok(!/CAMERA ANGLE \(LOCKED — read this FIRST\)/.test(proofPrompt),
+    "the camera contract must not be re-raised to first position, where generic composition outvotes it");
   assert.match(proofPrompt, /\$\{STUDIO_ENVIRONMENT\}/);
   assert.match(proofPrompt, /\$\{PHOTOREALISM_REQUIREMENT\}/);
   assert.match(proofPrompt, /\$\{WRAP_COVERAGE_RULES\}/);

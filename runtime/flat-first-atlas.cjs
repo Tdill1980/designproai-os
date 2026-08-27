@@ -102,6 +102,25 @@ const EXAMPLE_PURPOSE = "topology-only";
 const SURFACE_KEYS = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 const CENTER_ORDER = Object.freeze(["rear", "roof", "hood", "front"]);
 const PROOF_VIEWS = Object.freeze(["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"]);
+/**
+ * THE ORDER PANELS ARE CUT IN, WHICH IS NOT `SURFACE_KEYS`.
+ *
+ * Owner, 2026-08-27: "Driver -> Passenger -> Hood -> Front -> Rear -> Roof.
+ * Each completed panel is immediately persisted and published to PanelPro
+ * Studio with its trim dimensions, 5\u2033 bleed, hashes and lineage."
+ *
+ * `SURFACE_KEYS` is frozen on the cross-session seam (RULE 0.5) and orders roof
+ * third; it is a SET, used for membership and for the exactly-six assertion, and
+ * it is left exactly as it is. This is a separate constant because extraction
+ * order is a scheduling decision -- Driver first because the Driver proof is
+ * what the customer sees first (RULE 0.23), Roof last because it is the view
+ * most likely to need a corrective cycle and the least likely to be looked at
+ * first.
+ *
+ * The two must stay the same SET, which `tests/atlas-streaming-fanout.test.mjs`
+ * asserts.
+ */
+const PANEL_EXTRACTION_ORDER = Object.freeze(["driver", "passenger", "hood", "front", "rear", "roof"]);
 const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // Pinned to the edge function's own ATLAS_ARTBOARD_PROMPT_VERSION; the reuse
 // contract folds it into the request identity, and the revision records it.
@@ -747,35 +766,42 @@ function surfaceForProofView(sourceViewType) {
   return VIEW_SURFACE[sourceViewType];
 }
 
-async function viewAuthorityDerivative(surfaceSourceBytes, manifest, sourceViewType) {
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EACH 3D PROOF IS FED ITS OWN EXTRACTED PANEL. (Trish 2026-08-27)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Owner, verbatim: "The 3D proofs should not render directly from the whole
+ * ATLAS master. They should render per side from the extracted panel for that
+ * side... Each proof uses its own extracted panel as immutable artwork
+ * authority." RULE 0.28 §6 already specified it -- "buildViewAuthorities /
+ * viewAuthorityFor must hash-bind to the persisted Call-9 panel rather than to
+ * a fresh crop of the master" -- and listed it as not yet built. This builds it.
+ *
+ * WHAT THIS CHANGES, PRECISELY: NOT THE PIXELS. This used to run its OWN
+ * `sharp.extract` over the repaired sheet using `zone.extraction` -- the exact
+ * rect and rotation `cutCallOnePanels` uses for the panel. Two crops, same
+ * region, one encoded PNG and one encoded JPEG. So the authority is now an
+ * encode OF THE PANEL rather than a second cut of the master, and on any sheet
+ * both routes produce the same image; what changes is that there is one source
+ * of those pixels instead of two that merely agree, and the authority now
+ * carries `panelContentHash`, so a proof can PROVE it was conditioned on the
+ * panel the customer buys rather than on something that resembles it.
+ *
+ * The budget ladder is unchanged: the request has a byte ceiling, so quality
+ * steps down until the encode fits, and an exhausted ladder still refuses
+ * rather than resizing the artwork.
+ */
+async function viewAuthorityFromPanel(panel, sourceViewType) {
   const surfaceKey = surfaceForProofView(sourceViewType);
-  const zone = manifest?.zones?.find((candidate) => candidate.surfaceKey === surfaceKey);
-  if (!zone?.extraction) {
+  if (!panel || panel.surfaceKey !== surfaceKey || !Buffer.isBuffer(panel.bytes) || !panel.bytes.length) {
     throw new FlatAtlasError(
-      "flat_atlas_view_authority_zone_missing",
-      `${sourceViewType}: ${surfaceKey} master zone is missing`,
+      "flat_atlas_view_authority_panel_missing",
+      `${sourceViewType}: the extracted ${surfaceKey} panel is not available as artwork authority`,
     );
   }
-  const extract = {
-    left: Number(zone.extraction.x),
-    top: Number(zone.extraction.y),
-    width: Number(zone.extraction.w),
-    height: Number(zone.extraction.h),
-  };
-  if (!Object.values(extract).every(Number.isSafeInteger)
-    || extract.left < 0 || extract.top < 0 || extract.width < 1 || extract.height < 1
-    || extract.left + extract.width > CANVAS.widthPx
-    || extract.top + extract.height > CANVAS.heightPx) {
-    throw new FlatAtlasError(
-      "flat_atlas_view_authority_zone_invalid",
-      `${sourceViewType}: ${surfaceKey} extraction is outside the canonical master`,
-    );
-  }
-  const rotationDegrees = Number(zone.extraction.outputRotationDegrees || 0);
   for (const quality of PROJECTION_QUALITY_LADDER) {
-    const bytes = await sharp(surfaceSourceBytes, { limitInputPixels: false })
-      .extract(extract)
-      .rotate(rotationDegrees)
+    const bytes = await sharp(panel.bytes, { limitInputPixels: false })
       .flatten({ background: "#ffffff" })
       .removeAlpha()
       .toColourspace("srgb")
@@ -805,41 +831,22 @@ async function viewAuthorityDerivative(surfaceSourceBytes, manifest, sourceViewT
         heightPx: Number(metadata.height),
         quality,
         chromaSubsampling: "4:4:4",
-        sourceMasterHash: sha256(surfaceSourceBytes),
-        sourceZone: Object.freeze({
-          x: extract.left,
-          y: extract.top,
-          w: extract.width,
-          h: extract.height,
-          outputRotationDegrees: rotationDegrees,
-        }),
+        // LINEAGE stays the repaired sheet, unchanged, because that is what
+        // `viewAuthorityFor` and the persisted revision bind against.
+        sourceMasterHash: panel.surfaceSourceHash,
+        // PROVENANCE is now explicit: the exact Call-9 panel these pixels are.
+        panelContentHash: panel.contentHash,
+        panelByteSize: Number(panel.byteSize),
       });
     }
   }
   throw new FlatAtlasError(
     "flat_atlas_view_authority_budget_exhausted",
-    `${sourceViewType}: exact ${surfaceKey} crop cannot fit ${VIEW_AUTHORITY_MAX_BYTES} bytes without resizing`,
+    `${sourceViewType}: exact ${surfaceKey} panel cannot fit ${VIEW_AUTHORITY_MAX_BYTES} bytes without resizing`,
   );
 }
 
-/**
- * CALL 1 CUTS THE SIX PANELS.
- *
- * The panels a buyer is enticed with, and the panels PanelPro Studio is later
- * served, are cut here -- from the canonical master, at Call 1, before any GENIE
- * dimension exists and before the production workflow is created. Nothing
- * downstream re-derives them; Call 9 promotes these exact bytes.
- *
- * It is pure geometry. Every zone already carries its extraction rectangle, its
- * inverse rotation, and its real per-side dimensions with the five-inch bleed
- * already included (trimWidthIn + BLEED_INCHES * 2). So there is nothing to
- * infer: crop, unrotate, stamp the size on it.
- *
- * PNG, not the JPEG the view authorities use. A view authority is conditioning
- * evidence for another model; a panel is print artwork, and print artwork is
- * never handed a lossy round trip.
- */
-async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash) {
+async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash, { onPanel = null } = {}) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
   // LINEAGE, NOT PROVENANCE. `sourceMasterHash` is the identity PanelPro pairs
   // a panel with its proof by, so it has to be the CANONICAL master hash the
@@ -852,7 +859,29 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
   const lineageHash = HASH_RE.test(String(canonicalMasterHash || ""))
     ? String(canonicalMasterHash)
     : surfaceSourceHash;
-  return Promise.all(SURFACE_KEYS.map(async (surfaceKey) => {
+  // SEQUENTIAL, IN THE OWNER'S ORDER, RELEASING EACH PANEL AS IT LANDS.
+  //
+  // This was `Promise.all(SURFACE_KEYS.map(...))`. Six concurrent 4096x4096
+  // sharp extracts finish sooner in aggregate, but they finish TOGETHER -- and
+  // a barrier is exactly what the orchestration forbids: "Do not use
+  // Promise.all to redefine the six panel extraction algorithm if the canonical
+  // extractor is intentionally ordered... each completed panel emits a
+  // panel.ready(surfaceKey) event that makes its corresponding proof node
+  // runnable immediately" (owner, 2026-08-27).
+  //
+  // So the cut is ordered and `onPanel` fires the instant each panel exists,
+  // before the next one starts. The caller uses that to persist it, publish it
+  // to PanelPro, and release that surface's 3D proof. Driver is first, so the
+  // Driver panel and its proof are unblocked while Roof has not been touched.
+  const panels = [];
+  for (const surfaceKey of PANEL_EXTRACTION_ORDER) {
+    const panel = await cutOnePanel(surfaceKey);
+    panels.push(panel);
+    if (typeof onPanel === "function") await onPanel(panel, panels.length - 1);
+  }
+  return panels;
+
+  async function cutOnePanel(surfaceKey) {
     const zone = zones.find((candidate) => candidate.surfaceKey === surfaceKey);
     if (!zone?.extraction) {
       throw new FlatAtlasError("flat_atlas_panel_zone_missing", `${surfaceKey} master zone is missing`);
@@ -900,13 +929,23 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
       sourceMasterHash: lineageHash,
       surfaceSourceHash,
     });
-  }));
+  }
 }
 
-async function buildViewAuthorities(surfaceSourceBytes, manifest) {
+/**
+ * Seven proof views over six panels -- Close-Up shares Driver's surface, so it
+ * shares Driver's panel. Keyed by surface, so a view can only ever be handed
+ * the panel for the surface it photographs.
+ *
+ * These encodes are cheap and independent of each other, and by the time this
+ * runs every panel already exists, so nothing here is a barrier between
+ * branches -- the streaming release happened in `cutCallOnePanels`'s `onPanel`.
+ */
+async function buildViewAuthorities(panels) {
+  const bySurface = new Map((Array.isArray(panels) ? panels : []).map((panel) => [panel.surfaceKey, panel]));
   const entries = await Promise.all(PROOF_VIEWS.map(async (sourceViewType) => [
     sourceViewType,
-    await viewAuthorityDerivative(surfaceSourceBytes, manifest, sourceViewType),
+    await viewAuthorityFromPanel(bySurface.get(surfaceForProofView(sourceViewType)), sourceViewType),
   ]));
   return Object.freeze(Object.fromEntries(entries));
 }
@@ -918,6 +957,20 @@ async function buildViewAuthorities(surfaceSourceBytes, manifest) {
 function surfaceSourceHashOf(atlas) {
   const recorded = atlas?.metadata?.panelSourceHash;
   return HASH_RE.test(String(recorded || "")) ? String(recorded) : atlas?.master?.contentHash;
+}
+
+/**
+ * Does the revision's own record of this surface's Call 1 panel agree with the
+ * panel hash the proof authority carries? A revision with no recorded panels is
+ * historical -- it predates the panel-fed authority -- and must stay readable
+ * (owner protection #1), so absence passes and only DISAGREEMENT convicts.
+ */
+function panelHashMatches(atlas, surfaceKey, panelContentHash) {
+  const recorded = Array.isArray(atlas?.callOnePanels) ? atlas.callOnePanels : [];
+  if (!recorded.length) return true;
+  const entry = recorded.find((candidate) => candidate?.surfaceKey === surfaceKey);
+  if (!entry || !entry.contentHash) return true;
+  return String(entry.contentHash).toLowerCase() === String(panelContentHash).toLowerCase();
 }
 
 function viewAuthorityFor(atlas, sourceViewType) {
@@ -934,7 +987,14 @@ function viewAuthorityFor(atlas, sourceViewType) {
     // Bound to the SURFACE SOURCE -- the repaired sheet the panels are cut
     // from, which equals the canonical master byte for byte whenever the sheet
     // arrived without cut-outs.
-    || authority.sourceMasterHash !== surfaceSourceHashOf(atlas)) {
+    || authority.sourceMasterHash !== surfaceSourceHashOf(atlas)
+    // AND BOUND TO THE PANEL ITSELF. The proof's artwork authority IS this
+    // surface's extracted panel (owner, 2026-08-27), so it carries that panel's
+    // hash and the revision's own record of that panel has to agree. Without
+    // this the two could drift apart and every downstream pairing would still
+    // report a match.
+    || !HASH_RE.test(String(authority.panelContentHash || ""))
+    || !panelHashMatches(atlas, expectedSurface, authority.panelContentHash)) {
     throw new FlatAtlasError(
       "flat_atlas_view_authority_identity_mismatch",
       `${sourceViewType}: exact ${expectedSurface} authority is not bound to the immutable master`,
@@ -1316,8 +1376,33 @@ async function downloadVerified(supabase, storagePath, expectedHash, expectedByt
   return bytes;
 }
 
-async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projectionBytes, { reused }) {
-  const viewAuthorities = await buildViewAuthorities(surfaceSourceBytes, manifest);
+async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projectionBytes, { reused, panels = null }) {
+  // THE AUTHORITIES COME FROM THE PANELS, ON BOTH PATHS.
+  //
+  // A fresh run hands its just-cut panels straight in. A RESUMED run has none
+  // in memory, so it re-cuts them from the repaired sheet -- deterministically,
+  // by the same code, from the same rects -- and then PROVES the result against
+  // the hashes the revision recorded. That check is the point: it is the same
+  // guarantee `flat_atlas_surface_source_mismatch` gives the sheet itself, one
+  // level down, and it means a resumed proof is conditioned on bytes identical
+  // to the panel the customer is buying rather than on bytes that merely ought
+  // to be.
+  const authorityPanels = Array.isArray(panels) && panels.length
+    ? panels
+    : await cutCallOnePanels(surfaceSourceBytes, manifest, row.master_content_hash);
+  const recorded = Array.isArray(row.metadata?.callOnePanels) ? row.metadata.callOnePanels : [];
+  if (recorded.length) {
+    for (const panel of authorityPanels) {
+      const match = recorded.find((entry) => entry.surfaceKey === panel.surfaceKey);
+      if (match && String(match.contentHash || "").toLowerCase() !== panel.contentHash) {
+        throw new FlatAtlasError(
+          "flat_atlas_panel_rebuild_mismatch",
+          `${panel.surfaceKey}: re-cut panel does not reproduce the recorded Call 1 panel`,
+        );
+      }
+    }
+  }
+  const viewAuthorities = await buildViewAuthorities(authorityPanels);
   return {
     contract: ATLAS_CONTRACT,
     revisionId: row.id,
@@ -1484,7 +1569,12 @@ function atlasReceipt(atlas) {
         widthPx: authority.widthPx,
         heightPx: authority.heightPx,
         sourceMasterHash: authority.sourceMasterHash,
-        sourceZone: authority.sourceZone,
+        // The panel this proof's artwork IS. `sourceZone` is gone with the
+        // second crop that produced it -- the authority is now an encode of the
+        // extracted panel, not a rect over the master, so the panel's identity
+        // is the provenance a reader needs.
+        panelContentHash: authority.panelContentHash,
+        panelByteSize: authority.panelByteSize,
       }];
     })),
   };
@@ -1535,6 +1625,12 @@ async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
     claimToken, input, surfaces, geometryAuthority, topologyExamples = [],
+    // panel.ready(surfaceKey). Called with that surface's identity and
+    // dimensions the moment its panel exists, before the next cut starts, so a
+    // consumer can publish it and release its 3D proof without waiting for the
+    // set. Failures are logged and never propagate: Branch A does not stop for
+    // Branch B.
+    onSurfaceReady = null,
     artboardQualityExamples = [], masterValidatorFactory = createAtlasMasterValidator,
     // The Call-1 transport is injectable so a unit test can drive the authoring
     // loop without a live edge function. Production always uses the real POST.
@@ -1969,10 +2065,66 @@ async function generateOrReuseFlatAtlas(options) {
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
   const surfaceSourceBytes = cutoutFill.bytes;
   const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
+  // ── BRANCH A: ORDERED EXTRACTION, EACH PANEL RELEASED THE MOMENT IT EXISTS ──
+  //
+  // Owner, 2026-08-27: "Each completed panel is immediately persisted and
+  // published to PanelPro Studio with its trim dimensions, 5\u2033 bleed, hashes
+  // and lineage... Nothing in Branch A waits for Branch B."
+  //
+  // The extraction is ORDERED -- Driver, Passenger, Hood, Front, Rear, Roof --
+  // and its write is fired inside the loop rather than batched afterwards, so
+  // the Driver panel is in durable storage while Roof has not been cut. The
+  // write promise is collected, never awaited here: awaiting it would put the
+  // upload on the critical path of the next cut and re-create the barrier this
+  // removes. `onSurfaceReady` is the panel.ready event; a caller uses it to
+  // release that surface's 3D proof.
+  const panelWrites = [];
+  const panelReleaseErrors = [];
   const [callOnePanels, projection] = await Promise.all([
-    cutCallOnePanels(surfaceSourceBytes, manifest, masterHash),
+    cutCallOnePanels(surfaceSourceBytes, manifest, masterHash, {
+      onPanel: (panel) => {
+        panelWrites.push(store.putImmutableBytes({
+          storagePath: atlasStoragePath({
+            tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
+          }),
+          bytes: panel.bytes,
+          contentType: panel.contentType,
+        }));
+        if (typeof onSurfaceReady !== "function") return;
+        // A consumer's failure is ITS failure. Branch A does not stop cutting
+        // panels because Branch B could not start one proof -- "a failed proof
+        // never blocks its production panel."
+        try {
+          const released = onSurfaceReady({
+            surfaceKey: panel.surfaceKey,
+            contentHash: panel.contentHash,
+            byteSize: panel.byteSize,
+            trimWidthIn: panel.trimWidthIn,
+            trimHeightIn: panel.trimHeightIn,
+            printWidthIn: panel.printWidthIn,
+            printHeightIn: panel.printHeightIn,
+            surfaceSqFt: panel.surfaceSqFt,
+            bleedInches: panel.bleedInches,
+            sourceMasterHash: panel.sourceMasterHash,
+            surfaceSourceHash: panel.surfaceSourceHash,
+          });
+          if (released && typeof released.catch === "function") {
+            released.catch((cause) => panelReleaseErrors.push({ surfaceKey: panel.surfaceKey, cause }));
+          }
+        } catch (cause) {
+          panelReleaseErrors.push({ surfaceKey: panel.surfaceKey, cause });
+        }
+      },
+    }),
     projectionDerivative(surfaceSourceBytes),
   ]);
+  for (const failure of panelReleaseErrors) {
+    logger?.warn?.("flat_atlas_panel_release_failed", {
+      generationId,
+      surfaceKey: failure.surfaceKey,
+      reason: String(failure.cause?.message || failure.cause || "unknown"),
+    });
+  }
 
   // Every content-addressed path the write batch below needs must be resolved
   // BEFORE that batch is defined -- `persistImmutableAssets` is now invoked
@@ -1995,13 +2147,10 @@ async function generateOrReuseFlatAtlas(options) {
     store.putImmutableBytes({
       storagePath: projectionStoragePath, bytes: projection.bytes, contentType: projection.contentType,
     }),
-    ...callOnePanels.map((panel) => store.putImmutableBytes({
-      storagePath: atlasStoragePath({
-        tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
-      }),
-      bytes: panel.bytes,
-      contentType: panel.contentType,
-    })),
+    // THE PANELS ARE NOT WRITTEN HERE ANY MORE. Each one's upload was fired the
+    // instant it was cut, in Branch A, so the Driver panel reached storage
+    // before Roof was extracted. All that is left is to join them.
+    ...panelWrites,
   ]);
 
   // ── THE JUDGE'S VERDICT IS COLLECTED HERE, AND IT DECIDES NOTHING ────────
@@ -2239,7 +2388,11 @@ async function generateOrReuseFlatAtlas(options) {
     throw new FlatAtlasError("flat_atlas_revision_insert_failed", error.message, true);
   }
   logger(`persisted immutable atlas revision 1 ${masterHash}`);
-  return rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projection.bytes, { reused: false });
+  return rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projection.bytes, {
+    reused: false,
+    // Already cut, already published. Never cut them twice.
+    panels: callOnePanels,
+  });
 }
 
 function atlasProjectionParts(atlas, sourceViewType) {
@@ -2289,6 +2442,7 @@ module.exports = {
   PROOF_VIEWS,
   SEMANTIC_CONTINUITY,
   SURFACE_KEYS,
+  PANEL_EXTRACTION_ORDER,
   TARGET_PRINT_PPI,
   TOPOLOGY,
   VIEW_AUTHORITY_CONTRACT,
@@ -2336,7 +2490,7 @@ module.exports = {
     surfaceForProofView,
     topologyExampleParts,
     verifiedCustomerReferenceParts,
-    viewAuthorityDerivative,
+    viewAuthorityFromPanel,
     trimRectangle,
     zoneEffectivePpi,
   },

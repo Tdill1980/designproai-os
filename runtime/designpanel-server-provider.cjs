@@ -95,20 +95,11 @@ TRUCK BED: on a pickup, the wrap covers the outer painted panels — cab, bed si
 This is how real vehicle wraps work. Vinyl goes on painted body panels only.
 `;
 
-// Camera/framing-only reinforcement. Artwork is supplied by the exact native
-// Atlas zone crop; adding logo/layout/flow instructions here would become a
-// second design prompt and let each proof invent a different wrap.
-const VIEW_REINFORCEMENT = Object.freeze({
-  // Keep the DesignPanel detail treatment, but never contradict the locked
-  // 18-inch view-angles-os camera with either historical 12-inch or 3-5-foot
-  // duplicate framing. The imported angle contract remains authoritative.
-  "close-up": " This is a CLOSE-UP design-detail photograph at the locked camera distance above. Show the vinyl texture grain, laminate sheen, ink depth, printed pattern, color transitions or artwork conforming to the body curve. A body line, panel edge or door handle may provide scale. The wrap design fills 90%+ of frame. This is NOT a full vehicle shot and NOT a three-quarter vehicle view.",
-  "passenger-side": " This is the PASSENGER SIDE of the vehicle — the opposite side from the driver. The vehicle faces RIGHT in frame (nose pointing right). All text and lettering reads correctly left-to-right, NEVER mirrored. Show the passenger-side wheels.",
-  roof: " This is a TOP-DOWN ROOF view — camera is DIRECTLY ABOVE the vehicle pointing straight down at 90 degrees. Orthographic flat top-down, NOT tilted and NOT angled. Frame only the roof/cab-top panel between windshield and rear glass. Crop tightly so that panel fills the frame. Exclude hood, front end, cargo bed, tailgate, wheels, mirrors, vehicle sides, floor and walls.",
-  hood_detail: " This is a TOP-DOWN HOOD view — camera is DIRECTLY ABOVE the hood pointing straight down. Orthographic flat overhead, NOT a 3/4 glamour shot. Frame only the hood between windshield base and front bumper edge, with the hood filling the frame.",
-  front: " This is a STRAIGHT-ON FRONT view — camera is DIRECTLY in front at grille/bumper height, perpendicular and perfectly symmetrical. NOT a 3/4 angle, rotated or tilted view. Frame grille, both headlights, hood edge, front bumper and windshield head-on, with the front filling the frame.",
-  rear: " This is a STRAIGHT-ON REAR view — camera is DIRECTLY behind at tailgate/bumper height, perpendicular and perfectly symmetrical. NOT a 3/4 angle, rotated or tilted view. Frame rear glass/tailgate, both tail lights and rear bumper head-on, with the rear filling the frame.",
-});
+// VIEW_REINFORCEMENT AND THE PICKUP CAB-ROOF OVERRIDE NOW LIVE IN
+// view-angles.cjs. They were camera geometry authored HERE, which made three
+// voices where the contract allows one (owner 2026-08-27: "collapse camera
+// authority to view-angles-os"). Their substance is unchanged; they are
+// emitted once, LAST, by `angles.cameraAuthority()`.
 
 // Ported from app/src/utils/passenger-mirror.ts. The server calls Gemini
 // directly for the same surgical text repair; it does not invoke revise-render
@@ -498,11 +489,7 @@ function buildAtlasProjectionPrompt({ input, sourceViewType, hasDriverAnchor, au
   const finish = String(input?.finish || "Gloss");
   const finishSpec = FINISH_SPEC[finish.toLowerCase()] || FINISH_SPEC.gloss;
   const viewLabel = angles.viewLabel(sourceViewType).toLowerCase();
-  const reinforcement = VIEW_REINFORCEMENT[sourceViewType] || "";
   const surfaceKey = authorityIdentity?.surfaceKey || ATLAS_VIEW_SURFACES[sourceViewType];
-  const pickupRoofOverride = sourceViewType === "roof" && pickupVehicle(input)
-    ? "\nPICKUP CAB-ROOF OVERRIDE: For this pickup, CAB ROOF ONLY between windshield and rear cab glass overrides the imported generalized phrase ‘A-pillars to trunk.’ The hood, complete front end, cargo bed/box, bedliner, tailgate, wheels, mirrors, body sides, floor and walls must be outside the frame."
-    : "";
   const photoLock = briefWantsPhoto(String(input?.brief || ""))
     ? "\nPHOTOGRAPHIC REALISM LOCK: preserve photographic artwork in the Atlas as a real high-resolution color photograph; never turn it into illustration, vector art or clip-art."
     : "";
@@ -510,17 +497,13 @@ function buildAtlasProjectionPrompt({ input, sourceViewType, hasDriverAnchor, au
     ? `\nThe second attached image is the byte-verified accepted Driver proof. Use it ONLY to keep the exact vehicle anatomy, wheelbase, cab/bed configuration, studio, lighting, physical vinyl finish and visible installed scale continuous. It is not permission to infer, redraw or replace hidden artwork; where the Driver proof and Atlas could be read differently, the Atlas wins.`
     : "\nNo prior 3D proof is attached to this first projection. Establish the Driver proof directly from the Atlas and the locked vehicle/camera/photography contracts below.";
 
-  return `CAMERA ANGLE (LOCKED — read this FIRST):
-${angles.cameraAngle(sourceViewType)}
-
-Render the ${viewLabel} proof of this exact ${vehicle}. This is the sanctioned generate-color-render photography stage. It is texture projection from one already-approved design-panel-ai-generate flat master, NOT another design call.
+  return `Render the ${viewLabel} proof of this exact ${vehicle}. This is the sanctioned generate-color-render photography stage. It is texture projection from one already-approved design-panel-ai-generate flat master, NOT another design call.
 
 ARTWORK AUTHORITY — NON-NEGOTIABLE:
 The first attached image is the immutable A.T.L.A.S. native ${String(surfaceKey || "target").toUpperCase()} zone crop and the SOLE artwork authority for this proof. Project those exact pixels onto that corresponding painted surface. Preserve every color, photograph, pattern, gradient, graphic, logo, wordmark, character, spelling, relative scale, hierarchy and flow. Never redraw hidden content from Driver, borrow another master zone, redesign, reimagine, beautify, simplify, restyle, recolor, mirror, move, resize, substitute, autocomplete or invent. The crop is full-bleed behind future installer cut lines; mask it to factory glass/openings in the photo without relocating the master artwork.${driverRole}
 
 VIEW FIDELITY — NON-NEGOTIABLE:
-Reproduce the identical approved design on the same vehicle from the ${viewLabel} camera angle defined above.${reinforcement}
-${pickupRoofOverride}
+Reproduce the identical approved design on the same vehicle from the ${viewLabel} camera angle defined in the FINAL block of this prompt.
 The artwork is LOCKED. Treat this as photographing one real wrapped vehicle while only the camera moves. The design does not change between angles.
 
 Finish: ${finish.toUpperCase()} — ${finishSpec} Keep this finish identical across every view.
@@ -532,7 +515,9 @@ ${STUDIO_ENVIRONMENT}
 ${STUDIO_REINFORCEMENT}
 ${PHOTOREALISM_REQUIREMENT}
 
-The exact vehicle, wrap, studio, lighting and finish remain continuous; only the camera moves. Output one 16:9 photorealistic vehicle proof only. Never output an installer map, panel sheet, dieline, labels, dimensions or annotations.${photoLock}`;
+The exact vehicle, wrap, studio, lighting and finish remain continuous; only the camera moves. Output one 16:9 photorealistic vehicle proof only. Never output an installer map, panel sheet, dieline, labels, dimensions or annotations.${photoLock}
+
+${angles.cameraAuthority(sourceViewType, { pickup: pickupVehicle(input) })}`;
 }
 
 async function buildAtlasProjectionRequest({ atlas, input, sourceViewType, call, driverReference = null }) {
@@ -589,10 +574,7 @@ function buildReproductionPrompt({ input, sourceViewType }) {
     ? "\n\nPHOTOGRAPHIC REALISM LOCK: preserve any photographic imagery as a real high-resolution color photograph; never turn it into illustration, vector art, or clip-art."
     : "";
 
-  return `CAMERA ANGLE (LOCKED — read this FIRST):
-${angles.cameraAngle(sourceViewType)}
-
-IMAGE 1 and IMAGE 2 are two copies of the SAME verified, immutable driver-side winner created by design-panel-ai-generate. Render the SAME ${vehicle} with the SAME wrap design from the ${viewLabel} angle. This is generate-color-render reproduction, not another design decision.
+  return `IMAGE 1 and IMAGE 2 are two copies of the SAME verified, immutable driver-side winner created by design-panel-ai-generate. Render the SAME ${vehicle} with the SAME wrap design from the ${viewLabel} angle. This is generate-color-render reproduction, not another design decision.
 
 Preserve every color, pattern, graphic, logo, wordmark, line of text, spelling, scale, position, and hierarchy from View 1. Never redesign, restyle, recolor, simplify, mirror, autocomplete, replace, or invent. All visible text must read correctly left-to-right. Apply the design naturally to only the painted body panels visible in this camera view; windows, lights, wheels, tires, trim, glass, grilles, and manufacturer emblems remain factory.
 
@@ -603,7 +585,9 @@ ${STUDIO_ENVIRONMENT}
 ${WRAP_COVERAGE_RULES}
 ${truckBedClause(vehicle)}
 
-The vehicle and studio must be the same as View 1; only the camera moves.${photoLock}`;
+The vehicle and studio must be the same as View 1; only the camera moves.${photoLock}
+
+${angles.cameraAuthority(sourceViewType, { pickup: pickupVehicle(input) })}`;
 }
 
 function reproductionParts({ attempt, prompt, reference, corrections = [] }) {
@@ -1459,7 +1443,6 @@ module.exports = {
     PASSENGER_TEXT_FIX_SYSTEM_INSTRUCTION,
     passengerRepairRequestByteSize,
     PHOTOREALISM_REQUIREMENT,
-    VIEW_REINFORCEMENT,
     WRAP_COVERAGE_RULES,
     STANDARD_QC_MODEL,
     STANDARD_QC_CONFIDENCE,
