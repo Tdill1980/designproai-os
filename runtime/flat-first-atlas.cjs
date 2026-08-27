@@ -978,6 +978,8 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     guideStoragePath: extras.guideStoragePath,
     structuralReferenceStoragePath: extras.structuralReferenceStoragePath,
     structuralReferenceMime: extras.structuralReferenceMime,
+    structuralPairedProofStoragePath: extras.structuralPairedProofStoragePath,
+    structuralPairedProofMime: extras.structuralPairedProofMime,
     referenceImagesBase64: extras.referenceImagesBase64,
     correctiveNote: extras.correctiveNote,
   };
@@ -1579,8 +1581,19 @@ async function generateOrReuseFlatAtlas(options) {
   // edge prompt), and the verified customer logo/reference images. The
   // gold-standard artboard examples are loaded by the edge function itself
   // from its own bucket.
+  // THE PAIR IS THE LESSON — BOTH HALVES, OR IT IS NOT THE PAIR.
+  //
+  // `topologyExampleParts` emits the Houdini lesson as two images: the
+  // flattened top-view PANEL LAYOUT sheet and its corresponding finished 3D
+  // proof. When Call 1 moved onto the edge function this staged only
+  // `.find(...)` — the FIRST inline image — so the finished proof silently
+  // stopped reaching the authoring model, which is exactly the removal RULE
+  // 0.15 records as having cost the design once already and says in as many
+  // words not to repeat. Take every image the lesson emits, in order.
   const topologyParts = await topologyExampleParts(topologyExamples);
-  const structuralImage = topologyParts.find((part) => part?.inlineData?.data);
+  const structuralImages = topologyParts.filter((part) => part?.inlineData?.data);
+  const structuralImage = structuralImages[0];
+  const pairedProofImage = structuralImages[1];
   const customerImageParts = [
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
@@ -1601,10 +1614,16 @@ async function generateOrReuseFlatAtlas(options) {
     ? Buffer.from(structuralImage.inlineData.data, "base64")
     : null;
   const structuralMime = structuralImage?.inlineData?.mimeType || "image/jpeg";
+  const pairedProofBytes = pairedProofImage?.inlineData?.data
+    ? Buffer.from(pairedProofImage.inlineData.data, "base64")
+    : null;
+  const pairedProofMime = pairedProofImage?.inlineData?.mimeType || "image/png";
   const edgeExtras = {
     guideStoragePath: await stageEdgeInput(authoringGuideBytes, "image/png"),
     structuralReferenceStoragePath: await stageEdgeInput(structuralBytes, structuralMime),
     structuralReferenceMime: structuralMime,
+    structuralPairedProofStoragePath: await stageEdgeInput(pairedProofBytes, pairedProofMime),
+    structuralPairedProofMime: pairedProofMime,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   if (typeof masterValidatorFactory !== "function") {

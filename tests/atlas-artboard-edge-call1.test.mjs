@@ -113,3 +113,33 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.ok(runtimeVersion, "the runtime must pin the edge prompt version");
   assert.equal(runtimeVersion[1], edge[1]);
 });
+
+test("both halves of the Houdini paired lesson reach Call 1", () => {
+  // RULE 0.15: "THE PAIRED EXAMPLE ... IS RESTORED. DO NOT REMOVE IT AGAIN."
+  // topologyExampleParts emits the lesson as TWO images — the flattened
+  // top-view PANEL LAYOUT sheet and its corresponding finished 3D proof — and
+  // the move onto the edge function staged only `.find(...)`, the first inline
+  // image, so the finished proof silently stopped being attached. Nothing
+  // failed; the lesson just went half-taught.
+  assert.match(runtimeSource, /const structuralImages = topologyParts\.filter\(/);
+  assert.ok(
+    !/const structuralImage = topologyParts\.find\(/.test(runtimeSource),
+    "taking the first inline image drops the finished-proof half of the pair",
+  );
+  assert.match(runtimeSource, /structuralPairedProofStoragePath: await stageEdgeInput\(pairedProofBytes/);
+  // …and the function downloads and attaches both.
+  assert.match(handler, /downloadPart\(body\.structuralReferenceStoragePath/);
+  assert.match(handler, /downloadPart\(body\.structuralPairedProofStoragePath/);
+
+  // The framing text lives in the edge function (prompt text belongs there),
+  // but the runtime still carries the canonical wording, so lock them equal
+  // rather than leaving two copies free to drift.
+  for (const line of [
+    "PAIRED TOPOLOGY EXAMPLE — FLATTENED TOP-VIEW OUTPUT FORMAT.",
+    "PAIRED TOPOLOGY EXAMPLE — CORRESPONDING FINISHED 3D PROOF.",
+    "CALL 1 TARGET: create the customer's NEW flattened top-view design",
+  ]) {
+    assert.ok(runtimeSource.includes(line), `the runtime lesson must still say: ${line}`);
+    assert.ok(handler.includes(line), `the Call-1 request must carry: ${line}`);
+  }
+});
