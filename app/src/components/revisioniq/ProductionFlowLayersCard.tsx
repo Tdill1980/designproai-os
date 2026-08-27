@@ -200,6 +200,14 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   // Required, not preferred. There is no other way to fill this card, which is
   // the whole point: a fallback resolver would be a second authority for the
   // same design, reachable from the customer's screen.
+  // `source` is legitimately null for a design with no standalone run, and the
+  // guard below returns null for exactly that. But three hooks sit BETWEEN that
+  // guard and the reads above it, so the guard cannot be hoisted without
+  // changing the hook count between renders -- and every read here ran first.
+  // Live 2026-08-27: opening any card in RevisionStudioIQ threw
+  // "Cannot read properties of null (reading 'canonicalId')" and the whole
+  // route fell to the error boundary, so no past design could be opened at all.
+  // The reads are optional now; the guard still decides what renders.
   const injected = source;
   const [ordering, setOrdering] = useState(false);
   // Fit-to-screen preview lightbox target ({url,label}) or null when closed.
@@ -218,9 +226,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   // The runtime publishes the same four answers through dpApi, and
   // designpro-production-layers maps them into the rows below. The presentation
   // is unchanged, because the rows are.
-  const resolved = { canonical: injected.canonicalId, visualizationId: "", expectedUpdatedAt: "" };
+  const resolved = { canonical: injected?.canonicalId, visualizationId: "", expectedUpdatedAt: "" };
   const resolving = false;
-  const activePack = injected.activePack;
+  const activePack = injected?.activePack;
   const activePackLoading = false;
 
   const activeProofUrl = String((activePack as any)?.proof_artifact?.url || "");
@@ -228,7 +236,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
     ? (activePack as any).surface_manifest.surfaces.length
     : 0;
 
-  const rows = injected.rows as PFARow[];
+  const rows = (injected?.rows ?? []) as PFARow[];
   const rowsLoading = false;
 
   // Prefer the pack built from the CURRENT proof. If there isn't one yet, fall
@@ -282,7 +290,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
    * downloads are off, and the paid artifact is the same lineage -- the same
    * accepted master -- reached through purchase rather than a second producer.
    */
-  const entice = injected.stage === "entice";
+  const entice = injected?.stage === "entice";
 
   // Comparison thumbnails come from the exact frozen revision that produced the
   // panels ON SCREEN — not from the activated pack, which may not exist yet.
@@ -291,7 +299,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   const displayRevisionId = String(
     latestBySide[0]?.revision_id || (activePack as any)?.revision_id || "",
   );
-  const designViews = injected.designViews;
+  const designViews = injected?.designViews;
 
   // LOGO PACK — read only from the ONE selected atomic pack. Never union
   // admin_notes across order-family revisions: that was able to attach stale
@@ -367,12 +375,12 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
    * button that can start or restart production work is a second conductor.
    */
   const orderProductionPack =
-    injected.onOrderProductionPack && (entice || (isVerifiedPack && packState.productionEligible))
+    injected?.onOrderProductionPack && (entice || (isVerifiedPack && packState.productionEligible))
       ? async () => {
         if (ordering) return;
         setOrdering(true);
         try {
-          await injected.onOrderProductionPack!();
+          await injected!.onOrderProductionPack!();
         } catch (error: any) {
           toast({
             title: "Production Pack checkout could not start",
@@ -405,7 +413,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
     if (orderingLogoPack) return;
     setOrderingLogoPack(true);
     try {
-      if (!injected.onOrderLogoPack) throw new Error("Logo Pack checkout is not available");
+      if (!injected?.onOrderLogoPack) throw new Error("Logo Pack checkout is not available");
       await injected.onOrderLogoPack();
     } catch (e) {
       toast({

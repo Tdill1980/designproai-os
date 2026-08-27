@@ -164,7 +164,7 @@ test("the customer reaches checkout through dpApi, not a legacy function", () =>
   // to hold: a fallback that is merely second is still reachable, and it is the
   // one that runs whenever the injected source is absent for any reason. The
   // legacy branch is gone, so the assertion is now absence.
-  assert.match(card, /await injected\.onOrderProductionPack!\(\)/);
+  assert.match(card, /await injected!?\.onOrderProductionPack!\(\)/);
   assert.match(card, /await injected\.onOrderLogoPack\(\)/);
   assert.doesNotMatch(card, /create-single-use-checkout/);
   assert.doesNotMatch(card, /submitProductionPack/);
