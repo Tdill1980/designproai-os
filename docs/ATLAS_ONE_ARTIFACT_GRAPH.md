@@ -133,17 +133,35 @@ inspectable** (RULE 0.22).
 These are the work items. Each must end with both surfaces resolving to the
 **same six artifact IDs and hashes**.
 
-1. **Why PanelPro says 0/6 while RevisionStudio shows panel-looking images.**
-   *Found so far:* they read different fields. `designpro-production-layers.ts`
-   builds RevisionStudio's right column from artifacts of kind **`panel`**
-   (branded) and **`qc-panel`** (clean) and returns `null` unless **all six**
-   branded surfaces exist — so that column cannot fabricate panels; it either
-   shows six or nothing. PanelPro's badge counts
-   `panels[side]?.gemini_url` over `PRODUCTION_SURFACES`, a different accessor
-   fed by `loadPanelProStudioJob`. **Two counters, two sources, one truth
-   required.** Determine which images the right column was actually showing on
-   the affected generation — if they are not `kind:"panel"` rows, a second
-   producer exists and must be deleted, not fixed.
+1. **PanelPro's `0/6` is the WRONG NUMBER. The panels exist.** *(Corrected
+   2026-08-27 from the owner's RevisionStudio screenshots — the first reading of
+   this contradiction guessed the opposite, that RevisionStudio was showing
+   something fake. It is not.)*
+
+   `designpro-production-layers.ts` builds RevisionStudio's right column from
+   artifacts of kind **`panel`** (branded) and **`qc-panel`** (clean), and
+   **returns `null` unless ALL SIX branded surfaces exist**. It cannot render a
+   partial or invented pack: six or nothing.
+
+   The owner's screens show six labelled rows — DRIVER SIDE · PASSENGER SIDE ·
+   HOOD · ROOF · FRONT · REAR — each stamped **`v2:a4dfe5244c00cd554bba6b6e`**,
+   and `a4dfe5244c00cd55` is exactly the master hash PanelPro itself prints
+   (`a4dfe5244c00cd55 · 4096×4096`). **Six master-bound panel artifacts exist,
+   from the accepted master, on the run PanelPro reports as `0/6`.**
+
+   So the defect is in PanelPro's projection, not in the panels. Its badge
+   counts `panels[side]?.gemini_url` over `PRODUCTION_SURFACES`, fed by
+   `panelProStudioPanel()` in `app/src/lib/panelpro-studio-source.ts`, which
+   projects the run into the legacy page shape
+   (`concept_json.qc_side_panels[sideKey]`). **Suspect first: the surface-key
+   namespace.** The artifacts key on `driver` / `passenger` / `hood` / `roof` /
+   `front` / `rear`; the legacy board keys on its own `sideKey` labels. A
+   projection that misses on the key yields an empty map and an honest-looking
+   `0/6` over artifacts that are present and correct.
+
+   **Fix the counter to read the same six artifact IDs the right column reads,
+   and assert the two agree in a test.** Do NOT "fix" this by making
+   RevisionStudio produce or re-derive anything.
 
 2. **Why the roof exists in RevisionStudio but is reported missing elsewhere.**
    A 3D *proof* artifact and a canonical *production* surface are different
@@ -235,7 +253,13 @@ unilaterally, because it changes what the downstream gates mean.
 
 ## 8. STILL OPEN, NOT YET DONE
 
-- The hardwired artboard shell (§1) — **not built**.
+- The hardwired artboard shell (§1) — **not built**. This is the top item.
+- **The parallel fan-out is the owner's restated priority (2026-08-27):** "It
+  needs to use our edge function design panel ai generate — SINGLE ATLAS is
+  created and all the other assets done sequentially and in parallel." Call 1
+  already executes through the deployed `design-panel-ai-generate` (verified,
+  §7); what remains is that panels, asset extraction and the Driver proof must
+  all start on master acceptance rather than queue behind one another.
 - The parallel fan-out (§2) — panels and assets are not proven to publish
   independently of the proof set.
 - The five contradictions (§4) — diagnosed, not fixed.
