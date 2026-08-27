@@ -9,6 +9,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { buildControlPrompt, resolveEsbuild } from "../../scripts/build-control-prompt.mjs";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 let cached = null;
@@ -16,15 +17,14 @@ let cached = null;
 export async function loadDesignIQ() {
   if (cached) return cached;
   const work = mkdtempSync(join(tmpdir(), "designiq-"));
-  execFileSync("node", [join(ROOT, "scripts", "build-control-prompt.mjs"), work], {
-    cwd: ROOT,
-    stdio: "pipe",
-    // build-control-prompt shells out to `esbuild`; the repo's copy lives in
-    // node_modules/.bin and is not on PATH in a bare test run.
-    env: { ...process.env, PATH: `${join(ROOT, "node_modules", ".bin")}:${process.env.PATH}` },
-  });
+  // The builder is imported, not spawned: a child `node` inherits only PATH,
+  // and the release gate installs no root node_modules, so pointing PATH at
+  // one that does not exist is how this went red in CI while passing locally.
+  // resolveEsbuild() searches every workspace the gate DOES install.
+  const esbuild = resolveEsbuild();
+  buildControlPrompt({ outDir: work, esbuild });
   const out = join(work, "designiq.mjs");
-  execFileSync(join(ROOT, "node_modules", ".bin", "esbuild"), [
+  execFileSync(esbuild, [
     join(work, "control-prompt.ts"),
     "--bundle",
     "--format=esm",
