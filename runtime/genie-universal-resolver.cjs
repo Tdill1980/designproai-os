@@ -300,6 +300,11 @@ function catalogDimensionRow(match, vehicle) {
       sourceUrls: [],
       confidence: "high",
       operatorValidated: false,
+      // Layout geometry, exactly like every other authority this file emits.
+      // It was OMITTED, and normalizedGeometryAuthority reads
+      // `productionEligible !== false` -- so `undefined` threw
+      // flat_atlas_geometry_authority_invalid the moment the catalog matched.
+      productionEligible: false,
       catalogModel: match.row.model,
       catalogYearRange: match.row.year_range || null,
       catalogTotalSqft: match.totalSqft,
