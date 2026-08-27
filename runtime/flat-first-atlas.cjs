@@ -18,7 +18,7 @@
  * over a whole vehicle is silently relabelled a print-ready master.
  */
 
-const { createHash } = require("node:crypto");
+const { createHash, randomUUID } = require("node:crypto");
 const sharp = require("sharp");
 const { analyzeVisionBoardStyles } = require("./visionboard-iq.cjs");
 const {
@@ -2114,13 +2114,48 @@ async function generateOrReuseFlatAtlas(options) {
   // of a row written after the panels. It is not read by any conditioning path
   // (`atlasProjectionParts` never mentions it), and it is filled in below the
   // moment the row lands -- long before a ~30s proof reaches its persist step.
+  // MINTED HERE, NOT ASSIGNED BY THE INSERT.
+  //
+  // `revisionId` was the one field genuinely unknown at master-ready time: the
+  // primary key of `designpro_flat_atlas_revisions`, previously left to
+  // Postgres's `DEFAULT extensions.gen_random_uuid()`. That default is exactly
+  // as good as a client-generated one -- both are just a random v4 UUID -- so
+  // minting it now and passing it explicitly as the row's `id` on insert loses
+  // nothing and lets every consumer of the progressive root node reference the
+  // real, final identity from the first moment the master exists, instead of
+  // only after the row is written.
+  const mintedRevisionId = randomUUID();
   const progressiveAtlas = {
     contract: ATLAS_CONTRACT,
     promptVersion: PROMPT_VERSION,
-    revisionId: null,
+    revisionId: mintedRevisionId,
     revisionSequence,
     manifest,
     master: { contentHash: masterHash, bytes: masterBytes },
+    // Not a second producer of design and not a second QC pass -- every field
+    // here is already known, either a module constant or a local computed
+    // upstream of this point (`promptHash` at authoring time, well before the
+    // deterministic gate could even run). This is the SAME value `rowIdentity`
+    // derives from the persisted row's metadata later; the two must never be
+    // allowed to drift, which `tests/atlas-streaming-fanout.test.mjs` pins by
+    // comparing them byte for byte on a real run.
+    masterAcceptance: {
+      contract: MASTER_QC_CONTRACT,
+      promptHash,
+      providerContract: MASTER_PROVIDER_CONTRACT,
+      artboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
+      passed: true,
+      basis: "deterministic",
+    },
+    // `manifestHash` was computed at authoring time, long before the
+    // deterministic gate ran -- it does not wait on anything this object is
+    // trying not to wait on.
+    manifestAsset: { contentHash: manifestHash },
+    // Filled in the moment `projectionDerivative` resolves, a few lines below
+    // this object's construction -- pure Sharp/hash work, no network or AI, so
+    // "the moment it exists" is milliseconds, not the storage/DB tail this
+    // object exists to not wait for.
+    projection: null,
     metadata: { panelSourceHash },
     callOnePanels: [],
     viewAuthorities: {},
@@ -2148,6 +2183,15 @@ async function generateOrReuseFlatAtlas(options) {
   // release that surface's 3D proof.
   const panelWrites = [];
   const panelReleaseErrors = [];
+  // `projection` is attached to the progressive root the INSTANT it resolves,
+  // independent of panel-cutting -- not after `Promise.all` settles both, which
+  // would delay it behind the slower of the two for no reason. It is pure
+  // Sharp/hash work on bytes already in memory (no network, no AI), so this is
+  // milliseconds after the master itself was accepted.
+  const projectionPromise = projectionDerivative(surfaceSourceBytes).then((result) => {
+    progressiveAtlas.projection = result;
+    return result;
+  });
   const [callOnePanels, projection] = await Promise.all([
     cutCallOnePanels(surfaceSourceBytes, manifest, masterHash, {
       onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
@@ -2198,7 +2242,7 @@ async function generateOrReuseFlatAtlas(options) {
         }
       },
     }),
-    projectionDerivative(surfaceSourceBytes),
+    projectionPromise,
   ]);
   for (const failure of panelReleaseErrors) {
     logger?.warn?.("flat_atlas_panel_release_failed", {
@@ -2314,6 +2358,12 @@ async function generateOrReuseFlatAtlas(options) {
   const primaryTopologyExample = topologyExamples[0] || null;
 
   const rowPayload = {
+    // The SAME id the progressive root node handed out at master-ready time.
+    // This row is the persisted record of that identity, not the source of it
+    // -- Postgres's own `DEFAULT extensions.gen_random_uuid()` would produce an
+    // equally valid random v4 UUID, but a SECOND one, disagreeing with every
+    // proof that already started against `mintedRevisionId`.
+    id: mintedRevisionId,
     request_id: requestId,
     generation_id: generationId,
     owner_id: ownerId,

@@ -389,13 +389,33 @@ function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imagePa
     return {
       sourceViewType,
       consumerRole: entry.consumerRole,
+      // FOR THE FLAT-FIRST PATH, THIS IS NEVER READ FOR CONTENT.
+      //
+      // `createAtlasDesignPanelProvider.generateImage` spreads `...call` and
+      // then immediately OVERWRITES `parts` with its own freshly-built
+      // `request.parts` from `buildAtlasProjectionRequest`, which reads the
+      // provider's own `atlas.conditioningPartsFor` closure -- the one gated on
+      // `awaitSurface(sourceViewType)`. Whatever is computed here is discarded
+      // before a single byte reaches Gemini. It used to be computed EAGERLY via
+      // `conditionedPromptPartsFor` -> `atlasProjectionParts` -> `viewAuthorityFor`,
+      // for all seven views in this one `.map()` pass, before a single panel
+      // existed -- which is why it was a crash site, not because its RESULT
+      // mattered. An empty array is honest about that and satisfies every
+      // `Array.isArray(promptParts)` check downstream (`correctedParts`).
       promptParts: flatAtlas
-        ? conditionedPromptPartsFor(input, sourceViewType, instructions[sourceViewType], flatAtlas)
+        ? []
         : promptPartsFor(input, sourceViewType, instructions[sourceViewType], imageParts),
       aspectRatio: angles.aspectRatio(sourceViewType),
       imageSize: angles.resolutionTier(sourceViewType),
       ...(flatAtlas ? {
-        authorityMetadata: (() => {
+        // LAZY, NOT EAGER. `viewAuthorityFor` throws for a surface whose panel
+        // has not been cut yet, and ALL seven views are built in this one
+        // `.map()` pass at slot-construction time -- long before any panel
+        // exists. `runSlot` (generation-engine.cjs) calls this only AFTER that
+        // slot's own generation is accepted, by which point the provider's own
+        // gate (`awaitSurface`) has already proven the panel exists; a proof
+        // cannot be accepted without it.
+        authorityMetadata: () => {
           const viewAuthority = viewAuthorityFor(flatAtlas, sourceViewType);
           return {
             contract: flatAtlas.contract,
@@ -415,7 +435,7 @@ function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imagePa
             zoneContentHash: viewAuthority.contentHash,
             zoneSurfaceKey: viewAuthority.surfaceKey,
           };
-        })(),
+        },
       } : {}),
     };
   });
@@ -890,41 +910,44 @@ function createGenerationWorker({
         // Releasing twice is a no-op; a resolved promise stays resolved. The
         // failure branch swallows nothing -- `await atlasRun` below re-throws.
         atlasRun.then(releaseAllGates, releaseAllGates);
-        // HOTFIX -- LIVE OUTAGE, confirmed on a real production canary
-        // (b7f18baa/16ee00aa, 2026-08-27): every flat-first request failed at
-        // ~40s with generation_atlas_lineage_invalid.
-        //
-        // The race that substituted the PROGRESSIVE root node for the fully
-        // joined `flatAtlas` here was wrong for a reason deeper than the one
-        // assertion it broke first. THREE separate places between here and the
-        // old `flatAtlas = await atlasRun` read identity fields that plainly do
-        // not exist until Call 1's tail persists the revision row --
-        // `revisionId` in particular is assigned by the DATABASE on insert, so
-        // no amount of restructuring the progressive object can populate it
-        // earlier without minting a client-side id, which is a real change to
-        // how the revision is persisted, not a one-line fix:
-        //
-        //   1. `assertAtlasViewLineage`'s unconditional identity/masterAcceptance
-        //      check (the first crash observed).
-        //   2. `createAtlasDesignPanelProvider` itself calls
-        //      `assertHash(identity.projectionContentHash, ...)` SYNCHRONOUSLY
-        //      at construction -- the provider cannot be built at all against
-        //      an incomplete atlas, let alone conditioned per surface.
-        //   3. `slotsFrom`'s eager per-slot IIFE calls `viewAuthorityFor` and
-        //      reads `flatAtlas.projection`/`.manifestAsset` for EVERY slot at
-        //      `.map()` time -- before a single panel has been cut.
-        //
-        // So this reverts to what is actually safe: wait for the real object.
-        // The panel-extraction streaming this was trying to feed (PR #215/#216
-        // -- ordered per-panel persistence, panel.ready events, each proof fed
-        // its own extracted panel rather than a fresh crop) is UNCHANGED and
-        // still correct; only the worker's attempt to start proof CONSTRUCTION
-        // before Call 1's tail landed is undone. Pre-minting `revisionId` and
-        // moving `projection`/`manifestAsset` identity into the progressive
-        // object earlier is the real fix for the remaining latency and is a
-        // change to `generateOrReuseFlatAtlas`'s persistence order, not this
-        // call site -- tracked as follow-up, not attempted again blind.
-        flatAtlas = await atlasRun;
+        // THE FORWARD FIX. The 2026-08-27 outage traced to THREE places that
+        // needed identity fields the progressive root did not yet carry:
+        // `assertAtlasViewLineage`'s completeness check, `createAtlasDesignPanelProvider`'s
+        // constructor-time hash assertion, and `slotsFrom`'s eager per-slot
+        // authorityMetadata. Two of the three missing fields --
+        // `manifestAsset.contentHash` and every `masterAcceptance` field -- were
+        // already computed upstream of the progressive object's construction
+        // and are now IN it from the start (`generateOrReuseFlatAtlas`).
+        // `revisionId` is minted client-side there too, and persisted as that
+        // exact id rather than left to the database's default. Only
+        // `projection` is genuinely computed after master-ready, so the race
+        // below waits for it specifically -- pure Sharp/hash work on bytes
+        // already in memory, milliseconds, never the storage/DB tail this
+        // exists to not wait for. `slotsFrom`'s eager `viewAuthorityFor` call is
+        // fixed separately, below, by making it lazy.
+        await Promise.race([
+          atlasRun.then(() => {}),
+          new Promise((resolve) => {
+            const poll = setInterval(() => {
+              if (progressiveAtlas?.projection) { clearInterval(poll); resolve(); }
+            }, 10);
+            poll.unref?.();
+          }),
+        ]);
+        flatAtlas = progressiveAtlas || await atlasRun;
+        // A resumed Atlas request may already contain accepted rows. Admit
+        // them only when they prove this exact master/provider/Driver lineage;
+        // old generic rows must never short-circuit the corrected pipeline.
+        // The progressive object now satisfies every field this checks --
+        // `manifestAsset`, `masterAcceptance`, `revisionId` are front-loaded and
+        // `projection` is what the race above just waited for -- so this runs
+        // unconditionally again, exactly as it did before either the outage or
+        // the hotfix.
+        assertAtlasViewLineage({
+          views: await viewsPayload(requestId),
+          flatAtlas,
+          requireComplete: false,
+        });
       }
 
       const atlasProvider = isFlatFirst ? atlasProviderFactory({
