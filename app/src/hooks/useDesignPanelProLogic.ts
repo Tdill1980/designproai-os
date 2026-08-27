@@ -752,6 +752,14 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       if (usableViews.length && !requiresNewAtlasRun && acceptedRequest) {
         applyGeneratedViews(recoveredViews);
         const primary = pickPrimaryProofView(recoveredViews);
+        // SHOW THE DESIGN, not just a kinder sentence about it.
+        //
+        // The tool UI renders its design grid on `generatedImageUrl` and falls
+        // back to the error card when that is null. Recovering the views and
+        // setting only the persona fields left the grid unmounted, so canary
+        // 7ffeee28 (2026-08-27 10:52) printed an accurate "5 of 7 views
+        // rendered" over an empty card -- honest text, invisible design.
+        setGeneratedImageUrl(primary?.signedUrl || null);
         setPersonaHeroUrl(primary?.signedUrl || null);
         setPersonaGenerationId(acceptedRequest.generationId);
         setPersonaAllViews(Object.fromEntries(

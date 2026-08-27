@@ -1974,6 +1974,36 @@ async function generateOrReuseFlatAtlas(options) {
     projectionDerivative(surfaceSourceBytes),
   ]);
 
+  // Every content-addressed path the write batch below needs must be resolved
+  // BEFORE that batch is defined -- `persistImmutableAssets` is now invoked
+  // thirty lines earlier than the write it replaced, so a declaration left at
+  // the old site is a temporal-dead-zone ReferenceError, and a source-text lock
+  // cannot see one.
+  const projectionStoragePath = atlasStoragePath({
+    tenantKey, generationId, revisionSequence, kind: "projection", contentHash: projection.contentHash,
+  });
+
+  // The guide, manifest, master, derivative and six panels enter durable storage
+  // as one parallel batch. They are written only after the master passes the
+  // DETERMINISTIC gate -- a blank, checkerboard or side-mismatched authority can
+  // never receive a row -- but they do not wait on the semantic judge, whose
+  // verdict flags rather than blocks.
+  const persistImmutableAssets = () => Promise.all([
+    store.putImmutableBytes({ storagePath: guideStoragePath, bytes: guideBytes, contentType: "image/png" }),
+    store.putImmutableBytes({ storagePath: manifestStoragePath, bytes: manifestBytes, contentType: "application/json" }),
+    store.putImmutableBytes({ storagePath: masterStoragePath, bytes: masterBytes, contentType: "image/png" }),
+    store.putImmutableBytes({
+      storagePath: projectionStoragePath, bytes: projection.bytes, contentType: projection.contentType,
+    }),
+    ...callOnePanels.map((panel) => store.putImmutableBytes({
+      storagePath: atlasStoragePath({
+        tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
+      }),
+      bytes: panel.bytes,
+      contentType: panel.contentType,
+    })),
+  ]);
+
   // ── THE JUDGE'S VERDICT IS COLLECTED HERE, AND IT DECIDES NOTHING ────────
   //
   // Only its RECORD matters now: the review is persisted on the immutable
@@ -1986,7 +2016,19 @@ async function generateOrReuseFlatAtlas(options) {
   // graded against superseded bytes -- the passenger composition replaces the
   // master mid-loop -- is discarded rather than recorded against the wrong
   // image, which is the mistake `sourceMasterHash` exists to prevent elsewhere.
-  const semanticVerdict = semanticQc ? await semanticQc : null;
+  // THE JUDGE IS NOT A GATE BETWEEN BRANCHES. (Owner, 2026-08-27: "Do not add
+  // gates between these branches.")
+  //
+  // This awaited the judge and THEN wrote the master, guide, manifest,
+  // projection and six panels to storage. Nothing about those bytes depends on
+  // its opinion -- they are already cut and already final -- so a ~15s Flash
+  // round trip sat between the panels existing and the panels being publishable.
+  // The two now run together: the ten immutable writes and the judge start at
+  // the same moment and the block costs whichever is slower, not their sum.
+  const [, semanticVerdict] = await Promise.all([
+    persistImmutableAssets(),
+    semanticQc || Promise.resolve(null),
+  ]);
   const semanticBound = semanticVerdict?.metadata?.contract === MASTER_QC_CONTRACT
     && semanticVerdict.metadata.masterHash === masterHash
     && semanticVerdict.metadata.masterHash === semanticQcMasterHash
@@ -2013,27 +2055,6 @@ async function generateOrReuseFlatAtlas(options) {
       surfaces: judged,
     });
   }
-  const projectionStoragePath = atlasStoragePath({
-    tenantKey, generationId, revisionSequence, kind: "projection", contentHash: projection.contentHash,
-  });
-  // The guide, manifest, master and derivative enter durable storage only after
-  // the canonical master passes deterministic + semantic acceptance. A blank,
-  // cut-out, incoherent or side-mismatched authority can never receive a row.
-  await Promise.all([
-    store.putImmutableBytes({ storagePath: guideStoragePath, bytes: guideBytes, contentType: "image/png" }),
-    store.putImmutableBytes({ storagePath: manifestStoragePath, bytes: manifestBytes, contentType: "application/json" }),
-    store.putImmutableBytes({ storagePath: masterStoragePath, bytes: masterBytes, contentType: "image/png" }),
-    store.putImmutableBytes({
-      storagePath: projectionStoragePath, bytes: projection.bytes, contentType: projection.contentType,
-    }),
-    ...callOnePanels.map((panel) => store.putImmutableBytes({
-      storagePath: atlasStoragePath({
-        tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
-      }),
-      bytes: panel.bytes,
-      contentType: panel.contentType,
-    })),
-  ]);
   // Identity + the design-time size of every side, recorded on the immutable
   // revision. Downstream consumes these; it never re-cuts them.
   const callOnePanelRecords = callOnePanels.map((panel) => ({
