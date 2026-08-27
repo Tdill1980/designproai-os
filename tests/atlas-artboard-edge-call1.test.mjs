@@ -50,9 +50,16 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
   const calls = handler.match(/generativelanguage\.googleapis\.com/g) || [];
   assert.equal(calls.length, 1, "the handler must contain exactly one Gemini endpoint");
   assert.match(handler, /imageRequestCount: 1/);
-  // No retry loop around the image call: one attempt per request, the caller's
-  // QC decides whether to issue another edge request.
-  assert.ok(!/for \(/.test(handler.slice(handler.indexOf("generativelanguage"), handler.indexOf("masterSha256"))));
+  // No RETRY loop around the image call: one attempt per request, the caller's
+  // QC decides whether to issue another edge request. (A byte-decode `for` is
+  // not a retry — the assertion names the retry shape rather than any loop.)
+  const afterCall = handler.slice(handler.indexOf("generativelanguage"), handler.indexOf("masterSha256"));
+  assert.ok(!/for \([^)]*attempt/i.test(afterCall), "no attempt loop around the image call");
+  assert.ok(!/while \(/.test(afterCall), "no retry while-loop around the image call");
+  assert.equal((handler.match(/await fetch\(geminiUrl/g) || []).length, 1, "exactly one fetch of the Gemini endpoint");
+  // And a hard deadline, so the platform's bodiless 504 can never be the
+  // caller's only signal.
+  assert.match(handler, /AbortSignal\.timeout\(/);
 });
 
 test("the response carries the full owner proof contract", () => {

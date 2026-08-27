@@ -47,6 +47,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // ATLAS-ARTBOARD (owner directive 2026-08-27): the canonical Call-1 prompt
 // assembly — it EXECUTES the real Persona-2 designer brain. See the module.
 import {
+  ATLAS_ARTBOARD_AUTHORING_MODEL,
   ATLAS_ARTBOARD_PROMPT_VERSION,
   ATLAS_ARTBOARD_SOURCE_COMMIT,
   buildAtlasArtboardPrompt,
@@ -1946,11 +1947,18 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     for (const ref of references) pushImage(ref);
 
     // 4 — exactly ONE Gemini image request. No retries, no second asset.
-    const model = "gemini-3-pro-image-preview";
+    //
+    // The platform kills an Edge Function at ~150s with a bare 504 and no body
+    // (live 2026-08-27, execution_time_ms 160015). An explicit deadline turns
+    // that into a readable JSON error the caller can act on, and the phase
+    // timings below say which half was slow.
+    const model = ATLAS_ARTBOARD_AUTHORING_MODEL;
+    const t0 = Date.now();
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiKey()}`;
     const geminiRes = await fetch(geminiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(115_000),
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
         generationConfig: {
@@ -1959,6 +1967,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         },
       }),
     });
+    console.log(`atlas-artboard ${requestId}: gemini responded in ${Date.now() - t0}ms (${model}, ${parts.length} parts, prompt ${prompt.length} chars)`);
     if (!geminiRes.ok) {
       throw new Error(`atlas_artboard_gemini_http_${geminiRes.status}: ${(await geminiRes.text()).slice(0, 300)}`);
     }
@@ -1971,7 +1980,12 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     }
 
     // 5 — persist + provenance.
-    const masterBytes = Uint8Array.from(atob(imagePart.inlineData.data), (c) => c.charCodeAt(0));
+    // Decode without a per-byte JS callback: a 4K master is ~5MB, and
+    // Uint8Array.from(binaryString, cb) walks it one closure call at a time.
+    const tDecode = Date.now();
+    const binary = atob(imagePart.inlineData.data);
+    const masterBytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) masterBytes[i] = binary.charCodeAt(i);
     const digest = await crypto.subtle.digest("SHA-256", masterBytes);
     const masterSha256 = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
     const storagePath = `atlas-call1/${requestId}.png`;
@@ -1981,6 +1995,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     });
     if (upErr) throw new Error(`atlas_artboard_upload_failed: ${upErr.message}`);
     const { data: pub } = svc.storage.from("wrap-files").getPublicUrl(storagePath);
+    console.log(`atlas-artboard ${requestId}: decode+upload ${Date.now() - tDecode}ms, total ${Date.now() - t0}ms, master ${masterBytes.length} bytes`);
 
     return new Response(
       JSON.stringify({

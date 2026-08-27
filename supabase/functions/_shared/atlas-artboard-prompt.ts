@@ -23,6 +23,14 @@ import { getCameraAngle } from "./view-angles-os.ts";
 export const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-persona.20260827.v1";
 export const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
+// THE AUTHORING MODEL IS PINNED BY NAME, AND THE NAME IS THE GA ID.
+// Byte-identical to runtime/designiq-prompt.cjs's DESIGNPANEL_AUTHORING_MODEL —
+// the eleven-run fleet measurement (CLAUDE.md RULE 0.16) chose the GA id over
+// -preview, and the Flamingo master this product is judged against was authored
+// on it. Never an env lookup: the projections may follow GOOGLE_IMAGE_MODEL,
+// the design authority may not.
+export const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
+
 // THE OWNER LOGO CONTRACT (PASTE_TO_CLAUDE.md: "plain company-name typography
 // alone does not satisfy the logo requirement; the Call-1 designer must create
 // the logo inside the same accepted master when none is supplied"). The three
