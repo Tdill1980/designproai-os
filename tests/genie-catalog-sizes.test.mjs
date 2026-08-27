@@ -95,3 +95,55 @@ test("a catalog read failure never takes the run down", async () => {
 test("model tokens normalise shop punctuation away", () => {
   assert.deepEqual(normalizeModelTokens("F-250, 350 – Super Duty"), ["f", "250", "350", "super", "duty"]);
 });
+
+// ── THE F-650 REGRESSION ───────────────────────────────────────────────────
+//
+// Live: canary 7323fd73 (2026-08-27) asked for a 2009 Ford F250 Crew Cab and
+// resolved `gemini_grounded`, not the catalog. Two defects, together:
+//
+//   * `F250` tokenized to one token and the catalog's `F-250` to `f` + `250`,
+//     so the model NUMBER matched nothing and the row scored 2 on `crew`+`cab`;
+//   * `F-650 Crew Cab / Cab Only` scored the same 2 with a SHORTER model
+//     string, so the "least specific row wins" tie-break chose it -- and that
+//     row carries side dimensions only, so surfacesFromGenieCatalog returned
+//     null and the whole lookup fell through in silence.
+const F650_CAB_ONLY = {
+  id: "row-f650", make: "Ford", model: "F-650 Crew Cab / Cab Only",
+  year_range: "2008-2010", year_start: 2008, year_end: 2010,
+  side_width: "143.1", side_height: "68.5",
+  back_width: null, back_height: null,
+  hood_width: null, hood_length: null,
+  roof_width: null, roof_length: null,
+  total_sqft: null,
+};
+
+test("a model number matches across punctuation: F250 finds F-250", () => {
+  const tokens = normalizeModelTokens("F250 Crew Cab");
+  assert.ok(tokens.includes("250"), "the bare number is emitted alongside the joined form");
+  assert.ok(tokens.includes("f250"), "the joined form is kept, so an exact catalog spelling still hits");
+  const catalog = normalizeModelTokens("F-250, 350, 450, 550 – Super Duty – Crew Cab Long Box");
+  assert.ok(catalog.includes("250"));
+  assert.ok(!catalog.includes("650"), "the split must not invent numbers the row does not carry");
+});
+
+test("a cab-only row cannot beat the measured pickup it shares words with", async () => {
+  const match = await findGenieCatalogSurfaces(
+    stub([F650_CAB_ONLY, F250]),
+    { make: "Ford", model: "F250 Crew Cab", year: "2009", vehicleClass: "truck" },
+  );
+  assert.ok(match, "the catalog must resolve rather than fall through to the estimator");
+  assert.equal(match.row.id, "row-f250");
+  assert.equal(match.surfaces.driver.widthInches, 251);
+  assert.equal(match.surfaces.driver.heightInches, 60);
+});
+
+test("a row missing three of its four measured surfaces is filtered out, not merely outscored", async () => {
+  // On its own it is the ONLY candidate and still must not resolve: half a
+  // vehicle is not a size authority, and returning it would print panels for
+  // surfaces nobody measured.
+  const match = await findGenieCatalogSurfaces(
+    stub([F650_CAB_ONLY]),
+    { make: "Ford", model: "F650 Crew Cab", year: "2009", vehicleClass: "truck" },
+  );
+  assert.equal(match, null);
+});
