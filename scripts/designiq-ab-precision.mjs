@@ -367,9 +367,21 @@ async function main() {
         const out = await atlas._test.callAtlasArtboardEdge(bEdgeBody, { logger: log });
         imageRequestsExecuted += out.provenance.imageRequestCount;
         writeFileSync(join(OUT, spec.file), out.bytes);
+        // The owner proof contract: the six deterministic crop hashes, cut by
+        // the same cutCallOnePanels geometry production uses (sharp.extract,
+        // no AI), from the same normalized master bytes.
+        const normalized = await atlas.normalizeAtlasMaster(out.bytes, manifest);
+        const crops = await atlas.cutCallOnePanels(normalized.bytes, manifest, out.provenance.masterSha256);
+        const cropHashes = {};
+        for (const crop of crops) {
+          cropHashes[crop.surfaceKey] = crop.contentHash;
+          writeFileSync(join(OUT, `B-panel-${crop.surfaceKey}.png`), crop.bytes);
+          produced.push(`B-panel-${crop.surfaceKey}.png`);
+        }
         results[name] = {
           ok: true, file: spec.file, bytes: out.bytes.length,
           contentHash: out.provenance.masterSha256, ...out.provenance,
+          panelCropHashes: cropHashes,
         };
         produced.push(spec.file);
         continue;
