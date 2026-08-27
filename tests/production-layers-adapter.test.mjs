@@ -274,10 +274,14 @@ test("the entice half asks for the sale instead of reporting a defect", () => {
   assert.match(adapter, /stage\?: "entice" \| "production"/);
   assert.match(adapter, /stage: "entice"/);
   assert.match(adapter, /stage: "production"/);
-  assert.match(card, /const entice = injected\.stage === "entice"/);
+  // Optional chaining is fine and required: `source` is legitimately null for
+  // a design with no standalone run, and three hooks sit between this read and
+  // the guard that returns null for it, so the guard cannot be hoisted above
+  // it. The lock is that the stage comes from the injected source.
+  assert.match(card, /const entice = injected\??\.stage === "entice"/);
 
   // The CTA is live before purchase. That is the whole point of the surface.
-  assert.match(card, /injected\.onOrderProductionPack && \(entice \|\| \(isVerifiedPack && packState\.productionEligible\)\)/);
+  assert.match(card, /injected\??\.onOrderProductionPack && \(entice \|\| \(isVerifiedPack && packState\.productionEligible\)\)/);
   assert.match(card, /GET PRODUCTION PACK/);
 
   // The conversion message, in the owner's own words.

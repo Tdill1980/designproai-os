@@ -128,12 +128,20 @@ function shortDate(value: string | null): string {
  * The exact date is kept as the element's title, because "5 days ago" is what
  * a person scans by and the timestamp is what they need when it matters.
  */
-function relativeAge(value: string | null): string {
+export function relativeAge(value: string | null, now: number = Date.now()): string {
   const parsed = Date.parse(String(value || ""));
   if (!Number.isFinite(parsed)) return "—";
-  const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  const seconds = Math.max(0, Math.floor((now - parsed) / 1000));
+  // EACH ENTRY IS "divide by THIS, and the result is named THAT".
+  //
+  // The list used to read [60,"second"], [60,"minute"], [24,"hour"], … which
+  // names every result after the unit it just left: dividing seconds by 60
+  // labelled the answer "second", so each step reported one unit too small.
+  // A design from 17 hours ago read "17 minutes ago" on every card in the
+  // library (live 2026-08-27) — which makes stale work look fresh, and is the
+  // opposite of what a timestamp is for.
   const units: Array<[number, string]> = [
-    [60, "second"], [60, "minute"], [24, "hour"], [7, "day"], [4.35, "week"], [12, "month"],
+    [60, "minute"], [60, "hour"], [24, "day"], [7, "week"], [4.35, "month"], [12, "year"],
   ];
   let amount = seconds;
   let unit = "second";
