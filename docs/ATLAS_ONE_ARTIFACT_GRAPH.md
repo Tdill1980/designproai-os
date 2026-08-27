@@ -62,6 +62,39 @@ This does not conflict with RULE 0.15 or RULE 0.24. The Houdini pair remains a
 STRUCTURAL reference and still teaches layout; hardwiring the shell means the
 layout no longer *depends* on the model having learned it.
 
+### The owner's restatement, 2026-08-27
+
+> "6 panel flattened topo should be labeled container with the 6 panels."
+
+Her screenshot shows the two halves side by side on the DesignPro page and they
+do not agree:
+
+- **"Vehicle layout"** — the deterministic guide. It ALREADY has the six labeled
+  containers in the canonical Houdini arrangement: `PASSENGER · REAR · ROOF ·
+  HOOD · FRONT · DRIVER`, at GENIE proportions, drawn by code.
+- **"Flattened top-view design"** — the authored master. It does NOT fill those
+  containers. Its panels sit at different sizes and positions, with dark
+  cut-outs where the guide has clean rectangles.
+
+**The master is supposed to BE the guide, filled.** Today the guide is only
+shown to the model as a reference and then shown to the customer as a separate
+card; nothing makes the output land inside those rects.
+
+### The machinery for this already exists — it was demoted, not missing
+
+`runtime/atlas-artwork-compose.cjs` exports **`composeAtlasFromArtwork({
+artworkBytes, manifest, branding })`**, which lays artwork into the manifest's
+zones with the passenger flank mirrored deterministically. Its own header now
+reads *"A MEASUREMENT ARM. NOT THE ARCHITECTURE. (Owner correction,
+2026-08-26)"* — on 2026-08-26 it was stood down in favour of Call 1 authoring
+the whole sheet freehand.
+
+**This directive reverses that specific decision.** The composer goes back to
+owning the master's geometry: code places and labels the six containers from the
+GENIE manifest, and the authored artwork fills them. Do not rebuild it from
+scratch, and do not read the 2026-08-26 demotion as still standing — it is
+superseded by this rule.
+
 ---
 
 ## 2. AFTER MASTER ACCEPTANCE — IMMEDIATE PARALLEL FAN-OUT
