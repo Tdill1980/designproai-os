@@ -99,3 +99,17 @@ test("the runtime enforces the one-image-call contract and records provenance", 
   assert.match(runtimeSource, /x-designpro-owner-id/);
   assert.match(runtimeSource, /functions\/v1\/design-panel-ai-generate/);
 });
+
+test("the runtime records the prompt version the edge function actually stamps", () => {
+  // Nothing compares these at run time — the runtime folds its copy into the
+  // reuse hash and writes it onto every revision — so a drift is silent, and
+  // it drifted: the runtime still said `atlas-artboard-persona.20260827.v1`
+  // after Call 1 moved off the Persona-2 string-replacement path onto
+  // buildDesignIQPrompt's atlasFlatMaster branch, which the function stamps
+  // `atlas-artboard-designiq.20260827.v2`. Read both, compare them here.
+  const edge = edgeSource.match(/ATLAS_ARTBOARD_PROMPT_VERSION = "([^"]+)"/);
+  const runtimeVersion = runtimeSource.match(/ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "([^"]+)"/);
+  assert.ok(edge, "the edge function must declare ATLAS_ARTBOARD_PROMPT_VERSION");
+  assert.ok(runtimeVersion, "the runtime must pin the edge prompt version");
+  assert.equal(runtimeVersion[1], edge[1]);
+});
