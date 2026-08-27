@@ -1379,6 +1379,11 @@ async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, proje
       providerContract: row.metadata?.masterProviderContract || null,
       artboardPortVersion: row.metadata?.designPanelArtboardPortVersion || null,
       passed: row.metadata?.masterQcPassed === true,
+      // WHAT ACTUALLY GATED THIS MASTER. The deterministic pixel checks decide
+      // acceptance now; the semantic judge is recorded and flags but never
+      // blocks. A consumer that still reads `confidence` alone is reading the
+      // opinion of something that no longer decides anything.
+      basis: row.metadata?.masterAcceptance || null,
     },
     metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {},
     manifest,

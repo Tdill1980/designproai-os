@@ -447,12 +447,31 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
     || !flatAtlas?.manifestAsset?.contentHash || !flatAtlas?.revisionId) {
     throw atlasLineageError("immutable flat-master identity is incomplete");
   }
+  // THE RUNTIME TWIN OF THE SAME GATE, AND IT MUST READ THE SAME BASIS.
+  //
+  // This demanded `confidence >= 0.92` -- the SEMANTIC judge's certainty. Since
+  // 2026-08-27 that judge no longer decides whether a master may exist: the
+  // deterministic pixel gate does, and the judge's verdict is recorded and
+  // flags. So a master the deterministic gate ACCEPTED, whose six panels were
+  // already cut, died here whenever the judge happened to come back unsure.
+  //
+  // Live, canary 4efeda23 (2026-08-27 10:29): Call 1 finished in 91s with an
+  // accepted master and ZERO proofs rendered, because this assertion fired
+  // first -- `generation_atlas_lineage_invalid: flattened master did not pass
+  // the current DesignPanel authoring/QC contract`.
+  //
+  // 20260827070000 fixed the identical predicate in the database an hour
+  // earlier. Fixing one copy and not the other is the same divergence twice, so
+  // both now accept either proof-of-gate: the recorded acceptance basis, or the
+  // legacy numeric confidence for revisions authored before the basis existed.
   const masterAcceptance = flatAtlas.masterAcceptance || {};
+  const gatedDeterministically = masterAcceptance.basis === "deterministic";
+  const gatedBySemanticConfidence = Number.isFinite(masterAcceptance.confidence)
+    && masterAcceptance.confidence >= 0.92;
   if (flatAtlas.promptVersion !== ATLAS_PROMPT_VERSION
     || masterAcceptance.passed !== true
     || masterAcceptance.contract !== MASTER_QC_CONTRACT
-    || !Number.isFinite(masterAcceptance.confidence)
-    || masterAcceptance.confidence < 0.92
+    || !(gatedDeterministically || gatedBySemanticConfidence)
     || !/^[0-9a-f]{64}$/.test(String(masterAcceptance.promptHash || ""))
     || masterAcceptance.providerContract !== MASTER_PROVIDER_CONTRACT
     || masterAcceptance.artboardPortVersion !== DESIGNPANEL_ARTBOARD_PORT_VERSION) {
