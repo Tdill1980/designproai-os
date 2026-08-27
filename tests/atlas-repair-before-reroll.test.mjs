@@ -120,9 +120,60 @@ test("the authored master is never mutated", () => {
 
 test("the verdict is collected after the panels are cut, not before", () => {
   const panels = afterLoop.indexOf("cutCallOnePanels(surfaceSourceBytes");
-  const collect = afterLoop.indexOf("const semanticVerdict = semanticQc ? await semanticQc : null;");
+  const collect = afterLoop.indexOf("const [, semanticVerdict] = await Promise.all([");
   assert.ok(panels > 0 && collect > 0);
   assert.ok(collect > panels, "the judge overlaps the panel cut instead of preceding it");
+});
+
+test("the judge is not a gate between branches: the writes run alongside it", () => {
+  // Owner, 2026-08-27: "Do not add gates between these branches." The ten
+  // immutable writes do not depend on the judge's opinion -- the bytes are
+  // already cut and already final -- so awaiting it first put a Flash round
+  // trip between the panels existing and the panels being publishable.
+  assert.match(afterLoop, /const \[, semanticVerdict\] = await Promise\.all\(\[\s*\n\s*persistImmutableAssets\(\),\s*\n\s*semanticQc \|\| Promise\.resolve\(null\),/);
+  // And the writes are themselves one parallel batch, not a sequence.
+  assert.match(afterLoop, /const persistImmutableAssets = \(\) => Promise\.all\(\[/);
+  assert.ok(
+    !/await semanticQc;[\s\S]{0,400}putImmutableBytes/.test(afterLoop),
+    "no storage write may sit behind a bare await of the judge",
+  );
+});
+
+test("every binding the write batch closes over is declared before it runs", () => {
+  // THE LOCK ABOVE IS TEXT, AND TEXT CANNOT SEE A TEMPORAL DEAD ZONE.
+  //
+  // Hoisting the batch out of its old site moved its INVOCATION thirty lines
+  // earlier while `const projectionStoragePath = ...` stayed where it was --
+  // so `persistImmutableAssets()` ran, reached a `const` that had not been
+  // evaluated yet, and would have thrown ReferenceError on the first real
+  // generation. The regex above matched happily throughout, because the two
+  // strings it asserts were both exactly right.
+  //
+  // So this reads the ORDER instead of the words: every `const`/`let` in this
+  // file that the batch body names must be declared on a line before the line
+  // that calls it.
+  const defLine = afterLoop.split("\n")
+    .findIndex((line) => line.includes("const persistImmutableAssets = () => Promise.all(["));
+  const callLine = afterLoop.split("\n")
+    .findIndex((line) => line.includes("persistImmutableAssets(),"));
+  assert.ok(defLine >= 0 && callLine > defLine, "the batch must be defined before it is called");
+
+  const lines = afterLoop.split("\n");
+  const body = lines.slice(defLine, lines.findIndex((line, i) => i > defLine && /^  \]\);$/.test(line)) + 1)
+    .join("\n");
+  const named = new Set(body.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) || []);
+
+  const declaredAt = new Map();
+  lines.forEach((line, i) => {
+    const hit = /^\s*(?:const|let)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=/.exec(line);
+    if (hit && !declaredAt.has(hit[1])) declaredAt.set(hit[1], i);
+  });
+
+  const dead = [...declaredAt].filter(([name, at]) => named.has(name) && at > callLine && at !== defLine);
+  assert.deepEqual(
+    dead.map(([name]) => name), [],
+    `these bindings are read by the write batch but declared after it runs: ${dead.map(([n]) => n).join(", ")}`,
+  );
 });
 
 test("a verdict graded against superseded bytes is discarded, never recorded", () => {
