@@ -350,25 +350,43 @@ test("all seven proof prompts carry their exact master-bound native zone and ide
   };
   const slots = worker.slotsFrom(undefined, v3Input, {}, flatAtlas);
   assert.equal(slots.length, 7);
-  assert.equal(new Set(slots.map((slot) => slot.promptParts[0].inlineData.data)).size, 6,
+  // `slotsFrom` no longer precomputes either field for the flat-first path --
+  // both are LAZY (owner 2026-08-27 forward fix): `promptParts` is inert
+  // (`[]`) because `createAtlasDesignPanelProvider` overwrites it with its own
+  // `conditionedPromptPartsFor` result at generation time, gated per surface;
+  // `authorityMetadata` is a thunk, resolved by `generation-engine.cjs` only
+  // after that view's generation is accepted. Calling `viewAuthorityFor` for
+  // all seven views eagerly, at `.map()` time before a single panel exists, is
+  // what caused the 2026-08-27 outage. This test now calls the SAME functions
+  // the real provider and the real persist path call, at the point they are
+  // actually safe to call -- against this fixture, whose `viewAuthorities` are
+  // already fully populated, exactly mirroring a surface whose panel has
+  // already landed.
+  assert.equal(slots.every((slot) => Array.isArray(slot.promptParts) && slot.promptParts.length === 0), true);
+  assert.equal(slots.every((slot) => typeof slot.authorityMetadata === "function"), true);
+
+  const promptPartsFor = (slot) => worker.conditionedPromptPartsFor(v3Input, slot.sourceViewType, undefined, flatAtlas);
+  const authorityFor = (slot) => slot.authorityMetadata();
+
+  assert.equal(new Set(slots.map((slot) => promptPartsFor(slot)[0].inlineData.data)).size, 6,
     "Close-Up intentionally shares Driver's exact master zone; every other proof owns its native zone");
   assert.equal(slots.every((slot) => (
-    slot.promptParts[0].inlineData.data === viewAuthorities[slot.sourceViewType].bytes.toString("base64")
+    promptPartsFor(slot)[0].inlineData.data === viewAuthorities[slot.sourceViewType].bytes.toString("base64")
   )), true);
-  assert.equal(slots.every((slot) => slot.promptParts[0].inlineData.mimeType === "image/jpeg"), true);
-  assert.equal(slots.some((slot) => slot.promptParts[0].inlineData.data === masterBytes.toString("base64")), false,
+  assert.equal(slots.every((slot) => promptPartsFor(slot)[0].inlineData.mimeType === "image/jpeg"), true);
+  assert.equal(slots.some((slot) => promptPartsFor(slot)[0].inlineData.data === masterBytes.toString("base64")), false,
     "the canonical PNG is never inlined into a proof request");
-  assert.equal(slots.every((slot) => slot.authorityMetadata.masterContentHash === flatAtlas.master.contentHash), true);
-  assert.equal(slots.every((slot) => slot.authorityMetadata.projectionContentHash === flatAtlas.projection.contentHash), true);
-  assert.equal(slots.every((slot) => slot.authorityMetadata.revisionId === flatAtlas.revisionId), true);
-  assert.equal(slots.every((slot) => slot.authorityMetadata.geometryAuthority.status === "validated"), true);
-  assert.equal(slots.every((slot) => slot.authorityMetadata.zoneContentHash
+  assert.equal(slots.every((slot) => authorityFor(slot).masterContentHash === flatAtlas.master.contentHash), true);
+  assert.equal(slots.every((slot) => authorityFor(slot).projectionContentHash === flatAtlas.projection.contentHash), true);
+  assert.equal(slots.every((slot) => authorityFor(slot).revisionId === flatAtlas.revisionId), true);
+  assert.equal(slots.every((slot) => authorityFor(slot).geometryAuthority.status === "validated"), true);
+  assert.equal(slots.every((slot) => authorityFor(slot).zoneContentHash
     === viewAuthorities[slot.sourceViewType].contentHash), true);
-  assert.equal(slots.every((slot) => slot.authorityMetadata.zoneSurfaceKey
+  assert.equal(slots.every((slot) => authorityFor(slot).zoneSurfaceKey
     === viewAuthorities[slot.sourceViewType].surfaceKey), true);
-  assert.match(slots.find((slot) => slot.sourceViewType === "passenger-side").promptParts[1].text, /passenger/);
-  assert.equal(slots.every((slot) => slot.promptParts.length === 3), true, "atlas image + topology lock + projection-only camera prompt");
-  const projectionPrompt = slots.find((slot) => slot.sourceViewType === "side").promptParts[2].text;
+  assert.match(promptPartsFor(slots.find((slot) => slot.sourceViewType === "passenger-side"))[1].text, /passenger/);
+  assert.equal(slots.every((slot) => promptPartsFor(slot).length === 3), true, "atlas image + topology lock + projection-only camera prompt");
+  const projectionPrompt = promptPartsFor(slots.find((slot) => slot.sourceViewType === "side"))[2].text;
   assert.match(projectionPrompt, /CAMERA AND FRAMING ARE LOCKED/);
   assert.match(projectionPrompt, /2024 Ford F-250 truck/);
   assert.match(projectionPrompt, /SOLE appearance authority/);

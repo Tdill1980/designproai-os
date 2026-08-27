@@ -159,6 +159,19 @@ async function runSlot(options) {
     throw new EngineError("attempt_ceiling_invalid", `Provider attempts must be 1..${MAX_PROVIDER_ATTEMPTS_PER_SLOT}`);
   }
 
+  // LAZY FOR THE FLAT-FIRST PATH, PLAIN FOR THE STANDARD ONE.
+  //
+  // `slotsFrom` (generation-worker.cjs) hands the A.T.L.A.S. branch a THUNK
+  // instead of a precomputed object, because building it eagerly meant calling
+  // `viewAuthorityFor` for all seven views at slot-construction time -- before
+  // a single panel existed. Calling it here, at persist time (both below, only
+  // ever reached after this exact view's generation was ACCEPTED or its bytes
+  // RECONCILED from a prior successful attempt), is safe: a proof cannot be
+  // accepted without its panel already existing, so the authority it names is
+  // guaranteed to be there by the time this function runs. The Standard path
+  // still hands a plain object, unchanged.
+  const resolveAuthorityMetadata = () => (typeof authorityMetadata === "function" ? authorityMetadata() : authorityMetadata);
+
   // 1. An accepted winner is final. Calls 8+ may already have hashed it.
   const existing = await store.findAcceptedSlot({ requestId, sourceViewType });
   if (existing) {
@@ -194,9 +207,10 @@ async function runSlot(options) {
         metadata: {
           contract: ENGINE_CONTRACT,
           reconciledFromStorage: true,
-          ...(authorityMetadata && typeof authorityMetadata === "object"
-            ? { authority: authorityMetadata }
-            : {}),
+          ...((() => {
+            const resolved = resolveAuthorityMetadata();
+            return resolved && typeof resolved === "object" ? { authority: resolved } : {};
+          })()),
         },
       });
       return { requestId, sourceViewType, consumerRole, state: "accepted", reused: true, reconciled: true, winner, providerCalls: 0, attempts };
@@ -352,9 +366,10 @@ async function runSlot(options) {
           ...(verdict?.metadata && typeof verdict.metadata === "object"
             ? { validation: verdict.metadata }
             : {}),
-          ...(authorityMetadata && typeof authorityMetadata === "object"
-            ? { authority: authorityMetadata }
-            : {}),
+          ...((() => {
+            const resolved = resolveAuthorityMetadata();
+            return resolved && typeof resolved === "object" ? { authority: resolved } : {};
+          })()),
         },
       });
       const record = {

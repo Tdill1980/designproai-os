@@ -241,11 +241,23 @@ test("A.T.L.A.S. projections carry exact studio constants but no customer refere
     ),
   };
   const forbiddenReference = { inlineData: { mimeType: "image/png", data: "customer-reference-must-not-project" } };
+  // `slotsFrom`'s promptParts field is INERT for the flat-first path (owner
+  // 2026-08-27 forward fix, tracked_atlas_forward_fix): `createAtlasDesignPanelProvider`
+  // spreads `...call` and then overwrites `parts` with its own freshly-built
+  // `request.parts` from `conditionedPromptPartsFor`, gated per surface by
+  // `awaitSurface`. Calling `viewAuthorityFor` for all seven views eagerly at
+  // `.map()` time -- before a single panel exists -- is what caused the
+  // 2026-08-27 outage, so `slotsFrom` no longer does it. This test now asserts
+  // the invariant against the SAME function the provider actually calls,
+  // rather than against `slotsFrom`'s (now dead) precomputed field.
   const slots = worker.slotsFrom(undefined, RICH_INPUT, {}, flatAtlas, [forbiddenReference]);
-  assert.equal(slots.every((slot) => slot.promptParts.length === 3), true);
-  assert.equal(slots.some((slot) => JSON.stringify(slot.promptParts).includes(forbiddenReference.inlineData.data)), false);
+  assert.equal(slots.every((slot) => Array.isArray(slot.promptParts) && slot.promptParts.length === 0), true,
+    "slotsFrom's promptParts is inert for the flat-first path; the provider never reads it");
   for (const slot of slots) {
-    const projectionPrompt = slot.promptParts[2].text;
+    const promptParts = worker.conditionedPromptPartsFor(RICH_INPUT, slot.sourceViewType, undefined, flatAtlas);
+    assert.equal(promptParts.length, 3);
+    assert.equal(JSON.stringify(promptParts).includes(forbiddenReference.inlineData.data), false);
+    const projectionPrompt = promptParts[2].text;
     assert.ok(projectionPrompt.includes(studio.STUDIO_ENVIRONMENT.trim()));
     assert.ok(projectionPrompt.includes(studio.STUDIO_REINFORCEMENT.trim()));
   }
