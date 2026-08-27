@@ -81,6 +81,91 @@ test("revision freeze accepts exactly one Close-Up or historical Hero identity",
   );
 });
 
+test("a refused proof is described, not thrown -- the panels it never touched still publish", () => {
+  // THE SIXTH ALL-OR-NOTHING SEVEN, and the most expensive of them.
+  //
+  // `revision.freeze` is the FIRST stage of the entice run and it threw
+  // `seven_views_incomplete` NON-RETRYABLY, so one refused proof killed the
+  // workflow before it began -- and with it the six A.T.L.A.S. panels Call 1
+  // had already cut, hashed and written to storage, and the whole Logo Pack.
+  // Owner: "A failed Hood 3D proof cannot prevent the Hood production panel
+  // from existing."
+  //
+  // `revisionViewSet` DESCRIBES the shortfall so the caller decides; the strict
+  // `exactSevenViews` still raises, byte for byte, what it always raised.
+  const short = { ...views };
+  delete short.roof;
+  const set = _test.revisionViewSet({ renderAssets: short }, tenantKey, revisionId);
+
+  assert.equal(set.complete, false);
+  assert.deepEqual(set.missingRoles, ["roof"]);
+  assert.deepEqual(set.presentRoles, ["closeup", "driver", "front", "hood", "passenger", "rear"]);
+  assert.equal(set.presentRoles.length, 6, "every view that DID land is resolved and returned");
+  assert.ok(!("roof" in set.views), "a refused view is absent, never substituted");
+  // The strict form is unchanged for anyone who still requires seven.
+  assert.equal(set.shortfall.code, "seven_views_incomplete");
+  assert.equal(set.shortfall.retryable, false);
+  assert.throws(() => _test.exactSevenViews({ renderAssets: short }, tenantKey, revisionId), /roof view is missing/);
+
+  // A COMPLETE SET IS UNAFFECTED IN EVERY OBSERVABLE WAY.
+  const whole = _test.revisionViewSet({ renderAssets: views }, tenantKey, revisionId);
+  assert.equal(whole.complete, true);
+  assert.equal(whole.shortfall, null);
+  assert.deepEqual(whole.missingRoles, []);
+  assert.deepEqual(whole.views, _test.exactSevenViews({ renderAssets: views }, tenantKey, revisionId));
+
+  // DISTINCTNESS IS NEVER RELAXED. It is what makes an implicit passenger
+  // mirror impossible (RULE 0.5), and a short set is not a licence to reuse a
+  // byte identity -- so it convicts over WHATEVER landed, not only over seven.
+  const shortAndReused = { ...short, passenger: { ...short.driver } };
+  assert.throws(
+    () => _test.revisionViewSet({ renderAssets: shortAndReused }, tenantKey, revisionId),
+    /distinct paths and byte identities/,
+  );
+
+  // TWO SEVENTH VIEWS IS A MALFORMED SNAPSHOT, NOT A SHORT SET -- the Close-Up
+  // and the historical Hero share one slot, so two of them means the snapshot
+  // cannot say which proof that slot holds. Still fatal for every caller.
+  assert.throws(
+    () => _test.revisionViewSet({ renderAssets: { ...views, hero3d: historicalHero } }, tenantKey, revisionId),
+    /Exactly one Close-Up or immutable historical Hero proof/,
+  );
+});
+
+test("the freeze and the pack report the view count they actually had", async () => {
+  const source = await readFile(fileURLToPath(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url)), "utf8");
+
+  // A short set is admitted ONLY when A.T.L.A.S. panels exist. On a Standard
+  // run the views genuinely are what Call 9 cuts from, so a missing one still
+  // means there is nothing to manufacture for that surface.
+  assert.match(source, /const atlasPanels = viewSet\.complete \? null : await callOnePanelSet\(sb, run\)\.catch\(\(\) => null\);/);
+  assert.match(source, /if \(!viewSet\.complete && !atlasPanels\) throw viewSet\.shortfall;/);
+
+  // AND THE RECEIPT MUST NOT CLAIM SEVEN. `pack.verify` wrote
+  // `sevenViewsVerified: true` as a literal, so a pack assembled over a short
+  // set asserted seven views it never had -- straight into the pack's own
+  // immutable identity.
+  // Comment lines are excluded deliberately: the comments in the runtime QUOTE
+  // the literal they replaced, and a naive scan convicts the explanation.
+  const codeLines = source.split("\n").filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line));
+  assert.deepEqual(
+    codeLines.filter((line) => line.includes("sevenViewsVerified: true")), [],
+    "no executable line may hardcode the seven-view claim -- it is read from what actually froze",
+  );
+  assert.match(source, /sevenViewsVerified: !shortViewSet/);
+  assert.match(source, /const shortViewSet = views\.receipt\?\.sevenViewsVerified === false;/);
+  assert.match(source, /missingViewRoles: viewSet\.missingRoles/);
+
+  // GENIE resolves dimensions from the measured vehicle row, so it never needed
+  // seven proofs -- and requiring them there would have killed a run the
+  // customer had already PAID for, at manifest.resolve.
+  assert.match(source, /const viewSet = revisionViewSet\(source\.snapshot, run\.tenant_key, run\.revision_id\);/);
+  assert.match(source, /sevenViewsVerified: viewSet\.complete/,
+    "the GENIE manifest asserted seven views too, and now resolves without them");
+  assert.doesNotMatch(source, /= exactSevenViews\(source\.snapshot/);
+  assert.doesNotMatch(source, /= exactSevenViews\(data\.snapshot/);
+});
+
 test("Call 8 composes the proof from seven views and Call 9 gridslices six own-surface fields", async () => {
   assert.equal(typeof _test.call8ProofRequest, "function");
   const source = await readFile(fileURLToPath(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url)), "utf8");

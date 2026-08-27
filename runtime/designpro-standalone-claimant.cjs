@@ -135,13 +135,41 @@ function sourceAsset(value, tenant, revisionId) {
 }
 
 function exactSevenViews(snapshot, tenantValue, revisionId) {
+  const set = revisionViewSet(snapshot, tenantValue, revisionId);
+  if (!set.complete) throw set.shortfall;
+  return set.views;
+}
+
+/**
+ * THE VIEWS THAT LANDED, AND AN HONEST ACCOUNT OF THE ONES THAT DID NOT.
+ *
+ * `exactSevenViews` throws `seven_views_incomplete` NON-RETRYABLY, and
+ * `revision.freeze` is the first stage of the entice run -- so a single refused
+ * proof killed the workflow before it began, and with it every artifact the
+ * workflow publishes: the six A.T.L.A.S. panels Call 1 had ALREADY cut, hashed
+ * and stored, and the whole Logo Pack.
+ *
+ * That is the owner's rule inverted: "A failed Hood 3D proof cannot prevent the
+ * Hood production panel from existing. A failed Close-Up cannot cancel
+ * Driver/Passenger/Front/Rear/Roof artifacts." The four predicates fixed in
+ * #214 made a short set READABLE -- canary 2d918868's six accepted proofs
+ * display -- while this one still meant that same run published zero panels and
+ * zero logos, permanently.
+ *
+ * So the shortfall is DESCRIBED rather than thrown, and the caller decides. The
+ * error object is built here, once, so a caller that still requires seven
+ * raises exactly what it raised before.
+ */
+function revisionViewSet(snapshot, tenantValue, revisionId) {
   const tenant = tenantKey(tenantValue);
   const assets = requiredObject(snapshot?.renderAssets, "revision snapshot renderAssets");
   const normalized = Object.fromEntries(Object.entries(assets).map(([key, value]) => [String(key).toLowerCase(), value]));
   const resolved = {};
+  const missing = [];
+  const missingRequired = [];
   for (const [role, aliases] of Object.entries(REQUIRED_REVISION_VIEWS)) {
     const key = aliases.find((candidate) => normalized[candidate] && typeof normalized[candidate] === "object");
-    if (!key) throw new StageError("seven_views_incomplete", `Required ${role} view is missing`, false);
+    if (!key) { missing.push(role); missingRequired.push(role); continue; }
     resolved[role] = sourceAsset(normalized[key], tenant, revisionId);
   }
   const seventh = Object.entries(SEVENTH_REVISION_VIEWS)
@@ -150,22 +178,55 @@ function exactSevenViews(snapshot, tenantValue, revisionId) {
       key: aliases.find((candidate) => normalized[candidate] && typeof normalized[candidate] === "object"),
     }))
     .filter((item) => item.key);
-  if (seventh.length !== 1) {
+  // MORE than one seventh view is a malformed snapshot, not a short set: the
+  // Close-Up and the immutable historical Hero occupy the same slot, so two of
+  // them means the snapshot cannot say which proof that slot holds. That stays
+  // fatal for every caller.
+  if (seventh.length > 1) {
     throw new StageError(
       "seven_views_incomplete",
       "Exactly one Close-Up or immutable historical Hero proof is required",
       false,
     );
   }
-  if (Object.keys(assets).length !== 7) {
-    throw new StageError("seven_views_incomplete", "Exactly seven revision source views are required", false);
+  const missingSeventh = seventh.length !== 1;
+  if (!missingSeventh) resolved[seventh[0].role] = sourceAsset(normalized[seventh[0].key], tenant, revisionId);
+  else missing.push("closeup");
+
+  // DISTINCTNESS IS NEVER RELAXED. It is what makes an implicit mirror
+  // impossible (RULE 0.5), and it holds over whatever landed: two views sharing
+  // a byte identity is a defect at any count, not a consequence of a short set.
+  const present = Object.values(resolved);
+  if (new Set(present.map((item) => item.storagePath)).size !== present.length
+    || new Set(present.map((item) => item.contentHash)).size !== present.length) {
+    throw new StageError("seven_views_not_distinct", "All required views must have distinct paths and byte identities", false);
   }
-  resolved[seventh[0].role] = sourceAsset(normalized[seventh[0].key], tenant, revisionId);
-  if (new Set(Object.values(resolved).map((item) => item.storagePath)).size !== 7
-    || new Set(Object.values(resolved).map((item) => item.contentHash)).size !== 7) {
-    throw new StageError("seven_views_not_distinct", "All seven required views must have distinct paths and byte identities", false);
-  }
-  return resolved;
+
+  const unclaimed = Object.keys(assets).length !== present.length;
+  const complete = missing.length === 0 && Object.keys(assets).length === 7;
+  return {
+    views: resolved,
+    presentRoles: Object.keys(resolved).sort(),
+    missingRoles: missing.sort(),
+    complete,
+    // THE SHORTFALL REPRODUCES THE ORIGINAL MESSAGES, IN THE ORIGINAL ORDER.
+    // `exactSevenViews` is still the strict form and still raises exactly what
+    // it raised before -- a caller that requires seven must not be able to tell
+    // that the check was refactored underneath it.
+    shortfall: complete ? null : new StageError(
+      "seven_views_incomplete",
+      missingRequired.length
+        ? `Required ${missingRequired[0]} view is missing`
+        : missingSeventh
+          ? "Exactly one Close-Up or immutable historical Hero proof is required"
+          : "Exactly seven revision source views are required",
+      false,
+    ),
+    // Recorded so a later reader can tell a short set from a snapshot carrying
+    // assets under names no role claims.
+    declaredAssetCount: Object.keys(assets).length,
+    unclaimedAssets: unclaimed,
+  };
 }
 
 function uuidFromHash(hash) {
@@ -177,7 +238,14 @@ function uuidFromHash(hash) {
 
 function round2(value) { return Math.round((Number(value) + Number.EPSILON) * 100) / 100; }
 
-async function fingerprintSevenViews(views, sb, tenantValue, revisionId) {
+/**
+ * Fingerprints WHATEVER LANDED. The count assertion is relative to what was
+ * handed in, not hardcoded to seven -- the seven-ness is decided by
+ * `revisionViewSet` and enforced by whoever requires it. What never relaxes is
+ * REUSE: two views sharing a byte identity is how an implicit mirror would slip
+ * through (RULE 0.5), and that is a defect at four views as much as at seven.
+ */
+async function fingerprintRevisionViews(views, sb, tenantValue, revisionId) {
   const tenant = tenantKey(tenantValue);
   const identities = [];
   for (const [viewKey, rawAsset] of Object.entries(views)) {
@@ -187,7 +255,9 @@ async function fingerprintSevenViews(views, sb, tenantValue, revisionId) {
     catch (error) { throw new StageError("view_fingerprint_failed", `${viewKey}: ${error.message}`, false); }
     identities.push({ viewKey, storagePath: asset.storagePath, contentHash: asset.contentHash, byteSize: asset.byteSize, contentType: asset.contentType });
   }
-  if (identities.length !== 7 || new Set(identities.map((item) => item.contentHash)).size !== 7) throw new StageError("seven_view_identity_reuse", "Seven unique view byte identities are required", false);
+  if (!identities.length || new Set(identities.map((item) => item.contentHash)).size !== identities.length) {
+    throw new StageError("seven_view_identity_reuse", "Every present view must have a unique byte identity", false);
+  }
   return identities;
 }
 
@@ -277,7 +347,19 @@ function call8ProofRequest(run, manifest, viewLineage, textLock, proofMeta) {
 async function resolveGenieManifest(sb, run, stage) {
   const { data: source, error: sourceError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
   if (sourceError || !source || source.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("revision_source_drift", "Immutable revision source is missing or changed", false);
-  const views = exactSevenViews(source.snapshot, run.tenant_key, run.revision_id);
+  // GENIE'S DIMENSIONS COME FROM THE VEHICLE, NOT FROM THE PROOFS.
+  //
+  // This called `exactSevenViews`, so a refused proof raised here too -- in the
+  // FREE half via Call 8, and in the PAID half at `manifest.resolve`, where it
+  // would have killed a run the customer had already paid for. Neither needed
+  // seven views to resolve a dimension: every width and height below comes from
+  // the measured GENIE row, and each surface's `sourceAsset` is consumed by
+  // exactly one caller, `call8ProofRequest`. That caller does its own
+  // all-seven check (`call8_view_lineage_invalid`) and `proof.build` turns it
+  // into a recorded deferral, so the missing view is still refused where it
+  // actually matters -- once, with an honest reason, instead of everywhere.
+  const viewSet = revisionViewSet(source.snapshot, run.tenant_key, run.revision_id);
+  const views = viewSet.views;
   const vehicle = requiredObject(source.snapshot.vehicle, "revision vehicle");
   const make = requiredString(vehicle.make, "vehicle make"); const model = requiredString(vehicle.model, "vehicle model"); const year = Number(vehicle.year);
   // Legacy designpro_vehicle_dimensions rows do not carry validator identity or
@@ -300,7 +382,7 @@ async function resolveGenieManifest(sb, run, stage) {
   const dimensionBasis = { recordId: row.id, make: row.make, model: row.model, year, universalValidation: row.universalValidation || null, expectedSurfaces: expectedSurfaces.map(({ sourceAsset, ...item }) => item) };
   const dimensionBasisHash = hashJson(dimensionBasis);
   const totalSqFt = round2(expectedSurfaces.reduce((total, item) => total + (item.widthInches * item.heightInches / 144), 0));
-  const manifest = { contract: "designpro.genie-dimension-manifest.v1", genieVerified: true, sevenViewsVerified: true, requiredViewCount: 7, dimensionsAuthority: "genie-universal-panelizer", vehicle: { type: vehicle.type || vehicle.vehicleClass, year, make, model }, bleedInches: 5, totalSqFt, squareFootRounding: "nearest-0.01-after-raw-sum", dimensionBasisHash, expectedSurfaces };
+  const manifest = { contract: "designpro.genie-dimension-manifest.v1", genieVerified: true, sevenViewsVerified: viewSet.complete, requiredViewCount: 7, presentViewRoles: viewSet.presentRoles, missingViewRoles: viewSet.missingRoles, dimensionsAuthority: "genie-universal-panelizer", vehicle: { type: vehicle.type || vehicle.vehicleClass, year, make, model }, bleedInches: 5, totalSqFt, squareFootRounding: "nearest-0.01-after-raw-sum", dimensionBasisHash, expectedSurfaces };
   return { source, views, manifest, dimensionBasisHash, dimensionManifestId: uuidFromHash(dimensionBasisHash) };
 }
 
@@ -821,9 +903,50 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
   if (stage.stage_key === "revision.freeze") {
     const { data, error } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
     if (error || !data || data.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("revision_source_drift", "Immutable revision source does not match workflow", false);
-    const views = exactSevenViews(data.snapshot, run.tenant_key, run.revision_id);
-    const viewIdentities = await fingerprintSevenViews(views, sb, run.tenant_key, run.revision_id);
-    return complete(sb, stage, run, { verified: true, receiptKind: "views.seven-source", revisionSnapshotHash: data.snapshot_hash, requiredViewCount: 7, viewReceipts: viewIdentities, distinctViewsVerified: true });
+    // A REFUSED PROOF MUST NOT CANCEL THE PANELS CALL 1 ALREADY CUT.
+    //
+    // This threw `seven_views_incomplete` NON-RETRYABLY on the FIRST stage of
+    // the entice run, so one refused view killed the workflow before it began
+    // -- and with it every artifact the workflow publishes: the six A.T.L.A.S.
+    // panels, already cut and hashed and sitting in storage, and the Logo Pack.
+    //
+    // On an A.T.L.A.S. run the views are not the manufacturing source. The
+    // accepted master is, and Call 1 cut the panels from it before any proof
+    // rendered. So a short set is recorded and production continues -- the same
+    // shape `proof.build` already uses for a deferred Call 8, for the same
+    // reason: a documentation artifact must not hold the manufacturing chain
+    // hostage.
+    //
+    // A run with NO A.T.L.A.S. panel set still fails hard. There the views
+    // genuinely are what Call 9 cuts from, and a run missing one has nothing to
+    // manufacture for that surface.
+    const viewSet = revisionViewSet(data.snapshot, run.tenant_key, run.revision_id);
+    const atlasPanels = viewSet.complete ? null : await callOnePanelSet(sb, run).catch(() => null);
+    if (!viewSet.complete && !atlasPanels) throw viewSet.shortfall;
+    const views = viewSet.views;
+    const viewIdentities = await fingerprintRevisionViews(views, sb, run.tenant_key, run.revision_id);
+    if (!viewSet.complete) {
+      console.error(`[DESIGNPRO-OS] run ${run.id} froze a short view set: missing ${viewSet.missingRoles.join(", ")}`);
+    }
+    return complete(sb, stage, run, {
+      verified: true,
+      receiptKind: "views.seven-source",
+      revisionSnapshotHash: data.snapshot_hash,
+      requiredViewCount: 7,
+      viewReceipts: viewIdentities,
+      distinctViewsVerified: true,
+      // STATED, NEVER INFERRED. `pack.verify` copies these onto the pack
+      // receipt, so a pack assembled over a short set says so instead of
+      // claiming seven views it never had.
+      presentViewCount: viewSet.presentRoles.length,
+      presentViewRoles: viewSet.presentRoles,
+      ...(viewSet.complete ? {} : {
+        sevenViewsVerified: false,
+        missingViewRoles: viewSet.missingRoles,
+        productionAuthority: "atlas-master",
+        note: "One or more 3D proofs were refused. A.T.L.A.S. is the manufacturing authority and Call 1 had already cut the six panels, so the refused view is recorded and the panels and Logo Pack still publish.",
+      }),
+    });
   }
   if (stage.stage_key === "proof.build") {
     // CALL 8 IS A VALUE-ADD ARTIFACT, NOT THE MANUFACTURING AUTHORITY.
@@ -1229,8 +1352,21 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
     const call10 = await receipt(sb, run.id, "call10.logo-inventory");
     const call8Deferred = call8.receipt?.deferred === true;
     const sourceContract = { revisionSnapshotHash: run.revision_snapshot_hash, manifestHash: run.manifest_hash, views: views.receipt_hash, call8: call8.receipt_hash, call9: call9.receipt_hash, call10: call10.receipt_hash };
+    // THE PACK REPORTS WHAT THE FREEZE ACTUALLY FROZE.
+    //
+    // `sevenViewsVerified: true` used to be a literal, so a pack assembled over
+    // a short view set asserted seven views it never had -- the "do not report
+    // READY while an artifact is missing" failure, written into the pack's own
+    // immutable identity. It now reads the freeze receipt, which states the
+    // count and names the refused roles.
+    const shortViewSet = views.receipt?.sevenViewsVerified === false;
     const packReceipt = {
-      verified: true, exactCallSet: [8, 9, 10], sevenViewsVerified: true, sourceContract,
+      verified: true, exactCallSet: [8, 9, 10], sevenViewsVerified: !shortViewSet, sourceContract,
+      ...(shortViewSet ? {
+        missingViewRoles: views.receipt?.missingViewRoles || [],
+        presentViewCount: views.receipt?.presentViewCount ?? null,
+        productionAuthority: "atlas-master",
+      } : {}),
       // Stated, so the pack's own record says whether the 2D Production Proof
       // exists rather than leaving a later reader to infer it from a hash.
       ...(call8Deferred ? {
@@ -2546,4 +2682,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
