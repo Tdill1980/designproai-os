@@ -950,6 +950,7 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     companyName: String(input?.companyName || input?.businessName || "").trim() || undefined,
     phone: String(input?.phone || "").trim() || undefined,
     website: String(input?.website || "").trim() || undefined,
+    textLayerPrompt: String(input?.textLayerPrompt || "").trim() || undefined,
     mascot: String(input?.mascot || "").trim() || undefined,
     industryType: String(input?.industry || "").trim() || undefined,
     bulletPoints: Array.isArray(input?.bulletPoints) ? input.bulletPoints.map(String) : undefined,
@@ -1463,6 +1464,9 @@ async function generateOrReuseFlatAtlas(options) {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
     claimToken, input, surfaces, geometryAuthority, topologyExamples = [],
     artboardQualityExamples = [], masterValidatorFactory = createAtlasMasterValidator,
+    // The Call-1 transport is injectable so a unit test can drive the authoring
+    // loop without a live edge function. Production always uses the real POST.
+    callEdge = callAtlasArtboardEdge,
     masterRequestMaxBytes = MASTER_REQUEST_MAX_BYTES,
     logger = () => {},
   } = options;
@@ -1647,7 +1651,7 @@ async function generateOrReuseFlatAtlas(options) {
     // edge function executes the real Persona-2 designer brain and makes
     // exactly one Gemini image request per attempt; this runtime never calls
     // Gemini for Call 1 (owner directive 2026-08-27).
-    generated = await callAtlasArtboardEdge(attemptBody, { logger, ownerId, supabase });
+    generated = await callEdge(attemptBody, { logger, ownerId, supabase });
     edgeProvenance.push(generated.provenance);
     const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
     masterBytes = normalized.bytes;

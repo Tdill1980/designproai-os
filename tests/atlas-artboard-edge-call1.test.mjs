@@ -84,7 +84,10 @@ test("the runtime assembles no creative text and never calls Gemini for Call 1",
     runtimeSource.indexOf("for (let attempt = 1; attempt <= maxAuthoringAttempts"),
     runtimeSource.indexOf("const masterStoragePath"),
   );
-  assert.match(loop, /callAtlasArtboardEdge\(/);
+  assert.match(loop, /callEdge\(/);
+  // …whose default IS the real edge POST; injectable only so a unit test can
+  // drive the authoring loop without a live function.
+  assert.match(runtimeSource, /callEdge = callAtlasArtboardEdge/);
   assert.ok(!loop.includes("provider.generateImage"), "Call 1 makes no direct provider image call");
   assert.ok(!runtimeSource.includes("generativelanguage.googleapis.com"), "no raw Gemini endpoint in the runtime");
 });

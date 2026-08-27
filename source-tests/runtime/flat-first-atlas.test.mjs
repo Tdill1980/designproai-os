@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import test from "node:test";
 
@@ -107,9 +109,13 @@ test("provisional Google-grounded geometry is truthfully immutable and remains p
   assert.equal(manifest.sourceAuthority.geometry, "provisional-google-grounded-layout-only");
   assert.match(manifest.productionBlockers.join(" "), /operator-validated exact six-surface geometry/i);
   assert.equal(manifest.productionEligible, false);
-  const prompt = atlas._test.atlasPrompt(v3Input, manifest);
-  assert.match(prompt, /Google-grounded.*PROVISIONAL proof-layout rectangles/i);
-  assert.match(prompt, /never authorization for print production/i);
+  // The runtime assembles no prompt prose any more (owner directive
+  // 2026-08-27) — the provisional/proof-only status lives in the manifest it
+  // maps onto the edge request, and in the production blockers above.
+  assert.equal(manifest.geometryAuthority.status, "provisional");
+  const body = atlas._test.atlasEdgeRequestBody(v3Input, manifest, {});
+  assert.equal(body.mode, "atlas-artboard");
+  assert.equal(body.panels.length, 6);
 });
 
 test("Call 1 sees the paired flattened top-view and corresponding finished 3D proof", async () => {
@@ -130,11 +136,11 @@ test("Call 1 sees the paired flattened top-view and corresponding finished 3D pr
   assert.deepEqual([...flattened.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   assert.deepEqual([...finished.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 
-  const prompt = atlas._test.atlasPrompt(v3Input, atlas.buildAtlasManifest(surfaces));
-  assert.match(prompt, /flattened top-view example.*finished 3D vehicle proof/i);
-  assert.match(prompt, /output the new flattened top-view design first/i);
-  assert.match(prompt, /never output a vehicle photograph/i);
-  assert.match(prompt, /IGNORE their palette, imagery, text, logos, brand and style/);
+  // The teaching contract rides the parts themselves; the flat-master output
+  // contract (LAYOUT ONLY, never a vehicle photograph) lives in the deployed
+  // edge function and is locked by tests/atlas-artboard-edge-call1.
+  assert.match(parts[0].text, /Copy no artwork, wording, logo, color or brand/i);
+  assert.match(parts[2].text, /context only; do not return a vehicle image in Call 1/i);
 });
 
 test("Atlas preserves DesignPanel loadArtboardExamples behavior as optional quality evidence", async () => {
@@ -227,14 +233,17 @@ test("4K atlas reports effective PPI honestly and cannot masquerade as print rea
   assert.equal(manifest.zones.some((zone) => zone.surfaceKey === "closeup" || zone.surfaceKey === "hero3d"), false);
 });
 
-test("topology examples are firewalled from customer style", () => {
-  const prompt = atlas._test.atlasPrompt(v3Input, atlas.buildAtlasManifest(surfaces));
-  assert.match(prompt, /TOPOLOGY\/LAYOUT references only/);
-  assert.match(prompt, /IGNORE their palette, imagery, text, logos, brand and style/);
-  assert.match(prompt, /customer's brief and verified customer-owned assets are the sole style source/i);
-  assert.match(prompt, /passenger flank.*LEFT/i);
-  assert.match(prompt, /driver flank.*RIGHT/i);
-  assert.match(prompt, /REAR, ROOF, HOOD, FRONT/);
+test("topology examples are firewalled from customer style", async () => {
+  // The firewall is stated where the prompt is now assembled — inside the
+  // deployed edge function — and on the attached example parts themselves.
+  const example = topologyExamples.loadBundledFlatToFinishedExample();
+  const parts = await atlas._test.topologyExampleParts([example]);
+  assert.match(parts[0].text, /Copy no artwork, wording, logo, color or brand/i);
+  const edge = readFileSync(new URL("../../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
+  assert.match(edge, /teaches LAYOUT ONLY/);
+  // And the zone map the model follows is the deterministic guide, not prose.
+  const manifest = atlas.buildAtlasManifest(surfaces);
+  assert.equal(manifest.zones.length, 6);
 });
 
 /**
@@ -459,17 +468,25 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   let providerOptions = null;
   const pairedExample = topologyExamples.loadBundledFlatToFinishedExample();
   const generated = await atlas.renderAtlasGuide(atlas.buildAtlasManifest(surfaces));
-  const provider = {
-    async generateImage(options) {
-      events.push("provider");
-      providerOptions = options;
-      return {
-        bytes: generated,
-        contentType: "image/png",
+  const provider = {};
+  // Call 1 is a POST to the deployed design-panel-ai-generate (owner directive
+  // 2026-08-27); the runtime makes no direct image call, so the transport is
+  // what this test drives.
+  const callEdge = async (body) => {
+    events.push("provider");
+    providerOptions = body;
+    return {
+      bytes: generated,
+      provenance: {
+        requestId: "11111111-2222-3333-4444-555555555555",
+        functionName: "design-panel-ai-generate",
+        sourceCommit: "113d137dbe8813ca3bf70c8d7265ad081ebd4524",
+        promptVersion: "atlas-artboard-designiq.20260827.v2",
         model: "gemini-3-pro-image",
-        keyFingerprint: "0123456789ab",
-      };
-    },
+        imageRequestCount: 1,
+        masterSha256: createHash("sha256").update(generated).digest("hex"),
+      },
+    };
   };
   const stored = [];
   const store = {
@@ -511,11 +528,26 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
       assert.equal(name, "designpro_flat_atlas_revisions");
       return table;
     },
-    storage: { from() { throw new Error("no customer logo or existing atlas should download in this test"); } },
+    // Call 1 stages its two large inputs (authoring guide + structural
+    // reference) to content-addressed objects and sends their PATHS, so an
+    // upload here is expected; a DOWNLOAD would mean a customer logo or an
+    // existing atlas was fetched, which this test forbids.
+    storage: {
+      from() {
+        return {
+          async upload(path) {
+            events.push("stage-input");
+            assert.match(path, /^atlas-call1-inputs\//);
+            return { error: null };
+          },
+          download() { throw new Error("no customer logo or existing atlas should download in this test"); },
+        };
+      },
+    },
   };
 
   const result = await atlas.generateOrReuseFlatAtlas({
-    supabase, store, provider,
+    supabase, store, provider, callEdge,
     requestId: REQUEST, claimToken: CLAIM_TOKEN,
     generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
     input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
@@ -555,11 +587,13 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   );
   assert.ok(events.lastIndexOf("insert") > Math.max(...events.map((event, index) => event.startsWith("put:") ? index : -1)),
     "the immutable row is inserted only after all three objects exist");
-  assert.equal(providerOptions.aspectRatio, "1:1");
-  assert.equal(providerOptions.imageSize, "4K");
-  assert.equal(providerOptions.parts[0].inlineData.mimeType, "image/png", "the deterministic guide is the first input image");
-  assert.match(providerOptions.parts[2].text, /FLATTENED TOP-VIEW OUTPUT FORMAT/);
-  assert.match(providerOptions.parts[4].text, /CORRESPONDING FINISHED 3D PROOF/);
+  // The runtime now sends a REQUEST BODY to the edge function rather than
+  // Gemini parts: aspect/size/model and the prompt live inside the function.
+  assert.equal(providerOptions.mode, "atlas-artboard");
+  assert.equal(providerOptions.panels.length, 6);
+  assert.match(providerOptions.guideStoragePath, /^atlas-call1-inputs\//, "the deterministic guide is staged, not inlined");
+  assert.ok(providerOptions.structuralReferenceStoragePath, "the paired topology example rides the request");
+  assert.match(providerOptions.structuralReferenceMime, /^image\/(png|jpeg)$/, "the teaching pair travels by path + mime");
   assert.equal(inserted.example_id, null, "release-bundled examples never forge a database example foreign key");
   assert.equal(inserted.production_eligible, false);
   assert.equal(inserted.manifest.geometryAuthority.status, "provisional");
@@ -629,14 +663,21 @@ test("an interrupted Atlas authoring fence prevents a duplicate provider call", 
       fenceCalls += 1;
       return { data: fenceCalls === 1, error: null };
     },
-    storage: { from() { throw new Error("no customer assets are present"); } },
+    storage: {
+      from() {
+        return {
+          async upload(path) { assert.match(path, /^atlas-call1-inputs\//); return { error: null }; },
+          download() { throw new Error("no customer assets are present"); },
+        };
+      },
+    },
   };
   const store = { async putImmutableBytes() { return {}; } };
+  const callEdge = async () => {
+    providerCalls += 1;
+    throw new Error("simulated worker interruption after the fence");
+  };
   const provider = {
-    async generateImage() {
-      providerCalls += 1;
-      throw new Error("simulated worker interruption after the fence");
-    },
     // The fail-closed validator is now constructed BEFORE the design call, so
     // its own precondition cannot fire after a 4K image was already paid for.
     // The mock therefore has to satisfy that precondition to reach the
@@ -646,7 +687,7 @@ test("an interrupted Atlas authoring fence prevents a duplicate provider call", 
     },
   };
   const options = {
-    supabase, store, provider, requestId: REQUEST, claimToken: CLAIM_TOKEN,
+    supabase, store, provider, callEdge, requestId: REQUEST, claimToken: CLAIM_TOKEN,
     generationId: GENERATION, tenantKey: TENANT, ownerId: OWNER,
     input: v3Input, surfaces, geometryAuthority: provisionalAuthority,
   };

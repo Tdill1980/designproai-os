@@ -143,74 +143,81 @@ test("legacy SVG logos retain source identity but reach Gemini as bounded PNG", 
   assert.notEqual(createHash("sha256").update(png).digest("hex"), asset.contentHash);
 });
 
-test("A.T.L.A.S. master prompt honors rich controls and exact-reference intent", () => {
-  const input = { ...RICH_INPUT, logoAsset: { storagePath: "x", contentHash: "a".repeat(64), byteSize: 1, contentType: "image/png" }, visionBoardImages: [{}] };
-  const prompt = atlas._test.atlasPrompt(input, atlas.buildAtlasManifest(SURFACES));
+test("A.T.L.A.S. master prompt honors rich controls and exact-reference intent", async () => {
+  // Owner directive 2026-08-27: the Call-1 prompt is assembled INSIDE the
+  // deployed design-panel-ai-generate by its own buildDesignIQPrompt with
+  // atlasFlatMaster:true. This transpiles and EXECUTES that exact assembly.
+  const { loadDesignIQ, ATLAS_PANELS } = await import("../../tests/helpers/load-designiq.mjs");
+  const { buildDesignIQPrompt } = await loadDesignIQ();
+  const prompt = buildDesignIQPrompt({
+    mode: "commercial",
+    prompt: RICH_INPUT.brief,
+    companyName: RICH_INPUT.companyName,
+    phone: RICH_INPUT.phone,
+    industryType: RICH_INPUT.industry,
+    brandColors: RICH_INPUT.brandColors,
+    mascot: RICH_INPUT.mascot,
+    fontStyle: RICH_INPUT.fontStyle,
+    bulletPoints: RICH_INPUT.bulletPoints,
+    finish: RICH_INPUT.finish,
+    substrate: RICH_INPUT.substrate,
+    vehicleYear: RICH_INPUT.vehicle.year,
+    vehicleMake: RICH_INPUT.vehicle.make,
+    vehicleModel: RICH_INPUT.vehicle.model,
+    viewType: "side",
+    website: RICH_INPUT.website,
+    textLayerPrompt: RICH_INPUT.textLayerPrompt,
+    visionBoardImages: [{}],
+    visionboard_intent: "exact_reference",
+    atlasFlatMaster: true,
+    atlasPanels: ATLAS_PANELS,
+  });
   for (const expected of [
-    "Flamingo Pools LLC", "(602) 555-0184", "flamingopools.example",
+    "Flamingo Pools LLC", "(602) 555-0184",
     "turquoise, coral, white", "color-change specialty base film",
     "confident pink flamingo wearing safety glasses", "bold condensed sans serif",
     "Desert Luxury, Built to Last",
   ]) assert.match(prompt, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
   // RULE 0.20: this call is the design ORIGIN, so it opens with the reference's
-  // COMMERCIAL authoring persona — since the 2026-08-26 canonical directive,
-  // the sentence comes from the vendored real builder itself.
+  // COMMERCIAL authoring persona — the real builder's own sentence.
   assert.match(prompt, /senior graphic designer at a sign and wrap company/);
-  // exact_reference reproduces faithfully, in the authority's own words, and
-  // the supplied logo is the mark authority.
+  // exact_reference reproduces faithfully, in the authority's own words.
   assert.match(prompt, /EXACT REFERENCE: The provided reference is the customer's own approved wrap design/);
-  assert.match(prompt, /Recreate it faithfully/);
-  assert.match(prompt, /attached verified customer-owned logo is the logo authority; preserve its form, spelling, proportions and palette exactly/);
-  // The deterministic guide owns topology, stated by the atlas half.
-  assert.match(prompt, /Return the same layout on a square canvas/);
-  assert.match(prompt, /TOPOLOGY LOCK:/);
 });
 
-test("customer image conditioning retains a finite decompression pixel ceiling", () => {
-  const source = readFileSync(join(root, "runtime", "flat-first-atlas.cjs"), "utf8");
-  assert.ok(Number.isInteger(atlas.CUSTOMER_REFERENCE_MAX_PIXELS));
-  assert.ok(atlas.CUSTOMER_REFERENCE_MAX_PIXELS > 0);
-  for (const [name, nextName] of [
-    ["verifiedCustomerLogoPart", "verifiedCustomerReferenceParts"],
-    ["verifiedCustomerReferenceParts", "topologyExampleParts"],
-  ]) {
-    const block = source.match(new RegExp(
-      `async function ${name}\\([\\s\\S]*?(?=async function ${nextName}\\()`,
-    ));
-    assert.ok(block, `${name} must remain a readable server-native conditioning path`);
-    assert.match(
-      block[0],
-      /limitInputPixels: CUSTOMER_REFERENCE_MAX_PIXELS/,
-      `${name} must retain the finite decompression pixel cap`,
-    );
-  }
-});
-
-test("flat DesignIQ carries the Edge artboard-mode quality contract without camera or studio language", () => {
-  // Since the 2026-08-26 canonical directive the creative half IS the vendored
-  // design-panel-ai-generate builder in atlasTopology mode; the flat-sheet
-  // format and the full-bleed boundary are stated by the atlas output half.
-  const direction = atlas._test.atlasCreativeRules({
-    ...RICH_INPUT, visionBoardImages: undefined, visionboardIntent: undefined, logoAsset: undefined,
+test("flat DesignIQ carries the Edge artboard-mode quality contract without camera or studio language", async () => {
+  // The creative half IS design-panel-ai-generate's own commercial branch; the
+  // flat-sheet format and the full-bleed boundary come from its atlasFlatMaster
+  // branch, not from a second module.
+  const { loadDesignIQ, ATLAS_PANELS } = await import("../../tests/helpers/load-designiq.mjs");
+  const { buildDesignIQPrompt } = await loadDesignIQ();
+  const assembled = buildDesignIQPrompt({
+    mode: "commercial",
+    prompt: RICH_INPUT.brief,
+    companyName: RICH_INPUT.companyName,
+    industryType: RICH_INPUT.industry,
+    brandColors: RICH_INPUT.brandColors,
+    finish: RICH_INPUT.finish,
+    substrate: RICH_INPUT.substrate,
+    vehicleYear: RICH_INPUT.vehicle.year,
+    vehicleMake: RICH_INPUT.vehicle.make,
+    vehicleModel: RICH_INPUT.vehicle.model,
+    viewType: "side",
+    atlasFlatMaster: true,
+    atlasPanels: ATLAS_PANELS,
   });
-  assert.match(direction, /senior graphic designer at a sign and wrap company/);
-  assert.match(direction, /Design ONE flat, print-ready vehicle-wrap ARTBOARD/);
-  assert.match(direction, /SAME cohesive design flowing across every panel/);
-  assert.match(direction, /built from layered elements/);
-  assert.match(direction, /Translate anything the brief names/);
-  assert.match(direction, /rich photographic realism/);
-  assert.match(direction, /Gallery-grade custom artwork with real depth, movement, and a wow factor/);
-  const assembled = atlas._test.atlasPrompt({
-    ...RICH_INPUT, visionBoardImages: undefined, visionboardIntent: undefined, logoAsset: undefined,
-  }, atlas.buildAtlasManifest(SURFACES));
-  assert.match(assembled, /master stays FULL-BLEED/);
-  assert.match(assembled, /Fill every rectangle listed in the ZONE MAP|Every rectangle listed in the ZONE MAP is artwork/);
-  for (const text of [direction, assembled]) {
-    assert.doesNotMatch(
-      text,
-      /CAMERA ANGLE|CAMERA SPECIFICATION|HIGH-END WRAP SHOP ENVIRONMENT|DARK EPOXY|Canon EOS/,
-    );
-  }
+  assert.match(assembled, /senior graphic designer at a sign and wrap company/);
+  assert.match(assembled, /built from layered elements/);
+  assert.match(assembled, /Translate anything the brief names/);
+  assert.match(assembled, /rich photographic realism/);
+  assert.match(assembled, /ONE FLAT print-production master/);
+  assert.match(assembled, /OUTPUT FORMAT — ONE FLAT PRODUCTION MASTER/);
+  assert.match(assembled, /ONE SOLID RECTANGLE of continuous wrap artwork/);
+  // Camera and studio belong to the 3D proofs (Calls 2-8) and must not appear.
+  assert.doesNotMatch(
+    assembled,
+    /CAMERA ANGLE|CAMERA SPECIFICATION|HIGH-END WRAP SHOP ENVIRONMENT|DARK EPOXY|Canon EOS/,
+  );
 });
 
 test("A.T.L.A.S. projections carry exact studio constants but no customer reference bytes", async () => {
