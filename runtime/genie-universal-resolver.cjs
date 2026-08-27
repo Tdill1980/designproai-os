@@ -908,13 +908,9 @@ async function resolveFlatAtlasPreviewDimensions(sb, rawVehicle, provider) {
   // grounded candidate attached, marks the geometry provisional and
   // production-ineligible, and PanelPro shows that plainly. Production unlocks
   // on an operator validation or a real catalog row, never on a guess.
-  if (!provider) {
-    throw new UniversalDimensionError(
-      "genie_dimensions_unresolved",
-      `GENIE has no authoritative row covering ${vehicle.year} ${vehicle.make} ${vehicle.model}`,
-      false,
-    );
-  }
+  // The estimator still RUNS -- the owner allows it as a preview aid -- but it
+  // may never present itself as authority. The state below is what production
+  // reads, and it says `unresolved`.
   const grounded = await groundedCandidate(vehicle, provider);
   const row = await insertOrReadGroundedCandidate(sb, vehicle, grounded);
   const validated = validatedSurfaces(row);
