@@ -834,6 +834,20 @@ function createGenerationWorker({
       let openSurfaceGate = null;
       let awaitSurface = null;
       let releaseAllGates = null;
+      // THE SERVER LOG IS THE PROOF THE GRAPH STREAMS.
+      //
+      // A local test asserting "Driver's proof can start before Passenger
+      // exists" is not evidence about production; twice on 2026-08-27 the full
+      // suite was green while the deployed runtime failed every request. These
+      // lines make the deployed worker state the timeline itself, so
+      // `proof.start(driver)` appearing BEFORE `panel.ready(roof)` is an
+      // observed fact on the server rather than an inference from a fixture.
+      // Monotonic ms since the claim so the ordering survives clock skew.
+      const graphT0 = Date.now();
+      const graphEvent = (event, surfaceKey = null) => {
+        const at = Date.now() - graphT0;
+        console.log(`[DESIGNPRO-OS] graph ${requestId}: ${event}${surfaceKey ? `(${surfaceKey})` : ""} +${at}ms`);
+      };
       const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
       const standardProvider = isFlatFirst ? null : standardProviderFactory({
         supabase,
@@ -897,8 +911,11 @@ function createGenerationWorker({
           topologyExamples,
           artboardQualityExamples,
           logger: (line) => console.log(`[DESIGNPRO-OS] flat-first ${requestId}: ${line}`),
-          onMasterReady: (atlas) => { progressiveAtlas = atlas; },
-          onSurfaceReady: ({ surfaceKey }) => { openSurfaceGate(surfaceKey); },
+          onMasterReady: (atlas) => { progressiveAtlas = atlas; graphEvent("master.accepted"); },
+          onSurfaceReady: ({ surfaceKey }) => {
+            graphEvent("panel.ready", surfaceKey);
+            openSurfaceGate(surfaceKey);
+          },
         });
         // A CALL 1 FAILURE MUST STILL KILL THE RUN. The promise is started
         // rather than awaited, so nothing may swallow its rejection: every gate
@@ -972,7 +989,12 @@ function createGenerationWorker({
           // still cannot be conditioned on the wrong surface or an unbound
           // master -- it just stops waiting for five panels it never needed.
           conditioningPartsFor: async (sourceViewType) => {
+            graphEvent("proof.wait", sourceViewType);
             await awaitSurface(sourceViewType);
+            // First thing past this surface's own gate: the proof node for it
+            // is now running. Its position relative to other surfaces'
+            // `panel.ready` lines is the streaming proof.
+            graphEvent("proof.start", sourceViewType);
             return atlasProjectionParts(flatAtlas, sourceViewType);
           },
           conditioningIdentityFor: async (sourceViewType) => {
