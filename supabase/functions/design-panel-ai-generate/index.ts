@@ -244,6 +244,8 @@ interface DesignIQParams {
   bulletPoints?: string[];
   industryType?: string;
   phone?: string;
+  website?: string;
+  textLayerPrompt?: string;
   brandColors?: string;
   fontStyle?: string;
   qrEnabled?: boolean;
@@ -331,6 +333,8 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
     mascot,
     bulletPoints,
     phone,
+    website,
+    textLayerPrompt,
     industryType,
     brandColors,
     fontStyle,
@@ -543,6 +547,19 @@ CLIENT BRIEF:`;
       assembled += `\nContact info (place in the contact bar): ${phone} — display this EXACT number, digit for digit. Never alter or invent any digits.`;
     } else {
       assembled += `\nNo phone number was provided — do NOT invent, fabricate, or display any phone number, website, email, or address anywhere on the vehicle. Show the company name only.`;
+    }
+    // EXACT CUSTOMER TEXT, PAIRED PER FIELD. Ported verbatim from
+    // runtime/designiq-prompt.cjs's supplementalBrandDirection (owner contract:
+    // "keep exact supplied text/contact data; never invent customer
+    // information") so the website half and the customer-authored tagline
+    // cannot be dropped by a branch that only guards the phone.
+    if (website) {
+      assembled += `\nWebsite (place in the contact bar): ${website} — display this EXACT URL, character for character. Never alter or invent it.`;
+    } else {
+      assembled += `\nNo website was supplied — invent no website, email address or street address, and display none anywhere on the design.`;
+    }
+    if (textLayerPrompt) {
+      assembled += `\nTEXT LAYER DIRECTION (customer-authored): ${textLayerPrompt} Preserve every supplied name, slogan, service and contact string exactly; do not invent replacement copy.`;
     }
     if (industryType) assembled += `\nIndustry: ${industryType}`;
     if (brandColors) assembled += `\nBrand colors: ${brandColors} — build the entire design from this palette and do not introduce unrelated colors.`;
@@ -1972,6 +1989,8 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       bulletPoints: Array.isArray(body.bulletPoints) ? (body.bulletPoints as string[]) : undefined,
       industryType: String(body.industryType || "").trim() || undefined,
       phone: String(body.phone || "").trim() || undefined,
+      website: String(body.website || "").trim() || undefined,
+      textLayerPrompt: String(body.textLayerPrompt || "").trim() || undefined,
       brandColors: String(body.brandColors || "").trim() || undefined,
       fontStyle: String(body.fontStyle || "").trim() || undefined,
       qrEnabled: body.qrEnabled === true,
