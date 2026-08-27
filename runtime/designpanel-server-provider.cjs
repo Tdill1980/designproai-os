@@ -523,6 +523,20 @@ ${angles.cameraAuthority(sourceViewType, { pickup: pickupVehicle(input) })}`;
 async function buildAtlasProjectionRequest({ atlas, input, sourceViewType, call, driverReference = null }) {
   angles.assertTextDirectionGuard(sourceViewType);
   const authorityIdentity = await atlasViewIdentity(atlas, sourceViewType);
+  // `call?.parts` still wins when a direct caller (or a focused test) hands
+  // one in explicitly -- that path is unchanged. What changed is the engine
+  // layer: `correctedParts()` (generation-engine.cjs) no longer turns the
+  // flat-first path's inert `promptParts: []` into a non-empty text-only
+  // array on a judged rejection, so this never again receives a `call.parts`
+  // that holds ONLY correction text with no image. It used to: a non-empty
+  // `callParts` here wins over the atlas fallback inside
+  // resolveAtlasConditioningParts, so that text-only array silently stripped
+  // the artwork authority image from every corrective retry -- "expected
+  // exactly one canonical Atlas image, received 0" on attempt 2+, live-caught
+  // 2026-08-27 (requestId 262f70cf-20e9-44fe-8b74-de44185b386a). The judge's
+  // findings still reach the retry -- via `call?.corrections` below, which
+  // the engine threads through independently of `call.parts` for exactly
+  // this purpose.
   const atlasParts = await resolveAtlasConditioningParts(atlas, sourceViewType, call?.parts);
   const prompt = buildAtlasProjectionPrompt({
     input,
@@ -530,6 +544,7 @@ async function buildAtlasProjectionRequest({ atlas, input, sourceViewType, call,
     hasDriverAnchor: Boolean(driverReference),
     authorityIdentity,
   });
+  const corrections = Array.isArray(call?.corrections) ? call.corrections.filter(Boolean) : [];
   const parts = [
     { text: prompt },
     { text: `IMAGE 1 — IMMUTABLE A.T.L.A.S. ${authorityIdentity.surfaceKey.toUpperCase()} NATIVE-ZONE CROP sha256 ${authorityIdentity.contentHash} (SOLE ARTWORK AUTHORITY).` },
@@ -538,6 +553,7 @@ async function buildAtlasProjectionRequest({ atlas, input, sourceViewType, call,
       { text: "IMAGE 2 — BYTE-VERIFIED DRIVER PROOF (VEHICLE/STUDIO/FINISH CONTINUITY ONLY)." },
       { inlineData: { mimeType: driverReference.mimeType, data: driverReference.data } },
     ] : []),
+    ...(corrections.length ? [{ text: corrections.join("\n\n") }] : []),
   ];
   const responseModalities = Number(call?.attempt) === 3 ? ["IMAGE"] : ["TEXT", "IMAGE"];
   const requestByteSize = assertAtlasRequestWithinLimit({
