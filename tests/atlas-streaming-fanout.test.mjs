@@ -247,8 +247,12 @@ test("no global barrier between extraction and proofs", () => {
   // Call 1 is STARTED, not awaited, so the proof branch runs against the root
   // node while Call 1's tail finishes.
   assert.match(worker, /const atlasRun = generateOrReuseFlatAtlas\(\{/);
-  assert.match(worker, /onMasterReady: \(atlas\) => \{ progressiveAtlas = atlas; \}/);
-  assert.match(worker, /onSurfaceReady: \(\{ surfaceKey \}\) => \{ openSurfaceGate\(surfaceKey\); \}/);
+  // The root node is captured the instant the master is accepted, and each
+  // surface opens its OWN gate the instant its panel lands. Asserted on the
+  // load-bearing assignment/call rather than the whole callback body, so
+  // adding the server-log instrumentation beside them is not a "regression".
+  assert.match(worker, /onMasterReady: \(atlas\) => \{[^}]*progressiveAtlas = atlas;/);
+  assert.match(worker, /onSurfaceReady: \(\{ surfaceKey \}\) => \{[\s\S]*?openSurfaceGate\(surfaceKey\);/);
   // ...but it is still JOINED, so a Call 1 failure is still fatal and its
   // rejection is never swallowed.
   assert.match(worker, /flatAtlas = await atlasRun;/);

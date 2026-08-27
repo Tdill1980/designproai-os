@@ -134,9 +134,22 @@ function classifyFailure(error) {
  * parts keep their order and position, which is what the Atlas conditioning
  * identity check reads. The correction is one extra trailing text part, and it
  * exists only on attempts that follow a rejection.
+ *
+ * An EMPTY promptParts is never appended to, on any attempt. The flat-first
+ * path hands this an inert `[]` (its provider overwrites `parts` unconditionally
+ * from the atlas itself and never reads them -- see
+ * designpanel-server-provider.cjs's buildAtlasProjectionRequest). Appending a
+ * correction to `[]` used to produce a ONE-ELEMENT array holding only that
+ * text, which -- because a non-empty `call.parts` wins over the atlas fallback
+ * one layer up -- silently dropped the artwork authority image from every
+ * corrective retry: "expected exactly one canonical Atlas image, received 0"
+ * on attempt 2+, live-caught 2026-08-27 (requestId
+ * 262f70cf-20e9-44fe-8b74-de44185b386a). Findings still reach the retry: they
+ * are also passed as `corrections` (see the `provider.generateImage` call
+ * below), and the Atlas builder reads that field directly.
  */
 function correctedParts(promptParts, corrections) {
-  if (!Array.isArray(promptParts) || !corrections.length) return promptParts;
+  if (!Array.isArray(promptParts) || !promptParts.length || !corrections.length) return promptParts;
   return [...promptParts, { text: corrections.join("\n\n") }];
 }
 
@@ -449,5 +462,5 @@ module.exports = {
   runSlot,
   slotStoragePath,
   slotStoragePrefix,
-  _test: { classifyFailure, extensionFor, isSemanticQualityRejection, semanticRejectionCorrection, sha256 },
+  _test: { classifyFailure, correctedParts, extensionFor, isSemanticQualityRejection, semanticRejectionCorrection, sha256 },
 };

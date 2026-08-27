@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 const require = createRequire(import.meta.url);
 const { runAtlasProofStages } = require("../runtime/generation-worker.cjs");
 const { buildAtlasProjectionRequest } = require("../runtime/designpanel-server-provider.cjs");
+const { _test: engineTest } = require("../runtime/generation-engine.cjs");
 const sharp = require("../runtime/node_modules/sharp");
 
 /**
@@ -35,15 +36,42 @@ test("atlas proof slots get a rejection budget equal to their attempt budget", a
 });
 
 /**
- * AND THE CYCLE IS REAL: THE INSPECTOR'S FINDINGS REACH THE RE-ATTEMPT.
+ * AND THE CYCLE IS REAL: THE INSPECTOR'S FINDINGS REACH THE RE-ATTEMPT --
+ * WITHOUT DROPPING THE ARTWORK AUTHORITY IMAGE.
  *
- * The engine appends corrections to call.parts (correctedParts), and the atlas
- * projection builder passes call.parts through resolveAtlasConditioningParts,
- * which preserves text parts. This pins that path -- if a refactor ever drops
- * the trailing correction, a bigger budget really would be re-rolling the same
- * dice, which is exactly what this test exists to refuse.
+ * For flat-first, `promptParts` at the engine layer is `[]` (buildAtlasProjection-
+ * Request overwrites `parts` unconditionally and never reads them). Before
+ * 2026-08-27, `correctedParts([], corrections)` on any judged rejection
+ * produced a ONE-ELEMENT array holding ONLY the correction text -- and a
+ * non-empty `call.parts` wins over the atlas's own `conditioningPartsFor`
+ * fallback one layer up, so that text-only array silently stripped the
+ * artwork authority image from every corrective retry: "expected exactly one
+ * canonical Atlas image, received 0" on attempt 2+, live-caught 2026-08-27
+ * (requestId 262f70cf-20e9-44fe-8b74-de44185b386a).
+ *
+ * The fix is at the source: `correctedParts` now leaves an EMPTY promptParts
+ * empty on every attempt, corrected or not, so the flat-first path always
+ * falls through to the atlas's own image. The judge's findings still reach
+ * the retry -- via `call.corrections`, which the engine passes to
+ * `provider.generateImage` independently of `call.parts` (see the call site
+ * in `runSlot`), and which `buildAtlasProjectionRequest` reads as a trailing
+ * text part. This test exercises both halves of that real chain.
  */
-test("a correction carried in call.parts survives into the projection request", async () => {
+test("a correction on an empty (flat-first) promptParts never displaces the artwork image, and the finding still reaches the retry", async () => {
+  // Half 1: the engine's own correctedParts leaves [] empty even with
+  // findings queued -- this is what stopped call.parts from ever again
+  // becoming a text-only array that could out-rank the atlas's image.
+  assert.deepEqual(engineTest.correctedParts([], ["some finding"]), []);
+  // Non-empty promptParts (the Standard/non-flat-first path) is unaffected --
+  // it still gets the trailing correction appended, exactly as before.
+  assert.deepEqual(
+    engineTest.correctedParts([{ text: "base" }], ["some finding"]),
+    [{ text: "base" }, { text: "some finding" }],
+  );
+
+  // Half 2: with call.parts genuinely empty (what correctedParts now always
+  // produces for flat-first), the projection builder must still resolve the
+  // real image from the atlas AND surface the finding via call.corrections.
   const png = await sharp({
     create: { width: 64, height: 32, channels: 3, background: { r: 20, g: 40, b: 80 } },
   }).png().toBuffer();
@@ -58,21 +86,20 @@ test("a correction carried in call.parts survives into the projection request", 
       },
     },
     maxRequestBytes: 10_000_000,
+    conditioningPartsFor: async () => [
+      { inlineData: { mimeType: "image/png", data: png.toString("base64") } },
+      { text: "authority text" },
+    ],
   };
   const finding = "PREVIOUS ATTEMPT REJECTED BY THE HOOD PROOF INSPECTOR.\n- Camera height is too low";
   const request = await buildAtlasProjectionRequest({
     atlas,
     input: { vehicle: { year: "2023", make: "Ford", model: "Transit" }, finish: "Gloss", brief: "b" },
     sourceViewType: "hood_detail",
-    call: {
-      attempt: 2,
-      parts: [
-        { inlineData: { mimeType: "image/png", data: png.toString("base64") } },
-        { text: "projection prompt" },
-        { text: finding },
-      ],
-    },
+    call: { attempt: 2, parts: engineTest.correctedParts([], [finding]), corrections: [finding] },
   });
+  const imageParts = request.parts.filter((part) => part?.inlineData);
+  assert.equal(imageParts.length, 1, "the artwork authority image must survive a corrective retry");
   const texts = request.parts.filter((part) => typeof part.text === "string").map((part) => part.text);
   assert.ok(
     texts.some((text) => text.includes("Camera height is too low")),
