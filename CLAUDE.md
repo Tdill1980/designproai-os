@@ -250,52 +250,63 @@ border, not as new design. `masterCutoutSurfaces` still records that the sheet
 arrived holed, and PanelPro's human QC still sees those sides flagged. Locked by
 `tests/atlas-cutout-fill.test.mjs`.
 
-## 🎯 RULE 0.26 — ONE CANONICAL CALL 1: THE REAL DPAG BUILDER + ATLAS, ONE AUTHORING CALL (Trish 2026-08-26)
+## 🎯 RULE 0.26 — ONE CANONICAL CALL 1: THE REAL EDGE FUNCTION EXECUTES THE PERSONA BRAIN (Trish 2026-08-27, supersedes the 08-26 vendored-bridge form)
 
-**Owner directive, verbatim intent: "IMPLEMENT ONE CANONICAL DESIGNPROAI CALL 1:
-DESIGNPANELAI + ATLAS IN THE SAME AUTHORING CALL … There must be one canonical
-creative implementation, not two drifting copies." Behavioral authority =
-`Tdill1980/restylepro-os` at `113d137dbe8813ca3bf70c8d7265ad081ebd4524`.**
+**Owner directive (PASTE_TO_CLAUDE.md, 2026-08-27): "Call 1 must execute through
+the actual deployed `supabase/functions/design-panel-ai-generate/index.ts` …
+For its ATLAS/artboard mode, import and execute the real `buildDesignerPrompt`
+from `../_shared/persona-designer-prompt.ts`. Do not reproduce its words in
+another runtime file." Behavioral authority = the pinned edge functions from
+`Tdill1980/restylepro-os` @ `113d137…` (persona-csr-enrich,
+persona-designer-generate + persona-designer-prompt.ts,
+persona-photographer-render, logopro-*, studio-os, view-angles-os,
+artboard-template-os) — the working creative stack the source audit
+(`SOURCE_AUDIT/WORKING_DESIGN_PIPELINE_EDGE_FUNCTIONS.md`) identifies.**
 
 How it is implemented — DO NOT re-split it:
 
-- The creative half of Call 1 IS `design-panel-ai-generate`'s own builder. The
-  vendored source (`supabase/functions/design-panel-ai-generate/index.ts` =
-  113d137 + one delimited `ATLAS MODE` patch inside the artboard branch) is
-  mechanically transpiled by `scripts/build-designpanel-authoring.mjs` into the
-  committed `runtime/vendor/designpanel-authoring.cjs`, which
-  `flat-first-atlas.cjs`'s `atlasCreativeRules()` invokes as a PURE INPUT
-  MAPPING (`mode:'artboard', atlasTopology:true`). It adds no prompt text.
-- The reconstructed `buildAtlasArtboardDesignIQDirection` (and its
-  `buildFlatDesignIQDirection` alias) are DELETED. Its SIDE-TWIN "photographic
-  scene / landmarks" sentence — the only flank-specific language and the prime
-  suspect for the flanks broken since v4 — does not exist in v9; the topology
-  half keeps the mirror-twin requirement in flat-sheet terms only.
-- Executed parity, not vibes: `tests/designpanel-vendor-parity.test.mjs` runs
-  the patched builder and a pinned pristine-113d137 twin on locked fixtures and
-  requires BYTE-IDENTICAL output for every non-atlas mode, plus bundle
-  freshness by source hash. `tests/atlas-designiq-artboard.test.mjs` asserts
-  the assembled Call-1 prompt carries no studio, camera, vehicle-stage,
-  flank-viewpoint or 3D-proof language (owner protection #3) and that the whole
-  professional-designer contract (auto-logo with typeface-is-not-a-logo,
-  supplied-logo faithfulness, per-field no-invention guards for phone AND
-  website, VisionBoardIQ intents that never disable the persona, exact
-  customer text) fires inside the one call.
-- Versions moved together and are DB-gated:
-  `designpro-flat-first-atlas-20260826.v9-dpag` +
-  `designpanel-ai-generate.artboard.20260826.v3-vendored`
-  (`supabase/migrations/20260826090000_designpro_atlas_canonical_dpag_v9.sql`).
-- Owner protection #5: `DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS=1` (or the
-  `maxAuthoringAttempts` option) pins the re-roll budget to exactly one for an
-  acceptance run, and the revision records
-  `metadata.geminiImageRequestCount` — a claimed "one call" is proven by that
-  number.
-- The acceptance route is the harness with `runtime_source: checkout` and
-  `arms: B`: this ref's runtime modules run inside the EXACT deployed image's
-  dependencies while production traffic keeps serving the existing release —
-  no deploy, no cutover (owner protection #4). Report such a run only as a
-  "canonical Call-1 candidate for owner review", never as ATLAS
-  migrated/restored/complete (owner protection #6).
+- `design-panel-ai-generate` (deployed on this project) is the SOLE Call-1
+  network endpoint: `mode: "atlas-artboard"` dispatches to
+  `handleAtlasArtboard`, which makes exactly ONE Gemini image request and
+  returns the flattened master + full provenance (requestId, functionName,
+  sourceCommit, promptVersion `atlas-artboard-persona.20260827.v1`, model,
+  imageRequestCount, masterSha256).
+- The prompt assembly is ONE canonical module,
+  `supabase/functions/_shared/atlas-artboard-prompt.ts`: it EXECUTES the real
+  `buildDesignerPrompt` (never re-types it), swaps ONLY the presentation tail
+  (studio scene, side camera, on-vehicle photo lines) for the flat-master
+  output contract via exact-match throw-on-drift replacements, and appends the
+  owner logo contract (LOGO_REQUIREMENT + typeface-is-not-a-logo) and contact
+  lock (no invented phone/website) — byte-locked against
+  `runtime/designiq-prompt.cjs` so the two homes cannot drift.
+- `runtime/flat-first-atlas.cjs` assembles NO creative text and makes NO
+  direct Gemini request for Call 1: `atlasEdgeRequestBody` maps the verified
+  input + GENIE manifest onto the request, `callAtlasArtboardEdge` POSTs it,
+  verifies the returned master sha256, enforces `imageRequestCount === 1`, and
+  records the provenance chain (`metadata.atlasEdgeProvenance`). QC gate,
+  cut-out fill, deterministic panel cut and lineage hashes are unchanged.
+  `PROMPT_VERSION` = `designpro-flat-first-atlas-20260827.v10-edge`.
+- DELETED from the product path (do not restore): the transpiled vendor bridge
+  `runtime/vendor/designpanel-authoring.cjs` + its build script, the
+  reconstructed `buildAtlasArtboardDesignIQDirection`, the SIDE-TWIN
+  photographic-scene framing, and any direct Call-1 Gemini invocation outside
+  the edge function.
+- Locked by `tests/atlas-artboard-edge-call1.test.mjs` (both halves of the
+  contract, plus the persona-drift alarm), and the assembly module is
+  transpiled and EXECUTED by `tests/designpro-persona-contract.test.mjs` /
+  `tests/designpro-reference-authority.test.mjs`.
+- The v9 DB pin (20260826090000) was applied to production and REVERTED live
+  the same night (the deployed runtime still emits v8);
+  `20260827010000_designpro_atlas_revert_v9_pin.sql` captures that revert
+  idempotently. SHIP ORDER for v10: the DB gate must learn v10-edge in the
+  same cutover as the runtime that emits it — runner and gate may not diverge
+  across a customer-visible window again.
+- Acceptance (owner protection): a dark, isolated Call-1 run through the
+  DEPLOYED edge function — report requestId, function name + source SHA,
+  prompt version, image-request count exactly 1, zero direct Call-1 Gemini
+  requests elsewhere, the master image, and the source-master hash + six crop
+  hashes. STOP after showing the owner the master; no proofs, no traffic
+  switch, until she approves it against HVAC Hero / Iron Horse.
 
 ## 🖥️ RULE 0.16 — CALLS 1–7 EXECUTE ON THIS SERVER (2026-08-23)
 

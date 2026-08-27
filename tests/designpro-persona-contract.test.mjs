@@ -14,7 +14,35 @@ const SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"].map((s
 }));
 const manifest = atlas.buildAtlasManifest(SURFACES);
 const VEHICLE = { year: "2022", make: "Ford", model: "F250 Crew Cab", type: "truck" };
-const authored = (input) => atlas._test.atlasPrompt({ vehicle: VEHICLE, finish: "Gloss", ...input }, manifest, {});
+// The canonical Call-1 assembly (owner directive 2026-08-27): the deployed
+// edge module, transpiled and EXECUTED — the same code path production runs.
+const { loadPersonaDesigner } = await import("./helpers/load-persona-designer.mjs");
+const edge = await loadPersonaDesigner();
+const PANELS = SURFACES.map((sfc) => ({ label: sfc.surfaceKey.toUpperCase(), widthInches: sfc.widthInches, heightInches: sfc.heightInches }));
+const authored = (input) => edge.buildAtlasArtboardPrompt({
+  brief: String(input.brief || ""),
+  authoringMode: input.mode === "restyle" ? "restyle" : "commercial",
+  vehicleYear: VEHICLE.year,
+  vehicleMake: VEHICLE.make,
+  vehicleModel: VEHICLE.model,
+  finish: "Gloss",
+  companyName: input.companyName,
+  phone: input.phone,
+  industryType: input.industry,
+  logoSupplied: Boolean(input.logoAsset),
+  hasVisionBoardImages: Array.isArray(input.visionBoardImages) && input.visionBoardImages.length > 0,
+  visionboardIntent: input.visionboardIntent === "exact_reference" || input.visionboardIntent === "artboard_projection"
+    ? "exact_reference" : "style_inspiration",
+  panels: PANELS,
+});
+
+// THE TWO HOMES OF THE OWNER LOGO CONTRACT CANNOT DRIFT. The edge assembly
+// carries its own copies (Deno cannot import the runtime's .cjs); byte
+// equality is what keeps them one contract.
+test("the edge assembly's logo literals are byte-identical to the runtime's", () => {
+  assert.equal(edge.ATLAS_LOGO_AUTHORING_RULE, LOGO_AUTHORING_RULE);
+  assert.equal(edge.LOGO_REQUIREMENT, LOGO_REQUIREMENT);
+});
 
 // THE LOGO CONDITION IS DECIDED BY THE INPUT.
 //
@@ -70,8 +98,11 @@ test("a supplied logo is used faithfully and never asked to be redesigned", () =
   const prompt = authored({
     mode: "commercial", brief: "Wrap for Harbor Point Electric",
     companyName: "Harbor Point Electric", logoAsset: { path: "logo.png" },
+    visionBoardImages: [{}], visionboardIntent: "exact_reference",
   });
-  assert.match(prompt, /logo authority; preserve its form, spelling, proportions and palette exactly/);
+  // The supplied logo travels as an exact-reference image; the persona's own
+  // EXACT rule governs faithful reproduction of it.
+  assert.match(prompt, /VISIONBOARD REFERENCES — EXACT: The attached reference images ARE the wrap design/);
   assert.ok(!prompt.includes(LOGO_AUTHORING_RULE), "do not also demand an invented mark");
   assert.ok(!prompt.includes(LOGO_REQUIREMENT), "do not also demand an invented mark");
 });
@@ -97,13 +128,12 @@ test("the professional designer persona and its elevation fire on every brief sh
   ];
   for (const input of shapes) {
     const prompt = authored(input);
-    assert.ok(prompt.includes(COMMERCIAL_AUTHORING_PERSONA), "the persona is not optional");
-    // Elevation and depth, in whichever branch's words: commercial states them
-    // as COMMERCIAL_DEPTH, restyle as DESIGN AMPLIFICATION. Both must promise
-    // layered depth and texture rather than a flat generated background.
-    assert.match(prompt, /layered elements|layered thematic elements/, "layered depth must be required");
+    // The pinned Persona-2 identity is not optional (owner directive
+    // 2026-08-27: the persona stack is the creative authority, executed).
+    assert.match(prompt, /elite vehicle wrap graphic designer/, "the persona is not optional");
+    assert.match(prompt, /\$5K-\$10K per design\. SEMA featured/, "the pro register is not optional");
     assert.match(prompt, /texture/, "texture must be required");
-    assert.match(prompt, /amplif|elevat/i, "the brief must be elevated, not restated");
+    assert.match(prompt, /layered depth|depth in every element/, "depth must be required");
   }
 });
 
@@ -165,8 +195,6 @@ test("VisionBoardIQ failure leaves the design call to the brief, not broken", as
 // elevation block, so attaching one picture silently stripped COMMERCIAL_DEPTH
 // and the professional judgment from a commercial brief.
 test("neither the presence nor the absence of references changes the core design behaviour", () => {
-  const { COMMERCIAL_DEPTH, PROFESSIONAL_JUDGMENT, LOGO_AUTHORING_RULE, LOGO_REQUIREMENT } =
-    require("../runtime/designiq-prompt.cjs");
   const base = { mode: "commercial", brief: "Wrap for Harbor Point Electric", companyName: "Harbor Point Electric" };
   const intents = [
     ["none", {}],
@@ -175,24 +203,16 @@ test("neither the presence nor the absence of references changes the core design
   ];
   for (const [label, extra] of intents) {
     const prompt = authored({ ...base, ...extra });
-    assert.ok(prompt.includes(COMMERCIAL_DEPTH), `${label}: layered depth must survive`);
-    assert.ok(prompt.includes(PROFESSIONAL_JUDGMENT), `${label}: professional judgment must survive`);
+    assert.match(prompt, /elite vehicle wrap graphic designer/, `${label}: the persona must survive`);
+    assert.match(prompt, /YOUR DESIGN APPROACH/, `${label}: the design approach must survive`);
     assert.ok(prompt.includes(LOGO_REQUIREMENT), `${label}: auto-logo must survive`);
     assert.ok(prompt.includes(LOGO_AUTHORING_RULE), `${label}: the mark rule must survive`);
   }
-  // Style DNA travels under BOTH intents, and the intents stay distinct: style
-  // inspiration composes from it, an exact reference reproduces the images and
-  // carries the DNA only to the zones they do not show.
-  const withRefs = (extra) => authored({ ...base, visionBoardImages: [{}], styleDescriptors: "ART STYLE: bold", ...extra });
-  const inspiration = withRefs({ visionboardIntent: "style_inspiration" });
-  assert.match(inspiration, /STYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design/);
-  assert.match(inspiration, /ART STYLE: bold/);
-
-  const exact = withRefs({ visionboardIntent: "exact_reference" });
-  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer\'s own approved wrap design/, "the reproduction rule governs");
-  assert.match(exact, /ART STYLE: bold/, "and the derived DNA still reaches the call");
-  assert.match(exact, /the images win/, "subordinate to the reference, never competing with it");
-
-  // Style DNA is derived FROM references, so it says nothing without them.
-  assert.doesNotMatch(authored(base), /STYLE INSPIRATION|style DNA/);
+  // The two intents stay distinct, in the persona's own words.
+  const inspiration = authored({ ...base, visionBoardImages: [{}], visionboardIntent: "style_inspiration" });
+  assert.match(inspiration, /VISIONBOARD REFERENCES — STYLE INSPIRATION: Study the mood, colors, and artistic style/);
+  const exact = authored({ ...base, visionBoardImages: [{}], visionboardIntent: "exact_reference" });
+  assert.match(exact, /VISIONBOARD REFERENCES — EXACT: The attached reference images ARE the wrap design/);
+  // No references, no visionboard block at all.
+  assert.doesNotMatch(authored(base), /VISIONBOARD REFERENCES/);
 });

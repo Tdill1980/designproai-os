@@ -154,3 +154,21 @@ verify_jwt = false
 
 [functions.designpro-text-layer-generate]
 verify_jwt = false
+
+# Pinned RestylePro Persona stack (restylepro-os 113d137) — the creative
+# authority the atlas-artboard mode executes via _shared imports. The persona/
+# logopro functions themselves are not wired to any caller yet.
+[functions.persona-csr-enrich]
+verify_jwt = false
+
+[functions.persona-designer-generate]
+verify_jwt = false
+
+[functions.persona-photographer-render]
+verify_jwt = false
+
+[functions.logopro-generate-concepts]
+verify_jwt = false
+
+[functions.logopro-finalize-logo]
+verify_jwt = false

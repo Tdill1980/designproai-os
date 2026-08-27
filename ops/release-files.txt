@@ -16,7 +16,6 @@ runtime/topaz-upscale.cjs
 runtime/logo-removal.cjs
 runtime/studio-os.cjs
 runtime/designiq-prompt.cjs
-runtime/vendor/designpanel-authoring.cjs
 runtime/output-qc.cjs
 # The QC certificate page stamp.build emits beside the seal. Omitting it would
 # kill the claimant at require time rather than merely drop the certificate.

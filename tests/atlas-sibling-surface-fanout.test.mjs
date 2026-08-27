@@ -184,9 +184,14 @@ test("8: backwards or upside-down customer text is still fatal", () => {
   // The proof reviewer, which this change does not touch, still convicts
   // reversed lettering -- that is how fc2f2e80 was caught.
   assert.match(proofQc, /mirror|backwards|reversed|forward-reading/i);
-  // And the authoring prompt still requires forward-reading text on both flanks.
-  const atlasPrompt = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  assert.match(atlasPrompt, /every word\/logo\/URL\/number remains forward-reading on both zones/);
+  // And the authoring prompt still requires forward-reading text on both
+  // flanks -- it lives in the deployed edge function's flat contract now
+  // (owner directive 2026-08-27), with the runtime's corrective note carrying
+  // the same requirement on a mirror refusal.
+  const edgeSource = readFileSync(new URL("../supabase/functions/_shared/atlas-artboard-prompt.ts", import.meta.url), "utf8");
+  assert.match(edgeSource, /every word and logo forward-reading on both/);
+  const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  assert.match(atlasSource, /forward-reading on both/);
 });
 
 // 9. the old mirror path is unreachable from active ATLAS generation

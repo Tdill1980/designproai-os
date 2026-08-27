@@ -32,7 +32,24 @@ const SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"].map((s
 }));
 const manifest = atlas.buildAtlasManifest(SURFACES);
 const VEHICLE = { year: "2022", make: "Ford", model: "F250 Crew Cab", type: "truck" };
-const authored = (input) => atlas._test.atlasPrompt({ vehicle: VEHICLE, finish: "Gloss", ...input }, manifest, {});
+// The canonical Call-1 assembly (owner directive 2026-08-27), executed.
+const { loadPersonaDesigner } = await import("./helpers/load-persona-designer.mjs");
+const edgeAssembly = await loadPersonaDesigner();
+const authored = (input) => edgeAssembly.buildAtlasArtboardPrompt({
+  brief: String(input.brief || ""),
+  authoringMode: input.mode === "restyle" ? "restyle" : "commercial",
+  vehicleYear: VEHICLE.year,
+  vehicleMake: VEHICLE.make,
+  vehicleModel: VEHICLE.model,
+  finish: "Gloss",
+  companyName: input.companyName,
+  phone: input.phone,
+  website: input.website,
+  logoSupplied: Boolean(input.logoAsset),
+  hasVisionBoardImages: Array.isArray(input.visionBoardImages) && input.visionBoardImages.length > 0,
+  visionboardIntent: input.visionboardIntent === "exact_reference" ? "exact_reference" : "style_inspiration",
+  panels: [{ label: "DRIVER SIDE", widthInches: 100, heightInches: 60 }],
+});
 
 const swatch = async (color) => sharp({
   create: { width: 64, height: 64, channels: 3, background: color },
@@ -67,15 +84,18 @@ test("a customer reference declares artwork authority and distinguishes itself f
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     visionboardIntent: "exact_reference", visionBoardImages: [{}],
   });
-  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's own approved wrap design/);
-  assert.match(exact, /Installer-map examples remain topology-only and must never influence style/);
+  // The persona's own EXACT rule declares the customer reference the artwork
+  // authority; the flat contract's LAYOUT ONLY line keeps the structural
+  // example out of style.
+  assert.match(exact, /VISIONBOARD REFERENCES — EXACT: The attached reference images ARE the wrap design/);
+  assert.match(exact, /teaches LAYOUT ONLY — take no artwork, wording, logo, colour or style from it/);
 
   const inspiration = authored({
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     visionboardIntent: "style_inspiration", visionBoardImages: [{}],
   });
-  assert.match(inspiration, /REFERENCE FIREWALL/);
-  assert.match(inspiration, /TOPOLOGY\/LAYOUT references only/);
+  assert.match(inspiration, /VISIONBOARD REFERENCES — STYLE INSPIRATION/);
+  assert.match(inspiration, /teaches LAYOUT ONLY/);
 });
 
 // WITH NO CUSTOMER REFERENCE, THE FIREWALL STILL STANDS.
@@ -85,8 +105,10 @@ test("a customer reference declares artwork authority and distinguishes itself f
 // one — and nothing may take style from it.
 test("with no customer reference at all, the structural example is still firewalled", () => {
   const prompt = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(prompt, /REFERENCE FIREWALL/);
-  assert.match(prompt, /IGNORE their palette, imagery, text, logos, brand and style/);
+  // The firewall line rides the flat-master output contract on every call —
+  // reference supplied or not — because the structural example is always
+  // attached by the transport.
+  assert.match(prompt, /teaches LAYOUT ONLY — take no artwork, wording, logo, colour or style from it/);
 });
 
 // THE METADATA KEEPS THE CLASSES APART.

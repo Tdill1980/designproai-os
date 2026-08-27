@@ -35,7 +35,7 @@ const angles = require("./view-angles.cjs");
 // Versioned independently from the A.T.L.A.S. topology prompt so an immutable
 // master authored with an older/partial DesignPanel port can never be reused
 // after the proven artboard implementation changes.
-const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.20260826.v3-vendored";
+const DESIGNPANEL_ARTBOARD_PORT_VERSION = "designpanel-ai-generate.artboard.20260827.v4-edge";
 
 // THE MODEL THE AUTHORITY AUTHORS ON, BY NAME.
 //
@@ -189,9 +189,10 @@ function supplementalBrandDirection({ website, qrEnabled, qrUrl, textLayerPrompt
 // "photographic scene / landmarks" sentence was the only flank-specific
 // language in Call 1 and the prime suspect for the vehicle-silhouette flanks
 // broken since v4. The ONE canonical creative implementation is the vendored
-// real builder: runtime/vendor/designpanel-authoring.cjs (built from
+// real builder: the deployed design-panel-ai-generate edge function's
+// atlas-artboard mode (supabase/functions/_shared/atlas-artboard-prompt.ts,
 // supabase/functions/design-panel-ai-generate/index.ts by
-// scripts/build-designpanel-authoring.mjs), invoked by
+// owner directive 2026-08-27), invoked over the network by
 // runtime/flat-first-atlas.cjs atlasCreativeRules(). Do not re-add a port.
 /**
  * The proven commercial authoring persona, copied byte for byte from
