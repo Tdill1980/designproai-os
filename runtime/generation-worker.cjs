@@ -31,6 +31,10 @@ const { buildDesignIQPrompt } = require("./designiq-prompt.cjs");
 const { createProvider } = require("./generation-provider.cjs");
 const {
   ARTIFACT_AUDIT_CONTRACT,
+  ATLAS_PANEL_AUTHORITY_CONTRACT,
+  ATLAS_PHOTOGRAPHER_PROOF_CONTRACT,
+  ATLAS_PROOF_EXECUTION,
+  ATLAS_PROOF_STAGE,
   ATLAS_SERVER_PROVIDER_CONTRACT,
   createAtlasDesignPanelProvider,
   createDesignPanelServerProvider,
@@ -503,22 +507,43 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
     const authority = metadata.authority && typeof metadata.authority === "object"
       ? metadata.authority : {};
     const viewAuthority = viewAuthorityFor(flatAtlas, sourceViewType);
+    const panelAuthority = atlasPanelForProofView(flatAtlas, sourceViewType);
+    // THE PRODUCER THIS ASSERTS MUST BE THE PRODUCER THAT RAN.
+    //
+    // These three blocks described the retired in-runtime projection: a
+    // `generate-color-render` stage executing `server-native`, stamping its own
+    // prompt hash and the studio/angle/photorealism contract versions, bound to
+    // a fresh crop of the master. #232 replaced all of that with the deployed
+    // photographer (RULE 0.29) and did not update the assert, so every
+    // A.T.L.A.S. run was refused at lineage however good its proofs.
+    //
+    // It stayed invisible because Call 1 kept failing first. Generation
+    // a14acec2-93e8-4d57-a6a2-40b88721b65a (2026-08-28) is what surfaced it:
+    // an accepted master, six panels cut, all SEVEN proofs rendered and passing
+    // their own visual QC at confidence 1 -- then refused here.
+    //
+    // The strings now come from the provider that writes them, so the two
+    // cannot drift apart again.
     if (metadata.providerContract !== ATLAS_SERVER_PROVIDER_CONTRACT
-      || providerMetadata.stage !== "generate-color-render"
-      || providerMetadata.execution !== "server-native"
+      || providerMetadata.stage !== ATLAS_PROOF_STAGE
+      || providerMetadata.execution !== ATLAS_PROOF_EXECUTION
       || providerMetadata.anchoredToFlatAtlas !== true
       || providerMetadata.atlasConditioningVerified !== true) {
-      throw atlasLineageError(`${sourceViewType} was not produced by the server Atlas projection contract`);
+      throw atlasLineageError(`${sourceViewType} was not produced by the pinned photographer stage`);
     }
-    if (providerMetadata.contract !== ARTIFACT_AUDIT_CONTRACT
-      || providerMetadata.sourceViewType !== sourceViewType
-      || !/^[0-9a-f]{64}$/.test(String(providerMetadata.promptHash || ""))
-      || !Number.isSafeInteger(providerMetadata.promptLength)
-      || providerMetadata.promptLength < 1
-      || providerMetadata.studioContractVersion !== STUDIO_CONTRACT_VERSION
-      || providerMetadata.viewAngleContractVersion !== angles.VIEW_ANGLE_CONTRACT_VERSION
-      || providerMetadata.photographyContractVersion !== PHOTOREALISM_CONTRACT_VERSION) {
-      throw atlasLineageError(`${sourceViewType} is missing the locked angle/photography/lighting audit`);
+    // The photographer's own provenance, in place of the retired runtime
+    // producer's prompt audit. Every field is stamped by the edge function and
+    // carried through by the provider, and each one answers a question the old
+    // audit answered about the old producer: WHICH function, at WHICH pinned
+    // commit, through WHICH provider and model, in exactly ONE image request.
+    if (providerMetadata.proofProducer !== ATLAS_PROOF_STAGE
+      || providerMetadata.proofContract !== ATLAS_PHOTOGRAPHER_PROOF_CONTRACT
+      || !/^[0-9a-f]{40}$/.test(String(providerMetadata.proofSourceCommit || ""))
+      || !/^[0-9a-f-]{36}$/.test(String(providerMetadata.proofRequestId || ""))
+      || providerMetadata.proofProvider !== "google"
+      || !String(providerMetadata.proofModel || "").trim()
+      || Number(providerMetadata.proofImageRequestCount) !== 1) {
+      throw atlasLineageError(`${sourceViewType} is missing the photographer's provenance audit`);
     }
     if (validation.contract !== ATLAS_PROOF_QC_CONTRACT
       || validation.expectedView !== ATLAS_QC_VIEW_CONTRACTS[sourceViewType]?.label
@@ -536,9 +561,16 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
       || providerMetadata.atlasManifestContentHash !== flatAtlas.manifestAsset.contentHash
       || providerMetadata.atlasRevisionId !== flatAtlas.revisionId
       || Number(providerMetadata.atlasRevisionSequence) !== Number(flatAtlas.revisionSequence)
-      || providerMetadata.atlasZoneContract !== viewAuthority.contract
-      || providerMetadata.atlasZoneContentHash !== viewAuthority.contentHash
-      || providerMetadata.atlasZoneSurfaceKey !== viewAuthority.surfaceKey) {
+      // THE ARTWORK BINDING IS THE PANEL, NOT A CROP OF THE MASTER.
+      //
+      // RULE 0.28 §6: a proof hash-binds to the persisted Call-1/Call-9 panel
+      // the customer actually buys, rather than to a fresh crop of the sheet.
+      // That is what the photographer is handed and what it verifies before it
+      // renders; this assert follows it to the same artifact.
+      || providerMetadata.atlasZoneContract !== ATLAS_PANEL_AUTHORITY_CONTRACT
+      || providerMetadata.atlasZoneContentHash !== panelAuthority.contentHash
+      || providerMetadata.atlasZoneSurfaceKey !== panelAuthority.surfaceKey
+      || providerMetadata.sourcePanelHash !== panelAuthority.contentHash) {
       throw atlasLineageError(`${sourceViewType} points at a different Atlas revision`);
     }
     if (authority.contract !== flatAtlas.contract

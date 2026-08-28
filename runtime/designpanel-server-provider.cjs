@@ -1050,6 +1050,9 @@ function createDesignPanelServerProvider(options = {}) {
 /** The stage name the proof metadata reports, now that the producer is the
  *  deployed photographer rather than an in-runtime generate-color-render port. */
 const ATLAS_PROOF_STAGE = "persona-photographer-render";
+const ATLAS_PROOF_EXECUTION = "edge-photographer";
+/** The contract the deployed photographer stamps on every atlas-proof response. */
+const ATLAS_PHOTOGRAPHER_PROOF_CONTRACT = "designpro.atlas-photographer-proof.v1";
 const ATLAS_PROOF_BUCKET = "wrap-files";
 /** The proof's artwork authority is the persisted panel, not a transient crop. */
 const ATLAS_PANEL_AUTHORITY_CONTRACT = "designpro.atlas-panel-authority.v1";
@@ -1244,6 +1247,17 @@ function createAtlasDesignPanelProvider(options = {}) {
 module.exports = {
   ARTIFACT_AUDIT_CONTRACT,
   ATLAS_SERVER_PROVIDER_CONTRACT,
+  // The photographer's identity, exported so the worker's lineage assert names
+  // the SAME producer this provider records rather than a second copy of the
+  // strings. The two drifted once already: #232 moved the proofs onto the
+  // deployed photographer and the assert kept demanding the retired
+  // `generate-color-render` / `server-native` pair, so no A.T.L.A.S. run could
+  // clear lineage (generation a14acec2, 2026-08-28 -- seven good proofs, all
+  // refused).
+  ATLAS_PANEL_AUTHORITY_CONTRACT,
+  ATLAS_PHOTOGRAPHER_PROOF_CONTRACT,
+  ATLAS_PROOF_EXECUTION,
+  ATLAS_PROOF_STAGE,
   SERVER_PROVIDER_CONTRACT,
   DesignPanelServerError,
   buildReproductionPrompt,

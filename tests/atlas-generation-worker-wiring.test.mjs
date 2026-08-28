@@ -73,9 +73,16 @@ const FLAT_ATLAS = Object.freeze({
   projection: { contentHash: "b".repeat(64), sourceMasterHash: "a".repeat(64) },
   manifestAsset: { contentHash: "c".repeat(64) },
   viewAuthorities: VIEW_AUTHORITIES,
+  // The persisted Call-1 panels, with the storage identity a proof's artwork
+  // authority is resolved through. `atlasPanelForProofView` refuses a panel
+  // that has no path or no hash, because a proof cannot be bound to an
+  // artifact that does not exist yet.
   callOnePanels: Object.freeze([...new Set(Object.values(ZONE_SURFACE_BY_VIEW))].map((surfaceKey) => Object.freeze({
     surfaceKey,
     contentHash: createHash("sha256").update(`panel-${surfaceKey}`).digest("hex"),
+    storagePath: `designpro/tenant/generation/flat-first/v1/revisions/1/panels/${surfaceKey}.png`,
+    contentType: "image/png",
+    sourceMasterHash: "a".repeat(64),
   }))),
   masterAcceptance: Object.freeze({
     passed: true,
@@ -105,16 +112,21 @@ function atlasView(sourceViewType, contentHash, extraProvider = {}) {
     metadata: {
       providerContract: "designpro.atlas-designpanel-server-provider.v1",
       provider: {
-        contract: "designpro.generation-artifact-audit.v1",
         sourceViewType,
-        renderMethod: "generate-color-render",
-        promptHash: "9".repeat(64),
-        promptLength: 4000,
-        studioContractVersion: "designpro.studio-os.port-ab0f0638.v1",
-        viewAngleContractVersion: "designpro.view-angles-os.port-ab0f0638.v1",
-        photographyContractVersion: "designpro.photorealism-prompt.port.v1",
-        stage: "generate-color-render",
-        execution: "server-native",
+        // THE DEPLOYED PHOTOGRAPHER IS THE PRODUCER (RULE 0.29 / #232). The
+        // retired in-runtime projection stamped a prompt hash and the
+        // studio/angle/photorealism contract versions; the photographer stamps
+        // its own function identity, its pinned source commit, and the single
+        // image request it made.
+        stage: "persona-photographer-render",
+        execution: "edge-photographer",
+        proofProducer: "persona-photographer-render",
+        proofContract: "designpro.atlas-photographer-proof.v1",
+        proofSourceCommit: "113d137dbe8813ca3bf70c8d7265ad081ebd4524",
+        proofRequestId: "94b78e73-41e6-4a59-a579-dd87d38029ef",
+        proofProvider: "google",
+        proofModel: "gemini-3-pro-image",
+        proofImageRequestCount: 1,
         anchoredToFlatAtlas: true,
         atlasConditioningVerified: true,
         atlasMasterContentHash: FLAT_ATLAS.master.contentHash,
@@ -122,9 +134,12 @@ function atlasView(sourceViewType, contentHash, extraProvider = {}) {
         atlasManifestContentHash: FLAT_ATLAS.manifestAsset.contentHash,
         atlasRevisionId: FLAT_ATLAS.revisionId,
         atlasRevisionSequence: FLAT_ATLAS.revisionSequence,
-        atlasZoneContract: zone.contract,
-        atlasZoneContentHash: zone.contentHash,
+        // The artwork authority is the surface's persisted panel, not a crop
+        // of the master (RULE 0.28 §6).
+        atlasZoneContract: "designpro.atlas-panel-authority.v1",
+        atlasZoneContentHash: zone.panelContentHash,
         atlasZoneSurfaceKey: zone.surfaceKey,
+        sourcePanelHash: zone.panelContentHash,
         // SIX SIBLING SURFACES (8576619a, owner-approved): every view is
         // projected directly from the flat master. The four retired-path keys
         // are injected only by the refusal tests below, via extraProvider.
@@ -240,7 +255,7 @@ test("Atlas refuses generic accepted rows and dependents from a previous Driver"
   delete generic.metadata.provider.anchoredToFlatAtlas;
   assert.throws(
     () => assertAtlasViewLineage({ views: [generic], flatAtlas: FLAT_ATLAS }),
-    (error) => error.code === "generation_atlas_lineage_invalid" && /server Atlas projection/.test(error.message),
+    (error) => error.code === "generation_atlas_lineage_invalid" && /pinned photographer stage/.test(error.message),
   );
 
   // Any of the four retired anchor/mirror keys is refused on ANY view --
