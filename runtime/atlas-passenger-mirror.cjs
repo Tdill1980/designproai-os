@@ -174,8 +174,32 @@ async function mirrorPassengerFromDriver({ masterBytes, manifest, brandBands = [
   }
 
   // Back into sheet space, where the passenger zone lives.
-  const zoneBytes = rotation
-    ? await sharp(composed, { limitInputPixels: false }).rotate(360 - rotation).png(PNG_OPTIONS).toBuffer()
+  //
+  // THE INVERSE BELONGS TO THE PASSENGER ZONE, NOT THE DRIVER'S.
+  //
+  // This used to undo `rotation` -- the DRIVER's -- on the way back in. The two
+  // flanks sit on opposite sides of the sheet and carry opposite rotations
+  // (`buildAtlasManifest` fits passenger at +90 and driver at -90), so the
+  // checker reads driver with `outputRotationDegrees` +90 and passenger with
+  // -90. Undoing the driver's rotation therefore landed the composed flank
+  // exactly 180 degrees out, and the master QC -- which compares the passenger
+  // zone against the mirrored driver zone after each zone's OWN rotation --
+  // could never be satisfied by it.
+  //
+  // Measured on the live GENIE geometry for a 2018 Transit (zones 1153x2782,
+  // driver -90 / passenger +90): the composed passenger panel came back as
+  // `flop(rotate180(driver panel))` at MAE 0.000000 against that transform,
+  // where the checker requires `flop(driver panel)`. Exactly one 180-degree
+  // turn, exactly as the two rotations predict.
+  //
+  // Live cost: generations f72c10f0-8e36-489f-95c0-da6c55a75c5b and
+  // 45f0ea61-0f65-4a30-98c8-f1a0e29f9591 (2026-08-28) both died at Call 1 on
+  // `passengerMirrorMae` 0.37993 and 0.39117 -- the repair ran on both, and on
+  // both it could not move the number, because the flank it wrote was upside
+  // down relative to what the gate measures.
+  const passengerInverse = (360 - zoneRotation(passenger)) % 360;
+  const zoneBytes = passengerInverse
+    ? await sharp(composed, { limitInputPixels: false }).rotate(passengerInverse).png(PNG_OPTIONS).toBuffer()
     : composed;
   const zoneMeta = await sharp(zoneBytes).metadata();
   if (Number(zoneMeta.width) !== region.width || Number(zoneMeta.height) !== region.height) {
