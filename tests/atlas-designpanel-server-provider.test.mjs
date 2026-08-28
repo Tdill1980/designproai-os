@@ -274,6 +274,18 @@ test("real atlasProjectionParts passes its exact native crop through the provide
     bleed: { top: 5, right: 5, bottom: 5, left: 5 },
   }));
   const manifest = flatFirst.buildAtlasManifest(panelSurfaces);
+  // The cut is fail-closed on the GENIE manifest identity now.
+  manifest.geometryResolution = {
+    contract: "designpro.genie-manifest.v1",
+    genieManifestId: "0".repeat(32),
+    genieManifestHash: "0".repeat(64),
+    state: "derived",
+    derivationContract: "designpro.genie-front-derived.v1",
+    derivedSurfaces: ["front"],
+    geometrySourceRowId: "row-fixture",
+    productionEligible: false,
+    operatorValidated: false,
+  };
   const guide = await flatFirst.renderAtlasGuide(manifest);
   const masterBytes = (await flatFirst.normalizeAtlasMaster(guide, manifest)).bytes;
   const projection = await flatFirst.projectionDerivative(masterBytes);

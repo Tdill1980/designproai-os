@@ -7,6 +7,12 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const contract = require("../../runtime/runtime-contract.cjs");
 const readiness = require("../../runtime/runtime-readiness.cjs");
+/** The GENIE catalog with no row for the vehicle under test. */
+const catalogMiss = {
+  select() { return this; }, eq() { return this; }, ilike() { return this; },
+  limit() { return Promise.resolve({ data: [], error: null }); },
+};
+
 const universal = require("../../runtime/genie-universal-resolver.cjs");
 const claimant = require("../../runtime/designpro-standalone-claimant.cjs");
 const claimantSource = readFileSync(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");
@@ -347,7 +353,19 @@ test("an unvalidated Universal GENIE candidate parks the stage without invoking 
     limit() { return Promise.resolve({ data: [{ id: candidateId, requires_validation: true }], error: null }); },
   };
   const sb = {
-    from(table) { assert.equal(table, "designpro_vehicle_specs_universal"); return query; },
+    // THE RESOLVER CONSULTS THE MEASURED GENIE CATALOG FIRST.
+    //
+    // This stub used to assert the table was the universal candidate table and
+    // throw otherwise -- and the throw was invisible, because the caller wrapped
+    // the catalog lookup in `.catch(() => null)`. That swallow is gone (a lookup
+    // failure is not a catalog miss), so the fixture has to model both tables:
+    // the catalog answers empty, which is the real state for this vehicle, and
+    // the candidate table answers as before.
+    from(table) {
+      if (table === "vehicle_dimensions") return catalogMiss;
+      assert.equal(table, "designpro_vehicle_specs_universal");
+      return query;
+    },
     async rpc(name, payload) { calls.push({ name, payload }); return { error: null }; },
   };
   await assert.rejects(
@@ -367,7 +385,19 @@ test("Calls 1-7 reports unvalidated GENIE geometry without inventing a workflow 
     limit() { return Promise.resolve({ data: [{ id: candidateId, requires_validation: true }], error: null }); },
   };
   const sb = {
-    from(table) { assert.equal(table, "designpro_vehicle_specs_universal"); return query; },
+    // THE RESOLVER CONSULTS THE MEASURED GENIE CATALOG FIRST.
+    //
+    // This stub used to assert the table was the universal candidate table and
+    // throw otherwise -- and the throw was invisible, because the caller wrapped
+    // the catalog lookup in `.catch(() => null)`. That swallow is gone (a lookup
+    // failure is not a catalog miss), so the fixture has to model both tables:
+    // the catalog answers empty, which is the real state for this vehicle, and
+    // the candidate table answers as before.
+    from(table) {
+      if (table === "vehicle_dimensions") return catalogMiss;
+      assert.equal(table, "designpro_vehicle_specs_universal");
+      return query;
+    },
     async rpc(name, payload) { calls.push({ name, payload }); return { error: null }; },
   };
   await assert.rejects(
@@ -408,7 +438,19 @@ test("A.T.L.A.S. preview alone accepts cited provisional geometry while producti
   };
   const calls = [];
   const sb = {
-    from(table) { assert.equal(table, "designpro_vehicle_specs_universal"); return query; },
+    // THE RESOLVER CONSULTS THE MEASURED GENIE CATALOG FIRST.
+    //
+    // This stub used to assert the table was the universal candidate table and
+    // throw otherwise -- and the throw was invisible, because the caller wrapped
+    // the catalog lookup in `.catch(() => null)`. That swallow is gone (a lookup
+    // failure is not a catalog miss), so the fixture has to model both tables:
+    // the catalog answers empty, which is the real state for this vehicle, and
+    // the candidate table answers as before.
+    from(table) {
+      if (table === "vehicle_dimensions") return catalogMiss;
+      assert.equal(table, "designpro_vehicle_specs_universal");
+      return query;
+    },
     async rpc(name, payload) { calls.push({ name, payload }); return { error: null }; },
   };
 
@@ -509,7 +551,15 @@ test("cold-cache A.T.L.A.S. grounds once, stores the candidate as unvalidated, a
         };
       },
     };
-    const sb = { from(name) { assert.equal(name, "designpro_vehicle_specs_universal"); return table; } };
+    // The catalog is consulted first and has no row for this vehicle; the
+    // grounding path below is what the resolver then falls to.
+    const sb = {
+      from(name) {
+        if (name === "vehicle_dimensions") return catalogMiss;
+        assert.equal(name, "designpro_vehicle_specs_universal");
+        return table;
+      },
+    };
 
     const preview = await universal.resolveFlatAtlasPreviewDimensions(
       sb,
@@ -613,7 +663,13 @@ test("cold-cache A.T.L.A.S. retries one malformed grounding response and correct
       };
     },
   };
-  const sb = { from(name) { assert.equal(name, "designpro_vehicle_specs_universal"); return table; } };
+  const sb = {
+    from(name) {
+      if (name === "vehicle_dimensions") return catalogMiss;
+      assert.equal(name, "designpro_vehicle_specs_universal");
+      return table;
+    },
+  };
 
   const preview = await universal.resolveFlatAtlasPreviewDimensions(
     sb,

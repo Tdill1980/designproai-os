@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered seventy-five-migration chain', () => {
-  assert.equal(migrationNames.length, 75);
+test('fresh bootstrap contains one ordered seventy-seven-migration chain', () => {
+  assert.equal(migrationNames.length, 77);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -161,6 +161,12 @@ test('fresh bootstrap contains one ordered seventy-five-migration chain', () => 
       '20260827100000',
       '20260827110000',
       '20260827120000',
+      // The A.T.L.A.S. identity is minted at prompt, not 65s later when Call 1
+      // returns -- which is also where the handoff's revision id comes from.
+      '20260827130000',
+      // The SECOND handoff gate: `calls_1_7_handoff_state` re-imposed the
+      // seven-view barrier one line after the first gate was relaxed.
+      '20260827140000',
     ],
   );
 });
