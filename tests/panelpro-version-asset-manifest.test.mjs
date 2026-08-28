@@ -86,3 +86,42 @@ test("a missing artifact is reported missing, never substituted", () => {
   assert.match(manifest, /not produced yet/);
   assert.doesNotMatch(manifest, /placeholder|fallbackUrl|\|\| ".*\.png"/);
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE PAIR IS THE CONTAINER, AND IT DOES NOT COLLAPSE. (Trish 2026-08-28)
+//
+// "RevisionStudioIQ must have containers on right side column with print panel
+// next to 3d proofs — you already had this working!"
+//
+// It was working, and it still is — but the row collapsed to ONE wide tile
+// whenever either half was missing, so a board whose roof proof had not
+// rendered read as though the layout itself had broken. Live 2026-08-26,
+// generation 04cc0b29: five of seven views existed, roof was never rendered,
+// and its row showed a lone panel with nothing saying why.
+const layers = readFileSync(
+  new URL("../app/src/components/revisioniq/ProductionFlowLayersCard.tsx", import.meta.url),
+  "utf8",
+);
+
+test("the proof-beside-panel row never collapses to one column", () => {
+  assert.match(layers, /const cols = "grid-cols-2";/);
+  assert.doesNotMatch(
+    layers,
+    /panelUrl && showApproved \? "grid-cols-2" : "grid-cols-1"/,
+    "a missing half must not silently widen the other half",
+  );
+});
+
+test("an absent half is labeled, not blank and not substituted", () => {
+  assert.match(layers, /function MissingHalf\(/);
+  assert.match(layers, /3D proof not rendered yet/);
+  assert.match(layers, /Print panel not cut yet/);
+});
+
+test("proof stays LEFT and panel stays RIGHT", () => {
+  // RULE 0.21 in its own words. The customer approved the design on the
+  // vehicle; the panel is what that approval produced.
+  const proofAt = layers.indexOf("Your approved design");
+  const panelAt = layers.indexOf("label={panelLabel}");
+  assert.ok(proofAt > 0 && panelAt > 0 && proofAt < panelAt, "the proof column must come first");
+});
