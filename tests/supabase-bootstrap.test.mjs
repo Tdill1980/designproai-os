@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered seventy-nine-migration chain', () => {
-  assert.equal(migrationNames.length, 79);
+test('fresh bootstrap contains one ordered eighty-migration chain', () => {
+  assert.equal(migrationNames.length, 80);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -174,6 +174,9 @@ test('fresh bootstrap contains one ordered seventy-nine-migration chain', () => 
       // pack.verify demanded the GENIE manifest RULE 0.19 defers to the paid
       // half, so no free A.T.L.A.S. entice pack could ever be activated.
       '20260828110000',
+      // ...and the table CHECK behind it, which still demanded a manifest on a
+      // production run at INSERT -- before await_purchase, its first stage.
+      '20260828120000',
     ],
   );
 });
