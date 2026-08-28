@@ -100,6 +100,23 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     description: "2D proof, six production layers, QC gates and the verified output files",
     brandAnchor: true,
   },
+  // THE PRODUCTION CONTROL ROOM, IN THE NAV. (Trish 2026-08-28)
+  //
+  // "Add a link to PanelProStudio to admin tab so I can access and validate."
+  // PanelPro Studio is where a design's whole lineage is inspected and where
+  // the design team ticks the human QC that releases the preflight gate. Until
+  // now the only way in was to already know a generation id and type the URL,
+  // which is not a door -- it is a keyhole. `/designpro/studio-board` is the
+  // same board with no job pinned: it opens on the recent-jobs list.
+  {
+    key: "panelprostudio",
+    label: "PanelPro Studio",
+    route: "/designpro/studio-board",
+    icon: Factory,
+    pillar: "output",
+    tier: "starter",
+    description: "The production control room — A.T.L.A.S. master, panels, proofs, downloads and the human QC checklist",
+  },
   {
     key: "genieqc",
     label: "GENIE QC",

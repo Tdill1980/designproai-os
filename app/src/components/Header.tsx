@@ -226,6 +226,16 @@ const HeaderComponent = () => {
     <>
       {[
         ["/admin", "Admin dashboard"],
+        // THE PRODUCTION CONTROL ROOM NEEDS A DOOR. (Trish 2026-08-28)
+        //
+        // "Add a link to PanelProStudio to admin tab so I can access and
+        // validate." PanelPro Studio is where the design team inspects a
+        // design's whole lineage and ticks the human QC that releases the
+        // preflight gate -- and the only way in was to already know a
+        // generation id and type the URL. `/designpro/studio-board` is the same
+        // board with no job pinned: it opens on the recent-jobs list and the
+        // operator picks one, so the door does not require the key.
+        ["/designpro/studio-board", "PanelPro Studio"],
         ["/admin/production-packs", "Production packs"],
         ["/admin/production-files", "Production files"],
         ["/admin/production-test", "Production test bench"],
