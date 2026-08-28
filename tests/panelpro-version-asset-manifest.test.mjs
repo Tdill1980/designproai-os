@@ -125,3 +125,48 @@ test("proof stays LEFT and panel stays RIGHT", () => {
   const panelAt = layers.indexOf("label={panelLabel}");
   assert.ok(proofAt > 0 && panelAt > 0 && proofAt < panelAt, "the proof column must come first");
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE PRESENCE SWEEP THE DESIGN TEAM TICKS. (Trish 2026-08-28)
+//
+// "All the checks must be visible in UI on PanelProStudio ... it was just
+// missing the written checkboxes for QC the design team needs to use", followed
+// by the eleven items themselves.
+//
+// PREFLIGHT_CHECKS asks whether the pack is CORRECT. This asks the question
+// that comes first and had no written form: is every artifact actually there.
+// Each row shows evidence the board computes from the run's own artifacts, and
+// the box beside it is only ever ticked by a person -- RULE 0.22, PanelPro QC
+// is human design-team QC.
+const stages = readFileSync(
+  new URL("../app/src/lib/designpro-stages.ts", import.meta.url),
+  "utf8",
+);
+
+test("every item the owner listed has a written checkbox", () => {
+  for (const key of [
+    "atlasPresent", "designIdPresent", "sevenProofsPresent",
+    "proofsIndividuallyPresent", "resolutionPresent", "dimensionsPresent",
+    "panelQtyPresent", "assetsSeparate", "tiffPresent", "pngPresent",
+    "productionProofPresent",
+  ]) {
+    assert.ok(stages.includes(`"${key}"`), `${key} must be a written check`);
+  }
+  assert.match(board, /PACK_PRESENCE_CHECKS\.map\(\(\[key, label\]\) => \(/);
+});
+
+test("the sweep gates the preflight release, it is not decorative", () => {
+  assert.match(board, /PACK_PRESENCE_CHECKS\.every\(\(\[key\]\) => preflight\[key\]\)/);
+  // And it travels into the receipt the QC certificate is written from.
+  assert.match(board, /PACK_PRESENCE_CHECKS\.reduce\(/);
+});
+
+test("evidence is computed from artifacts, and the box is still human", () => {
+  assert.match(board, /function packPresenceEvidence\(/);
+  // Real counts, not assertions: cameras rendered, panels cut, formats present.
+  for (const source of ["job.raw_views", "callOnePanels", "job.outputs", "job.logos"]) {
+    assert.ok(board.includes(source), `evidence must read ${source}`);
+  }
+  // Nothing pre-ticks a box.
+  assert.doesNotMatch(board, /checked=\{true\}/);
+});

@@ -38,6 +38,39 @@ export const PREFLIGHT_CHECKS: Array<[string, string]> = [
   ["textLockVerified", "Every required body-text character matches the frozen revision text lock"],
 ];
 
+/**
+ * IS EVERYTHING ACTUALLY THERE — the design team's presence sweep.
+ *
+ * Owner, 2026-08-28: "All the checks must be visible in UI on PanelProStudio
+ * ... it was just missing the written checkboxes for QC the design team needs
+ * to use", followed by the list itself.
+ *
+ * PREFLIGHT_CHECKS below asks whether the pack is CORRECT. This asks the
+ * question that comes first and had no written form: is every artifact the
+ * pack is supposed to contain actually present. A designer could see a board
+ * full of tiles and still not be able to state, on the record, that the seven
+ * proofs and eighteen production files exist.
+ *
+ * Each row is rendered beside EVIDENCE the board computes from the server's own
+ * artifacts -- the counts, the formats, the identities. The evidence is
+ * computed; the box is only ever ticked by a person. That split is RULE 0.22's:
+ * PanelPro QC is human design-team QC, and a machine may show what it found but
+ * never sign for it.
+ */
+export const PACK_PRESENCE_CHECKS: Array<[string, string]> = [
+  ["atlasPresent", "A.T.L.A.S. master present, with its Generation ID"],
+  ["designIdPresent", "Design ID present"],
+  ["sevenProofsPresent", "All 7 3D proofs present"],
+  ["proofsIndividuallyPresent", "Each 3D proof is its own file, individually downloadable"],
+  ["resolutionPresent", "Resolution stated on every panel"],
+  ["dimensionsPresent", "Trim, print and bleed dimensions stated on every panel"],
+  ["panelQtyPresent", "All 6 print panels present"],
+  ["assetsSeparate", "Logos / branding separated as their own assets"],
+  ["tiffPresent", "TIFF production files present"],
+  ["pngPresent", "PNG production files present"],
+  ["productionProofPresent", "2D Production Proof present"],
+];
+
 export const FINAL_CHECKS: Array<[string, string]> = [
   ["outputHashesVerified", "Every PNG, TIFF and EPS output hash matches the verified output receipt"],
   ["printDimensionsVerified", "Final print dimensions, resolution and bleed match GENIE"],
