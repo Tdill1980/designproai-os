@@ -571,55 +571,65 @@ select ok(
 -- were promoted from Call 1, not on the workflow type: geometry a run cannot
 -- otherwise account for still has to come from GENIE.
 
--- Everything pack.verify wants EXCEPT the manifest, on both runs.
+-- The identity columns are WRITE-ONCE (guard_designpro_run_identity_immutable),
+-- so the order here is the test: give the runs what pack.verify wants one piece
+-- at a time, and the refusals in between are evidence rather than setup.
+-- A refused completion RAISEs before it writes, so one lease survives all of it.
+
+-- First: the pack receipt and the source contract hash, but no artifact set
+-- hash. The A.T.L.A.S. exemption covers the MANIFEST only, so this is still
+-- refused -- proving the exemption is not a blanket bypass of pack identity.
 update public.designpro_workflow_runs
 set source_contract_hash=repeat('7',64),
-    artifact_set_hash=repeat('8',64),
     results=coalesce(results,'{}'::jsonb)
-      || jsonb_build_object('packReceipt',jsonb_build_object('verified',true)),
-    dimension_manifest_id=null, manifest_hash=null
+      || jsonb_build_object('packReceipt',jsonb_build_object('verified',true))
 where id in ((select atlas_run from runs),(select standard_run from runs));
+
+create temporary table verify_leases on commit drop as
+select
+  pg_temp.lease((select atlas_run from runs),'pack.verify',
+    '7a000000-0000-4000-8000-000000000001') as atlas_verify,
+  pg_temp.lease((select standard_run from runs),'pack.verify',
+    '7c000000-0000-4000-8000-000000000001') as standard_verify;
+
+select throws_ok($t9a$
+  select public.complete_designpro_stage(
+    (select atlas_verify from verify_leases),
+    '7a000000-0000-4000-8000-000000000001',
+    pg_temp.identity_for((select atlas_run from runs)),
+    jsonb_build_object('verified',true,'receiptKind','entice.pack-verify'),
+    repeat('7',64),'[]'::jsonb)
+$t9a$,'finalized_entice_identity_required',
+  'the exemption covers the manifest only, never the rest of the pack identity');
+
+-- Now the artifact set hash. Every identity the free pack CAN have is present;
+-- only the GENIE manifest is missing, and it is missing by design.
+update public.designpro_workflow_runs set artifact_set_hash=repeat('8',64)
+where id in ((select atlas_run from runs),(select standard_run from runs));
+
+-- A run with no A.T.L.A.S. panel set has nothing else fixing its geometry, so
+-- the manifest requirement stands exactly as before.
+select throws_ok($t9b$
+  select public.complete_designpro_stage(
+    (select standard_verify from verify_leases),
+    '7c000000-0000-4000-8000-000000000001',
+    pg_temp.identity_for((select standard_run from runs)),
+    jsonb_build_object('verified',true,'receiptKind','entice.pack-verify'),
+    repeat('7',64),'[]'::jsonb)
+$t9b$,'finalized_entice_identity_required',
+  'a run that did not promote Call-1 panels still must bind a manifest');
 
 -- The A.T.L.A.S. run promoted its panels from Call 1, so it is accountable for
 -- its own geometry and pack.verify accepts it.
 select is(
   public.complete_designpro_stage(
-    pg_temp.lease((select atlas_run from runs),'pack.verify',
-      '7a000000-0000-4000-8000-000000000001'),
+    (select atlas_verify from verify_leases),
     '7a000000-0000-4000-8000-000000000001',
     pg_temp.identity_for((select atlas_run from runs)),
     jsonb_build_object('verified',true,'receiptKind','entice.pack-verify'),
     repeat('7',64),'[]'::jsonb
   ),true,'an A.T.L.A.S. entice pack verifies without a GENIE manifest'
 );
-
--- A run with no A.T.L.A.S. panel set has nothing else fixing its geometry, so
--- the requirement stands exactly as before.
-select throws_ok($t9$
-  select public.complete_designpro_stage(
-    pg_temp.lease((select standard_run from runs),'pack.verify',
-      '7c000000-0000-4000-8000-000000000001'),
-    '7c000000-0000-4000-8000-000000000001',
-    pg_temp.identity_for((select standard_run from runs)),
-    jsonb_build_object('verified',true,'receiptKind','entice.pack-verify'),
-    repeat('7',64),'[]'::jsonb)
-$t9$,'finalized_entice_identity_required',
-  'a run that did not promote Call-1 panels still must bind a manifest');
-
--- And the other three identities are untouched: strip one and it is refused
--- again, A.T.L.A.S. or not.
-update public.designpro_workflow_runs set artifact_set_hash=null
-where id=(select atlas_run from runs);
-select throws_ok($t9b$
-  select public.complete_designpro_stage(
-    pg_temp.lease((select atlas_run from runs),'pack.verify',
-      '7a000000-0000-4000-8000-000000000002'),
-    '7a000000-0000-4000-8000-000000000002',
-    pg_temp.identity_for((select atlas_run from runs)),
-    jsonb_build_object('verified',true,'receiptKind','entice.pack-verify'),
-    repeat('7',64),'[]'::jsonb)
-$t9b$,'finalized_entice_identity_required',
-  'the exemption covers the manifest only, never the pack identity');
 
 select * from finish();
 rollback;
