@@ -76,6 +76,23 @@ const SIDE_TO_VIEW: Record<string, string> = {
   "REAR": "rear",
 };
 
+/**
+ * The half of the pair that has no file yet.
+ *
+ * RULE 0.27 §3: "neither UI may synthesize its own representation of a missing
+ * canonical artifact." So the column is held and labeled rather than filled
+ * with a substitute, a stretched neighbour, or nothing at all -- an empty
+ * column reads as a broken layout, and a substituted one reads as a file that
+ * exists. This reads as what it is: the pair is real, this half has not landed.
+ */
+function MissingHalf({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-[88px] items-center justify-center rounded-md border border-dashed border-zinc-700 bg-zinc-900/40 p-2">
+      <span className="text-center text-[10px] font-medium text-zinc-500">{label}</span>
+    </div>
+  );
+}
+
 function Thumb({
   url,
   label,
@@ -607,7 +624,21 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           // for this side, so the flat panel doesn't read as "wrong design".
           const brandedView = designViews[SIDE_TO_VIEW[p.side] || ""] || "";
           const showApproved = !!brandedView;
-          const cols = panelUrl && showApproved ? "grid-cols-2" : "grid-cols-1";
+          // THE PAIR IS THE CONTAINER. IT DOES NOT COLLAPSE WHEN HALF IS MISSING.
+          //
+          // The column count used to be conditional on BOTH halves existing, so
+          // a surface whose proof had not rendered yet quietly became a single
+          // wide tile -- and a board with roof unrendered read as though the
+          // proof-beside-panel layout had broken, rather than as one missing
+          // file. Live 2026-08-26 on generation 04cc0b29: five of seven views
+          // existed, roof was never rendered, and its row showed only a panel
+          // with nothing saying why.
+          //
+          // RULE 0.21 states the row as REAL DESIGN PROOF | PRINT PANEL, and
+          // RULE 0.27 §3 requires a missing canonical artifact to be REPORTED
+          // missing rather than substituted or hidden. Both halves always hold
+          // their column; the absent one says what is absent.
+          const cols = "grid-cols-2";
           return (
             <div key={p.id} className="rounded-lg border border-zinc-800 p-2.5">
               <div className="flex items-center justify-between mb-2">
@@ -633,8 +664,10 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                   approval produced -- so the eye lands on what was approved and
                   then on what will print. Do not swap these back. */}
               <div className={cn("grid gap-2", cols)}>
-                {showApproved && <Thumb url={brandedView} label="Your approved design" onOpen={() => setPreview({ url: brandedView, label: `${p.side} — your approved design` })} />}
-                {panelUrl && (
+                {showApproved
+                  ? <Thumb url={brandedView} label="Your approved design" onOpen={() => setPreview({ url: brandedView, label: `${p.side} — your approved design` })} />
+                  : <MissingHalf label="3D proof not rendered yet" />}
+                {panelUrl ? (
                   <div className="relative">
                     <Thumb
                       url={panelUrl}
@@ -659,6 +692,8 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
                       />
                     )}
                   </div>
+                ) : (
+                  <MissingHalf label="Print panel not cut yet" />
                 )}
               </div>
             </div>
