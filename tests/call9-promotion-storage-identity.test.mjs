@@ -139,3 +139,46 @@ test("promotion re-cuts nothing", () => {
     assert.equal(branch.includes(producer), false, `promotion must not call ${producer}`);
   }
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// CALL 8 COULD NEVER RUN, AND THE DEFERRAL SAID "PRODUCTION CONTINUES".
+//
+// `buildCall8Proof` was extracted out of `executeEntice`, which had `baseUrl`
+// and `secret` as parameters. The extraction left them behind, so every entice
+// run threw `ReferenceError: baseUrl is not defined` 200ms in. The Call-8
+// deferral -- which exists for the right reason, so a proof the tool cannot
+// draw does not hold manufacturing hostage -- caught it and recorded
+// `call8_proof_unavailable`, a receipt that reads like a proof-service outage.
+//
+// So the 2D Production Proof the owner requires in the ZIP ("production proof
+// ... is a part of zip file that has 3d proofs, tiff, PNGs, production proof")
+// was never once produced, and nothing said so in those words. Live on run
+// 8e9fab59-d282-4f92-a8aa-86b2f4e1d09e.
+//
+// `node --check` cannot see this: a free variable is a runtime ReferenceError,
+// not a parse error. So the signature is asserted directly.
+
+test("Call 8 receives the tool endpoint it calls", () => {
+  const signature = claimant.match(/async function buildCall8Proof\(([^)]*)\)/);
+  assert.ok(signature, "buildCall8Proof must still exist");
+  const params = signature[1].split(",").map((p) => p.trim());
+  for (const needed of ["baseUrl", "secret"]) {
+    assert.ok(params.includes(needed), `buildCall8Proof must take ${needed} -- it calls callTool with it`);
+  }
+});
+
+test("every caller passes them", () => {
+  // Both the declaration and every call site must lead with the same three, so
+  // one shape covers all occurrences.
+  const occurrences = [...claimant.matchAll(/buildCall8Proof\(([^)]*)\)/g)].map((m) => m[1].trim());
+  assert.ok(occurrences.length >= 3, "expected the declaration and at least two call sites");
+  const nonConforming = occurrences.filter((args) => !args.startsWith("sb, baseUrl, secret,"));
+  assert.deepEqual(nonConforming, [], "a caller is not passing baseUrl/secret through");
+});
+
+test("a defect in the stage is not recorded as a proof-service outage", () => {
+  assert.match(claimant, /call8_stage_defect/);
+  assert.match(claimant, /error instanceof ReferenceError/);
+  // And a lost lease still escapes the deferral entirely.
+  assert.match(claimant, /error\?\.code === "stage_lease_lost" \|\| error\?\.retryable === true\) throw error/);
+});

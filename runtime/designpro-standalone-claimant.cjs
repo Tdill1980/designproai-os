@@ -815,7 +815,7 @@ async function withHeavyOutputLease(sb, stage, work) {
  * failure MEANS, which differs by run: fatal where the proof is the source Call
  * 9 cuts from, recorded-and-deferred where A.T.L.A.S. already cut the panels.
  */
-async function buildCall8Proof(sb, run, stage, runtimeConfig, input) {
+async function buildCall8Proof(sb, baseUrl, secret, run, stage, runtimeConfig, input) {
     const rebound = await getRun(sb, run.id);
     // GENIE deploys on order, so the free run has no bound production manifest.
     // Call 8 draws a dimensioned proof either way: pre-purchase it uses the
@@ -1011,13 +1011,33 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const atlasPanels = await callOnePanelSet(sb, run).catch(() => null);
     if (atlasPanels) {
       try {
-        return await buildCall8Proof(sb, run, stage, runtimeConfig, input);
+        return await buildCall8Proof(sb, baseUrl, secret, run, stage, runtimeConfig, input);
       } catch (error) {
         // A lost lease is not a Call 8 defect -- the stage was aborted before
         // it could persist anything, and swallowing it would record a deferral
         // that never happened.
         if (error?.code === "stage_lease_lost" || error?.retryable === true) throw error;
-        const code = String(error?.code || error?.stageCode || "call8_proof_unavailable");
+        // A DEFECT IN THIS STAGE IS NOT A PROOF-SERVICE OUTAGE. (2026-08-28)
+        //
+        // The deferral above exists so a proof the tool cannot draw does not
+        // hold manufacturing hostage. It is not a place to launder OUR bugs:
+        // `buildCall8Proof` was extracted out of `executeEntice` and left
+        // `baseUrl` and `secret` behind, so every entice run since threw
+        // `ReferenceError: baseUrl is not defined` and recorded it as
+        // `call8_proof_unavailable` -- a business-sounding receipt saying
+        // "production continues" over a stage that could never run. Live on run
+        // 8e9fab59-d282-4f92-a8aa-86b2f4e1d09e: the 2D Production Proof the
+        // owner requires in the ZIP was never once produced, and nothing said
+        // so in those words.
+        //
+        // A native error carries no `code`, which is exactly what distinguishes
+        // it from every failure this stage raises deliberately. Still deferred,
+        // because the policy above is right, but named as ours.
+        const nativeDefect = !error?.code && !error?.stageCode
+          && (error instanceof ReferenceError || error instanceof TypeError || error instanceof RangeError);
+        const code = nativeDefect
+          ? "call8_stage_defect"
+          : String(error?.code || error?.stageCode || "call8_proof_unavailable");
         const message = String(error?.message || error);
         console.error(`[DESIGNPRO-OS] Call 8 deferred for run ${run.id}: ${code}: ${message}`);
         return complete(sb, stage, await getRun(sb, run.id), {
@@ -1032,7 +1052,7 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         }, null, []);
       }
     }
-    return buildCall8Proof(sb, run, stage, runtimeConfig, input);
+    return buildCall8Proof(sb, baseUrl, secret, run, stage, runtimeConfig, input);
   }
   if (stage.stage_key === "panels.build") {
     // ⚠️ READ THIS STAGE AS `panels.verify_and_promote`. (Trish 2026-08-28.)
