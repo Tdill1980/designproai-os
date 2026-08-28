@@ -266,7 +266,7 @@ function canonicalIdentities(surfaces) {
  * This runtime's Call 8 already holds the approved per-surface artwork, and no
  * model may run in Calls 8-11.
  */
-async function renderMasterProof({ render, manifest, proofFonts, vehicle, designName, finish, designId, orderNumber, bleedInches = BLEED_INCHES }) {
+async function renderMasterProof({ render, manifest, proofFonts, vehicle, designName, finish, designId, orderNumber, generationId, bleedInches = BLEED_INCHES }) {
   if (!render || render.contract !== "designpro.production-surface-render.v1") {
     fail("proof_render_invalid", "the 2D proof must be derived from a completed production render");
   }
@@ -469,7 +469,20 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
   const footerY = bodyTop + bodyH + COVERAGE_H;
   markup.push(line(MARGIN, footerY, W - MARGIN, footerY));
   markup.push(label(fonts, `Approved By: ______________________    Signature: ______________________    Date: ____________`, { x: MARGIN, y: footerY + 20 + 17, size: 17, fill: INK }));
-  markup.push(label(fonts, `${designId || "DesignID pending"}  ·  Order # ${orderNumber || "pending"}  ·  revision ${render.revisionId}`, { x: MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED }));
+  // THE GENERATION ID BELONGS ON THE SHEET. (Trish 2026-08-28)
+  //
+  // "Production proof ie a screenshot of the panels on a sheet with vehicle
+  // make model, design order #, generation id, dimensions." Every other item
+  // was already stamped -- the vehicle line above, the per-surface W/H rules
+  // beside each panel, the Design ID and Order # here. The generation id was
+  // the one identity a shop could not read off the page, and it is the id that
+  // every other table carries forward and the one PanelPro is opened on.
+  //
+  // It is the FIRST permanent identity a design has: minted at Create Design,
+  // before Call 1 runs, while the Design ID and Order # are assigned later when
+  // the Production Pack is purchased. So a proof printed before that purchase
+  // could name neither -- and now always names one.
+  markup.push(label(fonts, `${designId || "DesignID pending"}  ·  Order # ${orderNumber || "pending"}  ·  revision ${render.revisionId}  ·  generation ${generationId || "pending"}`, { x: MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED }));
   markup.push(label(fonts, `master ${String(render.masterHash).slice(0, 16)}  ·  render ${String(render.renderHash).slice(0, 16)}  ·  GENIE ${String(render.dimensionManifestId)}  ·  no image generation`, { x: W - MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED, anchor: "end" }));
 
   if (BAND_H) {

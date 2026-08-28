@@ -27,6 +27,7 @@ import {
   EXPECTED_OUTPUT_FILES,
   FINAL_CHECKS,
   OUTPUT_FORMATS,
+  PACK_PRESENCE_CHECKS,
   outputFormatOf,
   PREFLIGHT_CHECKS,
   STAGE_LABEL,
@@ -47,6 +48,7 @@ import {
 // rendering validation results threw `cn is not defined` and white-screened the
 // whole board into the ErrorBoundary (caught in the 2026-07-24 button audit).
 import { cn } from "@/lib/utils";
+import { VersionAssetManifest } from "@/components/designpro/VersionAssetManifest";
 import {
   getProductionPanelPackState,
   type ProductionFlowAssetRow,
@@ -881,6 +883,15 @@ function AtlasProgressCard({
           holed. PanelPro is the source-of-truth inspection surface, so they
           belong in its UI rather than in a diagnostic log. */}
       {atlas && <AtlasForensicRecord atlas={atlas} />}
+
+      {/* EVERY FILE THIS VERSION PRODUCED, EACH ONE DOWNLOADABLE.
+          RULE 0.22 lists the complete asset set the design team takes off this
+          board. The card above proves the master exists and prints its record;
+          this is where a designer actually gets the files -- the six panels
+          with the dimensions that make them checkable, the seven proofs, and
+          the 2D Production Proof, all bound to the SELECTED version so V1 stays
+          reachable after V2 is made. */}
+      <VersionAssetManifest job={job} atlas={atlas} />
     </div>
   );
 }
@@ -1735,6 +1746,43 @@ function ActivityHistory({ job }: { job: PanelProStudioJob }) {
  * check is explicitly confirmed -- so both are listed rather than summarised,
  * and neither is pre-ticked.
  */
+/**
+ * WHAT THE SERVER ACTUALLY HAS, FOR EACH PRESENCE CHECK.
+ *
+ * Computed from the run's own artifacts -- never asserted, never defaulted. A
+ * check whose evidence reads "0/7" is telling the design team the truth about
+ * the pack in front of them, and the box beside it stays theirs to tick.
+ */
+function packPresenceEvidence(job: PanelProStudioJob): Record<string, string> {
+  const atlas = job.atlas_versions[job.atlas_versions.length - 1] || null;
+  const panels = atlas?.callOnePanels || [];
+  const cameras = new Set(
+    (job.raw_views || []).filter((view) => view.signedUrl).map((view) => String(view.sourceViewType)),
+  );
+  const outputs = job.outputs || [];
+  const formatCount = (format: string) =>
+    outputs.filter((row) => outputFormatOf(String(row.storagePath || "")) === format).length;
+  const withDims = panels.filter((panel) =>
+    Number(panel.trimWidthIn) > 0 && Number(panel.printWidthIn) > 0 && Number(panel.bleedInches) > 0).length;
+  const withPpi = panels.filter((panel) => Number(panel.effectivePpi) > 0).length;
+
+  return {
+    atlasPresent: atlas?.master?.contentHash
+      ? `master ${atlas.master.contentHash.slice(0, 16)} · generation ${job.generation_id}`
+      : "no accepted master",
+    designIdPresent: job.design_id || "not assigned",
+    sevenProofsPresent: `${cameras.size}/7 cameras rendered`,
+    proofsIndividuallyPresent: `${(job.raw_views || []).filter((view) => view.signedUrl).length} proof files`,
+    resolutionPresent: `${withPpi}/${panels.length || 6} panels state effective PPI`,
+    dimensionsPresent: `${withDims}/${panels.length || 6} panels state trim, print and bleed`,
+    panelQtyPresent: `${panels.length}/${PRODUCTION_SURFACES.length} panels cut`,
+    assetsSeparate: `${(job.logos || []).length} separated logo asset(s)`,
+    tiffPresent: `${formatCount("tiff")}/${PRODUCTION_SURFACES.length} TIFF`,
+    pngPresent: `${formatCount("png")}/${PRODUCTION_SURFACES.length} PNG`,
+    productionProofPresent: job.concept_json?.flat_proof_url ? "present" : "not produced",
+  };
+}
+
 function ProductionPackSection({
   job,
   approvedSides,
@@ -1765,7 +1813,9 @@ function ProductionPackSection({
   // not been laid on a real template and confirmed to fit, and releasing it
   // sends artwork to print that nobody physically checked.
   const qcOutstanding = PRODUCTION_SURFACES.filter((side) => !qcPassedSides.has(side));
-  const preflightReady = PREFLIGHT_CHECKS.every(([key]) => preflight[key])
+  const presenceEvidence = packPresenceEvidence(job);
+  const preflightReady = PACK_PRESENCE_CHECKS.every(([key]) => preflight[key])
+    && PREFLIGHT_CHECKS.every(([key]) => preflight[key])
     && allSidesApproved && qcOutstanding.length === 0;
   const finalReady = FINAL_CHECKS.every(([key]) => finalQc[key]);
 
@@ -1780,6 +1830,7 @@ function ProductionPackSection({
       await dpApi.approvePreflight(
         job.generation_id,
         {
+          ...(PACK_PRESENCE_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as PreflightQc),
           ...(PREFLIGHT_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as PreflightQc),
           approvedSides: [...approvedSides],
           // What was verified on each side, so the receipt records the physical
@@ -1851,6 +1902,36 @@ function ProductionPackSection({
         </div>
         {!preflightDone && (
           <>
+            {/* IS EVERYTHING THERE. The presence sweep the owner asked for
+                (2026-08-28), written out so the design team can tick it rather
+                than infer it from a wall of tiles. The evidence beside each row
+                is computed from the run's own artifacts; the box is only ever
+                ticked by a person -- RULE 0.22: PanelPro QC is human QC, and a
+                machine may show what it found but never sign for it. */}
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
+              Everything present
+            </div>
+            <ul className="mb-3 space-y-1.5">
+              {PACK_PRESENCE_CHECKS.map(([key, label]) => (
+                <li key={key} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-emerald-600"
+                    checked={!!preflight[key]}
+                    onChange={(event) => setPreflight((prev) => ({ ...prev, [key]: event.target.checked }))}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[11px] leading-snug text-gray-600">{label}</span>
+                    <span className="block truncate font-mono text-[10px] text-gray-400" title={presenceEvidence[key]}>
+                      {presenceEvidence[key]}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
+              Everything correct
+            </div>
             <ul className="space-y-1.5">
               {PREFLIGHT_CHECKS.map(([key, label]) => (
                 <li key={key} className="flex items-start gap-2">

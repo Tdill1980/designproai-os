@@ -52,6 +52,7 @@ function fail(code, message) {
 async function regenerate({
   master, manifest, plates, loadAsset, loadFont, proofFonts,
   pxPerInch, bleedInches, vehicle, designName, finish, designId, orderNumber,
+  generationId,
   maxSurfaceBytes, maxViewBytes,
 }) {
   const render = await renderProductionSurfaces({
@@ -63,6 +64,7 @@ async function regenerate({
     vehicle, designName, finish,
     designId: designId || master.designId,
     orderNumber,
+    generationId: generationId || master.generationId,
   });
   // The 3D proof is presentation. It is derived from the same surfaces the
   // panels are cut from and contributes no pixel to any of them, so a plate set
