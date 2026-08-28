@@ -29,6 +29,7 @@ const TOOL_WORDMARKS: Record<string, WordmarkSplit> = {
   designpro:        { base: "Design",     suffix: "Pro", subSuffix: "AI" },
   revisionstudio:   { base: "RevisionStudio", suffix: "IQ" },
   productionjobs:   { base: "Production\u00A0", suffix: "jobs" },
+  panelprostudio:   { base: "PanelPro\u00A0",   suffix: "Studio" },
   genieqc:          { base: "GENIE\u00A0",      suffix: "QC" },
   wrapbox:          { base: "Wrap",       suffix: "Box" },
   gallery:          { base: "Gallery",    suffix: "" },
