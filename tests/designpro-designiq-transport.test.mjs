@@ -25,7 +25,15 @@ test("the restored customer hook carries every existing DesignIQ control into on
   assert.match(hook, /website: explicitWebsite\(params\) \|\| combinedContact\.website/);
   assert.match(hook, /phone: combinedContact\.phone/);
   assert.match(hook, /companyName: params\.companyName\?\.trim\(\)/);
-  assert.match(hook, /mode: params\.companyName\?\.trim\(\) \? "commercial" : params\.mode/);
+  // ONE INFERENCE, not four. The company-name-only test that lived inline here
+  // is now step 1 of `lib/inferDesignMode`, alongside phone / website / industry
+  // / logo and the brief-keyword fallback -- the rule the owner specified on
+  // 2026-08-28 ("Mode is inferred once from the prepared intake"). The hook must
+  // apply that helper rather than re-deciding locally.
+  assert.match(hook, /import \{ inferDesignMode \} from "@\/lib\/inferDesignMode"/);
+  assert.match(hook, /mode: inferDesignMode\(\{/);
+  assert.ok(!/mode: params\.companyName\?\.trim\(\)/.test(hook),
+    "the hook re-decides the mode locally again");
 });
 
 test("VisionBoard references are uploaded and verified before identity enters Calls 1-7", () => {

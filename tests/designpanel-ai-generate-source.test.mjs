@@ -51,7 +51,24 @@ test("the Standard standalone worker executes Calls 1-7 on this server", () => {
   assert.match(provider, /execution: "server-native"/);
   assert.match(provider, /resize\(1024, 1024/);
   assert.match(provider, /View 1 bytes do not match the immutable database identity/);
-  assert.doesNotMatch(provider, /\/functions\/v1|supabase\.functions|createSignedUrl/);
+  // THE STANDARD HALF STILL EXECUTES IN THIS PROCESS.
+  //
+  // This used to read the whole file, because the whole file was server-native.
+  // It no longer is: the A.T.L.A.S. proof provider is a TRANSPORT to the
+  // deployed persona-photographer-render (owner, 2026-08-28: "DO NOT CREATE
+  // ANOTHER 3D EDGE FUNCTION" — use the proven one). That is a deliberate edge
+  // call and the only one this file may contain, so the assertion is scoped to
+  // the Standard half rather than weakened.
+  const standardHalf = provider.slice(
+    0,
+    provider.indexOf("THE PROVEN PHOTOGRAPHER RENDERS EVERY A.T.L.A.S. PROOF"),
+  );
+  assert.ok(standardHalf.length > 1000, "the Standard half of the provider is gone");
+  assert.doesNotMatch(standardHalf, /\/functions\/v1|supabase\.functions|createSignedUrl/);
+  // ...and the ONE edge call in the file is the sanctioned photographer.
+  assert.deepEqual([...new Set(provider.match(/\/functions\/v1\/[a-z-]+/g) || [])],
+    ["/functions/v1/persona-photographer-render"],
+    "the provider gained an edge call other than the proven 3D photographer");
   assert.doesNotMatch(productionDeploy, /repair-designpanel-edge-chain/);
   assert.doesNotMatch(productionDeploy, /functions deploy generate-color-render/);
   assert.match(provider, /maxProviderAttempts:\s*4/);

@@ -84,6 +84,7 @@ const {
   generateOrReuseFlatAtlas,
   MASTER_PROVIDER_CONTRACT,
   PROMPT_VERSION: ATLAS_PROMPT_VERSION,
+  atlasPanelForProofView,
   viewAuthorityFor,
 } = require("./flat-first-atlas.cjs");
 
@@ -842,6 +843,11 @@ function createGenerationWorker({
         atlas: {
           conditioningPartsFor: (sourceViewType) => atlasProjectionParts(flatAtlas, sourceViewType),
           conditioningIdentityFor: (sourceViewType) => viewAuthorityFor(flatAtlas, sourceViewType),
+          // THE ARTWORK AUTHORITY THE PHOTOGRAPHER IS SENT. Resolved lazily,
+          // per surface, at generation time -- the panel it names may not exist
+          // when the slots are built, and `panel.ready(surface)` is what
+          // releases that surface's proof.
+          panelFor: (sourceViewType) => atlasPanelForProofView(flatAtlas, sourceViewType),
           authorityMetadata: {
             masterContentHash: flatAtlas.master.contentHash,
             surfaceSourceHash: flatAtlas.projection.sourceMasterHash,

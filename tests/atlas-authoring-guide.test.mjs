@@ -77,7 +77,7 @@ const GUIDE_ANNOTATIONS = [
  * GLYPH MAY SIT INSIDE A CONTAINER. The containers are labeled; the paint area
  * stays clean.
  */
-test("every authoring-guide label sits outside every printable region", () => {
+test("every authoring-guide label sits outside every EXTRACTION rectangle", () => {
   const svg = authoringGuideSvg(manifest).toString("utf8");
   const anchors = [...svg.matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"/g)];
   assert.equal(anchors.length, (svg.match(/<text\b/gi) || []).length,
@@ -87,10 +87,45 @@ test("every authoring-guide label sits outside every printable region", () => {
     const x = Number(rawX);
     const y = Number(rawY);
     for (const zone of manifest.zones) {
-      const trim = zone.trim || zone;
-      const inside = x > trim.x && x < trim.x + trim.w && y > trim.y && y < trim.y + trim.h;
+      const cut = zone.extraction || zone;
+      const inside = x > cut.x && x < cut.x + cut.w && y > cut.y && y < cut.y + cut.h;
       assert.equal(inside, false,
-        `a label at ${x},${y} sits inside the ${zone.surfaceKey} printable region`);
+        `a label at ${x},${y} sits inside the ${zone.surfaceKey} extraction rectangle`);
+    }
+  }
+});
+
+/**
+ * THE BLEED BAND IS PART OF THE CUSTOMER'S PANEL. IT IS NOT SPARE ROOM.
+ *
+ * For one day the caption sat in the bleed band -- inside `zone`, outside
+ * `zone.trim` -- on the reasoning that the panel is "finished to trim". It is
+ * not: `cutOnePanel` extracts `zone.extraction`, which is the whole container,
+ * and stores the panel at PRINT size with the bleed attached.
+ *
+ * Live cost, request f3eb40c1 (2026-08-27): the model copied the caption off
+ * the artboard, the cut carried it into the passenger panel, and the proof
+ * judge -- handed that panel as artwork authority -- refused the proof with
+ * "The text 'PASSENGER SIDE' and dimensions visible in the authority crop are
+ * not present on the candidate proof." Four attempts, no passenger proof.
+ *
+ * So this asserts the band is inside the cut and that nothing is drawn there.
+ */
+test("no caption is drawn in a container's bleed band, which the panel cut keeps", () => {
+  const svg = authoringGuideSvg(manifest).toString("utf8");
+  const anchors = [...svg.matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"/g)]
+    .map(([, x, y]) => ({ x: Number(x), y: Number(y) }));
+  for (const zone of manifest.zones) {
+    const band = zone.trim.y - zone.y;
+    assert.ok(band > 0, `${zone.surfaceKey} has no bleed band to test`);
+    // The band is inside what the extractor cuts -- that is the whole point.
+    assert.ok(zone.extraction.y <= zone.y && zone.extraction.h >= zone.h,
+      `${zone.surfaceKey}'s cut no longer contains its bleed band`);
+    for (const anchor of anchors) {
+      const inBand = anchor.x >= zone.x && anchor.x <= zone.x + zone.w
+        && anchor.y >= zone.y && anchor.y < zone.trim.y;
+      assert.equal(inBand, false,
+        `a caption sits in the ${zone.surfaceKey} bleed band, which prints on the customer's panel`);
     }
   }
 });
@@ -168,6 +203,8 @@ test("a glyph put back INSIDE a container fails the run instead of authoring", a
   const hood = manifest.zones.find((zone) => zone.surfaceKey === "hood");
   const x = Math.round(hood.trim.x + hood.trim.w / 2);
   const y = Math.round(hood.trim.y + hood.trim.h / 2);
+  // ...and the bleed band, which is equally inside the panel cut.
+  const bandY = Math.round(hood.y + (hood.trim.y - hood.y) / 2);
   const withText = {
     ...manifest,
     zones: manifest.zones.map((zone) => ({
@@ -178,6 +215,19 @@ test("a glyph put back INSIDE a container fails the run instead of authoring", a
   await assert.rejects(
     () => renderAtlasAuthoringGuide(withText),
     (error) => error?.code === "flat_atlas_authoring_guide_contains_text",
+  );
+
+  const inBleedBand = {
+    ...manifest,
+    zones: manifest.zones.map((zone) => ({
+      ...zone,
+      guideFill: `#4a4a4a"/><text x="${x}" y="${bandY}" font-size="40">HOOD</text><rect fill="#4a4a4a`,
+    })),
+  };
+  await assert.rejects(
+    () => renderAtlasAuthoringGuide(inBleedBand),
+    (error) => error?.code === "flat_atlas_authoring_guide_contains_text",
+    "a glyph in the bleed band is a glyph in the printed panel and must fail closed",
   );
 });
 

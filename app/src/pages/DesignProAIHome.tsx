@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { inferDesignMode } from "@/lib/inferDesignMode";
 import { useNavigate } from "react-router-dom";
 import {
   Sparkles, Infinity as InfinityIcon, FileText, Clock, ChevronLeft, ChevronRight,
@@ -202,7 +203,9 @@ export default function DesignProAIHome() {
   // DERIVED, NOT CHOSEN. A business identity means Commercial; otherwise this
   // is a styling job. The same rule the studio and the operator page already
   // apply ("a company name means commercial whatever the toggle says").
-  const mode = companyName.trim() || phone.trim() || website.trim() ? "Commercial" : "Restyle";
+  const mode = inferDesignMode({
+    companyName, phone, website, brief: prompt,
+  }) === "commercial" ? "Commercial" : "Restyle";
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
   const [year, setYear] = useState("");
   const [make, setMake] = useState("");

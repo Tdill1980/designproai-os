@@ -1016,6 +1016,25 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     return buildCall8Proof(sb, run, stage, runtimeConfig, input);
   }
   if (stage.stage_key === "panels.build") {
+    // ⚠️ READ THIS STAGE AS `panels.verify_and_promote`. (Trish 2026-08-28.)
+    //
+    // "Call 9 does not create these panels. `panels.build` is
+    // verification/promotion of the already-created Call-1 bytes and must throw
+    // on byte drift. Rename mentally/architecturally: panels.build =
+    // panels.verify_and_promote."
+    //
+    // The stage_key itself stays `panels.build`: it is written into the
+    // DesignProAI stage-run rows that already exist, seeded by migrations, and
+    // referenced by `stageOutput(...)` lookups elsewhere in this file.
+    // Renaming the key is a migration with a live-window risk
+    // (CLAUDE.md: the runner must ship in an EARLIER PR than the migration that
+    // schedules its stage), and it would buy nothing the comment does not.
+    //
+    // What matters is that nobody reads the word "build" as "produce". This
+    // stage creates no artwork. It re-reads the exact Call-1 storage paths,
+    // re-hashes the bytes, and throws `call9_call1_panel_changed` if they moved
+    // even one byte.
+    //
     // CALL 1 ALREADY CUT THESE PANELS. Promote those exact bytes.
     //
     // The panels RevisionStudio entices the buyer with, and the panels PanelPro

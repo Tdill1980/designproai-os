@@ -11,7 +11,6 @@ const {
   runAtlasProofStages,
 } = worker;
 const {
-  buildAtlasProjectionPrompt,
 } = require("../runtime/designpanel-server-provider.cjs");
 const angles = require("../runtime/view-angles.cjs");
 // Track the shipped contract rather than a literal: a prompt-version bump is
@@ -389,27 +388,18 @@ test("Atlas cannot finalize while any surface is still leased elsewhere", async 
   assert.deepEqual(events, [`run:${views.join(",")}:true`]);
 });
 
-test("Atlas provider carries locked angles, photography, Studio OS lighting, deterministic Passenger and pickup roof exclusion", () => {
-  const input = {
-    brief: "photographic pool wrap with Flamingo Pools logo",
-    finish: "Gloss",
-    vehicle: { year: "2024", make: "Ford", model: "F-250", type: "truck" },
-  };
-  const driver = buildAtlasProjectionPrompt({ input, sourceViewType: "side", hasDriverAnchor: false });
-  const passenger = buildAtlasProjectionPrompt({ input, sourceViewType: "passenger-side", hasDriverAnchor: true });
-  const roof = buildAtlasProjectionPrompt({ input, sourceViewType: "roof", hasDriverAnchor: true });
-
-  assert.match(driver, /PERFECTLY STRAIGHT side-on elevation/);
-  assert.match(driver, /DARK EPOXY WITH MIRROR REFLECTIONS/);
-  assert.match(driver, /Canon EOS R5, RF 24-70mm/);
-  assert.match(driver, /design-panel-ai-generate flat master/);
-  assert.match(driver, /generate-color-render photography stage/);
-  assert.match(passenger, /vehicle faces RIGHT in frame \(nose pointing right\)/);
-  assert.match(passenger, /NEVER mirrored/);
-  assert.match(roof, /CAB ROOF ONLY/);
-  assert.match(roof, /cargo bed\/box.*must be outside the frame/is);
-  assert.match(roof, /open bed interior stays bare factory bedliner/i);
-
+test("the A.T.L.A.S. proof path keeps no producer of its own, and no mirror chain", () => {
+  // ⛔ THIS TEST USED TO READ `buildAtlasProjectionPrompt`'S TEXT.
+  //
+  // It asserted the locked side elevation, the Studio OS epoxy floor, the Canon
+  // body, the passenger nose direction and the pickup cab-roof exclusion --
+  // all by reading a prompt this runtime assembled. That producer is deleted
+  // (owner, 2026-08-28), so those strings are no longer this repository's to
+  // assert: they belong to the byte-pinned `view-angles-os` and `studio-os`,
+  // which `tests/proof-stack-pinned-sources.test.mjs` pins and which
+  // `tests/proof-camera-authority.test.mjs` reads directly.
+  //
+  // What remains here is the half that was never about the prompt.
   // THE MIRROR CHAIN IS UNREACHABLE FROM A.T.L.A.S.
   //
   // Passenger is a sibling surface rendered from its own A.T.L.A.S. authority,
@@ -420,7 +410,7 @@ test("Atlas provider carries locked angles, photography, Studio OS lighting, det
   // producePassengerView because the Standard provider legitimately uses it,
   // and slicing to end-of-file would read that export list as a call site.
   const atlasBranch = PROVIDER_SOURCE.slice(
-    PROVIDER_SOURCE.indexOf("SIX SIBLING SURFACES"),
+    PROVIDER_SOURCE.indexOf("THE PROVEN PHOTOGRAPHER RENDERS EVERY A.T.L.A.S. PROOF"),
     PROVIDER_SOURCE.indexOf("hydrateDriver: driverStore.hydrateHero"),
   );
   assert.ok(atlasBranch.length > 500, "the A.T.L.A.S. branch slice must not be empty");
