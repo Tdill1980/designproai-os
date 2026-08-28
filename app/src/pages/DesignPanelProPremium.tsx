@@ -1207,16 +1207,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     // name is read from the brief inside design-panel-ai-generate when the field is
     // empty, so no fragile client-side name extraction is needed. A pure artistic
     // brief (no company/logo/contact signals) is untouched and stays restyle.
-    if (params.mode !== "commercial") {
-      const brief = (params.prompt || "").toLowerCase();
-      const commercialSignal =
-        /\b(commercial|fleet|logo|business|compan|brand|est\.?\s*\d{4}|since\s*\d{4}|llc|\binc\b|\.com|\d{3}[-.\s]?\d{3}[-.\s]?\d{4})\b/.test(brief) ||
-        /\bwrap\s+for\s+\w/.test(brief);
-      if (commercialSignal) {
-        console.log("[DesignIQ] Commercial intent detected in brief — routing to commercial design brain (was:", params.mode, ")");
-        params = { ...params, mode: "commercial" };
-      }
-    }
+    // ONE INFERENCE. The brief-keyword upgrade that used to live here is now
+    // step 2 of `lib/inferDesignMode`, which the studio hook applies to every
+    // request -- so a business/logo brief still reaches the commercial design
+    // brain (the restyle path has no logo architecture and its 2D-proof flatten
+    // smears baked-in text), and it does so by the SAME rule the home page and
+    // the operator page use.
 
     // Auto-collapse the left Design Brief panel the moment generation starts so
     // the KONVA canvas immediately gets the extra width. The thin gradient

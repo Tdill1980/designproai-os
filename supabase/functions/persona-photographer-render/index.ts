@@ -47,9 +47,17 @@ const ATLAS_SHOT_SURFACES: Record<string, string> = {
   "front": "front",
   "rear": "rear",
   "roof": "roof",
-  // The detail shot is a crop of a real surface; the caller names which one.
-  "close-up": "",
+  // ⚠️ CLOSE-UP HAS NO FIXED SURFACE, AND MAY NOT SILENTLY INHERIT DRIVER.
+  //
+  // Owner, 2026-08-28: "Close-Up must never silently inherit a Driver
+  // photograph unless the requested detail explicitly uses Driver as its
+  // selected artwork surface." So `null` here means "the caller must NAME the
+  // surface", not "anything goes" -- the check below requires it to be one of
+  // the six real surfaces, and the response echoes which was chosen so the
+  // selection is on the record rather than assumed.
+  "close-up": null,
 };
+const ATLAS_REAL_SURFACES = ["driver", "passenger", "hood", "front", "rear", "roof"];
 
 /** Fetch an image URL and return base64 inline data for Gemini */
 async function fetchImageAsInlineData(
@@ -445,13 +453,18 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
     if (expectedSurface && surfaceKey !== expectedSurface) {
       return fail(`atlas_proof_surface_mismatch: ${shotKey} requires the ${expectedSurface} panel, received ${surfaceKey || "(none)"}`);
     }
+    // Close-Up: the surface is a SELECTION the caller must state. An unnamed or
+    // unknown one is refused rather than defaulted to Driver.
+    if (expectedSurface === null && !ATLAS_REAL_SURFACES.includes(surfaceKey)) {
+      return fail(`atlas_proof_detail_surface_unselected: close-up must name its artwork surface, received ${surfaceKey || "(none)"}`);
+    }
     if (body.heroRenderUrl) {
       return fail("atlas_proof_hero_forbidden: the A.T.L.A.S. panel is the artwork authority; a hero render may not be substituted");
     }
 
-    const panelPath = String(body.sourcePanelPath || "").trim();
+    const panelPath = String(body.sourcePanelStoragePath || "").trim();
     const panelHash = String(body.sourcePanelHash || "").trim().toLowerCase();
-    if (!panelPath) return fail("atlas_proof_panel_path_missing");
+    if (!panelPath) return fail("atlas_proof_panel_storage_path_missing");
     if (!/^[0-9a-f]{64}$/.test(panelHash)) return fail("atlas_proof_panel_hash_missing");
 
     const { data: blob, error: dlErr } = await svc.storage.from("wrap-files").download(panelPath);
@@ -475,11 +488,18 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
 
     if (!hasGeminiKey()) return fail("atlas_proof_no_api_key", 500);
 
-    // PRESENTATION AUTHORITY ONLY. `designAnchorText` is the pinned prompt's
-    // slot for describing the installed wrap; under A.T.L.A.S. the wrap is the
-    // attached image, so this names the authority and says nothing creative.
-    // No brief, no company, no palette, no style: Call 1 already designed this.
-    const designAnchorText = `The attached image is the exact, already-approved flat print panel for this vehicle's ${surfaceKey || shotKey} surface. It is the wrap, and it is the sole artwork authority. Photograph it as installed vinyl: reproduce its colours, graphics, logos and lettering exactly as they appear, and do not redesign, restyle, recolour, simplify, mirror, substitute or invent any part of it. Perspective, curvature and the camera angle change how it appears; they never change what it is.`;
+    // ⚠️ KEEP THIS SHORT. Owner, 2026-08-28: "The current ATLAS proof prompts
+    // were recorded at roughly 13K characters while the proven photographer
+    // prompt is approximately 1.4K. Restore the real photographer prompt stack
+    // rather than wrapping it in another enormous reconstructed proof prompt.
+    // ATLAS should contribute only: exact panel artwork; lineage; exact
+    // vehicle/config; requested shot."
+    //
+    // The artwork IS the attached image, so this fills the pinned prompt's
+    // design slot with the one sentence that says so. Every instruction about
+    // HOW to photograph it already lives in the pinned stack; restating any of
+    // it here would rebuild the 13K prompt one clause at a time.
+    const designAnchorText = `The attached image is this vehicle's exact approved ${surfaceKey} print panel. It is the wrap.`;
 
     const prompt = buildPhotographerPrompt({
       designAnchorText,
@@ -558,14 +578,16 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
         functionName: "persona-photographer-render",
         contract: ATLAS_PROOF_CONTRACT,
         sourceCommit: ATLAS_PROOF_SOURCE_COMMIT,
+        provider: "google",
         model: modelUsed,
+        functionVersion: ATLAS_PROOF_SOURCE_COMMIT,
         imageRequestCount,
         promptChars: prompt.length,
         shotKey,
         surfaceKey,
         // Every output proves which panel authored it, and which master that
         // panel came from, so both UIs can pair a proof with its panel.
-        sourcePanelPath: panelPath,
+        sourcePanelStoragePath: panelPath,
         sourcePanelHash: panelSha,
         sourceMasterHash: String(body.sourceMasterHash || "") || null,
         atlasRevisionId: String(body.atlasRevisionId || "") || null,

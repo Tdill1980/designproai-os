@@ -58,7 +58,7 @@ test("the photographer's adaptation touches the artwork input and nothing else",
 
   // ARTWORK AUTHORITY, SWAPPED. The panel is read by storage path and hash —
   // never a hero render, and never a public URL of a private bucket.
-  assert.match(atlas, /sourcePanelPath/);
+  assert.match(atlas, /sourcePanelStoragePath/);
   assert.match(atlas, /atlas_proof_panel_hash_mismatch/);
   assert.match(atlas, /atlas_proof_hero_forbidden/,
     "a hero render must be refused outright in atlas-proof mode");
@@ -127,7 +127,7 @@ test("the A.T.L.A.S. proof provider is a transport, not a second producer", () =
   assert.match(atlasProvider, /mode: "atlas-proof"/);
   // It resolves THIS surface's panel and sends its path + hash as the artwork.
   assert.match(atlasProvider, /atlas\.panelFor\(sourceViewType\)/);
-  assert.match(atlasProvider, /sourcePanelPath: panel\.storagePath/);
+  assert.match(atlasProvider, /sourcePanelStoragePath: panel\.storagePath/);
   assert.match(atlasProvider, /sourcePanelHash: panel\.contentHash/);
   // No prompt assembly, no direct image call, and no Driver anchor.
   assert.ok(!atlasProvider.includes("buildAtlasProjectionPrompt"),

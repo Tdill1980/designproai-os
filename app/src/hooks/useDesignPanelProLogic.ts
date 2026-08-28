@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { inferDesignMode } from "@/lib/inferDesignMode";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -596,9 +597,19 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
             vehicleInfo?.model,
           ),
         },
-        // A company name means commercial whatever the toggle says -- the rule
-        // the proven intake has always applied.
-        mode: params.companyName?.trim() ? "commercial" : params.mode,
+        // ONE INFERENCE, from `lib/inferDesignMode`. This used to be a
+        // company-name-only test here, a company/phone/website test on the home
+        // page and a brief-keyword test in the studio -- three different rules
+        // deciding which design brain a customer reached, depending on which
+        // door they came through.
+        mode: inferDesignMode({
+          companyName: params.companyName,
+          phone: combinedContact.phone,
+          website: combinedContact.website,
+          industry: params.industryType,
+          hasLogo: (params.textLayerImages?.length || 0) > 0,
+          brief: params.prompt,
+        }),
         companyName: params.companyName?.trim() || undefined,
         phone: combinedContact.phone,
         industry: params.industryType || undefined,

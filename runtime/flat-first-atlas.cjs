@@ -159,9 +159,23 @@ const VIEW_SURFACE = Object.freeze({
   hood_detail: "hood",
   front: "front",
   rear: "rear",
+  // ⚠️ CLOSE-UP'S SURFACE IS A SELECTION, NOT AN INHERITANCE. (Trish 2026-08-28)
+  //
+  // "Close-Up must never silently inherit a Driver photograph unless the
+  // requested detail explicitly uses Driver as its selected artwork surface."
+  //
+  // Driver remains the DEFAULT selected detail surface -- it is the largest
+  // continuous area of livery and the natural place to show vinyl grain -- but
+  // it is now a stated choice: `atlasPanelForProofView` marks the close-up
+  // authority `surfaceSelection: "default-driver-detail"`, the transport sends
+  // that surface by name, and the photographer REFUSES a close-up whose surface
+  // was not named (`atlas_proof_detail_surface_unselected`). Nothing defaults
+  // on the far side of the wire.
   "close-up": "driver",
   roof: "roof",
 });
+/** The close-up's default detail surface, named so the choice is auditable. */
+const CLOSE_UP_DEFAULT_DETAIL_SURFACE = "driver";
 // Google generateContent requests must remain below 20 MiB. Twelve MiB of
 // binary JPEG becomes at most sixteen MiB after base64, leaving room for JSON,
 // prompts and request framing without shrinking the canonical 4096px master.
@@ -1297,6 +1311,12 @@ function atlasPanelForProofView(atlas, sourceViewType) {
   return Object.freeze({
     surfaceKey,
     sourceViewType,
+    // Every other view's surface is fixed by geometry; the close-up's is chosen.
+    // Saying which it was keeps a Driver detail from ever reading as an
+    // accident downstream.
+    surfaceSelection: sourceViewType === "close-up"
+      ? `default-${CLOSE_UP_DEFAULT_DETAIL_SURFACE}-detail`
+      : "fixed-by-surface",
     storagePath: String(panel.storagePath),
     contentHash: String(panel.contentHash).toLowerCase(),
     contentType: String(panel.contentType || "image/png"),

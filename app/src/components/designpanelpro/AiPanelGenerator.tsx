@@ -535,85 +535,19 @@ export const AiPanelGenerator = ({
       {/* Vehicle Details (or any caller-supplied header) sits in the left column */}
       {leftColumnHeader}
 
-      {/* THE CUSTOMER CHOOSES COMMERCIAL OR RESTYLE. THE QUESTION STAYS.
+      {/* THE CUSTOMER NO LONGER PICKS COMMERCIAL vs RESTYLE. (Trish 2026-08-28)
         *
-        * ⛔ IT WAS DELETED ON 2026-08-28 AND THAT WAS WRONG. Owner, the same
-        * day: "Why did you take out the question. I never said to remove
-        * commercial / or restyle. I said use the correct designpanelai
-        * generate. There is a specific ATLAS version."
+        * "The customer shouldn't need to understand your internal design
+        * taxonomy. Infer it." Two experience cards used to live here, and the
+        * cost was not the click -- it was that NINE fields below were sent as
+        * `mode === "commercial" ? x : undefined`, so a customer who typed a
+        * phone number into a form we had put in "ReStyle" had that phone number
+        * silently discarded on the way to the wrap.
         *
-        * Those are two different instructions and only the second was given.
-        * `design-panel-ai-generate` branches on this mode -- COMMERCIAL_DEPTH,
-        * COMMERCIAL_TRANSLATION, buildLogoArchitecture and the restyle style
-        * presets are entirely different creative assemblies -- and its
-        * atlasFlatMaster branch keeps both. Removing the control did not make
-        * the taxonomy internal; it made the customer unable to reach half of
-        * A.C.E.
-        *
-        * What DOES stay removed is the SUPPRESSION that used to ride on it:
-        * nine fields were sent as `mode === "commercial" ? x : undefined`, so a
-        * phone number typed with the ReStyle card highlighted was silently
-        * discarded. The choice now selects the creative assembly. It never
-        * deletes what the customer typed. */}
-      <div className="space-y-3">
-        {/* ReStyle card */}
-        <Card
-          className={cn(
-            "p-4 cursor-pointer transition-all border",
-            mode === "restyle"
-              ? "border-2 border-transparent bg-[#1c1c1e] shadow-[0_0_18px_rgba(236,72,153,0.45)] [background:linear-gradient(#1c1c1e,#1c1c1e)_padding-box,linear-gradient(to_right,#3b82f6,#ec4899)_border-box]"
-              : "border-white/10 bg-[#1c1c1e] hover:border-blue-500/40"
-          )}
-          onClick={() => setMode("restyle")}
-        >
-          <div className="flex items-start gap-3">
-            <div className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
-              mode === "restyle" ? "bg-blue-500/20" : "bg-secondary"
-            )}>
-              <Paintbrush className={cn("w-5 h-5", mode === "restyle" ? "text-blue-400" : "text-muted-foreground")} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm">Artistic &amp; Style Wraps</span>
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">ReStyle</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                Create bold aesthetic designs with style presets like Racing, Organic, Geometric, Camo &amp; more
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        {/* Commercial card */}
-        <Card
-          className={cn(
-            "p-4 cursor-pointer transition-all border",
-            mode === "commercial"
-              ? "border-2 border-transparent bg-[#1c1c1e] shadow-[0_0_18px_rgba(236,72,153,0.45)] [background:linear-gradient(#1c1c1e,#1c1c1e)_padding-box,linear-gradient(to_right,#3b82f6,#ec4899)_border-box]"
-              : "border-white/10 bg-[#1c1c1e] hover:border-blue-500/40"
-          )}
-          onClick={() => setMode("commercial")}
-        >
-          <div className="flex items-start gap-3">
-            <div className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
-              mode === "commercial" ? "bg-blue-500/20" : "bg-secondary"
-            )}>
-              <Briefcase className={cn("w-5 h-5", mode === "commercial" ? "text-blue-400" : "text-muted-foreground")} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm">Business &amp; Fleet Wraps</span>
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Commercial</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                Brand-focused commercial designs with company identity, mascots, and industry-optimized layouts
-              </p>
-            </div>
-          </div>
-        </Card>
-      </div>
+        * Mode is now derived once, downstream, from what they actually entered
+        * (useDesignPanelProLogic: a company name means commercial whatever else
+        * was selected). Deterministic and local -- no classification call on the
+        * critical path. */}
 
       {/* Creative Workspace */}
       <Card className="p-4 bg-[#1c1c1e] border-white/10 space-y-4">
@@ -985,7 +919,7 @@ export const AiPanelGenerator = ({
             Type your idea naturally — colors, style, and any company name, phone, website,
             or text you want on the vehicle. Drop a <span className="font-semibold text-blue-400">design to match</span> below
             and the wrap artwork follows it. Your <span className="font-semibold text-fuchsia-400">logo</span> (added under
-            Brand Direction in Business &amp; Fleet Wraps) rides on top as an editable layer you can
+            Brand Direction) rides on top as an editable layer you can
             move, resize, and rotate.
           </p>
           <Textarea
@@ -1044,7 +978,7 @@ export const AiPanelGenerator = ({
               <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-400/30 bg-amber-400/[0.06] px-2 py-1.5">
                 <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
                 <p className="text-[10px] leading-snug text-amber-200/90">
-                  To lock in an <span className="font-semibold">exact logo match</span> without AI redraws, drop your logo into the <span className="font-semibold text-fuchsia-300">Your logo</span> box under Brand Direction (Business &amp; Fleet Wraps).
+                  To lock in an <span className="font-semibold">exact logo match</span> without AI redraws, drop your logo into the <span className="font-semibold text-fuchsia-300">Your logo</span> box under Brand Direction.
                 </p>
               </div>
             )}

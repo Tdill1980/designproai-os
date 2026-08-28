@@ -203,7 +203,7 @@ test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver d
     // ITS OWN PANEL. Passenger gets passenger; nothing gets the driver's
     // artwork unless it IS the driver surface.
     assert.equal(post.body.surfaceKey, surfaceKey);
-    assert.equal(post.body.sourcePanelPath, panelPaths[surfaceKey]);
+    assert.equal(post.body.sourcePanelStoragePath, panelPaths[surfaceKey]);
     assert.equal(post.body.sourcePanelHash, hash(Buffer.from(surfaceKey)));
 
     // NO DRIVER DEPENDENCY, AND NO HERO.
