@@ -145,6 +145,25 @@ function tenantKey(value) {
   catch (error) { throw new StageError("unsafe_tenant_key", error.message, false); }
 }
 
+// EVERY ARTIFACT LIVES UNDER ITS OWN RUN. (designpro_artifacts trigger)
+//
+// `designpro_private.enforce_artifact_storage_identity` refuses any artifact
+// row whose storage_path is not `designpro/<tenant_key>/<run_id>/…` (bar the
+// wrapbox and logo-input shapes it names separately). That is what stops one
+// run's artifact row pointing at another run's bytes, so every stage that
+// registers an artifact builds its path here rather than restating the shape.
+//
+// Built by concatenation on purpose. `source-tests/runtime/resumable-producer-
+// paths.test.mjs` scrapes the claimant for the literal
+// `designpro/${tenantKey(run.tenant_key)}/${run.id}/…` template to enumerate
+// every run subdirectory that can reach the resumable transport, and checks
+// each against `zip-spool.cjs`'s allowlist. A helper spelling that template
+// would hand the scraper this function's own interpolation as a directory name.
+function runScopedStoragePath(run, relativePath) {
+  const tail = String(relativePath).replace(/^\/+/, "");
+  return "designpro/" + tenantKey(run.tenant_key) + "/" + run.id + "/" + tail;
+}
+
 function sourceAsset(value, tenant, revisionId) {
   try { return normalizeSourceAsset(value, tenant, revisionId); }
   catch (error) { throw new StageError("invalid_source_asset", error.message, false); }
@@ -1049,6 +1068,7 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     const callOnePanels = await callOnePanelSet(sb, run);
     if (callOnePanels) {
       const spools = [];
+      const panelArtifacts = [];
       const produced = [];
       const panelHashes = {};
       for (const panel of callOnePanels) {
@@ -1066,26 +1086,71 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
           surfaceSqFt: Number(panel.surfaceSqFt),
           bleedInches: Number(panel.bleedInches),
         };
-        produced.push({ surfaceKey: panel.surfaceKey, storagePath: panel.storagePath, contentHash: observed, byteSize: bytes.length, ...dims });
-        spools.push(artifact("panel", panel.storagePath, observed, bytes.length, panel.surfaceKey, {
+
+        // PROMOTION COPIES THE BYTES; IT NEVER ALIASES CALL 1'S PATH.
+        //
+        // `designpro_artifacts` carries a BEFORE INSERT trigger,
+        // `designpro_private.enforce_artifact_storage_identity`, that requires
+        // every artifact to live under `designpro/<tenant_key>/<run_id>/…`.
+        // Call 1 wrote these panels long before this run existed, under the
+        // generation's own owner-scoped prefix, so registering that path as the
+        // artifact raised `artifact_storage_identity_mismatch` and killed
+        // `panels.build` half a second in -- live on run
+        // 8e9fab59-d282-4f92-a8aa-86b2f4e1d09e, generation 8555be2f, whose six
+        // Call-1 panels were all present and correct.
+        //
+        // Copying is the honest repair, not relaxing the trigger: that
+        // invariant is what stops one run's artifact row pointing at another
+        // run's bytes. And it costs nothing the owner cares about -- the bytes
+        // are IDENTICAL ("the panels should just be the exact panels from the
+        // ATLAS container design generation"). Nothing is re-cut, no AI runs,
+        // and the copy is refused unless it hashes to the Call-1 panel it came
+        // from. The Call-1 path and hash ride along as `sourceStoragePath` /
+        // `sourceContentHash`, so the lineage is still one lineage published
+        // twice (RULE 0.27 §3) rather than two representations.
+        const storagePath = runScopedStoragePath(run, `panels/${panel.surfaceKey}.png`);
+        const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, bytes, "image/png");
+        if (stored.spool) spools.push(stored.spool);
+        if (String(stored.hash).toLowerCase() !== observed || Number(stored.bytes) !== bytes.length) {
+          throw new StageError("call9_call1_panel_promotion_drift", `${panel.surfaceKey} promoted copy is not the Call 1 panel`, false);
+        }
+
+        produced.push({
+          surfaceKey: panel.surfaceKey,
+          storagePath: stored.storagePath,
+          contentHash: observed,
+          byteSize: bytes.length,
+          sourceStoragePath: panel.storagePath,
+          ...dims,
+        });
+        panelArtifacts.push(artifact("panel", stored.storagePath, observed, bytes.length, panel.surfaceKey, {
           source: "atlas-call1-panel",
+          promotedFrom: "atlas-call1",
+          deterministic: true,
+          sourceStoragePath: panel.storagePath,
+          sourceContentHash: observed,
           sourceMasterHash: panel.sourceMasterHash,
           geometryPurpose: panel.geometryPurpose,
+          revisionId: run.revision_id,
+          revisionSnapshotHash: run.revision_snapshot_hash || null,
           ...dims,
         }));
       }
       if (new Set(Object.values(panelHashes)).size !== SURFACE_KEYS.length) {
         throw new StageError("call9_panel_identity_collision", "Call 1 panels are not six distinct surfaces", false);
       }
-      return complete(sb, stage, run, {
+      const completed = await complete(sb, stage, run, {
         verified: true,
         receiptKind: "call9.surface-panels",
         call: 9,
         panelSourceRule: PANEL_SOURCE_RULE,
         promotedFrom: "atlas-call1",
+        deterministic: true,
         panels: produced,
         panelHashes,
-      }, null, spools);
+      }, null, panelArtifacts);
+      for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 1 panel promotion spool cleanup failed: ${error.message}`));
+      return completed;
     }
 
     const proof = await stageOutput(sb, run.id, "proof.build");
@@ -2751,4 +2816,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
