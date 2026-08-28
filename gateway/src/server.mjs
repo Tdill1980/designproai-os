@@ -426,7 +426,29 @@ async function listRuns(fetchImpl, token, cfg) {
   return response.json();
 }
 
-async function businessIdentityForRun(fetchImpl, token, cfg, run) {
+// AN UNBOUND DESIGN STILL HAS AN IDENTITY. (2026-08-28)
+//
+// A design-first (v2) handoff freezes an explicitly UNBOUND revision source:
+// Calls 1-7 v2 refuses orderNumber and delivery, and fulfillment identity is a
+// separate append-only binding made at purchase
+// (20260821200000_designpro_design_first_production_handoff.sql, in as many
+// words). So before the pack is ordered, `snapshot.orderNumber` is legitimately
+// absent.
+//
+// This function demanded one anyway, and both READ paths -- the board list and
+// the board itself -- answered 409 `immutable_design_id_and_order_number_invalid`
+// over it. PanelPro Studio therefore could not open ANY free entice job, which
+// is precisely the window the board exists to serve: the design team validating
+// panels BEFORE the customer pays. Live on generation
+// 8555be2f-71fe-4a30-8680-653d086a213e, whose master, six panels and seven
+// proofs were all present.
+//
+// So the order number is optional for reads and required where it is actually
+// load-bearing -- the final human QC gate, which stamps it onto the
+// certificate. Nothing else relaxes: the snapshot must still carry the exact
+// canonical generationId and designId in both modes, because those are the
+// identity the two studios pair artifacts by.
+async function businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrderNumber = true } = {}) {
   const revisionId = String(run?.revision_id || "").toLowerCase();
   const snapshotHash = String(run?.revision_snapshot_hash || "").toLowerCase();
   if (!UUID_PATTERN.test(revisionId) || !SHA256_PATTERN.test(snapshotHash)) {
@@ -443,7 +465,9 @@ async function businessIdentityForRun(fetchImpl, token, cfg, run) {
   const snapshot = rows[0].snapshot;
   const designId = canonicalDesignId(generation);
   const orderNumber = String(snapshot?.orderNumber || "");
-  if (snapshot?.generationId !== generation || snapshot?.designId !== designId || !ORDER_NUMBER_PATTERN.test(orderNumber) || orderNumber.trim() !== orderNumber) {
+  const orderNumberValid = ORDER_NUMBER_PATTERN.test(orderNumber) && orderNumber.trim() === orderNumber;
+  if (snapshot?.generationId !== generation || snapshot?.designId !== designId
+    || (requireOrderNumber ? !orderNumberValid : orderNumber !== "" && !orderNumberValid)) {
     throw Object.assign(new Error("immutable_design_id_and_order_number_invalid"), { status: 409 });
   }
   // THE CARD METADATA COMES FROM THE SAME FROZEN SNAPSHOT, NOT A SECOND STORE.
@@ -494,7 +518,8 @@ async function businessIdentityForRun(fetchImpl, token, cfg, run) {
   };
   return {
     designId,
-    orderNumber,
+    // Null, never "", so a consumer cannot render an empty order number as one.
+    orderNumber: orderNumberValid ? orderNumber : null,
     brief,
     designName: text(snapshot?.delivery?.designName),
     finish: text(snapshot?.finish),
@@ -2530,7 +2555,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const runs = await listRuns(fetchImpl, token, cfg);
         const states = await Promise.all(runs.map(async (run) => ({
           ...publicState(await runState(fetchImpl, token, cfg, run)),
-          ...await businessIdentityForRun(fetchImpl, token, cfg, run),
+          ...await businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrderNumber: false }),
         })));
         return json(res, 200, states);
       }
@@ -3037,7 +3062,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const production = run.workflow_type === "designpro.production_pack";
         if (req.method === "GET" && !match[2]) return json(res, 200, {
           ...publicState(await runState(fetchImpl, token, cfg, run)),
-          ...await businessIdentityForRun(fetchImpl, token, cfg, run),
+          ...await businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrderNumber: false }),
         });
         if (req.method === "POST" && match[2] === "resume") return json(res, 202, await rpc(fetchImpl, token, cfg, "resume_designpro_workflow", { p_run_id: run.id, p_actor: user.id, p_retry_failed: true }));
         if (req.method === "POST" && match[2]?.startsWith("approvals/")) {
