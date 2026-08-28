@@ -40,33 +40,46 @@ test("provider, model and key selection are three separate things", () => {
 });
 
 /**
- * ⚠️ THE AUTHORING MODEL AND THE PROOF MODEL ARE DIFFERENT IDS TODAY, AND THAT
- * IS A MODEL/CONFIG QUESTION, NOT A FUNCTION QUESTION.
+ * ONE IMAGE MODEL: THE GA ID, FOR AUTHORING AND FOR PROOFS.
  *
- * Call 1 authors on the GA id, pinned BY NAME in the runtime because
- * `lockModel` alone pins "the first of whatever is configured", which is config
- * drift rather than a pin. CLAUDE.md records the measurement behind that
- * choice: eleven production masters on the GA id held a full-bleed border
- * across every prompt version, and the first `-preview` run dropped it to
- * 18–23 with 63–83% of each border dark.
+ * Owner decision, 2026-08-28: "use gemini-3-pro-image GA for Call 1 AND the 3D
+ * proof stack. Remove the GA/preview split. Keep this in LOCK 2; do not alter
+ * LOCK 1/function source to accomplish it."
  *
- * The proof stack takes its model from `model-config.ts`, which is currently
- * on the `-preview` id. This test does not force them equal — the proofs are
- * projections and CLAUDE.md deliberately allows them a fallback the authoring
- * call is denied. It exists so the difference is STATED and has to be
- * re-approved rather than drifting silently.
+ * So the change lands in `model-config.ts`, which is NOT one of LOCK 1's four
+ * byte-pinned files — persona-photographer-prompt, view-angles-os, studio-os and
+ * persona-photographer-render are all untouched by it. That separation is the
+ * whole point of having two locks: a model decision is made here and costs
+ * nothing in the source lock.
+ *
+ * The evidence behind GA is in CLAUDE.md: eleven production masters held a
+ * border median of 135-177 on the GA id across every prompt version from v2 to
+ * v8; the first `-preview` run dropped it to 18-23 with 63-83% of each border
+ * dark. Authoring already pinned GA by name. The proof stack was still on
+ * `-preview`, so a design was authored on one model and photographed under
+ * another.
+ *
+ * FALLBACK IS A DIFFERENT AXIS and stays: LOCK 2 requires an explicit fallback,
+ * and a proof that renders on Flash is a weaker proof of a design that already
+ * exists. That is not the GA/preview split — it is the projection allowance
+ * CLAUDE.md grants proofs and denies authoring.
  */
-test("the authoring model is pinned by name and is not an env lookup", () => {
+test("authoring and proofs render on the same pinned GA model", () => {
   const prompt = read("runtime/designiq-prompt.cjs");
   assert.match(prompt, /const DESIGNPANEL_AUTHORING_MODEL = "[^"]+"/);
   const line = prompt.match(/const DESIGNPANEL_AUTHORING_MODEL = "([^"]+)"/)[1];
   assert.ok(!/process\.env/.test(
     prompt.slice(prompt.indexOf("DESIGNPANEL_AUTHORING_MODEL"), prompt.indexOf("DESIGNPANEL_AUTHORING_MODEL") + 200),
   ), "the authoring model became an env lookup — that is config drift, not a pin");
-  // Recorded so a change to either id is a visible diff in this file.
+  // ONE id for both halves. A change to either is a visible diff in this file.
   assert.equal(line, "gemini-3-pro-image");
   const modelConfig = read("supabase/functions/_shared/model-config.ts");
-  assert.equal(modelConfig.match(/PRIMARY_IMAGE_MODEL = "([^"]+)"/)[1], "gemini-3-pro-image-preview");
+  assert.equal(modelConfig.match(/PRIMARY_IMAGE_MODEL = "([^"]+)"/)[1], "gemini-3-pro-image",
+    "the proof stack drifted off the authoring model again");
+  assert.equal(line, modelConfig.match(/PRIMARY_IMAGE_MODEL = "([^"]+)"/)[1],
+    "authoring and proofs must render on the same image model");
+  // The fallback is a different axis and must stay explicit.
+  assert.match(modelConfig, /FALLBACK_IMAGE_MODEL = "[^"]+"/);
 });
 
 /**
