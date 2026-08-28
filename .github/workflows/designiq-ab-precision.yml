@@ -88,7 +88,16 @@ env:
   # to run if the slice no longer hashes to this — a drifted control is not a
   # control. Recompute after any legitimate change to the vendored source:
   #   node scripts/build-control-prompt.mjs control-build && sha256sum control-build/control-prompt.ts
-  EXPECT_CONTROL_HASH: d677c5308811e0ba50b1aecd0b16d09199751eccc355f2acaad45909092c5b02
+  # Re-pinned 2026-08-28. The harness hashes the WHOLE sliced pure-prompt
+  # region, so any edit inside the A.T.L.A.S. branch reads as control drift.
+  # The control did not drift: `git diff 6a50978b..31005f2d -U0` on
+  # design-panel-ai-generate/index.ts is exactly three hunks, and all three are
+  # A.T.L.A.S.-only --- ATLAS_ARTBOARD_PROMPT_VERSION (line 52),
+  # ATLAS_PLACEMENT_WORDS (316) and atlasFlatMasterContract (331). The
+  # commercial/restyle assembly the control arm exercises is byte-identical, so
+  # the A arm still compares against the same creative engine it always did.
+  # Recomputed with scripts/build-control-prompt.mjs, as #202, #203 and #224 did.
+  EXPECT_CONTROL_HASH: cf65f98fedaf0523b3ba3b90983d1a86e991f39733ff720ccef61a2eb2d9c313
 
 jobs:
   ab:
