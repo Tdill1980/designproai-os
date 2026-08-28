@@ -293,8 +293,13 @@ test("the 2D Production Proof never gates A.T.L.A.S. manufacturing", () => {
   assert.match(claimant, /productionAuthority: "atlas-master"/);
   // A lost lease is still a lease loss, not a deferred proof.
   assert.match(claimant, /error\?\.code === "stage_lease_lost" \|\| error\?\.retryable === true\) throw error/);
-  // A run with no atlas panels still runs Call 8 fatally.
-  assert.match(claimant, /return buildCall8Proof\(sb, run, stage, runtimeConfig, input\);/);
+  // A run with no atlas panels still runs Call 8 fatally -- the call outside the
+  // try/catch, so nothing defers it. (The argument list gained baseUrl/secret on
+  // 2026-08-28: the extraction that created buildCall8Proof left them behind in
+  // executeEntice's scope, so every entice run threw ReferenceError 200ms in and
+  // the deferral recorded it as a proof-service outage. What this asserts is the
+  // undeferred call, not the arity.)
+  assert.match(claimant, /return buildCall8Proof\(sb, baseUrl, secret, run, stage, runtimeConfig, input\);/);
 
   // source.verify certifies the manufacturing authority, not the documentation.
   const verify = claimant.slice(claimant.indexOf('stage.stage_key === "source.verify"'));
