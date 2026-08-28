@@ -1237,6 +1237,48 @@ function createDesignPanelServerProvider(options = {}) {
  * deterministic producer, then each remaining camera from that same flat
  * master plus the accepted Driver as vehicle/studio continuity evidence.
  */
+/** The stage name the proof metadata reports, now that the producer is the
+ *  deployed photographer rather than an in-runtime generate-color-render port. */
+const ATLAS_PROOF_STAGE = "persona-photographer-render";
+const ATLAS_PROOF_BUCKET = "wrap-files";
+/** The proof's artwork authority is the persisted panel, not a transient crop. */
+const ATLAS_PANEL_AUTHORITY_CONTRACT = "designpro.atlas-panel-authority.v1";
+
+/**
+ * THE PROVEN PHOTOGRAPHER RENDERS EVERY A.T.L.A.S. PROOF. (Trish 2026-08-28)
+ *
+ * Owner directive, verbatim: "DO NOT CREATE ANOTHER 3D EDGE FUNCTION. Use
+ * supabase/functions/persona-photographer-render/index.ts with
+ * persona-photographer-prompt.ts, view-angles-os.ts, studio-os.ts. For ATLAS,
+ * replace the historical heroRenderUrl artwork reference with the matching
+ * persisted sourcePanelUrl/sourcePanelHash. Passenger must receive its
+ * Passenger panel. Driver must receive Driver. Hood receives Hood, etc. Do not
+ * skip the panel input for Passenger. Do not use Driver as artwork continuity
+ * authority. ATLAS panel = artwork authority. Photographer + angles + studio +
+ * lighting = presentation authority only."
+ *
+ * WHAT THIS REPLACED, AND WHY IT WAS A REGRESSION. This provider used to build
+ * its OWN proof prompt (`buildAtlasProjectionPrompt`) and call Gemini directly
+ * through the key pool. It reached the same studio and the same angles by
+ * importing the same kernels, so no single line of it was wrong -- but it was a
+ * SECOND implementation of a stage that already had a proven one, and the
+ * A/B against the pin showed the drift accumulating around it: a Driver
+ * continuity photograph the proven stack never sent, its own 3.5K prompt
+ * against the photographer's 1.4K, its own retry ladder, its own aspect ratio,
+ * and a nine-contract acceptance judge the proven stack has no counterpart for.
+ * Calls 2-7 were never supposed to change. Only the artwork source was.
+ *
+ * So this is now a TRANSPORT: it resolves the surface's persisted Call-9 panel,
+ * POSTs `mode: "atlas-proof"` to the deployed photographer, downloads the proof
+ * it wrote, and verifies the hash. It assembles no prompt at all.
+ *
+ * THE DRIVER CONTINUITY REFERENCE IS DELETED. It was added on 2026-08-26 to
+ * give siblings a photographic hint after the mirror chain was removed, and the
+ * owner has now ruled it out by name: "Do not use Driver as artwork continuity
+ * authority." Cross-view identity rests where it always actually lived -- every
+ * surface is a deterministic cut of one master, hash-bound, which is a stronger
+ * guarantee than injecting one render into the others.
+ */
 function createAtlasDesignPanelProvider(options = {}) {
   const provider = options.provider;
   const input = options.input && typeof options.input === "object" ? options.input : {};
@@ -1248,73 +1290,32 @@ function createAtlasDesignPanelProvider(options = {}) {
       false,
     );
   }
+  if (typeof atlas.panelFor !== "function") {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_panel_resolver_missing",
+      "The A.T.L.A.S. proof transport requires a per-surface panel resolver",
+      false,
+    );
+  }
   const identity = atlasIdentity(atlas);
   assertHash(identity.masterContentHash, "Atlas master hash");
   assertHash(identity.projectionContentHash, "Atlas projection hash");
+
+  const supabase = options.supabase;
+  const supabaseUrl = String(options.supabaseUrl || process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const serviceRoleKey = String(options.serviceRoleKey || process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  const ownerId = String(options.tenantKey || "").replace(/^user_/, "");
 
   // Reuse the standard provider's exact database/storage View-1 identity
   // verification. Atlas has a different generation policy, not a second way
   // to trust or download accepted Driver bytes.
   const driverStore = createDesignPanelServerProvider(options);
 
-  // CONTINUITY-ONLY DRIVER REFERENCE — OWNER DECISION, 2026-08-26.
-  //
-  // The sibling-surface change (8576619a, owner-approved) removed the retired
-  // artwork/mirror anchor: no sibling may inherit design from Driver, and the
-  // fence refuses any view carrying that path's keys. It ALSO removed the one
-  // thing the anchor was quietly providing -- a photographic reference for the
-  // studio, vehicle anatomy and camera language. The anchor-free runs then
-  // went 0-for-8 on hood and close-up across fb63e76f and 13bdc331, every
-  // verdict the same: the renderer apes its flat zone crop's framing instead
-  // of the locked camera contract, while the four flank/overhead views that
-  // resemble a flat elevation kept passing.
-  //
-  // So the accepted Driver photograph returns as CONTINUITY ONLY, and three
-  // properties keep it from becoming the retired path again:
-  //   1. OPPORTUNISTIC, NEVER A GATE. The seven slots still launch together;
-  //      each sibling ATTEMPT asks whether an accepted Driver exists at that
-  //      moment (hydrateDriver returns null until one does) and renders
-  //      without it when none is there. A failed or slow Driver blocks
-  //      nothing, exactly as the sibling architecture requires -- in practice
-  //      attempt 1 usually runs bare and the corrective re-attempts carry it.
-  //   2. ARTWORK STAYS WITH THE ATLAS. The prompt scopes the reference to
-  //      vehicle anatomy, studio, lighting and installed scale, and states
-  //      that where the two could be read differently, the Atlas wins. The
-  //      zone crop remains the sole artwork authority the proof QC judges
-  //      against.
-  //   3. NAMED FOR WHAT IT IS. The view records atlasDriverContinuityOnly and
-  //      the compacted reference's own hash -- never driverContentHash,
-  //      deterministicMirror, passengerProducer or
-  //      atlasZonePassedToPassengerRepair, the four keys that mark the
-  //      retired path and stay refused by the fence.
-  let continuityReference = null;
-  async function driverContinuityReference() {
-    let accepted = null;
-    try {
-      accepted = await driverStore.hydrateHero();
-    } catch {
-      // Continuity is opportunistic: a transient hero lookup failure must
-      // never fail a sibling render that is valid without it.
-      return null;
-    }
-    if (!accepted?.bytes) return null;
-    if (!continuityReference || continuityReference.driverContentHash !== accepted.contentHash) {
-      const compact = await compactAtlasDriverReference(accepted.bytes);
-      continuityReference = Object.freeze({
-        driverContentHash: accepted.contentHash,
-        mimeType: compact.mimeType,
-        data: compact.data,
-        byteSize: compact.byteSize,
-        contentHash: compact.contentHash,
-      });
-    }
-    return continuityReference;
-  }
-
   function atlasMetadata(extra = {}) {
     return {
-      stage: "generate-color-render",
-      execution: "server-native",
+      stage: ATLAS_PROOF_STAGE,
+      execution: "edge-photographer",
       anchoredToFlatAtlas: true,
       atlasMasterContentHash: identity.masterContentHash,
       atlasProjectionContentHash: identity.projectionContentHash,
@@ -1328,80 +1329,91 @@ function createAtlasDesignPanelProvider(options = {}) {
   async function generateImage(call = {}) {
     const sourceViewType = String(call.sourceViewType || "").trim();
     if (!sourceViewType) throw new DesignPanelServerError("designpanel_server_view_missing", "A source view is required");
+    angles.assertTextDirectionGuard(sourceViewType);
+    if (!supabase?.storage?.from) {
+      throw new DesignPanelServerError("designpanel_atlas_proof_transport_missing", "A server Supabase client is required to read the proof the photographer wrote", true);
+    }
+    if (!supabaseUrl || serviceRoleKey.length < 32) {
+      throw new DesignPanelServerError("designpanel_atlas_proof_transport_missing", "SUPABASE_URL / service key are required for the photographer request", true);
+    }
 
-    // SIX SIBLING SURFACES, NOT ONE PARENT AND FIVE CHILDREN.
-    //
-    // Passenger used to be produced by mirroring the accepted Driver render and
-    // asking the model to repair the reversed lettering, policed by a similarity
-    // bound. Every other non-Driver view additionally BLOCKED on an accepted
-    // Driver and was handed a compacted copy of it as a cross-view anchor. Both
-    // couplings came from the server port (daf3929, 2026-08-23); neither is what
-    // the proven A.T.L.A.S.-first path did.
-    //
-    // Live evidence: Flamingo Pools (5b2eb96c, 2026-08-22) rendered Passenger as
-    // its own Gemini call -- 35,747 ms with a real key fingerprint, LONGER than
-    // its own Driver at 30,709 ms -- from the same master authority
-    // (f9015398...) Driver used. A sharp mirror costs ~100 ms and burns no key,
-    // so that Passenger was independently generated, not mirrored.
-    //
-    // The mirror chain then became the top cause of failed runs, because a
-    // branded design can never be a literal pixel mirror: the prompt requires
-    // every word to stay forward-reading on BOTH flanks. dda491ae was refused at
-    // 0.28346, a9daede trimmed the mean to absorb it, a6dd78aa still failed at
-    // 0.29343 -- and fc2f2e80 failed the other way, the reviewer reporting
-    // upside-down Passenger lettering. Two detectors, one defect, and the defect
-    // is the operation itself.
-    //
-    // Cross-view identity now rests where it always actually lived: the shared
-    // A.T.L.A.S. authority. Every view is conditioned on the same frozen master
-    // and its own exact surface region, and carries generationId,
-    // atlasRevisionId, masterContentHash and surfaceKey. That is a stronger
-    // guarantee than injecting one render into the others, because it is
-    // hash-verified rather than hoped for -- and it means a Driver failure can
-    // no longer take the other five down with it.
-    //
-    // Driver keeps scheduling priority: it is what the customer sees first
-    // (RULE 0.23). Priority is not the same as prerequisite.
-    const driverReference = sourceViewType === "side" ? null : await driverContinuityReference();
-    const request = await buildAtlasProjectionRequest({
-      atlas,
-      input,
-      sourceViewType,
-      call,
-      driverReference,
-    });
-    const generated = await provider.generateImage({
-      ...call,
-      parts: request.parts,
-      responseModalities: request.responseModalities,
-      temperature: 1,
-      label: `A.T.L.A.S. ${angles.viewLabel(sourceViewType)} projection`,
-    });
-    return {
-      ...generated,
-      contract: ATLAS_SERVER_PROVIDER_CONTRACT,
-      metadata: {
-        ...(generated.metadata || {}),
-        ...request.audit,
-        ...atlasMetadata({
-          // Stated, not computed: no A.T.L.A.S. view is anchored to another
-          // view, and the seam refuses any that claims to be.
-          anchoredToView1: false,
-          // Continuity only, named so it can never be confused with artwork
-          // authority: the hash recorded here is the COMPACTED photograph's
-          // own, not the Driver view's content hash, and the four retired-path
-          // keys the fence refuses are never written.
-          ...(driverReference ? {
-            atlasDriverContinuityOnly: true,
-            atlasDriverContinuityReferenceHash: driverReference.contentHash,
-          } : {}),
-          atlasConditioningVerified: true,
-          atlasZoneContract: request.authorityIdentity.contract,
-          atlasZoneContentHash: request.authorityIdentity.contentHash,
-          atlasZoneSurfaceKey: request.authorityIdentity.surfaceKey,
-          requestByteSize: request.requestByteSize,
-        }),
+    // EACH SURFACE GETS ITS OWN PANEL. `panelFor` resolves through
+    // `surfaceForProofView`, so passenger-side receives the passenger panel and
+    // never the driver's -- the exact substitution the owner ruled out.
+    const panel = atlas.panelFor(sourceViewType);
+    const vehicle = input?.vehicle || {};
+
+    const response = await fetchImpl(`${supabaseUrl}/functions/v1/persona-photographer-render`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+        "content-type": "application/json",
+        "x-designpro-owner-id": ownerId,
       },
+      body: JSON.stringify({
+        mode: "atlas-proof",
+        shotKey: sourceViewType,
+        surfaceKey: panel.surfaceKey,
+        sourcePanelPath: panel.storagePath,
+        sourcePanelHash: panel.contentHash,
+        sourcePanelContentType: panel.contentType,
+        sourceMasterHash: panel.sourceMasterHash || identity.masterContentHash,
+        atlasRevisionId: identity.revisionId || null,
+        generationId: options.generationId || null,
+        vehicleYear: String(vehicle.year || ""),
+        vehicleMake: String(vehicle.make || ""),
+        vehicleModel: String(vehicle.model || ""),
+        finish: String(input?.finish || "Gloss"),
+      }),
+      signal: call.signal,
+    });
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+    if (!response.ok || payload?.success !== true) {
+      throw new DesignPanelServerError(
+        "designpanel_atlas_proof_failed",
+        `persona-photographer-render atlas-proof ${sourceViewType} failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}`,
+        response.status >= 500 || response.status === 429,
+      );
+    }
+    // The proof comes back by STORAGE PATH: wrap-files is private, so a public
+    // URL 400s -- the same lesson Call 1 learned live on 2026-08-27.
+    const proofPath = String(payload.proofStoragePath || "").trim();
+    if (!proofPath) throw new DesignPanelServerError("designpanel_atlas_proof_path_missing", "The photographer returned no proof storage path", true);
+    const { data: blob, error: dlErr } = await supabase.storage.from(ATLAS_PROOF_BUCKET).download(proofPath);
+    if (dlErr || !blob) {
+      throw new DesignPanelServerError("designpanel_atlas_proof_download_failed", dlErr?.message || `Could not read ${proofPath}`, true);
+    }
+    const bytes = Buffer.from(await blob.arrayBuffer());
+    if (sha256(bytes) !== String(payload.proofSha256 || "").toLowerCase()) {
+      throw new DesignPanelServerError("designpanel_atlas_proof_hash_mismatch", "Downloaded proof bytes do not match the photographer's reported sha256");
+    }
+
+    return {
+      bytes,
+      contentType: String(payload.contentType || "image/png"),
+      contract: ATLAS_SERVER_PROVIDER_CONTRACT,
+      metadata: atlasMetadata({
+        // Stated, not computed: no A.T.L.A.S. view is anchored to another view,
+        // and the seam refuses any that claims to be.
+        anchoredToView1: false,
+        atlasConditioningVerified: true,
+        // The proven stack, named so a later reader can prove which producer
+        // made these pixels without re-deriving it.
+        proofProducer: "persona-photographer-render",
+        proofContract: String(payload.contract || ""),
+        proofSourceCommit: String(payload.sourceCommit || ""),
+        proofRequestId: String(payload.requestId || ""),
+        proofModel: String(payload.model || ""),
+        proofImageRequestCount: Number(payload.imageRequestCount || 0),
+        // ARTWORK AUTHORITY: this surface's own persisted Call-9 panel.
+        atlasZoneContract: ATLAS_PANEL_AUTHORITY_CONTRACT,
+        atlasZoneContentHash: panel.contentHash,
+        atlasZoneSurfaceKey: panel.surfaceKey,
+        sourcePanelStoragePath: panel.storagePath,
+        sourcePanelHash: panel.contentHash,
+      }),
     };
   }
 
@@ -1410,8 +1422,8 @@ function createAtlasDesignPanelProvider(options = {}) {
     hydrateDriver: driverStore.hydrateHero,
     contract: ATLAS_SERVER_PROVIDER_CONTRACT,
     maxProviderAttempts: 4,
-    models: [...(provider.models || [])],
-    keyCount: Number(provider.keyCount || 0),
+    models: [...(provider?.models || [])],
+    keyCount: Number(provider?.keyCount || 0),
   };
 }
 

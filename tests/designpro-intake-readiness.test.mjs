@@ -1,23 +1,33 @@
 /**
- * THE INTAKE DOES NOT INTERROGATE THE CUSTOMER, AND DOES NOT DISCARD THEIR DATA.
+ * THE CUSTOMER STILL CHOOSES COMMERCIAL OR RESTYLE. IT JUST STOPS DELETING
+ * WHAT THEY TYPED.
  *
- * Owner, 2026-08-28: "Don't ask: Commercial or Restyle? The customer shouldn't
- * need to understand your internal design taxonomy. Infer it." And: "No hard
- * blocks — just add the enter button, it sends to DesignProAI to process
- * appropriately."
+ * ⛔ THE MODE CONTROL WAS DELETED ON 2026-08-28 AND PUT BACK THE SAME DAY.
+ * Owner: "Why did you take out the question. I never said to remove commercial
+ * / or restyle. I said use the correct designpanelai generate. There is a
+ * specific ATLAS version." Two different instructions; only the second was
+ * given, and a session acted on the first.
  *
- * Two things this locks, and the second is the one that actually cost money.
+ * The mode is not an internal label. `design-panel-ai-generate` branches on it
+ * — COMMERCIAL_DEPTH, COMMERCIAL_TRANSLATION and buildLogoArchitecture against
+ * the restyle style presets are different creative assemblies, and the
+ * atlasFlatMaster branch keeps both — so deleting the control took half of
+ * A.C.E. out of the customer's reach.
  *
- * 1. NO HARD BLOCKS. `canGenerate` may not encode a judgement about whether the
- *    customer's input is good enough. Only in-flight guards survive.
+ * What stays fixed is the defect that rode on it, and it is the one that cost
+ * money:
  *
- * 2. NO MODE-GATED FIELDS. Nine values used to be sent as
+ * 1. NO MODE-GATED FIELDS. Nine values used to be sent as
  *    `mode === "commercial" ? x : undefined` — companyName, phone, mascot,
  *    bulletPoints, industryType, brandColors, fontStyle, qrEnabled, qrUrl. A
  *    customer who typed a phone number while the ReStyle card happened to be
- *    highlighted had it dropped on the way to the wrap, silently. That is also
- *    circular: mode is INFERRED from those same values downstream, so gating
- *    them on it meant the inference could never see them.
+ *    highlighted had it dropped on the way to the wrap, silently. The choice
+ *    selects the creative assembly; it may not erase their input.
+ *
+ * 2. NO HARD BLOCKS. `canGenerate` may not encode a judgement about whether the
+ *    customer's input is good enough. Only in-flight guards survive. ("No hard
+ *    blocks — just add the enter button, it sends to DesignProAI to process
+ *    appropriately.")
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -32,19 +42,17 @@ const home = readFileSync(
   "utf8",
 );
 
-test("the customer is never asked to choose Commercial or Restyle", () => {
-  // What is forbidden is a CONTROL that asks them. `setMode` itself is still
-  // legitimate where the system learns the answer on its own -- the LogoPro
-  // handoff injects a logo and sets commercial, which is an inference from a
-  // real event, not a question.
-  assert.equal(/onClick=\{\(\) => setMode\(/.test(intake), false,
-    "a mode selector is back on the intake");
-  assert.equal(/MODES\.map/.test(home), false,
-    "the home page's mode selector is back");
-  // And the cards themselves, by their copy.
+test("the customer can choose Commercial or Restyle, on both intakes", () => {
+  assert.match(intake, /onClick=\{\(\) => setMode\("restyle"\)\}/,
+    "the ReStyle card lost its control");
+  assert.match(intake, /onClick=\{\(\) => setMode\("commercial"\)\}/,
+    "the Commercial card lost its control");
   for (const copy of ["Artistic &amp; Style Wraps", "Business &amp; Fleet Wraps"]) {
-    assert.equal(intake.includes(copy), false, `the "${copy}" card is back`);
+    assert.ok(intake.includes(copy), `the "${copy}" card is missing`);
   }
+  assert.match(home, /MODES\.map/, "the home page's mode selector is missing");
+  assert.match(home, /const \[mode, setMode\] = useState\("Commercial"\)/,
+    "the home page stopped letting the customer choose");
 });
 
 test("no field the customer filled in is discarded by a mode check", () => {
@@ -58,9 +66,15 @@ test("no field the customer filled in is discarded by a mode check", () => {
       `${field} is gated on the mode again — a customer's own input may not be dropped`,
     );
   }
-  // And the same on the home handoff.
-  assert.equal(/mode === ["']Commercial["'] \? \(/.test(home), false,
-    "the home page gates its identity fields on the mode again");
+  // And the same on the home handoff: the three identity fields travel
+  // whatever the mode button says.
+  for (const field of ["companyName", "phone", "website"]) {
+    assert.equal(
+      new RegExp(`${field}: mode === ["']Commercial["']`).test(home),
+      false,
+      `${field} is gated on the mode again on the home intake`,
+    );
+  }
 });
 
 test("nothing about the customer's input disables Generate", () => {

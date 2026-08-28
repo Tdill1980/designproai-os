@@ -35,6 +35,8 @@ import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
 
 const TABS = ["DesignProAI™", "RevisionStudioIQ™", "ProductionPack™", "ProductionFlow™"];
 
+const MODES = ["Commercial", "Restyle"];
+
 
 const VEHICLE_TYPES = [
   { icon: Car, label: "Car", value: "car" },
@@ -199,10 +201,11 @@ export default function DesignProAIHome() {
   );
   const [showPromptHelp, setShowPromptHelp] = useState(false);
   // Left-rail "Start Your Design" state
-  // DERIVED, NOT CHOSEN. A business identity means Commercial; otherwise this
-  // is a styling job. The same rule the studio and the operator page already
-  // apply ("a company name means commercial whatever the toggle says").
-  const mode = companyName.trim() || phone.trim() || website.trim() ? "Commercial" : "Restyle";
+  // CHOSEN BY THE CUSTOMER. Owner, 2026-08-28: "I never said to remove
+  // commercial / or restyle." It selects which creative assembly inside
+  // design-panel-ai-generate authors the wrap, so it is a real product choice,
+  // not an internal label. What it no longer does is DELETE the fields below.
+  const [mode, setMode] = useState("Commercial");
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
   const [year, setYear] = useState("");
   const [make, setMake] = useState("");
@@ -325,9 +328,12 @@ export default function DesignProAIHome() {
               <Wand2 className="h-4 w-4" /> Create Design
             </button>
 
-            {/* The Commercial/ReStyle buttons were here. The customer should not
-                have to understand our design taxonomy to describe their wrap
-                (Trish 2026-08-28) -- it is inferred from what they enter. */}
+            {/* Mode */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {MODES.map((m) => (
+                <button key={m} onClick={() => setMode(m)} className={cn("rounded-lg border px-3 py-2 text-xs font-bold transition", mode === m ? "border-transparent bg-gradient-to-r from-blue-600 to-fuchsia-500 text-white shadow" : "border-white/10 text-white/70 hover:bg-white/5")}>{m}</button>
+              ))}
+            </div>
 
             {/* Vehicle type */}
             <div className="mt-3 text-[10px] font-bold uppercase tracking-wider text-white/60">Vehicle Type</div>

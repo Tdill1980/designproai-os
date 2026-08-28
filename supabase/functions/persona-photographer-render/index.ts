@@ -23,7 +23,32 @@ import { upscaleImageBytes } from "../_shared/topaz-upscale.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-designpro-owner-id",
+};
+
+// The A.T.L.A.S. contract version this function stamps on every proof it
+// produces in atlas-proof mode. The runtime pins the same string, so a drift
+// between the two homes is caught by a test rather than shipped.
+const ATLAS_PROOF_CONTRACT = "designpro.atlas-photographer-proof.v1";
+const ATLAS_PROOF_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
+
+/**
+ * THE SEVEN CANONICAL A.T.L.A.S. SHOTS, AND THE SURFACE THAT AUTHORS EACH.
+ *
+ * PHOTOGRAPHER_SHOT_SEQUENCE is the pinned SIX-shot magazine sequence and has
+ * no roof. `CAMERA_ANGLES` in view-angles-os carries all seven, so atlas-proof
+ * resolves against this map instead of that sequence — which changes nothing
+ * about the camera text, only which of the pinned angles may be requested.
+ */
+const ATLAS_SHOT_SURFACES: Record<string, string> = {
+  "side": "driver",
+  "passenger-side": "passenger",
+  "hood_detail": "hood",
+  "front": "front",
+  "rear": "rear",
+  "roof": "roof",
+  // The detail shot is a crop of a real surface; the caller names which one.
+  "close-up": "",
 };
 
 /** Fetch an image URL and return base64 inline data for Gemini */
@@ -58,6 +83,14 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
+
+    // ═══ ATLAS-PROOF — the DesignProAI 3D proof, artwork authority swapped.
+    // Owner directive 2026-08-28: "DO NOT CREATE ANOTHER 3D EDGE FUNCTION."
+    // This is that function, in the one mode where the extracted A.T.L.A.S.
+    // panel is the artwork instead of a hero render. See handleAtlasProof.
+    if (body?.mode === "atlas-proof") {
+      return await handleAtlasProof(body);
+    }
     const {
       designAnchorText,
       heroRenderUrl,
@@ -340,3 +373,212 @@ serve(async (req) => {
     );
   }
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATLAS-PROOF MODE — THE PROVEN PHOTOGRAPHER, ONE INPUT CHANGED
+//
+// Owner directive (Trish 2026-08-28), verbatim: "DO NOT CREATE ANOTHER 3D EDGE
+// FUNCTION. Use supabase/functions/persona-photographer-render/index.ts with
+// persona-photographer-prompt.ts, view-angles-os.ts, studio-os.ts. For ATLAS,
+// replace the historical heroRenderUrl artwork reference with the matching
+// persisted sourcePanelUrl/sourcePanelHash. Passenger must receive its
+// Passenger panel. Driver must receive Driver. Hood receives Hood, etc. Do not
+// skip the panel input for Passenger. Do not use Driver as artwork continuity
+// authority. ATLAS panel = artwork authority. Photographer + angles + studio +
+// lighting = presentation authority only."
+//
+// So exactly one thing differs from the shot loop above:
+//
+//   heroRenderUrl (a 3D render of the whole vehicle, dropped for two shots)
+//     becomes
+//   sourcePanelPath (this surface's deterministic panel, attached to every shot)
+//
+// Everything else is the pinned stack, untouched: buildPhotographerPrompt owns
+// the words, view-angles-os owns the camera, studio-os owns the room and the
+// light, model-config owns the model and its fallback.
+//
+// THREE THINGS THE HERO PATH DID THAT THIS MUST NOT.
+//
+//   1. `skipHeroShots = ['passenger-side', 'close-up']` dropped the reference
+//      image for those two shots, because a DRIVER-SIDE hero biased the camera
+//      toward the wrong angle. That reasoning does not survive the swap: the
+//      passenger panel is not a driver-side photograph, it is the passenger
+//      side's own flat artwork, and dropping it would leave the model to invent
+//      that flank's design. Every shot gets its own panel.
+//   2. The retry re-sent `[{ text: prompt }]` with no image. Under a hero that
+//      lost a consistency hint; here it would lose the ARTWORK, and the proof
+//      would be a different wrap. The panel is re-attached on every attempt.
+//   3. It required a browser JWT. The runtime holds the service role, so this
+//      mode takes the same service-role + x-designpro-owner-id pair the Call-1
+//      endpoint already accepts, and writes into the DesignProAI namespace.
+//
+// Returned by STORAGE PATH plus sha256, never a public URL: wrap-files is
+// private and a public URL 400s (live 2026-08-27, the same lesson Call 1
+// learned). The caller downloads with its server client and verifies the hash.
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function handleAtlasProof(body: Record<string, unknown>): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  const shotKey = String(body.shotKey || "").trim();
+  const surfaceKey = String(body.surfaceKey || "").trim();
+  const svc = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+  const fail = (message: string, status = 400) => new Response(
+    JSON.stringify({
+      success: false, requestId, functionName: "persona-photographer-render",
+      contract: ATLAS_PROOF_CONTRACT, shotKey, surfaceKey, error: message,
+    }),
+    { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
+
+  try {
+    if (!(shotKey in ATLAS_SHOT_SURFACES)) {
+      return fail(`atlas_proof_unknown_shot: ${shotKey || "(missing)"}`);
+    }
+    // THE PANEL MUST BE THE ONE THIS SHOT IS FOR. A silent mismatch here is the
+    // whole defect class this mode exists to remove -- a passenger proof built
+    // from the driver's artwork looks plausible and is wrong.
+    const expectedSurface = ATLAS_SHOT_SURFACES[shotKey];
+    if (expectedSurface && surfaceKey !== expectedSurface) {
+      return fail(`atlas_proof_surface_mismatch: ${shotKey} requires the ${expectedSurface} panel, received ${surfaceKey || "(none)"}`);
+    }
+    if (body.heroRenderUrl) {
+      return fail("atlas_proof_hero_forbidden: the A.T.L.A.S. panel is the artwork authority; a hero render may not be substituted");
+    }
+
+    const panelPath = String(body.sourcePanelPath || "").trim();
+    const panelHash = String(body.sourcePanelHash || "").trim().toLowerCase();
+    if (!panelPath) return fail("atlas_proof_panel_path_missing");
+    if (!/^[0-9a-f]{64}$/.test(panelHash)) return fail("atlas_proof_panel_hash_missing");
+
+    const { data: blob, error: dlErr } = await svc.storage.from("wrap-files").download(panelPath);
+    if (dlErr || !blob) return fail(`atlas_proof_panel_download_failed: ${dlErr?.message || panelPath}`, 502);
+    const panelBytes = new Uint8Array(await blob.arrayBuffer());
+    const panelDigest = await crypto.subtle.digest("SHA-256", panelBytes);
+    const panelSha = Array.from(new Uint8Array(panelDigest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    if (panelSha !== panelHash) {
+      return fail("atlas_proof_panel_hash_mismatch: the stored panel is not the artifact the caller named");
+    }
+    let panelBin = "";
+    for (let i = 0; i < panelBytes.length; i += 8192) {
+      panelBin += String.fromCharCode.apply(null, Array.from(panelBytes.subarray(i, Math.min(i + 8192, panelBytes.length))));
+    }
+    const panelPart = {
+      inlineData: {
+        mimeType: String(body.sourcePanelContentType || "image/png"),
+        data: btoa(panelBin),
+      },
+    };
+
+    if (!hasGeminiKey()) return fail("atlas_proof_no_api_key", 500);
+
+    // PRESENTATION AUTHORITY ONLY. `designAnchorText` is the pinned prompt's
+    // slot for describing the installed wrap; under A.T.L.A.S. the wrap is the
+    // attached image, so this names the authority and says nothing creative.
+    // No brief, no company, no palette, no style: Call 1 already designed this.
+    const designAnchorText = `The attached image is the exact, already-approved flat print panel for this vehicle's ${surfaceKey || shotKey} surface. It is the wrap, and it is the sole artwork authority. Photograph it as installed vinyl: reproduce its colours, graphics, logos and lettering exactly as they appear, and do not redesign, restyle, recolour, simplify, mirror, substitute or invent any part of it. Perspective, curvature and the camera angle change how it appears; they never change what it is.`;
+
+    const prompt = buildPhotographerPrompt({
+      designAnchorText,
+      vehicleYear: String(body.vehicleYear || ""),
+      vehicleMake: String(body.vehicleMake || ""),
+      vehicleModel: String(body.vehicleModel || ""),
+      finish: String(body.finish || "Gloss"),
+      shotKey,
+    });
+
+    // THE PANEL FIRST, THE CAMERA LAST. Gemini weights the final part most
+    // heavily, and the camera instruction is the one that must win -- the same
+    // ordering the hero path used, for the same reason.
+    const parts = [panelPart, { text: prompt }];
+
+    let imageBase64: string | null = null;
+    let imageMimeType = "image/png";
+    let modelUsed = PRIMARY_IMAGE_MODEL;
+    let imageRequestCount = 0;
+    const MAX_RETRIES = 2;
+    for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
+      const currentModel = attempt < MAX_RETRIES + 1 ? PRIMARY_IMAGE_MODEL : FALLBACK_IMAGE_MODEL;
+      modelUsed = currentModel;
+      try {
+        imageRequestCount += 1;
+        const response = await fetch(geminiImageUrl(getGeminiKey(), currentModel), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // The panel rides EVERY attempt. Retrying text-only would ask the
+          // model to invent the design it was meant to photograph.
+          body: JSON.stringify({
+            contents: [{ parts }],
+            generationConfig: {
+              responseModalities: ["TEXT", "IMAGE"],
+              imageConfig: { imageSize: "4K", aspectRatio: "4:3" },
+            },
+          }),
+          signal: AbortSignal.timeout(90_000),
+        });
+        if (!response.ok) {
+          console.error(`atlas-proof ${requestId} ${shotKey}: HTTP ${response.status} (attempt ${attempt})`);
+          if (attempt <= MAX_RETRIES) { await new Promise((r) => setTimeout(r, 2000 * attempt)); continue; }
+          break;
+        }
+        const result = await response.json();
+        for (const part of (result.candidates?.[0]?.content?.parts || [])) {
+          if (part.inlineData) {
+            imageBase64 = part.inlineData.data;
+            imageMimeType = part.inlineData.mimeType || "image/png";
+          }
+        }
+        if (imageBase64) break;
+      } catch (err) {
+        console.error(`atlas-proof ${requestId} ${shotKey}: attempt ${attempt} error`, (err as Error)?.message);
+      }
+      if (attempt <= MAX_RETRIES) await new Promise((r) => setTimeout(r, 2000 * attempt));
+    }
+    if (!imageBase64) return fail(`atlas_proof_no_image after ${imageRequestCount} request(s)`, 502);
+
+    const bin = atob(imageBase64);
+    const proofBytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) proofBytes[i] = bin.charCodeAt(i);
+    const digest = await crypto.subtle.digest("SHA-256", proofBytes);
+    const proofSha256 = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const ext = imageMimeType === "image/jpeg" ? "jpg" : imageMimeType === "image/webp" ? "webp" : "png";
+    const storagePath = `atlas-proof/${requestId}_${shotKey}.${ext}`;
+    const { error: upErr } = await svc.storage.from("wrap-files").upload(storagePath, proofBytes, {
+      contentType: imageMimeType, upsert: false,
+    });
+    if (upErr) return fail(`atlas_proof_upload_failed: ${upErr.message}`, 502);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        requestId,
+        functionName: "persona-photographer-render",
+        contract: ATLAS_PROOF_CONTRACT,
+        sourceCommit: ATLAS_PROOF_SOURCE_COMMIT,
+        model: modelUsed,
+        imageRequestCount,
+        promptChars: prompt.length,
+        shotKey,
+        surfaceKey,
+        // Every output proves which panel authored it, and which master that
+        // panel came from, so both UIs can pair a proof with its panel.
+        sourcePanelPath: panelPath,
+        sourcePanelHash: panelSha,
+        sourceMasterHash: String(body.sourceMasterHash || "") || null,
+        atlasRevisionId: String(body.atlasRevisionId || "") || null,
+        generationId: String(body.generationId || "") || null,
+        proofStoragePath: storagePath,
+        proofSha256,
+        proofBytes: proofBytes.length,
+        contentType: imageMimeType,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (err) {
+    console.error(`atlas-proof ${requestId} failed:`, err);
+    return fail(`atlas_proof_unexpected: ${String((err as Error)?.message || err).slice(0, 300)}`, 500);
+  }
+}

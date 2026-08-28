@@ -420,7 +420,7 @@ test("Atlas provider carries locked angles, photography, Studio OS lighting, det
   // producePassengerView because the Standard provider legitimately uses it,
   // and slicing to end-of-file would read that export list as a call site.
   const atlasBranch = PROVIDER_SOURCE.slice(
-    PROVIDER_SOURCE.indexOf("SIX SIBLING SURFACES"),
+    PROVIDER_SOURCE.indexOf("THE PROVEN PHOTOGRAPHER RENDERS EVERY A.T.L.A.S. PROOF"),
     PROVIDER_SOURCE.indexOf("hydrateDriver: driverStore.hydrateHero"),
   );
   assert.ok(atlasBranch.length > 500, "the A.T.L.A.S. branch slice must not be empty");

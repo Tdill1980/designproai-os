@@ -1271,6 +1271,39 @@ function panelHashMatches(atlas, surfaceKey, panelContentHash) {
   return String(entry.contentHash).toLowerCase() === String(panelContentHash).toLowerCase();
 }
 
+/**
+ * THE PERSISTED PANEL THIS PROOF IS PHOTOGRAPHED FROM.
+ *
+ * `viewAuthorityFor` returns the in-memory JPEG derivative the runtime used to
+ * condition a projection. The photographer edge function needs something
+ * different and stricter: the STORAGE PATH of the exact Call-9 panel plus its
+ * hash, so the function can read the customer's real artifact itself and prove
+ * it is the one the caller named.
+ *
+ * Both are bound to the same surface and the same master, so a proof produced
+ * this way carries the identity RULE 0.21 pairs the two UIs by.
+ */
+function atlasPanelForProofView(atlas, sourceViewType) {
+  const surfaceKey = surfaceForProofView(sourceViewType);
+  const panels = Array.isArray(atlas?.callOnePanels) ? atlas.callOnePanels : [];
+  const panel = panels.find((candidate) => candidate?.surfaceKey === surfaceKey);
+  if (!panel || !panel.storagePath || !HASH_RE.test(String(panel.contentHash || ""))) {
+    throw new FlatAtlasError(
+      "flat_atlas_proof_panel_unavailable",
+      `${sourceViewType}: the ${surfaceKey} Call-1 panel is not persisted yet, so its 3D proof has no artwork authority`,
+      true,
+    );
+  }
+  return Object.freeze({
+    surfaceKey,
+    sourceViewType,
+    storagePath: String(panel.storagePath),
+    contentHash: String(panel.contentHash).toLowerCase(),
+    contentType: String(panel.contentType || "image/png"),
+    sourceMasterHash: String(panel.sourceMasterHash || atlas?.master?.contentHash || ""),
+  });
+}
+
 function viewAuthorityFor(atlas, sourceViewType) {
   const authority = atlas?.viewAuthorities?.[sourceViewType];
   const expectedSurface = surfaceForProofView(sourceViewType);
@@ -2877,6 +2910,7 @@ module.exports = {
   projectionDerivative,
   renderAtlasAuthoringGuide,
   renderAtlasGuide,
+  atlasPanelForProofView,
   viewAuthorityFor,
   _test: {
     activeZoneMaskSvg,

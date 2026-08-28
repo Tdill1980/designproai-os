@@ -295,6 +295,69 @@ is PRESENTATION authority only.** Every output must persist `generationId`,
 id + hash, and `shotKey`, so both UIs can prove a proof came from its matching
 panel.
 
+### ✅ IT IS NOW WIRED THAT WAY — THE DEPLOYED PHOTOGRAPHER RENDERS EVERY PROOF (Trish 2026-08-28)
+
+Owner, verbatim: **"DO NOT CREATE ANOTHER 3D EDGE FUNCTION. Use
+`supabase/functions/persona-photographer-render/index.ts` with
+`persona-photographer-prompt.ts`, `view-angles-os.ts`, `studio-os.ts`. For
+ATLAS, replace the historical `heroRenderUrl` artwork reference with the
+matching persisted `sourcePanelUrl`/`sourcePanelHash`. Passenger must receive
+its Passenger panel. Driver must receive Driver. Hood receives Hood, etc. Do
+not skip the panel input for Passenger. Do not use Driver as artwork continuity
+authority. ATLAS panel = artwork authority. Photographer + angles + studio +
+lighting = presentation authority only."**
+
+Until this date the pin above was a REFERENCE the runtime imitated: the proofs
+were produced by `createAtlasDesignPanelProvider`, which built its own
+`buildAtlasProjectionPrompt` and called Gemini through the key pool. It reached
+the same studio and the same angles by importing the same kernels, so no single
+line of it was wrong — but a second implementation of a proven stage drifts, and
+the A/B against the pin showed exactly that: a Driver continuity photograph the
+proven stack never sent, a 3.5K prompt against the photographer's 1.4K, its own
+retry ladder, its own aspect ratio, and a nine-contract acceptance judge with no
+counterpart in the pin at all. Live cost on request `f3eb40c1`: every one of the
+eight refusals was a JUDGE VERDICT on a rendered image, not a renderer error.
+
+**The producer is now the deployed function, in `mode: "atlas-proof"`:**
+
+| authority | owner | changed? |
+|---|---|---|
+| words | `persona-photographer-prompt.ts` → `buildPhotographerPrompt` | no |
+| camera, framing | `view-angles-os.ts` → `CAMERA_ANGLES[shotKey]` | no |
+| studio, lighting | `studio-os.ts` | no |
+| model + fallback | `model-config.ts` | no |
+| **artwork** | **the surface's persisted Call-9 panel** | **yes — this is the one** |
+
+`persona-photographer-prompt.ts`, `studio-os.ts` and `view-angles-os.ts` stay
+byte-pinned. `persona-photographer-render/index.ts` is now ADAPTED, per this
+rule's own "adapt, do not restore blindly", and
+`tests/proof-stack-pinned-sources.test.mjs` asserts the adaptation touched the
+artwork input and nothing else.
+
+**Four behaviours that must never come back:**
+
+1. **`skipHeroShots = ['passenger-side', 'close-up']`.** The hero path dropped
+   the reference image for those two shots because a DRIVER-SIDE hero biased
+   the camera. That reasoning dies with the swap: the passenger panel is not a
+   driver photograph, it is the passenger side's own artwork, and dropping it
+   leaves the model to invent that flank. Every shot gets its own panel.
+2. **A text-only retry.** The hero path re-sent `[{ text: prompt }]` on attempts
+   2+. Under a hero that lost a hint; here it loses the ARTWORK and the proof
+   becomes a different wrap. The panel rides every attempt.
+3. **The Driver continuity reference.** Added 2026-08-26, ruled out by name
+   here. Cross-view identity rests on the shared master, hash-bound per
+   surface — a stronger guarantee than injecting one render into the others.
+4. **A public URL for the panel.** `wrap-files` is private; a public URL 400s.
+   The panel travels as a STORAGE PATH plus sha256, and the function verifies
+   the bytes are the artifact the caller named (`atlas_proof_panel_hash_mismatch`),
+   as does the caller on the returned proof.
+
+The roof is included even though `PHOTOGRAPHER_SHOT_SEQUENCE` is the historical
+SIX-shot magazine sequence: `CAMERA_ANGLES` carries all seven, so `atlas-proof`
+resolves against `ATLAS_SHOT_SURFACES` instead. That changes which pinned angle
+may be requested, never the angle text. A shot handed the wrong surface's panel
+is refused (`atlas_proof_surface_mismatch`), never rendered.
+
 ## 📐 RULE 0.28 — THE ARTBOARD IS LABELED CONTAINERS AT GENIE DIMS + 5″ BLEED, FILLED EDGE TO EDGE, WITH NO BODY LINES (Trish 2026-08-27)
 
 Owner, verbatim: **"ATLAS FLATTENED TOPO VIEW CONTAINER MUST HAVE LABELED

@@ -90,182 +90,193 @@ async function fixture() {
   };
 }
 
-test("Atlas renders every surface from its own master-zone authority, with no Driver dependency", async () => {
-  const f = await fixture();
-  const calls = [];
-  const directProvider = {
-    models: ["gemini-3-pro-image"],
-    keyCount: 2,
-    generateImage: async (call) => {
-      calls.push(call);
-      const repairedPassengerBytes = call.passengerRepairAttempt
-        ? Buffer.from(call.parts[0].inlineData.data, "base64")
-        : null;
-      return {
-        bytes: repairedPassengerBytes || f.driverBytes,
-        contentType: "image/png",
+/**
+ * EVERY SURFACE IS PHOTOGRAPHED FROM ITS OWN PANEL, BY THE PROVEN STACK.
+ *
+ * This test used to assert the runtime's own proof prompt -- promptHash,
+ * studioContractVersion, "SOLE artwork authority", the STUDIO LOCK text. That
+ * producer is gone (owner, 2026-08-28: "DO NOT CREATE ANOTHER 3D EDGE
+ * FUNCTION"), and the provider is now a transport to
+ * persona-photographer-render. The INTENT it protected is unchanged and is
+ * what is asserted here instead:
+ *
+ *   - each shot is sent its OWN surface's persisted panel, never another's;
+ *   - Passenger is one render from the passenger panel -- not a mirror, not a
+ *     repair pass, not the driver's artwork;
+ *   - no Driver dependency of any kind, and none of the retired-path keys;
+ *   - the returned bytes are hash-verified against what the function reported.
+ */
+function transportFixture({ proofBytes, panelPaths }) {
+  const posts = [];
+  const proofSha = hash(proofBytes);
+  const fetchImpl = async (url, init) => {
+    posts.push({ url, body: JSON.parse(init.body), headers: init.headers });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        contract: "designpro.atlas-photographer-proof.v1",
+        sourceCommit: "113d137dbe8813ca3bf70c8d7265ad081ebd4524",
         model: "gemini-3-pro-image",
-        keyFingerprint: "0123456789ab",
-        attempts: [],
+        imageRequestCount: 1,
+        proofStoragePath: "atlas-proof/x.png",
+        proofSha256: proofSha,
+        proofBytes: proofBytes.length,
+        contentType: "image/png",
+      }),
+    };
+  };
+  const supabase = {
+    storage: { from: () => ({ download: async () => ({ data: new Blob([proofBytes]), error: null }) }) },
+    from: () => {
+      const chain = {
+        select: () => chain, eq: () => chain, is: () => chain,
+        maybeSingle: async () => ({ data: null, error: null }),
+      };
+      return chain;
+    },
+  };
+  const surfaces = {
+    side: "driver", "passenger-side": "passenger", hood_detail: "hood",
+    front: "front", rear: "rear", "close-up": "driver", roof: "roof",
+  };
+  const atlas = {
+    masterContentHash: "a".repeat(64),
+    projectionContentHash: "c".repeat(64),
+    manifestContentHash: "b".repeat(64),
+    revisionId: "44444444-4444-4444-8444-444444444444",
+    revisionSequence: 1,
+    conditioningIdentityFor: (sourceViewType) => ({
+      contract: "designpro.flat-first-atlas-view-authority.v1",
+      sourceViewType, surfaceKey: surfaces[sourceViewType],
+      contentHash: "c".repeat(64), sourceMasterHash: "a".repeat(64),
+    }),
+    panelFor: (sourceViewType) => {
+      const surfaceKey = surfaces[sourceViewType];
+      return {
+        surfaceKey, sourceViewType,
+        storagePath: panelPaths[surfaceKey],
+        contentHash: hash(Buffer.from(surfaceKey)),
+        contentType: "image/png",
+        sourceMasterHash: "a".repeat(64),
       };
     },
   };
-  const atlas = {
-    masterContentHash: f.masterContentHash,
-    projectionContentHash: f.projectionContentHash,
-    manifestContentHash: f.manifestContentHash,
-    revisionId: "44444444-4444-4444-8444-444444444444",
-    revisionSequence: 1,
-    conditioningIdentityFor: f.conditioningIdentityFor,
-  };
-  const input = {
-    brief: "Flamingo Pools logo and photographic pool scene",
-    finish: "Gloss",
-    vehicle: { year: "2024", make: "Ford", model: "F-250", type: "truck" },
-  };
+  return { posts, atlas, supabase, fetchImpl, surfaces };
+}
+
+test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver dependency", async () => {
+  const proofBytes = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#1565c0" } })
+    .png().toBuffer();
+  const panelPaths = Object.fromEntries(
+    ["driver", "passenger", "hood", "roof", "front", "rear"].map((s) => [s, `designpro/panels/${s}.png`]),
+  );
+  const f = transportFixture({ proofBytes, panelPaths });
   const provider = createAtlasDesignPanelProvider({
     supabase: f.supabase,
-    provider: directProvider,
+    supabaseUrl: "https://example.supabase.co",
+    serviceRoleKey: "s".repeat(64),
+    fetchImpl: f.fetchImpl,
+    provider: { models: ["gemini-3-pro-image"], keyCount: 2, generateImage: async () => { throw new Error("the transport must not generate images itself"); } },
     requestId: REQUEST_ID,
     generationId: GENERATION_ID,
     tenantKey: TENANT_KEY,
-    input,
-    atlas,
-  });
-
-  const driverCallParts = f.conditioningParts("side");
-  const driver = await provider.generateImage({
-    sourceViewType: "side",
-    parts: driverCallParts,
-    aspectRatio: "16:9",
-    imageSize: "4K",
-    attempt: 1,
+    input: {
+      brief: "Flamingo Pools logo and photographic pool scene",
+      finish: "Gloss",
+      vehicle: { year: "2024", make: "Ford", model: "F-250", type: "truck" },
+    },
+    atlas: f.atlas,
   });
   assert.equal(provider.contract, ATLAS_SERVER_PROVIDER_CONTRACT);
-  assert.equal(driver.metadata.stage, "generate-color-render");
-  assert.equal(driver.metadata.anchoredToFlatAtlas, true);
-  assert.equal(driver.metadata.anchoredToView1, false);
-  assert.equal(driver.metadata.contract, ARTIFACT_AUDIT_CONTRACT);
-  assert.equal(driver.metadata.renderMethod, "generate-color-render");
-  assert.equal(driver.metadata.atlasZoneSurfaceKey, "driver");
-  assert.equal(driver.metadata.atlasZoneContentHash, f.projectionContentHash);
-  assert.match(driver.metadata.promptHash, /^[0-9a-f]{64}$/);
-  assert.ok(driver.metadata.promptLength > 1000);
-  assert.equal(driver.metadata.studioContractVersion, "designpro.studio-os.port-ab0f0638.v1");
-  assert.equal(driver.metadata.viewAngleContractVersion, "designpro.view-angles-os.port-ab0f0638.v1");
-  assert.equal(driver.metadata.photographyContractVersion, "designpro.photorealism-prompt.port.v1");
-  assert.equal(driver.metadata.structuredInputs.vehicleModel, true);
-  assert.equal(driver.metadata.logoPresent, false);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].parts.filter((part) => part.inlineData).length, 1,
-    "Driver must receive the existing Atlas projection only");
-  assert.equal(calls[0].parts.some((part) => part.text === driverCallParts[1].text), true,
-    "the existing view-specific Atlas call.parts were replaced");
-  assert.match(calls[0].parts[0].text, /SOLE artwork authority/i);
-  assert.match(calls[0].parts[0].text, /generate-color-render photography stage/i);
-  assert.match(calls[0].parts[0].text, /open bed interior stays bare factory bedliner/i);
-  assert.match(calls[0].parts[0].text, /Canon EOS R5/);
-  assert.match(calls[0].parts[0].text, /STUDIO LOCK/);
-  assert.ok(driver.metadata.requestByteSize < _test.GEMINI_REQUEST_LIMIT_BYTES);
 
-  // The engine persists Driver between these stages; expose that frozen row to
-  // this provider exactly where the production worker would.
-  f.setDriverReady();
-  const passenger = await provider.generateImage({
-    sourceViewType: "passenger-side",
-    parts: f.conditioningParts("passenger-side"),
-    aspectRatio: "16:9",
-    imageSize: "4K",
-    attempt: 1,
-  });
-  // PASSENGER IS A SIBLING, RENDERED FROM ITS OWN SURFACE AUTHORITY.
-  //
-  // It used to be a sharp mirror of the accepted Driver followed by a surgical
-  // AI text-repair pass, policed by a similarity bound. Flamingo Pools
-  // (5b2eb96c, the proven A.T.L.A.S.-first run) did no such thing: its
-  // Passenger was its own Gemini call at 35,747 ms with a real key
-  // fingerprint, LONGER than its own Driver -- a sharp mirror costs ~100 ms and
-  // burns no key. The mirror chain arrived with the server port and became the
-  // top cause of failed runs, because a branded design can never be a literal
-  // pixel mirror while every word stays forward-reading on both flanks.
-  assert.equal(passenger.metadata.renderMethod, "generate-color-render",
-    "Passenger renders like every other surface");
-  assert.equal(passenger.metadata.passengerProducer, undefined);
-  assert.equal(passenger.metadata.deterministicMirror, undefined);
-  assert.equal(passenger.metadata.atlasZonePassedToPassengerRepair, undefined);
-  // No Driver dependency of any kind.
-  assert.equal(passenger.metadata.anchoredToView1, false);
-  assert.equal(passenger.metadata.driverContentHash, undefined);
-  // Identity still binds to the shared master, for this exact surface.
-  assert.equal(passenger.metadata.atlasZoneSurfaceKey, "passenger");
-  assert.match(passenger.metadata.promptHash, /^[0-9a-f]{64}$/);
-  assert.equal(calls.length, 2, "Passenger is one render, not a mirror plus a repair");
-  const passengerParts = calls[1].parts;
-  const passengerAuthority = passengerParts.find((part) => part?.inlineData);
-  assert.ok(passengerAuthority, "Passenger must receive its master-zone authority as image data");
-  assert.equal(hash(Buffer.from(passengerAuthority.inlineData.data, "base64")), f.projectionContentHash,
-    "Passenger must be conditioned on its verified native master-zone authority");
-  // The camera contract itself is asserted against the real builder in
-  // atlas-generation-worker-wiring.test.mjs; this harness stubs the prompt, so
-  // what matters here is that Passenger got the canonical projection prompt for
-  // its OWN view rather than a mirror-repair instruction.
-  assert.ok(
-    passengerParts.some((part) => /canonical Atlas projection instructions for passenger-side/.test(part?.text || "")),
-    "Passenger got the canonical projection prompt for its OWN view",
-  );
-  // THE CONTINUITY-ONLY DRIVER PHOTOGRAPH (owner decision, 2026-08-26).
-  // Driver is accepted by now, so the sibling's request carries a SECOND
-  // image: the compacted Driver proof, labelled continuity-only and placed
-  // AFTER the zone authority. It provides vehicle/studio/camera context and
-  // never artwork -- the metadata says so under its own name, and the four
-  // retired-path keys the fence refuses stay absent.
-  assert.equal(passengerParts.filter((part) => part?.inlineData).length, 2,
-    "sibling carries its zone authority plus the continuity photograph");
-  assert.ok(
-    passengerParts.some((part) => /CONTINUITY ONLY/.test(part?.text || "")),
-    "the continuity image is labelled for what it is",
-  );
-  assert.equal(passenger.metadata.atlasDriverContinuityOnly, true);
-  assert.match(passenger.metadata.atlasDriverContinuityReferenceHash, /^[0-9a-f]{64}$/);
+  for (const sourceViewType of ["side", "passenger-side", "hood_detail", "front", "rear", "roof", "close-up"]) {
+    const result = await provider.generateImage({ sourceViewType, attempt: 1 });
+    const post = f.posts[f.posts.length - 1];
+    const surfaceKey = f.surfaces[sourceViewType];
 
-  const roof = await provider.generateImage({
-    sourceViewType: "roof",
-    parts: f.conditioningParts("roof"),
-    aspectRatio: "16:9",
-    imageSize: "4K",
-    attempt: 1,
-  });
-  assert.equal(calls.length, 3);
-  const roofCall = calls[2];
-  // Roof, like every other surface, receives its OWN master-zone authority and
-  // nothing else. The bounded Driver continuity anchor is gone: cross-view
-  // identity comes from the shared frozen master, hash-verified per surface,
-  // rather than from injecting one render into the others.
-  // Zone authority FIRST image, continuity photograph last: the authority
-  // position the proof QC verifies is untouched by the continuity reference.
-  assert.equal(roofCall.parts.filter((part) => part.inlineData).length, 2,
-    "Roof carries its own Atlas authority plus the continuity photograph");
-  assert.equal(
-    hash(Buffer.from(roofCall.parts.find((part) => part?.inlineData).inlineData.data, "base64")),
-    f.projectionContentHash,
-    "the FIRST image remains the zone authority",
-  );
-  assert.match(roofCall.parts[0].text, /CAB ROOF ONLY/);
-  assert.match(roofCall.parts[0].text, /cargo bed\/box.*must be outside the frame/is);
-  assert.match(roofCall.parts[0].text, /open bed interior stays bare factory bedliner/i);
-  // The prompt may name the Driver photograph, but only as continuity: the
-  // Atlas stays the sole artwork authority and wins any conflict.
-  assert.match(roofCall.parts[0].text, /where the Driver proof and Atlas could be read differently, the Atlas wins/i);
-  assert.equal(roof.metadata.stage, "generate-color-render");
-  assert.equal(roof.metadata.anchoredToFlatAtlas, true);
-  assert.equal(roof.metadata.anchoredToView1, false);
-  assert.equal(roof.metadata.driverStoragePath, undefined);
-  assert.equal(roof.metadata.driverReferenceByteSize, undefined);
-  assert.equal(roof.metadata.atlasZoneSurfaceKey, "roof");
-  assert.ok(roof.metadata.requestByteSize < _test.GEMINI_REQUEST_LIMIT_BYTES);
+    // THE PROVEN PRODUCER, ONE SHOT AT A TIME.
+    assert.match(post.url, /\/functions\/v1\/persona-photographer-render$/);
+    assert.equal(post.body.mode, "atlas-proof");
+    assert.equal(post.body.shotKey, sourceViewType);
+
+    // ITS OWN PANEL. Passenger gets passenger; nothing gets the driver's
+    // artwork unless it IS the driver surface.
+    assert.equal(post.body.surfaceKey, surfaceKey);
+    assert.equal(post.body.sourcePanelPath, panelPaths[surfaceKey]);
+    assert.equal(post.body.sourcePanelHash, hash(Buffer.from(surfaceKey)));
+
+    // NO DRIVER DEPENDENCY, AND NO HERO.
+    assert.equal(post.body.heroRenderUrl, undefined);
+    assert.equal(post.body.designAnchorText, undefined,
+      "the anchor text is the photographer's to build, not the runtime's");
+
+    // Vehicle + finish travel; nothing creative does.
+    assert.equal(post.body.vehicleMake, "Ford");
+    assert.equal(post.body.finish, "Gloss");
+    assert.equal(post.body.brief, undefined);
+    assert.equal(post.body.companyName, undefined);
+
+    // Hash-verified bytes come back, bound to this surface and this master.
+    assert.equal(hash(result.bytes), hash(proofBytes));
+    assert.equal(result.metadata.anchoredToFlatAtlas, true);
+    assert.equal(result.metadata.anchoredToView1, false);
+    assert.equal(result.metadata.proofProducer, "persona-photographer-render");
+    assert.equal(result.metadata.atlasZoneSurfaceKey, surfaceKey);
+    assert.equal(result.metadata.sourcePanelStoragePath, panelPaths[surfaceKey]);
+
+    // The four retired-path keys the fence refuses, plus the continuity key.
+    for (const retired of [
+      "driverContentHash", "deterministicMirror", "passengerProducer",
+      "atlasZonePassedToPassengerRepair", "atlasDriverContinuityOnly",
+    ]) {
+      assert.equal(result.metadata[retired], undefined,
+        `${sourceViewType} carries the retired key ${retired}`);
+    }
+  }
+  assert.equal(f.posts.length, 7, "seven shots, seven renders — no mirror, no repair pass");
 });
 
-test("real atlasProjectionParts passes its exact native crop through the provider identity gate", async () => {
+test("a proof whose bytes do not match the photographer's reported hash is refused", async () => {
+  const proofBytes = await sharp({ create: { width: 32, height: 24, channels: 3, background: "#000000" } })
+    .png().toBuffer();
+  const panelPaths = { driver: "designpro/panels/driver.png" };
+  const f = transportFixture({ proofBytes, panelPaths });
+  const provider = createAtlasDesignPanelProvider({
+    // The store hands back DIFFERENT bytes than the function reported.
+    supabase: {
+      ...f.supabase,
+      storage: { from: () => ({ download: async () => ({ data: new Blob([Buffer.from("tampered")]), error: null }) }) },
+    },
+    supabaseUrl: "https://example.supabase.co",
+    serviceRoleKey: "s".repeat(64),
+    fetchImpl: f.fetchImpl,
+    provider: { models: ["gemini-3-pro-image"], keyCount: 1, generateImage: async () => { throw new Error("the transport must not generate images itself"); } },
+    requestId: REQUEST_ID,
+    generationId: GENERATION_ID,
+    tenantKey: TENANT_KEY,
+    input: { finish: "Gloss", vehicle: { year: "2024", make: "Ford", model: "F-250", type: "truck" } },
+    atlas: f.atlas,
+  });
+  await assert.rejects(
+    () => provider.generateImage({ sourceViewType: "side", attempt: 1 }),
+    (error) => error?.code === "designpanel_atlas_proof_hash_mismatch",
+  );
+});
+
+/**
+ * REAL GEOMETRY, REAL CUTS: EACH PROOF VIEW RESOLVES TO ITS OWN PERSISTED PANEL.
+ *
+ * This used to drive `buildAtlasProjectionRequest` and assert the runtime's own
+ * conditioning gate. The photographer is the producer now, and what it is sent
+ * is a STORAGE PATH plus a hash -- so the gate that matters is the resolver
+ * that picks which panel belongs to which shot. It is exercised here against a
+ * master that was actually cut, not a hand-built fixture, because a
+ * surface-to-shot mix-up is invisible in prose and obvious in geometry.
+ */
+test("every proof view resolves to its own surface's persisted panel, or fails closed", async () => {
   const panelSurfaces = [
     ["driver", 190, 66], ["passenger", 190, 66], ["hood", 68, 62],
     ["roof", 76, 96], ["front", 84, 34], ["rear", 82, 48],
@@ -274,7 +285,6 @@ test("real atlasProjectionParts passes its exact native crop through the provide
     bleed: { top: 5, right: 5, bottom: 5, left: 5 },
   }));
   const manifest = flatFirst.buildAtlasManifest(panelSurfaces);
-  // The cut is fail-closed on the GENIE manifest identity now.
   manifest.geometryResolution = {
     contract: "designpro.genie-manifest.v1",
     genieManifestId: "0".repeat(32),
@@ -288,74 +298,48 @@ test("real atlasProjectionParts passes its exact native crop through the provide
   };
   const guide = await flatFirst.renderAtlasGuide(manifest);
   const masterBytes = (await flatFirst.normalizeAtlasMaster(guide, manifest)).bytes;
-  const projection = await flatFirst.projectionDerivative(masterBytes);
-  const callOnePanels = await flatFirst.cutCallOnePanels(
-    masterBytes, manifest, flatFirst._test.sha256(masterBytes),
-  );
-  const viewAuthorities = await flatFirst._test.buildViewAuthorities(callOnePanels);
-  const masterContentHash = hash(masterBytes);
-  const flatAtlas = {
-    contract: flatFirst.ATLAS_CONTRACT,
-    revisionId: "44444444-4444-4444-8444-444444444444",
-    revisionSequence: 1,
-    manifest,
-    manifestAsset: { contentHash: "b".repeat(64) },
-    master: { bytes: masterBytes, contentHash: masterContentHash },
-    projection,
-    viewAuthorities,
-  };
-  const transportCalls = [];
-  const provider = createAtlasDesignPanelProvider({
-    supabase: {
-      storage: { from: () => ({ download: async () => ({ data: null, error: null }) }) },
-      from: () => {
-        const chain = {
-          select: () => chain, eq: () => chain, is: () => chain,
-          maybeSingle: async () => ({ data: null, error: null }),
-        };
-        return chain;
-      },
-    },
-    provider: {
-      models: ["gemini-3-pro-image"], keyCount: 1,
-      generateImage: async (call) => {
-        transportCalls.push(call);
-        return {
-          bytes: viewAuthorities.side.bytes,
-          contentType: "image/jpeg",
-          model: "gemini-3-pro-image",
-          keyFingerprint: "0123456789ab",
-          attempts: [],
-        };
-      },
-    },
-    requestId: REQUEST_ID,
-    generationId: GENERATION_ID,
-    tenantKey: TENANT_KEY,
-    input: { vehicle: { year: "2024", make: "Ford", model: "F-250", type: "truck" } },
-    atlas: {
-      conditioningPartsFor: (sourceViewType) => flatFirst.atlasProjectionParts(flatAtlas, sourceViewType),
-      conditioningIdentityFor: (sourceViewType) => flatFirst.viewAuthorityFor(flatAtlas, sourceViewType),
-      authorityMetadata: {
-        masterContentHash,
-        projectionContentHash: projection.contentHash,
-        manifestContentHash: flatAtlas.manifestAsset.contentHash,
-        revisionId: flatAtlas.revisionId,
-        revisionSequence: 1,
-      },
-    },
-  });
+  const masterHash = flatFirst._test.sha256(masterBytes);
+  const cut = await flatFirst.cutCallOnePanels(masterBytes, manifest, masterHash);
 
-  const parts = flatFirst.atlasProjectionParts(flatAtlas, "side");
-  const result = await provider.generateImage({
-    sourceViewType: "side", parts, aspectRatio: "16:9", imageSize: "4K", attempt: 1,
-  });
-  const sentImage = transportCalls[0].parts.find((part) => part.inlineData);
-  assert.equal(hash(Buffer.from(sentImage.inlineData.data, "base64")), viewAuthorities.side.contentHash);
-  assert.equal(result.metadata.atlasZoneContentHash, viewAuthorities.side.contentHash);
-  assert.equal(result.metadata.atlasZoneSurfaceKey, "driver");
-  assert.notEqual(viewAuthorities.side.contentHash, projection.contentHash,
-    "the provider receives the exact Driver zone, not the complete white-flattened sheet");
+  // The revision's own panel records, exactly as `generateOrReuseFlatAtlas`
+  // writes them: a storage path per surface plus that panel's content hash.
+  const callOnePanels = cut.map((panel) => ({
+    surfaceKey: panel.surfaceKey,
+    storagePath: `designpro/${TENANT_KEY}/${GENERATION_ID}/flat-first/v1/revisions/1/panels/${panel.contentHash}.png`,
+    contentHash: panel.contentHash,
+    contentType: panel.contentType,
+    sourceMasterHash: masterHash,
+  }));
+  const atlas = { callOnePanels, master: { contentHash: masterHash } };
+
+  const expected = {
+    side: "driver", "passenger-side": "passenger", hood_detail: "hood",
+    front: "front", rear: "rear", roof: "roof",
+    // The detail shot is a crop of the driver flank, by design.
+    "close-up": "driver",
+  };
+  const seen = new Map();
+  for (const [sourceViewType, surfaceKey] of Object.entries(expected)) {
+    const panel = flatFirst.atlasPanelForProofView(atlas, sourceViewType);
+    assert.equal(panel.surfaceKey, surfaceKey, `${sourceViewType} resolved to ${panel.surfaceKey}`);
+    assert.match(panel.contentHash, /^[0-9a-f]{64}$/);
+    assert.equal(panel.sourceMasterHash, masterHash, "every panel names the one master it was cut from");
+    assert.ok(panel.storagePath.includes(panel.contentHash), "the path is content-addressed to that panel");
+    seen.set(surfaceKey, panel.contentHash);
+  }
+  // Six distinct surfaces, six distinct panels. Driver and passenger are cut
+  // from opposite flanks of the sheet, so they must not collide.
+  assert.equal(new Set(seen.values()).size, 6, "two surfaces resolved to the same panel");
+
+  // FAIL CLOSED. A proof whose panel has not landed yet has no artwork
+  // authority, and asking the photographer to render it anyway would be asking
+  // it to invent the design. Retryable: `panel.ready(surface)` is what releases
+  // that surface's proof, and it may simply not have fired yet.
+  const missingRoof = { ...atlas, callOnePanels: callOnePanels.filter((p) => p.surfaceKey !== "roof") };
+  assert.throws(
+    () => flatFirst.atlasPanelForProofView(missingRoof, "roof"),
+    (error) => error?.code === "flat_atlas_proof_panel_unavailable" && error.retryable === true,
+  );
 });
 
 test("Atlas keeps the exact passenger and close-up view clauses without introducing a hero view", () => {

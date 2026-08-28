@@ -39,7 +39,7 @@ const WORKER_SOURCE = readFileSync(
 
 /** The A.T.L.A.S. branch only -- the module still exports the Standard mirror. */
 const ATLAS_BRANCH = PROVIDER_SOURCE.slice(
-  PROVIDER_SOURCE.indexOf("SIX SIBLING SURFACES"),
+  PROVIDER_SOURCE.indexOf("THE PROVEN PHOTOGRAPHER RENDERS EVERY A.T.L.A.S. PROOF"),
   PROVIDER_SOURCE.indexOf("hydrateDriver: driverStore.hydrateHero"),
 );
 
@@ -96,10 +96,18 @@ test("2+3: Passenger and every other surface render from their own surface autho
   assert.equal(ATLAS_BRANCH.includes("fixMirrorText"), false);
   assert.equal(ATLAS_BRANCH.includes("designpanel_server_driver_required"), false);
   assert.equal(ATLAS_BRANCH.includes("compactAcceptedDriver"), false);
+  // ...and the continuity photograph the owner ruled out by name on
+  // 2026-08-28: "Do not use Driver as artwork continuity authority."
+  assert.equal(ATLAS_BRANCH.includes("driverContinuityReference"), false);
+  assert.equal(ATLAS_BRANCH.includes("compactAtlasDriverReference"), false);
   // Identity is per-surface and hash-bound to the shared master.
   assert.match(ATLAS_BRANCH, /atlasZoneSurfaceKey/);
   assert.match(ATLAS_BRANCH, /atlasZoneContentHash/);
   assert.match(ATLAS_BRANCH, /atlasConditioningVerified:\s*true/);
+  // And each surface is SENT its own panel: `panelFor` resolves through
+  // `surfaceForProofView`, so passenger-side receives the passenger panel.
+  assert.match(ATLAS_BRANCH, /atlas\.panelFor\(sourceViewType\)/);
+  assert.match(ATLAS_BRANCH, /sourcePanelPath: panel\.storagePath/);
 });
 
 // 4. a failed Driver does not prevent the others

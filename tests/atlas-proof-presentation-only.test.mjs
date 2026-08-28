@@ -1,5 +1,14 @@
 // CALLS 2-8 ARE PRESENTATION, NEVER A SECOND DESIGN GENERATION.
 //
+// ⚠️ THIS FILE GUARDS A PATH THAT IS NO LONGER THE PRODUCT'S. Owner, 2026-08-28:
+// "DO NOT CREATE ANOTHER 3D EDGE FUNCTION." A.T.L.A.S. proofs are produced by
+// the deployed `persona-photographer-render` now, and the runtime provider is a
+// transport to it -- see `tests/proof-stack-pinned-sources.test.mjs`, which is
+// where the LIVE presentation-only property is asserted.
+// `buildAtlasProjectionPrompt` survives as an unwired helper; these assertions
+// stop it drifting into a creative producer if anything ever picks it up again,
+// and they are not evidence about what renders today.
+//
 // Owner directive (Trish 2026-08-27): "3D proofs must not re-enter creative
 // authoring. ONE DESIGN GENERATION = Call 1 only." The A.T.L.A.S. proof path
 // uses buildAtlasProjectionPrompt — the presentation branch of the same
