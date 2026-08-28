@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-61), [
+  assert.deepEqual(names.slice(-62), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -192,6 +192,11 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // one line after the first gate had already been relaxed to master
     // acceptance, and re-imposed the seven-view barrier on publication.
     "20260827140000_designpro_publication_does_not_wait_for_seven_proofs.sql",
+    // The DATABASE twin of `assertAtlasViewLineage`, corrected the same way
+    // #238 corrected the worker: it still described the retired in-runtime
+    // `generate-color-render` projection #232 replaced, so no A.T.L.A.S. run
+    // could clear it however good its proofs.
+    "20260828100000_designpro_db_gate_names_the_photographer.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

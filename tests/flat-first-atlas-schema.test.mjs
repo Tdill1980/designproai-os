@@ -95,6 +95,69 @@ test("the owner-callable regeneration RPC refuses exact Atlas v3 before any muta
   );
 });
 
+// THE GATE AND THE WORKER ASSERT MUST NAME THE SAME PRODUCER.
+//
+// `designpro_private.flat_first_atlas_view_set_valid` is the SQL twin of
+// `assertAtlasViewLineage`. #232 moved the proofs onto the deployed
+// photographer (RULE 0.29); #238 corrected the worker assert and left the SQL
+// twin describing the retired in-runtime `generate-color-render` projection.
+// Generation 8555be2f-71fe-4a30-8680-653d086a213e (2026-08-28, on 8c7ec086) is
+// what surfaced it: the worker accepted the run and wrote outputs_ready with all
+// seven proofs persisted, and this predicate then judged the set invalid, so
+// `flat_first_atlas_requires_new_run` returned true, the status RPC rewrote the
+// state to failed with `flat_first_atlas_new_run_required`, and the gateway
+// answered 409 over seven good proofs. The paid half is gated on the same
+// verdict and could never start.
+//
+// Read across every migration that touches the function, newest last: a later
+// migration PATCHES the live body rather than restating it (restating reverts
+// the patches in between), so the defining body alone is not the contract.
+test("the view-set gate names the deployed photographer, not the producer it replaced", () => {
+  assert.ok(
+    viewSetContractSql.lastIndexOf("persona-photographer-render")
+      > viewSetContractSql.lastIndexOf("'generate-color-render'"),
+    "the newest migration touching the gate must name the photographer",
+  );
+  assert.ok(
+    viewSetContractSql.lastIndexOf("'edge-photographer'")
+      > viewSetContractSql.lastIndexOf("'server-native'"),
+    "the newest migration touching the gate must name the photographer's execution",
+  );
+  // The retired prompt audit is REPLACED, not dropped: every field below answers
+  // a question the old audit answered about the old producer -- which function,
+  // at which pinned source commit, through which provider and model, in exactly
+  // one image request.
+  for (const provenance of [
+    "proofProducer", "proofContract", "proofSourceCommit",
+    "proofRequestId", "proofProvider", "proofModel", "proofImageRequestCount",
+  ]) {
+    assert.ok(
+      viewSetContractSql.includes(provenance),
+      `${provenance} must be asserted by the gate`,
+    );
+  }
+  // RULE 0.28 §6: the proof's artwork authority is the persisted Call-1 panel,
+  // and the photographer reports that hash twice -- as the zone it was
+  // conditioned on and as the panel it came from -- so the gate checks both.
+  assert.ok(
+    viewSetContractSql.lastIndexOf("designpro.atlas-panel-authority.v1")
+      > viewSetContractSql.lastIndexOf("'designpro.generation-artifact-audit.v1'"),
+    "the gate must bind proof artwork to the persisted panel",
+  );
+  assert.ok(viewSetContractSql.includes("sourcePanelHash"));
+  // The runtime and the gate must agree on the strings, or they drift again.
+  const provider = readFileSync(new URL(
+    "../runtime/designpanel-server-provider.cjs", import.meta.url,
+  ), "utf8");
+  for (const shared of [
+    "persona-photographer-render", "edge-photographer",
+    "designpro.atlas-photographer-proof.v1", "designpro.atlas-panel-authority.v1",
+  ]) {
+    assert.ok(provider.includes(shared), `${shared} must be the runtime's own string`);
+    assert.ok(viewSetContractSql.includes(shared), `${shared} must be the gate's string`);
+  }
+});
+
 test("terminal Atlas owner reads require exact seven current roles and one audited lineage", () => {
   assert.match(viewSetGuardSql, /flat_first_atlas_view_set_valid/);
   // Pinned across the defining body and every later patch, newest last, so a
