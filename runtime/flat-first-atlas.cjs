@@ -89,7 +89,28 @@ const PROMPT_VERSION = "designpro-flat-first-atlas-20260827.v10-edge";
 // DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS raises it up to the hard cap for a
 // harness or an operator retry -- but the default path is the fast one.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
-const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 1;
+// TWO, NOT ONE — THE CORRECTIVE RE-ROLL HAD BECOME UNREACHABLE.
+//
+// The ceiling was pinned to 1 so the customer waits ~60s rather than ~180s,
+// on the reasoning that the two deterministic repairs (cut-out fill, passenger
+// compose) cover the only defect classes a re-roll used to answer. Generation
+// f72c10f0-8e36-489f-95c0-da6c55a75c5b, 2026-08-28, is the counter-example:
+// `passengerMirrorMae=0.37993` survived the passenger compose and the run died
+// on the spot, with no master, no panels and no proofs -- the customer's whole
+// design lost to one refused sheet.
+//
+// At 1 the corrective ladder below is DEAD CODE: `attempt === maxAuthoringAttempts`
+// is true on the first pass, so the block that forwards the gate's own finding
+// back to the edge function ("PASSENGER SIDE is DRIVER SIDE's mirror twin --
+// the same flat artwork reversed") can never run. That correction exists
+// precisely for this defect and had never been given a chance to work.
+//
+// Two is the smallest budget that makes it reachable: one authored sheet, and
+// one corrected sheet if the first is refused. A good master still costs one
+// call and still lands in ~60s -- nothing changes on the happy path, which is
+// the whole of the speed argument. Only a sheet that would otherwise have
+// failed outright spends the second call.
+const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 2;
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
   const value = Number(raw);
