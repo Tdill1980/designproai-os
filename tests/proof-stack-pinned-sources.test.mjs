@@ -139,3 +139,84 @@ test("the A.T.L.A.S. proof provider is a transport, not a second producer", () =
       `the Driver continuity anchor is back as ${retired} — the owner ruled it out by name`);
   }
 });
+
+/**
+ * THE SECOND PROOF IMPLEMENTATION IS DELETED, NOT MERELY UNWIRED.
+ *
+ * Owner, 2026-08-28: "Delete buildAtlasProjectionPrompt and its obsolete tests
+ * instead of leaving a second proof implementation available to reconnect. If
+ * deletion is unsafe, add an enforcement test proving there are zero production
+ * references or calls."
+ *
+ * Deletion was safe, so this proves the stronger thing: the symbols do not
+ * exist anywhere in the repository -- not as a definition, not as an export,
+ * not as an import, not in a test. An unwired producer is one import away from
+ * being the producer again.
+ */
+test("no A.T.L.A.S. proof producer survives anywhere in the repository", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const DELETED = [
+    "buildAtlasProjectionPrompt",
+    "buildAtlasProjectionRequest",
+    "resolveAtlasConditioningParts",
+    "atlasViewIdentity",
+    "compactAtlasDriverReference",
+    "assertAtlasRequestWithinLimit",
+    // The Driver continuity anchor the owner ruled out by name.
+    "driverContinuityReference",
+  ];
+  for (const symbol of DELETED) {
+    let hits = "";
+    try {
+      // `grep -w` so a mention inside a longer identifier cannot mask a real
+      // reference, and the tombstone comments are excluded by requiring the
+      // symbol to appear OUTSIDE a comment line.
+      hits = execFileSync("git", [
+        "grep", "-n", "-w", symbol, "--",
+        ":!node_modules", ":!*.md", ":!docs/",
+        // This file NAMES the forbidden symbols in order to forbid them.
+        ":!tests/proof-stack-pinned-sources.test.mjs",
+      ], { cwd: ROOT, encoding: "utf8" });
+    } catch {
+      hits = ""; // git grep exits 1 when there are no matches
+    }
+    const code = hits.split("\n").filter(Boolean).filter((line) => {
+      const text = line.slice(line.indexOf(":", line.indexOf(":") + 1) + 1).trim();
+      return !text.startsWith("*") && !text.startsWith("//") && !text.startsWith("/*");
+    });
+    assert.deepEqual(code, [],
+      `${symbol} is referenced in code again — the second proof producer is being reconnected`);
+  }
+});
+
+/**
+ * `atlasDriverContinuityOnly` is a metadata KEY, not a function, so it is not on
+ * the zero-reference list above: the fence and several negative fixtures have to
+ * keep NAMING it in order to refuse it. What must be true is that nothing
+ * WRITES it any more.
+ */
+test("no runtime code writes the Driver continuity metadata key", async () => {
+  const { execFileSync } = await import("node:child_process");
+  let hits = "";
+  try {
+    hits = execFileSync("git", ["grep", "-n", "atlasDriverContinuityOnly:", "--", "runtime/", "gateway/", "app/"],
+      { cwd: ROOT, encoding: "utf8" });
+  } catch { hits = ""; }
+  assert.equal(hits.trim(), "",
+    "something writes atlasDriverContinuityOnly again — the Driver anchor is back");
+});
+
+test("the A.T.L.A.S. transport makes no image request of its own", () => {
+  const provider = readFileSync(join(ROOT, "runtime/designpanel-server-provider.cjs"), "utf8");
+  const transport = provider.slice(
+    provider.indexOf("function createAtlasDesignPanelProvider"),
+    provider.indexOf("module.exports = {"),
+  );
+  // It calls the photographer and nothing else. No key pool, no Gemini, no
+  // prompt assembly, and no second edge function.
+  assert.ok(!transport.includes("generativelanguage"), "the transport reaches Gemini directly");
+  assert.ok(!transport.includes("provider.generateImage"), "the transport generates its own image");
+  assert.ok(!/\btext:\s*`/.test(transport), "the transport assembles prompt text");
+  assert.deepEqual([...new Set(transport.match(/\/functions\/v1\/[a-z-]+/g) || [])],
+    ["/functions/v1/persona-photographer-render"]);
+});

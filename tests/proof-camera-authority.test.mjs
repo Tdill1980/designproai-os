@@ -50,18 +50,29 @@ const INPUT = {
 const FINAL_LINE = "Shoot the frame described in this block and no other.";
 const MARKER = "CAMERA GEOMETRY — FINAL AUTHORITY";
 
-const atlasPrompt = (sourceViewType) => provider.buildAtlasProjectionPrompt({
-  input: INPUT,
-  sourceViewType,
-  hasDriverAnchor: true,
-  authorityIdentity: { surfaceKey: sourceViewType, contentHash: "a".repeat(64) },
-});
+// ⛔ THERE IS NO A.T.L.A.S. PROOF PROMPT IN THIS RUNTIME ANY MORE.
+//
+// `buildAtlasProjectionPrompt` was deleted on 2026-08-28 (owner: "Delete
+// buildAtlasProjectionPrompt and its obsolete tests instead of leaving a second
+// proof implementation available to reconnect"). A.T.L.A.S. proofs are produced
+// by the deployed `persona-photographer-render`, whose camera text comes from
+// the byte-pinned `view-angles-os` through the byte-pinned
+// `buildPhotographerPrompt`.
+//
+// So the "one camera voice, speaking last" invariant is now split in two, and
+// BOTH halves are still locked, just not both here:
+//   - A.T.L.A.S.  -> `tests/proof-stack-pinned-sources.test.mjs`, which pins
+//     those two files byte-for-byte and asserts atlas-proof mode restates
+//     neither `Camera:` nor `Framing:`.
+//   - Standard    -> `reproPrompt` below, which is still assembled here.
+// The three tests after these two read `view-angles.cjs` and `studio-os.cjs`
+// directly and are unaffected either way.
 const reproPrompt = (sourceViewType) => provider.buildReproductionPrompt({ input: INPUT, sourceViewType });
 
 const VIEWS = ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"];
 
 test("exactly one camera instruction per proof request", () => {
-  for (const build of [atlasPrompt, reproPrompt]) {
+  for (const build of [reproPrompt]) {
     for (const view of VIEWS) {
       const prompt = build(view);
       assert.equal(
@@ -77,7 +88,7 @@ test("exactly one camera instruction per proof request", () => {
 
 test("the camera block is the LAST word, and the studio block comes before it", () => {
   const studioOpening = "You are a professional automotive photographer";
-  for (const build of [atlasPrompt, reproPrompt]) {
+  for (const build of [reproPrompt]) {
     for (const view of VIEWS) {
       const prompt = build(view);
       assert.ok(prompt.trimEnd().endsWith(FINAL_LINE), `${view}: camera block is not the final block`);

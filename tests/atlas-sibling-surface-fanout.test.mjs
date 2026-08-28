@@ -96,10 +96,11 @@ test("2+3: Passenger and every other surface render from their own surface autho
   assert.equal(ATLAS_BRANCH.includes("fixMirrorText"), false);
   assert.equal(ATLAS_BRANCH.includes("designpanel_server_driver_required"), false);
   assert.equal(ATLAS_BRANCH.includes("compactAcceptedDriver"), false);
-  // ...and the continuity photograph the owner ruled out by name on
-  // 2026-08-28: "Do not use Driver as artwork continuity authority."
-  assert.equal(ATLAS_BRANCH.includes("driverContinuityReference"), false);
-  assert.equal(ATLAS_BRANCH.includes("compactAtlasDriverReference"), false);
+  // The Driver continuity photograph the owner ruled out by name on 2026-08-28
+  // ("Do not use Driver as artwork continuity authority") is not asserted here:
+  // it and the whole deleted proof producer are covered repository-wide by
+  // `tests/proof-stack-pinned-sources.test.mjs`, which fails if either symbol
+  // reappears in ANY code line rather than just in this slice.
   // Identity is per-surface and hash-bound to the shared master.
   assert.match(ATLAS_BRANCH, /atlasZoneSurfaceKey/);
   assert.match(ATLAS_BRANCH, /atlasZoneContentHash/);

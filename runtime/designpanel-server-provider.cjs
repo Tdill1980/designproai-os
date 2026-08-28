@@ -318,40 +318,6 @@ function atlasIdentity(atlas = {}) {
   });
 }
 
-async function atlasViewIdentity(atlas, sourceViewType) {
-  const expectedSurface = ATLAS_VIEW_SURFACES[sourceViewType];
-  if (!expectedSurface) {
-    throw new DesignPanelServerError(
-      "designpanel_atlas_view_invalid",
-      `${sourceViewType || "missing"} is not one of Driver, Passenger, Hood, Front, Rear, Close-Up, Roof`,
-      false,
-    );
-  }
-  const source = atlas?.conditioningIdentityFor || atlas?.viewAuthorities;
-  const candidate = typeof source === "function"
-    ? await source(sourceViewType)
-    : source?.[sourceViewType];
-  const identity = atlasIdentity(atlas);
-  if (!candidate || candidate.contract !== "designpro.flat-first-atlas-view-authority.v1"
-    || candidate.sourceViewType !== sourceViewType
-    || candidate.surfaceKey !== expectedSurface
-    || candidate.sourceMasterHash !== identity.surfaceSourceHash) {
-    throw new DesignPanelServerError(
-      "designpanel_atlas_view_authority_invalid",
-      `${sourceViewType}: exact ${expectedSurface} authority is not bound to this master`,
-      false,
-    );
-  }
-  assertHash(candidate.contentHash, `${sourceViewType} Atlas zone hash`);
-  return Object.freeze({
-    contract: candidate.contract,
-    sourceViewType,
-    surfaceKey: expectedSurface,
-    contentHash: String(candidate.contentHash).toLowerCase(),
-    sourceMasterHash: identity.surfaceSourceHash,
-  });
-}
-
 function assertHash(value, label) {
   if (!/^[0-9a-f]{64}$/.test(String(value || ""))) {
     throw new DesignPanelServerError("designpanel_atlas_identity_invalid", `${label} is required`, false);
@@ -377,86 +343,6 @@ function decodeInlineData(part) {
   return { bytes, mimeType };
 }
 
-async function resolveAtlasConditioningParts(atlas, sourceViewType, callParts = null) {
-  // generation-worker already constructs the master-bound, view-specific
-  // Atlas projection parts on each slot. Preserve those exact call.parts by
-  // default; an explicit factory callback is supported for direct callers and
-  // focused tests, but neither path reconstructs the Atlas here.
-  const source = (Array.isArray(callParts) && callParts.length)
-    ? callParts
-    : atlas.conditioningPartsFor || atlas.conditioningParts;
-  const candidate = typeof source === "function" ? await source(sourceViewType) : source;
-  if (!Array.isArray(candidate) || !candidate.length) {
-    throw new DesignPanelServerError(
-      "designpanel_atlas_conditioning_missing",
-      `${sourceViewType}: immutable Atlas conditioning parts are required`,
-      false,
-    );
-  }
-  // One exact native surface crop is the complete artwork authority for this
-  // proof. A second image here could silently become another design source.
-  const imageParts = candidate.filter((part) => part?.inlineData);
-  if (imageParts.length !== 1) {
-    throw new DesignPanelServerError(
-      "designpanel_atlas_conditioning_invalid",
-      `${sourceViewType}: expected exactly one canonical Atlas image, received ${imageParts.length}`,
-      false,
-    );
-  }
-  const { bytes } = decodeInlineData(imageParts[0]);
-  const identity = atlasIdentity(atlas);
-  const viewIdentity = await atlasViewIdentity(atlas, sourceViewType);
-  assertHash(identity.masterContentHash, "Atlas master hash");
-  assertHash(identity.projectionContentHash, "Atlas projection hash");
-  if (sha256(bytes) !== viewIdentity.contentHash) {
-    throw new DesignPanelServerError(
-      "designpanel_atlas_view_authority_hash_mismatch",
-      `${sourceViewType}: Atlas conditioning bytes do not match the exact ${viewIdentity.surfaceKey} identity`,
-      false,
-    );
-  }
-  return candidate.map((part) => ({
-    ...(part?.text == null ? {} : { text: String(part.text) }),
-    ...(part?.inlineData ? { inlineData: { ...part.inlineData } } : {}),
-  }));
-}
-
-async function compactAtlasDriverReference(bytes, options = {}) {
-  const maxBytes = Math.min(
-    MAX_ATLAS_DRIVER_REFERENCE_BYTES,
-    Math.max(100_000, Number(options.maxBytes) || MAX_ATLAS_DRIVER_REFERENCE_BYTES),
-  );
-  const maxEdge = Math.min(
-    MAX_ATLAS_DRIVER_REFERENCE_EDGE,
-    Math.max(640, Number(options.maxEdge) || MAX_ATLAS_DRIVER_REFERENCE_EDGE),
-  );
-  const qualities = [88, 82, 75, 68, 60, 52];
-  const edges = [...new Set([maxEdge, Math.min(maxEdge, 1120), Math.min(maxEdge, 960), 800, 640])]
-    .filter((edge) => edge <= maxEdge);
-  for (const edge of edges) {
-    for (const quality of qualities) {
-      const candidate = await sharp(bytes, { limitInputPixels: false })
-        .rotate()
-        .resize(edge, edge, { fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
-        .jpeg({ quality, chromaSubsampling: "4:2:0", optimiseCoding: true })
-        .toBuffer();
-      if (candidate.length <= maxBytes) {
-        return {
-          mimeType: "image/jpeg",
-          data: candidate.toString("base64"),
-          byteSize: candidate.length,
-          contentHash: sha256(candidate),
-        };
-      }
-    }
-  }
-  throw new DesignPanelServerError(
-    "designpanel_atlas_driver_reference_too_large",
-    `The verified Driver anchor cannot be conditioned below ${maxBytes} bytes`,
-    false,
-  );
-}
-
 function estimatedGeminiImageRequestBytes({ parts, aspectRatio = "16:9", imageSize = "4K", responseModalities = ["TEXT", "IMAGE"], temperature = 1 }) {
   return Buffer.byteLength(JSON.stringify({
     contents: [{ parts }],
@@ -467,115 +353,39 @@ function estimatedGeminiImageRequestBytes({ parts, aspectRatio = "16:9", imageSi
     },
   }));
 }
+/**
+ * ⛔ THE RUNTIME'S OWN A.T.L.A.S. PROOF IMPLEMENTATION IS DELETED. DO NOT
+ * RECREATE IT. (Trish 2026-08-28.)
+ *
+ * Six functions lived here and together formed a SECOND 3D proof producer:
+ * `atlasViewIdentity`, `resolveAtlasConditioningParts`,
+ * `compactAtlasDriverReference`, `assertAtlasRequestWithinLimit`,
+ * `buildAtlasProjectionPrompt` and `buildAtlasProjectionRequest`. They
+ * assembled a proof prompt in this process and called Gemini through the key
+ * pool.
+ *
+ * They were unwired on 2026-08-28 when A.T.L.A.S. proofs moved onto the
+ * deployed `persona-photographer-render`. The owner then required their
+ * REMOVAL, and the reason is the important part: "Delete
+ * buildAtlasProjectionPrompt and its obsolete tests instead of leaving a second
+ * proof implementation available to reconnect."
+ *
+ * An unwired producer is one import away from being the producer again, and the
+ * drift it accumulated while it WAS the producer is on the record in RULE 0.29
+ * -- a Driver continuity photograph the pinned stack never sent, a 3.5K prompt
+ * against the photographer's 1.4K, its own retry ladder, its own aspect ratio,
+ * and a nine-contract acceptance judge with no counterpart in the pin.
+ *
+ * `createAtlasDesignPanelProvider` below is now a TRANSPORT: it assembles no
+ * creative text and makes no image request of its own. Enforced by
+ * `tests/proof-stack-pinned-sources.test.mjs`.
+ *
+ * ⚠️ The Standard (non-A.T.L.A.S.) passenger mirror -- `generatePassengerMirror`,
+ * `passengerTextFixPrompt`, `producePassengerView`, `buildPassengerTextFixRequest`
+ * -- is a DIFFERENT pipeline with its own proven history and is deliberately
+ * untouched. Do not delete those while cleaning up here.
+ */
 
-function assertAtlasRequestWithinLimit(request, configuredMaxBytes = MAX_ATLAS_REQUEST_BYTES) {
-  const maxBytes = Math.min(
-    MAX_ATLAS_REQUEST_BYTES,
-    Math.max(1, Number(configuredMaxBytes) || MAX_ATLAS_REQUEST_BYTES),
-  );
-  const byteSize = estimatedGeminiImageRequestBytes(request);
-  if (byteSize > maxBytes) {
-    throw new DesignPanelServerError(
-      "designpanel_atlas_request_too_large",
-      `Atlas projection request is ${byteSize} bytes; bounded maximum is ${maxBytes}`,
-      false,
-    );
-  }
-  return byteSize;
-}
-
-function buildAtlasProjectionPrompt({ input, sourceViewType, hasDriverAnchor, authorityIdentity = null }) {
-  const vehicle = vehicleDescription(input);
-  const finish = String(input?.finish || "Gloss");
-  const finishSpec = FINISH_SPEC[finish.toLowerCase()] || FINISH_SPEC.gloss;
-  const viewLabel = angles.viewLabel(sourceViewType).toLowerCase();
-  const surfaceKey = authorityIdentity?.surfaceKey || ATLAS_VIEW_SURFACES[sourceViewType];
-  const photoLock = briefWantsPhoto(String(input?.brief || ""))
-    ? "\nPHOTOGRAPHIC REALISM LOCK: preserve photographic artwork in the Atlas as a real high-resolution color photograph; never turn it into illustration, vector art or clip-art."
-    : "";
-  const driverRole = hasDriverAnchor
-    ? `\nThe second attached image is the byte-verified accepted Driver proof. Use it ONLY to keep the exact vehicle anatomy, wheelbase, cab/bed configuration, studio, lighting, physical vinyl finish and visible installed scale continuous. It is not permission to infer, redraw or replace hidden artwork; where the Driver proof and Atlas could be read differently, the Atlas wins.`
-    : "\nNo prior 3D proof is attached to this first projection. Establish the Driver proof directly from the Atlas and the locked vehicle/camera/photography contracts below.";
-
-  return `Render the ${viewLabel} proof of this exact ${vehicle}. This is the sanctioned generate-color-render photography stage. It is texture projection from one already-approved design-panel-ai-generate flat master, NOT another design call.
-
-ARTWORK AUTHORITY — NON-NEGOTIABLE:
-The first attached image is the immutable A.T.L.A.S. native ${String(surfaceKey || "target").toUpperCase()} zone crop and the SOLE artwork authority for this proof. Project those exact pixels onto that corresponding painted surface. Preserve every color, photograph, pattern, gradient, graphic, logo, wordmark, character, spelling, relative scale, hierarchy and flow. Never redraw hidden content from Driver, borrow another master zone, redesign, reimagine, beautify, simplify, restyle, recolor, mirror, move, resize, substitute, autocomplete or invent. The crop is full-bleed behind future installer cut lines; mask it to factory glass/openings in the photo without relocating the master artwork.${driverRole}
-
-VIEW FIDELITY — NON-NEGOTIABLE:
-Reproduce the identical approved design on the same vehicle from the ${viewLabel} camera angle defined in the FINAL block of this prompt.
-The artwork is LOCKED. Treat this as photographing one real wrapped vehicle while only the camera moves. The design does not change between angles.
-
-Finish: ${finish.toUpperCase()} — ${finishSpec} Keep this finish identical across every view.
-
-${WRAP_COVERAGE_RULES}
-${truckBedClause(vehicle)}
-
-${STUDIO_ENVIRONMENT}
-${STUDIO_REINFORCEMENT}
-${PHOTOREALISM_REQUIREMENT}
-
-The exact vehicle, wrap, studio, lighting and finish remain continuous; only the camera moves. Output one 16:9 photorealistic vehicle proof only. Never output an installer map, panel sheet, dieline, labels, dimensions or annotations.${photoLock}
-
-${angles.cameraAuthority(sourceViewType, { pickup: pickupVehicle(input) })}`;
-}
-
-async function buildAtlasProjectionRequest({ atlas, input, sourceViewType, call, driverReference = null }) {
-  angles.assertTextDirectionGuard(sourceViewType);
-  const authorityIdentity = await atlasViewIdentity(atlas, sourceViewType);
-  // `call?.parts` still wins when a direct caller (or a focused test) hands
-  // one in explicitly -- that path is unchanged. What changed is the engine
-  // layer: `correctedParts()` (generation-engine.cjs) no longer turns the
-  // flat-first path's inert `promptParts: []` into a non-empty text-only
-  // array on a judged rejection, so this never again receives a `call.parts`
-  // that holds ONLY correction text with no image. It used to: a non-empty
-  // `callParts` here wins over the atlas fallback inside
-  // resolveAtlasConditioningParts, so that text-only array silently stripped
-  // the artwork authority image from every corrective retry -- "expected
-  // exactly one canonical Atlas image, received 0" on attempt 2+, live-caught
-  // 2026-08-27 (requestId 262f70cf-20e9-44fe-8b74-de44185b386a). The judge's
-  // findings still reach the retry -- via `call?.corrections` below, which
-  // the engine threads through independently of `call.parts` for exactly
-  // this purpose.
-  const atlasParts = await resolveAtlasConditioningParts(atlas, sourceViewType, call?.parts);
-  const prompt = buildAtlasProjectionPrompt({
-    input,
-    sourceViewType,
-    hasDriverAnchor: Boolean(driverReference),
-    authorityIdentity,
-  });
-  const corrections = Array.isArray(call?.corrections) ? call.corrections.filter(Boolean) : [];
-  const parts = [
-    { text: prompt },
-    { text: `IMAGE 1 — IMMUTABLE A.T.L.A.S. ${authorityIdentity.surfaceKey.toUpperCase()} NATIVE-ZONE CROP sha256 ${authorityIdentity.contentHash} (SOLE ARTWORK AUTHORITY).` },
-    ...atlasParts,
-    ...(driverReference ? [
-      { text: "IMAGE 2 — BYTE-VERIFIED DRIVER PROOF (VEHICLE/STUDIO/FINISH CONTINUITY ONLY)." },
-      { inlineData: { mimeType: driverReference.mimeType, data: driverReference.data } },
-    ] : []),
-    ...(corrections.length ? [{ text: corrections.join("\n\n") }] : []),
-  ];
-  const responseModalities = Number(call?.attempt) === 3 ? ["IMAGE"] : ["TEXT", "IMAGE"];
-  const requestByteSize = assertAtlasRequestWithinLimit({
-    parts,
-    aspectRatio: call?.aspectRatio || angles.aspectRatio(sourceViewType),
-    imageSize: call?.imageSize || angles.resolutionTier(sourceViewType),
-    responseModalities,
-    temperature: 1,
-  }, atlas.maxRequestBytes);
-  return {
-    parts,
-    responseModalities,
-    requestByteSize,
-    authorityIdentity,
-    audit: proofPromptAudit({
-      input,
-      sourceViewType,
-      prompt,
-      renderMethod: "generate-color-render",
-    }),
-  };
-}
 
 function buildReproductionPrompt({ input, sourceViewType }) {
   const vehicleInput = input?.vehicle || {};
@@ -1432,10 +1242,7 @@ module.exports = {
   ATLAS_SERVER_PROVIDER_CONTRACT,
   SERVER_PROVIDER_CONTRACT,
   DesignPanelServerError,
-  buildAtlasProjectionPrompt,
-  buildAtlasProjectionRequest,
   buildReproductionPrompt,
-  compactAtlasDriverReference,
   createAtlasDesignPanelProvider,
   createDesignPanelServerProvider,
   designLikelyHasText,
@@ -1450,11 +1257,8 @@ module.exports = {
   producePassengerView,
   reproductionParts,
   _test: {
-    assertAtlasRequestWithinLimit,
     atlasIdentity,
-    atlasViewIdentity,
     buildPassengerTextFixRequest,
-    resolveAtlasConditioningParts,
     sha256,
     GEMINI_REQUEST_LIMIT_BYTES,
     MAX_ATLAS_REQUEST_BYTES,

@@ -127,10 +127,23 @@ test("every consumer binds the surface authority to the surface source, not the 
   assert.match(source, /function surfaceSourceHashOf\(atlas\) \{/);
   // atlas-proof-qc: the judge's own staleness check.
   assert.match(proofQcSource, /atlas\?\.metadata\?\.panelSourceHash/);
-  // designpanel-server-provider: the renderer refuses conditioning bytes that
-  // are not the sheet this revision cut its surfaces from.
-  assert.match(providerSource, /candidate\.sourceMasterHash !== identity\.surfaceSourceHash/);
-  assert.match(providerSource, /surfaceSourceHash: String\(/);
+  // designpanel-server-provider: the renderer no longer receives conditioning
+  // BYTES at all -- it sends the photographer a storage PATH -- so the
+  // byte-level refusal it used to perform moved to the two ends of that
+  // transport. What it must still do is resolve the panel through
+  // `atlasPanelForProofView` (which reads the surface-source-derived record)
+  // and hash-verify what comes back.
+  assert.match(providerSource, /atlas\.panelFor\(sourceViewType\)/);
+  assert.match(providerSource, /designpanel_atlas_proof_hash_mismatch/);
+  // flat-first-atlas: the resolver that binds a shot to its own surface's panel
+  // and to the master that panel names.
+  assert.match(source, /function atlasPanelForProofView\(atlas, sourceViewType\)/);
+  assert.match(source, /sourceMasterHash: String\(panel\.sourceMasterHash/);
+  // and the photographer refuses a panel whose bytes are not the artifact named.
+  const photographer = readFileSync(
+    new URL("../supabase/functions/persona-photographer-render/index.ts", import.meta.url), "utf8",
+  );
+  assert.match(photographer, /atlas_proof_panel_hash_mismatch/);
   // generation-worker: what it publishes to the provider and re-asserts on the
   // accepted rows.
   assert.match(workerSource, /surfaceSourceHash: flatAtlas\.projection\.sourceMasterHash/);

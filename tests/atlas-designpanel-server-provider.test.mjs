@@ -10,8 +10,6 @@ const flatFirst = require("../runtime/flat-first-atlas.cjs");
 const {
   ARTIFACT_AUDIT_CONTRACT,
   ATLAS_SERVER_PROVIDER_CONTRACT,
-  buildAtlasProjectionPrompt,
-  buildAtlasProjectionRequest,
   createAtlasDesignPanelProvider,
   _test,
 } = require("../runtime/designpanel-server-provider.cjs");
@@ -342,63 +340,6 @@ test("every proof view resolves to its own surface's persisted panel, or fails c
   );
 });
 
-test("Atlas keeps the exact passenger and close-up view clauses without introducing a hero view", () => {
-  const input = { vehicle: { year: "2024", make: "Ford", model: "F-250", type: "truck" } };
-  const passenger = buildAtlasProjectionPrompt({ input, sourceViewType: "passenger-side", hasDriverAnchor: true });
-  const closeUp = buildAtlasProjectionPrompt({ input, sourceViewType: "close-up", hasDriverAnchor: true });
-  assert.match(passenger, /vehicle faces RIGHT in frame \(nose pointing right\)/);
-  assert.match(passenger, /All text and lettering reads correctly left-to-right, NEVER mirrored/);
-  assert.match(closeUp, /18 inches from the vehicle body surface/);
-  assert.match(closeUp, /locked camera distance above/);
-  assert.doesNotMatch(closeUp, /hero view/i);
-});
-
-test("Atlas verifies the exact zone hash and fails closed before a request can exceed Gemini 20 MiB", async () => {
-  const huge = Buffer.alloc(15 * 1024 * 1024, 7);
-  const atlas = {
-    masterContentHash: "a".repeat(64),
-    projectionContentHash: hash(huge),
-    conditioningParts: [{ inlineData: { mimeType: "image/jpeg", data: huge.toString("base64") } }],
-    conditioningIdentityFor: (sourceViewType) => ({
-      contract: "designpro.flat-first-atlas-view-authority.v1",
-      sourceViewType,
-      surfaceKey: "driver",
-      contentHash: hash(huge),
-      sourceMasterHash: "a".repeat(64),
-    }),
-  };
-  await assert.rejects(
-    () => buildAtlasProjectionRequest({
-      atlas,
-      input: { vehicle: { year: "2024", make: "Ford", model: "F-250" } },
-      sourceViewType: "side",
-      call: { attempt: 1, aspectRatio: "16:9", imageSize: "4K" },
-    }),
-    (error) => error?.code === "designpanel_atlas_request_too_large" && error.retryable === false,
-  );
-
-  const wrongIdentity = {
-    ...atlas,
-    maxRequestBytes: 100_000_000,
-    conditioningIdentityFor: (sourceViewType) => ({
-      contract: "designpro.flat-first-atlas-view-authority.v1",
-      sourceViewType,
-      surfaceKey: "driver",
-      contentHash: "f".repeat(64),
-      sourceMasterHash: "a".repeat(64),
-    }),
-  };
-  await assert.rejects(
-    () => buildAtlasProjectionRequest({
-      atlas: wrongIdentity,
-      input: { vehicle: { make: "Ford", model: "F-250" } },
-      sourceViewType: "side",
-      call: { attempt: 1 },
-    }),
-    (error) => error?.code === "designpanel_atlas_view_authority_hash_mismatch" && error.retryable === false,
-  );
-});
-
 test("Passenger mirror plus native zone are deterministically bounded below Gemini 20 MiB", async () => {
   const mirrorRaw = randomBytes(2560 * 1440 * 3);
   const authorityRaw = randomBytes(1800 * 1200 * 3);
@@ -436,3 +377,23 @@ test("Passenger mirror plus native zone are deterministically bounded below Gemi
     "request bounding may change JPEG quality but never crop or resize either authority",
   );
 });
+
+/**
+ * ⛔ TWO TESTS WERE REMOVED HERE WITH THE PRODUCER THEY DROVE.
+ *
+ * "Atlas keeps the exact passenger and close-up view clauses without
+ * introducing a hero view" and "Atlas verifies the exact zone hash and fails
+ * closed before a request can exceed Gemini 20 MiB" both called
+ * `buildAtlasProjectionPrompt` / `buildAtlasProjectionRequest`, which are
+ * deleted (owner, 2026-08-28).
+ *
+ * Neither property is unguarded:
+ *   - view clauses + no hero  -> the byte pin on `view-angles-os`, plus the
+ *     "hero is removed" assertion, in `proof-stack-pinned-sources.test.mjs`.
+ *   - exact zone hash, fail closed -> `atlasPanelForProofView` above (a missing
+ *     panel throws `flat_atlas_proof_panel_unavailable`), the transport's
+ *     `designpanel_atlas_proof_hash_mismatch`, and the edge function's own
+ *     `atlas_proof_panel_hash_mismatch` on the panel it downloads.
+ *   - the 20 MiB request bound is no longer this process's problem: the
+ *     transport sends a storage PATH, not the image bytes.
+ */

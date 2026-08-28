@@ -5,7 +5,6 @@ import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const { runAtlasProofStages } = require("../runtime/generation-worker.cjs");
-const { buildAtlasProjectionRequest } = require("../runtime/designpanel-server-provider.cjs");
 const { _test: engineTest } = require("../runtime/generation-engine.cjs");
 const sharp = require("../runtime/node_modules/sharp");
 
@@ -57,10 +56,10 @@ test("atlas proof slots get a rejection budget equal to their attempt budget", a
  * in `runSlot`), and which `buildAtlasProjectionRequest` reads as a trailing
  * text part. This test exercises both halves of that real chain.
  */
-test("a correction on an empty (flat-first) promptParts never displaces the artwork image, and the finding still reaches the retry", async () => {
-  // Half 1: the engine's own correctedParts leaves [] empty even with
-  // findings queued -- this is what stopped call.parts from ever again
-  // becoming a text-only array that could out-rank the atlas's image.
+test("a correction on an empty (flat-first) promptParts stays empty", async () => {
+  // The engine's own `correctedParts` leaves `[]` empty even with findings
+  // queued. This is what stopped `call.parts` from ever again becoming a
+  // text-only array that could out-rank the artwork image.
   assert.deepEqual(engineTest.correctedParts([], ["some finding"]), []);
   // Non-empty promptParts (the Standard/non-flat-first path) is unaffected --
   // it still gets the trailing correction appended, exactly as before.
@@ -69,40 +68,18 @@ test("a correction on an empty (flat-first) promptParts never displaces the artw
     [{ text: "base" }, { text: "some finding" }],
   );
 
-  // Half 2: with call.parts genuinely empty (what correctedParts now always
-  // produces for flat-first), the projection builder must still resolve the
-  // real image from the atlas AND surface the finding via call.corrections.
-  const png = await sharp({
-    create: { width: 64, height: 32, channels: 3, background: { r: 20, g: 40, b: 80 } },
-  }).png().toBuffer();
-  const hash = createHash("sha256").update(png).digest("hex");
-  const atlas = {
-    masterContentHash: hash,
-    projectionContentHash: hash,
-    viewAuthorities: {
-      hood_detail: {
-        sourceViewType: "hood_detail", surfaceKey: "hood", sourceMasterHash: hash,
-        contentHash: hash, contract: "designpro.flat-first-atlas-view-authority.v1",
-      },
-    },
-    maxRequestBytes: 10_000_000,
-    conditioningPartsFor: async () => [
-      { inlineData: { mimeType: "image/png", data: png.toString("base64") } },
-      { text: "authority text" },
-    ],
-  };
-  const finding = "PREVIOUS ATTEMPT REJECTED BY THE HOOD PROOF INSPECTOR.\n- Camera height is too low";
-  const request = await buildAtlasProjectionRequest({
-    atlas,
-    input: { vehicle: { year: "2023", make: "Ford", model: "Transit" }, finish: "Gloss", brief: "b" },
-    sourceViewType: "hood_detail",
-    call: { attempt: 2, parts: engineTest.correctedParts([], [finding]), corrections: [finding] },
-  });
-  const imageParts = request.parts.filter((part) => part?.inlineData);
-  assert.equal(imageParts.length, 1, "the artwork authority image must survive a corrective retry");
-  const texts = request.parts.filter((part) => typeof part.text === "string").map((part) => part.text);
-  assert.ok(
-    texts.some((text) => text.includes("Camera height is too low")),
-    "the inspector's finding must survive into the rebuilt projection request",
-  );
+  // ⚠️ THE SECOND HALF OF THIS TEST IS GONE, AND SO IS THE BEHAVIOUR IT COVERED.
+  //
+  // It drove `buildAtlasProjectionRequest` to prove that a corrective retry kept
+  // the artwork image AND carried the judge's finding into the rebuilt prompt.
+  // That builder is deleted, and the transport that replaced it sends the
+  // photographer a fixed request: artwork panel + vehicle + finish + shotKey.
+  // It has no field for a judge finding, because the pinned photographer has no
+  // such input.
+  //
+  // So an A.T.L.A.S. proof retry is now UNCONDITIONED -- the same request again,
+  // which is what the pinned stack itself does (MAX_RETRIES re-sends). If
+  // findings should steer a re-roll, that is a deliberate extension of the
+  // photographer's contract and an owner decision, not something to reintroduce
+  // by rebuilding a second producer here.
 });
