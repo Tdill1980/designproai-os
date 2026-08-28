@@ -827,6 +827,108 @@ async function insertOrReadGroundedCandidate(sb, vehicle, candidate) {
  * function never queues production and never returns universalValidation for
  * provisional geometry.
  */
+/**
+ * THE CHEAP READ, FOR A FORM THE CUSTOMER IS STILL TYPING INTO.
+ *
+ * `resolveFlatAtlasPreviewDimensions` is not safe to call from a browser: on a
+ * catalog miss it makes a Gemini grounding request AND inserts a candidate row.
+ * Debounced keystrokes would turn that into a cost and abuse surface.
+ *
+ * This is the same resolution ORDER minus that last step -- measured catalog,
+ * then an operator-validated row, then a cached candidate -- and it never
+ * grounds and never writes. A miss returns `unresolved` with the near-miss rows
+ * attached, which is what lets the UI say "which one is yours?" instead of
+ * "we could not find your vehicle".
+ *
+ * The near misses matter because of a real gap: the catalog is keyed on
+ * configuration strings ("F-250, 350, 450, 550 - Super Duty - Crew Cab Long
+ * Box") and the request carries no config field, so a match depends on the
+ * customer having typed "Crew Cab" into a free-text Model box. Offering them
+ * the rows we do have turns that from a dead end into one click.
+ */
+async function previewGenieDimensionsFromCatalog(sb, rawVehicle) {
+  const vehicle = normalizedVehicle(rawVehicle);
+  const match = await findGenieCatalogSurfaces(sb, vehicle);
+  if (match) {
+    const row = stampGeometryResolution(
+      attachVehicleClassResolution(catalogDimensionRow(match, vehicle), vehicle),
+      {
+        state: "derived",
+        measuredSurfaces: ["driver", "passenger", "hood", "roof", "rear"],
+        derivedSurfaces: match.derivedSurfaces || ["front"],
+        derivationContract: FRONT_DERIVATION_CONTRACT,
+        geometrySourceRowId: match.row?.id || null,
+        catalogModel: match.row?.model || null,
+        catalogYearRange: match.row?.year_range || null,
+        productionEligible: true,
+        operatorValidated: false,
+      },
+    );
+    return { resolution: row.geometryResolution, surfaces: expectedSurfacesFromRow(row), candidates: [] };
+  }
+
+  const { data: rows } = await findCandidates(sb, vehicle);
+  if (rows?.length === 1) {
+    const validated = validatedSurfaces(rows[0]);
+    if (validated) {
+      const row = stampGeometryResolution(
+        attachVehicleClassResolution(validated, vehicle),
+        {
+          state: "measured",
+          measuredSurfaces: [...SURFACES],
+          derivedSurfaces: [],
+          geometrySourceRowId: rows[0].id,
+          productionEligible: true,
+          operatorValidated: true,
+        },
+      );
+      return { resolution: row.geometryResolution, surfaces: expectedSurfacesFromRow(row), candidates: [] };
+    }
+  }
+
+  // No authoritative record. Offer what the catalog DOES hold for this make, so
+  // the customer can recognise their own configuration.
+  return {
+    resolution: {
+      contract: "designpro.genie-manifest.v1",
+      state: "unresolved",
+      productionEligible: false,
+      operatorValidated: false,
+      reason: "no_authoritative_genie_row_for_year_and_configuration",
+      vehicle: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+    },
+    surfaces: [],
+    candidates: await nearMissCatalogRows(sb, vehicle),
+  };
+}
+
+/**
+ * Rows for the same make whose model shares a token with what the customer
+ * typed, in any year. Deliberately NOT year-filtered: the point is to show a
+ * 2017-2020 record to someone who typed 2024, labelled with its own years so
+ * choosing it is an informed act.
+ */
+async function nearMissCatalogRows(sb, vehicle) {
+  const tokens = normalizeModelTokens(vehicle.model);
+  if (!tokens.length) return [];
+  const { data: rows, error } = await sb
+    .from(GENIE_CATALOG_TABLE).select("*").ilike("make", vehicle.make).limit(400);
+  if (error || !Array.isArray(rows)) return [];
+  return rows
+    .filter(catalogRowIsIntact)
+    .map((row) => ({ row, score: scoreCatalogRow(row, tokens) }))
+    .filter((entry) => entry.score > 0 && surfacesFromGenieCatalog(entry.row, vehicle.vehicleClass))
+    .sort((a, b) => b.score - a.score || String(a.row.model).length - String(b.row.model).length)
+    .slice(0, 6)
+    .map(({ row }) => ({
+      id: row.id,
+      model: row.model,
+      yearRange: row.year_range || `${row.year_start}-${row.year_end}`,
+      sideWidthIn: Number(row.side_width),
+      sideHeightIn: Number(row.side_height),
+    }));
+}
+
 async function resolveFlatAtlasPreviewDimensions(sb, rawVehicle, provider) {
   const vehicle = normalizedVehicle(rawVehicle);
 
@@ -1001,6 +1103,7 @@ module.exports = {
   UniversalDimensionError,
   expectedSurfacesFromRow,
   resolveFlatAtlasPreviewDimensions,
+  previewGenieDimensionsFromCatalog,
   resolveOrQueueUniversalDimensions,
   _test: {
     assertGroundedCandidate,

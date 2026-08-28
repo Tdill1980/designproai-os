@@ -871,6 +871,28 @@ export type CreateGenerationRequestOptions = {
   pipelineMode?: GenerationPipelineMode;
 };
 
+/** What `previewGenieDimensions` answers with. `state` is GENIE's own verdict. */
+export interface GenieDimensionPreview {
+  resolution: {
+    state: "measured" | "derived" | "provisional" | "unresolved";
+    productionEligible?: boolean;
+    operatorValidated?: boolean;
+    genieManifestHash?: string;
+    catalogModel?: string | null;
+    catalogYearRange?: string | null;
+    reason?: string;
+  };
+  surfaces: Array<{ surfaceKey: string; widthInches: number; heightInches: number }>;
+  /** Near-miss catalog rows, offered when nothing authoritative matched. */
+  candidates: Array<{
+    id: string;
+    model: string;
+    yearRange: string;
+    sideWidthIn: number;
+    sideHeightIn: number;
+  }>;
+}
+
 /** Pure request encoder, kept exported so v2 rollback/v3 opt-in are testable. */
 export function buildGenerationInput(
   options: CreateGenerationRequestOptions,
@@ -1040,6 +1062,18 @@ export const dpApi = {
     request<WrapboxPack>(`/wrapbox/${encodeURIComponent(packId)}`),
 
   /* GENIE exact geometry */
+  /**
+   * Does GENIE know this vehicle? Catalog-only, so it is safe to call from a
+   * debounced form field -- it never grounds and never writes.
+   *
+   * It is an assist, never a gate: the caller shows the answer in the readiness
+   * strip and Generate stays live either way.
+   */
+  previewGenieDimensions: (vehicle: { year?: string; make?: string; model?: string; type?: string }) =>
+    request<GenieDimensionPreview>("/genie/dimensions/preview", {
+      method: "POST",
+      body: JSON.stringify({ vehicle }),
+    }),
   listGenieCandidates: () => request<GenieCandidate[]>("/genie/candidates"),
   validateGenieCandidate: (
     candidateId: string,

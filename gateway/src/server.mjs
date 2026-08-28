@@ -2340,6 +2340,35 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         });
       }
 
+      // WHILE THE FORM IS STILL BEING FILLED. (Trish 2026-08-28)
+      //
+      // "While the customer is filling out the form, DesignProAI can already
+      // parse and prepare everything." This is the dimension half of that: the
+      // intake asks whether GENIE knows the vehicle and shows the answer in the
+      // readiness strip, so the customer learns their geometry is provisional
+      // BEFORE they commit rather than after seven proofs.
+      //
+      // It proxies to the runtime because the catalog matcher lives there and
+      // must have exactly one implementation. It is catalog-only on that side:
+      // no grounding call, no row insert, safe for a debounced keystroke.
+      //
+      // It never gates anything -- a failure answers "unresolved" and Generate
+      // stays live, per the no-hard-blocks rule.
+      if (req.method === "POST" && url.pathname === "/api/genie/dimensions/preview") {
+        const body = await readBody(req);
+        const vehicle = body?.vehicle || body || {};
+        if (!cfg.internalRuntimeUrl || cfg.workerSecret.length < 32) {
+          return json(res, 200, { resolution: { state: "unresolved" }, surfaces: [], candidates: [] });
+        }
+        const upstreamRes = await fetchImpl(`${cfg.internalRuntimeUrl}/internal/genie/dimensions/preview`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${cfg.workerSecret}` },
+          body: JSON.stringify({ vehicle }),
+        }).catch(() => null);
+        const preview = await upstreamRes?.json().catch(() => null);
+        return json(res, 200, preview || { resolution: { state: "unresolved" }, surfaces: [], candidates: [] });
+      }
+
       if (req.method === "GET" && url.pathname === "/api/genie/candidates") {
         const candidates = await rpc(fetchImpl, token, cfg, "list_pending_designpro_vehicle_specs_universal", {});
         const rows = Array.isArray(candidates) ? candidates : candidates?.candidates || [];
