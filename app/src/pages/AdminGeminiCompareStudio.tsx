@@ -18,6 +18,7 @@ import {
   type GenieSurfaceKey,
   type PreflightQc,
   PRODUCTION_SURFACES,
+  ROLE_FOR_SOURCE_VIEW_TYPE,
   SURFACE_QC_CHECKLIST,
   type SurfaceQcRecord,
   type WorkflowArtifact,
@@ -606,6 +607,125 @@ const STUDIO_RENDER_ACE_ENABLED = false;
  * V1 is never replaced when V2 is made. Every version stays selectable, and
  * selecting one is what switches the workspace below to that revision's assets.
  */
+/** The seven immutable cameras a finished run has rendered. */
+export const CANONICAL_VIEW_COUNT = 7;
+
+export type AtlasProgressCounts = {
+  cutSurfaces: GenieSurfaceKey[];
+  promotedSurfaces: GenieSurfaceKey[];
+  proofCameras: string[];
+  unknownCameras: string[];
+  viewGenerationFailed: boolean;
+  panelLabel: string;
+  panelDetail: string;
+  panelDone: boolean;
+  proofLabel: string;
+  proofDetail: string;
+  proofDone: boolean;
+};
+
+/**
+ * THE TWO NUMBERS THE PROGRESS CARD REPORTS, DERIVED WHERE THEY CAN BE TESTED.
+ *
+ * On generation 04cc0b29 the board read "Print panels 0/6" while RevisionStudio
+ * showed all six, and "3D proofs 8/7 - All seven views saved" in green on a run
+ * whose own status line says failed - calls_1_7_failed and which never produced
+ * roof or close-up. Neither number came from the pipeline; both were this
+ * card's arithmetic, and the second one made a failed production job look
+ * finished on the one surface an operator trusts.
+ *
+ * THREE SEPARATE FAULTS, ONE PER INPUT:
+ *
+ * 1. A PROOF IS A CAMERA, NOT A KEY. `all_view_urls` carries every view under
+ *    BOTH names on purpose -- the camera the server rendered and the role the
+ *    app displays (side/driver, passenger-side/passenger, hood_detail/hood,
+ *    close-up/closeup). Counting its keys turns five saved views into eight.
+ *    The cameras are counted here, from the views themselves.
+ *
+ * 2. `qc_side_panels` IS KEYED BY SIDE, NOT BY SURFACE. Its keys are
+ *    `driver_side` and `passenger_side`; the surfaces are `driver` and
+ *    `passenger`. Indexing it with a surface key silently missed those two
+ *    sides, so a fully promoted job could never read higher than 4/6. The
+ *    translation that already exists (SURFACE_FOR_SIDE_KEY) is used.
+ *
+ * 3. CUT IS NOT PROMOTED. The six panels are cut at Call 1 and published on
+ *    the revision as `callOnePanels` -- the record RevisionStudio's Production
+ *    Layers renders. `qc_side_panels` is built from the artifacts Call 9
+ *    promoted. A run that dies inside Calls 1-7 genuinely has six cut panels
+ *    and zero promoted ones, and the row that sits under "master accepted ->
+ *    six panels cut" has to say both rather than report the later stage under
+ *    the earlier stage's name.
+ *
+ * COUNT ALONE NEVER DECLARES COMPLETION. "All seven views saved" requires
+ * seven canonical cameras AND a view-generation status that did not fail, so a
+ * calls_1_7_failed run can never present as finished however its arithmetic
+ * lands. A camera outside the canonical set, or an eighth camera, is REPORTED
+ * -- named in the label and the detail, never clamped to seven and never green.
+ */
+export function atlasProgressCounts(input: {
+  callOnePanels?: ReadonlyArray<{ surfaceKey?: string } | null | undefined> | null;
+  promotedPanels?: Record<string, { gemini_url?: string } | undefined> | null;
+  views?: ReadonlyArray<{ sourceViewType?: string; signedUrl?: string } | null | undefined> | null;
+  state?: string | null;
+  currentStage?: string | null;
+  stages?: ReadonlyArray<{ key?: string; state?: string } | null | undefined> | null;
+}): AtlasProgressCounts {
+  const cut = new Set((input.callOnePanels || []).map((panel) => String(panel?.surfaceKey || "")));
+  const cutSurfaces = PRODUCTION_SURFACES.filter((surface) => cut.has(surface));
+
+  const promotedRows = input.promotedPanels || {};
+  const promoted = new Set<GenieSurfaceKey>();
+  for (const [sideKey, surface] of Object.entries(SURFACE_FOR_SIDE_KEY)) {
+    if (promotedRows[sideKey]?.gemini_url) promoted.add(surface);
+  }
+  const promotedSurfaces = PRODUCTION_SURFACES.filter((surface) => promoted.has(surface));
+
+  const cameras = new Set<string>();
+  for (const view of input.views || []) {
+    if (!view?.signedUrl) continue;
+    const camera = String(view.sourceViewType || "").trim();
+    if (camera) cameras.add(camera);
+  }
+  const proofCameras = [...cameras];
+  const unknownCameras = proofCameras.filter((camera) => !ROLE_FOR_SOURCE_VIEW_TYPE[camera]);
+
+  const viewGenerationFailed = input.state === "failed"
+    || String(input.currentStage || "").startsWith("calls_1_7_failed")
+    || (input.stages || []).some((stage) =>
+      String(stage?.key || "").startsWith("calls_1_7") && stage?.state === "failed");
+
+  const proofCount = proofCameras.length;
+  const proofDone = proofCount === CANONICAL_VIEW_COUNT
+    && unknownCameras.length === 0
+    && !viewGenerationFailed;
+
+  const proofDetail = unknownCameras.length
+    ? `Unrecognised camera: ${unknownCameras.join(", ")}`
+    : proofCount > CANONICAL_VIEW_COUNT
+      ? `More cameras than the seven-view contract: ${proofCameras.join(", ")}`
+      : viewGenerationFailed
+        ? "View generation did not finish, so these are not a complete set"
+        : proofDone
+          ? "All seven views saved"
+          : "Projected from the same frozen master, concurrently";
+
+  return {
+    cutSurfaces,
+    promotedSurfaces,
+    proofCameras,
+    unknownCameras,
+    viewGenerationFailed,
+    panelLabel: `Print panels ${cutSurfaces.length}/${PRODUCTION_SURFACES.length}`,
+    panelDetail: cutSurfaces.length
+      ? `${cutSurfaces.join(" · ")} · ${promotedSurfaces.length}/${PRODUCTION_SURFACES.length} promoted by Call 9`
+      : "Cut deterministically from the accepted master",
+    panelDone: cutSurfaces.length === PRODUCTION_SURFACES.length,
+    proofLabel: `3D proofs ${proofCount}/${CANONICAL_VIEW_COUNT}`,
+    proofDetail,
+    proofDone,
+  };
+}
+
 /**
  * THE A.T.L.A.S. CARD, FILLING IN AS THE SERVER ACTUALLY PRODUCES.
  *
@@ -642,40 +762,15 @@ function AtlasProgressCard({
   const atlas = job.atlas_versions.find(
     (entry) => entry.id === selectedVersion?.revisionId,
   ) || job.atlas_versions[job.atlas_versions.length - 1] || null;
-  const panels = job.concept_json?.qc_side_panels || {};
-  /**
-   * WHY THIS ROW SAID 0/6 WITH SIX PANELS ON DISK.
-   *
-   * `qc_side_panels` is built from panel ARTIFACTS, which is what Call 9
-   * promoted. The six panels themselves are cut at Call 1 and published on the
-   * revision as `callOnePanels` -- the same record RevisionStudio's Production
-   * Layers reads, which is why that surface showed six panels for a job this
-   * card called zero. A run that dies inside Calls 1-7 genuinely has six cut
-   * panels and zero promoted ones.
-   *
-   * This row sits under "master accepted -> six panels cut", so it counts the
-   * cut set and states the promotion separately, rather than reporting the
-   * later stage under the earlier stage's name.
-   */
-  const cutPanels = new Set((atlas?.callOnePanels || []).map((panel) => panel.surfaceKey));
-  const panelCount = PRODUCTION_SURFACES.filter((side) => cutPanels.has(side)).length;
-  const promotedCount = PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).length;
   const proofUrls = job.all_view_urls || {};
-  /**
-   * ONE PROOF IS ONE CAMERA, NOT ONE KEY.
-   *
-   * `all_view_urls` deliberately carries every view under BOTH names -- the
-   * camera the server rendered (`side`) and the role the app displays
-   * (`driver`) -- so five saved views produce eight entries and this row read
-   * "8/7 - All seven views saved" on a job missing roof and close-up. Count
-   * the cameras themselves, which is what the denominator counts.
-   */
-  const proofCameras = new Set(
-    (job.raw_views || [])
-      .filter((view) => Boolean(view.signedUrl))
-      .map((view) => String(view.sourceViewType)),
-  );
-  const proofCount = proofCameras.size;
+  const counts = atlasProgressCounts({
+    callOnePanels: atlas?.callOnePanels,
+    promotedPanels: job.concept_json?.qc_side_panels,
+    views: job.raw_views,
+    state: job.state,
+    currentStage: job.current_stage,
+    stages: job.stages,
+  });
   const driverReady = Boolean(proofUrls.driver || proofUrls.side);
 
   const step = (label: string, done: boolean, detail: string) => (
@@ -711,14 +806,7 @@ function AtlasProgressCard({
             ? `${atlas.master.contentHash.slice(0, 16)} · ${atlas.master.widthPx}×${atlas.master.heightPx}`
             : "Call 1 has not produced an accepted master yet",
         )}
-        {step(
-          `Print panels ${panelCount}/${PRODUCTION_SURFACES.length}`,
-          panelCount === PRODUCTION_SURFACES.length,
-          panelCount
-            ? `${PRODUCTION_SURFACES.filter((side) => cutPanels.has(side)).join(" · ")}`
-              + ` · ${promotedCount}/${PRODUCTION_SURFACES.length} promoted by Call 9`
-            : "Cut deterministically from the accepted master",
-        )}
+        {step(counts.panelLabel, counts.panelDone, counts.panelDetail)}
         {step(
           "Driver 3D",
           driverReady,
@@ -726,13 +814,7 @@ function AtlasProgressCard({
             ? "Rendered and hash-verified before the other cameras"
             : "Rendered first, so the design can be judged before the full set",
         )}
-        {step(
-          `3D proofs ${proofCount}/7`,
-          proofCount >= 7,
-          proofCount >= 7
-            ? "All seven views saved"
-            : "Projected from the same frozen master, concurrently",
-        )}
+        {step(counts.proofLabel, counts.proofDone, counts.proofDetail)}
       </div>
 
       {/* THE SHEET ITSELF. Everything above is a status line about the master;
