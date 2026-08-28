@@ -47,6 +47,7 @@ import {
 // rendering validation results threw `cn is not defined` and white-screened the
 // whole board into the ErrorBoundary (caught in the 2026-07-24 button audit).
 import { cn } from "@/lib/utils";
+import { VersionAssetManifest } from "@/components/designpro/VersionAssetManifest";
 import {
   getProductionPanelPackState,
   type ProductionFlowAssetRow,
@@ -881,6 +882,15 @@ function AtlasProgressCard({
           holed. PanelPro is the source-of-truth inspection surface, so they
           belong in its UI rather than in a diagnostic log. */}
       {atlas && <AtlasForensicRecord atlas={atlas} />}
+
+      {/* EVERY FILE THIS VERSION PRODUCED, EACH ONE DOWNLOADABLE.
+          RULE 0.22 lists the complete asset set the design team takes off this
+          board. The card above proves the master exists and prints its record;
+          this is where a designer actually gets the files -- the six panels
+          with the dimensions that make them checkable, the seven proofs, and
+          the 2D Production Proof, all bound to the SELECTED version so V1 stays
+          reachable after V2 is made. */}
+      <VersionAssetManifest job={job} atlas={atlas} />
     </div>
   );
 }
