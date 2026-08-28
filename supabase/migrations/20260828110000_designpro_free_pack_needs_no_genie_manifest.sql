@@ -58,8 +58,14 @@ BEGIN
     RAISE EXCEPTION 'free_pack_gate_target_missing';
   END IF;
 
-  -- Idempotent.
-  IF pg_catalog.strpos(v_definition, 'promotedFrom') > 0 THEN
+  -- Idempotent -- against a sentinel THIS patch introduces and nothing else
+  -- contains. The first draft tested for 'promotedFrom', which the A.T.L.A.S.
+  -- panels.build branch already uses twice, so the guard fired on an unpatched
+  -- function, returned early, and installed nothing. Every later assertion then
+  -- passed against the ORIGINAL body -- including the two that check the
+  -- exemption is conditional, because the strings they look for were already
+  -- there. supabase/tests caught it; no assertion in this file could have.
+  IF pg_catalog.strpos(v_definition, 'GENIE DEPLOYS ON ORDER (RULE 0.19)') > 0 THEN
     RETURN;
   END IF;
 
@@ -79,9 +85,19 @@ BEGIN
   THEN
     RAISE EXCEPTION 'free_pack_gate_lost_a_neighbour';
   END IF;
-  -- And the exemption must be conditional, never a blanket removal.
+  -- The patch must actually be IN there. Substring checks that a pre-existing
+  -- body already satisfies prove nothing, so this looks for text that exists
+  -- nowhere but v_new.
+  IF pg_catalog.strpos(v_patched, 'GENIE DEPLOYS ON ORDER (RULE 0.19)') = 0
+    OR pg_catalog.strpos(v_patched,
+      'AND p.output->>''promotedFrom''=''atlas-call1''') = 0
+  THEN
+    RAISE EXCEPTION 'free_pack_gate_not_installed';
+  END IF;
+  -- And the exemption must be conditional, never a blanket removal: the
+  -- manifest columns are still named, and still inside the pack.verify guard.
   IF pg_catalog.strpos(v_patched, 'v_run.dimension_manifest_id IS NULL') = 0
-    OR pg_catalog.strpos(v_patched, 'atlas-call1') = 0
+    OR pg_catalog.strpos(v_patched, 'v_run.manifest_hash IS NULL') = 0
   THEN
     RAISE EXCEPTION 'free_pack_gate_exemption_unconditional';
   END IF;
