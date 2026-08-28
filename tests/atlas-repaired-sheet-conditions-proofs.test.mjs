@@ -83,7 +83,21 @@ test("a panel's sourceMasterHash is the canonical master, so PanelPro can pair i
     create: { width: canvas.widthPx, height: canvas.heightPx, channels: 4, background: "#123456" },
   }).png().toBuffer();
   const canonicalMasterHash = "a".repeat(64);
+  // `cutCallOnePanels` now refuses to cut without the GENIE manifest identity
+  // that built the containers (owner 2026-08-27: "Fail closed if those
+  // provenance fields are absent"), so the fixture states it.
   const manifest = {
+    geometryResolution: {
+      contract: "designpro.genie-manifest.v1",
+      genieManifestId: "0".repeat(32),
+      genieManifestHash: "0".repeat(64),
+      state: "derived",
+      derivationContract: "designpro.genie-front-derived.v1",
+      derivedSurfaces: ["front"],
+      geometrySourceRowId: "row-fixture",
+      productionEligible: false,
+      operatorValidated: false,
+    },
     zones: atlas.SURFACE_KEYS.map((surfaceKey, index) => ({
       surfaceKey,
       trimWidthIn: 100, trimHeightIn: 50, printWidthIn: 110, printHeightIn: 60,

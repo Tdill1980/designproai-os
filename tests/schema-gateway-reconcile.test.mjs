@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-59), [
+  assert.deepEqual(names.slice(-61), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -184,6 +184,14 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // workflow that carries panels.build/logos.extract may be created on
     // A.T.L.A.S. master acceptance alone, not on all seven proofs accepted.
     "20260827120000_designpro_logo_extraction_does_not_wait_for_proofs.sql",
+    // The A.T.L.A.S. identity is minted at prompt time rather than 65s later
+    // when Call 1 returns, which also gives the handoff the revision id it
+    // raises `generation_handoff_revision_missing` without.
+    "20260827130000_designpro_atlas_identity_exists_at_prompt.sql",
+    // ...and the SECOND handoff gate, which called `calls_1_7_handoff_state`
+    // one line after the first gate had already been relaxed to master
+    // acceptance, and re-imposed the seven-view barrier on publication.
+    "20260827140000_designpro_publication_does_not_wait_for_seven_proofs.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
