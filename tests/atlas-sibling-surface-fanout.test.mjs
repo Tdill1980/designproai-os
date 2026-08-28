@@ -237,7 +237,46 @@ test("9: the mirror/repair/MAE path is unreachable from A.T.L.A.S. generation", 
   const sql = gate.split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
   assert.equal(/renderMethod[^\n]*producePassengerView/.test(sql), false,
     "the gate must not still mandate the mirror producer");
-  assert.match(sql, /renderMethod[^\n]*'generate-color-render'/);
+
+  // THE GATE MUST NAME THE PRODUCER THAT ACTUALLY RUNS.
+  //
+  // This used to assert the gate mandated renderMethod='generate-color-render',
+  // read off the DEFINING migration. That producer was retired by #232 (RULE
+  // 0.29: every proof is rendered by the deployed persona-photographer-render),
+  // and the gate kept demanding it -- so a run whose seven proofs were all
+  // correct was judged an invalid view set, `flat_first_atlas_requires_new_run`
+  // returned true, and the gateway answered 409 over it (generation
+  // 8555be2f-71fe-4a30-8680-653d086a213e, 2026-08-28). Asserting the retired
+  // string here is what let that pass CI.
+  //
+  // A later migration PATCHES the live body rather than restating it -- restating
+  // reverts the patches in between -- so the current contract is only visible
+  // across every migration that touches the function, newest last. That is the
+  // same shape the prompt-version pin already uses in
+  // tests/flat-first-atlas-schema.test.mjs, and for the same reason.
+  const contract = readdirSync(dir).filter((n) => n.endsWith(".sql"))
+    .filter((n) => readFileSync(new URL(n, dir), "utf8")
+      .includes("designpro_private.flat_first_atlas_view_set_valid"))
+    .sort()
+    .map((n) => readFileSync(new URL(n, dir), "utf8"))
+    .join("\n");
+  assert.ok(
+    contract.lastIndexOf("persona-photographer-render")
+      > contract.lastIndexOf("'generate-color-render'"),
+    "the newest migration touching the gate must name the photographer, not the retired producer",
+  );
+  // Not merely renamed: the photographer's own provenance replaces the retired
+  // producer's prompt audit, one field for each question the old audit answered.
+  for (const provenance of [
+    "proofProducer", "proofContract", "proofSourceCommit",
+    "proofRequestId", "proofProvider", "proofModel", "proofImageRequestCount",
+  ]) {
+    assert.ok(contract.includes(provenance), `${provenance} must be asserted by the gate`);
+  }
+  // And the artwork binding follows the worker to the persisted Call-1 panel.
+  assert.ok(contract.lastIndexOf("designpro.atlas-panel-authority.v1")
+    > contract.lastIndexOf("'designpro.generation-artifact-audit.v1'"),
+    "the gate must bind proof artwork to the persisted panel");
 });
 
 test("Close-Up remains the seventh visualization and never a seventh panel", () => {
