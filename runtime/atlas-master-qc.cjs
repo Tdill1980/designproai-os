@@ -344,14 +344,47 @@ async function zonePixelMetrics(masterBytes, manifest) {
   return metrics;
 }
 
+/**
+ * THE FLOP IS ITS OWN PASS, OR THIS MEASURES THE WRONG THING ENTIRELY.
+ *
+ * sharp does not apply operations in call order: chaining `.rotate(angle)` and
+ * `.flop()` runs the FLOP FIRST, so a chained pipeline computes
+ * `rotate(flop(zone))` and not `flop(rotate(zone))`. On a flank zone those two
+ * differ by exactly 180 degrees, which is the whole comparison this function
+ * exists to make. Measured in isolation on a 300x700 region:
+ *
+ *   chained .rotate(90).flop()  vs  flop(rotate(region))  ->  MAE 0.634781
+ *   chained .rotate(90).flop()  vs  rotate(flop(region))  ->  MAE 0.000000
+ *
+ * The consequence was not a slightly noisy metric, it was an unsatisfiable
+ * gate: a passenger flank composed to be the driver's exact mirror scored
+ * 0.45087 -- WORSE than two genuinely different flanks at 0.27636 -- so
+ * `atlas-passenger-mirror` could never clear the bound however correct its
+ * output, and every master with a mirror miss died at Call 1 (generations
+ * f72c10f0 and 45f0ea61, 2026-08-28). With the flop taken out into its own
+ * pass the same pair reads 0.00000 for the true twin and 0.42136 for the
+ * different flanks, so the 0.26 bound now sits between the two classes it was
+ * always meant to separate.
+ *
+ * `atlas-passenger-mirror.cjs` has always guarded itself against this hazard
+ * ("THE FLOP IS ITS OWN PASS"), and `atlas-artwork-compose.cjs` documents it at
+ * length. This is the one place that still chained them.
+ */
 async function nativeZoneSignature(masterBytes, zone, { mirror = false } = {}) {
   const rotation = Number(zone?.extraction?.outputRotationDegrees || 0);
-  let pipeline = sharp(masterBytes, { failOn: "error", limitInputPixels: 100_000_000 })
+  let bytes = await sharp(masterBytes, { failOn: "error", limitInputPixels: 100_000_000 })
     .extract({ left: Number(zone.x), top: Number(zone.y), width: Number(zone.w), height: Number(zone.h) })
     .rotate(rotation)
-    .flatten({ background: "#ffffff" });
-  if (mirror) pipeline = pipeline.flop();
-  const { data } = await pipeline
+    .flatten({ background: "#ffffff" })
+    .png()
+    .toBuffer();
+  if (mirror) {
+    bytes = await sharp(bytes, { failOn: "error", limitInputPixels: 100_000_000 })
+      .flop()
+      .png()
+      .toBuffer();
+  }
+  const { data } = await sharp(bytes, { failOn: "error", limitInputPixels: 100_000_000 })
     .toColourspace("srgb")
     .resize(160, 64, { fit: "fill", kernel: "lanczos3" })
     .raw()
