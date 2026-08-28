@@ -225,6 +225,37 @@ app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(r
  * exists, parked at its purchase gate, and the worker's reconciler is what
  * advances it. Payment changes authorization; the worker changes workflow state.
  */
+/**
+ * THE DIMENSION PREVIEW THE INTAKE FORM ASKS FOR WHILE IT IS BEING FILLED.
+ *
+ * The customer should not press Generate and only then discover their vehicle
+ * has no measured record. This answers "does GENIE know this vehicle?" from the
+ * catalog ONLY -- it never grounds and never writes, so it is safe to call on a
+ * debounced keystroke, unlike `resolveFlatAtlasPreviewDimensions`, which makes
+ * a Gemini request and inserts a candidate row on a miss.
+ *
+ * It lives here rather than in the gateway because the matcher lives here. Two
+ * implementations of "does this catalog row match this vehicle" would drift the
+ * week they were written, and the gateway is browser-facing and holds no
+ * service role in any case.
+ */
+app.post("/internal/genie/dimensions/preview", authMiddleware, async (req, res) => {
+  try {
+    const { previewGenieDimensionsFromCatalog } = require("./genie-universal-resolver.cjs");
+    const preview = await previewGenieDimensionsFromCatalog(supabase, req.body?.vehicle || req.body);
+    return res.status(200).json(preview);
+  } catch (error) {
+    // A preview is an assist, never a gate: an unusable vehicle string or a
+    // catalog hiccup answers "we do not know", and the customer proceeds.
+    return res.status(200).json({
+      resolution: { state: "unresolved", productionEligible: false, operatorValidated: false,
+        reason: String(error?.code || error?.message || "preview_unavailable") },
+      surfaces: [],
+      candidates: [],
+    });
+  }
+});
+
 app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};

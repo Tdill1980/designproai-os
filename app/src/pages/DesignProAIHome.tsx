@@ -35,7 +35,6 @@ import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
 
 const TABS = ["DesignProAI™", "RevisionStudioIQ™", "ProductionPack™", "ProductionFlow™"];
 
-const MODES = ["Commercial", "Restyle"];
 
 const VEHICLE_TYPES = [
   { icon: Car, label: "Car", value: "car" },
@@ -200,7 +199,10 @@ export default function DesignProAIHome() {
   );
   const [showPromptHelp, setShowPromptHelp] = useState(false);
   // Left-rail "Start Your Design" state
-  const [mode, setMode] = useState("Commercial");
+  // DERIVED, NOT CHOSEN. A business identity means Commercial; otherwise this
+  // is a styling job. The same rule the studio and the operator page already
+  // apply ("a company name means commercial whatever the toggle says").
+  const mode = companyName.trim() || phone.trim() || website.trim() ? "Commercial" : "Restyle";
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
   const [year, setYear] = useState("");
   const [make, setMake] = useState("");
@@ -283,9 +285,11 @@ export default function DesignProAIHome() {
       make: make.trim() || undefined,
       model: model.trim() || undefined,
       // Commercial (Business & Fleet) text → studio Layer-2 extraction.
-      companyName: mode === "Commercial" ? (companyName.trim() || undefined) : undefined,
-      phone: mode === "Commercial" ? (phone.trim() || undefined) : undefined,
-      website: mode === "Commercial" ? (website.trim() || undefined) : undefined,
+      // Whatever they typed travels. It used to be gated on the mode button,
+      // so a phone number entered on the ReStyle side was silently dropped.
+      companyName: companyName.trim() || undefined,
+      phone: phone.trim() || undefined,
+      website: website.trim() || undefined,
       // Background examples → Layer 1; logo/overlay examples → Layer 2.
       visionBoardUrls: visionRefs.filter((v) => v.kind === "background").map((v) => v.url),
       overlayUrls: visionRefs.filter((v) => v.kind === "overlay").map((v) => v.url),
@@ -321,12 +325,9 @@ export default function DesignProAIHome() {
               <Wand2 className="h-4 w-4" /> Create Design
             </button>
 
-            {/* Mode */}
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {MODES.map((m) => (
-                <button key={m} onClick={() => setMode(m)} className={cn("rounded-lg border px-3 py-2 text-xs font-bold transition", mode === m ? "border-transparent bg-gradient-to-r from-blue-600 to-fuchsia-500 text-white shadow" : "border-white/10 text-white/70 hover:bg-white/5")}>{m}</button>
-              ))}
-            </div>
+            {/* The Commercial/ReStyle buttons were here. The customer should not
+                have to understand our design taxonomy to describe their wrap
+                (Trish 2026-08-28) -- it is inferred from what they enter. */}
 
             {/* Vehicle type */}
             <div className="mt-3 text-[10px] font-bold uppercase tracking-wider text-white/60">Vehicle Type</div>
@@ -351,9 +352,9 @@ export default function DesignProAIHome() {
 
             {/* Commercial (Business & Fleet) brand fields — these feed the studio's
                 Layer-2 text extraction so the design gets editable logo/phone/website. */}
-            {mode === "Commercial" && (
+            {(
               <div className="mt-3 space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">Business details (for logo & text layers)</div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">Business details (optional — for logo &amp; text layers)</div>
                 <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Company name" className="w-full rounded-lg border border-fuchsia-500/30 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-fuchsia-500/60 focus:outline-none" />
                 <div className="grid grid-cols-2 gap-2">
                   <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />

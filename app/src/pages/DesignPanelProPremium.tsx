@@ -89,8 +89,10 @@ import { DesignIQShowcase, GenerationWizard, DESIGNPANELPRO_TIPS } from "@/compo
 import { formatDid } from "@/lib/designId";
 import { BuildTag } from "@/components/BuildTag";
 import {
+  dpApi,
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type GenerationPipelineMode,
+  type GenieDimensionPreview,
 } from "@/lib/designpro-api";
 import {
   FLAT_FIRST_ATLAS_UI_ENABLED,
@@ -362,6 +364,40 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const [make, setMake] = useState(() => briefVehicleRef.current?.make || "");
   const [model, setModel] = useState(() => briefVehicleRef.current?.model || "");
   const [yearError, setYearError] = useState(false);
+  const [showDimensionHelp, setShowDimensionHelp] = useState(false);
+
+  // ── GENIE, RESOLVED WHILE THE FORM IS BEING FILLED ──────────────
+  //
+  // Owner (2026-08-28): "While the customer is filling out the form,
+  // DesignProAI can already parse and prepare everything." The customer should
+  // not press Generate and only then learn their vehicle has no measured
+  // record -- especially now that a year/config miss resolves as provisional
+  // rather than silently inventing dimensions.
+  //
+  // Catalog-only on the server, so this is safe to fire from a debounced field.
+  // It NEVER blocks: an unresolved answer is shown in the readiness strip and
+  // Generate stays live.
+  const [dimensionPreview, setDimensionPreview] = useState<GenieDimensionPreview | null>(null);
+  useEffect(() => {
+    const y = year.trim();
+    const mk = make.trim();
+    const md = model.trim();
+    if (!y || !mk || !md) { setDimensionPreview(null); return; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      dpApi.previewGenieDimensions({ year: y, make: mk, model: md, type: vehicleType })
+        .then((preview) => { if (!cancelled) setDimensionPreview(preview); })
+        // An assist that fails is silent: the chip simply stays neutral.
+        .catch(() => { if (!cancelled) setDimensionPreview(null); });
+    }, 600);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [year, make, model, vehicleType]);
+
+  const dimensionsState: "ok" | "warn" | "neutral" = !dimensionPreview
+    ? "neutral"
+    : dimensionPreview.resolution.state === "measured" || dimensionPreview.resolution.state === "derived"
+      ? "ok"
+      : "warn";
   // QuickQuote × DesignPro side panel — branded sidebar consistent
   // with ColorPro / GraphicsPro. Hosts the dashboard QuickQuoteCard
   // pre-seeded with the active vehicle + render so the rep can build
@@ -1898,6 +1934,49 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       initialWebsite={briefCommercial?.website}
                       injectedLogo={injectedLogo}
                       onInjectedLogoConsumed={() => setInjectedLogo(null)}
+                      vehicle={{ year, make, model }}
+                      dimensionsState={dimensionsState}
+                      onResolveDimensions={() => setShowDimensionHelp((open) => !open)}
+                      dimensionHelp={
+                        showDimensionHelp && dimensionsState === "warn" ? (
+                          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-left">
+                            <p className="text-xs text-gray-700">
+                              We have no measured record for a {year} {make} {model}. Your design will
+                              still be produced — the panel sizes will be estimated until someone
+                              measures this vehicle.
+                            </p>
+                            {dimensionPreview?.candidates?.length ? (
+                              <>
+                                <p className="mt-2 text-xs font-semibold text-gray-900">
+                                  Is one of these yours?
+                                </p>
+                                <div className="mt-1.5 space-y-1">
+                                  {dimensionPreview.candidates.map((candidate) => (
+                                    <button
+                                      key={candidate.id}
+                                      type="button"
+                                      // Picking a configuration appends it to the model
+                                      // string, which is what the catalog is actually keyed
+                                      // on ("Crew Cab Long Box"). The re-run then resolves.
+                                      onClick={() => {
+                                        setModel(`${model.trim()} ${candidate.model}`.trim());
+                                        setShowDimensionHelp(false);
+                                      }}
+                                      className="block w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-left text-xs text-gray-700 hover:border-gray-400"
+                                    >
+                                      <span className="font-medium text-gray-900">{candidate.model}</span>
+                                      <span className="text-gray-500">
+                                        {" · "}{candidate.yearRange}{" · side "}
+                                        {candidate.sideWidthIn}&Prime; × {candidate.sideHeightIn}&Prime;
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
+                        ) : null
+                      }
                       onExactReproHandoff={(refs) => {
                         // APPROPRIATE-TOOL HANDOFF: reproducing an uploaded design
                         // belongs in RecreatePro (exact recreate + edit box). Carry
