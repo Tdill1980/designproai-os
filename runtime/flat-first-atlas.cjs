@@ -142,7 +142,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260827.v5";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v6";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -624,66 +624,88 @@ const SURFACE_IDS = Object.freeze({
 
 
 /**
- * THE CONTAINERS ARE LABELED INSIDE THEIR OWN STRUCTURAL MARGIN.
+ * HOW MUCH CLEAR SPACE A CAPTION OCCUPIES, PER POINT OF TYPE.
  *
- * Owner's sheet, 2026-08-27 ("A.T.L.A.S. FLATTENED - TOPO TOP VIEW · SINGLE
- * SOURCE MASTER · SIX DETERMINISTIC PANELS · 1:1 TOPOLOGY"): every container
- * carries its name, its Surface ID and its W/H in pixels, set upright on the
- * container itself -- and each container shows an OUTER structural boundary
- * with an INNER dashed printable region, which the sheet's own legend calls
- * "Printable Area (Design Region) · Exact panel crop area".
- *
- * That inner/outer split is what makes a label on the container safe, and it
- * is not a new idea here: `trimRectangle()` has always computed the trim box
- * inside the 5" bleed. The label goes in the margin BETWEEN the container edge
- * and that trim box.
- *
- * Why this is not the 2026-08-25 failure returning: those deaths
- * (`artifactFreeContract`, "The hood zone contains the guide label 'HOOD'")
- * were a surface name set 180px bold DEAD CENTRE on the area the model was
- * told to paint. Here the paint area is the dashed trim box and no glyph is
- * inside it -- asserted, not assumed, by `renderAtlasAuthoringGuide`.
- *
- * A caption is also physically unable to reach a customer: the master is
- * masked to the zone rectangles, then each panel is cut to the container and
- * finished to trim, so the structural margin is discarded twice over.
+ * Every caption on this sheet is rotated about its own x/y anchor, so its
+ * half-extent is bounded by the font size rather than by the string length.
+ * ONE constant, used by both the writer (`containerCaptionSvg`, sizing type to
+ * the gutter it has) and the reader (`renderAtlasAuthoringGuide`'s guard,
+ * proving that anchor clears every extraction rectangle). Two constants would
+ * let the guard admit a caption the layout had already overrun.
  */
 const LABEL_REACH = 0.7;
 
 /**
- * NAME THE CONTAINERS. THAT WAS THE WHOLE TASK. (Trish 2026-08-27)
+ * NAME THE CONTAINERS -- IN THE GUTTER, NEVER INSIDE THE EXTRACTION RECTANGLE.
  *
  * Owner, pointing at the bundled Houdini PANEL LAYOUT: "All you were supposed
  * to do was name the containers so Gemini could understand what the flattened
  * topo panels are. Like Lamborghini, like truck -- except truck didn't have
  * labels so impossible to understand, no truck bed and what was what."
  *
- * The Houdini sheet prints REAR BUMPER, HATCH, PASSENGER, DRIVER, ROOF, HOOD,
- * FRONT BUMPER on the panels themselves. Ours handed the model six unnamed grey
- * rectangles, so it had to infer which was which -- and on a truck it inferred
- * wrong, because nothing told it there was a bed.
+ * ⛔ THE NAME MAY NOT GO IN THE BLEED BAND. IT WAS THERE, AND IT REACHED THE
+ * CUSTOMER. (Corrected 2026-08-28, from the product's own evidence.)
  *
- * So the name goes ON its container, exactly as the reference does it, in the
- * BLEED BAND at the top: inside the container, outside `zone.trim`. That band
- * is 5" of bleed -- about 70px on the 4096 canvas -- which carries one word at
- * ~48px, and it is trimmed off every panel by construction.
+ * The first version of this put the name inside the container, in the 5" bleed
+ * band above `zone.trim`, on the reasoning that "each panel is cut to the
+ * container and finished to trim, so the structural margin is discarded twice
+ * over". `cutOnePanel` disproves the second half: its extract rect IS
+ * `zone.extraction`, which is the WHOLE container -- trim plus bleed -- and no
+ * later step trims it. A panel is stored at PRINT size. So a glyph in the bleed
+ * band is a glyph in the file the customer buys.
  *
- * This is the ONE thing that was open. The container ORDER was already right
- * and is not touched: see CENTER_ORDER.
+ * It was not hypothetical. Request f3eb40c1 (2026-08-27), passenger attempt 2,
+ * the proof judge reading the extracted panel it was handed as artwork
+ * authority: "The text 'PASSENGER SIDE' and dimensions visible in the authority
+ * crop are not present on the candidate proof." The model had copied the
+ * caption off the artboard into the sheet, the cut carried it into the panel,
+ * and the judge then refused the proof for correctly NOT printing it on the
+ * vehicle.
+ *
+ * So the caption sits in the GUTTER BESIDE its container -- the far-left margin
+ * for passenger, the far-right margin for driver, the passenger/centre gutter
+ * for the four centre surfaces -- rotated to read up the sheet. That is the
+ * form RULE 0.28 describes, and it satisfies the actual ask: the rectangle is
+ * named, adjacently and unambiguously, with no glyph anywhere the extractor
+ * cuts. `normalizeAtlasMaster` masks the delivered sheet to the zone rectangles
+ * as well, so anything painted in a gutter is discarded before a master exists.
+ *
+ * The container ORDER is untouched: see CENTER_ORDER.
  */
 
-function containerLabelSvg(zone) {
-  const trim = zone.trim || zone;
-  const band = Math.max(0, Number(trim.y) - Number(zone.y));
-  if (band < 14) return "";
+/**
+ * The clear gutter beside a container, as [near edge, far edge] on x.
+ * Measured from the real zones, so a layout with tighter columns shrinks the
+ * caption instead of pushing it into a neighbour.
+ */
+function captionGutter(zone, zones) {
+  if (zone.placement === "right-flank") return [Number(zone.x) + Number(zone.w), CANVAS.widthPx];
+  if (zone.placement === "left-flank") return [0, Number(zone.x)];
+  // Centre column: the gutter between the left flank and this container.
+  const flank = zones.find((candidate) => candidate.placement === "left-flank");
+  const leftEdge = flank ? Number(flank.x) + Number(flank.w) : 0;
+  return [leftEdge, Number(zone.x)];
+}
+
+function containerCaptionSvg(zone, zones) {
+  const [near, far] = captionGutter(zone, zones);
+  const width = far - near;
+  if (!(width > 24)) return "";
   const name = (SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey)).toUpperCase();
-  const size = Math.max(11, Math.min(56, Math.floor(band * 0.62)));
-  const centreX = Math.round(Number(zone.x) + Number(zone.w) / 2);
-  const y = Math.round(Number(zone.y) + band / 2);
-  return `<text x="${centreX}" y="${y}" text-anchor="middle" `
-    + `dominant-baseline="central" fill="#1a1a1a" `
+  const id = SURFACE_IDS[zone.surfaceKey];
+  const label = id ? `${id} · ${name}` : name;
+  // The caption is rotated a quarter turn, so its cap height runs across the
+  // gutter. Size it to fit with the same pad the guard measures.
+  const size = Math.max(11, Math.min(52, Math.floor((width / 2) / LABEL_REACH)));
+  const centreX = Math.round(near + width / 2);
+  const centreY = Math.round(Number(zone.y) + Number(zone.h) / 2);
+  // Read up the sheet on the left, down it on the right, so both captions face
+  // outward from the containers they name.
+  const rotation = zone.placement === "right-flank" ? 90 : -90;
+  return `<text x="${centreX}" y="${centreY}" transform="rotate(${rotation} ${centreX} ${centreY})" `
+    + `text-anchor="middle" dominant-baseline="central" fill="#1a1a1a" `
     + `font-family="Arial,sans-serif" font-size="${size}" font-weight="700" `
-    + `letter-spacing="${Math.max(1, Math.round(size * 0.06))}">${name}</text>`;
+    + `letter-spacing="${Math.max(1, Math.round(size * 0.06))}">${label}</text>`;
 }
 
 /**
@@ -693,7 +715,7 @@ function containerLabelSvg(zone) {
 
 /** The container names. Shared by both guides. */
 function guideLabelsSvg(manifest) {
-  return manifest.zones.map(containerLabelSvg).join("");
+  return manifest.zones.map((zone) => containerCaptionSvg(zone, manifest.zones)).join("");
 }
 
 /**
@@ -839,22 +861,30 @@ async function renderAtlasAuthoringGuide(manifest) {
   }
   for (const anchor of anchors) {
     for (const zone of manifest.zones) {
-      // THE PAINT AREA IS THE TRIM BOX, NOT THE CONTAINER.
+      // ⛔ THE BOUNDARY IS THE EXTRACTION RECTANGLE -- THE WHOLE CONTAINER.
       //
-      // The containers are labeled now (owner's sheet, 2026-08-27), so the
-      // guard protects the region the model is actually told to fill and the
-      // panel is actually finished to. A caption in the bleed margin is
-      // discarded twice -- by the finish to trim, and by the fact that it is
-      // never inside the printable rectangle in the first place.
-      const trim = zone.trim || zone;
-      const inside = anchor.x + anchor.pad > trim.x
-        && anchor.x - anchor.pad < trim.x + trim.w
-        && anchor.y + anchor.pad > trim.y
-        && anchor.y - anchor.pad < trim.y + trim.h;
+      // This checked `zone.trim` for one day, on the claim that a caption in the
+      // bleed band was "discarded twice -- by the finish to trim". There is no
+      // finish to trim: `cutOnePanel` extracts `zone.extraction`, which is the
+      // container in full, and the panel is stored at PRINT size with the bleed
+      // attached. So the trim box was the wrong boundary by exactly the width of
+      // the bleed, and a caption sitting in that band was copied by the model
+      // into the sheet and cut straight into the customer's panel (request
+      // f3eb40c1, passenger attempt 2 -- the proof judge read "PASSENGER SIDE
+      // and dimensions" off the panel it was handed as artwork authority).
+      //
+      // The boundary is now whatever the extractor actually cuts. It is still
+      // not the old "no text at all" rule: captions in the gutters and the
+      // header/footer bands remain legal, because nothing cuts those.
+      const cut = zone.extraction || zone;
+      const inside = anchor.x + anchor.pad > Number(cut.x)
+        && anchor.x - anchor.pad < Number(cut.x) + Number(cut.w)
+        && anchor.y + anchor.pad > Number(cut.y)
+        && anchor.y - anchor.pad < Number(cut.y) + Number(cut.h);
       if (inside) {
         throw new FlatAtlasError(
           "flat_atlas_authoring_guide_contains_text",
-          `An authoring-guide label falls inside the ${zone.surfaceKey} printable region; text on a paintable rectangle is reproducible as artwork`,
+          `An authoring-guide label falls inside the ${zone.surfaceKey} extraction rectangle; text the panel cut carries is text on the customer's print file`,
         );
       }
     }

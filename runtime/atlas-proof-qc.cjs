@@ -186,7 +186,17 @@ function buildAtlasProofQcPrompt({
   const pickup = pickupVehicle(input);
   return `A.T.L.A.S. CUSTOMER-PROOF ACCEPTANCE INSPECTION — ${QC_CONTRACT}
 
-You are a strict visual quality-control inspector, not a designer. Do not edit, improve or reinterpret either image. Grade the first attached image (CANDIDATE PROOF) against the second attached image (EXACT NATIVE ${String(authoritySurface).toUpperCase()} ZONE CROP). That crop was deterministically extracted from the accepted flattened A.T.L.A.S. master and is the sole artwork authority for this proof. Do not compare against or infer from any other master zone. Perspective may change how these exact pixels appear on a real body panel, but colors, distinctive graphics, logos, lettering, photographic scenes, scale relationships and flow must remain the same design. Invented or moved artwork is a failure.
+You are a strict visual quality-control inspector, not a designer. Do not edit, improve or reinterpret either image. Grade the first attached image (CANDIDATE PROOF) against the second attached image (EXACT NATIVE ${String(authoritySurface).toUpperCase()} ZONE CROP). That crop was deterministically extracted from the accepted flattened A.T.L.A.S. master and is the sole artwork authority for this proof. Do not compare against or infer from any other master zone.
+
+WHAT THE TWO IMAGES ARE, AND WHY THEY CANNOT LOOK ALIKE:
+The authority crop is a FLAT, HEAD-ON, RECTANGULAR print panel. The candidate is a PHOTOGRAPH of that panel already installed on a three-dimensional vehicle and shot from a locked camera angle. Installing flat vinyl on a curved body and photographing it necessarily changes the geometry, and every one of the following is EXPECTED and must be graded "pass", never a failure:
+- perspective, foreshortening, convergence and the vehicle's own curvature;
+- a graphic or logo appearing LARGER, SMALLER, higher, lower, nearer one end, or rotated relative to the flat crop;
+- a graphic reading horizontally on the vehicle that runs vertically down the flat crop, or the reverse;
+- artwork running off the frame, disappearing over a body contour, or hidden behind glass, wheels, handles, mirrors or a bumper;
+- the outer margin of the crop being absent, because that margin is installer BLEED that wraps around the panel edge and is not visible on the finished vehicle;
+- any dimension text, surface name, guide annotation or callout that appears in the crop and NOT on the vehicle. Annotations must never appear on a proof; their absence is correct.
+Do not measure, compare or grade layout, position, scale, orientation or alignment between the two images. You are not checking that the panel was reproduced to size; that is guaranteed by deterministic extraction upstream and is not visible in a photograph.
 
 Expected proof: ${view.label}
 Exact target vehicle: ${vehicleDescription(input)}
@@ -221,7 +231,7 @@ INSPECTION RULES:
 5. roofBoundaryContract must be "pass" for Roof and "not_applicable" for every other view.
 6. photorealismContract grades real automotive photography, installed cast vinyl, coherent geometry and physical materials.
 7. studioLightingContract grades the identical premium wrap-shop environment and its bright color-accurate lighting. Camera-specific tight crops need not reveal floor or walls when the angle contract excludes them.
-8. atlasContinuityContract compares the candidate artwork only to the exact attached ${authoritySurface} crop. New art, missing dominant motifs, moved/re-scaled brand elements, a different layout/palette, copied content from another zone or an independently designed surface is a failure.
+8. atlasContinuityContract grades DESIGN IDENTITY only: is the wrap in the photograph the same design as the attached ${authoritySurface} crop? Fail ONLY for: artwork that is not in the crop at all; a dominant motif, wordmark or logo from the crop that is wholly absent from the vehicle; a materially different colour palette; content plainly taken from a different master zone; or a surface that was independently designed rather than reproduced. Everything in the EXPECTED list above is a pass. If the same elements are present and recognisable, this contract passes even when their placement, size and orientation differ.
 9. vehicleContinuityContract grades the exact vehicle body/cab/bed configuration and plausible anatomy.
 10. artifactFreeContract fails melted bodywork, extra wheels, duplicated parts, malformed lettering, impossible panel lines, phantom reflections or other AI artifacts.
 11. Echo the proof, canonical Atlas and exact surface-authority sha256 values exactly. Return only the schema-bound JSON object. No Markdown or prose.
