@@ -643,9 +643,39 @@ function AtlasProgressCard({
     (entry) => entry.id === selectedVersion?.revisionId,
   ) || job.atlas_versions[job.atlas_versions.length - 1] || null;
   const panels = job.concept_json?.qc_side_panels || {};
-  const panelCount = PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).length;
+  /**
+   * WHY THIS ROW SAID 0/6 WITH SIX PANELS ON DISK.
+   *
+   * `qc_side_panels` is built from panel ARTIFACTS, which is what Call 9
+   * promoted. The six panels themselves are cut at Call 1 and published on the
+   * revision as `callOnePanels` -- the same record RevisionStudio's Production
+   * Layers reads, which is why that surface showed six panels for a job this
+   * card called zero. A run that dies inside Calls 1-7 genuinely has six cut
+   * panels and zero promoted ones.
+   *
+   * This row sits under "master accepted -> six panels cut", so it counts the
+   * cut set and states the promotion separately, rather than reporting the
+   * later stage under the earlier stage's name.
+   */
+  const cutPanels = new Set((atlas?.callOnePanels || []).map((panel) => panel.surfaceKey));
+  const panelCount = PRODUCTION_SURFACES.filter((side) => cutPanels.has(side)).length;
+  const promotedCount = PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).length;
   const proofUrls = job.all_view_urls || {};
-  const proofCount = Object.values(proofUrls).filter(Boolean).length;
+  /**
+   * ONE PROOF IS ONE CAMERA, NOT ONE KEY.
+   *
+   * `all_view_urls` deliberately carries every view under BOTH names -- the
+   * camera the server rendered (`side`) and the role the app displays
+   * (`driver`) -- so five saved views produce eight entries and this row read
+   * "8/7 - All seven views saved" on a job missing roof and close-up. Count
+   * the cameras themselves, which is what the denominator counts.
+   */
+  const proofCameras = new Set(
+    (job.raw_views || [])
+      .filter((view) => Boolean(view.signedUrl))
+      .map((view) => String(view.sourceViewType)),
+  );
+  const proofCount = proofCameras.size;
   const driverReady = Boolean(proofUrls.driver || proofUrls.side);
 
   const step = (label: string, done: boolean, detail: string) => (
@@ -685,7 +715,8 @@ function AtlasProgressCard({
           `Print panels ${panelCount}/${PRODUCTION_SURFACES.length}`,
           panelCount === PRODUCTION_SURFACES.length,
           panelCount
-            ? PRODUCTION_SURFACES.filter((side) => panels[side]?.gemini_url).join(" · ")
+            ? `${PRODUCTION_SURFACES.filter((side) => cutPanels.has(side)).join(" · ")}`
+              + ` · ${promotedCount}/${PRODUCTION_SURFACES.length} promoted by Call 9`
             : "Cut deterministically from the accepted master",
         )}
         {step(
