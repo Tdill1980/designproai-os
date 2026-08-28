@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-63), [
+  assert.deepEqual(names.slice(-64), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -201,6 +201,10 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // does not resolve until after purchase -- so the FREE entice pack could
     // never be verified or activated, however complete its panels.
     "20260828110000_designpro_free_pack_needs_no_genie_manifest.sql",
+    // The same leftover one layer down: designpro_run_identity_phase_check
+    // required a bound manifest on a production run at INSERT, so
+    // pack.activate could not create the run that waits for the purchase.
+    "20260828120000_designpro_production_run_starts_before_genie.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
