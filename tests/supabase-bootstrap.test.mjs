@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered seventy-seven-migration chain', () => {
-  assert.equal(migrationNames.length, 77);
+test('fresh bootstrap contains one ordered seventy-eight-migration chain', () => {
+  assert.equal(migrationNames.length, 78);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -167,6 +167,10 @@ test('fresh bootstrap contains one ordered seventy-seven-migration chain', () =>
       // The SECOND handoff gate: `calls_1_7_handoff_state` re-imposed the
       // seven-view barrier one line after the first gate was relaxed.
       '20260827140000',
+      // The DATABASE twin of the lineage assert #238 corrected: it still
+      // demanded the `generate-color-render` producer #232 replaced, so a run
+      // whose seven proofs were all correct was judged an invalid view set.
+      '20260828100000',
     ],
   );
 });
