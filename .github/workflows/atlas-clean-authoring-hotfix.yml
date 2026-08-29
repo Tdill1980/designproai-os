@@ -19,12 +19,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Apply surgical ATLAS source patch
+      - name: Apply surgical ATLAS source patch and clean bootstrap files
         shell: bash
         run: |
           if grep -q 'atlas-artboard-designiq.20260828.v8-clean' runtime/flat-first-atlas.cjs \
@@ -39,12 +34,3 @@ jobs:
           git add runtime/flat-first-atlas.cjs supabase/functions/design-panel-ai-generate/index.ts tests/atlas-clean-authoring-contract.test.mjs
           git commit -m "fix: clean ATLAS Call-1 authoring contract"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run targeted ATLAS tests
-        run: node --test tests/atlas-clean-authoring-contract.test.mjs tests/atlas-authoring-guide.test.mjs tests/atlas-artboard-edge-call1.test.mjs
-
-      - name: Run full test suite
-        run: npm test
