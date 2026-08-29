@@ -28,6 +28,9 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
+import { FullQcPanel } from "@/components/designpro/FullQcPanel";
+import type { PanelQcReport } from "@/lib/designpro-panel-qc";
 import { CheckCircle2, Download, FileArchive, ImageOff, PackageCheck, ShieldCheck, UploadCloud, Wand2 } from "lucide-react";
 import {
   ApiError,
@@ -689,6 +692,10 @@ export default function PanelProStudioBoard() {
   const [finalNotes, setFinalNotes] = useState("");
   const [finalSubmitting, setFinalSubmitting] = useState(false);
   const [finalError, setFinalError] = useState("");
+  // The deterministic panel QC verdict for the panels currently on screen.
+  // Held here rather than in the QC card so the workflow header can reflect
+  // it -- one answer about this job, not two.
+  const [qcReport, setQcReport] = useState<PanelQcReport | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -984,6 +991,13 @@ export default function PanelProStudioBoard() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 md:px-6">
+      {/* DESIGN → REVISE → PANELS → QC → WRAPBOX, carrying this job. */}
+      <JobWorkflowHeader
+        generationId={generationId}
+        current="panels"
+        qcPassed={Boolean(qcReport?.passed)}
+        className="-mx-4 -mt-8 mb-2 md:-mx-6"
+      />
       <PageHead
         eyebrow="PanelPro Studio"
         title={job?.designId || "Production board"}
@@ -1475,6 +1489,18 @@ export default function PanelProStudioBoard() {
           </div>
         </Panel>
       )}
+
+      {/* FULL PRODUCTION QC, over the exact panels shown above.
+          It sits BEFORE the human preflight gate deliberately: the machine
+          checks are what a designer should have in hand while ticking the six
+          attestations, not a second opinion offered afterwards. A failure keeps
+          the owner here and names the panel; a pass reveals Create WrapBox. */}
+      <FullQcPanel
+        generationId={generationId}
+        revision={atlasRevisions[atlasVersion] || atlasRevisions[0] || null}
+        hasProductionProof={allArtifacts.some((artifact) => artifact.kind === "flat-proof")}
+        onReport={setQcReport}
+      />
 
       <Panel
         eyebrow="The gate"

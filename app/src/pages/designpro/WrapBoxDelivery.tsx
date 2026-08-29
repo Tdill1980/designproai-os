@@ -5,9 +5,11 @@
  * download links are five-minute signed URLs minted for this session; the ZIP
  * and manifest hashes are the durable identity and are shown next to them.
  */
-import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { dpApi, WrapboxPack } from "@/lib/designpro-api";
+import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
+import { useDesignProJob } from "@/hooks/useDesignProJob";
 import { Button } from "@/components/ui/button";
 import {
   ContentHash,
@@ -23,6 +25,16 @@ export function WrapBoxList() {
   const [packs, setPacks] = useState<WrapboxPack[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  // ARRIVING FROM QC, THE JOB COMES WITH YOU. (Trish 2026-08-29.)
+  //
+  // `?job=<generationId>` is how the QC pass hands this page its identity, so
+  // the owner is not dropped into an undifferentiated list to find their own
+  // pack by eye. A pack carries `designId` but no generationId, and designId is
+  // derived canonically from the generation -- so it is the correct join, and
+  // it needs no server change.
+  const [searchParams] = useSearchParams();
+  const jobId = searchParams.get("job");
+  const job = useDesignProJob(jobId);
 
   useEffect(() => {
     dpApi
@@ -32,8 +44,21 @@ export function WrapBoxList() {
       .finally(() => setLoading(false));
   }, []);
 
+  const jobPack = useMemo(
+    () => (job.designId ? packs.find((pack) => pack.designId === job.designId) || null : null),
+    [packs, job.designId],
+  );
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 md:px-6">
+      {jobId && (
+        <JobWorkflowHeader
+          generationId={jobId}
+          current="wrapbox"
+          qcPassed
+          className="-mx-4 -mt-8 mb-2 md:-mx-6"
+        />
+      )}
       <PageHead
         eyebrow="Private delivery"
         title="WrapBox"
@@ -41,6 +66,38 @@ export function WrapBoxList() {
         backTo="/designpro/jobs"
         backLabel="Production jobs"
       />
+      {/* THIS JOB, FIRST AND BY NAME -- and honest when its pack does not exist
+          yet. A delivered pack is built after the PAID production run reaches
+          final QC, stamp and ZIP verification, so a free design legitimately has
+          none. Saying that is the whole point; inventing a preview would be the
+          entitlement gate leaking. */}
+      {jobId && !loading && (
+        jobPack ? (
+          <Panel eyebrow="This job" title={job.designId || "Production pack"}>
+            <Link
+              to={`/designpro/wrapbox/${jobPack.id}`}
+              className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-card p-4 transition hover:border-primary"
+            >
+              <strong className="text-sm">{jobPack.designName}</strong>
+              <span className="text-sm text-muted-foreground">
+                Order # {jobPack.orderNumber} · {new Date(jobPack.readyAt).toLocaleString()}
+              </span>
+              <ContentHash value={jobPack.zip.contentHash} chars={12} />
+            </Link>
+          </Panel>
+        ) : (
+          <Panel eyebrow="This job" title={job.designId || "This design"}>
+            <p className="text-sm text-muted-foreground">
+              No delivered pack yet for this design. The panels and proofs are inspectable in{" "}
+              <Link className="underline" to={`/designpro/jobs/${encodeURIComponent(jobId)}/panelpro/surfaces`}>
+                PanelPro Studio
+              </Link>
+              . A WrapBox pack is published after the ordered production run passes final QC,
+              stamping and ZIP verification.
+            </p>
+          </Panel>
+        )
+      )}
       {loading && <Loading label="Loading delivered packs…" />}
       {error && <Notice tone="error">{error}</Notice>}
       {!loading && !error && packs.length === 0 && (

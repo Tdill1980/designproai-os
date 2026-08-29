@@ -2408,13 +2408,27 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <Layers className="w-4 h-4" />
                             See All Views
                           </Button>
+                          {/* THE ID TRAVELS WITH THE BUTTON. (Trish 2026-08-29:
+                              "I should never have to copy/paste a Generation
+                              ID.") This navigated to a bare `/revision-studio`,
+                              which opens the LIBRARY rather than this design —
+                              so the one moment the owner has the id in hand was
+                              exactly where the app threw it away, and she had to
+                              find the job again by eye. RevisionStudio's
+                              `openDesignById` deep link has always handled
+                              `?id=`; it was simply never given one. */}
                           <Button
-                            onClick={() => navigate("/revision-studio")}
+                            onClick={() => {
+                              const id = generationIdRef.current;
+                              navigate(id
+                                ? `/revision-studio?id=${encodeURIComponent(id)}`
+                                : "/revision-studio");
+                            }}
                             variant="outline"
                             className="flex-1 gap-2 border-fuchsia-400/50 bg-fuchsia-400/5 text-fuchsia-100 hover:bg-fuchsia-400/10"
                           >
                             <RefreshCw className="w-4 h-4" />
-                            Revise This Design
+                            Open in RevisionStudio
                           </Button>
                         </div>
                         <p className="text-[11px] text-white/50">
