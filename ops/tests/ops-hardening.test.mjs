@@ -14,13 +14,21 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 54);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 56);
   for (const name of [
     // stamp.build requires it at module load, so a release without it dies at
     // require time rather than merely shipping a pack with no certificate.
     "runtime/qc-certificate.cjs",
     "runtime/resend-transport.cjs", "runtime/wrapbox-delivery.cjs", "runtime/zip-spool.cjs",
     "runtime/gemini-flat-wrap.cjs", "runtime/flat-wrap-layout.cjs", "runtime/proof-sheet.cjs", "runtime/server-grid-slice.cjs", "runtime/topaz-upscale.cjs",
+    // Call 8's material identity. It is deterministic assembly of the six
+    // Call-1 panels now (Trish 2026-08-29), and `runtime/index.js` requires this
+    // at module load, so a release without it dies at require time.
+    "runtime/call8-proof-material.cjs",
+    // The ancestry gate `source.verify` runs at the boundary into the paid
+    // half. A release without it is a release where a panel descended from a 3D
+    // proof reaches Topaz, the ZIP and WrapBox unchallenged.
+    "runtime/production-provenance.cjs",
     "runtime/logo-removal.cjs", "runtime/studio-os.cjs", "runtime/designiq-prompt.cjs",
     // Calls 1-7. These existed in the tree but were absent from the policy, so
     // no release ever shipped them and the generation queue had no executor.

@@ -267,10 +267,17 @@ describe("print panel counting", () => {
     expect(counts.panelDetail).toContain("2/6 promoted by Call 9");
   });
 
-  it("says nothing was cut when the revision carries no Call 1 panels", () => {
+  // Owner, 2026-08-29: "if six deterministic Call-1 panel artifacts do not
+  // exist, the UI must say PRODUCTION PANELS NOT CREATED." The detail line used
+  // to read "Cut deterministically from the accepted master" beside 0/6 -- a
+  // description of what the pipeline would do, printed under the number saying
+  // it had not. With `panels.build` failing closed there is no other producer,
+  // so zero cut panels means exactly one thing.
+  it("says PRODUCTION PANELS NOT CREATED when the revision carries no Call 1 panels", () => {
     const { counts } = countsFor({ cutSurfaces: [] });
     expect(counts.panelLabel).toBe("Print panels 0/6");
     expect(counts.panelDone).toBe(false);
-    expect(counts.panelDetail).toBe("Cut deterministically from the accepted master");
+    expect(counts.panelDetail).toContain("PRODUCTION PANELS NOT CREATED");
+    expect(counts.panelDetail).not.toContain("Cut deterministically");
   });
 });

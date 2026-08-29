@@ -95,7 +95,13 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
     "generation-engine.cjs",
     "generation-store.cjs",         // persistence
     "generation-provider.cjs",
-    "server-grid-slice.cjs",        // deterministic surface extraction
+    // `server-grid-slice.cjs` left this list on 2026-08-29. It was the
+    // deterministic slicer Call 8/9 ran over the GEMINI-FLATTENED 3D PROOFS --
+    // honest pixel math on a dishonest input. Call 1 cuts the six panels from
+    // the accepted master, Call 8 composes them, Call 9 promotes them, so the
+    // runtime entry has nothing left to slice. The module itself is untouched.
+    "proof-sheet.cjs",              // deterministic Call-8 sheet assembly
+    "call8-proof-material.cjs",     // the Call-8 material identity, no model
   ]) {
     assert.ok(loaded.has(module), `runtime/index.js must load ${module}`);
   }

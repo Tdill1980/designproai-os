@@ -255,25 +255,45 @@ test("paid production resolves either the historical bound snapshot or one froze
   );
 });
 
-test("Call 8 authors six isolated surface fields and Call 9 only gridslices them", () => {
+// ⛔ CALL 8 AUTHORS NOTHING. (Trish 2026-08-29.)
+//
+// This test was called "Call 8 authors six isolated surface fields and Call 9
+// only gridslices them", and it locked the flattener's whole prompt contract:
+// `imageSize: "4K"`, "Output only one opaque, edge-to-edge flat artwork
+// rectangle", `ownReference`, the three-attempt loop, `QC_HARD_ISSUES`,
+// `judgeSurface`. Every one of those held. The isolation it protected was real
+// too -- each surface was flattened from its OWN 3D proof rather than from the
+// driver hero, which is why the assertions against "cross-vehicle design
+// anchor" are here.
+//
+// But the input to that whole apparatus was a PHOTOGRAPH of a vehicle, and its
+// output became the customer's print files. Isolating six photographs from each
+// other does not make any of them artwork. Call 8 is deterministic assembly of
+// the six Call-1 panels now, and this test asserts the inverse of what it did.
+test("Call 8 authors nothing, and Call 9 promotes rather than cuts", () => {
   const entry = readFileSync(new URL("../../runtime/index.js", import.meta.url), "utf8");
   const surfaceSource = readFileSync(new URL("../../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8");
   const gridSource = readFileSync(new URL("../../runtime/server-grid-slice.cjs", import.meta.url), "utf8");
-  assert.match(entry, /authorFlatSurfaceFields/);
-  assert.match(surfaceSource, /gemini-3-pro-image|selectedImageModel/);
-  assert.match(surfaceSource, /imageSize: "4K"/);
-  assert.match(surfaceSource, /Output only one opaque, edge-to-edge flat artwork rectangle/);
-  assert.match(surfaceSource, /ownReference/);
-  assert.match(surfaceSource, /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/);
-  assert.match(surfaceSource, /QC_HARD_ISSUES/);
-  assert.match(surfaceSource, /judgeSurface/);
+  // The Call-8 endpoint composes; it does not generate.
+  assert.match(entry, /renderProofSheet/);
+  assert.match(entry, /call8ProofMaterialHash/);
+  assert.doesNotMatch(entry, /authorFlatSurfaceFields\(/);
+  assert.doesNotMatch(entry, /authorFlatWrapLayout/);
+  // And the module that used to hold the authoring pass holds none of it.
+  for (const gone of [/imageSize: "4K"/, /ownReference/, /QC_HARD_ISSUES/, /function judgeSurface/,
+                      /for \(let attempt = 1; attempt <= 3; attempt \+= 1\)/]) {
+    assert.doesNotMatch(surfaceSource, gone, "the flat-surface authoring pass must stay deleted");
+  }
   assert.doesNotMatch(surfaceSource, /cross-vehicle design anchor/i);
   assert.doesNotMatch(surfaceSource, /DESIGN ANCHOR/);
-  assert.doesNotMatch(entry, /authorFlatWrapLayout/);
   assert.equal(existsSync(new URL("../../runtime/deterministic-artboard.cjs", import.meta.url)), false);
+  // Call 9 promotes the Call-1 bytes, and fails closed when there are none.
   assert.match(claimantSource, /PANEL_SOURCE_RULE = "one-own-surface-region-per-output-side"/);
-  assert.match(claimantSource, /call9_surface_field_changed/);
-  assert.match(claimantSource, /gridSliceAll\(fieldSources, manifest\.expectedSurfaces/);
+  assert.match(claimantSource, /promotedFrom: "atlas-call1"/);
+  assert.match(claimantSource, /call9_call1_panel_changed/);
+  assert.match(claimantSource, /production_panels_not_created/);
+  assert.doesNotMatch(claimantSource, /gridSliceAll\(/);
+  // The deterministic geometry module is untouched and still AI-free.
   assert.match(gridSource, /extendWith: "mirror"/);
   assert.doesNotMatch(claimantSource, /cutAllPanels/);
   assert.doesNotMatch(claimantSource, /flatWrapLayout/);
@@ -306,7 +326,10 @@ test("every server-produced artifact above 6 MiB uses persistent create-only res
   assert.match(claimantSource, /outputs\/\$\{slug\}[\s\S]*?uploadProducedBytes/);
   assert.match(claimantSource, /stamped-call8-proof\.png[\s\S]*?stampedStored\.spool/);
   assert.match(runtimeEntrySource, /body\.length <= MAX_STANDARD_UPLOAD_BYTES[\s\S]*?spoolImmutableBuffer[\s\S]*?uploadSpoolWithTus/);
-  assert.match(runtimeEntrySource, /persist: \(surface, bytes\) => uploadBuffer/);
+  // The Call-8 proof sheet is the entry's large upload now. `persist: (surface,
+  // bytes) => uploadBuffer` was the flattener's per-surface persist callback and
+  // went with it; the sheet takes the same resumable path.
+  assert.match(runtimeEntrySource, /uploadBuffer\(proofPath, sheet\.bytes, "image\/png", tenantKey, workflowRunId, requestAbort\.signal\)/);
 });
 
 test("recipient registration remains worker-authenticated and strips service authority", () => {

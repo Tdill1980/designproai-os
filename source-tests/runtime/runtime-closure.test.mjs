@@ -66,8 +66,14 @@ test("every module the runtime requires is in the release manifest", () => {
 test("contains Calls 7/8/9 and all paid late-stage gates", () => {
   for (const stage of ["revision.freeze", "proof.build", "panels.build", "logos.extract", "pack.verify", "pack.activate", "source.verify", "await_panelpro_preflight_qc", "output.build", "output.verify", "await_final_human_qc", "stamp.build", "zip.build", "wrapbox.deliver"]) assert.ok(claimant.includes(stage), `missing stage ${stage}`);
   assert.match(entry, /renderProofSheet/);
-  assert.match(entry, /authorFlatSurfaceFields/);
-  assert.match(entry, /gridSliceAll/);
+  // Call 8 is DETERMINISTIC ASSEMBLY of the six Call-1 panels (Trish
+  // 2026-08-29). This used to require `authorFlatSurfaceFields` and
+  // `gridSliceAll` on the entry -- the Gemini pass that flattened each 3D proof
+  // photograph, and the slicer that turned those flattened photographs into
+  // print panels. Requiring them is now the regression.
+  assert.match(entry, /call8ProofMaterialHash/);
+  assert.match(entry, /normalizeCallOnePanelSet/);
+  assert.doesNotMatch(entry, /authorFlatSurfaceFields\(|gridSliceAll\(/);
   assert.doesNotMatch(entry, /authorFlatWrapLayout|cutAllPanels/);
   assert.match(claimant, /call8\.flat-proof/); assert.match(claimant, /call9\.surface-panels/); assert.match(claimant, /call10\.logo-inventory/);
 });

@@ -5,18 +5,25 @@ const sharp = require("sharp");
 const { createClient } = require("@supabase/supabase-js");
 const { createHash } = require("node:crypto");
 const { registerDesignProStandaloneClaimant } = require("./designpro-standalone-claimant.cjs");
-const { canonicalTenantKey, canonicalUuid, immutableStorageUpload, normalizeSourceAsset, verifySourceBytes } = require("./runtime-contract.cjs");
+// `normalizeSourceAsset` / `verifySourceBytes` went with `sourceObject`, the
+// loader that pulled the seven 3D proofs into Call 8. Call 8 reads panels now.
+const { canonicalTenantKey, canonicalUuid, immutableStorageUpload } = require("./runtime-contract.cjs");
 const { probeRuntimeDependencies } = require("./runtime-readiness.cjs");
 const {
-  authorFlatSurfaceFields,
-  flatSurfaceInputHash,
   normalizeTextLock,
   selectedImageModel,
-  sourceViewKeys,
   SURFACE_KEYS,
-  VIEW_KEYS,
 } = require("./gemini-flat-surface.cjs");
-const { GRID_SLICE_CONTRACT, gridSliceAll } = require("./server-grid-slice.cjs");
+// ⛔ `authorFlatSurfaceFields` IS DELETED, NOT MERELY UNWIRED. (Trish 2026-08-29.)
+//
+// It was the Gemini pass that flattened each 3D proof photograph into a
+// "surface field", and those fields fed both the Call-8 proof sheet and, through
+// `panels.build`'s fail-open arm, the print panels. Leaving a live producer of
+// that class importable is how it comes back. Call 8 is deterministic assembly
+// of the six Call-1 panels now, so this module keeps only the shared
+// vocabulary -- surface keys, the text lock, the model name the PROJECTIONS
+// still use.
+const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-proof-material.cjs");
 const { PROOF_SHEET_CONTRACT, renderProofSheet } = require("./proof-sheet.cjs");
 const { enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 const { dispatchOneWrapboxNotification, reconcileCompletedWrapboxDeliveries } = require("./wrapbox-delivery.cjs");
@@ -56,16 +63,6 @@ app.use(express.json({ limit: "1mb" }));
 function authMiddleware(req, res, next) {
   if (req.headers.authorization !== `Bearer ${WORKER_SECRET}`) return res.status(401).json({ error: "Unauthorized" });
   next();
-}
-
-async function sourceObject(rawAsset, tenantValue, revisionValue) {
-  const tenant = canonicalTenantKey(tenantValue);
-  const revisionId = canonicalUuid(revisionValue, "revisionId");
-  const asset = normalizeSourceAsset(rawAsset, tenant, revisionId);
-  const { data, error } = await supabase.storage.from(asset.bucket).download(asset.storagePath);
-  if (error || !data) throw new Error(`private seven-view source download failed: ${error?.message || "empty object"}`);
-  const bytes = verifySourceBytes(asset, Buffer.from(await data.arrayBuffer()));
-  return { ...asset, bytes };
 }
 
 async function uploadBuffer(storagePath, buffer, contentType, tenantKey, workflowRunId, signal) {
@@ -525,112 +522,103 @@ app.post("/internal/wrapbox/recipient", authMiddleware, async (req, res) => {
 // view is never used as an anchor for another surface. Call 9 repeats only the
 // geometric gridslice and never runs a model.
 app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
+  // CALL 8: DETERMINISTIC ASSEMBLY OF THE SIX CALL-1 PANELS. NO MODEL.
+  //
+  // What this endpoint used to do, in its own three numbered steps:
+  //   1. `authorFlatSurfaceFields` -- one Gemini image call per surface, each
+  //      handed that surface's 3D PROOF PHOTOGRAPH and asked to flatten it back
+  //      into a rectangle;
+  //   2. `gridSliceAll` over those flattened photographs, producing the
+  //      "deterministic gridslice identities" `panels.build` then reproduced
+  //      and shipped as print files;
+  //   3. `renderProofSheet` over the seven proof photographs.
+  //
+  // Every one of those three is a 3D proof becoming production artwork, and the
+  // owner's invariant (2026-08-29) is that none of them may: "No pixel
+  // originating from a 3D proof may ever become a Call-8 surface, production
+  // panel, print file, or ZIP asset."
+  //
+  // So there is one step now. The six Call-1 panels -- geometric crops of the
+  // accepted A.T.L.A.S. master, already at GENIE trim with the five-inch bleed
+  // -- are loaded, hash-verified, and composed onto the dimensioned sheet by
+  // `runtime/proof-sheet.cjs`. Every mark on that sheet that is not a panel is
+  // DRAWN, so no label, callout or square footage can be hallucinated. There is
+  // no `GOOGLE_IMAGE_MODEL` in this handler and there must not be one again.
   const requestAbort = new AbortController();
   req.once("aborted", () => requestAbort.abort(new Error("claimant request aborted")));
   res.once("close", () => { if (!res.writableEnded) requestAbort.abort(new Error("claimant connection closed")); });
   try {
-    const { tenantKey: rawTenantKey, workflowRunId: rawWorkflowRunId, revisionId: rawRevisionId, surfaces = [], sourceAssets = [], textLock, flatMaterialHash, vehicle, proofMeta } = req.body || {};
+    const { tenantKey: rawTenantKey, workflowRunId: rawWorkflowRunId, revisionId: rawRevisionId, surfaces = [], panelAssets = [], textLock, flatMaterialHash, vehicle, proofMeta } = req.body || {};
     const tenantKey = canonicalTenantKey(rawTenantKey);
     const workflowRunId = canonicalUuid(rawWorkflowRunId, "workflowRunId");
     const revisionId = canonicalUuid(rawRevisionId, "revisionId");
-    if (!Array.isArray(surfaces) || surfaces.length !== SURFACE_KEYS.length || !Array.isArray(sourceAssets) || sourceAssets.length !== VIEW_KEYS.length) {
-      return res.status(400).json({ success: false, error: "exactly seven immutable views and exactly six validated GENIE surfaces are required" });
+    if (!Array.isArray(surfaces) || surfaces.length !== SURFACE_KEYS.length) {
+      return res.status(400).json({ success: false, error: "exactly six validated GENIE surfaces are required" });
     }
-    let requiredViewKeys;
-    try { requiredViewKeys = sourceViewKeys(sourceAssets); }
+    let panels;
+    try { panels = normalizeCallOnePanelSet(panelAssets, tenantKey); }
     catch (error) { return res.status(400).json({ success: false, error: error.message }); }
-    const loadedSources = [];
-    const sourceKeys = new Set();
-    for (const raw of sourceAssets) {
-      const viewKey = String(raw?.viewKey || "").trim().toLowerCase();
-      if (!requiredViewKeys.includes(viewKey) || sourceKeys.has(viewKey)) return res.status(400).json({ success: false, error: `invalid seven-view role ${viewKey || "?"}` });
-      sourceKeys.add(viewKey);
-      loadedSources.push({ viewKey, ...(await sourceObject(raw, tenantKey, revisionId)) });
-    }
-    if (requiredViewKeys.some((key) => !sourceKeys.has(key))) return res.status(400).json({ success: false, error: "seven-view source set is incomplete" });
+
     const frozenTextLock = normalizeTextLock(textLock);
-    const computedMaterialHash = flatSurfaceInputHash({ sourceViews: loadedSources, surfaces, revisionId, textLock: frozenTextLock, model: GOOGLE_IMAGE_MODEL });
-    if (String(flatMaterialHash || "").toLowerCase() !== computedMaterialHash) return res.status(409).json({ success: false, error: "Call 8 flat-surface material identity changed" });
+    const computedMaterialHash = call8ProofMaterialHash({ panels, surfaces, revisionId, textLock: frozenTextLock, tenantKey });
+    if (String(flatMaterialHash || "").toLowerCase() !== computedMaterialHash) return res.status(409).json({ success: false, error: "Call 8 panel material identity changed" });
 
-    // 1. One immutable field per production surface, each authored from its own
-    //    DesignPanel view. The material-addressed path makes retries reuse the
-    //    first completed winner instead of generating different pixels.
-    const fieldPath = (surfaceKey) => `designpro/${tenantKey}/${workflowRunId}/proof-masters/raw/${surfaceKey}-${computedMaterialHash.slice(0, 24)}.png`;
-    const fields = await authorFlatSurfaceFields({
-      apiKeys: String(process.env.GOOGLE_AI_API_KEY_POOL || GOOGLE_AI_API_KEY).split(","),
-      model: GOOGLE_IMAGE_MODEL, surfaces, revisionId,
-      inputHash: computedMaterialHash, sourceViews: loadedSources, textLock: frozenTextLock,
-      vehicleName: [vehicle?.year, vehicle?.make, vehicle?.model].filter(Boolean).join(" ") || "vehicle",
-      signal: requestAbort.signal,
-      loadExisting: (surface) => existingMaster(fieldPath(surface.surfaceKey)),
-      persist: (surface, bytes) => uploadBuffer(fieldPath(surface.surfaceKey), bytes, "image/png", tenantKey, workflowRunId, requestAbort.signal),
-    });
+    // Load the six panels and prove the bytes are the artifacts the caller
+    // named. A panel whose storage object no longer hashes to its identity is a
+    // refusal, never a silent substitution.
+    const panelBytes = {};
+    const masterHashes = new Set();
+    for (const panel of panels) {
+      const { data, error } = await supabase.storage.from(panel.bucket).download(panel.storagePath);
+      if (error || !data) return res.status(502).json({ success: false, error: `Call 1 panel download failed for ${panel.surfaceKey}: ${error?.message || "empty object"}` });
+      const bytes = Buffer.from(await data.arrayBuffer());
+      const observed = createHash("sha256").update(bytes).digest("hex");
+      if (observed !== panel.contentHash || bytes.length !== panel.byteSize) {
+        return res.status(409).json({ success: false, error: `Call 1 panel ${panel.surfaceKey} changed before the proof was drawn` });
+      }
+      panelBytes[panel.surfaceKey] = bytes;
+      if (panel.sourceMasterHash) masterHashes.add(String(panel.sourceMasterHash).toLowerCase());
+    }
 
-    // 2. The server-native panel-artboard-generator gridslice. These exact
-    //    deterministic results are repeated by Call 9 and compared by hash,
-    //    so no surface can be replaced by the driver field between stages.
-    const fieldByKey = new Map(fields.map((field) => [field.surfaceKey, field]));
-    const panels = await gridSliceAll(fieldByKey, surfaces, { bleedInches: 5, maxCanvas: 4000 });
-    const surfacePanels = panels.map((panel) => ({
-      key: panel.surfaceKey,
-      step: panel.step,
-      contract: panel.contract,
-      cropRect: panel.crop,
-      contentHash: panel.contentHash, byteSize: panel.byteSize,
-      pixelWidth: panel.pixelWidth, pixelHeight: panel.pixelHeight,
-      trimWidthIn: panel.trimWidthIn, trimHeightIn: panel.trimHeightIn, bleedIn: panel.bleedIn,
-      printWidthIn: panel.printWidthIn, printHeightIn: panel.printHeightIn,
-      effectivePpi: panel.effectivePpi,
-      provenance: {
-        contract: GRID_SLICE_CONTRACT,
-        sourceFieldSha256: panel.sourceFieldHash,
-        sourceFieldPath: fieldPath(panel.surfaceKey),
-        ownSourceViewKey: fieldByKey.get(panel.surfaceKey).ownSourceViewKey,
-        ownSourceViewSha256: fieldByKey.get(panel.surfaceKey).ownSourceViewSha256,
-        model: fieldByKey.get(panel.surfaceKey).model,
-        promptVersion: fieldByKey.get(panel.surfaceKey).promptVersion,
-        fieldQc: fieldByKey.get(panel.surfaceKey).qc,
-        regenerated: false,
-      },
-    }));
-
-    // 3. The customer document.
     const sheet = await renderProofSheet({
-      views: Object.fromEntries(loadedSources.map((item) => [item.viewKey, item.bytes])),
+      panels: panelBytes,
       surfaces,
       vehicle,
       designName: proofMeta?.designName, finish: proofMeta?.finish,
       designId: proofMeta?.designId, orderNumber: proofMeta?.orderNumber,
       proofBinding: computedMaterialHash,
+      // One master, or nothing claimed. Six panels naming two different masters
+      // is a lineage defect, and the sheet says "unbound" rather than picking one.
+      masterHash: masterHashes.size === 1 ? [...masterHashes][0] : "",
     });
     const proofPath = `designpro/${tenantKey}/${workflowRunId}/proof/call8-2d-production-proof-${computedMaterialHash.slice(0, 24)}.png`;
     const storedProof = await uploadBuffer(proofPath, sheet.bytes, "image/png", tenantKey, workflowRunId, requestAbort.signal);
 
     res.json({
-      success: true, contract: "designpro.call8-flat-proof.v3", imageModel: GOOGLE_IMAGE_MODEL,
+      success: true, contract: "designpro.call8-panel-proof.v4",
+      // STATED, NOT INFERRED. A reader must not have to prove a negative from
+      // the absence of a field, and a v3 caller must not be able to read this
+      // response as its own.
+      deterministic: true,
+      imageRequestCount: 0,
+      assembledFrom: "atlas-call1-panels",
       flatMaterialHash: computedMaterialHash, textLock: frozenTextLock,
-      surfaceFields: fields.map((field) => ({
-        contract: field.contract,
-        surfaceKey: field.surfaceKey,
-        storagePath: fieldPath(field.surfaceKey),
-        contentHash: field.contentHash,
-        byteSize: field.byteSize,
-        pixelWidth: field.pixelWidth,
-        pixelHeight: field.pixelHeight,
-        trimWidthIn: field.trimWidthIn,
-        trimHeightIn: field.trimHeightIn,
-        ownSourceViewKey: field.ownSourceViewKey,
-        ownSourceViewSha256: field.ownSourceViewSha256,
-        promptVersion: field.promptVersion,
-        qc: field.qc,
-        reusedImmutableWinner: field.reused === true,
-      })),
+      surfaceTiles: sheet.tiles.map((tile) => {
+        const panel = panels.find((item) => item.surfaceKey === tile.surfaceKey);
+        return {
+          surfaceKey: tile.surfaceKey,
+          sourcePanelPath: panel.storagePath,
+          sourcePanelHash: panel.contentHash,
+          trimWidthIn: tile.trimWidthIn, trimHeightIn: tile.trimHeightIn,
+          printWidthIn: tile.printWidthIn, printHeightIn: tile.printHeightIn,
+          placement: tile.placement,
+        };
+      }),
       proof: {
         contract: PROOF_SHEET_CONTRACT,
         storagePath: storedProof.storagePath, contentHash: storedProof.contentHash, byteSize: storedProof.byteSize,
         width: sheet.width, height: sheet.height, totalSqFt: sheet.totalSqFt,
       },
-      surfacePanels,
     });
   } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });

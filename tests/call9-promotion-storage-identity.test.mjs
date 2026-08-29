@@ -126,15 +126,24 @@ test("the artifact still names the Call-1 bytes it came from", () => {
   assert.match(claimant, /promotedFrom: "atlas-call1"/);
 });
 
+function panelsBuildStart() {
+  return claimant.indexOf('stage.stage_key === "panels.build"');
+}
+
 test("promotion re-cuts nothing", () => {
   // The whole point of the stage. If a generative or geometric producer ever
   // appears in the promotion branch, the panels stop being the ones the
   // customer was shown.
-  const branch = claimant.slice(
-    claimant.indexOf("const callOnePanels = await callOnePanelSet(sb, run);"),
-    claimant.indexOf('const proof = await stageOutput(sb, run.id, "proof.build");'),
-  );
-  assert.ok(branch.length > 0, "the promotion branch must still be findable");
+  // The branch ends at the fail-closed throw now. It used to end at
+  // `const proof = await stageOutput(sb, run.id, "proof.build")` -- the first
+  // line of the arm that read Call 8's Gemini-flattened 3D proofs and gridsliced
+  // them into print files. That arm is deleted (Trish 2026-08-29), and an
+  // `indexOf` returning -1 would have sliced to the end of the file and made
+  // this assertion meaningless rather than failing.
+  const promotionStart = claimant.indexOf("const callOnePanels = await callOnePanelSet(sb, run);", panelsBuildStart());
+  const failClosed = claimant.indexOf("// FAIL CLOSED. NO CALL-1 PANEL SET MEANS NO PRODUCTION PANELS.", promotionStart);
+  assert.ok(promotionStart > 0 && failClosed > promotionStart, "the promotion branch must still be findable");
+  const branch = claimant.slice(promotionStart, failClosed);
   for (const producer of ["sharp(", "generateContent", "extract(", "gridslice"]) {
     assert.equal(branch.includes(producer), false, `promotion must not call ${producer}`);
   }
