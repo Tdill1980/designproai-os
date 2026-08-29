@@ -1216,6 +1216,74 @@ function stripePromotionCode(session) {
   return null;
 }
 
+function stripePromotionCodeId(session) {
+  const candidates = [
+    session?.discounts?.[0]?.promotion_code,
+    session?.total_details?.breakdown?.discounts?.[0]?.discount?.promotion_code,
+  ];
+  for (const candidate of candidates) {
+    const id = typeof candidate === "string" ? candidate.trim() : String(candidate?.id || "").trim();
+    if (/^promo_[A-Za-z0-9_]+$/.test(id)) return id;
+  }
+  return null;
+}
+
+/**
+ * Resolve the human-facing Stripe promotion code when a webhook only
+ * carries its promotion-code id. Discounted purchases must retain the
+ * code because the entitlement table deliberately refuses a zero-dollar
+ * purchase without one.
+ */
+async function resolvedStripePromotionCode(fetchImpl, cfg, session, discountCents) {
+  const direct = stripePromotionCode(session);
+  if (direct || !(Number(discountCents) > 0)) return direct;
+
+  let promotionId = stripePromotionCodeId(session);
+  if (!promotionId) {
+    const sessionId = String(session?.id || "").trim();
+    if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return null;
+    const lookup = new URL(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`);
+    lookup.searchParams.append("expand[]", "discounts.promotion_code");
+    const response = await fetchImpl(lookup, {
+      method: "GET",
+      headers: { authorization: `Bearer ${cfg.stripeSecretKey}` },
+    });
+    const expanded = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw Object.assign(new Error(expanded?.error?.message || `stripe_${response.status}`), { status: 502 });
+    }
+    const expandedCode = stripePromotionCode(expanded);
+    if (expandedCode) return expandedCode;
+    promotionId = stripePromotionCodeId(expanded);
+  }
+  if (!promotionId) return null;
+
+  const response = await fetchImpl(`https://api.stripe.com/v1/promotion_codes/${encodeURIComponent(promotionId)}`, {
+    method: "GET",
+    headers: { authorization: `Bearer ${cfg.stripeSecretKey}` },
+  });
+  const promotion = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(promotion?.error?.message || `stripe_${response.status}`), { status: 502 });
+  }
+  const code = typeof promotion.code === "string" ? promotion.code.trim() : "";
+  return code || null;
+}
+
+/**
+ * Stripe marks a 100%-discounted Checkout Session as
+ * `no_payment_required`, not `paid`. That is a completed purchase only
+ * when Stripe also reports a real discount and we resolved the applied
+ * promotion code. A naked zero-dollar session still grants nothing.
+ */
+export function completedCheckoutPaymentAllowed(paymentStatus, amountCents, discountCents, promotionCode) {
+  if (String(paymentStatus || "") === "paid") return true;
+  return String(paymentStatus || "") === "no_payment_required"
+    && Number(amountCents) === 0
+    && Number(discountCents) > 0
+    && Boolean(String(promotionCode || "").trim());
+}
+
 function verifiedStripeEvent(rawBody, signatureHeader, secret, nowSeconds) {
   const parts = String(signatureHeader || "").split(",").map((piece) => piece.trim());
   const timestamp = parts.find((piece) => piece.startsWith("t="))?.slice(2) || "";
@@ -2084,12 +2152,13 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const raw = await readRawBody(req);
         const event = verifiedStripeEvent(raw, req.headers["stripe-signature"], cfg.stripeWebhookSecret, Math.floor(Date.now() / 1000));
         if (!event) return json(res, 400, { error: "stripe_signature_invalid" });
-        // Only a completed, actually-paid session authorizes anything. An
-        // expired or unpaid session is acknowledged so Stripe stops retrying,
-        // and grants nothing.
+        // A completed Stripe checkout may be either normally paid or fully
+        // discounted by a real promotion code. Stripe reports the latter as
+        // `no_payment_required`; treating that as unpaid broke the owner/affiliate
+        // 100%-off path even though the checkout and entitlement schema explicitly
+        // support it. Expired/unpaid sessions still grant nothing.
         if (event.type !== "checkout.session.completed") return json(res, 200, { received: true, ignored: event.type });
         const object = event.data?.object || {};
-        if (String(object.payment_status || "") !== "paid") return json(res, 200, { received: true, unpaid: true });
         // The metadata is what the checkout put there; the amount is what
         // Stripe says was actually charged, not what the session asked for.
         const metadata = object.metadata || {};
@@ -2105,7 +2174,10 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           ? Number(metadata.amount_cents || 0)
           : Number(object.amount_total);
         const discountCents = Number(object.total_details?.amount_discount || 0);
-        const promotionCode = stripePromotionCode(object);
+        const promotionCode = await resolvedStripePromotionCode(fetchImpl, cfg, object, discountCents);
+        if (!completedCheckoutPaymentAllowed(object.payment_status, amountCents, discountCents, promotionCode)) {
+          return json(res, 200, { received: true, unpaid: true });
+        }
         const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
           checkoutSessionId: String(object.id || ""),
           paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
