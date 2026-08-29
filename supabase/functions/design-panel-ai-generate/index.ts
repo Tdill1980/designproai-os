@@ -366,7 +366,7 @@ Create one cohesive professional wrap composition filling every region completel
 Treat a pickup flank as one coordinated composition across cab and bed; treat a van flank as one continuous commercial composition; treat a car or SUV flank as one continuous side composition; treat a box truck cab and box as one coordinated visual system.
 The two flank regions share one coordinated side-design system, with every customer-facing word and logo readable in normal orientation on its installed side.
 Return artwork only. Technical labels, measurements, trim/bleed metadata and production annotations exist outside the returned pixels and are not part of the design.
-Any attached flattened-top-view reference teaches only the relationship of flattened vehicle surfaces. The customer's brief and verified customer assets control the creative design.`;
+Any attached flattened-top-view reference teaches only the relationship of flattened vehicle surfaces. Every element of the design — artwork, wording, logo and colour — comes from the customer's brief and their verified assets.`;
 }
 
 function buildDesignIQPrompt(params: DesignIQParams): string {

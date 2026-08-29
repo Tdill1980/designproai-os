@@ -92,14 +92,15 @@ test("a customer reference declares artwork authority and distinguishes itself f
   // authority; the flat contract's LAYOUT ONLY line keeps the structural
   // example out of style.
   assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's own approved wrap design/);
-  assert.match(exact, /teaches LAYOUT ONLY — take no artwork, wording, logo, colour or style from it/);
+  assert.match(exact, /teaches only the relationship of flattened vehicle surfaces/);
+  assert.match(exact, /artwork, wording, logo and colour — comes from the customer's brief/);
 
   const inspiration = authored({
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     visionboardIntent: "style_inspiration", visionBoardImages: [{}],
   });
   assert.match(inspiration, /STYLE INSPIRATION: Transform/);
-  assert.match(inspiration, /teaches LAYOUT ONLY/);
+  assert.match(inspiration, /teaches only the relationship of flattened vehicle surfaces/);
 });
 
 // WITH NO CUSTOMER REFERENCE, THE FIREWALL STILL STANDS.
@@ -112,7 +113,17 @@ test("with no customer reference at all, the structural example is still firewal
   // The firewall line rides the flat-master output contract on every call —
   // reference supplied or not — because the structural example is always
   // attached by the transport.
-  assert.match(prompt, /teaches LAYOUT ONLY — take no artwork, wording, logo, colour or style from it/);
+  // ⚠️ THE WORDS CHANGED ON 2026-08-29; THE FIREWALL DID NOT.
+  // It read "teaches LAYOUT ONLY — take no artwork, wording, logo, colour or
+  // style from it". The clean-contract rewrite shortened that to "teaches only
+  // the relationship of flattened vehicle surfaces", which drops the explicit
+  // list. RULE 0.24 is not negotiable and 0 of 11 real runs supplied a customer
+  // reference, so this line is the only thing standing between the Houdini
+  // sheet and the customer's design on every real run. It is restored in
+  // POSITIVE form — naming where each element comes from rather than what not
+  // to take — and both halves are asserted.
+  assert.match(prompt, /teaches only the relationship of flattened vehicle surfaces/);
+  assert.match(prompt, /artwork, wording, logo and colour — comes from the customer's brief and their verified assets/);
 });
 
 // THE METADATA KEEPS THE CLASSES APART.

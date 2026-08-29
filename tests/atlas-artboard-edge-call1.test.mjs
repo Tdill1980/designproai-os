@@ -22,6 +22,7 @@ const edgeSource = readFileSync(
 const runtimeSource = readFileSync(join(ROOT, "runtime", "flat-first-atlas.cjs"), "utf8");
 const assembly = edgeSource; // the real assembly lives IN the edge function now
 const handler = edgeSource.slice(edgeSource.indexOf("async function handleAtlasArtboard"));
+const MARK = "OUTPUT FORMAT \u2014 ONE FLAT A.T.L.A.S. MASTER";
 
 test("Call 1 executes DPAG's own commercial/restyle creative assembly", () => {
   // Owner directive 2026-08-27: no separate creative module, no string
@@ -69,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260828\.v7"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260828\.v8-clean"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -144,43 +145,49 @@ test("both halves of the Houdini paired lesson reach Call 1", () => {
   }
 });
 
-test("the flat contract states labeled containers, GENIE dims + 5in bleed, filled to the edges, no body lines", () => {
-  // Owner directive 2026-08-27, verbatim: "ATLAS FLATTENED TOPO VIEW CONTAINER
-  // MUST HAVE LABELED CONTAINERS AND GENIE DIMS WITH 5" BLEED — ATLAS FILLS
-  // FLATTENED TOP DESIGN WITHOUT BODYLINES FILLED TO RECTANGLE CONTAINER EDGES."
+test("the flat contract gives the model placement and creative intent, and no technical inventory", () => {
+  // ⚠️ THIS BLOCK ONCE ASSERTED THE OPPOSITE, AND THAT IS WHY IT IS HERE.
   //
-  // This narrows RULE 0.15 on ONE point, by the owner's own decision: the
-  // master no longer carries the vehicle's panel geometry. It never carried
-  // holes — that was already forbidden — and now it carries no seams, contours
-  // or arches either. A line drawn on the master prints as a line on the wrap.
-  const contract = edgeSource.slice(
-    edgeSource.indexOf("function atlasFlatMasterContract("),
-    edgeSource.indexOf("function buildDesignIQPrompt("),
-  );
-  assert.match(contract, /labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed/);
-  assert.match(contract, /FILL EVERY CONTAINER EDGE TO EDGE/);
-  assert.match(contract, /running off all four sides of its rectangle/);
-  assert.match(contract, /No blank margin, no white gap, no letterboxing/);
-  assert.match(contract, /NO BODY LINES/);
-  for (const forbidden of ["door seams", "panel gaps", "rocker", "wheel arches", "windows", "bumpers", "vehicle silhouette"]) {
-    assert.ok(contract.includes(forbidden), `the contract must name ${forbidden} as forbidden geometry`);
-  }
-  // THE UNWRAPPED REGIONS ARE MASKED BY CODE, NOT DRAWN BY THE MODEL.
-  // Owner 2026-08-27: "masked truck bed must not have any wrap design." A
-  // pickup's bed opening carries no vinyl — but asking the model to leave a
-  // hole for it reintroduces exactly the cut-out class RULE 0.15 convicts, with
-  // soft edges and invented placement. It fills the whole rectangle; geometry
-  // owns the mask, deterministically, afterwards.
-  assert.match(contract, /Paint the FULL rectangle even where the finished vehicle is not wrapped/);
-  assert.match(contract, /pickup bed opening/);
-  assert.match(contract, /masked out of the panel by code after you finish/);
-  assert.match(contract, /Do not leave a gap, a hole, a dark shape or a soft edge for one/);
+  // It required the contract to NAME each forbidden feature — door seams,
+  // wheel arches, windows, bumpers, vehicle silhouette — because RULE 0.28 §4
+  // lists them, and to describe the sheet's captions, Surface IDs, pixel sizes
+  // and dashed outlines before saying not to reproduce them.
+  //
+  // Generation 8555be2f (2026-08-28) returned `231.3" x 90"`, `170" x 71.8"`,
+  // `70.9" x 36"`, `79" x 73.6"`, the codes HD/RF/RR/FR, dashed rectangles and
+  // flanks drawn as van elevations with the arches punched out. Four of five
+  // dimension strings and four of six surface IDs, verbatim from the prompt.
+  // All six print panels were cut from it.
+  //
+  // Owner, 2026-08-29: "Do not put technical information into pixels and then
+  // ask Gemini not to reproduce it... Do NOT enumerate forbidden objects such
+  // as rocker, window, wheel arch, bumper. Those words themselves are
+  // contaminating the image-generation context."
+  //
+  // The requirements are unchanged. The contract now reaches them by naming
+  // what to paint.
+  const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function buildDesignIQPrompt("));
 
-  // The mirror twin and the one-cohesive-wrap rules survive the rewrite.
-  assert.match(contract, /PASSENGER SIDE is DRIVER SIDE's mirror twin/);
-  assert.match(contract, /ONE cohesive wrap/);
-  // …and the reference-class firewall is still on the reference.
-  assert.match(contract, /teaches LAYOUT ONLY/);
+  assert.match(contract, /Left tall region = Passenger Side artwork/);
+  assert.match(contract, /Centre top-to-bottom = Rear, Roof, Hood, Front/);
+  assert.match(contract, /Right tall region = Driver Side artwork/);
+  assert.match(contract, /filling every region completely edge-to-edge/);
+  assert.match(contract, /Return artwork only/);
+
+  for (const leaked of ["Surface ID", "pixel size", "CAPTIONED", "DASHED", "title band", "footer", "GENIE", "widthInches", "heightInches"]) {
+    assert.ok(!contract.toLowerCase().includes(leaked.toLowerCase()),
+      `the contract must not speak "${leaked}" to the image model`);
+  }
+  for (const enumerated of ["door seam", "wheel arch", "window", "bumper", "rocker", "silhouette", "handle"]) {
+    assert.ok(!contract.toLowerCase().includes(enumerated),
+      `the contract must not enumerate "${enumerated}" — naming it is what produced it`);
+  }
+
+  // The centre column is described in the order the layout actually builds. The
+  // prompt said ROOF/HOOD/FRONT/REAR while CENTER_ORDER has always been
+  // rear/roof/hood/front, so it was naming the containers in the wrong order.
+  assert.match(runtimeSource, /const CENTER_ORDER = Object\.freeze\(\["rear", "roof", "hood", "front"\]\)/);
+  assert.match(contract, /teaches only the relationship of flattened vehicle surfaces/);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -208,21 +215,42 @@ test("the six canonical surfaces are unchanged", () => {
   assert.match(runtimeSource, /surfaceKey === "driver" \|\| surfaceKey === "passenger" \? flank : null/);
 });
 
-test("the flank's structure is named to the authoring model", () => {
+test("body-style INTENT reaches the model; the region enumeration does not", () => {
+  // Owner, 2026-08-29: "we went too far when it became FRONT FENDER -> FRONT
+  // DOOR -> REAR DOOR -> QUARTER -> BED -> ROCKER... That starts becoming scene
+  // content to an image generator." The useful half is the relationship — a
+  // pickup flank spans a cab and a bed and must compose across both — and that
+  // is what the contract says now.
+  //
+  // FLANK_TOPOLOGY_BY_BODY stays: it is server-side machine data, and GENIE is
+  // allowed to know everything. It simply stops being spoken.
   assert.match(runtimeSource, /const FLANK_TOPOLOGY_BY_BODY = Object\.freeze\(/);
   for (const body of ["pickup", "van", "suv", "car", "box"]) {
     assert.ok(runtimeSource.includes(`${body}: Object.freeze(`), `${body} needs its own structure`);
   }
-  // And the edge function renders it into the panel line it already builds.
-  assert.match(edgeSource, /structure front to rear:/);
-  assert.match(edgeSource, /running the full length along the bottom edge/);
+  const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function buildDesignIQPrompt("));
+  assert.match(contract, /pickup flank as one coordinated composition across cab and bed/);
+  assert.match(contract, /van flank as one continuous commercial composition/);
+  assert.match(contract, /box truck cab and box as one coordinated visual system/);
+  for (const region of ["FRONT FENDER", "CAB DOOR", "REAR QUARTER", "BED SIDE", "ROCKER"]) {
+    assert.ok(!contract.includes(region), `the contract must not name ${region} to the image model`);
+  }
+  assert.ok(!contract.includes("structure front to rear:"),
+    "the region enumeration must not be rendered into the prompt");
 });
 
-test("the guidance says, in its own words, that it is not a seam", () => {
-  // The file writes its dashes as \u2014 escapes, so match the source bytes.
-  assert.match(edgeSource, /paint straight THROUGH every one .{0,8} they are where the vehicle's shapes fall, not seams to draw/);
-  // The NO BODY LINES contract is untouched — this sits beside it, not instead.
-  assert.match(edgeSource, /NO BODY LINES\. Do not draw door seams/);
+test("the technical metadata never leaves the server", () => {
+  // `atlasEdgeRequestBody` is the whole wire. A field absent from it cannot be
+  // shown to the model however the prompt is later worded.
+  const body = runtimeSource.slice(
+    runtimeSource.indexOf("function atlasEdgeRequestBody("),
+    runtimeSource.indexOf("async function callAtlasArtboardEdge("),
+  );
+  for (const field of ["surfaceId:", "widthInches:", "heightInches:", "topology:", "placement:"]) {
+    assert.ok(!body.includes(field),
+      `${field} must not be sent to Call 1; GENIE keeps it and the cut uses it`);
+  }
+  assert.match(body, /label: SURFACE_LABELS\[zone\.surfaceKey\]/);
 });
 
 test("body style is decided in code, never by a second AI call", () => {
