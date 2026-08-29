@@ -24,7 +24,7 @@ const sharp = runtimeRequire("sharp");
 
 const flatFirst = require("../runtime/flat-first-atlas.cjs");
 const { CANVAS, SURFACE_KEYS, PROMPT_VERSION, renderAtlasAuthoringGuide, renderAtlasGuide, _test } = flatFirst;
-const { authoringGuideSvg, guideGeometrySvg, guideSvg } = _test;
+const { authoringGuideSvg, guideContainersSvg, guideGeometrySvg, guideSvg } = _test;
 
 const { deterministicMasterChecks } = require("../runtime/atlas-master-qc.cjs");
 
@@ -158,18 +158,35 @@ test("the labelled admin guide keeps every annotation the design team reads", ()
   assert.match(svg, /TOPOLOGY GUIDE ONLY/);
 });
 
-test("both guides are rendered from one identical geometry authority", () => {
-  const geometry = guideGeometrySvg(manifest);
-  assert.equal(authoringGuideSvg(manifest).toString("utf8").includes(geometry), true);
-  assert.equal(guideSvg(manifest).toString("utf8").includes(geometry), true);
+test("both guides carry the identical container geometry, and only the human map is marked inside one", () => {
+  // THE CONTAINERS ARE SHARED. THE MARKS INSIDE THEM ARE NOT.
+  //
+  // This used to assert both guides embedded `guideGeometrySvg` verbatim —
+  // containers AND the dashed printable-area inset. The inset is a mark drawn
+  // INSIDE the rectangle the model is told to fill, and on 2026-08-29 the
+  // canary (c3269f4d) returned all six panels with a dashed rectangle running
+  // through the artwork. Same lesson as the labels, one level down.
+  //
+  // So the split now covers marks as well as glyphs: identical containers,
+  // identical fills, identical strokes, identical canvas — and the trim inset
+  // only on the map a human reads.
+  const containers = guideContainersSvg(manifest);
+  assert.equal(authoringGuideSvg(manifest).toString("utf8").includes(containers), true,
+    "the model's guide must carry the shared container geometry");
+  assert.equal(guideSvg(manifest).toString("utf8").includes(guideGeometrySvg(manifest)), true,
+    "the installer map must carry the containers plus the printable-area inset");
   // Topology is preserved exactly: every zone box and fill survives the split.
   for (const zone of manifest.zones) {
     assert.equal(
-      geometry.includes(`x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}"`),
+      containers.includes(`x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}"`),
       true,
       `${zone.surfaceKey} geometry is missing from the shared authority`,
     );
   }
+  assert.equal(containers.includes("stroke-dasharray"), false,
+    "nothing may be drawn inside a container the model is told to paint");
+  assert.equal(guideGeometrySvg(manifest).includes("stroke-dasharray"), true,
+    "the human map keeps the printable-area inset");
 });
 
 test("the two renders differ only by the annotations, and the authoring one is the plainer", async () => {

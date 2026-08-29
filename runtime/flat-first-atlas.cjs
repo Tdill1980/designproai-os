@@ -163,7 +163,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v7";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260829.v8";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -875,12 +875,37 @@ function guideLabelsSvg(manifest) {
  * authority itself, identical in each, so the two renders can never disagree
  * about where a surface is.
  */
+/**
+ * THE CONTAINERS, AND NOTHING DRAWN INSIDE ONE.
+ *
+ * The dashed trim rectangle used to be drawn here, for both consumers, on the
+ * reasoning that "a human and the model can both see where the bleed ends".
+ * The model does not need to see it and cannot be trusted with it: handed a
+ * rectangle with a dashed line inset inside it and asked to paint artwork in
+ * that rectangle, it paints the dashed line. Live on the 2026-08-29 canary
+ * (generation c3269f4d) -- every one of the six panels came back with a dashed
+ * rectangle running through the artwork, because every container on the guide
+ * had one and the prompt named it as well.
+ *
+ * That is the same lesson the split below is already built on, one level down:
+ * the guide was split so the model would not copy the surface NAMES, and the
+ * dashed inset was left drawn on both halves. It is a mark inside the paint
+ * area, so it belongs on the human's map only.
+ *
+ * The model does not lose anything. It is told to fill the container edge to
+ * edge; trim and bleed are code's, resolved from the manifest at the cut.
+ */
+function guideContainersSvg(manifest) {
+  return manifest.zones.map((zone) => (
+    `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="10" `
+    + `fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
+  )).join("");
+}
+
+/** The containers plus the printable-area inset. Human map only -- never the model's. */
 function guideGeometrySvg(manifest) {
   return manifest.zones.map((zone) => {
     const trim = zone.trim || zone;
-    // OUTER = the container, structural. INNER dashed = the printable area,
-    // which the sheet's legend calls the exact panel crop. Two rectangles per
-    // container, so a human and the model can both see where the bleed ends.
     return `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" rx="10" `
       + `fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
       + `<rect x="${trim.x}" y="${trim.y}" width="${trim.w}" height="${trim.h}" `
@@ -929,7 +954,7 @@ function guideGeometrySvg(manifest) {
 function authoringGuideSvg(manifest) {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
-    ${guideGeometrySvg(manifest)}
+    ${guideContainersSvg(manifest)}
     ${guideLabelsSvg(manifest)}
   </svg>`);
 }
@@ -3099,6 +3124,7 @@ module.exports = {
     fitCenterColumn,
     fitRotatedSide,
     authoringGuideSvg,
+    guideContainersSvg,
     guideGeometrySvg,
     guideSvg,
     normalizedGeometryAuthority,

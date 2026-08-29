@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v7";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260829.v8";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -353,9 +353,22 @@ function atlasFlatMasterContract(
 ): string {
   const panelLines = (panels || [])
     .map((p) => {
-      const id = p.surfaceId ? `${p.surfaceId} \u2014 ` : "";
+      // \u26d4 NO SURFACE ID AND NO MEASUREMENTS. THE MODEL LETTERS WHAT IT IS GIVEN.
+      //
+      // The line used to read `DS \u2014 DRIVER SIDE \u2014 tall column down the RIGHT
+      // edge \u2014 231.3" x 90"`. Generation 8555be2f (Northgate Plumbing,
+      // 2026-08-28) came back with `231.3" x 90"`, `170" x 71.8"`,
+      // `70.9" x 36"` and `79" x 73.6"` lettered onto the artwork, plus the
+      // codes HD, RF, RR and FR. Four of the five dimension strings and four of
+      // the six surface IDs, verbatim from this line. Not hallucinated \u2014
+      // transcribed. Every one of them was then cut into a print panel.
+      //
+      // The model never needed either. Placement is what it composes for;
+      // inches are code's, resolved from the GENIE manifest, stamped on the
+      // Call-8 proof and used for the cut. `surfaceId` and `widthInches` stay
+      // on the wire so the human map and the panel records keep them \u2014 they
+      // just stop being spoken to the model.
       const where = p.placement && ATLAS_PLACEMENT_WORDS[p.placement] ? ` \u2014 ${ATLAS_PLACEMENT_WORDS[p.placement]}` : "";
-      const size = p.widthInches && p.heightInches ? ` \u2014 ${p.widthInches}" x ${p.heightInches}"` : "";
       // THE FLANK'S REAL VEHICLE STRUCTURE, NAMED SO THE MODEL COMPOSES FOR IT.
       //
       // Owner, 2026-08-28: within DRIVER and PASSENGER only, name the vehicle
@@ -365,8 +378,14 @@ function atlasFlatMasterContract(
       // runs FENDER, DOOR, DOOR, QUARTER with a ROCKER along the bottom is a
       // vehicle side, and a livery can be composed for it.
       //
-      // It ends by saying what it is NOT, because the line above forbids body
-      // lines and this must not read as permission to draw them.
+      // It ends by saying what to DO with them — compose across and paint
+      // through — rather than what not to draw. The whole contract is positive
+      // now: the enumeration it used to sit under ("do not draw door seams,
+      // panel gaps, rocker or hood contours, wheel arches, windows, glass,
+      // lights, handles, bumpers, a vehicle silhouette") named ten vehicle
+      // features to a model this repo's own RULE 0.15 says over-indexes on
+      // negatives, and the flanks came back as vehicle elevations with the
+      // arches punched out.
       const regions = Array.isArray(p.topology?.frontToRear) ? p.topology!.frontToRear! : [];
       const bands = Array.isArray(p.topology?.fullLengthBands) ? p.topology!.fullLengthBands! : [];
       const structure = regions.length
@@ -374,17 +393,15 @@ function atlasFlatMasterContract(
           + (bands.length ? `, with ${bands.join(" and ")} running the full length along the bottom edge` : "")
           + ". Compose the livery ACROSS them as one artwork and paint straight THROUGH every one \u2014 they are where the vehicle's shapes fall, not seams to draw."
         : "";
-      return `\u2022 ${id}${p.label}${where}${size}${structure}`;
+      return `\u2022 ${p.label}${where}${structure}`;
     })
     .join("\n");
   return `OUTPUT FORMAT \u2014 ONE FLAT PRODUCTION MASTER on a single square 4K canvas:
-The attached layout guide is the ARTBOARD: a flattened TOP-DOWN TOPOLOGY of the vehicle \u2014 passenger flank as a tall column down the left, the centre column stacked ROOF then HOOD then FRONT then REAR from the top, driver flank as a tall column down the right. Its labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed already included. Paint inside each labeled rectangle; outside the rectangles the canvas stays blank.
-Each container shows a DASHED BLUE outline \u2014 that is the printable area, the exact panel crop. Fill it corner to corner and run the artwork past it to the container edge, which is the bleed.
-Every container is CAPTIONED beside it with its name, its Surface ID and its pixel size, and the sheet carries a title band, a footer, a faint vehicle silhouette and a grid. All of that is STRUCTURE, not artwork: it lives outside the containers and is cropped away, so paint only inside the rectangles and reproduce none of that lettering.
+The attached layout guide is the ARTBOARD: a flattened TOP-DOWN TOPOLOGY of the vehicle \u2014 passenger flank as a tall column down the left, the centre column stacked ROOF then HOOD then FRONT then REAR from the top, driver flank as a tall column down the right. Each rectangle is a fixed container already sized to its real panel. Paint inside each rectangle; outside the rectangles the canvas stays blank.
 ${panelLines}
 FILL EVERY CONTAINER EDGE TO EDGE. Each panel is ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner, with the design running off all four sides of its rectangle. No blank margin, no white gap, no letterboxing, no rounded corner, no frame or border around a panel.
-NO BODY LINES. Do not draw door seams, panel gaps, rocker or hood contours, wheel arches, windows, glass, lights, handles, bumpers, a vehicle silhouette, or any cut-out shape. The artwork paints straight THROUGH every place one of those would sit \u2014 the installer cuts the openings from the printed vinyl afterwards, and a line drawn here prints as a line on the wrap.
-Paint the FULL rectangle even where the finished vehicle is not wrapped \u2014 a pickup bed opening, for example. Those regions are masked out of the panel by code after you finish, from the vehicle's own geometry. Do not leave a gap, a hole, a dark shape or a soft edge for one, and do not try to draw where it goes.
+UNBROKEN COLOUR EVERYWHERE. Every square inch of every rectangle is finished artwork \u2014 the livery flows across the whole surface as one continuous field and stays opaque right to the four edges. It is printed vinyl seen flat, before anything has been cut from it.
+Paint the FULL rectangle even where the finished vehicle is not wrapped \u2014 a pickup bed opening, for example. Those regions are masked out of the panel by code after you finish, from the vehicle's own geometry, so the artwork simply carries on across them.
 PASSENGER SIDE is DRIVER SIDE's mirror twin \u2014 the same artwork reversed \u2014 with every word and logo forward-reading on both.
 ONE cohesive wrap: the same design flows across all panels as a single artwork laid flat.
 Any attached flattened-top-view reference teaches LAYOUT ONLY \u2014 take no artwork, wording, logo, colour or style from it.`;

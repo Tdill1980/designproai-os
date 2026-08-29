@@ -69,7 +69,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260828\.v7"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260829\.v8"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -153,17 +153,39 @@ test("the flat contract states labeled containers, GENIE dims + 5in bleed, fille
   // master no longer carries the vehicle's panel geometry. It never carried
   // holes — that was already forbidden — and now it carries no seams, contours
   // or arches either. A line drawn on the master prints as a line on the wrap.
+  // The TEMPLATE, not the whole function: the builder's own comments discuss
+  // the enumeration this test now forbids, and a slice that swallowed them
+  // would convict the explanation instead of the prompt.
   const contract = edgeSource.slice(
-    edgeSource.indexOf("function atlasFlatMasterContract("),
+    edgeSource.indexOf("OUTPUT FORMAT \\u2014 ONE FLAT PRODUCTION MASTER"),
     edgeSource.indexOf("function buildDesignIQPrompt("),
   );
-  assert.match(contract, /labeled rectangles are fixed containers at true GENIE panel dimensions with a 5" bleed/);
+  // ⚠️ THE REQUIREMENT IS UNCHANGED. THE WORDING IS INVERTED, ON EVIDENCE.
+  //
+  // This block used to assert the contract NAMED each forbidden feature —
+  // "door seams", "wheel arches", "windows", "bumpers", "vehicle silhouette" —
+  // because RULE 0.28 §4 lists them. Two live masters then came back drawn as
+  // vehicle elevations with the arches punched out (8555be2f 2026-08-28 in
+  // white, c3269f4d 2026-08-29 in black), which is the failure the enumeration
+  // existed to prevent.
+  //
+  // RULE 0.15 already records why, in this repo's own words: negatives make
+  // Gemini over-index on the forbidden thing. A ten-item inventory of vehicle
+  // parts is the strongest form of that. So the master must still carry no body
+  // lines — that owner requirement is untouched — and the contract now gets
+  // there by describing the surface it DOES want: one continuous opaque field,
+  // printed vinyl seen flat before anything is cut from it.
+  assert.match(contract, /fixed container already sized to its real panel/);
   assert.match(contract, /FILL EVERY CONTAINER EDGE TO EDGE/);
   assert.match(contract, /running off all four sides of its rectangle/);
   assert.match(contract, /No blank margin, no white gap, no letterboxing/);
-  assert.match(contract, /NO BODY LINES/);
-  for (const forbidden of ["door seams", "panel gaps", "rocker", "wheel arches", "windows", "bumpers", "vehicle silhouette"]) {
-    assert.ok(contract.includes(forbidden), `the contract must name ${forbidden} as forbidden geometry`);
+  assert.match(contract, /UNBROKEN COLOUR EVERYWHERE/);
+  assert.match(contract, /one continuous field and stays opaque right to the four edges/);
+  for (const enumerated of ["door seams", "wheel arches", "windows", "bumpers", "vehicle silhouette"]) {
+    assert.ok(
+      !contract.includes(enumerated),
+      `the contract must not enumerate ${enumerated} — naming it is what produced it`,
+    );
   }
   // THE UNWRAPPED REGIONS ARE MASKED BY CODE, NOT DRAWN BY THE MODEL.
   // Owner 2026-08-27: "masked truck bed must not have any wrap design." A
@@ -174,7 +196,10 @@ test("the flat contract states labeled containers, GENIE dims + 5in bleed, fille
   assert.match(contract, /Paint the FULL rectangle even where the finished vehicle is not wrapped/);
   assert.match(contract, /pickup bed opening/);
   assert.match(contract, /masked out of the panel by code after you finish/);
-  assert.match(contract, /Do not leave a gap, a hole, a dark shape or a soft edge for one/);
+  // Was "Do not leave a gap, a hole, a dark shape or a soft edge for one" —
+  // four more forbidden shapes, on the same evidence as above. The instruction
+  // it carried survives as the thing to do instead.
+  assert.match(contract, /the artwork simply carries on across them/);
 
   // The mirror twin and the one-cohesive-wrap rules survive the rewrite.
   assert.match(contract, /PASSENGER SIDE is DRIVER SIDE's mirror twin/);
@@ -221,8 +246,10 @@ test("the flank's structure is named to the authoring model", () => {
 test("the guidance says, in its own words, that it is not a seam", () => {
   // The file writes its dashes as \u2014 escapes, so match the source bytes.
   assert.match(edgeSource, /paint straight THROUGH every one .{0,8} they are where the vehicle's shapes fall, not seams to draw/);
-  // The NO BODY LINES contract is untouched — this sits beside it, not instead.
-  assert.match(edgeSource, /NO BODY LINES\. Do not draw door seams/);
+  // The no-body-lines requirement is untouched — this sits beside it, not
+  // instead. It is now carried positively (see the contract test above), so the
+  // assertion is on the rule's surviving form rather than on the enumeration.
+  assert.match(edgeSource, /UNBROKEN COLOUR EVERYWHERE/);
 });
 
 test("body style is decided in code, never by a second AI call", () => {
