@@ -60,16 +60,35 @@ test("contact data is never invented — absent fields stay absent", () => {
   assert.equal(b.website, undefined);
 });
 
-test("the six GENIE panels ride the request with their real inches", () => {
+test("the six panels ride the request as NAMES ONLY -- the inches stay with GENIE", () => {
+  // Owner directive 2026-08-28 (the Call-1 authoring boundary): pixel and inch
+  // dimensions, Surface IDs, trim/bleed and topology vocabulary are SERVER-ONLY
+  // machine metadata. Call 1 is an authoring request, and a measurement in it is
+  // a string the model can decide to letter onto the artwork.
+  //
+  // This test used to assert the opposite -- that `widthInches` rode the body --
+  // which is exactly the contract that put technical inventory in front of the
+  // image model. GENIE keeps the numbers; they reach the panels through
+  // `manifest.zones`, which is what `cutCallOnePanels` crops to, and through the
+  // guide geometry. They do not reach Gemini.
   const b = body();
   assert.equal(b.panels.length, 6);
-  const driver = b.panels.find((p) => p.label === "Driver Side");
-  assert.equal(driver.widthInches, 153);
-  assert.equal(driver.heightInches, 56);
   const labels = b.panels.map((p) => p.label).sort();
   // The owner's exact container names (2026-08-27): "Driver Side, Passenger
   // Side, Hood, Roof, Rear and Front."
   assert.deepEqual(labels, ["Driver Side", "Front", "Hood", "Passenger Side", "Rear", "Roof"]);
+  // A NAME is the whole of a panel entry. Anything else is machine metadata.
+  for (const panel of b.panels) {
+    assert.deepEqual(Object.keys(panel), ["label"], "a panel entry carries its label and nothing else");
+  }
+  // And the geometry the request no longer carries is still held by GENIE, at
+  // full precision, where the deterministic crop reads it.
+  const manifest = buildAtlasManifest(SURFACES, null);
+  const driverZone = manifest.zones.find((z) => z.surfaceKey === "driver");
+  assert.equal(driverZone.trimWidthIn, 153);
+  assert.equal(driverZone.trimHeightIn, 56);
+  assert.equal(driverZone.printWidthIn, 163, "GENIE still carries the 5\" bleed on both edges");
+  assert.equal(driverZone.printHeightIn, 66);
 });
 
 test("restyle maps to restyle; unknown modes fall back to commercial", () => {

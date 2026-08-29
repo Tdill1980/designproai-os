@@ -77,21 +77,30 @@ const GUIDE_ANNOTATIONS = [
  * GLYPH MAY SIT INSIDE A CONTAINER. The containers are labeled; the paint area
  * stays clean.
  */
-test("every authoring-guide label sits outside every EXTRACTION rectangle", () => {
+test("the model's guide carries no glyph at all", () => {
+  // ⚠️ THE RULE WIDENED BACK ON 2026-08-29, BY THE OWNER, ON THE EVIDENCE.
+  //
+  // For two days this was POSITIONAL: captions were legal beside a container,
+  // and the guard only proved no anchor sat inside an extraction rectangle.
+  // That was narrowed deliberately (RULE 0.28) so the containers could be
+  // labeled. It cost two masters. 8555be2f came back with the sheet's own
+  // Surface IDs and dimension callouts lettered into the artwork, and every
+  // one of its six print panels carried them.
+  //
+  // Owner, 2026-08-29: "six blank container regions only — NO text, NO surface
+  // IDs, NO dimensions, NO dashed outlines, NO title/footer, NO grid... Do not
+  // put technical information into pixels and then ask Gemini not to reproduce
+  // it." GENIE keeps every one of those values; the model is simply never
+  // shown them.
+  //
+  // So the invariant is absolute again, and it is the stronger statement:
+  // nothing readable is present, so nothing readable can be copied.
   const svg = authoringGuideSvg(manifest).toString("utf8");
-  const anchors = [...svg.matchAll(/<text\s+x="(-?\d+(?:\.\d+)?)"\s+y="(-?\d+(?:\.\d+)?)"/g)];
-  assert.equal(anchors.length, (svg.match(/<text\b/gi) || []).length,
-    "every label must declare an x/y anchor so its position can be proven");
-  assert.ok(anchors.length > 0, "the containers must actually be labeled");
-  for (const [, rawX, rawY] of anchors) {
-    const x = Number(rawX);
-    const y = Number(rawY);
-    for (const zone of manifest.zones) {
-      const cut = zone.extraction || zone;
-      const inside = x > cut.x && x < cut.x + cut.w && y > cut.y && y < cut.y + cut.h;
-      assert.equal(inside, false,
-        `a label at ${x},${y} sits inside the ${zone.surfaceKey} extraction rectangle`);
-    }
+  assert.equal((svg.match(/<text\b/gi) || []).length, 0,
+    "the model's guide must contain no text node whatsoever");
+  for (const key of SURFACE_KEYS) {
+    assert.equal(svg.includes(key.toUpperCase()), false,
+      `the authoring guide leaked the ${key} surface name`);
   }
 });
 
@@ -130,22 +139,15 @@ test("no caption is drawn in a container's bleed band, which the panel cut keeps
   }
 });
 
-test("the authoring guide names every container, and never the instructions about them", () => {
+test("the authoring guide leaks neither container names nor the instructions about them", () => {
   const svg = authoringGuideSvg(manifest).toString("utf8");
-  // The Surface IDs and names ARE on the model's sheet now -- that is the
-  // point of a labeled container, and it is what lets the panel list in the
-  // prompt ("DS — DRIVER SIDE") refer to a specific rectangle.
-  for (const key of SURFACE_KEYS) {
-    assert.ok(svg.includes(key.toUpperCase()),
-      `the authoring artboard must caption its ${key} container`);
-  }
-  // What still may NEVER reach the model is the prose telling it what not to
-  // paint -- a negative instruction rendered as pixels inside the image it is
-  // warning about, which is the one prompt shape Gemini over-indexes on.
-  for (const annotation of ["TOPOLOGY GUIDE ONLY", "MUST NOT APPEAR IN ARTWORK", "GRAYS AND LABELS"]) {
+  for (const annotation of GUIDE_ANNOTATIONS) {
     assert.equal(svg.includes(annotation), false,
-      `the authoring guide leaked the annotation ${JSON.stringify(annotation)}`);
+      `the authoring guide leaked ${JSON.stringify(annotation)}`);
   }
+  // Six filled rectangles and the canvas ground. Nothing else is drawn.
+  assert.equal((svg.match(/<rect\b/gi) || []).length, manifest.zones.length + 1,
+    "the model's guide is the canvas plus exactly one rectangle per container");
 });
 
 test("the labelled admin guide keeps every annotation the design team reads", () => {
@@ -158,18 +160,22 @@ test("the labelled admin guide keeps every annotation the design team reads", ()
   assert.match(svg, /TOPOLOGY GUIDE ONLY/);
 });
 
-test("both guides are rendered from one identical geometry authority", () => {
-  const geometry = guideGeometrySvg(manifest);
-  assert.equal(authoringGuideSvg(manifest).toString("utf8").includes(geometry), true);
-  assert.equal(guideSvg(manifest).toString("utf8").includes(geometry), true);
-  // Topology is preserved exactly: every zone box and fill survives the split.
+test("both guides place the identical containers; only the human map is marked", () => {
+  // The containers are shared — same boxes, same fills, same canvas. What
+  // differs is that the installer map also carries the dashed printable-area
+  // inset and the captions, and the model's guide carries neither. A mark
+  // drawn INSIDE a rectangle the model is told to fill is a mark it copies.
+  const authoring = authoringGuideSvg(manifest).toString("utf8");
+  const human = guideSvg(manifest).toString("utf8");
   for (const zone of manifest.zones) {
-    assert.equal(
-      geometry.includes(`x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}"`),
-      true,
-      `${zone.surfaceKey} geometry is missing from the shared authority`,
-    );
+    const box = `x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}"`;
+    assert.equal(authoring.includes(box), true, `${zone.surfaceKey} is missing from the model's guide`);
+    assert.equal(human.includes(box), true, `${zone.surfaceKey} is missing from the installer map`);
   }
+  assert.equal(authoring.includes("stroke-dasharray"), false,
+    "no dashed inset may be drawn inside a container the model must fill");
+  assert.equal(human.includes("stroke-dasharray"), true,
+    "the installer map keeps the printable-area inset the design team reads");
 });
 
 test("the two renders differ only by the annotations, and the authoring one is the plainer", async () => {
@@ -184,66 +190,90 @@ test("the two renders differ only by the annotations, and the authoring one is t
   assert.equal(a.height, CANVAS.heightPx);
   assert.equal(a.width, b.width);
   assert.equal(a.height, b.height);
-  // Glyphs are ink. The labelled map must carry strictly more distinct tones
-  // than the geometry-only render, which is the pixel-level statement that the
-  // authoring copy has had annotation removed rather than merely relabelled.
-  const distinct = async (bytes) => {
-    const stats = await sharp(bytes).greyscale().stats();
-    return stats.channels[0].stdev;
+  // ⚠️ NOT TONAL SPREAD. The old assertion compared greyscale stdev, on the
+  // reasoning that "glyphs are ink". That inverts once the model's guide is
+  // bare fills: six light rectangles on a dark ground is a HIGH-variance image,
+  // and adding fine captions to it moves the mean more than the spread. It
+  // failed on exactly that.
+  //
+  // Count EDGES instead. The model's guide is six flat fills, so it has almost
+  // none; the installer map adds a white stroke, a dashed inset and four lines
+  // of caption per container. That comparison cannot tie and cannot invert.
+  const edginess = async (bytes) => {
+    const { data, info } = await sharp(bytes).greyscale().resize(512, 512, { fit: "fill" })
+      .raw().toBuffer({ resolveWithObject: true });
+    let edges = 0;
+    for (let y = 1; y < info.height; y += 1) {
+      for (let x = 1; x < info.width; x += 1) {
+        const at = y * info.width + x;
+        if (Math.abs(data[at] - data[at - 1]) > 24 || Math.abs(data[at] - data[at - info.width]) > 24) edges += 1;
+      }
+    }
+    return edges;
   };
-  assert.ok(await distinct(labelled) > await distinct(authoring),
-    "the labelled guide should carry more tonal variation than the glyph-free one");
+  assert.ok(await edginess(labelled) > await edginess(authoring),
+    "the installer map carries marks the model's guide does not");
 });
 
-test("a glyph put back INSIDE a container fails the run instead of authoring", async () => {
-  // The renderer's own fail-closed guard, aimed at the real 08-25 defect: a
-  // surface name sitting ON the rectangle the model is told to paint. The
-  // injected label is anchored at the centre of the hood container, which is
-  // exactly where "HOOD" was when three attempts died on artifactFreeContract.
+test("any glyph, anywhere, fails the run instead of authoring", async () => {
+  // The renderer's fail-closed guard. It used to convict only a glyph inside a
+  // container; it now convicts every glyph, because the guide has no legal text
+  // at all. The injected label is anchored at the centre of the hood container
+  // — exactly where "HOOD" was when three attempts died on artifactFreeContract
+  // (eb7835a8, 2026-08-25) — and in the gutter, which used to be allowed.
   const hood = manifest.zones.find((zone) => zone.surfaceKey === "hood");
-  const x = Math.round(hood.trim.x + hood.trim.w / 2);
-  const y = Math.round(hood.trim.y + hood.trim.h / 2);
-  // ...and the bleed band, which is equally inside the panel cut.
-  const bandY = Math.round(hood.y + (hood.trim.y - hood.y) / 2);
-  const withText = {
-    ...manifest,
-    zones: manifest.zones.map((zone) => ({
-      ...zone,
-      guideFill: `#4a4a4a"/><text x="${x}" y="${y}">HOOD</text><rect fill="#4a4a4a`,
-    })),
+  const inside = {
+    x: Math.round(hood.trim.x + hood.trim.w / 2),
+    y: Math.round(hood.trim.y + hood.trim.h / 2),
   };
-  await assert.rejects(
-    () => renderAtlasAuthoringGuide(withText),
-    (error) => error?.code === "flat_atlas_authoring_guide_contains_text",
-  );
+  const gutter = { x: 40, y: 40 };
+  for (const [where, at] of Object.entries({ "inside a container": inside, "in the gutter": gutter })) {
+    const withText = {
+      ...manifest,
+      zones: manifest.zones.map((zone) => ({
+        ...zone,
+        guideFill: `#4a4a4a"/><text x="${at.x}" y="${at.y}" font-size="40">HOOD</text><rect fill="#4a4a4a`,
+      })),
+    };
+    await assert.rejects(
+      () => renderAtlasAuthoringGuide(withText),
+      (error) => error?.code === "flat_atlas_authoring_guide_contains_technical_furniture",
+      `a glyph ${where} must fail closed`,
+    );
+  }
+});
 
-  const inBleedBand = {
-    ...manifest,
-    zones: manifest.zones.map((zone) => ({
-      ...zone,
-      guideFill: `#4a4a4a"/><text x="${x}" y="${bandY}" font-size="40">HOOD</text><rect fill="#4a4a4a`,
-    })),
+test("dashed, line, path and polygon geometry are refused too", async () => {
+  // Not only glyphs. The 2026-08-29 canary (c3269f4d) returned all six panels
+  // with a dashed rectangle through the artwork, because the guide drew the
+  // trim inset inside every container. Anything the model can trace is
+  // forbidden, not just anything it can read.
+  const injections = {
+    "a dashed inset": '#4a4a4a"/><rect x="10" y="10" width="20" height="20" stroke-dasharray="26 18" fill="none',
+    "a line": '#4a4a4a"/><line x1="0" y1="0" x2="10" y2="10',
+    "a path": '#4a4a4a"/><path d="M0 0 L10 10',
+    "a polygon": '#4a4a4a"/><polygon points="0,0 10,0 10,10',
   };
-  await assert.rejects(
-    () => renderAtlasAuthoringGuide(inBleedBand),
-    (error) => error?.code === "flat_atlas_authoring_guide_contains_text",
-    "a glyph in the bleed band is a glyph in the printed panel and must fail closed",
-  );
+  for (const [what, fill] of Object.entries(injections)) {
+    await assert.rejects(
+      () => renderAtlasAuthoringGuide({
+        ...manifest,
+        zones: manifest.zones.map((zone) => ({ ...zone, guideFill: fill })),
+      }),
+      (error) => error?.code === "flat_atlas_authoring_guide_contains_technical_furniture",
+      `${what} must fail closed`,
+    );
+  }
 });
 
 /**
- * THE GUTTERS ARE NOT A FIXED WIDTH, AND THE GUARD MUST MEASURE, NOT ASSUME.
+ * THE SHEET STILL HAS TO RENDER FOR EVERY VEHICLE PROPORTION.
  *
- * Two live refusals came out of this, both on correctly laid-out sheets. The
- * first sized the captions for one vehicle's proportions: a 190x66 side leaves
- * 74px between the passenger column and the centre stack where a 251x60 side
- * leaves 115px. The second was subtler -- the guard read each label's pad from
- * an OPTIONAL font-size capture sitting behind a lazy `[^>]*?`, which a regex
- * engine satisfies by leaving unmatched, so every caption was padded as the
- * largest type on the sheet however small it actually was.
- *
- * So this walks a spread of real vehicle proportions, wide flanks to narrow,
- * and asserts the sheet renders for all of them.
+ * This used to also assert each caption declared a font-size the positional
+ * guard could read, and two live refusals came out of that machinery on
+ * correctly laid-out sheets. With no captions left there is nothing to fit and
+ * nothing to size — but the layout itself still has to survive flanks from
+ * 120in to 300in, so the render is exercised across the spread.
  */
 test("captions fit the gutter on every vehicle proportion, not just the fixture's", async () => {
   const build = (rows) => flatFirst.buildAtlasManifest(rows.map(([surfaceKey, widthInches, heightInches]) => ({
@@ -257,29 +287,26 @@ test("captions fit the gutter on every vehicle proportion, not just the fixture'
   };
   for (const [name, rows] of Object.entries(proportions)) {
     await flatFirst.renderAtlasAuthoringGuide(build(rows));
-    // And the pad the guard uses must come from the label's OWN declared size.
     const svg = flatFirst._test.authoringGuideSvg(build(rows)).toString("utf8");
-    const sizes = [...svg.matchAll(/<text\s[^>]*font-size="(\d+)"/g)].map((m) => Number(m[1]));
-    assert.equal(sizes.length, (svg.match(/<text\b/gi) || []).length,
-      `${name}: every label must declare a font-size the guard can read`);
+    assert.equal((svg.match(/<text\b/gi) || []).length, 0,
+      `${name}: the model's guide must stay glyph-free at every proportion`);
   }
 });
 
-test("a label whose position cannot be read is refused rather than trusted", async () => {
-  // The positional guard is only as good as its ability to LOCATE every glyph.
-  // A text node that declares no x/y anchor -- or declares them in another
-  // order -- cannot be proven outside a container, so it stops the run rather
-  // than passing unchecked.
-  const unlocatable = {
-    ...manifest,
-    zones: manifest.zones.map((zone) => ({
-      ...zone,
-      guideFill: '#4a4a4a"/><text dx="10">HOOD</text><rect fill="#4a4a4a',
-    })),
-  };
+test("text with no readable anchor is refused, as every text node now is", async () => {
+  // This used to be its own class: a glyph that declares no x/y could not be
+  // proven outside a container, so it was refused rather than trusted. With no
+  // legal text at all the distinction collapses — but the fixture is kept,
+  // because a guard that only convicted ANCHORED text would let this one past.
   await assert.rejects(
-    () => renderAtlasAuthoringGuide(unlocatable),
-    (error) => error?.code === "flat_atlas_authoring_guide_text_unlocatable",
+    () => renderAtlasAuthoringGuide({
+      ...manifest,
+      zones: manifest.zones.map((zone) => ({
+        ...zone,
+        guideFill: '#4a4a4a"/><text dx="10">HOOD</text><rect fill="#4a4a4a',
+      })),
+    }),
+    (error) => error?.code === "flat_atlas_authoring_guide_contains_technical_furniture",
   );
 });
 
@@ -289,10 +316,25 @@ test("the solid-panel output contract lives in the edge function's flat contract
   // handler instead, stated once and positively.
   const { readFileSync } = require("node:fs");
   const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edge, /ONE SOLID RECTANGLE of continuous wrap artwork, opaque corner to corner/);
-  assert.match(edge, /outside the rectangles the canvas stays blank/i);
-  // Zone identity reaches the model as the labeled GENIE panel list.
-  assert.match(edge, /panelLines/);
+  assert.match(edge, /filling every region completely edge-to-edge/);
+  // Zone identity reaches the model as PLACEMENT PROSE, not a labeled panel
+  // list: left tall region, centre top-to-bottom, right tall region. The
+  // Surface IDs and GENIE inches that used to ride that list are what came
+  // back lettered onto 8555be2f's artwork.
+  assert.match(edge, /Left tall region = Passenger Side artwork/);
+  assert.match(edge, /Centre top-to-bottom = Rear, Roof, Hood, Front/);
+  assert.match(edge, /Right tall region = Driver Side artwork/);
+  // Scoped to the ATLAS contract, not the file: `mode === 'artboard'` is the
+  // separate legacy RestylePro artboard branch and still builds its own list.
+  // The RETURNED TEMPLATE, not the whole function: the signature still types
+  // widthInches/heightInches on its parameter, which is dead but harmless — the
+  // defect was ever putting them in the words the model reads.
+  const atlasContract = edge.slice(
+    edge.indexOf("OUTPUT FORMAT \u2014 ONE FLAT A.T.L.A.S. MASTER"),
+    edge.indexOf("function buildDesignIQPrompt("),
+  );
+  assert.doesNotMatch(atlasContract, /\$\{p\.surfaceId\}|\$\{panel\.surfaceId\}/);
+  assert.doesNotMatch(atlasContract, /widthInches|heightInches/);
 });
 
 test("the prompt version moved off v6, so masters authored with the labelled guide are refused", () => {

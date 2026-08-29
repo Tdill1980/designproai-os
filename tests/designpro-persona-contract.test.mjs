@@ -137,7 +137,7 @@ test("camera, studio and the photograph framing stay out of the flat master", ()
   assert.doesNotMatch(flat, /Canon EOS R5/);
   assert.doesNotMatch(flat, /epoxy floor|LED strip/);
   assert.match(flat, /ONE FLAT print-production master/);
-  assert.match(flat, /OUTPUT FORMAT — ONE FLAT PRODUCTION MASTER/);
+  assert.match(flat, /OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER/);
 
   // And the 3D path is untouched: same assembly, atlasFlatMaster off.
   const threeD = buildDesignIQPrompt({

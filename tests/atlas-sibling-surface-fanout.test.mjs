@@ -198,7 +198,7 @@ test("8: backwards or upside-down customer text is still fatal", () => {
   // (owner directive 2026-08-27), with the runtime's corrective note carrying
   // the same requirement on a mirror refusal.
   const edgeSource = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edgeSource, /every word and logo forward-reading on both/);
+  assert.match(edgeSource, /every customer-facing word and logo readable in normal orientation on its installed side/);
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   assert.match(atlasSource, /forward-reading on both/);
 });
