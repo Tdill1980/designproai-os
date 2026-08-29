@@ -265,3 +265,34 @@ test("nothing downstream learns a seventh surface", () => {
     assert.equal(source.includes("FLANK_TOPOLOGY"), false, `${consumer} must not read flank topology`);
   }
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// A FAILURE HAS TO SAY WHY. (2026-08-29)
+//
+// generateOneSurface caught Gemini's actual message into `lastError` and then
+// returned a bare null, so every failure reached the stage receipt as the same
+// sentence: "generation attempt N returned no image". Live cost on run
+// 8e9fab59's proof.build — five stage attempts, three generation attempts each,
+// and the only thing recorded was that there was no image.
+//
+// The reasons it hid all have different remedies: a NO_IMAGE finishReason wants
+// a shorter prompt, an HTTP 400 wants a different aspect or imageSize, a
+// blockReason wants the brief looked at, and a decode failure wants none of
+// those. A receipt that cannot distinguish them cannot be acted on.
+const flatSurface = readFileSync(
+  new URL("../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8",
+);
+
+test("a failed surface generation carries Gemini's own reason", () => {
+  assert.match(flatSurface, /return \{ bytes: null, reason: lastError \}/);
+  assert.match(flatSurface, /returned no image\$\{why \? `: \$\{why\}` : ""\}/);
+  // The extractor already names the finishReason; this is what stops it being
+  // swallowed on the way out.
+  assert.match(flatSurface, /finishReason \|\| payload\?\.promptFeedback\?\.blockReason/);
+});
+
+test("an injected generator may still return raw bytes", () => {
+  // The test seam predates the shape change, so both are accepted rather than
+  // rewriting every double.
+  assert.match(flatSurface, /Buffer\.isBuffer\(produced\) \? produced : produced\?\.bytes \|\| null/);
+});
