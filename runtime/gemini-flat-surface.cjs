@@ -259,7 +259,7 @@ async function generateOneSurface({ apiKeys, model, surface, ownReference, sourc
         const detail = await response.text().catch(() => "");
         lastError = `HTTP ${response.status}${detail ? `: ${detail.slice(0, 240)}` : ""}`;
         if (response.status === 429 || response.status >= 500) continue;
-        return null;
+        return { bytes: null, reason: lastError };
       }
       const bytes = extractOneImageResponse(await response.json(), surface.surfaceKey);
       await assertOpaqueImage(bytes, surface.surfaceKey);
@@ -268,8 +268,23 @@ async function generateOneSurface({ apiKeys, model, surface, ownReference, sourc
       lastError = String(error?.message || error);
     }
   }
-  if (lastError) return null;
-  return null;
+  // WHY IT FAILED, NOT JUST THAT IT DID. (2026-08-29)
+  //
+  // This returned a bare `null` and threw `lastError` away, so every failure
+  // reached the caller as the same sentence: "generation attempt N returned no
+  // image". That sentence is what a stage receipt records, so a live failure
+  // could not be diagnosed from the run at all -- and the reasons it hides are
+  // all different remedies: a finishReason of NO_IMAGE wants a shorter prompt, a
+  // 400 wants a different aspect or imageSize, a blockReason wants the brief
+  // looked at, and a decode failure wants none of those.
+  //
+  // Live cost: run 8e9fab59, proof.build, five stage attempts x three generation
+  // attempts, and the only thing recorded was that there was no image.
+  //
+  // Returned rather than thrown: the caller already treats a missing image as a
+  // retryable outcome, and turning it into an exception would change which
+  // failures are retried.
+  return { bytes: null, reason: lastError };
 }
 
 async function judgeSurface({ apiKeys, model, ownReference, fieldBytes, surfaceKey, fetchImpl = fetch, signal }) {
@@ -336,12 +351,16 @@ async function authorFlatSurfaceFields(options) {
       let best = null;
       let lastReason = "no image";
       for (let attempt = 1; attempt <= 3; attempt += 1) {
-        const generated = await generate({
+        const produced = await generate({
           apiKeys, model, surface, ownReference, sourceSetHash: inputHash, textLock, attempt,
           vehicleName: options.vehicleName, fetchImpl: options.fetchImpl, signal: options.signal,
         });
+        // A Buffer, or { bytes, reason }. Both shapes are accepted so an
+        // injected test double may still return raw bytes.
+        const generated = Buffer.isBuffer(produced) ? produced : produced?.bytes || null;
         if (!generated) {
-          lastReason = `generation attempt ${attempt} returned no image`;
+          const why = Buffer.isBuffer(produced) ? "" : String(produced?.reason || "").trim();
+          lastReason = `generation attempt ${attempt} returned no image${why ? `: ${why}` : ""}`;
           if (attempt < 3) await pause(1500 * attempt);
           continue;
         }
