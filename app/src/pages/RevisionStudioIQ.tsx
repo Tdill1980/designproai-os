@@ -4737,6 +4737,30 @@ export default function RevisionStudioIQ() {
                         {formatDid(genIdOf(selectedRender) || selectedRender?.id) || "DID-————"}
                       </Badge>
                     )}
+                    {/* THE A.T.L.A.S. GENERATION ID ITSELF, NOT ONLY ITS DID.
+                        (Trish 2026-08-28: "I need the actual ATLAS Generation
+                        ID # viewable.") The DID is a formatted eight-character
+                        prefix — good for recognising a job at a glance, useless
+                        for pasting into PanelPro, a query or a support thread.
+                        PanelPro Studio prints the full id at the top of its
+                        board; RevisionStudio showed only the short form, so the
+                        two studios named the same design differently. */}
+                    {(genIdOf(selectedRender) || selectedRender?.id) && (
+                      <Badge
+                        variant="outline"
+                        className="border-zinc-600 text-zinc-300 text-[11px] font-mono cursor-pointer hover:bg-zinc-700/40"
+                        title="A.T.L.A.S. Generation ID — click to copy"
+                        onClick={() => {
+                          const fullId = String(genIdOf(selectedRender) || selectedRender?.id || "");
+                          if (fullId) {
+                            navigator.clipboard?.writeText(fullId).catch(() => {});
+                            toast.success("Generation ID copied", { description: fullId });
+                          }
+                        }}
+                      >
+                        GEN {String(genIdOf(selectedRender) || selectedRender?.id || "")}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 text-sm text-zinc-400">
                     {selectedRender.color_hex && (
