@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
+import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import { DesignIQProgressBar } from "@/components/designpanelpro/DesignIQProgressBar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -2394,6 +2395,17 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         Neither button starts a producer: the reveal shows the
                         views the server is already rendering, and Revise opens
                         the studio against this same design lineage. */}
+                    {/* The workflow rail appears the moment this page has a job
+                        to name -- which is the same moment the design exists.
+                        Before that there is no identity to carry and it renders
+                        nothing. */}
+                    {mainDisplayUrl && generationIdRef.current && (
+                      <JobWorkflowHeader
+                        generationId={generationIdRef.current}
+                        current="design"
+                        className="w-full rounded-lg border"
+                      />
+                    )}
                     {mainDisplayUrl && !allViewsRevealed && (
                       <div className="w-full space-y-2 rounded-lg border border-cyan-400/30 bg-cyan-400/5 p-3">
                         <p className="text-sm font-semibold text-cyan-100">

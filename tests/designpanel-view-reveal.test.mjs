@@ -11,11 +11,15 @@ test("See All Views is available as soon as Driver Side exists", () => {
   // condition itself is unchanged and is what this asserts.
   const label = source.lastIndexOf("See All Views");
   assert.ok(label > 0, "the See All Views action is missing");
-  const button = source.slice(label - 2500, label + 900);
+  const button = source.slice(label - 2500, label + 2200);
   assert.match(button, /mainDisplayUrl\s*&&\s*!allViewsRevealed/);
   // And the customer can say no there, without waiting out six more proofs.
+  // THAT DECISION is what RULE 0.23 protects, and it is unchanged. The label
+  // was "Revise This Design" until 2026-08-29, when the owner renamed it to
+  // "Open in RevisionStudio" as part of making the job identity travel between
+  // screens. The wording is presentation; the decision point is the rule.
   assert.match(button, /Do you want to see all sides of this design, or revise it\?/);
-  assert.match(button, /Revise This Design/);
+  assert.match(button, /Open in RevisionStudio/);
   assert.doesNotMatch(button, /!pipelineActive/);
 
   const handler = source.slice(
