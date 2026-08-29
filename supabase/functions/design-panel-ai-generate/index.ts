@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v6";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v7";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -316,15 +316,65 @@ const ATLAS_PLACEMENT_WORDS: Record<string, string> = {
   "center-column": "in the CENTRE column, stacked ROOF then HOOD then FRONT then REAR from the top",
 };
 
+/** Strings only, capped, or nothing. A malformed topology is simply absent. */
+function atlasPanelTopology(value: unknown): AtlasPanelTopology | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const names = (input: unknown) => (Array.isArray(input) ? input : [])
+    .map((item) => String(item || "").trim().toUpperCase())
+    .filter((item) => item.length > 0 && item.length <= 40)
+    .slice(0, 8);
+  const frontToRear = names(raw.frontToRear);
+  if (!frontToRear.length) return undefined;
+  return {
+    bodyStyle: String(raw.bodyStyle || "").trim().slice(0, 24) || undefined,
+    frontToRear,
+    fullLengthBands: names(raw.fullLengthBands),
+    paintThrough: true,
+  };
+}
+
+type AtlasPanelTopology = {
+  bodyStyle?: string;
+  frontToRear?: string[];
+  fullLengthBands?: string[];
+  paintThrough?: boolean;
+};
+
 function atlasFlatMasterContract(
-  panels: Array<{ label: string; surfaceId?: string; placement?: string; widthInches?: number; heightInches?: number }>,
+  panels: Array<{
+    label: string;
+    surfaceId?: string;
+    placement?: string;
+    widthInches?: number;
+    heightInches?: number;
+    topology?: AtlasPanelTopology;
+  }>,
 ): string {
   const panelLines = (panels || [])
     .map((p) => {
       const id = p.surfaceId ? `${p.surfaceId} \u2014 ` : "";
       const where = p.placement && ATLAS_PLACEMENT_WORDS[p.placement] ? ` \u2014 ${ATLAS_PLACEMENT_WORDS[p.placement]}` : "";
       const size = p.widthInches && p.heightInches ? ` \u2014 ${p.widthInches}" x ${p.heightInches}"` : "";
-      return `\u2022 ${id}${p.label}${where}${size}`;
+      // THE FLANK'S REAL VEHICLE STRUCTURE, NAMED SO THE MODEL COMPOSES FOR IT.
+      //
+      // Owner, 2026-08-28: within DRIVER and PASSENGER only, name the vehicle
+      // topology the model needs "to understand the real vehicle structure",
+      // while the six production cuts stay exactly six. A 251-inch rectangle
+      // with nothing named inside it is a rectangle; the same rectangle told it
+      // runs FENDER, DOOR, DOOR, QUARTER with a ROCKER along the bottom is a
+      // vehicle side, and a livery can be composed for it.
+      //
+      // It ends by saying what it is NOT, because the line above forbids body
+      // lines and this must not read as permission to draw them.
+      const regions = Array.isArray(p.topology?.frontToRear) ? p.topology!.frontToRear! : [];
+      const bands = Array.isArray(p.topology?.fullLengthBands) ? p.topology!.fullLengthBands! : [];
+      const structure = regions.length
+        ? `\n  structure front to rear: ${regions.join(" \u203a ")}`
+          + (bands.length ? `, with ${bands.join(" and ")} running the full length along the bottom edge` : "")
+          + ". Compose the livery ACROSS them as one artwork and paint straight THROUGH every one \u2014 they are where the vehicle's shapes fall, not seams to draw."
+        : "";
+      return `\u2022 ${id}${p.label}${where}${size}${structure}`;
     })
     .join("\n");
   return `OUTPUT FORMAT \u2014 ONE FLAT PRODUCTION MASTER on a single square 4K canvas:
@@ -1978,7 +2028,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // The six labeled panels: caller-supplied GENIE dimensions win; the PVO
     // table (artboard-template-os) is the fallback — the same resolver the
     // legacy artboard mode uses.
-    type PanelIn = { label?: unknown; surfaceId?: unknown; placement?: unknown; widthInches?: unknown; heightInches?: unknown };
+    type PanelIn = { label?: unknown; surfaceId?: unknown; placement?: unknown; widthInches?: unknown; heightInches?: unknown; topology?: unknown };
     const suppliedPanels = Array.isArray(body.panels) ? (body.panels as PanelIn[]) : [];
     const panels = suppliedPanels.length
       ? suppliedPanels.map((p) => ({
@@ -1987,6 +2037,10 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
           placement: String((p as Record<string, unknown>).placement || "") || undefined,
           widthInches: Number(p.widthInches) || undefined,
           heightInches: Number(p.heightInches) || undefined,
+          // Guidance only, and only on the two flanks. Read as strings and
+          // nothing else: it names structure, it never becomes a surface, a
+          // panel record, an output or a ZIP entry.
+          topology: atlasPanelTopology(p.topology),
         }))
       : await resolveArtboardPanels(svc, vehicleYear, vehicleMake, vehicleModel);
 

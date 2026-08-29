@@ -163,7 +163,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v6";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v7";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -464,8 +464,12 @@ function zoneEffectivePpi(zone, surface) {
  * data is deliberately not accepted, so a proof image can never become
  * geometry.
  */
-function buildAtlasManifest(surfaces, geometryAuthorityInput) {
+function buildAtlasManifest(surfaces, geometryAuthorityInput, vehicleTypeInput) {
   const geometryAuthority = normalizedGeometryAuthority(geometryAuthorityInput);
+  // Driver and passenger only. The centre four are single structural surfaces
+  // with nothing to sub-divide, and inventing regions for them would be exactly
+  // the eleven-panel architecture the owner ruled out.
+  const flank = flankTopology(vehicleTypeInput);
   const byKey = normalizedSurfaces(surfaces);
   const availableTop = OUTER_PADDING_PX;
   const availableHeight = CANVAS.heightPx - OUTER_PADDING_PX * 2;
@@ -515,6 +519,10 @@ function buildAtlasManifest(surfaces, geometryAuthorityInput) {
       effectivePpi,
       proofDependencies: [...PROOF_DEPENDENCIES[surfaceKey]],
       guideFill: GUIDE_FILL,
+      // Authoring guidance, on the two flanks only. Read by the guide caption
+      // and by the Call-1 panel list; read by nothing that cuts, counts,
+      // packages or delivers a panel.
+      flankTopology: surfaceKey === "driver" || surfaceKey === "passenger" ? flank : null,
     };
   });
   const minimumEffectivePpi = Math.min(...zones.map((zone) => zone.effectivePpi));
@@ -709,6 +717,100 @@ const LABEL_REACH = 0.7;
  */
 
 /**
+ * THE REAL VEHICLE STRUCTURE ALONG A FLANK — GUIDANCE, NEVER A SEAM. (Trish 2026-08-28)
+ *
+ * The bundled Houdini PANEL LAYOUT names eleven-plus panels — rear bumper,
+ * hatch, rocker, fender, quarter, front bumper — and A.T.L.A.S. cuts six. The
+ * owner's decision on that gap, verbatim:
+ *
+ *   "True topology inside the existing six-container contract. Do NOT change
+ *    the six production cuts... Within DRIVER and PASSENGER only, add the
+ *    appropriate vehicle topology/subregions needed for DesignPanelAI to
+ *    understand the real vehicle structure... These are authoring/topology
+ *    guidance only, not new canonical surfaces, not new seams, not new panel
+ *    records, not new ZIP entries, and not new production outputs."
+ *
+ * So this changes exactly one thing: what the authoring model KNOWS about the
+ * long rectangle it is painting. `SURFACE_KEYS` is untouched, `cutCallOnePanels`
+ * still makes six files, `source.verify` still counts six, Call 11 still makes
+ * six duplicates, and the ZIP still carries six panels.
+ *
+ * TWO RULES THIS OBEYS, BOTH LEARNED EXPENSIVELY.
+ *
+ * It draws NO geometry inside a container. RULE 0.28 §4 forbids body lines on
+ * the master — "a line drawn on the master prints as a line on the wrap" — and
+ * the owner repeated it here: "do not draw fake vehicle silhouettes over the
+ * artwork and do not let topology guidance become printable content." The
+ * regions therefore exist as manifest METADATA and as text in the flank's
+ * GUTTER caption, which `normalizeAtlasMaster` masks away before a master
+ * exists. Nothing new is paintable.
+ *
+ * It is DETERMINISTIC AND LOCAL. No classification call decides the body
+ * style; a keyword read of the vehicle type does, in code, on the critical
+ * path where a second AI stage is forbidden.
+ *
+ * The regions run FRONT TO REAR, which is the direction a flank unrolls, plus
+ * the rocker band that runs the whole length along the bottom edge.
+ */
+const FLANK_TOPOLOGY_CONTRACT = "designpro.atlas-flank-topology.v1";
+const FLANK_TOPOLOGY_BY_BODY = Object.freeze({
+  pickup: Object.freeze(["FRONT FENDER", "CAB DOOR", "CAB REAR", "BED SIDE", "REAR QUARTER"]),
+  van: Object.freeze(["FRONT FENDER", "CAB DOOR", "CARGO BODY", "REAR QUARTER"]),
+  suv: Object.freeze(["FRONT FENDER", "FRONT DOOR", "REAR DOOR", "REAR QUARTER"]),
+  car: Object.freeze(["FRONT FENDER", "FRONT DOOR", "REAR DOOR", "REAR QUARTER"]),
+  box: Object.freeze(["CAB", "BOX SIDE"]),
+});
+const FLANK_ROCKER = "ROCKER";
+
+/**
+ * Which body the vehicle type names. Longest-match first, so "cargo van" reads
+ * as a van rather than falling through, and an unrecognised type takes the
+ * four-region car layout — the shape every passenger vehicle shares.
+ */
+function flankBodyStyle(vehicleType) {
+  const text = String(vehicleType || "").toLowerCase();
+  if (/\b(pickup|pick-up|truck bed|crew cab|super cab|quad cab|regular cab|f-?\d{3}|silverado|sierra|ram \d|tacoma|tundra|ranger|colorado|frontier|ridgeline|titan)\b/.test(text)) return "pickup";
+  if (/\b(box truck|box van|cutaway|step van|straight truck)\b/.test(text)) return "box";
+  if (/\b(van|transit|sprinter|promaster|express|savana|metris|nv\d*)\b/.test(text)) return "van";
+  if (/\b(suv|wagon|crossover|tahoe|suburban|explorer|expedition|4runner|bronco|jeep)\b/.test(text)) return "suv";
+  return "car";
+}
+
+/**
+ * The flank's structure, as ordered regions plus the rocker band.
+ *
+ * Proportional, never pixel-placed: the model is told the ORDER and roughly how
+ * much of the length each region occupies, which is what it needs to compose a
+ * cohesive livery across a door line it must paint straight through. Exact
+ * placement would be a seam, and a seam is what this must not become.
+ */
+function flankTopology(vehicleType) {
+  const bodyStyle = flankBodyStyle(vehicleType);
+  const regions = FLANK_TOPOLOGY_BY_BODY[bodyStyle];
+  const share = Math.round((100 / regions.length) * 10) / 10;
+  return {
+    contract: FLANK_TOPOLOGY_CONTRACT,
+    bodyStyle,
+    printable: false,
+    role: "authoring-guidance-only",
+    // Said in the manifest so a later reader cannot mistake it for a cut list.
+    note: "Structure the artwork should account for. Not surfaces, not seams, not panels; the livery paints straight through every one of them.",
+    orderFrontToRear: regions.map((label, index) => ({
+      label,
+      order: index + 1,
+      approximateLengthSharePct: share,
+    })),
+    fullLengthBands: [{ label: FLANK_ROCKER, edge: "bottom" }],
+  };
+}
+
+/** The gutter caption's structure line, e.g. "FENDER › DOOR › DOOR › QUARTER". */
+function flankTopologyCaption(topology) {
+  if (!topology) return "";
+  return topology.orderFrontToRear.map((region) => region.label).join(" › ");
+}
+
+/**
  * The clear gutter beside a container, as [near edge, far edge] on x.
  * Measured from the real zones, so a layout with tighter columns shrinks the
  * caption instead of pushing it into a neighbour.
@@ -728,7 +830,13 @@ function containerCaptionSvg(zone, zones) {
   if (!(width > 24)) return "";
   const name = (SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey)).toUpperCase();
   const id = SURFACE_IDS[zone.surfaceKey];
-  const label = id ? `${id} · ${name}` : name;
+  const base = id ? `${id} · ${name}` : name;
+  // The flank's real structure, in the gutter beside it — never inside the
+  // container, where a glyph becomes a glyph in the printed panel (request
+  // f3eb40c1). `normalizeAtlasMaster` masks the gutter away, so this is
+  // structurally unprintable rather than merely discouraged.
+  const structure = flankTopologyCaption(zone.flankTopology);
+  const label = structure ? `${base} · ${structure}` : base;
   // The caption is rotated a quarter turn, so its cap height runs across the
   // gutter. Size it to fit with the same pad the guard measures.
   const size = Math.max(11, Math.min(52, Math.floor((width / 2) / LABEL_REACH)));
@@ -1470,6 +1578,24 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       placement: zone.placement,
       widthInches: Number(zone.trimWidthIn) || undefined,
       heightInches: Number(zone.trimHeightIn) || undefined,
+      // THE FLANK'S REAL VEHICLE STRUCTURE, SO THE MODEL COMPOSES FOR IT.
+      //
+      // Owner, 2026-08-28: within DRIVER and PASSENGER only, name the vehicle
+      // topology "needed for DesignPanelAI to understand the real vehicle
+      // structure". A 251-inch rectangle with no structure named is why a flank
+      // reads as one long smear while the centre four compose cleanly.
+      //
+      // It is guidance, and it says so in its own words: the livery paints
+      // straight THROUGH every region. Nothing here becomes a surface, a seam,
+      // a panel record, a ZIP entry or an output.
+      topology: zone.flankTopology
+        ? {
+          bodyStyle: zone.flankTopology.bodyStyle,
+          frontToRear: zone.flankTopology.orderFrontToRear.map((region) => region.label),
+          fullLengthBands: zone.flankTopology.fullLengthBands.map((band) => band.label),
+          paintThrough: true,
+        }
+        : undefined,
     })),
     // The two large inputs travel by STORAGE PATH: a 2.2MB inline-base64 body
     // killed the edge worker twice (2026-08-27). Customer references stay
@@ -2031,7 +2157,7 @@ async function generateOrReuseFlatAtlas(options) {
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
-  const manifest = buildAtlasManifest(surfaces, geometryAuthority);
+  const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
   if (geometryResolution) manifest.geometryResolution = geometryResolution;
