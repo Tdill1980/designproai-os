@@ -163,7 +163,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v7";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v8-clean";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -927,10 +927,13 @@ function guideGeometrySvg(manifest) {
  * check that caught this.
  */
 function authoringGuideSvg(manifest) {
+  const rectangles = manifest.zones.map((zone) => (
+    `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" `
+      + `fill="${zone.guideFill}"/>`
+  )).join("");
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
-    ${guideGeometrySvg(manifest)}
-    ${guideLabelsSvg(manifest)}
+    ${rectangles}
   </svg>`);
 }
 
@@ -972,6 +975,21 @@ async function renderAtlasAuthoringGuide(manifest) {
   // is bounded by the font size; the anchor plus that pad is checked against
   // all six rectangles.
   const markup = svg.toString("utf8");
+  const forbiddenAuthoringMarkup = [
+    [/<text\b/i, "text"],
+    [/stroke-dasharray/i, "dashed trim geometry"],
+    [/<line\b/i, "line geometry"],
+    [/<path\b/i, "path geometry"],
+    [/<polygon\b/i, "polygon geometry"],
+  ];
+  for (const [pattern, label] of forbiddenAuthoringMarkup) {
+    if (pattern.test(markup)) {
+      throw new FlatAtlasError(
+        "flat_atlas_authoring_guide_contains_technical_furniture",
+        `The model-facing A.T.L.A.S. guide contains ${label}; it must be six plain spatial regions only`,
+      );
+    }
+  }
   // READ THE WHOLE TAG, THEN PULL THE THREE ATTRIBUTES OUT OF IT.
   //
   // The first version tried to do it in one expression, with an OPTIONAL
@@ -1574,28 +1592,6 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     // the mapping (owner, 2026-08-27: "true topography ... labeled containers").
     panels: manifest.zones.map((zone) => ({
       label: SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
-      surfaceId: SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
-      placement: zone.placement,
-      widthInches: Number(zone.trimWidthIn) || undefined,
-      heightInches: Number(zone.trimHeightIn) || undefined,
-      // THE FLANK'S REAL VEHICLE STRUCTURE, SO THE MODEL COMPOSES FOR IT.
-      //
-      // Owner, 2026-08-28: within DRIVER and PASSENGER only, name the vehicle
-      // topology "needed for DesignPanelAI to understand the real vehicle
-      // structure". A 251-inch rectangle with no structure named is why a flank
-      // reads as one long smear while the centre four compose cleanly.
-      //
-      // It is guidance, and it says so in its own words: the livery paints
-      // straight THROUGH every region. Nothing here becomes a surface, a seam,
-      // a panel record, a ZIP entry or an output.
-      topology: zone.flankTopology
-        ? {
-          bodyStyle: zone.flankTopology.bodyStyle,
-          frontToRear: zone.flankTopology.orderFrontToRear.map((region) => region.label),
-          fullLengthBands: zone.flankTopology.fullLengthBands.map((band) => band.label),
-          paintThrough: true,
-        }
-        : undefined,
     })),
     // The two large inputs travel by STORAGE PATH: a 2.2MB inline-base64 body
     // killed the edge worker twice (2026-08-27). Customer references stay
