@@ -170,3 +170,78 @@ test("evidence is computed from artifacts, and the box is still human", () => {
   // Nothing pre-ticks a box.
   assert.doesNotMatch(board, /checked=\{true\}/);
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// THE BOARD SHOWS THE PAIR, AND THE ZIP SAYS WHAT IS IN IT. (Trish 2026-08-28)
+//
+// Three asks, one screen:
+//
+//   "ATLAS design with visible Generation ID should be at top of the
+//    PanelProStudio admin page, then panels next to individual 3d proofs,
+//    then production sheet"
+//   "All ZIP assets must have a container next to ZIP so we know what's in ZIP"
+//   "I need the actual ATLAS Generation ID # viewable"  (RevisionStudioIQ)
+//
+// The per-side row existed only at /panelpro/surfaces, one level below the
+// control room, so the board went master → logos and skipped the pair a
+// designer actually validates. The ZIP had a download link and a census of
+// kinds; a census cannot say WHICH six panels or at what path. And
+// RevisionStudio printed the eight-character DID, which recognises a job but
+// cannot be pasted into PanelPro, a query or a support thread.
+
+test("the pair rows sit between the master and the production pack", () => {
+  assert.match(board, /function SurfacePairRows\(/);
+  assert.match(board, /Real design proof ∥ print panel · per surface/);
+  const pairAt = board.indexOf("<SurfacePairRows job=");
+  const masterAt = board.indexOf("<VersionAssetManifest job={job} atlas={atlas} />");
+  const packAt = board.indexOf("<ProductionPackSection");
+  assert.ok(masterAt > 0 && pairAt > 0 && packAt > 0);
+  assert.ok(pairAt < packAt, "panels beside their proofs must come before the production sheet");
+});
+
+test("a missing half of the pair is reported, never substituted", () => {
+  assert.match(board, /3D proof not rendered yet/);
+  assert.match(board, /Print panel not cut yet/);
+  // RULE 0.21: the board publishes the server's artifacts, it does not make them.
+  const rows = board.slice(board.indexOf("function SurfacePairRows("), board.indexOf("function SurfacePairRows(") + 5200);
+  for (const producer of ["Pull panel", "Mirror from driver"]) {
+    assert.equal(rows.includes(producer), false, `${producer} is a browser-era producer`);
+  }
+});
+
+test("the pair states whether both halves came from the same master", () => {
+  assert.match(board, /same master/);
+  assert.match(board, /different masters/);
+  assert.match(board, /side\?\.atlas\?\.matches/);
+});
+
+test("the ZIP publishes a per-file manifest, not only a count of kinds", () => {
+  const claimant = readFileSync(
+    new URL("../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8",
+  );
+  assert.match(claimant, /const archiveManifest = \[/);
+  for (const field of ["archivePath", "kind", "surfaceKey", "contentHash", "byteSize"]) {
+    assert.ok(claimant.includes(field), `every archive row must carry ${field}`);
+  }
+  // Every entry written is an entry listed, or the stage refuses.
+  assert.match(claimant, /zip_manifest_incomplete/);
+  assert.match(claimant, /includedKinds, archiveManifest,/);
+});
+
+test("the board renders that manifest beside the ZIP", () => {
+  assert.match(board, /function ZipContentsCard\(/);
+  assert.match(board, /Inside the Production ZIP/);
+  assert.match(board, /<ZipContentsCard zip=\{job\.zip\} \/>/);
+  // Before the archive exists it says so rather than previewing a contract.
+  assert.match(board, /No archive built yet/);
+});
+
+test("RevisionStudio shows the full Generation ID, not only the DID", () => {
+  const studio = readFileSync(
+    new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url), "utf8",
+  );
+  assert.match(studio, /A\.T\.L\.A\.S\. Generation ID — click to copy/);
+  assert.match(studio, /Generation ID copied/);
+  // And the DID badge stays: the two answer different questions.
+  assert.match(studio, /formatDid\(genIdOf\(selectedRender\) \|\| selectedRender\?\.id\)/);
+});

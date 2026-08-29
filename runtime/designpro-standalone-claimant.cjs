@@ -2404,6 +2404,45 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
     });
     const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1 };
+
+    // THE ZIP SAYS WHAT IS IN IT, FILE BY FILE. (Trish 2026-08-28)
+    //
+    // "All ZIP assets must have a container next to ZIP so we know what's in
+    // ZIP." The receipt carried `includedKinds` -- six panels, eighteen
+    // outputs, three stamps -- which is a census, not a manifest: it cannot
+    // tell you WHICH six, at what path inside the archive, or whether the file
+    // you are holding is the one that got packed. So the archive now publishes
+    // its own table of contents, one row per entry, with the archive path it
+    // was written to and the sha256 of the bytes that went in.
+    //
+    // Read straight off `entries` and `rows` rather than re-derived, so the
+    // list is the archive by construction. RULE 0.22: do not hide files behind
+    // only a final ZIP -- and a reader who cannot see inside it is in exactly
+    // that position even when every file is downloadable elsewhere.
+    // zipArtifactEntries sorts its input by kind/surface/path; sorting the rows
+    // the same way once is what lets entry[i] and row[i] be the same file.
+    const orderedRows = [...rows].sort((left, right) =>
+      `${left.artifact_kind}/${left.surface_key}/${left.storage_path}`
+        .localeCompare(`${right.artifact_kind}/${right.surface_key}/${right.storage_path}`));
+    const archiveManifest = [
+      ...zipArtifactEntries(sb, rows).map((entry, index) => ({
+        archivePath: entry.name,
+        kind: orderedRows[index].artifact_kind,
+        surfaceKey: orderedRows[index].surface_key || null,
+        contentHash: orderedRows[index].content_hash,
+        byteSize: Number(orderedRows[index].byte_size),
+      })),
+      ...archivedSourceViews.map((view) => ({
+        archivePath: view.archivePath, kind: "source-view", surfaceKey: view.viewKey,
+        contentHash: view.contentHash, byteSize: Number(view.byteSize) || null,
+      })),
+      { archivePath: dimensionArchivePath, kind: "dimension-manifest", surfaceKey: null, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length },
+      { archivePath: businessIdentityArchivePath, kind: "design-order-identity", surfaceKey: null, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length },
+    ];
+    if (archiveManifest.length !== entries.length) {
+      throw new StageError("zip_manifest_incomplete", `${archiveManifest.length} listed, ${entries.length} archived`, false);
+    }
+
     const signal = stageLeaseContext.getStore()?.controller?.signal;
     let spool;
     try {
@@ -2412,10 +2451,10 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/production-pack.zip`;
         return uploadSpoolWithTus({ supabase: sb, supabaseUrl: runtimeConfig.supabaseUrl, serviceRoleKey: runtimeConfig.serviceRoleKey, endpoint: runtimeConfig.tusEndpoint, spoolDir: runtimeConfig.spoolDir, spool, storagePath, signal });
       });
-      const zip = artifact("zip", stored.storagePath, stored.contentHash, stored.byteSize, "", { entries: entries.length, compression: "store", zipFormat: "ZIP64", deterministicDate: "1980-01-01T00:00:00.000Z", mode: "100644", materialHash, includedKinds, designId, orderNumber });
+      const zip = artifact("zip", stored.storagePath, stored.contentHash, stored.byteSize, "", { entries: entries.length, compression: "store", zipFormat: "ZIP64", deterministicDate: "1980-01-01T00:00:00.000Z", mode: "100644", materialHash, includedKinds, archiveManifest, designId, orderNumber });
       const result = await complete(sb, stage, run, {
         verified: true, receiptKind: "zip", zipHash: stored.contentHash, zipByteSize: stored.byteSize,
-        materialHash, entryCount: entries.length, includedKinds,
+        materialHash, entryCount: entries.length, includedKinds, archiveManifest,
         authorizedAssetManifest: authorized, deliverables: authorized.deliverables,
         sourceViews: archivedSourceViews,
         dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },

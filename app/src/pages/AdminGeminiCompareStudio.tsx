@@ -896,6 +896,120 @@ function AtlasProgressCard({
   );
 }
 
+/**
+ * REAL DESIGN PROOF ∥ PRINT PANEL, one row per surface, straight under the
+ * master. (Trish 2026-08-28: "Then Panels next to individual 3d proofs.")
+ *
+ * RULE 0.21 states the relationship as exactly this row, and the board had it
+ * only one level down at /panelpro/surfaces — so the control room showed the
+ * master and then jumped to logos, and the pair a designer actually validates
+ * was somewhere else. The bytes are already loaded here; this is a second
+ * PUBLICATION of the same artifacts, never a second producer, so there is no
+ * Pull panel, no Mirror from driver and no browser crop.
+ *
+ * Both halves publish their A.T.L.A.S. binding, so "same design?" is answered
+ * by comparing two hashes rather than by looking. A missing half is reported
+ * missing — RULE 0.27 §3 forbids either UI synthesizing a stand-in.
+ */
+function SurfacePairRows({ job }: { job: PanelProStudioJob }) {
+  const viewFor = (surface: string) =>
+    job.raw_views.find((view) => view.surfaceKey === surface) || null;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+          Real design proof ∥ print panel · per surface
+        </div>
+        <div className="text-[11px] text-gray-500">
+          Left is that side's 3D proof. Right is the deterministic Call&nbsp;9 panel at GENIE dimensions + 5″ bleed.
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        {Object.entries(SURFACE_FOR_SIDE_KEY).map(([sideKey, surface]) => {
+          const side = job.qc_side_panels[sideKey] || null;
+          const view = viewFor(surface);
+          const bound = side?.atlas?.matches;
+          return (
+            <div key={sideKey} className="rounded-lg border border-gray-200 p-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold capitalize text-gray-900">
+                  {sideKey.replace(/_/g, " ")}
+                </h4>
+                <div className="flex items-center gap-2">
+                  {bound === true && (
+                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
+                      same master
+                    </span>
+                  )}
+                  {bound === false && (
+                    <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-red-700">
+                      different masters
+                    </span>
+                  )}
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${side?.approved ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                    {side?.approved ? "Approved" : "Pending"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Real design proof</div>
+                  {view ? (
+                    <a href={view.signedUrl} target="_blank" rel="noreferrer" className="block">
+                      <img
+                        src={view.signedUrl}
+                        alt={`${sideKey} 3D proof`}
+                        loading="lazy"
+                        className="mt-1 h-40 w-full rounded border border-gray-200 bg-gray-50 object-contain"
+                      />
+                    </a>
+                  ) : (
+                    <div className="mt-1 flex h-40 items-center justify-center rounded border border-dashed border-gray-300 text-[11px] text-gray-400">
+                      3D proof not rendered yet
+                    </div>
+                  )}
+                  {view && (
+                    <p className="mt-1 truncate text-[10px] text-gray-500">
+                      {view.sourceViewType} · <span className="font-mono">{view.contentHash.slice(0, 12)}</span>
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Print panel</div>
+                  {side?.gemini_url ? (
+                    <a href={side.gemini_url} target="_blank" rel="noreferrer" className="block">
+                      <img
+                        src={side.gemini_url}
+                        alt={`${sideKey} print panel`}
+                        loading="lazy"
+                        className="mt-1 h-40 w-full rounded border border-gray-200 bg-gray-50 object-contain"
+                      />
+                    </a>
+                  ) : (
+                    <div className="mt-1 flex h-40 items-center justify-center rounded border border-dashed border-gray-300 text-[11px] text-gray-400">
+                      Print panel not cut yet
+                    </div>
+                  )}
+                  {side?.print_dims && (
+                    <p className="mt-1 truncate text-[10px] text-gray-500 tabular-nums">
+                      {side.print_dims.widthInches}″ × {side.print_dims.heightInches}″
+                      {side.print_dims.bleedInches != null && ` + ${side.print_dims.bleedInches}″ bleed`}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Rows that render only when the server actually stated a value. */
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   if (value === null || value === undefined || value === "" ) return null;
@@ -2150,9 +2264,94 @@ function ProductionPackSection({
           </div>
         ))}
       </div>
+
+      {/* WHAT IS IN THE ZIP. (Trish 2026-08-28)
+          "All ZIP assets must have a container next to ZIP so we know what's in
+          ZIP." A download link is not an inventory: RULE 0.22 forbids hiding
+          files behind only a final ZIP, and a reader who cannot see inside the
+          archive is in that position even when every file is downloadable
+          somewhere else on this board. `zip.build` publishes its own table of
+          contents -- one row per entry, the path it was written to inside the
+          archive, and the sha256 of the bytes that went in -- so this lists the
+          archive rather than a guess at it. */}
+      <ZipContentsCard zip={job.zip} />
     </div>
   );
 }
+
+/**
+ * The archive's own table of contents, grouped by what each file is.
+ *
+ * Before the ZIP is built there is nothing to list, and this says so rather
+ * than previewing a contract: what a pack WILL contain depends on which
+ * products were purchased, and stating it early would be a claim the server
+ * has not made. Once built, every row comes off `metadata.archiveManifest`.
+ */
+function ZipContentsCard({ zip }: { zip: WorkflowArtifact | null }) {
+  const manifest = Array.isArray((zip?.metadata as { archiveManifest?: unknown })?.archiveManifest)
+    ? ((zip!.metadata as { archiveManifest: ZipArchiveEntry[] }).archiveManifest)
+    : [];
+  const groups = new Map<string, ZipArchiveEntry[]>();
+  for (const entry of manifest) {
+    const kind = String(entry?.kind || "file");
+    groups.set(kind, [...(groups.get(kind) || []), entry]);
+  }
+  const totalBytes = manifest.reduce((sum, entry) => sum + (Number(entry?.byteSize) || 0), 0);
+
+  return (
+    <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+          Inside the Production ZIP
+        </div>
+        {manifest.length > 0 && (
+          <div className="text-[11px] text-gray-500 tabular-nums">
+            {manifest.length} files · {(totalBytes / 1_048_576).toFixed(1)} MB uncompressed
+          </div>
+        )}
+      </div>
+
+      {manifest.length === 0 ? (
+        <p className="mt-1 text-[11px] text-gray-400">
+          No archive built yet — its contents are listed here the moment
+          <span className="font-mono"> zip.build </span> writes them.
+        </p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {[...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([kind, entries]) => (
+            <div key={kind}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+                {kind.replace(/-/g, " ")} · {entries.length}
+              </div>
+              <ul className="mt-0.5 space-y-0.5">
+                {entries.map((entry) => (
+                  <li key={entry.archivePath} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
+                    <code className="font-mono text-gray-800 break-all">{entry.archivePath}</code>
+                    {entry.surfaceKey && <span className="text-gray-500">{entry.surfaceKey}</span>}
+                    {entry.byteSize ? (
+                      <span className="text-gray-400 tabular-nums">{(entry.byteSize / 1024).toFixed(0)} KB</span>
+                    ) : null}
+                    {entry.contentHash && (
+                      <code className="font-mono text-gray-400">{String(entry.contentHash).slice(0, 12)}</code>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type ZipArchiveEntry = {
+  archivePath: string;
+  kind: string;
+  surfaceKey: string | null;
+  contentHash: string | null;
+  byteSize: number | null;
+};
 
 export default function AdminGeminiCompareStudio() {
   const navigate = useNavigate();
@@ -3445,6 +3644,11 @@ export default function AdminGeminiCompareStudio() {
                 </ul>
               </div>
             )}
+
+            {/* PANELS NEXT TO THEIR INDIVIDUAL 3D PROOFS, DIRECTLY UNDER THE
+                MASTER. RULE 0.21's row, published on the control room rather
+                than only at /panelpro/surfaces one level down. */}
+            {versionedJob && <SurfacePairRows job={versionedJob as unknown as PanelProStudioJob} />}
 
             {/* Every brand mark Call 10 separated out of this version's panels,
                 individually downloadable. */}
