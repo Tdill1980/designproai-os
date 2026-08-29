@@ -45,7 +45,14 @@
 -- text patches; re-emitting the body reverts every one. The fragment below is
 -- anchored on its own RAISE so it is unique -- the totalSqFt comparison alone
 -- appears twice in the function.
-DO $call8_geometry$
+-- The dollar-quote tag is letters and underscores only, deliberately. The
+-- first draft used $call8_geometry$, and the digit is what broke it: the
+-- migration splitter's dollar-quote pattern does not admit one, so it never
+-- entered quote mode, split on the first `;` inside an E-string, and reported
+-- `syntax error at end of input (SQLSTATE 42601)` at statement 0 -- the whole
+-- file. Every other tag in supabase/migrations is letters only; that was not a
+-- style choice anywhere else either.
+DO $call_eight_geometry$
 DECLARE
   v_definition text;
   v_patched text;
@@ -53,7 +60,7 @@ DECLARE
 
   v_old constant text := E'      OR (p_receipt->>''totalSqFt'')::numeric IS DISTINCT FROM (v_manifest->>''totalSqFt'')::numeric\n    THEN RAISE EXCEPTION ''call8_flat_proof_contract_failed''; END IF;';
 
-  v_new constant text := E'      -- GENIE DEPLOYS ON ORDER (RULE 0.19), so a FREE entice run has no bound\n      -- production manifest and there is nothing here to compare against. Call 8\n      -- proofs the design-time geometry Call 1 already resolved and cut the six\n      -- panels to, and the proof''''s own trim table reports it. The receipt must\n      -- still declare a POSITIVE area, so "no manifest" is never a way to pass\n      -- with zero square feet. When a manifest IS bound -- the paid half -- the\n      -- receipt must match it exactly, unchanged.\n      OR CASE\n        WHEN v_manifest IS NULL OR pg_catalog.jsonb_typeof(v_manifest)=''null''\n        THEN COALESCE((p_receipt->>''totalSqFt'')::numeric, 0) <= 0\n        ELSE (p_receipt->>''totalSqFt'')::numeric IS DISTINCT FROM (v_manifest->>''totalSqFt'')::numeric\n      END\n    THEN RAISE EXCEPTION ''call8_flat_proof_contract_failed''; END IF;';
+  v_new constant text := E'      -- GENIE DEPLOYS ON ORDER (RULE 0.19), so a FREE entice run has no bound\n      -- production manifest and there is nothing here to compare against. Call 8\n      -- proofs the design-time geometry Call 1 already resolved and cut the six\n      -- panels to, and the proof''''s own trim table reports it. The receipt must\n      -- still declare a POSITIVE area, so a missing manifest is never a way to pass\n      -- with zero square feet. When a manifest IS bound -- the paid half -- the\n      -- receipt must match it exactly, unchanged.\n      OR CASE\n        WHEN v_manifest IS NULL OR pg_catalog.jsonb_typeof(v_manifest)=''null''\n        THEN COALESCE((p_receipt->>''totalSqFt'')::numeric, 0) <= 0\n        ELSE (p_receipt->>''totalSqFt'')::numeric IS DISTINCT FROM (v_manifest->>''totalSqFt'')::numeric\n      END\n    THEN RAISE EXCEPTION ''call8_flat_proof_contract_failed''; END IF;';
 BEGIN
   v_definition := pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
     'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'
@@ -101,4 +108,4 @@ BEGIN
 
   EXECUTE v_patched;
 END
-$call8_geometry$;
+$call_eight_geometry$;
