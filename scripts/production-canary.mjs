@@ -44,6 +44,10 @@ const EXTENSION = Object.freeze({
   "image/jpeg": "jpg",
   "image/webp": "webp",
 });
+// The six canonical A.T.L.A.S. surfaces, in the order the frozen seam names
+// them. Deliberately the same list the gateway validates Call 1's panel records
+// against, because this file is doing the gateway's job for a direct-RPC caller.
+const CALL_ONE_SURFACES = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 const BUCKET = "wrap-files";
 const POLL_INTERVAL_MS = 5_000;
 const MAX_ENTICE_POLLS = 240;
@@ -668,6 +672,44 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
   step(`A.T.L.A.S. master ${atlasRow.master_content_hash.slice(0, 12)} `
     + `(${atlasRow.prompt_version}, ${atlasRow.width_px}x${atlasRow.height_px}, QC passed)`);
 
+  // THE SIX PANELS CALL 1 CUT HAVE TO CROSS THE SEAM ON THE SNAPSHOT.
+  //
+  // Manufacturing may not read designpro_flat_atlas_revisions -- the frozen seam
+  // makes the immutable revision snapshot its only interface -- so the panel
+  // records have to be carried over. In the product the gateway does that, in
+  // `atlasCallOnePanels`. The canary talks to the RPCs directly, so it never got
+  // the enrichment and froze a snapshot with no `callOnePanels` at all. Both
+  // downstream failures on run 33231986815 came from that one omission:
+  // `proof.build` raised `call8_dimensions_unavailable` (RULE 0.19 leaves the
+  // free half with no GENIE manifest, so Call 8 sizes the proof from these
+  // records), and `panels.build` then fell to the legacy arm that consumes
+  // proof.build's surfaces and raised `prior_stage_unverified`.
+  //
+  // Same acceptance as the gateway's, and it throws rather than returning none:
+  // a canary that quietly freezes an empty set reports green on the path it
+  // exists to exercise. A snapshot cannot be repaired once frozen.
+  const callOnePanels = Array.isArray(atlasRow.metadata?.callOnePanels)
+    ? atlasRow.metadata.callOnePanels : [];
+  const usablePanels = callOnePanels.filter((panel) => CALL_ONE_SURFACES.includes(String(panel?.surfaceKey || ""))
+    && /^[0-9a-f]{64}$/.test(String(panel?.contentHash || "").toLowerCase())
+    && String(panel?.storagePath || "").trim()
+    && Number(panel?.byteSize) > 0
+    && Number(panel?.printWidthIn) > 0 && Number(panel?.printHeightIn) > 0);
+  if (usablePanels.length !== CALL_ONE_SURFACES.length
+    || new Set(usablePanels.map((panel) => panel.surfaceKey)).size !== CALL_ONE_SURFACES.length) {
+    throw new Error(`Call 1 did not record six usable panels: ${usablePanels.length} of `
+      + `${callOnePanels.length} recorded are usable across `
+      + `${new Set(usablePanels.map((panel) => panel.surfaceKey)).size} surfaces`);
+  }
+  evidence.callOnePanels = usablePanels.map((panel) => ({
+    surfaceKey: panel.surfaceKey,
+    contentHash: panel.contentHash,
+    printWidthIn: panel.printWidthIn,
+    printHeightIn: panel.printHeightIn,
+    bleedInches: panel.bleedInches,
+  }));
+  step(`Call 1 cut six panels (${usablePanels.map((panel) => panel.surfaceKey).sort().join(", ")})`);
+
   // The worker copied the accepted views to the revision input paths; rebuild
   // the same addresses it wrote, since the status RPC withholds storage paths.
   const { data: viewRows, error: viewError } = await service
@@ -691,7 +733,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
     throw new Error(`expected seven placed views, found ${Object.keys(renderAssets).length}`);
   }
   step(`revision ${revisionId} carries seven placed views`);
-  return { revisionId, renderAssets, flatAtlas: evidence.flatAtlas };
+  return { revisionId, renderAssets, callOnePanels: usablePanels, flatAtlas: evidence.flatAtlas };
 }
 
 async function main() {
@@ -724,13 +766,17 @@ async function main() {
   // production master authored from them would be reconstruction. Calls 1-7 run
   // for real here, and the authoring boundary records the canonical design as
   // they do it.
-  const { revisionId, renderAssets } = await runCallsOneToSeven({
+  const { revisionId, renderAssets, callOnePanels } = await runCallsOneToSeven({
     operator, operatorId, generationId, delivery,
   });
   evidence.revisionId = revisionId;
   evidence.renderAssets = renderAssets;
   const snapshot = {
     contractVersion: "designpro.revision-snapshot.v1",
+    // Call 9 promotes these exact bytes and Call 8 sizes the proof from them.
+    // Both re-download and re-hash, so a snapshot that disagreed with storage is
+    // refused there rather than trusted here.
+    callOnePanels,
     vehicle: VEHICLE,
     surfaceOptions: {
       coverage: "full",
