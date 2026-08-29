@@ -1,0 +1,1 @@
+Generation OS kernel branch: Generation-ID locked version/event history, canonical snapshot, artifact/receipt lineage, and ATLAS production-authority wording.
