@@ -85,7 +85,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 /* ── Identity and workflow contracts ─────────────────────────────── */
 
-export type GenieSurfaceKey = "driver" | "passenger" | "hood" | "roof" | "front" | "rear";
+// The six surfaces and their key type live in `designpro-surfaces.ts`, which
+// has no dependencies -- this module builds a Supabase client at import time,
+// so a pure domain module that only needed the surface list was dragging a
+// live client in with it. Re-exported here so every existing importer of
+// `@/lib/designpro-api` is unchanged and there is still one definition.
+export type { GenieSurfaceKey } from "@/lib/designpro-surfaces";
+import type { GenieSurfaceKey } from "@/lib/designpro-surfaces";
 export type ActiveRenderRole = GenieSurfaceKey | "closeup";
 export type RenderRole = GenieSurfaceKey | "closeup" | "hero3d";
 /** New revision submissions are Close-Up-only. Hero is historical read data. */
@@ -312,14 +318,7 @@ export type FlatAtlasRevision = {
 };
 
 /** The six printed surfaces, in the order the production layers are cut. */
-export const PRODUCTION_SURFACES: GenieSurfaceKey[] = [
-  "driver",
-  "passenger",
-  "hood",
-  "roof",
-  "front",
-  "rear",
-];
+export { PRODUCTION_SURFACES } from "@/lib/designpro-surfaces";
 
 /** The exact seven immutable source views, in their frozen display order. */
 export const RENDER_ROLES: ActiveRenderRole[] = [

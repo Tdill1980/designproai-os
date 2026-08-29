@@ -345,8 +345,18 @@ test("the customer is asked before six more proofs are rendered", () => {
   // design they have already rejected.
   assert.match(page, /Do you want to see all sides of this design, or revise it\?/);
   assert.match(page, /See All Views/);
-  assert.match(page, /Revise This Design/);
-  assert.match(page, /navigate\("\/revision-studio"\)/);
+  // Renamed by the owner on 2026-08-29; the decision point the rule protects is
+  // unchanged, only its wording.
+  assert.match(page, /Open in RevisionStudio/);
+  // ⛔ THIS LOCK USED TO ASSERT `navigate("/revision-studio")` -- THE DEFECT.
+  //
+  // A bare `/revision-studio` opens the design LIBRARY, not the design the
+  // customer just generated, so the one moment the app held the id was exactly
+  // where it discarded it and the owner had to find her own job by eye. The
+  // destination was right, which is why it read as correct for weeks; only the
+  // identity was missing. The lock now requires the identity to travel.
+  assert.match(page, /\/revision-studio\?id=\$\{encodeURIComponent\(id\)\}/);
+  assert.doesNotMatch(page, /navigate\("\/revision-studio"\)/);
 });
 
 /**

@@ -54,6 +54,7 @@ import {
   type RenderElementSeparatorHandle,
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
+import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 // DesignVersionRecordCard is intentionally not mounted: production identity lives in PanelPro.
 import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
@@ -4250,6 +4251,12 @@ export default function RevisionStudioIQ() {
   // ---------------------------------------------------------------------------
   return (
     <div className="min-h-screen bg-black text-white pb-28 overflow-x-hidden">
+      {/* THE JOB CARRIES ITSELF BETWEEN SCREENS. (Trish 2026-08-29.)
+          DESIGN → REVISE → PANELS → QC → WRAPBOX, for the design that is open.
+          It renders nothing when no design is selected, because the library
+          view is not a job and a header for one would be inventing an identity
+          rather than carrying it. */}
+      <JobWorkflowHeader generationId={productionLayersId} current="revise" />
       {/* In-app confirm dialog host — replaces window.confirm(), which is
           blocked inside sandboxed iframes / mobile webviews and silently
           broke every Delete/Regenerate action. */}
@@ -6024,6 +6031,41 @@ export default function RevisionStudioIQ() {
                     production identities, and they live in PanelPro Studio
                     with the rest of the technical record. RestylePro's studio
                     -- the spec -- never showed them to the customer. */}
+
+                {/* APPROVE DESIGN & BUILD PRINT PANELS — the stage 2 → 3 door.
+                    (Trish 2026-08-29.)
+
+                    It is a NAVIGATION, deliberately, and it does not pretend to
+                    trigger a build. The freeze is already the server's: the
+                    handoff fires on master acceptance (RULE 0.5 amendment), the
+                    entice workflow runs `revision.freeze` and `panels.build`
+                    without being asked, and Call 1 cut the six panels before any
+                    proof rendered. A button here that POSTed something would be
+                    a second trigger for work already in flight.
+
+                    What it does provide is the thing that was missing: the
+                    owner's explicit "this design is the one", carrying the job
+                    identity to PanelPro so no id is ever retyped. The breadcrumb
+                    above reports whether the server has actually frozen. */}
+                {productionLayersId && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 to-zinc-900 p-4">
+                    <p className="text-sm font-bold text-zinc-100">Happy with this design?</p>
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Approving freezes this revision as the production authority. Every print
+                      panel below is a deterministic crop of its accepted master — nothing is
+                      redesigned downstream.
+                    </p>
+                    <Button
+                      onClick={() => navigate(
+                        `/designpro/jobs/${encodeURIComponent(productionLayersId)}/panelpro/surfaces`,
+                      )}
+                      className="mt-3 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-500"
+                    >
+                      <Package className="w-4 h-4" />
+                      Approve Design &amp; Build Print Panels
+                    </Button>
+                  </div>
+                )}
 
                 <ProductionFlowLayersCard
                   // A panelizer-sourced card's `id` was a job id —

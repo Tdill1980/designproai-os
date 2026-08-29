@@ -50,6 +50,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
 import { ServerRevisionStudio } from "@/components/revisioniq/ServerRevisionStudio";
+import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import {
   ContentHash,
   Loading,
@@ -694,6 +695,13 @@ export default function ProductionWorkflow() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 md:px-6">
+      {/* This page is the job's home, so the workflow rail belongs at its top:
+          DESIGN is the stage you are standing on here. */}
+      <JobWorkflowHeader
+        generationId={generationId}
+        current="design"
+        className="-mx-4 -mt-8 mb-2 md:-mx-6"
+      />
       <PageHead
         eyebrow="Calls 8–12 · Production"
         title={job.designId}

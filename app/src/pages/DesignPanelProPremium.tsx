@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
+import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import { DesignIQProgressBar } from "@/components/designpanelpro/DesignIQProgressBar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -2394,6 +2395,17 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         Neither button starts a producer: the reveal shows the
                         views the server is already rendering, and Revise opens
                         the studio against this same design lineage. */}
+                    {/* The workflow rail appears the moment this page has a job
+                        to name -- which is the same moment the design exists.
+                        Before that there is no identity to carry and it renders
+                        nothing. */}
+                    {mainDisplayUrl && generationIdRef.current && (
+                      <JobWorkflowHeader
+                        generationId={generationIdRef.current}
+                        current="design"
+                        className="w-full rounded-lg border"
+                      />
+                    )}
                     {mainDisplayUrl && !allViewsRevealed && (
                       <div className="w-full space-y-2 rounded-lg border border-cyan-400/30 bg-cyan-400/5 p-3">
                         <p className="text-sm font-semibold text-cyan-100">
@@ -2408,13 +2420,27 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <Layers className="w-4 h-4" />
                             See All Views
                           </Button>
+                          {/* THE ID TRAVELS WITH THE BUTTON. (Trish 2026-08-29:
+                              "I should never have to copy/paste a Generation
+                              ID.") This navigated to a bare `/revision-studio`,
+                              which opens the LIBRARY rather than this design —
+                              so the one moment the owner has the id in hand was
+                              exactly where the app threw it away, and she had to
+                              find the job again by eye. RevisionStudio's
+                              `openDesignById` deep link has always handled
+                              `?id=`; it was simply never given one. */}
                           <Button
-                            onClick={() => navigate("/revision-studio")}
+                            onClick={() => {
+                              const id = generationIdRef.current;
+                              navigate(id
+                                ? `/revision-studio?id=${encodeURIComponent(id)}`
+                                : "/revision-studio");
+                            }}
                             variant="outline"
                             className="flex-1 gap-2 border-fuchsia-400/50 bg-fuchsia-400/5 text-fuchsia-100 hover:bg-fuchsia-400/10"
                           >
                             <RefreshCw className="w-4 h-4" />
-                            Revise This Design
+                            Open in RevisionStudio
                           </Button>
                         </div>
                         <p className="text-[11px] text-white/50">
