@@ -69,7 +69,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260828\.v6"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260828\.v7"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -181,4 +181,87 @@ test("the flat contract states labeled containers, GENIE dims + 5in bleed, fille
   assert.match(contract, /ONE cohesive wrap/);
   // …and the reference-class firewall is still on the reference.
   assert.match(contract, /teaches LAYOUT ONLY/);
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// TRUE TOPOLOGY INSIDE THE SIX-CONTAINER CONTRACT. (Trish 2026-08-28)
+//
+// The bundled Houdini PANEL LAYOUT names eleven-plus panels — rear bumper,
+// hatch, rocker, fender, quarter, front bumper. A.T.L.A.S. cuts six. The
+// owner's decision on that gap was explicit about the boundary:
+//
+//   "True topology inside the existing six-container contract. Do NOT change
+//    the six production cuts... Within DRIVER and PASSENGER only, add the
+//    appropriate vehicle topology/subregions needed for DesignPanelAI to
+//    understand the real vehicle structure... not new canonical surfaces, not
+//    new seams, not new panel records, not new ZIP entries, and not new
+//    production outputs... Do not draw fake vehicle silhouettes over the
+//    artwork and do not let topology guidance become printable content."
+//
+// So these assert BOTH halves: the guidance reaches the model, and it reaches
+// nothing that cuts, counts, packages or prints.
+
+test("the six canonical surfaces are unchanged", () => {
+  assert.match(runtimeSource, /const SURFACE_KEYS = Object\.freeze\(\["driver", "passenger", "hood", "roof", "front", "rear"\]\)/);
+  // Only the two flanks carry topology. A centre surface with invented regions
+  // would be the eleven-panel architecture by another name.
+  assert.match(runtimeSource, /surfaceKey === "driver" \|\| surfaceKey === "passenger" \? flank : null/);
+});
+
+test("the flank's structure is named to the authoring model", () => {
+  assert.match(runtimeSource, /const FLANK_TOPOLOGY_BY_BODY = Object\.freeze\(/);
+  for (const body of ["pickup", "van", "suv", "car", "box"]) {
+    assert.ok(runtimeSource.includes(`${body}: Object.freeze(`), `${body} needs its own structure`);
+  }
+  // And the edge function renders it into the panel line it already builds.
+  assert.match(edgeSource, /structure front to rear:/);
+  assert.match(edgeSource, /running the full length along the bottom edge/);
+});
+
+test("the guidance says, in its own words, that it is not a seam", () => {
+  // The file writes its dashes as \u2014 escapes, so match the source bytes.
+  assert.match(edgeSource, /paint straight THROUGH every one .{0,8} they are where the vehicle's shapes fall, not seams to draw/);
+  // The NO BODY LINES contract is untouched — this sits beside it, not instead.
+  assert.match(edgeSource, /NO BODY LINES\. Do not draw door seams/);
+});
+
+test("body style is decided in code, never by a second AI call", () => {
+  assert.match(runtimeSource, /function flankBodyStyle\(vehicleType\)/);
+  const chooser = runtimeSource.slice(
+    runtimeSource.indexOf("function flankBodyStyle(vehicleType)"),
+    runtimeSource.indexOf("function flankTopology(vehicleType)"),
+  );
+  for (const call of ["generateContent", "callEdge", "await "]) {
+    assert.equal(chooser.includes(call), false, `body style must not ${call}`);
+  }
+});
+
+test("topology never becomes geometry drawn inside a container", () => {
+  // The regions exist as manifest metadata and as gutter caption text. Nothing
+  // adds a rect, line or path inside a zone — RULE 0.28 §4, and the owner's
+  // "do not draw fake vehicle silhouettes over the artwork".
+  const topology = runtimeSource.slice(
+    runtimeSource.indexOf("const FLANK_TOPOLOGY_CONTRACT"),
+    runtimeSource.indexOf("function captionGutter(zone, zones)"),
+  );
+  assert.ok(topology.length > 0);
+  for (const drawing of ["<rect", "<line", "<path", "<polygon"]) {
+    assert.equal(topology.includes(drawing), false, `topology must not emit ${drawing}`);
+  }
+  // It is carried on the caption, which lives in the gutter the master masks away.
+  assert.match(runtimeSource, /const structure = flankTopologyCaption\(zone\.flankTopology\)/);
+});
+
+test("nothing downstream learns a seventh surface", () => {
+  // The cut, the counts and the packaging all still speak of six, and the
+  // topology is absent from every one of them.
+  for (const consumer of [
+    "runtime/designpro-standalone-claimant.cjs",
+    "app/src/lib/panelpro-studio-source.ts",
+    "app/src/lib/designpro-production-layers.ts",
+  ]) {
+    const source = readFileSync(new URL(`../${consumer}`, import.meta.url), "utf8");
+    assert.equal(source.includes("flankTopology"), false, `${consumer} must not read flank topology`);
+    assert.equal(source.includes("FLANK_TOPOLOGY"), false, `${consumer} must not read flank topology`);
+  }
 });
