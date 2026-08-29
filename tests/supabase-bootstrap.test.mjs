@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered eighty-one-migration chain', () => {
-  assert.equal(migrationNames.length, 81);
+test('fresh bootstrap contains one ordered eighty-three-migration chain', () => {
+  assert.equal(migrationNames.length, 83);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -22,164 +22,61 @@ test('fresh bootstrap contains one ordered eighty-one-migration chain', () => {
       '20260806180800', '20260806180900', '20260806181000', '20260806181100',
       '20260806181200', '20260808024500', '20260812120000', '20260812140000', '20260812170000',
       '20260813190000',
-      // The slot-lease layer generation-store.cjs calls, and the completion RPC
-      // rewritten to validate the engine's rows in place instead of deleting them.
       '20260814050000', '20260814050100',
-      // Historical hero-3d substitution; the final forward migration restores
-      // Close-Up without rewriting already-frozen hero revisions.
       '20260814060000',
-      // Per-view regeneration: one active view per slot, history preserved.
       '20260814070000',
-      // The revoke that supersession missed: designpro_generation_view_paths
-      // was left executable by PUBLIC, which is anon reach into storage paths.
       '20260814140000',
-      // A non-owner read answers NULL, not a raise: the gateway turns NULL into
-      // a 404, and raising only for rows that exist is an existence oracle.
       '20260814150000',
-      // Storage RLS never covered the calls-1-7 subtree, so an operator could
-      // not see the seven views their own generation had just produced.
       '20260814160000',
-      // Call 11 schedules panels.delogo, the de-logo duplicate set that
-      // PanelPro validates against vehicle templates. It lands after the
-      // runner that already understands the stage.
       '20260817060000',
-      // The proven-implementation schema/data contract for the migrated
-      // DesignPro edge functions and worker (owner decision, PR #73).
       '20260817230000',
-      // The Commercial identity carrier: the structured intake reaches the
-      // frozen snapshot instead of being reduced to a brief string.
       '20260818173000',
-      // The purchase gate: Calls 8-11 prepare for free, and the two
-      // entitlements decide what fulfillment may spend.
       '20260818210000', '20260819180000',
-      // Opt-in flat-first v3 storage and owner preview contract. v1/v2 remain
-      // accepted unchanged and the legacy intake RPC is not replaced.
       '20260820100000',
-      // Restore the bounded DesignIQ request fields and permit owners to read
-      // only their exact immutable Atlas guide/master preview objects.
       '20260821120000',
-      // Normal design-first v2 enters the existing Calls 8-11 workflow without
-      // inventing an order; paid work stays closed until exact late binding.
       '20260821200000',
-      // Restore the locked Close-Up seventh proof while preserving explicit
-      // read/handoff compatibility for immutable historical hero3d rows.
       '20260822060000',
-      // Atlas is one immutable master plus a dependent seven-view proof set;
-      // per-view regeneration is refused before the owner-callable RPC mutates.
       '20260822070000',
-      // Completed legacy/broken Atlas proof sets cannot cross the owner status
-      // or signed-view boundary without the current lineage/audit/QC evidence.
       '20260822080000',
-      // Complete the Close-Up port at revision, Storage, freeze and Atlas master
-      // preview boundaries while keeping historical Hero rows immutable.
       '20260822090000',
-      // A failed run with no private Atlas identities reports the real cause;
-      // saved invalid masters/proofs remain quarantined.
       '20260822100000',
-      // A.T.L.A.S. joins the ONE existing file-output pipeline: the handoff
-      // gate is decided by canonical-master acceptance, not by the atlas
-      // layout-geometry flag, which stays false because Calls 8+ resolve
-      // production dimensions from the GENIE manifest.
       '20260823220000',
-      // A.T.L.A.S. panels are solid rectangles. v4 masters, which could punch
-      // wheel arches and glass out of a zone, stop qualifying.
       '20260823230000',
-      // GENIE deploys only when the production pack is ordered. It used to sit
-      // second in the FREE run, parking every job before a proof or a panel
-      // existed.
       '20260824000000',
-      // The revision snapshot carries the six Call-1 panels, so manufacturing
-      // consumes those exact bytes without reaching into generation's tables.
       '20260824010000', '20260824020000', '20260824030000', '20260824040000',
       '20260824050000', '20260824180000',
-      // The audited human correction path: a corrected panel is its own artifact
-      // kind, bound to the Call 9 panel it replaces, which is never touched.
       '20260825000000',
-      // A.T.L.A.S. enters the production handoff, and the revision source
-      // accepts it. 20260823220000 opened the gate; the handoff function and
-      // the three revision-source gates behind it still refused v3, so every
-      // atlas run raised on the next statement and no master ever reached
-      // manufacturing.
       '20260825120000', '20260825121000',
-      // Carley's checklist, on the server, keyed by the panel's own content
-      // hash -- so a corrected file starts an empty checklist by construction.
       '20260825140000',
-      // A.T.L.A.S. prompt v7: the authoring guide carries geometry only.
       '20260825190000',
-      // Six sibling surfaces after master acceptance -- no view may carry a
-      // Driver reference, and Passenger renders like every other surface.
       '20260826000000',
-      // The stage machine learns the A.T.L.A.S. manufacturing path: a deferred
-      // Call 8 and a Call 1 panel promotion are accepted on their own evidence.
       '20260826010000',
-      // The receipts table's own enum had to learn the deferred Call 8 kind:
-      // the stage logic emitted it and the CHECK refused it, so the insert died
-      // before any later assertion could run.
       '20260826010100',
-      // v8: Call 1 opens as the designer and the atlas is its output contract.
-      // Patches the live gate's pinned prompt version; never restates the body.
       '20260826020000',
-      // RevisionStudioIQ's own read: the generation-keyed workspace, the six
-      // Call-1 panels published through the atlas path, and the design team's
-      // existing QC membership extended from the request row to the rest of
-      // one design's record.
       '20260826030000',
-      // The design library: every generation in a window, read from the
-      // generation records rather than from the workflow runs the studio's feed
-      // was keyed on -- which represented 8 of the last four months' 48.
       '20260826040000',
-      // The DesignPanel creative port moves to v2, so masters authored while
-      // the flat call was still being told about factory glass stop qualifying.
       '20260826050000',
-      // COALESCE unqualified: the aggregate that projects each approved view
-      // only compiles its expressions when it has a row, so the qualified form
-      // passed every apply and failed every generation that had proofs.
       '20260826060000',
-      // A partial A.T.L.A.S. set presents its individually sound views; the
-      // fence still gates revisions and production on a complete set.
       '20260826070000',
-      // `? key` on a NULL provider object is NULL; NOT NULL is NULL; fifteen
-      // Standard tiles vanished. Existence tests COALESCE to false.
       '20260826080000', '20260826090000',
-      // The v9 pin was applied then reverted live (owner halt, 2026-08-26);
-      // 010000 captures the revert, 020000 pins v10-edge for the edge-canonical
-      // Call 1 cutover.
       '20260827010000', '20260827020000', '20260827030000',
-      // The EXECUTE grant on has_role, without which every signed-in customer
-      // read of user_roles / user_subscriptions / user_tokens raised 42501.
       '20260827040000',
-      // The second raise site of the same exception, patched to match.
       '20260827050000',
-      // A short proof set is not an invalid lineage.
       '20260827060000',
-      // The gate reads the acceptance basis, not the judge's confidence.
       '20260827070000',
-      // Driver is priority, not prerequisite.
       '20260827080000',
-      // The projection is derived from the repaired sheet, not the authored one.
       '20260827090000',
       '20260827100000',
       '20260827110000',
       '20260827120000',
-      // The A.T.L.A.S. identity is minted at prompt, not 65s later when Call 1
-      // returns -- which is also where the handoff's revision id comes from.
       '20260827130000',
-      // The SECOND handoff gate: `calls_1_7_handoff_state` re-imposed the
-      // seven-view barrier one line after the first gate was relaxed.
       '20260827140000',
-      // The DATABASE twin of the lineage assert #238 corrected: it still
-      // demanded the `generate-color-render` producer #232 replaced, so a run
-      // whose seven proofs were all correct was judged an invalid view set.
       '20260828100000',
-      // pack.verify demanded the GENIE manifest RULE 0.19 defers to the paid
-      // half, so no free A.T.L.A.S. entice pack could ever be activated.
       '20260828110000',
-      // ...and the table CHECK behind it, which still demanded a manifest on a
-      // production run at INSERT -- before await_purchase, its first stage.
       '20260828120000',
-      // The Call-8 receipt was compared against a production manifest the free
-      // run cannot have, so every honest proof receipt was refused.
       '20260829010000',
+      '20260829230000',
+      '20260829230100',
     ],
   );
 });
