@@ -96,6 +96,12 @@ test("every GENIE surface carries five-inch bleed and the total is the raw sum, 
 test("standalone panel authority contains no estimated or shared-runtime success path", () => {
   assert.match(claimantSource, /Every vehicle,[\s\S]*?validated Universal GENIE gate/);
   assert.match(claimantSource, /genie_total_square_feet_mismatch/);
-  assert.match(claimantSource, /call9_surface_reuse/);
+  // `call9_surface_reuse` guarded the deleted gridslice arm against six panels
+  // sharing one set of bytes. The promotion arm's own collision guard is what
+  // says the same thing now: six surfaces, six distinct hashes, or the stage
+  // fails. It reads the Call-1 panels rather than gridslice output, so the
+  // driver's artwork still cannot end up on every side.
+  assert.match(claimantSource, /call9_panel_identity_collision/);
+  assert.match(claimantSource, /new Set\(Object\.values\(panelHashes\)\)\.size !== SURFACE_KEYS\.length/);
   assert.doesNotMatch(universalSource + claimantSource, /143\.110\.237\.145|RAILWAY_|restyleproai\.com/i);
 });

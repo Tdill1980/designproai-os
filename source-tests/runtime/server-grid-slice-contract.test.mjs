@@ -4,14 +4,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import gridSliceModule from "../../runtime/server-grid-slice.cjs";
-import flatSurfaceModule from "../../runtime/gemini-flat-surface.cjs";
 
 const claimant = readFileSync(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");
 const runtime = readFileSync(new URL("../../runtime/index.js", import.meta.url), "utf8");
 const surface = readFileSync(new URL("../../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8");
 const grid = readFileSync(new URL("../../runtime/server-grid-slice.cjs", import.meta.url), "utf8");
 const { gridSliceAll, gridSlicePanel } = gridSliceModule;
-const { authorFlatSurfaceFields, SURFACE_KEYS, VIEW_KEYS } = flatSurfaceModule;
 
 function fieldSvg(surfaceKey, color) {
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1200">
@@ -24,24 +22,51 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-test("standard Call 8 consumes seven DesignPanel views and composes the dimensioned proof on the server", () => {
-  assert.match(claimant, /call8ProofRequest\(rebound, manifest, frozenViews\.viewReceipts/);
+// ⛔ CALL 8 CONSUMES THE SIX CALL-1 PANELS. IT DOES NOT CONSUME THE SEVEN
+//    3D PROOFS. (Trish 2026-08-29.)
+//
+// This test used to assert the inverse, line for line: that the claimant passed
+// `frozenViews.viewReceipts` into `call8ProofRequest`, and that the runtime
+// entry still reached `authorFlatSurfaceFields` -- the Gemini pass that
+// flattened each 3D proof PHOTOGRAPH into a "surface field". Those fields were
+// the sheet's tiles and, through `panels.build`'s fail-open arm, the customer's
+// print files. It was a faithful lock on a source-authority inversion.
+test("Call 8 consumes the six Call-1 panels and composes the dimensioned proof deterministically", () => {
+  assert.match(claimant, /call8ProofRequest\(rebound, manifest, panelSources, frozenViews\.viewReceipts/);
+  assert.match(claimant, /const callOnePanels = await callOnePanelSet\(sb, run\);/);
+  assert.match(claimant, /call8_production_panels_not_created/);
   assert.match(claimant, /callTool\(baseUrl, secret, "\/compose-proof-sheet"/);
-  assert.match(runtime, /authorFlatSurfaceFields/);
-  assert.match(surface, /ownReference/);
-  assert.match(surface, /Do not import, recall, mirror, or continue artwork from the driver side/);
   assert.match(runtime, /renderProofSheet/);
   assert.match(claimant, /proofKind: "flattened-2d-proof"/);
+  // The receipt says, in fields a query can read, what the sheet is made of.
+  assert.match(claimant, /assembledFrom: "atlas-call1-panels"/);
+  assert.match(claimant, /imageRequestCount: 0/);
+  assert.match(claimant, /proofPixelsUsed: false/);
+  // And nothing on the Call-8 path generates an image any more. The patterns
+  // are call and endpoint syntax, not bare words, so the comments recording
+  // what was removed -- which are the point of removing it -- stay legal.
+  for (const generative of [/authorFlatSurfaceFields\(/, /generativelanguage\.googleapis/, /:generateContent/]) {
+    assert.doesNotMatch(runtime, generative, "the Call 8 endpoint must make no image request");
+    assert.doesNotMatch(surface, generative, "the shared surface vocabulary must author nothing");
+  }
 });
 
-test("Call 9 is the server-native gridslice: GENIE trim, five-inch mirror bleed, no AI", () => {
+// CALL 9 IS PROMOTION, NOT CUTTING. Call 1 already cut the six panels from the
+// accepted master; `panels.build` re-reads those exact bytes, re-hashes them and
+// copies them into the run's namespace. It used to gridslice the flattened
+// photographs instead, which is why the markers below moved off the claimant.
+// The geometry module itself is unchanged and still asserted -- it is pure
+// deterministic pixel math, and the assertions on it are the ones worth keeping.
+test("Call 9 promotes the Call-1 panels, and the deterministic geometry stays AI-free", () => {
   for (const marker of [
-    "GRID_SLICE_CONTRACT",
-    "gridSliceAll(fieldSources, manifest.expectedSurfaces",
-    "bleedInches: 5",
-    "step: \"gridslice\"",
+    "promotedFrom: \"atlas-call1\"",
     "deterministic: true",
+    "call9_call1_panel_changed",
+    "call9_call1_panel_promotion_drift",
   ]) assert.ok(claimant.includes(marker), marker);
+  // Every panel a run ships is a copy of a Call-1 artifact, or the stage fails.
+  assert.match(claimant, /production_panels_not_created/);
+  assert.doesNotMatch(claimant, /gridSliceAll\(/, "Call 9 must not cut anything");
   assert.match(grid, /resize\(crop\.resizedWidth, crop\.resizedHeight/);
   assert.match(grid, /\.extract\(\{ left: crop\.left, top: crop\.top/);
   assert.match(grid, /extendWith: "mirror"/);
@@ -51,12 +76,16 @@ test("Call 9 is the server-native gridslice: GENIE trim, five-inch mirror bleed,
   }
 });
 
-test("each own-surface field and gridslice is immutable hash-bound across Calls 8 and 9", () => {
-  assert.match(claimant, /call9_surface_field_changed/);
-  assert.match(claimant, /slice\.sourceFieldHash !== sourceFieldHashes\[key\]/);
-  assert.match(claimant, /String\(call8Slice\.contentHash \|\| ""\)\.toLowerCase\(\) !== slice\.contentHash/);
-  assert.match(claimant, /sourceFieldHash: slice\.sourceFieldHash/);
-  assert.match(claimant, /new Set\(Object\.values\(panelHashes\)\)\.size !== produced\.length/);
+test("every Call-8 tile and every Call-9 panel is hash-bound to its own Call-1 artifact", () => {
+  // Call 8: the tile must be the panel, by hash and by path.
+  assert.match(claimant, /String\(tile\.sourcePanelHash \|\| ""\)\.toLowerCase\(\) !== panel\.contentHash/);
+  assert.match(claimant, /tile\.sourcePanelPath !== panel\.storagePath/);
+  assert.match(claimant, /call8_call1_panel_changed/);
+  // Call 9: the promoted copy must hash to the Call-1 panel it copied.
+  assert.match(claimant, /observed !== String\(panel\.contentHash \|\| ""\)\.toLowerCase\(\)/);
+  assert.match(claimant, /String\(stored\.hash\)\.toLowerCase\(\) !== observed/);
+  // And six surfaces means six distinct sets of bytes, at both calls.
+  assert.match(claimant, /new Set\(Object\.values\(panelHashes\)\)\.size !== SURFACE_KEYS\.length/);
 });
 
 // Owner decision 2026-08-23: the A.T.L.A.S. split path is wired to the ONE
@@ -117,70 +146,17 @@ test("executable gridslice uses six exact own-surface fields and never reuses a 
   }
 });
 
-test("server Call 8 runs the proven own-side GENERATE → QC → RETRY gate before persistence", async () => {
-  const sourceViews = VIEW_KEYS.map((viewKey, index) => {
-    const bytes = fieldSvg(viewKey, `hsl(${index * 47} 70% 40%)`);
-    return {
-      viewKey,
-      storagePath: `users/test/revisions/test/inputs/${viewKey}.svg`,
-      contentHash: sha256(bytes),
-      byteSize: bytes.length,
-      contentType: "image/svg+xml",
-      bytes,
-    };
-  });
-  const surfaces = SURFACE_KEYS.map((surfaceKey, index) => ({
-    surfaceKey,
-    widthInches: 20 + index,
-    heightInches: 10 + index,
-  }));
-  const generatedBySide = new Map();
-  const referenceHashes = new Map();
-  const stored = new Map();
-  const fields = await authorFlatSurfaceFields({
-    revisionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    sourceViews,
-    surfaces,
-    textLock: { bodyText: {}, logoPlacements: [] },
-    sleep: async () => {},
-    generateSurface: async ({ surface: ownSurface, ownReference }) => {
-      const calls = (generatedBySide.get(ownSurface.surfaceKey) || 0) + 1;
-      generatedBySide.set(ownSurface.surfaceKey, calls);
-      referenceHashes.set(ownSurface.surfaceKey, sha256(Buffer.from(ownReference.data, "base64")));
-      return fieldSvg(`${ownSurface.surfaceKey}-${calls}`, `hsl(${(SURFACE_KEYS.indexOf(ownSurface.surfaceKey) * 47 + calls) % 360} 70% 40%)`);
-    },
-    judgeSurface: async ({ surfaceKey }) => surfaceKey === "driver" && generatedBySide.get(surfaceKey) === 1
-      ? { pass: false, issues: ["wrong_design"], note: "wrong own-side layout" }
-      : { pass: true, issues: [], note: "matches own approved side" },
-    loadExisting: async (ownSurface) => stored.get(ownSurface.surfaceKey) || null,
-    persist: async (ownSurface, bytes) => stored.set(ownSurface.surfaceKey, Buffer.from(bytes)),
-  });
-
-  assert.equal(generatedBySide.get("driver"), 2);
-  for (const surfaceKey of SURFACE_KEYS.filter((key) => key !== "driver")) assert.equal(generatedBySide.get(surfaceKey), 1);
-  assert.equal(fields.find((field) => field.surfaceKey === "driver").qc.attempts, 2);
-  assert.equal(new Set(fields.map((field) => field.contentHash)).size, 6);
-  for (const field of fields) {
-    assert.equal(field.qc.accepted, true);
-    assert.equal(referenceHashes.get(field.surfaceKey), sourceViews.find((view) => view.viewKey === field.surfaceKey).contentHash);
-    assert.equal(sha256(stored.get(field.surfaceKey)), field.contentHash);
-  }
-});
-
-test("server Call 8 refuses three own-side fields that fail hard QC", async () => {
-  const sourceViews = VIEW_KEYS.map((viewKey, index) => {
-    const bytes = fieldSvg(viewKey, `hsl(${index * 47} 70% 40%)`);
-    return { viewKey, storagePath: `${viewKey}.svg`, contentHash: sha256(bytes), byteSize: bytes.length, contentType: "image/svg+xml", bytes };
-  });
-  await assert.rejects(() => authorFlatSurfaceFields({
-    revisionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    sourceViews,
-    surfaces: SURFACE_KEYS.map((surfaceKey) => ({ surfaceKey, widthInches: 20, heightInches: 10 })),
-    textLock: { bodyText: {}, logoPlacements: [] },
-    sleep: async () => {},
-    generateSurface: async () => fieldSvg("wrong", "#111827"),
-    judgeSurface: async () => ({ pass: false, issues: ["wrong_design"], note: "does not match" }),
-    loadExisting: async () => null,
-    persist: async () => assert.fail("hard-QC field must never persist"),
-  }), /failed closed after 3 attempts: QC: wrong_design/);
-});
+// DELETED WITH THE FLATTENER THEY EXERCISED (Trish 2026-08-29):
+//
+//   "server Call 8 runs the proven own-side GENERATE -> QC -> RETRY gate
+//    before persistence"
+//   "server Call 8 refuses three own-side fields that fail hard QC"
+//
+// Both drove `authorFlatSurfaceFields` end to end -- generate a surface from
+// its own 3D proof photograph, judge it, retry up to three times, refuse on
+// hard QC. The gate worked exactly as written. What it was gating was the
+// conversion of a photograph into production artwork, so the gate is gone with
+// the conversion, and there is nothing left on the Call-8 path for a judge to
+// judge: the six tiles ARE the panels, verified by sha256 rather than by a
+// model's opinion. See `proof-sheet-panel-tiles.test.mjs` for the contract that
+// replaced them.

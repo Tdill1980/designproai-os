@@ -12,6 +12,8 @@ runtime/gemini-flat-wrap.cjs
 runtime/flat-wrap-layout.cjs
 runtime/server-grid-slice.cjs
 runtime/proof-sheet.cjs
+runtime/call8-proof-material.cjs
+runtime/production-provenance.cjs
 runtime/topaz-upscale.cjs
 runtime/logo-removal.cjs
 runtime/studio-os.cjs

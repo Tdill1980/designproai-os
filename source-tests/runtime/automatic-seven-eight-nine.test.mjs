@@ -184,12 +184,21 @@ test("the freeze and the pack report the view count they actually had", async ()
   assert.doesNotMatch(source, /= exactSevenViews\(data\.snapshot/);
 });
 
-test("Call 8 composes the proof from seven views and Call 9 gridslices six own-surface fields", async () => {
+// ⛔ THE PROOF IS COMPOSED FROM THE SIX PANELS, NOT THE SEVEN VIEWS.
+//    (Trish 2026-08-29.)
+//
+// The old name of this test -- "Call 8 composes the proof from seven views and
+// Call 9 gridslices six own-surface fields" -- is an accurate description of the
+// defect. The seven views are 3D proof photographs; gridslicing them produced
+// the customer's print files.
+test("Call 8 composes the proof from the six Call-1 panels, and Call 9 cuts nothing", async () => {
   assert.equal(typeof _test.call8ProofRequest, "function");
   const source = await readFile(fileURLToPath(new URL("../../runtime/designpro-standalone-claimant.cjs", import.meta.url)), "utf8");
   assert.match(source, /"\/compose-proof-sheet"/);
-  assert.match(source, /gridSliceAll\(fieldSources, manifest\.expectedSurfaces/);
-  assert.match(source, /sourceFieldHashes/);
+  assert.match(source, /call8ProofRequest\(rebound, manifest, panelSources, frozenViews\.viewReceipts/);
+  assert.match(source, /assembledFrom: "atlas-call1-panels"/);
+  assert.doesNotMatch(source, /gridSliceAll\(/);
+  assert.doesNotMatch(source, /sourceFieldHashes/);
   assert.doesNotMatch(source, /buildMasterCycle\(/);
   assert.doesNotMatch(source, /flatWrapLayout/);
   assert.doesNotMatch(source, /cutAllPanels/);
@@ -332,9 +341,19 @@ test("Call 9 promotes the Call-1 panels rather than re-cutting them", () => {
   assert.match(source, /call9_call1_panel_changed/);
   assert.match(source, /call9_call1_panel_surface_missing/);
   assert.match(source, /call9_panel_identity_collision/);
-  // A run with no atlas still reaches the existing gridslice path.
+  // AND A RUN WITH NO CALL-1 PANEL SET FAILS CLOSED. (Trish 2026-08-29.)
+  //
+  // This used to assert that such a run "still reaches the existing gridslice
+  // path" -- the arm that read Call 8's Gemini-flattened 3D proofs and shipped
+  // them as print files. `panels.build` failed OPEN, so losing the Call-1
+  // panels for any reason silently substituted photographs. The fallback is
+  // deleted; there is one source of production artwork or there is none.
+  assert.match(source, /production_panels_not_created/);
+  assert.doesNotMatch(source, /requiredObject\(run\.results\?\.dimensionManifest, "bound GENIE dimension manifest"\)/);
+  // Anchored on the bare code, not the substring: `call8_production_panels_not_created`
+  // is a different guard on an earlier stage and contains this one's name.
   assert.ok(
-    source.indexOf('promotedFrom: "atlas-call1"') < source.indexOf('requiredObject(run.results?.dimensionManifest'),
-    "the Call-1 promotion is tried before the GENIE-dimensioned gridslice fallback",
+    source.indexOf('promotedFrom: "atlas-call1"') < source.indexOf('\n      "production_panels_not_created",'),
+    "the promotion runs first and the fail-closed throw is the only other outcome",
   );
 });

@@ -718,9 +718,19 @@ export function atlasProgressCounts(input: {
     unknownCameras,
     viewGenerationFailed,
     panelLabel: `Print panels ${cutSurfaces.length}/${PRODUCTION_SURFACES.length}`,
+    // ⛔ ZERO PANELS SAYS SO. (Trish 2026-08-29: "if six deterministic Call-1
+    //    panel artifacts do not exist, the UI must say PRODUCTION PANELS NOT
+    //    CREATED.")
+    //
+    // This read "Cut deterministically from the accepted master" on a
+    // generation with NO panels -- a description of what the pipeline would do,
+    // printed under the number saying it had not. An operator reading a green
+    // sentence beside 0/6 has to work out for themselves which half is true.
+    // There is no fallback producer any more (`panels.build` fails closed), so
+    // zero cut panels means exactly one thing and the card says it.
     panelDetail: cutSurfaces.length
       ? `${cutSurfaces.join(" · ")} · ${promotedSurfaces.length}/${PRODUCTION_SURFACES.length} promoted by Call 9`
-      : "Cut deterministically from the accepted master",
+      : "PRODUCTION PANELS NOT CREATED — no deterministic Call-1 panel exists for this design",
     panelDone: cutSurfaces.length === PRODUCTION_SURFACES.length,
     proofLabel: `3D proofs ${proofCount}/${CANONICAL_VIEW_COUNT}`,
     proofDetail,

@@ -14,14 +14,16 @@ const sharp = require("sharp");
 const { canonicalTenantKey, immutableStorageUpload, normalizeLogoAsset, normalizeSourceAsset, safeStoragePath, verifySourceBytes } = require("./runtime-contract.cjs");
 const { resolveOrQueueUniversalDimensions } = require("./genie-universal-resolver.cjs");
 const {
-  flatSurfaceInputHash,
   normalizeTextLock,
-  selectedImageModel,
   sourceViewKeys,
   SURFACE_KEYS,
   VIEW_KEYS,
 } = require("./gemini-flat-surface.cjs");
-const { GRID_SLICE_CONTRACT, gridSliceAll } = require("./server-grid-slice.cjs");
+// Call 8's identity is DETERMINISTIC and carries no model. `flatSurfaceInputHash`
+// and `gridSliceAll` are gone from this file with the Gemini flattener they
+// served -- see `buildCall8Proof` and the fail-closed arm in `panels.build`.
+const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-proof-material.cjs");
+const { assertRunProductionAncestry } = require("./production-provenance.cjs");
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
@@ -333,10 +335,36 @@ function call8TextLock(snapshot) {
 }
 
 /**
- * Server Call 8 request: seven frozen DesignPanel views + exact GENIE geometry
- * -> six own-surface immutable fields + one dimensioned customer proof.
+ * Server Call 8 request: the SIX deterministic Call-1 panels + exact GENIE
+ * geometry -> one dimensioned customer proof, assembled by code.
+ *
+ * ⛔ THE SIX SURFACE INPUTS ARE PANELS. THEY ARE NOT THE 3D PROOFS. (Trish
+ * 2026-08-29.)
+ *
+ * This used to take `viewLineage` -- the seven persona-photographer renders --
+ * and pass them to the server as `sourceAssets`, where a Gemini pass flattened
+ * each PHOTOGRAPH into a "surface field" and those fields became both the
+ * proof-sheet tiles and, through `panels.build`'s fallback arm, the print
+ * panels. Traced on Northgate: all six Call-8 inputs joined by hash straight
+ * back to `designpro_generation_views`, 6/6, every one produced by
+ * `persona-photographer-render`.
+ *
+ * That is backwards. The authority chain runs ONE way:
+ *
+ *   Call-1 flattened A.T.L.A.S. master
+ *     -> exact deterministic container crop
+ *       -> Call-1 panel            <- the ONLY production artwork
+ *         -> 3D proof              <- presentation, downstream, terminal
+ *
+ * A 3D proof is a photograph of a vehicle wearing the design. Flattening it
+ * back into a rectangle recovers a picture of a truck, not artwork, and GENIE
+ * dimensions stamped around it do not make it a print file.
+ *
+ * `viewLineage` still rides the RECEIPT: those seven proofs are real, they
+ * belong to this design, and the stage contract joins them to the frozen view
+ * set. What it no longer does is contribute a pixel.
  */
-function call8ProofRequest(run, manifest, viewLineage, textLock, proofMeta) {
+function call8ProofRequest(run, manifest, callOnePanels, viewLineage, textLock, proofMeta) {
   const tenant = tenantKey(run.tenant_key);
   const surfaces = manifest.expectedSurfaces || [];
   if (surfaces.length !== SURFACE_KEYS.length) {
@@ -345,37 +373,34 @@ function call8ProofRequest(run, manifest, viewLineage, textLock, proofMeta) {
   if (!Array.isArray(viewLineage) || viewLineage.length !== VIEW_KEYS.length) {
     throw new StageError("call8_view_lineage_invalid", "Call 8 requires all seven immutable source identities", false);
   }
-  let requiredViewKeys;
-  try { requiredViewKeys = sourceViewKeys(viewLineage); }
+  try { sourceViewKeys(viewLineage); }
   catch (error) { throw new StageError("call8_view_lineage_invalid", error.message, false); }
-  const sourceAssets = requiredViewKeys.map((viewKey) => {
-    const item = viewLineage.find((candidate) => String(candidate?.viewKey) === viewKey);
-    if (!item) throw new StageError("call8_view_lineage_invalid", `Call 8 is missing ${viewKey}`, false);
-    return {
-      viewKey, bucket: BUCKET, storagePath: item.storagePath,
-      contentHash: item.contentHash, byteSize: item.byteSize, contentType: item.contentType,
-    };
-  });
   const totalSqFt = round2(surfaces.reduce(
     (total, item) => total + Number(item.widthInches) * Number(item.heightInches), 0,
   ) / 144);
   if (round2(Number(manifest.totalSqFt)) !== totalSqFt) {
     throw new StageError("genie_total_square_feet_mismatch", "GENIE total square footage does not match raw per-surface dimensions", false);
   }
-  const imageModel = selectedImageModel();
   const productionSurfaces = surfaces.map(({ sourceAsset: _sourceAsset, ...surface }) => surface);
-  const materialHash = flatSurfaceInputHash({
-    sourceViews: sourceAssets, surfaces: productionSurfaces,
-    revisionId: run.revision_id, textLock, model: imageModel,
-  });
+  let panelAssets;
+  let materialHash;
+  try {
+    panelAssets = normalizeCallOnePanelSet(callOnePanels, tenant);
+    materialHash = call8ProofMaterialHash({
+      panels: panelAssets, surfaces: productionSurfaces,
+      revisionId: run.revision_id, textLock, tenantKey: tenant,
+    });
+  } catch (error) {
+    throw new StageError("call8_panel_source_invalid", String(error?.message || error), false);
+  }
   return {
     request: {
       tenantKey: tenant, workflowRunId: run.id, revisionId: run.revision_id,
       surfaces: productionSurfaces,
-      sourceAssets, textLock, flatMaterialHash: materialHash,
+      panelAssets, textLock, flatMaterialHash: materialHash,
       vehicle: manifest.vehicle, proofMeta: proofMeta || {},
     },
-    totalSqFt, materialHash, imageModel,
+    totalSqFt, materialHash, panelAssets,
   };
 }
 
@@ -808,12 +833,22 @@ async function withHeavyOutputLease(sb, stage, work) {
 }
 
 /**
- * Draw the 2D Production Proof for this run.
+ * Draw the 2D Production Proof for this run, from the six Call-1 panels.
  *
- * Unchanged in behaviour -- the same request, the same contract checks, the
- * same receipt. It is a function now only so its caller can decide what a
- * failure MEANS, which differs by run: fatal where the proof is the source Call
- * 9 cuts from, recorded-and-deferred where A.T.L.A.S. already cut the panels.
+ * DETERMINISTIC ASSEMBLY. NO GENERATIVE STEP. (Trish 2026-08-29, fix order
+ * step 3: "Call 8 becomes deterministic proof-sheet assembly from those six
+ * artifacts -- labels/grid/dimensions can be presentation metadata, but no
+ * Gemini flattening.")
+ *
+ * Everything on the sheet that is not a panel -- the header, the trim and print
+ * tables, the dimension callouts, the approval block, the provenance line -- is
+ * DRAWN by `runtime/proof-sheet.cjs`, so it cannot be hallucinated, and the six
+ * tiles are the exact bytes the customer's print files are made of. Same
+ * inputs, same sheet, on any worker.
+ *
+ * It is a separate function so its caller can decide what a failure MEANS,
+ * which differs by run: fatal where nothing else can manufacture, recorded-and-
+ * deferred where A.T.L.A.S. has already cut the panels.
  */
 async function buildCall8Proof(sb, baseUrl, secret, run, stage, runtimeConfig, input) {
     const rebound = await getRun(sb, run.id);
@@ -829,77 +864,98 @@ async function buildCall8Proof(sb, baseUrl, secret, run, stage, runtimeConfig, i
     if (revisionError || !revisionSource || revisionSource.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("call8_revision_source_drift", "Frozen Call 8 text source changed", false);
     const snapshot = revisionSource.snapshot || {};
     const textLock = call8TextLock(snapshot);
-    const spec = call8ProofRequest(rebound, manifest, frozenViews.viewReceipts, textLock, {
+
+    // THE SIX SURFACE INPUTS, AND THE ONLY PLACE THEY MAY COME FROM.
+    //
+    // Call 8 runs BEFORE `panels.build`, so the promoted run-scoped panels do
+    // not exist yet -- and they are only a copy in any case. The authority is
+    // the Call-1 panel set on the immutable revision snapshot: six geometric
+    // crops of the accepted A.T.L.A.S. master, each already at its GENIE trim
+    // with the five-inch bleed. No panel set means no production proof, and
+    // that is a fatal, honest outcome rather than a sheet of photographs.
+    const callOnePanels = await callOnePanelSet(sb, run);
+    if (!callOnePanels) {
+      throw new StageError(
+        "call8_production_panels_not_created",
+        "No deterministic Call-1 panel set exists for this revision, so there is nothing to proof. The 2D Production Proof is assembled from the six Call-1 panels; it is never composed out of the 3D proofs.",
+        false,
+      );
+    }
+    // Re-read and re-hash every panel before it is proofed. The snapshot states
+    // the identity; storage has to still agree with it.
+    const panelSources = [];
+    for (const panel of callOnePanels) {
+      const bytes = await storageBytes(sb, panel.storagePath);
+      const contentHash = String(panel.contentHash || "").toLowerCase();
+      if (hashBytes(bytes) !== contentHash || bytes.length !== Number(panel.byteSize)) {
+        throw new StageError("call8_call1_panel_changed", `${panel.surfaceKey} Call 1 panel changed before the proof was drawn`, false);
+      }
+      panelSources.push({
+        surfaceKey: panel.surfaceKey,
+        bucket: BUCKET,
+        storagePath: panel.storagePath,
+        contentHash,
+        byteSize: bytes.length,
+        contentType: "image/png",
+        trimWidthIn: Number(panel.trimWidthIn),
+        trimHeightIn: Number(panel.trimHeightIn),
+        printWidthIn: Number(panel.printWidthIn),
+        printHeightIn: Number(panel.printHeightIn),
+        sourceMasterHash: panel.sourceMasterHash || null,
+      });
+    }
+
+    const spec = call8ProofRequest(rebound, manifest, panelSources, frozenViews.viewReceipts, textLock, {
       designName: snapshot.designName || snapshot.delivery?.designName || "",
       finish: snapshot.finish || "",
       designId: snapshot.designId || "",
       orderNumber: snapshot.orderNumber || "",
     });
     const result = await callTool(baseUrl, secret, "/compose-proof-sheet", spec.request);
-    if (result.contract !== "designpro.call8-flat-proof.v3"
+    // v4 IS THE FENCE, NOT A VERSION BUMP. A v3 server returns `surfaceFields`
+    // and `surfacePanels` -- the Gemini-flattened photographs and their
+    // gridslices -- and refusing that contract by name is what stops a
+    // half-rolled droplet quietly proofing the old way.
+    if (result.contract !== "designpro.call8-panel-proof.v4"
       || result.flatMaterialHash !== spec.materialHash
-      || result.imageModel !== spec.imageModel
-      || !Array.isArray(result.surfaceFields)
-      || result.surfaceFields.length !== SURFACE_KEYS.length
-      || !Array.isArray(result.surfacePanels)
-      || result.surfacePanels.length !== SURFACE_KEYS.length) {
-      throw new StageError("call8_result_invalid", "Call 8 did not return the dimensioned proof, six own-surface fields and six gridslice identities", false);
+      || result.imageRequestCount !== 0
+      || !Array.isArray(result.surfaceTiles)
+      || result.surfaceTiles.length !== SURFACE_KEYS.length
+      || result.surfaceFields !== undefined
+      || result.surfacePanels !== undefined) {
+      throw new StageError("call8_result_invalid", "Call 8 did not return a deterministic six-panel proof sheet", false);
     }
     const proofSheet = requiredObject(result.proof, "Call 8 2D production proof");
     const dimensionByKey = new Map((manifest.expectedSurfaces || []).map((surface) => [String(surface.surfaceKey), surface]));
-    const viewByKey = new Map((frozenViews.viewReceipts || []).map((view) => [String(view.viewKey), view]));
-    const fieldKeys = result.surfaceFields.map((item) => String(item?.surfaceKey || ""));
-    const fieldHashes = result.surfaceFields.map((item) => String(item?.contentHash || "").toLowerCase());
-    if (new Set(fieldKeys).size !== SURFACE_KEYS.length
-      || SURFACE_KEYS.some((key) => !fieldKeys.includes(key))
-      || new Set(fieldHashes).size !== SURFACE_KEYS.length
-      || fieldHashes.some((hash) => !HASH_RE.test(hash))) {
-      throw new StageError("call8_surface_field_identity_invalid", "Call 8 must freeze six distinct own-surface fields", false);
+    const panelByKey = new Map(panelSources.map((panel) => [panel.surfaceKey, panel]));
+    const tileKeys = result.surfaceTiles.map((item) => String(item?.surfaceKey || ""));
+    if (new Set(tileKeys).size !== SURFACE_KEYS.length || SURFACE_KEYS.some((key) => !tileKeys.includes(key))) {
+      throw new StageError("call8_surface_tile_identity_invalid", "Call 8 must place one tile per canonical surface", false);
     }
-    const surfaceFields = [];
-    for (const field of result.surfaceFields) {
-      const key = String(field.surfaceKey || "");
+    const surfaceTiles = [];
+    for (const tile of result.surfaceTiles) {
+      const key = String(tile.surfaceKey || "");
       const dims = dimensionByKey.get(key);
-      const ownView = viewByKey.get(key);
-      const fieldQc = field?.qc;
-      if (!dims || !ownView
-        || field.ownSourceViewKey !== key
-        || String(field.ownSourceViewSha256 || "").toLowerCase() !== String(ownView.contentHash || "").toLowerCase()
-        || round2(field.trimWidthIn) !== round2(dims.widthInches)
-        || round2(field.trimHeightIn) !== round2(dims.heightInches)
-        || !fieldQc || typeof fieldQc !== "object" || Array.isArray(fieldQc)
-        || fieldQc.accepted !== true || !Array.isArray(fieldQc.issues)
-        || !Number.isInteger(Number(fieldQc.attempts))
-        || Number(fieldQc.attempts) < 0 || Number(fieldQc.attempts) > 3) {
-        throw new StageError("call8_surface_field_binding_invalid", `${key || "unknown"} is not bound to its own DesignPanel view and GENIE geometry`, false);
+      const panel = panelByKey.get(key);
+      // EVERY TILE IS THE PANEL. Bound by hash to the exact Call-1 artifact,
+      // and dimensioned by the same GENIE row the panel was cut to, so the
+      // callout on the sheet and the size of the print file cannot disagree.
+      if (!dims || !panel
+        || String(tile.sourcePanelHash || "").toLowerCase() !== panel.contentHash
+        || tile.sourcePanelPath !== panel.storagePath
+        || round2(tile.trimWidthIn) !== round2(dims.widthInches)
+        || round2(tile.trimHeightIn) !== round2(dims.heightInches)) {
+        throw new StageError("call8_surface_tile_binding_invalid", `${key || "unknown"} tile is not its own Call-1 panel at GENIE geometry`, false);
       }
-      const bytes = await storageBytes(sb, field.storagePath);
-      const contentHash = String(field.contentHash || "").toLowerCase();
-      if (bytes.length !== Number(field.byteSize) || hashBytes(bytes) !== contentHash) {
-        throw new StageError("call8_surface_field_storage_drift", `${key} immutable field does not match its receipt`, false);
-      }
-      surfaceFields.push({
-        contract: field.contract, surfaceKey: key, storagePath: safePath(field.storagePath, `${key} Call 8 field`),
-        contentHash, byteSize: bytes.length, pixelWidth: Number(field.pixelWidth), pixelHeight: Number(field.pixelHeight),
-        trimWidthIn: Number(field.trimWidthIn), trimHeightIn: Number(field.trimHeightIn),
-        ownSourceViewKey: key, ownSourceViewSha256: String(field.ownSourceViewSha256).toLowerCase(),
-        promptVersion: field.promptVersion,
-        qc: {
-          accepted: true, pass: fieldQc.pass === true,
-          issues: fieldQc.issues.map(String), note: String(fieldQc.note || "").slice(0, 240),
-          attempts: Number(fieldQc.attempts),
-        },
-        reusedImmutableWinner: field.reusedImmutableWinner === true,
+      surfaceTiles.push({
+        surfaceKey: key,
+        sourcePanelPath: safePath(panel.storagePath, `${key} Call 1 panel`),
+        sourcePanelHash: panel.contentHash,
+        sourceMasterHash: panel.sourceMasterHash,
+        trimWidthIn: Number(tile.trimWidthIn), trimHeightIn: Number(tile.trimHeightIn),
+        printWidthIn: Number(panel.printWidthIn), printHeightIn: Number(panel.printHeightIn),
+        placement: tile.placement,
       });
-    }
-    const panelKeys = result.surfacePanels.map((item) => String(item?.key || ""));
-    const panelHashes = result.surfacePanels.map((item) => String(item?.contentHash || "").toLowerCase());
-    if (new Set(panelKeys).size !== SURFACE_KEYS.length
-      || SURFACE_KEYS.some((key) => !panelKeys.includes(key))
-      || new Set(panelHashes).size !== SURFACE_KEYS.length
-      || panelHashes.some((hash) => !HASH_RE.test(hash))
-      || result.surfacePanels.some((item) => item.contract !== GRID_SLICE_CONTRACT || item.step !== "gridslice")) {
-      throw new StageError("call8_gridslice_identity_invalid", "Call 8 did not attest one deterministic gridslice for every GENIE surface", false);
     }
     const proofArtifact = await exactStoredArtifact(sb, {
       storagePath: proofSheet.storagePath,
@@ -911,6 +967,12 @@ async function buildCall8Proof(sb, baseUrl, secret, run, stage, runtimeConfig, i
         widthPx: proofSheet.width, heightPx: proofSheet.height,
         totalSqFt: proofSheet.totalSqFt, bleedInches: 5,
         dimensionsAuthority: "genie-universal-panelizer",
+        // PROVENANCE, ON THE ARTIFACT ITSELF. A reader must be able to answer
+        // "what is this made of" without joining three tables.
+        producer: "designpro.call8-panel-proof.v4",
+        deterministic: true,
+        assembledFrom: "atlas-call1-panels",
+        sourcePanelHashes: Object.fromEntries(surfaceTiles.map((tile) => [tile.surfaceKey, tile.sourcePanelHash])),
       },
     }, "flat-proof");
     return complete(sb, stage, await getRun(sb, run.id), {
@@ -923,13 +985,23 @@ async function buildCall8Proof(sb, baseUrl, secret, run, stage, runtimeConfig, i
       dimensionManifestId: rebound.dimension_manifest_id,
       manifestHash: rebound.manifest_hash,
       perSurfaceDimensions: manifest.expectedSurfaces.map(({ sourceAsset: _sourceAsset, ...surface }) => surface),
+      // LINEAGE, NOT SOURCE. The seven proofs are this design's proofs and the
+      // stage contract joins them to the frozen view set -- but not one of their
+      // pixels is on the sheet. `proofPixelsUsed: false` says so in a field a
+      // query can read, because the absence of a field proves nothing.
       viewLineage: frozenViews.viewReceipts,
+      viewLineageRole: "presentation-only",
+      proofPixelsUsed: false,
       flatMaterialHash: spec.materialHash,
-      imageModel: result.imageModel,
       textLock: result.textLock,
       requiresPanelProTextReview: true,
-      surfaceFields,
-      surfacePanels: result.surfacePanels,
+      // No `imageModel`: nothing generated. No `surfaceFields`: nothing was
+      // flattened. No `surfacePanels`: Call 8 does not cut panels, Call 1 did.
+      producer: "designpro.call8-panel-proof.v4",
+      deterministic: true,
+      imageRequestCount: 0,
+      assembledFrom: "atlas-call1-panels",
+      surfaceTiles,
     }, null, [proofArtifact]);
 }
 
@@ -1168,127 +1240,67 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         deterministic: true,
         panels: produced,
         panelHashes,
+        // CALL 10 READS THIS, AND ONLY THE DELETED ARM USED TO WRITE IT.
+        //
+        // `logos.extract` binds every separated logo to the verified source
+        // REGION it was lifted from -- `requiredString(regionHashes[surface])`,
+        // fatal when absent. That map was only ever emitted by the proof-derived
+        // arm below, so with that arm gone a run with a listed logo inventory
+        // would die at Call 10 with `call10_..._verified source region is
+        // required`, and a run with an empty inventory would pass while the
+        // field silently meant nothing.
+        //
+        // On the A.T.L.A.S. path the source region IS the promoted panel: the
+        // logo sits on that surface, in those exact bytes. So the region hash is
+        // the panel hash, stated rather than left missing. It is the same value
+        // as `panelHashes` and deliberately not a second derivation of it.
+        sourceRegionHashes: panelHashes,
       }, null, panelArtifacts);
       for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 1 panel promotion spool cleanup failed: ${error.message}`));
       return completed;
     }
 
-    const proof = await stageOutput(sb, run.id, "proof.build");
-    const manifest = requiredObject(run.results?.dimensionManifest, "bound GENIE dimension manifest");
-    const expected = new Map((manifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
-    const recorded = Array.isArray(proof.surfacePanels) ? proof.surfacePanels : [];
-    if (recorded.length !== SURFACE_KEYS.length) {
-      throw new StageError("call9_surface_set_invalid", "Call 8 did not record all six deterministic gridslices", false);
-    }
-    const fields = Array.isArray(proof.surfaceFields) ? proof.surfaceFields : [];
-    if (fields.length !== SURFACE_KEYS.length) {
-      throw new StageError("call9_surface_fields_missing", "Call 8 did not freeze all six own-surface fields", false);
-    }
-    const viewByKey = new Map((proof.viewLineage || []).map((view) => [String(view.viewKey), view]));
-    const fieldSources = new Map();
-    const sourceFieldHashes = {};
-    for (const field of fields) {
-      const key = String(field?.surfaceKey || "");
-      const dims = expected.get(key);
-      const ownView = viewByKey.get(key);
-      if (!SURFACE_KEYS.includes(key) || fieldSources.has(key) || !dims || !ownView
-        || field.ownSourceViewKey !== key
-        || String(field.ownSourceViewSha256 || "").toLowerCase() !== String(ownView.contentHash || "").toLowerCase()
-        || round2(field.trimWidthIn) !== round2(dims.widthInches)
-        || round2(field.trimHeightIn) !== round2(dims.heightInches)
-        || field.qc?.accepted !== true || !Array.isArray(field.qc?.issues)) {
-        throw new StageError("call9_surface_field_binding_drift", `${key || "unknown"} field is not its own frozen DesignPanel surface`, false);
-      }
-      const bytes = await storageBytes(sb, field.storagePath);
-      const observed = hashBytes(bytes);
-      if (observed !== String(field.contentHash || "").toLowerCase() || bytes.length !== Number(field.byteSize)) {
-        throw new StageError("call9_surface_field_changed", `${key} immutable Call 8 field changed before gridslice`, false);
-      }
-      fieldSources.set(key, { bytes });
-      sourceFieldHashes[key] = observed;
-    }
-
-    // Server-native panel-artboard-generator step:gridslice. Each input is the
-    // matching side's own immutable field. This stage only cover-crops to exact
-    // GENIE trim aspect and mirror-extends five-inch bleed.
-    let slices;
-    try {
-      slices = await gridSliceAll(fieldSources, manifest.expectedSurfaces, { bleedInches: 5, maxCanvas: 4000 });
-    } catch (error) {
-      throw new StageError(error?.code || "call9_gridslice_failed", String(error?.message || error), false);
-    }
-
-    const recordedByKey = new Map(recorded.map((item) => [String(item?.key || ""), item]));
-    const spools = [];
-    const produced = [];
-    const sourceRegionHashes = {};
-    for (const slice of slices) {
-      const key = slice.surfaceKey;
-      const dims = expected.get(key);
-      if (!dims) throw new StageError("call9_genie_identity_missing", key, false);
-      const call8Slice = recordedByKey.get(key);
-      if (!call8Slice
-        || call8Slice.contract !== GRID_SLICE_CONTRACT
-        || call8Slice.step !== "gridslice"
-        || String(call8Slice.contentHash || "").toLowerCase() !== slice.contentHash
-        || String(call8Slice.provenance?.sourceFieldSha256 || "").toLowerCase() !== slice.sourceFieldHash
-        || slice.sourceFieldHash !== sourceFieldHashes[key]
-        || call8Slice.provenance?.ownSourceViewKey !== key
-        || String(call8Slice.provenance?.ownSourceViewSha256 || "").toLowerCase() !== String(viewByKey.get(key)?.contentHash || "").toLowerCase()
-        || JSON.stringify(canonical(call8Slice.provenance?.fieldQc)) !== JSON.stringify(canonical(fields.find((field) => field.surfaceKey === key)?.qc))
-        || Number(call8Slice.pixelWidth) !== slice.pixelWidth
-        || Number(call8Slice.pixelHeight) !== slice.pixelHeight
-        || round2(call8Slice.trimWidthIn) !== round2(dims.widthInches)
-        || round2(call8Slice.trimHeightIn) !== round2(dims.heightInches)
-        || Number(call8Slice.bleedIn) !== 5) {
-        throw new StageError("call9_gridslice_receipt_mismatch", `${key} does not reproduce the deterministic gridslice Call 8 recorded`, false);
-      }
-
-      const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/panels/${key}.png`;
-      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, slice.bytes, "image/png");
-      if (stored.spool) spools.push(stored.spool);
-      sourceRegionHashes[key] = slice.contentHash;
-      produced.push(artifact("panel", stored.storagePath, stored.hash, stored.bytes, key, {
-        call: 9, sourceRule: PANEL_SOURCE_RULE,
-        extractionContract: GRID_SLICE_CONTRACT, step: "gridslice",
-        deterministic: true,
-        sourceRegionHash: slice.contentHash,
-        sourceContentHash: slice.sourceFieldHash,
-        sourceFieldPath: fields.find((field) => field.surfaceKey === key).storagePath,
-        sourceFieldHash: slice.sourceFieldHash,
-        ownSourceViewKey: key,
-        ownSourceViewSha256: String(viewByKey.get(key).contentHash).toLowerCase(),
-        cropRect: slice.crop,
-        revisionId: run.revision_id, revisionSnapshotHash: run.revision_snapshot_hash || null,
-        dimensionManifestId: run.dimension_manifest_id, manifestHash: run.manifest_hash,
-        trimWidthInches: dims.widthInches, trimHeightInches: dims.heightInches,
-        bleed: { top: 5, right: 5, bottom: 5, left: 5 },
-        surfaceSqFt: dims.surfaceSqFt,
-        effectivePpi: slice.effectivePpi,
-        pixelWidth: slice.pixelWidth, pixelHeight: slice.pixelHeight,
-        printWidthInches: slice.printWidthIn,
-        printHeightInches: slice.printHeightIn,
-        dpi: 1500, outputScale: 0.1, regenerated: false,
-      }));
-    }
-
-    const panelHashes = Object.fromEntries(produced.map((item) => [item.surfaceKey, item.contentHash]));
-    if (new Set(Object.values(panelHashes)).size !== produced.length) throw new StageError("call9_surface_reuse", "Every gridslice panel must have its own byte identity", false);
-    if (panelHashes.driver === panelHashes.passenger) throw new StageError("call9_driver_passenger_reuse", "Driver artwork cannot be reused for passenger", false);
-    const trimDimensions = Object.fromEntries(manifest.expectedSurfaces.map((item) => [item.surfaceKey, { widthInches: item.widthInches, heightInches: item.heightInches, surfaceSqFt: item.surfaceSqFt }]));
-    const completed = await complete(sb, stage, run, {
-      verified: true, receiptKind: "call9.surface-panels", call: 9,
-      sourceRule: PANEL_SOURCE_RULE,
-      extractionContract: GRID_SLICE_CONTRACT,
-      step: "gridslice", deterministic: true, regenerated: false,
-      sides: produced.map((item) => item.surfaceKey), panelHashes, sourceRegionHashes,
-      sourceFieldHashes,
-      dimensionsAuthority: "genie-universal-panelizer", bleedInches: 5, dpi: 1500, outputScale: 0.1,
-      dimensionManifestId: run.dimension_manifest_id, manifestHash: run.manifest_hash,
-      totalSqFt: manifest.totalSqFt, trimDimensions,
-    }, null, produced);
-    for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 9 panel spool cleanup failed: ${error.message}`));
-    return completed;
+    // FAIL CLOSED. NO CALL-1 PANEL SET MEANS NO PRODUCTION PANELS.
+    //
+    // Owner, 2026-08-29, after tracing the six "production panels" on Northgate
+    // back to their source bytes: "No pixel originating from a 3D proof may ever
+    // become a Call-8 surface, production panel, print file, or ZIP asset."
+    //
+    // WHAT USED TO BE HERE. A second arm that, when the revision carried no
+    // `callOnePanels`, read `proof.build`'s `surfaceFields` -- six images
+    // Gemini FLATTENED OUT OF THE SIX 3D PROOF PHOTOGRAPHS -- and gridsliced
+    // them into `panel` artifacts. It was added by 2eb62f3 (#123, 2026-08-21)
+    // when that was the only panel source there was; f2620290 (#143,
+    // 2026-08-23) put the Call-1 promotion in front of it and left it standing
+    // as a fallback. So the stage FAILED OPEN: a run that lost its Call-1
+    // panels for any reason silently shipped print files descended from
+    // photographs of a vehicle, correctly dimensioned by GENIE and wrong in
+    // every pixel. GENIE dimensions around an image do not make the image
+    // production artwork.
+    //
+    // The only legal production artwork source is the Call-1 flattened
+    // A.T.L.A.S. master -> exact deterministic container crop -> Call-1 panel.
+    // The photographer stack is strictly downstream of that (RULE 0.29:
+    // "the extracted panel is ARTWORK authority; the photographer/view/studio
+    // stack is PRESENTATION authority only"), and information never flows back
+    // up it.
+    //
+    // REMOVING IT BREAKS NOTHING LIVE. Every `panel` artifact this system has
+    // ever written came from one of two shapes, and neither is that arm:
+    // `source: atlas-call1-panel` (six, one run, 2026-08-28) and a pre-#123
+    // shape carrying no `extractionContract` (six, one run, 2026-08-18).
+    // The proof-derived arm has produced a production panel exactly zero times.
+    //
+    // A Standard (non-A.T.L.A.S.) run reaches this too, and it is meant to:
+    // there is no master, so there is nothing deterministic to cut, and the
+    // honest outcome is that the panels were not created. The UI reports
+    // PRODUCTION PANELS NOT CREATED rather than showing six pictures of a
+    // truck under a print-file heading.
+    throw new StageError(
+      "production_panels_not_created",
+      "No deterministic Call-1 panel set exists for this revision. Production panels are only ever a geometric crop of the accepted A.T.L.A.S. master; nothing is derived from a 3D proof.",
+      false,
+    );
   }
   if (stage.stage_key === "logos.extract") {
     const { data: revisionSource, error: revisionError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
@@ -1900,6 +1912,35 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     if (sourcePanels.length !== SURFACE_KEYS.length
       || new Set(sourcePanels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
       throw new StageError("production_source_set_incomplete", "The exact six own-surface production panels are required", false);
+    }
+
+    // ⛔ THE ANCESTRY GATE. NOTHING DESCENDED FROM A 3D PROOF PASSES HERE.
+    //    (Trish 2026-08-29.)
+    //
+    // Every other assertion in this stage was already passing on the Northgate
+    // run whose six "production panels" were flattened photographs: they were
+    // six, distinct, correctly keyed, correctly dimensioned by GENIE, correctly
+    // hashed. Dimensions around an image do not make the image artwork, so none
+    // of those checks could see it. This one asks the only question that
+    // separates a print file from a picture of a truck -- what is it descended
+    // from -- and it asks it at the boundary into the PAID half, before a single
+    // byte is upscaled, packed or delivered.
+    //
+    // It runs for every run, A.T.L.A.S. or not. A non-A.T.L.A.S. run has no
+    // accepted master and therefore no legal production artwork, which is
+    // exactly what `panels.build` now says by refusing to create any.
+    try {
+      assertRunProductionAncestry({
+        panels: sourcePanels.map((row) => ({ surfaceKey: row.surface_key, metadata: row.metadata })),
+        proof: customerProof ? { metadata: customerProof.metadata } : null,
+        acceptedPanels: await callOnePanelSet(sb, run).catch(() => null),
+      });
+    } catch (error) {
+      throw new StageError(
+        String(error?.code || "production_ancestry_invalid"),
+        String(error?.message || error),
+        false,
+      );
     }
     for (const surface of SURFACE_KEYS) {
       const row = sourcePanels.find((item) => item.surface_key === surface);

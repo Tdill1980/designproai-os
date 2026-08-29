@@ -28,21 +28,42 @@ for(const artifact of ["flat-proof","panel","logo","output","stamp","zip","wrapb
 assert.ok(lower.includes("verifiedby"),"stamp must use server-derived final-QC identity");
 assert.ok(lower.includes("ziphash"),"WrapBox receipt must bind exact ZIP hash");
 assert.ok(!lower.includes("approve_designpro_human_gate"),"claimant must never self-approve a human gate");
-for(const exactField of ["viewreceipts","viewlineage","dimensionmanifestid","manifesthash","totalsqft","surfacesqft","trimdimensions"])
+// `trimdimensions` left this list with the proof-derived Call 9 arm that emitted
+// it (2026-08-29). The promotion receipt carries each panel's own trim/print
+// inches per surface instead, which is why `trimwidthin` is here now.
+for(const exactField of ["viewreceipts","viewlineage","dimensionmanifestid","manifesthash","totalsqft","surfacesqft","trimwidthin"])
   assert.ok(lower.includes(exactField),`claimant is not aligned to schema field ${exactField}`);
 for(const edge of ["top: 5","right: 5","bottom: 5","left: 5"])
   assert.ok(lower.includes(edge),`claimant does not bind exact ${edge} bleed`);
-// Each panel binds the canonical surface it IS, not a region of a shared atlas.
-// The rule string is the one the database enforces on the Call 9 receipt. The
-// window is generous because the panel also carries its proof, revision and
-// GENIE identities now; what is being asserted is the ORDER and PRESENCE of the
-// source binding, not how tightly packed the metadata happens to be.
-assert.match(lower,/sourcerule: panel_source_rule[\s\S]{0,900}sourceregionhash:[\s\S]{0,900}sourcefieldhash:[\s\S]{0,2500}bleed:\s*\{\s*top:\s*5,\s*right:\s*5,\s*bottom:\s*5,\s*left:\s*5\s*\}/,
-  'panel artifact metadata must bind its own immutable surface field and four-edge bleed');
+// EACH PANEL BINDS THE CALL-1 ARTIFACT IT IS A COPY OF, AND THE MASTER THAT WAS
+// CUT TO MAKE IT. (Trish 2026-08-29.)
+//
+// This used to assert the ORDER of `sourceRule -> sourceRegionHash ->
+// sourceFieldHash`, the metadata of the proof-derived arm: a "surface field"
+// was a 3D proof photograph flattened by Gemini, and a panel that named one was
+// a print file descended from a photograph. That arm is deleted, so the binding
+// asserted here is the only one left -- the promoted bytes, the Call-1 path and
+// hash they were copied from, and the A.T.L.A.S. master hash that is the
+// lineage identity PanelPro pairs the panel with its proof by.
+assert.match(lower,/source: "atlas-call1-panel"[\s\S]{0,400}promotedfrom: "atlas-call1"[\s\S]{0,400}sourcestoragepath:[\s\S]{0,200}sourcecontenthash:[\s\S]{0,200}sourcemasterhash:/,
+  'panel artifact metadata must bind the Call-1 panel it promotes and the master it was cut from');
 assert.ok(lower.includes('panel_source_rule = "one-own-surface-region-per-output-side"'),
   'Call 9 must declare the one-own-surface-per-output-side rule the database requires');
-for(const guard of ["call9_surface_field_changed","call9_surface_field_binding_drift","call9_gridslice_receipt_mismatch","call9_surface_reuse"])
+for(const guard of ["call9_call1_panel_changed","call9_call1_panel_promotion_drift","call9_panel_identity_collision","call9_call1_panel_surface_missing","production_panels_not_created"])
   assert.ok(lower.includes(guard.toLowerCase()),`Call 9 must fail closed on ${guard}`);
+// ⛔ NO PIXEL FROM A 3D PROOF MAY REACH PRODUCTION. (Trish 2026-08-29.)
+//
+// The claimant may not CALL the deleted flattener, hash its inputs, gridslice
+// its output, or emit the `surfaceFields` those three produced. The patterns
+// are call and property syntax rather than bare words, so the comments in the
+// claimant explaining what was removed -- which are the point of removing it --
+// do not themselves trip the lock. `viewlineage` above is the deliberate
+// exception: Call 8 records the seven proofs as LINEAGE on its receipt, which
+// is exactly why `proofpixelsused: false` has to sit beside it.
+for(const inversion of ["authorflatsurfacefields(","flatsurfaceinputhash(","gridsliceall(","surfacefields:","surfacefields."])
+  assert.ok(!lower.includes(inversion),`claimant must not derive production artwork from a 3D proof (${inversion})`);
+assert.ok(lower.includes("proofpixelsused: false"),
+  'Call 8 must state, in a field a query can read, that no proof pixel is on the sheet');
 // The atlas is gone and may not return: no shared layout, no cut, no crop.
 for(const atlas of ["cutallpanels","flatwraplayout","cutrect","deterministic-cut-of-approved-call8-flat-wrap-layout"])
   assert.ok(!lower.includes(atlas),`Call 9 must not reintroduce the shared atlas (${atlas})`);

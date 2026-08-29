@@ -295,58 +295,42 @@ test("nothing downstream learns a seventh surface", () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// A FAILURE HAS TO SAY WHY. (2026-08-29)
+// THREE FLAT-SURFACE TESTS DELETED WITH THE PASS THEY COVERED (2026-08-29):
 //
-// generateOneSurface caught Gemini's actual message into `lastError` and then
-// returned a bare null, so every failure reached the stage receipt as the same
-// sentence: "generation attempt N returned no image". Live cost on run
-// 8e9fab59's proof.build — five stage attempts, three generation attempts each,
-// and the only thing recorded was that there was no image.
+//   "a failed surface generation carries Gemini's own reason"
+//   "an injected generator may still return raw bytes"
+//   "verifiedReference still carries bytes for the judge"
 //
-// The reasons it hid all have different remedies: a NO_IMAGE finishReason wants
-// a shorter prompt, an HTTP 400 wants a different aspect or imageSize, a
-// blockReason wants the brief looked at, and a decode failure wants none of
-// those. A receipt that cannot distinguish them cannot be acted on.
-const flatSurface = readFileSync(
-  new URL("../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8",
-);
-
-test("a failed surface generation carries Gemini's own reason", () => {
-  assert.match(flatSurface, /return \{ bytes: null, reason: lastError \}/);
-  assert.match(flatSurface, /returned no image\$\{why \? `: \$\{why\}` : ""\}/);
-  // The extractor already names the finishReason; this is what stops it being
-  // swallowed on the way out.
-  assert.match(flatSurface, /finishReason \|\| payload\?\.promptFeedback\?\.blockReason/);
-});
-
-test("an injected generator may still return raw bytes", () => {
-  // The test seam predates the shape change, so both are accepted rather than
-  // rewriting every double.
-  assert.match(flatSurface, /Buffer\.isBuffer\(produced\) \? produced : produced\?\.bytes \|\| null/);
-});
-
+// All three were real fixes to `authorFlatSurfaceFields` -- the Gemini pass
+// that flattened each 3D PROOF PHOTOGRAPH into a Call-8 "surface field". The
+// reason-propagation fix is what finally made the HTTP 400 below visible, and
+// the 400 is why `proof.build` had no proof to show for any run. Good work on
+// a stage that should not have existed: those fields were the source of the
+// customer's print files, so the pipeline was flattening photographs into
+// production artwork the whole time it was being repaired.
+//
+// Call 8 is deterministic assembly of the six Call-1 panels now (no image
+// request at all), so there is no generation to carry a reason for, no injected
+// generator, and no reference for a judge to re-encode. The module is reduced
+// to the shared surface/view vocabulary.
+//
 // ────────────────────────────────────────────────────────────────────────────
 // AN inlineData PART CARRIES EXACTLY TWO FIELDS. (2026-08-29)
 //
-// verifiedReference returns { mimeType, data, bytes } — `bytes` so the QC judge
-// can re-encode the same reference without decoding base64 again. Spreading
+// This half SURVIVES, because the modules it sweeps still make image calls.
+// `verifiedReference` used to return { mimeType, data, bytes } and spreading
 // that whole object into an inlineData part sent the third field to Gemini,
 // which rejects it outright:
 //
 //   HTTP 400 Invalid JSON payload received. Unknown name "bytes"
 //   at 'contents[0].parts[2].inline_data': Cannot find field.
 //
-// So the call could never succeed, on any surface, on any attempt — which is
-// why proof.build had no 2D Production Proof to show for any run. It took the
-// reason-propagation fix above to see it at all; before that every one of the
-// fifteen attempts reported "returned no image".
-//
-// The whole file is swept, not just the one call site: this is invisible until
-// it 400s, and the object that carries an extra field is the normal case.
+// The sweep is over every remaining file that builds a part, not just the one
+// that had the bug: this is invisible until it 400s, and an object carrying an
+// extra field is the normal case.
 
 test("no inlineData part is handed a reference object wholesale", () => {
   for (const [name, source] of [
-    ["gemini-flat-surface.cjs", flatSurface],
     ["gemini-flat-wrap.cjs", readFileSync(new URL("../runtime/gemini-flat-wrap.cjs", import.meta.url), "utf8")],
     ["designpanel-server-provider.cjs", readFileSync(new URL("../runtime/designpanel-server-provider.cjs", import.meta.url), "utf8")],
   ]) {
@@ -359,8 +343,6 @@ test("no inlineData part is handed a reference object wholesale", () => {
       assert.ok(literal || vetted, `${name}: inlineData: ${value} is unvetted`);
     }
   }
-  // The flat-surface part now names its two fields rather than spreading.
-  assert.match(flatSurface, /inlineData: \{ mimeType: ownReference\.mimeType, data: ownReference\.data \}/);
   // And the builders the vetted identifiers come from emit only those two.
   const wrap = readFileSync(new URL("../runtime/gemini-flat-wrap.cjs", import.meta.url), "utf8");
   assert.match(wrap, /return \{ mimeType: "image\/jpeg", data: bytes\.toString\("base64"\) \};/);
@@ -368,9 +350,15 @@ test("no inlineData part is handed a reference object wholesale", () => {
   assert.match(provider, /reference: \{ mimeType: "image\/png", data: bounded\.toString\("base64"\) \}/);
 });
 
-test("verifiedReference still carries bytes for the judge", () => {
-  // The extra field is not the bug — sending it was. The judge re-encodes from
-  // ownReference.bytes, so removing it would break QC instead.
-  assert.match(flatSurface, /return \{ mimeType: item\.contentType, data: item\.bytes\.toString\("base64"\), bytes: item\.bytes \};/);
-  assert.match(flatSurface, /sharp\(ownReference\.bytes/);
+test("the flat-surface module authors nothing and carries no prompt", () => {
+  const flatSurface = readFileSync(new URL("../runtime/gemini-flat-surface.cjs", import.meta.url), "utf8");
+  for (const gone of [/inlineData/, /generateContent/, /generativelanguage/, /function authorFlatSurfaceFields/,
+                      /function generateOneSurface/, /function judgeSurface/, /function flatPrompt/]) {
+    assert.doesNotMatch(flatSurface, gone, "the Call-8 flattener must stay deleted");
+  }
+  // What it keeps is the vocabulary every stage still speaks.
+  assert.match(flatSurface, /const SURFACE_KEYS = Object\.freeze\(\["driver", "passenger", "hood", "roof", "front", "rear"\]\)/);
+  assert.match(flatSurface, /const VIEW_KEYS = Object\.freeze\(\[\.\.\.SURFACE_KEYS, "closeup"\]\)/);
+  assert.match(flatSurface, /function normalizeTextLock/);
+  assert.match(flatSurface, /function selectedImageModel/);
 });
