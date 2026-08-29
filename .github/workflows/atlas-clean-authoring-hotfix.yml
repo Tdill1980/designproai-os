@@ -24,6 +24,17 @@ jobs:
       - name: Apply surgical ATLAS patch
         run: python3 scripts/atlas-clean-authoring-hotfix.py
 
+      - name: Push fix branch
+        env:
+          FIX_BRANCH: fix/atlas-v8-clean-authoring-20260828
+        run: |
+          git config user.name "DesignProAI Hotfix"
+          git config user.email "actions@users.noreply.github.com"
+          git switch -C "$FIX_BRANCH"
+          git add runtime/flat-first-atlas.cjs supabase/functions/design-panel-ai-generate/index.ts tests/atlas-clean-authoring-contract.test.mjs
+          git commit -m "fix: clean ATLAS Call-1 authoring contract"
+          git push --force-with-lease origin "$FIX_BRANCH"
+
       - name: Install dependencies
         run: npm ci
 
@@ -32,14 +43,3 @@ jobs:
 
       - name: Run full test suite
         run: npm test
-
-      - name: Push fix branch
-        env:
-          FIX_BRANCH: fix/atlas-v8-clean-authoring-20260828
-        run: |
-          git config user.name "DesignProAI Hotfix"
-          git config user.email "actions@users.noreply.github.com"
-          git switch -c "$FIX_BRANCH"
-          git add runtime/flat-first-atlas.cjs supabase/functions/design-panel-ai-generate/index.ts tests/atlas-clean-authoring-contract.test.mjs
-          git commit -m "fix: clean ATLAS Call-1 authoring contract"
-          git push origin "$FIX_BRANCH"
