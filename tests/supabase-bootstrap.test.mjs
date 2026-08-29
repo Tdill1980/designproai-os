@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered eighty-migration chain', () => {
-  assert.equal(migrationNames.length, 80);
+test('fresh bootstrap contains one ordered eighty-one-migration chain', () => {
+  assert.equal(migrationNames.length, 81);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -177,6 +177,9 @@ test('fresh bootstrap contains one ordered eighty-migration chain', () => {
       // ...and the table CHECK behind it, which still demanded a manifest on a
       // production run at INSERT -- before await_purchase, its first stage.
       '20260828120000',
+      // The Call-8 receipt was compared against a production manifest the free
+      // run cannot have, so every honest proof receipt was refused.
+      '20260829010000',
     ],
   );
 });

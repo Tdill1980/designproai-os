@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-64), [
+  assert.deepEqual(names.slice(-65), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -205,6 +205,10 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // required a bound manifest on a production run at INSERT, so
     // pack.activate could not create the run that waits for the purchase.
     "20260828120000_designpro_production_run_starts_before_genie.sql",
+    // The same family once more, in the Call-8 receipt contract: it compared
+    // totalSqFt against results->'dimensionManifest', which RULE 0.19 leaves
+    // absent until purchase, so proof.build could never record a built proof.
+    "20260829010000_designpro_call8_proof_uses_design_time_geometry.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
