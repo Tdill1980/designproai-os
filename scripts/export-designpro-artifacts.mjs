@@ -55,6 +55,39 @@ async function fetchVerified(storagePath, recordedHash, fileName, extra, sink) {
   console.error(`ok ${fileName} ${bytes.length}B hashMatch=${observed === String(recordedHash || "").toLowerCase()}`);
 }
 
+/**
+ * A browsable copy of every exported file, beside the originals.
+ *
+ * The originals are what the chain wrote and are the point of the export, but
+ * they are 4K masters and 8 MB proofs -- a thirty-file set is hundreds of
+ * megabytes, and nothing that wants to LOOK at the graph can hold that. The
+ * previews are long-edge 1400px JPEGs in `previews/`, small enough to open or
+ * assemble into a contact sheet, and they are explicitly derived: the manifest
+ * keeps the original's hash, never the preview's, so a preview can never be
+ * mistaken for the artifact or offered as evidence of one.
+ */
+async function writePreviews(files) {
+  const { default: sharp } = await import("sharp");
+  mkdirSync(`${outDir}/previews`, { recursive: true });
+  for (const entry of files) {
+    if (!entry.file) continue;
+    const name = `${entry.file.replace(/\.[a-z0-9]+$/i, "")}.jpg`;
+    try {
+      const preview = await sharp(readFileSync(`${outDir}/${entry.file}`))
+        .resize({ width: 1400, height: 1400, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 72, chromaSubsampling: "4:2:0" })
+        .toBuffer();
+      writeFileSync(`${outDir}/previews/${name}`, preview);
+      entry.preview = `previews/${name}`;
+      entry.previewBytes = preview.length;
+    } catch (error) {
+      entry.preview = null;
+      entry.previewError = String(error?.message || error);
+      console.error(`preview failed for ${entry.file}: ${entry.previewError}`);
+    }
+  }
+}
+
 if (generationId) {
   const { data: atlasRows, error: atlasError } = await supabase
     .from("designpro_flat_atlas_revisions")
@@ -87,6 +120,53 @@ if (generationId) {
         sourceMasterHash: panel.sourceMasterHash ?? null,
       }, files);
   }
+
+  // THE SEVEN 3D PROOFS, BESIDE THE PANELS THAT CONDITIONED THEM.
+  //
+  // RULE 0.21 pairs a surface's proof with its print panel, and RULE 0.29 makes
+  // the panel the proof's artwork authority -- so the pairing is the thing worth
+  // looking at, and until now the export could show only one half of it. Each
+  // view carries the panel hash it was rendered from, which is what turns "these
+  // look like the same design" into a checkable claim.
+  // Resolved in two steps rather than an embedded join: PostgREST resolves an
+  // embed from the FK graph, and a rename there would turn this into a silent
+  // empty set rather than an error anyone notices.
+  const { data: requestRows, error: requestError } = await supabase
+    .from("designpro_generation_requests")
+    .select("id")
+    .eq("generation_id", generationId);
+  if (requestError) console.error(`generation request query failed: ${requestError.message}`);
+  const requestIds = (requestRows || []).map((row) => row.id);
+  const { data: viewRows, error: viewError } = requestIds.length
+    ? await supabase
+      .from("designpro_generation_views")
+      .select("consumer_role,source_view_type,storage_path,content_hash,byte_size,content_type,metadata")
+      .in("request_id", requestIds)
+      .is("superseded_at", null)
+    : { data: [], error: null };
+  if (viewError) {
+    console.error(`generation view query failed: ${viewError.message}`);
+  }
+  for (const view of (viewRows || []).sort((a, b) => String(a.consumer_role).localeCompare(String(b.consumer_role)))) {
+    const extension = view.content_type === "image/png" ? "png"
+      : view.content_type === "image/webp" ? "webp" : "jpg";
+    const provider = view.metadata?.provider || {};
+    await fetchVerified(view.storage_path, view.content_hash,
+      `proof3d__${view.consumer_role}.${extension}`, {
+        role: "canonical-3d-proof",
+        consumerRole: view.consumer_role,
+        sourceViewType: view.source_view_type,
+        // The pairing, stated per file so the manifest answers it directly.
+        surfaceKey: provider.atlasZoneSurfaceKey ?? null,
+        sourcePanelHash: provider.sourcePanelHash ?? null,
+        atlasMasterContentHash: provider.atlasMasterContentHash ?? null,
+        proofProducer: provider.proofProducer ?? null,
+        proofSourceCommit: provider.proofSourceCommit ?? null,
+        atlasConditioningVerified: provider.atlasConditioningVerified ?? null,
+      }, files);
+  }
+
+  await writePreviews(files);
 
   writeFileSync(`${outDir}/manifest.json`, JSON.stringify({
     generationId,
@@ -170,5 +250,6 @@ for (const row of wanted.sort((a, b) => `${a.artifact_kind}/${a.surface_key}`.lo
   });
   console.error(`ok ${name} ${bytes.length}B hashMatch=${observed === String(row.content_hash).toLowerCase()}`);
 }
+await writePreviews(manifest);
 writeFileSync(`${outDir}/manifest.json`, JSON.stringify(manifest, null, 2));
 console.error(`exported ${manifest.filter((m) => m.file).length} files`);
