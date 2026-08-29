@@ -296,3 +296,53 @@ test("an injected generator may still return raw bytes", () => {
   // rewriting every double.
   assert.match(flatSurface, /Buffer\.isBuffer\(produced\) \? produced : produced\?\.bytes \|\| null/);
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// AN inlineData PART CARRIES EXACTLY TWO FIELDS. (2026-08-29)
+//
+// verifiedReference returns { mimeType, data, bytes } — `bytes` so the QC judge
+// can re-encode the same reference without decoding base64 again. Spreading
+// that whole object into an inlineData part sent the third field to Gemini,
+// which rejects it outright:
+//
+//   HTTP 400 Invalid JSON payload received. Unknown name "bytes"
+//   at 'contents[0].parts[2].inline_data': Cannot find field.
+//
+// So the call could never succeed, on any surface, on any attempt — which is
+// why proof.build had no 2D Production Proof to show for any run. It took the
+// reason-propagation fix above to see it at all; before that every one of the
+// fifteen attempts reported "returned no image".
+//
+// The whole file is swept, not just the one call site: this is invisible until
+// it 400s, and the object that carries an extra field is the normal case.
+
+test("no inlineData part is handed a reference object wholesale", () => {
+  for (const [name, source] of [
+    ["gemini-flat-surface.cjs", flatSurface],
+    ["gemini-flat-wrap.cjs", readFileSync(new URL("../runtime/gemini-flat-wrap.cjs", import.meta.url), "utf8")],
+    ["designpanel-server-provider.cjs", readFileSync(new URL("../runtime/designpanel-server-provider.cjs", import.meta.url), "utf8")],
+  ]) {
+    for (const [, part] of source.matchAll(/\{\s*inlineData:\s*([^}]+?)\s*\}/g)) {
+      const value = part.trim();
+      const literal = value.startsWith("{");
+      // A bare identifier is only safe when the thing it names is built with
+      // exactly mimeType and data. Those are asserted by name below.
+      const vetted = ["reference", "reference.inline", "atlasAuthority.inlineData"].includes(value);
+      assert.ok(literal || vetted, `${name}: inlineData: ${value} is unvetted`);
+    }
+  }
+  // The flat-surface part now names its two fields rather than spreading.
+  assert.match(flatSurface, /inlineData: \{ mimeType: ownReference\.mimeType, data: ownReference\.data \}/);
+  // And the builders the vetted identifiers come from emit only those two.
+  const wrap = readFileSync(new URL("../runtime/gemini-flat-wrap.cjs", import.meta.url), "utf8");
+  assert.match(wrap, /return \{ mimeType: "image\/jpeg", data: bytes\.toString\("base64"\) \};/);
+  const provider = readFileSync(new URL("../runtime/designpanel-server-provider.cjs", import.meta.url), "utf8");
+  assert.match(provider, /reference: \{ mimeType: "image\/png", data: bounded\.toString\("base64"\) \}/);
+});
+
+test("verifiedReference still carries bytes for the judge", () => {
+  // The extra field is not the bug — sending it was. The judge re-encodes from
+  // ownReference.bytes, so removing it would break QC instead.
+  assert.match(flatSurface, /return \{ mimeType: item\.contentType, data: item\.bytes\.toString\("base64"\), bytes: item\.bytes \};/);
+  assert.match(flatSurface, /sharp\(ownReference\.bytes/);
+});

@@ -246,7 +246,21 @@ async function generateOneSurface({ apiKeys, model, surface, ownReference, sourc
           contents: [{ parts: [
             { text: `PANEL REFERENCE (${surface.surfaceKey}) — flatten THIS exact wrap side into ONE continuous flat field:` },
             { text: flatPrompt(surface.surfaceKey, vehicleName, sourceSetHash, textLock, attempt) },
-            { inlineData: ownReference },
+            // ONLY THE TWO FIELDS THE API DEFINES. (2026-08-29)
+            //
+            // `verifiedReference` returns { mimeType, data, bytes } -- `bytes`
+            // is there so the QC judge can re-encode the same reference without
+            // decoding base64 again. Spreading the whole object into inlineData
+            // sent that third field to Gemini, which rejects it outright:
+            //
+            //   HTTP 400 Invalid JSON payload received. Unknown name "bytes"
+            //   at 'contents[0].parts[2].inline_data': Cannot find field.
+            //
+            // So this call could never succeed, on any surface, on any attempt.
+            // It is why proof.build had no 2D Production Proof to show for any
+            // run -- three generation attempts and five stage attempts, all
+            // failing identically, all reported as "returned no image".
+            { inlineData: { mimeType: ownReference.mimeType, data: ownReference.data } },
           ] }],
           generationConfig: {
             responseModalities: ["TEXT", "IMAGE"],
