@@ -37,14 +37,16 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 
 ## Current release blocker — PR #260
 
-- [x] PR #260 exists and is mergeable.
-- [x] Head SHA: `9094150857d07211790ff2acdf5be550ee122556`.
+- [x] PR #260 exists.
+- [x] Original failing head SHA identified: `9094150857d07211790ff2acdf5be550ee122556`.
 - [x] Exact release run #729 identified.
-- [x] `executable-contracts` reaches `npm test` and fails there.
-- [x] `supabase-shadow` reaches fresh Auth/Storage/PostgREST/migrations/pgTAP and fails there.
-- [ ] Exact failing npm assertion identified.
+- [x] `executable-contracts` reached `npm test` and failed there.
+- [x] `supabase-shadow` reached fresh Auth/Storage/PostgREST/migrations/pgTAP and failed there.
+- [x] Exact npm-test bootstrap failure identified: `tests/supabase-bootstrap.test.mjs` still hard-coded the pre-kernel 81-migration chain while PR #260 adds migrations `20260829230000` and `20260829230100`.
+- [x] Bootstrap contract repaired to require the new 83-migration chain and explicitly include both Generation OS migrations. Repair commit: `046b4f4679dfc06278cde755741211b7acf351ad`.
+- [ ] Confirm whether any additional npm assertion remains after rerun.
 - [ ] Exact migration/pgTAP failure identified.
-- [ ] Failures fixed without redesigning A.T.L.A.S.
+- [ ] Supabase migration/pgTAP failure repaired without redesigning A.T.L.A.S.
 - [ ] Exact release gate rerun green.
 - [ ] PR #260 merged.
 - [ ] Exact merged SHA deployed to `designproai-prod-sfo3`.
