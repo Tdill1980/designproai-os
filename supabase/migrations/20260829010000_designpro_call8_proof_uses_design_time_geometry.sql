@@ -45,13 +45,17 @@
 -- text patches; re-emitting the body reverts every one. The fragment below is
 -- anchored on its own RAISE so it is unique -- the totalSqFt comparison alone
 -- appears twice in the function.
--- The dollar-quote tag is letters and underscores only, deliberately. The
--- first draft used $call8_geometry$, and the digit is what broke it: the
--- migration splitter's dollar-quote pattern does not admit one, so it never
--- entered quote mode, split on the first `;` inside an E-string, and reported
--- `syntax error at end of input (SQLSTATE 42601)` at statement 0 -- the whole
--- file. Every other tag in supabase/migrations is letters only; that was not a
--- style choice anywhere else either.
+-- THE CASE IS PARENTHESISED, AND THAT IS LOAD-BEARING. plpgsql reads an IF
+-- condition by scanning to the first THEN token at paren level zero, so a bare
+-- `OR CASE WHEN ... THEN ...` ends the condition on the CASE's own THEN. The
+-- rest of the arm is then read as statements, the IF never finds its END IF,
+-- and the body fails to compile with `syntax error at end of input
+-- (SQLSTATE 42601)` -- reported by the migration runner against statement 0,
+-- which reads like a parse failure of this file and is not one. It is
+-- `EXECUTE v_patched` refusing the function it was handed, twelve seconds in.
+-- Wrapping the CASE in parentheses puts its THEN at paren level one, where the
+-- scanner ignores it. Confirmed by compiling both forms against the live
+-- function: bare raises, parenthesised installs.
 DO $call_eight_geometry$
 DECLARE
   v_definition text;
@@ -60,7 +64,7 @@ DECLARE
 
   v_old constant text := E'      OR (p_receipt->>''totalSqFt'')::numeric IS DISTINCT FROM (v_manifest->>''totalSqFt'')::numeric\n    THEN RAISE EXCEPTION ''call8_flat_proof_contract_failed''; END IF;';
 
-  v_new constant text := E'      -- GENIE DEPLOYS ON ORDER (RULE 0.19), so a FREE entice run has no bound\n      -- production manifest and there is nothing here to compare against. Call 8\n      -- proofs the design-time geometry Call 1 already resolved and cut the six\n      -- panels to, and the proof''''s own trim table reports it. The receipt must\n      -- still declare a POSITIVE area, so a missing manifest is never a way to pass\n      -- with zero square feet. When a manifest IS bound -- the paid half -- the\n      -- receipt must match it exactly, unchanged.\n      OR CASE\n        WHEN v_manifest IS NULL OR pg_catalog.jsonb_typeof(v_manifest)=''null''\n        THEN COALESCE((p_receipt->>''totalSqFt'')::numeric, 0) <= 0\n        ELSE (p_receipt->>''totalSqFt'')::numeric IS DISTINCT FROM (v_manifest->>''totalSqFt'')::numeric\n      END\n    THEN RAISE EXCEPTION ''call8_flat_proof_contract_failed''; END IF;';
+  v_new constant text := E'      -- GENIE DEPLOYS ON ORDER (RULE 0.19), so a FREE entice run has no bound\n      -- production manifest and there is nothing here to compare against. Call 8\n      -- proofs the design-time geometry Call 1 already resolved and cut the six\n      -- panels to, and the trim table on the proof reports exactly that. The receipt\n      -- must still declare a POSITIVE area, so a missing manifest is never a way\n      -- to pass\n      -- with zero square feet. When a manifest IS bound -- the paid half -- the\n      -- receipt must match it exactly, unchanged. The parentheses around the\n      -- CASE keep its own THEN out of the IF scanner reach.\n      OR (CASE\n        WHEN v_manifest IS NULL OR pg_catalog.jsonb_typeof(v_manifest)=''null''\n        THEN COALESCE((p_receipt->>''totalSqFt'')::numeric, 0) <= 0\n        ELSE (p_receipt->>''totalSqFt'')::numeric IS DISTINCT FROM (v_manifest->>''totalSqFt'')::numeric\n      END)\n    THEN RAISE EXCEPTION ''call8_flat_proof_contract_failed''; END IF;';
 BEGIN
   v_definition := pg_catalog.pg_get_functiondef(pg_catalog.to_regprocedure(
     'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'
@@ -104,6 +108,13 @@ BEGIN
     'ELSE (p_receipt->>''totalSqFt'')::numeric IS DISTINCT FROM (v_manifest->>''totalSqFt'')::numeric') = 0
   THEN
     RAISE EXCEPTION 'call8_geometry_paid_comparison_lost';
+  END IF;
+  -- The CASE is parenthesised. Without this the body still LOOKS right and
+  -- simply refuses to compile, which reads as a parse failure of the migration.
+  IF pg_catalog.strpos(v_patched, 'OR (CASE') = 0
+    OR pg_catalog.strpos(v_patched, 'END)') = 0
+  THEN
+    RAISE EXCEPTION 'call8_geometry_case_unparenthesised';
   END IF;
 
   EXECUTE v_patched;
