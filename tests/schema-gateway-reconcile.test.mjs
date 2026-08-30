@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-65), [
+  assert.deepEqual(names.slice(-67), [
     "20260812170000_designpro_generation_attempts.sql",
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
@@ -209,6 +209,12 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // totalSqFt against results->'dimensionManifest', which RULE 0.19 leaves
     // absent until purchase, so proof.build could never record a built proof.
     "20260829010000_designpro_call8_proof_uses_design_time_geometry.sql",
+    // The Generation-ID OS kernel records immutable revision/run/stage history
+    // without becoming a second producer or workflow authority.
+    "20260829230000_designpro_generation_os_kernel.sql",
+    // Artifact and verified-receipt history plus the canonical server snapshot
+    // complete the same Generation-ID observability contract.
+    "20260829230100_designpro_generation_os_artifact_events.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

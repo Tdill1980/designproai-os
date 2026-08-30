@@ -1,0 +1,1 @@
+This branch is additive only: it records Generation-ID lineage and server evidence. It does not replace the existing dependency graph or mutate ATLAS creative generation, 3D proof generation, deterministic panels, QC, Topaz, entitlement, ZIP, or WrapBox execution.
