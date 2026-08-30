@@ -61,7 +61,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260827.v10-edge";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260830.v11-pure-panels";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -139,7 +139,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v9-labeled-topology";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v10-pure-panels";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1597,14 +1597,10 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       surfaceId: SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
       placement: zone.placement,
     })),
-    // The two large inputs travel by STORAGE PATH: a 2.2MB inline-base64 body
-    // killed the edge worker twice (2026-08-27). Customer references stay
+    // The deterministic guide travels by STORAGE PATH: a 2.2MB inline-base64
+    // body killed the edge worker twice (2026-08-27). Customer references stay
     // inline — they are already size-capped at 1600px by the verified loader.
     guideStoragePath: extras.guideStoragePath,
-    structuralReferenceStoragePath: extras.structuralReferenceStoragePath,
-    structuralReferenceMime: extras.structuralReferenceMime,
-    structuralPairedProofStoragePath: extras.structuralPairedProofStoragePath,
-    structuralPairedProofMime: extras.structuralPairedProofMime,
     referenceImagesBase64: extras.referenceImagesBase64,
     correctiveNote: extras.correctiveNote,
   };
@@ -2130,7 +2126,7 @@ function assertAtlasReuseContract(atlas, {
 async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
-    claimToken, input, surfaces, geometryAuthority, geometryResolution = null, topologyExamples = [],
+    claimToken, input, surfaces, geometryAuthority, geometryResolution = null,
     // panel.ready(surfaceKey). Called with that surface's identity and
     // dimensions the moment its panel exists, before the next cut starts, so a
     // consumer can publish it and release its 3D proof without waiting for the
@@ -2143,7 +2139,7 @@ async function generateOrReuseFlatAtlas(options) {
     // that gates on `onSurfaceReady` can condition that surface's proof against
     // it immediately.
     onMasterReady = null,
-    artboardQualityExamples = [], masterValidatorFactory = createAtlasMasterValidator,
+    masterValidatorFactory = createAtlasMasterValidator,
     // The Call-1 transport is injectable so a unit test can drive the authoring
     // loop without a live edge function. Production always uses the real POST.
     callEdge = callAtlasArtboardEdge,
@@ -2201,7 +2197,11 @@ async function generateOrReuseFlatAtlas(options) {
     `${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
     "utf8",
   ));
-  const currentExampleSetHash = exampleSetHash(topologyExamples, artboardQualityExamples);
+  // Current A.T.L.A.S. authoring is governed by its deterministic labeled
+  // rectangle guide. Historical vehicle/template examples are deliberately
+  // excluded: live generation f5bef168 proved that they teach the image model
+  // to draw doors, windows, handles and wheel arches inside the print regions.
+  const currentExampleSetHash = exampleSetHash();
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
     const expectedManifestHash = sha256(canonicalBytes(manifest));
@@ -2251,29 +2251,16 @@ async function generateOrReuseFlatAtlas(options) {
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
-  // The edge function receives: the labeled layout guide, the Houdini
-  // flattened structural reference (LAYOUT ONLY — the firewall lives in the
-  // edge prompt), and the verified customer logo/reference images. The
-  // gold-standard artboard examples are loaded by the edge function itself
-  // from its own bucket.
-  // THE PAIR IS THE LESSON — BOTH HALVES, OR IT IS NOT THE PAIR.
-  //
-  // `topologyExampleParts` emits the Houdini lesson as two images: the
-  // flattened top-view PANEL LAYOUT sheet and its corresponding finished 3D
-  // proof. When Call 1 moved onto the edge function this staged only
-  // `.find(...)` — the FIRST inline image — so the finished proof silently
-  // stopped reaching the authoring model, which is exactly the removal RULE
-  // 0.15 records as having cost the design once already and says in as many
-  // words not to repeat. Take every image the lesson emits, in order.
-  const topologyParts = await topologyExampleParts(topologyExamples);
-  const structuralImages = topologyParts.filter((part) => part?.inlineData?.data);
-  const structuralImage = structuralImages[0];
-  const pairedProofImage = structuralImages[1];
+  // The edge function receives only the deterministic current A.T.L.A.S.
+  // guide and verified customer assets. A legacy flattened-vehicle example or
+  // finished 3D proof is a stronger visual instruction than any text firewall;
+  // attaching either one caused Call 1 to reproduce vehicle anatomy inside the
+  // six rectangular print containers.
   const customerImageParts = [
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
-  // Stage the two large inputs where the edge function can read them with its
+  // Stage the guide where the edge function can read it with its
   // own service client. Content-addressed and upserted, so a retry or a second
   // revision re-uses the same object instead of writing another copy.
   const stageEdgeInput = async (bytes, contentType) => {
@@ -2285,20 +2272,8 @@ async function generateOrReuseFlatAtlas(options) {
     }
     return path;
   };
-  const structuralBytes = structuralImage?.inlineData?.data
-    ? Buffer.from(structuralImage.inlineData.data, "base64")
-    : null;
-  const structuralMime = structuralImage?.inlineData?.mimeType || "image/jpeg";
-  const pairedProofBytes = pairedProofImage?.inlineData?.data
-    ? Buffer.from(pairedProofImage.inlineData.data, "base64")
-    : null;
-  const pairedProofMime = pairedProofImage?.inlineData?.mimeType || "image/png";
   const edgeExtras = {
     guideStoragePath: await stageEdgeInput(authoringGuideBytes, "image/png"),
-    structuralReferenceStoragePath: await stageEdgeInput(structuralBytes, structuralMime),
-    structuralReferenceMime: structuralMime,
-    structuralPairedProofStoragePath: await stageEdgeInput(pairedProofBytes, pairedProofMime),
-    structuralPairedProofMime: pairedProofMime,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   if (typeof masterValidatorFactory !== "function") {
@@ -2794,9 +2769,6 @@ async function generateOrReuseFlatAtlas(options) {
     productionEligible: panel.productionEligible,
   }));
 
-  const topologyExample = topologyExamples.find((example) => example?.identity?.exampleId) || null;
-  const primaryTopologyExample = topologyExamples[0] || null;
-
   const rowPayload = {
     // The SAME id the progressive root node handed out at master-ready time.
     // This row is the persisted record of that identity, not the source of it
@@ -2835,9 +2807,9 @@ async function generateOrReuseFlatAtlas(options) {
     width_px: CANVAS.widthPx,
     height_px: CANVAS.heightPx,
     effective_ppi: manifest.quality.minimumEffectivePpi,
-    example_id: topologyExample?.identity.exampleId || null,
-    example_guide_hash: topologyExample?.identity.guideContentHash || null,
-    example_master_hash: topologyExample?.identity.masterContentHash || null,
+    example_id: null,
+    example_guide_hash: null,
+    example_master_hash: null,
     metadata: {
       contract: ATLAS_CONTRACT,
       inputContract: INPUT_CONTRACT,
@@ -2848,12 +2820,11 @@ async function generateOrReuseFlatAtlas(options) {
       callOnePanelContract: CALL_ONE_PANEL_CONTRACT,
       callOnePanels: callOnePanelRecords,
       examplePurpose: EXAMPLE_PURPOSE,
-      topologyExamplesApplied: topologyExamples.length,
-      topologyExampleIdentity: primaryTopologyExample?.identity || null,
-      topologyExampleIdentities: topologyExamples.map((example) => example?.identity).filter(Boolean),
-      designPanelArtboardQualityExamplesApplied: artboardQualityExamples.length,
-      designPanelArtboardQualityExampleIdentities: artboardQualityExamples
-        .map((example) => example?.identity).filter(Boolean),
+      topologyExamplesApplied: 0,
+      topologyExampleIdentity: null,
+      topologyExampleIdentities: [],
+      designPanelArtboardQualityExamplesApplied: 0,
+      designPanelArtboardQualityExampleIdentities: [],
       designPanelArtboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
       masterProviderContract: MASTER_PROVIDER_CONTRACT,
       masterPromptHash: promptHash,

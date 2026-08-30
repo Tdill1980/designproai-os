@@ -51,6 +51,7 @@ function passingReview(body) {
     masterSha256: props.masterSha256.enum[0],
     guideSha256: props.guideSha256.enum[0],
     outputFormatContract: "pass",
+    flatArtworkOnlyContract: "pass",
     topologyContract: "pass",
     zoneCoverageContract: "pass",
     fullBleedNoCutoutsContract: "pass",
@@ -128,6 +129,7 @@ test("master QC parser is identity-bound and rejects extra fields", () => {
     masterSha256: masterHash,
     guideSha256: guideHash,
     outputFormatContract: "pass",
+    flatArtworkOnlyContract: "pass",
     topologyContract: "pass",
     zoneCoverageContract: "pass",
     fullBleedNoCutoutsContract: "pass",
@@ -145,6 +147,30 @@ test("master QC parser is identity-bound and rejects extra fields", () => {
     () => parseMasterQcResponse(payload(review), { masterHash, guideHash }),
     (error) => error?.code === "atlas_master_qc_response_malformed",
   );
+});
+
+test("vehicle anatomy in a print region fails the master before proof fan-out", async () => {
+  const masterBytes = await patternedMaster();
+  const guideBytes = await sharp({
+    create: { width: 300, height: 200, channels: 3, background: "#e5e5e5" },
+  }).png().toBuffer();
+  const validate = createAtlasMasterValidator({
+    provider: {
+      generateRaw: async ({ body }) => ({
+        payload: payload({
+          ...passingReview(body),
+          flatArtworkOnlyContract: "fail",
+          reasons: ["front and rear regions depict truck doors and wheel arches"],
+        }),
+        model: "gemini-2.5-flash",
+        keyFingerprint: "0123456789ab",
+      }),
+    },
+  });
+  const result = await validate({ masterBytes, guideBytes, manifest, input: {} });
+  assert.equal(result.accepted, false);
+  assert.equal(result.code, "atlas_master_qc_semantic_failed");
+  assert.match(result.reason, /flatArtworkOnlyContract/);
 });
 
 

@@ -675,6 +675,8 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
     masterCutoutSurfaces: atlasRow.metadata?.masterCutoutSurfaces || [],
     createdAt: atlasRow.created_at,
     geminiImageRequestCount: Number(atlasRow.metadata?.geminiImageRequestCount),
+    callOneTimings: atlasRow.metadata?.callOneTimings || null,
+    atlasEdgeProvenance: atlasRow.metadata?.atlasEdgeProvenance || [],
   };
   step(`A.T.L.A.S. master ${atlasRow.master_content_hash.slice(0, 12)} `
     + `(${atlasRow.prompt_version}, ${atlasRow.width_px}x${atlasRow.height_px}, QC passed)`);
@@ -725,6 +727,14 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
     .eq("request_id", requestId)
     .is("superseded_at", null);
   if (viewError) throw new Error(`generation view read failed: ${viewError.message}`);
+  evidence.callsOneToSeven = {
+    acceptedViews: (viewRows || []).map((view) => ({
+      sourceViewType: view.source_view_type,
+      consumerRole: view.consumer_role,
+      createdAt: view.created_at,
+    })),
+    refusedViews: Array.isArray(receipt.refusedViews) ? receipt.refusedViews : [],
+  };
   const driverRow = (viewRows || []).find((view) => view.source_view_type === "side");
   if (!driverRow?.created_at) throw new Error("Driver proof has no durable availability timestamp");
   const atlasSeconds = elapsedSeconds(row.created_at, atlasRow.created_at, "A.T.L.A.S. latency");
@@ -758,7 +768,10 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
     };
   }
   if (Object.keys(renderAssets).length !== 7) {
-    throw new Error(`expected seven placed views, found ${Object.keys(renderAssets).length}`);
+    const accepted = evidence.callsOneToSeven.acceptedViews.map((view) => view.sourceViewType).join(", ") || "none";
+    const refused = evidence.callsOneToSeven.refusedViews
+      .map((view) => `${view.sourceViewType}:${view.reason}`).join(", ") || "none recorded";
+    throw new Error(`expected seven placed views, found ${Object.keys(renderAssets).length}; accepted ${accepted}; refused ${refused}`);
   }
   step(`revision ${revisionId} carries seven placed views`);
   return {

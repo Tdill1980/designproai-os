@@ -135,7 +135,7 @@ test("provisional Google-grounded geometry is truthfully immutable and remains p
   assert.equal(body.panels.length, 6);
 });
 
-test("Call 1 sees the paired flattened top-view and corresponding finished 3D proof", async () => {
+test("the historical paired-example parser remains readable for forensics", async () => {
   const example = topologyExamples.loadBundledFlatToFinishedExample();
   const parts = await atlas._test.topologyExampleParts([example]);
 
@@ -146,21 +146,20 @@ test("Call 1 sees the paired flattened top-view and corresponding finished 3D pr
   assert.equal(parts[3].inlineData.mimeType, "image/png");
   assert.match(parts[4].text, /CALL 1 TARGET.*NEW flattened top-view design/i);
   assert.notEqual(parts[1].inlineData.data, parts[3].inlineData.data,
-    "the model must receive both sides of the real teaching pair");
+    "the archived lesson must retain both original halves");
 
   const flattened = Buffer.from(parts[1].inlineData.data, "base64");
   const finished = Buffer.from(parts[3].inlineData.data, "base64");
   assert.deepEqual([...flattened.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   assert.deepEqual([...finished.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 
-  // The teaching contract rides the parts themselves; the flat-master output
-  // contract (LAYOUT ONLY, never a vehicle photograph) lives in the deployed
-  // edge function and is locked by tests/atlas-artboard-edge-call1.
+  // These archival parts are not connected to current Call 1. Their historical
+  // framing remains parseable so old generations can be audited truthfully.
   assert.match(parts[0].text, /Copy no artwork, wording, logo, color or brand/i);
   assert.match(parts[2].text, /context only; do not return a vehicle image in Call 1/i);
 });
 
-test("Atlas preserves DesignPanel loadArtboardExamples behavior as optional quality evidence", async () => {
+test("the historical artboard-example loader remains readable for non-ATLAS paths", async () => {
   const downloads = new Map([
     ["quality-one.png", new Blob([Buffer.from("first-quality-example")], { type: "image/png" })],
     ["quality-two.JPG", new Blob([Buffer.from("second-quality-example")], { type: "image/jpeg" })],
@@ -209,7 +208,7 @@ test("Atlas preserves DesignPanel loadArtboardExamples behavior as optional qual
   const unavailable = await topologyExamples.loadDesignPanelArtboardExamples({
     storage: { from() { throw new Error("live optional bucket is unseeded"); } },
   });
-  assert.deepEqual(unavailable, [], "the hash-pinned Houdini pair remains mandatory when optional gold examples are absent");
+  assert.deepEqual(unavailable, [], "an unavailable historical example bucket remains non-fatal");
 });
 
 test("Call 1 aggregate inline bytes fail closed before Gemini's request ceiling", () => {
@@ -250,14 +249,19 @@ test("4K atlas reports effective PPI honestly and cannot masquerade as print rea
   assert.equal(manifest.zones.some((zone) => zone.surfaceKey === "closeup" || zone.surfaceKey === "hero3d"), false);
 });
 
-test("topology examples are firewalled from customer style", async () => {
-  // The firewall is stated where the prompt is now assembled — inside the
-  // deployed edge function — and on the attached example parts themselves.
+test("historical topology examples remain parseable but are dormant in live authoring", async () => {
+  // Historical rows remain readable for forensics, but their bytes are never
+  // attached to current Call 1. The helper's own firewall remains intact in
+  // case an operator exports the old lesson outside the live path.
   const example = topologyExamples.loadBundledFlatToFinishedExample();
   const parts = await atlas._test.topologyExampleParts([example]);
   assert.match(parts[0].text, /Copy no artwork, wording, logo, color or brand/i);
-  const edge = readFileSync(new URL("../../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edge, /teaches LAYOUT ONLY/);
+  const runtimeSource = readFileSync(new URL("../../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  const live = runtimeSource.slice(
+    runtimeSource.indexOf("async function generateOrReuseFlatAtlas"),
+    runtimeSource.indexOf("async function updateAtlasRevision"),
+  );
+  assert.doesNotMatch(live, /topologyExampleParts\(/);
   // And the zone map the model follows is the deterministic guide, not prose.
   const manifest = atlas.buildAtlasManifest(surfaces);
   assert.equal(manifest.zones.length, 6);
@@ -368,23 +372,15 @@ test("all seven proof prompts carry their exact master-bound native zone and ide
   };
   const slots = worker.slotsFrom(undefined, v3Input, {}, flatAtlas);
   assert.equal(slots.length, 7);
-  // `slotsFrom` no longer precomputes either field for the flat-first path --
-  // both are LAZY (owner 2026-08-27 forward fix): `promptParts` is inert
-  // (`[]`) because `createAtlasDesignPanelProvider` overwrites it with its own
-  // `conditionedPromptPartsFor` result at generation time, gated per surface;
-  // `authorityMetadata` is a thunk, resolved by `generation-engine.cjs` only
-  // after that view's generation is accepted. Calling `viewAuthorityFor` for
-  // all seven views eagerly, at `.map()` time before a single panel exists, is
-  // what caused the 2026-08-27 outage. This test now calls the SAME functions
-  // the real provider and the real persist path call, at the point they are
-  // actually safe to call -- against this fixture, whose `viewAuthorities` are
-  // already fully populated, exactly mirroring a surface whose panel has
-  // already landed.
-  assert.equal(slots.every((slot) => Array.isArray(slot.promptParts) && slot.promptParts.length === 0), true);
-  assert.equal(slots.every((slot) => typeof slot.authorityMetadata === "function"), true);
+  // `slotsFrom` is called only after a released panel's persistence
+  // prerequisite resolves. At that point it binds the exact conditioning bytes
+  // and immutable authority synchronously; no callback or later proof can
+  // substitute another surface.
+  assert.equal(slots.every((slot) => Array.isArray(slot.promptParts) && slot.promptParts.length > 0), true);
+  assert.equal(slots.every((slot) => slot.authorityMetadata && typeof slot.authorityMetadata === "object"), true);
 
   const promptPartsFor = (slot) => worker.conditionedPromptPartsFor(v3Input, slot.sourceViewType, undefined, flatAtlas);
-  const authorityFor = (slot) => slot.authorityMetadata();
+  const authorityFor = (slot) => slot.authorityMetadata;
 
   assert.equal(new Set(slots.map((slot) => promptPartsFor(slot)[0].inlineData.data)).size, 6,
     "Close-Up intentionally shares Driver's exact master zone; every other proof owns its native zone");
@@ -504,7 +500,6 @@ test("reusing an atlas verifies the stored projection is the deterministic child
 test("initial authoring makes one image call, stores guide/manifest/master/projection, then inserts one immutable row", async () => {
   const events = [];
   let providerOptions = null;
-  const pairedExample = topologyExamples.loadBundledFlatToFinishedExample();
   const generated = await atlas.renderAtlasGuide(atlas.buildAtlasManifest(surfaces));
   const provider = {};
   // Call 1 is a POST to the deployed design-panel-ai-generate (owner directive
@@ -566,10 +561,10 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
       assert.equal(name, "designpro_flat_atlas_revisions");
       return table;
     },
-    // Call 1 stages its two large inputs (authoring guide + structural
-    // reference) to content-addressed objects and sends their PATHS, so an
-    // upload here is expected; a DOWNLOAD would mean a customer logo or an
-    // existing atlas was fetched, which this test forbids.
+    // Call 1 stages its deterministic authoring guide to a content-addressed
+    // object and sends its PATH. Legacy vehicle/template examples must not be
+    // staged. A DOWNLOAD would mean a customer logo or existing atlas was
+    // fetched, which this test forbids.
     storage: {
       from() {
         return {
@@ -607,7 +602,6 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
       productionEligible: false,
       operatorValidated: false,
     },
-    topologyExamples: [pairedExample],
     masterValidatorFactory: () => async ({ masterBytes, guideBytes }) => {
       events.push("master-qc");
       return {
@@ -648,8 +642,8 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(providerOptions.mode, "atlas-artboard");
   assert.equal(providerOptions.panels.length, 6);
   assert.match(providerOptions.guideStoragePath, /^atlas-call1-inputs\//, "the deterministic guide is staged, not inlined");
-  assert.ok(providerOptions.structuralReferenceStoragePath, "the paired topology example rides the request");
-  assert.match(providerOptions.structuralReferenceMime, /^image\/(png|jpeg)$/, "the teaching pair travels by path + mime");
+  assert.equal(providerOptions.structuralReferenceStoragePath, undefined, "obsolete vehicle/template examples never reach Call 1");
+  assert.equal(providerOptions.structuralPairedProofStoragePath, undefined, "finished 3D examples never reach Call 1");
   assert.equal(inserted.example_id, null, "release-bundled examples never forge a database example foreign key");
   assert.equal(inserted.production_eligible, false);
   assert.equal(inserted.manifest.geometryAuthority.status, "provisional");
@@ -681,10 +675,10 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
     assert.ok(stored.some((item) => item.storagePath === panel.storagePath), `${panel.surfaceKey} bytes were not stored`);
   }
   assert.equal(new Set(panels.map((panel) => panel.contentHash)).size, 6, "six distinct panels");
-  assert.equal(inserted.metadata.topologyExamplesApplied, 1);
+  assert.equal(inserted.metadata.topologyExamplesApplied, 0);
   assert.equal(inserted.metadata.masterQcPassed, true);
   assert.equal(inserted.metadata.masterQcContract, "designpro.atlas-master-semantic-qc.v1");
-  assert.equal(inserted.metadata.topologyExampleIdentity.source, "exact-server-release");
+  assert.equal(inserted.metadata.topologyExampleIdentity, null);
   assert.equal(inserted.projection_content_type, "image/jpeg");
   assert.ok(inserted.projection_byte_size <= atlas.PROJECTION_MAX_BYTES);
   assert.equal(inserted.metadata.projectionSourceMasterHash, inserted.master_content_hash);

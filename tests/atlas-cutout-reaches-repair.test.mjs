@@ -97,6 +97,7 @@ function review(body, overrides = {}) {
     masterSha256: props.masterSha256.enum[0],
     guideSha256: props.guideSha256.enum[0],
     outputFormatContract: "pass",
+    flatArtworkOnlyContract: "pass",
     topologyContract: "pass",
     zoneCoverageContract: "pass",
     fullBleedNoCutoutsContract: "pass",
@@ -201,6 +202,7 @@ test("C: cut-outs alongside any other fatal contract stay fatal", async () => {
     ["briefFidelityContract", "brief fidelity"],
     ["passengerMirrorContract", "passenger mirror"],
     ["outputFormatContract", "output format"],
+    ["flatArtworkOnlyContract", "flat artwork only"],
   ]) {
     const validate = validatorReturning({
       zoneCoverageContract: "fail",
