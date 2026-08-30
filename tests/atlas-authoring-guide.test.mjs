@@ -305,9 +305,10 @@ test("the solid-panel output contract lives in the edge function's flat contract
   assert.doesNotMatch(atlasContract, /widthInches|heightInches/);
 });
 
-test("the prompt version moved off v6, so masters authored with the labelled guide are refused", () => {
+test("the prompt version fences pure-panel masters from every obsolete authoring contract", () => {
   const { readFileSync } = require("node:fs");
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  assert.match(atlasSource, /designpro-flat-first-atlas-20260827\.v10-edge/);
+  assert.match(atlasSource, /designpro-flat-first-atlas-20260830\.v11-pure-panels/);
+  assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260827\.v10-edge"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260824\.v6"/);
 });
