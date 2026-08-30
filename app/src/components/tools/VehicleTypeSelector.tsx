@@ -50,16 +50,20 @@ interface VehicleTypeSelectorProps {
   value: VehicleType;
   onChange: (type: VehicleType) => void;
   className?: string;
+  allowedTypes?: VehicleType[];
 }
 
-export const VehicleTypeSelector = ({ value, onChange, className }: VehicleTypeSelectorProps) => {
+export const VehicleTypeSelector = ({ value, onChange, className, allowedTypes }: VehicleTypeSelectorProps) => {
+  const visibleOptions = allowedTypes?.length
+    ? OPTIONS.filter((option) => allowedTypes.includes(option.id))
+    : OPTIONS;
   return (
     <div className={cn("space-y-1.5", className)}>
       <label className="text-[10px] text-muted-foreground uppercase tracking-wider">
         Vehicle Type
       </label>
       <div className="grid grid-cols-4 gap-1.5">
-        {OPTIONS.map((opt) => {
+        {visibleOptions.map((opt) => {
           const selected = value === opt.id;
           return (
             <button

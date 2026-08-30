@@ -80,18 +80,19 @@ test("the canary crosses purchase with one real Generation-bound owner promotion
   assert.match(canary, /p_discount_cents: OWNER_PROMOTION_DISCOUNT_CENTS/);
   assert.match(canary, /from\("designpro_purchase_entitlements"\)/);
   assert.match(canary, /row\.entice_run_id !== enticeRunId \|\| row\.generation_id !== generationId/);
+  assert.match(canary, /without[\s\S]*a Stripe dependency/);
   assert.doesNotMatch(canary, /paid\s*=\s*true|paid:\s*true/);
 });
 
-test("the July 24 canary carries the exact recovered F-250 trim geometry", () => {
-  for (const literal of [
-    "driver: { widthInches: 153, heightInches: 56 }",
-    "passenger: { widthInches: 153, heightInches: 56 }",
-    "hood: { widthInches: 71.5, heightInches: 56 }",
-    "roof: { widthInches: 74.3, heightInches: 54.8 }",
-    "front: { widthInches: 129, heightInches: 34 }",
-    "rear: { widthInches: 76, heightInches: 54 }",
-  ]) assert.ok(canary.includes(literal), literal);
+test("the canary prepares geometry from the current GENIE catalog only", () => {
+  assert.match(canary, /previewGenieDimensionsFromCatalog/);
+  assert.match(canary, /genie-panelizer-catalog/);
+  assert.match(canary, /current GENIE preparation returned no immutable manifest hash/);
+  assert.match(canary, /A\.T\.L\.A\.S\. did not use the GENIE manifest prepared before Call 1/);
+  assert.doesNotMatch(canary, /designpro_vehicle_specs_universal/);
+  assert.doesNotMatch(canary, /source_urls|validated_surfaces|legacy-geometry-evidence/);
+  assert.doesNotMatch(canary, /July 24|July24|kfapjdyythzyvnpdeghu/);
+  assert.doesNotMatch(workflow, /views_json|VIEWS_B64|July 24|July24|kfapjdyythzyvnpdeghu/);
   assert.match(canary, /DID-\$\{generationId\.replaceAll/);
 });
 

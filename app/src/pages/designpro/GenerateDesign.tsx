@@ -30,6 +30,7 @@ import {
   dpApi,
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type FlatAtlasRevision,
+  type GenieDimensionPreview,
   type GenerationPipelineMode,
   GenerationRequestState,
   GenerationVehicle,
@@ -39,10 +40,6 @@ import {
   SOURCE_VIEW_TYPE_FOR_ROLE,
   SURFACE_LABEL,
 } from "@/lib/designpro-api";
-import {
-  FLAT_FIRST_ATLAS_UI_ENABLED,
-  flatFirstAtlasSupportedVehicleType,
-} from "@/lib/designpro-flat-first";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,13 +60,6 @@ const VEHICLE_TYPES: Array<{ value: GenerationVehicle["type"]; label: string }> 
   { value: "truck", label: "Truck / box truck" },
   { value: "suv", label: "SUV" },
   { value: "van", label: "Van" },
-  { value: "motorcycle", label: "Motorcycle" },
-  { value: "boat", label: "Boat" },
-  { value: "bus", label: "Bus" },
-  { value: "rv", label: "RV" },
-  { value: "trailer", label: "Trailer" },
-  { value: "aircraft", label: "Aircraft" },
-  { value: "heavy_equipment", label: "Heavy equipment" },
 ];
 
 const TERMINAL_STATES = ["outputs_ready", "failed", "cancelled"];
@@ -217,9 +207,15 @@ export default function GenerateDesign() {
   const [views, setViews] = useState<GenerationView[]>([]);
   const [atlasRevisions, setAtlasRevisions] = useState<FlatAtlasRevision[]>([]);
   const [atlasLoadError, setAtlasLoadError] = useState("");
-  const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>("legacy");
-  const [vehicleType, setVehicleType] = useState<GenerationVehicle["type"]>("van");
-  const [requestPipelineMode, setRequestPipelineMode] = useState<GenerationPipelineMode>("legacy");
+  const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  const [vehicleType, setVehicleType] = useState<GenerationVehicle["type"]>("truck");
+  const [vehicleYear, setVehicleYear] = useState("");
+  const [vehicleMake, setVehicleMake] = useState("");
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [designPrep, setDesignPrep] = useState<GenieDimensionPreview | null>(null);
+  const [designPrepVehicle, setDesignPrepVehicle] = useState("");
+  const [designPrepBusy, setDesignPrepBusy] = useState(false);
+  const [requestPipelineMode, setRequestPipelineMode] = useState<GenerationPipelineMode>(FLAT_FIRST_ATLAS_PIPELINE_MODE);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -227,8 +223,48 @@ export default function GenerateDesign() {
 
   const requestId = request?.requestId;
   const state = request?.state;
-  const isFlatFirstDiagnostic = requestPipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  const isAtlasRequest = requestPipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
   const latestAtlas = atlasRevisions[atlasRevisions.length - 1];
+  const currentVehicleIdentity = [vehicleYear, vehicleMake, vehicleModel, vehicleType]
+    .map((value) => value.trim().toLowerCase())
+    .join("|");
+  const designPrepIsCurrent = Boolean(designPrep && designPrepVehicle === currentVehicleIdentity);
+
+  function changeVehicle(setter: (value: string) => void, value: string) {
+    setter(value);
+    setDesignPrep(null);
+    setDesignPrepVehicle("");
+  }
+
+  async function beginDesignPrep() {
+    const vehicle = {
+      year: vehicleYear.trim(),
+      make: vehicleMake.trim(),
+      model: vehicleModel.trim(),
+      type: vehicleType,
+    };
+    if (!vehicle.year || !vehicle.make || !vehicle.model) {
+      setError("Enter the vehicle year, make, and model before beginning Design Prep.");
+      return;
+    }
+    setError("");
+    setDesignPrepBusy(true);
+    setProgress("Beginning Design Prep — pulling vehicle dimensions…");
+    try {
+      const prepared = await dpApi.previewGenieDimensions(vehicle);
+      setDesignPrep(prepared);
+      setDesignPrepVehicle(currentVehicleIdentity);
+    } catch (cause) {
+      setDesignPrep(null);
+      setDesignPrepVehicle("");
+      setError(cause instanceof ApiError
+        ? `Design Prep could not pull vehicle dimensions (${cause.code}).`
+        : "Design Prep could not pull vehicle dimensions.");
+    } finally {
+      setDesignPrepBusy(false);
+      setProgress("");
+    }
+  }
 
   const loadViews = useCallback(() => {
     if (!requestId) return;
@@ -239,7 +275,7 @@ export default function GenerateDesign() {
   }, [requestId]);
 
   const loadAtlas = useCallback(() => {
-    if (!requestId || !isFlatFirstDiagnostic) return;
+    if (!requestId || !isAtlasRequest) return;
     dpApi
       .listFlatAtlasRevisions(requestId)
       .then((items) => {
@@ -253,7 +289,7 @@ export default function GenerateDesign() {
             : "The A.T.L.A.S. record could not be loaded.",
         );
       });
-  }, [requestId, isFlatFirstDiagnostic]);
+  }, [requestId, isAtlasRequest]);
 
   // Poll while the worker runs. The request is durable, so a browser refresh
   // resumes reporting rather than losing the job.
@@ -277,17 +313,16 @@ export default function GenerateDesign() {
   }, [requestId, state, request?.views?.length, loadViews]);
 
   useEffect(() => {
-    if (!requestId || !isFlatFirstDiagnostic) return;
+    if (!requestId || !isAtlasRequest) return;
     loadAtlas();
     const timer = window.setInterval(loadAtlas, atlasRevisions.length ? 240000 : 5000);
     return () => window.clearInterval(timer);
-  }, [requestId, isFlatFirstDiagnostic, atlasRevisions.length, loadAtlas]);
+  }, [requestId, isAtlasRequest, atlasRevisions.length, loadAtlas]);
 
   // The seven views are only half the job. As soon as the database confirms the
   // handoff is valid, advance into the existing Calls 8–12 workflow — the
   // operator should not have to re-enter anything to get a production pack.
   useEffect(() => {
-    if (isFlatFirstDiagnostic) return;
     if (!request || request.state !== "outputs_ready" || request.handoffReady !== true) return;
     if (handingOff) return;
     setHandingOff(true);
@@ -302,13 +337,13 @@ export default function GenerateDesign() {
             : "The production handoff failed.",
         );
       });
-  }, [request, handingOff, navigate, isFlatFirstDiagnostic]);
+  }, [request, handingOff, navigate]);
 
   // The regenerate route is keyed by the camera the frozen view contract names,
   // not by the role that consumes it.
   async function regenerate(role: RenderRole, instruction: string) {
     if (!requestId) return;
-    if (isFlatFirstDiagnostic) {
+    if (isAtlasRequest) {
       setError("An A.T.L.A.S. proof cannot be regenerated independently. Start a new A.T.L.A.S. run.");
       return;
     }
@@ -330,6 +365,10 @@ export default function GenerateDesign() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!designPrepIsCurrent) {
+      setError("Press “Enter vehicle — begin Design Prep” before generating the design.");
+      return;
+    }
     setBusy(true);
     setError("");
     const form = new FormData(event.currentTarget);
@@ -442,49 +481,14 @@ export default function GenerateDesign() {
 
       {!request && (
         <form className="flex flex-col gap-5" onSubmit={submit}>
-          {FLAT_FIRST_ATLAS_UI_ENABLED && (
-            <Panel
-              eyebrow="Pipeline test"
-              title="Choose how this run starts"
-              description="Legacy remains the default. A.T.L.A.S. creates an immutable guide + canonical master before it renders the seven vehicle proofs."
-            >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  aria-pressed={pipelineMode === "legacy"}
-                  onClick={() => setPipelineMode("legacy")}
-                  className={`rounded-xl border p-4 text-left transition ${
-                    pipelineMode === "legacy"
-                      ? "border-primary bg-primary/10"
-                      : "border-border bg-card hover:border-primary/40"
-                  }`}
-                >
-                  <span className="text-sm font-semibold">Legacy production</span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    Existing v2 path, including the automatic Calls 8–12 handoff.
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!flatFirstAtlasSupportedVehicleType(vehicleType)}
-                  aria-pressed={pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE}
-                  onClick={() => setPipelineMode(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
-                  className={`rounded-xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-                      ? "border-cyan-400 bg-cyan-400/10"
-                      : "border-border bg-card hover:border-cyan-400/40"
-                  }`}
-                >
-                  <span className="text-sm font-semibold">A.T.L.A.S. (flat-first test)</span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    Automatically grounds proof-layout proportions, stores the before guide and canonical after master, then projects that same design into seven proofs. Car, truck, SUV and van only; production stays locked.
-                  </span>
-                </button>
-              </div>
-            </Panel>
-          )}
+          <Panel
+            className="order-1"
+            eyebrow="DesignProAI operating system"
+            title="One A.T.L.A.S. artifact graph"
+            description="One prepared vehicle manifest drives one canonical master, six extracted panels, seven matched 3D proofs, and the production handoff."
+          />
 
-          <Panel eyebrow="The design">
+          <Panel className="order-3" eyebrow="The design">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <Label htmlFor="brief" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -515,7 +519,7 @@ export default function GenerateDesign() {
             vector type for the strings, the uploaded bytes for the logo -- so no
             image model ever spells the company name or redraws the mark.
           */}
-          <Panel eyebrow="Commercial identity">
+          <Panel className="order-4" eyebrow="Commercial identity">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
                 label="Company name"
@@ -544,11 +548,16 @@ export default function GenerateDesign() {
             </div>
           </Panel>
 
-          <Panel eyebrow="Vehicle identity">
+          <Panel
+            className="order-2"
+            eyebrow="Vehicle identity"
+            title="Enter the vehicle, then begin Design Prep"
+            description="After Year, Make, and Model are complete, press Enter vehicle. DesignProAI immediately pulls GENIE dimensions and prepares the labeled A.T.L.A.S. topology while you continue the creative brief."
+          >
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Year" name="year" required />
-              <Field label="Make" name="make" required />
-              <Field label="Model" name="model" required />
+              <Field label="Year" name="year" required value={vehicleYear} onChange={(event) => changeVehicle(setVehicleYear, event.target.value)} />
+              <Field label="Make" name="make" required value={vehicleMake} onChange={(event) => changeVehicle(setVehicleMake, event.target.value)} />
+              <Field label="Model" name="model" required value={vehicleModel} onChange={(event) => changeVehicle(setVehicleModel, event.target.value)} />
               <div>
                 <Label htmlFor="type" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Vehicle type
@@ -560,7 +569,8 @@ export default function GenerateDesign() {
                   onChange={(event) => {
                     const next = event.target.value as GenerationVehicle["type"];
                     setVehicleType(next);
-                    if (!flatFirstAtlasSupportedVehicleType(next)) setPipelineMode("legacy");
+                    setDesignPrep(null);
+                    setDesignPrepVehicle("");
                   }}
                   required
                   className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -572,57 +582,46 @@ export default function GenerateDesign() {
                   ))}
                 </select>
               </div>
+              <div className="sm:col-span-2 flex flex-col gap-3 rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-4">
+                <div>
+                  <p className="text-sm font-semibold text-cyan-100">Required: press Enter to begin Design Prep</p>
+                  <p className="mt-1 text-xs leading-5 text-cyan-100/80">
+                    This sends the vehicle identity immediately. The final design is not generated until the creative prompt is submitted.
+                  </p>
+                </div>
+                <div>
+                  <Button type="button" onClick={beginDesignPrep} disabled={designPrepBusy}>
+                    {designPrepBusy ? "Beginning Design Prep…" : "Enter vehicle — begin Design Prep"}
+                  </Button>
+                </div>
+                {designPrepBusy && <Loading label="Beginning Design Prep — pulling vehicle dimensions…" />}
+                {designPrepIsCurrent && designPrep && (
+                  designPrep.surfaces.length === 6 ? (
+                    <Notice tone="success">
+                      Design Prep ready — six labeled surfaces are bound to GENIE manifest {designPrep.resolution.genieManifestHash?.slice(0, 16)}… You may continue the creative prompt.
+                    </Notice>
+                  ) : (
+                    <Notice tone="warning">
+                      Vehicle received. GENIE needs an exact configuration match; A.T.L.A.S. will keep this geometry provisional and production-locked until it is validated.
+                    </Notice>
+                  )
+                )}
+              </div>
             </div>
           </Panel>
 
-          {pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE ? (
-            <Panel
-              eyebrow="Diagnostic identity"
-              description="This name labels the saved A.T.L.A.S. master and proofs. The test does not register a WrapBox recipient or bind an order."
-            >
-              <Field label="Design name" name="designName" maxLength={240} required wide />
-            </Panel>
-          ) : (
-            <Panel
-              eyebrow="Immutable order + WrapBox recipient"
-              description="Enter normal business information — never database IDs or hashes. The order or payment reference is hashed at the gateway and never stored in its original form."
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field
-                  label="Order #"
-                  name="orderNumber"
-                  pattern="[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}"
-                  maxLength={120}
-                  required
-                />
-                <Field
-                  label="Confirmed customer email"
-                  name="customerEmail"
-                  type="email"
-                  autoComplete="email"
-                  maxLength={320}
-                  required
-                />
-                <Field label="Customer reference / name" name="customerReference" minLength={1} maxLength={160} required />
-                <Field
-                  label="Order or payment verification reference"
-                  name="verificationReference"
-                  minLength={3}
-                  maxLength={256}
-                  autoComplete="off"
-                  spellCheck={false}
-                  required
-                  wide
-                />
-                <Field label="Design name" name="designName" maxLength={240} required wide />
-              </div>
-            </Panel>
-          )}
+          <Panel
+            className="order-5"
+            eyebrow="Design identity"
+            description="This name stays bound to the A.T.L.A.S. master, six panels, seven proofs, and production artifacts."
+          >
+            <Field label="Design name" name="designName" maxLength={240} required wide />
+          </Panel>
 
-          {error && <Notice tone="error">{error}</Notice>}
-          {progress && <Notice>{progress}</Notice>}
+          {error && <div className="order-6"><Notice tone="error">{error}</Notice></div>}
+          {progress && <div className="order-7"><Notice>{progress}</Notice></div>}
 
-          <div>
+          <div className="order-8">
             <Button type="submit" size="lg" disabled={busy}>
               {busy
                 ? "Working…"
@@ -660,9 +659,9 @@ export default function GenerateDesign() {
               {request.state === "outputs_ready" && !handingOff && (
                 <p className="text-emerald-300">All seven views are generated and byte-verified.</p>
               )}
-              {isFlatFirstDiagnostic && (
+              {isAtlasRequest && (
                 <p className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-3 text-cyan-100">
-                  Diagnostic isolation is active: the A.T.L.A.S. master and seven proofs are saved, but this request will not enter Calls 8–12 or publish production panels.
+                  A.T.L.A.S. graph active: one master releases six panel nodes and their matched proof nodes, then hands the same artifact lineage to production.
                 </p>
               )}
               {handingOff && <Loading label="Freezing the revision and starting the production workflow…" />}
@@ -675,7 +674,7 @@ export default function GenerateDesign() {
               </p>
             )}
             {request.state === "failed" && <div className="mt-4"><Notice tone="error">{request.failureCode || "Generation failed."}</Notice></div>}
-            {request.state === "outputs_ready" && request.handoffReady === false && !isFlatFirstDiagnostic && (
+            {request.state === "outputs_ready" && request.handoffReady === false && (
               <div className="mt-4">
                 <Notice tone="error">
                   Production handoff blocked: {request.handoffBlocker || "unknown"}
@@ -684,7 +683,7 @@ export default function GenerateDesign() {
             )}
           </Panel>
 
-          {isFlatFirstDiagnostic && (
+          {isAtlasRequest && (
             <Panel
               eyebrow="A.T.L.A.S. · immutable lineage"
               title={latestAtlas ? `Revision ${latestAtlas.revisionSequence}` : "Building the canonical master"}
@@ -719,8 +718,8 @@ export default function GenerateDesign() {
                     </article>
                   ))}
                   <div className="sm:col-span-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">Proofs-only test.</span>{" "}
-                    {atlasRevisions.length} immutable version{atlasRevisions.length === 1 ? "" : "s"} saved. Model {latestAtlas.model}; prompt {latestAtlas.promptVersion}; Gemini example conditioning {latestAtlas.exampleUsed ? "locked" : "not used"}; manifest sha256 {latestAtlas.manifest.contentHash.slice(0, 16)}…. Production eligibility: {latestAtlas.productionEligible ? "passed" : "not promoted"}.
+                    <span className="font-semibold text-foreground">Canonical graph lineage.</span>{" "}
+                    {atlasRevisions.length} immutable version{atlasRevisions.length === 1 ? "" : "s"} saved. Model {latestAtlas.model}; prompt {latestAtlas.promptVersion}; structural example conditioning {latestAtlas.exampleUsed ? "locked" : "not used"}; manifest sha256 {latestAtlas.manifest.contentHash.slice(0, 16)}…. Production eligibility: {latestAtlas.productionEligible ? "passed" : "awaiting geometry validation"}.
                   </div>
                   <FlatAtlasPanelSchedule panels={latestAtlas.panelMap} className="sm:col-span-2" />
                 </div>
@@ -750,7 +749,7 @@ export default function GenerateDesign() {
                   busy={busy}
                   onRegenerate={(instruction) => regenerate(role, instruction)}
                   regenerationDisabledReason={
-                    isFlatFirstDiagnostic
+                    isAtlasRequest
                       ? "A.T.L.A.S. authority is locked. Start a new A.T.L.A.S. run to regenerate its master and seven-view proof set."
                       : role === "hero3d"
                         ? "This immutable historical Hero proof is read-only and cannot be regenerated."

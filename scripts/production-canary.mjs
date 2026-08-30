@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 /**
- * Production canary: seven existing July 24 renders -> Calls 8-12 -> files.
+ * Production canary: current A.T.L.A.S. graph -> Calls 8-12 -> files.
  *
  * This wrapper deliberately uses the real standalone contracts:
  * - a confirmed authenticated operator owns the revision
  * - a distinct confirmed customer is registered through WrapBox
- * - the exact July 24 F-250 GENIE geometry is seeded as a validated manual record
+ * - vehicle geometry must resolve from the current GENIE catalog
  * - Entice must complete before Production can be created
+ * - the intentional owner-promotion entitlement exercises production without
+ *   a Stripe dependency and never fabricates a paid state
  * - both human QC gates are approved only through the real QC RPC
  * - artifacts are collected from both Entice and Production runs
  */
 
 import { createRequire } from "node:module";
-import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 const require = createRequire(import.meta.url);
@@ -20,25 +22,16 @@ const { createClient } = (() => {
   try { return require("@supabase/supabase-js"); }
   catch { return require("../runtime/node_modules/@supabase/supabase-js"); }
 })();
+const { previewGenieDimensionsFromCatalog } = (() => {
+  try { return require("./genie-universal-resolver.cjs"); }
+  catch { return require("../runtime/genie-universal-resolver.cjs"); }
+})();
 
 const arg = (name, fallback = null) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > -1 ? process.argv[i + 1] : fallback;
 };
 
-// Retained to validate the supplied views file and to seed the GENIE record.
-// The renders themselves are NOT ingested any more: the canary authors a new
-// design through Calls 1-7, and a master built from these would be
-// reconstruction from approval output.
-const SOURCE_TO_ROLE = Object.freeze({
-  side: "driver",
-  "passenger-side": "passenger",
-  hood_detail: "hood",
-  roof: "roof",
-  front: "front",
-  rear: "rear",
-  "close-up": "hero3d",
-});
 const EXTENSION = Object.freeze({
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -53,8 +46,7 @@ const POLL_INTERVAL_MS = 5_000;
 const MAX_ENTICE_POLLS = 240;
 const MAX_PRODUCTION_POLLS = 720;
 const OPERATOR_EMAIL = "canary-operator@designproai.com";
-const SOURCE_JOB_ID = "c0c59dd6-1ce8-4f31-95ce-8e1734d4bd4b";
-const CUSTOMER_REFERENCE = "WPW-JUL24-PRODUCTION-CANARY";
+const CUSTOMER_REFERENCE = "DESIGNPROAI-ATLAS-GRAPH-CANARY";
 
 const RUNTIME_URL = String(
   process.env.DESIGNPRO_RUNTIME_INTERNAL_URL || "http://127.0.0.1:3001"
@@ -69,11 +61,11 @@ const OUT = arg("out", "./canary-output");
 const ORDER_NUMBER = arg("order", `CANARY-${Date.now().toString(36).toUpperCase()}`);
 const VEHICLE = Object.freeze({
   type: arg("type", "truck"),
-  year: arg("year", "2022"),
+  year: arg("year", "2020"),
   make: arg("make", "Ford"),
-  model: arg("model", "F250 Crew Cab"),
+  model: arg("model", "F250 Crew Cab 6.5ft Box"),
 });
-const DESIGN_NAME = arg("design", "Precision Climate Solutions — July 24 canary");
+const DESIGN_NAME = arg("design", "Precision Climate Solutions — A.T.L.A.S. graph canary");
 // A.T.L.A.S. authors from a brief, so the canary has to carry a real one. v3
 // requires both `brief` and `designName` and caps the brief at 8000 characters.
 const DESIGN_BRIEF = arg("brief",
@@ -93,12 +85,11 @@ const service = createClient(SUPABASE_URL, SERVICE_KEY, {
 });
 const step = (message) => process.stdout.write(`  ${message}\n`);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
-const stableJsonHash = (value) => sha256(Buffer.from(JSON.stringify(value)));
 
 const evidence = {
   contract: "designpro.production-canary-evidence.v3",
   ranAt: new Date().toISOString(),
-  sourceJobId: SOURCE_JOB_ID,
+  graphContract: "designpro.atlas-one-artifact-graph.v1",
   vehicle: VEHICLE,
   orderNumber: ORDER_NUMBER,
   operator: null,
@@ -222,93 +213,27 @@ async function ensureOperatorAndCustomer() {
   return { operator: signed.client, operatorId: signed.user.id, customerId: customerAuth.user.id };
 }
 
-const EXACT_F250_SURFACES = Object.freeze({
-  driver: { widthInches: 153, heightInches: 56 },
-  passenger: { widthInches: 153, heightInches: 56 },
-  hood: { widthInches: 71.5, heightInches: 56 },
-  roof: { widthInches: 74.3, heightInches: 54.8 },
-  front: { widthInches: 129, heightInches: 34 },
-  rear: { widthInches: 76, heightInches: 54 },
-});
-
-async function ensureValidatedGenie(operatorId, evidenceUrl) {
-  const validatedSurfaces = {
-    contractVersion: "designpro.genie-validated-surfaces.v1",
-    surfaces: EXACT_F250_SURFACES,
-  };
-  const totalSqFt = Math.round(
-    Object.values(EXACT_F250_SURFACES)
-      .reduce((sum, s) => sum + (s.widthInches * s.heightInches) / 144, 0) * 100
-  ) / 100;
-  const validationHash = stableJsonHash(validatedSurfaces);
-  const candidateHash = stableJsonHash({
-    vehicleClass: "truck",
-    make: "Ford",
-    model: "F250 Crew Cab",
-    year: "2022",
-    sourceJobId: SOURCE_JOB_ID,
-    validatedSurfaces,
-  });
-
-  const { data: rows, error } = await service
-    .from("designpro_vehicle_specs_universal")
-    .select("*")
-    .eq("vehicle_class", "truck")
-    .ilike("make", "Ford")
-    .ilike("model", "F250 Crew Cab")
-    .eq("year", "2022");
-  if (error) throw new Error(`GENIE lookup failed: ${error.message}`);
-  if ((rows || []).length > 1) {
-    throw new Error("multiple standalone GENIE rows match the July 24 F-250");
+async function assertCurrentGeniePrep() {
+  const prepared = await previewGenieDimensionsFromCatalog(service, VEHICLE);
+  if (!["measured", "derived"].includes(String(prepared?.resolution?.state))) {
+    throw new Error(`current GENIE catalog has no authoritative match for ${VEHICLE.year} ${VEHICLE.make} ${VEHICLE.model}`);
   }
-
-  const record = {
-    vehicle_class: "truck",
-    make: "Ford",
-    model: "F250 Crew Cab",
-    year: "2022",
-    sub_type: "crew cab",
-    panels: {},
-    source: "manual",
-    source_urls: [evidenceUrl],
-    confidence: "high",
-    requires_validation: false,
-    validated_surfaces: validatedSurfaces,
-    validated_total_sqft: totalSqFt,
-    validated_by: operatorId,
-    validated_at: new Date().toISOString(),
-    validation_notes: `Exact trim geometry recovered from July 24 source job ${SOURCE_JOB_ID}`,
-    validation_evidence: {
-      contractVersion: "designpro.canary-legacy-geometry-evidence.v1",
-      sourceJobId: SOURCE_JOB_ID,
-      source: "legacy qc_side_panels.dimensions_inches",
-    },
-    validation_hash: validationHash,
-    candidate_hash: candidateHash,
-    raw_response: { sourceJobId: SOURCE_JOB_ID, exactTrimSurfaces: EXACT_F250_SURFACES },
-  };
-
-  let id;
-  if ((rows || []).length === 1) {
-    const { data, error: updateError } = await service
-      .from("designpro_vehicle_specs_universal")
-      .update(record)
-      .eq("id", rows[0].id)
-      .select("id")
-      .single();
-    if (updateError) throw new Error(`GENIE validation update failed: ${updateError.message}`);
-    id = data.id;
-  } else {
-    const { data, error: insertError } = await service
-      .from("designpro_vehicle_specs_universal")
-      .insert(record)
-      .select("id")
-      .single();
-    if (insertError) throw new Error(`GENIE validation insert failed: ${insertError.message}`);
-    id = data.id;
+  if (!/^[0-9a-f]{64}$/.test(String(prepared?.resolution?.genieManifestHash || ""))) {
+    throw new Error("current GENIE preparation returned no immutable manifest hash");
   }
-  step(`validated GENIE F-250 ${id} · ${totalSqFt.toFixed(2)} sq ft`);
-  return { id, validatedSurfaces, totalSqFt, validationHash };
+  if (!Array.isArray(prepared?.surfaces) || prepared.surfaces.length !== CALL_ONE_SURFACES.length) {
+    throw new Error(`current GENIE preparation returned ${prepared?.surfaces?.length || 0} of 6 surfaces`);
+  }
+  evidence.geniePrep = {
+    state: prepared.resolution.state,
+    manifestHash: prepared.resolution.genieManifestHash,
+    sourceRowId: prepared.resolution.geometrySourceRowId,
+    catalogModel: prepared.resolution.catalogModel,
+    catalogYearRange: prepared.resolution.catalogYearRange,
+    surfaces: prepared.surfaces,
+  };
+  step(`prepared current GENIE manifest ${prepared.resolution.genieManifestHash.slice(0, 12)} · six surfaces`);
+  return prepared;
 }
 
 async function registerRecipient(operatorId) {
@@ -596,8 +521,8 @@ function assertOutputSet() {
 async function runCallsOneToSeven({ operator, operatorId, generationId, delivery }) {
   // THE CANARY RUNS A.T.L.A.S., BECAUSE THAT IS WHAT PRODUCTION RUNS.
   //
-  // It used to submit `designpro.calls-1-7-input.v1` -- the legacy replay
-  // contract that hands the runtime seven pre-existing July 24 render URLs -- and
+  // It used to submit `designpro.calls-1-7-input.v1` -- an obsolete replay
+  // contract that hands the runtime seven pre-existing render URLs -- and
   // then assert `receipt.designMaster`. Nothing about that exercised A.T.L.A.S.:
   // no flattened master was authored, no zone was cut, no proof was projected.
   // Worse, it could never pass, because the v1 path records no design master at
@@ -699,6 +624,14 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
   if (atlasRow.metadata?.masterQcPassed !== true) {
     throw new Error(`the A.T.L.A.S. master did not pass QC: ${JSON.stringify(atlasRow.metadata || null).slice(0, 300)}`);
   }
+  if (atlasRow.metadata?.geometryAuthority?.source !== "genie-panelizer-catalog") {
+    throw new Error(`A.T.L.A.S. used non-current geometry authority: ${String(atlasRow.metadata?.geometryAuthority?.source || "missing")}`);
+  }
+  const atlasPanelManifestHashes = new Set((atlasRow.metadata?.callOnePanels || [])
+    .map((panel) => panel?.genieManifestHash).filter(Boolean));
+  if (atlasPanelManifestHashes.size !== 1 || !atlasPanelManifestHashes.has(evidence.geniePrep?.manifestHash)) {
+    throw new Error("A.T.L.A.S. did not use the GENIE manifest prepared before Call 1");
+  }
   for (const [field, value] of Object.entries({
     master_storage_path: atlasRow.master_storage_path,
     projection_content_hash: atlasRow.projection_content_hash,
@@ -795,12 +728,8 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   writeEvidence();
 
-  const views = JSON.parse(readFileSync(arg("views"), "utf8"));
-  const missing = Object.keys(SOURCE_TO_ROLE).filter((key) => !views[key]);
-  if (missing.length) throw new Error(`views file is missing: ${missing.join(", ")}`);
-
   const { operator, operatorId } = await ensureOperatorAndCustomer();
-  await ensureValidatedGenie(operatorId, views.side);
+  await assertCurrentGeniePrep();
 
   const generationId = randomUUID();
   const visualizationId = randomUUID();
@@ -816,11 +745,9 @@ async function main() {
 
   process.stdout.write(`\nProduction canary — order ${ORDER_NUMBER}\ndesign ${designId}\n\n`);
 
-  // A NEW CURRENT-SYSTEM DESIGN. The canary no longer replays the July 24
-  // renders: those are approval output from the retired architecture, and a
-  // production master authored from them would be reconstruction. Calls 1-7 run
-  // for real here, and the authoring boundary records the canonical design as
-  // they do it.
+  // A NEW CURRENT-SYSTEM DESIGN. No historical render, geometry row or source
+  // job enters this request. Calls 1-7 run through the current one-artifact
+  // A.T.L.A.S. graph and record its canonical design as they author it.
   const { revisionId, renderAssets, callOnePanels } = await runCallsOneToSeven({
     operator, operatorId, generationId, delivery,
   });
@@ -842,7 +769,7 @@ async function main() {
     },
     finish: "gloss",
     bodyText: { designName: "Precision Climate Solutions" },
-    change: { source: "production-canary", sourceJobId: SOURCE_JOB_ID },
+    change: { source: "atlas-graph-production-canary", generationId },
     orderNumber: ORDER_NUMBER,
     expectedLogoInventory: [],
     logoInventoryAttestation: { attested: true, mode: "none" },
