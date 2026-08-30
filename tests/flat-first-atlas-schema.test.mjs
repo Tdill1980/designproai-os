@@ -62,6 +62,10 @@ const viewSetContractSql = readdirSync(migrationsDir)
   .sort()
   .map((name) => readFileSync(new URL(name, migrationsDir), "utf8"))
   .join("\n");
+const historicalReadGateSql = readFileSync(new URL(
+  "../supabase/migrations/20260830233000_designpro_atlas_read_gate_accepts_history.sql",
+  import.meta.url,
+), "utf8");
 const closeupBoundarySql = readFileSync(new URL(
   "../supabase/migrations/20260822090000_designpro_closeup_schema_boundaries.sql",
   import.meta.url,
@@ -158,16 +162,15 @@ test("the view-set gate names the deployed photographer, not the producer it rep
   }
 });
 
-test("terminal Atlas owner reads require exact seven current roles and one audited lineage", () => {
+test("terminal Atlas owner reads require seven current roles and audited lineage without an authoring-version pin", () => {
   assert.match(viewSetGuardSql, /flat_first_atlas_view_set_valid/);
-  // Pinned across the defining body and every later patch, newest last, so a
-  // version bump that patches in place satisfies it and a stale pin does not.
-  assert.match(viewSetContractSql, /designpro-flat-first-atlas-20260827\.v10-edge/);
-  assert.ok(
-    viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260827.v10-edge")
-      > viewSetContractSql.lastIndexOf("designpro-flat-first-atlas-20260826.v8"),
-    "the newest migration touching the gate must pin the current prompt version",
-  );
+  // Exact prompt-version fencing belongs to NEW authoring reuse. Reads accept
+  // the A.T.L.A.S. prompt family so a prompt bump cannot hide an already
+  // accepted master, its panels, proofs or PanelPro history.
+  assert.match(historicalReadGateSql, /\^designpro-flat-first-atlas-\[A-Za-z0-9\._-\]\{1,96\}\$/);
+  assert.match(historicalReadGateSql, /pg_catalog\.replace\(v_definition, v_exact_pin, v_family_gate\)/);
+  assert.match(historicalReadGateSql, /newest_accepted_atlas_is_not_readable/);
+  assert.match(historicalReadGateSql, /flat_first_atlas_requires_new_run/);
   // The DesignPanel creative port carries its own version, so the creative half
   // and the topology half can move independently. It is pinned the same way,
   // and against the shipped constant rather than a literal, so the gate and the
