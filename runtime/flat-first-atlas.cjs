@@ -61,7 +61,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260830.v11-pure-panels";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260830.v12-neutral-mask";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -139,7 +139,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v10-pure-panels";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v11-neutral-mask";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -892,7 +892,7 @@ function guideGeometrySvg(manifest) {
 }
 
 /**
- * THE MODEL'S GUIDE CARRIES ONLY SHORT GUTTER LABELS.
+ * THE MODEL'S GUIDE IS GEOMETRY ONLY.
  *
  * There used to be one guide, and it went to three consumers at once: the
  * authoring model, the QC inspector and the human design team. It carried each
@@ -914,13 +914,17 @@ function guideGeometrySvg(manifest) {
  * footer was that same instruction rendered as pixels INSIDE the image it was
  * warning about.
  *
- * So the guide is split by consumer instead. The model receives the six plain
- * rectangles plus one short name/ID in the gutter beside each rectangle. It
- * receives no dimensions, trim marks, title/footer or component vocabulary.
- * The labels are outside every extraction rectangle and the delivered master
- * is masked to those rectangles, so the navigation layer cannot become a
- * production panel. The structured panel list repeats the same ID/placement
- * mapping and the edge function refuses an incomplete or mismatched map.
+ * So the guide is split by consumer instead. The model receives only the six
+ * plain filled rectangles. It receives no captions, strokes, dimensions, trim
+ * marks, title/footer or component vocabulary. The structured panel list is
+ * the identity layer: it states PS=left, DS=right and RR/RF/HD/FR=center in
+ * order, and the edge function refuses an incomplete or mismatched map.
+ *
+ * Live canary 33337222395 proved that even short OUTSIDE captions and a white
+ * rectangle stroke are unsafe visual authority. The model copied them inward,
+ * then treated the whole neutral sheet as a labelled vehicle diagram despite a
+ * prose firewall. Side identity therefore lives in data and code, never in the
+ * pixels shown to the creative model.
  *
  * The labelled guide is unchanged and still rendered: it is what the design
  * team reads, what enters durable storage as `guide_storage_path`, and what the
@@ -932,12 +936,11 @@ function guideGeometrySvg(manifest) {
 function authoringGuideSvg(manifest) {
   const rectangles = manifest.zones.map((zone) => (
     `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" `
-      + `fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
+      + `fill="${zone.guideFill}"/>`
   )).join("");
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
     ${rectangles}
-    ${authoringGuideLabelsSvg(manifest)}
   </svg>`);
 }
 
@@ -964,93 +967,27 @@ async function renderAtlasGuide(manifest) {
   return rasterizeGuide(guideSvg(manifest));
 }
 
-/** Labeled geometry authority. This is the one the authoring model sees. */
+/** Neutral geometry mask. This is the only image the authoring model sees. */
 async function renderAtlasAuthoringGuide(manifest) {
   const svg = authoringGuideSvg(manifest);
-  // Fail closed rather than ship a glyph INTO a container. The guide is now a
-  // labeled artboard (owner, 2026-08-27), so the guard can no longer be "no
-  // text at all" -- but the thing it was actually protecting against is
-  // unchanged and narrower than the old rule stated: a surface name sitting on
-  // the rectangle the model is told to paint comes back painted
-  // (`artifactFreeContract`, live 2026-08-25).
-  //
-  // So every glyph must be provably outside every zone. A caption lives at the
-  // centre of a gutter and is rotated about its own anchor, so its half-width
-  // is bounded by the font size; the anchor plus that pad is checked against
-  // all six rectangles.
+  // Fail closed on ANY visual instruction beyond the six masks. The human guide
+  // stays fully labelled; this one is not a diagram and cannot teach the image
+  // model to paint a caption, outline or template into customer artwork.
   const markup = svg.toString("utf8");
   const forbiddenAuthoringMarkup = [
     [/stroke-dasharray/i, "dashed trim geometry"],
+    [/<text\b/i, "text labels"],
     [/<line\b/i, "line geometry"],
     [/<path\b/i, "path geometry"],
     [/<polygon\b/i, "polygon geometry"],
+    [/\bstroke=/i, "outline geometry"],
   ];
   for (const [pattern, label] of forbiddenAuthoringMarkup) {
     if (pattern.test(markup)) {
       throw new FlatAtlasError(
         "flat_atlas_authoring_guide_contains_technical_furniture",
-        `The model-facing A.T.L.A.S. guide contains ${label}; it must remain six labeled spatial regions only`,
+        `The model-facing A.T.L.A.S. guide contains ${label}; it must remain six neutral spatial masks only`,
       );
-    }
-  }
-  // READ THE WHOLE TAG, THEN PULL THE THREE ATTRIBUTES OUT OF IT.
-  //
-  // The first version tried to do it in one expression, with an OPTIONAL
-  // font-size group behind a lazy `[^>]*?`. A regex engine satisfies that by
-  // leaving the optional group unmatched, so the size never captured and every
-  // label was padded as if it were the largest type on the sheet. On a layout
-  // whose gutters are narrower than the fixture's, that over-pad reached into
-  // the neighbouring container and refused a run that was correctly laid out
-  // (live, 2026-08-27).
-  const anchors = [...markup.matchAll(/<text\s[^>]*>/g)].map(([tag]) => {
-    const attribute = (name) => {
-      const found = tag.match(new RegExp(`\\b${name}="(-?\\d+(?:\\.\\d+)?)"`));
-      return found ? Number(found[1]) : null;
-    };
-    const size = attribute("font-size");
-    return {
-      x: attribute("x"),
-      y: attribute("y"),
-      // No declared size means an inherited one, which cannot be bounded from
-      // the markup -- assume the largest glyph the sheet ever draws.
-      pad: Math.ceil((size || 40) * LABEL_REACH),
-    };
-  }).filter((anchor) => anchor.x !== null && anchor.y !== null);
-  const glyphCount = (markup.match(/<text\b/gi) || []).length;
-  if (anchors.length !== glyphCount) {
-    throw new FlatAtlasError(
-      "flat_atlas_authoring_guide_text_unlocatable",
-      "Every authoring-guide label must declare an x/y anchor so its position can be proven outside the containers",
-    );
-  }
-  for (const anchor of anchors) {
-    for (const zone of manifest.zones) {
-      // ⛔ THE BOUNDARY IS THE EXTRACTION RECTANGLE -- THE WHOLE CONTAINER.
-      //
-      // This checked `zone.trim` for one day, on the claim that a caption in the
-      // bleed band was "discarded twice -- by the finish to trim". There is no
-      // finish to trim: `cutOnePanel` extracts `zone.extraction`, which is the
-      // container in full, and the panel is stored at PRINT size with the bleed
-      // attached. So the trim box was the wrong boundary by exactly the width of
-      // the bleed, and a caption sitting in that band was copied by the model
-      // into the sheet and cut straight into the customer's panel (request
-      // f3eb40c1, passenger attempt 2 -- the proof judge read "PASSENGER SIDE
-      // and dimensions" off the panel it was handed as artwork authority).
-      //
-      // The boundary is now whatever the extractor actually cuts. It is still
-      // not the old "no text at all" rule: captions in the gutters and the
-      // header/footer bands remain legal, because nothing cuts those.
-      const cut = zone.extraction || zone;
-      const inside = anchor.x + anchor.pad > Number(cut.x)
-        && anchor.x - anchor.pad < Number(cut.x) + Number(cut.w)
-        && anchor.y + anchor.pad > Number(cut.y)
-        && anchor.y - anchor.pad < Number(cut.y) + Number(cut.h);
-      if (inside) {
-        throw new FlatAtlasError(
-          "flat_atlas_authoring_guide_contains_text",
-          `An authoring-guide label falls inside the ${zone.surfaceKey} extraction rectangle; text the panel cut carries is text on the customer's print file`,
-        );
-      }
     }
   }
   return rasterizeGuide(svg);
@@ -2243,8 +2180,9 @@ async function generateOrReuseFlatAtlas(options) {
   // `guideBytes` is the labelled installer map: it is what enters storage, what
   // the design team reads, and what the QC inspector compares the master
   // against -- so `artifactFreeContract` still has annotations to look for.
-  // `authoringGuideBytes` is the same rectangles with short gutter identity
-  // labels only; it is the one the authoring model is shown.
+  // `authoringGuideBytes` is the same six rectangles as a neutral, unlabelled,
+  // unstroked mask; it is the one the authoring model is shown. Surface identity
+  // travels separately in the schema-bound panel list.
   const guideBytes = await renderAtlasGuide(manifest);
   const guideHash = sha256(guideBytes);
   const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
