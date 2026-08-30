@@ -44,7 +44,6 @@ const CUSTOMER_ROUTE_MODULES = [
   "pages/designpro/ProductionJobs.tsx",
   "pages/designpro/ProductionWorkflow.tsx",
   "pages/designpro/GenieQc.tsx",
-  "pages/designpro/NewRevisionSource.tsx",
   "pages/designpro/WrapBoxDelivery.tsx",
   "pages/PanelSizer.tsx",
   "pages/DesignStudio.tsx",

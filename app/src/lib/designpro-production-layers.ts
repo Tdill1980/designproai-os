@@ -173,6 +173,8 @@ export type ProductionLayersSource = {
   /** Purchase actions, injected so the customer path calls no legacy function. */
   onOrderProductionPack?: () => void | Promise<void>;
   onOrderLogoPack?: () => void | Promise<void>;
+  /** Owner-only protected promotion path. Same entitlement, no Stripe charge. */
+  onRunOwnerEndToEndTest?: () => void | Promise<void>;
   /** What the customer has actually paid for. Preview assets never imply this. */
   entitlements?: { productionPack: boolean; logoPack: boolean };
 };

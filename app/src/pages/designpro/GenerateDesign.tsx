@@ -374,18 +374,7 @@ export default function GenerateDesign() {
     const form = new FormData(event.currentTarget);
     try {
       setRequestPipelineMode(pipelineMode);
-      let resolvedDesignName = String(form.get("designName") || "").trim();
-      if (pipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE) {
-        setProgress("Registering the confirmed WrapBox recipient…");
-        const { delivery } = await dpApi.registerDeliveryRecipient({
-          customerEmail: String(form.get("customerEmail") || "").trim().toLowerCase(),
-          customerReference: String(form.get("customerReference") || "").trim(),
-          verificationReference: String(form.get("verificationReference") || "").trim(),
-          orderNumber: String(form.get("orderNumber") || "").trim(),
-          designName: resolvedDesignName,
-        });
-        resolvedDesignName = delivery.designName;
-      }
+      const resolvedDesignName = String(form.get("designName") || "").trim();
       const companyName = String(form.get("companyName") || "").trim();
       const phone = String(form.get("phone") || "").trim();
       const website = String(form.get("website") || "").trim();
@@ -411,10 +400,8 @@ export default function GenerateDesign() {
       );
       setRequest(
         await dpApi.createGenerationRequest({
-          // The recipient registered above binds fulfillment, not generation.
-          // Calls 1-7 no longer take it: a design is created before anyone
-          // knows where it ships. This operator page still registers it up
-          // front because an operator working an order already has it.
+          // Calls 1-7 are fulfillment-unbound. WrapBox customer/order data is
+          // collected only after a Production Pack entitlement exists.
           designName: resolvedDesignName,
           vehicle: {
             year: String(form.get("year") || "").trim(),

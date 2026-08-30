@@ -281,7 +281,8 @@ test("the entice half asks for the sale instead of reporting a defect", () => {
   assert.match(card, /const entice = injected\??\.stage === "entice"/);
 
   // The CTA is live before purchase. That is the whole point of the surface.
-  assert.match(card, /injected\??\.onOrderProductionPack && \(entice \|\| \(isVerifiedPack && packState\.productionEligible\)\)/);
+  assert.match(card, /!injected\??\.entitlements\??\.productionPack/);
+  assert.match(card, /injected\??\.onOrderProductionPack\s*\n\s*&& \(entice \|\| \(isVerifiedPack && packState\.productionEligible\)\)/);
   assert.match(card, /GET PRODUCTION PACK/);
 
   // The conversion message, in the owner's own words.

@@ -43,6 +43,11 @@ const ORDER_NUMBER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CUSTOMER_REFERENCE_PATTERN = /^[^\u0000-\u001f\u007f]{1,160}$/;
 const VERIFICATION_REFERENCE_PATTERN = /^[^\u0000-\u001f\u007f]{3,256}$/;
+const OWNER_TEST_EMAILS = new Set([
+  "tdill@restyleproai.com",
+  "trish@restyleproai.com",
+  "trish@weprintwraps.com",
+]);
 const MIME_EXTENSION = new Map([
   ["image/png", "png"],
   ["image/jpeg", "jpg"],
@@ -521,7 +526,7 @@ async function businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrder
     // Null, never "", so a consumer cannot render an empty order number as one.
     orderNumber: orderNumberValid ? orderNumber : null,
     brief,
-    designName: text(snapshot?.delivery?.designName),
+    designName: text(snapshot?.designName) || text(snapshot?.delivery?.designName),
     finish: text(snapshot?.finish),
     vehicle: vehicle
       ? {
@@ -1233,7 +1238,7 @@ function verifiedStripeEvent(rawBody, signatureHeader, secret, nowSeconds) {
 }
 
 function validatedRecipientRequest(body) {
-  const exactKeys = ["customerEmail", "customerReference", "designName", "orderNumber", "verificationReference"];
+  const exactKeys = ["customerEmail", "customerReference", "designName", "generationId", "orderNumber", "verificationReference"];
   if (!body || typeof body !== "object" || Array.isArray(body) ||
     JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(exactKeys)) {
     throw Object.assign(new Error("delivery_recipient_request_invalid"), { status: 400 });
@@ -1243,10 +1248,11 @@ function validatedRecipientRequest(body) {
   const verificationReference = String(body.verificationReference || "").trim();
   const orderNumber = String(body?.orderNumber || "").trim();
   const designName = String(body?.designName || "").trim();
+  const generationId = String(body?.generationId || "").trim().toLowerCase();
   if (!EMAIL_PATTERN.test(customerEmail) || customerEmail.length > 320 ||
     !CUSTOMER_REFERENCE_PATTERN.test(customerReference) ||
     !VERIFICATION_REFERENCE_PATTERN.test(verificationReference) ||
-    !ORDER_NUMBER_PATTERN.test(orderNumber) ||
+    !ORDER_NUMBER_PATTERN.test(orderNumber) || !UUID_PATTERN.test(generationId) ||
     designName.length < 1 || designName.length > 240) {
     throw Object.assign(new Error("delivery_recipient_request_invalid"), { status: 400 });
   }
@@ -1254,7 +1260,7 @@ function validatedRecipientRequest(body) {
   // to a one-way identity at the HTTPS gateway and is never logged, returned,
   // forwarded in raw form, or persisted by any DesignPro service.
   const verificationRefHash = createHash("sha256").update(verificationReference, "utf8").digest("hex");
-  return { customerEmail, customerReference, verificationRefHash, orderNumber, designName };
+  return { customerEmail, customerReference, verificationRefHash, orderNumber, designName, generationId };
 }
 
 /**
@@ -1309,11 +1315,26 @@ async function upscalePanelThroughRuntime(fetchImpl, cfg, ownerId, generationId,
   return payload;
 }
 
-async function registerRecipientThroughRuntime(fetchImpl, cfg, operatorId, body) {
+async function registerRecipientThroughRuntime(fetchImpl, token, cfg, operatorId, body) {
   if (!cfg.internalRuntimeUrl || cfg.workerSecret.length < 32) {
     throw Object.assign(new Error("recipient_service_unavailable"), { status: 503 });
   }
   const request = validatedRecipientRequest(body);
+  // The browser may read only its own entitlement rows under RLS. Prove the
+  // production-pack purchase before recipient PII crosses the internal runtime
+  // boundary; the runtime repeats the check with its service role.
+  const entitlementUrl = `${cfg.supabaseUrl}/rest/v1/designpro_purchase_entitlements`
+    + `?select=id&owner_id=eq.${encodeURIComponent(operatorId)}`
+    + `&generation_id=eq.${encodeURIComponent(request.generationId)}`
+    + "&product_type=eq.print_pack_entitlement&limit=2";
+  const entitlementResponse = await upstream(fetchImpl, entitlementUrl, { method: "GET" }, token, cfg);
+  if (!entitlementResponse.ok) {
+    throw Object.assign(new Error("purchase_entitlement_lookup_failed"), { status: 503 });
+  }
+  const entitlements = await entitlementResponse.json();
+  if (!Array.isArray(entitlements) || entitlements.length !== 1) {
+    throw Object.assign(new Error("production_pack_entitlement_required"), { status: 409 });
+  }
   const response = await fetchImpl(`${cfg.internalRuntimeUrl}/internal/wrapbox/recipient`, {
     method: "POST",
     headers: {
@@ -1322,6 +1343,7 @@ async function registerRecipientThroughRuntime(fetchImpl, cfg, operatorId, body)
     },
     body: JSON.stringify({
       operatorId,
+      generationId: request.generationId,
       customerEmail: request.customerEmail,
       customerReference: request.customerReference,
       verificationRefHash: request.verificationRefHash,
@@ -2448,8 +2470,24 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         }));
       }
 
+      const entitlementMatch = url.pathname.match(/^\/api\/purchases\/entitlements\/([0-9a-f-]{36})$/);
+      if (req.method === "GET" && entitlementMatch) {
+        const generationId = entitlementMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(generationId)) return json(res, 400, { error: "generation_id_invalid" });
+        const response = await upstream(fetchImpl,
+          `${cfg.supabaseUrl}/rest/v1/designpro_purchase_entitlements?select=product_type&owner_id=eq.${encodeURIComponent(user.id)}&generation_id=eq.${encodeURIComponent(generationId)}`,
+          { method: "GET" }, token, cfg);
+        if (!response.ok) return json(res, 503, { error: "purchase_entitlement_lookup_failed" });
+        const rows = await response.json();
+        const products = new Set(Array.isArray(rows) ? rows.map((row) => String(row?.product_type || "")) : []);
+        return json(res, 200, {
+          productionPack: products.has("print_pack_entitlement"),
+          logoPack: products.has("logo_pack"),
+        });
+      }
+
       if (req.method === "POST" && url.pathname === "/api/wrapbox/recipients/register") {
-        return json(res, 201, await registerRecipientThroughRuntime(fetchImpl, cfg, user.id, await readBody(req)));
+        return json(res, 201, await registerRecipientThroughRuntime(fetchImpl, token, cfg, user.id, await readBody(req)));
       }
       if (req.method === "GET" && url.pathname === "/api/wrapbox") {
         const rows = await wrapboxRows(fetchImpl, token, cfg);
@@ -2674,6 +2712,31 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       // OPEN A PURCHASE. The proven `create-single-use-checkout` behaviour,
       // moved inside this boundary: the customer UI calls dpApi, dpApi calls
       // here, and only this process talks to Stripe.
+      if (req.method === "POST" && url.pathname === "/api/testing/owner-entitlements") {
+        const ownerEmail = String(user.email || "").trim().toLowerCase();
+        if (!OWNER_TEST_EMAILS.has(ownerEmail)) return json(res, 403, { error: "owner_test_forbidden" });
+        const body = await readBody(req);
+        if (JSON.stringify(Object.keys(body || {}).sort()) !== JSON.stringify(["confirmation", "generationId"])
+          || body.confirmation !== "RUN_FULL_END_TO_END_TEST"
+          || !UUID_PATTERN.test(String(body.generationId || "").toLowerCase())) {
+          return json(res, 400, { error: "owner_test_request_invalid" });
+        }
+        const generationId = String(body.generationId).toLowerCase();
+        const run = requestedRun(await listRuns(fetchImpl, token, cfg), generationId);
+        if (!run) return json(res, 404, { error: "job_not_found" });
+        const result = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
+          checkoutSessionId: `owner_ui_test_${generationId.replaceAll("-", "")}`,
+          paymentIntentId: null,
+          productType: "print_pack_entitlement",
+          generationId,
+          amountCents: 0,
+          userEmail: ownerEmail,
+          promotionCode: "DESIGNPROAI_OWNER_UI_TEST_100",
+          discountCents: PURCHASE_PRODUCTS.print_pack_entitlement.amountCents,
+        });
+        return json(res, 200, { accepted: true, noStripe: true, entitlementId: result.entitlementId || null });
+      }
+
       if (req.method === "POST" && url.pathname === "/api/checkout/sessions") {
         if (!cfg.stripeSecretKey) return json(res, 503, { error: "checkout_not_configured" });
         const body = await readBody(req);

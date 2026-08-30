@@ -21,7 +21,7 @@
  *   Verified output  — the eighteen files (six surfaces x PNG/TIFF/EPS)
  *   Delivery         — the approval stamp, the production ZIP and the manifest
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CheckCircle2, Circle, CircleDashed, PauseCircle, XCircle } from "lucide-react";
 import {
@@ -46,6 +46,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
@@ -542,6 +544,70 @@ function QcGate({
   );
 }
 
+function PostPurchaseFulfillment({
+  generationId,
+  designName,
+  onBound,
+}: {
+  generationId: string;
+  designName: string;
+  onBound: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const orderNumber = String(form.get("orderNumber") || "").trim();
+      const { delivery } = await dpApi.registerDeliveryRecipient({
+        generationId,
+        customerEmail: String(form.get("customerEmail") || "").trim().toLowerCase(),
+        customerReference: String(form.get("customerReference") || "").trim(),
+        verificationReference: String(form.get("verificationReference") || "").trim(),
+        orderNumber,
+        designName,
+      });
+      await dpApi.bindFulfillment(generationId, {
+        recipientIdentityHash: delivery.recipientIdentityHash,
+        orderNumber,
+        designName,
+      });
+      await onBound();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "WrapBox recipient binding failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel
+      className="border-blue-500/40"
+      eyebrow="Production Pack purchased"
+      title="Send this production pack to WrapBox"
+      description="Purchase is confirmed. Recipient and order information is collected only now, then bound immutably to this Generation ID."
+    >
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+        <div><Label htmlFor="fulfillment-order">Order #</Label><Input id="fulfillment-order" name="orderNumber" required maxLength={120} /></div>
+        <div><Label htmlFor="fulfillment-email">Confirmed customer email</Label><Input id="fulfillment-email" name="customerEmail" type="email" required maxLength={320} /></div>
+        <div><Label htmlFor="fulfillment-customer">Customer reference / name</Label><Input id="fulfillment-customer" name="customerReference" required maxLength={160} /></div>
+        <div><Label htmlFor="fulfillment-verification">Order/payment verification reference</Label><Input id="fulfillment-verification" name="verificationReference" required minLength={3} maxLength={256} /></div>
+        <div className="sm:col-span-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+          Design: <strong>{designName}</strong>
+        </div>
+        {error && <div className="sm:col-span-2"><Notice tone="error">{error}</Notice></div>}
+        <Button className="sm:col-span-2" type="submit" disabled={busy}>
+          {busy ? "Binding verified recipient…" : "Confirm recipient and begin production"}
+        </Button>
+      </form>
+    </Panel>
+  );
+}
+
 /* ── Everything else the job published ───────────────────────────── */
 
 function OtherArtifacts({ artifacts }: { artifacts: WorkflowArtifact[] }) {
@@ -755,6 +821,19 @@ export default function ProductionWorkflow() {
           </div>
         </Notice>
       )}
+
+      {layersSource?.entitlements?.productionPack
+        && job.stages.some((stage) => stage.key === "await_purchase" && stage.state === "waiting")
+        && job.designName && (
+          <PostPurchaseFulfillment
+            generationId={generationId}
+            designName={job.designName}
+            onBound={async () => {
+              await load();
+              await loadArtifacts();
+            }}
+          />
+        )}
 
       {job.state === "waiting_for_preflight" && (
         <QcGate

@@ -68,6 +68,22 @@ test("production is server-created exactly once after Entice completes", () => {
   assert.match(canary, /expected exactly one automatic Production workflow/);
 });
 
+test("WrapBox recipient data is registered and bound only after the purchase entitlement", () => {
+  const handoff = canary.indexOf('"handoff_designpro_generation_to_production"');
+  const entice = canary.indexOf("await waitForEntice(evidence.enticeRunId)");
+  const entitlement = canary.indexOf("await confirmOwnerPromotionEntitlement(generationId, evidence.enticeRunId)");
+  const recipient = canary.indexOf("await registerRecipient(operatorId, generationId)");
+  const binding = canary.indexOf('"bind_designpro_revision_fulfillment"');
+  const production = canary.indexOf("await waitForProduction(operator, operatorId, evidence.productionRunId, designId)");
+  assert.ok(handoff > -1 && entice > handoff, "Entice must use the unbound server handoff");
+  assert.ok(entitlement > entice, "the entitlement must follow Entice completion");
+  assert.ok(recipient > entitlement, "recipient registration must follow the entitlement");
+  assert.ok(binding > recipient, "fulfillment binding must follow recipient registration");
+  assert.ok(production > binding, "Production may run only after purchase and recipient binding");
+  assert.doesNotMatch(canary, /save_designpro_revision_source/,
+    "the canary must not replace the unbound handoff snapshot with early fulfillment data");
+});
+
 test("the canary crosses purchase with one real Generation-bound owner promotion entitlement", () => {
   const entitlement = canary.indexOf("await confirmOwnerPromotionEntitlement(generationId, evidence.enticeRunId)");
   const productionWait = canary.indexOf("await waitForProduction(operator, operatorId, evidence.productionRunId, designId)");
@@ -112,4 +128,7 @@ test("workflow no longer accepts an old-project owner UUID as the new-project te
   assert.match(workflow, /RUN_PRODUCTION_CANARY/);
   assert.match(workflow, /ServerAliveInterval=30/);
   assert.match(workflow, /designproai-runtime:\$sha/);
+  assert.match(workflow, /atlas-canary-customer@designproai\.com/);
+  assert.doesNotMatch(workflow, /inputs\.customer_email/);
+  assert.match(workflow, /\[\[ \$sha == "\$EXPECTED_SHA" \]\]/);
 });

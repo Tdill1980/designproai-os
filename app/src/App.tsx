@@ -117,7 +117,6 @@ const PanelProStudioBoard = lazyWithRetry(() => import("./pages/designpro/PanelP
 const AdminGeminiCompareStudio = lazyWithRetry(() => import("./pages/AdminGeminiCompareStudio"));
 const GenieProgress = lazyWithRetry(() => import("./pages/designpro/GenieProgress"));
 const DesignProGenieQc = lazyWithRetry(() => import("./pages/designpro/GenieQc"));
-const DesignProNewRevision = lazyWithRetry(() => import("./pages/designpro/NewRevisionSource"));
 const DesignProWrapBox = lazyWithRetry(() =>
   import("./pages/designpro/WrapBoxDelivery").then((mod) => ({ default: mod.WrapBoxList })),
 );
@@ -274,7 +273,7 @@ const App = () => {
           <Route path="/designpro/jobs" element={<RequireAuth><DesignProJobs /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId" element={<RequireAuth><DesignProWorkflow /></RequireAuth>} />
           <Route path="/designpro/generate" element={<RequireAuth><DesignProGenerate /></RequireAuth>} />
-          <Route path="/designpro/revisions/new" element={<RequireAuth><DesignProNewRevision /></RequireAuth>} />
+          <Route path="/designpro/revisions/new" element={<RequireAuth><Navigate to="/designpro" replace /></RequireAuth>} />
           <Route path="/designpro/genie-qc" element={<RequireAuth><DesignProGenieQc /></RequireAuth>} />
           <Route path="/designpro/wrapbox" element={<RequireAuth><DesignProWrapBox /></RequireAuth>} />
           <Route path="/designpro/wrapbox/:packId" element={<RequireAuth><DesignProWrapBoxPack /></RequireAuth>} />

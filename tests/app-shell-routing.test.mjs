@@ -88,7 +88,6 @@ test("every operating surface is behind the shell's auth guard", () => {
     "DesignProJobs",
     "DesignProWorkflow",
     "DesignProGenieQc",
-    "DesignProNewRevision",
     "DesignProWrapBox",
     "DesignProWrapBoxPack",
   ]) {
@@ -98,6 +97,11 @@ test("every operating surface is behind the shell's auth guard", () => {
       `${element} must be wrapped in <RequireAuth>`,
     );
   }
+  assert.match(
+    APP,
+    /<Route path="\/designpro\/revisions\/new" element=\{<RequireAuth><Navigate to="\/designpro" replace \/><\/RequireAuth>\} \/>/,
+    "the obsolete revision intake URL must remain authenticated while redirecting to A.T.L.A.S.",
+  );
 });
 
 test("the DesignPro surfaces keep the app shell chrome", () => {

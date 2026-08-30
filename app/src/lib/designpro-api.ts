@@ -1030,6 +1030,7 @@ export const dpApi = {
 
   /* WrapBox recipient + delivery */
   registerDeliveryRecipient: (input: {
+    generationId: string;
     customerEmail: string;
     customerReference: string;
     verificationReference: string;
@@ -1213,6 +1214,18 @@ export const dpApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  getPurchaseEntitlements: (generationId: string) =>
+    request<{ productionPack: boolean; logoPack: boolean }>(
+      `/purchases/entitlements/${encodeURIComponent(generationId)}`,
+    ),
+  runOwnerEndToEndTest: (generationId: string) =>
+    request<{ accepted: true; noStripe: true; entitlementId: string | null }>(
+      "/testing/owner-entitlements",
+      {
+        method: "POST",
+        body: JSON.stringify({ generationId, confirmation: "RUN_FULL_END_TO_END_TEST" }),
+      },
+    ),
 
   /**
    * A panel a designer corrected against the real vehicle template.
