@@ -35,7 +35,17 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 - [ ] Durable queues, idempotency, retries, concurrency control, failure recovery and observability are implemented server-side.
 - [ ] UI/UX works DESIGN → REVISE → PANELS → QC → WRAPBOX without manual IDs, SQL, hidden RPCs or engineering intervention.
 
-## Current release blocker — PR #260
+## Verified release state — 2026-08-30
+
+- [x] Workflow UI/UX PR #258 merged as `b6b30c1e913c3656602923affb30face6ab6c013`; it is an ancestor of the deployed release and carries one Generation ID through DESIGN → REVISE → PANELS → QC → WRAPBOX without manual copy/paste handoffs.
+- [x] Generation-ID OS kernel PR #260 merged as `01eb47ddea1c9c67c240aba172f8b4a5d5e2d5eb`; it is an ancestor of the deployed release.
+- [x] Labeled A.T.L.A.S. Call-1 recovery PR #261 merged as `b7e639721918f7290e2ff0f8ed124c989d1c38c4` with all four required checks passed.
+- [x] Protected manual dark-deploy workflow run #839 succeeded for exact `main` SHA `b7e639721918f7290e2ff0f8ed124c989d1c38c4` in 6m 46s and produced the exact-droplet inventory artifact.
+- [x] Run #839 built and labeled both `designproai-runtime` and `designproai-gateway` with exact SHA `b7e639721918f7290e2ff0f8ed124c989d1c38c4`, deployed web, gateway and two exact-SHA server-owned runtime replicas, and passed isolated dark loopback infrastructure acceptance on `designproai-prod-sfo3`.
+- [x] Release archive layout, manifest/content hashes, extracted release tree, role-separated environment files, shared restart-safe spool and exact-SHA runtime isolation all passed in run #839. Topaz Call 12 and Stripe checkout were enabled without printing secrets.
+- [ ] Seven-view production workflow canary is still required. Run #839 explicitly reports that infrastructure acceptance is not the seven-view production canary; Caddy, DNS and public traffic were not changed by the dark deploy.
+
+## Resolved release — PR #260
 
 - [x] PR #260 exists.
 - [x] Original failing head SHA identified: `9094150857d07211790ff2acdf5be550ee122556`.
@@ -52,7 +62,7 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 - [x] Exact merged SHA `01eb47ddea1c9c67c240aba172f8b4a5d5e2d5eb` deployed to `designproai-prod-sfo3` through the protected exact-artifact workflow.
 - [x] Droplet acceptance verified the exact release/image SHA `01eb47ddea1c9c67c240aba172f8b4a5d5e2d5eb`; protected deploy workflow run #834 succeeded.
 
-## Current release blocker — PR #261
+## Resolved merge/deploy — PR #261; production canary pending
 
 - [x] Production canary failure localized: GENIE supplied the correct Hood geometry, but Call 1 had been given six unnamed rectangles and label-only panel entries, so side-view artwork could occupy the Hood region.
 - [x] Call 1 restored to one complete flattened 4K A.T.L.A.S. design through `design-panel-ai-generate` `atlas-artboard`; DCA and the separate `persona-photographer-render` 3D-proof architecture are unchanged.
@@ -62,11 +72,11 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 - [x] The same live run exposed the next OS seam: the canary duplicated the automatic Production workflow and created no entitlement, leaving both runs honestly at `await_purchase`.
 - [x] Canary repaired to consume exactly one server-created Production workflow and persist/verify a real Generation-bound owner promotion entitlement through `confirm_designpro_purchase`; no browser boolean or purchase bypass is accepted.
 - [x] Exact local release gate repeated after both repairs: runtime/schema 386, repository contracts 496, gateway 63, web 8, app 74, server/archive 57, and both production builds passed.
-- [x] PR #261 opened at initial head `dfe063840b18d7f2fbc9cea334495a6445790a32` and updated head `be75cb0e5515e99146bef8dedb312d402cba3689`.
-- [ ] Exact GitHub release gate #740 green at head `be75cb0e5515e99146bef8dedb312d402cba3689`.
-- [ ] PR #261 merged.
-- [ ] Exact PR #261 merged SHA deployed and independently verified on `designproai-prod-sfo3`.
-- [ ] Fresh production canary proves one entitlement, one Production workflow, Full QC, output, ZIP and WrapBox.
+- [x] PR #261 opened at initial head `dfe063840b18d7f2fbc9cea334495a6445790a32`, repaired at `be75cb0e5515e99146bef8dedb312d402cba3689`, and finalized at `da6bde122fe9738b032ca1039ed41ca677e2e0f1`.
+- [x] Exact final PR release gate #741 succeeded at head `da6bde122fe9738b032ca1039ed41ca677e2e0f1`; executable contracts, Supabase shadow migrations/pgTAP and the immutable release archive all passed.
+- [x] PR #261 merged as exact `main` SHA `b7e639721918f7290e2ff0f8ed124c989d1c38c4`.
+- [x] Exact merged SHA `b7e639721918f7290e2ff0f8ed124c989d1c38c4` deployed and independently verified on `designproai-prod-sfo3` by protected workflow run #839.
+- [ ] Fresh production canary proves one entitlement, one Production workflow, Full QC, output, ZIP and WrapBox. This remains the release blocker after the successful infrastructure deployment.
 
 ## Required live acceptance
 
