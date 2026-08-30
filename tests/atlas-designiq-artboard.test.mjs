@@ -114,18 +114,17 @@ test("the mapping contains zero creative language of its own", () => {
   }
 });
 
-test("corrective notes and inputs ride only through extras", () => {
+test("corrective notes, the guide and customer references ride only through extras", () => {
   const b = body(BASE_INPUT, {
     guideStoragePath: "atlas-call1-inputs/abc.png",
-    structuralReferenceStoragePath: "atlas-call1-inputs/def.jpg",
-    structuralReferenceMime: "image/jpeg",
     correctiveNote: "CORRECTION -- refused",
     referenceImagesBase64: ["YmF6"],
   });
-  // The two large inputs travel as STORAGE PATHS — a 2.2MB inline-base64 body
-  // killed the edge worker twice (2026-08-27).
+  // The deterministic guide travels as a STORAGE PATH — a 2.2MB inline-base64
+  // body killed the edge worker twice (2026-08-27).
   assert.equal(b.guideStoragePath, "atlas-call1-inputs/abc.png");
-  assert.equal(b.structuralReferenceStoragePath, "atlas-call1-inputs/def.jpg");
+  assert.equal(b.structuralReferenceStoragePath, undefined);
+  assert.equal(b.structuralPairedProofStoragePath, undefined);
   assert.equal(b.correctiveNote, "CORRECTION -- refused");
   assert.deepEqual(b.referenceImagesBase64, ["YmF6"]);
   // And no inline blob field survives on the request.
