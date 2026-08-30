@@ -44,10 +44,10 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 - [x] `supabase-shadow` reached fresh Auth/Storage/PostgREST/migrations/pgTAP and failed there.
 - [x] Exact npm-test bootstrap failure identified: `tests/supabase-bootstrap.test.mjs` still hard-coded the pre-kernel 81-migration chain while PR #260 adds migrations `20260829230000` and `20260829230100`.
 - [x] Bootstrap contract repaired to require the new 83-migration chain and explicitly include both Generation OS migrations. Repair commit: `046b4f4679dfc06278cde755741211b7acf351ad`.
-- [ ] Confirm whether any additional npm assertion remains after rerun.
-- [ ] Exact migration/pgTAP failure identified.
-- [ ] Supabase migration/pgTAP failure repaired without redesigning A.T.L.A.S.
-- [ ] Exact release gate rerun green.
+- [x] Additional npm assertion identified and repaired: `tests/schema-gateway-reconcile.test.mjs` still expected the pre-OS migration tail instead of both Generation OS migrations.
+- [x] Exact migration/pgTAP failures identified: purchase confirmation queried nonexistent `designpro_workflow_runs.generation_id`; legacy rows were rejected with `workflow_run_generation_identity_missing`; artifact/receipt trigger tests used the wrong pgTAP overload; new SECURITY DEFINER trigger functions retained default execute privileges.
+- [x] Supabase migration/pgTAP failures repaired without redesigning A.T.L.A.S.: purchases resolve Generation ID through the revision-source contract; legacy unbound rows remain compatible without inventing lineage; artifact/receipt triggers assert their exact functions; PUBLIC/anon execute is revoked from every new SECURITY DEFINER function. Repair commits: `3d1ed060dd91e631a44d534bbffc65d836147006`, `9ae9162276f4cef0d5398798a2f7c4091bd9794f`, `4fbed7c40424b965621f4477dda7732e5129543f`.
+- [x] Exact PR release gate rerun green: run #735, attempt 2, head `4fbed7c40424b965621f4477dda7732e5129543f`; executable contracts, fresh Supabase migrations/pgTAP, immutable archive reproducibility and manifest-bound image builds all passed. Production migration was correctly skipped until trusted merged/main context.
 - [ ] PR #260 merged.
 - [ ] Exact merged SHA deployed to `designproai-prod-sfo3`.
 - [ ] Droplet SHA independently verified.
