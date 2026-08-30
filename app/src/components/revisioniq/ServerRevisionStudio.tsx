@@ -141,7 +141,7 @@ export function ServerRevisionStudio({
   const selectedPanel = panels.get(selectedRole) || null;
   const stageUrl = mode === "proof" ? proof?.signedUrl : selectedView?.signedUrl;
   const stageLabel = mode === "proof" ? "2D Production Proof" : SURFACE_LABEL[selectedRole];
-  const revisionUrl = `/designpro/revisions/new?source=${encodeURIComponent(generationId)}&instruction=${encodeURIComponent(revisionInstruction.trim())}&surface=${encodeURIComponent(selectedRole)}`;
+  const revisionUrl = "/designpro";
   const verifiedCount = viewForRole.size;
 
   return (
@@ -510,10 +510,11 @@ function StudioWorkspace({
             placeholder={`Example: On the ${SURFACE_LABEL[selectedRole].toLowerCase()}, move the phone number above the rear wheel and preserve all approved text exactly.`}
           />
           <Button asChild className="mt-3 w-full bg-gradient-to-r from-blue-600 to-fuchsia-600 text-white">
-            <Link to={revisionUrl}>Create new revision source</Link>
+            <Link to={revisionUrl}>Start new A.T.L.A.S. design</Link>
           </Button>
           <p className="mt-2 text-[10px] leading-4 text-zinc-600">
-            This control does not rerun production or mutate approved files.
+            A revision is a new current-architecture A.T.L.A.S. run. It never
+            mutates approved files or reopens fulfillment on this design.
           </p>
         </div>
       </aside>

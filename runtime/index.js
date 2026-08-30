@@ -479,8 +479,9 @@ app.post("/internal/wrapbox/recipient", authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
     const keys = Object.keys(body).sort();
-    if (JSON.stringify(keys) !== JSON.stringify(["customerEmail", "customerReference", "operatorId", "orderNumber", "verificationRefHash"])) return res.status(400).json({ error: "recipient_registration_request_invalid" });
+    if (JSON.stringify(keys) !== JSON.stringify(["customerEmail", "customerReference", "generationId", "operatorId", "orderNumber", "verificationRefHash"])) return res.status(400).json({ error: "recipient_registration_request_invalid" });
     const operatorId = canonicalUuid(body.operatorId, "operatorId");
+    const generationId = canonicalUuid(body.generationId, "generationId");
     const customerEmail = String(body.customerEmail || "").trim().toLowerCase();
     const customerReference = String(body.customerReference || "").trim();
     const orderNumber = String(body.orderNumber || "");
@@ -489,6 +490,22 @@ app.post("/internal/wrapbox/recipient", authMiddleware, async (req, res) => {
       !/^[^\u0000-\u001f\u007f]{1,160}$/.test(customerReference) ||
       !/^[0-9a-f]{64}$/.test(verificationRefHash) || orderNumber !== orderNumber.trim() ||
       !/^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$/.test(orderNumber)) return res.status(400).json({ error: "recipient_registration_request_invalid" });
+    // Defense in depth: the gateway checks the caller-visible entitlement
+    // before forwarding any recipient details, and the trusted runtime proves
+    // it again using the service role. An internal caller cannot turn WrapBox
+    // into a pre-purchase customer registry.
+    const { data: entitlement, error: entitlementError } = await supabase
+      .from("designpro_purchase_entitlements")
+      .select("id")
+      .eq("owner_id", operatorId)
+      .eq("generation_id", generationId)
+      .eq("product_type", "print_pack_entitlement")
+      .limit(1)
+      .maybeSingle();
+    if (entitlementError || !entitlement?.id) {
+      console.error(`[DESIGNPRO-OS] recipient registration blocked: production entitlement missing for ${generationId}`);
+      return res.status(409).json({ error: "production_pack_entitlement_required" });
+    }
     const { data, error } = await supabase.rpc("register_designpro_operator_wrapbox_recipient", {
       p_operator_id: operatorId,
       p_customer_email: customerEmail,

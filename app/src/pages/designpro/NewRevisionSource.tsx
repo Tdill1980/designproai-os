@@ -93,6 +93,7 @@ export default function NewRevisionSource() {
     try {
       setProgress("Registering the confirmed WrapBox recipient…");
       const { delivery } = await dpApi.registerDeliveryRecipient({
+        generationId,
         customerEmail: String(form.get("customerEmail") || "").trim().toLowerCase(),
         customerReference: String(form.get("customerReference") || "").trim(),
         verificationReference: String(form.get("verificationReference") || "").trim(),

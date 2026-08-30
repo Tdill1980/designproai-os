@@ -52,8 +52,11 @@ const RUNTIME_URL = String(
   process.env.DESIGNPRO_RUNTIME_INTERNAL_URL || "http://127.0.0.1:3001"
 ).trim();
 const WORKER_SECRET = String(process.env.WORKER_SECRET || "").trim();
+// This identity belongs only to the current-architecture canary. Never reuse a
+// real customer here: recipient bindings are append-only business records and
+// are created only after the protected owner entitlement below is persisted.
 const CUSTOMER_EMAIL = String(
-  process.env.DESIGNPRO_CANARY_EMAIL || "trish@weprintwraps.com"
+  process.env.DESIGNPRO_CANARY_EMAIL || "atlas-canary-customer@designproai.com"
 ).trim().toLowerCase();
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
 const SERVICE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
@@ -236,7 +239,7 @@ async function assertCurrentGeniePrep() {
   return prepared;
 }
 
-async function registerRecipient(operatorId) {
+async function registerRecipient(operatorId, generationId) {
   step("registering WrapBox recipient through the runtime");
   const verificationRefHash = sha256(Buffer.from(`canary-verification:${ORDER_NUMBER}`));
   const response = await fetch(`${RUNTIME_URL}/internal/wrapbox/recipient`, {
@@ -247,6 +250,7 @@ async function registerRecipient(operatorId) {
     },
     body: JSON.stringify({
       operatorId,
+      generationId,
       customerEmail: CUSTOMER_EMAIL,
       customerReference: CUSTOMER_REFERENCE,
       verificationRefHash,
@@ -377,7 +381,7 @@ async function confirmOwnerPromotionEntitlement(generationId, enticeRunId) {
     p_product_type: "print_pack_entitlement",
     p_generation_id: generationId,
     p_amount_cents: 0,
-    p_user_email: CANARY_EMAIL,
+    p_user_email: OPERATOR_EMAIL,
     p_promotion_code: OWNER_PROMOTION_CODE,
     p_discount_cents: OWNER_PROMOTION_DISCOUNT_CENTS,
   });
@@ -518,7 +522,7 @@ function assertOutputSet() {
  * get_designpro_generation_request deliberately does not return it -- that is a
  * read; the revision itself is still saved by the operator's own JWT.
  */
-async function runCallsOneToSeven({ operator, operatorId, generationId, delivery }) {
+async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   // THE CANARY RUNS A.T.L.A.S., BECAUSE THAT IS WHAT PRODUCTION RUNS.
   //
   // It used to submit `designpro.calls-1-7-input.v1` -- an obsolete replay
@@ -535,9 +539,8 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
   // v3 is the contract the gateway now normalizes every real vehicle-wrap
   // generation onto, so the canary submits it directly. Its validator
   // (calls_1_7_input_v3_valid) forbids `orderNumber` and `delivery` on the
-  // input -- Calls 1-7 no longer decide fulfilment -- so the recipient stays
-  // registered separately and reaches the revision through the snapshot, which
-  // is unchanged.
+  // input. Calls 1-7 and the Entice pack are fulfillment-unbound by design;
+  // recipient registration happens only after the purchase entitlement.
   const input = {
     contractVersion: "designpro.calls-1-7-input.v3",
     pipelineMode: "flat-first-atlas-v1",
@@ -562,6 +565,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
   const requestId = String(created?.requestId || created?.id || "");
   if (!requestId) throw new Error(`generation request was not created: ${JSON.stringify(created).slice(0, 300)}`);
   evidence.generationRequestId = requestId;
+  evidence.visualizationId = requestId;
   step(`request ${requestId}`);
 
   let state = "";
@@ -721,7 +725,13 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, delivery
     throw new Error(`expected seven placed views, found ${Object.keys(renderAssets).length}`);
   }
   step(`revision ${revisionId} carries seven placed views`);
-  return { revisionId, renderAssets, callOnePanels: usablePanels, flatAtlas: evidence.flatAtlas };
+  return {
+    requestId,
+    revisionId,
+    renderAssets,
+    callOnePanels: usablePanels,
+    flatAtlas: evidence.flatAtlas,
+  };
 }
 
 async function main() {
@@ -732,79 +742,61 @@ async function main() {
   await assertCurrentGeniePrep();
 
   const generationId = randomUUID();
-  const visualizationId = randomUUID();
   const designId = `DID-${generationId.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
   evidence.generationId = generationId;
-  evidence.visualizationId = visualizationId;
-
-  // The recipient is bound BEFORE the request, not after: create_designpro_
-  // generation_request keys its idempotency on the recipient identity hash and
-  // the order number, so neither can be decided later.
-  const delivery = await registerRecipient(operatorId);
-  step(`recipient bound ${delivery.customerId}`);
 
   process.stdout.write(`\nProduction canary — order ${ORDER_NUMBER}\ndesign ${designId}\n\n`);
 
   // A NEW CURRENT-SYSTEM DESIGN. No historical render, geometry row or source
   // job enters this request. Calls 1-7 run through the current one-artifact
   // A.T.L.A.S. graph and record its canonical design as they author it.
-  const { revisionId, renderAssets, callOnePanels } = await runCallsOneToSeven({
-    operator, operatorId, generationId, delivery,
+  const { requestId, revisionId, renderAssets } = await runCallsOneToSeven({
+    operator, operatorId, generationId,
   });
   evidence.revisionId = revisionId;
   evidence.renderAssets = renderAssets;
-  const snapshot = {
-    contractVersion: "designpro.revision-snapshot.v1",
-    // Call 9 promotes these exact bytes and Call 8 sizes the proof from them.
-    // Both re-download and re-hash, so a snapshot that disagreed with storage is
-    // refused there rather than trusted here.
-    callOnePanels,
-    vehicle: VEHICLE,
-    surfaceOptions: {
-      coverage: "full",
-      addHood: true,
-      addRoof: true,
-      addFrontBumper: true,
-      addRearBumper: true,
-    },
-    finish: "gloss",
-    bodyText: { designName: "Precision Climate Solutions" },
-    change: { source: "atlas-graph-production-canary", generationId },
-    orderNumber: ORDER_NUMBER,
-    expectedLogoInventory: [],
-    logoInventoryAttestation: { attested: true, mode: "none" },
-    delivery,
-    revisionId,
-    generationId,
-    visualizationId,
-    renderAssets,
-    designId,
-  };
-
-  step("saving revision through authenticated operator JWT");
-  const saved = await rpc(operator, "save_designpro_revision_source", {
-    p_revision_id: revisionId,
-    p_generation_id: generationId,
-    p_visualization_id: visualizationId,
-    p_expected_updated_at: new Date().toISOString(),
-    p_snapshot: snapshot,
-    p_snapshot_hash: null,
-    p_idempotency_key: `canary-${revisionId}`,
+  step("handing the unbound A.T.L.A.S. design to Entice");
+  const handoff = await rpc(operator, "handoff_designpro_generation_to_production", {
+    p_request_id: requestId,
   });
-  step(`snapshot ${String(saved?.snapshotHash || "").slice(0, 16)}`);
-
-  step("starting Entice Calls 8-10");
-  const entice = await rpc(operator, "create_designpro_entice_workflow", {
-    p_revision_id: revisionId,
-    p_idempotency_key: `canary-entice-${revisionId}`,
-    p_input: { trigger: "production-canary", revisionSnapshotHash: saved?.snapshotHash },
-  });
-  evidence.enticeRunId = entice?.workflowRunId;
+  if (String(handoff?.revisionId || "").toLowerCase() !== revisionId.toLowerCase()) {
+    throw new Error("A.T.L.A.S. handoff returned a different revision");
+  }
+  evidence.enticeRunId = String(handoff?.workflowRunId || "");
+  if (!evidence.enticeRunId) throw new Error("A.T.L.A.S. handoff returned no Entice workflow");
   await waitForEntice(evidence.enticeRunId);
   step("Entice complete; resolving its one server-created Production workflow");
   const production = await automaticProductionRun(evidence.enticeRunId);
   evidence.productionRunId = production.id;
+
+  // The canary bypasses Stripe, never the purchase gate. This service-role RPC
+  // persists the same Generation-bound entitlement the Stripe webhook writes,
+  // with an explicit protected 100% owner promotion instead of a fake paid bit.
   await confirmOwnerPromotionEntitlement(generationId, evidence.enticeRunId);
+
+  // WrapBox is fulfillment data. Do not register or bind a recipient while the
+  // customer is designing or viewing Entice output. The entitlement above must
+  // exist first; the database then requires this exact late binding before it
+  // will release Production from await_purchase.
+  const delivery = await registerRecipient(operatorId, generationId);
+  step(`recipient registered after entitlement ${delivery.customerId}`);
+  const fulfillment = await rpc(operator, "bind_designpro_revision_fulfillment", {
+    p_revision_id: revisionId,
+    p_recipient_identity_hash: delivery.recipientIdentityHash,
+    p_order_number: ORDER_NUMBER,
+    p_design_name: DESIGN_NAME,
+  });
+  if (String(fulfillment?.revisionId || "").toLowerCase() !== revisionId.toLowerCase()
+    || fulfillment?.delivery?.recipientIdentityHash !== delivery.recipientIdentityHash) {
+    throw new Error("post-purchase WrapBox fulfillment binding is invalid");
+  }
+  evidence.delivery = {
+    registeredAfterEntitlement: true,
+    bindingHash: fulfillment.bindingHash,
+    customerId: delivery.customerId,
+    recipientIdentityHash: delivery.recipientIdentityHash,
+  };
+  step(`post-purchase fulfillment bound ${String(fulfillment.bindingHash || "").slice(0, 12)}`);
   await waitForProduction(operator, operatorId, evidence.productionRunId, designId);
 
   evidence.finalState = {

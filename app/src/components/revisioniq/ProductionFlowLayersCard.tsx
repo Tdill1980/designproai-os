@@ -392,7 +392,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
    * button that can start or restart production work is a second conductor.
    */
   const orderProductionPack =
-    injected?.onOrderProductionPack && (entice || (isVerifiedPack && packState.productionEligible))
+    !injected?.entitlements?.productionPack
+      && injected?.onOrderProductionPack
+      && (entice || (isVerifiedPack && packState.productionEligible))
       ? async () => {
         if (ordering) return;
         setOrdering(true);
@@ -525,6 +527,15 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
               {ordering
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening checkout…</>
                 : <><ShoppingBag className="h-4 w-4" /> GET PRODUCTION PACK</>}
+            </button>
+          )}
+          {!injected?.entitlements?.productionPack && injected?.onRunOwnerEndToEndTest && (
+            <button
+              type="button"
+              onClick={() => void injected.onRunOwnerEndToEndTest?.()}
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-cyan-400/50 bg-cyan-500/10 text-sm font-bold text-cyan-100 hover:bg-cyan-500/20"
+            >
+              Run Full End-to-End Test — No Stripe
             </button>
           )}
         </>

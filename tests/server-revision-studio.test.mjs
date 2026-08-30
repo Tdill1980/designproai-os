@@ -6,10 +6,6 @@ const studio = readFileSync(
   new URL("../app/src/components/revisioniq/ServerRevisionStudio.tsx", import.meta.url),
   "utf8",
 );
-const intake = readFileSync(
-  new URL("../app/src/pages/designpro/NewRevisionSource.tsx", import.meta.url),
-  "utf8",
-);
 const initialDesignPage = readFileSync(
   new URL("../app/src/pages/DesignPanelProPremium.tsx", import.meta.url),
   "utf8",
@@ -49,13 +45,10 @@ test("PanelProStudio is backed by the same server artifacts", () => {
   assert.match(panelStudio, /Server production panel/);
 });
 
-test("a revision is a new immutable source, never a browser-side rerun", () => {
-  assert.match(studio, /Create new revision source/);
-  assert.match(studio, /does not rerun production or mutate approved files/);
-  assert.match(studio, /\/designpro\/revisions\/new\?source=/);
-  assert.match(intake, /sourceGenerationId/);
-  assert.match(intake, /original server-owned job remains unchanged/);
-  assert.match(intake, /defaultValue=\{requestedInstruction\}/);
+test("a revision starts a new current A.T.L.A.S. run, never the obsolete manual source form", () => {
+  assert.match(studio, /Start new A\.T\.L\.A\.S\. design/);
+  assert.match(studio, /new current-architecture A\.T\.L\.A\.S\. run/);
+  assert.doesNotMatch(studio, /\/designpro\/revisions\/new\?source=/);
 });
 
 // THE CUSTOMER-FACING EDITOR IS MOUNTED, NOT MERELY IMPORTED.

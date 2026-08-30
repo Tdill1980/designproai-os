@@ -20,11 +20,6 @@ on:
         options:
           - DO_NOT_RUN
           - RUN_PRODUCTION_CANARY
-      customer_email:
-        description: "Confirmed customer identity used for the canary WrapBox recipient"
-        required: true
-        type: string
-        default: trish@weprintwraps.com
       vehicle_type:
         required: true
         type: string
@@ -75,7 +70,6 @@ jobs:
           set +x
           test "${{ inputs.confirmation }}" = "RUN_PRODUCTION_CANARY"
           test -n "$SSH_PRIVATE_KEY"
-          printf '%s' '${{ inputs.customer_email }}' | grep -Eq '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
 
       - name: Pin the droplet SSH identity
         id: ssh
@@ -111,7 +105,8 @@ jobs:
           CANARY_MAKE: ${{ inputs.vehicle_make }}
           CANARY_MODEL: ${{ inputs.vehicle_model }}
           CANARY_TYPE: ${{ inputs.vehicle_type }}
-          CANARY_EMAIL: ${{ inputs.customer_email }}
+          CANARY_EMAIL: atlas-canary-customer@designproai.com
+          EXPECTED_RELEASE_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -123,6 +118,7 @@ jobs:
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "PAYLOAD='$payload' \
+             EXPECTED_SHA='$EXPECTED_RELEASE_SHA' \
              YEAR='$CANARY_YEAR' MAKE='$CANARY_MAKE' MODEL='$CANARY_MODEL' \
              VTYPE='$CANARY_TYPE' CEMAIL='$CANARY_EMAIL' bash -s" \
             > "$RUNNER_TEMP/canary.log" 2>&1 <<'REMOTE'
@@ -132,8 +128,13 @@ jobs:
           test -f /opt/designproai-os/shared/runtime.env || { echo "runtime.env missing"; exit 41; }
 
           sha=$(basename "$(readlink -f "$release")")
+          [[ $EXPECTED_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "invalid expected workflow SHA"; exit 42; }
+          [[ $sha == "$EXPECTED_SHA" ]] || {
+            echo "refusing mixed release: workflow SHA $EXPECTED_SHA, deployed SHA $sha — dark deploy the exact workflow SHA first"
+            exit 43
+          }
           image="designproai-runtime:$sha"
-          docker image inspect "$image" >/dev/null 2>&1 || { echo "runtime image $image is not present"; exit 42; }
+          docker image inspect "$image" >/dev/null 2>&1 || { echo "runtime image $image is not present"; exit 44; }
 
           work=$(mktemp -d /tmp/designpro-canary.XXXXXX)
           out="$work/output"

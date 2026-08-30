@@ -427,6 +427,7 @@ test("fresh-project signup honors email confirmation and cannot grant QC authori
 
 test("operator recipient intake accepts normal business fields and forwards only a server hash", async (t) => {
   const operatorId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   const customerId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const verificationReference = "PAYMENT-SETTLED-2026-0042";
   const expectedHash = createHash("sha256").update(verificationReference, "utf8").digest("hex");
@@ -442,10 +443,15 @@ test("operator recipient intake accepts normal business fields and forwards only
       if (String(url).endsWith("/auth/v1/user")) {
         return Response.json({ id: operatorId, email: "operator@designproai.com" });
       }
+      if (String(url).includes("/rest/v1/designpro_purchase_entitlements?")) {
+        assert.match(String(url), new RegExp(`generation_id=eq\\.${generationId}`));
+        return Response.json([{ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" }]);
+      }
       if (String(url) === "http://runtime-1:3001/internal/wrapbox/recipient") {
         const body = JSON.parse(init.body);
         assert.deepEqual(body, {
           operatorId,
+          generationId,
           customerEmail: "customer@designproai.test",
           customerReference: "Acme Fleet Customer",
           verificationRefHash: expectedHash,
@@ -472,6 +478,7 @@ test("operator recipient intake accepts normal business fields and forwards only
     method: "POST",
     headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
     body: JSON.stringify({
+      generationId,
       customerEmail: " Customer@DesignProAI.Test ",
       customerReference: "Acme Fleet Customer",
       verificationReference,
@@ -517,6 +524,48 @@ test("recipient intake rejects UUID/hash-era fields before calling the runtime",
   });
   assert.equal(response.status, 400);
   assert.equal(internalCalled, false);
+});
+
+test("recipient details never cross into the runtime before a production-pack entitlement", async (t) => {
+  const operatorId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  let runtimeCalled = false;
+  const server = createGateway({
+    env: {
+      ...env,
+      DESIGNPRO_RUNTIME_INTERNAL_URL: "http://runtime-1:3001",
+      WORKER_SECRET: "w".repeat(32),
+    },
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("/auth/v1/user")) {
+        return Response.json({ id: operatorId, email: "operator@designproai.com" });
+      }
+      if (String(url).includes("/rest/v1/designpro_purchase_entitlements?")) {
+        return Response.json([]);
+      }
+      if (String(url) === "http://runtime-1:3001/internal/wrapbox/recipient") {
+        runtimeCalled = true;
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/wrapbox/recipients/register`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      generationId,
+      customerEmail: "customer@designproai.test",
+      customerReference: "Acme Fleet Customer",
+      verificationReference: "PAYMENT-PENDING-0042",
+      orderNumber: "ORDER-2026-0042",
+      designName: "Acme fleet wrap",
+    }),
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "production_pack_entitlement_required");
+  assert.equal(runtimeCalled, false);
 });
 
 test("source has no legacy approval RPC, public render URL fallback, or Supabase service key", () => {
@@ -1072,6 +1121,7 @@ test("revision source cannot silently freeze a zero-logo expectation", () => {
 
 test("recipient registration is same-origin, operator-bound, and mediated only through the internal runtime", async (t) => {
   const operatorId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   const customerId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const verificationReference = "WPW-PAID-2026-0042";
   const verificationRefHash = createHash("sha256").update(verificationReference, "utf8").digest("hex");
@@ -1088,10 +1138,14 @@ test("recipient registration is same-origin, operator-bound, and mediated only t
     fetchImpl: async (url, init = {}) => {
       calls.push({ url: String(url), init });
       if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: operatorId, email: "operator@designproai.com" });
+      if (String(url).includes("/rest/v1/designpro_purchase_entitlements?")) {
+        return Response.json([{ id: "ffffffff-ffff-4fff-8fff-ffffffffffff" }]);
+      }
       if (String(url) === "http://runtime-1:3001/internal/wrapbox/recipient") {
         assert.equal(init.headers.authorization, `Bearer ${workerSecret}`);
         assert.deepEqual(JSON.parse(init.body), {
           operatorId,
+          generationId,
           customerEmail: "verified.customer@example.com",
           customerReference: "Verified Fleet Customer",
           verificationRefHash,
@@ -1119,6 +1173,7 @@ test("recipient registration is same-origin, operator-bound, and mediated only t
       "content-type": "application/json",
     },
     body: JSON.stringify({
+      generationId,
       customerEmail: " Verified.Customer@Example.com ",
       customerReference: "Verified Fleet Customer",
       verificationReference,

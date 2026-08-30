@@ -14,6 +14,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { dpApi } from "@/lib/designpro-api";
+import { isOwner } from "@/lib/admin-allowlist";
 import {
   loadProductionLayers,
   type ProductionLayers,
@@ -25,6 +26,8 @@ export function useStandaloneProductionLayers(
   options?: { returnPath?: string },
 ): ProductionLayersSource | null {
   const [layers, setLayers] = useState<ProductionLayers | null>(null);
+  const [entitlements, setEntitlements] = useState({ productionPack: false, logoPack: false });
+  const [owner, setOwner] = useState(false);
   const id = String(generationId || "");
 
   useEffect(() => {
@@ -33,12 +36,22 @@ export function useStandaloneProductionLayers(
       setLayers(null);
       return () => { live = false; };
     }
-    // A design that is not a standalone run answers 404 here, which is the
-    // honest "not mine" rather than an error worth showing anyone.
-    loadProductionLayers(id)
-      .then((result) => { if (live) setLayers(result); })
-      .catch(() => { if (live) setLayers(null); });
-    return () => { live = false; };
+    const refresh = () => Promise.all([
+      loadProductionLayers(id),
+      dpApi.getPurchaseEntitlements(id),
+    ]).then(([result, purchased]) => {
+      if (!live) return;
+      setLayers(result);
+      setEntitlements(purchased);
+    }).catch(() => { if (live) setLayers(null); });
+    void refresh();
+    // Purchase return and server reconciliation are asynchronous. Polling here
+    // turns the card into a repeatable OS view instead of requiring a refresh.
+    const timer = window.setInterval(refresh, 5000);
+    void dpApi.session().then((session) => {
+      if (live) setOwner(isOwner(session.user.email));
+    }).catch(() => { if (live) setOwner(false); });
+    return () => { live = false; window.clearInterval(timer); };
   }, [id]);
 
   const returnPath = options?.returnPath;
@@ -58,9 +71,16 @@ export function useStandaloneProductionLayers(
       rows: layers.rows,
       designViews: layers.designViews,
       activePack: layers.activePack,
+      entitlements,
       // Two products, two checkouts. Neither authorizes the other.
       onOrderProductionPack: checkout("print_pack_entitlement"),
       onOrderLogoPack: checkout("logo_pack"),
+      ...(owner ? {
+        onRunOwnerEndToEndTest: async () => {
+          await dpApi.runOwnerEndToEndTest(id);
+          setEntitlements((current) => ({ ...current, productionPack: true }));
+        },
+      } : {}),
     };
-  }, [layers, id, returnPath]);
+  }, [layers, entitlements, owner, id, returnPath]);
 }
