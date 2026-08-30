@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v11-neutral-mask"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v12-neutral-fields"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -130,7 +130,7 @@ test("obsolete vehicle/template and finished-proof examples cannot reach Call 1"
   assert.match(liveAuthoring, /guideStoragePath: await stageEdgeInput\(authoringGuideBytes/);
 });
 
-test("the flat contract gives the model data-bound placement without anatomy triggers or dimensions", () => {
+test("the flat contract gives the model neutral field placement without anatomy triggers or dimensions", () => {
   // ⚠️ THIS BLOCK ONCE ASSERTED THE OPPOSITE, AND THAT IS WHY IT IS HERE.
   //
   // The contract names the forbidden vehicle anatomy because live generation
@@ -150,10 +150,10 @@ test("the flat contract gives the model data-bound placement without anatomy tri
   //
   // The requirements are unchanged. The contract now reaches them by naming
   // what to paint.
-  const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function buildDesignIQPrompt("));
+  const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function atlasNeutralCreativeDirection("));
 
   assert.match(contract, /neutral spatial mask with six fixed GENIE regions/);
-  assert.match(contract, /The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front/);
+  assert.match(contract, /The centre column is fixed top-to-bottom as Fields C, D, E, F/);
   assert.match(contract, /\$\{panelLines\}/);
   assert.match(contract, /Replace every light mask region, corner to corner/);
   assert.match(contract, /Return the finished two-dimensional livery fields/);
@@ -168,9 +168,8 @@ test("the flat contract gives the model data-bound placement without anatomy tri
       `the authoring contract must not name ${anatomyTrigger}`);
   }
 
-  // The centre column is described in the order the layout actually builds. The
-  // prompt said ROOF/HOOD/FRONT/REAR while CENTER_ORDER has always been
-  // rear/roof/hood/front, so it was naming the containers in the wrong order.
+  // Physical identity remains deterministic runtime data; the model sees only
+  // the anonymous fields in their actual layout order.
   assert.match(runtimeSource, /const CENTER_ORDER = Object\.freeze\(\["rear", "roof", "hood", "front"\]\)/);
   assert.doesNotMatch(contract, /vehicle named above/);
 });
@@ -213,7 +212,7 @@ test("body-style and component vocabulary stay server-side", () => {
   for (const body of ["pickup", "van", "suv", "car", "box"]) {
     assert.ok(runtimeSource.includes(`${body}: Object.freeze(`), `${body} needs its own structure`);
   }
-  const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function buildDesignIQPrompt("));
+  const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function atlasNeutralCreativeDirection("));
   for (const region of ["pickup flank", "van flank", "box truck", "FRONT FENDER", "CAB DOOR", "REAR QUARTER", "BED SIDE", "ROCKER"]) {
     assert.ok(!contract.includes(region), `the contract must not name ${region} to the image model`);
   }

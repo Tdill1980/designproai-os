@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v11-neutral-mask";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v12-neutral-fields";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -310,12 +310,6 @@ function splitStyleAndText(raw: string, companyName?: string): { stylePrompt: st
 // on-vehicle camera/studio/photograph presentation. Nothing is stripped by a
 // later string replacement and there is no second creative implementation:
 // the presentation half is a branch inside the authority itself.
-const ATLAS_PLACEMENT_WORDS: Record<string, string> = {
-  "left-flank": "tall column down the LEFT edge",
-  "right-flank": "tall column down the RIGHT edge",
-  "center-column": "in the CENTRE column, stacked REAR then ROOF then HOOD then FRONT from the top",
-};
-
 /** Strings only, capped, or nothing. A malformed topology is simply absent. */
 function atlasPanelTopology(value: unknown): AtlasPanelTopology | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -370,17 +364,49 @@ function atlasFlatMasterContract(
       throw new Error(`ATLAS panel identity mismatch: ${label}`);
     }
   }
-  const panelLines = [...expected.keys()].map((label) => {
-    const panel = supplied.get(label)!;
-    const where = ATLAS_PLACEMENT_WORDS[String(panel.placement || "")] || String(panel.placement || "");
-    return `• ${String(panel.surfaceId || "").toUpperCase()} — ${label} — ${where}`;
-  }).join("\n");
+  // The exact physical identities above are a SERVER validation contract. Do
+  // not interpolate them into the image-model prompt. Live canary 33339192219
+  // received an unlabelled mask but still drew a tailgate outline and cut-out
+  // in the region named REAR by prose. The creative model needs position and
+  // coordination, not vehicle anatomy. GENIE and the deterministic crop retain
+  // the real PS/DS/RR/RF/HD/FR mapping.
+  const panelLines = [
+    "• FIELD A — tall primary region on the LEFT",
+    "• FIELD B — tall primary region on the RIGHT",
+    "• FIELD C — first centre region from the top",
+    "• FIELD D — second centre region from the top",
+    "• FIELD E — third centre region from the top",
+    "• FIELD F — fourth centre region from the top",
+  ].join("\n");
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER on one square 4K canvas.
 The attached image is a neutral spatial mask with six fixed GENIE regions. It carries geometry only. Region identity is defined by this exact data mapping:
 ${panelLines}
-The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Replace every light mask region, corner to corner, with the final customer livery pixels for its mapped surface. Keep the dark gutters as separation space.
+The centre column is fixed top-to-bottom as Fields C, D, E, F. Replace every light mask region, corner to corner, with the final customer livery pixels for its mapped field. Keep the dark gutters as separation space.
 Create one cohesive professional wrap composition across all six regions. Each region is an unbroken rectangular field of continuous printed artwork: customer palette, graphics, texture, logo and supplied wording only. The two flank regions are opposite-facing twins of the same coordinated side composition, with customer-facing wording readable normally in each region.
 The six fields are the source artwork. Physical component masking and presentation lighting happen later, during the seven downstream proof projections. Return the finished two-dimensional livery fields in the mask layout.`;
+}
+
+/**
+ * Translate customer-facing physical placement words to the neutral field
+ * aliases Call 1 actually paints. The original brief remains immutable in the
+ * request ledger; only the image-model direction is normalized. This is a
+ * deterministic architecture boundary, not a second creative pass.
+ */
+function atlasNeutralCreativeDirection(value: string): string {
+  return String(value || "")
+    .replace(/\bfront\s*(?:-|to)\s*rear\b/gi, "end-to-end across both primary fields")
+    .replace(/\brear\s*(?:-|to)\s*front\b/gi, "end-to-end across both primary fields")
+    .replace(/\bdriver(?:'s)?\s+side\b/gi, "FIELD B")
+    .replace(/\bpassenger(?:'s)?\s+side\b/gi, "FIELD A")
+    .replace(/\b(?:tailgate|rear)\b/gi, "FIELD C")
+    .replace(/\broof\b/gi, "FIELD D")
+    .replace(/\bhood\b/gi, "FIELD E")
+    .replace(/\bfront\b/gi, "FIELD F")
+    .replace(/\b(?:doors?|fenders?|wheel(?:\s+arches?)?|windows?|windshield|bumpers?|grilles?|mirrors?|body\s+lines?)\b/gi, "primary field")
+    .replace(/\b(?:vehicle|pickup|truck|van|car|suv)\s+wrap\b/gi, "six-field livery artwork")
+    .replace(/\bwrap\b/gi, "livery artwork")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function buildDesignIQPrompt(params: DesignIQParams): string {
@@ -419,6 +445,7 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   const canonicalMakeModel = canonicalizeVehicle(vehicleMake, vehicleModel, vehicleYear);
   const atlasFlatMaster = (params as any).atlasFlatMaster === true;
   const atlasPanels = Array.isArray((params as any).atlasPanels) ? (params as any).atlasPanels : [];
+  const creativeDirection = atlasFlatMaster ? atlasNeutralCreativeDirection(prompt) : prompt;
   const vehicle = [vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(' ');
@@ -586,7 +613,7 @@ ${studioEnvironment}`;
 ${commercialPresentation}
 
 THE CONCEPT — the heart of this design; build everything around it:
-Client's creative direction: "${prompt}"
+Client's creative direction: "${creativeDirection}"
 ${COMMERCIAL_TRANSLATION}
 
 CLIENT BRIEF:`;
@@ -744,7 +771,7 @@ ${restyleFinish}
 
 ${restylePresentation}
 
-Wrap request: "${prompt}"`;
+Wrap request: "${creativeDirection}"`;
 
   // DESIGN AMPLIFICATION + the quality floor — RESTORED 2026-07-27 (deleted by
   // PR #3677); skipped for exact recreate, where amplifying would fight the
