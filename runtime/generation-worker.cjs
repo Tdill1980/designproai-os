@@ -74,10 +74,6 @@ const { PHOTOREALISM_CONTRACT_VERSION } = require("./photorealism-prompt.cjs");
 const { DESIGNPANEL_ARTBOARD_PORT_VERSION } = require("./designiq-prompt.cjs");
 const { MASTER_QC_CONTRACT } = require("./atlas-master-qc.cjs");
 const {
-  loadActiveFlatAtlasTopologyExamples,
-  loadDesignPanelArtboardExamples,
-} = require("./flat-atlas-topology-examples.cjs");
-const {
   expectedSurfacesFromRow,
   resolveFlatAtlasPreviewDimensions,
 } = require("./genie-universal-resolver.cjs");
@@ -902,13 +898,11 @@ function createGenerationWorker({
         // The exact v3 contract + pipelineMode pair is the server-side feature
         // gate. v1/v2 never reach this branch, so the UI can roll back by
         // ceasing to issue v3 without requiring a deployment-wide env change.
-        let topologyExamples;
-        let artboardQualityExamples;
-        [dimensionRow, topologyExamples, artboardQualityExamples] = await Promise.all([
-          resolveFlatAtlasPreviewDimensions(supabase, claim.input?.vehicle, imageProvider),
-          loadActiveFlatAtlasTopologyExamples(supabase),
-          loadDesignPanelArtboardExamples(supabase),
-        ]);
+        dimensionRow = await resolveFlatAtlasPreviewDimensions(
+          supabase,
+          claim.input?.vehicle,
+          imageProvider,
+        );
         if (dimensionRow.resolvedVehicleClass
           && dimensionRow.resolvedVehicleClass !== claim.input?.vehicle?.type) {
           executionInput = {
@@ -933,8 +927,6 @@ function createGenerationWorker({
           // UIs must all be able to name the same GENIE manifest -- so it
           // travels with the geometry rather than being re-derived per stage.
           geometryResolution: dimensionRow.geometryResolution,
-          topologyExamples,
-          artboardQualityExamples,
           // The customer critical path is exactly one creative authoring call.
           // A refused design becomes an explicit new revision; it never buys a
           // second hidden A.T.L.A.S. call while the customer waits for Driver.
