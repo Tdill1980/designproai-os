@@ -133,6 +133,7 @@ const RESPONSE_FIELDS = Object.freeze([
   "masterSha256",
   "guideSha256",
   "outputFormatContract",
+  "flatArtworkOnlyContract",
   "topologyContract",
   "zoneCoverageContract",
   "fullBleedNoCutoutsContract",
@@ -622,14 +623,15 @@ Deterministic pixel evidence: ${JSON.stringify(deterministic)}
 
 ACCEPTANCE CONTRACT:
 1. IMAGE 1 is one flat 2D unwrapped artwork sheet in exactly the guide's six zones, not a vehicle photo, mockup, proof, second template, labelled diagram or Hero view.
-2. Every zone is one solid rectangle of continuous artwork, filled edge to edge and corner to corner. The artwork runs unbroken straight through the places a windshield, side window, wheel arch, pickup-bed opening, light or trim will later sit -- the installer cuts those openings out of a finished panel, so the master carries artwork there. A zone containing a vehicle silhouette, a wheel circle, a glass shape or any hole punched through the design is a failure even when the hole is filled with flat colour.
-3. The sheet is one premium DesignPanelAI wrap: layered depth, intentional flow, strong hierarchy, readable-at-a-glance composition and gallery-grade custom quality. Six unrelated designs, generic AI filler, duplicated panels or incoherent motifs fail.
-4. The brief, palette, supplied identity and requested photographic/illustrated treatment are visibly honored. Do not excuse a generic design merely because it is colorful.
-5. Every supplied business/contact string that is visibly rendered must be exact and forward-reading. Malformed or invented words, URLs or numbers fail. If no brand strings are required, brandTextContract is not_applicable.
-6. Passenger is the opposite-facing, mirror-compatible twin of Driver in motif, scale, hierarchy and flow, while every readable string on both sides remains forward-reading. Grossly different side compositions fail.
-7. No guide gray, guide labels, outlines, dimensions, legends, browser UI, watermarks, melted artwork or other AI artifacts may survive.
-8. In driverBrandBands, return the bounding rectangle of EVERY band of readable lettering, logo or contact text on the DRIVER zone -- company name, phone, URL, tagline, logo lockup. Coordinates are fractions of the DRIVER ZONE ITSELF (0-1, origin at that zone's top-left as the guide draws it), not of the whole sheet. Group text that sits together into one band. Return an empty array when the driver zone carries no lettering. These are measurements, not judgements: report them even when every contract passes.
-9. Return only schema-bound JSON. Echo the two sha256 identities exactly.
+2. flatArtworkOnlyContract passes only when every zone contains PRINTED ARTWORK and no depiction or tracing of vehicle anatomy. Any door, window, glass area, handle, mirror, wheel, wheel arch, fender, bumper, grille, light, hood/roof/tailgate outline, body seam, vehicle silhouette, mockup or perspective inside a zone is a failure even when it is opaque and filled with color.
+3. Every zone is one solid rectangle of continuous artwork, filled edge to edge and corner to corner. The artwork runs unbroken straight through the places a windshield, side window, wheel arch, pickup-bed opening, light or trim will later sit -- the installer cuts those openings out of a finished panel, so the master carries artwork there. A zone containing a vehicle silhouette, a wheel circle, a glass shape or any hole punched through the design is a failure even when the hole is filled with flat colour.
+4. The sheet is one premium DesignPanelAI wrap: layered depth, intentional flow, strong hierarchy, readable-at-a-glance composition and gallery-grade custom quality. Six unrelated designs, generic AI filler, duplicated panels or incoherent motifs fail.
+5. The brief, palette, supplied identity and requested photographic/illustrated treatment are visibly honored. Do not excuse a generic design merely because it is colorful.
+6. Every supplied business/contact string that is visibly rendered must be exact and forward-reading. Malformed or invented words, URLs or numbers fail. If no brand strings are required, brandTextContract is not_applicable.
+7. Passenger is the opposite-facing, mirror-compatible twin of Driver in motif, scale, hierarchy and flow, while every readable string on both sides remains forward-reading. Grossly different side compositions fail.
+8. No guide gray, guide labels, outlines, dimensions, legends, browser UI, watermarks, melted artwork or other AI artifacts may survive.
+9. In driverBrandBands, return the bounding rectangle of EVERY band of readable lettering, logo or contact text on the DRIVER zone -- company name, phone, URL, tagline, logo lockup. Coordinates are fractions of the DRIVER ZONE ITSELF (0-1, origin at that zone's top-left as the guide draws it), not of the whole sheet. Group text that sits together into one band. Return an empty array when the driver zone carries no lettering. These are measurements, not judgements: report them even when every contract passes.
+10. Return only schema-bound JSON. Echo the two sha256 identities exactly.
 `;
 }
 
@@ -643,6 +645,7 @@ function responseSchema({ masterHash, guideHash, brandRequired }) {
       masterSha256: { type: "STRING", enum: [masterHash] },
       guideSha256: { type: "STRING", enum: [guideHash] },
       outputFormatContract: status,
+      flatArtworkOnlyContract: status,
       topologyContract: status,
       zoneCoverageContract: status,
       fullBleedNoCutoutsContract: status,
@@ -734,7 +737,7 @@ function brandBandsOf(review) {
 
 function rejectionFor(review, brandRequired, confidenceThreshold) {
   const requiredPass = [
-    "outputFormatContract", "topologyContract", "zoneCoverageContract",
+    "outputFormatContract", "flatArtworkOnlyContract", "topologyContract", "zoneCoverageContract",
     "coherentDesignContract", "briefFidelityContract",
     "passengerMirrorContract", "artifactFreeContract",
   ];
