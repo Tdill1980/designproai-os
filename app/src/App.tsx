@@ -273,7 +273,7 @@ const App = () => {
           <Route path="/designpro/jobs" element={<RequireAuth><DesignProJobs /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId" element={<RequireAuth><DesignProWorkflow /></RequireAuth>} />
           <Route path="/designpro/generate" element={<RequireAuth><DesignProGenerate /></RequireAuth>} />
-          <Route path="/designpro/revisions/new" element={<Navigate to="/designpro" replace />} />
+          <Route path="/designpro/revisions/new" element={<RequireAuth><Navigate to="/designpro" replace /></RequireAuth>} />
           <Route path="/designpro/genie-qc" element={<RequireAuth><DesignProGenieQc /></RequireAuth>} />
           <Route path="/designpro/wrapbox" element={<RequireAuth><DesignProWrapBox /></RequireAuth>} />
           <Route path="/designpro/wrapbox/:packId" element={<RequireAuth><DesignProWrapBoxPack /></RequireAuth>} />

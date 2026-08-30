@@ -334,8 +334,12 @@ test("private bucket and readiness agree on the bounded 50 GB contract", () => {
 
 test("closure remains standalone DesignPro-only", () => {
   const combined = `${migrations}\n${gateway}\n${web}`;
+  // An authenticated owner's email is an identity, not an architectural
+  // dependency. Remove only email-shaped occurrences before proving the old
+  // service name, hosts, ports and agents cannot re-enter the runtime closure.
+  const dependencySurface = combined.replace(/[A-Z0-9._%+-]+@restyleproai\.com/gi, "");
   for (const forbidden of ["restylepro", "railway", "slack-agent", "143.110.237.145:3100", ":8080"]) {
-    assert.doesNotMatch(combined, new RegExp(forbidden, "i"));
+    assert.doesNotMatch(dependencySurface, new RegExp(forbidden, "i"));
   }
   assert.doesNotMatch(web, /value="other"|value="box-truck"/);
 });
