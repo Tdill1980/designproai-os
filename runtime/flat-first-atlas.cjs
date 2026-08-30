@@ -62,13 +62,10 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
 const PROMPT_VERSION = "designpro-flat-first-atlas-20260827.v10-edge";
-// Bounded QC-corrective re-rolls inside the one claimed authoring fence. Three
-// is the proof QC's budget for the same generate/inspect/correct loop. The
-// OWNER ACCEPTANCE RUN pins this to exactly ONE via
-// DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS=1 (or the maxAuthoringAttempts
-// option): one revision = one DesignPanelAI creative call = one Gemini image
-// request, and the exact request count is reported on the revision as
-// metadata.geminiImageRequestCount.
+// Bounded QC-corrective re-rolls exist for operator harnesses only. The
+// customer path defaults to exactly ONE: one revision = one DesignPanelAI
+// creative call = one Gemini image request, and the exact request count is
+// reported on the revision as metadata.geminiImageRequestCount.
 // ONE AUTHORING CALL ON THE CUSTOMER'S CRITICAL PATH. (Trish 2026-08-27:
 // "ATLAS SHOULD GENERATE IN LESS THAN 1 MINUTE, then sequential panels and 3D
 // driver in less than 2 min".)
@@ -85,32 +82,11 @@ const PROMPT_VERSION = "designpro-flat-first-atlas-20260827.v10-edge";
 // miss, and the answer to that is a revision the customer asks for, not two
 // more minutes of silence she did not.
 //
-// So the ceiling is ONE attempt by default. The budget is still adjustable --
-// DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS raises it up to the hard cap for a
-// harness or an operator retry -- but the default path is the fast one.
+// The budget remains adjustable for a harness or an explicit operator retry,
+// but production cannot silently spend a second creative call while the buyer
+// is waiting for Driver.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
-// TWO, NOT ONE — THE CORRECTIVE RE-ROLL HAD BECOME UNREACHABLE.
-//
-// The ceiling was pinned to 1 so the customer waits ~60s rather than ~180s,
-// on the reasoning that the two deterministic repairs (cut-out fill, passenger
-// compose) cover the only defect classes a re-roll used to answer. Generation
-// f72c10f0-8e36-489f-95c0-da6c55a75c5b, 2026-08-28, is the counter-example:
-// `passengerMirrorMae=0.37993` survived the passenger compose and the run died
-// on the spot, with no master, no panels and no proofs -- the customer's whole
-// design lost to one refused sheet.
-//
-// At 1 the corrective ladder below is DEAD CODE: `attempt === maxAuthoringAttempts`
-// is true on the first pass, so the block that forwards the gate's own finding
-// back to the edge function ("PASSENGER SIDE is DRIVER SIDE's mirror twin --
-// the same flat artwork reversed") can never run. That correction exists
-// precisely for this defect and had never been given a chance to work.
-//
-// Two is the smallest budget that makes it reachable: one authored sheet, and
-// one corrected sheet if the first is refused. A good master still costs one
-// call and still lands in ~60s -- nothing changes on the happy path, which is
-// the whole of the speed argument. Only a sheet that would otherwise have
-// failed outright spends the second call.
-const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 2;
+const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 1;
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
   const value = Number(raw);
@@ -2681,7 +2657,6 @@ async function generateOrReuseFlatAtlas(options) {
   // removes. `onSurfaceReady` is the panel.ready event; a caller uses it to
   // release that surface's 3D proof.
   const panelWrites = [];
-  const panelReleaseErrors = [];
   // `projection` is attached to the progressive root the INSTANT it resolves,
   // independent of panel-cutting -- not after `Promise.all` settles both, which
   // would delay it behind the slower of the two for no reason. It is pure
@@ -2697,31 +2672,41 @@ async function generateOrReuseFlatAtlas(options) {
         "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },
       ),
       onPanel: async (panel) => {
+        const panelStoragePath = atlasStoragePath({
+          tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
+        });
+        // The progressive graph must carry the same durable panel identity the
+        // final revision will record. A proof is never allowed to start from an
+        // in-memory-only panel or to guess its storage path.
+        const progressivePanel = Object.freeze({ ...panel, storagePath: panelStoragePath });
         // THE PANEL IS THE PROOF'S ARTWORK AUTHORITY, so the authority is built
         // HERE -- the instant the panel exists -- rather than in one batch after
         // the last cut. Every proof view that photographs this surface becomes
         // conditionable now. (Close-Up shares Driver's surface, so Driver's cut
         // releases two nodes.)
-        progressiveAtlas.callOnePanels.push(panel);
+        progressiveAtlas.callOnePanels.push(progressivePanel);
         for (const sourceViewType of PROOF_VIEWS) {
           if (surfaceForProofView(sourceViewType) !== panel.surfaceKey) continue;
           progressiveAtlas.viewAuthorities[sourceViewType] =
             await viewAuthorityFromPanel(panel, sourceViewType);
         }
-        panelWrites.push(store.putImmutableBytes({
-          storagePath: atlasStoragePath({
-            tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
-          }),
+        const panelPersisted = store.putImmutableBytes({
+          storagePath: panelStoragePath,
           bytes: panel.bytes,
           contentType: panel.contentType,
-        }));
+        });
+        panelWrites.push(panelPersisted);
         if (typeof onSurfaceReady !== "function") return;
         // A consumer's failure is ITS failure. Branch A does not stop cutting
         // panels because Branch B could not start one proof -- "a failed proof
         // never blocks its production panel."
         try {
           const released = onSurfaceReady({
+            atlas: progressiveAtlas,
+            projectionReady: projectionPromise,
+            panelPersisted,
             surfaceKey: panel.surfaceKey,
+            panelStoragePath,
             contentHash: panel.contentHash,
             byteSize: panel.byteSize,
             trimWidthIn: panel.trimWidthIn,
@@ -2734,23 +2719,23 @@ async function generateOrReuseFlatAtlas(options) {
             surfaceSourceHash: panel.surfaceSourceHash,
           });
           if (released && typeof released.catch === "function") {
-            released.catch((cause) => panelReleaseErrors.push({ surfaceKey: panel.surfaceKey, cause }));
+            released.catch((cause) => logger?.warn?.("flat_atlas_panel_release_failed", {
+              generationId,
+              surfaceKey: panel.surfaceKey,
+              reason: String(cause?.message || cause || "unknown"),
+            }));
           }
         } catch (cause) {
-          panelReleaseErrors.push({ surfaceKey: panel.surfaceKey, cause });
+          logger?.warn?.("flat_atlas_panel_release_failed", {
+            generationId,
+            surfaceKey: panel.surfaceKey,
+            reason: String(cause?.message || cause || "unknown"),
+          });
         }
       },
     }),
     projectionPromise,
   ]);
-  for (const failure of panelReleaseErrors) {
-    logger?.warn?.("flat_atlas_panel_release_failed", {
-      generationId,
-      surfaceKey: failure.surfaceKey,
-      reason: String(failure.cause?.message || failure.cause || "unknown"),
-    });
-  }
-
   // Every content-addressed path the write batch below needs must be resolved
   // BEFORE that batch is defined -- `persistImmutableAssets` is now invoked
   // thirty lines earlier than the write it replaced, so a declaration left at
@@ -2953,7 +2938,7 @@ async function generateOrReuseFlatAtlas(options) {
       // promptVersion, model, masterSha256.
       atlasEdgeProvenance: edgeProvenance,
       atlasEdgePromptVersion: ATLAS_ARTBOARD_EDGE_PROMPT_VERSION,
-      proofExecution: "driver-first-sequential-generate-color-render",
+      proofExecution: "panel-ready-driver-priority-parallel",
     },
   };
   const { data: row, error } = await supabase.from("designpro_flat_atlas_revisions")

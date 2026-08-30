@@ -252,6 +252,35 @@ test("D: an artifact-free failure stays fatal, cut-outs or not", async () => {
   }
 });
 
+test("D2: artifact-free may alias the same measured cut-out without buying another design call", async () => {
+  const validate = validatorReturning({
+    zoneCoverageContract: "fail",
+    fullBleedNoCutoutsContract: "fail",
+    artifactFreeContract: "fail",
+    reasons: ["roof contains one wheel/glass/bed shape cut out of the panel"],
+    driverBrandBands: [],
+  });
+  const result = await validate({
+    masterBytes: await masterWithWheelArches(), guideBytes, manifest, input: INPUT,
+  });
+  assert.equal(result.code, "atlas_master_qc_cutouts_present");
+  assert.ok(result.cutout.surfaces.length > 0);
+});
+
+test("D3: mixed cut-out and real artifact language remains fatal", async () => {
+  const validate = validatorReturning({
+    zoneCoverageContract: "fail",
+    fullBleedNoCutoutsContract: "fail",
+    artifactFreeContract: "fail",
+    reasons: ["wheel opening is cut out and a guide label is printed on the panel"],
+    driverBrandBands: [],
+  });
+  const result = await validate({
+    masterBytes: await masterWithWheelArches(), guideBytes, manifest, input: INPUT,
+  });
+  assert.equal(result.code, "atlas_master_qc_semantic_failed");
+});
+
 // E. deterministic thresholds unchanged
 test("E: the deterministic thresholds this fix relies on are unchanged", async () => {
   assert.equal(_test.MIN_ZONE_OPAQUE_RATIO, 0.995);

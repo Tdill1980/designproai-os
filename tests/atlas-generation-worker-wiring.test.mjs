@@ -172,21 +172,25 @@ function atlasView(sourceViewType, contentHash, extraProvider = {}) {
   };
 }
 
-test("generation-worker selects the Atlas DesignPanel provider and has no generic parallel Atlas branch", () => {
+test("generation-worker selects the Atlas DesignPanel provider for every progressive proof node", () => {
   assert.match(WORKER_SOURCE, /createAtlasDesignPanelProvider/);
   assert.match(WORKER_SOURCE, /atlasProviderFactory\s*=\s*createAtlasDesignPanelProvider/);
-  assert.match(WORKER_SOURCE, /const atlasProvider = isFlatFirst \? atlasProviderFactory\(/);
+  assert.match(WORKER_SOURCE, /const atlasProvider = atlasProviderFactory\(/);
   assert.match(WORKER_SOURCE, /provider:\s*atlasProvider/);
   assert.match(WORKER_SOURCE, /atlasProofValidatorFactory\s*=\s*createAtlasProofValidator/);
-  assert.match(WORKER_SOURCE, /provider:\s*imageProvider,[\s\S]{0,200}atlas:\s*flatAtlas/);
-  assert.match(WORKER_SOURCE, /\{ \.\.\.slot, validate: atlasProofValidator \}/);
+  assert.match(WORKER_SOURCE, /const validator = atlasProofValidatorFactory\(\{[\s\S]{0,200}atlas,/);
+  assert.match(WORKER_SOURCE, /\{ \.\.\.slot, validate: validator \}/);
 
   const atlasExecution = WORKER_SOURCE.slice(
     WORKER_SOURCE.indexOf("if (isFlatFirst) {", WORKER_SOURCE.indexOf("const slots = slotsFrom")),
     WORKER_SOURCE.indexOf("} else {", WORKER_SOURCE.indexOf("if (isFlatFirst) {", WORKER_SOURCE.indexOf("const slots = slotsFrom"))),
   );
-  assert.match(atlasExecution, /runAtlasProofStages/);
-  assert.doesNotMatch(atlasExecution, /provider:\s*imageProvider/);
+  const progressiveLauncher = WORKER_SOURCE.slice(
+    WORKER_SOURCE.indexOf("const launchAtlasProof"),
+    WORKER_SOURCE.indexOf("if (isFlatFirst) {", WORKER_SOURCE.indexOf("const launchAtlasProof")),
+  );
+  assert.match(progressiveLauncher, /runAtlasProofStages/);
+  assert.match(atlasExecution, /progressiveProofRuns/);
 });
 
 test("A.T.L.A.S. fans all six surfaces out together, with Driver dispatched first", async () => {

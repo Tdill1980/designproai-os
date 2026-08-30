@@ -189,6 +189,9 @@ jobs:
         run: |
           cat <<'NOTE'
           PASS requires the real standalone chain to produce:
+            - one A.T.L.A.S. creative image request
+            - durable A.T.L.A.S. master in 60 seconds or less
+            - durable Driver-side 3D proof in 90 seconds or less
             - customer 2D proof + immutable flat layout
             - six Call 9 panel cuts
             - six Call 12 Topaz-enhanced panel masters

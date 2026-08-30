@@ -58,6 +58,16 @@ test("the canary proves a persisted A.T.L.A.S. master, not just a receipt field"
     "the flat-first snapshot carries no designMaster to freeze");
 });
 
+test("the canary fails unless one-call A.T.L.A.S. and Driver meet their display SLOs", () => {
+  assert.match(canary, /const ATLAS_SLO_SECONDS = 60/);
+  assert.match(canary, /const DRIVER_SLO_SECONDS = 90/);
+  assert.match(canary, /metadata\?\.geminiImageRequestCount\) !== 1/);
+  assert.match(canary, /source_view_type,consumer_role,content_hash,byte_size,content_type,created_at/);
+  assert.match(canary, /view\.source_view_type === "side"/);
+  assert.match(canary, /basis: "request-created-to-durable-artifact"/);
+  assert.match(canary, /latency SLO failed/);
+});
+
 test("production is server-created exactly once after Entice completes", () => {
   const wait = canary.indexOf("await waitForEntice(evidence.enticeRunId)");
   const resolve = canary.indexOf("await automaticProductionRun(evidence.enticeRunId)");
