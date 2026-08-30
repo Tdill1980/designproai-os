@@ -5,6 +5,16 @@ on:
     branches: [main]
     paths:
       - .github/workflows/migrate-atlas-now.yml
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Protected production migration action"
+        required: true
+        type: choice
+        default: DO_NOT_MIGRATE
+        options:
+          - DO_NOT_MIGRATE
+          - APPLY_DESIGNPRO_PRODUCTION_MIGRATIONS
 
 permissions:
   contents: read
@@ -15,6 +25,10 @@ env:
 
 jobs:
   production-migrate-now:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       inputs.confirmation == 'APPLY_DESIGNPRO_PRODUCTION_MIGRATIONS')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -34,6 +48,7 @@ jobs:
           set +x
           test "$(git rev-parse HEAD)" = "$EXACT_SHA"
           test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "push" || test "${{ inputs.confirmation }}" = "APPLY_DESIGNPRO_PRODUCTION_MIGRATIONS"
           test -n "$SUPABASE_ACCESS_TOKEN"
           test -n "$SUPABASE_DB_PASSWORD"
           test "$PRODUCTION_APPROVAL_TOKEN" = "APPROVED_DESIGNPRO_PRODUCTION_MIGRATION"
