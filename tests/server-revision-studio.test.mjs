@@ -474,6 +474,30 @@ test("RevisionStudio and PanelPro read one canonical version and prompt history"
   assert.match(studio, /presentation\.revisionNotes/);
 });
 
+test("PanelPro indexes generations so every accepted A.T.L.A.S. is discoverable before purchase", () => {
+  const panelSource = readFileSync(
+    new URL("../app/src/lib/panelpro-studio-source.ts", import.meta.url),
+    "utf8",
+  );
+  const list = panelSource.slice(
+    panelSource.indexOf("export async function listPanelProStudioJobs"),
+    panelSource.indexOf("export async function findPanelProStudioJob"),
+  );
+  assert.match(list, /dpApi\.listDesignLibrary\(\)/);
+  assert.match(list, /design\.state === "outputs_ready"[\s\S]{0,80}\? "complete"/,
+    "a fully persisted A.T.L.A.S. must display as complete in PanelPro");
+  assert.doesNotMatch(list, /dpApi\.listJobs\(\)/,
+    "a production-run index hides A.T.L.A.S. until purchase/handoff");
+  assert.match(list, /design\.generationId/);
+  assert.match(list, /design\.designId/);
+  assert.match(list, /design\.production\?\.orderNumber \|\| ""/,
+    "order identity is allowed to remain unbound before purchase");
+  assert.match(panelSource, /dpApi\.getStatus\(id\)/,
+    "a generation selected from the index must open through the pre-handoff status projection");
+  assert.match(panelSource, /dpApi\.listJobFlatAtlasRevisions\(job\.generationId\)/,
+    "PanelPro must load the A.T.L.A.S. master and history by Generation ID");
+});
+
 /**
  * THE PANELPRO ADMIN STUDIO IS A COMPLETE PRODUCTION RECORD, OR IT IS DECORATION.
  *
