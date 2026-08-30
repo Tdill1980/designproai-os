@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 // OWNER PROTECTION #1 (Trish 2026-08-26): "Version fencing prevents old masters
@@ -63,4 +63,21 @@ test("no read surface checks the atlas prompt version", () => {
   // The customer/product API layer types the field; it must not gate on it.
   const dpApi = read("../app/src/lib/designpro-api.ts");
   assert.doesNotMatch(dpApi, /PROMPT_VERSION|v9-dpag|contract_stale/);
+});
+
+test("the database read gate removes the exact authoring prompt pin", () => {
+  const migrations = new URL("../supabase/migrations/", import.meta.url);
+  const latestReadGatePatch = readdirSync(migrations)
+    .filter((name) => name.endsWith(".sql"))
+    .filter((name) => readFileSync(new URL(name, migrations), "utf8")
+      .includes("atlas_historical_read_prompt_family_not_installed"))
+    .sort()
+    .at(-1);
+  assert.ok(latestReadGatePatch, "the historical A.T.L.A.S. read migration is missing");
+  const migration = readFileSync(new URL(latestReadGatePatch, migrations), "utf8");
+  assert.match(migration, /pg_get_functiondef/);
+  assert.match(migration, /pg_catalog\.replace\(v_definition, v_exact_pin, v_family_gate\)/);
+  assert.match(migration, /\^designpro-flat-first-atlas-\[A-Za-z0-9\._-\]\{1,96\}\$/);
+  assert.match(migration, /newest_accepted_atlas_is_not_readable/);
+  assert.match(migration, /newest_accepted_atlas_was_superseded/);
 });

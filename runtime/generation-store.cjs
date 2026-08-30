@@ -126,17 +126,52 @@ function createGenerationStore({ supabase, workerId }) {
       if (error) throw new Error(`attempt close failed: ${error.message}`);
     },
 
-    /** Create-only. An existing object with different bytes is a hard failure. */
-    async putImmutableBytes({ storagePath, bytes, contentType }) {
-      const { error } = await supabase.storage.from(BUCKET).upload(storagePath, bytes, { contentType, upsert: false });
+    /**
+     * Create-only canonical persistence.
+     *
+     * The A.T.L.A.S. photographer has already put its 4K result in this same
+     * private bucket so the runtime can hash and inspect it. After QC, promote
+     * that verified object with Storage's server-side copy instead of uploading
+     * the same multi-megabyte payload again. Standard generation, and any copy
+     * transport failure, keeps the proven direct-upload path.
+     */
+    async putImmutableBytes({ storagePath, bytes, contentType, sourceStoragePath = null, sourceContentHash = null }) {
+      const contentHash = sha256(bytes);
+      const sourcePath = String(sourceStoragePath || "");
+      const sourceHash = String(sourceContentHash || "").toLowerCase();
+      const stagedProof = /^atlas-proof\/[0-9a-f-]{36}_[a-z0-9-]+\.(png|jpg|webp)$/i.test(sourcePath);
+      if (sourcePath && (!stagedProof || sourceHash !== contentHash)) {
+        throw new Error("staged proof identity does not match the verified candidate bytes");
+      }
+
+      const bucket = supabase.storage.from(BUCKET);
+      let error = null;
+      if (stagedProof && typeof bucket.copy === "function") {
+        ({ error } = await bucket.copy(sourcePath, storagePath));
+      }
+      // No staging object (Standard path), an older Storage client, or a copy
+      // transport fault: fall back to the original create-only byte upload.
+      if (!stagedProof || typeof bucket.copy !== "function"
+        || (error && !/exists|duplicate|conflict/i.test(`${error.message}`))) {
+        ({ error } = await bucket.upload(storagePath, bytes, { contentType, upsert: false }));
+      }
       if (error) {
         if (!/exists|duplicate|conflict/i.test(`${error.message}`)) throw new Error(`slot upload failed: ${error.message}`);
-        const { data, error: readError } = await supabase.storage.from(BUCKET).download(storagePath);
+        const { data, error: readError } = await bucket.download(storagePath);
         if (readError || !data) throw new Error(`slot upload idempotency read failed: ${readError?.message || "empty"}`);
         const existing = Buffer.from(await data.arrayBuffer());
-        if (sha256(existing) !== sha256(bytes)) throw new Error("content-addressed path already holds different bytes");
+        if (sha256(existing) !== contentHash) throw new Error("content-addressed path already holds different bytes");
       }
-      return { storagePath, contentHash: sha256(bytes), byteSize: bytes.length };
+      return { storagePath, contentHash, byteSize: bytes.length };
+    },
+
+    /** Best-effort deletion of the photographer's noncanonical staging copy. */
+    async removeStagedBytes({ storagePath }) {
+      const sourcePath = String(storagePath || "");
+      if (!/^atlas-proof\/[0-9a-f-]{36}_[a-z0-9-]+\.(png|jpg|webp)$/i.test(sourcePath)) return false;
+      const { error } = await supabase.storage.from(BUCKET).remove([sourcePath]);
+      if (error) throw new Error(`staged proof cleanup failed: ${error.message}`);
+      return true;
     },
 
     /** The database refuses to mutate or delete this row once written. */

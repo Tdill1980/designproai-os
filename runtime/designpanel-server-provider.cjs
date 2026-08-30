@@ -1207,6 +1207,12 @@ function createAtlasDesignPanelProvider(options = {}) {
     return {
       bytes,
       contentType: String(payload.contentType || "image/png"),
+      // The photographer has already uploaded these exact hash-verified bytes
+      // into the private bucket. The generation store promotes that object to
+      // the canonical content-addressed path after semantic QC instead of
+      // sending the same 4K payload over the network a second time.
+      stagedStoragePath: proofPath,
+      stagedStorageHash: String(payload.proofSha256 || "").toLowerCase(),
       contract: ATLAS_SERVER_PROVIDER_CONTRACT,
       metadata: atlasMetadata({
         // Stated, not computed: no A.T.L.A.S. view is anchored to another view,

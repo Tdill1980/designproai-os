@@ -374,20 +374,34 @@ export async function listPanelProStudioJobs(): Promise<
     "id" | "generation_id" | "order_number" | "design_id" | "status" | "created_at"
     | "vehicle_year" | "vehicle_make" | "vehicle_model" | "state">>
 > {
-  const jobs = await dpApi.listJobs();
-  return jobs.map((job) => {
-    const year = Number(job.vehicle?.year);
+  // PanelPro is a generation control room, so its index must start at the
+  // generation record. `listJobs()` starts at production handoff and therefore
+  // omitted every accepted A.T.L.A.S. that had not yet been purchased. The
+  // design library is the canonical owner/staff-authorized generation index;
+  // the existing job detail routes already project pre-handoff generations and
+  // fill in the master, six Call-1 panels and proofs as they persist.
+  const designs = await dpApi.listDesignLibrary();
+  return designs.map((design) => {
+    const year = Number(design.vehicle?.year);
+    const state: WorkflowStatus["state"] = design.state === "queued"
+      ? "queued"
+      : design.state === "outputs_ready"
+        ? "complete"
+      : design.state === "failed" || design.state === "cancelled"
+        ? "failed"
+        : "running";
     return {
-      id: job.generationId,
-      generation_id: job.generationId,
-      order_number: job.orderNumber,
-      design_id: job.designId,
-      status: job.currentStage,
-      created_at: job.createdAt,
+      id: design.generationId,
+      generation_id: design.generationId,
+      order_number: design.production?.orderNumber || "",
+      design_id: design.designId,
+      status: design.production?.status
+        || (design.state === "outputs_ready" ? "calls_1_7_complete" : `calls_1_7_${design.state}`),
+      created_at: design.createdAt,
       vehicle_year: Number.isFinite(year) && year > 0 ? year : null,
-      vehicle_make: job.vehicle?.make || "",
-      vehicle_model: job.vehicle?.model || "",
-      state: job.state,
+      vehicle_make: design.vehicle?.make || "",
+      vehicle_model: design.vehicle?.model || "",
+      state,
     };
   }).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
 }

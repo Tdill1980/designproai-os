@@ -365,7 +365,13 @@ async function runSlot(options) {
 
       const contentHash = sha256(result.bytes);
       const storagePath = slotStoragePath({ tenantKey, generationId, sourceViewType, contentHash, contentType: result.contentType });
-      await store.putImmutableBytes({ storagePath, bytes: result.bytes, contentType: result.contentType });
+      await store.putImmutableBytes({
+        storagePath,
+        bytes: result.bytes,
+        contentType: result.contentType,
+        sourceStoragePath: result.stagedStoragePath || null,
+        sourceContentHash: result.stagedStorageHash || null,
+      });
       const winner = await store.persistAcceptedSlot({
         requestId, sourceViewType, consumerRole, storagePath, contentHash,
         byteSize: result.bytes.length, contentType: result.contentType,
@@ -390,6 +396,13 @@ async function runSlot(options) {
         outcome: OUTCOME.ACCEPTED, durationMs, errorCode: null, detail: null, winnerHash: contentHash,
       };
       await store.recordAttemptFinished(record);
+      // Cleanup is deliberately outside the customer-visible durability path.
+      // The canonical object and immutable view row already exist; a failed
+      // removal leaves only an unreachable staging copy and cannot delay the
+      // Driver proof or change its identity.
+      if (result.stagedStoragePath) {
+        void store.removeStagedBytes?.({ storagePath: result.stagedStoragePath }).catch(() => {});
+      }
       attempts.push(record);
       return { requestId, sourceViewType, consumerRole, state: "accepted", reused: false, winner, providerCalls, attempts };
     }
