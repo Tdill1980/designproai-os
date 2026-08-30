@@ -30,7 +30,24 @@ const authored = (input = {}) => buildDesignIQPrompt({
   visionboard_intent: input.visionboardIntent === "exact_reference" ? "exact_reference" : "style_inspiration",
   styleDescriptors: input.styleDescriptors,
   atlasFlatMaster: true,
-  atlasPanels: ATLAS_PANELS,
+  atlasPanels: input.atlasPanels || ATLAS_PANELS,
+});
+
+test("the real Call-1 assembly refuses a missing or mismatched surface identity", () => {
+  const base = { mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" };
+  assert.throws(
+    () => authored({ ...base, atlasPanels: ATLAS_PANELS.filter((panel) => panel.surfaceId !== "HD") }),
+    /ATLAS panel identity incomplete: HOOD/,
+  );
+  assert.throws(
+    () => authored({
+      ...base,
+      atlasPanels: ATLAS_PANELS.map((panel) => (
+        panel.surfaceId === "HD" ? { ...panel, placement: "right-flank" } : panel
+      )),
+    }),
+    /ATLAS panel identity mismatch: HOOD/,
+  );
 });
 
 // AUTO-LOGO FIRES ON BOTH COMMERCIAL SHAPES. 3 of 11 real A.T.L.A.S. runs sent

@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v8-clean";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v9-labeled-topology";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -346,26 +346,43 @@ function atlasFlatMasterContract(
     label: string;
     surfaceId?: string;
     placement?: string;
-    widthInches?: number;
-    heightInches?: number;
-    topology?: AtlasPanelTopology;
   }>,
 ): string {
-  const supplied = new Set((panels || []).map((panel) => String(panel.label || "").trim().toUpperCase()));
-  const required = ["DRIVER SIDE", "PASSENGER SIDE", "HOOD", "ROOF", "FRONT", "REAR"];
-  const missing = required.filter((label) => !supplied.has(label));
+  const expected = new Map([
+    ["DRIVER SIDE", { surfaceId: "DS", placement: "right-flank" }],
+    ["PASSENGER SIDE", { surfaceId: "PS", placement: "left-flank" }],
+    ["HOOD", { surfaceId: "HD", placement: "center-column" }],
+    ["ROOF", { surfaceId: "RF", placement: "center-column" }],
+    ["FRONT", { surfaceId: "FR", placement: "center-column" }],
+    ["REAR", { surfaceId: "RR", placement: "center-column" }],
+  ]);
+  const supplied = new Map((panels || []).map((panel) => [
+    String(panel.label || "").trim().toUpperCase(), panel,
+  ]));
+  const missing = [...expected.keys()].filter((label) => !supplied.has(label));
   if (missing.length) {
     throw new Error(`ATLAS panel identity incomplete: ${missing.join(", ")}`);
   }
+  for (const [label, identity] of expected) {
+    const panel = supplied.get(label)!;
+    if (String(panel.surfaceId || "").trim().toUpperCase() !== identity.surfaceId
+      || String(panel.placement || "").trim() !== identity.placement) {
+      throw new Error(`ATLAS panel identity mismatch: ${label}`);
+    }
+  }
+  const panelLines = [...expected.keys()].map((label) => {
+    const panel = supplied.get(label)!;
+    const where = ATLAS_PLACEMENT_WORDS[String(panel.placement || "")] || String(panel.placement || "");
+    return `• ${String(panel.surfaceId || "").toUpperCase()} — ${label} — ${where}`;
+  }).join("\n");
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER on one square 4K canvas.
-Use the attached clean six-region layout only as spatial placement.
-Left tall region = Passenger Side artwork.
-Centre top-to-bottom = Rear, Roof, Hood, Front.
-Right tall region = Driver Side artwork.
+The attached guide is the hardwired flattened TOP-VIEW artboard for this exact vehicle. Its six adjacent gutter labels identify the fixed GENIE containers; those labels sit outside the artwork regions and are navigation, not design content.
+${panelLines}
+The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Paint each named surface only in its matching region; never exchange, relabel or independently redesign regions.
 Create one cohesive professional wrap composition filling every region completely edge-to-edge.
 Treat a pickup flank as one coordinated composition across cab and bed; treat a van flank as one continuous commercial composition; treat a car or SUV flank as one continuous side composition; treat a box truck cab and box as one coordinated visual system.
 The two flank regions share one coordinated side-design system, with every customer-facing word and logo readable in normal orientation on its installed side.
-Return artwork only. Technical labels, measurements, trim/bleed metadata and production annotations exist outside the returned pixels and are not part of the design.
+Return artwork only inside the six regions. Do not reproduce the gutter labels in the artwork.
 Any attached flattened-top-view reference teaches only the relationship of flattened vehicle surfaces. Every element of the design — artwork, wording, logo and colour — comes from the customer's brief and their verified assets.`;
 }
 

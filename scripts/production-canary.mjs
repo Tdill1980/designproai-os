@@ -427,6 +427,61 @@ function finalQc(designId) {
   };
 }
 
+const OWNER_PROMOTION_CODE = "DESIGNPROAI_OWNER_CANARY_100";
+const OWNER_PROMOTION_DISCOUNT_CENTS = 29_900;
+
+async function automaticProductionRun(enticeRunId) {
+  const { data, error } = await service
+    .from("designpro_workflow_runs")
+    .select("id,workflow_type,status,entice_pack_id")
+    .eq("workflow_type", "designpro.production_pack")
+    .eq("entice_pack_id", enticeRunId)
+    .order("created_at");
+  if (error) throw new Error(`automatic production lookup failed: ${error.message}`);
+  if ((data || []).length !== 1) {
+    throw new Error(`expected exactly one automatic Production workflow for Entice ${enticeRunId}, found ${(data || []).length}`);
+  }
+  return data[0];
+}
+
+async function confirmOwnerPromotionEntitlement(generationId, enticeRunId) {
+  const checkoutSessionId = `cs_owner_canary_${generationId.replaceAll("-", "")}`;
+  const result = await rpc(service, "confirm_designpro_purchase", {
+    p_checkout_session_id: checkoutSessionId,
+    p_payment_intent_id: null,
+    p_product_type: "print_pack_entitlement",
+    p_generation_id: generationId,
+    p_amount_cents: 0,
+    p_user_email: CANARY_EMAIL,
+    p_promotion_code: OWNER_PROMOTION_CODE,
+    p_discount_cents: OWNER_PROMOTION_DISCOUNT_CENTS,
+  });
+  const { data: row, error } = await service
+    .from("designpro_purchase_entitlements")
+    .select("id,entice_run_id,generation_id,product_type,amount_cents,checkout_session_id,promotion_code,discount_cents")
+    .eq("checkout_session_id", checkoutSessionId)
+    .maybeSingle();
+  if (error || !row) throw new Error(`owner promotion entitlement was not persisted: ${error?.message || "no row"}`);
+  if (row.entice_run_id !== enticeRunId || row.generation_id !== generationId
+    || row.product_type !== "print_pack_entitlement" || row.amount_cents !== 0
+    || row.promotion_code !== OWNER_PROMOTION_CODE
+    || row.discount_cents !== OWNER_PROMOTION_DISCOUNT_CENTS) {
+    throw new Error("owner promotion entitlement does not match the exact prepared pack and Generation ID");
+  }
+  evidence.ownerPromotionEntitlement = {
+    entitlementId: row.id,
+    enticeRunId: row.entice_run_id,
+    generationId: row.generation_id,
+    productType: row.product_type,
+    amountCents: row.amount_cents,
+    promotionCode: row.promotion_code,
+    discountCents: row.discount_cents,
+    checkoutSessionId: row.checkout_session_id,
+    idempotent: result?.idempotent === true,
+  };
+  step(`real owner promotion entitlement ${row.id} recorded through confirm_designpro_purchase`);
+}
+
 async function approveGate(operator, operatorId, runId, stageKey, qc) {
   const approvalRef = `CANARY-${stageKey === "await_panelpro_preflight_qc" ? "PREFLIGHT" : "FINAL"}-${runId}`;
   const result = await rpc(operator, "approve_designpro_human_gate", {
@@ -819,14 +874,10 @@ async function main() {
   });
   evidence.enticeRunId = entice?.workflowRunId;
   await waitForEntice(evidence.enticeRunId);
-  step("Entice complete; creating Production workflow");
-
-  const production = await rpc(operator, "create_designpro_production_workflow", {
-    p_entice_run_id: evidence.enticeRunId,
-    p_idempotency_key: `canary-production-${revisionId}`,
-    p_input: { orderRequestId: null },
-  });
-  evidence.productionRunId = production?.workflowRunId;
+  step("Entice complete; resolving its one server-created Production workflow");
+  const production = await automaticProductionRun(evidence.enticeRunId);
+  evidence.productionRunId = production.id;
+  await confirmOwnerPromotionEntitlement(generationId, evidence.enticeRunId);
   await waitForProduction(operator, operatorId, evidence.productionRunId, designId);
 
   evidence.finalState = {

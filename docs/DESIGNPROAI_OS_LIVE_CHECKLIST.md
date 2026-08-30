@@ -48,9 +48,25 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 - [x] Exact migration/pgTAP failures identified: purchase confirmation queried nonexistent `designpro_workflow_runs.generation_id`; legacy rows were rejected with `workflow_run_generation_identity_missing`; artifact/receipt trigger tests used the wrong pgTAP overload; new SECURITY DEFINER trigger functions retained default execute privileges.
 - [x] Supabase migration/pgTAP failures repaired without redesigning A.T.L.A.S.: purchases resolve Generation ID through the revision-source contract; legacy unbound rows remain compatible without inventing lineage; artifact/receipt triggers assert their exact functions; PUBLIC/anon execute is revoked from every new SECURITY DEFINER function. Repair commits: `3d1ed060dd91e631a44d534bbffc65d836147006`, `9ae9162276f4cef0d5398798a2f7c4091bd9794f`, `4fbed7c40424b965621f4477dda7732e5129543f`.
 - [x] Exact PR release gate rerun green: run #735, attempt 2, head `4fbed7c40424b965621f4477dda7732e5129543f`; executable contracts, fresh Supabase migrations/pgTAP, immutable archive reproducibility and manifest-bound image builds all passed. Production migration was correctly skipped until trusted merged/main context.
-- [ ] PR #260 merged.
-- [ ] Exact merged SHA deployed to `designproai-prod-sfo3`.
-- [ ] Droplet SHA independently verified.
+- [x] PR #260 merged as `01eb47ddea1c9c67c240aba172f8b4a5d5e2d5eb`.
+- [x] Exact merged SHA `01eb47ddea1c9c67c240aba172f8b4a5d5e2d5eb` deployed to `designproai-prod-sfo3` through the protected exact-artifact workflow.
+- [x] Droplet acceptance verified the exact release/image SHA `01eb47ddea1c9c67c240aba172f8b4a5d5e2d5eb`; protected deploy workflow run #834 succeeded.
+
+## Current release blocker — PR #261
+
+- [x] Production canary failure localized: GENIE supplied the correct Hood geometry, but Call 1 had been given six unnamed rectangles and label-only panel entries, so side-view artwork could occupy the Hood region.
+- [x] Call 1 restored to one complete flattened 4K A.T.L.A.S. design through `design-panel-ai-generate` `atlas-artboard`; DCA and the separate `persona-photographer-render` 3D-proof architecture are unchanged.
+- [x] Model-facing topology now carries six short gutter labels plus exact `surfaceId` / placement bindings, while dimensions, trim furniture and component topology remain server-only.
+- [x] Hash-bound semantic master acceptance again blocks design-breaking Call-1 sheets before any master or panel is published; deterministic cut-out repair remains allowed.
+- [x] Live canary evidence before this fix: Generation `ed000590-1658-4f26-adbe-c11c68d13517` reached one immutable A.T.L.A.S. revision and seven active proof roles; its Entice workflow completed with six `panel` and six `qc-panel` artifacts.
+- [x] The same live run exposed the next OS seam: the canary duplicated the automatic Production workflow and created no entitlement, leaving both runs honestly at `await_purchase`.
+- [x] Canary repaired to consume exactly one server-created Production workflow and persist/verify a real Generation-bound owner promotion entitlement through `confirm_designpro_purchase`; no browser boolean or purchase bypass is accepted.
+- [x] Exact local release gate repeated after both repairs: runtime/schema 386, repository contracts 496, gateway 63, web 8, app 74, server/archive 57, and both production builds passed.
+- [x] PR #261 opened at initial head `dfe063840b18d7f2fbc9cea334495a6445790a32` and updated head `be75cb0e5515e99146bef8dedb312d402cba3689`.
+- [ ] Exact GitHub release gate #740 green at head `be75cb0e5515e99146bef8dedb312d402cba3689`.
+- [ ] PR #261 merged.
+- [ ] Exact PR #261 merged SHA deployed and independently verified on `designproai-prod-sfo3`.
+- [ ] Fresh production canary proves one entitlement, one Production workflow, Full QC, output, ZIP and WrapBox.
 
 ## Required live acceptance
 
