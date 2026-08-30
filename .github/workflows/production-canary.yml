@@ -1,10 +1,10 @@
-name: Run one production canary on the droplet
+name: Run current A.T.L.A.S. graph production canary
 
-# Replays the exact July 24 seven-render set through the standalone production
-# kernel and returns every artifact it actually produced. The canary bootstraps
-# its own confirmed operator/customer identities in the isolated Supabase Auth
-# project; the old RestylePro user UUID is evidence provenance only, never the
-# owner of a new-project workflow.
+# Authors one current A.T.L.A.S. design and returns every artifact the graph
+# actually produced. The canary bootstraps its own confirmed operator/customer
+# identities in the isolated Supabase Auth project. It intentionally proves the
+# protected owner-promotion path without a Stripe dependency; it never fakes a
+# payment or marks a row paid.
 #
 # Calls 8 and 12 use their real configured providers. The canary is therefore
 # bounded by the production workflow itself and must never be treated as a mock.
@@ -20,12 +20,6 @@ on:
         options:
           - DO_NOT_RUN
           - RUN_PRODUCTION_CANARY
-      views_json:
-        description: "The exact seven July 24 source render URLs"
-        required: true
-        type: string
-        default: >-
-          {"side": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784931913896_commercial.jpg", "passenger-side": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/revisions/designpanelpro_1784932075617.jpg", "hood_detail": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932072890_restyle.jpg", "front": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932073375_restyle.jpg", "rear": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932075057_restyle.jpg", "close-up": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932071794_restyle.jpg", "roof": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784932074924_restyle.jpg"}
       customer_email:
         description: "Confirmed customer identity used for the canary WrapBox recipient"
         required: true
@@ -38,7 +32,7 @@ on:
       vehicle_year:
         required: true
         type: string
-        default: "2022"
+        default: "2020"
       vehicle_make:
         required: true
         type: string
@@ -46,7 +40,7 @@ on:
       vehicle_model:
         required: true
         type: string
-        default: F250 Crew Cab
+        default: F250 Crew Cab 6.5ft Box
 
 permissions:
   contents: read
@@ -81,9 +75,6 @@ jobs:
           set +x
           test "${{ inputs.confirmation }}" = "RUN_PRODUCTION_CANARY"
           test -n "$SSH_PRIVATE_KEY"
-          printf '%s' '${{ inputs.views_json }}' | jq -e '
-            (keys | sort) == (["side","passenger-side","hood_detail","front","rear","close-up","roof"] | sort)
-            and (to_entries | all(.value | test("^https://")))' >/dev/null
           printf '%s' '${{ inputs.customer_email }}' | grep -Eq '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
 
       - name: Pin the droplet SSH identity
@@ -112,11 +103,10 @@ jobs:
           echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
           echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
 
-      - name: Run the exact July 24 production canary
+      - name: Run the current A.T.L.A.S. graph canary
         env:
           KEY_FILE: ${{ steps.ssh.outputs.key_file }}
           KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
-          CANARY_VIEWS: ${{ inputs.views_json }}
           CANARY_YEAR: ${{ inputs.vehicle_year }}
           CANARY_MAKE: ${{ inputs.vehicle_make }}
           CANARY_MODEL: ${{ inputs.vehicle_model }}
@@ -128,12 +118,11 @@ jobs:
           set +x
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
                     -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
-          views_b64=$(printf '%s' "$CANARY_VIEWS" | base64 -w0)
           payload=$(tar -cz scripts/production-canary.mjs | base64 -w0)
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "VIEWS_B64='$views_b64' PAYLOAD='$payload' \
+            "PAYLOAD='$payload' \
              YEAR='$CANARY_YEAR' MAKE='$CANARY_MAKE' MODEL='$CANARY_MODEL' \
              VTYPE='$CANARY_TYPE' CEMAIL='$CANARY_EMAIL' bash -s" \
             > "$RUNNER_TEMP/canary.log" 2>&1 <<'REMOTE'
@@ -152,7 +141,6 @@ jobs:
           trap 'rm -rf "$work"' EXIT
 
           printf '%s' "$PAYLOAD" | base64 -d | tar -C "$work" -xz
-          printf '%s' "$VIEWS_B64" | base64 -d > "$work/views.json"
           chmod -R 0777 "$work"
 
           set +e
@@ -162,9 +150,9 @@ jobs:
             -v "$work/scripts/production-canary.mjs:/app/production-canary.mjs:ro" \
             -v "$work:/canary" \
             "$image" node /app/production-canary.mjs \
-              --views /canary/views.json --out /canary/output \
+              --out /canary/output \
               --year "$YEAR" --make "$MAKE" --model "$MODEL" --type "$VTYPE" \
-              --design "Precision Climate Solutions — July 24 canary"
+              --design "Precision Climate Solutions — A.T.L.A.S. graph canary"
           status=$?
           set -e
 

@@ -2798,6 +2798,15 @@ async function generateOrReuseFlatAtlas(options) {
     effectivePpi: panel.effectivePpi,
     geometryPurpose: panel.geometryPurpose,
     sourceMasterHash: masterHash,
+    surfaceSourceHash: panel.surfaceSourceHash,
+    method: panel.method,
+    deterministic: panel.deterministic,
+    genieManifestId: panel.genieManifestId,
+    genieManifestHash: panel.genieManifestHash,
+    geometryAuthorityState: panel.geometryAuthorityState,
+    geometrySourceRowId: panel.geometrySourceRowId,
+    derivationContract: panel.derivationContract,
+    productionEligible: panel.productionEligible,
   }));
 
   const topologyExample = topologyExamples.find((example) => example?.identity?.exampleId) || null;

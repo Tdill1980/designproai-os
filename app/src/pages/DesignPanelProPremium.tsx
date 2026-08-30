@@ -96,9 +96,7 @@ import {
   type GenieDimensionPreview,
 } from "@/lib/designpro-api";
 import {
-  FLAT_FIRST_ATLAS_UI_ENABLED,
   flatFirstAtlasSupportedVehicleType,
-  initialDesignProPipelineMode,
   inlineRevisionEnabledForPipeline,
   myVehiclePhotoFlowEnabledForPipeline,
   normalizeDesignProVehicleType,
@@ -192,21 +190,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // When rendered inline on the DesignProAI home (no navigation), the brief comes
   // in as a prop instead of router location.state — so designing stays on one page.
   const briefState: any = embeddedBrief || (location.state as any) || null;
-  const [pipelineMode, setPipelineModeState] = useState<GenerationPipelineMode>(() =>
-    initialDesignProPipelineMode(briefState?.pipelineMode, location.search),
-  );
-  // Keep the launch authority in a ref as well as React state. The selector and
-  // the nested DesignIQ submit button live in different components; a callback
-  // retained across their render boundary must never submit yesterday's
-  // `legacy` value while the page visibly says Precision. Updating the ref in
-  // the selector's click handler makes the chosen mode synchronous, and the
-  // server echoes it back before the UI accepts the request.
+  // A.T.L.A.S. is the only DesignProAI operating path. The retired producer is
+  // not a customer choice and cannot be selected through location state or a
+  // query string.
+  const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE;
   const pipelineModeRef = useRef<GenerationPipelineMode>(pipelineMode);
   pipelineModeRef.current = pipelineMode;
-  const setPipelineMode = (next: GenerationPipelineMode) => {
-    pipelineModeRef.current = next;
-    setPipelineModeState(next);
-  };
   const pushedRenderFromState = briefState?.previewRender || null;
   // Capture pushed render in a ref so it survives history.replaceState clearing location.state
   const pushedRenderRef = useRef<any>(null);
@@ -367,7 +356,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const [yearError, setYearError] = useState(false);
   const [showDimensionHelp, setShowDimensionHelp] = useState(false);
 
-  // ── GENIE, RESOLVED WHILE THE FORM IS BEING FILLED ──────────────
+  // ── GENIE, RESOLVED ON THE CUSTOMER'S EXPLICIT ENTER ACTION ─────
   //
   // Owner (2026-08-28): "While the customer is filling out the form,
   // DesignProAI can already parse and prepare everything." The customer should
@@ -375,26 +364,59 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // record -- especially now that a year/config miss resolves as provisional
   // rather than silently inventing dimensions.
   //
-  // Catalog-only on the server, so this is safe to fire from a debounced field.
-  // It NEVER blocks: an unresolved answer is shown in the readiness strip and
-  // Generate stays live.
+  // Catalog-only on the server. An explicit action makes the YMM handoff visible
+  // and repeatable: it never guesses when a half-typed model is "finished".
   const [dimensionPreview, setDimensionPreview] = useState<GenieDimensionPreview | null>(null);
-  useEffect(() => {
-    const y = year.trim();
-    const mk = make.trim();
-    const md = model.trim();
-    if (!y || !mk || !md) { setDimensionPreview(null); return; }
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      dpApi.previewGenieDimensions({ year: y, make: mk, model: md, type: vehicleType })
-        .then((preview) => { if (!cancelled) setDimensionPreview(preview); })
-        // An assist that fails is silent: the chip simply stays neutral.
-        .catch(() => { if (!cancelled) setDimensionPreview(null); });
-    }, 600);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [year, make, model, vehicleType]);
+  const [designPrepVehicle, setDesignPrepVehicle] = useState("");
+  const [designPrepBusy, setDesignPrepBusy] = useState(false);
+  const currentPrepVehicle = [year, make, model, vehicleType]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .join("|");
+  const designPrepIsCurrent = Boolean(dimensionPreview && designPrepVehicle === currentPrepVehicle);
 
-  const dimensionsState: "ok" | "warn" | "neutral" = !dimensionPreview
+  const invalidateDesignPrep = () => {
+    setDimensionPreview(null);
+    setDesignPrepVehicle("");
+  };
+
+  const beginDesignPrep = async () => {
+    const vehicle = {
+      year: year.trim(), make: make.trim(), model: model.trim(), type: vehicleType,
+    };
+    if (!vehicle.year || !vehicle.make || !vehicle.model) {
+      toast({
+        title: "Vehicle required",
+        description: "Enter year, make, and model, then press Enter vehicle.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!flatFirstAtlasSupportedVehicleType(vehicle.type)) {
+      toast({
+        title: "A.T.L.A.S. topology unavailable",
+        description: "Current Design Prep supports cars, trucks, SUVs, and vans.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setDesignPrepBusy(true);
+    try {
+      const prepared = await dpApi.previewGenieDimensions(vehicle);
+      setDimensionPreview(prepared);
+      setDesignPrepVehicle(currentPrepVehicle);
+    } catch {
+      invalidateDesignPrep();
+      toast({
+        title: "Design Prep could not start",
+        description: "Vehicle dimensions could not be pulled. Please try Enter vehicle again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDesignPrepBusy(false);
+    }
+  };
+
+  const dimensionsState: "ok" | "warn" | "neutral" = !designPrepIsCurrent || !dimensionPreview
     ? "neutral"
     : dimensionPreview.resolution.state === "measured" || dimensionPreview.resolution.state === "derived"
       ? "ok"
@@ -1113,16 +1135,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
   // Pipeline entry point - called when user clicks "Create with DesignIQ"
   const handlePipelineStart = async (params: DesignIQParams) => {
-    // Precision is the default producer, so a vehicle family its layout
-    // estimator has no body-class rules for (motorcycle, boat, bus, rv,
-    // trailer) has to land on the standard producer here rather than consume a
-    // Gemini call it cannot lay out. The selector's own handler covers a type
-    // changed by hand; this covers a type arriving on the brief.
-    const requestedPipelineMode =
-      pipelineModeRef.current === FLAT_FIRST_ATLAS_PIPELINE_MODE &&
-      !flatFirstAtlasSupportedVehicleType(vehicleType)
-        ? "legacy"
-        : pipelineModeRef.current;
+    const requestedPipelineMode = pipelineModeRef.current;
     if (params.prompt?.trim()) lastDesignBriefRef.current = params.prompt.trim();
     if (
       mvp.isMyVehicleMode &&
@@ -1145,6 +1158,22 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
         toast({
           title: "Vehicle required",
           description: "Enter year, make, and model before creating a design",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!flatFirstAtlasSupportedVehicleType(vehicleType)) {
+        toast({
+          title: "A.T.L.A.S. topology unavailable",
+          description: "Current DesignProAI supports cars, trucks, SUVs, and vans.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!designPrepIsCurrent) {
+        toast({
+          title: "Begin Design Prep",
+          description: "Press Enter vehicle so A.T.L.A.S. can pull the exact vehicle dimensions before generation.",
           variant: "destructive",
         });
         return;
@@ -1858,48 +1887,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <ChevronLeft className="h-4 w-4" />
                         </button>
                       </div>
-                      {FLAT_FIRST_ATLAS_UI_ENABLED && (
-                        <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-                            Design mode
-                          </div>
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              aria-pressed={pipelineMode === "legacy"}
-                              disabled={isBusy || !!mainDisplayUrl}
-                              onClick={() => setPipelineMode("legacy")}
-                              className={cn(
-                                "rounded-lg border px-2 py-2 text-[10px] font-bold transition disabled:opacity-50",
-                                pipelineMode === "legacy"
-                                  ? "border-white/30 bg-white/10 text-white"
-                                  : "border-white/10 text-white/50 hover:bg-white/5",
-                              )}
-                            >
-                              Production
-                            </button>
-                            <button
-                              type="button"
-                              aria-pressed={pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE}
-                              disabled={isBusy || !!mainDisplayUrl || !flatFirstAtlasSupportedVehicleType(vehicleType)}
-                              onClick={() => setPipelineMode(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
-                              className={cn(
-                                "rounded-lg border px-2 py-2 text-[10px] font-bold transition disabled:opacity-50",
-                                pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-                                  ? "border-cyan-400 bg-cyan-400/15 text-cyan-200"
-                                  : "border-white/10 text-white/50 hover:bg-white/5",
-                              )}
-                            >
-                              Precision
-                            </button>
-                          </div>
-                          <p className="mt-2 text-[10px] leading-4 text-white/55">
-                            {flatFirstAtlasSupportedVehicleType(vehicleType)
-                              ? "Creates your design, then Driver Side. Use See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready. Your print-ready files are prepared alongside them."
-                              : "Precision mode is available for car, truck, SUV and van. Standard generation will be used for this vehicle."}
-                          </p>
+                      <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                          A.T.L.A.S. graph active
                         </div>
-                      )}
+                        <p className="mt-2 text-[10px] leading-4 text-white/65">
+                          One canonical design releases labeled vehicle surfaces and their matched 3D proofs. The same artifact lineage continues into production.
+                        </p>
+                      </div>
                       {/* Input area */}
                       <div className="space-y-4">
                     {/* ACE Character Header — typewriter intro (spans full width) */}
@@ -1957,6 +1952,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                       // on ("Crew Cab Long Box"). The re-run then resolves.
                                       onClick={() => {
                                         setModel(`${model.trim()} ${candidate.model}`.trim());
+                                        invalidateDesignPrep();
                                         setShowDimensionHelp(false);
                                       }}
                                       className="block w-full rounded border border-gray-200 bg-white px-2 py-1.5 text-left text-xs text-gray-700 hover:border-gray-400"
@@ -2032,9 +2028,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           <p className="text-sm text-muted-foreground mb-3">Select Your Vehicle</p>
                           {/* Vehicle type — push-button per class */}
                           <div className="mb-3">
-                            <VehicleTypeSelector value={vehicleType} onChange={(next) => {
+                            <VehicleTypeSelector allowedTypes={["car", "truck", "suv", "van"]} value={vehicleType} onChange={(next) => {
                               setVehicleType(next);
-                              if (!flatFirstAtlasSupportedVehicleType(next)) setPipelineMode("legacy");
+                              invalidateDesignPrep();
                             }} />
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -2051,6 +2047,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 onChange={(e) => {
                                   setYear(e.target.value);
                                   setYearError(false);
+                                  invalidateDesignPrep();
                                 }}
                                 className={cn(
                                   "bg-background border-2 border-border/50 transition-all",
@@ -2067,7 +2064,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 type="text"
                                 placeholder={isNonStandardVehicle(vehicleType) ? "Kawasaki" : "Ford"}
                                 value={make}
-                                onChange={(e) => setMake(e.target.value)}
+                                onChange={(e) => {
+                                  setMake(e.target.value);
+                                  invalidateDesignPrep();
+                                }}
                                 className="bg-background border-2 border-border/50"
                               />
                             </div>
@@ -2080,10 +2080,45 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 type="text"
                                 placeholder={isNonStandardVehicle(vehicleType) ? "Ninja 650" : "Mustang"}
                                 value={model}
-                                onChange={(e) => setModel(e.target.value)}
+                                onChange={(e) => {
+                                  setModel(e.target.value);
+                                  invalidateDesignPrep();
+                                }}
                                 className="bg-background border-2 border-border/50"
                               />
                             </div>
+                          </div>
+                          <div className="mt-3 rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-3">
+                            <p className="text-xs font-semibold text-cyan-100">
+                              Required: press Enter vehicle to begin Design Prep
+                            </p>
+                            <p className="mt-1 text-[11px] leading-4 text-cyan-100/70">
+                              DesignProAI sends the vehicle now and pulls its GENIE dimensions while you continue the creative prompt.
+                            </p>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={beginDesignPrep}
+                              disabled={designPrepBusy}
+                              className="mt-2"
+                            >
+                              {designPrepBusy ? "Beginning Design Prep…" : "Enter vehicle — begin Design Prep"}
+                            </Button>
+                            {designPrepBusy && (
+                              <p className="mt-2 text-[11px] text-cyan-100/80">
+                                Beginning Design Prep — pulling vehicle dimensions…
+                              </p>
+                            )}
+                            {designPrepIsCurrent && dimensionPreview && (
+                              <p className={cn(
+                                "mt-2 text-[11px]",
+                                dimensionsState === "ok" ? "text-emerald-300" : "text-amber-300",
+                              )}>
+                                {dimensionsState === "ok"
+                                  ? `Design Prep ready — six labeled surfaces are bound to GENIE manifest ${dimensionPreview.resolution.genieManifestHash?.slice(0, 16)}…`
+                                  : "Vehicle received — exact GENIE geometry must be validated before production unlocks."}
+                              </p>
+                            )}
                           </div>
                         </CollapsibleContent>
                       </Card>

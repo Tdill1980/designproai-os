@@ -113,21 +113,14 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
   assert.match(gateway, /designpro_generation_view_paths[\s\S]*includes\(ATLAS_NEW_RUN_REQUIRED\)[\s\S]*status: 409/);
 });
 
-test("the design-mode banner reports customer progress without naming the internal pipeline", () => {
+test("the customer page exposes the current A.T.L.A.S. graph without a legacy selector", () => {
   const premium = read("app/src/pages/DesignPanelProPremium.tsx");
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
   const gateway = read("gateway/src/server.mjs");
-  assert.match(premium, /initialDesignProPipelineMode\(briefState\?\.pipelineMode, location\.search\)/);
-  // A.T.L.A.S. is the internal codename for the flat-first master pipeline --
-  // it is a trade secret and must never reach customer-visible copy. The
-  // customer sees "Precision" mode and its outcomes (master design, seven
-  // views, panels), never the internal name or its QC mechanics. Call 1 is
-  // still the initial design generation -- it authors the canonical master
-  // and cuts the six panels from it -- so calling the mode a "preview"
-  // understated what the run had already produced and was the framing behind
-  // hiding the order button; that stays fixed, just under a customer-safe name.
-  assert.doesNotMatch(premium, /A\.T\.L\.A\.S\./);
-  assert.match(premium, /Precision/);
+  assert.match(premium, /const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE/);
+  assert.doesNotMatch(premium, /initialDesignProPipelineMode/);
+  assert.doesNotMatch(premium, /setPipelineMode\("legacy"\)/);
+  assert.match(premium, /A\.T\.L\.A\.S\. graph active/);
   assert.doesNotMatch(premium, /A\.T\.L\.A\.S\. Preview/);
   assert.doesNotMatch(premium, /Server accepted A\.T\.L\.A\.S\. v3/);
   assert.doesNotMatch(premium, /Google-grounded vehicle proportions/);
@@ -145,26 +138,15 @@ test("the design-mode banner reports customer progress without naming the intern
 // 2026-08-24/25 arrived as contract v2 with a null pipelineMode and died in
 // `generation_slots_failed`, while all three atlas masters showed zero
 // production runs. The default is the whole mechanism, so it is locked here.
-test("the create page sends A.T.L.A.S. by default and keeps a one-URL rollback", () => {
-  const selector = read("app/src/lib/designpro-flat-first.ts");
+test("every DesignProAI intake is current-only A.T.L.A.S. with no legacy fallback", () => {
   const premium = read("app/src/pages/DesignPanelProPremium.tsx");
   const home = read("app/src/pages/DesignProAIHome.tsx");
-  assert.match(selector, /if \(!FLAT_FIRST_ATLAS_UI_ENABLED\) return "legacy"/);
-  assert.match(selector, /flatFirstAtlasRequestedBySearch\(search\)/);
-  assert.match(selector, /return FLAT_FIRST_ATLAS_PIPELINE_MODE;\s*\n}/);
-  // `?pipeline=legacy` must stay reachable -- the standard producer is the
-  // rollback, and losing it would make a bad atlas day unrecoverable.
-  assert.match(selector, /get\("pipeline"\) === "legacy"/);
-  assert.match(selector, /if \(value === "legacy"\) return "legacy";/);
-  // A body class the atlas layout estimator has no rules for must still land
-  // on the standard producer instead of burning a Gemini call it cannot lay
-  // out -- on the brief-carried path as well as the hand-changed selector.
-  assert.match(
-    premium,
-    /pipelineModeRef\.current === FLAT_FIRST_ATLAS_PIPELINE_MODE &&\s*\n\s*!flatFirstAtlasSupportedVehicleType\(vehicleType\)\s*\n\s*\? "legacy"/,
-  );
-  assert.match(home, /initialDesignProPipelineMode\(/);
-  assert.match(home, /setPipelineMode\("legacy"\)/);
+  assert.match(premium, /const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE/);
+  assert.match(home, /const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE/);
+  assert.doesNotMatch(premium, /initialDesignProPipelineMode|setPipelineMode\("legacy"\)/);
+  assert.doesNotMatch(home, /initialDesignProPipelineMode|setPipelineMode\("legacy"\)|PipelineModeSelector/);
+  const vehicleChoices = home.slice(home.indexOf("const VEHICLE_TYPES"), home.indexOf("const CAPABILITIES"));
+  assert.doesNotMatch(vehicleChoices, /Motorcycle|Trailer|Bus|RV/);
 });
 
 // A.T.L.A.S. is no longer isolated from production (owner decision
