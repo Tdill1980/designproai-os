@@ -31,7 +31,10 @@ test("ATLAS creative contract carries labeled topology without dimensions or tri
   const contract = block(edge, "function atlasFlatMasterContract(", "function buildDesignIQPrompt");
   assert.match(contract, /hardwired flattened TOP-VIEW artboard/);
   assert.match(contract, /panel identity mismatch/);
-  for (const forbidden of ["DASHED BLUE", "pixel size", "title band", "vehicle silhouette", "ROCKER", "FENDER", "QUARTER", "widthInches", "heightInches"]) {
+  assert.match(contract, /plain rectangular sheet of PRINTED ARTWORK ONLY/);
+  assert.match(contract, /no doors, windows/);
+  assert.match(contract, /vehicle silhouettes/);
+  for (const forbidden of ["DASHED BLUE", "pixel size", "title band", "widthInches", "heightInches"]) {
     assert.doesNotMatch(contract, new RegExp(forbidden, "i"));
   }
 });
@@ -46,6 +49,6 @@ test("ATLAS request exposes exact identity and placement but no dimensions or co
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v9-labeled-topology"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v9-labeled-topology"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v10-pure-panels"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v10-pure-panels"/);
 });
