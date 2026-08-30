@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v10-pure-panels";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v11-neutral-mask";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -376,21 +376,11 @@ function atlasFlatMasterContract(
     return `• ${String(panel.surfaceId || "").toUpperCase()} — ${label} — ${where}`;
   }).join("\n");
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER on one square 4K canvas.
-The attached guide is the hardwired flattened TOP-VIEW artboard for this exact vehicle. Its six adjacent gutter labels identify the fixed GENIE containers; those labels sit outside the artwork regions and are navigation, not design content.
+The attached image is a neutral spatial mask with six fixed GENIE regions. It carries geometry only. Region identity is defined by this exact data mapping:
 ${panelLines}
-The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Paint each named surface only in its matching region; never exchange, relabel or independently redesign regions.
-Create one cohesive professional wrap composition filling every region completely edge-to-edge.
-Each region is a plain rectangular sheet of PRINTED ARTWORK ONLY. Do not draw,
-trace or imply a vehicle body or template inside any region: no doors, windows,
-glass, handles, mirrors, wheels, wheel arches, fenders, bumpers, grilles, lights,
-hood outlines, roof outlines, tailgates, body seams, vehicle silhouettes,
-mockups or 3D perspective. The vehicle named above defines design context only;
-it must not appear in the master. Components are masked only after these flat
-rectangles are projected into the seven downstream proofs.
-Treat a pickup flank as one coordinated composition across cab and bed; treat a van flank as one continuous commercial composition; treat a car or SUV flank as one continuous side composition; treat a box truck cab and box as one coordinated visual system.
-The two flank regions share one coordinated side-design system, with every customer-facing word and logo readable in normal orientation on its installed side.
-Return artwork only inside the six regions. Do not reproduce the gutter labels in the artwork.
-Any attached flattened-top-view reference teaches only the relationship of flattened vehicle surfaces. Every element of the design — artwork, wording, logo and colour — comes from the customer's brief and their verified assets.`;
+The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Replace every light mask region, corner to corner, with the final customer livery pixels for its mapped surface. Keep the dark gutters as separation space.
+Create one cohesive professional wrap composition across all six regions. Each region is an unbroken rectangular field of continuous printed artwork: customer palette, graphics, texture, logo and supplied wording only. The two flank regions are opposite-facing twins of the same coordinated side composition, with customer-facing wording readable normally in each region.
+The six fields are the source artwork. Physical component masking and presentation lighting happen later, during the seven downstream proof projections. Return the finished two-dimensional livery fields in the mask layout.`;
 }
 
 function buildDesignIQPrompt(params: DesignIQParams): string {
@@ -567,7 +557,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = `Design the printed wrap artwork for a ${vehicle} as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. ${COMMERCIAL_DEPTH} The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+    const atlasScene = `Design ONE flat print-production master across the six fixed regions in the attached mask. Output only the final straight-on two-dimensional livery fields. Build the design from layered background color and texture, mid-ground graphic motion, and foreground accent detail across the regions. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
@@ -587,7 +577,11 @@ ${commercialScene}
 
 ${studioEnvironment}`;
 
-    let assembled = `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.
+    const commercialIdentity = atlasFlatMaster
+      ? `You are the senior graphic designer at a sign and wrap company — 20 years of premium commercial fleet-graphics artwork. You amplify each brief into an original six-field livery built for this one business — premium, readable at a glance, and worth what the customer paid.`
+      : `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.`;
+
+    let assembled = `${commercialIdentity}
 
 ${commercialPresentation}
 
@@ -616,7 +610,9 @@ CLIENT BRIEF:`;
     if (phone) {
       assembled += `\nContact info (place in the contact bar): ${phone} — display this EXACT number, digit for digit. Never alter or invent any digits.`;
     } else {
-      assembled += `\nNo phone number was provided — do NOT invent, fabricate, or display any phone number, website, email, or address anywhere on the vehicle. Show the company name only.`;
+      assembled += atlasFlatMaster
+        ? `\nNo phone number was provided — show the company name only and add no contact information.`
+        : `\nNo phone number was provided — do NOT invent, fabricate, or display any phone number, website, email, or address anywhere on the vehicle. Show the company name only.`;
     }
     // EXACT CUSTOMER TEXT, PAIRED PER FIELD. Ported verbatim from
     // runtime/designiq-prompt.cjs's supplementalBrandDirection (owner contract:
@@ -639,11 +635,15 @@ CLIENT BRIEF:`;
     }
 
     if (mascot) {
-      assembled += `\n\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${mascot} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Anchor the mascot as a hero graphic on the rear quarter panel, sized to complement the company name without crowding it.`;
+      assembled += atlasFlatMaster
+        ? `\n\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${mascot} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Integrate it as a coordinated hero graphic in both flank fields, sized to complement the company name without crowding it.`
+        : `\n\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${mascot} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Anchor the mascot as a hero graphic on the rear quarter panel, sized to complement the company name without crowding it.`;
     }
 
     if (qrEnabled) {
-      assembled += `\n\nQR CODE ZONE: Reserve one clean, flat, evenly-lit rectangular area (roughly 10x10 inches) low on the rear quarter panel — free of graphics, text, and busy color — as space for a scannable QR code added in production. Do not draw a QR code yourself.`;
+      assembled += atlasFlatMaster
+        ? `\n\nQR CODE ZONE: Reserve one clean, flat rectangular area in the coordinated lower portion of each flank field as space for a scannable QR code added in production.`
+        : `\n\nQR CODE ZONE: Reserve one clean, flat, evenly-lit rectangular area (roughly 10x10 inches) low on the rear quarter panel — free of graphics, text, and busy color — as space for a scannable QR code added in production. Do not draw a QR code yourself.`;
     }
 
 
@@ -652,24 +652,28 @@ CLIENT BRIEF:`;
     // VisionBoardIQ — follows Gemini's "high-fidelity detail preservation" and "style transfer" patterns
     if (visionBoardImages && visionBoardImages.length > 0) {
       if (visionboard_intent === 'exact_reference') {
-        assembled += `\n\nEXACT REFERENCE: The provided reference is the customer's own approved wrap design for their vehicle. Recreate it faithfully on the ${vehicle} — keep the colors, patterns, typography, logos, layout, and composition true to the reference, adapting only to fit the ${vehicle}'s body lines and preserving the design's identity, proportions, and visual hierarchy.`;
+        assembled += atlasFlatMaster
+          ? `\n\nEXACT REFERENCE: The provided reference is the customer's approved artwork authority. Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully across the six mapped livery fields.`
+          : `\n\nEXACT REFERENCE: The provided reference is the customer's own approved wrap design for their vehicle. Recreate it faithfully on the ${vehicle} — keep the colors, patterns, typography, logos, layout, and composition true to the reference, adapting only to fit the ${vehicle}'s body lines and preserving the design's identity, proportions, and visual hierarchy.`;
       } else if (styleDescriptors) {
         assembled += `\n\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA extracted from references:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the reference images directly.`;
       } else {
-        assembled += `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new that captures their energy.`;
+        assembled += atlasFlatMaster
+          ? `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL six-field livery. Use them as style inspiration only — create something new that captures their energy.`
+          : `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new that captures their energy.`;
       }
     }
 
     // PHOTOGRAPHIC REALISM LOCK — only when the brief names a real photo scene.
     if (wantsPhoto) assembled += `\n\n${PHOTO_REALISM_LOCK}`;
 
-    assembled += `\n\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
-    if (substrateContext) assembled += `\n${substrateContext}`;
     if (atlasFlatMaster) {
-      assembled += `\nThe artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.`;
+      assembled += `\nThe master carries uniform print color only; laminate and physical finish are applied in the downstream proof views.`;
       assembled += `\n\n${atlasFlatMasterContract(atlasPanels)}`;
       return assembled;
     }
+    assembled += `\n\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
+    if (substrateContext) assembled += `\n${substrateContext}`;
     assembled += `\nThe wrap covers painted body panels only. Windows, lights, wheels, and trim stay factory.${truckBedClause(vehicle)}`;
     assembled += viewType === 'close-up'
       ? `\nCanon EOS R5, 35mm f/4, moderate depth of field. Razor-sharp focus on vinyl surface texture showing depth, material quality, and body curves. Vibrant colors.`
@@ -708,14 +712,18 @@ CLIENT BRIEF:`;
     : `A photorealistic studio photograph of a ${vehicle} with a premium artistic vehicle wrap fully installed — real printed vinyl, physically applied. The design elevates the brief into a bold, cohesive wrap built from multiple layered thematic elements — a hero focal point across the door panels, with supporting background atmosphere, mid-ground motion, and foreground accent detail — flowing with the body lines, fender curves, and wheel-arch contours, rich with distressed depth and texture. Branding is added separately as its own layer.`;
 
   // Copyist identity for recreate; the golden designer identity for every other path.
-  const restyleIdentity = isExactRecreate
-    ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com. Your job is to reproduce an existing, approved wrap design EXACTLY as shown in the reference image, re-fitted onto a different vehicle. You do NOT redesign, restyle, recolor, simplify, or invent — you copy the reference faithfully, including every logo and line of text, and change only the vehicle it sits on. If the reference image contains anything besides the design itself (a browser window, app interface, dark panels, menus, thumbnails, captions), IGNORE all of that completely — reproduce ONLY the wrap design shown on the vehicle within it, at FULL fidelity. Copy EVERY design element at its true relative size and position: colored panels, swooshes, and shapes behind or around the logo are part of the design — never drop, shrink, or simplify them, and never shrink the logo lockup.`
-    : `You are WePrintWraps.com Lead Vehicle Wrap Designer. You create both restyle and commercial wraps with depth and texture — your designs are seen in car shows around the world. You take a customer's order and create amazing, modern vehicle wrap designs that we sell to wrap shops who then print and install them on real vehicles. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`;
+  const restyleIdentity = atlasFlatMaster
+    ? isExactRecreate
+      ? `You are a livery-artwork REPRODUCTION specialist at WePrintWraps.com. Reproduce the customer's approved reference faithfully across the six mapped fields, including every supplied color, graphic, pattern, logo, wordmark and line of text at its true relative scale and position.`
+      : `You are WePrintWraps.com Lead Livery Designer. You create premium flat print artwork with depth and texture. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`
+    : isExactRecreate
+      ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com. Your job is to reproduce an existing, approved wrap design EXACTLY as shown in the reference image, re-fitted onto a different vehicle. You do NOT redesign, restyle, recolor, simplify, or invent — you copy the reference faithfully, including every logo and line of text, and change only the vehicle it sits on. If the reference image contains anything besides the design itself (a browser window, app interface, dark panels, menus, thumbnails, captions), IGNORE all of that completely — reproduce ONLY the wrap design shown on the vehicle within it, at FULL fidelity. Copy EVERY design element at its true relative size and position: colored panels, swooshes, and shapes behind or around the logo are part of the design — never drop, shrink, or simplify them, and never shrink the logo lockup.`
+      : `You are WePrintWraps.com Lead Vehicle Wrap Designer. You create both restyle and commercial wraps with depth and texture — your designs are seen in car shows around the world. You take a customer's order and create amazing, modern vehicle wrap designs that we sell to wrap shops who then print and install them on real vehicles. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`;
 
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = `Design the printed wrap artwork for a ${vehicle} as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. The design elevates the brief into a bold, cohesive wrap built from multiple layered thematic elements — a hero focal point across the door panels, with supporting background atmosphere, mid-ground motion, and foreground accent detail — rich with distressed depth and texture.`;
+  const atlasRestyleScene = `Design ONE flat print-production master across the six fixed regions in the attached mask. Output only the final straight-on two-dimensional livery fields. Elevate the brief into a bold, cohesive composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
   const restylePresentation = atlasFlatMaster
     ? atlasRestyleScene
     : `CAMERA ANGLE (LOCKED — read this FIRST):
@@ -725,10 +733,14 @@ ${restyleScene}
 
 ${studioEnvironment}`;
 
+  const restyleFinish = atlasFlatMaster
+    ? `PRINT COLOR: uniform artwork color across all six fields. Physical finish is applied only in downstream proof projections.`
+    : `FINISH LOCK (LOCKED — read this FIRST, applies to every body panel):
+${(finish || 'Gloss').toUpperCase()} — ${finishSpec}`;
+
   let assembled = `${restyleIdentity}
 
-FINISH LOCK (LOCKED — read this FIRST, applies to every body panel):
-${(finish || 'Gloss').toUpperCase()} — ${finishSpec}
+${restyleFinish}
 
 ${restylePresentation}
 
@@ -762,11 +774,15 @@ ${PROFESSIONAL_JUDGMENT}`;
         assembled += ` THIS VIEW = the ${panelLabel} of the vehicle: use the artboard's "${panelLabel}" panel as the exact artwork for this side — match that specific panel's design, layout, colors, logos, and text precisely.`;
       }
     } else if (visionboard_intent === 'exact_reference') {
-      assembled += `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's own approved wrap design. Reproduce it faithfully on the ${vehicle} — keep the exact colors, patterns, graphics, typography, layout, and composition true to the reference, adapting ONLY to fit the ${vehicle}'s body lines while preserving the design's identity, proportions, and visual hierarchy. Reproduce EVERY logo, wordmark, and line of text exactly once, in the same place and style as the reference — branding is PART of this design, never a separate layer to strip, relocate, duplicate, or reinvent. Do NOT redesign, reinterpret, recolor, simplify, or add elements; the ONLY thing that changes is the vehicle the design is applied to. Match the reference's full coverage and texture density — if it is an all-over textured wrap, cover the entire body edge to edge; where the reference leaves the body plain, keep it plain.`;
+      assembled += atlasFlatMaster
+        ? `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's approved artwork authority. Reproduce its exact colors, patterns, graphics, typography, layout, composition, logos, wordmarks and supplied text faithfully across the six mapped livery fields. Preserve its proportions, hierarchy, coverage and texture density.`
+        : `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's own approved wrap design. Reproduce it faithfully on the ${vehicle} — keep the exact colors, patterns, graphics, typography, layout, and composition true to the reference, adapting ONLY to fit the ${vehicle}'s body lines while preserving the design's identity, proportions, and visual hierarchy. Reproduce EVERY logo, wordmark, and line of text exactly once, in the same place and style as the reference — branding is PART of this design, never a separate layer to strip, relocate, duplicate, or reinvent. Do NOT redesign, reinterpret, recolor, simplify, or add elements; the ONLY thing that changes is the vehicle the design is applied to. Match the reference's full coverage and texture density — if it is an all-over textured wrap, cover the entire body edge to edge; where the reference leaves the body plain, keep it plain.`;
     } else if (styleDescriptors) {
       assembled += `\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the references directly.`;
     } else {
-      assembled += `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new.`;
+      assembled += atlasFlatMaster
+        ? `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL six-field livery. Use them as style inspiration only — create something new.`
+        : `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new.`;
     }
   }
 
@@ -775,7 +791,7 @@ ${PROFESSIONAL_JUDGMENT}`;
   // the top-down hood view, and the roof in its own view; rendered independently,
   // the AI invents a different layout each time — the "two different hoods" bug.
   // Lock them all to the ONE design so they read as the same wrap.
-  if (viewType === 'hood_detail' || viewType === 'hood' || viewType === 'roof' || viewType === 'front') {
+  if (!atlasFlatMaster && (viewType === 'hood_detail' || viewType === 'hood' || viewType === 'roof' || viewType === 'front')) {
     const surface = viewType === 'roof' ? 'roof' : 'hood';
     assembled += `\nHOOD/ROOF CONTINUITY (NON-NEGOTIABLE): The ${surface} carries the SAME single continuous wrap design that flows onto it from the body in this exact wrap — identical colors, graphics, motif, and flow direction. The ${surface} is NOT a separate composition: do not invent, substitute, simplify, mirror, or redraw a different pattern for it. Across the front view and the top-down ${surface} view the ${surface} design must be one and the same — only the camera moves.`;
   }
@@ -783,13 +799,13 @@ ${PROFESSIONAL_JUDGMENT}`;
   // PHOTOGRAPHIC REALISM LOCK — only when the brief names a real photo scene.
   if (wantsPhoto) assembled += `\n\n${PHOTO_REALISM_LOCK}`;
 
-  assembled += `\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
-  if (substrateContext) assembled += `\n${substrateContext}`;
   if (atlasFlatMaster) {
-    assembled += `\nThe artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.`;
+    assembled += `\nThe master carries uniform print color only; laminate and physical finish are applied in the downstream proof views.`;
     assembled += `\n\n${atlasFlatMasterContract(atlasPanels)}`;
     return assembled;
   }
+  assembled += `\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
+  if (substrateContext) assembled += `\n${substrateContext}`;
   assembled += `\nThe wrap covers painted body panels only. Windows, lights, wheels, and trim stay factory.${truckBedClause(vehicle)}`;
   assembled += viewType === 'close-up'
     ? `\nCanon EOS R5, 85mm f/2.8, shallow depth of field with rich bokeh. Razor-sharp focus on vinyl surface texture showing depth, material quality, and fine detail. Vibrant colors.`
@@ -2081,10 +2097,11 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       atlasPanels: panels,
     } as any);
 
-    // 3 — parts: designer prompt, deterministic current A.T.L.A.S. guide, then
+    // 3 — parts: designer prompt, deterministic neutral six-region mask, then
     // verified customer references. Historical artboard/template and finished
     // vehicle examples are intentionally excluded: they made the model copy
-    // vehicle anatomy into the six rectangular print regions.
+    // presentation anatomy into the six rectangular print regions. The mask is
+    // unlabelled and unstroked; region identity travels in the panel data.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
     const pushImage = (b64: unknown, mime = "image/png") => {
       if (typeof b64 === "string" && b64.length > 0) {
