@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v9-labeled-topology";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v10-pure-panels";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -380,6 +380,13 @@ The attached guide is the hardwired flattened TOP-VIEW artboard for this exact v
 ${panelLines}
 The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Paint each named surface only in its matching region; never exchange, relabel or independently redesign regions.
 Create one cohesive professional wrap composition filling every region completely edge-to-edge.
+Each region is a plain rectangular sheet of PRINTED ARTWORK ONLY. Do not draw,
+trace or imply a vehicle body or template inside any region: no doors, windows,
+glass, handles, mirrors, wheels, wheel arches, fenders, bumpers, grilles, lights,
+hood outlines, roof outlines, tailgates, body seams, vehicle silhouettes,
+mockups or 3D perspective. The vehicle named above defines design context only;
+it must not appear in the master. Components are masked only after these flat
+rectangles are projected into the seven downstream proofs.
 Treat a pickup flank as one coordinated composition across cab and bed; treat a van flank as one continuous commercial composition; treat a car or SUV flank as one continuous side composition; treat a box truck cab and box as one coordinated visual system.
 The two flank regions share one coordinated side-design system, with every customer-facing word and logo readable in normal orientation on its installed side.
 Return artwork only inside the six regions. Do not reproduce the gutter labels in the artwork.
@@ -2074,8 +2081,10 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       atlasPanels: panels,
     } as any);
 
-    // 3 — parts: designer prompt, layout guide, structural reference, the
-    // gold-standard artboard examples, then verified customer references.
+    // 3 — parts: designer prompt, deterministic current A.T.L.A.S. guide, then
+    // verified customer references. Historical artboard/template and finished
+    // vehicle examples are intentionally excluded: they made the model copy
+    // vehicle anatomy into the six rectangular print regions.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
     const pushImage = (b64: unknown, mime = "image/png") => {
       if (typeof b64 === "string" && b64.length > 0) {
@@ -2103,26 +2112,9 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       parts.push({ inlineData: { mimeType: mime, data: btoa(binary) } });
     };
     await downloadPart(body.guideStoragePath, "image/png");
-    // THE HOUDINI LESSON IS A PAIR: the flattened top-view PANEL LAYOUT sheet
-    // AND its corresponding finished 3D proof. RULE 0.15 records what removing
-    // the second half cost the last time, and says not to repeat it. Each half
-    // is framed here — reference-class firewall included (RULE 0.24: structural
-    // teaches layout, never artwork) — because prompt text belongs in this
-    // function, not in the runtime that stages the bytes.
-    if (String(body.structuralReferenceStoragePath || "").trim()) {
-      parts.push({ text: "PAIRED TOPOLOGY EXAMPLE — FLATTENED TOP-VIEW OUTPUT FORMAT. Study how all visible vehicle surfaces are intentionally composed into one unwrapped design. Copy no artwork, wording, logo, color or brand." });
-    }
-    await downloadPart(body.structuralReferenceStoragePath, String(body.structuralReferenceMime || "image/jpeg"));
-    if (String(body.structuralPairedProofStoragePath || "").trim()) {
-      parts.push({ text: "PAIRED TOPOLOGY EXAMPLE — CORRESPONDING FINISHED 3D PROOF. This shows how the preceding flat design reads after projection onto the vehicle. It is context only; do not return a vehicle image in Call 1 and copy no style." });
-      await downloadPart(body.structuralPairedProofStoragePath, String(body.structuralPairedProofMime || "image/png"));
-      parts.push({ text: "CALL 1 TARGET: create the customer's NEW flattened top-view design in the deterministic guide layout. The seven finished 3D proof views are downstream projections of that saved master." });
-    }
     // Legacy inline path kept for callers that still send bytes (harness
     // capture-only, tests); production sends paths.
     pushImage(body.guideImageBase64);
-    pushImage(body.structuralReferenceBase64, String(body.structuralReferenceMime || "image/jpeg"));
-    for (const ex of await loadArtboardExamples(svc)) parts.push(ex);
     // Re-roll corrective direction from the caller's QC gate (text only).
     if (typeof body.correctiveNote === "string" && body.correctiveNote.trim()) {
       parts.push({ text: body.correctiveNote.trim().slice(0, 2000) });
