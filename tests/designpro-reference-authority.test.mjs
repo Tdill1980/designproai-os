@@ -89,25 +89,26 @@ test("a customer reference declares artwork authority and distinguishes itself f
     visionboardIntent: "exact_reference", visionBoardImages: [{}],
   });
   // The persona's own EXACT rule declares the customer reference the artwork
-  // authority; the flat contract's LAYOUT ONLY line keeps the structural
-  // example out of style.
-  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's own approved wrap design/);
-  assert.match(exact, /teaches only the relationship of flattened vehicle surfaces/);
-  assert.match(exact, /artwork, wording, logo and colour — comes from the customer's brief/);
+  // authority; the neutral mask remains geometry only.
+  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's approved artwork authority/);
+  assert.match(exact, /neutral spatial mask with six fixed GENIE regions/);
+  assert.match(exact, /customer palette, graphics, texture, logo and supplied wording only/);
+  assert.doesNotMatch(exact, /2022|Ford|F250|body lines|wheel|window|door|studio photograph/i);
 
   const inspiration = authored({
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     visionboardIntent: "style_inspiration", visionBoardImages: [{}],
   });
   assert.match(inspiration, /STYLE INSPIRATION: Transform/);
-  assert.match(inspiration, /teaches only the relationship of flattened vehicle surfaces/);
+  assert.match(inspiration, /neutral spatial mask with six fixed GENIE regions/);
 });
 
 // WITH NO CUSTOMER REFERENCE, NO OBSOLETE VISUAL AUTHORITY IS SUBSTITUTED.
 test("with no customer reference, Call 1 still uses only the current guide", () => {
   const prompt = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(prompt, /plain rectangular sheet of PRINTED ARTWORK ONLY/);
-  assert.match(prompt, /vehicle named above defines design context only/);
+  assert.match(prompt, /unbroken rectangular field of continuous printed artwork/);
+  assert.match(prompt, /Region identity is defined by this exact data mapping/);
+  assert.doesNotMatch(prompt, /2022|Ford|F250|body lines|wheel|window|door|studio photograph/i);
 });
 
 // THE METADATA KEEPS THE CLASSES APART.
@@ -193,7 +194,7 @@ test("contact information is preserved exactly when supplied and never invented 
   // DPAG's own contact contract: one sentence covers phone, website, email and
   // address when nothing was supplied, and an exact-digits lock when it was.
   const none = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(none, /No phone number was provided — do NOT invent, fabricate, or display any phone number, website, email, or address anywhere on the vehicle\. Show the company name only\./);
+  assert.match(none, /No phone number was provided — show the company name only and add no contact information\./);
 
   const withPhone = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme", phone: "555-0142" });
   assert.match(withPhone, /555-0142 — display this EXACT number, digit for digit\. Never alter or invent any digits\./);

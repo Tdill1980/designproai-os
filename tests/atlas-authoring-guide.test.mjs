@@ -1,4 +1,4 @@
-// THE MODEL'S GUIDE MUST CARRY SIX GUTTER LABELS, AND EVERY ZONE MUST BE OPAQUE.
+// THE MODEL'S GUIDE MUST BE SIX NEUTRAL MASKS, AND EVERY ZONE MUST BE OPAQUE.
 //
 // Generation eb7835a8-247b-443c-9804-e73f66379603 (2026-08-25, Carley's 2011
 // Chevy Traverse LT) died at Call 1 after three consecutive authoring attempts,
@@ -10,8 +10,8 @@
 // The cause was the input, not the gate: one guide served the model, the QC
 // inspector and the design team at once, and it printed each surface's name
 // across the middle of that surface at up to 180px bold. These tests lock the
-// split that fixes it -- the model sees short identity labels only outside the
-// cut rectangles, while humans and QC keep the full installer annotations.
+// split that fixes it -- the model sees only the region masks, while humans and
+// QC keep the full installer annotations and the schema carries identity.
 
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -75,13 +75,10 @@ const FORBIDDEN_AUTHORING_ANNOTATIONS = [
  * GLYPH MAY SIT INSIDE A CONTAINER. The containers are labeled; the paint area
  * stays clean.
  */
-test("the model's guide carries exactly six short gutter labels", () => {
+test("the model's guide carries no labels or outlines", () => {
   const svg = authoringGuideSvg(manifest).toString("utf8");
-  assert.equal((svg.match(/<text\b/gi) || []).length, SURFACE_KEYS.length);
-  for (const key of SURFACE_KEYS) {
-    assert.equal(svg.includes(key.toUpperCase()), true,
-      `the authoring guide lost the ${key} surface name`);
-  }
+  assert.equal((svg.match(/<text\b/gi) || []).length, 0);
+  assert.equal(/\bstroke=/i.test(svg), false);
 });
 
 /**
@@ -119,13 +116,13 @@ test("no caption is drawn in a container's bleed band, which the panel cut keeps
   }
 });
 
-test("the authoring guide carries names but no installer instructions or dimensions", () => {
+test("the authoring guide carries only masks, no names, instructions or dimensions", () => {
   const svg = authoringGuideSvg(manifest).toString("utf8");
   for (const annotation of FORBIDDEN_AUTHORING_ANNOTATIONS) {
     assert.equal(svg.includes(annotation), false,
       `the authoring guide leaked ${JSON.stringify(annotation)}`);
   }
-  // Six filled rectangles, six gutter labels and the canvas ground. No trim furniture.
+  // Six filled rectangles and the canvas ground. No labels or trim furniture.
   assert.equal((svg.match(/<rect\b/gi) || []).length, manifest.zones.length + 1,
     "the model's guide is the canvas plus exactly one rectangle per container");
   assert.equal(svg.includes("stroke-dasharray"), false);
@@ -211,7 +208,7 @@ test("a glyph inside any extraction rectangle fails before authoring", async () 
   };
   await assert.rejects(
     () => renderAtlasAuthoringGuide(withText),
-    (error) => error?.code === "flat_atlas_authoring_guide_contains_text",
+    (error) => error?.code === "flat_atlas_authoring_guide_contains_technical_furniture",
   );
 });
 
@@ -247,7 +244,7 @@ test("dashed, line, path and polygon geometry are refused too", async () => {
  * nothing to size — but the layout itself still has to survive flanks from
  * 120in to 300in, so the render is exercised across the spread.
  */
-test("captions fit the gutter on every vehicle proportion, not just the fixture's", async () => {
+test("the neutral mask renders for every vehicle proportion", async () => {
   const build = (rows) => flatFirst.buildAtlasManifest(rows.map(([surfaceKey, widthInches, heightInches]) => ({
     surfaceKey, widthInches, heightInches, bleed: { top: 5, right: 5, bottom: 5, left: 5 },
   })), null);
@@ -260,12 +257,12 @@ test("captions fit the gutter on every vehicle proportion, not just the fixture'
   for (const [name, rows] of Object.entries(proportions)) {
     await flatFirst.renderAtlasAuthoringGuide(build(rows));
     const svg = flatFirst._test.authoringGuideSvg(build(rows)).toString("utf8");
-    assert.equal((svg.match(/<text\b/gi) || []).length, SURFACE_KEYS.length,
-      `${name}: every container must retain one gutter label`);
+    assert.equal((svg.match(/<text\b/gi) || []).length, 0,
+      `${name}: the model-facing mask must remain text-free`);
   }
 });
 
-test("text with no readable anchor is refused, as every text node now is", async () => {
+test("unanchored text is refused because every text node is forbidden", async () => {
   // This used to be its own class: a glyph that declares no x/y could not be
   // proven outside a container, so it was refused rather than trusted. With no
   // legal text at all the distinction collapses — but the fixture is kept,
@@ -278,7 +275,7 @@ test("text with no readable anchor is refused, as every text node now is", async
         guideFill: '#4a4a4a"/><text dx="10">HOOD</text><rect fill="#4a4a4a',
       })),
     }),
-    (error) => error?.code === "flat_atlas_authoring_guide_text_unlocatable",
+    (error) => error?.code === "flat_atlas_authoring_guide_contains_technical_furniture",
   );
 });
 
@@ -288,8 +285,8 @@ test("the solid-panel output contract lives in the edge function's flat contract
   // handler instead, stated once and positively.
   const { readFileSync } = require("node:fs");
   const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edge, /filling every region completely edge-to-edge/);
-  assert.match(edge, /hardwired flattened TOP-VIEW artboard/);
+  assert.match(edge, /Replace every light mask region, corner to corner/);
+  assert.match(edge, /neutral spatial mask with six fixed GENIE regions/);
   assert.match(edge, /\$\{panelLines\}/);
   assert.match(edge, /centre column is fixed top-to-bottom as Rear, Roof, Hood, Front/);
   // Scoped to the ATLAS contract, not the file: `mode === 'artboard'` is the
@@ -305,10 +302,10 @@ test("the solid-panel output contract lives in the edge function's flat contract
   assert.doesNotMatch(atlasContract, /widthInches|heightInches/);
 });
 
-test("the prompt version fences pure-panel masters from every obsolete authoring contract", () => {
+test("the prompt version fences neutral-mask masters from every obsolete authoring contract", () => {
   const { readFileSync } = require("node:fs");
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  assert.match(atlasSource, /designpro-flat-first-atlas-20260830\.v11-pure-panels/);
+  assert.match(atlasSource, /designpro-flat-first-atlas-20260830\.v12-neutral-mask/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260827\.v10-edge"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260824\.v6"/);
 });
