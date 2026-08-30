@@ -45,6 +45,8 @@ const BUCKET = "wrap-files";
 const POLL_INTERVAL_MS = 5_000;
 const MAX_ENTICE_POLLS = 240;
 const MAX_PRODUCTION_POLLS = 720;
+const ATLAS_SLO_SECONDS = 60;
+const DRIVER_SLO_SECONDS = 90;
 const OPERATOR_EMAIL = "canary-operator@designproai.com";
 const CUSTOMER_REFERENCE = "DESIGNPROAI-ATLAS-GRAPH-CANARY";
 
@@ -88,6 +90,13 @@ const service = createClient(SUPABASE_URL, SERVICE_KEY, {
 });
 const step = (message) => process.stdout.write(`  ${message}\n`);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const elapsedSeconds = (start, end, label) => {
+  const milliseconds = Date.parse(String(end || "")) - Date.parse(String(start || ""));
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+    throw new Error(`${label} timestamps are invalid: ${String(start)} -> ${String(end)}`);
+  }
+  return Math.round(milliseconds / 10) / 100;
+};
 
 const evidence = {
   contract: "designpro.production-canary-evidence.v3",
@@ -106,6 +115,7 @@ const evidence = {
   // The persisted A.T.L.A.S. revision this run authored. Null means Calls 1-7
   // never produced a master, which is a failed canary however green the rest is.
   flatAtlas: null,
+  latency: null,
   stageTransitions: [],
   autoApprovals: [],
   outputs: [],
@@ -584,7 +594,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
 
   const { data: row, error } = await service
     .from("designpro_generation_requests")
-    .select("engine_receipt")
+    .select("engine_receipt,created_at,completed_at")
     .eq("id", requestId)
     .maybeSingle();
   if (error || !row) throw new Error(`engine receipt read failed: ${error?.message || "no row"}`);
@@ -608,7 +618,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
     .from("designpro_flat_atlas_revisions")
     .select("id,revision_sequence,master_content_hash,master_storage_path,master_byte_size,"
       + "projection_content_hash,manifest_content_hash,guide_content_hash,prompt_version,model,"
-      + "width_px,height_px,effective_ppi,metadata")
+      + "width_px,height_px,effective_ppi,metadata,created_at")
     .eq("generation_id", generationId)
     .order("revision_sequence", { ascending: false })
     .limit(1)
@@ -627,6 +637,9 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   // the failure this whole path exists to prevent.
   if (atlasRow.metadata?.masterQcPassed !== true) {
     throw new Error(`the A.T.L.A.S. master did not pass QC: ${JSON.stringify(atlasRow.metadata || null).slice(0, 300)}`);
+  }
+  if (Number(atlasRow.metadata?.geminiImageRequestCount) !== 1) {
+    throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; expected exactly one`);
   }
   if (atlasRow.metadata?.geometryAuthority?.source !== "genie-panelizer-catalog") {
     throw new Error(`A.T.L.A.S. used non-current geometry authority: ${String(atlasRow.metadata?.geometryAuthority?.source || "missing")}`);
@@ -660,6 +673,8 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
     effectivePpi: atlasRow.effective_ppi,
     masterQcPassed: atlasRow.metadata?.masterQcPassed === true,
     masterCutoutSurfaces: atlasRow.metadata?.masterCutoutSurfaces || [],
+    createdAt: atlasRow.created_at,
+    geminiImageRequestCount: Number(atlasRow.metadata?.geminiImageRequestCount),
   };
   step(`A.T.L.A.S. master ${atlasRow.master_content_hash.slice(0, 12)} `
     + `(${atlasRow.prompt_version}, ${atlasRow.width_px}x${atlasRow.height_px}, QC passed)`);
@@ -706,10 +721,31 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   // the same addresses it wrote, since the status RPC withholds storage paths.
   const { data: viewRows, error: viewError } = await service
     .from("designpro_generation_views")
-    .select("consumer_role,content_hash,byte_size,content_type")
+    .select("source_view_type,consumer_role,content_hash,byte_size,content_type,created_at")
     .eq("request_id", requestId)
     .is("superseded_at", null);
   if (viewError) throw new Error(`generation view read failed: ${viewError.message}`);
+  const driverRow = (viewRows || []).find((view) => view.source_view_type === "side");
+  if (!driverRow?.created_at) throw new Error("Driver proof has no durable availability timestamp");
+  const atlasSeconds = elapsedSeconds(row.created_at, atlasRow.created_at, "A.T.L.A.S. latency");
+  const driverSeconds = elapsedSeconds(row.created_at, driverRow.created_at, "Driver latency");
+  evidence.latency = {
+    basis: "request-created-to-durable-artifact",
+    requestCreatedAt: row.created_at,
+    atlasCreatedAt: atlasRow.created_at,
+    driverCreatedAt: driverRow.created_at,
+    atlasSeconds,
+    driverSeconds,
+    atlasSloSeconds: ATLAS_SLO_SECONDS,
+    driverSloSeconds: DRIVER_SLO_SECONDS,
+    pass: atlasSeconds <= ATLAS_SLO_SECONDS && driverSeconds <= DRIVER_SLO_SECONDS,
+  };
+  step(`latency A.T.L.A.S. ${atlasSeconds.toFixed(2)}s / ${ATLAS_SLO_SECONDS}s; `
+    + `Driver ${driverSeconds.toFixed(2)}s / ${DRIVER_SLO_SECONDS}s`);
+  if (!evidence.latency.pass) {
+    throw new Error(`latency SLO failed: A.T.L.A.S. ${atlasSeconds.toFixed(2)}s (max ${ATLAS_SLO_SECONDS}s), `
+      + `Driver ${driverSeconds.toFixed(2)}s (max ${DRIVER_SLO_SECONDS}s)`);
+  }
   const renderAssets = {};
   for (const view of viewRows || []) {
     const extension = EXTENSION[view.content_type];

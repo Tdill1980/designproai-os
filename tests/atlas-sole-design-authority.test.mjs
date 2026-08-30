@@ -125,9 +125,11 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   assert.match(atlas, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash[,)]/);
   assert.match(atlas, /async function cutCallOnePanels\(/);
 
-  // → server-native 3D proof provider, conditioned on the master's own bytes.
+  // → server-native 3D proof provider, conditioned on the canonical master's
+  // own per-surface panel bytes as soon as that panel becomes durable.
   assert.match(worker, /atlasProviderFactory = createAtlasDesignPanelProvider/);
-  assert.match(worker, /conditioningIdentityFor: \(sourceViewType\) => viewAuthorityFor\(flatAtlas, sourceViewType\)/);
+  assert.match(worker, /conditioningIdentityFor: \(view\) => viewAuthorityFor\(atlas, view\)/);
+  assert.match(worker, /panelFor: \(view\) => atlasPanelForProofView\(atlas, view\)/);
   // The gate that makes "conditioned on the master" a fact rather than a claim.
   assert.match(atlas, /function viewAuthorityFor\(/);
 
@@ -156,7 +158,7 @@ test("no new A.T.L.A.S. generation can reach a legacy or browser-side design pro
   // standard provider is hardcoded null when the request is flat-first, and the
   // atlas factory has no environment switch at all.
   assert.match(worker, /const standardProvider = isFlatFirst \? null : standardProviderFactory\(\{/);
-  assert.match(worker, /const atlasProvider = isFlatFirst \? atlasProviderFactory\(\{/);
+  assert.match(worker, /const atlasProvider = atlasProviderFactory\(\{/);
   const transportGate = worker.slice(
     worker.indexOf("function standardProviderFactoryFor"),
     worker.indexOf("function standardProviderFactoryFor") + 400,

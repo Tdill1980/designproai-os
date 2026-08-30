@@ -732,6 +732,28 @@ async function runAtlasProofStages({
   return proofs;
 }
 
+/** Combine independently released proof nodes into the receipt shape the
+ * existing completion path already consumes. Each node keeps its own slot
+ * lease and retry budget; this only joins their finished receipts. */
+function combineAtlasProofRuns(runs, viewPlan) {
+  const orderedViews = (Array.isArray(viewPlan) ? viewPlan : [])
+    .map((entry) => String(entry?.sourceViewType || ""));
+  const results = runs.flatMap((run) => Array.isArray(run?.results) ? run.results : []);
+  const byView = new Map(results.map((result) => [String(result?.sourceViewType || ""), result]));
+  const orderedResults = orderedViews.map((sourceViewType) => byView.get(sourceViewType)).filter(Boolean);
+  const failed = orderedResults.some((result) => result.state === "failed");
+  const allAccepted = orderedResults.length === orderedViews.length
+    && orderedResults.every((result) => result.state === "accepted");
+  return {
+    contract: engine.ENGINE_CONTRACT,
+    state: failed ? "failed" : allAccepted ? "outputs_ready" : "pending",
+    providerCalls: runs.reduce((total, run) => total + Number(run?.providerCalls || 0), 0),
+    budget: runs.reduce((total, run) => total + Number(run?.budget || 0), 0),
+    results: orderedResults,
+    requiresExplicitResume: runs.some((run) => run?.requiresExplicitResume === true),
+  };
+}
+
 function createGenerationWorker({
   supabase,
   workerId,
@@ -815,6 +837,66 @@ function createGenerationWorker({
         requestId,
         input: claim.input,
       });
+      const progressiveProofRuns = new Map();
+      let progressiveAtlas = null;
+      let driverSurfaceRelease = null;
+
+      // Start one proof node from the progressive A.T.L.A.S. object. The task
+      // is registered before it awaits panel/projection persistence, so the
+      // callback returns immediately and panel extraction never waits on a 3D
+      // render. A no-op rejection observer prevents an early provider failure
+      // becoming an unhandled promise while Call 1 is still finishing; the
+      // original task is awaited and reported below.
+      const launchAtlasProof = ({ atlas, sourceViewType, prerequisites = [] }) => {
+        if (progressiveProofRuns.has(sourceViewType)) return progressiveProofRuns.get(sourceViewType);
+        const task = (async () => {
+          await Promise.all(prerequisites.filter(Boolean));
+          const atlasProvider = atlasProviderFactory({
+            supabase,
+            provider: imageProvider,
+            tenantKey: claim.tenantKey,
+            generationId: claim.generationId,
+            requestId,
+            input: executionInput,
+            atlas: {
+              conditioningPartsFor: (view) => atlasProjectionParts(atlas, view),
+              conditioningIdentityFor: (view) => viewAuthorityFor(atlas, view),
+              panelFor: (view) => atlasPanelForProofView(atlas, view),
+              authorityMetadata: {
+                masterContentHash: atlas.master.contentHash,
+                surfaceSourceHash: atlas.projection.sourceMasterHash,
+                projectionContentHash: atlas.projection.contentHash,
+                manifestContentHash: atlas.manifestAsset.contentHash,
+                revisionId: atlas.revisionId,
+                revisionSequence: atlas.revisionSequence,
+              },
+            },
+          });
+          const validator = atlasProofValidatorFactory({
+            provider: imageProvider,
+            atlas,
+            input: executionInput,
+          });
+          const plan = claim.viewPlan.filter((entry) => entry.sourceViewType === sourceViewType);
+          const slots = slotsFrom(plan, executionInput, instructions, atlas, [])
+            .map((slot) => ({ ...slot, validate: validator }));
+          if (slots.length !== 1) {
+            throw new Error(`A.T.L.A.S. progressive release could not resolve ${sourceViewType}`);
+          }
+          return runAtlasProofStages({
+            runRequest: engine.runRequest,
+            requestId,
+            generationId: claim.generationId,
+            tenantKey: claim.tenantKey,
+            provider: atlasProvider,
+            store,
+            slots,
+          });
+        })();
+        void task.catch(() => {});
+        progressiveProofRuns.set(sourceViewType, task);
+        return task;
+      };
 
       if (isFlatFirst) {
         // The exact v3 contract + pipelineMode pair is the server-side feature
@@ -853,6 +935,37 @@ function createGenerationWorker({
           geometryResolution: dimensionRow.geometryResolution,
           topologyExamples,
           artboardQualityExamples,
+          // The customer critical path is exactly one creative authoring call.
+          // A refused design becomes an explicit new revision; it never buys a
+          // second hidden A.T.L.A.S. call while the customer waits for Driver.
+          maxAuthoringAttempts: 1,
+          onMasterReady: (atlas) => {
+            progressiveAtlas = atlas;
+          },
+          onSurfaceReady: (release) => {
+            const atlas = release?.atlas || progressiveAtlas;
+            if (!atlas) throw new Error("A.T.L.A.S. surface released before its master");
+            const node = {
+              atlas,
+              prerequisites: [release.projectionReady, release.panelPersisted],
+            };
+            if (release.surfaceKey === "driver") {
+              driverSurfaceRelease = node;
+              // Driver owns the first dispatch. Close-Up shares its panel but
+              // is deliberately deferred until the next surface releases, so
+              // it cannot compete with the customer-critical Driver request.
+              launchAtlasProof({ ...node, sourceViewType: "side" });
+              return;
+            }
+            if (driverSurfaceRelease && !progressiveProofRuns.has("close-up")) {
+              launchAtlasProof({ ...driverSurfaceRelease, sourceViewType: "close-up" });
+            }
+            for (const [sourceViewType, surfaceKey] of Object.entries(ATLAS_VIEW_ROLES)) {
+              if (surfaceKey === release.surfaceKey) {
+                launchAtlasProof({ ...node, sourceViewType });
+              }
+            }
+          },
           logger: (line) => console.log(`[DESIGNPRO-OS] flat-first ${requestId}: ${line}`),
         });
         // A resumed Atlas request may already contain accepted rows. Admit
@@ -865,67 +978,36 @@ function createGenerationWorker({
         });
       }
 
-      const atlasProvider = isFlatFirst ? atlasProviderFactory({
-        supabase,
-        provider: imageProvider,
-        tenantKey: claim.tenantKey,
-        generationId: claim.generationId,
-        requestId,
-        input: executionInput,
-        atlas: {
-          conditioningPartsFor: (sourceViewType) => atlasProjectionParts(flatAtlas, sourceViewType),
-          conditioningIdentityFor: (sourceViewType) => viewAuthorityFor(flatAtlas, sourceViewType),
-          // THE ARTWORK AUTHORITY THE PHOTOGRAPHER IS SENT. Resolved lazily,
-          // per surface, at generation time -- the panel it names may not exist
-          // when the slots are built, and `panel.ready(surface)` is what
-          // releases that surface's proof.
-          panelFor: (sourceViewType) => atlasPanelForProofView(flatAtlas, sourceViewType),
-          authorityMetadata: {
-            masterContentHash: flatAtlas.master.contentHash,
-            surfaceSourceHash: flatAtlas.projection.sourceMasterHash,
-            projectionContentHash: flatAtlas.projection.contentHash,
-            manifestContentHash: flatAtlas.manifestAsset.contentHash,
-            revisionId: flatAtlas.revisionId,
-            revisionSequence: flatAtlas.revisionSequence,
-          },
-        },
-      }) : null;
-
       // Standard DesignPanel generation is deliberately staged on this server:
       // design-panel-ai-generate creates View 1, then generate-color-render
       // receives that byte-verified accepted winner for Views 2-7. Reproductions
       // remain sequential so one frozen anchor yields one deterministic order.
-      // A.T.L.A.S. remains explicitly requested, but its proof photography now
-      // uses the same server-side generate-color-render behavior: the immutable
-      // flat DesignPanel master projects Driver first, the verified Driver is
-      // persisted, and Passenger plus the remaining views follow sequentially.
+      // A.T.L.A.S. is different: panel.ready(surface) releases each independent
+      // photographer node while Call 1 is still persisting its later branches.
       const standardReferenceParts = isFlatFirst ? [] : await referenceImageParts(supabase, claim.input);
-      const atlasProofValidator = isFlatFirst ? atlasProofValidatorFactory({
-        // The direct server provider owns generateRaw. The Atlas projection
-        // adapter owns image generation only and intentionally cannot perform
-        // an independent analysis transport.
-        provider: imageProvider,
-        atlas: flatAtlas,
-        input: executionInput,
-      }) : null;
       const slots = slotsFrom(
         claim.viewPlan,
         executionInput,
         instructions,
         flatAtlas,
         standardReferenceParts,
-      ).map((slot) => (atlasProofValidator ? { ...slot, validate: atlasProofValidator } : slot));
+      );
       let result;
       if (isFlatFirst) {
-        result = await runAtlasProofStages({
-          runRequest: engine.runRequest,
-          requestId,
-          generationId: claim.generationId,
-          tenantKey: claim.tenantKey,
-          provider: atlasProvider,
-          store,
-          slots,
-        });
+        // Reuse/resume paths do not emit progressive callbacks. Launch only the
+        // nodes that were not already released, then join every independent
+        // node in the canonical view order for the existing completion gate.
+        for (const slot of slots) {
+          if (!progressiveProofRuns.has(slot.sourceViewType)) {
+            launchAtlasProof({ atlas: flatAtlas, sourceViewType: slot.sourceViewType });
+          }
+        }
+        const runs = await Promise.all(claim.viewPlan.map((entry) => {
+          const task = progressiveProofRuns.get(entry.sourceViewType);
+          if (!task) throw new Error(`A.T.L.A.S. proof node ${entry.sourceViewType} was not released`);
+          return task;
+        }));
+        result = combineAtlasProofRuns(runs, claim.viewPlan);
       } else {
         await standardProvider.hydrateHero();
         const designer = await engine.runRequest({
@@ -1037,7 +1119,7 @@ function createGenerationWorker({
             vehicleClassResolution: dimensionRow.vehicleClassResolution,
             generationProducer: "design-panel-ai-generate",
             reproductionProducer: "generate-color-render",
-            proofExecution: "driver-first-sequential",
+            proofExecution: "panel-ready-driver-priority-parallel",
           }
         : {
             generationProducer: "design-panel-ai-generate",

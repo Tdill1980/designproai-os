@@ -792,12 +792,31 @@ function rejectionFor(review, brandRequired, confidenceThreshold) {
  * as a cut-out that was not already one, and every other contract stays fatal.
  */
 function coverageFailedOnClassifiedCutoutsOnly(rejection, review, deterministic) {
-  return Array.isArray(rejection?.failed)
-    && rejection.failed.length === 1
-    && rejection.failed[0] === "zoneCoverageContract"
-    && Array.isArray(deterministic?.cutoutFindings)
-    && deterministic.cutoutFindings.length > 0
-    && cutoutContractFailed(review);
+  if (!Array.isArray(rejection?.failed)
+    || !Array.isArray(deterministic?.cutoutFindings)
+    || deterministic.cutoutFindings.length < 1
+    || !cutoutContractFailed(review)) return false;
+
+  const failed = [...rejection.failed].sort();
+  if (failed.length === 1 && failed[0] === "zoneCoverageContract") return true;
+
+  // Live A.T.L.A.S. 522ed2c7 (2026-08-30) exposed one semantic alias for the
+  // same deterministic defect: the inspector failed both zone coverage and
+  // artifact-free, but every stated reason was the measured wheel/glass/bed
+  // cut-out. Spending another 35-45 second creative call on that same hole
+  // broke both the one-call contract and the Driver SLO. Treat the second flag
+  // as the same repairable defect only when the failed set is EXACTLY these two
+  // fields and every reviewer reason describes a hole/opening. Labels,
+  // lettering, duplicated parts, melted bodywork and all other artifacts stay
+  // fatal and can never enter deterministic fill.
+  if (failed.join(",") !== "artifactFreeContract,zoneCoverageContract") return false;
+  const reasons = Array.isArray(review?.reasons)
+    ? review.reasons.map((value) => cleanText(value, 240)).filter(Boolean)
+    : [];
+  if (!reasons.length) return false;
+  const cutoutLanguage = /cut[ -]?out|hole|opening|wheel|wheel arch|glass|window|bed shape|lamp/i;
+  const nonCutoutArtifact = /label|annotation|dimension|text|word|letter|logo|duplicate|extra wheel|melt|malform|impossible|reflection|watermark/i;
+  return reasons.every((reason) => cutoutLanguage.test(reason) && !nonCutoutArtifact.test(reason));
 }
 
 // The reviewer's own read on holes. Deterministic pixel measurement is the
