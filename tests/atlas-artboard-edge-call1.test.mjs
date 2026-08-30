@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v9-labeled-topology"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v10-pure-panels"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -115,43 +115,27 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.equal(runtimeVersion[1], edge[1]);
 });
 
-test("both halves of the Houdini paired lesson reach Call 1", () => {
-  // RULE 0.15: "THE PAIRED EXAMPLE ... IS RESTORED. DO NOT REMOVE IT AGAIN."
-  // topologyExampleParts emits the lesson as TWO images — the flattened
-  // top-view PANEL LAYOUT sheet and its corresponding finished 3D proof — and
-  // the move onto the edge function staged only `.find(...)`, the first inline
-  // image, so the finished proof silently stopped being attached. Nothing
-  // failed; the lesson just went half-taught.
-  assert.match(runtimeSource, /const structuralImages = topologyParts\.filter\(/);
-  assert.ok(
-    !/const structuralImage = topologyParts\.find\(/.test(runtimeSource),
-    "taking the first inline image drops the finished-proof half of the pair",
+test("obsolete vehicle/template and finished-proof examples cannot reach Call 1", () => {
+  assert.ok(!handler.includes("body.structuralReferenceStoragePath"));
+  assert.ok(!handler.includes("body.structuralPairedProofStoragePath"));
+  assert.ok(!handler.includes("body.structuralReferenceBase64"));
+  assert.ok(!handler.includes("loadArtboardExamples(svc)"));
+  const liveAuthoring = runtimeSource.slice(
+    runtimeSource.indexOf("async function generateOrReuseFlatAtlas"),
+    runtimeSource.indexOf("async function updateAtlasRevision"),
   );
-  assert.match(runtimeSource, /structuralPairedProofStoragePath: await stageEdgeInput\(pairedProofBytes/);
-  // …and the function downloads and attaches both.
-  assert.match(handler, /downloadPart\(body\.structuralReferenceStoragePath/);
-  assert.match(handler, /downloadPart\(body\.structuralPairedProofStoragePath/);
-
-  // The framing text lives in the edge function (prompt text belongs there),
-  // but the runtime still carries the canonical wording, so lock them equal
-  // rather than leaving two copies free to drift.
-  for (const line of [
-    "PAIRED TOPOLOGY EXAMPLE — FLATTENED TOP-VIEW OUTPUT FORMAT.",
-    "PAIRED TOPOLOGY EXAMPLE — CORRESPONDING FINISHED 3D PROOF.",
-    "CALL 1 TARGET: create the customer's NEW flattened top-view design",
-  ]) {
-    assert.ok(runtimeSource.includes(line), `the runtime lesson must still say: ${line}`);
-    assert.ok(handler.includes(line), `the Call-1 request must carry: ${line}`);
-  }
+  assert.ok(!liveAuthoring.includes("topologyExampleParts("));
+  assert.ok(!liveAuthoring.includes("structuralReferenceStoragePath"));
+  assert.ok(!liveAuthoring.includes("structuralPairedProofStoragePath"));
+  assert.match(liveAuthoring, /guideStoragePath: await stageEdgeInput\(authoringGuideBytes/);
 });
 
 test("the flat contract gives the model exact labeled placement without dimensions", () => {
   // ⚠️ THIS BLOCK ONCE ASSERTED THE OPPOSITE, AND THAT IS WHY IT IS HERE.
   //
-  // It required the contract to NAME each forbidden feature — door seams,
-  // wheel arches, windows, bumpers, vehicle silhouette — because RULE 0.28 §4
-  // lists them, and to describe the sheet's captions, Surface IDs, pixel sizes
-  // and dashed outlines before saying not to reproduce them.
+  // The contract names the forbidden vehicle anatomy because live generation
+  // f5bef168 copied it from obsolete visual examples. It still never exposes
+  // dimensions, trim furniture or production geometry.
   //
   // Generation 8555be2f (2026-08-28) returned `231.3" x 90"`, `170" x 71.8"`,
   // `70.9" x 36"`, `79" x 73.6"`, the codes HD/RF/RR/FR, dashed rectangles and
@@ -178,16 +162,16 @@ test("the flat contract gives the model exact labeled placement without dimensio
     assert.ok(!contract.toLowerCase().includes(leaked.toLowerCase()),
       `the contract must not speak "${leaked}" to the image model`);
   }
-  for (const enumerated of ["door seam", "wheel arch", "window", "bumper", "rocker", "silhouette", "handle"]) {
-    assert.ok(!contract.toLowerCase().includes(enumerated),
-      `the contract must not enumerate "${enumerated}" — naming it is what produced it`);
-  }
+  assert.match(contract, /plain rectangular sheet of PRINTED ARTWORK ONLY/);
+  assert.match(contract, /no doors, windows/);
+  assert.match(contract, /wheel arches/);
+  assert.match(contract, /vehicle silhouettes/);
 
   // The centre column is described in the order the layout actually builds. The
   // prompt said ROOF/HOOD/FRONT/REAR while CENTER_ORDER has always been
   // rear/roof/hood/front, so it was naming the containers in the wrong order.
   assert.match(runtimeSource, /const CENTER_ORDER = Object\.freeze\(\["rear", "roof", "hood", "front"\]\)/);
-  assert.match(contract, /teaches only the relationship of flattened vehicle surfaces/);
+  assert.match(contract, /vehicle named above defines design context only/);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
