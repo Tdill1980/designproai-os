@@ -32,6 +32,20 @@ select trigger_is(
   'designpro_private','log_designpro_stage_os_event',
   'graph-node transitions are appended to Generation history'
 );
+select diag(COALESCE((
+  SELECT pg_catalog.string_agg(
+    nt.nspname||'.'||ct.relname||':'||t.tgname||'->'||ni.nspname||'.'||p.proname,
+    ', ' ORDER BY ct.relname,t.tgname
+  )
+  FROM pg_catalog.pg_trigger t
+  JOIN pg_catalog.pg_class ct ON ct.oid=t.tgrelid
+  JOIN pg_catalog.pg_namespace nt ON nt.oid=ct.relnamespace
+  JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid
+  JOIN pg_catalog.pg_namespace ni ON ni.oid=p.pronamespace
+  WHERE nt.nspname='public'
+    AND ct.relname IN ('designpro_artifacts','designpro_stage_receipts')
+    AND NOT t.tgisinternal
+),'no artifact/receipt triggers found'));
 select trigger_is(
   'public','designpro_artifacts','designpro_artifact_os_event',
   'every production artifact is appended to Generation history'

@@ -363,6 +363,79 @@ BEGIN
 END;
 $purchase$;
 
+-- The promotion-aware overload is the production webhook contract. Repair it
+-- against the same revision-source identity without changing Stripe-owned
+-- discount calculation or the real zero-dollar promotion entitlement path.
+CREATE OR REPLACE FUNCTION public.confirm_designpro_purchase(
+  p_checkout_session_id text,
+  p_payment_intent_id text,
+  p_product_type text,
+  p_generation_id uuid,
+  p_amount_cents integer,
+  p_user_email text,
+  p_promotion_code text DEFAULT NULL,
+  p_discount_cents integer DEFAULT 0
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO pg_catalog, public, extensions
+AS $promotion_purchase$
+DECLARE
+  v_run public.designpro_workflow_runs%ROWTYPE;
+  v_row public.designpro_purchase_entitlements%ROWTYPE;
+  v_code text;
+BEGIN
+  IF COALESCE(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION 'service_role_required';
+  END IF;
+  v_code:=NULLIF(pg_catalog.btrim(COALESCE(p_promotion_code,'')),'');
+
+  SELECT * INTO v_row
+  FROM public.designpro_purchase_entitlements
+  WHERE checkout_session_id=p_checkout_session_id;
+
+  IF v_row.id IS NOT NULL THEN
+    RETURN pg_catalog.jsonb_build_object(
+      'entitlementId',v_row.id,
+      'productType',v_row.product_type,
+      'idempotent',true
+    );
+  END IF;
+
+  SELECT w.* INTO v_run
+  FROM public.designpro_workflow_runs w
+  JOIN public.designpro_revision_sources s ON s.revision_id=w.revision_id
+  WHERE w.workflow_type='designpro.entice_pack'
+    AND s.generation_id=p_generation_id
+    AND w.status='completed'
+  ORDER BY w.created_at DESC
+  LIMIT 1;
+
+  IF v_run.id IS NULL THEN
+    RAISE EXCEPTION 'prepared_pack_not_found';
+  END IF;
+
+  INSERT INTO public.designpro_purchase_entitlements(
+    owner_id,entice_run_id,generation_id,product_type,amount_cents,user_email,
+    checkout_session_id,payment_intent_id,promotion_code,discount_cents
+  ) VALUES (
+    v_run.owner_id,v_run.id,p_generation_id,p_product_type,p_amount_cents,
+    p_user_email,p_checkout_session_id,p_payment_intent_id,v_code,
+    GREATEST(COALESCE(p_discount_cents,0),0)
+  )
+  RETURNING * INTO v_row;
+
+  RETURN pg_catalog.jsonb_build_object(
+    'entitlementId',v_row.id,
+    'productType',v_row.product_type,
+    'idempotent',false,
+    'amountCents',v_row.amount_cents,
+    'promotionCode',v_row.promotion_code,
+    'discountCents',v_row.discount_cents
+  );
+END;
+$promotion_purchase$;
+
 -- No OS SECURITY DEFINER helper is a public/anonymous RPC. Trigger helpers
 -- need no direct role grant; the snapshot is owner/staff readable and purchase
 -- confirmation remains service-role only.
@@ -379,4 +452,8 @@ GRANT EXECUTE ON FUNCTION public.designpro_generation_os_snapshot(uuid)
 REVOKE ALL ON FUNCTION public.confirm_designpro_purchase(text,text,text,uuid,integer,text)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.confirm_designpro_purchase(text,text,text,uuid,integer,text)
+  TO service_role;
+REVOKE ALL ON FUNCTION public.confirm_designpro_purchase(text,text,text,uuid,integer,text,text,integer)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.confirm_designpro_purchase(text,text,text,uuid,integer,text,text,integer)
   TO service_role;
