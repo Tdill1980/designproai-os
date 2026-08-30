@@ -87,9 +87,9 @@ test("persona, depth, translation and professional judgment fire on every commer
     const prompt = authored(input);
     // PERSONA — DPAG's own sign-and-wrap-company designer.
     assert.match(prompt, /senior graphic designer at a sign and wrap company/);
-    assert.match(prompt, /You amplify each brief into an original design built for this one business/);
-    // COMMERCIAL_DEPTH.
-    assert.match(prompt, /built from layered elements — background color and texture flowing across the body lines, mid-ground graphic motion, and foreground accent detail/);
+    assert.match(prompt, /You amplify each brief into an original six-field livery built for this one business/);
+    // COMMERCIAL_DEPTH survives without describing physical anatomy.
+    assert.match(prompt, /layered background color and texture, mid-ground graphic motion, and foreground accent detail across the regions/);
     // COMMERCIAL_TRANSLATION.
     assert.match(prompt, /Translate anything the brief names into concrete design/);
     // PROFESSIONAL_JUDGMENT.
@@ -104,7 +104,7 @@ test("the restyle branch keeps its layered-depth elevation in flat-master mode",
   const prompt = authored({ mode: "restyle", brief: "Distressed Martini racing livery" });
   assert.match(prompt, /layered thematic elements/);
   assert.match(prompt, /depth and texture/);
-  assert.match(prompt, /ONE FLAT print-production master/);
+  assert.match(prompt, /Design ONE flat print-production master/);
 });
 
 // EXACT CUSTOMER DATA IN; NOTHING INVENTED WHEN ABSENT.
@@ -113,18 +113,20 @@ test("contact data is exact when supplied and never invented when not", () => {
   assert.match(withPhone, /\(520\) 555-0192 — display this EXACT number, digit for digit/);
 
   const none = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(none, /No phone number was provided — do NOT invent, fabricate, or display any phone number, website, email, or address anywhere/);
+  assert.match(none, /No phone number was provided — show the company name only and add no contact information/);
 });
 
-// BRAND, INDUSTRY AND FINISH ALL RIDE THE ONE CALL.
-test("brand colours, industry and finish reach the same request", () => {
+// BRAND + INDUSTRY RIDE CALL 1; PHYSICAL FINISH BELONGS TO PROOFS.
+test("brand colours and industry reach Call 1 while physical finish is deferred", () => {
   const prompt = authored({
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     industry: "HVAC and climate control", brandColors: "deep blue, sunrise orange",
   });
   assert.match(prompt, /Industry: HVAC and climate control/);
   assert.match(prompt, /Brand colors: deep blue, sunrise orange — build the entire design from this palette/);
-  assert.match(prompt, /Finish: GLOSS/);
+  assert.match(prompt, /uniform print color only/);
+  assert.match(prompt, /physical finish are applied in the downstream proof views/);
+  assert.doesNotMatch(prompt, /Finish: GLOSS|wet-look surface|specular highlights/);
 });
 
 // VISIONBOARD NEVER DISABLES THE DESIGNER.
@@ -143,7 +145,7 @@ test("references never turn the persona or the auto-logo off", () => {
   assert.match(inspiration, /STYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design/);
   assert.match(inspiration, /ART STYLE: bold/);
   const exact = authored({ ...base, visionBoardImages: [{}], visionboardIntent: "exact_reference" });
-  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's own approved wrap design/);
+  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's approved artwork authority/);
   assert.doesNotMatch(authored(base), /STYLE INSPIRATION|EXACT REFERENCE/);
 });
 
@@ -153,8 +155,9 @@ test("camera, studio and the photograph framing stay out of the flat master", ()
   assert.doesNotMatch(flat, /CAMERA ANGLE \(LOCKED/);
   assert.doesNotMatch(flat, /Canon EOS R5/);
   assert.doesNotMatch(flat, /epoxy floor|LED strip/);
-  assert.match(flat, /ONE FLAT print-production master/);
+  assert.match(flat, /Design ONE flat print-production master/);
   assert.match(flat, /OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER/);
+  assert.doesNotMatch(flat, /2022|Ford|F250|body lines|wheel|window|door|studio photograph/i);
 
   // And the 3D path is untouched: same assembly, atlasFlatMaster off.
   const threeD = buildDesignIQPrompt({
