@@ -23,7 +23,9 @@ BEGIN
   WHERE w.id=NEW.run_id;
 
   IF v_generation IS NULL THEN
-    RAISE EXCEPTION 'artifact_generation_identity_missing';
+    -- Do not attach an artifact to a guessed Generation ID. Legacy/unbound
+    -- workflow rows stay compatible and simply remain outside the OS ledger.
+    RETURN NEW;
   END IF;
 
   INSERT INTO public.designpro_generation_os_events(
@@ -73,7 +75,9 @@ BEGIN
   WHERE w.id=NEW.run_id;
 
   IF v_generation IS NULL THEN
-    RAISE EXCEPTION 'receipt_generation_identity_missing';
+    -- Verified receipts are logged only when the canonical revision-source
+    -- contract resolves their exact Generation ID; ambiguity is never filled.
+    RETURN NEW;
   END IF;
 
   INSERT INTO public.designpro_generation_os_events(
@@ -282,3 +286,97 @@ BEGIN
   );
 END;
 $fn$;
+
+-- Reassert both evidence triggers after every OS function has reached its
+-- final definition. These names are part of the pgTAP/release contract.
+DROP TRIGGER IF EXISTS designpro_artifact_os_event ON public.designpro_artifacts;
+CREATE TRIGGER designpro_artifact_os_event
+AFTER INSERT ON public.designpro_artifacts
+FOR EACH ROW EXECUTE FUNCTION designpro_private.log_designpro_artifact_os_event();
+
+DROP TRIGGER IF EXISTS designpro_receipt_os_event ON public.designpro_stage_receipts;
+CREATE TRIGGER designpro_receipt_os_event
+AFTER INSERT ON public.designpro_stage_receipts
+FOR EACH ROW EXECUTE FUNCTION designpro_private.log_designpro_receipt_os_event();
+
+-- Repair the paid-entitlement lookup against the actual Generation identity
+-- contract: workflow_run.revision_id -> revision_sources.generation_id.
+CREATE OR REPLACE FUNCTION public.confirm_designpro_purchase(
+  p_checkout_session_id text,
+  p_payment_intent_id text,
+  p_product_type text,
+  p_generation_id uuid,
+  p_amount_cents integer,
+  p_user_email text
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO pg_catalog, public, extensions
+AS $purchase$
+DECLARE
+  v_run public.designpro_workflow_runs%ROWTYPE;
+  v_row public.designpro_purchase_entitlements%ROWTYPE;
+BEGIN
+  IF COALESCE(auth.jwt()->>'role', '') IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION 'service_role_required';
+  END IF;
+
+  SELECT * INTO v_row
+  FROM public.designpro_purchase_entitlements
+  WHERE checkout_session_id=p_checkout_session_id;
+
+  IF v_row.id IS NOT NULL THEN
+    RETURN pg_catalog.jsonb_build_object(
+      'entitlementId',v_row.id,
+      'productType',v_row.product_type,
+      'idempotent',true
+    );
+  END IF;
+
+  SELECT w.* INTO v_run
+  FROM public.designpro_workflow_runs w
+  JOIN public.designpro_revision_sources s ON s.revision_id=w.revision_id
+  WHERE w.workflow_type='designpro.entice_pack'
+    AND s.generation_id=p_generation_id
+    AND w.status='completed'
+  ORDER BY w.created_at DESC
+  LIMIT 1;
+
+  IF v_run.id IS NULL THEN
+    RAISE EXCEPTION 'prepared_pack_not_found';
+  END IF;
+
+  INSERT INTO public.designpro_purchase_entitlements(
+    owner_id,entice_run_id,generation_id,product_type,amount_cents,user_email,
+    checkout_session_id,payment_intent_id
+  ) VALUES (
+    v_run.owner_id,v_run.id,p_generation_id,p_product_type,p_amount_cents,
+    p_user_email,p_checkout_session_id,p_payment_intent_id
+  )
+  RETURNING * INTO v_row;
+
+  RETURN pg_catalog.jsonb_build_object(
+    'entitlementId',v_row.id,
+    'productType',v_row.product_type,
+    'idempotent',false
+  );
+END;
+$purchase$;
+
+-- No OS SECURITY DEFINER helper is a public/anonymous RPC. Trigger helpers
+-- need no direct role grant; the snapshot is owner/staff readable and purchase
+-- confirmation remains service-role only.
+REVOKE ALL ON FUNCTION designpro_private.log_designpro_artifact_os_event()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION designpro_private.log_designpro_receipt_os_event()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION designpro_private.designpro_generation_phase(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.designpro_generation_os_snapshot(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.designpro_generation_os_snapshot(uuid)
+  TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.confirm_designpro_purchase(text,text,text,uuid,integer,text)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.confirm_designpro_purchase(text,text,text,uuid,integer,text)
+  TO service_role;

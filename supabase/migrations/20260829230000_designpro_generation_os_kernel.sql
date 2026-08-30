@@ -124,7 +124,11 @@ BEGIN
   WHERE s.revision_id=NEW.revision_id;
 
   IF v_generation IS NULL THEN
-    RAISE EXCEPTION 'workflow_run_generation_identity_missing';
+    -- Historical rows and schema-contract fixtures can predate the canonical
+    -- revision-source binding. The OS observer must never invent a Generation
+    -- ID for them or block the workflow table they already use. Canonically
+    -- bound DesignPro runs still emit an event keyed by the exact source row.
+    RETURN NEW;
   END IF;
 
   INSERT INTO public.designpro_generation_os_events(
@@ -174,7 +178,10 @@ BEGIN
   WHERE w.id=NEW.run_id;
 
   IF v_generation IS NULL THEN
-    RAISE EXCEPTION 'workflow_stage_generation_identity_missing';
+    -- A stage belonging to an unbound legacy run is outside Generation-OS
+    -- history. Skip it rather than fabricating lineage or breaking the legacy
+    -- workflow row; bound DesignPro runs remain Generation-ID locked above.
+    RETURN NEW;
   END IF;
 
   INSERT INTO public.designpro_generation_os_events(
@@ -323,6 +330,18 @@ $fn$;
 
 REVOKE ALL ON FUNCTION public.designpro_generation_os_snapshot(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.designpro_generation_os_snapshot(uuid) TO authenticated, service_role;
+
+-- Trigger functions execute through their triggers and are never application
+-- RPCs. Remove PostgreSQL's implicit PUBLIC EXECUTE grant from every private OS
+-- helper, including roles that must not invoke them directly.
+REVOKE ALL ON FUNCTION designpro_private.refuse_designpro_os_event_mutation()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION designpro_private.log_designpro_atlas_revision_event()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION designpro_private.log_designpro_run_os_event()
+  FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION designpro_private.log_designpro_stage_os_event()
+  FROM PUBLIC, anon, authenticated, service_role;
 
 COMMENT ON FUNCTION public.designpro_generation_os_snapshot(uuid) IS
   'Canonical Generation-ID snapshot consumed by Design, RevisionStudioIQ, PanelProStudio, QC and WrapBox. The execution graph remains authoritative; this function projects its version and event history into one read model.';
