@@ -219,6 +219,8 @@ test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver d
 
     // Hash-verified bytes come back, bound to this surface and this master.
     assert.equal(hash(result.bytes), hash(proofBytes));
+    assert.equal(result.stagedStoragePath, "atlas-proof/x.png");
+    assert.equal(result.stagedStorageHash, hash(proofBytes));
     assert.equal(result.metadata.anchoredToFlatAtlas, true);
     assert.equal(result.metadata.anchoredToView1, false);
     assert.equal(result.metadata.proofProducer, "persona-photographer-render");
