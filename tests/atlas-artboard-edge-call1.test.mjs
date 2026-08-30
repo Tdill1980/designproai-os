@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v10-pure-panels"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v11-neutral-mask"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -130,7 +130,7 @@ test("obsolete vehicle/template and finished-proof examples cannot reach Call 1"
   assert.match(liveAuthoring, /guideStoragePath: await stageEdgeInput\(authoringGuideBytes/);
 });
 
-test("the flat contract gives the model exact labeled placement without dimensions", () => {
+test("the flat contract gives the model data-bound placement without anatomy triggers or dimensions", () => {
   // ⚠️ THIS BLOCK ONCE ASSERTED THE OPPOSITE, AND THAT IS WHY IT IS HERE.
   //
   // The contract names the forbidden vehicle anatomy because live generation
@@ -152,26 +152,27 @@ test("the flat contract gives the model exact labeled placement without dimensio
   // what to paint.
   const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function buildDesignIQPrompt("));
 
-  assert.match(contract, /hardwired flattened TOP-VIEW artboard/);
+  assert.match(contract, /neutral spatial mask with six fixed GENIE regions/);
   assert.match(contract, /The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front/);
   assert.match(contract, /\$\{panelLines\}/);
-  assert.match(contract, /filling every region completely edge-to-edge/);
-  assert.match(contract, /Return artwork only inside the six regions/);
+  assert.match(contract, /Replace every light mask region, corner to corner/);
+  assert.match(contract, /Return the finished two-dimensional livery fields/);
 
   for (const leaked of ["pixel size", "DASHED", "title band", "footer", "widthInches", "heightInches"]) {
     assert.ok(!contract.toLowerCase().includes(leaked.toLowerCase()),
       `the contract must not speak "${leaked}" to the image model`);
   }
-  assert.match(contract, /plain rectangular sheet of PRINTED ARTWORK ONLY/);
-  assert.match(contract, /no doors, windows/);
-  assert.match(contract, /wheel arches/);
-  assert.match(contract, /vehicle silhouettes/);
+  assert.match(contract, /unbroken rectangular field of continuous printed artwork/);
+  for (const anatomyTrigger of ["doors", "windows", "wheel arches", "vehicle silhouettes", "F250", "F-250"]) {
+    assert.ok(!contract.includes(anatomyTrigger),
+      `the authoring contract must not name ${anatomyTrigger}`);
+  }
 
   // The centre column is described in the order the layout actually builds. The
   // prompt said ROOF/HOOD/FRONT/REAR while CENTER_ORDER has always been
   // rear/roof/hood/front, so it was naming the containers in the wrong order.
   assert.match(runtimeSource, /const CENTER_ORDER = Object\.freeze\(\["rear", "roof", "hood", "front"\]\)/);
-  assert.match(contract, /vehicle named above defines design context only/);
+  assert.doesNotMatch(contract, /vehicle named above/);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -199,7 +200,7 @@ test("the six canonical surfaces are unchanged", () => {
   assert.match(runtimeSource, /surfaceKey === "driver" \|\| surfaceKey === "passenger" \? flank : null/);
 });
 
-test("body-style INTENT reaches the model; the region enumeration does not", () => {
+test("body-style and component vocabulary stay server-side", () => {
   // Owner, 2026-08-29: "we went too far when it became FRONT FENDER -> FRONT
   // DOOR -> REAR DOOR -> QUARTER -> BED -> ROCKER... That starts becoming scene
   // content to an image generator." The useful half is the relationship — a
@@ -213,10 +214,7 @@ test("body-style INTENT reaches the model; the region enumeration does not", () 
     assert.ok(runtimeSource.includes(`${body}: Object.freeze(`), `${body} needs its own structure`);
   }
   const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function buildDesignIQPrompt("));
-  assert.match(contract, /pickup flank as one coordinated composition across cab and bed/);
-  assert.match(contract, /van flank as one continuous commercial composition/);
-  assert.match(contract, /box truck cab and box as one coordinated visual system/);
-  for (const region of ["FRONT FENDER", "CAB DOOR", "REAR QUARTER", "BED SIDE", "ROCKER"]) {
+  for (const region of ["pickup flank", "van flank", "box truck", "FRONT FENDER", "CAB DOOR", "REAR QUARTER", "BED SIDE", "ROCKER"]) {
     assert.ok(!contract.includes(region), `the contract must not name ${region} to the image model`);
   }
   assert.ok(!contract.includes("structure front to rear:"),
