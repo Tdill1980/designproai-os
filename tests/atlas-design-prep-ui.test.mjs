@@ -4,6 +4,7 @@ import test from "node:test";
 
 const ui = readFileSync(new URL("../app/src/pages/designpro/GenerateDesign.tsx", import.meta.url), "utf8");
 const customerUi = readFileSync(new URL("../app/src/pages/DesignPanelProPremium.tsx", import.meta.url), "utf8");
+const homeUi = readFileSync(new URL("../app/src/pages/DesignProAIHome.tsx", import.meta.url), "utf8");
 const vehicleSelector = readFileSync(new URL("../app/src/components/tools/VehicleTypeSelector.tsx", import.meta.url), "utf8");
 const atlas = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
 
@@ -23,6 +24,16 @@ test("the customer DesignProAI UI requires the same explicit vehicle handoff", (
   assert.match(vehicleSelector, /allowedTypes\?: VehicleType\[\]/);
   assert.doesNotMatch(customerUi, /onClick=\{\(\) => setPipelineMode\("legacy"\)\}/);
   assert.doesNotMatch(customerUi, /initialDesignProPipelineMode/);
+});
+
+test("the DesignProAI front door starts prep before opening the studio", () => {
+  assert.match(homeUi, /Enter vehicle — begin Design Prep/);
+  assert.match(homeUi, /Beginning Design Prep — pulling vehicle dimensions…/);
+  assert.match(homeUi, /dpApi\.previewGenieDimensions\(vehicle\)/);
+  assert.match(homeUi, /if \(!designPrepIsCurrent\)/);
+  assert.match(homeUi, /disabled=\{!designPrepIsCurrent \|\| designPrepBusy\}/);
+  assert.match(homeUi, /const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE/);
+  assert.doesNotMatch(homeUi, /PipelineModeSelector|setPipelineMode\("legacy"\)/);
 });
 
 test("the operating UI exposes only the current A.T.L.A.S. graph", () => {

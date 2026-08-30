@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { inferDesignMode } from "@/lib/inferDesignMode";
 import { useNavigate } from "react-router-dom";
 import {
@@ -6,21 +6,18 @@ import {
   Bell, HelpCircle, Truck, Car, Flag, Boxes, Search, MessageCircle, Plus,
   Upload, CarFront, Images, Wand2, CheckCircle2, Layers,
   PencilRuler, FileEdit, Package, Cog, Printer, ArrowRight, Play,
-  Bike, Bus, Caravan, X,
+  X,
 } from "lucide-react";
 import { useStarredRenders } from "@/hooks/useStarredRenders";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import DesignPanelProPremium from "./DesignPanelProPremium";
 import {
+  dpApi,
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type GenerationPipelineMode,
+  type GenieDimensionPreview,
 } from "@/lib/designpro-api";
-import {
-  FLAT_FIRST_ATLAS_UI_ENABLED,
-  flatFirstAtlasSupportedVehicleType,
-  initialDesignProPipelineMode,
-} from "@/lib/designpro-flat-first";
 import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
 
 /**
@@ -42,69 +39,7 @@ const VEHICLE_TYPES = [
   { icon: Car, label: "SUV", value: "suv" },
   { icon: Truck, label: "Truck", value: "truck" },
   { icon: CarFront, label: "Van", value: "van" },
-  { icon: Bike, label: "Motorcycle", value: "motorcycle" },
-  { icon: Caravan, label: "Trailer", value: "trailer" },
-  { icon: Bus, label: "Bus", value: "bus" },
-  { icon: Caravan, label: "RV", value: "rv" },
 ] as const;
-
-function PipelineModeSelector({
-  value,
-  onChange,
-  vehicleType,
-  disabled = false,
-  className,
-}: {
-  value: GenerationPipelineMode;
-  onChange: (mode: GenerationPipelineMode) => void;
-  vehicleType: VehicleType;
-  disabled?: boolean;
-  className?: string;
-}) {
-  if (!FLAT_FIRST_ATLAS_UI_ENABLED) return null;
-  return (
-    <div className={cn("rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-2.5", className)}>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">Design mode</div>
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        <button
-          type="button"
-          disabled={disabled}
-          aria-pressed={value === "legacy"}
-          onClick={() => onChange("legacy")}
-          className={cn(
-            "rounded-lg border px-2 py-1.5 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-70",
-            value === "legacy"
-              ? "border-white/30 bg-white/10 text-white"
-              : "border-white/10 text-white/50 hover:bg-white/5",
-          )}
-        >
-          Production
-        </button>
-        <button
-          type="button"
-          disabled={disabled || !flatFirstAtlasSupportedVehicleType(vehicleType)}
-          aria-pressed={value === FLAT_FIRST_ATLAS_PIPELINE_MODE}
-          onClick={() => onChange(FLAT_FIRST_ATLAS_PIPELINE_MODE)}
-          className={cn(
-            "rounded-lg border px-2 py-1.5 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-70",
-            value === FLAT_FIRST_ATLAS_PIPELINE_MODE
-              ? "border-cyan-400 bg-cyan-400/15 text-cyan-200"
-              : "border-white/10 text-white/50 hover:bg-white/5",
-          )}
-        >
-          Precision
-        </button>
-      </div>
-      <p className="mt-2 text-[10px] leading-4 text-white/55">
-        {disabled
-          ? "Design mode is locked for this run. Start a new design to change it."
-          : flatFirstAtlasSupportedVehicleType(vehicleType)
-            ? "Creates your design first, then shows all seven vehicle views as they finish. Your print-ready files are prepared alongside them."
-            : "Preview mode is available for car, truck, SUV and van. Production mode will be used for this vehicle."}
-      </p>
-    </div>
-  );
-}
 
 const CAPABILITIES = [
   { icon: Sparkles, label: "Professional Designs" },
@@ -192,44 +127,55 @@ export default function DesignProAIHome() {
   // When set, the design studio renders INLINE on this same page (no navigation,
   // no new window) — brief on the left, Konva canvas in the center.
   const [studioBrief, setStudioBrief] = useState<any | null>(null);
-  const [pipelineMode, setPipelineMode] = useState<GenerationPipelineMode>(() =>
-    initialDesignProPipelineMode(
-      undefined,
-      typeof window === "undefined" ? "" : window.location.search,
-    ),
-  );
+  const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE;
   const [showPromptHelp, setShowPromptHelp] = useState(false);
-  // Left-rail "Start Your Design" state
-  // DERIVED, NOT CHOSEN. A business identity means Commercial; otherwise this
-  // is a styling job. The same rule the studio and the operator page already
-  // apply ("a company name means commercial whatever the toggle says").
-  const mode = inferDesignMode({
-    companyName, phone, website, brief: prompt,
-  }) === "commercial" ? "Commercial" : "Restyle";
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
   const [year, setYear] = useState("");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
+  const [designPrep, setDesignPrep] = useState<GenieDimensionPreview | null>(null);
+  const [designPrepVehicle, setDesignPrepVehicle] = useState("");
+  const [designPrepBusy, setDesignPrepBusy] = useState(false);
+  const [designPrepError, setDesignPrepError] = useState("");
   // Commercial brief (Business & Fleet) — drives the studio's Layer-2 text extraction.
   const [companyName, setCompanyName] = useState("");
   const [phone, setPhone] = useState("");
   const [website, setWebsite] = useState("");
+  // DERIVED, NOT CHOSEN. A business identity means Commercial; otherwise this
+  // is a styling job. The same rule the studio and the operator page apply.
+  const mode = inferDesignMode({
+    companyName, phone, website, brief: prompt,
+  }) === "commercial" ? "Commercial" : "Restyle";
   // VisionBoard references, each tagged so the system knows what to parse it as:
   // "background" → Layer-1 style reference; "overlay" → Layer-2 logo/text example.
   const [visionRefs, setVisionRefs] = useState<{ url: string; kind: "background" | "overlay" }[]>([]);
   const [uploadingRef, setUploadingRef] = useState(false);
 
-  // A.T.L.A.S. currently has a bounded topology contract for four vehicle
-  // families. If the customer changes to an unsupported body class, visibly
-  // fall back before they can submit rather than sending an impossible v3 run.
-  useEffect(() => {
-    if (
-      pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE &&
-      !flatFirstAtlasSupportedVehicleType(vehicleType)
-    ) {
-      setPipelineMode("legacy");
+  const currentPrepVehicle = [year, make, model, vehicleType]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .join("|");
+  const designPrepIsCurrent = Boolean(designPrep && designPrepVehicle === currentPrepVehicle);
+
+  const beginDesignPrep = async () => {
+    const vehicle = { year: year.trim(), make: make.trim(), model: model.trim(), type: vehicleType };
+    if (!vehicle.year || !vehicle.make || !vehicle.model) {
+      setDesignPrepError("Enter year, make, and model, then press Enter vehicle.");
+      return;
     }
-  }, [pipelineMode, vehicleType]);
+    setDesignPrepBusy(true);
+    setDesignPrepError("");
+    try {
+      const prepared = await dpApi.previewGenieDimensions(vehicle);
+      setDesignPrep(prepared);
+      setDesignPrepVehicle(currentPrepVehicle);
+    } catch {
+      setDesignPrep(null);
+      setDesignPrepVehicle("");
+      setDesignPrepError("Vehicle dimensions could not be pulled. Press Enter vehicle to try again.");
+    } finally {
+      setDesignPrepBusy(false);
+    }
+  };
 
   const uploadRef = async (file: File) => {
     setUploadingRef(true);
@@ -269,17 +215,25 @@ export default function DesignProAIHome() {
 
   const heroUrl = showcase[heroIdx % Math.max(showcase.length, 1)] || "";
   const dots = Math.min(Math.max(showcase.length, 1), 5);
-  const displayedPipelineMode = studioBrief?.pipelineMode ?? pipelineMode;
-
   // Open the studio INLINE on this page (no navigation, no new window).
-  const startNewDesign = () => setStudioBrief({
-    pipelineMode,
-    vehicleType,
-    year: year.trim() || undefined,
-    make: make.trim() || undefined,
-    model: model.trim() || undefined,
-  });
-  const startDesign = () =>
+  const startNewDesign = () => {
+    if (!designPrepIsCurrent) {
+      setDesignPrepError("Press “Enter vehicle — begin Design Prep” before creating the design.");
+      return;
+    }
+    setStudioBrief({
+      pipelineMode,
+      vehicleType,
+      year: year.trim() || undefined,
+      make: make.trim() || undefined,
+      model: model.trim() || undefined,
+    });
+  };
+  const startDesign = () => {
+    if (!designPrepIsCurrent) {
+      setDesignPrepError("Press “Enter vehicle — begin Design Prep” before creating the design.");
+      return;
+    }
     setStudioBrief({
       acePrompt: prompt.trim() || undefined,
       mode, vehicleType,
@@ -297,6 +251,7 @@ export default function DesignProAIHome() {
       visionBoardUrls: visionRefs.filter((v) => v.kind === "background").map((v) => v.url),
       overlayUrls: visionRefs.filter((v) => v.kind === "overlay").map((v) => v.url),
     });
+  };
   // Clicking a popular prompt fills the prompt box (copy-paste ready) — they tweak the [blanks], then Start.
   const usePrompt = (p: string) => {
     setPrompt(p);
@@ -315,16 +270,12 @@ export default function DesignProAIHome() {
             </div>
             <p className="text-[11px] text-white/70">Pick a vehicle, add make & model, describe it.</p>
 
-            <PipelineModeSelector
-              className="mt-3"
-              value={displayedPipelineMode}
-              onChange={setPipelineMode}
-              vehicleType={vehicleType}
-              disabled={!!studioBrief}
-            />
+            <div className="mt-3 rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-2.5 text-[10px] text-cyan-200">
+              A.T.L.A.S. graph active — one prepared vehicle topology, one master, six labeled panels and seven proof views.
+            </div>
 
             {/* Primary CTA at the top so it's always visible — fill the info below, then Create. */}
-            <button onClick={startDesign} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-pink-500 py-2.5 text-sm font-bold text-white shadow transition hover:opacity-90">
+            <button onClick={startDesign} disabled={!designPrepIsCurrent || designPrepBusy} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-pink-500 py-2.5 text-sm font-bold text-white shadow transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
               <Wand2 className="h-4 w-4" /> Create Design
             </button>
 
@@ -336,10 +287,7 @@ export default function DesignProAIHome() {
             <div className="mt-3 text-[10px] font-bold uppercase tracking-wider text-white/60">Vehicle Type</div>
             <div className="mt-2 grid grid-cols-4 gap-1.5">
               {VEHICLE_TYPES.map((v) => (
-                <button key={v.value} onClick={() => {
-                  setVehicleType(v.value);
-                  if (!flatFirstAtlasSupportedVehicleType(v.value)) setPipelineMode("legacy");
-                }} className={cn("flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition", vehicleType === v.value ? "border-blue-500 bg-blue-500/15 text-white" : "border-white/10 text-white/70 hover:bg-white/5")}>
+                <button key={v.value} onClick={() => setVehicleType(v.value)} className={cn("flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition", vehicleType === v.value ? "border-blue-500 bg-blue-500/15 text-white" : "border-white/10 text-white/70 hover:bg-white/5")}>
                   <v.icon className="h-4 w-4" />
                   <span className="text-[9px] leading-none">{v.label}</span>
                 </button>
@@ -352,6 +300,14 @@ export default function DesignProAIHome() {
               <input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
               <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
             </div>
+            <button type="button" onClick={beginDesignPrep} disabled={designPrepBusy} className="mt-2 w-full rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-wait disabled:opacity-60">
+              {designPrepBusy ? "Beginning Design Prep…" : "Enter vehicle — begin Design Prep"}
+            </button>
+            {designPrepBusy && <p className="mt-1 text-[10px] text-cyan-200">Beginning Design Prep — pulling vehicle dimensions…</p>}
+            {designPrepIsCurrent && designPrep && (
+              <p className="mt-1 text-[10px] text-emerald-300">Design Prep ready — {designPrep.surfaces.length} labeled surfaces bound. Continue filling out your prompt.</p>
+            )}
+            {designPrepError && <p role="alert" className="mt-1 text-[10px] text-red-300">{designPrepError}</p>}
 
             {/* Commercial (Business & Fleet) brand fields — these feed the studio's
                 Layer-2 text extraction so the design gets editable logo/phone/website. */}
@@ -429,13 +385,6 @@ export default function DesignProAIHome() {
 
         {/* CENTER */}
         <main className="min-w-0 flex-1 space-y-5">
-          <PipelineModeSelector
-            className="lg:hidden"
-            value={displayedPipelineMode}
-            onChange={setPipelineMode}
-            vehicleType={vehicleType}
-            disabled={!!studioBrief}
-          />
           {studioBrief ? (
             /* ONE unified page: the canvas renders right here in the center — the
                left brief stays put, no swap to a separate studio, no re-entry. */
