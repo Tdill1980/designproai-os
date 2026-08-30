@@ -1,5 +1,5 @@
-// A CUT-OUT MUST NEVER CONSUME AN AUTHORING ATTEMPT — AND NEITHER MUST A JUDGE
-// CYCLE. (Trish 2026-08-27.)
+// A CUT-OUT MUST NEVER CONSUME AN AUTHORING ATTEMPT, BUT A DESIGN-BREAKING
+// SEMANTIC FAILURE MUST NEVER BE RELEASED AS AN A.T.L.A.S. MASTER.
 //
 // FIRST FORM OF THIS LOCK. The judge decided acceptance, so a cut-out could only
 // avoid costing a re-roll by being filled and RE-JUDGED inside the loop. That
@@ -9,18 +9,12 @@
 // then spent 180 seconds on ONE attempt — image, judge, compose, judge, fill,
 // judge — and showed the customer a failure page at the end of it.
 //
-// SECOND FORM, WHICH IS THIS ONE. The owner's directive removed the judge from
-// the customer's critical path entirely: "Do deterministic master validation
-// immediately … don't make the customer wait for Flash to philosophically judge
-// the artwork before starting Driver. If semantic QC finds something
-// catastrophic, flag the job."
-//
-// So the original intent is now satisfied more strongly than the old mechanism
-// could: a cut-out cannot consume an authoring attempt because acceptance never
-// consults the judge at all. What this file locks is that the deterministic gate
-// really is the gate, that the two repairs still happen before any re-roll, and
-// that the judge's verdict is still COLLECTED and still FLAGS — because a
-// non-blocking check that nobody records is just a check that was deleted.
+// The latency-first change made every semantic failure non-blocking. Production
+// canary 33295724263 then persisted a correctly sized Hood container populated
+// with side-view artwork, marked the master QC-passed, and failed only when the
+// Hood 3D proof compared itself with that bad authority. Geometry was correct;
+// the labeled zone's content identity was not. This lock preserves the fast
+// deterministic repairs while restoring semantic acceptance before release.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -34,32 +28,23 @@ const loop = source.slice(
 );
 const afterLoop = source.slice(source.indexOf("const masterStoragePath = atlasStoragePath"));
 
-test("the gate is deterministic — acceptance never consults the judge", () => {
-  // The decision to keep or re-roll reads pixel measurements only.
+test("the gate requires deterministic and hash-bound semantic acceptance", () => {
   assert.match(loop, /const stillBlocking = deterministic\.blockingFailures \|\| \[\];/);
-  assert.match(loop, /if \(!stillBlocking\.length\) break;/);
   assert.match(loop, /deterministicMasterChecks\(masterBytes, manifest\)/);
-  // And nothing in the loop turns the judge's verdict into an accept/reject.
-  assert.ok(
-    !/masterQc\?\.accepted === true/.test(loop),
-    "acceptance must not read the semantic verdict",
-  );
-  assert.ok(
-    !/atlas_master_qc_semantic_failed/.test(loop),
-    "the loop must not branch on a semantic failure code",
-  );
+  assert.match(loop, /semanticVerdict = await semanticQc;/);
+  assert.match(loop, /semanticVerdict\.metadata\.masterHash === masterHash/);
+  assert.match(loop, /semanticVerdict\.metadata\.guideHash === guideHash/);
+  assert.match(loop, /semanticVerdict\.accepted === true \|\| repairableCutouts/);
+  assert.match(loop, /flat_atlas_master_semantic_failed/);
 });
 
-test("the judge is dispatched the moment the master exists, and awaited nowhere on the fast path", () => {
+test("the judge starts immediately and only its unresolved tail is awaited at the gate", () => {
   const dispatch = loop.indexOf("semanticQc = Promise.resolve()");
   const gate = loop.indexOf("const stillBlocking");
   assert.ok(dispatch > 0, "the semantic pass is dispatched inside the loop");
   assert.ok(dispatch < gate, "it is dispatched before the gate, not after it");
-  // Exactly one place may await it: the passenger composition, which needs the
-  // measured lettering bands and only runs on a master already known to be
-  // wrong. Any other await would put Flash back on the customer's clock.
   const awaits = loop.match(/await semanticQc/g) || [];
-  assert.equal(awaits.length, 1, "only the lettering-band path may await the judge");
+  assert.equal(awaits.length, 2, "composition and final acceptance consume the same in-flight review");
   const bandWait = loop.indexOf("const bandVerdict = await semanticQc;");
   assert.ok(bandWait > 0);
   assert.ok(
@@ -97,11 +82,11 @@ test("the surfaces that arrived holed are still recorded for human QC", () => {
   assert.match(loop, /masterCutoutFindings = \(deterministic\.cutoutFindings \|\| \[\]\)/);
 });
 
-test("a still-refused candidate spends the retry on the deterministic finding", () => {
-  // The corrective note must name what actually refused the sheet, which is now
-  // the pixel measurement rather than a model's prose.
-  assert.match(loop, /const refusalReason = stillBlocking\.join\("; "\)/);
+test("a refused candidate spends the retry on the gate that actually failed", () => {
+  assert.match(loop, /let refusalReason = stillBlocking\.join\("; "\)/);
   assert.match(loop, /flat_atlas_master_deterministic_failed/);
+  assert.match(loop, /refusalReason = semanticBound/);
+  assert.match(loop, /flat_atlas_master_semantic_failed/);
 });
 
 test("the authored master is never mutated", () => {
@@ -112,31 +97,14 @@ test("the authored master is never mutated", () => {
   assert.match(loop, /masterBytes = mirrored\.bytes;\s*\n\s*masterHash = composedHash;/);
 });
 
-// ── THE VERDICT IS STILL COLLECTED, AND IT STILL FLAGS ─────────────────────
-//
-// Off the critical path must not mean discarded. The owner's directive says
-// "flag the job", so the review reaches the immutable revision and a
-// catastrophic verdict joins the surfaces PanelPro's human QC must inspect.
+// ── NOTHING IS RELEASED BEFORE THE VERDICT ─────────────────────────────────
 
-test("the verdict is collected after the panels are cut, not before", () => {
+test("the semantic gate precedes master and panel publication", () => {
+  const acceptance = loop.indexOf("semanticVerdict = await semanticQc;");
   const panels = afterLoop.indexOf("cutCallOnePanels(surfaceSourceBytes");
-  const collect = afterLoop.indexOf("const [, semanticVerdict] = await Promise.all([");
-  assert.ok(panels > 0 && collect > 0);
-  assert.ok(collect > panels, "the judge overlaps the panel cut instead of preceding it");
-});
-
-test("the judge is not a gate between branches: the writes run alongside it", () => {
-  // Owner, 2026-08-27: "Do not add gates between these branches." The ten
-  // immutable writes do not depend on the judge's opinion -- the bytes are
-  // already cut and already final -- so awaiting it first put a Flash round
-  // trip between the panels existing and the panels being publishable.
-  assert.match(afterLoop, /const \[, semanticVerdict\] = await Promise\.all\(\[\s*\n\s*persistImmutableAssets\(\),\s*\n\s*semanticQc \|\| Promise\.resolve\(null\),/);
-  // And the writes are themselves one parallel batch, not a sequence.
+  assert.ok(acceptance > 0 && panels > 0);
+  assert.match(afterLoop, /await persistImmutableAssets\(\);/);
   assert.match(afterLoop, /const persistImmutableAssets = \(\) => Promise\.all\(\[/);
-  assert.ok(
-    !/await semanticQc;[\s\S]{0,400}putImmutableBytes/.test(afterLoop),
-    "no storage write may sit behind a bare await of the judge",
-  );
 });
 
 test("every binding the write batch closes over is declared before it runs", () => {
@@ -155,7 +123,7 @@ test("every binding the write batch closes over is declared before it runs", () 
   const defLine = afterLoop.split("\n")
     .findIndex((line) => line.includes("const persistImmutableAssets = () => Promise.all(["));
   const callLine = afterLoop.split("\n")
-    .findIndex((line) => line.includes("persistImmutableAssets(),"));
+    .findIndex((line) => line.includes("await persistImmutableAssets();"));
   assert.ok(defLine >= 0 && callLine > defLine, "the batch must be defined before it is called");
 
   const lines = afterLoop.split("\n");
@@ -176,31 +144,23 @@ test("every binding the write batch closes over is declared before it runs", () 
   );
 });
 
-test("a verdict graded against superseded bytes is discarded, never recorded", () => {
-  assert.match(afterLoop, /semanticVerdict\.metadata\.masterHash === masterHash/);
-  assert.match(afterLoop, /semanticVerdict\.metadata\.masterHash === semanticQcMasterHash/);
-  assert.match(afterLoop, /semanticVerdict\.metadata\.guideHash === guideHash/);
-  assert.match(afterLoop, /const masterQc = semanticBound \? semanticVerdict : null;/);
+test("a verdict graded against superseded bytes is refused, never recorded", () => {
+  assert.match(loop, /semanticVerdict\.metadata\.masterHash === masterHash/);
+  assert.match(loop, /semanticVerdict\.metadata\.masterHash === semanticQcMasterHash/);
+  assert.match(loop, /semanticVerdict\.metadata\.guideHash === guideHash/);
+  assert.match(loop, /semantic master QC did not return a verdict bound/);
 });
 
-test("a catastrophic verdict flags the surfaces instead of destroying the design", () => {
-  assert.match(afterLoop, /const semanticFlagged = masterQc && masterQc\.accepted !== true;/);
-  assert.match(afterLoop, /masterCutoutSurfaces = judged;/);
-  assert.match(afterLoop, /semantic review \(non-blocking, recorded for human QC\)/);
-  assert.match(afterLoop, /flat_atlas_master_semantic_flagged/);
-  // It must not raise. The design ships and a human looks at the panels.
-  const flagStart = afterLoop.indexOf("if (semanticFlagged) {");
-  const flagEnd = afterLoop.indexOf("flat_atlas_master_semantic_flagged");
-  assert.ok(flagStart > 0 && flagEnd > flagStart);
-  const flagBlock = afterLoop.slice(flagStart, flagEnd);
-  assert.ok(!/throw /.test(flagBlock), "a semantic verdict must never throw");
+test("a cut-out-only verdict survives and carries its surfaces into repair", () => {
+  assert.match(loop, /semanticVerdict\?\.code === "atlas_master_qc_cutouts_present"/);
+  assert.match(loop, /\.\.\.\(semanticVerdict\.cutout\?\.surfaces \|\| \[\]\)\.map\(String\)/);
+  assert.match(afterLoop, /fillMasterCutouts\(masterBytes, manifest, masterCutoutSurfaces\)/);
 });
 
 test("the revision records what decided acceptance and what the judge said", () => {
-  assert.match(afterLoop, /masterAcceptance: "deterministic"/);
+  assert.match(afterLoop, /masterAcceptance: "semantic"/);
   assert.match(afterLoop, /masterSemanticVerdict:/);
-  assert.match(afterLoop, /masterSemanticBlocking: false/);
-  // The deterministic measurements are always present, because they are the gate.
+  assert.match(afterLoop, /masterSemanticBlocking: true/);
   assert.match(afterLoop, /masterQcDeterministic: masterQc\?\.deterministic \|\| masterDeterministic/);
 });
 
@@ -262,17 +222,10 @@ const lineage = worker.slice(
   worker.indexOf("const byView = new Map();"),
 );
 
-test("the runtime lineage gate accepts the deterministic acceptance basis", () => {
+test("the runtime lineage gate preserves semantic-confidence acceptance", () => {
   assert.match(lineage, /masterAcceptance\.basis === "deterministic"/);
   assert.match(lineage, /gatedDeterministically \|\| gatedBySemanticConfidence/);
-  // The legacy path survives, because revisions authored before the basis was
-  // recorded carry a real semantic confidence and must stay readable.
   assert.match(lineage, /masterAcceptance\.confidence >= 0\.92/);
-  // And confidence alone may no longer be the sole gate.
-  assert.ok(
-    !/\|\|\s*masterAcceptance\.confidence < 0\.92/.test(lineage),
-    "a low-confidence judge must not by itself invalidate a deterministically accepted master",
-  );
 });
 
 test("the basis actually reaches the gate from the persisted revision", () => {
@@ -280,5 +233,5 @@ test("the basis actually reaches the gate from the persisted revision", () => {
   // builds from the revision metadata. If the field is not carried across, the
   // gate silently falls back to the confidence branch and the fix is inert.
   assert.match(source, /basis: row\.metadata\?\.masterAcceptance \|\| null,/);
-  assert.match(afterLoop, /masterAcceptance: "deterministic"/);
+  assert.match(afterLoop, /masterAcceptance: "semantic"/);
 });

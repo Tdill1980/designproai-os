@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260828\.v8-clean"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v9-labeled-topology"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -145,7 +145,7 @@ test("both halves of the Houdini paired lesson reach Call 1", () => {
   }
 });
 
-test("the flat contract gives the model placement and creative intent, and no technical inventory", () => {
+test("the flat contract gives the model exact labeled placement without dimensions", () => {
   // ⚠️ THIS BLOCK ONCE ASSERTED THE OPPOSITE, AND THAT IS WHY IT IS HERE.
   //
   // It required the contract to NAME each forbidden feature — door seams,
@@ -168,13 +168,13 @@ test("the flat contract gives the model placement and creative intent, and no te
   // what to paint.
   const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function buildDesignIQPrompt("));
 
-  assert.match(contract, /Left tall region = Passenger Side artwork/);
-  assert.match(contract, /Centre top-to-bottom = Rear, Roof, Hood, Front/);
-  assert.match(contract, /Right tall region = Driver Side artwork/);
+  assert.match(contract, /hardwired flattened TOP-VIEW artboard/);
+  assert.match(contract, /The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front/);
+  assert.match(contract, /\$\{panelLines\}/);
   assert.match(contract, /filling every region completely edge-to-edge/);
-  assert.match(contract, /Return artwork only/);
+  assert.match(contract, /Return artwork only inside the six regions/);
 
-  for (const leaked of ["Surface ID", "pixel size", "CAPTIONED", "DASHED", "title band", "footer", "GENIE", "widthInches", "heightInches"]) {
+  for (const leaked of ["pixel size", "DASHED", "title band", "footer", "widthInches", "heightInches"]) {
     assert.ok(!contract.toLowerCase().includes(leaked.toLowerCase()),
       `the contract must not speak "${leaked}" to the image model`);
   }
@@ -239,18 +239,18 @@ test("body-style INTENT reaches the model; the region enumeration does not", () 
     "the region enumeration must not be rendered into the prompt");
 });
 
-test("the technical metadata never leaves the server", () => {
-  // `atlasEdgeRequestBody` is the whole wire. A field absent from it cannot be
-  // shown to the model however the prompt is later worded.
+test("identity and placement cross the wire while dimensions and component topology stay server-side", () => {
   const body = runtimeSource.slice(
     runtimeSource.indexOf("function atlasEdgeRequestBody("),
     runtimeSource.indexOf("async function callAtlasArtboardEdge("),
   );
-  for (const field of ["surfaceId:", "widthInches:", "heightInches:", "topology:", "placement:"]) {
+  for (const field of ["widthInches:", "heightInches:", "topology:"]) {
     assert.ok(!body.includes(field),
       `${field} must not be sent to Call 1; GENIE keeps it and the cut uses it`);
   }
   assert.match(body, /label: SURFACE_LABELS\[zone\.surfaceKey\]/);
+  assert.match(body, /surfaceId: SURFACE_IDS\[zone\.surfaceKey\]/);
+  assert.match(body, /placement: zone\.placement/);
 });
 
 test("body style is decided in code, never by a second AI call", () => {

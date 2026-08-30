@@ -35,10 +35,10 @@ export async function loadDesignIQ() {
 }
 
 export const ATLAS_PANELS = [
-  { label: "DRIVER SIDE", widthInches: 153, heightInches: 56 },
-  { label: "PASSENGER SIDE", widthInches: 153, heightInches: 56 },
-  { label: "HOOD", widthInches: 71.5, heightInches: 56 },
-  { label: "ROOF", widthInches: 74.3, heightInches: 54.8 },
-  { label: "FRONT", widthInches: 129, heightInches: 34 },
-  { label: "REAR", widthInches: 76, heightInches: 54 },
+  { label: "DRIVER SIDE", surfaceId: "DS", placement: "right-flank" },
+  { label: "PASSENGER SIDE", surfaceId: "PS", placement: "left-flank" },
+  { label: "HOOD", surfaceId: "HD", placement: "center-column" },
+  { label: "ROOF", surfaceId: "RF", placement: "center-column" },
+  { label: "FRONT", surfaceId: "FR", placement: "center-column" },
+  { label: "REAR", surfaceId: "RR", placement: "center-column" },
 ];

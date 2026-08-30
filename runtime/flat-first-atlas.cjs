@@ -163,7 +163,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260828.v8-clean";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v9-labeled-topology";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -862,6 +862,33 @@ function guideLabelsSvg(manifest) {
 }
 
 /**
+ * THE MODEL GETS THE SIX NAMES, BUT NONE OF THE PRODUCTION INVENTORY.
+ *
+ * Each short caption sits in the gutter beside its container, outside every
+ * extraction rectangle. The image therefore carries the hardwired mapping the
+ * A.T.L.A.S. prompt relies on without exposing dimensions, trim marks or flank
+ * component vocabulary that an image model can reproduce as artwork.
+ */
+function authoringGuideLabelsSvg(manifest) {
+  return manifest.zones.map((zone) => {
+    const [near, far] = captionGutter(zone, manifest.zones);
+    const width = far - near;
+    if (!(width > 24)) return "";
+    const id = SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase();
+    const name = SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase();
+    const label = `${id} · ${name.toUpperCase()}`;
+    const size = Math.max(11, Math.min(42, Math.floor((width / 2) / LABEL_REACH)));
+    const x = Math.round(near + width / 2);
+    const y = Math.round(Number(zone.y) + Number(zone.h) / 2);
+    const rotation = zone.placement === "right-flank" ? 90 : -90;
+    return `<text x="${x}" y="${y}" transform="rotate(${rotation} ${x} ${y})" `
+      + `text-anchor="middle" dominant-baseline="central" fill="#d9d9d9" `
+      + `font-family="Arial,sans-serif" font-size="${size}" font-weight="700" `
+      + `letter-spacing="${Math.max(1, Math.round(size * 0.06))}">${label}</text>`;
+  }).join("");
+}
+
+/**
  * THE TOPOLOGY UNDERLAY -- what makes this read as a vehicle seen from above
  * rather than three columns of boxes.
  *
@@ -889,7 +916,7 @@ function guideGeometrySvg(manifest) {
 }
 
 /**
- * THE MODEL'S GUIDE CARRIES NO READABLE TEXT. THAT IS THE WHOLE POINT.
+ * THE MODEL'S GUIDE CARRIES ONLY SHORT GUTTER LABELS.
  *
  * There used to be one guide, and it went to three consumers at once: the
  * authoring model, the QC inspector and the human design team. It carried each
@@ -911,13 +938,13 @@ function guideGeometrySvg(manifest) {
  * footer was that same instruction rendered as pixels INSIDE the image it was
  * warning about.
  *
- * So the guide is split by consumer instead. The model receives geometry and
- * nothing else: same rectangles, same fills, same strokes, same canvas, zero
- * glyphs. Nothing readable is present, so nothing readable can be copied. Zone
- * identity is not lost -- it was never carried by the glyphs. The prompt's ZONE
- * MAP names every surface with its exact box and rotation, and the TOPOLOGY
- * LOCK describes the layout in words, both of which the model reads as text
- * rather than as something to paint.
+ * So the guide is split by consumer instead. The model receives the six plain
+ * rectangles plus one short name/ID in the gutter beside each rectangle. It
+ * receives no dimensions, trim marks, title/footer or component vocabulary.
+ * The labels are outside every extraction rectangle and the delivered master
+ * is masked to those rectangles, so the navigation layer cannot become a
+ * production panel. The structured panel list repeats the same ID/placement
+ * mapping and the edge function refuses an incomplete or mismatched map.
  *
  * The labelled guide is unchanged and still rendered: it is what the design
  * team reads, what enters durable storage as `guide_storage_path`, and what the
@@ -929,11 +956,12 @@ function guideGeometrySvg(manifest) {
 function authoringGuideSvg(manifest) {
   const rectangles = manifest.zones.map((zone) => (
     `<rect x="${zone.x}" y="${zone.y}" width="${zone.w}" height="${zone.h}" `
-      + `fill="${zone.guideFill}"/>`
+      + `fill="${zone.guideFill}" stroke="#ffffff" stroke-width="8"/>`
   )).join("");
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS.widthPx}" height="${CANVAS.heightPx}" viewBox="0 0 ${CANVAS.widthPx} ${CANVAS.heightPx}">
     <rect width="100%" height="100%" fill="#111111"/>
     ${rectangles}
+    ${authoringGuideLabelsSvg(manifest)}
   </svg>`);
 }
 
@@ -960,7 +988,7 @@ async function renderAtlasGuide(manifest) {
   return rasterizeGuide(guideSvg(manifest));
 }
 
-/** Geometry authority only. This is the one the authoring model ever sees. */
+/** Labeled geometry authority. This is the one the authoring model sees. */
 async function renderAtlasAuthoringGuide(manifest) {
   const svg = authoringGuideSvg(manifest);
   // Fail closed rather than ship a glyph INTO a container. The guide is now a
@@ -976,7 +1004,6 @@ async function renderAtlasAuthoringGuide(manifest) {
   // all six rectangles.
   const markup = svg.toString("utf8");
   const forbiddenAuthoringMarkup = [
-    [/<text\b/i, "text"],
     [/stroke-dasharray/i, "dashed trim geometry"],
     [/<line\b/i, "line geometry"],
     [/<path\b/i, "path geometry"],
@@ -986,7 +1013,7 @@ async function renderAtlasAuthoringGuide(manifest) {
     if (pattern.test(markup)) {
       throw new FlatAtlasError(
         "flat_atlas_authoring_guide_contains_technical_furniture",
-        `The model-facing A.T.L.A.S. guide contains ${label}; it must be six plain spatial regions only`,
+        `The model-facing A.T.L.A.S. guide contains ${label}; it must remain six labeled spatial regions only`,
       );
     }
   }
@@ -1536,11 +1563,10 @@ function customerCreativeBrief(input) {
 // Front." These are the strings on the labelled installer map and in the
 // GENIE panel list the Call-1 request carries.
 //
-// They are NOT drawn on the authoring guide. renderAtlasAuthoringGuide is
-// geometry only and throws `flat_atlas_authoring_guide_contains_text` if a
-// glyph ever reaches it -- a surface name shown to the image model comes back
-// painted across the wrap as artwork. Labelling the containers and keeping the
-// model's copy text-free are both true at once, by having two guides.
+// The short names and two-letter IDs are drawn only in the gutters of the
+// authoring guide, outside every extraction rectangle. Dimensions, trim marks
+// and component vocabulary stay server-only. The model therefore receives the
+// identity mapping it needs without putting production inventory into artwork.
 const SURFACE_LABELS = Object.freeze({
   driver: "Driver Side",
   passenger: "Passenger Side",
@@ -1592,6 +1618,8 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     // the mapping (owner, 2026-08-27: "true topography ... labeled containers").
     panels: manifest.zones.map((zone) => ({
       label: SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
+      surfaceId: SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
+      placement: zone.placement,
     })),
     // The two large inputs travel by STORAGE PATH: a 2.2MB inline-base64 body
     // killed the edge worker twice (2026-08-27). Customer references stay
@@ -2239,15 +2267,15 @@ async function generateOrReuseFlatAtlas(options) {
   // `guideBytes` is the labelled installer map: it is what enters storage, what
   // the design team reads, and what the QC inspector compares the master
   // against -- so `artifactFreeContract` still has annotations to look for.
-  // `authoringGuideBytes` is the same rectangles with no glyphs at all, and is
-  // the only one the authoring model is ever shown.
+  // `authoringGuideBytes` is the same rectangles with short gutter identity
+  // labels only; it is the one the authoring model is shown.
   const guideBytes = await renderAtlasGuide(manifest);
   const guideHash = sha256(guideBytes);
   const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
-  // The edge function receives: the glyph-free layout guide, the Houdini
+  // The edge function receives: the labeled layout guide, the Houdini
   // flattened structural reference (LAYOUT ONLY — the firewall lives in the
   // edge prompt), and the verified customer logo/reference images. The
   // gold-standard artboard examples are loaded by the edge function itself
@@ -2328,11 +2356,14 @@ async function generateOrReuseFlatAtlas(options) {
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
   let passengerComposed = null;
-  // The semantic judge, in flight. It is created inside the loop the moment a
-  // master exists and is resolved once, below, alongside the panel cut -- so it
-  // overlaps the deterministic work instead of preceding it.
+  // The semantic judge is dispatched the moment a master exists so it overlaps
+  // the deterministic measurements and repairs. Its hash-bound verdict gates
+  // release: a design-breaking refusal is corrected by Call 1 before any master
+  // or panel is published; a cut-out-only verdict remains repairable in code.
   let semanticQc = null;
   let semanticQcMasterHash = null;
+  let semanticVerdict = null;
+  let masterQc = null;
   // The pixel measurements that actually decided acceptance, kept for the row.
   let masterDeterministic = null;
   const edgeProvenance = [];
@@ -2369,42 +2400,11 @@ async function generateOrReuseFlatAtlas(options) {
     masterBytes = normalized.bytes;
     masterDelivery = normalized;
     masterHash = sha256(masterBytes);
-    // ─────────────────────────────────────────────────────────────────────
-    // THE CUSTOMER'S CRITICAL PATH IS DETERMINISTIC. (Owner, 2026-08-27.)
-    //
-    // "Do deterministic master validation immediately … don't make the customer
-    // wait for Flash to philosophically judge the artwork before starting
-    // Driver. If semantic QC finds something catastrophic, flag the job. But
-    // don't automatically make every customer wait through three judge cycles."
-    //
-    // Measured cost of the old arrangement, canary a3e15054 (2026-08-27):
-    // ONE authoring attempt took 180 seconds and ended on a failure page. The
-    // image itself is ~50-70s of that. The rest was the Flash judge, run up to
-    // three times over one candidate -- judge, compose the passenger flank,
-    // judge again, fill the cut-outs, judge again -- with the customer looking
-    // at a spinner for every cycle.
-    //
-    // So the judge no longer gates anything the customer waits on. It is
-    // dispatched the instant the master exists and runs CONCURRENTLY with the
-    // work that follows: the cut-out fill, the six panel cuts, the projection
-    // derivative and every storage write. Its verdict is still recorded on the
-    // immutable revision, and a catastrophic one still flags the affected
-    // surfaces for PanelPro's human QC -- it simply no longer decides whether
-    // the design is allowed to exist.
-    //
-    // WHAT DECIDES THAT NOW: `deterministicMasterChecks`, which is pure pixel
-    // measurement over the six known zones -- opacity, edge opacity, contrast,
-    // the painted-checkerboard signature, concentrated flat-black cut-outs, and
-    // the passenger mirror MAE. No model, no network, ~1s. Those are exactly
-    // the failures that mean the sheet cannot be used at all.
-    //
-    // This is the trade the owner named, stated plainly: a master whose only
-    // defect is one a MODEL can see (an incoherent composition, a silhouette
-    // that survives the pixel checks, a misread phone number) now reaches the
-    // customer and is flagged, rather than costing them three minutes and a
-    // failure page. Hardwired GENIE containers are what make that trade sound --
-    // the model no longer decides geometry, so the geometry failures the judge
-    // used to catch are the ones code now prevents.
+    // Dispatch semantic review immediately. Deterministic checks still run
+    // first and repairs still avoid unnecessary authoring calls, but labeled
+    // geometry cannot prove that the artwork assigned to each label is the
+    // correct artwork. The hash-bound semantic verdict therefore protects the
+    // existing A.T.L.A.S. identity contract before release.
     semanticQc = Promise.resolve()
       .then(() => validateMaster({ masterBytes: masterBytes, guideBytes, manifest, input }))
       .catch((cause) => ({
@@ -2475,7 +2475,7 @@ async function generateOrReuseFlatAtlas(options) {
           logger?.info?.("flat_atlas_passenger_flank_composed", passengerComposed);
           // The judge graded the pre-composition bytes, so its verdict no
           // longer describes this master. Re-dispatch it against what will
-          // actually be persisted -- still concurrent, still not a gate.
+          // actually be persisted.
           semanticQc = Promise.resolve()
             .then(() => validateMaster({ masterBytes, guideBytes, manifest, input }))
             .catch((cause) => ({
@@ -2503,26 +2503,47 @@ async function generateOrReuseFlatAtlas(options) {
 
     // ── THE GATE ─────────────────────────────────────────────────────────
     //
-    // Everything still blocking after the two deterministic repairs is a sheet
-    // that cannot be used: a blank or transparent zone, no contrast, a painted
-    // transparency checkerboard, or two flanks that are still not twins. Those
-    // are worth another throw; nothing else is.
+    // Pixel failures and design-breaking semantic failures both refuse the
+    // candidate. A cut-out-only semantic result is explicitly repairable and
+    // survives; fillMasterCutouts closes it below without creating new art.
     // `deterministic` is the post-repair measurement: when the passenger flank
     // was composed above it was re-measured, so a mirror finding surviving here
     // means the composition did not fix it and another throw is the remedy.
     const stillBlocking = deterministic.blockingFailures || [];
-    if (!stillBlocking.length) break;
+    let refusalCode = "flat_atlas_master_deterministic_failed";
+    let refusalReason = stillBlocking.join("; ").slice(0, 600);
+    if (!stillBlocking.length) {
+      const semanticStartedAt = Date.now();
+      semanticVerdict = await semanticQc;
+      timings.semanticWaitMs += Date.now() - semanticStartedAt;
+      const semanticBound = semanticVerdict?.metadata?.contract === MASTER_QC_CONTRACT
+        && semanticVerdict.metadata.masterHash === masterHash
+        && semanticVerdict.metadata.masterHash === semanticQcMasterHash
+        && semanticVerdict.metadata.guideHash === guideHash;
+      const repairableCutouts = semanticVerdict?.code === "atlas_master_qc_cutouts_present";
+      if (semanticBound && (semanticVerdict.accepted === true || repairableCutouts)) {
+        masterQc = semanticVerdict;
+        masterCutoutSurfaces = [...new Set([
+          ...masterCutoutSurfaces,
+          ...(semanticVerdict.cutout?.surfaces || []).map(String),
+        ])].sort();
+        masterCutoutFindings = [...new Set([
+          ...masterCutoutFindings,
+          ...(semanticVerdict.cutout?.findings || []).map(String),
+        ])];
+        break;
+      }
+      refusalCode = "flat_atlas_master_semantic_failed";
+      refusalReason = semanticBound
+        ? String(semanticVerdict.reason || semanticVerdict.code || "semantic master QC refused the design").slice(0, 600)
+        : "semantic master QC did not return a verdict bound to the final master and guide hashes";
+    }
     if (attempt === maxAuthoringAttempts) {
       throw new FlatAtlasError(
-        "flat_atlas_master_deterministic_failed",
-        `The flattened A.T.L.A.S. design call failed deterministic acceptance ${attempt} times: ${stillBlocking.join("; ").slice(0, 700)}`,
+        refusalCode,
+        `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times: ${refusalReason.slice(0, 700)}`,
       );
     }
-    // THE CORRECTION NAMES THE ACTUAL DEFECT (see generation 632642dc): the
-    // gate's own finding is the corrective direction, forwarded to the edge
-    // function as a text part on the next attempt. It is now the DETERMINISTIC
-    // finding, which is the one that refused the sheet.
-    const refusalReason = stillBlocking.join("; ").slice(0, 600);
     // ASK FOR THE FULL CANVAS BACK WHEN IT ARRIVED SHORT.
     //
     // Owner 2026-08-27: "Make sure atlas is highest possible 4K or more
@@ -2569,10 +2590,6 @@ async function generateOrReuseFlatAtlas(options) {
   // views". Nothing changes on a clean master: `fillMasterCutouts` returns the
   // same buffer, `panelSourceHash` equals `masterHash`, and the projection and
   // view authorities are byte-identical to what they were before.
-  // THE FILL, THE SIX PANEL CUTS AND THE PROJECTION ALL RUN WHILE THE JUDGE IS
-  // STILL THINKING. `semanticQc` was dispatched the instant the master existed;
-  // nothing between there and here awaits it, so its latency is spent against
-  // this deterministic work rather than added to it.
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
   const surfaceSourceBytes = cutoutFill.bytes;
   const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
@@ -2621,11 +2638,13 @@ async function generateOrReuseFlatAtlas(options) {
     // comparing them byte for byte on a real run.
     masterAcceptance: {
       contract: MASTER_QC_CONTRACT,
+      confidence: masterQc?.metadata?.confidence ?? null,
+      model: masterQc?.metadata?.model ?? null,
       promptHash,
       providerContract: MASTER_PROVIDER_CONTRACT,
       artboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
       passed: true,
-      basis: "deterministic",
+      basis: "semantic",
     },
     // `manifestHash` was computed at authoring time, long before the
     // deterministic gate ran -- it does not wait on anything this object is
@@ -2742,10 +2761,7 @@ async function generateOrReuseFlatAtlas(options) {
   });
 
   // The guide, manifest, master, derivative and six panels enter durable storage
-  // as one parallel batch. They are written only after the master passes the
-  // DETERMINISTIC gate -- a blank, checkerboard or side-mismatched authority can
-  // never receive a row -- but they do not wait on the semantic judge, whose
-  // verdict flags rather than blocks.
+  // as one parallel batch after deterministic and semantic acceptance.
   const persistImmutableAssets = () => Promise.all([
     store.putImmutableBytes({ storagePath: guideStoragePath, bytes: guideBytes, contentType: "image/png" }),
     store.putImmutableBytes({ storagePath: manifestStoragePath, bytes: manifestBytes, contentType: "application/json" }),
@@ -2759,57 +2775,7 @@ async function generateOrReuseFlatAtlas(options) {
     ...panelWrites,
   ]);
 
-  // ── THE JUDGE'S VERDICT IS COLLECTED HERE, AND IT DECIDES NOTHING ────────
-  //
-  // Only its RECORD matters now: the review is persisted on the immutable
-  // revision so PanelPro's human QC and the admin studio can read what a model
-  // thought of this sheet, and a catastrophic verdict FLAGS the affected
-  // surfaces rather than destroying the design (owner, 2026-08-27: "If semantic
-  // QC finds something catastrophic, flag the job").
-  //
-  // Bound to the master hash like every other verdict in this file. A review
-  // graded against superseded bytes -- the passenger composition replaces the
-  // master mid-loop -- is discarded rather than recorded against the wrong
-  // image, which is the mistake `sourceMasterHash` exists to prevent elsewhere.
-  // THE JUDGE IS NOT A GATE BETWEEN BRANCHES. (Owner, 2026-08-27: "Do not add
-  // gates between these branches.")
-  //
-  // This awaited the judge and THEN wrote the master, guide, manifest,
-  // projection and six panels to storage. Nothing about those bytes depends on
-  // its opinion -- they are already cut and already final -- so a ~15s Flash
-  // round trip sat between the panels existing and the panels being publishable.
-  // The two now run together: the ten immutable writes and the judge start at
-  // the same moment and the block costs whichever is slower, not their sum.
-  const [, semanticVerdict] = await Promise.all([
-    persistImmutableAssets(),
-    semanticQc || Promise.resolve(null),
-  ]);
-  const semanticBound = semanticVerdict?.metadata?.contract === MASTER_QC_CONTRACT
-    && semanticVerdict.metadata.masterHash === masterHash
-    && semanticVerdict.metadata.masterHash === semanticQcMasterHash
-    && semanticVerdict.metadata.guideHash === guideHash;
-  const masterQc = semanticBound ? semanticVerdict : null;
-  // A surface the judge convicted joins the cut-out flag list: both mean "a
-  // human must look at this panel on a real template before it prints", which
-  // is exactly what `await_panelpro_preflight_qc` gates on. The design ships
-  // either way; the flag is what stops a bad panel reaching a printer.
-  const semanticFlagged = masterQc && masterQc.accepted !== true;
-  if (semanticFlagged) {
-    const judged = [...new Set([
-      ...masterCutoutSurfaces,
-      ...(masterQc.cutout?.surfaces || []).map(String),
-    ])].sort();
-    masterCutoutSurfaces = judged;
-    masterCutoutFindings = [...new Set([
-      ...masterCutoutFindings,
-      `semantic review (non-blocking, recorded for human QC): ${String(masterQc.reason || masterQc.code || "not accepted").slice(0, 400)}`,
-    ])];
-    logger?.warn?.("flat_atlas_master_semantic_flagged", {
-      generationId,
-      code: masterQc.code || null,
-      surfaces: judged,
-    });
-  }
+  await persistImmutableAssets();
   // Identity + the design-time size of every side, recorded on the immutable
   // revision. Downstream consumes these; it never re-cuts them.
   const callOnePanelRecords = callOnePanels.map((panel) => ({
@@ -2933,23 +2899,21 @@ async function generateOrReuseFlatAtlas(options) {
       // the judge's own copy when it returned one, the loop's otherwise.
       masterQcDeterministic: masterQc?.deterministic || masterDeterministic,
       masterQcReview: masterQc?.review ?? null,
-      // What actually decided this master was allowed to exist, and what the
-      // judge said about it afterwards. Distinguishable at a glance in PanelPro.
-      masterAcceptance: "deterministic",
+      // The pixel gate and hash-bound design review both accepted this master.
+      masterAcceptance: "semantic",
       // click -> master, in segments, on the immutable revision.
       callOneTimings: {
         ...timings,
         totalMs: Date.now() - callOneStartedAt,
-        // The judge overlapped this work rather than preceding it; a non-zero
-        // semanticWaitMs means one master needed its lettering bands, which is
-        // the only path that ever blocks on it.
+        // Semantic review begins before deterministic work, so this measures
+        // only the unresolved tail that remained at the acceptance gate.
         semanticOverlapped: timings.semanticWaitMs === 0,
       },
       masterSemanticVerdict: masterQc
         ? { accepted: masterQc.accepted === true, code: masterQc.code || null,
             reason: String(masterQc.reason || "").slice(0, 600) || null }
         : { accepted: null, code: semanticVerdict?.code || "semantic_qc_unbound", reason: null },
-      masterSemanticBlocking: false,
+      masterSemanticBlocking: true,
       providerKeyFingerprint: generated.keyFingerprint || null,
       providerResponseContentType: generated.contentType,
       rawProviderResponseHash: sha256(generated.bytes),
@@ -3095,6 +3059,7 @@ module.exports = {
     fitCenterColumn,
     fitRotatedSide,
     authoringGuideSvg,
+    authoringGuideLabelsSvg,
     guideGeometrySvg,
     guideSvg,
     normalizedGeometryAuthority,
