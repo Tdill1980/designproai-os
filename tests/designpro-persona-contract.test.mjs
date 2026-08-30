@@ -129,6 +129,21 @@ test("brand colours and industry reach Call 1 while physical finish is deferred"
   assert.doesNotMatch(prompt, /Finish: GLOSS|wet-look surface|specular highlights/);
 });
 
+test("the exact production-canary brief is neutralized before Call 1", () => {
+  const prompt = authored({
+    mode: "commercial",
+    brief: "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif company name, high contrast and legible at highway distance.",
+    companyName: "Precision Climate Solutions",
+    industry: "HVAC and climate control",
+    brandColors: "deep blue, sunrise orange",
+  });
+  assert.match(prompt, /end-to-end across both primary fields/);
+  for (const field of ["FIELD A", "FIELD B", "FIELD C", "FIELD D", "FIELD E", "FIELD F"]) {
+    assert.match(prompt, new RegExp(field));
+  }
+  assert.doesNotMatch(prompt, /front to rear|tailgate|rear zone|2022|Ford|F250|body lines|wheel|window|door|studio photograph/i);
+});
+
 // VISIONBOARD NEVER DISABLES THE DESIGNER.
 test("references never turn the persona or the auto-logo off", () => {
   const base = { mode: "commercial", brief: "Wrap for Harbor Point Electric", companyName: "Harbor Point Electric" };
