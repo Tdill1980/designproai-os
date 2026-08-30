@@ -133,7 +133,7 @@ if (generationId) {
   // empty set rather than an error anyone notices.
   const { data: requestRows, error: requestError } = await supabase
     .from("designpro_generation_requests")
-    .select("id")
+    .select("id,engine_receipt")
     .eq("generation_id", generationId);
   if (requestError) console.error(`generation request query failed: ${requestError.message}`);
   const requestIds = (requestRows || []).map((row) => row.id);
@@ -146,6 +146,28 @@ if (generationId) {
     : { data: [], error: null };
   if (viewError) {
     console.error(`generation view query failed: ${viewError.message}`);
+  }
+  const { data: attemptRows, error: attemptError } = requestIds.length
+    ? await supabase
+      .from("designpro_generation_attempts")
+      .select("request_id,source_view_type,attempt,model,outcome,http_status,detail,duration_ms,content_hash,created_at")
+      .in("request_id", requestIds)
+      .order("source_view_type")
+      .order("attempt")
+    : { data: [], error: null };
+  if (attemptError) {
+    console.error(`generation attempt query failed: ${attemptError.message}`);
+  }
+  const proofDiagnostics = {
+    refusedViews: (requestRows || []).flatMap((row) => Array.isArray(row.engine_receipt?.refusedViews)
+      ? row.engine_receipt.refusedViews : []),
+    attempts: attemptRows || [],
+  };
+  for (const refused of proofDiagnostics.refusedViews) {
+    console.error(`REFUSED ${String(refused?.sourceViewType || "unknown")}: ${String(refused?.reason || "unknown")}`);
+  }
+  for (const attempt of proofDiagnostics.attempts.filter((item) => item.outcome !== "accepted")) {
+    console.error(`ATTEMPT ${attempt.source_view_type} #${attempt.attempt} ${attempt.outcome}: ${String(attempt.detail || "no detail")}`);
   }
   for (const view of (viewRows || []).sort((a, b) => String(a.consumer_role).localeCompare(String(b.consumer_role)))) {
     const extension = view.content_type === "image/png" ? "png"
@@ -182,6 +204,7 @@ if (generationId) {
     panelSourceHash: atlas.metadata?.panelSourceHash ?? null,
     canonicalMasterHash: atlas.metadata?.canonicalMasterHash ?? null,
     geometryAuthority: atlas.manifest?.geometryAuthority ?? null,
+    proofDiagnostics,
     files,
   }, null, 2));
   console.error(`exported ${files.filter((f) => f.file).length} A.T.L.A.S. files`);
