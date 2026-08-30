@@ -132,23 +132,22 @@ test("corrective notes, the guide and customer references ride only through extr
   assert.equal(b.structuralReferenceBase64, undefined);
 });
 
-test("the containers are labeled, and no label sits inside one", async () => {
-  // Owner 2026-08-27: "just fix so it's a true topography flattened view
-  // labeled containers." Both halves must hold at once. The Surface IDs and
-  // names ARE on the artboard the model paints into -- otherwise six unnamed
-  // grey rectangles have to be mapped onto six names carried separately as
-  // prose -- but every caption lives in the gutter beside its container, so a
-  // surface name is never sitting on a rectangle the model is told to paint.
-  // That distinction is the whole defence against artifactFreeContract, and
-  // renderAtlasAuthoringGuide throws if a future edit crosses it.
+test("the human guide stays labeled while the model mask contains no printable furniture", async () => {
+  // Identity remains exact request data and on the human installer guide. The
+  // model sees neutral masks only; visual labels and outlines were copied into
+  // candidate artwork and failed artifact-free QC.
   const { readFileSync } = await import("node:fs");
   const source = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   for (const label of ["Driver Side", "Passenger Side", "Hood", "Roof", "Front", "Rear"]) {
-    assert.ok(source.includes(`"${label}"`), `the container label ${label} must be declared`);
+    assert.ok(source.includes(`"${label}"`), `the human guide label ${label} must remain declared`);
   }
   for (const id of ["DS", "PS", "HD", "RF", "FR", "RR"]) {
-    assert.match(source, new RegExp(`"${id}"`), `the ${id} Surface ID must be declared`);
+    assert.match(source, new RegExp(`"${id}"`), `the ${id} data identity must be declared`);
   }
-  assert.match(source, /flat_atlas_authoring_guide_contains_text/);
-  assert.match(source, /every glyph must be provably outside every zone/);
+  const authoringGuide = source.slice(
+    source.indexOf("function authoringGuideSvg(manifest)"),
+    source.indexOf("/** The human-readable installer map"),
+  );
+  assert.doesNotMatch(authoringGuide, /<text\\b|stroke=|stroke-dasharray|<line\\b|<path\\b|<polygon\\b/i);
+  assert.match(source, /flat_atlas_authoring_guide_contains_technical_furniture/);
 });
