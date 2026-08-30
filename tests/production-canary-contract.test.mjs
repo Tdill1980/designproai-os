@@ -58,11 +58,29 @@ test("the canary proves a persisted A.T.L.A.S. master, not just a receipt field"
     "the flat-first snapshot carries no designMaster to freeze");
 });
 
-test("production workflow cannot start until Entice has actually completed", () => {
+test("production is server-created exactly once after Entice completes", () => {
   const wait = canary.indexOf("await waitForEntice(evidence.enticeRunId)");
-  const create = canary.indexOf('"create_designpro_production_workflow"');
+  const resolve = canary.indexOf("await automaticProductionRun(evidence.enticeRunId)");
   assert.ok(wait > -1, "missing Entice completion wait");
-  assert.ok(create > wait, "production is created before Entice completes");
+  assert.ok(resolve > wait, "automatic Production workflow is resolved before Entice completes");
+  assert.doesNotMatch(canary, /"create_designpro_production_workflow"/,
+    "the canary must not duplicate the workflow pack.activate creates server-side");
+  assert.match(canary, /expected exactly one automatic Production workflow/);
+});
+
+test("the canary crosses purchase with one real Generation-bound owner promotion entitlement", () => {
+  const entitlement = canary.indexOf("await confirmOwnerPromotionEntitlement(generationId, evidence.enticeRunId)");
+  const productionWait = canary.indexOf("await waitForProduction(operator, operatorId, evidence.productionRunId, designId)");
+  assert.ok(entitlement > -1 && productionWait > entitlement,
+    "the real entitlement must be persisted before the canary waits for paid production");
+  assert.match(canary, /"confirm_designpro_purchase"/);
+  assert.match(canary, /p_product_type: "print_pack_entitlement"/);
+  assert.match(canary, /p_amount_cents: 0/);
+  assert.match(canary, /p_promotion_code: OWNER_PROMOTION_CODE/);
+  assert.match(canary, /p_discount_cents: OWNER_PROMOTION_DISCOUNT_CENTS/);
+  assert.match(canary, /from\("designpro_purchase_entitlements"\)/);
+  assert.match(canary, /row\.entice_run_id !== enticeRunId \|\| row\.generation_id !== generationId/);
+  assert.doesNotMatch(canary, /paid\s*=\s*true|paid:\s*true/);
 });
 
 test("the July 24 canary carries the exact recovered F-250 trim geometry", () => {
