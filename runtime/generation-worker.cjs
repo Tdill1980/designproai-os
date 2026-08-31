@@ -59,6 +59,7 @@ function standardProviderFactoryFor(env = process.env) {
     : createDesignPanelServerProvider;
 }
 const {
+  ADVISORY_POLICY_CONTRACT: ATLAS_PROOF_ADVISORY_POLICY_CONTRACT,
   QC_CONTRACT: ATLAS_PROOF_QC_CONTRACT,
   VIEW_CONTRACTS: ATLAS_QC_VIEW_CONTRACTS,
   createAtlasProofValidator,
@@ -541,6 +542,16 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
       || Number(providerMetadata.proofImageRequestCount) !== 1) {
       throw atlasLineageError(`${sourceViewType} is missing the photographer's provenance audit`);
     }
+    // VISUAL REVIEW IS ADVISORY; IDENTITY IS NOT. Historical accepted proofs
+    // predate the explicit policy receipt and remain readable only when their
+    // semantic confidence met the old blocking threshold. New proofs carry the
+    // advisory policy plus an explicit disposition. Both shapes still have to
+    // bind these exact bytes to this exact Atlas projection and surface.
+    const legacySemanticPass = validation.policyContract === undefined
+      && Number.isFinite(validation.confidence)
+      && validation.confidence >= 0.9;
+    const advisoryReceipt = validation.policyContract === ATLAS_PROOF_ADVISORY_POLICY_CONTRACT
+      && ["pass", "review_required", "unavailable"].includes(validation.semanticDisposition);
     if (validation.contract !== ATLAS_PROOF_QC_CONTRACT
       || validation.expectedView !== ATLAS_QC_VIEW_CONTRACTS[sourceViewType]?.label
       || validation.proofHash !== view.contentHash
@@ -548,9 +559,8 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
       || validation.zoneHash !== viewAuthority.contentHash
       || validation.authorityHash !== viewAuthority.contentHash
       || validation.zoneSurfaceKey !== viewAuthority.surfaceKey
-      || !Number.isFinite(validation.confidence)
-      || validation.confidence < 0.9) {
-      throw atlasLineageError(`${sourceViewType} did not pass fail-closed Atlas visual QC`);
+      || (!legacySemanticPass && !advisoryReceipt)) {
+      throw atlasLineageError(`${sourceViewType} has no valid bound Atlas proof receipt`);
     }
     if (providerMetadata.atlasMasterContentHash !== flatAtlas.master.contentHash
       || providerMetadata.atlasProjectionContentHash !== flatAtlas.projection.contentHash
@@ -705,24 +715,11 @@ async function runAtlasProofStages({
     // it from the immutable master instead of adopting anonymous bytes.
     allowOrphanReconciliation: false,
     maxProviderAttempts: provider.maxProviderAttempts,
-    // THE REJECTION BUDGET MATCHES THE ATTEMPT BUDGET, DELIBERATELY.
-    //
-    // The engine default of two judged tries predates the corrective loop. On
-    // the first full acceptance run (fb63e76f, 2026-08-26) hood, roof and
-    // close-up each died at exactly two rejections -- and the attempt records
-    // show the loop CONVERGING, not thrashing: hood's second frame fixed the
-    // first frame's 80%-fill finding and failed on a new, smaller fault. Each
-    // rejection now feeds the inspector's own findings into the next attempt
-    // (verified end-to-end: correctedParts -> call.parts ->
-    // resolveAtlasConditioningParts preserves text parts), so a third and
-    // fourth judged try are corrective cycles, not re-rolls of the same dice.
-    //
-    // This widens nothing about acceptance: every accepted proof still passes
-    // the same inspector at the same thresholds, and a view that exhausts four
-    // judged tries still fails to semantic_review_required for a human. The
-    // overall call budget is unchanged -- four attempts per slot was already
-    // the ceiling; rejections simply no longer end the slot two attempts
-    // before it.
+    // Semantic findings never enter this rejection budget: the Atlas validator
+    // publishes them in an advisory receipt after deterministic preflight. The
+    // bounded ceiling remains for an actually invalid proof transport (missing
+    // or corrupt pixels, stale/hash-mismatched authority), which must never be
+    // persisted merely because the presentation reviewer is non-blocking.
     maxRegenerations: provider.maxProviderAttempts,
   });
   return proofs;

@@ -61,11 +61,15 @@ runtime/generation-worker.cjs
 # rollback fail at startup rather than merely disable the experiment.
 runtime/flat-first-atlas.cjs
 runtime/flat-atlas-topology-examples.cjs
-# Immutable, hash-pinned A.T.L.A.S. Call 1 lesson. The first image is the
-# flattened top-view target format; the second is its corresponding finished
-# 3D vehicle proof. Runtime verifies both SHA-256 identities before use.
+# Historical immutable Houdini pair, retained for forensic compatibility and
+# not attached to active Call 1.
 runtime/atlas-examples/houdini-flattened-top-view.jpg
 runtime/atlas-examples/houdini-finished-3d-proof.jpg
+# Owner-selected, release-pinned active relationship pair. Call 1 sees the
+# installed proof first, matching solid-rectangle flat atlas second and the
+# current target guide last. Runtime and edge verify both SHA-256 identities.
+runtime/atlas-examples/flamingo-installed-driver-proof.jpg
+runtime/atlas-examples/flamingo-rectangular-atlas.jpg
 # The authoring boundary. The generation worker requires it to record the
 # canonical design master while Calls 1-7 run, so a release without it dies at
 # require time exactly as the kernel modules above would.

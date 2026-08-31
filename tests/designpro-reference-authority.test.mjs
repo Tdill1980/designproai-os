@@ -10,10 +10,9 @@ const atlas = require("../runtime/flat-first-atlas.cjs");
  * THREE REFERENCE CLASSES, THREE AUTHORITIES, NEVER INTERCHANGEABLE.
  * (Owner correction, 2026-08-26.)
  *
- *   STRUCTURAL   the bundled Houdini flattened-top-view pair. It teaches how ONE
- *                cohesive wrap is represented across a flattened master. It is
- *                NOT a creative-style reference unless the customer supplies it
- *                as one.
+ *   STRUCTURAL   the release-pinned Flamingo installed→solid-flat pair. It
+ *                teaches how ONE cohesive wrap becomes six pure rectangles.
+ *                It is never creative/style or production authority.
  *   CREATIVE     the customer's own VisionBoard images. Artwork authority under
  *                exact_reference; style authority under style_inspiration.
  *   PRESENTATION the 3D proof example and Studio OS. They may teach vehicle
@@ -60,13 +59,12 @@ const swatch = async (color) => sharp({
   create: { width: 64, height: 64, channels: 3, background: color },
 }).png().toBuffer();
 
-// THE STRUCTURAL EXAMPLE CARRIES NO STYLE.
+// THE DORMANT STRUCTURAL-EXAMPLE HOOK CARRIES NO STYLE.
 //
-// The Houdini pair is attached to teach the OUTPUT FORMAT. Every part that
-// carries it must refuse its artwork, wording, logo, colour and brand — the
-// example is a layout lesson, and a session that lets it become a style source
-// has introduced a second, unrequested designer into the call.
-test("the structural topology example is attached as layout only, never as style", async () => {
+// No structural pair is active in Call 1. If an owner-approved, hash-pinned pair
+// is later supplied to this hook, every part must refuse its artwork, wording,
+// logo, colour and brand: it may teach a relationship, never a style.
+test("the dormant structural-example hook is topology-only, never style authority", async () => {
   const parts = await atlas._test.topologyExampleParts([{
     kind: "paired-flat-to-finished",
     flattenedTopView: { bytes: await swatch("#3355aa") },
@@ -106,10 +104,11 @@ test("a customer reference declares artwork authority and distinguishes itself f
   assert.match(inspiration, /neutral spatial mask with six fixed GENIE regions/);
 });
 
-// WITH NO CUSTOMER REFERENCE, NO OBSOLETE VISUAL AUTHORITY IS SUBSTITUTED.
-test("with no customer reference, Call 1 still uses only the current guide", () => {
+// WITH NO CUSTOMER REFERENCE, THE PROMPT STILL CARRIES ONLY CURRENT CUSTOMER
+// CREATIVE INPUT. The relationship pair is attached in separate server fields.
+test("with no customer reference, the Call 1 prompt keeps current vehicle and brief authority", () => {
   const prompt = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(prompt, /opaque, unbroken, full-bleed rectangle of continuous printed artwork/);
+  assert.match(prompt, /pure, opaque, unbroken, full-bleed rectangular region of continuous printable artwork/);
   assert.match(prompt, /Region identity is defined by this exact data mapping/);
   assert.match(prompt, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
   assert.doesNotMatch(prompt, /studio photograph|widthInches|heightInches/i);
@@ -123,6 +122,8 @@ test("the two reference classes are recorded under separate metadata keys", () =
   const source = require("node:fs").readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   assert.match(source, /topologyExamplesApplied: 0/);
   assert.match(source, /topologyExampleIdentities: \[\]/);
+  assert.match(source, /atlasDesignTeachingPairApplied: true/);
+  assert.match(source, /atlasDesignTeachingPairIdentity: cohesionExample\.identity/);
   assert.match(source, /verifiedCustomerReferenceCount: Array\.isArray\(input\?\.visionBoardImages\)/);
   // The customer-reference count must never be fed from the topology examples.
   assert.doesNotMatch(source, /verifiedCustomerReferenceCount:[^\n]*topologyExamples/);

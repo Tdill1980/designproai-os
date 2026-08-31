@@ -7,9 +7,11 @@ const require = createRequire(import.meta.url);
 const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
 const sharp = runtimeRequire("sharp");
 const angles = require("../runtime/view-angles.cjs");
+const { runSlot } = require("../runtime/generation-engine.cjs");
 const { PHOTOREALISM_REQUIREMENT } = require("../runtime/photorealism-prompt.cjs");
 const { STUDIO_ENVIRONMENT, STUDIO_REINFORCEMENT } = require("../runtime/studio-os.cjs");
 const {
+  ADVISORY_POLICY_CONTRACT,
   QC_CONTRACT,
   VIEW_CONTRACTS,
   buildAtlasProofQcPrompt,
@@ -190,12 +192,16 @@ test("the validator grades the actual candidate inline against the canonical Atl
   assert.equal(parts[3].inlineData.data, f.atlasBytes.toString("base64"));
   assert.equal(verdict.metadata.zoneSurfaceKey, "passenger");
   assert.equal(verdict.metadata.zoneHash, hash(f.atlasBytes));
+  assert.equal(verdict.metadata.policyContract, ADVISORY_POLICY_CONTRACT);
+  assert.equal(verdict.metadata.semanticDisposition, "pass");
+  assert.equal(verdict.metadata.semanticCode, null);
+  assert.deepEqual(verdict.metadata.semanticReview, verdict.review);
   assert.ok(verdict.metadata.requestByteSize < 18 * 1024 * 1024);
   assert.equal(verdict.metadata.candidateTransportDerived, false);
   assert.equal(verdict.metadata.atlasTransportDerived, false);
 });
 
-test("wrong view, passenger orientation, Atlas drift, pickup roof leakage and uncertainty all reject fail-closed", async (t) => {
+test("semantic findings are retained as advisory receipts without rejecting presentation proofs", async (t) => {
   const f = await fixture();
   const cases = [
     ["side", { observedView: "Hero" }, "atlas_qc_view_mismatch"],
@@ -214,13 +220,140 @@ test("wrong view, passenger orientation, Atlas drift, pickup roof leakage and un
       };
       const validate = createAtlasProofValidator({ provider, atlas: f.atlas, input: f.input });
       const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType });
-      assert.equal(verdict.accepted, false);
-      assert.equal(verdict.code, code);
+      assert.equal(verdict.accepted, true);
+      assert.equal(verdict.advisory, true);
+      assert.equal(verdict.metadata.policyContract, ADVISORY_POLICY_CONTRACT);
+      assert.equal(verdict.metadata.semanticDisposition, "review_required");
+      assert.equal(verdict.metadata.semanticCode, code);
+      assert.equal(typeof verdict.metadata.semanticReason, "string");
+      assert.deepEqual(verdict.metadata.semanticReview, verdict.review);
     });
   }
 });
 
-test("analyzer errors, malformed JSON, identity mismatch and incomplete answers can never accept a proof", async (t) => {
+test("an advisory semantic finding persists the first proof without an image reroll", async () => {
+  const f = await fixture();
+  let imageCalls = 0;
+  let persisted = null;
+  const validate = createAtlasProofValidator({
+    provider: {
+      generateRaw: async ({ body }) => {
+        const identity = responseIdentity(body);
+        return {
+          payload: payload(passingReview(identity, {
+            atlasContinuityContract: "fail",
+            reasons: ["The visual reviewer could not establish continuity."],
+          })),
+          model: "gemini-2.5-flash",
+        };
+      },
+    },
+    atlas: f.atlas,
+    input: f.input,
+  });
+  const store = {
+    async findAcceptedSlot() { return null; },
+    async acquireSlotLease() { return { token: "lease" }; },
+    async releaseSlotLease() {},
+    async recordAttemptStarted() {},
+    async recordAttemptFinished() {},
+    async putImmutableBytes() {},
+    async persistAcceptedSlot(row) { persisted = row; return row; },
+    async markSlotFailed() { throw new Error("an advisory finding may not fail the slot"); },
+  };
+  const result = await runSlot({
+    requestId: "request",
+    tenantKey: "user_owner",
+    generationId: "generation",
+    sourceViewType: "front",
+    consumerRole: "front",
+    provider: {
+      async generateImage() {
+        imageCalls += 1;
+        return {
+          bytes: f.proofBytes,
+          contentType: "image/png",
+          model: "gemini-3-pro-image",
+          keyFingerprint: "000000000000",
+        };
+      },
+    },
+    store,
+    promptParts: [],
+    aspectRatio: "4:3",
+    imageSize: "4K",
+    validate,
+    allowOrphanReconciliation: false,
+    maxProviderAttempts: 4,
+    maxRegenerations: 4,
+  });
+
+  assert.equal(result.state, "accepted");
+  assert.equal(result.providerCalls, 1);
+  assert.equal(imageCalls, 1);
+  assert.equal(persisted.metadata.validation.semanticDisposition, "review_required");
+  assert.equal(persisted.metadata.validation.semanticCode, "atlas_qc_design_drift");
+});
+
+test("an oversized advisory payload persists the first proof without reviewer or image reroll", async () => {
+  const f = await fixture();
+  let imageCalls = 0;
+  let reviewerCalls = 0;
+  let persisted = null;
+  const validate = createAtlasProofValidator({
+    provider: { generateRaw: async () => { reviewerCalls += 1; throw new Error("must not be called"); } },
+    atlas: f.atlas,
+    input: f.input,
+    maxRequestBytes: 1024,
+  });
+  const store = {
+    async findAcceptedSlot() { return null; },
+    async acquireSlotLease() { return { token: "lease" }; },
+    async releaseSlotLease() {},
+    async recordAttemptStarted() {},
+    async recordAttemptFinished() {},
+    async putImmutableBytes() {},
+    async persistAcceptedSlot(row) { persisted = row; return row; },
+    async markSlotFailed() { throw new Error("advisory transport may not fail the slot"); },
+  };
+  const result = await runSlot({
+    requestId: "request",
+    tenantKey: "user_owner",
+    generationId: "generation",
+    sourceViewType: "side",
+    consumerRole: "driver",
+    provider: {
+      async generateImage() {
+        imageCalls += 1;
+        return {
+          bytes: f.proofBytes,
+          contentType: "image/png",
+          model: "gemini-3-pro-image",
+          keyFingerprint: "000000000000",
+        };
+      },
+    },
+    store,
+    promptParts: [],
+    aspectRatio: "4:3",
+    imageSize: "4K",
+    validate,
+    allowOrphanReconciliation: false,
+    maxProviderAttempts: 4,
+    maxRegenerations: 4,
+  });
+
+  assert.equal(result.state, "accepted");
+  assert.equal(result.providerCalls, 1);
+  assert.equal(imageCalls, 1);
+  assert.equal(reviewerCalls, 0);
+  assert.equal(persisted.metadata.validation.semanticDisposition, "unavailable");
+  assert.equal(persisted.metadata.validation.semanticCode, "atlas_qc_request_too_large");
+  assert.equal(persisted.metadata.validation.proofHash, hash(f.proofBytes));
+  assert.equal(persisted.metadata.validation.authorityHash, hash(f.atlasBytes));
+});
+
+test("analyzer errors and unusable responses publish an unavailable advisory after deterministic preflight", async (t) => {
   const f = await fixture();
   const cases = [
     ["transport error", async () => { throw new Error("vision service unavailable"); }, "atlas_qc_analyzer_failed"],
@@ -235,13 +368,17 @@ test("analyzer errors, malformed JSON, identity mismatch and incomplete answers 
     await t.test(name, async () => {
       const validate = createAtlasProofValidator({ provider: { generateRaw }, atlas: f.atlas, input: f.input });
       const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
-      assert.equal(verdict.accepted, false);
-      assert.equal(verdict.code, code);
+      assert.equal(verdict.accepted, true);
+      assert.equal(verdict.advisory, true);
+      assert.equal(verdict.metadata.policyContract, ADVISORY_POLICY_CONTRACT);
+      assert.equal(verdict.metadata.semanticDisposition, "unavailable");
+      assert.equal(verdict.metadata.semanticCode, code);
+      assert.equal(verdict.metadata.confidence, null);
     });
   }
 });
 
-test("unknown Hero requests, corrupt pixels and oversized requests are rejected before analyzer transport", async (t) => {
+test("deterministic proof failures remain blocking while analyzer transport is advisory", async (t) => {
   const f = await fixture();
   let calls = 0;
   const provider = { generateRaw: async () => { calls += 1; throw new Error("must not be called"); } };
@@ -250,6 +387,7 @@ test("unknown Hero requests, corrupt pixels and oversized requests are rejected 
     const validate = createAtlasProofValidator({ provider, atlas: f.atlas, input: f.input });
     const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "hero-3d" });
     assert.equal(verdict.accepted, false);
+    assert.equal(verdict.structuralInvalid, true);
     assert.equal(verdict.code, "atlas_qc_view_invalid");
   });
 
@@ -257,17 +395,78 @@ test("unknown Hero requests, corrupt pixels and oversized requests are rejected 
     const validate = createAtlasProofValidator({ provider, atlas: f.atlas, input: f.input });
     const verdict = await validate({ bytes: Buffer.from("not an image"), contentType: "image/png", sourceViewType: "side" });
     assert.equal(verdict.accepted, false);
+    assert.equal(verdict.structuralInvalid, true);
     assert.equal(verdict.code, "atlas_qc_image_invalid");
   });
 
   await t.test("request budget", async () => {
     const validate = createAtlasProofValidator({ provider, atlas: f.atlas, input: f.input, maxRequestBytes: 1024 });
     const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
+    assert.equal(verdict.accepted, true);
+    assert.equal(verdict.advisory, true);
+    assert.equal(verdict.metadata.semanticDisposition, "unavailable");
+    assert.equal(verdict.metadata.semanticCode, "atlas_qc_request_too_large");
+    assert.equal(verdict.metadata.proofHash, hash(f.proofBytes));
+    assert.equal(verdict.metadata.authorityHash, hash(f.atlasBytes));
+  });
+
+  await t.test("stale authority hash", async () => {
+    const atlas = {
+      ...f.atlas,
+      viewAuthorities: {
+        ...f.atlas.viewAuthorities,
+        side: { ...f.atlas.viewAuthorities.side, contentHash: "f".repeat(64) },
+      },
+    };
+    const validate = createAtlasProofValidator({ provider, atlas, input: f.input });
+    const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
     assert.equal(verdict.accepted, false);
-    assert.equal(verdict.code, "atlas_qc_request_too_large");
+    assert.equal(verdict.structuralInvalid, true);
+    assert.equal(verdict.code, "atlas_qc_image_hash_mismatch");
+  });
+
+  await t.test("wrong surface authority", async () => {
+    const atlas = {
+      ...f.atlas,
+      viewAuthorities: {
+        ...f.atlas.viewAuthorities,
+        side: { ...f.atlas.viewAuthorities.side, surfaceKey: "passenger" },
+      },
+    };
+    const validate = createAtlasProofValidator({ provider, atlas, input: f.input });
+    const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
+    assert.equal(verdict.accepted, false);
+    assert.equal(verdict.structuralInvalid, true);
+    assert.equal(verdict.code, "atlas_qc_view_authority_invalid");
   });
 
   assert.equal(calls, 0);
+});
+
+test("missing or invalid semantic reviewer configuration is unavailable, never structural", async (t) => {
+  const f = await fixture();
+  const cases = [
+    ["missing reviewer seam", {}, {}, "atlas_qc_provider_invalid"],
+    ["invalid reviewer model", { generateRaw: async () => { throw new Error("must not be called"); } }, { model: "gemini-3-pro-image" }, "atlas_qc_model_invalid"],
+    ["invalid reviewer timeout", { generateRaw: async () => { throw new Error("must not be called"); } }, { timeoutMs: 100 }, "atlas_qc_timeout_invalid"],
+  ];
+  for (const [name, provider, options, code] of cases) {
+    await t.test(name, async () => {
+      const validate = createAtlasProofValidator({ provider, atlas: f.atlas, input: f.input, ...options });
+      const verdict = await validate({
+        bytes: f.proofBytes,
+        contentType: "image/png",
+        sourceViewType: "passenger-side",
+      });
+      assert.equal(verdict.accepted, true);
+      assert.equal(verdict.advisory, true);
+      assert.equal(verdict.metadata.policyContract, ADVISORY_POLICY_CONTRACT);
+      assert.equal(verdict.metadata.semanticDisposition, "unavailable");
+      assert.equal(verdict.metadata.semanticCode, code);
+      assert.equal(verdict.metadata.proofHash, hash(f.proofBytes));
+      assert.equal(verdict.metadata.zoneSurfaceKey, "passenger");
+    });
+  }
 });
 
 test("the strict parser rejects extra fields and non-applicable contract inflation", async () => {
@@ -289,6 +488,7 @@ test("the strict parser rejects extra fields and non-applicable contract inflati
   };
   const validate = createAtlasProofValidator({ provider, atlas: f.atlas, input: f.input });
   const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "close-up" });
-  assert.equal(verdict.accepted, false);
-  assert.equal(verdict.code, "atlas_qc_orientation_failed");
+  assert.equal(verdict.accepted, true);
+  assert.equal(verdict.metadata.semanticDisposition, "review_required");
+  assert.equal(verdict.metadata.semanticCode, "atlas_qc_orientation_failed");
 });

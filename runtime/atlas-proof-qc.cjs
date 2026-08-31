@@ -1,17 +1,17 @@
 "use strict";
 
 /**
- * Fail-closed visual acceptance gate for the seven A.T.L.A.S. customer proofs.
+ * Deterministic identity gate plus advisory visual review for the seven
+ * A.T.L.A.S. customer proofs.
  *
- * Generation prompts are necessary, but they are not evidence that an image
- * obeyed the requested camera. This module sends the actual candidate proof
- * and a bounded transport derivative of the immutable flattened Atlas to the
- * existing server-only provider.generateRaw seam, asks for strict structured
- * inspection, and accepts only an unambiguous all-pass verdict.
+ * The exact proof bytes, content type, decodability, flattened-Atlas hash and
+ * per-surface authority are still fail-closed. Once those facts are proven,
+ * Gemini's camera/aesthetic judgment is retained as an advisory receipt: a
+ * presentation view may look imperfect without becoming artwork authority or
+ * preventing the immutable Call-1 panels from progressing through the graph.
  *
- * This gate does not create, edit or persist artwork. It is deliberately
- * independent of the proof generator so a failed view is rejected by the
- * generation engine instead of becoming an accepted row.
+ * This module does not create, edit or persist artwork. The generation engine
+ * persists the bounded receipt beside the independently hash-bound proof.
  */
 
 const { createHash } = require("node:crypto");
@@ -21,6 +21,7 @@ const { PHOTOREALISM_REQUIREMENT } = require("./photorealism-prompt.cjs");
 const { STUDIO_ENVIRONMENT, STUDIO_REINFORCEMENT } = require("./studio-os.cjs");
 
 const QC_CONTRACT = "designpro.atlas-proof-semantic-qc.v1";
+const ADVISORY_POLICY_CONTRACT = "designpro.atlas-proof-semantic-advisory.v1";
 const DEFAULT_QC_MODEL = "gemini-2.5-flash";
 const DEFAULT_TIMEOUT_MS = 45_000;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.9;
@@ -302,7 +303,7 @@ async function boundedJpegTransport(bytes, maxBytes, label) {
   throw new AtlasProofQcError("atlas_qc_transport_too_large", `${label} could not fit the bounded visual-inspection transport`);
 }
 
-async function atlasTransport(atlas, sourceViewType) {
+async function atlasAuthorityPreflight(atlas, sourceViewType) {
   const authority = atlas?.viewAuthorities?.[sourceViewType];
   const expectedSurface = {
     side: "driver", "passenger-side": "passenger", hood_detail: "hood",
@@ -326,16 +327,87 @@ async function atlasTransport(atlas, sourceViewType) {
   const contentType = requireContentType(authority.contentType, `${sourceViewType} Atlas authority`);
   const hash = requireHash(bytes, authority.contentHash, `${sourceViewType} Atlas authority`);
   const dimensions = await assertDecodable(bytes, `${sourceViewType} Atlas authority`);
+  return {
+    bytes,
+    contentType,
+    hash,
+    surfaceKey: expectedSurface,
+    originalDimensions: dimensions,
+  };
+}
+
+async function atlasTransport(atlas, sourceViewType, verifiedAuthority = null) {
+  const authority = verifiedAuthority || await atlasAuthorityPreflight(atlas, sourceViewType);
+  const {
+    bytes, contentType, hash, surfaceKey, originalDimensions: dimensions,
+  } = authority;
   if (bytes.length <= MAX_ATLAS_TRANSPORT_BYTES) {
     return {
-      bytes, contentType, hash, surfaceKey: expectedSurface,
+      bytes, contentType, hash, surfaceKey,
       originalDimensions: dimensions, transportDimensions: dimensions, derived: false,
     };
   }
   return {
     ...(await boundedJpegTransport(bytes, MAX_ATLAS_TRANSPORT_BYTES, `${sourceViewType} Atlas authority`)),
     hash,
-    surfaceKey: expectedSurface,
+    surfaceKey,
+  };
+}
+
+async function deterministicProofPreflight({ atlas, bytes, contentType, sourceViewType }) {
+  if (!atlas) {
+    throw new AtlasProofQcError(
+      "atlas_qc_atlas_missing",
+      "A.T.L.A.S. proof validation requires the immutable flattened Atlas",
+    );
+  }
+  const view = VIEW_CONTRACTS[sourceViewType];
+  if (!view) {
+    throw new AtlasProofQcError(
+      "atlas_qc_view_invalid",
+      `${sourceViewType || "missing"} is not one of the seven A.T.L.A.S. proof views`,
+    );
+  }
+  const proofBytes = requireBuffer(bytes, "candidate proof");
+  const proofContentType = requireContentType(contentType, "candidate proof");
+  const proofHash = sha256(proofBytes);
+  const proofDimensions = await assertDecodable(proofBytes, "candidate proof");
+  const projectionBytes = requireBuffer(atlas?.projection?.bytes, "canonical Atlas projection");
+  requireContentType(atlas?.projection?.contentType, "canonical Atlas projection");
+  const atlasHash = requireHash(
+    projectionBytes,
+    atlas?.projection?.contentHash,
+    "canonical Atlas projection",
+  );
+  await assertDecodable(projectionBytes, "canonical Atlas projection");
+  const authority = await atlasAuthorityPreflight(atlas, sourceViewType);
+  return {
+    view,
+    proofBytes,
+    proofContentType,
+    proofHash,
+    proofDimensions,
+    atlasHash,
+    authority,
+  };
+}
+
+function deterministicReceiptMetadata(preflight) {
+  return {
+    contract: QC_CONTRACT,
+    expectedView: preflight.view.label,
+    proofHash: preflight.proofHash,
+    atlasHash: preflight.atlasHash,
+    authorityHash: preflight.authority.hash,
+    zoneHash: preflight.authority.hash,
+    zoneSurfaceKey: preflight.authority.surfaceKey,
+    requestByteSize: null,
+    candidateTransportDerived: null,
+    atlasTransportDerived: null,
+    candidateOriginalDimensions: preflight.proofDimensions,
+    candidateTransportDimensions: null,
+    atlasOriginalDimensions: preflight.authority.originalDimensions,
+    atlasTransportDimensions: null,
   };
 }
 
@@ -366,13 +438,12 @@ function makeBody({
   };
 }
 
-async function buildAtlasProofQcRequest({
+async function buildAtlasProofQcRequestFromPreflight({
   atlas,
-  bytes,
-  contentType,
   sourceViewType,
   input,
   maxRequestBytes = MAX_REQUEST_BYTES,
+  preflight,
 }) {
   const configuredBudget = Number(maxRequestBytes);
   if (!Number.isFinite(configuredBudget) || configuredBudget < 1024) {
@@ -381,19 +452,10 @@ async function buildAtlasProofQcRequest({
   // This module owns the hard provider ceiling. A caller may lower it for a
   // deployment/test, but may never raise it past the safe server budget.
   const requestBudget = Math.min(configuredBudget, MAX_REQUEST_BYTES);
-  const view = VIEW_CONTRACTS[sourceViewType];
-  if (!view) throw new AtlasProofQcError("atlas_qc_view_invalid", `${sourceViewType || "missing"} is not one of the seven A.T.L.A.S. proof views`);
-  const proofBytes = requireBuffer(bytes, "candidate proof");
-  const proofContentType = requireContentType(contentType, "candidate proof");
-  const proofHash = sha256(proofBytes);
-  const proofDimensions = await assertDecodable(proofBytes, "candidate proof");
-  const projectionBytes = requireBuffer(atlas?.projection?.bytes, "canonical Atlas projection");
-  const atlasHash = requireHash(
-    projectionBytes,
-    atlas?.projection?.contentHash,
-    "canonical Atlas projection",
-  );
-  const canonical = await atlasTransport(atlas, sourceViewType);
+  const {
+    view, proofBytes, proofContentType, proofHash, proofDimensions, atlasHash,
+  } = preflight;
+  const canonical = await atlasTransport(atlas, sourceViewType, preflight.authority);
   const prompt = buildAtlasProofQcPrompt({
     sourceViewType,
     input,
@@ -465,6 +527,29 @@ async function buildAtlasProofQcRequest({
       atlasTransportDimensions: canonical.transportDimensions,
     },
   };
+}
+
+async function buildAtlasProofQcRequest({
+  atlas,
+  bytes,
+  contentType,
+  sourceViewType,
+  input,
+  maxRequestBytes = MAX_REQUEST_BYTES,
+}) {
+  const preflight = await deterministicProofPreflight({
+    atlas,
+    bytes,
+    contentType,
+    sourceViewType,
+  });
+  return buildAtlasProofQcRequestFromPreflight({
+    atlas,
+    sourceViewType,
+    input,
+    maxRequestBytes,
+    preflight,
+  });
 }
 
 function responseText(payload) {
@@ -574,33 +659,107 @@ function createAtlasProofValidator({
   confidenceThreshold = DEFAULT_CONFIDENCE_THRESHOLD,
   maxRequestBytes = MAX_REQUEST_BYTES,
 } = {}) {
-  if (!provider || typeof provider.generateRaw !== "function") {
-    throw new AtlasProofQcError("atlas_qc_provider_invalid", "A.T.L.A.S. semantic QC requires the server provider.generateRaw seam");
-  }
-  if (!atlas) throw new AtlasProofQcError("atlas_qc_atlas_missing", "A.T.L.A.S. semantic QC requires the immutable flattened Atlas");
-  if (!/^gemini-[a-z0-9.-]+$/.test(String(model)) || /image/.test(String(model))) {
-    throw new AtlasProofQcError("atlas_qc_model_invalid", `${model} is not an explicit Gemini multimodal inspection model`);
-  }
   const threshold = Number(confidenceThreshold);
-  if (!Number.isFinite(threshold) || threshold < 0.5 || threshold > 1) {
-    throw new AtlasProofQcError("atlas_qc_threshold_invalid", "A.T.L.A.S. proof QC confidence threshold must be between 0.5 and 1");
-  }
   const boundedTimeoutMs = Number(timeoutMs);
-  if (!Number.isFinite(boundedTimeoutMs) || boundedTimeoutMs < 1_000 || boundedTimeoutMs > 60_000) {
-    throw new AtlasProofQcError("atlas_qc_timeout_invalid", "A.T.L.A.S. proof QC timeout must be between 1000 and 60000 milliseconds");
+
+  // Reviewer configuration belongs to the advisory branch. Keeping it as a
+  // constructor throw would let a missing Gemini seam, bad model name or bad
+  // timeout prevent a valid, hash-bound presentation proof from ever reaching
+  // storage. The deterministic preflight below still runs first; only after it
+  // passes may this configuration become an explicit `unavailable` receipt.
+  let analyzerConfigurationError = null;
+  if (!provider || typeof provider.generateRaw !== "function") {
+    analyzerConfigurationError = new AtlasProofQcError(
+      "atlas_qc_provider_invalid",
+      "A.T.L.A.S. semantic QC requires the server provider.generateRaw seam",
+    );
+  } else if (!/^gemini-[a-z0-9.-]+$/.test(String(model)) || /image/.test(String(model))) {
+    analyzerConfigurationError = new AtlasProofQcError(
+      "atlas_qc_model_invalid",
+      `${model} is not an explicit Gemini multimodal inspection model`,
+    );
+  } else if (!Number.isFinite(threshold) || threshold < 0.5 || threshold > 1) {
+    analyzerConfigurationError = new AtlasProofQcError(
+      "atlas_qc_threshold_invalid",
+      "A.T.L.A.S. proof QC confidence threshold must be between 0.5 and 1",
+    );
+  } else if (!Number.isFinite(boundedTimeoutMs) || boundedTimeoutMs < 1_000 || boundedTimeoutMs > 60_000) {
+    analyzerConfigurationError = new AtlasProofQcError(
+      "atlas_qc_timeout_invalid",
+      "A.T.L.A.S. proof QC timeout must be between 1000 and 60000 milliseconds",
+    );
   }
 
   return async function validateAtlasProof({ bytes, contentType, sourceViewType, signal } = {}) {
+    // STRUCTURE AND LINEAGE REMAIN BLOCKING. This preflight proves the actual
+    // candidate bytes and the exact Atlas/view authority before any semantic
+    // provider call. Do not move it into the advisory catch below: doing so
+    // would launder a corrupt image, stale authority or hash mismatch into an
+    // accepted "review unavailable" receipt.
+    let preflight;
     try {
-      const request = await buildAtlasProofQcRequest({
+      preflight = await deterministicProofPreflight({
         atlas,
         bytes,
         contentType,
         sourceViewType,
+      });
+    } catch (error) {
+      const known = error instanceof AtlasProofQcError;
+      return {
+        accepted: false,
+        structuralInvalid: true,
+        code: known ? error.code : "atlas_qc_preflight_failed",
+        reason: cleanText(known ? error.message : `A.T.L.A.S. proof preflight failed: ${error?.message || error}`, 500),
+      };
+    }
+
+    const unavailable = (error, requestMetadata = null, result = null) => {
+      const known = error instanceof AtlasProofQcError;
+      return {
+        accepted: true,
+        code: null,
+        reason: null,
+        review: null,
+        advisory: true,
+        metadata: {
+          ...(requestMetadata || deterministicReceiptMetadata(preflight)),
+          policyContract: ADVISORY_POLICY_CONTRACT,
+          semanticDisposition: "unavailable",
+          semanticCode: known ? error.code : "atlas_qc_analyzer_failed",
+          semanticReason: cleanText(
+            known ? error.message : `A.T.L.A.S. proof inspector failed: ${error?.message || error}`,
+            500,
+          ),
+          semanticReview: null,
+          model: result?.model || (/^gemini-[a-z0-9.-]+$/.test(String(model)) ? model : null),
+          keyFingerprint: result?.keyFingerprint || null,
+          confidence: null,
+        },
+      };
+    };
+
+    if (analyzerConfigurationError) return unavailable(analyzerConfigurationError);
+
+    // Everything below prepares or executes the OPTIONAL semantic inspection.
+    // A valid proof must not be rejected because its reviewer transport cannot
+    // fit a model request, be transcoded, or reach Gemini.
+    let request;
+    try {
+      request = await buildAtlasProofQcRequestFromPreflight({
+        atlas,
+        sourceViewType,
         input,
         maxRequestBytes,
+        preflight,
       });
-      const result = await provider.generateRaw({
+    } catch (error) {
+      return unavailable(error);
+    }
+
+    let result = null;
+    try {
+      result = await provider.generateRaw({
         model,
         body: request.body,
         signal,
@@ -613,44 +772,38 @@ function createAtlasProofValidator({
         { ...VIEW_CONTRACTS[sourceViewType], expectedView: request.metadata.expectedView },
         threshold,
       );
-      if (rejection) return rejection;
       return {
         accepted: true,
         code: null,
         reason: null,
         review,
+        advisory: Boolean(rejection),
         metadata: {
           ...request.metadata,
+          policyContract: ADVISORY_POLICY_CONTRACT,
+          semanticDisposition: rejection ? "review_required" : "pass",
+          semanticCode: rejection?.code || null,
+          semanticReason: rejection?.reason || null,
+          semanticReview: review,
           model: result?.model || model,
           keyFingerprint: result?.keyFingerprint || null,
           confidence: review.confidence,
         },
       };
     } catch (error) {
-      const known = error instanceof AtlasProofQcError;
-      // AN ANALYZER FAILURE IS NOT A VERDICT. Everything that lands here is
-      // the inspector's own plumbing -- a provider 503 on every key, a
-      // truncated or non-JSON response, an image that could not be shipped to
-      // it -- while every real verdict returns through rejectionFor above,
-      // never a throw. Live proof, generation 9dd6d43c close-up attempt 2:
-      // "semantic QC failed on every key: gemini-2.5-flash:503 UNAVAILABLE"
-      // was counted as a rejection, spent the second of two regeneration
-      // budget slots, and the run died as semantic_review_required -- a state
-      // that asks a human to review a verdict no judge ever issued. The
-      // engine reads this flag and retries within the bounded attempt budget
-      // instead of convicting; the proof is still never accepted unjudged.
-      return {
-        accepted: false,
-        analyzerUnavailable: true,
-        code: known ? error.code : "atlas_qc_analyzer_failed",
-        reason: cleanText(known ? error.message : `A.T.L.A.S. proof inspector failed: ${error?.message || error}`, 500),
-      };
+      // AN ANALYZER FAILURE IS NOT AN ARTIFACT FAILURE. Preflight above has
+      // already proven the proof bytes and every immutable Atlas identity.
+      // Record that the optional reviewer was unavailable, then publish the
+      // presentation proof instead of paying for another byte-distinct image
+      // merely because the reviewer returned 503 or malformed JSON.
+      return unavailable(error, request.metadata, result);
     }
   };
 }
 
 module.exports = {
   AtlasProofQcError,
+  ADVISORY_POLICY_CONTRACT,
   DEFAULT_CONFIDENCE_THRESHOLD,
   DEFAULT_QC_MODEL,
   MAX_REQUEST_BYTES,
@@ -667,8 +820,11 @@ module.exports = {
     OBSERVED_VIEW_VALUES,
     RESPONSE_FIELDS,
     STATUS,
+    atlasAuthorityPreflight,
     atlasTransport,
     boundedJpegTransport,
+    deterministicProofPreflight,
+    deterministicReceiptMetadata,
     rejectionFor,
     responseSchema,
     sha256,

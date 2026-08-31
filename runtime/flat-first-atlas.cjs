@@ -37,6 +37,7 @@ const {
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
+const { loadBundledAtlasCohesionExample } = require("./flat-atlas-topology-examples.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -59,7 +60,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260831.v14-vehicle-atlas";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260831.v15-pure-rectangles";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -137,7 +138,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v13-vehicle-atlas";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v14-pure-rectangles";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1537,6 +1538,15 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     // body killed the edge worker twice (2026-08-27). Customer references stay
     // inline — they are already size-capped at 1600px by the verified loader.
     guideStoragePath: extras.guideStoragePath,
+    // Release-owned teaching pair. It travels as content-addressed server
+    // storage paths, never as browser-controlled reference input. The edge
+    // presents installed proof first, solid rectangular atlas second, then the
+    // current target guide last so neither the historical vehicle nor its
+    // geometry can displace the canonical request.
+    cohesionExampleProofStoragePath: extras.cohesionExampleProofStoragePath,
+    cohesionExampleFlatStoragePath: extras.cohesionExampleFlatStoragePath,
+    cohesionExampleVehicle: extras.cohesionExampleVehicle,
+    cohesionExampleIdentity: extras.cohesionExampleIdentity,
     referenceImagesBase64: extras.referenceImagesBase64,
     correctiveNote: extras.correctiveNote,
   };
@@ -1573,6 +1583,19 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   if (Number(payload.imageRequestCount) !== 1) {
     throw new FlatAtlasError("flat_atlas_edge_call_count_invalid", `The edge function reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
   }
+  const expectedTeaching = body?.cohesionExampleIdentity || null;
+  if (expectedTeaching) {
+    const returned = payload?.cohesionExampleIdentity || null;
+    if (!returned
+      || returned.contract !== expectedTeaching.contract
+      || returned.flattenedTopViewContentHash !== expectedTeaching.flattenedTopViewContentHash
+      || returned.finished3dProofContentHash !== expectedTeaching.finished3dProofContentHash) {
+      throw new FlatAtlasError(
+        "flat_atlas_edge_teaching_pair_identity_mismatch",
+        "The edge function did not prove the release-pinned A.T.L.A.S. teaching pair identity",
+      );
+    }
+  }
   // The master comes back by STORAGE PATH and is read with the server client:
   // wrap-files is private, so a URL fetch 400s (live 2026-08-27).
   const masterPath = String(payload.masterStoragePath || "").trim();
@@ -1598,6 +1621,9 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       promptVersion: String(payload.promptVersion),
       model: String(payload.model),
       imageRequestCount: 1,
+      modelRequestByteSize: Number(payload.modelRequestByteSize) || null,
+      modelInputImageCount: Number(payload.modelInputImageCount) || null,
+      cohesionExampleIdentity: payload.cohesionExampleIdentity || null,
       masterSha256: digest,
       designText: String(payload.designText || ""),
     },
@@ -2091,6 +2117,12 @@ async function generateOrReuseFlatAtlas(options) {
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
   const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
+  // OWNER-SELECTED TEACHING PAIR. The clean flat half contains six solid
+  // rectangles with no wheel wells, bed opening or vehicle anatomy. Its exact
+  // installed Driver proof is the evidence that those rectangles are one
+  // vehicle-wrap design, not six unrelated graphics. Both bytes are pinned to
+  // this release and their hashes enter the reuse fence below.
+  const cohesionExample = loadBundledAtlasCohesionExample();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
   if (geometryResolution) manifest.geometryResolution = geometryResolution;
@@ -2134,11 +2166,12 @@ async function generateOrReuseFlatAtlas(options) {
     `${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
     "utf8",
   ));
-  // Current A.T.L.A.S. authoring is governed by its deterministic labeled
-  // rectangle guide. Historical vehicle/template examples are deliberately
-  // excluded: live generation f5bef168 proved that they teach the image model
-  // to draw doors, windows, handles and wheel arches inside the print regions.
-  const currentExampleSetHash = exampleSetHash();
+  // The current solid-rectangle pair is deliberately distinct from the
+  // historical Houdini/template examples that taught doors, windows, handles
+  // and wheel arches. Its identity is part of the immutable reuse contract.
+  const currentExampleSetHash = sha256(canonicalBytes({
+    atlasDesignTeachingPair: cohesionExample.identity,
+  }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
     const expectedManifestHash = sha256(canonicalBytes(manifest));
@@ -2189,11 +2222,9 @@ async function generateOrReuseFlatAtlas(options) {
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
-  // The edge function receives only the deterministic current A.T.L.A.S.
-  // guide and verified customer assets. A legacy flattened-vehicle example or
-  // finished 3D proof is a stronger visual instruction than any text firewall;
-  // attaching either one caused Call 1 to reproduce vehicle anatomy inside the
-  // six rectangular print containers.
+  // Customer-owned imagery remains a separate authority class. The release-
+  // owned pair below can teach only the flat↔installed relationship; it may
+  // never become style or artwork authority for this customer.
   const customerImageParts = [
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
@@ -2210,8 +2241,24 @@ async function generateOrReuseFlatAtlas(options) {
     }
     return path;
   };
+  const [cohesionExampleProofStoragePath, cohesionExampleFlatStoragePath, targetGuideStoragePath] = await Promise.all([
+    stageEdgeInput(
+      cohesionExample.finished3dProof.bytes,
+      cohesionExample.finished3dProof.contentType,
+    ),
+    stageEdgeInput(
+      cohesionExample.flattenedTopView.bytes,
+      cohesionExample.flattenedTopView.contentType,
+    ),
+    stageEdgeInput(authoringGuideBytes, "image/png"),
+  ]);
   const edgeExtras = {
-    guideStoragePath: await stageEdgeInput(authoringGuideBytes, "image/png"),
+    cohesionExampleProofStoragePath,
+    cohesionExampleFlatStoragePath,
+    cohesionExampleVehicle: cohesionExample.identity.historicalVehicle,
+    cohesionExampleIdentity: cohesionExample.identity,
+    // The TARGET guide is intentionally staged last in the edge image order.
+    guideStoragePath: targetGuideStoragePath,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
@@ -2641,15 +2688,18 @@ async function generateOrReuseFlatAtlas(options) {
       topologyExamplesApplied: 0,
       topologyExampleIdentity: null,
       topologyExampleIdentities: [],
+      atlasDesignTeachingPairApplied: true,
+      atlasDesignTeachingPairIdentity: cohesionExample.identity,
+      atlasDesignTeachingPairSetHash: currentExampleSetHash,
       designPanelArtboardQualityExamplesApplied: 0,
       designPanelArtboardQualityExampleIdentities: [],
       designPanelArtboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
       masterProviderContract: MASTER_PROVIDER_CONTRACT,
       masterPromptHash: promptHash,
       masterExampleSetHash: currentExampleSetHash,
-      // The DESIGN passed: coherent, faithful, correctly lettered, and its seven
-      // proofs are sound. A cut-out does not change that -- it is a defect in
-      // the printed panel, recorded below and caught at PanelPro's human QC.
+      // Deterministic topology/container/byte/hash/lineage acceptance passed.
+      // Semantic design judgement is advisory and is not run on this blocking
+      // path; any panel cut-out remains durable evidence for PanelPro human QC.
       masterQcPassed: true,
       // Empty on a clean master. Non-empty means the sheet arrived with a hole
       // in these surfaces; their panels were closed deterministically below and

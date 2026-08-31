@@ -6,9 +6,10 @@ creation and canary instructions that previously lived here.
 
 ## 1. What A.T.L.A.S. means
 
-A.T.L.A.S. is the exterior of one real three-dimensional target vehicle
-unwrapped into one flattened two-dimensional design space, like a globe
-flattened into a world atlas.
+A.T.L.A.S. is one cohesive vehicle-wrap design arranged flat as six named
+printable production surfaces for one exact target vehicle. The target vehicle
+is design and installation context; the Call-1 output is not a photograph,
+rendering, outline, silhouette or anatomy drawing of that vehicle.
 
 Call 1 performs one cohesive creative act across these six named surfaces:
 
@@ -37,6 +38,11 @@ The deployed creative endpoint is
 The droplet runtime maps verified inputs to that endpoint; it does not assemble
 a second creative prompt and does not make another Call-1 Gemini request.
 
+Current prompt fences:
+
+- runtime master: `designpro-flat-first-atlas-20260831.v15-pure-rectangles`;
+- edge assembly: `atlas-artboard-designiq.20260831.v14-pure-rectangles`.
+
 Call 1 receives:
 
 - authoritative Commercial or ReStyle mode;
@@ -49,10 +55,16 @@ Call 1 receives:
 - one deterministic, unlabeled and unstroked six-region guide;
 - the proven DesignPanelAI vehicle-wrap designer persona and quality floor.
 
-The prompt explicitly teaches that the result is one target vehicle exterior
-unfolded into one cohesive wrap. Driver and Passenger are coordinated
-adaptations of the same design system, but each is its own Call-1 region.
-Neither may be independently redesigned or substituted with the other's bytes.
+The prompt explicitly teaches that the result is one cohesive vehicle-wrap
+design across six named rectangular surfaces. Driver and Passenger are
+coordinated adaptations of the same design system, but each is its own Call-1
+region. Neither may be independently redesigned or substituted with the
+other's bytes.
+
+Every source region is pure, opaque, uninterrupted and full bleed. The prompt
+explicitly refuses vehicle renders or photographs, vehicle outlines or
+silhouettes, physical anatomy, wheels, windows, doors, component seams, cut
+lines, voids, shaped openings and mockup lighting in those source pixels.
 
 GENIE/code remains authority for numerical geometry, dimensions, masks, crop
 coordinates and lineage. Those values do not become printable prompt furniture.
@@ -67,21 +79,32 @@ For a pickup:
 - exterior cab and bed sides receive the coordinated side artwork;
 - the tailgate exterior receives Rear artwork;
 - the bed floor and inner bed walls remain unwrapped;
-- deterministic placement/projection masks enforce those exclusions;
+- downstream vehicle application/proof mapping enforces those exclusions;
 - every canonical source panel remains an opaque, uninterrupted, full-bleed
-  rectangle with artwork beneath later masks.
+  rectangle.
+
+No dedicated deterministic pickup-bed contour mask is claimed unless a durable
+mask contract and artifact are identified.
 
 Wheel wells, glass, lights, trim and open-bed interiors never punch holes into
 canonical Call-1 source artwork.
 
 ### Reference status
 
-No structural 3D ↔ flattened example pair is active in production today. A
-flat-only Flamingo image is not a matching pair and must not be silently
-attached. If later evidence proves a teaching example is necessary, use at most
-one owner-approved, hash-pinned, genuinely matching wrapped-vehicle ↔ flattened
-A.T.L.A.S. pair. It teaches only the mapping relationship and contributes no
-customer artwork, wording, logo, palette, style or production authority.
+Canary GenerationID `51ea0e06-2ceb-460a-8756-54888a7832a8` proved that prose
+plus an anonymous neutral mask could still produce a vehicle-anatomy montage.
+One owner-selected Flamingo relationship pair is therefore release-pinned from
+historical GenerationID `5b2eb96c-77b5-4705-8cad-fef00af677fe`:
+
+- installed Driver proof SHA-256: `4449c3274f7d5cd9c383c49a81b0407f99ae0251b8052cad1ee3927c41ac1fdc`;
+- matching solid-rectangle flat derivative SHA-256: `20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa`.
+
+The edge call presents installed proof first, matching flat atlas second and the
+current target guide last. Role text forbids copying the pair's artwork,
+wording, logo, brand, palette, typography, industry, vehicle geometry, camera or
+lighting. Its identity enters the immutable example-set hash. It is neither
+customer style authority nor production artwork authority; the current Call-1
+output remains the only creative source.
 
 The distressed Martini Porsche used a customer-requested one-off camera angle.
 Neither that angle nor an aspect-ratio change is the design-quality diagnosis.
@@ -192,12 +215,34 @@ The board reads promoted panels from
 
 ## 8. Current production evidence
 
-Baseline production release before this repair:
+Baseline production release before the current teaching-pair/semantic-proof
+repair:
 
-- PR #273
-- SHA `c582673d3316b4baa62f4a511af9796ee4b95d8a`
+- PR #274
+- SHA `c7be727b1782be64961ea58bdfad3bce64871607`
 - web, gateway and two runtime replicas deployed at that exact SHA
-- no canary
+
+Owner-authorized diagnostic production canary #35:
+
+| Identity/evidence | Value |
+|---|---|
+| GitHub Actions run | `33379526286` |
+| Production orderNumber | `CANARY-MTH23OJ1` |
+| GenerationID | `51ea0e06-2ceb-460a-8756-54888a7832a8` |
+| DesignID | `DID-51EA0E06` |
+| RequestID | `9fce604a-bc12-4696-82c0-0256a63e9937` |
+| flat-atlas revision row ID | `596033d0-b4e7-4127-8b36-35aaa069eeee` |
+| master hash | `25f3c64c68be85950315e87fa021f833b5b8c474b6991d67da5f69a78186da1e` |
+| terminal canary stage | early latency acceptance gate, before Call 8 |
+| latency | A.T.L.A.S. `82.86s` (max `60s`); Driver `163.47s` (max `90s`) |
+| proof state at failure | four accepted; Front, Rear and Roof refused after semantic review |
+
+The run persisted one master and six Call-1 panels, and deterministic master QC
+passed. Inspection of the exported master proved the design-quality defect: it
+was a montage of vehicle render fragments rather than six pure printable
+rectangles. The early latency throw also masked the already-recorded proof
+shortfall. The current canary records a latency miss, continues through the
+graph, and applies the hard latency gate only after downstream artifact checks.
 
 Real Oasis Pools DCA lineage:
 
@@ -228,7 +273,10 @@ continuity. They do not establish a Porsche-angle or aspect-ratio defect.
 
 ## 9. DCA Phase 1 acceptance
 
-No canary is permitted. Run one real customer-style production DCA:
+Do not run speculative canaries, and never treat a canary as this acceptance
+boundary. The owner explicitly authorized the current diagnostic production
+canary while away; final acceptance still requires one real customer-style
+production DCA:
 
 1. Vehicle Enter / Design Prep retains one GenerationID;
 2. Generate creates one accepted Call-1 master and immutable revision;
