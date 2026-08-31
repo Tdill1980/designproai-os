@@ -325,6 +325,40 @@ Candidate 2 was NOT reproduced: the gateway validator is not exported and could
 not be exercised in isolation, and the DB layer serves the row correctly. Do not
 record either candidate as the cause until one is demonstrated.
 
+#### Owner rule — only processing layers may await purchase (2026-08-31)
+
+Owner, verbatim: **"The only thing that should be awaiting purchase is any
+processing layers."**
+
+The stage graph already satisfies this and must keep satisfying it. Free:
+`revision.freeze`, `panels.build` (Call 9), `logos.extract` (Call 10),
+`panels.delogo` (Call 11), `proof.build` (Call 8), `pack.verify`,
+`pack.activate`. Behind `await_purchase`, and all of it processing or
+manufacturing: `manifest.resolve` (production GENIE geometry),
+`source.verify`, `await_panelpro_preflight_qc`, `enhance.upscale` (Topaz),
+`output.build`, `output.verify`, `await_final_human_qc`, `stamp.build`,
+`zip.build`, `wrapbox.deliver`.
+
+No design artifact, panel, proof, hash, dimension, metadata record or version
+history entry may be gated on purchase. Nothing above may be moved behind the
+gate, and nothing below it may be moved in front of it, without an owner
+decision.
+
+#### Third surface with the same defect — PanelPro Studio
+
+`AdminGeminiCompareStudio.tsx:1304` renders `Job status` as
+`${job.state} · ${job.current_stage}`. Both come from `studioJobFrom`, which
+takes them from `dpApi.getStatus`, which the gateway answered from the
+production run alone. So PanelPro Studio reports `running · await_purchase` for
+a job whose seven design stages completed. Same root cause as the Production
+Jobs rail; the projection defect is in the shared gateway read, not in either
+page.
+
+Two adjacent strings on that screen are CORRECT and must not be "fixed":
+`Design Order # — Not assigned until Production Pack` is honest under the
+design-first unbound-revision contract, and "a row with no file says so rather
+than showing a substitute" is RULE 0.27's honest-gap rule working.
+
 Note also that Production Jobs is not PanelPro Studio. Per RULE 0.22 the complete
 asset set, metadata and A.T.L.A.S. version history live in PanelPro Studio
 (`/designpro/jobs/:generationId/panelpro`), and no part of that lineage may be
