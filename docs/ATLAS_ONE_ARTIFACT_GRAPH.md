@@ -293,6 +293,45 @@ frozen list.
 Until it is repaired: on a run that has reached handoff, judge progress from the
 artifacts and receipts, never from the state badge or the stage rail.
 
+#### Owner screenshot, `DID-083D2A70`, Production Jobs
+
+The owner's screenshot of `/designpro/jobs` for this generation shows three
+statements, and the server contradicts all three:
+
+| On screen | Server holds |
+|---|---|
+| `0 of 11 stages verified` | entice run `f041f306…`: seven of seven design stages `completed`, including Call 8 and Call 9 |
+| `REVISE: Waiting for Call 1 to accept the A.T.L.A.S. master.` | `designpro_flat_atlas_generation_paths` returns 1 revision with `qc.masterQcPassed = true` and `callOnePanels` length `6` |
+| `await_purchase · WAITING · PURCHASE REQUIRED`, ten stages pending | correct for the production run in isolation, wrong as a description of the job |
+
+`0 of 11` is the union defect above: `ProductionWorkflow.tsx:774` counts
+`job.stages`, which the gateway populated from the production run alone.
+
+The `Waiting for Call 1` banner is a SEPARATE and un-isolated defect.
+`JobWorkflowHeader` reads `useDesignProJob`, which derives `hasAcceptedMaster`
+from `currentRevision.master.contentHash` plus `qc.masterQcPassed !== false`,
+and `callOnePanelCount` from `callOnePanels`. Both are present and correct in
+the RPC, and the gateway's strict master-path check does match the stored path,
+so the banner should read reachable. Two candidates remain and neither is
+proven:
+
+1. the screenshot predates the corrective deploy at 13:34Z (the canary ran at
+   11:54Z), so it shows the pre-`54af7f14` build;
+2. `GET /api/jobs/:id/atlas` fails for this row and the frontend's `.catch(() =>
+   [])` turns it into an empty revision list, which makes `hasAcceptedMaster`
+   false.
+
+Candidate 2 was NOT reproduced: the gateway validator is not exported and could
+not be exercised in isolation, and the DB layer serves the row correctly. Do not
+record either candidate as the cause until one is demonstrated.
+
+Note also that Production Jobs is not PanelPro Studio. Per RULE 0.22 the complete
+asset set, metadata and A.T.L.A.S. version history live in PanelPro Studio
+(`/designpro/jobs/:generationId/panelpro`), and no part of that lineage may be
+gated behind purchase, a ZIP, or a production run's state. Production Jobs
+showing a production rail is not itself the violation; stating that Call 1 has
+not accepted an accepted master is.
+
 ## 8. Current production evidence
 
 Current verified production release (2026-08-31, corrective release):
