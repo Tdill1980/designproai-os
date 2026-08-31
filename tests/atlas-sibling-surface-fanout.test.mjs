@@ -201,8 +201,8 @@ test("8: Passenger review stays visible while own-panel lineage forbids a Driver
   // The Call-1 contract requires forward-reading text on each installed side
   // and names Driver/Passenger as coordinated adaptations, not duplicate pixels.
   const edgeSource = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edgeSource, /customer-facing wording reads normally on each installed side/);
-  assert.match(edgeSource, /coordinated adaptations of the same design system, not duplicate images/);
+  assert.match(edgeSource, /Customer-facing wording reads normally on every panel/);
+  assert.match(edgeSource, /the two sides of the SAME vehicle carrying the SAME design/);
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   assert.doesNotMatch(atlasSource, /mirrorPassengerFromDriver/);
 });

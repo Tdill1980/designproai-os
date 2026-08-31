@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v15-flat-example-only";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v16-one-connected-wrap";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 const ATLAS_COHESION_EXAMPLE_MAX_BYTES = 2 * 1024 * 1024;
@@ -431,26 +431,37 @@ function atlasFlatMasterContract(
       throw new Error(`ATLAS panel identity mismatch: ${label}`);
     }
   }
+  // THE PANEL LIST IS PLACEMENT, NOT A CONTAINER ASSIGNMENT TABLE.
+  //
+  // It used to read "left tall rectangle maps to Passenger Side (internal ID
+  // PS)" six times over -- 6 "maps to", 7 "internal ID" -- which hands the
+  // model six addressed containers and six separate creative problems. The
+  // proven RestylePro artboard prompt (design-panel-ai-generate mode:'artboard',
+  // restylepro-os) lists the sides as plain bullets and spends its words on the
+  // opposite idea: "the SAME cohesive design flowing across every panel as one
+  // connected wrap unwrapped flat".
+  //
+  // Surface identity, coordinates, rotations and the cut stay in the OS, on
+  // manifest.zones, exactly as before. The model gets only the left/right/centre
+  // relationship it needs for the composition to land in the right places.
   const panelLines = [
-    "• left tall rectangle maps to Passenger Side (internal ID PS)",
-    "• right tall rectangle maps to Driver Side (internal ID DS)",
-    "• first centre rectangle from the top maps to Rear (internal ID RR)",
-    "• second centre rectangle from the top maps to Roof (internal ID RF)",
-    "• third centre rectangle from the top maps to Hood (internal ID HD)",
-    "• fourth centre rectangle from the top maps to Front (internal ID FR)",
+    "• PASSENGER SIDE — the tall panel down the left",
+    "• DRIVER SIDE — the tall panel down the right",
+    "• REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom",
   ].join("\n");
-  return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER on one square 4K canvas.
-A.T.L.A.S. is ONE unified vehicle-wrap design arranged flat as six server-mapped printable production surfaces for the exact target vehicle. These are six parts of one composition, not six independent design canvases and not a depiction of the vehicle itself.
-TARGET VEHICLE (CANONICAL): ${vehicle || "customer vehicle"}
-BODY CLASS (GENIE): ${bodyClass}
-The final TARGET A.T.L.A.S. GUIDE image is a neutral spatial mask with six fixed GENIE regions. It carries layout geometry only. Region identity is server metadata defined by this exact data mapping:
+  return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD on one square 4K canvas.
+Design ONE flat, print-ready vehicle-wrap ARTBOARD for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — the full wrap laid out FLAT as rectangular print panels on one sheet, one panel per vehicle side. The output is flat print artwork on a 2D sheet.
+
+Lay out these panels, the wrap artwork filling each panel edge to edge, and the SAME cohesive design flowing across every panel as ONE CONNECTED WRAP UNWRAPPED FLAT:
 ${panelLines}
-SURFACE METADATA IS NEVER VISIBLE ARTWORK: do not render a surface name, internal ID, legend, heading, label or caption anywhere on the canvas. In particular, never typeset Driver Side, Passenger Side, Rear, Roof, Hood, Front, DS, PS, RR, RF, HD or FR as an artboard annotation. Those terms only tell the server which rectangle it will crop.
-The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Replace every light mask region, corner to corner, with the final customer wrap pixels for its mapped surface. The existing dark space outside the light regions is canvas separation only. Do not invent, widen, outline, label or curve a gutter, and never place a gutter, border or caption band inside a light region.
-Create one cohesive professional vehicle-wrap composition across all six mapped surfaces. Continue the same palette, motifs, depth, visual rhythm and directional flow across surfaces that meet on the installed ${bodyClass}. Driver Side and Passenger Side are coordinated adaptations of the same design system, not duplicate images and not independent redesigns; customer-facing wording reads normally on each installed side. Hood, Roof, Front and Rear continue that same composition rather than introducing separate artwork.
-Every mapped surface is a pure, opaque, unbroken, full-bleed rectangular region of continuous printable artwork, filled to all four edges. The six rectangles themselves are the canonical source panels.
-PIXEL CONTENT LOCK: every one of the six rectangles is flat printed graphic art, edge to edge — the same kind of image as a printed poster or a roll of printed vinyl laid flat on a table. Each rectangle is the artwork by itself, before anything is cut or applied. Customer-requested photographic imagery is a photograph printed INTO that flat art. Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the seven proof projections and are absent here.
-Return only the finished two-dimensional A.T.L.A.S. artwork in the supplied six-region layout.`;
+
+The attached guide shows where each panel sits. Fill every light region corner to corner; the dark space between them is sheet separation. Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet.
+
+One wrap, unwrapped. The left and right flanks are the two sides of the SAME vehicle carrying the SAME design — the palette, the imagery, the motion and the branding continue from one to the other, and a person walking around the finished truck sees one design, not two. The centre panels carry that same composition across the ${bodyClass}'s top and ends. Customer-facing wording reads normally on every panel.
+
+Every panel is opaque, unbroken and full-bleed to all four edges: flat printed graphic art, the same kind of image as a printed poster or a roll of printed vinyl laid flat on a table. It is the artwork by itself, before anything is cut or applied. Customer-requested photographic imagery is a photograph printed INTO that flat art. Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the seven proof projections and are absent here.
+
+Gallery-grade custom artwork with real depth, movement and a wow factor — never generic AI filler, never a template. Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing.`;
 }
 
 /**

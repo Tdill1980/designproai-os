@@ -22,7 +22,7 @@ const edgeSource = readFileSync(
 const runtimeSource = readFileSync(join(ROOT, "runtime", "flat-first-atlas.cjs"), "utf8");
 const assembly = edgeSource; // the real assembly lives IN the edge function now
 const handler = edgeSource.slice(edgeSource.indexOf("async function handleAtlasArtboard"));
-const MARK = "OUTPUT FORMAT \u2014 ONE FLAT A.T.L.A.S. MASTER";
+const MARK = "OUTPUT FORMAT \u2014 ONE FLAT A.T.L.A.S. ARTBOARD";
 
 test("Call 1 executes DPAG's own commercial/restyle creative assembly", () => {
   // Owner directive 2026-08-27: no separate creative module, no string
@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v15-flat-example-only"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v16-one-connected-wrap"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -152,18 +152,19 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
   );
   const contract = flatFunction.slice(flatFunction.indexOf(MARK));
 
-  assert.match(contract, /neutral spatial mask with six fixed GENIE regions/);
-  assert.match(contract, /A\.T\.L\.A\.S\. is ONE unified vehicle-wrap design arranged flat as six server-mapped printable production surfaces/);
-  assert.match(contract, /TARGET VEHICLE \(CANONICAL\): \$\{vehicle/);
-  assert.match(contract, /BODY CLASS \(GENIE\): \$\{bodyClass\}/);
-  assert.match(contract, /The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front/);
+  assert.match(contract, /The attached guide shows where each panel sits/);
+  assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
+  assert.match(contract, /ARTBOARD for this exact \$\{vehicle/);
+  assert.match(contract, /\(\$\{bodyClass\}\)/);
+  assert.match(flatFunction, /REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom/);
   assert.match(contract, /\$\{panelLines\}/);
-  assert.match(contract, /Replace every light mask region, corner to corner/);
-  assert.match(contract, /pure, opaque, unbroken, full-bleed rectangular region/);
-  assert.match(contract, /SURFACE METADATA IS NEVER VISIBLE ARTWORK/);
-  assert.match(contract, /never place a gutter, border or caption band inside a light region/);
-  assert.match(contract, /not duplicate images and not independent redesigns/);
-  assert.match(contract, /PIXEL CONTENT LOCK:/);
+  assert.match(contract, /\$\{panelLines\}/);
+  assert.match(contract, /Fill every light region corner to corner/);
+  assert.match(contract, /opaque, unbroken and full-bleed to all four edges/);
+  assert.match(contract, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
+  assert.match(contract, /the dark space between them is sheet separation/);
+  assert.match(contract, /a person walking around the finished truck sees one design, not two/);
+  assert.match(contract, /flat printed graphic art, the same kind of image as a printed poster/);
 
   // ⚠️ INVERTED 2026-08-31. This used to REQUIRE the lock to name "vehicle
   // render", "vehicle photograph", "vehicle outline", "physical vehicle
@@ -189,18 +190,43 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
     assert.ok(!contract.includes(anatomyNoun),
       `the pixel lock must not name "${anatomyNoun}" to the image model -- a refusal list of anatomy is what taught it to draw the anatomy`);
   }
-  assert.match(contract, /flat printed graphic art, edge to edge/);
-  assert.match(contract, /printed poster or a roll of printed vinyl laid flat/);
+  assert.match(contract, /flat printed graphic art, the same kind of image as a printed poster/);
+  assert.match(contract, /a printed poster or a roll of printed vinyl laid flat/);
   assert.match(contract, /the artwork by itself, before anything is cut or applied/);
   assert.match(contract, /produced downstream by the seven proof projections and are absent here/);
-  assert.match(contract, /Return only the finished two-dimensional A\.T\.L\.A\.S\. artwork/);
+  assert.match(contract, /Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing/);
 
   for (const leaked of ["pixel size", "DASHED", "title band", "footer", "widthInches", "heightInches"]) {
     assert.ok(!contract.toLowerCase().includes(leaked.toLowerCase()),
       `the contract must not speak "${leaked}" to the image model`);
   }
-  for (const label of ["Passenger Side (internal ID PS)", "Driver Side (internal ID DS)", "Rear (internal ID RR)", "Roof (internal ID RF)", "Hood (internal ID HD)", "Front (internal ID FR)"]) {
-    assert.ok(flatFunction.includes(label), `the model needs the named surface ${label}`);
+  // ⚠️ INVERTED 2026-08-31 (owner directive). This REQUIRED the contract to
+  // address the model with six assigned containers -- "Passenger Side (internal
+  // ID PS)", "Driver Side (internal ID DS)", and four more -- six "maps to" and
+  // seven "internal ID" in one block. That is the container-constraint model,
+  // and it turns one wrap into six separate creative problems. Live cost: on
+  // e509d258 the driver flank came back as a full red-rock photographic wrap and
+  // the passenger flank as a dark navy body with an orange accent -- two
+  // unrelated designs on one truck.
+  //
+  // Owner: "Remove the AI-facing CONTAINER constraint model. Do NOT remove the
+  // underlying A.T.L.A.S. topology or six deterministic surface coordinates.
+  // The six regions belong to the OS, not to the creative reasoning task."
+  //
+  // Surface identity, coordinates, rotations and the deterministic cut are
+  // unchanged on manifest.zones -- asserted below and in the panel-cut locks.
+  // What the MODEL now gets is the proven RestylePro artboard framing: plain
+  // placement bullets plus "the SAME cohesive design flowing across every panel
+  // as ONE CONNECTED WRAP UNWRAPPED FLAT". So the internal IDs are forbidden in
+  // the model-facing contract rather than required.
+  for (const containerAddress of ["internal ID", "maps to", "mapped surface", "server-mapped"]) {
+    assert.ok(!contract.includes(containerAddress),
+      `the model-facing contract must not address regions as containers ("${containerAddress}")`);
+  }
+  assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
+  assert.match(contract, /the two sides of the SAME vehicle carrying the SAME design/);
+  for (const label of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
+    assert.ok(flatFunction.includes(label), `the model still needs the placement of ${label}`);
   }
   assert.doesNotMatch(contract, /FIELD [A-F]/, "anonymous field aliases must stay retired");
 

@@ -285,17 +285,17 @@ test("the solid-panel output contract lives in the edge function's flat contract
   // handler instead, stated once and positively.
   const { readFileSync } = require("node:fs");
   const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edge, /Replace every light mask region, corner to corner/);
-  assert.match(edge, /neutral spatial mask with six fixed GENIE regions/);
+  assert.match(edge, /Fill every light region corner to corner/);
+  assert.match(edge, /The attached guide shows where each panel sits/);
   assert.match(edge, /\$\{panelLines\}/);
-  assert.match(edge, /centre column is fixed top-to-bottom as Rear, Roof, Hood, Front/);
+  assert.match(edge, /REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom/);
   // Scoped to the ATLAS contract, not the file: `mode === 'artboard'` is the
   // separate legacy RestylePro artboard branch and still builds its own list.
   // The RETURNED TEMPLATE, not the whole function: the signature still types
   // widthInches/heightInches on its parameter, which is dead but harmless — the
   // defect was ever putting them in the words the model reads.
   const atlasContract = edge.slice(
-    edge.indexOf("OUTPUT FORMAT \u2014 ONE FLAT A.T.L.A.S. MASTER"),
+    edge.indexOf("OUTPUT FORMAT \u2014 ONE FLAT A.T.L.A.S. ARTBOARD"),
     edge.indexOf("function buildDesignIQPrompt("),
   );
   assert.match(atlasContract, /\$\{panelLines\}/);

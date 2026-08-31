@@ -22,20 +22,20 @@ test("ATLAS model-facing guide is six neutral masks with no visual instruction f
 test("ATLAS center topology order stays physical and named in model prose", () => {
   assert.match(runtime, /const CENTER_ORDER = Object\.freeze\(\["rear", "roof", "hood", "front"\]\)/);
   const contract = block(edge, "function atlasFlatMasterContract(", "function atlasCreativeDirection");
-  assert.match(contract, /centre column is fixed top-to-bottom as Rear, Roof, Hood, Front\./);
+  assert.match(block(edge, "const panelLines = [", "return `OUTPUT FORMAT"), /REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom/);
   assert.doesNotMatch(contract, /ROOF then HOOD then FRONT then REAR/i);
 });
 
 test("ATLAS creative contract carries named design context and pure rectangular pixels", () => {
   const contract = block(edge, "function atlasFlatMasterContract(", "function atlasCreativeDirection");
-  assert.match(contract, /neutral spatial mask with six fixed GENIE regions/);
+  assert.match(contract, /The attached guide shows where each panel sits/);
   assert.match(contract, /panel identity mismatch/);
-  assert.match(contract, /pure, opaque, unbroken, full-bleed rectangular region of continuous printable artwork/);
-  assert.match(contract, /ONE unified vehicle-wrap design arranged flat as six server-mapped printable production surfaces/);
-  assert.match(contract, /SURFACE METADATA IS NEVER VISIBLE ARTWORK/);
-  assert.match(contract, /never place a gutter, border or caption band inside a light region/);
-  assert.match(contract, /TARGET VEHICLE \(CANONICAL\)/);
-  assert.match(contract, /BODY CLASS \(GENIE\)/);
+  assert.match(contract, /opaque, unbroken and full-bleed to all four edges/);
+  assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
+  assert.match(contract, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
+  assert.match(contract, /the dark space between them is sheet separation/);
+  assert.match(contract, /ARTBOARD for this exact \$\{vehicle/);
+  assert.match(contract, /\(\$\{bodyClass\}\)/);
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
     assert.match(contract, new RegExp(surface));
   }
@@ -65,8 +65,8 @@ test("ATLAS creative contract carries named design context and pure rectangular 
     assert.doesNotMatch(contract, new RegExp(anatomyNoun, "i"),
       `the contract must not hand the image model "${anatomyNoun}"`);
   }
-  assert.match(contract, /flat printed graphic art, edge to edge/);
-  assert.match(contract, /printed poster or a roll of printed vinyl laid flat/);
+  assert.match(contract, /flat printed graphic art, the same kind of image as a printed poster/);
+  assert.match(contract, /a printed poster or a roll of printed vinyl laid flat/);
   assert.match(contract, /the artwork by itself, before anything is cut or applied/);
   assert.match(contract, /produced downstream by the seven proof projections and are absent here/);
 });
@@ -98,6 +98,6 @@ test("ATLAS teaching is solid-flat first and the current guide remains last", ()
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v15-flat-example-only"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v15-flat-example-only"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v16-one-connected-wrap"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v16-one-connected-wrap"/);
 });
