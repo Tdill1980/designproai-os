@@ -1,5 +1,21 @@
 /**
- * FULL PRODUCTION QC OVER THE SIX APPROVED CALL-1 PANELS.
+ * FULL PRODUCTION QC OVER THE SIX CANONICAL FLAT SURFACES.
+ *
+ * ⛔ WHAT "THE SIX CANONICAL FLAT SURFACES" ARE. (Trish 2026-08-30.)
+ *
+ * They are the six deterministic crops of the accepted A.T.L.A.S. master —
+ * `revision.callOnePanels`, one per surfaceKey. They are the ONLY origin of
+ * production artwork, and the two production artifacts are both DESCENDANTS of
+ * those exact six hashes rather than separate reconstructions:
+ *
+ *   accepted master → six flat surfaces ─┬─► Call 8, the 2D Production Proof
+ *                                        └─► Call 9, the six production panels
+ *
+ * So this report does not merely ask whether a proof and some panels exist. It
+ * resolves each one back to the six hashes, and a production artifact whose
+ * ancestry does not land there FAILS — which is the whole point, because a
+ * boolean "a proof exists" is exactly what let a proof-derived panel set report
+ * healthy while carrying pixels the master never authored.
  *
  * Owner directive (Trish 2026-08-29): QC must visibly report master/panel
  * ancestry, hash equality/provenance, dimensions, DPI/resolution, colour mode,
@@ -40,6 +56,20 @@ import type { FlatAtlasCallOnePanel, FlatAtlasRevision } from "@/lib/designpro-a
 // From the dependency-free module, not the API barrel: this report is pure and
 // must stay importable without constructing a Supabase client.
 import { PRODUCTION_SURFACES, type GenieSurfaceKey } from "@/lib/designpro-surfaces";
+
+/**
+ * The narrow slice of a published artifact this report reads.
+ *
+ * Deliberately not `WorkflowArtifact`: this module must stay importable without
+ * constructing a Supabase client, and everything below is a comparison of
+ * server-stamped provenance fields — never of a signed URL's bytes.
+ */
+export type ProductionArtifactRef = {
+  kind: string;
+  surfaceKey?: string | null;
+  contentHash?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
 
 export type QcOutcome = "pass" | "fail" | "warn" | "not_applicable_yet";
 
@@ -238,10 +268,16 @@ function panelChecks(panel: FlatAtlasCallOnePanel, masterContentHash: string): Q
 export function buildPanelQcReport(input: {
   generationId: string;
   revision: FlatAtlasRevision;
-  /** True when this job has a Call-8 2D Production Proof artifact. */
-  hasProductionProof: boolean;
+  /**
+   * Every artifact published for this job. The proof and panel rows below
+   * resolve their ancestry through it — which is why this is the artifact list
+   * and not a `hasProductionProof` boolean. A boolean can only say something
+   * exists; it cannot say what it is made of, and "made of" is the question.
+   */
+  artifacts: ProductionArtifactRef[];
 }): PanelQcReport {
-  const { generationId, revision, hasProductionProof } = input;
+  const { generationId, revision } = input;
+  const artifacts = Array.isArray(input.artifacts) ? input.artifacts : [];
   const masterContentHash = String(revision.master?.contentHash || "").toLowerCase();
   const panels = Array.isArray(revision.callOnePanels) ? revision.callOnePanels : [];
   const bySurface = new Map<string, FlatAtlasCallOnePanel>(
@@ -314,17 +350,93 @@ export function buildPanelQcReport(input: {
       : `Repaired before cutting: ${repaired.join(", ")} — review these on a vehicle template before printing`,
   ));
 
-  // THE 2D PRODUCTION PROOF. Since 2026-08-29 it is assembled from these exact
-  // six panels with zero image requests, so its existence is a statement about
-  // this panel set rather than about a separate render.
-  checks.push(check(
-    "job.production-proof",
-    "2D Production Proof",
-    hasProductionProof ? "pass" : "warn",
-    hasProductionProof
-      ? "Present, assembled deterministically from these six panels"
-      : "Not built yet — the proof is a later value-add artifact and does not gate the panels",
-  ));
+  // ── THE TWO DESCENDANT CHECKS ────────────────────────────────────────────
+  // Both production artifacts must resolve back to the six hashes above. These
+  // are the rows that make this a lineage report rather than an inventory.
+
+  // CALL 9 — THE SIX PRODUCTION PANELS ARE THOSE SIX FLAT SURFACES, BYTE FOR
+  // BYTE. `panels.build` promotes the Call-1 bytes into the run's own storage
+  // and refuses a copy that does not hash to its source, so the published panel
+  // must carry the SAME contentHash as the flat surface it came from. Anything
+  // else — a re-cut, a re-render, a proof-derived slice — lands on a different
+  // hash, and that is the defect this row exists to catch.
+  const publishedPanels = new Map<string, ProductionArtifactRef>();
+  for (const item of artifacts) {
+    if (String(item?.kind) !== "panel") continue;
+    const key = String(item?.surfaceKey || "");
+    if (PRODUCTION_SURFACES.includes(key as GenieSurfaceKey)) publishedPanels.set(key, item);
+  }
+  if (publishedPanels.size === 0) {
+    checks.push(check(
+      "job.call9-panels",
+      "Production panels descend from the six flat surfaces",
+      "warn",
+      "Not published yet — Call 9 promotes these six surfaces once the design is approved",
+    ));
+  } else {
+    const drifted: string[] = [];
+    // A published panel for a surface this revision never cut has NO flat
+    // source at all — the strongest form of the defect, and invisible if you
+    // only iterate the surfaces that do exist.
+    for (const key of publishedPanels.keys()) {
+      if (!present.includes(key as GenieSurfaceKey)) {
+        drifted.push(`${key}: published with no flat surface on this revision`);
+      }
+    }
+    for (const key of present) {
+      const published = publishedPanels.get(key);
+      if (!published) { drifted.push(`${key}: not published`); continue; }
+      const surfaceHash = String(bySurface.get(key)?.contentHash || "").toLowerCase();
+      const publishedHash = String(published.contentHash || "").toLowerCase();
+      const declared = String(published.metadata?.source || "");
+      if (publishedHash !== surfaceHash) {
+        drifted.push(`${key}: published ${publishedHash.slice(0, 12) || "none"}, flat surface ${surfaceHash.slice(0, 12)}`);
+      } else if (declared !== "atlas-call1-panel") {
+        drifted.push(`${key}: declares source "${declared || "none"}", not atlas-call1-panel`);
+      }
+    }
+    checks.push(check(
+      "job.call9-panels",
+      "Production panels descend from the six flat surfaces",
+      drifted.length === 0 ? "pass" : "fail",
+      drifted.length === 0
+        ? `${publishedPanels.size}/6 published, each byte-identical to its flat surface`
+        : `Published panels do not resolve to this master's flat surfaces — ${drifted.join(" · ")}`,
+    ));
+  }
+
+  // CALL 8 — THE 2D PRODUCTION PROOF IS ASSEMBLED FROM THOSE SAME SIX. It is
+  // drawn by code from the six panels with zero image requests, and it stamps
+  // the hash it used per surface. So the claim "assembled from these six
+  // panels" is CHECKED here rather than asserted: a proof naming any other hash
+  // is a proof of a different design, and it fails.
+  const proof = artifacts.find((item) => String(item?.kind) === "flat-proof");
+  if (!proof) {
+    checks.push(check(
+      "job.production-proof",
+      "2D Production Proof",
+      "warn",
+      "Not built yet — the proof is a later value-add artifact and does not gate the panels",
+    ));
+  } else {
+    const assembledFrom = String(proof.metadata?.assembledFrom || "");
+    const claimed = (proof.metadata?.sourcePanelHashes || {}) as Record<string, unknown>;
+    const mismatched = present.filter((key) => {
+      const surfaceHash = String(bySurface.get(key)?.contentHash || "").toLowerCase();
+      return String(claimed[key] || "").toLowerCase() !== surfaceHash;
+    });
+    const ok = assembledFrom === "atlas-call1-panels" && mismatched.length === 0 && present.length > 0;
+    checks.push(check(
+      "job.production-proof",
+      "2D Production Proof descends from the six flat surfaces",
+      ok ? "pass" : "fail",
+      ok
+        ? `Composed deterministically from all ${present.length} flat surfaces · no image request`
+        : assembledFrom !== "atlas-call1-panels"
+          ? `The proof declares it was assembled from "${assembledFrom || "an unrecorded source"}", not the six flat surfaces`
+          : `The proof names different bytes for: ${mismatched.join(", ")}`,
+    ));
+  }
 
   for (const key of PRODUCTION_SURFACES) {
     const panel = bySurface.get(key);

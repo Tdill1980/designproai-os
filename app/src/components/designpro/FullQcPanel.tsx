@@ -20,7 +20,12 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, CircleSlash, Loader2, ShieldCheck, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { buildPanelQcReport, type PanelQcReport, type QcCheck } from "@/lib/designpro-panel-qc";
+import {
+  buildPanelQcReport,
+  type PanelQcReport,
+  type ProductionArtifactRef,
+  type QcCheck,
+} from "@/lib/designpro-panel-qc";
 import { SURFACE_LABELS } from "@/lib/designpro-surfaces";
 import type { FlatAtlasRevision } from "@/lib/designpro-api";
 import { cn } from "@/lib/utils";
@@ -28,7 +33,11 @@ import { cn } from "@/lib/utils";
 export type FullQcPanelProps = {
   generationId: string;
   revision: FlatAtlasRevision | null | undefined;
-  hasProductionProof: boolean;
+  /**
+   * This job's published artifacts. QC resolves the Call-8 proof and the Call-9
+   * panels back through them to the six flat surfaces; it is not a count.
+   */
+  artifacts: ProductionArtifactRef[];
   /** Lets the host reflect the verdict in the workflow breadcrumb. */
   onReport?: (report: PanelQcReport | null) => void;
 };
@@ -54,7 +63,7 @@ function CheckRow({ row }: { row: QcCheck }) {
   );
 }
 
-export function FullQcPanel({ generationId, revision, hasProductionProof, onReport }: FullQcPanelProps) {
+export function FullQcPanel({ generationId, revision, artifacts, onReport }: FullQcPanelProps) {
   const [report, setReport] = useState<PanelQcReport | null>(null);
   const [running, setRunning] = useState(false);
 
@@ -64,7 +73,7 @@ export function FullQcPanel({ generationId, revision, hasProductionProof, onRepo
     // Synchronous by nature; the tick exists only so the button can show it ran
     // rather than appearing not to respond.
     window.setTimeout(() => {
-      const next = buildPanelQcReport({ generationId, revision, hasProductionProof });
+      const next = buildPanelQcReport({ generationId, revision, artifacts });
       setReport(next);
       onReport?.(next);
       setRunning(false);
@@ -80,8 +89,9 @@ export function FullQcPanel({ generationId, revision, hasProductionProof, onRepo
             Full production QC
           </h2>
           <p className="mt-0.5 text-xs text-gray-500">
-            Ancestry, hashes, dimensions, bleed, panelization, resolution, readability and the
-            required six surfaces — checked against the artifacts the server stamped.
+            The six canonical flat surfaces, and whether the 2D Production Proof and the six
+            production panels both descend from those exact hashes — plus dimensions, bleed,
+            panelization, resolution and readability, checked against what the server stamped.
           </p>
         </div>
         <Button onClick={run} disabled={!revision || running} className="gap-2">

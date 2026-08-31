@@ -68,8 +68,32 @@ function revision(panels: FlatAtlasCallOnePanel[]): FlatAtlasRevision {
 
 const sixGood = () => PRODUCTION_SURFACES.map((key, index) => panel(key, index + 1));
 
-const report = (panels: FlatAtlasCallOnePanel[], hasProductionProof = true) =>
-  buildPanelQcReport({ generationId: "gen-1", revision: revision(panels), hasProductionProof });
+// The published artifacts a healthy job carries: six Call-9 panels promoted
+// byte-for-byte from the flat surfaces, and one Call-8 proof naming those same
+// six hashes. Both are DESCENDANTS — neither carries bytes of its own.
+const publishedFor = (panels: FlatAtlasCallOnePanel[]) => [
+  ...panels.map((panel) => ({
+    kind: "panel",
+    surfaceKey: panel.surfaceKey as string,
+    contentHash: panel.contentHash,
+    metadata: { source: "atlas-call1-panel", promotedFrom: "atlas-call1", deterministic: true },
+  })),
+  {
+    kind: "flat-proof",
+    surfaceKey: "",
+    contentHash: "f".repeat(64),
+    metadata: {
+      assembledFrom: "atlas-call1-panels",
+      deterministic: true,
+      sourcePanelHashes: Object.fromEntries(panels.map((p) => [p.surfaceKey, p.contentHash])),
+    },
+  },
+];
+
+const report = (
+  panels: FlatAtlasCallOnePanel[],
+  artifacts: ReturnType<typeof publishedFor> = publishedFor(panels),
+) => buildPanelQcReport({ generationId: "gen-1", revision: revision(panels), artifacts });
 
 describe("full panel QC", () => {
   it("passes a clean six-panel set and reports every required check", () => {
@@ -80,7 +104,7 @@ describe("full panel QC", () => {
     const ids = result.checks.map((row) => row.id);
     for (const required of [
       "job.six-surfaces", "job.master", "job.master-qc", "job.distinct-panels",
-      "job.cutout-repair", "job.production-proof",
+      "job.cutout-repair", "job.production-proof", "job.call9-panels",
     ]) expect(ids).toContain(required);
     for (const surface of PRODUCTION_SURFACES) {
       for (const suffix of ["ancestry", "hash", "readable", "dimensions", "bleed", "resolution", "panelization"]) {
@@ -90,7 +114,7 @@ describe("full panel QC", () => {
   });
 
   it("an empty panel set is PRODUCTION PANELS NOT CREATED, in those words", () => {
-    const result = report([], false);
+    const result = report([], []);
     expect(result.passed).toBe(false);
     expect(result.checks.find((row) => row.id === "job.six-surfaces")!.detail)
       .toMatch(/PRODUCTION PANELS NOT CREATED/);
@@ -175,15 +199,72 @@ describe("full panel QC", () => {
     const result = buildPanelQcReport({
       generationId: "gen-1",
       revision: { ...base, qc: { ...base.qc, masterCutoutSurfaces: ["driver", "passenger"] } } as FlatAtlasRevision,
-      hasProductionProof: true,
+      artifacts: publishedFor(sixGood()),
     });
     expect(result.passed).toBe(true);
     expect(result.warnings.some((row) => row.id === "job.cutout-repair")).toBe(true);
   });
 
   it("a missing 2D proof warns — it is a later artifact and does not gate panels", () => {
-    const result = report(sixGood(), false);
+    const result = report(sixGood(), []);
     expect(result.passed).toBe(true);
     expect(result.warnings.some((row) => row.id === "job.production-proof")).toBe(true);
+    // Same for unpublished panels: before Call 9 there is nothing to convict.
+    expect(result.warnings.some((row) => row.id === "job.call9-panels")).toBe(true);
+  });
+
+  // ── THE LINEAGE ROWS ─────────────────────────────────────────────────────
+  // Owner (Trish 2026-08-30): "make both Call 8 proof and Call 9 panels
+  // descendants of those same six hashes." These two are what turn that
+  // sentence into something the report can be wrong about.
+
+  it("a production panel that is not the flat surface's own bytes FAILS, and is named", () => {
+    // The exact shape of the defect: a panel published under the right
+    // surfaceKey, carrying every other marking, cut from something else.
+    const panels = sixGood();
+    const artifacts = publishedFor(panels);
+    artifacts[2] = { ...artifacts[2], contentHash: "e".repeat(64) };
+    const result = report(panels, artifacts);
+    expect(result.passed).toBe(false);
+    const row = result.failures.find((r) => r.id === "job.call9-panels")!;
+    expect(row.detail).toContain("hood");
+  });
+
+  it("a production panel that does not declare the Call-1 source FAILS even on matching bytes", () => {
+    const panels = sixGood();
+    const artifacts = publishedFor(panels);
+    artifacts[0] = { ...artifacts[0], metadata: { source: "proof-region" } };
+    const result = report(panels, artifacts);
+    expect(result.failures.some((r) => r.id === "job.call9-panels")).toBe(true);
+  });
+
+  it("a panel published for a surface this revision never cut has no flat source, and FAILS", () => {
+    const panels = sixGood().slice(0, 5);
+    const artifacts = publishedFor(sixGood());
+    const result = report(panels, artifacts);
+    expect(result.failures.find((r) => r.id === "job.call9-panels")!.detail)
+      .toContain("no flat surface on this revision");
+  });
+
+  it("a 2D proof assembled from anything but the six flat surfaces FAILS", () => {
+    const panels = sixGood();
+    const artifacts = publishedFor(panels);
+    artifacts[6] = { ...artifacts[6], metadata: { assembledFrom: "gemini-flat-surface" } };
+    const result = report(panels, artifacts);
+    expect(result.passed).toBe(false);
+    expect(result.failures.find((r) => r.id === "job.production-proof")!.detail)
+      .toContain("gemini-flat-surface");
+  });
+
+  it("a 2D proof naming different bytes for one surface FAILS, and says which", () => {
+    const panels = sixGood();
+    const artifacts = publishedFor(panels);
+    const claimed = { ...(artifacts[6].metadata as Record<string, unknown>) };
+    claimed.sourcePanelHashes = {
+      ...(claimed.sourcePanelHashes as Record<string, string>), roof: "e".repeat(64),
+    };
+    artifacts[6] = { ...artifacts[6], metadata: claimed };
+    const result = report(panels, artifacts);
+    expect(result.failures.find((r) => r.id === "job.production-proof")!.detail).toContain("roof");
   });
 });
