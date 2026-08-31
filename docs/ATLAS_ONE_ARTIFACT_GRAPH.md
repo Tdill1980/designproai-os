@@ -248,6 +248,51 @@ The board reads promoted panels from
 `job.concept_json.qc_side_panels`; there is no top-level
 `job.qc_side_panels` contract.
 
+### KNOWN REPORTING DEFECT — a completed design half is reported as parked at purchase (2026-08-31, owner-observed, not yet repaired)
+
+The stage graph is correct: `proof.build` (Call 8) and `panels.build` (Call 9)
+both sit AHEAD of `await_purchase`, so nothing DCA Phase 1 needs is paid work.
+The defect is in the read projection, and it makes a finished design half look
+blocked.
+
+A generation that reaches handoff owns TWO runs. `requestedRun`
+(`gateway/src/server.mjs:542`) is `runs.find(...)` over a list ordered
+`created_at.desc`, so the NEWEST run wins — and the production run is created
+about a minute after the entice run completes, by `trigger:
+designpro.os.auto`. `runState` then queries stages for that one run only.
+
+So `GET /api/jobs/:generationId` answers from the production run alone:
+`state: approval_required`, `currentStage: await_purchase`, and a `stages` rail
+of ten production stages with nine `pending`. The seven completed design stages
+are never returned to any UI.
+
+Measured on canary `083d2a70-edac-4e75-9caa-1336542baf7c`:
+
+| Run | Created | Observed |
+|---|---|---|
+| `designpro.entice_pack` `f041f306…` | 11:57:08Z | `revision.freeze`, `panels.build`, `logos.extract`, `panels.delogo`, `proof.build`, `pack.verify`, `pack.activate` — all seven `completed` |
+| `designpro.production_pack` `07ec1282…` | 11:58:19Z | `await_purchase` `waiting`/`purchase_required`; all later stages `pending` |
+
+Consequences, stated exactly:
+
+- artifacts are NOT affected — `verifiedSourceEnticeRun` merges the entice run's
+  artifacts, and Call-1 panels come from the atlas route regardless, so panels
+  still render;
+- the reported STATE and STAGE RAIL are wrong, and they are what an operator
+  reads as "the system is waiting for purchase";
+- it violates RULE 0.22's requirement that PanelPro preserve the whole
+  chronological lineage: the design half is invisible in the rail.
+
+Proposed minimal repair, NOT yet implemented and NOT authorized: when a
+production run has a verified source entice run, return the union of both runs'
+stages, entice first, and derive the reported state from the whole lineage
+rather than the production run alone. Read projection only — no graph change,
+no new producer, no artifact-contract change, and nothing on the RULE 0.5
+frozen list.
+
+Until it is repaired: on a run that has reached handoff, judge progress from the
+artifacts and receipts, never from the state badge or the stage rail.
+
 ## 8. Current production evidence
 
 Current verified production release (2026-08-31, corrective release):
