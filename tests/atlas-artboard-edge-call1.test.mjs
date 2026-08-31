@@ -164,9 +164,35 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
   assert.match(contract, /never place a gutter, border or caption band inside a light region/);
   assert.match(contract, /not duplicate images and not independent redesigns/);
   assert.match(contract, /PIXEL CONTENT LOCK:/);
-  for (const forbiddenPixelContent of ["vehicle render", "vehicle photograph", "vehicle outline", "physical vehicle anatomy", "wheels", "windows", "doors", "component seams", "transparent voids", "shaped openings"]) {
-    assert.ok(contract.includes(forbiddenPixelContent), `Call 1 must explicitly refuse ${forbiddenPixelContent}`);
+
+  // ⚠️ INVERTED 2026-08-31. This used to REQUIRE the lock to name "vehicle
+  // render", "vehicle photograph", "vehicle outline", "physical vehicle
+  // anatomy", "wheels", "windows", "doors", "component seams", "transparent
+  // voids" and "shaped openings" -- ten anatomy nouns handed to an image model
+  // as a refusal list. CLAUDE.md's own Gemini guidance says a negative makes
+  // the model over-index on the forbidden thing, and this file has been around
+  // that loop twice already.
+  //
+  // Live proof it was not working: Desert Ridge (c3a8ff40, 2026-08-31) returned
+  // both flanks as a van side elevation with window and wheel-arch shapes, on a
+  // prompt carrying every one of those ten refusals verbatim. The lock asked
+  // for the words and got the pixels.
+  //
+  // The contract now says what the output IS, in terms with no vehicle in them
+  // -- a printed poster, a roll of vinyl laid flat, the artwork before anything
+  // is cut. This test therefore forbids the noun list it used to demand.
+  for (const anatomyNoun of [
+    "vehicle render", "vehicle photograph", "vehicle outline", "silhouette",
+    "physical vehicle anatomy", "wheels", "windows", "doors", "component seams",
+    "cut lines", "transparent voids", "shaped openings", "mockup lighting",
+  ]) {
+    assert.ok(!contract.includes(anatomyNoun),
+      `the pixel lock must not name "${anatomyNoun}" to the image model -- a refusal list of anatomy is what taught it to draw the anatomy`);
   }
+  assert.match(contract, /flat printed graphic art, edge to edge/);
+  assert.match(contract, /printed poster or a roll of printed vinyl laid flat/);
+  assert.match(contract, /the artwork by itself, before anything is cut or applied/);
+  assert.match(contract, /produced downstream by the seven proof projections and are absent here/);
   assert.match(contract, /Return only the finished two-dimensional A\.T\.L\.A\.S\. artwork/);
 
   for (const leaked of ["pixel size", "DASHED", "title band", "footer", "widthInches", "heightInches"]) {
@@ -224,10 +250,32 @@ test("component enumeration stays server-side while body class reaches Call 1", 
   }
   assert.ok(!contract.includes("structure front to rear:"),
     "the region enumeration must not be rendered into the prompt");
-  assert.match(contract, /PICKUP COVERAGE:/);
-  assert.match(contract, /open bed floor and inner bed walls remain bare factory bedliner/);
-  assert.match(contract, /keep every A\.T\.L\.A\.S\. source rectangle fully painted and opaque/);
-  assert.match(contract, /downstream vehicle application and proof mapping, not Call 1/);
+  // ⚠️ INVERTED 2026-08-31, SAME DEFECT, SECOND HALF. This used to REQUIRE a
+  // PICKUP COVERAGE paragraph in the Call-1 contract. That paragraph named
+  // "exterior cab", "exterior bed sides", "tailgate exterior", "open bed
+  // floor", "inner bed walls" and "bare factory bedliner" -- six pieces of
+  // physical vehicle anatomy -- and attached them BY NAME to Driver Side and
+  // Passenger Side. Those are precisely the two surfaces that come back as a
+  // vehicle side elevation while the centre four stay clean: the flank
+  // regression CLAUDE.md measured across eleven runs from v4 onward, and what
+  // Desert Ridge (c3a8ff40) produced on a pickup.
+  //
+  // It also argued with itself -- describing a bed exclusion and then telling
+  // the model not to draw one -- and it was never Call 1's job in the first
+  // place. RULE 0.28 §5 and RULE 0.0 both place that exclusion downstream, and
+  // it IS carried downstream, in the A.T.L.A.S. proof producer, sliced from the
+  // pinned WRAP_COVERAGE_RULES (tests/atlas-proof-truck-bed.test.mjs).
+  //
+  // So the anatomy is now forbidden here rather than required.
+  for (const bedAnatomy of [
+    "PICKUP COVERAGE", "exterior cab", "bed sides", "tailgate exterior",
+    "open bed floor", "inner bed walls", "bedliner", "bed-shaped",
+  ]) {
+    assert.ok(!contract.includes(bedAnatomy),
+      `the contract must not name ${bedAnatomy} to the image model; the bed exclusion is downstream proof mapping, not Call 1`);
+  }
+  assert.ok(!contract.includes("pickupCoverage"),
+    "the pickup coverage branch must be gone from the contract, not merely unreachable");
 });
 
 test("identity and placement cross the wire while dimensions and component topology stay server-side", () => {

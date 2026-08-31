@@ -43,9 +43,32 @@ test("ATLAS creative contract carries named design context and pure rectangular 
   for (const forbidden of ["DASHED BLUE", "pixel size", "title band", "widthInches", "heightInches", "FRONT FENDER", "CAB DOOR", "REAR QUARTER", "ROCKER"]) {
     assert.doesNotMatch(contract, new RegExp(forbidden, "i"));
   }
-  for (const refusedPixelContent of ["vehicle render", "vehicle photograph", "vehicle outline", "physical vehicle anatomy", "wheels", "windows", "doors", "component seams", "transparent voids", "shaped openings"]) {
-    assert.match(contract, new RegExp(refusedPixelContent, "i"));
+  // ⚠️ INVERTED 2026-08-31 — the third lock on the same defect.
+  //
+  // This required the contract to NAME ten pieces of vehicle anatomy as
+  // refusals. CLAUDE.md's own Gemini guidance is that a negative makes the
+  // model over-index on the forbidden concept, and Desert Ridge (c3a8ff40)
+  // proved it: the prompt carried all ten refusals verbatim and both flanks
+  // came back as a van side elevation with window and wheel-arch shapes, while
+  // the centre four — which no anatomy sentence addressed — were clean.
+  //
+  // The contract now states what the output IS, in terms containing no vehicle:
+  // flat printed graphic art, a printed poster, a roll of vinyl laid flat, the
+  // artwork before anything is cut. The anatomy nouns are forbidden here rather
+  // than required, and the positive framing is asserted in their place.
+  for (const anatomyNoun of [
+    "vehicle render", "vehicle photograph", "vehicle outline", "silhouette",
+    "physical vehicle anatomy", "wheels", "windows", "doors", "component seams",
+    "cut lines", "transparent voids", "shaped openings", "mockup lighting",
+    "PICKUP COVERAGE", "bedliner", "bed sides",
+  ]) {
+    assert.doesNotMatch(contract, new RegExp(anatomyNoun, "i"),
+      `the contract must not hand the image model "${anatomyNoun}"`);
   }
+  assert.match(contract, /flat printed graphic art, edge to edge/);
+  assert.match(contract, /printed poster or a roll of printed vinyl laid flat/);
+  assert.match(contract, /the artwork by itself, before anything is cut or applied/);
+  assert.match(contract, /produced downstream by the seven proof projections and are absent here/);
 });
 
 test("ATLAS request exposes exact identity and placement but no dimensions or component topology", () => {

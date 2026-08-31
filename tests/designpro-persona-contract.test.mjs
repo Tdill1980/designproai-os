@@ -141,10 +141,28 @@ test("the exact DCA brief retains vehicle-wrap intent and named topology before 
   assert.match(prompt, /airflow ribbons sweeping front to rear/);
   assert.match(prompt, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
   assert.match(prompt, /BODY CLASS \(GENIE\): truck/);
-  assert.match(prompt, /PICKUP COVERAGE:/);
-  assert.match(prompt, /open bed floor and inner bed walls remain bare factory bedliner/);
-  assert.match(prompt, /fully painted and opaque with no empty bed-shaped opening/);
+  // ⚠️ INVERTED 2026-08-31. This ran the REAL builder on a pickup and required
+  // the assembled prompt to contain PICKUP COVERAGE, "open bed floor and inner
+  // bed walls remain bare factory bedliner", and "no empty bed-shaped opening".
+  // That is six pieces of vehicle anatomy, attached by name to Driver Side and
+  // Passenger Side -- the two surfaces that come back as a van side elevation
+  // while the centre four stay clean (Desert Ridge c3a8ff40; the v4-onward flank
+  // regression in CLAUDE.md). The bed exclusion belongs to downstream proof
+  // mapping per RULE 0.28 §5, and is carried there. So the assembled Call-1
+  // prompt for a PICKUP must now be free of it.
+  for (const bedAnatomy of [
+    "PICKUP COVERAGE", "exterior cab", "bed sides", "tailgate exterior",
+    "open bed floor", "inner bed walls", "bedliner", "bed-shaped",
+  ]) {
+    assert.ok(!prompt.includes(bedAnatomy),
+      `a pickup's Call-1 prompt must not carry "${bedAnatomy}"`);
+  }
   assert.match(prompt, /PIXEL CONTENT LOCK:/);
+  assert.match(prompt, /printed poster or a roll of printed vinyl laid flat/);
+  for (const anatomyNoun of ["wheels", "windows", "doors", "silhouette", "vehicle outline", "shaped openings"]) {
+    assert.ok(!prompt.includes(anatomyNoun),
+      `the assembled prompt must not hand the image model the noun "${anatomyNoun}"`);
+  }
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
     assert.match(prompt, new RegExp(surface, "i"));
   }
