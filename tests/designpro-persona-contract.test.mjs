@@ -146,8 +146,9 @@ test("the exact DCA brief retains vehicle-wrap intent and named topology before 
   assert.match(prompt, /fully painted and opaque with no empty bed-shaped opening/);
   assert.match(prompt, /PIXEL CONTENT LOCK:/);
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
-    assert.match(prompt, new RegExp(surface));
+    assert.match(prompt, new RegExp(surface, "i"));
   }
+  assert.match(prompt, /SURFACE METADATA IS NEVER VISIBLE ARTWORK/);
   assert.doesNotMatch(prompt, /FIELD [A-F]|studio photograph|widthInches|heightInches/i);
 });
 

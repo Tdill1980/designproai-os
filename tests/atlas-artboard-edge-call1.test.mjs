@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v14-pure-rectangles"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v15-flat-example-only"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -115,7 +115,7 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.equal(runtimeVersion[1], edge[1]);
 });
 
-test("only the release-pinned cohesion pair reaches Call 1 and the target guide stays last", () => {
+test("only the release-pinned flat cohesion example reaches Call 1 and the target guide stays last", () => {
   assert.ok(!handler.includes("body.structuralReferenceStoragePath"));
   assert.ok(!handler.includes("body.structuralPairedProofStoragePath"));
   assert.ok(!handler.includes("body.structuralReferenceBase64"));
@@ -128,18 +128,17 @@ test("only the release-pinned cohesion pair reaches Call 1 and the target guide 
   assert.ok(!liveAuthoring.includes("structuralReferenceStoragePath"));
   assert.ok(!liveAuthoring.includes("structuralPairedProofStoragePath"));
   assert.match(liveAuthoring, /loadBundledAtlasCohesionExample/);
-  assert.match(liveAuthoring, /const \[cohesionExampleProofStoragePath, cohesionExampleFlatStoragePath, targetGuideStoragePath\] = await Promise\.all/);
-  assert.match(liveAuthoring, /cohesionExampleProofStoragePath,/);
+  assert.match(liveAuthoring, /const \[cohesionExampleFlatStoragePath, targetGuideStoragePath\] = await Promise\.all/);
   assert.match(liveAuthoring, /cohesionExampleFlatStoragePath,/);
   assert.match(liveAuthoring, /guideStoragePath: targetGuideStoragePath/);
 
-  const proof = handler.indexOf("RELATIONSHIP-ONLY EXAMPLE 1/2");
-  const flat = handler.indexOf("RELATIONSHIP-ONLY EXAMPLE 2/2");
+  const flat = handler.indexOf("RELEASE-PINNED FLAT A.T.L.A.S. OUTPUT EXAMPLE");
   const target = handler.indexOf("CURRENT TARGET GUIDE");
   const guide = handler.indexOf("await downloadPart(body.guideStoragePath");
-  assert.ok(proof > 0 && proof < flat && flat < target && target < guide,
-    "installed proof must precede solid flat atlas and the current target guide must be last");
-  assert.match(handler, /Copy no artwork, subject, wording, logo, company, colors, typography, industry, vehicle geometry, camera or lighting/);
+  assert.ok(flat > 0 && flat < target && target < guide,
+    "solid flat atlas must precede the current target guide, which remains last");
+  assert.doesNotMatch(handler, /cohesionExampleProofStoragePath|INSTALLED DRIVER PROOF/);
+  assert.match(handler, /Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry/);
   assert.match(handler, /Return flat printable rectangles only; never return a vehicle image/);
 });
 
@@ -154,13 +153,15 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
   const contract = flatFunction.slice(flatFunction.indexOf(MARK));
 
   assert.match(contract, /neutral spatial mask with six fixed GENIE regions/);
-  assert.match(contract, /A\.T\.L\.A\.S\. is ONE unified vehicle-wrap design arranged flat as six named printable production surfaces/);
+  assert.match(contract, /A\.T\.L\.A\.S\. is ONE unified vehicle-wrap design arranged flat as six server-mapped printable production surfaces/);
   assert.match(contract, /TARGET VEHICLE \(CANONICAL\): \$\{vehicle/);
   assert.match(contract, /BODY CLASS \(GENIE\): \$\{bodyClass\}/);
   assert.match(contract, /The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front/);
   assert.match(contract, /\$\{panelLines\}/);
   assert.match(contract, /Replace every light mask region, corner to corner/);
   assert.match(contract, /pure, opaque, unbroken, full-bleed rectangular region/);
+  assert.match(contract, /SURFACE METADATA IS NEVER VISIBLE ARTWORK/);
+  assert.match(contract, /never place a gutter, border or caption band inside a light region/);
   assert.match(contract, /not duplicate images and not independent redesigns/);
   assert.match(contract, /PIXEL CONTENT LOCK:/);
   for (const forbiddenPixelContent of ["vehicle render", "vehicle photograph", "vehicle outline", "physical vehicle anatomy", "wheels", "windows", "doors", "component seams", "transparent voids", "shaped openings"]) {
@@ -172,7 +173,7 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
     assert.ok(!contract.toLowerCase().includes(leaked.toLowerCase()),
       `the contract must not speak "${leaked}" to the image model`);
   }
-  for (const label of ["PASSENGER SIDE (PS)", "DRIVER SIDE (DS)", "REAR (RR)", "ROOF (RF)", "HOOD (HD)", "FRONT (FR)"]) {
+  for (const label of ["Passenger Side (internal ID PS)", "Driver Side (internal ID DS)", "Rear (internal ID RR)", "Roof (internal ID RF)", "Hood (internal ID HD)", "Front (internal ID FR)"]) {
     assert.ok(flatFunction.includes(label), `the model needs the named surface ${label}`);
   }
   assert.doesNotMatch(contract, /FIELD [A-F]/, "anonymous field aliases must stay retired");

@@ -137,10 +137,42 @@ test("the revision records what decided acceptance and what the judge said", () 
 
 test("click -> master is measured in segments on the immutable revision", () => {
   assert.match(source, /const callOneStartedAt = Date\.now\(\);/);
+  assert.match(source, /normalizeMs: 0,/);
+  assert.match(source, /panelExtractionMs: 0,/);
+  assert.match(source, /viewAuthorityMs: 0,/);
+  assert.match(source, /projectionMs: 0,/);
+  assert.match(source, /uploadWaitMs: 0,/);
   assert.match(source, /timings\.authoringMs \+= Date\.now\(\) - authoringStartedAt;/);
+  assert.match(source, /timings\.normalizeMs \+= Date\.now\(\) - normalizeStartedAt;/);
   assert.match(source, /timings\.deterministicMs \+= Date\.now\(\) - deterministicStartedAt;/);
+  assert.match(afterLoop, /timings\.repairMs \+= Date\.now\(\) - repairStartedAt;/);
+  assert.match(afterLoop, /timings\.panelExtractionMs \+= Number\(durationMs\) \|\| 0;/);
+  assert.match(afterLoop, /timings\.viewAuthorityMs \+= Date\.now\(\) - authorityStartedAt;/);
+  assert.match(afterLoop, /timings\.projectionMs \+= Date\.now\(\) - projectionStartedAt;/);
+  assert.match(afterLoop, /timings\.uploadWaitMs \+= Date\.now\(\) - uploadWaitStartedAt;/);
   assert.match(afterLoop, /callOneTimings: \{/);
+  assert.match(afterLoop, /\.\.\.timings,/);
   assert.match(afterLoop, /semanticOverlapped: timings\.semanticWaitMs === 0/);
+  assert.match(afterLoop, /callOneTimings=\$\{JSON\.stringify\(rowPayload\.metadata\.callOneTimings\)\}/);
+});
+
+test("repair timing wraps the real deterministic fill instead of reporting a permanent zero", () => {
+  const started = afterLoop.indexOf("const repairStartedAt = Date.now()");
+  const fill = afterLoop.indexOf("await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces)");
+  const completed = afterLoop.indexOf("timings.repairMs += Date.now() - repairStartedAt");
+  assert.ok(started > -1 && fill > started && completed > fill,
+    "repair timing must surround the actual cut-out fill");
+});
+
+test("panel timing is observation-only and preserves ordered extraction authority", () => {
+  const cutStart = source.indexOf("async function cutCallOnePanels");
+  const cutEnd = source.indexOf("function atlasPanelForProofView", cutStart);
+  const cut = source.slice(cutStart, cutEnd);
+  assert.match(cut, /onPanelTiming = null/);
+  assert.match(cut, /durationMs: Date\.now\(\) - extractionStartedAt/);
+  assert.match(cut, /catch \{\s*\/\/ Observability is not workflow authority\./);
+  assert.match(cut, /for \(const surfaceKey of PANEL_EXTRACTION_ORDER\)/);
+  assert.doesNotMatch(cut, /Promise\.all\(PANEL_EXTRACTION_ORDER/);
 });
 
 // ── THE ADVISORY MODULE KEEPS ITS DIAGNOSTIC RESPONSE SHAPE ────────────────

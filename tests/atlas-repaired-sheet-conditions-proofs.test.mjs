@@ -106,8 +106,14 @@ test("a panel's sourceMasterHash is the canonical master, so PanelPro can pair i
     })),
   };
 
-  const panels = await atlas.cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash);
+  const panelTimings = [];
+  const panels = await atlas.cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash, {
+    onPanelTiming: (timing) => panelTimings.push(timing),
+  });
   assert.equal(panels.length, atlas.SURFACE_KEYS.length);
+  assert.deepEqual(panelTimings.map((timing) => timing.surfaceKey), atlas.PANEL_EXTRACTION_ORDER);
+  assert.ok(panelTimings.every((timing) => timing.attempt === 1
+    && Number.isInteger(timing.durationMs) && timing.durationMs >= 0));
   for (const panel of panels) {
     // Lineage: what the proof also publishes. Pairing is done on this.
     assert.equal(panel.sourceMasterHash, canonicalMasterHash);
@@ -117,7 +123,9 @@ test("a panel's sourceMasterHash is the canonical master, so PanelPro can pair i
 
   // With no canonical hash supplied the panel falls back to its own source, so
   // a caller that forgets the argument never publishes an empty lineage.
-  const orphaned = await atlas.cutCallOnePanels(surfaceSourceBytes, manifest);
+  const orphaned = await atlas.cutCallOnePanels(surfaceSourceBytes, manifest, undefined, {
+    onPanelTiming() { throw new Error("timing observer is not authority"); },
+  });
   assert.equal(orphaned[0].sourceMasterHash, sha256(surfaceSourceBytes));
 });
 

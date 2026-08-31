@@ -40,8 +40,14 @@ a second creative prompt and does not make another Call-1 Gemini request.
 
 Current prompt fences:
 
-- runtime master: `designpro-flat-first-atlas-20260831.v15-pure-rectangles`;
-- edge assembly: `atlas-artboard-designiq.20260831.v14-pure-rectangles`.
+- pending corrective runtime master:
+  `designpro-flat-first-atlas-20260831.v16-flat-example-only`;
+- pending corrective edge assembly:
+  `atlas-artboard-designiq.20260831.v15-flat-example-only`.
+
+These prompt fences describe the current corrective source, not a deployed or
+accepted release. Production remains the exact release recorded in section 8
+until merge/deploy verification proves otherwise.
 
 Call 1 receives:
 
@@ -91,20 +97,31 @@ canonical Call-1 source artwork.
 
 ### Reference status
 
-Canary GenerationID `51ea0e06-2ceb-460a-8756-54888a7832a8` proved that prose
-plus an anonymous neutral mask could still produce a vehicle-anatomy montage.
-One owner-selected Flamingo relationship pair is therefore release-pinned from
-historical GenerationID `5b2eb96c-77b5-4705-8cad-fef00af677fe`:
+Production canary run `33389124918`, GenerationID
+`083d2a70-edac-4e75-9caa-1336542baf7c`, proved that the installed Flamingo
+Driver proof was a contaminating Call-1 instruction. The accepted master and
+panels retained wheel-well shapes, white guide/gutter bands and template
+furniture. Request inspection showed three images in this order: installed
+Driver proof, matching flat atlas, neutral target guide. The finished-vehicle
+image overpowered the flat-source contract.
 
-- installed Driver proof SHA-256: `4449c3274f7d5cd9c383c49a81b0407f99ae0251b8052cad1ee3927c41ac1fdc`;
-- matching solid-rectangle flat derivative SHA-256: `20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa`.
+The corrective Call-1 teaching contract therefore attaches:
 
-The edge call presents installed proof first, matching flat atlas second and the
-current target guide last. Role text forbids copying the pair's artwork,
-wording, logo, brand, palette, typography, industry, vehicle geometry, camera or
-lighting. Its identity enters the immutable example-set hash. It is neither
-customer style authority nor production artwork authority; the current Call-1
-output remains the only creative source.
+- the release-pinned solid-rectangle Flamingo flat example from historical
+  GenerationID `5b2eb96c-77b5-4705-8cad-fef00af677fe`, SHA-256
+  `20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa`;
+- the current deterministic neutral target guide.
+
+Verified customer references remain creative inputs under their existing
+exact-reference/style-inspiration contract. The image order is the pinned flat
+example, customer references, then the current neutral target guide last.
+
+The installed proof is retained only as historical/presentation evidence and
+is not a Call-1 input. The flat example identity enters the immutable
+example-set hash. It is neither customer style authority nor production artwork
+authority; the current Call-1 output remains the only creative source. Named
+surface relationships remain prompt and server metadata. Surface names and IDs
+must never render as labels, captions, legends or printable pixels.
 
 The distressed Martini Porsche used a customer-requested one-off camera angle.
 Neither that angle nor an aspect-ratio change is the design-quality diagnosis.
@@ -120,7 +137,14 @@ for the deterministic graph, including:
 - invalid dimensions or contract shape;
 - invalid content hash, storage identity or lineage;
 - deterministic evidence that the output is a diagram/checkerboard rather than
-  valid source artwork.
+  valid source artwork;
+- deterministic cross-surface evidence of a leaked six-zone template frame:
+  mirrored flank gutters beside full-axis guide lines plus corresponding
+  outlined bands on multiple centre surfaces.
+
+The template-leak signature is intentionally conjunctive. White artwork alone
+does not fail, and opaque white anatomy is not repainted by the dark cut-out
+fill.
 
 Semantic/visual AI review is advisory. It may report quality, wording,
 coherence or brief-fidelity concerns, but it may not refuse or delay a
@@ -186,6 +210,13 @@ but it is not a prerequisite or artwork authority for Passenger or other views.
 Call 8 builds the production proof from the six existing Call-1 panels. It may
 present and prove them; it may not create, crop, extract or modify artwork.
 
+Run `33389124918` exposed a deterministic Call-8 contract mismatch, not a
+geometry failure. The design-time manifest rounded each surface area before
+summing (`305.54` square feet), while the Call-8 request summed raw areas and
+rounded once (`305.53`). Both contracts must sum the same raw surface areas and
+apply `nearest-0.01-after-raw-sum` exactly once. Until the corrective release is
+deployed and a fresh proof exists, Call 8 remains unaccepted.
+
 Call 9 is deterministic production promotion:
 
 1. re-read the six accepted Call-1 panel objects;
@@ -215,14 +246,48 @@ The board reads promoted panels from
 
 ## 8. Current production evidence
 
-Baseline production release before the current teaching-pair/semantic-proof
-repair:
+Current verified production release before the flat-only/template-leak/Call-8
+corrective release:
 
-- PR #274
-- SHA `c7be727b1782be64961ea58bdfad3bce64871607`
+- PR #275
+- SHA `1bd4906ab6a7433b32677be9cc5adb87f17d2fed`
 - web, gateway and two runtime replicas deployed at that exact SHA
 
-Owner-authorized diagnostic production canary #35:
+Latest owner-authorized diagnostic production canary:
+
+| Identity/evidence | Value |
+|---|---|
+| GitHub Actions run | `33389124918` |
+| Production orderNumber | `CANARY-MTH6KLDP` |
+| GenerationID | `083d2a70-edac-4e75-9caa-1336542baf7c` |
+| RequestID | `cc9baeb7-bb77-4a34-a337-8d67241129f3` |
+| DesignID | `DID-083D2A70` |
+| handoff RevisionID | `8499ab58-0c00-40c3-a3c5-9fe2b73cb236` |
+| flat-atlas revision row ID | `db138185-3da3-483e-b013-5f3a0801ffe5` |
+| accepted master hash | `7e8e94f4e1f0e0649d9671c9e8f9f4d0cd904e154505545e3c763baeaf95290e` |
+| Entice RunID | `f041f306-f4da-4283-8b37-ea07a4bc50a9` |
+| Entice PackID | `75daace6-84e8-4b54-b521-ccc2b52b2fc2` |
+| Production RunID | `07ec1282-76a1-4e07-856f-8bff80d964c2` |
+| latency | A.T.L.A.S. `117.96s`; Driver `159.63s` |
+| proof state | all seven required presentation views accepted |
+| Call-8 state | deferred: `genie_total_square_feet_mismatch`; no flat proof |
+| production state | honestly parked at `approval_required/await_purchase` |
+
+This run executed one Call-1 image request and persisted the canonical master,
+six Call-1 panels and seven presentation views. Exported-byte inspection proved
+the master was structurally contaminated by the installed teaching proof. It
+must not advance into production and must not be overwritten in place. The next
+owner-authorized canary must create a fresh immutable Call-1 authority after the
+corrective release is deployed. A technical retry does not justify changing
+identity when the accepted creative authority remains valid; this case is
+different because the accepted source itself is proven structurally invalid.
+
+The run also exposed two non-creative defects: Call 8's inconsistent total-area
+rounding and a canary lookup that used the Entice RunID where the canonical
+Entice PackID was required. Neither defect justifies a new producer, altered
+panel geometry or relaxed validation.
+
+Earlier owner-authorized diagnostic production canary #35:
 
 | Identity/evidence | Value |
 |---|---|
@@ -274,9 +339,12 @@ continuity. They do not establish a Porsche-angle or aspect-ratio defect.
 ## 9. DCA Phase 1 acceptance
 
 Do not run speculative canaries, and never treat a canary as this acceptance
-boundary. The owner explicitly authorized the current diagnostic production
-canary while away; final acceptance still requires one real customer-style
-production DCA:
+boundary. After the earlier no-canary direction, the owner explicitly
+authorized a new production canary while away and directed the run to continue
+through observed failures. That exception authorizes the next verification run
+after the smallest corrective release; it does not mark the current source,
+tests, deployment or DCA accepted. Final acceptance still requires live
+evidence from one customer-style production lineage:
 
 1. Vehicle Enter / Design Prep retains one GenerationID;
 2. Generate creates one accepted Call-1 master and immutable revision;

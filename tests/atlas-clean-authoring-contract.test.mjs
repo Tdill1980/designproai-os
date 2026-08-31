@@ -31,7 +31,9 @@ test("ATLAS creative contract carries named design context and pure rectangular 
   assert.match(contract, /neutral spatial mask with six fixed GENIE regions/);
   assert.match(contract, /panel identity mismatch/);
   assert.match(contract, /pure, opaque, unbroken, full-bleed rectangular region of continuous printable artwork/);
-  assert.match(contract, /ONE unified vehicle-wrap design arranged flat as six named printable production surfaces/);
+  assert.match(contract, /ONE unified vehicle-wrap design arranged flat as six server-mapped printable production surfaces/);
+  assert.match(contract, /SURFACE METADATA IS NEVER VISIBLE ARTWORK/);
+  assert.match(contract, /never place a gutter, border or caption band inside a light region/);
   assert.match(contract, /TARGET VEHICLE \(CANONICAL\)/);
   assert.match(contract, /BODY CLASS \(GENIE\)/);
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
@@ -54,25 +56,25 @@ test("ATLAS request exposes exact identity and placement but no dimensions or co
   assert.match(panelBlock, /placement:/);
   assert.doesNotMatch(panelBlock, /widthInches:|heightInches:|topology:/);
   assert.match(request, /vehicleType:/);
-  assert.match(request, /cohesionExampleProofStoragePath:/);
   assert.match(request, /cohesionExampleFlatStoragePath:/);
+  assert.doesNotMatch(request, /cohesionExampleProofStoragePath:/);
   assert.match(request, /cohesionExampleIdentity:/);
   assert.doesNotMatch(request, /referenceImagesBase64:[^\n]*cohesionExample/);
 });
 
-test("ATLAS relationship teaching is installed-first, solid-flat-second, current guide last", () => {
+test("ATLAS teaching is solid-flat first and the current guide remains last", () => {
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
-  const installed = handler.indexOf("RELATIONSHIP-ONLY EXAMPLE 1/2");
-  const flat = handler.indexOf("RELATIONSHIP-ONLY EXAMPLE 2/2");
+  const flat = handler.indexOf("RELEASE-PINNED FLAT A.T.L.A.S. OUTPUT EXAMPLE");
   const customer = handler.indexOf("for (const ref of references) pushImage(ref)", flat);
   const target = handler.indexOf("CURRENT TARGET GUIDE", customer);
   const guide = handler.indexOf("await downloadPart(body.guideStoragePath", target);
-  assert.ok(installed > 0 && installed < flat && flat < customer && customer < target && target < guide);
-  assert.match(handler, /ATLAS_COHESION_PAIR_CONTRACT/);
+  assert.ok(flat > 0 && flat < customer && customer < target && target < guide);
+  assert.match(handler, /ATLAS_COHESION_EXAMPLE_CONTRACT/);
+  assert.doesNotMatch(handler, /cohesionExampleProofStoragePath|INSTALLED DRIVER PROOF/);
   assert.match(handler, /atlas_artboard_input_hash_mismatch/);
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v14-pure-rectangles"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v14-pure-rectangles"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v15-flat-example-only"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v15-flat-example-only"/);
 });
