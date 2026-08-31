@@ -559,8 +559,8 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
       || Number(providerMetadata.atlasRevisionSequence) !== Number(flatAtlas.revisionSequence)
       // THE ARTWORK BINDING IS THE PANEL, NOT A CROP OF THE MASTER.
       //
-      // RULE 0.28 §6: a proof hash-binds to the persisted Call-1/Call-9 panel
-      // the customer actually buys, rather than to a fresh crop of the sheet.
+      // RULE 0.28 §6: a proof hash-binds to the persisted Call-1 panel that
+      // Call 9 later verifies/promotes unchanged, rather than to a fresh crop.
       // That is what the photographer is handed and what it verifies before it
       // renders; this assert follows it to the same artifact.
       || providerMetadata.atlasZoneContract !== ATLAS_PANEL_AUTHORITY_CONTRACT

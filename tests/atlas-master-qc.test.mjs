@@ -363,17 +363,12 @@ test("a clean full-bleed sheet reports no cut-out component at all", async () =>
   }
 });
 
-/* ── Passenger mirror MAE must tolerate forward-reading text ───────────── */
+/* ── Passenger mirror MAE is telemetry, never structural authority ─────── */
 
-// The authoring prompt requires passenger to be driver's mirror-compatible
-// twin (same motif, scene, hierarchy, scale) while "every word/logo/URL/
-// number remains forward-reading on both zones" -- flat-first-atlas.cjs's
-// TOPOLOGY LOCK. A literal full-zone pixel-mirror comparison cannot pass any
-// design that honors that second clause: flipping driver's forward text
-// yields backward text, which never matches passenger's independently
-// forward text at those pixels. Live evidence 2026-08-24 (generation
-// dda491ae-ed63-4aa7-96af-c377d4f71383): a real branded master was refused
-// at passengerMirrorMae=0.28346 with every other check passing.
+// Passenger is its own named Call-1 surface. The historical mirror metric is
+// still useful for continuity investigations, but legitimate forward-reading
+// text and side-specific placement mean it cannot decide whether the flattened
+// authority is structurally valid.
 
 const sideBySideManifest = {
   zones: [
@@ -518,10 +513,17 @@ test("a true mirror twin with identical forward-reading text on both flanks pass
   assert.ok(mae <= MAX_PASSENGER_MIRROR_MAE, `expected the trimmed mean to absorb the text band, saw ${mae}`);
 });
 
-test("a passenger zone that is not actually driver's twin still fails", async () => {
+test("an independently authored Passenger is measured without becoming a blocker", async () => {
   const bytes = await unrelatedPassengerMaster();
   const mae = await passengerMirrorMae(bytes, sideBySideManifest);
-  assert.ok(mae > MAX_PASSENGER_MIRROR_MAE, `expected an unrelated flank to still fail, saw ${mae}`);
+  assert.ok(mae > MAX_PASSENGER_MIRROR_MAE, `fixture must exceed the historical diagnostic threshold, saw ${mae}`);
+  const checks = await deterministicMasterChecks(bytes, sideBySideManifest);
+  assert.equal(checks.passengerMirrorMae, mae);
+  assert.equal(
+    checks.blockingFailures.some((finding) => /passengerMirrorMae/.test(finding)),
+    false,
+    "Passenger similarity must never be a structural release gate",
+  );
 });
 
 // A ZONE THAT PAINTS A TRANSPARENCY CHECKERBOARD IS A PICTURE OF A CUT-OUT PNG.

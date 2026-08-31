@@ -20,24 +20,15 @@ const DEFAULT_CONFIDENCE_THRESHOLD = 0.92;
 const MIN_ZONE_OPAQUE_RATIO = 0.995;
 const MIN_ZONE_EDGE_OPAQUE_RATIO = 0.99;
 const MIN_ZONE_LUMA_STDDEV = 6;
+// Diagnostic threshold retained for historical timing/quality comparisons.
+// It is NOT a Call-1 release gate. Passenger is a separately authored named
+// surface, so legitimate copy placement and side-specific composition can
+// exceed a pixel-mirror threshold without making the A.T.L.A.S. structurally
+// invalid. The metric remains useful telemetry for investigating continuity.
 const MAX_PASSENGER_MIRROR_MAE = 0.26;
-// The trim fraction this check drops before averaging. The authoring prompt
-// requires passenger to be the mirror-compatible TWIN of driver -- same
-// motif, scene, hierarchy, scale -- while "every word/logo/URL/number
-// remains forward-reading on both zones" (flat-first-atlas.cjs TOPOLOGY
-// LOCK). That second clause makes a literal full-zone pixel mirror
-// impossible for any design that carries legible branding: flipping driver's
-// forward text produces backward text, which can never match passenger's
-// independently forward text at the same pixels, however well the two flanks
-// actually match as a design. Live evidence 2026-08-24 (generation
-// dda491ae-ed63-4aa7-96af-c377d4f71383): a real branded master was refused
-// at passengerMirrorMae=0.28346, barely over the old untrimmed 0.26 bound,
-// with no other check flagging it -- the motif matched, only the localized
-// text/logo band did not, exactly as the prompt instructs. Dropping the
-// worst-matching quarter of pixels before averaging absorbs one text/logo
-// band's worth of legitimate divergence while a passenger zone that is not
-// actually the driver's twin still differs across nearly the whole zone and
-// still fails on the trimmed mean.
+// The trim fraction drops localized text/logo divergence before computing the
+// diagnostic value. It keeps the historical metric comparable; it does not
+// make Driver the pixel authority for Passenger.
 const PASSENGER_MIRROR_TRIM_FRACTION = 0.25;
 // A ZONE THAT PAINTS A TRANSPARENCY CHECKERBOARD IS A PICTURE OF A CUT-OUT PNG.
 //
@@ -146,17 +137,9 @@ const RESPONSE_FIELDS = Object.freeze([
   "reasons",
   // WHERE THE DRIVER FLANK'S LETTERING SITS.
   //
-  // Not a verdict — a measurement, returned by the review we already make, so
-  // the passenger flank can be COMPOSED from the driver instead of requested
-  // from the model. Four canaries on one vehicle refused the same way
-  // ("The passenger side text 'FLAMINGO POOLS' is not forward-reading. The
-  // passenger side flamingo is facing the same direction..."), because asking
-  // an image model to author one flattened multi-surface sheet AND orient
-  // every piece of production text on it is brittle by construction.
-  //
-  // With these rects, runtime/atlas-passenger-mirror.cjs flops the driver
-  // flank onto the passenger zone and re-drops the lettering un-flipped: the
-  // mirror contract goes to ~0 and every word reads forward on both flanks.
+  // Advisory measurement retained for operator diagnostics and historical
+  // response compatibility. Active Call 1 never uses these rectangles to
+  // manufacture or overwrite Passenger.
   "driverBrandBands",
 ]);
 const STATUS = Object.freeze(["pass", "fail", "uncertain", "not_applicable"]);
@@ -569,9 +552,6 @@ async function deterministicMasterChecks(masterBytes, manifest) {
       );
     }
   }
-  if (passengerMae > MAX_PASSENGER_MIRROR_MAE) {
-    blocking(`passengerMirrorMae=${passengerMae.toFixed(5)}`);
-  }
   return {
     accepted: failures.length === 0,
     zones,
@@ -628,7 +608,7 @@ ACCEPTANCE CONTRACT:
 4. The sheet is one premium DesignPanelAI wrap: layered depth, intentional flow, strong hierarchy, readable-at-a-glance composition and gallery-grade custom quality. Six unrelated designs, generic AI filler, duplicated panels or incoherent motifs fail.
 5. The brief, palette, supplied identity and requested photographic/illustrated treatment are visibly honored. Do not excuse a generic design merely because it is colorful.
 6. Every supplied business/contact string that is visibly rendered must be exact and forward-reading. Malformed or invented words, URLs or numbers fail. If no brand strings are required, brandTextContract is not_applicable.
-7. Passenger is the opposite-facing, mirror-compatible twin of Driver in motif, scale, hierarchy and flow, while every readable string on both sides remains forward-reading. Grossly different side compositions fail.
+7. Passenger is its own named authored surface, coordinated with Driver through the same vehicle-wide palette, motif, hierarchy and flow. It may use side-specific placement and forward-reading text. Never require it to be Driver's pixel mirror or treat Driver pixels as Passenger authority; report visual inconsistency only as advisory evidence.
 8. No guide gray, guide labels, outlines, dimensions, legends, browser UI, watermarks, melted artwork or other AI artifacts may survive.
 9. In driverBrandBands, return the bounding rectangle of EVERY band of readable lettering, logo or contact text on the DRIVER zone -- company name, phone, URL, tagline, logo lockup. Coordinates are fractions of the DRIVER ZONE ITSELF (0-1, origin at that zone's top-left as the guide draws it), not of the whole sheet. Group text that sits together into one band. Return an empty array when the driver zone carries no lettering. These are measurements, not judgements: report them even when every contract passes.
 10. Return only schema-bound JSON. Echo the two sha256 identities exactly.

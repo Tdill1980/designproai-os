@@ -1,5 +1,43 @@
 # CLAUDE.md — designproai-os
 
+## 🗺️ RULE 0.0 — A.T.L.A.S. IS ONE VEHICLE UNWRAPPED, NOT SIX ANONYMOUS DESIGNS. (Trish 2026-08-31)
+
+This owner correction supersedes any later historical wording in this file
+that tells Call 1 to hide the target vehicle, replace named surfaces with
+anonymous `FIELD A–F` language, or treat its six regions as generic livery
+canvases.
+
+**A.T.L.A.S. means one real three-dimensional vehicle exterior unwrapped into
+one two-dimensional design space, like a globe flattened into an atlas.** Call 1
+authors one cohesive vehicle-wrap composition across that complete topology.
+Driver, Passenger, Hood, Roof, Front and Rear are coordinated surfaces of that
+one design, never six independent creative prompts.
+
+The image model receives the server-resolved year/make/model, body class, the
+named surface mapping and adjacency/coverage context it needs to understand the
+installed vehicle. GENIE/code remains the geometry authority; giving the model
+physical design context does not let it invent dimensions or topology.
+
+For pickups, exterior bed sides and tailgate receive the coordinated artwork;
+the bed floor and inner bed walls remain unwrapped. Wheel wells, glass, lights,
+trim and the open bed are deterministic placement/projection masks. They never
+punch holes into the canonical artwork: all six Call-1 source panels remain
+opaque, uninterrupted, full-bleed rectangles.
+
+Call 1 accepts and durably binds the master plus the six canonical panel files.
+Separating those exact rectangles is deterministic byte handling, not a later
+creative extraction. Both the master and all six Call-1 panels publish to
+PanelProStudio immediately after Call-1 acceptance. Call 9 only re-reads,
+hash-verifies and promotes those unchanged bytes; it is never their creator and
+never their first UI publication boundary.
+
+The quality baseline remains the proven DesignPanelAI vehicle-wrap designer
+persona and its populated structured inputs. A single hash-pinned, owner-
+approved matching 3D ↔ flattened example pair may teach the mapping relation;
+it is reference-only and may not contribute customer artwork, branding or
+production authority. Do not silently restore a stylistically contaminating
+example.
+
 ## 🎯 RULE 0.1 — TWO SEPARATE GOLD STANDARDS. DO NOT MIX THEM. (Trish 2026-08-17)
 
 Design quality and output-pipeline correctness are judged against **different
@@ -9,11 +47,13 @@ are fine".
 
 | Layer | Gold standard | Judge |
 |---|---|---|
-| **Design quality / generation behaviour** | the recent **distressed Martini Porsche** job | is the design language, studio consistency and creative quality acceptable |
+| **Design quality / generation behaviour** | the proven pre-regression DesignPanelAI production body of work (including Flamingo Pools, the commercial fleet gallery and owner-identified strong designs) | is one vehicle-specific design premium, cohesive and consistent across its six surfaces and presentation descendants |
 | **Output / production pipeline** | the **July 24** working state, `docs/LAST-WORKING-STATE-2026-07-24.md` | does the chain still produce the artifacts it produced then |
 
-**Do not use the Porsche to infer whether the output pipeline works. Do not use
-July 24 to judge current design-generation quality.**
+The distressed Martini Porsche used a customer-requested one-off camera angle.
+Neither that angle nor an aspect-ratio change is the regression being diagnosed.
+Do not turn either into a new global design contract. Do not use July 24 alone
+to judge current design-generation quality.
 
 The July-24 flow is a **regression target**, not a redesign brief:
 
@@ -36,12 +76,15 @@ whether branding/phone/logo fields were present · retries · image hash`
 
 Then the diagnosis is mechanical rather than aesthetic:
 
-- **Quality below the Porsche baseline** → parity-diff against that exact
-  stack before changing any creative logic. A short prompt or unpopulated
-  structured inputs means the port or the caller is incomplete; it never
-  means A.C.E. needs new creative direction.
-- **Individual quality passes but cross-view identity drifts** → port
-  `generate-color-render` only. Nothing else.
+- **The accepted flattened A.T.L.A.S. is weak or internally inconsistent** →
+  parity-diff Call 1 first: exact prompt, designer persona, canonical vehicle,
+  body class, named surface relationships, customer fields, references and
+  hashes. A short prompt or unpopulated structured inputs means the Call-1 port
+  or caller is incomplete.
+- **The accepted A.T.L.A.S. is cohesive but a presentation descendant drifts** →
+  trace only that view's `persona-photographer-render` / angle / surface-panel
+  input. `generate-color-render` is historical presentation behavior, not a
+  substitute creative authority and not an automatic diagnosis.
 
 **Do not touch Calls 8+ during that determination.**
 
@@ -51,17 +94,16 @@ for output. The question there is not "how should the pipeline work" — it is
 July 24?"** Keeping the front-half and back-half investigations separate is
 what stops the output path being treated as greenfield again.
 
-**Where the Porsche's quality came from.** It was produced by the live
-RestylePro stack — `design-panel-ai-generate` with `_shared/studio-os.ts` and
-`_shared/view-angles-os.ts`. That is exactly the stack ported into
-`runtime/designiq-prompt.cjs`, `runtime/studio-os.cjs` and
-`runtime/view-angles.cjs`. So the design-quality baseline and the port target
-are the same thing; a design that does not reach Porsche quality means the
-port is incomplete, not that a new creative approach is needed.
+**Where the proven quality came from.** The production body of work used
+`design-panel-ai-generate` with its vehicle-wrap designer persona and populated
+structured brief inputs. Studio and angle contracts governed the 3D
+presentation descendants. A weak accepted flattened master is therefore a
+Call-1 conditioning/input regression; a correct master with one drifting view
+is a presentation-projection regression. Keep those diagnoses separate.
 
 ## 🛞 RULE 0.15 — A WRAP PANEL IS A SOLID RECTANGLE. THE INSTALLER CUTS THE HOLES. (Trish 2026-08-23)
 
-**Every A.T.L.A.S. zone, every Call 9 panel, every print file is one solid
+**Every A.T.L.A.S. zone, every canonical Call-1 panel, every print file is one solid
 rectangle of continuous artwork, opaque corner to corner.** The design runs
 straight through the places a windshield, side window, door glass, wheel arch,
 tyre, pickup-bed opening, light, handle or trim will later sit.
@@ -86,19 +128,20 @@ pixel is opaque, and black is opaque. Two things now stop it:
   generations stay readable/viewable/downloadable on every read surface
   (owner protection #1, locked by `tests/atlas-historical-read.test.mjs`).
 
-  **⛔ THE PAIRED EXAMPLE AND THE ORIGINAL PROMPT ARE RESTORED. DO NOT REMOVE
-  THEM AGAIN. (Trish 2026-08-24)** A session concluded that showing Call 1 the
-  finished 3D proof was what produced the wheel-arch cut-outs, detached it, and
-  rewrote the prompt to say *"nothing in this canvas depicts a vehicle: no body,
-  no panel gap, no door seam, no window, no wheel…"*. **That was wrong and it
-  broke the design.**
+  **REFERENCE STATUS CORRECTION (2026-08-31).** No structural example pair is
+  currently active in production. Do not claim that a Houdini pair is bundled
+  or attached. A flat-only Flamingo image is not a valid pair. At most one
+  owner-approved, hash-pinned, genuinely matching wrapped-vehicle ↔ flattened
+  A.T.L.A.S. pair may be attached to teach the mapping relationship; it must
+  contribute no customer artwork, wording, logo, colour or style.
 
   **An A.T.L.A.S. master IS a flattened top view OF A VEHICLE WRAP.** It
   legitimately carries the vehicle's panel geometry — door seams, rocker and
-  hood contours, the lines an installer cuts to. The bundled Houdini example
-  shows exactly that, and so did every good master this system has produced.
-  Forbidding that geometry removed the very thing that makes the sheet a wrap
-  layout rather than abstract art.
+  hood contours and the relationships an installer understands. Canonical YMM,
+  body class and the six named surfaces must reach the prompt. Numeric geometry,
+  masks and production dimensions remain code/GENIE authority. Hiding all
+  physical meaning behind anonymous `FIELD A–F` removed the context that makes
+  the sheet a vehicle wrap rather than abstract art.
 
   The defect was never the geometry — it was **openings rendered as absent
   instead of painted through**, and that is now closed deterministically after
@@ -137,12 +180,12 @@ pixel is opaque, and black is opaque. Two things now stop it:
   above that floor, so every hole fixture still convicts. Ink scattered as
   specks is design; ink concentrated in shapes is a hole.
 
-**Do not relax either threshold to get a run through.** A master that fails this
-is telling you the truth — but a *rejection no longer kills the run*: Call 1
-re-rolls up to `MAX_MASTER_AUTHORING_ATTEMPTS` (3) times inside the one claimed
-authoring fence, feeding the gate's own findings back as corrective direction,
-exactly like the proof QC. A rejected candidate was never persisted and is not
-"the design"; the fence still makes a second concurrent master impossible.
+**Do not relax deterministic structural thresholds to get a run through.** A
+master that fails required container coverage, opacity, canonical artifact,
+hash, dimensions or lineage is invalid. Semantic/visual review is advisory and
+may not refuse or delay Call 1. Production defaults to one creative image call;
+an explicit operator authoring attempt may use the existing bounded retry
+contract, but a browser/network retry may never mint a second master.
 
 ### A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN (Trish 2026-08-24)
 
@@ -162,16 +205,13 @@ classes are now separated, and `deterministicMasterChecks` returns them apart:
 
 | class | examples | consequence |
 |---|---|---|
-| **blocking** — a broken *design* | blank zone, no contrast, passenger not the driver's twin | fatal, exactly as before; there is nothing worth showing a customer |
+| **blocking** — structurally invalid authority | blank/missing zone, broken container coverage, invalid canonical bytes/hash/lineage | fatal; downstream production has no valid source |
 | **cut-out** — a defect in the *panel* | wheel arch, glass, bed opening punched out | design and proofs survive, affected surfaces flagged |
 
-A cut-out no longer short-circuits the semantic review — the sheet still has to
-earn coherence, brief fidelity and correct lettering, because it is about to be
-shown to the customer, and because the exhausted path needs a complete QC record
-to persist rather than an empty one. `accepted` still means spotless, so the
-loop keeps re-rolling for a clean sheet; only when all three attempts carry
-cut-outs is the design kept, with `masterCutoutSurfaces` / `masterCutoutFindings`
-recorded on the revision.
+Semantic review may report coherence, brief-fidelity or lettering concerns, but
+it is advisory. It cannot block publication of a deterministically valid Call-1
+authority. `masterCutoutSurfaces` / `masterCutoutFindings` remain durable
+forensic evidence for PanelPro human review.
 
 **Those surfaces' panels must not print until a human has seen them on a
 template.** That is what `await_panelpro_preflight_qc` is for. `masterQcPassed`
@@ -289,7 +329,7 @@ drop the hero-first dependency. Per surface:
 `hood panel → hood` · `front panel → front` · `rear panel → rear` ·
 `roof panel → roof` · `close-up → the correct selected surface/detail authority`
 
-**The extracted panel is ARTWORK authority. The photographer/view/studio stack
+**The canonical Call-1 panel is ARTWORK authority. The photographer/view/studio stack
 is PRESENTATION authority only.** Every output must persist `generationId`,
 `atlasRevisionId`, `sourceMasterHash`, `surfaceKey`, the source panel artifact
 id + hash, and `shotKey`, so both UIs can prove a proof came from its matching
@@ -326,7 +366,7 @@ eight refusals was a JUDGE VERDICT on a rendered image, not a renderer error.
 | camera, framing | `view-angles-os.ts` → `CAMERA_ANGLES[shotKey]` | no |
 | studio, lighting | `studio-os.ts` | no |
 | model + fallback | `model-config.ts` | no |
-| **artwork** | **the surface's persisted Call-9 panel** | **yes — this is the one** |
+| **artwork** | **the surface's persisted canonical Call-1 panel (later Call-9-promoted without byte change)** | **yes — this is the one** |
 
 `persona-photographer-prompt.ts`, `studio-os.ts` and `view-angles-os.ts` stay
 byte-pinned. `persona-photographer-render/index.ts` is now ADAPTED, per this
@@ -358,7 +398,7 @@ resolves against `ATLAS_SHOT_SURFACES` instead. That changes which pinned angle
 may be requested, never the angle text. A shot handed the wrong surface's panel
 is refused (`atlas_proof_surface_mismatch`), never rendered.
 
-## 📐 RULE 0.28 — THE ARTBOARD IS LABELED CONTAINERS AT GENIE DIMS + 5″ BLEED, FILLED EDGE TO EDGE, WITH NO BODY LINES (Trish 2026-08-27)
+## 📐 RULE 0.28 — ONE NAMED VEHICLE A.T.L.A.S. ON GENIE CONTAINERS, FILLED EDGE TO EDGE, WITH NO BODY LINES (Trish 2026-08-27; corrected 2026-08-31)
 
 Owner, verbatim: **"ATLAS FLATTENED TOPO VIEW CONTAINER MUST HAVE LABELED
 CONTAINERS AND GENIE DIMS WITH 5\" BLEED — ATLAS FILLS FLATTENED TOP DESIGN
@@ -371,8 +411,12 @@ WITHOUT BODYLINES FILLED TO RECTANGLE CONTAINER EDGES."**
    has never seen the vehicle. Measured cost of not doing this: GENIE has the
    F-250 Super Duty Crew Cab side at **251×60**; the estimator produced
    **153×56** — ninety-eight inches short, on every container.
-2. **The guide IS the artboard.** Labeled rectangles, true GENIE panel
-   dimensions, 5″ bleed already included. The model paints inside them.
+2. **One geometry, two consumers.** The durable installer guide carries the
+   named surfaces, GENIE dimensions and 5″ bleed for humans and forensic
+   checks. The image model receives the same six-region geometry as a clean,
+   unlabeled mask plus a server-authored text mapping for Passenger, Driver,
+   Rear, Roof, Hood and Front. It does not receive anonymous `FIELD A–F`
+   aliases, pixel dimensions or installer annotations.
 3. **Filled edge to edge.** Artwork runs off all four sides of its rectangle.
    No blank margin, white gap, letterboxing, rounded corner, frame or border.
 4. **NO BODY LINES.** No door seams, panel gaps, rocker or hood contours, wheel
@@ -399,12 +443,12 @@ still a failed master.
    exactly the cut-out class RULE 0.15 convicts, with soft edges and invented
    placement. The model fills the whole rectangle; geometry applies the mask
    deterministically afterwards.
-6. **Every 3D proof is built from that side's EXTRACTED PANEL, and nothing
+6. **Every 3D proof is built from that side's canonical Call-1 panel, and nothing
    waits.** Owner: *"ALL 3d from extracted panels — no waiting. Individual
    panels fed to 3d sides and duplicated, put in RevisionStudioIQ alongside 3d
    proofs and in PanelPro with all upscaled assets."* `panel(surface) → 3D
    proof(surface)` the moment that panel is cut. `buildViewAuthorities` /
-   `viewAuthorityFor` must hash-bind to the persisted Call-9 panel rather than
+   `viewAuthorityFor` must hash-bind to the persisted Call-1 panel rather than
    to a fresh crop of the master — same strictness, pointed at the artifact the
    customer actually buys. Each panel is then duplicated and published without
    waiting for the set: RevisionStudioIQ beside that side's proof, PanelPro with
@@ -412,7 +456,18 @@ still a failed master.
 
 ### THE SHELL IS THE OWNER'S TOPO SHEET (Trish 2026-08-27)
 
-Spec: **"A.T.L.A.S. FLATTENED – TOPO TOP VIEW · SINGLE SOURCE MASTER · SIX
+**CURRENT CONTRACT — 2026-08-31.** The master uses one fixed 4096×4096
+six-region canvas. That square storage canvas is not an aspect-ratio quality
+fix. `CENTER_ORDER` is `rear → roof → hood → front`. The model-facing guide is
+an unlabeled, unstroked deterministic mask so labels and dimensions cannot be
+copied into artwork. Canonical YMM, body class and the named Driver, Passenger,
+Rear, Roof, Hood and Front mapping travel in the Call-1 text/data contract. The
+separate human installer map may show labels, IDs and dimensions. Do not restore
+anonymous `FIELD A–F`, model-facing technical furniture, or a vehicle silhouette.
+
+#### HISTORICAL SHELL DESCRIPTION — SUPERSEDED; DO NOT IMPLEMENT
+
+Historical spec: **"A.T.L.A.S. FLATTENED – TOPO TOP VIEW · SINGLE SOURCE MASTER · SIX
 DETERMINISTIC PANELS · 1:1 TOPOLOGY"**. The shell renders exactly that:
 
 - **Centre column reads ROOF → HOOD → FRONT → REAR from the top.** `CENTER_ORDER`
@@ -447,7 +502,7 @@ every anchor must lie outside every `zone.trim`
 to reach a customer: the master is masked to the zone rectangles and each panel is
 finished to trim.
 
-Contract `atlas-artboard-designiq.20260827.v5`, folded into the Call-1 `promptHash`
+Historical contract `atlas-artboard-designiq.20260827.v5`, folded into the Call-1 `promptHash`
 so masters authored against the old shell are not reused. `PROMPT_VERSION` stays
 `designpro-flat-first-atlas-20260827.v10-edge` — **no migration cutover.**
 
@@ -495,13 +550,13 @@ Enforced by `tests/atlas-artboard-edge-call1.test.mjs` and
 `promptHash`, so masters authored against the unlabeled artboard are not
 reused. The DB-pinned `PROMPT_VERSION` is unchanged at
 `designpro-flat-first-atlas-20260827.v10-edge`, so this needs no migration
-cutover. Items 5 and 6 are SPECIFIED, not yet
-built — see `docs/ATLAS_ONE_ARTIFACT_GRAPH.md` §2.
+cutover. This paragraph is historical; the current v14/v13 contracts and
+2026-08-31 correction at the top of this file are authoritative.
 
 ## 🧬 RULE 0.27 — ONE ARTIFACT GRAPH. CODE OWNS THE ARTBOARD; A.I. OWNS THE DESIGN. (Trish 2026-08-27)
 
 **Full directive: `docs/ATLAS_ONE_ARTIFACT_GRAPH.md`. Read it before touching
-RevisionStudioIQ, PanelPro Studio, panel extraction or the proof fan-out.**
+RevisionStudioIQ, PanelPro Studio, Call-1 panel separation/publication or the proof fan-out.**
 
 The owner proved the pipeline is still split, from the product's own screens:
 PanelPro reported **Print panels 0/6** while RevisionStudioIQ showed images in
@@ -517,13 +572,14 @@ Three rules follow, and they are architectural, not cosmetic:
 
 1. **HARDWIRE THE ARTBOARD SHELL.** Gemini must not be responsible for drawing
    the A.T.L.A.S. containers. Code/GENIE deterministically builds the six
-   labeled rectangular surface containers, their real GENIE proportions,
-   positions, surface IDs and the master canvas — the Houdini PANEL LAYOUT
-   topology. DesignPanelAI then authors ONE cohesive wrap INSIDE those defined
+   rectangular surface containers, their real GENIE proportions, positions,
+   surface IDs and the master canvas. The model-facing mask stays free of
+   printable labels; the Call-1 data/text maps every region to its named
+   vehicle surface. DesignPanelAI then authors ONE cohesive wrap INSIDE those defined
    interiors in ONE Call 1. **The A.I. owns the design; the code owns the
    geometry.** Still one source design, still one authoring call.
-2. **THE MASTER FANS OUT IN PARALLEL, IMMEDIATELY.** Panels (+5" bleed), asset
-   extraction, and the Driver proof all start on master acceptance. The
+2. **THE MASTER FANS OUT IN PARALLEL, IMMEDIATELY.** Canonical Call-1 panels
+   (+5" bleed), logo/asset analysis, and the Driver proof all start on master acceptance. The
    user-facing critical path is ONLY `Call 1 → Driver proof`; on "See All
    Sides" the remaining six render concurrently. Panels and logos are never
    behind the proof set.
@@ -539,9 +595,11 @@ both UIs populated FROM THE SAME ARTIFACT IDS, all bound to one `generationId`
 / `DesignID` / `atlasRevisionId` / `masterContentHash`. **Do not report READY
 while either UI is synthesizing a missing artifact.**
 
-Status 2026-08-27: §1 and §2 are NOT built; the five data contradictions in §4
-of the doc are diagnosed, not fixed. Design quality is a SEPARATE failure and a
-graph fix is never licence to rewrite the creative prompt (RULE 0.1).
+Status 2026-08-31: server fan-out and Call-1 panel persistence exist. The
+observed regressions are specific: Call 1 was conditioned as anonymous fields;
+PanelPro treated a thin index record as a hydrated job and hid Call-1 panels;
+the Hood proof staging allowlist rejected `hood_detail`. Repair those proven
+defects without adding a producer or changing graph authority.
 
 ## 🎯 RULE 0.26 — ONE CANONICAL CALL 1: THE REAL EDGE FUNCTION EXECUTES THE PERSONA BRAIN (Trish 2026-08-27, supersedes the 08-26 vendored-bridge form)
 
@@ -594,12 +652,11 @@ How it is implemented — DO NOT re-split it:
   idempotently. SHIP ORDER for v10: the DB gate must learn v10-edge in the
   same cutover as the runtime that emits it — runner and gate may not diverge
   across a customer-visible window again.
-- Acceptance (owner protection): a dark, isolated Call-1 run through the
-  DEPLOYED edge function — report requestId, function name + source SHA,
-  prompt version, image-request count exactly 1, zero direct Call-1 Gemini
-  requests elsewhere, the master image, and the source-master hash + six crop
-  hashes. STOP after showing the owner the master; no proofs, no traffic
-  switch, until she approves it against HVAC Hero / Iron Horse.
+- Acceptance (owner correction 2026-08-31): no canary and no isolated Call-1
+  stop. Run one real deployed customer-style DCA. Publish the accepted master
+  and six Call-1 panels immediately; continue the same lineage through the
+  required views, Call 8 and Call-9 promotion; then stop in PanelProStudio for
+  owner confirmation before Full QC.
 
 ## 🖥️ RULE 0.16 — CALLS 1–7 EXECUTE ON THIS SERVER (2026-08-23)
 
@@ -656,7 +713,7 @@ prompt version from v2 to v8. The first `-preview` run drops it to 18–23 with
 **One A/B pair is not eleven production runs.** A single sample on one payload is
 exactly the measurement that should lose to the fleet, and this one did.
 
-### ⚠️ THE FLANKS HAVE BEEN BROKEN SINCE v4 — AND THAT IS A SEPARATE BUG
+### ✅ THE v4 FLANK REGRESSION IS NOW LOCATED AND REPAIRED
 
 Same table, different column. `driver` and `passenger` come back as a vehicle
 silhouette on a dark surround from **v4 onward, on every model**, while the
@@ -671,11 +728,13 @@ The same commit added the negative block — *"Do not draw or punch out vehicle
 windows/glass, wheel arches… Do not draw a vehicle, camera scene, shadows"* —
 which is the prompt shape this file already warns Gemini over-indexes on.
 
-**This is not yet fixed and must not be "fixed" by guesswork.** RULE 0.15
-records what happened the last time a session rewrote the vehicle framing to
-chase a pixel defect. The controlled test is the A/B harness with one variable:
-same payload, same model, the side-twin sentence with and without the
-scene/landmarks framing.
+The current repair is evidence-based: the Call-1 contract restores canonical
+year/make/model, GENIE body class, the six named physical surfaces and the
+proven vehicle-wrap designer persona. It removes anonymous `FIELD A–F`
+conditioning and the active Driver-to-Passenger rewrite. Passenger remains its
+own authored Call-1 region; continuity is required at the design-system level,
+not by forcing pixel mirroring. The real production DCA, not a canary or a
+speculative A/B, is the acceptance test.
 
 **v2's prompt text is not in this repository.** `flat-first-atlas.cjs` was created
 at v4, so the Aug-22 code was never committed here — the v2 evidence is
@@ -691,11 +750,12 @@ closing line of every A.T.L.A.S. prompt said *"Match the production quality of
 the provided gold-standard DesignPanel artboards"* — pointing the model at
 images that were never in the request.
 
-The clause now follows the attachment count. Populating that bucket would be a
-real improvement and is a separate piece of work; until it is populated, the
-quality bar is stated without the dangling reference. **When you add examples,
-check the prompt still cites them** — the count is threaded through
-`atlasPrompt(input, manifest, { artboardQualityExampleCount })`.
+No teaching example is active. Do not populate that bucket with a flat-only
+image: a flat sheet by itself cannot teach the 3D-vehicle→flattened-A.T.L.A.S.
+relationship and can instead become an aesthetic template. A future example
+requires one owner-approved, hash-pinned, genuinely matching installed 3D view
+and flattened A.T.L.A.S. pair with verified lineage. Flamingo is only a
+candidate until that matching pair exists.
 
 ### 📏 REPRODUCING THE A/B
 
@@ -729,12 +789,13 @@ rather than left to prose — `tests/designpro-reference-authority.test.mjs`.
 
 | class | what it is | what it may teach | what it may NEVER do |
 |---|---|---|---|
-| **STRUCTURAL** | the bundled Houdini flattened-top-view pair | how ONE cohesive wrap is represented across a flattened master — layout, orientation, surface correspondence, seam intent | contribute artwork, wording, logo, colour, brand or style |
+| **STRUCTURAL** | at most one owner-approved, hash-pinned matching 3D ↔ flattened pair (none active today) | how ONE cohesive wrapped vehicle corresponds to its flattened master | contribute artwork, wording, logo, colour, brand or style |
 | **CREATIVE** | the customer's own VisionBoard images | artwork authority under `exact_reference`; style authority under `style_inspiration` | — |
 | **PRESENTATION** | the 3D proof example + Studio OS | vehicle presentation, camera, studio, photorealism, wrap realism | contribute artwork or redesign the customer's wrap |
 
-**The Houdini sheet is NOT a creative-style reference** unless the customer
-explicitly supplies it as one. It is attached to teach the output format.
+No structural pair is currently attached. A flat-only image is not a valid
+pair. If the owner approves a genuinely matching pair, it teaches only the
+3D-to-flat relationship and never becomes creative or production authority.
 
 **Authority order for a 3D proof:**
 
@@ -805,12 +866,14 @@ None of these may be re-implemented against `supabase.functions` or
 | GENIE Universal Panelizer progress — step rail, glowing 7 sides, "when all panels glow it's a go" | `/designpro/jobs/:generationId/progress`, `/productionflow/:generationId` | `pages/designpro/GenieProgress.tsx` |
 
 **The board is not a producer.** RestylePro's "Pull panel" / "Mirror from driver"
-built panels in the browser; here Call 9 cuts them deterministically. A side with
-no panel is reported as server work, never hand-patched — adding those buttons
-back is the second producer the one-sanctioned-chain rule forbids.
+built panels in the browser; here Call 1 deterministically separates and stores
+the six authored regions. Call 9 verifies and promotes those same bytes. A side
+with no Call-1 panel is reported as server work, never hand-patched — adding
+those buttons back is the second producer the one-sanctioned-chain rule forbids.
 
-A side **glows** on the progress page only when its Call 9 panel actually exists,
-not when a view merely rendered.
+A side may display its canonical Call-1 panel as soon as it exists. Production-
+promotion/QC state appears only after Call 9 verifies that same panel; a view
+render alone never substitutes for either state.
 
 ## 🧞 RULE 0.19 — GENIE DEPLOYS ONLY WHEN THE PRODUCTION PACK IS ORDERED (Trish 2026-08-23)
 
@@ -827,7 +890,7 @@ RevisionStudio had no extracted panels.**
 **The free half needs no validated production geometry.** Call 1 resolves the
 design-time size of every side (`resolveFlatAtlasPreviewDimensions`) and cuts the
 six panels to it with the 5″ bleed already in the layout. Those panels are what
-RevisionStudio entices with and what PanelPro Studio is later served. That
+RevisionStudio and PanelProStudio receive immediately. That
 geometry is marked `calls-1-7-layout-only` precisely because it is the design
 size, not the validated production size.
 
@@ -886,8 +949,9 @@ The intended relationship, for all six surfaces, is one row:
 
 > **REAL DESIGN PROOF ∥ PRINT PANEL**
 
-Left is that surface's 3D proof. Right is the deterministic A.T.L.A.S.
-extraction for that exact `surfaceKey` at GENIE dimensions + 5" bleed — **never
+Left is that surface's 3D proof. Right is the deterministically separated
+canonical Call-1 A.T.L.A.S. panel for that exact `surfaceKey` at GENIE
+dimensions + 5" bleed — **never
 an upload, never an AI regeneration, never a browser-made crop.** The pair is
 bound by the same `generationId`, A.T.L.A.S. revision / `masterContentHash`, and
 `surfaceKey`.
@@ -1012,8 +1076,8 @@ corrected. Forbid *generation*, never *correction*.
 (`supabase/migrations/20260825000000_designpro_panelpro_corrected_panels.sql`)
 against the exact `surface_key` and revision it replaces. It carries
 `correctedFromPath`, `correctedFromHash`, `sourceMasterHash`, `correctedBy`,
-`correctedAt` and a required reason; a correction with no Call 9 panel to
-correct is refused. The branded panel is **never touched**, so `source.verify`'s
+`correctedAt` and a required reason; a correction with no Call-9-promoted
+canonical Call-1 panel to correct is refused. The branded panel is **never touched**, so `source.verify`'s
 exactly-six-distinct assertion still reads the same six rows.
 
 `enhance.upscale` enhances the **active** artifact per surface — the newest
@@ -1066,8 +1130,9 @@ rejected — and a revision supersedes all of them anyway.
 Driver alone, hash-verifies the accepted bytes through `hydrateDriver()`, then
 projects the remaining six **concurrently** (`parallel: true`) from the same
 frozen master. `waitForGeneration` polls every 2s and reveals each view the
-instant it lands. Call 1 cuts the six panels deterministically before any proof
-renders, so panel extraction is never on the AI critical path.
+instant it lands. Call 1 separates and stores the six authored regions
+deterministically before any proof renders, so panel publication is never on
+the AI critical path.
 
 **Do not serialize the six projections to "reduce load", and do not hold a
 finished artifact back for an all-or-nothing bundle.** Progressive publication is
@@ -1092,8 +1157,10 @@ The operating invariant — for each of the six surfaces the system must produce
 AND show: (1) an approved side proof, (2) a matched print panel, (3) a composed
 2D proof sheet, (4) all six side outputs visible in the UI. The PRINT PANEL is
 deterministically derived for **that same side** at GENIE dimensions with 5"
-bleed — no AI re-render for manufacturing, no cross-side reuse, and passenger
-mirror is an explicit operator action, never pipeline default.
+bleed — no AI re-render for manufacturing and no cross-side reuse. Passenger is
+its own named Call-1 authority and must never be replaced by mirrored Driver
+pixels, whether automatically or as a hidden operator shortcut. An operator
+may request a new proof or customer revision under the existing lineage rules.
 
 Full spec, acceptance criteria, measured starting position, and the A/B session
 split: **`docs/BEHAVIORAL-SPEC.md`.**
@@ -1129,28 +1196,28 @@ accepted DesignID/revision using the same approved state and GENIE geometry.
 
 | Call | Produces |
 |---|---|
-| **9** | the six extracted **branded** production panels, at GENIE geometry + 5" bleed, independent immutable hashes — this is the original production artwork, and it is never mutated again |
+| **9** | byte/hash/lineage verification plus production-promotion receipts for the six existing **branded canonical Call-1 panels**; it creates no artwork and changes no bytes |
 | **10** | logo asset registration/separation for that accepted design |
-| **11** | **duplicate** the six branded panels, remove the **logos** from the **duplicates only**, and push those six `qc-panel` duplicates to PanelProStudio for human sizing/template QC |
+| **11** | **duplicate** the six Call-9-promoted Call-1 panels, remove the **logos** from the **duplicates only**, and push those six `qc-panel` duplicates to PanelProStudio for human sizing/template QC |
 
-**The hard order: Design → Extract → Separate/Register logos → Duplicate +
+**The hard order: Design/Call-1 panels → views + Call 8 → Call-9 promotion → Separate/Register logos → Duplicate +
 de-logo → PanelPro QC → Topaz → Final outputs → ZIP → WrapBox.** Topaz upscales
 the *approved* panels after human/template QC passes on the de-logoed
-duplicates. **No Topaz before PanelPro. No mutation of the Call 9 branded
+duplicates. **No Topaz before PanelPro. No mutation of the Call-1 branded
 panels, ever.**
 
 The runtime's frozen `STAGES` list already puts `await_panelpro_preflight_qc`
 before `enhance.upscale`, so that constraint holds today — do not reorder it.
 Call 11 inserts between `logos.extract` and `await_panelpro_preflight_qc`.
 
-**Two sets exist on purpose:** the branded extracted panels are the untouched
+**Two sets exist on purpose:** the branded canonical Call-1 panels are the untouched
 production artwork; the de-logoed duplicates are the working QC/template
 validation set. **Call 11 may never overwrite or replace the branded production
 panel set.**
 
 ### CALL 11 — DE-LOGO DUPLICATE SET (owner contract, verbatim)
 
-> Input: the six immutable branded panels from Call 9.
+> Input: the six immutable branded Call-1 panels after Call-9 promotion.
 >
 > For each canonical side:
 >
@@ -1184,7 +1251,7 @@ decision is required; implement by matching the proven RestylePro behavior.**
 5. Topaz stays after PanelPro preflight and runs on the **authoritative branded
    production path**, never the QC derivatives.
 
-Each `qc-panel` keeps its canonical `surface_key` and its source Call 9 hash,
+Each `qc-panel` keeps its canonical `surface_key` and its source Call-1 panel hash,
 and may never enter Topaz/output/ZIP as production artwork. The exact functions
 to port (`locateBrandingElements`, `collapseContainedBrandingElements`,
 `strictGeminiBox2d` in `restylepro-os` `worker/index.js`) and the dilation /
@@ -1195,7 +1262,7 @@ clamp / honest-no-op pattern that goes with them: `docs/BEHAVIORAL-SPEC.md`.
 **There is no authoritative pre-branding base artwork, and no session may
 synthesize one.** Calls 1–8 emit a single composited raster per surface
 (`proof.build:455`, `role: canonical-production-surface`), Call 9 consumes
-those exact bytes (`panels.build:513`, *"Consume, never cut"*), and the
+those exact Call-1 bytes (`panels.build:513`, *"Consume, never cut"*), and the
 revision snapshot carries no base-artwork field. Do not erase, inpaint,
 regenerate, pixel-lift, approximate a clean background, or reclassify baked-in
 artwork as an overlay after the fact. That is a frozen-seam violation, not a
@@ -1203,9 +1270,9 @@ Manufacturing workaround.
 
 This is a standing prohibition, not an open question. **Call 11's `qc-panel`
 duplicates are not that base** — they are derived downstream from the immutable
-branded Call 9 panels, are non-authoritative, are never printed, and are never
+branded Call-1 panels in their Call-9-promoted state, are non-authoritative, are never printed, and are never
 Topaz/output/ZIP inputs. They must never be relabelled as production artwork,
-promoted into the output set, or allowed to overwrite Call 9.
+promoted into the output set, or allowed to overwrite the canonical Call-1 panel set.
 
 ## 🧊 RULE 0.5 — THE GENERATION ↔ MANUFACTURING SEAM IS FROZEN (Trish 2026-08-17)
 
@@ -1471,6 +1538,6 @@ should ship, and then do not dispatch anything until that gate has finished.
 | The frozen cross-session seam | `docs/SEAM-FREEZE.md` |
 | What the working system produced (the spec, in screenshots) | `docs/LAST-WORKING-STATE-2026-07-24.md` |
 | Post-approval stage dispatch | `runtime/designpro-standalone-claimant.cjs` |
-| Calls 1–7 port scope and the passenger-mirror exception | `docs/CALLS-1-7-PORT-SCOPE.md` |
+| Calls 1–7 port scope and named-surface authority | `docs/CALLS-1-7-PORT-SCOPE.md` |
 | What ships first and what is unproven | `docs/GO-LIVE-READINESS.md` |
 | Reference checkout | `restylepro-os` alongside this repo (clone it if absent) |

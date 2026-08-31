@@ -33,11 +33,9 @@ const {
 // The transpiled vendor bridge is deleted from the product path.
 const {
   MASTER_QC_CONTRACT,
-  createAtlasMasterValidator,
   deterministicMasterChecks,
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
-const { MIRROR_CONTRACT, mirrorPassengerFromDriver } = require("./atlas-passenger-mirror.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -61,7 +59,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260830.v13-neutral-fields";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260831.v14-vehicle-atlas";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -74,13 +72,13 @@ const PROMPT_VERSION = "designpro-flat-first-atlas-20260830.v13-neutral-fields";
 // by construction, and the customer sees NOTHING until the loop ends -- canary
 // cad013e1 spent 181 seconds and showed her a failure page.
 //
-// The re-roll ladder existed because a refused master had no other remedy. It
-// now has two: a cut-out is FILLED deterministically (~100ms, atlas-cutout-fill)
-// and the passenger flank is COMPOSED from the driver deterministically
-// (atlas-passenger-mirror) -- between them, the two defect classes that refused
-// every canary tonight. What is left after those repairs is a genuine creative
-// miss, and the answer to that is a revision the customer asks for, not two
-// more minutes of silence she did not.
+// The re-roll ladder existed because a refused master had no other remedy. A
+// cut-out is now FILLED deterministically (~100ms, atlas-cutout-fill). Passenger
+// is different: it is its own named, authored Call-1 region and is never
+// manufactured from Driver. Pixel-mirror similarity remains recorded as
+// telemetry, but cannot replace Passenger or block an otherwise structurally
+// valid master. A genuine creative miss belongs to a customer revision, not a
+// hidden technical rewrite of the accepted authority.
 //
 // The budget remains adjustable for a harness or an explicit operator retry,
 // but production cannot silently spend a second creative call while the buyer
@@ -139,7 +137,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v12-neutral-fields";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v13-vehicle-atlas";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -674,7 +672,7 @@ const LABEL_REACH = 0.7;
  * band is a glyph in the file the customer buys.
  *
  * It was not hypothetical. Request f3eb40c1 (2026-08-27), passenger attempt 2,
- * the proof judge reading the extracted panel it was handed as artwork
+ * the proof judge reading the canonical Call-1 panel it was handed as artwork
  * authority: "The text 'PASSENGER SIDE' and dimensions visible in the authority
  * crop are not present on the candidate proof." The model had copied the
  * caption off the artboard into the sheet, the cut carried it into the panel,
@@ -1105,14 +1103,14 @@ function surfaceForProofView(sourceViewType) {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * EACH 3D PROOF IS FED ITS OWN EXTRACTED PANEL. (Trish 2026-08-27)
+ * EACH 3D PROOF IS FED ITS OWN CANONICAL CALL-1 PANEL. (Trish 2026-08-27)
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Owner, verbatim: "The 3D proofs should not render directly from the whole
- * ATLAS master. They should render per side from the extracted panel for that
- * side... Each proof uses its own extracted panel as immutable artwork
+ * ATLAS master. They should render per side from the panel for that
+ * side... Each proof uses its own Call-1 panel as immutable artwork
  * authority." RULE 0.28 §6 already specified it -- "buildViewAuthorities /
- * viewAuthorityFor must hash-bind to the persisted Call-9 panel rather than to
+ * viewAuthorityFor must hash-bind to the persisted Call-1 panel rather than to
  * a fresh crop of the master" -- and listed it as not yet built. This builds it.
  *
  * WHAT THIS CHANGES, PRECISELY: NOT THE PIXELS. This used to run its OWN
@@ -1171,7 +1169,7 @@ async function viewAuthorityFromPanel(panel, sourceViewType) {
         // LINEAGE stays the repaired sheet, unchanged, because that is what
         // `viewAuthorityFor` and the persisted revision bind against.
         sourceMasterHash: panel.surfaceSourceHash,
-        // PROVENANCE is now explicit: the exact Call-9 panel these pixels are.
+        // PROVENANCE is explicit: the exact canonical Call-1 panel these pixels encode.
         panelContentHash: panel.contentHash,
         panelByteSize: Number(panel.byteSize),
       });
@@ -1377,7 +1375,7 @@ function panelHashMatches(atlas, surfaceKey, panelContentHash) {
  *
  * `viewAuthorityFor` returns the in-memory JPEG derivative the runtime used to
  * condition a projection. The photographer edge function needs something
- * different and stricter: the STORAGE PATH of the exact Call-9 panel plus its
+ * different and stricter: the STORAGE PATH of the exact Call-1 panel plus its
  * hash, so the function can read the customer's real artifact itself and prove
  * it is the one the caller named.
  *
@@ -1427,7 +1425,7 @@ function viewAuthorityFor(atlas, sourceViewType) {
     // arrived without cut-outs.
     || authority.sourceMasterHash !== surfaceSourceHashOf(atlas)
     // AND BOUND TO THE PANEL ITSELF. The proof's artwork authority IS this
-    // surface's extracted panel (owner, 2026-08-27), so it carries that panel's
+    // surface's canonical Call-1 panel (owner, 2026-08-27), so it carries that panel's
     // hash and the revision's own record of that panel has to agree. Without
     // this the two could drift apart and every downstream pairing would still
     // report a match.
@@ -1519,6 +1517,7 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     vehicleYear: String(vehicle.year || "").trim(),
     vehicleMake: String(vehicle.make || "").trim(),
     vehicleModel: String(vehicle.model || "").trim(),
+    vehicleType: String(vehicle.type || vehicle.vehicleClass || "").trim(),
     logoSupplied: Boolean(input?.logoAsset),
     visionboard_intent: ["exact_reference", "artboard_projection"].includes(String(input?.visionboardIntent || "").trim())
       ? "exact_reference"
@@ -2012,7 +2011,7 @@ function atlasReceipt(atlas) {
         sourceMasterHash: authority.sourceMasterHash,
         // The panel this proof's artwork IS. `sourceZone` is gone with the
         // second crop that produced it -- the authority is now an encode of the
-        // extracted panel, not a rect over the master, so the panel's identity
+        // canonical Call-1 panel, not a rect over the master, so the panel's identity
         // is the provenance a reader needs.
         panelContentHash: authority.panelContentHash,
         panelByteSize: authority.panelByteSize,
@@ -2078,7 +2077,6 @@ async function generateOrReuseFlatAtlas(options) {
     // that gates on `onSurfaceReady` can condition that surface's proof against
     // it immediately.
     onMasterReady = null,
-    masterValidatorFactory = createAtlasMasterValidator,
     // The Call-1 transport is injectable so a unit test can drive the authoring
     // loop without a live edge function. Production always uses the real POST.
     callEdge = callAtlasArtboardEdge,
@@ -2216,19 +2214,6 @@ async function generateOrReuseFlatAtlas(options) {
     guideStoragePath: await stageEdgeInput(authoringGuideBytes, "image/png"),
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
-  if (typeof masterValidatorFactory !== "function") {
-    throw new FlatAtlasError(
-      "flat_atlas_master_qc_runtime_invalid",
-      "The fail-closed A.T.L.A.S. master validator factory is required",
-    );
-  }
-  const validateMaster = masterValidatorFactory({ provider });
-  if (typeof validateMaster !== "function") {
-    throw new FlatAtlasError(
-      "flat_atlas_master_qc_runtime_invalid",
-      "The fail-closed A.T.L.A.S. master validator is unavailable",
-    );
-  }
   // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
   // so no replacement worker can mint a second master -- but inside that fence a
   // rejected candidate is not "the design": it was never persisted and nobody
@@ -2246,12 +2231,6 @@ async function generateOrReuseFlatAtlas(options) {
   let masterDelivery = null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
-  let passengerComposed = null;
-  // Semantic review is advisory and off the Call-1 critical path. It is started
-  // only when deterministic passenger-mirror repair needs lettering bands.
-  // Container geometry, pixels, hashes and lineage remain release gates.
-  let semanticQc = null;
-  let semanticVerdict = null;
   // The pixel measurements that actually decided acceptance, kept for the row.
   let masterDeterministic = null;
   const edgeProvenance = [];
@@ -2288,89 +2267,24 @@ async function generateOrReuseFlatAtlas(options) {
     masterBytes = normalized.bytes;
     masterDelivery = normalized;
     masterHash = sha256(masterBytes);
-    semanticQc = null;
-    semanticVerdict = null;
-    // Lazily start the advisory analyzer only for the deterministic mirror
-    // repair that needs its lettering-band coordinates. A normal accepted
-    // master makes no semantic network call and waits on no subjective verdict.
-    const startSemanticQc = () => {
-      if (!semanticQc) {
-        const reviewedBytes = masterBytes;
-        semanticQc = Promise.resolve()
-          .then(() => validateMaster({ masterBytes: reviewedBytes, guideBytes, manifest, input }))
-          .catch((cause) => ({
-            accepted: false,
-            code: "atlas_master_qc_analyzer_failed",
-            reason: String(cause?.message || cause).slice(0, 400),
-          }));
-      }
-      return semanticQc;
-    };
 
     const deterministicStartedAt = Date.now();
-    let deterministic = await deterministicMasterChecks(masterBytes, manifest);
+    const deterministic = await deterministicMasterChecks(masterBytes, manifest);
     timings.deterministicMs += Date.now() - deterministicStartedAt;
     masterDeterministic = deterministic;
     const cutoutSurfacesOf = (result) => [...new Set(
       (result?.cutoutFindings || []).map((item) => String(item.surfaceKey)),
     )].sort();
-    const mirrorFailed = (result) => (result?.blockingFailures || [])
-      .some((finding) => /passengerMirrorMae/.test(String(finding)));
 
-    // ── REPAIR 1: THE PASSENGER FLANK IS COMPOSED, NOT REQUESTED ──────────
+    // PASSENGER IS AUTHORITY, NOT A DERIVATIVE.
     //
-    // Owner directive 2026-08-27: "STOP RELYING ON GEMINI TO SOLVE PRODUCTION
-    // LETTERING ORIENTATION." Four canaries on one vehicle refused with the
-    // same finding -- cad013e1 verbatim, "The passenger side text 'FLAMINGO
-    // POOLS' is not forward-reading. The passenger side flamingo is facing the
-    // same direction as the driver side flamingo" -- i.e. the model drew the
-    // passenger flank as a SECOND, independent composition. Prompting never
-    // moved it.
-    //
-    // `passengerMirrorMae` is deterministic, so the DECISION to compose is made
-    // here with no model in the loop. The lettering bands that get re-dropped
-    // un-flipped are the one genuinely ambiguous input ("where is the text"),
-    // and they come from the semantic pass already in flight -- so this is the
-    // ONLY path that ever waits on it, and only on a master that is already
-    // known to be wrong. A good master never touches this branch and never
-    // waits for the judge at all.
-    if (mirrorFailed(deterministic)) {
-      const repairStartedAt = Date.now();
-      const bandVerdict = await startSemanticQc();
-      semanticVerdict = bandVerdict;
-      timings.semanticWaitMs += Date.now() - repairStartedAt;
-      const bands = Array.isArray(bandVerdict?.brandBands) ? bandVerdict.brandBands : [];
-      const mirrored = await mirrorPassengerFromDriver({
-        masterBytes, manifest, brandBands: bands,
-      }).catch((error) => {
-        logger?.warn?.("flat_atlas_passenger_compose_failed", { message: error?.message });
-        return null;
-      });
-      if (mirrored?.bytes) {
-        const composedHash = sha256(mirrored.bytes);
-        const composedChecks = await deterministicMasterChecks(mirrored.bytes, manifest);
-        if (!mirrorFailed(composedChecks)) {
-          // The composed flank IS the master from here: it is what the panels
-          // are cut from and what the proofs are conditioned on, so it must be
-          // the persisted lineage identity too.
-          masterBytes = mirrored.bytes;
-          masterHash = composedHash;
-          deterministic = composedChecks;
-          masterDeterministic = composedChecks;
-          passengerComposed = {
-            contract: MIRROR_CONTRACT,
-            bandsApplied: mirrored.bandsApplied,
-            rotation: mirrored.rotation,
-            attempt,
-          };
-          logger?.info?.("flat_atlas_passenger_flank_composed", passengerComposed);
-          // The advisory verdict describes the pre-composition bytes and is
-          // retained only as repair telemetry. The composed master is accepted
-          // exclusively by its fresh deterministic measurements.
-        }
-      }
-      timings.repairMs += Date.now() - repairStartedAt;
-    }
+    // `passengerMirrorMae` remains in `deterministic` as useful continuity
+    // telemetry. It is deliberately absent from `blockingFailures`: two named
+    // Call-1 surfaces may share a design system while legitimately differing in
+    // placement, text and vehicle-side anatomy. Replacing Passenger with a
+    // pixel mirror of Driver destroys that authored region and can make a fake
+    // Passenger look structurally "better" than the actual accepted design.
+    // No semantic call or image rewrite occurs here.
 
     // ── REPAIR 2: A CUT-OUT IS FILLED, NEVER RE-ROLLED FOR ────────────────
     //
@@ -2388,9 +2302,8 @@ async function generateOrReuseFlatAtlas(options) {
     //
     // Only deterministic structural failures refuse the candidate. Subjective
     // semantic review is advisory and cannot stall or terminate Call 1.
-    // `deterministic` is the post-repair measurement: when the passenger flank
-    // was composed above it was re-measured, so a mirror finding surviving here
-    // means the composition did not fix it and another throw is the remedy.
+    // `deterministic` measures the exact candidate bytes. Passenger continuity
+    // telemetry never enters this structural refusal set.
     const stillBlocking = deterministic.blockingFailures || [];
     const refusalCode = "flat_atlas_master_deterministic_failed";
     const refusalReason = stillBlocking.join("; ").slice(0, 600);
@@ -2415,11 +2328,8 @@ async function generateOrReuseFlatAtlas(options) {
     const shortDelivery = masterDelivery && masterDelivery.nativelyFourK === false
       ? ` The previous sheet came back at ${masterDelivery.deliveredWidthPx}x${masterDelivery.deliveredHeightPx}, below the 4096x4096 production canvas -- return the full 4K square so the panels carry real detail rather than an upscale.`
       : "";
-    const mirrorBroken = /passengerMirrorMae/.test(refusalReason);
     correctiveNote = `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}.${shortDelivery} Author a NEW sheet. `
-      + (mirrorBroken
-        ? "The refusal above means the PASSENGER SIDE panel was NOT the DRIVER SIDE panel's mirror twin: the two read as different designs. Draw ONE side composition and install it on BOTH: PASSENGER SIDE is DRIVER SIDE's mirror twin -- the same flat artwork reversed -- while every word and logo remains forward-reading on both."
-        : "Every panel is one SOLID rectangle of continuous artwork, opaque corner to corner: paint the artwork straight through every position where a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece would sit. The installer cuts those openings out of the printed vinyl; the artwork itself never contains a dark or empty shape standing in for one.");
+      + "Every panel is one SOLID rectangle of continuous artwork, opaque corner to corner: paint the artwork straight through every position where a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece would sit. The installer cuts those openings out of the printed vinyl; the artwork itself never contains a dark or empty shape standing in for one.";
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
   // ONE REPAIRED SHEET FEEDS BOTH HALVES OF THE FAN-OUT.
@@ -2629,7 +2539,7 @@ async function generateOrReuseFlatAtlas(options) {
   });
 
   // The guide, manifest, master, derivative and six panels enter durable storage
-  // as one parallel batch after deterministic and semantic acceptance.
+  // as one parallel batch after deterministic structural acceptance.
   const persistImmutableAssets = () => Promise.all([
     store.putImmutableBytes({ storagePath: guideStoragePath, bytes: guideBytes, contentType: "image/png" }),
     store.putImmutableBytes({ storagePath: manifestStoragePath, bytes: manifestBytes, contentType: "application/json" }),
@@ -2746,7 +2656,14 @@ async function generateOrReuseFlatAtlas(options) {
       // still must not print until a human has seen them on a template.
       masterCutoutSurfaces,
       masterCutoutFindings,
-      passengerComposed,
+      // Historical readers may inspect this key. New Call-1 revisions never
+      // populate it: Passenger's authored bytes are preserved verbatim.
+      passengerComposed: null,
+      passengerMirrorTelemetry: {
+        mae: Number(masterDeterministic?.passengerMirrorMae ?? 0),
+        blocking: false,
+        passengerSource: "authored-passenger-region",
+      },
       // What the six panels were actually cut from. Equal to canonicalMasterHash
       // on a clean master; on a filled one it addresses the duplicate, so the
       // panel bytes are traceable to their source rather than silently differing
@@ -2762,9 +2679,8 @@ async function generateOrReuseFlatAtlas(options) {
       masterDeliveredHeightPx: masterDelivery?.deliveredHeightPx ?? null,
       masterNativelyFourK: masterDelivery?.nativelyFourK ?? null,
       masterQcContract: MASTER_QC_CONTRACT,
-      // Semantic analysis is not run for a normally accepted master. When it
-      // assists passenger composition it grades superseded pre-composition
-      // bytes, so no final-master semantic confidence is claimed here.
+      // Semantic analysis is not on the Call-1 acceptance path. No semantic
+      // verdict is used to rewrite either named side or to accept/reject it.
       masterQcConfidence: null,
       masterQcModel: null,
       masterQcKeyFingerprint: null,
@@ -2779,14 +2695,10 @@ async function generateOrReuseFlatAtlas(options) {
       callOneTimings: {
         ...timings,
         totalMs: Date.now() - callOneStartedAt,
-        // Zero on a normal master; non-zero only when deterministic passenger
-        // repair explicitly needed advisory lettering-band coordinates.
+        // Always zero in active Call 1; retained for timing-schema continuity.
         semanticOverlapped: timings.semanticWaitMs === 0,
       },
-      masterSemanticVerdict: semanticVerdict
-        ? { accepted: null, code: "semantic_qc_advisory_precomposition_only",
-            reason: String(semanticVerdict.reason || semanticVerdict.code || "").slice(0, 600) || null }
-        : { accepted: null, code: "semantic_qc_advisory_not_run", reason: null },
+      masterSemanticVerdict: { accepted: null, code: "semantic_qc_advisory_not_run", reason: null },
       masterSemanticBlocking: false,
       providerKeyFingerprint: generated.keyFingerprint || null,
       providerResponseContentType: generated.contentType,

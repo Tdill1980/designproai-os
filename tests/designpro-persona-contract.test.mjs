@@ -25,6 +25,7 @@ const authored = (input = {}) => buildDesignIQPrompt({
   vehicleYear: VEHICLE.year,
   vehicleMake: VEHICLE.make,
   vehicleModel: VEHICLE.model,
+  vehicleType: "truck",
   viewType: "side",
   visionBoardImages: Array.isArray(input.visionBoardImages) ? input.visionBoardImages : undefined,
   visionboard_intent: input.visionboardIntent === "exact_reference" ? "exact_reference" : "style_inspiration",
@@ -85,11 +86,11 @@ test("persona, depth, translation and professional judgment fire on every commer
     { mode: "commercial", brief: "Wrap for Acme", companyName: "Acme", industry: "Plumbing", phone: "555-0100" },
   ]) {
     const prompt = authored(input);
-    // PERSONA — DPAG's own sign-and-wrap-company designer.
-    assert.match(prompt, /senior graphic designer at a sign and wrap company/);
-    assert.match(prompt, /You amplify each brief into an original six-field livery built for this one business/);
-    // COMMERCIAL_DEPTH survives without describing physical anatomy.
-    assert.match(prompt, /layered background color and texture, mid-ground graphic motion, and foreground accent detail across the regions/);
+    // PERSONA — DPAG's proven vehicle-wrap designer identity.
+    assert.match(prompt, /senior vehicle-wrap designer at a sign and wrap company/);
+    assert.match(prompt, /one original, premium, instantly readable wrap design/);
+    // COMMERCIAL_DEPTH survives in the one cohesive vehicle atlas.
+    assert.match(prompt, /layered background color and texture, mid-ground graphic motion, and foreground accent detail/);
     // COMMERCIAL_TRANSLATION.
     assert.match(prompt, /Translate anything the brief names into concrete design/);
     // PROFESSIONAL_JUDGMENT.
@@ -104,7 +105,7 @@ test("the restyle branch keeps its layered-depth elevation in flat-master mode",
   const prompt = authored({ mode: "restyle", brief: "Distressed Martini racing livery" });
   assert.match(prompt, /layered thematic elements/);
   assert.match(prompt, /depth and texture/);
-  assert.match(prompt, /Design ONE flat print-production master/);
+  assert.match(prompt, /Design ONE cohesive flattened vehicle-wrap master/);
 });
 
 // EXACT CUSTOMER DATA IN; NOTHING INVENTED WHEN ABSENT.
@@ -129,7 +130,7 @@ test("brand colours and industry reach Call 1 while physical finish is deferred"
   assert.doesNotMatch(prompt, /Finish: GLOSS|wet-look surface|specular highlights/);
 });
 
-test("the exact production-canary brief is neutralized before Call 1", () => {
+test("the exact DCA brief retains vehicle-wrap intent and named topology before Call 1", () => {
   const prompt = authored({
     mode: "commercial",
     brief: "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif company name, high contrast and legible at highway distance.",
@@ -137,11 +138,13 @@ test("the exact production-canary brief is neutralized before Call 1", () => {
     industry: "HVAC and climate control",
     brandColors: "deep blue, sunrise orange",
   });
-  assert.match(prompt, /end-to-end across both primary fields/);
-  for (const field of ["FIELD A", "FIELD B", "FIELD C", "FIELD D", "FIELD E", "FIELD F"]) {
-    assert.match(prompt, new RegExp(field));
+  assert.match(prompt, /airflow ribbons sweeping front to rear/);
+  assert.match(prompt, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
+  assert.match(prompt, /BODY CLASS \(GENIE\): truck/);
+  for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
+    assert.match(prompt, new RegExp(surface));
   }
-  assert.doesNotMatch(prompt, /front to rear|tailgate|rear zone|2022|Ford|F250|body lines|wheel|window|door|studio photograph/i);
+  assert.doesNotMatch(prompt, /FIELD [A-F]|studio photograph|widthInches|heightInches/i);
 });
 
 // VISIONBOARD NEVER DISABLES THE DESIGNER.
@@ -153,7 +156,7 @@ test("references never turn the persona or the auto-logo off", () => {
     { visionboardIntent: "exact_reference", visionBoardImages: [{}] },
   ]) {
     const prompt = authored({ ...base, ...extra });
-    assert.match(prompt, /senior graphic designer at a sign and wrap company/);
+    assert.match(prompt, /senior vehicle-wrap designer at a sign and wrap company/);
     assert.match(prompt, /This business needs its own logo/);
   }
   const inspiration = authored({ ...base, visionBoardImages: [{}], visionboardIntent: "style_inspiration", styleDescriptors: "ART STYLE: bold" });
@@ -170,9 +173,10 @@ test("camera, studio and the photograph framing stay out of the flat master", ()
   assert.doesNotMatch(flat, /CAMERA ANGLE \(LOCKED/);
   assert.doesNotMatch(flat, /Canon EOS R5/);
   assert.doesNotMatch(flat, /epoxy floor|LED strip/);
-  assert.match(flat, /Design ONE flat print-production master/);
+  assert.match(flat, /Design ONE cohesive flattened vehicle-wrap master/);
   assert.match(flat, /OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER/);
-  assert.doesNotMatch(flat, /2022|Ford|F250|body lines|wheel|window|door|studio photograph/i);
+  assert.match(flat, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
+  assert.doesNotMatch(flat, /studio photograph|Canon EOS R5|epoxy floor|LED strip/i);
 
   // And the 3D path is untouched: same assembly, atlasFlatMaster off.
   const threeD = buildDesignIQPrompt({

@@ -9,9 +9,11 @@
 // then spent 180 seconds on ONE attempt — image, judge, compose, judge, fill,
 // judge — and showed the customer a failure page at the end of it.
 //
-// Semantic analysis remains available as an advisory repair helper, but the
-// release invariant is deterministic: container geometry, pixels, hashes and
-// lineage. A normal master must make no semantic call and wait on no reviewer.
+// Semantic analysis remains available outside active Call 1 as advisory
+// telemetry, but the release invariant is deterministic: container geometry,
+// pixels, hashes and lineage. Call 1 makes no semantic call and waits on no
+// reviewer. Passenger is its own authored region and is never rebuilt from
+// Driver merely to satisfy a similarity score.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -33,38 +35,19 @@ test("the release gate is deterministic and semantic review cannot refuse Call 1
   assert.doesNotMatch(loop, /semanticVerdict = await semanticQc/);
 });
 
-test("semantic analysis starts only inside deterministic passenger repair", () => {
-  const dispatch = loop.indexOf("const startSemanticQc = () =>");
-  const gate = loop.indexOf("const stillBlocking");
-  assert.ok(dispatch > 0 && dispatch < gate);
-  const awaits = loop.match(/await startSemanticQc\(\)/g) || [];
-  assert.equal(awaits.length, 1, "only mirror composition may await semantic help");
-  const bandWait = loop.indexOf("const bandVerdict = await startSemanticQc();");
-  assert.ok(bandWait > 0);
-  assert.ok(
-    loop.slice(0, bandWait).includes("if (mirrorFailed(deterministic)) {"),
-    "the advisory wait must be guarded by deterministic mirror failure",
-  );
-  assert.equal(loop.slice(gate).includes("await startSemanticQc"), false,
-    "the release gate waits on semantic review");
+test("active Call 1 never starts semantic analysis", () => {
+  assert.doesNotMatch(loop, /startSemanticQc/);
+  assert.doesNotMatch(loop, /createAtlasMasterValidator/);
+  assert.doesNotMatch(loop, /await\s+validateMaster/);
 });
 
-test("the optional semantic helper always catches analyzer failures", () => {
-  const creations = loop.match(/semanticQc = Promise\.resolve\(\)/g) || [];
-  assert.equal(creations.length, 1, "one lazy advisory helper exists");
-  const guards = loop.match(/\.catch\(\(cause\) => \(\{/g) || [];
-  assert.equal(guards.length, creations.length, "every creation attaches its own catch");
-});
-
-test("the passenger flank is composed, and the re-measure decides whether it worked", () => {
-  assert.match(loop, /mirrorPassengerFromDriver\(\{\s*\n?\s*masterBytes, manifest, brandBands: bands,/);
-  assert.match(loop, /const composedChecks = await deterministicMasterChecks\(mirrored\.bytes, manifest\)/);
-  assert.match(loop, /if \(!mirrorFailed\(composedChecks\)\)/);
-  assert.doesNotMatch(
-    loop.slice(loop.indexOf("flat_atlas_passenger_flank_composed")),
-    /semanticQc = Promise\.resolve\(\)/,
-    "composed bytes must not trigger a second semantic critical-path call",
-  );
+test("Passenger is never manufactured from Driver in active Call 1", () => {
+  assert.doesNotMatch(source, /require\("\.\/atlas-passenger-mirror\.cjs"\)/);
+  assert.doesNotMatch(loop, /mirrorPassengerFromDriver/);
+  assert.doesNotMatch(loop, /masterBytes\s*=\s*mirrored\.bytes/);
+  assert.match(afterLoop, /passengerSource: "authored-passenger-region"/);
+  assert.match(afterLoop, /passengerMirrorTelemetry: \{/);
+  assert.match(afterLoop, /blocking: false/);
 });
 
 test("the surfaces that arrived holed are still recorded for human QC", () => {
@@ -81,11 +64,11 @@ test("only a deterministic refusal can spend an authoring retry", () => {
 });
 
 test("the authored master is never mutated", () => {
-  // masterBytes stays the lineage identity; every repair works on a copy. The
-  // composed flank is the one sanctioned replacement and it re-hashes.
+  // masterBytes stays the lineage identity; the cut-out fill works on a copy
+  // and Passenger's authored pixels are never substituted with Driver.
   assert.ok(!/masterBytes = trialFill/.test(loop), "the authored bytes must never be replaced by a fill");
   assert.ok(!/masterBytes = repairedBytes/.test(loop), "the authored bytes must never be replaced by a fill");
-  assert.match(loop, /masterBytes = mirrored\.bytes;\s*\n\s*masterHash = composedHash;/);
+  assert.doesNotMatch(loop, /masterBytes\s*=\s*mirrored\.bytes/);
 });
 
 // ── NOTHING IS RELEASED BEFORE DETERMINISTIC ACCEPTANCE ─────────────────────
@@ -135,8 +118,8 @@ test("every binding the write batch closes over is declared before it runs", () 
   );
 });
 
-test("a pre-composition advisory verdict is never claimed as final-master acceptance", () => {
-  assert.match(afterLoop, /semantic_qc_advisory_precomposition_only/);
+test("an absent semantic verdict is never claimed as final-master acceptance", () => {
+  assert.match(afterLoop, /semantic_qc_advisory_not_run/);
   assert.doesNotMatch(afterLoop, /masterAcceptance: "semantic"/);
 });
 
@@ -160,24 +143,23 @@ test("click -> master is measured in segments on the immutable revision", () => 
   assert.match(afterLoop, /semanticOverlapped: timings\.semanticWaitMs === 0/);
 });
 
-// ── THE VERDICT MUST STILL CARRY WHAT THE REPAIR NEEDS ─────────────────────
+// ── THE ADVISORY MODULE KEEPS ITS DIAGNOSTIC RESPONSE SHAPE ────────────────
 //
-// The lettering bands ride on the semantic return. If that return stops
-// reporting them, the passenger composition silently flops the text backward —
-// the exact defect cad013e1 reported — so this stays locked even though the
-// verdict no longer gates anything.
+// Active Call 1 does not invoke this module. Operator diagnostics can still use
+// its bound metadata, classified cut-outs and measurements without granting it
+// permission to mutate the A.T.L.A.S. authority.
 const qcSource = readFileSync(join(ROOT, "runtime/atlas-master-qc.cjs"), "utf8");
 const semanticReturn = qcSource.slice(
   qcSource.indexOf("if (rejection && !coverageFailedOnClassifiedCutoutsOnly"),
   qcSource.indexOf("if (!rejection && !cutoutSurfaces.length"),
 );
 
-test("a fatal semantic verdict still reports its metadata, bands and classified cut-outs", () => {
+test("an advisory diagnostic result still reports bound metadata and classified cut-outs", () => {
   assert.match(semanticReturn, /code: "atlas_master_qc_semantic_failed"/);
   // Without metadata the caller's contract/hash check fails and the verdict is
   // discarded as unbound.
   assert.match(semanticReturn, /reason: rejection\.reason, review, deterministic, metadata/);
-  // The lettering bands the passenger composition re-drops un-flipped.
+  // Retained as diagnostic data; active Call 1 does not consume it as a repair.
   assert.match(semanticReturn, /brandBands: brandBandsOf\(review\)/);
   // And the repairable half is named.
   assert.match(semanticReturn, /cutout: \{ surfaces: cutoutSurfaces, findings, semantic: semanticCutout \}/);

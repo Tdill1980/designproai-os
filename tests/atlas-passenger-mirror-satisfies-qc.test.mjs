@@ -1,8 +1,10 @@
-// THE REPAIR MUST SATISFY THE GATE THAT ASKED FOR IT. (2026-08-28)
+// HISTORICAL MIRROR UTILITY + NON-BLOCKING CONTINUITY TELEMETRY. (2026-08-31)
 //
-// `atlas-passenger-mirror` exists so a master whose flanks are not twins is
-// repaired deterministically instead of re-rolled. It ran on both live
-// generations of 2026-08-28 and moved the number on neither:
+// `atlas-passenger-mirror` previously overwrote the authored Passenger region
+// to satisfy `passengerMirrorMae`. Active flat-first Call 1 no longer imports or
+// invokes it: Passenger is its own named authority. These fixtures remain to
+// keep the historical diagnostic/utility math understood, not to authorize a
+// Driver-to-Passenger substitution.
 //
 //   f72c10f0-8e36-489f-95c0-da6c55a75c5b   passengerMirrorMae=0.37993
 //   45f0ea61-0f65-4a30-98c8-f1a0e29f9591   passengerMirrorMae=0.39117  (2 attempts)
@@ -94,16 +96,16 @@ test("the two flanks carry opposite rotations -- the geometry both defects hid b
   assert.equal(zoneOf("driver").h, zoneOf("passenger").h);
 });
 
-test("a sheet with two independent flanks is refused", async () => {
+test("a sheet with two independently authored flanks reports telemetry but is not refused", async () => {
   const checks = await deterministicMasterChecks(await masterWithMismatchedFlanks(), manifest);
   assert.ok(
     checks.passengerMirrorMae > MAX_PASSENGER_MIRROR_MAE,
-    `two different flanks must fail the bound, measured ${checks.passengerMirrorMae}`,
+    `fixture must exceed the historical diagnostic threshold, measured ${checks.passengerMirrorMae}`,
   );
-  assert.ok(checks.blockingFailures.some((finding) => /passengerMirrorMae/.test(finding)));
+  assert.equal(checks.blockingFailures.some((finding) => /passengerMirrorMae/.test(finding)), false);
 });
 
-test("the composed passenger flank drives the gate's own metric to zero", async () => {
+test("the historical mirror utility drives the diagnostic metric to zero", async () => {
   const master = await masterWithMismatchedFlanks();
   const mirrored = await mirrorPassengerFromDriver({ masterBytes: master, manifest, brandBands: [] });
   assert.ok(mirrored?.bytes, "the repair must return a sheet");
@@ -119,7 +121,7 @@ test("the composed passenger flank drives the gate's own metric to zero", async 
   assert.equal(
     checks.blockingFailures.filter((finding) => /passengerMirrorMae/.test(finding)).length,
     0,
-    "the repaired sheet must carry no mirror finding",
+    "the diagnostic metric is never a structural finding",
   );
 });
 

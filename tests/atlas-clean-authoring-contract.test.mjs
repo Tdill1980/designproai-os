@@ -19,21 +19,25 @@ test("ATLAS model-facing guide is six neutral masks with no visual instruction f
   assert.doesNotMatch(guide, /authoringGuideLabelsSvg|guideGeometrySvg|stroke=|stroke-dasharray|<text\\b|<line\\b|<path\\b|<polygon\\b/i);
 });
 
-test("ATLAS center topology order stays physical in runtime and neutral in model prose", () => {
+test("ATLAS center topology order stays physical and named in model prose", () => {
   assert.match(runtime, /const CENTER_ORDER = Object\.freeze\(\["rear", "roof", "hood", "front"\]\)/);
-  const contract = block(edge, "function atlasFlatMasterContract(", "function atlasNeutralCreativeDirection");
-  assert.match(contract, /centre column is fixed top-to-bottom as Fields C, D, E, F\./);
+  const contract = block(edge, "function atlasFlatMasterContract(", "function atlasCreativeDirection");
+  assert.match(contract, /centre column is fixed top-to-bottom as Rear, Roof, Hood, Front\./);
   assert.doesNotMatch(contract, /ROOF then HOOD then FRONT then REAR/i);
 });
 
-test("ATLAS creative contract carries neutral field topology without anatomy triggers or trim furniture", () => {
-  const contract = block(edge, "function atlasFlatMasterContract(", "function atlasNeutralCreativeDirection");
+test("ATLAS creative contract carries one named vehicle topology without technical furniture", () => {
+  const contract = block(edge, "function atlasFlatMasterContract(", "function atlasCreativeDirection");
   assert.match(contract, /neutral spatial mask with six fixed GENIE regions/);
   assert.match(contract, /panel identity mismatch/);
-  assert.match(contract, /unbroken rectangular field of continuous printed artwork/);
-  for (const field of ["FIELD A", "FIELD B", "FIELD C", "FIELD D", "FIELD E", "FIELD F"]) {
-    assert.match(contract, new RegExp(field));
+  assert.match(contract, /opaque, unbroken, full-bleed rectangle of continuous printed artwork/);
+  assert.match(contract, /one cohesive wrap design authored once/);
+  assert.match(contract, /TARGET VEHICLE \(CANONICAL\)/);
+  assert.match(contract, /BODY CLASS \(GENIE\)/);
+  for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
+    assert.match(contract, new RegExp(surface));
   }
+  assert.doesNotMatch(contract, /FIELD [A-F]/);
   for (const forbidden of ["DASHED BLUE", "pixel size", "title band", "widthInches", "heightInches", "doors", "windows", "wheel arches", "vehicle silhouettes"]) {
     assert.doesNotMatch(contract, new RegExp(forbidden, "i"));
   }
@@ -49,6 +53,6 @@ test("ATLAS request exposes exact identity and placement but no dimensions or co
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v12-neutral-fields"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v12-neutral-fields"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v13-vehicle-atlas"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v13-vehicle-atlas"/);
 });
