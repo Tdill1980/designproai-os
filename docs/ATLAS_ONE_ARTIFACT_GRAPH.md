@@ -366,6 +366,106 @@ gated behind purchase, a ZIP, or a production run's state. Production Jobs
 showing a production rail is not itself the violation; stating that Call 1 has
 not accepted an accepted master is.
 
+## 7A. Server-owned orchestration — the browser may not advance the graph (owner, 2026-08-31)
+
+Owner, verbatim: **"The browser must not be required to advance the DesignProAI
+graph. Move the handoff initiation to the server-side orchestration boundary
+that owns master acceptance / durable Call-1 persistence. Preserve idempotency
+and the existing authorization invariants, but refactor them so the server can
+advance its own lineage. The UI becomes observer-only. Then audit every stage
+for false serialization and trigger each branch from its earliest real
+dependency receipt."**
+
+The governing rule:
+
+> Every stage triggers from the earliest server-owned durable receipt that
+> satisfies its ACTUAL dependencies — never from UI completion, and never from
+> an unrelated sibling branch finishing.
+
+Accepting one Call-1 master must fan out server-side and idempotently:
+
+```
+CALL 1 MASTER ACCEPTED
+  ├─ persist/publish the six Call-1 panels
+  ├─ RevisionStudioIQ visibility
+  ├─ PanelProStudio visibility
+  ├─ Driver proof (scheduling priority, never a prerequisite)
+  ├─ Passenger · Hood · Front · Rear · Roof · Close-Up proofs
+  ├─ logo / asset extraction
+  └─ downstream production lineage / handoff receipt
+
+six Call-1 panels ready            → Call 8 eligibility
+handoff lineage + the six panels   → Call 9 verify/promote
+all required proof/panel evidence  → owner-visible PanelPro state
+```
+
+Dependency-driven concurrency, not Calls 1–9 in a straight line.
+
+### The measured violation, and why the obvious fix is not the fix
+
+On generation `7a1062f4`: master accepted t+238s, last proof t+279s, revision
+source and entice run created **t+281s** — 1.7s after the last proof. So Call 9
+promotion, Call 10 logos, Call 11 cleaned panels and Call 8 all waited on the
+slowest of seven independent proofs, which RULE 0.27 forbids by name ("panels
+and logos are never behind the proof set").
+
+The SQL gate is NOT the cause. Migration `20260827120000` already patched
+`handoff_designpro_generation_to_production` to allow a flat-first request to
+hand off on `masterQcPassed` alone. Nothing calls it that way.
+
+The caller is the browser: `useDesignPanelProLogic.ts` awaits
+`waitForGeneration(...)`, checks `finished.handoffReady`, then calls
+`handoffGeneration(...)` — its own comment says "behind the same seven-view
+readiness check". `gateway/src/server.mjs:2355` explains why it is the browser
+at all: *"as the authenticated owner because save_designpro_revision_source
+refuses a service role."*
+
+Both functions enforce it:
+
+```
+handoff_designpro_generation_to_production:
+  IF v_owner IS NULL OR auth.jwt()->>'role' IS DISTINCT FROM 'authenticated'
+     OR is_anonymous='true' THEN RAISE 'authentication_required'
+save_designpro_revision_source:
+  IF auth.jwt()->>'role' IS DISTINCT FROM 'authenticated' OR v_owner IS NULL
+     THEN RAISE 'authenticated_user_required'
+```
+
+**Firing the same browser call earlier — from the `onState` observer when
+`handoffReady` flips true — is a latency patch and is REJECTED as the fix.** It
+moves one client trigger to another client trigger and leaves the browser
+required to advance the graph. It also leaves the real failure intact: a
+customer who closes the tab before the trigger gets a master, six panels and
+seven proofs, and no Call 9, no logos, no cleaned panels and no Call 8, ever.
+
+**The authorization model is therefore the bottleneck, not optional polish.**
+The refactor must let the server advance its own lineage while preserving what
+those checks exist to protect — an owner-scoped, idempotent, non-forgeable
+freeze of a revision. Server execution must not become a way for any caller to
+freeze a revision for a generation it does not own.
+
+Not yet designed, not yet authorized, and not to be started as a side effect of
+a latency fix. What is settled is the principle above and that the browser is
+observer-only.
+
+### False-serialization audit — outstanding
+
+Every stage is to be re-derived from its real dependency receipt. Known
+candidates, none yet actioned:
+
+- `logos.extract` (Call 10) runs after `panels.build` (Call 9); Call 9 is byte
+  promotion of panels Call 1 already cut, so logo extraction depends on the
+  Call-1 panels, not on promotion;
+- `proof.build` (Call 8) sits behind `panels.delogo` (Call 11) in the frozen
+  sequence, but needs only the six panels — it can run alongside the logo and
+  de-logo branch;
+- the entice stages share one single-flight claimant and one ascending sequence,
+  so any independence between them is currently unexpressible.
+
+Changing WHEN a stage runs is explicitly not an owner-level stop (RULE 0.5
+amendment). Changing the artifact contract, the panel/proof counts, storage
+paths, content hashes or receipt shape still is.
+
 ## 8. Current production evidence
 
 Current verified production release (2026-08-31, corrective release):
