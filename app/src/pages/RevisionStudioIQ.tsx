@@ -1296,6 +1296,22 @@ function StoredOrGenerated2DProof({
       enticeWorkflowStatus?.workflowRun?.workflow_status || "missing",
     );
     if (["completed", "cancelled"].includes(status)) return;
+    // ⛔ NEVER AUTO-REBUILD A RUN THAT DEFERRED THE PROOF.
+    //
+    // Call 8 defers on a condition of the design -- a dimension total that will
+    // not reconcile, a font the run cannot load -- and a fresh run reproduces
+    // it exactly. So auto-submitting on "no proof yet" turned into a loop:
+    // submit, defer, still no proof, the run id changed so the attempt key
+    // changed, submit again. A run really was always in flight, which is why
+    // the sheet showed "Building Production Proof on Server" indefinitely
+    // instead of the deferral -- the honest state could never be reached
+    // because this effect kept manufacturing an active run in front of it.
+    //
+    // The manual retry stays: a human who has read the reason may still want to
+    // try, and a fix deployed in between makes that the right call.
+    if ((enticeWorkflowStatus as any)?.stages?.some(
+      (s: any) => s?.key === "proof.build" && s?.deferred === true,
+    )) return;
     const proofUrl = String(
       enticeWorkflowStatus?.proofUrl ||
         enticeWorkflowStatus?.activePack?.proof_artifact?.url ||
@@ -1345,6 +1361,21 @@ function StoredOrGenerated2DProof({
     : [];
   const workflowFailedStage = [...stages].reverse().find((s: any) => s?.status === "failed") || null;
   const packStatus = String((enticeWorkflowStatus as any)?.enticePack?.status || "");
+  // A DEFERRED CALL 8 IS AN OUTCOME, NOT A BUILD IN PROGRESS.
+  //
+  // proof.build defers rather than fails so a proof the tool cannot draw does
+  // not hold manufacturing hostage -- it completes with `deferred: true` and no
+  // artifact. Every signal this component had said "fine": the run is
+  // completed, nothing failed, nothing is queued. So the sheet fell through to
+  // its spinner and told the customer the server was "creating and verifying
+  // this proof" about work that finished minutes ago and will never resume.
+  //
+  // `workflowFailedStage` cannot catch it, because a deferral is a SUCCESS row.
+  // This reads the deferral the gateway now projects and reports it as what it
+  // is, with the reason the stage recorded.
+  const deferredProofStage = stages.find(
+    (s: any) => s?.key === "proof.build" && s?.deferred === true,
+  ) || null;
   const hasActiveRun =
     ["queued", "running"].includes(workflowStatus) || packStatus === "building";
 
@@ -1354,7 +1385,19 @@ function StoredOrGenerated2DProof({
         initialProofUrl: observedProofUrl,
         onProofGenerated: persistProofUrl,
         workflowStatus,
-        workflowFailedStage,
+        // The sheet already renders exactly the right thing for this -- "the
+        // durable workflow stopped at proof.build, so no 2D proof was
+        // produced", the reason, and a retry. It just never received it,
+        // because a deferral is not a failed stage. Reported through the
+        // existing surface rather than a new one: the sheet is the migrated
+        // component and does not need another branch.
+        workflowFailedStage: workflowFailedStage
+          || (deferredProofStage && !observedProofUrl
+            ? {
+              stage_key: "proof.build",
+              error_message: `${(deferredProofStage as any).deferredReason}: ${(deferredProofStage as any).deferredMessage || "the stage recorded no message"}`,
+            }
+            : null),
         hasActiveRun,
         onRetryBuild: startOrRetryBuild,
       })}
