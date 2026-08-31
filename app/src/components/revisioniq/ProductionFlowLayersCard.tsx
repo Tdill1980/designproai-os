@@ -490,10 +490,20 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
       <div className="flex items-center gap-2">
         <Layers className="w-4 h-4 text-blue-400" />
         <span className="text-sm font-bold text-zinc-200">
+          {/* NOTHING HERE IS "PRINT READY". (Owner, 2026-08-31: "We should never
+              call files print ready they need processing on sizing on correct
+              vehicle sizing and possibly resolution.")
+              Three things stand between these panels and a print file, and all
+              three are post-purchase by design: validated production geometry
+              (`manifest.resolve`, RULE 0.19 — design-time size can be
+              `provisional` when GENIE has not measured the vehicle), print
+              resolution (`enhance.upscale`; a 4096px master is ~16 PPI across a
+              251" flank), and human template QC. Calling them print ready is
+              how the wrong file gets sent to a printer. */}
           {entice
             ? "Production Pack"
             : printReady
-              ? "Print Ready Files"
+              ? "Verified panels — sizing and resolution processed on order"
               : isVerifiedPack ? "Panel previews — production blocked" : "Panel previews — awaiting verification"}
         </span>
         <span className="ml-auto text-[10px] text-zinc-500">{latestBySide.length} side{latestBySide.length === 1 ? "" : "s"}</span>
@@ -543,11 +553,12 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
         <>
           {printReady ? (
             <p className="text-[11px] text-zinc-300 leading-snug">
-              Every side is verified and print-ready.{" "}
+              Every side is verified against the approved design.{" "}
               <span className="font-semibold text-emerald-300">
                 Click Order Production Pack
               </span>{" "}
-              for the full-resolution print files.
+              to resolve exact vehicle sizing, process each panel to print
+              resolution, and run template QC.
             </p>
           ) : null}
           <p className="text-[11px] text-zinc-500 leading-snug">
@@ -614,7 +625,11 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           const panelLabel = entice
             ? "Production Pack panel · preview"
             : printReady
-              ? "Print ready · QC passed"
+              // NOT "Print ready · QC passed". The panel is cut from the
+              // approved master at DESIGN-TIME geometry; validated vehicle
+              // sizing, print-resolution processing and human template QC are
+              // all still ahead of it.
+              ? "Verified panel · design size"
               : "Preview only · production blocked";
           const di: any = p.dimensions_inches || {};
           const w = di.w ?? di.width;
