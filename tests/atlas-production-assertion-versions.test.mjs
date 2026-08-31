@@ -72,6 +72,19 @@ test("both derived versions exist in the migrations the script reads", () => {
   }
 });
 
+test("owner-read schema proof accepts the historical A.T.L.A.S. prompt family", () => {
+  assert.match(
+    script,
+    /\^designpro-flat-first-atlas-\[A-Za-z0-9\._-\]\{1,96\}\$/,
+    "a valid historical master must not disappear when the authoring prompt version advances",
+  );
+  assert.match(
+    script,
+    /__ATLAS_PROMPT_VERSION__[\s\S]*OR pg_catalog\.strpos\([\s\S]*\^designpro-flat-first-atlas-/,
+    "the live predicate may be the exact authoring pin or the immutable-history family gate",
+  );
+});
+
 /**
  * AND THE DERIVED VALUE MUST BE A WHOLE VERSION, SUFFIX INCLUDED.
  *

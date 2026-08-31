@@ -878,6 +878,69 @@ export default function PanelProStudioBoard() {
     };
   }, [correctionsBySide, panelBySide, generationId, job?.designId, job?.orderNumber, job?.revision]);
 
+  /**
+   * The complete design-team record for the selected immutable A.T.L.A.S.
+   * version. The UI renders the fields reviewers use most and makes this exact
+   * object downloadable for a forensic/QC handoff. Nothing is recomputed here:
+   * every value came from the canonical status, revision, proof or panel row.
+   */
+  const forensicRecord = useMemo(() => {
+    if (!selectedVersion) return null;
+    const selected = selectedVersion.revision;
+    return {
+      contract: "designpro.panelpro-forensic-record.v1",
+      generationId,
+      designId: job?.designId || null,
+      orderNumber: job?.orderNumber || null,
+      runRevisionId: job?.revisionId || null,
+      runRevision: job?.revision ?? null,
+      state: job?.state || null,
+      currentStage: job?.currentStage || null,
+      createdAt: job?.createdAt || null,
+      updatedAt: job?.updatedAt || null,
+      vehicle: job?.vehicle || null,
+      prompts: {
+        originalBrief: job?.brief || null,
+        selectedVersionPrompt: selectedVersion.prompt,
+        selectedVersionPromptKind: selectedVersion.promptKind,
+        promptContractVersion: selected.promptVersion,
+        promptHash: selected.provenance?.promptHash || null,
+        history: versionHistory.versions.map((version) => ({
+          version: version.version,
+          revisionId: version.revisionId,
+          parentRevisionId: version.parentRevisionId,
+          kind: version.promptKind,
+          prompt: version.prompt,
+          createdAt: version.createdAt,
+          masterContentHash: version.masterContentHash,
+        })),
+      },
+      atlas: selected,
+      proofs: views.map((view) => ({
+        id: view.id,
+        surfaceKey: view.surfaceKey,
+        sourceViewType: view.sourceViewType,
+        contentHash: view.contentHash,
+        byteSize: view.byteSize,
+        contentType: view.contentType,
+        atlasBinding: view.atlasBinding,
+      })),
+      panels: PRODUCTION_SURFACES.map((surfaceKey) => {
+        const panel = panelBySide.get(surfaceKey);
+        return panel ? {
+          id: panel.id,
+          surfaceKey,
+          contentHash: panel.contentHash,
+          byteSize: panel.byteSize,
+          metadata: panel.metadata,
+        } : { surfaceKey, missing: true };
+      }),
+    };
+  }, [generationId, job, panelBySide, selectedVersion, versionHistory.versions, views]);
+  const forensicRecordHref = forensicRecord
+    ? `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(forensicRecord, null, 2))}`
+    : "";
+
   const logos = useMemo(() => artifacts.filter((a) => a.kind === "logo"), [artifacts]);
   // Every enhanced derivative for a side, newest first. A side can carry more
   // than one: correcting a panel and enhancing again produces a second, and
@@ -1083,6 +1146,57 @@ export default function PanelProStudioBoard() {
               <span>{Math.round(selected.master.effectivePpi * 10) / 10} effective PPI</span>
               <span>{selected.promptVersion}</span>
               <ContentHash value={selected.master.contentHash || ""} chars={14} />
+            </div>
+
+            {/* THE DESIGN TEAM'S FORENSIC / QC RECORD. The server already
+                persists this evidence on the immutable revision; hiding it in
+                JSON made the operator guess whether a master passed, which
+                prompt contract made it, and whether 4K was actually delivered.
+                Show the high-signal fields here and preserve the entire exact
+                record as a downloadable JSON manifest. */}
+            <div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                    Vehicle, prompt and A.T.L.A.S. QC record
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Canonical metadata for this exact GenerationID and revision.
+                  </p>
+                </div>
+                {forensicRecordHref && (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={forensicRecordHref} download={`${job?.designId || generationId}-atlas-forensic-record.json`}>
+                      <Download className="mr-1 h-4 w-4" /> Download record
+                    </a>
+                  </Button>
+                )}
+              </div>
+
+              <dl className="mt-3 grid gap-x-6 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                <div><dt className="text-muted-foreground">Vehicle</dt><dd className="font-semibold">{[job?.vehicle?.year, job?.vehicle?.make, job?.vehicle?.model].filter(Boolean).join(" ") || "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Vehicle type</dt><dd className="font-semibold">{job?.vehicle?.type || "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Pipeline</dt><dd className="font-mono text-[11px]">{selected.provenance?.pipelineMode || "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Authoring model</dt><dd className="font-mono text-[11px]">{selected.model || "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Prompt contract</dt><dd className="font-mono text-[11px]">{selected.promptVersion || "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Prompt hash</dt><dd>{selected.provenance?.promptHash ? <ContentHash value={selected.provenance.promptHash} chars={14} /> : "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Master QC</dt><dd className={selected.qc?.masterQcPassed === true ? "font-semibold text-emerald-600 dark:text-emerald-400" : "font-semibold text-destructive"}>{selected.qc?.masterQcPassed === true ? "Passed" : selected.qc?.masterQcPassed === false ? "Failed" : "—"}</dd></div>
+                <div><dt className="text-muted-foreground">QC confidence</dt><dd className="font-semibold">{selected.qc?.masterQcConfidence == null ? "—" : selected.qc.masterQcConfidence}</dd></div>
+                <div><dt className="text-muted-foreground">QC model</dt><dd className="font-mono text-[11px]">{selected.qc?.masterQcModel || "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Authoring attempts</dt><dd className="font-semibold">{selected.qc?.masterAuthoringAttempts ?? "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Native 4K</dt><dd className="font-semibold">{selected.provenance?.nativelyFourK == null ? "—" : selected.provenance.nativelyFourK ? "Yes" : "No"}</dd></div>
+                <div><dt className="text-muted-foreground">Delivered pixels</dt><dd className="font-semibold">{selected.provenance?.deliveredWidthPx && selected.provenance?.deliveredHeightPx ? `${selected.provenance.deliveredWidthPx}×${selected.provenance.deliveredHeightPx}` : "—"}</dd></div>
+                <div><dt className="text-muted-foreground">Panels at Call 1</dt><dd className="font-semibold">{selected.callOnePanels.length}/6</dd></div>
+                <div><dt className="text-muted-foreground">Proofs saved</dt><dd className="font-semibold">{views.length}/7</dd></div>
+                <div><dt className="text-muted-foreground">Cut-out repairs</dt><dd className="font-semibold">{selected.qc?.masterCutoutSurfaces?.length ? selected.qc.masterCutoutSurfaces.join(", ") : "None reported"}</dd></div>
+              </dl>
+
+              <details className="mt-3 rounded border border-border bg-background p-2 text-xs">
+                <summary className="cursor-pointer font-semibold">View complete immutable QC and provenance metadata</summary>
+                <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-muted-foreground">
+                  {JSON.stringify({ qc: selected.qc || null, provenance: selected.provenance || null }, null, 2)}
+                </pre>
+              </details>
             </div>
 
             {/* THE VERSION'S OWN RECORD. Order number, Design ID, generation and
