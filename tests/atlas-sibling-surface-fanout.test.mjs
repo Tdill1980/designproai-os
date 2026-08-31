@@ -187,20 +187,20 @@ test("6+7: the gate still demands seven distinct views bound to one accepted rev
   assert.match(gate, /consumer_role='driver'/);
 });
 
-// 8. backwards passenger text still fails semantic QC
-test("8: backwards or upside-down customer text is still fatal", () => {
+// 8. backwards passenger text still fails proof QC, while Call 1 preserves the
+// separately authored Passenger region.
+test("8: Passenger text stays forward-reading without a Driver mirror rewrite", () => {
   const proofQc = readFileSync(new URL("../runtime/atlas-proof-qc.cjs", import.meta.url), "utf8");
   // The proof reviewer, which this change does not touch, still convicts
   // reversed lettering -- that is how fc2f2e80 was caught.
   assert.match(proofQc, /mirror|backwards|reversed|forward-reading/i);
-  // And the authoring prompt still requires forward-reading text on both
-  // flanks -- it lives in the deployed edge function's flat contract now
-  // (owner directive 2026-08-27), with the runtime's corrective note carrying
-  // the same requirement on a mirror refusal.
+  // The Call-1 contract requires forward-reading text on each installed side
+  // and names Driver/Passenger as coordinated adaptations, not duplicate pixels.
   const edgeSource = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edgeSource, /customer-facing wording readable normally in each region/);
+  assert.match(edgeSource, /customer-facing wording reads normally on each installed side/);
+  assert.match(edgeSource, /coordinated adaptations of the same design system, not duplicate images/);
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  assert.match(atlasSource, /forward-reading on both/);
+  assert.doesNotMatch(atlasSource, /mirrorPassengerFromDriver/);
 });
 
 // 9. the old mirror path is unreachable from active ATLAS generation

@@ -47,6 +47,7 @@ const authored = (input) => edgeAssembly.buildDesignIQPrompt({
   vehicleYear: VEHICLE.year,
   vehicleMake: VEHICLE.make,
   vehicleModel: VEHICLE.model,
+  vehicleType: VEHICLE.type,
   viewType: "side",
   visionBoardImages: Array.isArray(input.visionBoardImages) ? input.visionBoardImages : undefined,
   visionboard_intent: input.visionboardIntent === "exact_reference" ? "exact_reference" : "style_inspiration",
@@ -89,11 +90,13 @@ test("a customer reference declares artwork authority and distinguishes itself f
     visionboardIntent: "exact_reference", visionBoardImages: [{}],
   });
   // The persona's own EXACT rule declares the customer reference the artwork
-  // authority; the neutral mask remains geometry only.
+  // authority; the neutral mask remains layout geometry only while vehicle
+  // identity and surface semantics remain explicit.
   assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's approved artwork authority/);
   assert.match(exact, /neutral spatial mask with six fixed GENIE regions/);
-  assert.match(exact, /customer palette, graphics, texture, logo and supplied wording only/);
-  assert.doesNotMatch(exact, /2022|Ford|F250|body lines|wheel|window|door|studio photograph/i);
+  assert.match(exact, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
+  assert.match(exact, /Driver Side and Passenger Side are coordinated adaptations/);
+  assert.doesNotMatch(exact, /studio photograph|widthInches|heightInches/i);
 
   const inspiration = authored({
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
@@ -106,9 +109,10 @@ test("a customer reference declares artwork authority and distinguishes itself f
 // WITH NO CUSTOMER REFERENCE, NO OBSOLETE VISUAL AUTHORITY IS SUBSTITUTED.
 test("with no customer reference, Call 1 still uses only the current guide", () => {
   const prompt = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(prompt, /unbroken rectangular field of continuous printed artwork/);
+  assert.match(prompt, /opaque, unbroken, full-bleed rectangle of continuous printed artwork/);
   assert.match(prompt, /Region identity is defined by this exact data mapping/);
-  assert.doesNotMatch(prompt, /2022|Ford|F250|body lines|wheel|window|door|studio photograph/i);
+  assert.match(prompt, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
+  assert.doesNotMatch(prompt, /studio photograph|widthInches|heightInches/i);
 });
 
 // THE METADATA KEEPS THE CLASSES APART.

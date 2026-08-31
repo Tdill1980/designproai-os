@@ -203,6 +203,8 @@ interface Job {
   _panelizerJobId?: string;
 }
 
+type PanelProStudioListJob = Awaited<ReturnType<typeof listPanelProStudioJobs>>[number];
+
 function safeParseNotes(raw: any): any {
   if (!raw) return {};
   if (typeof raw === "string") { try { return JSON.parse(raw); } catch { return {}; } }
@@ -921,9 +923,19 @@ function AtlasProgressCard({
  * by comparing two hashes rather than by looking. A missing half is reported
  * missing — RULE 0.27 §3 forbids either UI synthesizing a stand-in.
  */
-function SurfacePairRows({ job }: { job: PanelProStudioJob }) {
+function SurfacePairRows({
+  job,
+  atlas,
+}: {
+  job: PanelProStudioJob;
+  /** The version selected by the operator, never an unscoped/latest guess. */
+  atlas: FlatAtlasRevision | null;
+}) {
   const viewFor = (surface: string) =>
     job.raw_views.find((view) => view.surfaceKey === surface) || null;
+  const callOneBySurface = new Map(
+    (atlas?.callOnePanels || []).map((panel) => [panel.surfaceKey, panel]),
+  );
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -932,15 +944,35 @@ function SurfacePairRows({ job }: { job: PanelProStudioJob }) {
           Real design proof ∥ print panel · per surface
         </div>
         <div className="text-[11px] text-gray-500">
-          Left is that side's 3D proof. Right is the deterministic Call&nbsp;9 panel at GENIE dimensions + 5″ bleed.
+          Left is that side's 3D proof. Right publishes the canonical Call&nbsp;1
+          A.T.L.A.S. source immediately, then identifies the Call&nbsp;9 promoted
+          production artifact when it exists.
         </div>
       </div>
 
       <div className="grid gap-3">
         {Object.entries(SURFACE_FOR_SIDE_KEY).map(([sideKey, surface]) => {
-          const side = job.qc_side_panels[sideKey] || null;
+          const side = job.concept_json?.qc_side_panels?.[sideKey] || null;
+          const callOnePanel = callOneBySurface.get(surface) || null;
           const view = viewFor(surface);
-          const bound = side?.atlas?.matches;
+          const panelUrl = side?.gemini_url || callOnePanel?.signedUrl || "";
+          const promoted = Boolean(side?.gemini_url);
+          const proofMasterHash = view?.atlasBinding?.masterContentHash || null;
+          const sourceMasterHash = callOnePanel?.sourceMasterHash || null;
+          const bound = promoted
+            ? side?.atlas?.matches
+            : proofMasterHash && sourceMasterHash
+              ? proofMasterHash === sourceMasterHash
+              : null;
+          const widthInches = promoted
+            ? side?.print_dims?.widthInches
+            : callOnePanel?.printWidthIn;
+          const heightInches = promoted
+            ? side?.print_dims?.heightInches
+            : callOnePanel?.printHeightIn;
+          const bleedInches = promoted
+            ? side?.print_dims?.bleedInches
+            : callOnePanel?.bleedInches;
           return (
             <div key={sideKey} className="rounded-lg border border-gray-200 p-3">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -958,9 +990,20 @@ function SurfacePairRows({ job }: { job: PanelProStudioJob }) {
                       different masters
                     </span>
                   )}
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${side?.approved ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                    {side?.approved ? "Approved" : "Pending"}
-                  </span>
+                  {promoted ? (
+                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-700">
+                      Call 9 promoted
+                    </span>
+                  ) : callOnePanel ? (
+                    <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-violet-700">
+                      Call 1 canonical · view only
+                    </span>
+                  ) : null}
+                  {promoted && (
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${side?.approved ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                      {side?.approved ? "Approved" : "Pending QC"}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -989,25 +1032,45 @@ function SurfacePairRows({ job }: { job: PanelProStudioJob }) {
                 </div>
 
                 <div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Print panel</div>
-                  {side?.gemini_url ? (
-                    <a href={side.gemini_url} target="_blank" rel="noreferrer" className="block">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    {promoted
+                      ? "Call 9 promoted production panel"
+                      : callOnePanel
+                        ? "Call 1 A.T.L.A.S. source panel"
+                        : "Print panel"}
+                  </div>
+                  {panelUrl ? (
+                    <a href={panelUrl} target="_blank" rel="noreferrer" className="block">
                       <img
-                        src={side.gemini_url}
-                        alt={`${sideKey} print panel`}
+                        src={panelUrl}
+                        alt={`${sideKey} ${promoted ? "Call 9 promoted production" : "Call 1 canonical A.T.L.A.S. source"} panel`}
                         loading="lazy"
                         className="mt-1 h-40 w-full rounded border border-gray-200 bg-gray-50 object-contain"
                       />
                     </a>
+                  ) : callOnePanel ? (
+                    <div className="mt-1 flex h-40 items-center justify-center rounded border border-dashed border-amber-300 bg-amber-50 px-3 text-center text-[11px] text-amber-700">
+                      Call 1 source panel is recorded, but its signed image URL is unavailable. Reload to request a new link.
+                    </div>
                   ) : (
                     <div className="mt-1 flex h-40 items-center justify-center rounded border border-dashed border-gray-300 text-[11px] text-gray-400">
-                      Print panel not cut yet
+                      Call 1 source panel not cut yet
                     </div>
                   )}
-                  {side?.print_dims && (
+                  {widthInches != null && heightInches != null && (
                     <p className="mt-1 truncate text-[10px] text-gray-500 tabular-nums">
-                      {side.print_dims.widthInches}″ × {side.print_dims.heightInches}″
-                      {side.print_dims.bleedInches != null && ` + ${side.print_dims.bleedInches}″ bleed`}
+                      {widthInches}″ × {heightInches}″
+                      {bleedInches != null && ` · ${bleedInches}″ bleed`}
+                      {!promoted && callOnePanel && (
+                        <> · sha256 <span className="font-mono">{callOnePanel.contentHash.slice(0, 12)}</span></>
+                      )}
+                    </p>
+                  )}
+                  {!promoted && callOnePanel && (
+                    <p className="mt-1 text-[10px] text-violet-700">
+                      Canonical artwork is visible now. Human QC, correction, and
+                      production enhancement remain locked until Call 9 promotes
+                      the verified artifact.
                     </p>
                   )}
                 </div>
@@ -2419,6 +2482,11 @@ export default function AdminGeminiCompareStudio() {
    * panel gets approved.
    */
   const [selectedVersionNumber, setSelectedVersionNumber] = useState<number | null>(null);
+  // Version selection is scoped to one generation. Without an independent
+  // identity ref, selecting V1 on job A and then opening job B could leave B on
+  // V1 even though an unqualified open must show its newest accepted revision.
+  // Polling the same job does not reset an intentional historical selection.
+  const versionSelectionGenerationRef = useRef<string | null>(null);
   /**
    * The designer's answers to the per-surface template check, held in the
    * browser until the preflight gate is submitted. Three of the ten questions
@@ -2458,7 +2526,7 @@ export default function AdminGeminiCompareStudio() {
   const [relinkInput, setRelinkInput] = useState("");
   const [relinking, setRelinking] = useState(false);
   // Recent jobs list so the board can be browsed without typing an order number.
-  const [recentJobs, setRecentJobs] = useState<Job[] | null>(null);
+  const [recentJobs, setRecentJobs] = useState<PanelProStudioListJob[] | null>(null);
   const [loadingRecent, setLoadingRecent] = useState(false);
   // BLANK BASE + LOGO PACK (Trish 2026-07-24: "PanelPro wasn't showing the
   // extracted logos or the blank back panel without the logo"). The blank base is
@@ -2477,7 +2545,7 @@ export default function AdminGeminiCompareStudio() {
     setLoadingRecent(true);
     try {
       const rows = await listPanelProStudioJobs();
-      setRecentJobs(rows as unknown as Job[]);
+      setRecentJobs(rows);
     } catch {
       setRecentJobs([]);
     } finally {
@@ -2500,8 +2568,23 @@ export default function AdminGeminiCompareStudio() {
   // already returned, nothing is minted, and a job that does not exist reports
   // that rather than being created.
   const loadJob = useCallback(async (generationId: string) => {
-    const next = await loadPanelProStudioJob(generationId, approvedSidesRef.current);
-    if (next) setJob(next as unknown as Job);
+    const requestedGeneration = String(generationId || "").trim().toLowerCase();
+    const changingGeneration = versionSelectionGenerationRef.current !== requestedGeneration;
+    const next = await loadPanelProStudioJob(
+      requestedGeneration,
+      changingGeneration ? new Set<string>() : approvedSidesRef.current,
+    );
+    if (next) {
+      if (versionSelectionGenerationRef.current !== next.generation_id) {
+        versionSelectionGenerationRef.current = next.generation_id;
+        // These approvals are unsaved browser working state. Every job uses
+        // the same six keys, so carrying them across a GenerationID boundary
+        // would make the new job appear approved by the old job's clicks.
+        approvedSidesRef.current = new Set();
+        setSelectedVersionNumber(null);
+      }
+      setJob(next as unknown as Job);
+    }
     // The checklist lives on the server, so it is READ here rather than
     // remembered. A reload shows what was actually ticked, by whom and when;
     // a job opened by a second person shows the same thing.
@@ -3491,22 +3574,35 @@ export default function AdminGeminiCompareStudio() {
               ) : recentJobs && recentJobs.length ? (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {recentJobs.map((j) => {
-                    const panels = j.concept_json?.qc_side_panels || {};
-                    const approved = VIEW_DEFS.filter((d) => panels[d.sideKey]?.approved).length;
-                    const started = VIEW_DEFS.some((d) => panels[d.sideKey]?.gemini_url || (panels[d.sideKey]?.versions || []).length);
                     const name = [j.vehicle_year, j.vehicle_make, j.vehicle_model].filter(Boolean).join(" ") || "Vehicle";
+                    const identity = j.order_number || j.design_id || j.generation_id;
+                    const stateLabel = j.state === "complete"
+                      ? "Complete"
+                      : j.state === "failed"
+                        ? "Failed"
+                        : j.state === "queued"
+                          ? "Queued"
+                          : "In progress";
                     return (
                       <button
                         key={j.id}
                         type="button"
-                        onClick={() => { setOrderInput(j.order_number || ""); setJob(j); setParams({ order: j.order_number || j.id }); }}
+                        onClick={() => {
+                          setOrderInput(identity);
+                          void runSearch(j.generation_id);
+                        }}
                         className="flex flex-col gap-1.5 rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-blue-300 hover:bg-blue-50/40"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="rounded bg-gray-900 px-1.5 py-0.5 font-mono text-[11px] text-white">{j.order_number}</span>
-                          {started
-                            ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">{approved}/{VIEW_DEFS.length} approved</span>
-                            : <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">Not started</span>}
+                          <span
+                            className="max-w-[70%] truncate rounded bg-gray-900 px-1.5 py-0.5 font-mono text-[11px] text-white"
+                            title={identity}
+                          >
+                            {identity}
+                          </span>
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                            {stateLabel}
+                          </span>
                         </div>
                         <span className="truncate text-sm font-semibold text-gray-800">{name}</span>
                         {j.status && <span className="text-[11px] text-gray-400">{j.status}</span>}
@@ -3658,7 +3754,9 @@ export default function AdminGeminiCompareStudio() {
             {/* PANELS NEXT TO THEIR INDIVIDUAL 3D PROOFS, DIRECTLY UNDER THE
                 MASTER. RULE 0.21's row, published on the control room rather
                 than only at /panelpro/surfaces one level down. */}
-            {versionedJob && <SurfacePairRows job={versionedJob as unknown as PanelProStudioJob} />}
+            {versionedJob && (
+              <SurfacePairRows job={versionedJob as unknown as PanelProStudioJob} atlas={selectedVersion?.revision || null} />
+            )}
 
             {/* Every brand mark Call 10 separated out of this version's panels,
                 individually downloadable. */}
@@ -3669,6 +3767,7 @@ export default function AdminGeminiCompareStudio() {
             {/* The physical check, per surface, and what it adds up to. */}
             {versionedJob && (
               <SurfaceQcPanel
+                key={`surface-qc:${versionedJob.generation_id}:${selectedVersion?.revisionId || "none"}`}
                 job={versionedJob}
                 selectedVersion={selectedVersion}
                 records={surfaceQcRecords}
@@ -3681,6 +3780,7 @@ export default function AdminGeminiCompareStudio() {
                 files, and the stamp/ZIP/WrapBox artifacts it produced. */}
             {job && (
               <ProductionPackSection
+                key={`production-pack:${job.generation_id}:${selectedVersion?.revisionId || "none"}`}
                 job={(versionedJob || job) as unknown as PanelProStudioJob}
                 approvedSides={approvedSidesRef.current}
                 qcPassedSides={qcPassedSides}

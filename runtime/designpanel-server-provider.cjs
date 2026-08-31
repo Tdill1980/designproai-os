@@ -1043,9 +1043,9 @@ function createDesignPanelServerProvider(options = {}) {
  *
  * A.T.L.A.S. has already made the sole creative decision before this provider
  * is constructed. This adapter therefore runs only generate-color-render:
- * Driver from the immutable flat master, Passenger through the canonical
- * deterministic producer, then each remaining camera from that same flat
- * master plus the accepted Driver as vehicle/studio continuity evidence.
+ * every view from its own named, persisted Call-1 panel. Passenger is rendered
+ * from the Passenger panel with the Passenger camera; it is never manufactured
+ * from the Driver proof or Driver panel.
  */
 /** The stage name the proof metadata reports, now that the producer is the
  *  deployed photographer rather than an in-runtime generate-color-render port. */
@@ -1081,7 +1081,7 @@ const ATLAS_PANEL_AUTHORITY_CONTRACT = "designpro.atlas-panel-authority.v1";
  * and a nine-contract acceptance judge the proven stack has no counterpart for.
  * Calls 2-7 were never supposed to change. Only the artwork source was.
  *
- * So this is now a TRANSPORT: it resolves the surface's persisted Call-9 panel,
+ * So this is now a TRANSPORT: it resolves the surface's persisted Call-1 panel,
  * POSTs `mode: "atlas-proof"` to the deployed photographer, downloads the proof
  * it wrote, and verifies the hash. It assembles no prompt at all.
  *
@@ -1229,7 +1229,7 @@ function createAtlasDesignPanelProvider(options = {}) {
         proofModel: String(payload.model || ""),
         proofFunctionVersion: String(payload.functionVersion || ""),
         proofImageRequestCount: Number(payload.imageRequestCount || 0),
-        // ARTWORK AUTHORITY: this surface's own persisted Call-9 panel.
+        // ARTWORK AUTHORITY: this surface's own persisted Call-1 panel.
         atlasZoneContract: ATLAS_PANEL_AUTHORITY_CONTRACT,
         atlasZoneContentHash: panel.contentHash,
         atlasZoneSurfaceKey: panel.surfaceKey,

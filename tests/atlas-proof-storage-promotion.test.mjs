@@ -9,6 +9,7 @@ const { createGenerationStore } = require("../runtime/generation-store.cjs");
 const bytes = Buffer.from("verified atlas driver proof");
 const contentHash = createHash("sha256").update(bytes).digest("hex");
 const sourceStoragePath = "atlas-proof/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa_side.png";
+const hoodSourceStoragePath = "atlas-proof/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa_hood_detail.png";
 const storagePath = `designpro/user_11111111-1111-4111-8111-111111111111/33333333-3333-4333-8333-333333333333/calls-1-7/side/${contentHash}.png`;
 
 function storageFixture() {
@@ -45,6 +46,21 @@ test("an accepted A.T.L.A.S. proof is promoted inside Storage instead of uploade
   assert.deepEqual(calls.upload, []);
   assert.equal(result.contentHash, contentHash);
   assert.equal(result.byteSize, bytes.length);
+});
+
+test("the canonical hood_detail staging key is accepted and promoted", async () => {
+  const { calls, store } = storageFixture();
+  await store.putImmutableBytes({
+    storagePath,
+    bytes,
+    contentType: "image/png",
+    sourceStoragePath: hoodSourceStoragePath,
+    sourceContentHash: contentHash,
+  });
+  assert.deepEqual(calls.copy, [{ from: hoodSourceStoragePath, to: storagePath }]);
+  assert.deepEqual(calls.upload, []);
+  assert.equal(await store.removeStagedBytes({ storagePath: hoodSourceStoragePath }), true);
+  assert.deepEqual(calls.remove, [[hoodSourceStoragePath]]);
 });
 
 test("a staging identity mismatch fails closed before copy or upload", async () => {

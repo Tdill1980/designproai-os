@@ -139,7 +139,11 @@ function createGenerationStore({ supabase, workerId }) {
       const contentHash = sha256(bytes);
       const sourcePath = String(sourceStoragePath || "");
       const sourceHash = String(sourceContentHash || "").toLowerCase();
-      const stagedProof = /^atlas-proof\/[0-9a-f-]{36}_[a-z0-9-]+\.(png|jpg|webp)$/i.test(sourcePath);
+      // `sourceViewType` is part of the photographer's immutable staging key.
+      // The active contract includes `hood_detail`; rejecting `_` here made a
+      // correctly hashed Hood proof look like a foreign staging object and
+      // failed the entire generation after Call 1 had already succeeded.
+      const stagedProof = /^atlas-proof\/[0-9a-f-]{36}_[a-z0-9_-]+\.(png|jpg|webp)$/i.test(sourcePath);
       if (sourcePath && (!stagedProof || sourceHash !== contentHash)) {
         throw new Error("staged proof identity does not match the verified candidate bytes");
       }
@@ -168,7 +172,7 @@ function createGenerationStore({ supabase, workerId }) {
     /** Best-effort deletion of the photographer's noncanonical staging copy. */
     async removeStagedBytes({ storagePath }) {
       const sourcePath = String(storagePath || "");
-      if (!/^atlas-proof\/[0-9a-f-]{36}_[a-z0-9-]+\.(png|jpg|webp)$/i.test(sourcePath)) return false;
+      if (!/^atlas-proof\/[0-9a-f-]{36}_[a-z0-9_-]+\.(png|jpg|webp)$/i.test(sourcePath)) return false;
       const { error } = await supabase.storage.from(BUCKET).remove([sourcePath]);
       if (error) throw new Error(`staged proof cleanup failed: ${error.message}`);
       return true;

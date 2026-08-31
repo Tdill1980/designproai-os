@@ -87,7 +87,7 @@ function supabaseFor(rows, blobs = new Map(), { lookupError = null } = {}) {
   };
 }
 
-test("the exact release always supplies the hash-pinned flattened-to-finished pair", async () => {
+test("the dormant historical loader can still verify its hash-pinned pair", async () => {
   const { client, observed } = supabaseFor([]);
   const examples = await loader.loadActiveFlatAtlasTopologyExamples(client);
   assert.equal(examples.length, 1);
@@ -108,7 +108,7 @@ test("the exact release always supplies the hash-pinned flattened-to-finished pa
   assert.equal(observed.bucket, null, "the bundled pair requires no legacy Storage object");
 });
 
-test("one active database example is verified and appended after the mandatory bundled pair", async () => {
+test("the dormant historical loader verifies a database example after its bundled pair", async () => {
   const item = fixture();
   const { client, observed } = supabaseFor([item.row], item.blobs);
   const examples = await loader.loadActiveFlatAtlasTopologyExamples(client);

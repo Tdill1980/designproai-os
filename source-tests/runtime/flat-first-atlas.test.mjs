@@ -497,7 +497,7 @@ test("reusing an atlas verifies the stored projection is the deterministic child
   assert.equal(loaded.projection.sourceMasterHash, loaded.master.contentHash);
 });
 
-test("initial authoring makes one image call, stores guide/manifest/master/projection, then inserts one immutable row", async () => {
+test("initial authoring makes one image call, passes deterministic acceptance, stores assets, then inserts one immutable row", async () => {
   const events = [];
   let providerOptions = null;
   const generated = await atlas.renderAtlasGuide(atlas.buildAtlasManifest(surfaces));
@@ -602,34 +602,17 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
       productionEligible: false,
       operatorValidated: false,
     },
-    masterValidatorFactory: () => async ({ masterBytes, guideBytes }) => {
-      events.push("master-qc");
-      return {
-        accepted: true,
-        review: { confidence: 0.99 },
-        deterministic: { accepted: true },
-        metadata: {
-          contract: "designpro.atlas-master-semantic-qc.v1",
-          confidence: 0.99,
-          model: "gemini-2.5-flash",
-          keyFingerprint: "abcdef012345",
-          requestByteSize: 1234,
-          masterHash: atlas._test.sha256(masterBytes),
-          guideHash: atlas._test.sha256(guideBytes),
-        },
-      };
-    },
   });
 
   assert.equal(events.filter((event) => event === "provider").length, 1);
   // Guide, manifest, master, projection -- plus the six panels Call 1 cuts from
   // the accepted master. Those six are what RevisionStudio entices with and what
-  // PanelPro Studio is later served, so they are produced here rather than
-  // re-derived downstream.
+  // PanelPro Studio publishes these Call-1 panels immediately, so they are
+  // produced here rather than re-derived downstream.
   assert.equal(stored.length, 10);
-  assert.ok(events.indexOf("master-qc") > events.indexOf("provider"));
-  assert.ok(events.indexOf("master-qc") < events.findIndex((event) => event.startsWith("put:")),
-    "master acceptance must pass before any Atlas artifact is persisted");
+  assert.equal(events.includes("master-qc"), false, "active Call 1 must not invoke semantic master QC");
+  assert.ok(events.findIndex((event) => event.startsWith("put:")) > events.indexOf("provider"),
+    "deterministic master acceptance must pass before any Atlas artifact is persisted");
   assert.deepEqual(
     stored.map((item) => item.contentType).sort(),
     ["application/json", "image/jpeg", ...Array(8).fill("image/png")],
@@ -678,6 +661,9 @@ test("initial authoring makes one image call, stores guide/manifest/master/proje
   assert.equal(inserted.metadata.topologyExamplesApplied, 0);
   assert.equal(inserted.metadata.masterQcPassed, true);
   assert.equal(inserted.metadata.masterQcContract, "designpro.atlas-master-semantic-qc.v1");
+  assert.equal(inserted.metadata.masterAcceptance, "deterministic");
+  assert.equal(inserted.metadata.masterSemanticBlocking, false);
+  assert.equal(inserted.metadata.masterSemanticVerdict.code, "semantic_qc_advisory_not_run");
   assert.equal(inserted.metadata.topologyExampleIdentity, null);
   assert.equal(inserted.projection_content_type, "image/jpeg");
   assert.ok(inserted.projection_byte_size <= atlas.PROJECTION_MAX_BYTES);

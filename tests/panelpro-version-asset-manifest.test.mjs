@@ -201,7 +201,7 @@ test("the pair rows sit between the master and the production pack", () => {
 
 test("a missing half of the pair is reported, never substituted", () => {
   assert.match(board, /3D proof not rendered yet/);
-  assert.match(board, /Print panel not cut yet/);
+  assert.match(board, /Call 1 source panel not cut yet/);
   // RULE 0.21: the board publishes the server's artifacts, it does not make them.
   const rows = board.slice(board.indexOf("function SurfacePairRows("), board.indexOf("function SurfacePairRows(") + 5200);
   for (const producer of ["Pull panel", "Mirror from driver"]) {
@@ -213,6 +213,41 @@ test("the pair states whether both halves came from the same master", () => {
   assert.match(board, /same master/);
   assert.match(board, /different masters/);
   assert.match(board, /side\?\.atlas\?\.matches/);
+});
+
+test("Call 1 canonical panels publish in the primary rows before Call 9", () => {
+  const rows = board.slice(
+    board.indexOf("function SurfacePairRows("),
+    board.indexOf("function Fact("),
+  );
+  assert.match(rows, /atlas: FlatAtlasRevision \| null/);
+  assert.match(rows, /atlas\?\.callOnePanels/);
+  assert.match(rows, /side\?\.gemini_url \|\| callOnePanel\?\.signedUrl/);
+  assert.match(rows, /Call 1 A\.T\.L\.A\.S\. source panel/);
+  assert.match(rows, /Call 1 canonical · view only/);
+  assert.match(rows, /sourceMasterHash/);
+  assert.match(board, /atlas=\{selectedVersion\?\.revision \|\| null\}/);
+});
+
+test("Call 1 visibility never unlocks Call 9 production controls", () => {
+  const rows = board.slice(
+    board.indexOf("function SurfacePairRows("),
+    board.indexOf("function Fact("),
+  );
+  assert.match(rows, /Call 9 promoted production panel/);
+  assert.match(rows, /Human QC, correction, and\s+production enhancement remain locked until Call 9 promotes/);
+  for (const control of ["Approve surface", "Needs correction", "Upscale"]) {
+    assert.equal(rows.includes(control), false, `${control} must not operate on a Call 1 source panel`);
+  }
+
+  // The operational QC component still resolves only a promoted Call 9 panel
+  // (or its audited correction), never atlas.callOnePanels.
+  const qc = board.slice(
+    board.indexOf("function SurfaceQcPanel("),
+    board.indexOf("function ActivityHistory("),
+  );
+  assert.match(qc, /job\.raw_artifacts\.find\(\(a\) => a\.kind === "panel"/);
+  assert.equal(qc.includes("callOnePanels"), false);
 });
 
 test("the ZIP publishes a per-file manifest, not only a count of kinds", () => {

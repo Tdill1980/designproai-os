@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260830\.v12-neutral-fields"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v13-vehicle-atlas"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -130,48 +130,38 @@ test("obsolete vehicle/template and finished-proof examples cannot reach Call 1"
   assert.match(liveAuthoring, /guideStoragePath: await stageEdgeInput\(authoringGuideBytes/);
 });
 
-test("the flat contract gives the model neutral field placement without anatomy triggers or dimensions", () => {
-  // ⚠️ THIS BLOCK ONCE ASSERTED THE OPPOSITE, AND THAT IS WHY IT IS HERE.
-  //
-  // The contract names the forbidden vehicle anatomy because live generation
-  // f5bef168 copied it from obsolete visual examples. It still never exposes
-  // dimensions, trim furniture or production geometry.
-  //
-  // Generation 8555be2f (2026-08-28) returned `231.3" x 90"`, `170" x 71.8"`,
-  // `70.9" x 36"`, `79" x 73.6"`, the codes HD/RF/RR/FR, dashed rectangles and
-  // flanks drawn as van elevations with the arches punched out. Four of five
-  // dimension strings and four of six surface IDs, verbatim from the prompt.
-  // All six print panels were cut from it.
-  //
-  // Owner, 2026-08-29: "Do not put technical information into pixels and then
-  // ask Gemini not to reproduce it... Do NOT enumerate forbidden objects such
-  // as rocker, window, wheel arch, bumper. Those words themselves are
-  // contaminating the image-generation context."
-  //
-  // The requirements are unchanged. The contract now reaches them by naming
-  // what to paint.
-  const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function atlasNeutralCreativeDirection("));
+test("the flat contract teaches one named vehicle atlas without leaking dimensions", () => {
+  // The neutral-mask experiment hid so much context that Gemini received six
+  // anonymous canvases rather than one flattened vehicle. Restore semantic
+  // identity while keeping all inch/pixel/cut geometry server authoritative.
+  const flatFunction = edgeSource.slice(
+    edgeSource.indexOf("function atlasFlatMasterContract("),
+    edgeSource.indexOf("function atlasCreativeDirection("),
+  );
+  const contract = flatFunction.slice(flatFunction.indexOf(MARK));
 
   assert.match(contract, /neutral spatial mask with six fixed GENIE regions/);
-  assert.match(contract, /The centre column is fixed top-to-bottom as Fields C, D, E, F/);
+  assert.match(contract, /A\.T\.L\.A\.S\. is the unfolded-map view of ONE real three-dimensional vehicle exterior/);
+  assert.match(contract, /TARGET VEHICLE \(CANONICAL\): \$\{vehicle/);
+  assert.match(contract, /BODY CLASS \(GENIE\): \$\{bodyClass\}/);
+  assert.match(contract, /The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front/);
   assert.match(contract, /\$\{panelLines\}/);
   assert.match(contract, /Replace every light mask region, corner to corner/);
-  assert.match(contract, /Return the finished two-dimensional livery fields/);
+  assert.match(contract, /opaque, unbroken, full-bleed rectangle/);
+  assert.match(contract, /not duplicate images and not independent redesigns/);
+  assert.match(contract, /Return only the finished two-dimensional A\.T\.L\.A\.S\. artwork/);
 
   for (const leaked of ["pixel size", "DASHED", "title band", "footer", "widthInches", "heightInches"]) {
     assert.ok(!contract.toLowerCase().includes(leaked.toLowerCase()),
       `the contract must not speak "${leaked}" to the image model`);
   }
-  assert.match(contract, /unbroken rectangular field of continuous printed artwork/);
-  for (const anatomyTrigger of ["doors", "windows", "wheel arches", "vehicle silhouettes", "F250", "F-250"]) {
-    assert.ok(!contract.includes(anatomyTrigger),
-      `the authoring contract must not name ${anatomyTrigger}`);
+  for (const label of ["PASSENGER SIDE (PS)", "DRIVER SIDE (DS)", "REAR (RR)", "ROOF (RF)", "HOOD (HD)", "FRONT (FR)"]) {
+    assert.ok(flatFunction.includes(label), `the model needs the named surface ${label}`);
   }
+  assert.doesNotMatch(contract, /FIELD [A-F]/, "anonymous field aliases must stay retired");
 
-  // Physical identity remains deterministic runtime data; the model sees only
-  // the anonymous fields in their actual layout order.
+  // Physical identity is model context; physical dimensions remain runtime data.
   assert.match(runtimeSource, /const CENTER_ORDER = Object\.freeze\(\["rear", "roof", "hood", "front"\]\)/);
-  assert.doesNotMatch(contract, /vehicle named above/);
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -199,25 +189,26 @@ test("the six canonical surfaces are unchanged", () => {
   assert.match(runtimeSource, /surfaceKey === "driver" \|\| surfaceKey === "passenger" \? flank : null/);
 });
 
-test("body-style and component vocabulary stay server-side", () => {
-  // Owner, 2026-08-29: "we went too far when it became FRONT FENDER -> FRONT
-  // DOOR -> REAR DOOR -> QUARTER -> BED -> ROCKER... That starts becoming scene
-  // content to an image generator." The useful half is the relationship — a
-  // pickup flank spans a cab and a bed and must compose across both — and that
-  // is what the contract says now.
-  //
-  // FLANK_TOPOLOGY_BY_BODY stays: it is server-side machine data, and GENIE is
-  // allowed to know everything. It simply stops being spoken.
+test("component enumeration stays server-side while body class reaches Call 1", () => {
+  // Detailed fender/door/quarter inventories stay out of Gemini. Only GENIE's
+  // canonical class and the pickup exterior/interior coverage distinction are
+  // model context.
   assert.match(runtimeSource, /const FLANK_TOPOLOGY_BY_BODY = Object\.freeze\(/);
   for (const body of ["pickup", "van", "suv", "car", "box"]) {
     assert.ok(runtimeSource.includes(`${body}: Object.freeze(`), `${body} needs its own structure`);
   }
-  const contract = edgeSource.slice(edgeSource.indexOf(MARK), edgeSource.indexOf("function atlasNeutralCreativeDirection("));
-  for (const region of ["pickup flank", "van flank", "box truck", "FRONT FENDER", "CAB DOOR", "REAR QUARTER", "BED SIDE", "ROCKER"]) {
+  const contract = edgeSource.slice(
+    edgeSource.indexOf("function atlasFlatMasterContract("),
+    edgeSource.indexOf("function atlasCreativeDirection("),
+  );
+  for (const region of ["FRONT FENDER", "CAB DOOR", "REAR QUARTER", "BED SIDE", "ROCKER"]) {
     assert.ok(!contract.includes(region), `the contract must not name ${region} to the image model`);
   }
   assert.ok(!contract.includes("structure front to rear:"),
     "the region enumeration must not be rendered into the prompt");
+  assert.match(contract, /PICKUP COVERAGE:/);
+  assert.match(contract, /open bed floor and inner bed walls remain bare factory bedliner/);
+  assert.match(contract, /keep every A\.T\.L\.A\.S\. source rectangle fully painted and opaque/);
 });
 
 test("identity and placement cross the wire while dimensions and component topology stay server-side", () => {
@@ -232,6 +223,7 @@ test("identity and placement cross the wire while dimensions and component topol
   assert.match(body, /label: SURFACE_LABELS\[zone\.surfaceKey\]/);
   assert.match(body, /surfaceId: SURFACE_IDS\[zone\.surfaceKey\]/);
   assert.match(body, /placement: zone\.placement/);
+  assert.match(body, /vehicleType: String\(vehicle\.type \|\| vehicle\.vehicleClass/);
 });
 
 test("body style is decided in code, never by a second AI call", () => {

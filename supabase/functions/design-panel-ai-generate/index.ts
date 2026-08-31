@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260830.v12-neutral-fields";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v13-vehicle-atlas";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 const corsHeaders = {
@@ -252,6 +252,7 @@ interface DesignIQParams {
   vehicleYear?: string;
   vehicleMake?: string;
   vehicleModel?: string;
+  vehicleType?: string;
   visionBoardImages?: VisionBoardImage[];
   visionboard_intent?: "style_inspiration" | "exact_reference" | "artboard_projection";
   viewType?: string;
@@ -335,12 +336,36 @@ type AtlasPanelTopology = {
   paintThrough?: boolean;
 };
 
+/**
+ * Resolve the body class from server-supplied identity only. This is prompt
+ * context, never geometry: GENIE remains the sole dimensional authority and no
+ * second model call is allowed to classify the vehicle.
+ */
+function atlasVehicleBodyClass(declaredType?: string): string {
+  const normalized = String(declaredType || "").trim().toLowerCase().replace(/[ -]+/g, "_");
+  const canonical = new Set([
+    "car", "truck", "suv", "van", "motorcycle", "boat", "bus", "rv",
+    "trailer", "aircraft", "heavy_equipment",
+  ]);
+  if (normalized === "pickup") return "truck";
+  return canonical.has(normalized) ? normalized : "vehicle";
+}
+
+/** A coverage subtype, not a replacement for GENIE's canonical class. */
+function atlasIsPickup(vehicle: string, bodyClass: string): boolean {
+  if (bodyClass !== "truck") return false;
+  return /\b(f[\s-]?(?:150|250|350|450|550)|silverado|sierra|ram\s*\d*|tundra|tacoma|colorado|canyon|ranger|maverick|frontier|titan|ridgeline|gladiator|dakota|pickup|pick-up|crew cab|super cab|quad cab|truck bed)\b/i.test(vehicle);
+}
+
 function atlasFlatMasterContract(
   panels: Array<{
     label: string;
     surfaceId?: string;
     placement?: string;
   }>,
+  vehicle: string,
+  bodyClass: string,
+  pickupCoverageApplies: boolean,
 ): string {
   const expected = new Map([
     ["DRIVER SIDE", { surfaceId: "DS", placement: "right-flank" }],
@@ -364,47 +389,36 @@ function atlasFlatMasterContract(
       throw new Error(`ATLAS panel identity mismatch: ${label}`);
     }
   }
-  // The exact physical identities above are a SERVER validation contract. Do
-  // not interpolate them into the image-model prompt. Live canary 33339192219
-  // received an unlabelled mask but still drew a tailgate outline and cut-out
-  // in the region named REAR by prose. The creative model needs position and
-  // coordination, not vehicle anatomy. GENIE and the deterministic crop retain
-  // the real PS/DS/RR/RF/HD/FR mapping.
   const panelLines = [
-    "• FIELD A — tall primary region on the LEFT",
-    "• FIELD B — tall primary region on the RIGHT",
-    "• FIELD C — first centre region from the top",
-    "• FIELD D — second centre region from the top",
-    "• FIELD E — third centre region from the top",
-    "• FIELD F — fourth centre region from the top",
+    "• PASSENGER SIDE (PS) — tall region on the LEFT",
+    "• DRIVER SIDE (DS) — tall region on the RIGHT",
+    "• REAR (RR) — first centre region from the top",
+    "• ROOF (RF) — second centre region from the top",
+    "• HOOD (HD) — third centre region from the top",
+    "• FRONT (FR) — fourth centre region from the top",
   ].join("\n");
+  const pickupCoverage = pickupCoverageApplies
+    ? `\nPICKUP COVERAGE: the Driver Side and Passenger Side artwork coordinates the exterior cab and exterior bed sides, and Rear supplies the tailgate exterior. The open bed floor and inner bed walls remain bare factory bedliner after installation. That physical exclusion belongs to downstream vehicle application and proof mapping, not Call 1; keep every A.T.L.A.S. source rectangle fully painted and opaque with no empty bed-shaped opening.`
+    : "";
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER on one square 4K canvas.
-The attached image is a neutral spatial mask with six fixed GENIE regions. It carries geometry only. Region identity is defined by this exact data mapping:
+A.T.L.A.S. is the unfolded-map view of ONE real three-dimensional vehicle exterior: one cohesive wrap design authored once, then flattened into the six named production surfaces below. These are not six independent design canvases.
+TARGET VEHICLE (CANONICAL): ${vehicle || "customer vehicle"}
+BODY CLASS (GENIE): ${bodyClass}
+The attached image is a neutral spatial mask with six fixed GENIE regions. It carries layout geometry only. Region identity is defined by this exact data mapping:
 ${panelLines}
-The centre column is fixed top-to-bottom as Fields C, D, E, F. Replace every light mask region, corner to corner, with the final customer livery pixels for its mapped field. Keep the dark gutters as separation space.
-Create one cohesive professional wrap composition across all six regions. Each region is an unbroken rectangular field of continuous printed artwork: customer palette, graphics, texture, logo and supplied wording only. The two flank regions are opposite-facing twins of the same coordinated side composition, with customer-facing wording readable normally in each region.
-The six fields are the source artwork. Physical component masking and presentation lighting happen later, during the seven downstream proof projections. Return the finished two-dimensional livery fields in the mask layout.`;
+The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Replace every light mask region, corner to corner, with the final customer wrap pixels for its named surface. Keep the dark gutters as separation space.
+Create one cohesive professional vehicle-wrap composition across all six named surfaces. Continue the same palette, motifs, depth, visual rhythm and directional flow across surfaces that meet on the installed ${bodyClass}. Driver Side and Passenger Side are coordinated adaptations of the same design system, not duplicate images and not independent redesigns; customer-facing wording reads normally on each installed side. Hood, Roof, Front and Rear continue that same composition rather than introducing separate artwork.
+Every named surface is an opaque, unbroken, full-bleed rectangle of continuous printed artwork, filled to all four edges. The six rectangles themselves are the canonical source panels. Installed component boundaries and presentation lighting belong to downstream vehicle application and the seven proof projections.${pickupCoverage}
+Return only the finished two-dimensional A.T.L.A.S. artwork in the supplied six-region layout.`;
 }
 
 /**
- * Translate customer-facing physical placement words to the neutral field
- * aliases Call 1 actually paints. The original brief remains immutable in the
- * request ledger; only the image-model direction is normalized. This is a
- * deterministic architecture boundary, not a second creative pass.
+ * Preserve the customer's vehicle-wrap language. Only whitespace is
+ * normalized; physical placement words are design intent and must reach the
+ * one Call-1 creative authority unchanged.
  */
-function atlasNeutralCreativeDirection(value: string): string {
+function atlasCreativeDirection(value: string): string {
   return String(value || "")
-    .replace(/\bfront\s*(?:-|to)\s*rear\b/gi, "end-to-end across both primary fields")
-    .replace(/\brear\s*(?:-|to)\s*front\b/gi, "end-to-end across both primary fields")
-    .replace(/\bdriver(?:'s)?\s+side\b/gi, "FIELD B")
-    .replace(/\bpassenger(?:'s)?\s+side\b/gi, "FIELD A")
-    .replace(/\b(?:tailgate|rear)\b/gi, "FIELD C")
-    .replace(/\broof\b/gi, "FIELD D")
-    .replace(/\bhood\b/gi, "FIELD E")
-    .replace(/\bfront\b/gi, "FIELD F")
-    .replace(/\b(?:doors?|fenders?|wheel(?:\s+arches?)?|windows?|windshield|bumpers?|grilles?|mirrors?|body\s+lines?)\b/gi, "primary field")
-    .replace(/\b(?:vehicle|pickup|truck|van|car|suv)\s+wrap\b/gi, "six-field livery artwork")
-    .replace(/\bwrap\b/gi, "livery artwork")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
@@ -428,6 +442,7 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
     vehicleYear,
     vehicleMake,
     vehicleModel,
+    vehicleType,
     visionBoardImages,
     visionboard_intent,
     viewType,
@@ -445,10 +460,12 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   const canonicalMakeModel = canonicalizeVehicle(vehicleMake, vehicleModel, vehicleYear);
   const atlasFlatMaster = (params as any).atlasFlatMaster === true;
   const atlasPanels = Array.isArray((params as any).atlasPanels) ? (params as any).atlasPanels : [];
-  const creativeDirection = atlasFlatMaster ? atlasNeutralCreativeDirection(prompt) : prompt;
   const vehicle = [vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(' ');
+  const atlasBodyClass = atlasVehicleBodyClass(vehicleType);
+  const pickupCoverageApplies = atlasIsPickup(vehicle, atlasBodyClass);
+  const creativeDirection = atlasFlatMaster ? atlasCreativeDirection(prompt) : prompt;
   const cameraAngle = getCameraAngle(viewType || 'side');
 
   // ── ARTBOARD MODE (surgical, additive) ───────────────────────────────
@@ -584,7 +601,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = `Design ONE flat print-production master across the six fixed regions in the attached mask. Output only the final straight-on two-dimensional livery fields. Build the design from layered background color and texture, mid-ground graphic motion, and foreground accent detail across the regions. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+    const atlasScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six named regions in the attached mask. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces, built from layered background color and texture, mid-ground graphic motion, and foreground accent detail. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
@@ -605,7 +622,7 @@ ${commercialScene}
 ${studioEnvironment}`;
 
     const commercialIdentity = atlasFlatMaster
-      ? `You are the senior graphic designer at a sign and wrap company — 20 years of premium commercial fleet-graphics artwork. You amplify each brief into an original six-field livery built for this one business — premium, readable at a glance, and worth what the customer paid.`
+      ? `You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real vehicles. You amplify each brief into one original, premium, instantly readable wrap design built specifically for this business and this exact vehicle.`
       : `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.`;
 
     let assembled = `${commercialIdentity}
@@ -696,7 +713,7 @@ CLIENT BRIEF:`;
 
     if (atlasFlatMaster) {
       assembled += `\nThe master carries uniform print color only; laminate and physical finish are applied in the downstream proof views.`;
-      assembled += `\n\n${atlasFlatMasterContract(atlasPanels)}`;
+      assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass, pickupCoverageApplies)}`;
       return assembled;
     }
     assembled += `\n\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
@@ -741,8 +758,8 @@ CLIENT BRIEF:`;
   // Copyist identity for recreate; the golden designer identity for every other path.
   const restyleIdentity = atlasFlatMaster
     ? isExactRecreate
-      ? `You are a livery-artwork REPRODUCTION specialist at WePrintWraps.com. Reproduce the customer's approved reference faithfully across the six mapped fields, including every supplied color, graphic, pattern, logo, wordmark and line of text at its true relative scale and position.`
-      : `You are WePrintWraps.com Lead Livery Designer. You create premium flat print artwork with depth and texture. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`
+      ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com. Reproduce the customer's approved wrap faithfully as one cohesive flattened A.T.L.A.S. for the exact target vehicle, including every supplied color, graphic, pattern, logo, wordmark and line of text at its true relative scale and position.`
+      : `You are WePrintWraps.com Lead Vehicle Wrap Designer. You create premium vehicle wraps with depth and texture that are printed and installed on real vehicles. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`
     : isExactRecreate
       ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com. Your job is to reproduce an existing, approved wrap design EXACTLY as shown in the reference image, re-fitted onto a different vehicle. You do NOT redesign, restyle, recolor, simplify, or invent — you copy the reference faithfully, including every logo and line of text, and change only the vehicle it sits on. If the reference image contains anything besides the design itself (a browser window, app interface, dark panels, menus, thumbnails, captions), IGNORE all of that completely — reproduce ONLY the wrap design shown on the vehicle within it, at FULL fidelity. Copy EVERY design element at its true relative size and position: colored panels, swooshes, and shapes behind or around the logo are part of the design — never drop, shrink, or simplify them, and never shrink the logo lockup.`
       : `You are WePrintWraps.com Lead Vehicle Wrap Designer. You create both restyle and commercial wraps with depth and texture — your designs are seen in car shows around the world. You take a customer's order and create amazing, modern vehicle wrap designs that we sell to wrap shops who then print and install them on real vehicles. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`;
@@ -750,7 +767,7 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = `Design ONE flat print-production master across the six fixed regions in the attached mask. Output only the final straight-on two-dimensional livery fields. Elevate the brief into a bold, cohesive composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
+  const atlasRestyleScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six named regions in the attached mask. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
   const restylePresentation = atlasFlatMaster
     ? atlasRestyleScene
     : `CAMERA ANGLE (LOCKED — read this FIRST):
@@ -828,7 +845,7 @@ ${PROFESSIONAL_JUDGMENT}`;
 
   if (atlasFlatMaster) {
     assembled += `\nThe master carries uniform print color only; laminate and physical finish are applied in the downstream proof views.`;
-    assembled += `\n\n${atlasFlatMasterContract(atlasPanels)}`;
+    assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass, pickupCoverageApplies)}`;
     return assembled;
   }
   assembled += `\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
@@ -2069,6 +2086,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     const vehicleYear = String(body.vehicleYear || "").trim();
     const vehicleMake = String(body.vehicleMake || "").trim();
     const vehicleModel = String(body.vehicleModel || "").trim();
+    const vehicleType = String(body.vehicleType || "").trim();
     const authoringMode = String(body.authoringMode || "commercial") === "restyle" ? "restyle" : "commercial";
 
     // The six labeled panels: caller-supplied GENIE dimensions win; the PVO
@@ -2116,6 +2134,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       vehicleYear,
       vehicleMake,
       vehicleModel,
+      vehicleType,
       viewType: "side",
       visionBoardImages: references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
       visionboard_intent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",

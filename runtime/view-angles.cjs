@@ -120,7 +120,7 @@ Minimize visible floor. The front wrap coverage is the subject.
 const VIEW_ASPECT_RATIOS = Object.freeze({
   "side":           "16:9",   // Full vehicle profile
   "driver-side":    "16:9",   // Same as side
-  "passenger-side": "16:9",   // Mirror of driver side
+  "passenger-side": "16:9",   // Own passenger camera; presentation only
   "hood_detail":    "16:9",   // Consistent 360 presentation
   "front":          "16:9",   // Consistent 360 presentation
   "rear":           "16:9",   // Consistent 360 presentation
@@ -132,7 +132,7 @@ const VIEW_ASPECT_RATIOS = Object.freeze({
 const VIEW_RESOLUTION = Object.freeze({
   "side":           "4K",     // GENIE primary extract source — needs max detail
   "driver-side":    "4K",     // Same as side
-  "passenger-side": "4K",     // Mirror output matches driver resolution
+  "passenger-side": "4K",     // Own passenger render at presentation resolution
   "hood_detail":    "4K",     // Restored to 4K per Trish (was 2K for edge-function memory limit — watch for crashes)
   "front":          "4K",     // GENIE front bumper extract
   "rear":           "4K",     // GENIE rear bumper extract

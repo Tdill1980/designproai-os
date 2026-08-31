@@ -1,10 +1,15 @@
 "use strict";
 
 /**
- * Loads the server-owned A.T.L.A.S. topology examples.
+ * DORMANT HISTORICAL LOADER for server-owned A.T.L.A.S. topology examples.
+ *
+ * Active Call 1 does not invoke this module and sends no teaching pair. It is
+ * retained only so historical revisions and forensic fixtures remain readable.
+ * Do not reconnect it without an owner-approved, genuinely matching,
+ * hash-pinned 3D↔flat pair and a production DCA proving the need.
  *
  * Security boundary:
- * - the release carries one immutable, hash-pinned flat-to-finished pair;
+ * - the historical release bundle carries one immutable, hash-pinned pair;
  * - the active view is readable by `service_role` only;
  * - every object must live below the server-owned system prefix;
  * - guide, manifest and master bytes are verified against the immutable row;
