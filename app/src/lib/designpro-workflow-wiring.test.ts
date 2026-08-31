@@ -42,6 +42,12 @@ describe("the workflow carries one job identity across the five existing screens
     expect(panelPro).toMatch(/generationId=\{generationId\}/);
     // The panels checked are the ones on screen, not a re-fetch that could drift.
     expect(panelPro).toMatch(/revision=\{atlasRevisions\[atlasVersion\]/);
+    // AND QC IS HANDED THE ARTIFACTS, NOT A COUNT. It has to resolve the Call-8
+    // proof and the Call-9 panels back to the six flat surfaces; a
+    // `hasProductionProof` boolean could only report that something exists,
+    // which is precisely how a proof-derived panel set once read as healthy.
+    expect(panelPro).toContain("artifacts={allArtifacts}");
+    expect(panelPro).not.toContain("hasProductionProof");
   });
 
   it("QC → WRAPBOX appears only on a pass, and carries the job", () => {

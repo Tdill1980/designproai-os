@@ -38,7 +38,13 @@ export type DesignProJob = {
   currentRevision: FlatAtlasRevision | null;
   hasAcceptedMaster: boolean;
   callOnePanelCount: number;
-  hasProductionProof: boolean;
+  /**
+   * Every artifact published for this job. Exposed as the LIST rather than as
+   * a `hasProductionProof` flag: the QC report resolves the Call-8 proof and
+   * the Call-9 panels back to the six flat surfaces, which a boolean cannot
+   * support — it can only say something exists, never what it is made of.
+   */
+  artifacts: WorkflowArtifact[];
   wrapboxPack: WrapboxPack | null;
   designId: string | null;
   loading: boolean;
@@ -124,11 +130,6 @@ export function useDesignProJob(generationId: string | null | undefined): Design
     currentRevision?.master?.contentHash && currentRevision?.qc?.masterQcPassed !== false,
   );
 
-  const hasProductionProof = useMemo(
-    () => artifacts.some((artifact) => artifact.kind === "flat-proof"),
-    [artifacts],
-  );
-
   const designId = status?.designId || null;
   const wrapboxPack = useMemo(() => {
     if (!designId) return null;
@@ -142,7 +143,7 @@ export function useDesignProJob(generationId: string | null | undefined): Design
     currentRevision,
     hasAcceptedMaster,
     callOnePanelCount,
-    hasProductionProof,
+    artifacts,
     wrapboxPack,
     designId,
     loading,

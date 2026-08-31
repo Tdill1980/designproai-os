@@ -1498,7 +1498,7 @@ export default function PanelProStudioBoard() {
       <FullQcPanel
         generationId={generationId}
         revision={atlasRevisions[atlasVersion] || atlasRevisions[0] || null}
-        hasProductionProof={allArtifacts.some((artifact) => artifact.kind === "flat-proof")}
+        artifacts={allArtifacts}
         onReport={setQcReport}
       />
 
