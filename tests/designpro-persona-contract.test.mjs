@@ -141,6 +141,10 @@ test("the exact DCA brief retains vehicle-wrap intent and named topology before 
   assert.match(prompt, /airflow ribbons sweeping front to rear/);
   assert.match(prompt, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
   assert.match(prompt, /BODY CLASS \(GENIE\): truck/);
+  assert.match(prompt, /PICKUP COVERAGE:/);
+  assert.match(prompt, /open bed floor and inner bed walls remain bare factory bedliner/);
+  assert.match(prompt, /fully painted and opaque with no empty bed-shaped opening/);
+  assert.match(prompt, /PIXEL CONTENT LOCK:/);
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
     assert.match(prompt, new RegExp(surface));
   }

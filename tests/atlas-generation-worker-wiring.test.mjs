@@ -12,6 +12,7 @@ const {
 } = worker;
 const {
 } = require("../runtime/designpanel-server-provider.cjs");
+const { ADVISORY_POLICY_CONTRACT } = require("../runtime/atlas-proof-qc.cjs");
 const angles = require("../runtime/view-angles.cjs");
 // Track the shipped contract rather than a literal: a prompt-version bump is
 // supposed to invalidate stale masters, so pinning the string here turns that
@@ -103,7 +104,7 @@ const LABEL_BY_VIEW = Object.freeze({
   front: "Front", rear: "Rear", "close-up": "Close-Up", roof: "Roof",
 });
 
-function atlasView(sourceViewType, contentHash, extraProvider = {}) {
+function atlasView(sourceViewType, contentHash, extraProvider = {}, extraValidation = {}) {
   const zone = VIEW_AUTHORITIES[sourceViewType];
   return {
     sourceViewType,
@@ -148,6 +149,10 @@ function atlasView(sourceViewType, contentHash, extraProvider = {}) {
       },
       validation: {
         contract: "designpro.atlas-proof-semantic-qc.v1",
+        policyContract: ADVISORY_POLICY_CONTRACT,
+        semanticDisposition: "pass",
+        semanticCode: null,
+        semanticReason: null,
         expectedView: LABEL_BY_VIEW[sourceViewType],
         proofHash: contentHash,
         atlasHash: FLAT_ATLAS.projection.contentHash,
@@ -155,6 +160,7 @@ function atlasView(sourceViewType, contentHash, extraProvider = {}) {
         zoneHash: zone.contentHash,
         zoneSurfaceKey: zone.surfaceKey,
         confidence: 0.97,
+        ...extraValidation,
       },
       authority: {
         contract: FLAT_ATLAS.contract,
@@ -250,6 +256,61 @@ test("Atlas accepts seven sibling proofs, continuity-only reference included", (
     },
   ));
   assert.equal(assertAtlasViewLineage({ views, flatAtlas: FLAT_ATLAS, requireComplete: true }), true);
+});
+
+test("Atlas accepts advisory review states but never relaxes their bound hashes", () => {
+  const reviewed = atlasView("front", "4".repeat(64), {}, {
+    semanticDisposition: "review_required",
+    semanticCode: "atlas_qc_design_drift",
+    semanticReason: "Reviewer could not compare the projected pixels confidently.",
+    confidence: 0.41,
+  });
+  assert.equal(assertAtlasViewLineage({ views: [reviewed], flatAtlas: FLAT_ATLAS }), true);
+
+  const unavailable = atlasView("roof", "5".repeat(64), {}, {
+    semanticDisposition: "unavailable",
+    semanticCode: "atlas_qc_analyzer_failed",
+    semanticReason: "503 UNAVAILABLE",
+    confidence: null,
+  });
+  assert.equal(assertAtlasViewLineage({ views: [unavailable], flatAtlas: FLAT_ATLAS }), true);
+
+  for (const [field, value] of [
+    ["proofHash", "f".repeat(64)],
+    ["atlasHash", "f".repeat(64)],
+    ["authorityHash", "f".repeat(64)],
+    ["zoneHash", "f".repeat(64)],
+    ["zoneSurfaceKey", "passenger"],
+  ]) {
+    const poisoned = atlasView("front", "6".repeat(64), {}, {
+      semanticDisposition: "review_required",
+      semanticCode: "atlas_qc_design_drift",
+      semanticReason: "advisory only",
+      confidence: 0.2,
+      [field]: value,
+    });
+    assert.throws(
+      () => assertAtlasViewLineage({ views: [poisoned], flatAtlas: FLAT_ATLAS }),
+      (error) => error.code === "generation_atlas_lineage_invalid"
+        && /valid bound Atlas proof receipt/.test(error.message),
+      `${field} must remain fail-closed under the advisory policy`,
+    );
+  }
+});
+
+test("Atlas keeps historical strict-confidence receipts readable", () => {
+  const legacy = atlasView("side", "7".repeat(64));
+  delete legacy.metadata.validation.policyContract;
+  delete legacy.metadata.validation.semanticDisposition;
+  delete legacy.metadata.validation.semanticCode;
+  delete legacy.metadata.validation.semanticReason;
+  assert.equal(assertAtlasViewLineage({ views: [legacy], flatAtlas: FLAT_ATLAS }), true);
+
+  legacy.metadata.validation.confidence = 0.89;
+  assert.throws(
+    () => assertAtlasViewLineage({ views: [legacy], flatAtlas: FLAT_ATLAS }),
+    /valid bound Atlas proof receipt/,
+  );
 });
 
 test("Atlas refuses generic accepted rows and dependents from a previous Driver", () => {

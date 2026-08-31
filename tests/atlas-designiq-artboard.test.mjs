@@ -50,6 +50,7 @@ test("the request targets the canonical mode and carries the exact customer data
   assert.equal(b.vehicleYear, "2022");
   assert.equal(b.vehicleMake, "Ford");
   assert.equal(b.vehicleModel, "F250 Crew Cab");
+  assert.equal(b.vehicleType, "truck");
   assert.match(b.prompt, /airflow ribbons/);
   assert.match(b.prompt, /deep blue, sunrise orange/);
 });
@@ -115,14 +116,23 @@ test("the mapping contains zero creative language of its own", () => {
 });
 
 test("corrective notes, the guide and customer references ride only through extras", () => {
+  const identity = { contract: "designpro.atlas-design-teaching-pair.v1" };
   const b = body(BASE_INPUT, {
     guideStoragePath: "atlas-call1-inputs/abc.png",
+    cohesionExampleProofStoragePath: `atlas-call1-inputs/${"a".repeat(64)}.jpg`,
+    cohesionExampleFlatStoragePath: `atlas-call1-inputs/${"b".repeat(64)}.jpg`,
+    cohesionExampleVehicle: "2022 Ford F-250 Crew Cab",
+    cohesionExampleIdentity: identity,
     correctiveNote: "CORRECTION -- refused",
     referenceImagesBase64: ["YmF6"],
   });
   // The deterministic guide travels as a STORAGE PATH — a 2.2MB inline-base64
   // body killed the edge worker twice (2026-08-27).
   assert.equal(b.guideStoragePath, "atlas-call1-inputs/abc.png");
+  assert.match(b.cohesionExampleProofStoragePath, /^atlas-call1-inputs\/[a-f0-9]{64}\.jpg$/);
+  assert.match(b.cohesionExampleFlatStoragePath, /^atlas-call1-inputs\/[a-f0-9]{64}\.jpg$/);
+  assert.equal(b.cohesionExampleVehicle, "2022 Ford F-250 Crew Cab");
+  assert.equal(b.cohesionExampleIdentity, identity);
   assert.equal(b.structuralReferenceStoragePath, undefined);
   assert.equal(b.structuralPairedProofStoragePath, undefined);
   assert.equal(b.correctiveNote, "CORRECTION -- refused");

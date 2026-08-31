@@ -108,6 +108,24 @@ test("the dormant historical loader can still verify its hash-pinned pair", asyn
   assert.equal(observed.bucket, null, "the bundled pair requires no legacy Storage object");
 });
 
+test("the active owner-selected cohesion pair is separate, immutable and pure-rectangle identified", () => {
+  const example = loader.loadBundledAtlasCohesionExample();
+  assert.equal(example.kind, "atlas-cohesion-flat-installed-pair");
+  assert.equal(example.identity.contract, "designpro.atlas-design-teaching-pair.v1");
+  assert.equal(example.identity.purpose, "flat-to-installed-relationship-only");
+  assert.equal(example.identity.historicalGenerationId, "5b2eb96c-77b5-4705-8cad-fef00af677fe");
+  assert.equal(example.identity.historicalRevisionId, "b1941528-e375-4d93-bef7-2fd48213370a");
+  assert.equal(example.identity.outputRule, "six-solid-full-bleed-print-art-rectangles");
+  assert.equal(example.identity.flattenedTopViewByteSize, example.flattenedTopView.bytes.length);
+  assert.equal(example.identity.finished3dProofByteSize, example.finished3dProof.bytes.length);
+  assert.equal(loader._test.sha256(example.flattenedTopView.bytes),
+    loader._test.COHESION_PAIR.flattenedTopView.contentHash);
+  assert.equal(loader._test.sha256(example.finished3dProof.bytes),
+    loader._test.COHESION_PAIR.finished3dProof.contentHash);
+  assert.notEqual(example.identity.exampleKey, loader._test.BUNDLED_PAIR.exampleKey,
+    "the active design lesson must never silently mutate the historical Houdini identity");
+});
+
 test("the dormant historical loader verifies a database example after its bundled pair", async () => {
   const item = fixture();
   const { client, observed } = supabaseFor([item.row], item.blobs);

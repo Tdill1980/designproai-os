@@ -4,6 +4,8 @@ import test from "node:test";
 
 const canary = readFileSync(new URL("../scripts/production-canary.mjs", import.meta.url), "utf8");
 const workflow = readFileSync(new URL("../.github/workflows/production-canary.yml", import.meta.url), "utf8");
+const atlasGraph = readFileSync(new URL("../docs/ATLAS_ONE_ARTIFACT_GRAPH.md", import.meta.url), "utf8");
+const repositoryContract = readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
 
 test("production canary uses the live standalone auth and schema contracts", () => {
   assert.match(canary, /auth\.admin\.createUser/);
@@ -47,10 +49,10 @@ test("the canary proves a persisted A.T.L.A.S. master, not just a receipt field"
   assert.match(canary, /no A\.T\.L\.A\.S\. revision was persisted/);
   assert.match(canary, /master_content_hash !== flatAtlas\.master\.contentHash/);
   assert.match(canary, /prompt_version !== flatAtlas\.promptVersion/);
-  // The master QC gate is the reason a defective sheet never reaches a panel.
-  // Accepting a revision without it would report green on the one failure this
-  // whole path exists to prevent.
+  // Deterministic master acceptance is the blocking gate. Semantic visual
+  // judgement remains advisory and is not a Call-1 blocker.
   assert.match(canary, /masterQcPassed !== true/);
+  assert.match(canary, /Semantic review is[\s\S]*advisory and is not a Call-1 blocker/);
   // The v1 gate itself, not the comment recording why it was removed.
   assert.doesNotMatch(canary, /designMaster\?\.creativeAssets/,
     "the v1 design-master assertion can never pass on the flat-first path");
@@ -58,7 +60,7 @@ test("the canary proves a persisted A.T.L.A.S. master, not just a receipt field"
     "the flat-first snapshot carries no designMaster to freeze");
 });
 
-test("the canary fails unless one-call A.T.L.A.S. and Driver meet their display SLOs", () => {
+test("the canary records display latency and defers its hard SLO gate until the full graph is checked", () => {
   assert.match(canary, /const ATLAS_SLO_SECONDS = 60/);
   assert.match(canary, /const DRIVER_SLO_SECONDS = 90/);
   assert.match(canary, /metadata\?\.geminiImageRequestCount\) !== 1/);
@@ -70,6 +72,21 @@ test("the canary fails unless one-call A.T.L.A.S. and Driver meet their display 
   assert.match(canary, /view\.source_view_type === "side"/);
   assert.match(canary, /basis: "request-created-to-durable-artifact"/);
   assert.match(canary, /latency SLO failed/);
+  assert.match(canary, /latency SLO missed; recording the miss and continuing through the full graph before final acceptance/);
+
+  const latencyEvidence = canary.indexOf("evidence.latency = {");
+  const renderAssets = canary.indexOf("const renderAssets = {}", latencyEvidence);
+  const enticeArtifacts = canary.indexOf('collectArtifacts(evidence.enticeRunId, "entice")');
+  const productionArtifacts = canary.indexOf('collectArtifacts(evidence.productionRunId, "production")');
+  const outputGate = canary.indexOf("assertOutputSet();", productionArtifacts);
+  const latencyGate = canary.indexOf("assertLatencySlo();", outputGate);
+  assert.ok(latencyEvidence > -1 && renderAssets > latencyEvidence, "latency evidence must be recorded before render handoff");
+  assert.doesNotMatch(canary.slice(latencyEvidence, renderAssets), /throw new Error\(`latency SLO failed/,
+    "a latency miss must not abort Calls 1-7 before downstream execution");
+  assert.ok(enticeArtifacts > -1 && productionArtifacts > enticeArtifacts,
+    "both workflow artifact sets must be collected");
+  assert.ok(outputGate > productionArtifacts && latencyGate > outputGate,
+    "the hard latency gate must run only after the downstream artifact gate");
 });
 
 test("production is server-created exactly once after Entice completes", () => {
@@ -132,8 +149,23 @@ test("canary uses the real QC gates and returns both Entice and Production artif
   assert.match(canary, /await_final_human_qc/);
   assert.match(canary, /collectArtifacts\(evidence\.enticeRunId, "entice"\)/);
   assert.match(canary, /collectArtifacts\(evidence\.productionRunId, "production"\)/);
+  assert.match(canary, /productionFlatProofs: count\("production", "flat-proof"\)/);
+  assert.match(canary, /Cardinality is counted BEFORE verification/);
+  assert.match(canary, /const count = \(run, kind\) => rows\(run, kind\)\.length/);
+  assert.match(canary, /hashVerified: false/,
+    "an unreadable artifact must remain in total cardinality and fail verification");
+  assert.match(canary, /checks\.enticeFlatProofs === 1/);
+  assert.match(canary, /checks\.productionFlatProofs === 1/);
+  assert.match(canary, /checks\.requiredHashesVerified/);
+  assert.match(canary, /checks\.productionFlatProofExactCopy/);
+  assert.match(canary, /productionProof\.contentHash === enticeProof\.contentHash/);
+  assert.match(canary, /productionProof\.metadata\?\.sourceContentHash === enticeProof\.contentHash/);
+  assert.match(canary, /productionProof\.metadata\?\.sourceStoragePath === enticeProof\.storagePath/);
+  assert.match(canary, /productionProof\.metadata\?\.sourceEnticeRunId === evidence\.enticeRunId/);
   assert.match(canary, /productionOutputs === 18/);
   assert.match(canary, /productionUpscaledPanels === 6/);
+  assert.match(workflow, /one Entice Call 8 proof and one exact Production copy/);
+  assert.doesNotMatch(workflow, /customer 2D proof \+ immutable flat layout/);
 });
 
 test("workflow no longer accepts an old-project owner UUID as the new-project tenant", () => {
@@ -145,4 +177,17 @@ test("workflow no longer accepts an old-project owner UUID as the new-project te
   assert.match(workflow, /atlas-canary-customer@designproai\.com/);
   assert.doesNotMatch(workflow, /inputs\.customer_email/);
   assert.match(workflow, /\[\[ \$sha == "\$EXPECTED_SHA" \]\]/);
+});
+
+test("canonical markdown records the explicit diagnostic-canary exception without replacing DCA", () => {
+  for (const document of [atlasGraph, repositoryContract]) {
+    assert.doesNotMatch(document, /No canary is permitted/i);
+    assert.match(document, /do not run speculative canaries/i);
+    assert.match(document, /owner\s+explicitly authorized the current diagnostic production\s+canary/i);
+  }
+  assert.match(atlasGraph, /Owner-authorized diagnostic production canary #35/);
+  assert.match(atlasGraph, /33379526286/);
+  assert.match(atlasGraph, /51ea0e06-2ceb-460a-8756-54888a7832a8/);
+  assert.match(atlasGraph, /early latency acceptance gate, before Call 8/);
+  assert.match(atlasGraph, /final acceptance still requires one real customer-style[\s\S]*production DCA/);
 });

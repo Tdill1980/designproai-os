@@ -14,7 +14,7 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 56);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 58);
   for (const name of [
     // stamp.build requires it at module load, so a release without it dies at
     // require time rather than merely shipping a pack with no certificate.
@@ -49,6 +49,8 @@ test("one canonical policy includes every required runtime file and five deploy 
     "runtime/flat-first-atlas.cjs", "runtime/flat-atlas-topology-examples.cjs",
     "runtime/atlas-examples/houdini-flattened-top-view.jpg",
     "runtime/atlas-examples/houdini-finished-3d-proof.jpg",
+    "runtime/atlas-examples/flamingo-installed-driver-proof.jpg",
+    "runtime/atlas-examples/flamingo-rectangular-atlas.jpg",
     // The authoring boundary the worker requires to record the canonical
     // design master while Calls 1-7 run.
     "runtime/creative-authoring.cjs",

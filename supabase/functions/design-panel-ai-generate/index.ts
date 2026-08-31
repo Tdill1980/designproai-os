@@ -49,8 +49,41 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v13-vehicle-atlas";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v14-pure-rectangles";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
+const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
+const ATLAS_COHESION_PAIR_MAX_BYTES = 2 * 1024 * 1024;
+const ATLAS_COHESION_PAIR_CONTRACT = "designpro.atlas-design-teaching-pair.v1";
+const ATLAS_COHESION_PAIR_PURPOSE = "flat-to-installed-relationship-only";
+const ATLAS_COHESION_PAIR_VERSION = 1;
+const ATLAS_COHESION_PAIR_VEHICLE = "2022 Ford F-250 Crew Cab";
+const ATLAS_COHESION_FLAT_HASH = "20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa";
+const ATLAS_COHESION_FLAT_BYTES = 619255;
+const ATLAS_COHESION_PROOF_HASH = "4449c3274f7d5cd9c383c49a81b0407f99ae0251b8052cad1ee3927c41ac1fdc";
+const ATLAS_COHESION_PROOF_BYTES = 169595;
+
+/**
+ * The Edge function is an independent deployment, so it must enforce the same
+ * immutable teaching identity as the runtime instead of trusting a caller to
+ * describe whichever two Storage objects it supplied.
+ */
+export function validateAtlasCohesionPairIdentity(value: unknown): Record<string, unknown> {
+  const identity = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : null;
+  if (!identity
+    || identity.contract !== ATLAS_COHESION_PAIR_CONTRACT
+    || identity.purpose !== ATLAS_COHESION_PAIR_PURPOSE
+    || identity.version !== ATLAS_COHESION_PAIR_VERSION
+    || identity.flattenedTopViewContentHash !== ATLAS_COHESION_FLAT_HASH
+    || identity.flattenedTopViewByteSize !== ATLAS_COHESION_FLAT_BYTES
+    || identity.finished3dProofContentHash !== ATLAS_COHESION_PROOF_HASH
+    || identity.finished3dProofByteSize !== ATLAS_COHESION_PROOF_BYTES
+    || ATLAS_COHESION_FLAT_BYTES + ATLAS_COHESION_PROOF_BYTES > ATLAS_COHESION_PAIR_MAX_BYTES) {
+    throw new Error("atlas_artboard_cohesion_pair_identity_invalid");
+  }
+  return identity;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -401,14 +434,15 @@ function atlasFlatMasterContract(
     ? `\nPICKUP COVERAGE: the Driver Side and Passenger Side artwork coordinates the exterior cab and exterior bed sides, and Rear supplies the tailgate exterior. The open bed floor and inner bed walls remain bare factory bedliner after installation. That physical exclusion belongs to downstream vehicle application and proof mapping, not Call 1; keep every A.T.L.A.S. source rectangle fully painted and opaque with no empty bed-shaped opening.`
     : "";
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER on one square 4K canvas.
-A.T.L.A.S. is the unfolded-map view of ONE real three-dimensional vehicle exterior: one cohesive wrap design authored once, then flattened into the six named production surfaces below. These are not six independent design canvases.
+A.T.L.A.S. is ONE unified vehicle-wrap design arranged flat as six named printable production surfaces for the exact target vehicle. These are six parts of one composition, not six independent design canvases and not a depiction of the vehicle itself.
 TARGET VEHICLE (CANONICAL): ${vehicle || "customer vehicle"}
 BODY CLASS (GENIE): ${bodyClass}
-The attached image is a neutral spatial mask with six fixed GENIE regions. It carries layout geometry only. Region identity is defined by this exact data mapping:
+The final TARGET A.T.L.A.S. GUIDE image is a neutral spatial mask with six fixed GENIE regions. It carries layout geometry only. Region identity is defined by this exact data mapping:
 ${panelLines}
 The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Replace every light mask region, corner to corner, with the final customer wrap pixels for its named surface. Keep the dark gutters as separation space.
 Create one cohesive professional vehicle-wrap composition across all six named surfaces. Continue the same palette, motifs, depth, visual rhythm and directional flow across surfaces that meet on the installed ${bodyClass}. Driver Side and Passenger Side are coordinated adaptations of the same design system, not duplicate images and not independent redesigns; customer-facing wording reads normally on each installed side. Hood, Roof, Front and Rear continue that same composition rather than introducing separate artwork.
-Every named surface is an opaque, unbroken, full-bleed rectangle of continuous printed artwork, filled to all four edges. The six rectangles themselves are the canonical source panels. Installed component boundaries and presentation lighting belong to downstream vehicle application and the seven proof projections.${pickupCoverage}
+Every named surface is a pure, opaque, unbroken, full-bleed rectangular region of continuous printable artwork, filled to all four edges. The six rectangles themselves are the canonical source panels.
+PIXEL CONTENT LOCK: output printable artwork inside those six rectangles only. Do not depict a vehicle render, vehicle photograph, vehicle outline or silhouette. Do not draw physical vehicle anatomy, wheels, windows, doors, component seams, cut lines, transparent voids, shaped openings or mockup lighting in any source rectangle. Customer-requested photographic imagery remains artwork printed within a rectangle; it is never a photograph or rendering of the wrapped vehicle. Installed boundaries and presentation lighting belong to downstream vehicle application and the seven proof projections.${pickupCoverage}
 Return only the finished two-dimensional A.T.L.A.S. artwork in the supplied six-region layout.`;
 }
 
@@ -968,6 +1002,15 @@ serve(async (req) => {
     // endpoint; the handler executes the REAL Persona-2 designer brain and
     // makes exactly ONE Gemini image request. See handleAtlasArtboard below.
     if (body?.mode === "atlas-artboard") {
+      // Call 1 belongs to the server OS. A browser JWT may still use every
+      // established non-Atlas DesignPanel mode below, but it cannot bypass the
+      // runtime's canonical identity, authoring fence or release-pinned inputs.
+      if (!internalCaller.internal) {
+        return new Response(
+          JSON.stringify({ success: false, error: "atlas_artboard_internal_only" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       return await handleAtlasArtboard(body);
     }
     const {
@@ -2143,11 +2186,12 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       atlasPanels: panels,
     } as any);
 
-    // 3 — parts: designer prompt, deterministic neutral six-region mask, then
-    // verified customer references. Historical artboard/template and finished
-    // vehicle examples are intentionally excluded: they made the model copy
-    // presentation anatomy into the six rectangular print regions. The mask is
-    // unlabelled and unstroked; region identity travels in the panel data.
+    // 3 — parts: designer prompt, one release-pinned installed→flat cohesion
+    // lesson, verified customer references, optional correction, then the
+    // CURRENT target mask as the final image.
+    // The old Houdini/template inputs remain excluded: their cutouts and vehicle
+    // anatomy taught the exact wrong pixels. The selected Flamingo flat half was
+    // repaired to six solid rectangles before it entered the release.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
     const pushImage = (b64: unknown, mime = "image/png") => {
       if (typeof b64 === "string" && b64.length > 0) {
@@ -2161,28 +2205,90 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // hung to its 160s ceiling with a bodiless 504, twice. Downloading the same
     // bytes here with the service client keeps the request a few KB and the
     // peak memory to one copy of each image.
-    const downloadPart = async (path: unknown, mime: string) => {
+    const sha256Hex = async (bytes: Uint8Array) => {
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    };
+    const downloadPart = async (
+      path: unknown,
+      mime: string,
+      expectedHash?: string,
+      expectedByteSize?: number,
+    ) => {
       const key = String(path || "").trim();
-      if (!key) return;
+      if (!key) return null;
+      const pathMatch = key.match(/^atlas-call1-inputs\/([0-9a-f]{64})\.(?:png|jpg)$/);
+      if (!pathMatch) {
+        throw new Error(`atlas_artboard_input_path_invalid:${key.slice(0, 160)}`);
+      }
       const { data, error } = await svc.storage.from("wrap-files").download(key);
       if (error || !data) throw new Error(`atlas_artboard_input_download_failed:${key}:${error?.message || "missing"}`);
       const bytes = new Uint8Array(await data.arrayBuffer());
+      const actualHash = await sha256Hex(bytes);
+      if (actualHash !== pathMatch[1] || (expectedHash && actualHash !== expectedHash)) {
+        throw new Error(`atlas_artboard_input_hash_mismatch:${key}`);
+      }
+      if (expectedByteSize != null && bytes.length !== expectedByteSize) {
+        throw new Error(`atlas_artboard_input_size_mismatch:${key}`);
+      }
       let binary = "";
       const CHUNK = 0x8000;
       for (let i = 0; i < bytes.length; i += CHUNK) {
         binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
       }
       parts.push({ inlineData: { mimeType: mime, data: btoa(binary) } });
+      return { contentHash: actualHash, byteSize: bytes.length };
     };
-    await downloadPart(body.guideStoragePath, "image/png");
-    // Legacy inline path kept for callers that still send bytes (harness
-    // capture-only, tests); production sends paths.
-    pushImage(body.guideImageBase64);
+    const cohesionProofPath = String(body.cohesionExampleProofStoragePath || "").trim();
+    const cohesionFlatPath = String(body.cohesionExampleFlatStoragePath || "").trim();
+    if (!cohesionProofPath || !cohesionFlatPath) {
+      throw new Error("atlas_artboard_cohesion_pair_incomplete");
+    }
+    let verifiedCohesionPair: Record<string, unknown> | null = null;
+    {
+      const identity = validateAtlasCohesionPairIdentity(body.cohesionExampleIdentity);
+      parts.push({
+        text: `RELATIONSHIP-ONLY EXAMPLE 1/2 — INSTALLED DRIVER PROOF on a ${ATLAS_COHESION_PAIR_VEHICLE}. This is the downstream result of one historical A.T.L.A.S. design. Learn only that all surfaces read as one coherent vehicle wrap. Copy no artwork, subject, wording, logo, company, colors, typography, industry, vehicle geometry, camera or lighting. This is not the requested output and the target vehicle is identified in the prompt above.`,
+      });
+      const proofVerified = await downloadPart(
+        cohesionProofPath,
+        "image/jpeg",
+        ATLAS_COHESION_PROOF_HASH,
+        ATLAS_COHESION_PROOF_BYTES,
+      );
+      parts.push({
+        text: "RELATIONSHIP-ONLY EXAMPLE 2/2 — MATCHING FLAT A.T.L.A.S. SOURCE. This is the same historical design represented as six solid, opaque, full-bleed print-art rectangles with no vehicle anatomy or openings. Learn only the installed-to-flat relationship, six-region cohesion and pure-rectangle output type. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry.",
+      });
+      const flatVerified = await downloadPart(
+        cohesionFlatPath,
+        "image/jpeg",
+        ATLAS_COHESION_FLAT_HASH,
+        ATLAS_COHESION_FLAT_BYTES,
+      );
+      verifiedCohesionPair = {
+        ...identity,
+        contract: ATLAS_COHESION_PAIR_CONTRACT,
+        purpose: ATLAS_COHESION_PAIR_PURPOSE,
+        version: ATLAS_COHESION_PAIR_VERSION,
+        historicalVehicle: ATLAS_COHESION_PAIR_VEHICLE,
+        finished3dProofContentHash: proofVerified?.contentHash,
+        finished3dProofByteSize: proofVerified?.byteSize,
+        flattenedTopViewContentHash: flatVerified?.contentHash,
+        flattenedTopViewByteSize: flatVerified?.byteSize,
+      };
+    }
+    for (const ref of references) pushImage(ref);
     // Re-roll corrective direction from the caller's QC gate (text only).
     if (typeof body.correctiveNote === "string" && body.correctiveNote.trim()) {
       parts.push({ text: body.correctiveNote.trim().slice(0, 2000) });
     }
-    for (const ref of references) pushImage(ref);
+    parts.push({
+      text: "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Fill its six regions with the NEW customer design from the canonical target vehicle and brief above. Return flat printable rectangles only; never return a vehicle image.",
+    });
+    await downloadPart(body.guideStoragePath, "image/png");
+    // Legacy inline path kept for callers that still send bytes (harness
+    // capture-only, tests); production sends it LAST for the same reason.
+    pushImage(body.guideImageBase64);
 
     // 4 — exactly ONE Gemini image request. No retries, no second asset.
     //
@@ -2193,17 +2299,23 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     const model = ATLAS_ARTBOARD_AUTHORING_MODEL;
     const t0 = Date.now();
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiKey()}`;
+    const modelRequest = JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { aspectRatio: "1:1", imageSize: "4K" },
+      },
+    });
+    const modelRequestByteSize = new TextEncoder().encode(modelRequest).byteLength;
+    if (modelRequestByteSize > ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES) {
+      throw new Error(`atlas_artboard_model_request_too_large:${modelRequestByteSize}`);
+    }
+    const modelInputImageCount = parts.filter((part) => Boolean((part as Record<string, any>)?.inlineData?.data)).length;
     const geminiRes = await fetch(geminiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: AbortSignal.timeout(115_000),
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-          imageConfig: { aspectRatio: "1:1", imageSize: "4K" },
-        },
-      }),
+      body: modelRequest,
     });
     console.log(`atlas-artboard ${requestId}: gemini responded in ${Date.now() - t0}ms (${model}, ${parts.length} parts, prompt ${prompt.length} chars)`);
     if (!geminiRes.ok) {
@@ -2247,6 +2359,10 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         promptVersion: ATLAS_ARTBOARD_PROMPT_VERSION,
         model,
         imageRequestCount: 1,
+        modelRequestByteSize,
+        modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
+        modelInputImageCount,
+        cohesionExampleIdentity: verifiedCohesionPair,
         promptChars: prompt.length,
         masterUrl: signed?.signedUrl || null,
         masterStoragePath: storagePath,

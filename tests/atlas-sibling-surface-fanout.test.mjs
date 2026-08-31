@@ -187,13 +187,17 @@ test("6+7: the gate still demands seven distinct views bound to one accepted rev
   assert.match(gate, /consumer_role='driver'/);
 });
 
-// 8. backwards passenger text still fails proof QC, while Call 1 preserves the
-// separately authored Passenger region.
-test("8: Passenger text stays forward-reading without a Driver mirror rewrite", () => {
+// 8. backwards passenger text is still reported by advisory proof QC, while
+// deterministic authority proves the proof came from the separately authored
+// Passenger panel rather than a Driver mirror.
+test("8: Passenger review stays visible while own-panel lineage forbids a Driver mirror", () => {
   const proofQc = readFileSync(new URL("../runtime/atlas-proof-qc.cjs", import.meta.url), "utf8");
-  // The proof reviewer, which this change does not touch, still convicts
-  // reversed lettering -- that is how fc2f2e80 was caught.
+  // The proof reviewer still names reversed lettering and persists its finding
+  // under an explicit advisory policy; it is evidence for the owner, not
+  // production-artwork authority.
   assert.match(proofQc, /mirror|backwards|reversed|forward-reading/i);
+  assert.match(proofQc, /designpro\.atlas-proof-semantic-advisory\.v1/);
+  assert.match(proofQc, /review_required/);
   // The Call-1 contract requires forward-reading text on each installed side
   // and names Driver/Passenger as coordinated adaptations, not duplicate pixels.
   const edgeSource = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");

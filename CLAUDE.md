@@ -1,28 +1,30 @@
 # CLAUDE.md — designproai-os
 
-## 🗺️ RULE 0.0 — A.T.L.A.S. IS ONE VEHICLE UNWRAPPED, NOT SIX ANONYMOUS DESIGNS. (Trish 2026-08-31)
+## 🗺️ RULE 0.0 — A.T.L.A.S. IS ONE VEHICLE-WRAP DESIGN, NOT SIX ANONYMOUS DESIGNS. (Trish 2026-08-31)
 
 This owner correction supersedes any later historical wording in this file
 that tells Call 1 to hide the target vehicle, replace named surfaces with
 anonymous `FIELD A–F` language, or treat its six regions as generic livery
 canvases.
 
-**A.T.L.A.S. means one real three-dimensional vehicle exterior unwrapped into
-one two-dimensional design space, like a globe flattened into an atlas.** Call 1
-authors one cohesive vehicle-wrap composition across that complete topology.
-Driver, Passenger, Hood, Roof, Front and Rear are coordinated surfaces of that
-one design, never six independent creative prompts.
+**A.T.L.A.S. means one cohesive vehicle-wrap design arranged flat as six named
+printable production surfaces for one exact target vehicle.** The vehicle is
+design and installation context; Call-1 output pixels are not a vehicle
+photograph, rendering, silhouette or anatomy drawing. Driver, Passenger, Hood,
+Roof, Front and Rear are coordinated rectangular surfaces of one composition,
+never six independent creative prompts.
 
-The image model receives the server-resolved year/make/model, body class, the
-named surface mapping and adjacency/coverage context it needs to understand the
-installed vehicle. GENIE/code remains the geometry authority; giving the model
-physical design context does not let it invent dimensions or topology.
+The image model receives the server-resolved year/make/model, GENIE body class,
+the named surface mapping and coverage context it needs to design for the
+installed vehicle. GENIE/code remains the geometry authority. Numerical
+dimensions and installer geometry never become printable prompt furniture.
 
 For pickups, exterior bed sides and tailgate receive the coordinated artwork;
-the bed floor and inner bed walls remain unwrapped. Wheel wells, glass, lights,
-trim and the open bed are deterministic placement/projection masks. They never
-punch holes into the canonical artwork: all six Call-1 source panels remain
-opaque, uninterrupted, full-bleed rectangles.
+the bed floor and inner bed walls remain unwrapped under the downstream vehicle
+application/proof coverage contract. Do not claim a dedicated bed contour mask
+exists unless a durable contract and artifact prove it. That exclusion never
+punches a hole into Call 1: all six source panels remain pure, opaque,
+uninterrupted, full-bleed rectangles.
 
 Call 1 accepts and durably binds the master plus the six canonical panel files.
 Separating those exact rectangles is deterministic byte handling, not a later
@@ -123,34 +125,34 @@ pixel is opaque, and black is opaque. Two things now stop it:
 
 - **`runtime/flat-first-atlas.cjs`** states the rule positively (SOLID PANELS),
   because negatives make Gemini over-index on the forbidden thing. `PROMPT_VERSION`
-  is `designpro-flat-first-atlas-20260826.v9-dpag`; older masters are refused for
+  is `designpro-flat-first-atlas-20260831.v15-pure-rectangles`; older masters are refused for
   NEW authoring/regeneration only, never migrated — and never hidden: existing
   generations stay readable/viewable/downloadable on every read surface
   (owner protection #1, locked by `tests/atlas-historical-read.test.mjs`).
 
-  **REFERENCE STATUS CORRECTION (2026-08-31).** No structural example pair is
-  currently active in production. Do not claim that a Houdini pair is bundled
-  or attached. A flat-only Flamingo image is not a valid pair. At most one
-  owner-approved, hash-pinned, genuinely matching wrapped-vehicle ↔ flattened
-  A.T.L.A.S. pair may be attached to teach the mapping relationship; it must
-  contribute no customer artwork, wording, logo, colour or style.
+  **REFERENCE STATUS CORRECTION (2026-08-31, after canary 51ea0e06).** One
+  owner-selected, release-pinned Flamingo pair is active. Its installed Driver
+  proof and flat master come from GenerationID
+  `5b2eb96c-77b5-4705-8cad-fef00af677fe`; the flat teaching derivative was
+  repaired into six solid rectangles before inclusion. Call 1 presents the
+  installed proof first, the matching pure-rectangle flat atlas second and the
+  current target guide last. It teaches only installed↔flat cohesion and must
+  contribute no customer artwork, wording, logo, colour, style, vehicle
+  geometry or production authority. The historical Houdini pair stays dormant.
 
-  **An A.T.L.A.S. master IS a flattened top view OF A VEHICLE WRAP.** It
-  legitimately carries the vehicle's panel geometry — door seams, rocker and
-  hood contours and the relationships an installer understands. Canonical YMM,
-  body class and the six named surfaces must reach the prompt. Numeric geometry,
-  masks and production dimensions remain code/GENIE authority. Hiding all
-  physical meaning behind anonymous `FIELD A–F` removed the context that makes
-  the sheet a vehicle wrap rather than abstract art.
+  **An A.T.L.A.S. master is one flat production atlas FOR a vehicle wrap.**
+  Canonical YMM, GENIE body class and the six named surfaces reach the prompt as
+  design context. The returned pixels remain six pure printable rectangles and
+  carry no vehicle photograph, outline, anatomy, wheel, window, seam, void or
+  shaped opening. Numeric geometry, coverage and production dimensions remain
+  code/GENIE authority. Hiding all physical meaning behind anonymous `FIELD
+  A–F` removed the context that makes the composition a vehicle wrap rather than
+  abstract art; drawing that context into the pixels is the opposite error.
 
-  The defect was never the geometry — it was **openings rendered as absent
-  instead of painted through**, and that is now closed deterministically after
-  authoring (see the cut-out fill below), so the teaching pair carries no risk
-  worth trading design quality for. The owner's actual correction was narrow:
-  the sheet must read as an **exact flattened-from-above view of ONE cohesive
-  wrap**, not six designs sharing a canvas, with the livery painted straight
-  THROUGH any panel line at full opacity. That is the only change v6 makes to
-  the working v5 text.
+  The output defect is any vehicle depiction or opening rendered into the
+  printable rectangles instead of artwork painted through at full opacity.
+  The sheet must read as **ONE cohesive flat production master**, not six
+  designs sharing a canvas and not a flattened vehicle illustration.
 
   **The rule this violated: RULE 0.1 — a design below baseline means the port or
   the inputs are incomplete, it NEVER means A.C.E. needs new creative
@@ -437,12 +439,12 @@ Everything else in RULE 0.15 is unchanged: a panel is still one solid rectangle,
 still opaque corner to corner, and a zone that returns a picture of a vehicle is
 still a failed master.
 
-5. **Unwrapped regions are masked by CODE, never drawn by the model.** Owner:
-   *"masked truck bed must not have any wrap design."* A pickup's bed opening
-   carries no vinyl — but asking the model to leave a hole for it reintroduces
-   exactly the cut-out class RULE 0.15 convicts, with soft edges and invented
-   placement. The model fills the whole rectangle; geometry applies the mask
-   deterministically afterwards.
+5. **Unwrapped regions never become holes in Call-1 artwork.** Owner: *"masked
+   truck bed must not have any wrap design."* A pickup's bed floor and inner
+   walls carry no installed vinyl, but Call 1 still fills every source rectangle
+   completely. That exclusion belongs to downstream vehicle application/proof
+   mapping. Do not claim a dedicated deterministic bed contour mask exists
+   unless its durable contract and artifact are identified.
 6. **Every 3D proof is built from that side's canonical Call-1 panel, and nothing
    waits.** Owner: *"ALL 3d from extracted panels — no waiting. Individual
    panels fed to 3d sides and duplicated, put in RevisionStudioIQ alongside 3d
@@ -550,7 +552,7 @@ Enforced by `tests/atlas-artboard-edge-call1.test.mjs` and
 `promptHash`, so masters authored against the unlabeled artboard are not
 reused. The DB-pinned `PROMPT_VERSION` is unchanged at
 `designpro-flat-first-atlas-20260827.v10-edge`, so this needs no migration
-cutover. This paragraph is historical; the current v14/v13 contracts and
+cutover. This paragraph is historical; the current v15/v14 contracts and
 2026-08-31 correction at the top of this file are authoritative.
 
 ## 🧬 RULE 0.27 — ONE ARTIFACT GRAPH. CODE OWNS THE ARTBOARD; A.I. OWNS THE DESIGN. (Trish 2026-08-27)
@@ -636,7 +638,7 @@ How it is implemented — DO NOT re-split it:
   verifies the returned master sha256, enforces `imageRequestCount === 1`, and
   records the provenance chain (`metadata.atlasEdgeProvenance`). QC gate,
   cut-out fill, deterministic panel cut and lineage hashes are unchanged.
-  `PROMPT_VERSION` = `designpro-flat-first-atlas-20260827.v10-edge`.
+  `PROMPT_VERSION` = `designpro-flat-first-atlas-20260831.v15-pure-rectangles`.
 - DELETED from the product path (do not restore): the transpiled vendor bridge
   `runtime/vendor/designpanel-authoring.cjs` + its build script, the
   reconstructed `buildAtlasArtboardDesignIQDirection`, the SIDE-TWIN
@@ -652,11 +654,12 @@ How it is implemented — DO NOT re-split it:
   idempotently. SHIP ORDER for v10: the DB gate must learn v10-edge in the
   same cutover as the runtime that emits it — runner and gate may not diverge
   across a customer-visible window again.
-- Acceptance (owner correction 2026-08-31): no canary and no isolated Call-1
-  stop. Run one real deployed customer-style DCA. Publish the accepted master
-  and six Call-1 panels immediately; continue the same lineage through the
-  required views, Call 8 and Call-9 promotion; then stop in PanelProStudio for
-  owner confirmation before Full QC.
+- Acceptance (owner correction 2026-08-31): do not run speculative canaries and
+  do not substitute a canary for the real deployed customer-style DCA. The owner
+  explicitly authorized the current diagnostic production canary while away.
+  Publish the accepted master and six Call-1 panels immediately; continue the
+  same lineage through the required views, Call 8 and Call-9 promotion; then
+  stop the real DCA in PanelProStudio for owner confirmation before Full QC.
 
 ## 🖥️ RULE 0.16 — CALLS 1–7 EXECUTE ON THIS SERVER (2026-08-23)
 
@@ -733,8 +736,9 @@ year/make/model, GENIE body class, the six named physical surfaces and the
 proven vehicle-wrap designer persona. It removes anonymous `FIELD A–F`
 conditioning and the active Driver-to-Passenger rewrite. Passenger remains its
 own authored Call-1 region; continuity is required at the design-system level,
-not by forcing pixel mirroring. The real production DCA, not a canary or a
-speculative A/B, is the acceptance test.
+not by forcing pixel mirroring. A production canary may diagnose the live graph
+when the owner explicitly requests it; the real owner-visible production DCA
+remains the final customer-path acceptance test.
 
 **v2's prompt text is not in this repository.** `flat-first-atlas.cjs` was created
 at v4, so the Aug-22 code was never committed here — the v2 evidence is
@@ -750,12 +754,16 @@ closing line of every A.T.L.A.S. prompt said *"Match the production quality of
 the provided gold-standard DesignPanel artboards"* — pointing the model at
 images that were never in the request.
 
-No teaching example is active. Do not populate that bucket with a flat-only
-image: a flat sheet by itself cannot teach the 3D-vehicle→flattened-A.T.L.A.S.
-relationship and can instead become an aesthetic template. A future example
-requires one owner-approved, hash-pinned, genuinely matching installed 3D view
-and flattened A.T.L.A.S. pair with verified lineage. Flamingo is only a
-candidate until that matching pair exists.
+The live teaching input does not come from that bucket. It is one release-owned,
+hash-pinned matching pair from Flamingo GenerationID
+`5b2eb96c-77b5-4705-8cad-fef00af677fe`: exact installed Driver proof plus a
+solid-rectangle flat derivative. Their release hashes are
+`4449c3274f7d5cd9c383c49a81b0407f99ae0251b8052cad1ee3927c41ac1fdc`
+and `20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa`.
+The model sees installed proof first, matching flat atlas second and the current
+neutral target guide last. Dedicated role text forbids copying the historical
+artwork, wording, logo, brand, palette, typography, industry, vehicle geometry,
+camera or lighting. A flat-only bucket object remains invalid.
 
 ### 📏 REPRODUCING THE A/B
 
@@ -789,13 +797,14 @@ rather than left to prose — `tests/designpro-reference-authority.test.mjs`.
 
 | class | what it is | what it may teach | what it may NEVER do |
 |---|---|---|---|
-| **STRUCTURAL** | at most one owner-approved, hash-pinned matching 3D ↔ flattened pair (none active today) | how ONE cohesive wrapped vehicle corresponds to its flattened master | contribute artwork, wording, logo, colour, brand or style |
+| **STRUCTURAL** | the one release-pinned Flamingo installed→pure-rectangle flat pair | how ONE cohesive wrapped vehicle corresponds to six flat print-art rectangles | contribute artwork, wording, logo, colour, brand, style, target geometry or production authority |
 | **CREATIVE** | the customer's own VisionBoard images | artwork authority under `exact_reference`; style authority under `style_inspiration` | — |
 | **PRESENTATION** | the 3D proof example + Studio OS | vehicle presentation, camera, studio, photorealism, wrap realism | contribute artwork or redesign the customer's wrap |
 
-No structural pair is currently attached. A flat-only image is not a valid
-pair. If the owner approves a genuinely matching pair, it teaches only the
-3D-to-flat relationship and never becomes creative or production authority.
+Exactly one structural pair is attached, and its two hashes plus historical
+GenerationID enter the immutable example-set/reuse fence. A flat-only image is
+not a valid pair. The pair teaches only the installed-to-flat relationship and
+never becomes creative or production authority.
 
 **Authority order for a 3D proof:**
 

@@ -9,20 +9,13 @@ const { _test: engineTest } = require("../runtime/generation-engine.cjs");
 const sharp = require("../runtime/node_modules/sharp");
 
 /**
- * FOUR JUDGED TRIES, BECAUSE EACH ONE IS A CORRECTIVE CYCLE.
- *
- * The engine default of two rejections predates the corrective loop. On the
- * first full acceptance run (fb63e76f, 2026-08-26) the master was accepted
- * first-attempt, six panels were cut, four proofs landed -- and hood, roof and
- * close-up each died at EXACTLY two rejections, with the attempt records
- * showing convergence: hood's second frame fixed the first frame's 80%-fill
- * finding and failed on a new, smaller fault. The budget ended the loop two
- * attempts before the ceiling, mid-correction.
- *
- * Acceptance is not widened: the same inspector, the same thresholds, and an
- * exhausted slot still fails to semantic_review_required for a human.
+ * The provider keeps its bounded technical-attempt ceiling. Semantic findings
+ * no longer consume it: the Atlas validator accepts a deterministically bound
+ * presentation proof and persists pass/review_required/unavailable as advisory
+ * metadata. A rejection can now only come from deterministic preflight (bad
+ * bytes, hash or authority), which remains blocked and bounded.
  */
-test("atlas proof slots get a rejection budget equal to their attempt budget", async () => {
+test("atlas proof slots retain a bounded structural rejection ceiling", async () => {
   let captured = null;
   await runAtlasProofStages({
     runRequest: async (options) => { captured = options; return { results: [], allAccepted: true }; },
@@ -31,7 +24,7 @@ test("atlas proof slots get a rejection budget equal to their attempt budget", a
     store: {}, slots: [{ sourceViewType: "side", consumerRole: "driver" }],
   });
   assert.equal(captured.maxProviderAttempts, 4);
-  assert.equal(captured.maxRegenerations, 4, "rejections may use the whole bounded attempt ceiling");
+  assert.equal(captured.maxRegenerations, 4, "structurally invalid proofs remain bounded");
 });
 
 /**

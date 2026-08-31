@@ -66,6 +66,10 @@ const historicalReadGateSql = readFileSync(new URL(
   "../supabase/migrations/20260830233000_designpro_atlas_read_gate_accepts_history.sql",
   import.meta.url,
 ), "utf8");
+const proofSemanticAdvisorySql = readFileSync(new URL(
+  "../supabase/migrations/20260831103000_designpro_atlas_proof_semantic_advisory.sql",
+  import.meta.url,
+), "utf8");
 const closeupBoundarySql = readFileSync(new URL(
   "../supabase/migrations/20260822090000_designpro_closeup_schema_boundaries.sql",
   import.meta.url,
@@ -159,6 +163,35 @@ test("the view-set gate names the deployed photographer, not the producer it rep
   ]) {
     assert.ok(provider.includes(shared), `${shared} must be the runtime's own string`);
     assert.ok(viewSetContractSql.includes(shared), `${shared} must be the gate's string`);
+  }
+});
+
+test("presentation semantic review is advisory without weakening the SQL lineage twin", () => {
+  assert.match(proofSemanticAdvisorySql, /pg_get_functiondef/);
+  assert.match(proofSemanticAdvisorySql, /pg_catalog\.replace\(v_definition, v_legacy, v_policy\)/);
+  assert.doesNotMatch(
+    proofSemanticAdvisorySql,
+    /CREATE OR REPLACE FUNCTION designpro_private\.flat_first_atlas_view_set_valid/,
+    "the migration must patch the live accumulated gate rather than restate an older body",
+  );
+  assert.match(proofSemanticAdvisorySql, /designpro\.atlas-proof-semantic-advisory\.v1/);
+  assert.match(proofSemanticAdvisorySql, /''pass'',''review_required'',''unavailable''/);
+  assert.match(proofSemanticAdvisorySql, /NOT \(\(v\.metadata->''validation''\) \? ''policyContract''\)/);
+  assert.match(proofSemanticAdvisorySql, /numeric>=0\.9/);
+
+  // Only the semantic confidence predicate is dual-versioned. Every
+  // deterministic proof, Atlas, surface, panel, producer, revision and
+  // no-mirror marker is asserted before the patched definition is installed.
+  for (const evidence of [
+    "{validation,proofHash}", "{validation,atlasHash}",
+    "{validation,authorityHash}", "{validation,zoneHash}",
+    "{validation,zoneSurfaceKey}", "designpro.atlas-panel-authority.v1",
+    "sourcePanelHash", "persona-photographer-render", "proofSourceCommit",
+    "atlasRevisionId", "anchoredToView1", "driverContentHash",
+    "deterministicMirror", "passengerProducer", "atlasZonePassedToPassengerRepair",
+    "v_valid_count=v_count",
+  ]) {
+    assert.ok(proofSemanticAdvisorySql.includes(evidence), `${evidence} must survive the advisory patch`);
   }
 });
 

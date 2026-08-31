@@ -474,7 +474,17 @@ async function collectArtifacts(runId, label) {
     const artifact = rows[index];
     const { data: blob, error: downloadError } = await service.storage.from(BUCKET).download(artifact.storage_path);
     if (downloadError || !blob) {
-      evidence.outputs.push({ run: label, ...artifact, downloadError: downloadError?.message || "empty body" });
+      evidence.outputs.push({
+        run: label,
+        artifactKind: artifact.artifact_kind,
+        surfaceKey: artifact.surface_key,
+        storagePath: artifact.storage_path,
+        byteSize: Number(artifact.byte_size),
+        contentHash: artifact.content_hash,
+        hashVerified: false,
+        metadata: artifact.metadata,
+        downloadError: downloadError?.message || "empty body",
+      });
       continue;
     }
     const bytes = Buffer.from(await blob.arrayBuffer());
@@ -500,26 +510,65 @@ async function collectArtifacts(runId, label) {
 }
 
 function assertOutputSet() {
-  const count = (run, kind) => evidence.outputs.filter(
-    (item) => item.run === run && item.artifactKind === kind && item.hashVerified
-  ).length;
+  // Cardinality is counted BEFORE verification. Otherwise one valid artifact
+  // plus a corrupt or unreadable duplicate would look like exactly one and let
+  // duplicate lineage pass the canary.
+  const rows = (run, kind) => evidence.outputs.filter(
+    (item) => item.run === run && item.artifactKind === kind
+  );
+  const count = (run, kind) => rows(run, kind).length;
+  const verifiedCount = (run, kind) => rows(run, kind).filter((item) => item.hashVerified === true).length;
+  const enticeProofs = rows("entice", "flat-proof");
+  const productionProofs = rows("production", "flat-proof");
+  const enticeProof = enticeProofs.length === 1 ? enticeProofs[0] : null;
+  const productionProof = productionProofs.length === 1 ? productionProofs[0] : null;
+  const productionFlatProofExactCopy = Boolean(
+    enticeProof?.hashVerified === true
+      && productionProof?.hashVerified === true
+      && productionProof.contentHash === enticeProof.contentHash
+      && productionProof.metadata?.sourceContentHash === enticeProof.contentHash
+      && productionProof.metadata?.sourceStoragePath === enticeProof.storagePath
+      && productionProof.metadata?.sourceEnticeRunId === evidence.enticeRunId
+  );
   const checks = {
     enticeFlatProofs: count("entice", "flat-proof"),
     enticePanels: count("entice", "panel"),
+    productionFlatProofs: count("production", "flat-proof"),
     productionUpscaledPanels: count("production", "upscaled-panel"),
     productionOutputs: count("production", "output"),
     productionZip: count("production", "zip"),
     productionWrapboxManifest: count("production", "wrapbox-manifest"),
+    requiredHashesVerified:
+      verifiedCount("entice", "flat-proof") === 1
+      && verifiedCount("entice", "panel") === 6
+      && verifiedCount("production", "flat-proof") === 1
+      && verifiedCount("production", "upscaled-panel") === 6
+      && verifiedCount("production", "output") === 18
+      && verifiedCount("production", "zip") === 1
+      && verifiedCount("production", "wrapbox-manifest") === 1,
+    productionFlatProofExactCopy,
   };
   const pass =
-    checks.enticeFlatProofs >= 2 &&
+    checks.enticeFlatProofs === 1 &&
     checks.enticePanels === 6 &&
+    checks.productionFlatProofs === 1 &&
     checks.productionUpscaledPanels === 6 &&
     checks.productionOutputs === 18 &&
     checks.productionZip === 1 &&
-    checks.productionWrapboxManifest === 1;
+    checks.productionWrapboxManifest === 1 &&
+    checks.requiredHashesVerified &&
+    checks.productionFlatProofExactCopy;
   evidence.expectedOutputChecks = { ...checks, pass };
   if (!pass) throw new Error(`production artifact set incomplete: ${JSON.stringify(checks)}`);
+}
+
+function assertLatencySlo() {
+  const latency = evidence.latency;
+  if (!latency) throw new Error("latency evidence was not recorded");
+  if (!latency.pass) {
+    throw new Error(`latency SLO failed: A.T.L.A.S. ${latency.atlasSeconds.toFixed(2)}s (max ${latency.atlasSloSeconds}s), `
+      + `Driver ${latency.driverSeconds.toFixed(2)}s (max ${latency.driverSloSeconds}s)`);
+  }
 }
 
 
@@ -607,9 +656,10 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   // The receipt is written by the same worker whose work is under test, so
   // trusting it alone would let a run assert its own success. The revision row
   // is the durable artifact every downstream consumer reads -- RevisionStudio,
-  // PanelPro, the handoff gate -- and it exists only after the master passed
-  // deterministic and semantic acceptance, because nothing is stored before
-  // then. The receipt is still checked, and then checked AGAINST the row.
+  // PanelPro, the handoff gate -- and it exists only after deterministic
+  // topology/container/byte/hash/lineage acceptance. Semantic review is
+  // advisory and is not a Call-1 blocker. The receipt is still checked, and
+  // then checked AGAINST the row.
   const flatAtlas = receipt.flatAtlas;
   if (!flatAtlas?.master?.contentHash) {
     throw new Error(`Calls 1-7 recorded no A.T.L.A.S. master: ${JSON.stringify(flatAtlas || null).slice(0, 300)}`);
@@ -632,9 +682,9 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   if (atlasRow.prompt_version !== flatAtlas.promptVersion) {
     throw new Error("the engine receipt's prompt version does not match the persisted A.T.L.A.S. revision");
   }
-  // The master QC gate is the reason a defective sheet never reaches a panel.
-  // A canary that accepted a revision without it would report green on exactly
-  // the failure this whole path exists to prevent.
+  // This is the deterministic master-acceptance gate. A canary that accepted a
+  // revision without it would let invalid topology/container/byte/hash/lineage
+  // state reach a panel; semantic visual judgement remains advisory.
   if (atlasRow.metadata?.masterQcPassed !== true) {
     throw new Error(`the A.T.L.A.S. master did not pass QC: ${JSON.stringify(atlasRow.metadata || null).slice(0, 300)}`);
   }
@@ -753,8 +803,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   step(`latency A.T.L.A.S. ${atlasSeconds.toFixed(2)}s / ${ATLAS_SLO_SECONDS}s; `
     + `Driver ${driverSeconds.toFixed(2)}s / ${DRIVER_SLO_SECONDS}s`);
   if (!evidence.latency.pass) {
-    throw new Error(`latency SLO failed: A.T.L.A.S. ${atlasSeconds.toFixed(2)}s (max ${ATLAS_SLO_SECONDS}s), `
-      + `Driver ${driverSeconds.toFixed(2)}s (max ${DRIVER_SLO_SECONDS}s)`);
+    step("latency SLO missed; recording the miss and continuing through the full graph before final acceptance");
   }
   const renderAssets = {};
   for (const view of viewRows || []) {
@@ -856,6 +905,7 @@ async function main() {
   await collectArtifacts(evidence.enticeRunId, "entice");
   await collectArtifacts(evidence.productionRunId, "production");
   assertOutputSet();
+  assertLatencySlo();
   writeEvidence();
 
   process.stdout.write(`\nPASS — ${evidence.outputs.length} verified artifact file(s) written to ${OUT}\n`);

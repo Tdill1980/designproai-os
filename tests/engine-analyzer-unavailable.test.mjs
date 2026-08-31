@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createRequire } from "node:module";
 
@@ -15,10 +16,11 @@ const { createAtlasProofValidator } = require("../runtime/atlas-proof-qc.cjs");
  * rejections, and the slot died `semantic_review_required` -- a state that
  * asks a human to review a verdict no judge ever issued.
  *
- * The contract now: an analyzer failure consumes a bounded ATTEMPT (the loop
- * still ends) but never the rejection budget, never pushes a correction, and
- * never accepts the unjudged proof. A real verdict still convicts exactly as
- * before -- these tests pin both directions.
+ * The generic engine still supports strict validators whose analyzer outage
+ * consumes a bounded attempt without spending the rejection budget. A.T.L.A.S.
+ * presentation proofs now use a narrower policy: after deterministic identity
+ * preflight, the visual reviewer is advisory and an outage is persisted in the
+ * accepted receipt rather than causing another expensive image render.
  */
 
 function memoryStore(log) {
@@ -89,21 +91,39 @@ test("an unjudged proof is never accepted", async () => {
   assert.equal(result.providerCalls, 3);
 });
 
-test("the atlas validator reports its own failure as analyzer-unavailable", async () => {
-  // Every failure of the inspector's own plumbing exits through one catch --
-  // a provider 503, a malformed response, an image it could not ship. This
-  // drives that catch and asserts the flag; whichever internal step throws
-  // first, the contract is the same: no verdict, not a rejection.
+test("the atlas validator publishes an unavailable advisory after valid preflight", async () => {
+  const image = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const contentHash = createHash("sha256").update(image).digest("hex");
   const validator = createAtlasProofValidator({
     provider: { async generateRaw() { throw new Error("503 UNAVAILABLE on every key"); } },
-    atlas: { master: { contentHash: "a".repeat(64) }, projection: {}, viewAuthorities: {} },
+    atlas: {
+      master: { contentHash },
+      projection: { bytes: image, contentType: "image/png", contentHash },
+      viewAuthorities: {
+        "close-up": {
+          contract: "designpro.flat-first-atlas-view-authority.v1",
+          sourceViewType: "close-up",
+          surfaceKey: "driver",
+          bytes: image,
+          contentType: "image/png",
+          contentHash,
+          sourceMasterHash: contentHash,
+        },
+      },
+    },
     input: {},
   });
   const verdict = await validator({
-    bytes: Buffer.from("x"), contentType: "image/png",
+    bytes: image, contentType: "image/png",
     sourceViewType: "close-up", consumerRole: "closeup",
   });
-  assert.equal(verdict.accepted, false);
-  assert.equal(verdict.analyzerUnavailable, true);
-  assert.equal(typeof verdict.reason, "string");
+  assert.equal(verdict.accepted, true);
+  assert.equal(verdict.advisory, true);
+  assert.equal(verdict.metadata.policyContract, "designpro.atlas-proof-semantic-advisory.v1");
+  assert.equal(verdict.metadata.semanticDisposition, "unavailable");
+  assert.equal(verdict.metadata.semanticCode, "atlas_qc_analyzer_failed");
+  assert.match(verdict.metadata.semanticReason, /503 UNAVAILABLE/);
 });
