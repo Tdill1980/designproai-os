@@ -377,6 +377,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const invalidateDesignPrep = () => {
     setDimensionPreview(null);
     setDesignPrepVehicle("");
+    generationIdRef.current = null;
   };
 
   const beginDesignPrep = async () => {
@@ -401,6 +402,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     }
     setDesignPrepBusy(true);
     try {
+      // The identity begins with vehicle preparation and is carried unchanged
+      // into the immutable generation request.
+      generationIdRef.current = crypto.randomUUID().toLowerCase();
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDimensionPreview(prepared);
       setDesignPrepVehicle(currentPrepVehicle);
@@ -959,7 +963,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const [pipelineStage, setPipelineStage] = useState<PipelineStage | null>(null);
   const autoRenderRef = useRef(false);
   const prevPanelRef = useRef<any>(null);
-  const generationIdRef = useRef<string | null>(null);
+  const generationIdRef = useRef<string | null>(
+    typeof briefState?.generationId === "string" ? briefState.generationId.toLowerCase() : null,
+  );
 
   // --- Pushed render from RevisionStudioIQ ---
   const [pushedImageUrl, setPushedImageUrl] = useState<string | null>(null);
@@ -1306,8 +1312,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     // MyVehiclePro → VisionBoard bridge:
     // Upload vehicle photos to storage and inject as VisionBoard images so
     // Gemini can SEE the actual vehicle when designing the wrap.
-    let enrichedParams = { ...params };
-    lastPipelineParamsRef.current = params;
+    let enrichedParams = {
+      ...params,
+      generationId: generationIdRef.current || undefined,
+    };
+    lastPipelineParamsRef.current = enrichedParams;
 
     // FAITHFUL UPLOAD WIRE: thread the customer's uploaded logo (briefOverlayUrls,
     // the Layer-2 upload) into textLayerVisionBoardImages so the already-built
@@ -1863,8 +1872,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                   {/* ── LEFT COLUMN — Controls ── On the unified home page this is
                       MOUNTED but hidden (the home's Start Your Design brief is the
                       only brief and drives auto-generate); standalone keeps it. */}
-                  {(embedded || leftColOpen) ? (
-                    <div className={cn("w-full lg:w-[420px] shrink-0 rounded-xl border border-white/10 bg-black/40 p-4 space-y-4", embedded && "hidden")}>
+                  {/* Keep the intake mounted while collapsed. Unmounting this
+                      component discarded a directly typed prompt after a
+                      generation failure, even though the immutable request
+                      still held the brief. */}
+                    <div className={cn(
+                      "w-full lg:w-[420px] shrink-0 rounded-xl border border-white/10 bg-black/40 p-4 space-y-4",
+                      (embedded || !leftColOpen) && "hidden",
+                    )}>
                       {/* DesignPro™ wordmark — blue→magenta gradient + magenta subtitle
                           (mirrors the DesignProAI™ wordmark pattern in Header.tsx). */}
                       <div className="flex flex-col leading-none px-1">
@@ -2128,8 +2143,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     />
                       </div>
                     </div>
-                  ) : (
-                    /* Collapsed LEFT pill */
+                  {!embedded && !leftColOpen && (
+                    /* Collapsed LEFT pill; the mounted form behind it retains
+                       the exact prompt and mode for retry. */
                     <button
                       type="button"
                       onClick={() => setLeftColOpen(true)}
@@ -2220,7 +2236,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             )}
                             <p className="text-sm text-gray-400 text-center">Let's try that again.</p>
                             <Button
-                              onClick={() => { setRenderError(false); clearGenerationError(); }}
+                              onClick={() => {
+                                setRenderError(false);
+                                clearGenerationError();
+                                invalidateDesignPrep();
+                                setLeftColOpen(true);
+                              }}
                               size="sm"
                               className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white gap-2"
                             >

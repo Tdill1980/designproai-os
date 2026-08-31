@@ -215,6 +215,7 @@ export default function GenerateDesign() {
   const [designPrep, setDesignPrep] = useState<GenieDimensionPreview | null>(null);
   const [designPrepVehicle, setDesignPrepVehicle] = useState("");
   const [designPrepBusy, setDesignPrepBusy] = useState(false);
+  const [designPrepGenerationId, setDesignPrepGenerationId] = useState<string | null>(null);
   const [requestPipelineMode, setRequestPipelineMode] = useState<GenerationPipelineMode>(FLAT_FIRST_ATLAS_PIPELINE_MODE);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
@@ -234,6 +235,7 @@ export default function GenerateDesign() {
     setter(value);
     setDesignPrep(null);
     setDesignPrepVehicle("");
+    setDesignPrepGenerationId(null);
   }
 
   async function beginDesignPrep() {
@@ -251,12 +253,15 @@ export default function GenerateDesign() {
     setDesignPrepBusy(true);
     setProgress("Beginning Design Prep — pulling vehicle dimensions…");
     try {
+      const generationId = crypto.randomUUID().toLowerCase();
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDesignPrep(prepared);
       setDesignPrepVehicle(currentVehicleIdentity);
+      setDesignPrepGenerationId(generationId);
     } catch (cause) {
       setDesignPrep(null);
       setDesignPrepVehicle("");
+      setDesignPrepGenerationId(null);
       setError(cause instanceof ApiError
         ? `Design Prep could not pull vehicle dimensions (${cause.code}).`
         : "Design Prep could not pull vehicle dimensions.");
@@ -400,6 +405,7 @@ export default function GenerateDesign() {
       );
       setRequest(
         await dpApi.createGenerationRequest({
+          generationId: designPrepGenerationId || undefined,
           // Calls 1-7 are fulfillment-unbound. WrapBox customer/order data is
           // collected only after a Production Pack entitlement exists.
           designName: resolvedDesignName,

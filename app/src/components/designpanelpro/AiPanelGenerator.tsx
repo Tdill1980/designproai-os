@@ -32,6 +32,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
 const VISIONBOARD_STORAGE_KEY = "designiq_visionboard_images_v1";
+const DESIGN_INTAKE_DRAFT_KEY = "designiq_intake_draft_v1";
 // v2 (2026-07-18): key bumped so sessions sticky on the old exact_reference
 // default start fresh on style_inspiration — see the default's comment below.
 const VISIONBOARD_INTENT_STORAGE_KEY = "designiq_visionboard_intent_v2";
@@ -44,6 +45,32 @@ const VISIONBOARD_INTENT_STORAGE_KEY = "designiq_visionboard_intent_v2";
 // versions on the inspo draws" when starting a new design — was the bug. 20 min
 // easily covers a render cycle (seconds) while keeping a fresh design clean.
 const VISIONBOARD_CACHE_TTL_MS = 20 * 60 * 1000;
+
+type DesignIntakeDraft = {
+  savedAt: number;
+  prompt: string;
+  mode: "restyle" | "commercial";
+};
+
+function readFreshDesignIntakeDraft(): DesignIntakeDraft | null {
+  try {
+    const saved = sessionStorage.getItem(DESIGN_INTAKE_DRAFT_KEY);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved) as Partial<DesignIntakeDraft>;
+    if (
+      typeof parsed.savedAt === "number"
+      && Date.now() - parsed.savedAt < VISIONBOARD_CACHE_TTL_MS
+      && typeof parsed.prompt === "string"
+      && (parsed.mode === "restyle" || parsed.mode === "commercial")
+    ) {
+      return parsed as DesignIntakeDraft;
+    }
+    sessionStorage.removeItem(DESIGN_INTAKE_DRAFT_KEY);
+  } catch {
+    /* ignore malformed or unavailable session storage */
+  }
+  return null;
+}
 
 /** Wipe both VisionBoard cache keys (images + intent) so the next design starts clean. */
 function clearVisionBoardCache() {
@@ -208,8 +235,20 @@ export const AiPanelGenerator = ({
 
   const hasPremiumAccess = checkPremiumAccess(userTier) || tokenBalance > 0;
 
-  const [mode, setMode] = useState<"restyle" | "commercial">(initialMode || "restyle");
-  const [prompt, setPrompt] = useState(initialPrompt || "");
+  const intakeDraftRef = useRef<DesignIntakeDraft | null>(readFreshDesignIntakeDraft());
+  const [mode, setMode] = useState<"restyle" | "commercial">(
+    initialMode || intakeDraftRef.current?.mode || "restyle",
+  );
+  const [prompt, setPrompt] = useState(initialPrompt || intakeDraftRef.current?.prompt || "");
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(DESIGN_INTAKE_DRAFT_KEY, JSON.stringify({
+        savedAt: Date.now(), prompt, mode,
+      } satisfies DesignIntakeDraft));
+    } catch {
+      /* the immutable server request remains the authority */
+    }
+  }, [prompt, mode]);
   const [finish, setFinish] = useState("Gloss");
   const [substrate, setSubstrate] = useState<PrintSubstrate>("standard");
   // Film Grounding — "Customize Color Change Film" toggle
@@ -535,19 +574,86 @@ export const AiPanelGenerator = ({
       {/* Vehicle Details (or any caller-supplied header) sits in the left column */}
       {leftColumnHeader}
 
-      {/* THE CUSTOMER NO LONGER PICKS COMMERCIAL vs RESTYLE. (Trish 2026-08-28)
-        *
-        * "The customer shouldn't need to understand your internal design
-        * taxonomy. Infer it." Two experience cards used to live here, and the
-        * cost was not the click -- it was that NINE fields below were sent as
-        * `mode === "commercial" ? x : undefined`, so a customer who typed a
-        * phone number into a form we had put in "ReStyle" had that phone number
-        * silently discarded on the way to the wrap.
-        *
-        * Mode is now derived once, downstream, from what they actually entered
-        * (useDesignPanelProLogic: a company name means commercial whatever else
-        * was selected). Deterministic and local -- no classification call on the
-        * critical path. */}
+      {/* Mode Selector - original DesignProAI experience cards. The selected
+          mode is part of the immutable request input; downstream may infer a
+          mode only for older callers that do not supply one. */}
+      <div className="space-y-3" aria-label="Design type">
+        {/* ReStyle card */}
+        <Card
+          role="button"
+          tabIndex={0}
+          aria-pressed={mode === "restyle"}
+          className={cn(
+            "p-4 cursor-pointer transition-all border",
+            mode === "restyle"
+              ? "border-2 border-transparent bg-[#1c1c1e] shadow-[0_0_18px_rgba(236,72,153,0.45)] [background:linear-gradient(#1c1c1e,#1c1c1e)_padding-box,linear-gradient(to_right,#3b82f6,#ec4899)_border-box]"
+              : "border-white/10 bg-[#1c1c1e] hover:border-blue-500/40"
+          )}
+          onClick={() => setMode("restyle")}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setMode("restyle");
+            }
+          }}
+        >
+          <div className="flex items-start gap-3">
+            <div className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
+              mode === "restyle" ? "bg-blue-500/20" : "bg-secondary"
+            )}>
+              <Paintbrush className={cn("w-5 h-5", mode === "restyle" ? "text-blue-400" : "text-muted-foreground")} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm">Artistic &amp; Style Wraps</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">ReStyle</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                Create bold aesthetic designs with style presets like Racing, Organic, Geometric, Camo &amp; more
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Commercial card */}
+        <Card
+          role="button"
+          tabIndex={0}
+          aria-pressed={mode === "commercial"}
+          className={cn(
+            "p-4 cursor-pointer transition-all border",
+            mode === "commercial"
+              ? "border-2 border-transparent bg-[#1c1c1e] shadow-[0_0_18px_rgba(236,72,153,0.45)] [background:linear-gradient(#1c1c1e,#1c1c1e)_padding-box,linear-gradient(to_right,#3b82f6,#ec4899)_border-box]"
+              : "border-white/10 bg-[#1c1c1e] hover:border-blue-500/40"
+          )}
+          onClick={() => setMode("commercial")}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setMode("commercial");
+            }
+          }}
+        >
+          <div className="flex items-start gap-3">
+            <div className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
+              mode === "commercial" ? "bg-blue-500/20" : "bg-secondary"
+            )}>
+              <Briefcase className={cn("w-5 h-5", mode === "commercial" ? "text-blue-400" : "text-muted-foreground")} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm">Business &amp; Fleet Wraps</span>
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Commercial</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                Brand-focused commercial designs with company identity, mascots, and industry-optimized layouts
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
 
       {/* Creative Workspace */}
       <Card className="p-4 bg-[#1c1c1e] border-white/10 space-y-4">

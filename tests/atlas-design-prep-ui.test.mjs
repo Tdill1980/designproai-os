@@ -24,12 +24,16 @@ test("the customer DesignProAI UI requires the same explicit vehicle handoff", (
   assert.match(vehicleSelector, /allowedTypes\?: VehicleType\[\]/);
   assert.doesNotMatch(customerUi, /onClick=\{\(\) => setPipelineMode\("legacy"\)\}/);
   assert.doesNotMatch(customerUi, /initialDesignProPipelineMode/);
+  assert.match(customerUi, /generationIdRef\.current = crypto\.randomUUID\(\)\.toLowerCase\(\)/);
+  assert.match(customerUi, /generationId: generationIdRef\.current \|\| undefined/);
 });
 
 test("the DesignProAI front door starts prep before opening the studio", () => {
   assert.match(homeUi, /Enter vehicle — begin Design Prep/);
   assert.match(homeUi, /Beginning Design Prep — pulling vehicle dimensions…/);
   assert.match(homeUi, /dpApi\.previewGenieDimensions\(vehicle\)/);
+  assert.match(homeUi, /const generationId = crypto\.randomUUID\(\)\.toLowerCase\(\)/);
+  assert.match(homeUi, /generationId: designPrepGenerationId/);
   assert.match(homeUi, /if \(!designPrepIsCurrent\)/);
   assert.match(homeUi, /disabled=\{!designPrepIsCurrent \|\| designPrepBusy\}/);
   assert.match(homeUi, /const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE/);

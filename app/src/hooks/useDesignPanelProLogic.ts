@@ -571,7 +571,9 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     // as naming exactly one design -- resubmitting it with a different brief is
     // a 409, not a retry -- because every Call 8 proof region and Call 9 panel
     // points back at it.
-    const generationId = crypto.randomUUID().toLowerCase();
+    // Enter-vehicle Design Prep mints the canonical identity. Older callers
+    // may omit it, but the customer DesignProAI path always carries it here.
+    const generationId = params.generationId || crypto.randomUUID().toLowerCase();
     const promptPrefix = (params.prompt || "").trim().split(/\s+/).slice(0, 6).join(" ");
     let acceptedRequest: GenerationRequestState | null = null;
 
@@ -597,12 +599,10 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
             vehicleInfo?.model,
           ),
         },
-        // ONE INFERENCE, from `lib/inferDesignMode`. This used to be a
-        // company-name-only test here, a company/phone/website test on the home
-        // page and a brief-keyword test in the studio -- three different rules
-        // deciding which design brain a customer reached, depending on which
-        // door they came through.
-        mode: inferDesignMode({
+        // The DesignProAI Commercial/ReStyle control is authoritative. Keep
+        // inference only as a compatibility fallback for older callers that
+        // did not send a mode; never override an explicit customer choice.
+        mode: params.mode || inferDesignMode({
           companyName: params.companyName,
           phone: combinedContact.phone,
           website: combinedContact.website,

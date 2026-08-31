@@ -117,6 +117,8 @@ export const SUBSTRATE_SPECS: Record<PrintSubstrate, { label: string; shortLabel
 };
 
 export interface DesignIQParams {
+  /** Canonical identity minted by the explicit Enter-vehicle Design Prep. */
+  generationId?: string;
   mode: 'restyle' | 'commercial';
   prompt: string;
   finish: string;
