@@ -253,15 +253,14 @@ export default function GenerateDesign() {
     setDesignPrepBusy(true);
     setProgress("Beginning Design Prep — pulling vehicle dimensions…");
     try {
-      const generationId = crypto.randomUUID().toLowerCase();
+      const generationId = designPrepGenerationId || crypto.randomUUID().toLowerCase();
+      setDesignPrepGenerationId(generationId);
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDesignPrep(prepared);
       setDesignPrepVehicle(currentVehicleIdentity);
-      setDesignPrepGenerationId(generationId);
     } catch (cause) {
       setDesignPrep(null);
       setDesignPrepVehicle("");
-      setDesignPrepGenerationId(null);
       setError(cause instanceof ApiError
         ? `Design Prep could not pull vehicle dimensions (${cause.code}).`
         : "Design Prep could not pull vehicle dimensions.");
@@ -564,6 +563,7 @@ export default function GenerateDesign() {
                     setVehicleType(next);
                     setDesignPrep(null);
                     setDesignPrepVehicle("");
+                    setDesignPrepGenerationId(null);
                   }}
                   required
                   className="mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
