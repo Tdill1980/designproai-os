@@ -379,11 +379,26 @@ function atlasVehicleBodyClass(declaredType?: string): string {
   return canonical.has(normalized) ? normalized : "vehicle";
 }
 
-/** A coverage subtype, not a replacement for GENIE's canonical class. */
-function atlasIsPickup(vehicle: string, bodyClass: string): boolean {
-  if (bodyClass !== "truck") return false;
-  return /\b(f[\s-]?(?:150|250|350|450|550)|silverado|sierra|ram\s*\d*|tundra|tacoma|colorado|canyon|ranger|maverick|frontier|titan|ridgeline|gladiator|dakota|pickup|pick-up|crew cab|super cab|quad cab|truck bed)\b/i.test(vehicle);
-}
+// THE PICKUP COVERAGE PARAGRAPH IS GONE FROM CALL 1. (2026-08-31)
+//
+// `atlasIsPickup` and the PICKUP COVERAGE block it gated were removed from the
+// authoring contract, not relocated. The block named "exterior cab", "exterior
+// bed sides", "tailgate exterior", "open bed floor", "inner bed walls" and
+// "bare factory bedliner" -- six pieces of physical vehicle anatomy -- and
+// attached them BY NAME to Driver Side and Passenger Side. Those are the exact
+// two surfaces that come back as a vehicle side elevation while the centre four
+// stay clean, the flank regression CLAUDE.md measured across eleven runs from
+// v4 onward. Live on Desert Ridge (c3a8ff40): both flanks returned a van body
+// with window and wheel-arch shapes; hood, roof, front and rear were correct.
+//
+// It also contradicted itself -- it described a bed exclusion and then told the
+// model not to draw one. RULE 0.28 §5 and RULE 0.0 both already place that
+// exclusion downstream: "that physical exclusion belongs to downstream vehicle
+// application/proof mapping, not Call 1". It is carried there, in the A.T.L.A.S.
+// proof producer, sliced from the pinned WRAP_COVERAGE_RULES. Call 1 does not
+// need it and was harmed by it.
+//
+// `truckBedClause` is untouched and still serves the 3D render path below.
 
 function atlasFlatMasterContract(
   panels: Array<{
@@ -393,7 +408,6 @@ function atlasFlatMasterContract(
   }>,
   vehicle: string,
   bodyClass: string,
-  pickupCoverageApplies: boolean,
 ): string {
   const expected = new Map([
     ["DRIVER SIDE", { surfaceId: "DS", placement: "right-flank" }],
@@ -425,9 +439,6 @@ function atlasFlatMasterContract(
     "• third centre rectangle from the top maps to Hood (internal ID HD)",
     "• fourth centre rectangle from the top maps to Front (internal ID FR)",
   ].join("\n");
-  const pickupCoverage = pickupCoverageApplies
-    ? `\nPICKUP COVERAGE: the Driver Side and Passenger Side artwork coordinates the exterior cab and exterior bed sides, and Rear supplies the tailgate exterior. The open bed floor and inner bed walls remain bare factory bedliner after installation. That physical exclusion belongs to downstream vehicle application and proof mapping, not Call 1; keep every A.T.L.A.S. source rectangle fully painted and opaque with no empty bed-shaped opening.`
-    : "";
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER on one square 4K canvas.
 A.T.L.A.S. is ONE unified vehicle-wrap design arranged flat as six server-mapped printable production surfaces for the exact target vehicle. These are six parts of one composition, not six independent design canvases and not a depiction of the vehicle itself.
 TARGET VEHICLE (CANONICAL): ${vehicle || "customer vehicle"}
@@ -438,7 +449,7 @@ SURFACE METADATA IS NEVER VISIBLE ARTWORK: do not render a surface name, interna
 The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Replace every light mask region, corner to corner, with the final customer wrap pixels for its mapped surface. The existing dark space outside the light regions is canvas separation only. Do not invent, widen, outline, label or curve a gutter, and never place a gutter, border or caption band inside a light region.
 Create one cohesive professional vehicle-wrap composition across all six mapped surfaces. Continue the same palette, motifs, depth, visual rhythm and directional flow across surfaces that meet on the installed ${bodyClass}. Driver Side and Passenger Side are coordinated adaptations of the same design system, not duplicate images and not independent redesigns; customer-facing wording reads normally on each installed side. Hood, Roof, Front and Rear continue that same composition rather than introducing separate artwork.
 Every mapped surface is a pure, opaque, unbroken, full-bleed rectangular region of continuous printable artwork, filled to all four edges. The six rectangles themselves are the canonical source panels.
-PIXEL CONTENT LOCK: output printable artwork inside those six rectangles only. Do not depict a vehicle render, vehicle photograph, vehicle outline or silhouette. Do not draw physical vehicle anatomy, wheels, windows, doors, component seams, cut lines, transparent voids, shaped openings or mockup lighting in any source rectangle. Customer-requested photographic imagery remains artwork printed within a rectangle; it is never a photograph or rendering of the wrapped vehicle. Installed boundaries and presentation lighting belong to downstream vehicle application and the seven proof projections.${pickupCoverage}
+PIXEL CONTENT LOCK: every one of the six rectangles is flat printed graphic art, edge to edge — the same kind of image as a printed poster or a roll of printed vinyl laid flat on a table. Each rectangle is the artwork by itself, before anything is cut or applied. Customer-requested photographic imagery is a photograph printed INTO that flat art. Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the seven proof projections and are absent here.
 Return only the finished two-dimensional A.T.L.A.S. artwork in the supplied six-region layout.`;
 }
 
@@ -494,7 +505,7 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
     .filter(Boolean)
     .join(' ');
   const atlasBodyClass = atlasVehicleBodyClass(vehicleType);
-  const pickupCoverageApplies = atlasIsPickup(vehicle, atlasBodyClass);
+
   const creativeDirection = atlasFlatMaster ? atlasCreativeDirection(prompt) : prompt;
   const cameraAngle = getCameraAngle(viewType || 'side');
 
@@ -743,7 +754,7 @@ CLIENT BRIEF:`;
 
     if (atlasFlatMaster) {
       assembled += `\nThe master carries uniform print color only; laminate and physical finish are applied in the downstream proof views.`;
-      assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass, pickupCoverageApplies)}`;
+      assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass)}`;
       return assembled;
     }
     assembled += `\n\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
@@ -875,7 +886,7 @@ ${PROFESSIONAL_JUDGMENT}`;
 
   if (atlasFlatMaster) {
     assembled += `\nThe master carries uniform print color only; laminate and physical finish are applied in the downstream proof views.`;
-    assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass, pickupCoverageApplies)}`;
+    assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass)}`;
     return assembled;
   }
   assembled += `\nFinish: ${(finish || 'Gloss').toUpperCase()} — ${finishSpec} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across ALL body panels — consistent finish on every surface.`;
