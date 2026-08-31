@@ -157,6 +157,13 @@ export default function DesignProAIHome() {
     .join("|");
   const designPrepIsCurrent = Boolean(designPrep && designPrepVehicle === currentPrepVehicle);
 
+  const changeVehicle = <T,>(setter: (value: T) => void, value: T) => {
+    setter(value);
+    setDesignPrep(null);
+    setDesignPrepVehicle("");
+    setDesignPrepGenerationId(null);
+  };
+
   const beginDesignPrep = async () => {
     const vehicle = { year: year.trim(), make: make.trim(), model: model.trim(), type: vehicleType };
     if (!vehicle.year || !vehicle.make || !vehicle.model) {
@@ -166,15 +173,14 @@ export default function DesignProAIHome() {
     setDesignPrepBusy(true);
     setDesignPrepError("");
     try {
-      const generationId = crypto.randomUUID().toLowerCase();
+      const generationId = designPrepGenerationId || crypto.randomUUID().toLowerCase();
+      setDesignPrepGenerationId(generationId);
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDesignPrep(prepared);
       setDesignPrepVehicle(currentPrepVehicle);
-      setDesignPrepGenerationId(generationId);
     } catch {
       setDesignPrep(null);
       setDesignPrepVehicle("");
-      setDesignPrepGenerationId(null);
       setDesignPrepError("Vehicle dimensions could not be pulled. Press Enter vehicle to try again.");
     } finally {
       setDesignPrepBusy(false);
@@ -293,7 +299,7 @@ export default function DesignProAIHome() {
             <div className="mt-3 text-[10px] font-bold uppercase tracking-wider text-white/60">Vehicle Type</div>
             <div className="mt-2 grid grid-cols-4 gap-1.5">
               {VEHICLE_TYPES.map((v) => (
-                <button key={v.value} onClick={() => setVehicleType(v.value)} className={cn("flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition", vehicleType === v.value ? "border-blue-500 bg-blue-500/15 text-white" : "border-white/10 text-white/70 hover:bg-white/5")}>
+                <button key={v.value} onClick={() => changeVehicle(setVehicleType, v.value)} className={cn("flex flex-col items-center gap-1 rounded-lg border px-1 py-2 transition", vehicleType === v.value ? "border-blue-500 bg-blue-500/15 text-white" : "border-white/10 text-white/70 hover:bg-white/5")}>
                   <v.icon className="h-4 w-4" />
                   <span className="text-[9px] leading-none">{v.label}</span>
                 </button>
@@ -302,9 +308,9 @@ export default function DesignProAIHome() {
 
             {/* Exact vehicle snapshot for the embedded studio. */}
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <input value={year} onChange={(e) => setYear(e.target.value)} inputMode="numeric" placeholder="Year" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
-              <input value={make} onChange={(e) => setMake(e.target.value)} placeholder="Make" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
-              <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
+              <input value={year} onChange={(e) => changeVehicle(setYear, e.target.value)} inputMode="numeric" placeholder="Year" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
+              <input value={make} onChange={(e) => changeVehicle(setMake, e.target.value)} placeholder="Make" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
+              <input value={model} onChange={(e) => changeVehicle(setModel, e.target.value)} placeholder="Model" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
             </div>
             <button type="button" onClick={beginDesignPrep} disabled={designPrepBusy} className="mt-2 w-full rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-wait disabled:opacity-60">
               {designPrepBusy ? "Beginning Design Prep…" : "Enter vehicle — begin Design Prep"}
