@@ -128,6 +128,7 @@ trap cleanup EXIT
   printf 'SUPABASE_URL=%s\n' "$PROJECT_URL"
   printf 'SUPABASE_PUBLISHABLE_KEY=%s\n' "$PUBLISHABLE_KEY"
   printf 'DESIGNPRO_APP_ORIGIN=https://os.designproai.com\n'
+  printf 'DESIGNPRO_ADDITIONAL_ORIGINS=https://designproai.com\n'
   printf 'DESIGNPRO_RUNTIME_INTERNAL_URL=http://runtime-1:3001\n'
   printf 'WORKER_SECRET=%s\n' "$worker_secret"
   # Checkout, written only when BOTH halves arrived. A secret key with no
@@ -164,4 +165,3 @@ unset service_key google_key topaz_key stripe_secret stripe_webhook worker_secre
 if docker ps --filter label=com.docker.compose.project=designproai-os --format '{{.ID}}' 2>/dev/null | grep -q .; then
   echo "NOTE: DesignProAI containers are running with the previous environment. Redeploy to load these values."
 fi
-
