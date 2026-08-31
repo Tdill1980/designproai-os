@@ -335,6 +335,21 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // to say which one it is. `flatProofUrl` is the Call 8 artifact selected by
   // role; absent it, the honest state is that the proof is still building.
   const proofToShow = flatProofUrl || null;
+  // A DEFERRED CALL 8 IS NOT "BUILDING". (Trish 2026-08-31)
+  //
+  // Once the seventh proof lands this page shows "Building Your 2D Production
+  // Proof" with an indeterminate pulse, because Call 8 has no granular percent
+  // to report. That is honest while the stage is running and a lie the moment
+  // it defers -- and a deferral is how Call 8 records a proof it could not draw
+  // ("A.T.L.A.S. is the manufacturing authority, so this failure is recorded
+  // and production continues"), completing the stage rather than failing it. So
+  // the pulse would run forever over work that finished.
+  //
+  // Nothing new is fetched for this: `productionJobStatus` is already polled
+  // here, and the gateway now projects the deferral the stage always recorded.
+  const proofDeferredStage = ((productionJobStatus as any)?.stages || []).find(
+    (stage: any) => stage?.key === "proof.build" && stage?.deferred === true,
+  ) || null;
   const isFlatFirstDiagnostic = activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
   const latestFlatAtlas = flatAtlasRevisions[flatAtlasRevisions.length - 1];
   const inlineRevisionEnabled = inlineRevisionEnabledForPipeline(activePipelineMode);
@@ -2543,7 +2558,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       const mm = Math.floor(viewElapsed / 60).toString().padStart(2, '0');
                       const ss = (viewElapsed % 60).toString().padStart(2, '0');
                       // All 7 views are in, but isGeneratingAdditional stays true through
-                      // Call 8 (generate-2d-proof) + the deterministic panel gridslice —
+                      // Call 8 + the deterministic panel gridslice —
+                      // (Call 8 is the runtime's own proof composer. This comment used to
+                      // name the retired `generate-2d-proof` edge function, which is not
+                      // the producer here and has not been since proofAuthority became
+                      // designpro-os-call8 — a stale pointer is how a session goes looking
+                      // for the proof in the wrong repository.)
                       // so without this the card sat frozen on "7/7 views ready" while it
                       // was actually building the 2D proof, reading as stuck.
                       const viewsComplete = doneViews >= totalViews;
@@ -2559,13 +2579,28 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                                  <span className="text-xs sm:text-sm font-bold text-cyan-400 uppercase tracking-wider">
-                                    {viewsComplete ? "Building Your 2D Production Proof" : "Generating Additional Views"}
+                                  {proofDeferredStage && viewsComplete && !proofToShow
+                                    ? <AlertTriangle className="w-4 h-4 text-amber-400" />
+                                    : <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />}
+                                  <span className={cn(
+                                    "text-xs sm:text-sm font-bold uppercase tracking-wider",
+                                    proofDeferredStage && viewsComplete && !proofToShow ? "text-amber-400" : "text-cyan-400",
+                                  )}>
+                                    {proofDeferredStage && viewsComplete && !proofToShow
+                                      ? "2D Production Proof Not Produced"
+                                      : viewsComplete ? "Building Your 2D Production Proof" : "Generating Additional Views"}
                                   </span>
                                 </div>
                                 <div className="flex items-baseline gap-3 flex-wrap">
-                                  {viewsComplete ? (
+                                  {proofDeferredStage && viewsComplete && !proofToShow ? (
+                                    // Named, not hidden: the design and its seven views are
+                                    // valid and manufacturing continues -- it is the proof
+                                    // sheet alone that was not drawn, and the reason the
+                                    // stage recorded is the only thing that explains why.
+                                    <span className="text-sm sm:text-base font-semibold text-foreground/90">
+                                      All 7 views ready. The proof sheet was deferred ({String((proofDeferredStage as any).deferredReason || "reason not recorded")}) — your design and views are saved.
+                                    </span>
+                                  ) : viewsComplete ? (
                                     <span className="text-sm sm:text-base font-semibold text-foreground/90">
                                       All 7 views ready — dimensioning &amp; packaging your print files
                                     </span>
@@ -2589,8 +2624,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <div className="mt-4 h-1.5 rounded-full bg-secondary/40 overflow-hidden">
                               <div
                                 className={cn(
-                                  "h-full bg-gradient-to-r from-cyan-400 to-purple-400 transition-all duration-700 ease-out",
-                                  viewsComplete && "animate-pulse",
+                                  "h-full transition-all duration-700 ease-out",
+                                  proofDeferredStage && viewsComplete && !proofToShow
+                                    // Solid amber, not a pulse: nothing is in flight.
+                                    ? "bg-amber-400"
+                                    : "bg-gradient-to-r from-cyan-400 to-purple-400",
+                                  viewsComplete && !proofDeferredStage && "animate-pulse",
                                 )}
                                 style={{ width: `${pct}%` }}
                               />
