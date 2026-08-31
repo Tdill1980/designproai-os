@@ -44,6 +44,7 @@ const CALL_ONE_SURFACES = Object.freeze(["driver", "passenger", "hood", "roof", 
 const BUCKET = "wrap-files";
 const POLL_INTERVAL_MS = 5_000;
 const MAX_ENTICE_POLLS = 240;
+const MAX_AUTOMATIC_PRODUCTION_POLLS = 12;
 const MAX_PRODUCTION_POLLS = 720;
 const ATLAS_SLO_SECONDS = 60;
 const DRIVER_SLO_SECONDS = 90;
@@ -110,6 +111,7 @@ const evidence = {
   generationId: null,
   visualizationId: null,
   enticeRunId: null,
+  enticePackId: null,
   productionRunId: null,
   renderAssets: {},
   // The persisted A.T.L.A.S. revision this run authored. Null means Calls 1-7
@@ -290,7 +292,7 @@ async function rpc(client, name, params) {
 async function fetchRun(runId) {
   const { data, error } = await service
     .from("designpro_workflow_runs")
-    .select("id,workflow_type,status,results,error,updated_at")
+    .select("id,workflow_type,status,results,error,entice_pack_id,updated_at")
     .eq("id", runId)
     .maybeSingle();
   if (error) throw new Error(`run ${runId} read failed: ${error.message}`);
@@ -369,18 +371,32 @@ function finalQc(designId) {
 const OWNER_PROMOTION_CODE = "DESIGNPROAI_OWNER_CANARY_100";
 const OWNER_PROMOTION_DISCOUNT_CENTS = 29_900;
 
-async function automaticProductionRun(enticeRunId) {
-  const { data, error } = await service
-    .from("designpro_workflow_runs")
-    .select("id,workflow_type,status,entice_pack_id")
-    .eq("workflow_type", "designpro.production_pack")
-    .eq("entice_pack_id", enticeRunId)
-    .order("created_at");
-  if (error) throw new Error(`automatic production lookup failed: ${error.message}`);
-  if ((data || []).length !== 1) {
-    throw new Error(`expected exactly one automatic Production workflow for Entice ${enticeRunId}, found ${(data || []).length}`);
+async function automaticProductionRun(enticePackId, enticeRunId) {
+  for (let poll = 0; poll < MAX_AUTOMATIC_PRODUCTION_POLLS; poll += 1) {
+    const { data, error } = await service
+      .from("designpro_workflow_runs")
+      .select("id,workflow_type,status,entice_pack_id,results")
+      .eq("workflow_type", "designpro.production_pack")
+      .eq("entice_pack_id", enticePackId)
+      .order("created_at");
+    if (error) throw new Error(`automatic production lookup failed: ${error.message}`);
+    const rows = data || [];
+    if (rows.length > 1) {
+      throw new Error(`expected exactly one automatic Production workflow for Entice pack ${enticePackId}, found ${rows.length}`);
+    }
+    if (rows.length === 1) {
+      const sourceEnticeRunId = String(rows[0].results?.sourceEnticeRunId || "").toLowerCase();
+      if (sourceEnticeRunId !== String(enticeRunId).toLowerCase()) {
+        throw new Error(`automatic Production workflow ${rows[0].id} belongs to Entice run ${sourceEnticeRunId || "missing"}, expected ${enticeRunId}`);
+      }
+      return rows[0];
+    }
+    if (poll < MAX_AUTOMATIC_PRODUCTION_POLLS - 1) {
+      if (poll === 0) step("automatic Production workflow is not visible yet; waiting for the server-created row");
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    }
   }
-  return data[0];
+  throw new Error(`expected exactly one automatic Production workflow for Entice pack ${enticePackId}, found 0 after ${MAX_AUTOMATIC_PRODUCTION_POLLS} bounded lookups`);
 }
 
 async function confirmOwnerPromotionEntitlement(generationId, enticeRunId) {
@@ -862,9 +878,12 @@ async function main() {
   }
   evidence.enticeRunId = String(handoff?.workflowRunId || "");
   if (!evidence.enticeRunId) throw new Error("A.T.L.A.S. handoff returned no Entice workflow");
-  await waitForEntice(evidence.enticeRunId);
+  const completedEntice = await waitForEntice(evidence.enticeRunId);
+  const enticePackId = String(completedEntice?.entice_pack_id || "");
+  if (!enticePackId) throw new Error("completed Entice workflow carries no canonical pack identity");
+  evidence.enticePackId = enticePackId;
   step("Entice complete; resolving its one server-created Production workflow");
-  const production = await automaticProductionRun(evidence.enticeRunId);
+  const production = await automaticProductionRun(enticePackId, evidence.enticeRunId);
   evidence.productionRunId = production.id;
 
   // The canary bypasses Stripe, never the purchase gate. This service-role RPC

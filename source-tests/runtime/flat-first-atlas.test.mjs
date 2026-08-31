@@ -626,10 +626,10 @@ test("initial authoring makes one image call, passes deterministic acceptance, s
   assert.equal(providerOptions.mode, "atlas-artboard");
   assert.equal(providerOptions.panels.length, 6);
   assert.match(providerOptions.guideStoragePath, /^atlas-call1-inputs\//, "the deterministic guide is staged, not inlined");
-  assert.match(providerOptions.cohesionExampleProofStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.jpg$/);
   assert.match(providerOptions.cohesionExampleFlatStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.jpg$/);
-  assert.equal(providerOptions.cohesionExampleIdentity.contract, "designpro.atlas-design-teaching-pair.v1");
-  assert.equal(events.filter((event) => event === "stage-input").length, 3);
+  assert.equal(providerOptions.cohesionExampleProofStoragePath, undefined);
+  assert.equal(providerOptions.cohesionExampleIdentity.contract, "designpro.atlas-design-teaching-example.v2");
+  assert.equal(events.filter((event) => event === "stage-input").length, 2);
   assert.equal(providerOptions.structuralReferenceStoragePath, undefined, "obsolete vehicle/template examples never reach Call 1");
   assert.equal(providerOptions.structuralPairedProofStoragePath, undefined, "finished 3D examples never reach Call 1");
   assert.equal(inserted.example_id, null, "release-bundled examples never forge a database example foreign key");
@@ -664,10 +664,10 @@ test("initial authoring makes one image call, passes deterministic acceptance, s
   }
   assert.equal(new Set(panels.map((panel) => panel.contentHash)).size, 6, "six distinct panels");
   assert.equal(inserted.metadata.topologyExamplesApplied, 0);
-  assert.equal(inserted.metadata.atlasDesignTeachingPairApplied, true);
-  assert.equal(inserted.metadata.atlasDesignTeachingPairIdentity.contract,
-    "designpro.atlas-design-teaching-pair.v1");
-  assert.match(inserted.metadata.atlasDesignTeachingPairSetHash, /^[0-9a-f]{64}$/);
+  assert.equal(inserted.metadata.atlasDesignTeachingExampleApplied, true);
+  assert.equal(inserted.metadata.atlasDesignTeachingExampleIdentity.contract,
+    "designpro.atlas-design-teaching-example.v2");
+  assert.match(inserted.metadata.atlasDesignTeachingExampleSetHash, /^[0-9a-f]{64}$/);
   assert.equal(inserted.metadata.masterQcPassed, true);
   assert.equal(inserted.metadata.masterQcContract, "designpro.atlas-master-semantic-qc.v1");
   assert.equal(inserted.metadata.masterAcceptance, "deterministic");

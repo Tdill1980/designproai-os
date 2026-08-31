@@ -41,7 +41,22 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 - [x] PR #273 merged and deployed exact SHA `c582673d3316b4baa62f4a511af9796ee4b95d8a`: apex `/api/*` now reaches the existing gateway, apex is in the origin allowlist and a Design Prep technical retry retains the same GenerationID.
 - [x] PR #273 release gate, web, gateway, Caddy/droplet install and two distinct runtime replicas accepted the same exact SHA.
 - [x] No canary was run for PR #272 or PR #273.
-- [x] The owner-selected DCA policy supersedes every historical “run a canary” item below. Validation is one real customer-style lineage through PanelProStudio, followed by owner confirmation before Full QC.
+- [x] Historical policy at the PR #272/#273 boundary selected the real DCA instead of a canary. On 2026-08-31 the owner explicitly authorized a new production canary while away; that later, specific instruction now governs the pending corrective release.
+
+## Current production diagnostic — PR #275 and run `33389124918`
+
+- [x] PR #275 is deployed as exact production SHA `1bd4906ab6a7433b32677be9cc5adb87f17d2fed` across web, gateway and two runtime replicas.
+- [x] Owner-authorized production canary run `33389124918` created order `CANARY-MTH6KLDP`, GenerationID `083d2a70-edac-4e75-9caa-1336542baf7c`, DesignID `DID-083D2A70`, handoff RevisionID `8499ab58-0c00-40c3-a3c5-9fe2b73cb236` and accepted master hash `7e8e94f4e1f0e0649d9671c9e8f9f4d0cd904e154505545e3c763baeaf95290e`.
+- [x] The run used one Call-1 image request, persisted all six Call-1 panels and accepted all seven presentation views under that lineage.
+- [x] Exported-byte inspection proved the accepted source is structurally invalid: the installed Flamingo Driver teaching proof contaminated the flat master with wheel-well shapes, white guide/gutter bands and template furniture.
+- [x] The corrective Call-1 teaching reference is flat-only: one hash-pinned Flamingo pure-rectangle example, then any verified customer references, with the neutral target guide last. Surface names/IDs remain metadata and prompt mapping only; they must never render into the artwork.
+- [x] The required new deterministic blocker is narrowly scoped to repeated cross-surface template leakage; semantic/visual AI remains advisory and a legitimate white-base livery is not rejected merely for being white.
+- [x] Exact Call-8 defect identified: design-time summed per-surface rounded areas (`305.54`) while Call 8 summed raw areas then rounded once (`305.53`), producing `genie_total_square_feet_mismatch` and no flat proof.
+- [x] Required Call-8 contract correction identified: both sides sum raw surface areas and apply `nearest-0.01-after-raw-sum` once; no panel dimension is changed.
+- [x] Local release tests passed for the flat-only reference, deterministic template-leak blocker, Call-8 rounding correction, canary PackID lookup and timing instrumentation: focused/source suites, runtime/schema `387/387`, repository `550/550`, gateway `64/64`, web `8/8`, app `79/79`, builds and archive `57/57`.
+- [ ] Merge and deploy the corrective release; verify web, gateway, edge function and both runtime replicas on the same exact SHA.
+- [ ] Run the newly authorized production canary and inspect the fresh master, six Call-1 panels, seven views, Call-8 proof and Call-9 lineage.
+- [ ] Prove Full QC, ProductionPack, ZIP and WrapBox on the accepted lineage. Current DCA acceptance remains pending.
 
 - [x] Workflow UI/UX PR #258 merged as `b6b30c1e913c3656602923affb30face6ab6c013`; it is an ancestor of the deployed release and carries one Generation ID through DESIGN → REVISE → PANELS → QC → WRAPBOX without manual copy/paste handoffs.
 - [x] Generation-ID OS kernel PR #260 merged as `01eb47ddea1c9c67c240aba172f8b4a5d5e2d5eb`; it is an ancestor of the deployed release.
@@ -49,7 +64,7 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 - [x] Protected manual dark-deploy workflow run #839 succeeded for exact `main` SHA `b7e639721918f7290e2ff0f8ed124c989d1c38c4` in 6m 46s and produced the exact-droplet inventory artifact.
 - [x] Run #839 built and labeled both `designproai-runtime` and `designproai-gateway` with exact SHA `b7e639721918f7290e2ff0f8ed124c989d1c38c4`, deployed web, gateway and two exact-SHA server-owned runtime replicas, and passed isolated dark loopback infrastructure acceptance on `designproai-prod-sfo3`.
 - [x] Release archive layout, manifest/content hashes, extracted release tree, role-separated environment files, shared restart-safe spool and exact-SHA runtime isolation all passed in run #839. Topaz Call 12 and Stripe checkout were enabled without printing secrets.
-- [x] Historical canary requirement superseded on 2026-08-31. Do not run a canary; use the real DCA path.
+- [x] Historical state at this release boundary: the canary requirement had been superseded. The owner's later explicit authorization for a new production canary controls the pending corrective release.
 
 ## Resolved release — PR #260
 
@@ -82,7 +97,7 @@ Print-ready panels from one accepted A.T.L.A.S. creative authority, with 3D proo
 - [x] Exact final PR release gate #741 succeeded at head `da6bde122fe9738b032ca1039ed41ca677e2e0f1`; executable contracts, Supabase shadow migrations/pgTAP and the immutable release archive all passed.
 - [x] PR #261 merged as exact `main` SHA `b7e639721918f7290e2ff0f8ed124c989d1c38c4`.
 - [x] Exact merged SHA `b7e639721918f7290e2ff0f8ed124c989d1c38c4` deployed and independently verified on `designproai-prod-sfo3` by protected workflow run #839.
-- [x] Historical canary release item superseded on 2026-08-31. The DCA is the only production validation path.
+- [x] Historical state at this release boundary: the canary item had been superseded. The owner's later explicit production-canary authorization is recorded above.
 
 ## Current DCA evidence — Oasis Pools, 2026-08-31
 

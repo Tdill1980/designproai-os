@@ -49,38 +49,33 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v14-pure-rectangles";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v15-flat-example-only";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
-const ATLAS_COHESION_PAIR_MAX_BYTES = 2 * 1024 * 1024;
-const ATLAS_COHESION_PAIR_CONTRACT = "designpro.atlas-design-teaching-pair.v1";
-const ATLAS_COHESION_PAIR_PURPOSE = "flat-to-installed-relationship-only";
-const ATLAS_COHESION_PAIR_VERSION = 1;
-const ATLAS_COHESION_PAIR_VEHICLE = "2022 Ford F-250 Crew Cab";
+const ATLAS_COHESION_EXAMPLE_MAX_BYTES = 2 * 1024 * 1024;
+const ATLAS_COHESION_EXAMPLE_CONTRACT = "designpro.atlas-design-teaching-example.v2";
+const ATLAS_COHESION_EXAMPLE_PURPOSE = "flat-output-cohesion-only";
+const ATLAS_COHESION_EXAMPLE_VERSION = 2;
 const ATLAS_COHESION_FLAT_HASH = "20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa";
 const ATLAS_COHESION_FLAT_BYTES = 619255;
-const ATLAS_COHESION_PROOF_HASH = "4449c3274f7d5cd9c383c49a81b0407f99ae0251b8052cad1ee3927c41ac1fdc";
-const ATLAS_COHESION_PROOF_BYTES = 169595;
 
 /**
  * The Edge function is an independent deployment, so it must enforce the same
  * immutable teaching identity as the runtime instead of trusting a caller to
  * describe whichever two Storage objects it supplied.
  */
-export function validateAtlasCohesionPairIdentity(value: unknown): Record<string, unknown> {
+export function validateAtlasCohesionExampleIdentity(value: unknown): Record<string, unknown> {
   const identity = value && typeof value === "object"
     ? value as Record<string, unknown>
     : null;
   if (!identity
-    || identity.contract !== ATLAS_COHESION_PAIR_CONTRACT
-    || identity.purpose !== ATLAS_COHESION_PAIR_PURPOSE
-    || identity.version !== ATLAS_COHESION_PAIR_VERSION
+    || identity.contract !== ATLAS_COHESION_EXAMPLE_CONTRACT
+    || identity.purpose !== ATLAS_COHESION_EXAMPLE_PURPOSE
+    || identity.version !== ATLAS_COHESION_EXAMPLE_VERSION
     || identity.flattenedTopViewContentHash !== ATLAS_COHESION_FLAT_HASH
     || identity.flattenedTopViewByteSize !== ATLAS_COHESION_FLAT_BYTES
-    || identity.finished3dProofContentHash !== ATLAS_COHESION_PROOF_HASH
-    || identity.finished3dProofByteSize !== ATLAS_COHESION_PROOF_BYTES
-    || ATLAS_COHESION_FLAT_BYTES + ATLAS_COHESION_PROOF_BYTES > ATLAS_COHESION_PAIR_MAX_BYTES) {
-    throw new Error("atlas_artboard_cohesion_pair_identity_invalid");
+    || ATLAS_COHESION_FLAT_BYTES > ATLAS_COHESION_EXAMPLE_MAX_BYTES) {
+    throw new Error("atlas_artboard_cohesion_example_identity_invalid");
   }
   return identity;
 }
@@ -423,25 +418,26 @@ function atlasFlatMasterContract(
     }
   }
   const panelLines = [
-    "• PASSENGER SIDE (PS) — tall region on the LEFT",
-    "• DRIVER SIDE (DS) — tall region on the RIGHT",
-    "• REAR (RR) — first centre region from the top",
-    "• ROOF (RF) — second centre region from the top",
-    "• HOOD (HD) — third centre region from the top",
-    "• FRONT (FR) — fourth centre region from the top",
+    "• left tall rectangle maps to Passenger Side (internal ID PS)",
+    "• right tall rectangle maps to Driver Side (internal ID DS)",
+    "• first centre rectangle from the top maps to Rear (internal ID RR)",
+    "• second centre rectangle from the top maps to Roof (internal ID RF)",
+    "• third centre rectangle from the top maps to Hood (internal ID HD)",
+    "• fourth centre rectangle from the top maps to Front (internal ID FR)",
   ].join("\n");
   const pickupCoverage = pickupCoverageApplies
     ? `\nPICKUP COVERAGE: the Driver Side and Passenger Side artwork coordinates the exterior cab and exterior bed sides, and Rear supplies the tailgate exterior. The open bed floor and inner bed walls remain bare factory bedliner after installation. That physical exclusion belongs to downstream vehicle application and proof mapping, not Call 1; keep every A.T.L.A.S. source rectangle fully painted and opaque with no empty bed-shaped opening.`
     : "";
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER on one square 4K canvas.
-A.T.L.A.S. is ONE unified vehicle-wrap design arranged flat as six named printable production surfaces for the exact target vehicle. These are six parts of one composition, not six independent design canvases and not a depiction of the vehicle itself.
+A.T.L.A.S. is ONE unified vehicle-wrap design arranged flat as six server-mapped printable production surfaces for the exact target vehicle. These are six parts of one composition, not six independent design canvases and not a depiction of the vehicle itself.
 TARGET VEHICLE (CANONICAL): ${vehicle || "customer vehicle"}
 BODY CLASS (GENIE): ${bodyClass}
-The final TARGET A.T.L.A.S. GUIDE image is a neutral spatial mask with six fixed GENIE regions. It carries layout geometry only. Region identity is defined by this exact data mapping:
+The final TARGET A.T.L.A.S. GUIDE image is a neutral spatial mask with six fixed GENIE regions. It carries layout geometry only. Region identity is server metadata defined by this exact data mapping:
 ${panelLines}
-The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Replace every light mask region, corner to corner, with the final customer wrap pixels for its named surface. Keep the dark gutters as separation space.
-Create one cohesive professional vehicle-wrap composition across all six named surfaces. Continue the same palette, motifs, depth, visual rhythm and directional flow across surfaces that meet on the installed ${bodyClass}. Driver Side and Passenger Side are coordinated adaptations of the same design system, not duplicate images and not independent redesigns; customer-facing wording reads normally on each installed side. Hood, Roof, Front and Rear continue that same composition rather than introducing separate artwork.
-Every named surface is a pure, opaque, unbroken, full-bleed rectangular region of continuous printable artwork, filled to all four edges. The six rectangles themselves are the canonical source panels.
+SURFACE METADATA IS NEVER VISIBLE ARTWORK: do not render a surface name, internal ID, legend, heading, label or caption anywhere on the canvas. In particular, never typeset Driver Side, Passenger Side, Rear, Roof, Hood, Front, DS, PS, RR, RF, HD or FR as an artboard annotation. Those terms only tell the server which rectangle it will crop.
+The centre column is fixed top-to-bottom as Rear, Roof, Hood, Front. Replace every light mask region, corner to corner, with the final customer wrap pixels for its mapped surface. The existing dark space outside the light regions is canvas separation only. Do not invent, widen, outline, label or curve a gutter, and never place a gutter, border or caption band inside a light region.
+Create one cohesive professional vehicle-wrap composition across all six mapped surfaces. Continue the same palette, motifs, depth, visual rhythm and directional flow across surfaces that meet on the installed ${bodyClass}. Driver Side and Passenger Side are coordinated adaptations of the same design system, not duplicate images and not independent redesigns; customer-facing wording reads normally on each installed side. Hood, Roof, Front and Rear continue that same composition rather than introducing separate artwork.
+Every mapped surface is a pure, opaque, unbroken, full-bleed rectangular region of continuous printable artwork, filled to all four edges. The six rectangles themselves are the canonical source panels.
 PIXEL CONTENT LOCK: output printable artwork inside those six rectangles only. Do not depict a vehicle render, vehicle photograph, vehicle outline or silhouette. Do not draw physical vehicle anatomy, wheels, windows, doors, component seams, cut lines, transparent voids, shaped openings or mockup lighting in any source rectangle. Customer-requested photographic imagery remains artwork printed within a rectangle; it is never a photograph or rendering of the wrapped vehicle. Installed boundaries and presentation lighting belong to downstream vehicle application and the seven proof projections.${pickupCoverage}
 Return only the finished two-dimensional A.T.L.A.S. artwork in the supplied six-region layout.`;
 }
@@ -635,7 +631,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six named regions in the attached mask. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces, built from layered background color and texture, mid-ground graphic motion, and foreground accent detail. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+    const atlasScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions in the attached mask. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces, built from layered background color and texture, mid-ground graphic motion, and foreground accent detail. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
@@ -801,7 +797,7 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six named regions in the attached mask. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
+  const atlasRestyleScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions in the attached mask. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
   const restylePresentation = atlasFlatMaster
     ? atlasRestyleScene
     : `CAMERA ANGLE (LOCKED — read this FIRST):
@@ -2186,9 +2182,11 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       atlasPanels: panels,
     } as any);
 
-    // 3 — parts: designer prompt, one release-pinned installed→flat cohesion
-    // lesson, verified customer references, optional correction, then the
-    // CURRENT target mask as the final image.
+    // 3 — parts: designer prompt, one release-pinned flat-output cohesion
+    // example, verified customer references, optional correction, then the
+    // CURRENT target mask as the final image. A finished vehicle proof is
+    // deliberately excluded: it is a stronger anatomy/camera instruction than
+    // prose and previously induced vehicle pixels inside source rectangles.
     // The old Houdini/template inputs remain excluded: their cutouts and vehicle
     // anatomy taught the exact wrong pixels. The selected Flamingo flat half was
     // repaired to six solid rectangles before it entered the release.
@@ -2239,25 +2237,15 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       parts.push({ inlineData: { mimeType: mime, data: btoa(binary) } });
       return { contentHash: actualHash, byteSize: bytes.length };
     };
-    const cohesionProofPath = String(body.cohesionExampleProofStoragePath || "").trim();
     const cohesionFlatPath = String(body.cohesionExampleFlatStoragePath || "").trim();
-    if (!cohesionProofPath || !cohesionFlatPath) {
-      throw new Error("atlas_artboard_cohesion_pair_incomplete");
+    if (!cohesionFlatPath) {
+      throw new Error("atlas_artboard_cohesion_example_incomplete");
     }
-    let verifiedCohesionPair: Record<string, unknown> | null = null;
+    let verifiedCohesionExample: Record<string, unknown> | null = null;
     {
-      const identity = validateAtlasCohesionPairIdentity(body.cohesionExampleIdentity);
+      const identity = validateAtlasCohesionExampleIdentity(body.cohesionExampleIdentity);
       parts.push({
-        text: `RELATIONSHIP-ONLY EXAMPLE 1/2 — INSTALLED DRIVER PROOF on a ${ATLAS_COHESION_PAIR_VEHICLE}. This is the downstream result of one historical A.T.L.A.S. design. Learn only that all surfaces read as one coherent vehicle wrap. Copy no artwork, subject, wording, logo, company, colors, typography, industry, vehicle geometry, camera or lighting. This is not the requested output and the target vehicle is identified in the prompt above.`,
-      });
-      const proofVerified = await downloadPart(
-        cohesionProofPath,
-        "image/jpeg",
-        ATLAS_COHESION_PROOF_HASH,
-        ATLAS_COHESION_PROOF_BYTES,
-      );
-      parts.push({
-        text: "RELATIONSHIP-ONLY EXAMPLE 2/2 — MATCHING FLAT A.T.L.A.S. SOURCE. This is the same historical design represented as six solid, opaque, full-bleed print-art rectangles with no vehicle anatomy or openings. Learn only the installed-to-flat relationship, six-region cohesion and pure-rectangle output type. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry.",
+        text: "RELEASE-PINNED FLAT A.T.L.A.S. OUTPUT EXAMPLE. Learn only the requested output type: one cohesive vehicle-wrap composition already flattened into six solid, opaque, full-bleed print-art rectangles with no vehicle anatomy, openings, artboard labels or caption bands. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry. It is not target-vehicle geometry authority; the final neutral target guide controls the current layout.",
       });
       const flatVerified = await downloadPart(
         cohesionFlatPath,
@@ -2265,14 +2253,11 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         ATLAS_COHESION_FLAT_HASH,
         ATLAS_COHESION_FLAT_BYTES,
       );
-      verifiedCohesionPair = {
+      verifiedCohesionExample = {
         ...identity,
-        contract: ATLAS_COHESION_PAIR_CONTRACT,
-        purpose: ATLAS_COHESION_PAIR_PURPOSE,
-        version: ATLAS_COHESION_PAIR_VERSION,
-        historicalVehicle: ATLAS_COHESION_PAIR_VEHICLE,
-        finished3dProofContentHash: proofVerified?.contentHash,
-        finished3dProofByteSize: proofVerified?.byteSize,
+        contract: ATLAS_COHESION_EXAMPLE_CONTRACT,
+        purpose: ATLAS_COHESION_EXAMPLE_PURPOSE,
+        version: ATLAS_COHESION_EXAMPLE_VERSION,
         flattenedTopViewContentHash: flatVerified?.contentHash,
         flattenedTopViewByteSize: flatVerified?.byteSize,
       };
@@ -2362,7 +2347,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         modelRequestByteSize,
         modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
         modelInputImageCount,
-        cohesionExampleIdentity: verifiedCohesionPair,
+        cohesionExampleIdentity: verifiedCohesionExample,
         promptChars: prompt.length,
         masterUrl: signed?.signedUrl || null,
         masterStoragePath: storagePath,

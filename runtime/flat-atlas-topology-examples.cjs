@@ -4,7 +4,7 @@
  * Historical loader plus release-owned A.T.L.A.S. teaching assets.
  *
  * The Houdini pair remains available for forensic compatibility but stays
- * dormant. Production Call 1 uses the separately named Flamingo cohesion pair,
+ * dormant. Production Call 1 uses the separately named Flamingo flat example,
  * selected by the owner after canary 51ea0e06 proved that prose plus an
  * anonymous mask could still yield a montage of vehicle anatomy. Its flat half
  * was repaired into six solid rectangles before it became a teaching asset.
@@ -15,8 +15,8 @@
  * - every object must live below the server-owned system prefix;
  * - guide, manifest and master bytes are verified against the immutable row;
  * - an optional database example exposes only its neutral before/guide bytes;
- * - the active cohesion pair is relationship-only: it teaches installed proof
- *   versus flat artwork, never its artwork, palette, wording or brand;
+ * - the active cohesion example teaches only cohesive flat-output structure,
+ *   never its artwork, palette, wording or brand;
  * - database metadata, prompts and storage URLs never enter the model request.
  *
  * The revision schema records at most one database example identity, and Gemini
@@ -49,25 +49,19 @@ const BUNDLED_PAIR = Object.freeze({
     contentType: "image/jpeg",
   }),
 });
-const COHESION_PAIR = Object.freeze({
-  contract: "designpro.atlas-design-teaching-pair.v1",
-  purpose: "flat-to-installed-relationship-only",
-  exampleKey: "flamingo-solid-rectangles-to-installed",
-  version: 1,
+const COHESION_EXAMPLE = Object.freeze({
+  contract: "designpro.atlas-design-teaching-example.v2",
+  purpose: "flat-output-cohesion-only",
+  exampleKey: "flamingo-solid-rectangles",
+  version: 2,
   historicalVehicle: "2022 Ford F-250 Crew Cab",
   historicalGenerationId: "5b2eb96c-77b5-4705-8cad-fef00af677fe",
   historicalRevisionId: "b1941528-e375-4d93-bef7-2fd48213370a",
   historicalCanonicalMasterHash: "f9015398d87eca57d16b121ba83d5dcf7843d8086b2f0a697ffc4cc6271921bb",
-  historicalDriverProofHash: "c7fbd5b6fda9674ce1944256c63b4f2c1fc580b190513ec09885cf0ba3afbfc7",
   outputRule: "six-solid-full-bleed-print-art-rectangles",
   flattenedTopView: Object.freeze({
     path: join(__dirname, "atlas-examples", "flamingo-rectangular-atlas.jpg"),
     contentHash: "20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa",
-    contentType: "image/jpeg",
-  }),
-  finished3dProof: Object.freeze({
-    path: join(__dirname, "atlas-examples", "flamingo-installed-driver-proof.jpg"),
-    contentHash: "4449c3274f7d5cd9c383c49a81b0407f99ae0251b8052cad1ee3927c41ac1fdc",
     contentType: "image/jpeg",
   }),
 });
@@ -170,41 +164,30 @@ function loadBundledFlatToFinishedExample() {
 
 function loadBundledAtlasCohesionExample() {
   const flattenedTopView = readBundledPairAsset(
-    COHESION_PAIR.flattenedTopView,
+    COHESION_EXAMPLE.flattenedTopView,
     "Release-pinned Flamingo rectangular A.T.L.A.S. example",
   );
-  const finished3dProof = readBundledPairAsset(
-    COHESION_PAIR.finished3dProof,
-    "Release-pinned Flamingo installed Driver proof",
-  );
   return Object.freeze({
-    kind: "atlas-cohesion-flat-installed-pair",
-    purpose: COHESION_PAIR.purpose,
+    kind: "atlas-cohesion-flat-example",
+    purpose: COHESION_EXAMPLE.purpose,
     identity: Object.freeze({
-      contract: COHESION_PAIR.contract,
-      purpose: COHESION_PAIR.purpose,
+      contract: COHESION_EXAMPLE.contract,
+      purpose: COHESION_EXAMPLE.purpose,
       exampleId: null,
-      exampleKey: COHESION_PAIR.exampleKey,
-      version: COHESION_PAIR.version,
+      exampleKey: COHESION_EXAMPLE.exampleKey,
+      version: COHESION_EXAMPLE.version,
       source: "exact-server-release",
-      historicalGenerationId: COHESION_PAIR.historicalGenerationId,
-      historicalRevisionId: COHESION_PAIR.historicalRevisionId,
-      historicalVehicle: COHESION_PAIR.historicalVehicle,
-      historicalCanonicalMasterHash: COHESION_PAIR.historicalCanonicalMasterHash,
-      historicalDriverProofHash: COHESION_PAIR.historicalDriverProofHash,
-      historicalProofLineageFields: "legacy-null; owner-approved matching generation export",
-      outputRule: COHESION_PAIR.outputRule,
+      historicalGenerationId: COHESION_EXAMPLE.historicalGenerationId,
+      historicalRevisionId: COHESION_EXAMPLE.historicalRevisionId,
+      historicalVehicle: COHESION_EXAMPLE.historicalVehicle,
+      historicalCanonicalMasterHash: COHESION_EXAMPLE.historicalCanonicalMasterHash,
+      outputRule: COHESION_EXAMPLE.outputRule,
       flattenedTopViewContentHash: flattenedTopView.contentHash,
       flattenedTopViewByteSize: flattenedTopView.byteSize,
       flattenedTopViewContentType: flattenedTopView.contentType,
       flattenedTopViewDimensions: "1254x1254",
-      finished3dProofContentHash: finished3dProof.contentHash,
-      finished3dProofByteSize: finished3dProof.byteSize,
-      finished3dProofContentType: finished3dProof.contentType,
-      finished3dProofDimensions: "1254x700",
     }),
     flattenedTopView,
-    finished3dProof,
   });
 }
 
@@ -508,7 +491,7 @@ module.exports = {
   loadActiveFlatAtlasTopologyExamples,
   _test: {
     BUNDLED_PAIR,
-    COHESION_PAIR,
+    COHESION_EXAMPLE,
     SELECT_COLUMNS,
     STYLE_KEYS,
     assertNoStyleFields,

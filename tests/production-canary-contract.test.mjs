@@ -89,14 +89,40 @@ test("the canary records display latency and defers its hard SLO gate until the 
     "the hard latency gate must run only after the downstream artifact gate");
 });
 
-test("production is server-created exactly once after Entice completes", () => {
-  const wait = canary.indexOf("await waitForEntice(evidence.enticeRunId)");
-  const resolve = canary.indexOf("await automaticProductionRun(evidence.enticeRunId)");
+test("production is server-created exactly once after Entice completes, with a bounded visibility poll", () => {
+  const wait = canary.indexOf("const completedEntice = await waitForEntice(evidence.enticeRunId)");
+  const resolve = canary.indexOf("await automaticProductionRun(enticePackId, evidence.enticeRunId)");
   assert.ok(wait > -1, "missing Entice completion wait");
   assert.ok(resolve > wait, "automatic Production workflow is resolved before Entice completes");
   assert.doesNotMatch(canary, /"create_designpro_production_workflow"/,
     "the canary must not duplicate the workflow pack.activate creates server-side");
+  assert.match(canary, /const MAX_AUTOMATIC_PRODUCTION_POLLS = 12/);
   assert.match(canary, /expected exactly one automatic Production workflow/);
+
+  const lookupStart = canary.indexOf("async function automaticProductionRun(");
+  const lookupEnd = canary.indexOf("async function confirmOwnerPromotionEntitlement(", lookupStart);
+  const lookup = canary.slice(lookupStart, lookupEnd);
+  const duplicateGate = lookup.indexOf("if (rows.length > 1)");
+  const foundGate = lookup.indexOf("if (rows.length === 1)");
+  const retryWait = lookup.indexOf("setTimeout(resolve, POLL_INTERVAL_MS)");
+  const exhausted = lookup.lastIndexOf("found 0 after");
+  assert.match(lookup, /for \(let poll = 0; poll < MAX_AUTOMATIC_PRODUCTION_POLLS; poll \+= 1\)/);
+  assert.match(canary, /\.select\("id,workflow_type,status,results,error,entice_pack_id,updated_at"\)/);
+  assert.match(canary, /const enticePackId = String\(completedEntice\?\.entice_pack_id \|\| ""\)/);
+  assert.match(canary, /completed Entice workflow carries no canonical pack identity/);
+  assert.match(lookup, /\.eq\("entice_pack_id", enticePackId\)/);
+  assert.doesNotMatch(lookup, /\.eq\("entice_pack_id",\s*enticeRunId\)/,
+    "the Production foreign key is the durable Entice pack ID, never the Entice workflow run ID");
+  assert.match(lookup, /\.select\("id,workflow_type,status,entice_pack_id,results"\)/);
+  assert.match(lookup, /rows\[0\]\.results\?\.sourceEnticeRunId/);
+  assert.match(lookup, /sourceEnticeRunId !== String\(enticeRunId\)\.toLowerCase\(\)/);
+  assert.match(lookup, /belongs to Entice run/);
+  assert.ok(duplicateGate > -1 && duplicateGate < retryWait,
+    "duplicate server-created workflows must fail before any retry sleep");
+  assert.ok(foundGate > duplicateGate && foundGate < retryWait,
+    "exactly one server-created workflow must return without sleeping again");
+  assert.ok(retryWait > foundGate && exhausted > retryWait,
+    "zero rows must retry before the bounded terminal failure");
 });
 
 test("WrapBox recipient data is registered and bound only after the purchase entitlement", () => {
@@ -183,11 +209,13 @@ test("canonical markdown records the explicit diagnostic-canary exception withou
   for (const document of [atlasGraph, repositoryContract]) {
     assert.doesNotMatch(document, /No canary is permitted/i);
     assert.match(document, /do not run speculative canaries/i);
-    assert.match(document, /owner\s+explicitly authorized the current diagnostic production\s+canary/i);
+    assert.match(document, /owner\s+explicitly\s+authorized[\s\S]{0,120}(?:new|fresh|current)[\s\S]{0,40}production canary/i);
   }
-  assert.match(atlasGraph, /Owner-authorized diagnostic production canary #35/);
+  assert.match(atlasGraph, /33389124918/);
+  assert.match(atlasGraph, /083d2a70-edac-4e75-9caa-1336542baf7c/);
+  assert.match(atlasGraph, /(?:Earlier\s+)?owner-authorized diagnostic production canary #35/i);
   assert.match(atlasGraph, /33379526286/);
   assert.match(atlasGraph, /51ea0e06-2ceb-460a-8756-54888a7832a8/);
   assert.match(atlasGraph, /early latency acceptance gate, before Call 8/);
-  assert.match(atlasGraph, /final acceptance still requires one real customer-style[\s\S]*production DCA/);
+  assert.match(atlasGraph, /final acceptance still requires live[\s\S]{0,80}one customer-style production lineage/i);
 });

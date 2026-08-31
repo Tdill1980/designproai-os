@@ -116,6 +116,25 @@ const CUTOUT_BRIGHT_MAJORITY = 0.55;
 const MAX_ZONE_CUTOUT_COMPONENT_RATIO = 0.02;
 const MIN_CUTOUT_COMPONENT_RATIO = 0.0025;
 const CUTOUT_ALPHA_MAX = 128;
+// A generated vehicle/template sometimes survives as opaque white anatomy, so
+// it is invisible to both the alpha and near-black cut-out masks above. The
+// 2026-08-31 production master carried the same unmistakable frame on four
+// surfaces: a narrow light-neutral gutter, an adjacent full-axis dark guide
+// line, mirrored on the two flanks and repeated across centre panels.
+//
+// White is valid wrap artwork, so neither a white pixel nor one white band is a
+// failure. Conviction happens only for the repeated six-zone template geometry
+// assembled in `structuralTemplateFrameLeak` below.
+const TEMPLATE_LIGHT_CHANNEL_MIN = 245;
+const TEMPLATE_LIGHT_CHROMA_MAX = 8;
+const TEMPLATE_LIGHT_LINE_COVERAGE = 0.9;
+const TEMPLATE_OUTLINE_LINE_COVERAGE = 0.75;
+const TEMPLATE_MIN_BAND_DEPTH_RATIO = 0.025;
+const TEMPLATE_MAX_BAND_DEPTH_RATIO = 0.18;
+const TEMPLATE_MAX_EDGE_DISTANCE_RATIO = 0.25;
+const TEMPLATE_MAX_OUTLINE_GAP_RATIO = 0.02;
+const TEMPLATE_MIN_OUTLINE_DEPTH_PX = 2;
+const TEMPLATE_REQUIRED_CENTER_SURFACES = 2;
 const MAX_REQUEST_BYTES = 18 * 1024 * 1024;
 const MAX_TRANSPORT_BYTES = 3 * 1024 * 1024;
 const MAX_TRANSPORT_DIMENSION = 1800;
@@ -192,6 +211,91 @@ function validatedZone(zone, width, height) {
   return { left: x, top: y, width: w, height: h };
 }
 
+function qualifyingRuns(counts, denominator, threshold) {
+  const runs = [];
+  let start = -1;
+  let minimumCoverage = 1;
+  for (let index = 0; index <= counts.length; index += 1) {
+    const coverage = index < counts.length ? counts[index] / denominator : 0;
+    if (coverage >= threshold) {
+      if (start < 0) {
+        start = index;
+        minimumCoverage = coverage;
+      } else {
+        minimumCoverage = Math.min(minimumCoverage, coverage);
+      }
+      continue;
+    }
+    if (start >= 0) {
+      runs.push({ start, end: index - 1, depth: index - start, minimumCoverage });
+      start = -1;
+      minimumCoverage = 1;
+    }
+  }
+  return runs;
+}
+
+function outlinedLightBandsForAxis({ axis, lightCounts, darkCounts, lineSpan }) {
+  const axisLength = lightCounts.length;
+  const minimumDepth = Math.max(3, Math.ceil(axisLength * TEMPLATE_MIN_BAND_DEPTH_RATIO));
+  const maximumDepth = Math.max(minimumDepth, Math.floor(axisLength * TEMPLATE_MAX_BAND_DEPTH_RATIO));
+  const maximumEdgeDistance = Math.ceil(axisLength * TEMPLATE_MAX_EDGE_DISTANCE_RATIO);
+  const maximumOutlineGap = Math.max(2, Math.ceil(axisLength * TEMPLATE_MAX_OUTLINE_GAP_RATIO));
+  const lightRuns = qualifyingRuns(lightCounts, lineSpan, TEMPLATE_LIGHT_LINE_COVERAGE);
+  const darkRuns = qualifyingRuns(darkCounts, lineSpan, TEMPLATE_OUTLINE_LINE_COVERAGE)
+    .filter((run) => run.depth >= TEMPLATE_MIN_OUTLINE_DEPTH_PX);
+  const bands = [];
+
+  for (const light of lightRuns) {
+    if (light.depth < minimumDepth || light.depth > maximumDepth) continue;
+    const edgeCandidates = [];
+    if (light.start <= maximumEdgeDistance) edgeCandidates.push("start");
+    if (axisLength - 1 - light.end <= maximumEdgeDistance) edgeCandidates.push("end");
+    for (const edge of edgeCandidates) {
+      const outline = darkRuns.find((run) => {
+        if (run.end < light.start) return light.start - run.end - 1 <= maximumOutlineGap;
+        if (run.start > light.end) return run.start - light.end - 1 <= maximumOutlineGap;
+        return false;
+      });
+      if (!outline) continue;
+      bands.push({
+        axis,
+        edge: axis === "x"
+          ? (edge === "start" ? "left" : "right")
+          : (edge === "start" ? "top" : "bottom"),
+        lightStart: light.start,
+        lightEnd: light.end,
+        lightDepthRatio: light.depth / axisLength,
+        lightCoverage: light.minimumCoverage,
+        outlineStart: outline.start,
+        outlineEnd: outline.end,
+        outlineCoverage: outline.minimumCoverage,
+      });
+    }
+  }
+  return bands;
+}
+
+function structuralTemplateFrameLeak(zones) {
+  const bySurface = new Map(zones.map((zone) => [zone.surfaceKey, zone]));
+  const hasBand = (surfaceKey, axis, edge) => (bySurface.get(surfaceKey)?.structuralTemplateBands || [])
+    .some((band) => band.axis === axis && band.edge === edge);
+  // In the canonical atlas raster, Passenger is the left column and Driver is
+  // the right column. Their leaked guide gutters therefore face each other:
+  // Passenger-right and Driver-left. Requiring that mirrored pair prevents an
+  // intentional light edge on one panel from becoming a workflow gate.
+  const mirroredFlankGutters = hasBand("driver", "x", "left")
+    && hasBand("passenger", "x", "right");
+  const centerSurfaces = ["hood", "roof", "front", "rear"].filter((surfaceKey) =>
+    (bySurface.get(surfaceKey)?.structuralTemplateBands || [])
+      .some((band) => band.axis === "y"));
+  return {
+    convicted: mirroredFlankGutters && centerSurfaces.length >= TEMPLATE_REQUIRED_CENTER_SURFACES,
+    mirroredFlankGutters,
+    centerSurfaces,
+  };
+}
+
 async function zonePixelMetrics(masterBytes, manifest) {
   const metadata = await sharp(masterBytes, { failOn: "error", limitInputPixels: 100_000_000 }).metadata();
   const width = Number(metadata.width || 0);
@@ -213,6 +317,10 @@ async function zonePixelMetrics(masterBytes, manifest) {
     let luminanceTotal = 0;
     let luminanceSquared = 0;
     const pixelCount = info.width * info.height;
+    const lightColumns = new Uint32Array(info.width);
+    const darkColumns = new Uint32Array(info.width);
+    const lightRows = new Uint32Array(info.height);
+    const darkRows = new Uint32Array(info.height);
     const edgeDepth = Math.max(1, Math.min(4, Math.floor(Math.min(info.width, info.height) / 20)));
     for (let py = 0; py < info.height; py += 1) {
       for (let px = 0; px < info.width; px += 1) {
@@ -221,7 +329,18 @@ async function zonePixelMetrics(masterBytes, manifest) {
         const green = data[offset + 1] ?? red;
         const blue = data[offset + 2] ?? red;
         const alpha = data[offset + info.channels - 1];
+        const maximumChannel = Math.max(red, green, blue);
+        const minimumChannel = Math.min(red, green, blue);
         const isOpaque = alpha >= 250;
+        if (isOpaque && minimumChannel >= TEMPLATE_LIGHT_CHANNEL_MIN
+          && maximumChannel - minimumChannel <= TEMPLATE_LIGHT_CHROMA_MAX) {
+          lightColumns[px] += 1;
+          lightRows[py] += 1;
+        }
+        if (isOpaque && maximumChannel <= FLAT_BLACK_CHANNEL_MAX) {
+          darkColumns[px] += 1;
+          darkRows[py] += 1;
+        }
         if (isOpaque) opaque += 1;
         const atEdge = px < edgeDepth || py < edgeDepth
           || px >= info.width - edgeDepth || py >= info.height - edgeDepth;
@@ -238,6 +357,14 @@ async function zonePixelMetrics(masterBytes, manifest) {
     }
     const average = opaque ? luminanceTotal / opaque : 0;
     const variance = opaque ? Math.max(0, luminanceSquared / opaque - average * average) : 0;
+    const structuralTemplateBands = [
+      ...outlinedLightBandsForAxis({
+        axis: "x", lightCounts: lightColumns, darkCounts: darkColumns, lineSpan: info.height,
+      }),
+      ...outlinedLightBandsForAxis({
+        axis: "y", lightCounts: lightRows, darkCounts: darkRows, lineSpan: info.width,
+      }),
+    ];
     // Second pass for the cutout signature: a near-black pixel whose four
     // neighbours are also near-black is blob INTERIOR, not a dark line, an
     // outline or a shadow edge. Counting interiors is what separates a punched
@@ -323,6 +450,7 @@ async function zonePixelMetrics(masterBytes, manifest) {
       cutoutComponentCount: componentCount,
       nonBlackFraction: brightCount / pixelCount,
       nonBlackMeanLuma: brightCount ? brightTotal / brightCount : 0,
+      structuralTemplateBands,
     });
   }
   return metrics;
@@ -497,6 +625,7 @@ async function paintedCheckerboardSignature(masterBytes, zone) {
 async function deterministicMasterChecks(masterBytes, manifest) {
   const zones = await zonePixelMetrics(masterBytes, manifest);
   const passengerMae = await passengerMirrorMae(masterBytes, manifest);
+  const structuralTemplateLeak = structuralTemplateFrameLeak(zones);
   const failures = [];
   const blockingFailures = [];
   const cutoutFindings = [];
@@ -540,6 +669,12 @@ async function deterministicMasterChecks(masterBytes, manifest) {
       }
     }
   }
+  if (structuralTemplateLeak.convicted) {
+    blocking(
+      "structural template frame leaked across mirrored Driver/Passenger gutters and centre surfaces "
+      + `${structuralTemplateLeak.centerSurfaces.join(", ")} -- opaque guide anatomy is not printable artwork`,
+    );
+  }
   for (const zone of manifest.zones) {
     const checkerboard = await paintedCheckerboardSignature(masterBytes, zone);
     if (checkerboard.convicted) {
@@ -556,6 +691,7 @@ async function deterministicMasterChecks(masterBytes, manifest) {
     accepted: failures.length === 0,
     zones,
     passengerMirrorMae: passengerMae,
+    structuralTemplateLeak,
     failures,
     blockingFailures,
     cutoutFindings,
@@ -974,12 +1110,14 @@ module.exports = {
     MAX_ZONE_FLAT_BLACK_RATIO,
     MIN_CUTOUT_COMPONENT_RATIO,
     CUTOUT_BRIGHT_MAJORITY,
+    TEMPLATE_REQUIRED_CENTER_SURFACES,
     RESPONSE_FIELDS,
     brandBandsOf,
     STATUS,
     boundedTransport,
     expectedBrandStrings,
     passengerMirrorMae,
+    structuralTemplateFrameLeak,
     rejectionFor,
     responseSchema,
     sha256,

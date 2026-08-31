@@ -60,7 +60,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260831.v15-pure-rectangles";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260831.v16-flat-example-only";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -138,7 +138,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v14-pure-rectangles";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v15-flat-example-only";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1182,7 +1182,13 @@ async function viewAuthorityFromPanel(panel, sourceViewType) {
   );
 }
 
-async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash, { onPanel = null, onPanelRetry = null } = {}) {
+async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHash, {
+  onPanel = null,
+  onPanelRetry = null,
+  // Optional observation only. A timing consumer can never change extraction
+  // success, bytes, order or retry behaviour -- even if that consumer throws.
+  onPanelTiming = null,
+} = {}) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
   // LINEAGE, NOT PROVENANCE. `sourceMasterHash` is the identity PanelPro pairs
   // a panel with its proof by, so it has to be the CANONICAL master hash the
@@ -1239,12 +1245,23 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
   for (const surfaceKey of PANEL_EXTRACTION_ORDER) {
     let panel = null;
     for (let attempt = 1; attempt <= PANEL_CUT_ATTEMPTS; attempt += 1) {
+      const extractionStartedAt = Date.now();
       try {
         panel = await cutOnePanel(surfaceKey);
         break;
       } catch (cause) {
         if (attempt >= PANEL_CUT_ATTEMPTS) throw cause;
         onPanelRetry?.({ surfaceKey, attempt, reason: String(cause?.message || cause || "unknown") });
+      } finally {
+        try {
+          onPanelTiming?.({
+            surfaceKey,
+            attempt,
+            durationMs: Date.now() - extractionStartedAt,
+          });
+        } catch {
+          // Observability is not workflow authority.
+        }
       }
     }
     panels.push(panel);
@@ -1523,12 +1540,10 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     visionboard_intent: ["exact_reference", "artboard_projection"].includes(String(input?.visionboardIntent || "").trim())
       ? "exact_reference"
       : "style_inspiration",
-    // `surfaceId` and `placement` are what let the panel list line up with the
-    // ARTBOARD the model is looking at: every container is captioned in the
-    // gutter beside it with the same two-letter id, so "DS" in the list and
-    // "DS" on the sheet are the same rectangle. Before this the model was
-    // handed six unnamed grey boxes and six names in prose, and had to guess
-    // the mapping (owner, 2026-08-27: "true topography ... labeled containers").
+    // `surfaceId` and `placement` bind each neutral guide rectangle to server
+    // metadata. They are never visual captions: the guide is deliberately
+    // unlabelled, and the edge explicitly forbids rendering names/IDs into the
+    // artwork that will be cropped as a production surface.
     panels: manifest.zones.map((zone) => ({
       label: SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
       surfaceId: SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
@@ -1538,14 +1553,11 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     // body killed the edge worker twice (2026-08-27). Customer references stay
     // inline — they are already size-capped at 1600px by the verified loader.
     guideStoragePath: extras.guideStoragePath,
-    // Release-owned teaching pair. It travels as content-addressed server
-    // storage paths, never as browser-controlled reference input. The edge
-    // presents installed proof first, solid rectangular atlas second, then the
-    // current target guide last so neither the historical vehicle nor its
-    // geometry can displace the canonical request.
-    cohesionExampleProofStoragePath: extras.cohesionExampleProofStoragePath,
+    // Release-owned flat teaching example. It travels as a content-addressed
+    // server storage path, never as browser-controlled reference input. No
+    // finished vehicle proof reaches Call 1; the solid rectangular atlas is
+    // followed by the current neutral target guide.
     cohesionExampleFlatStoragePath: extras.cohesionExampleFlatStoragePath,
-    cohesionExampleVehicle: extras.cohesionExampleVehicle,
     cohesionExampleIdentity: extras.cohesionExampleIdentity,
     referenceImagesBase64: extras.referenceImagesBase64,
     correctiveNote: extras.correctiveNote,
@@ -1588,11 +1600,10 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
     const returned = payload?.cohesionExampleIdentity || null;
     if (!returned
       || returned.contract !== expectedTeaching.contract
-      || returned.flattenedTopViewContentHash !== expectedTeaching.flattenedTopViewContentHash
-      || returned.finished3dProofContentHash !== expectedTeaching.finished3dProofContentHash) {
+      || returned.flattenedTopViewContentHash !== expectedTeaching.flattenedTopViewContentHash) {
       throw new FlatAtlasError(
-        "flat_atlas_edge_teaching_pair_identity_mismatch",
-        "The edge function did not prove the release-pinned A.T.L.A.S. teaching pair identity",
+        "flat_atlas_edge_teaching_example_identity_mismatch",
+        "The edge function did not prove the release-pinned flat A.T.L.A.S. teaching identity",
       );
     }
   }
@@ -2117,11 +2128,12 @@ async function generateOrReuseFlatAtlas(options) {
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
   const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
-  // OWNER-SELECTED TEACHING PAIR. The clean flat half contains six solid
-  // rectangles with no wheel wells, bed opening or vehicle anatomy. Its exact
-  // installed Driver proof is the evidence that those rectangles are one
-  // vehicle-wrap design, not six unrelated graphics. Both bytes are pinned to
-  // this release and their hashes enter the reuse fence below.
+  // OWNER-SELECTED FLAT TEACHING EXAMPLE. It contains six cohesive solid
+  // rectangles with no wheel wells, bed opening or vehicle anatomy. The
+  // installed Driver proof is intentionally not a Call-1 input: finished
+  // vehicle imagery overpowers prose and reintroduces the anatomy the source
+  // rectangles must exclude. The flat bytes are release-pinned and their
+  // identity enters the reuse fence below.
   const cohesionExample = loadBundledAtlasCohesionExample();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
@@ -2170,7 +2182,7 @@ async function generateOrReuseFlatAtlas(options) {
   // historical Houdini/template examples that taught doors, windows, handles
   // and wheel arches. Its identity is part of the immutable reuse contract.
   const currentExampleSetHash = sha256(canonicalBytes({
-    atlasDesignTeachingPair: cohesionExample.identity,
+    atlasDesignTeachingExample: cohesionExample.identity,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
@@ -2241,11 +2253,7 @@ async function generateOrReuseFlatAtlas(options) {
     }
     return path;
   };
-  const [cohesionExampleProofStoragePath, cohesionExampleFlatStoragePath, targetGuideStoragePath] = await Promise.all([
-    stageEdgeInput(
-      cohesionExample.finished3dProof.bytes,
-      cohesionExample.finished3dProof.contentType,
-    ),
+  const [cohesionExampleFlatStoragePath, targetGuideStoragePath] = await Promise.all([
     stageEdgeInput(
       cohesionExample.flattenedTopView.bytes,
       cohesionExample.flattenedTopView.contentType,
@@ -2253,9 +2261,7 @@ async function generateOrReuseFlatAtlas(options) {
     stageEdgeInput(authoringGuideBytes, "image/png"),
   ]);
   const edgeExtras = {
-    cohesionExampleProofStoragePath,
     cohesionExampleFlatStoragePath,
-    cohesionExampleVehicle: cohesionExample.identity.historicalVehicle,
     cohesionExampleIdentity: cohesionExample.identity,
     // The TARGET guide is intentionally staged last in the edge image order.
     guideStoragePath: targetGuideStoragePath,
@@ -2288,7 +2294,17 @@ async function generateOrReuseFlatAtlas(options) {
   // immutable revision -- an argument about latency is then a query, not a
   // stopwatch held against a browser tab.
   const callOneStartedAt = Date.now();
-  const timings = { authoringMs: 0, deterministicMs: 0, repairMs: 0, semanticWaitMs: 0 };
+  const timings = {
+    authoringMs: 0,
+    normalizeMs: 0,
+    deterministicMs: 0,
+    repairMs: 0,
+    panelExtractionMs: 0,
+    viewAuthorityMs: 0,
+    projectionMs: 0,
+    uploadWaitMs: 0,
+    semanticWaitMs: 0,
+  };
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
     masterAuthoringAttempts = attempt;
     const attemptBody = atlasEdgeRequestBody(authoringInput, manifest, {
@@ -2310,7 +2326,9 @@ async function generateOrReuseFlatAtlas(options) {
     generated = await callEdge(attemptBody, { logger, ownerId, supabase });
     timings.authoringMs += Date.now() - authoringStartedAt;
     edgeProvenance.push(generated.provenance);
+    const normalizeStartedAt = Date.now();
     const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
+    timings.normalizeMs += Date.now() - normalizeStartedAt;
     masterBytes = normalized.bytes;
     masterDelivery = normalized;
     masterHash = sha256(masterBytes);
@@ -2406,7 +2424,9 @@ async function generateOrReuseFlatAtlas(options) {
   // views". Nothing changes on a clean master: `fillMasterCutouts` returns the
   // same buffer, `panelSourceHash` equals `masterHash`, and the projection and
   // view authorities are byte-identical to what they were before.
+  const repairStartedAt = Date.now();
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
+  timings.repairMs += Date.now() - repairStartedAt;
   const surfaceSourceBytes = cutoutFill.bytes;
   const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
 
@@ -2502,15 +2522,23 @@ async function generateOrReuseFlatAtlas(options) {
   // would delay it behind the slower of the two for no reason. It is pure
   // Sharp/hash work on bytes already in memory (no network, no AI), so this is
   // milliseconds after the master itself was accepted.
-  const projectionPromise = projectionDerivative(surfaceSourceBytes).then((result) => {
-    progressiveAtlas.projection = result;
-    return result;
-  });
+  const projectionStartedAt = Date.now();
+  const projectionPromise = projectionDerivative(surfaceSourceBytes)
+    .then((result) => {
+      progressiveAtlas.projection = result;
+      return result;
+    })
+    .finally(() => {
+      timings.projectionMs += Date.now() - projectionStartedAt;
+    });
   const [callOnePanels, projection] = await Promise.all([
     cutCallOnePanels(surfaceSourceBytes, manifest, masterHash, {
       onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
         "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },
       ),
+      onPanelTiming: ({ durationMs }) => {
+        timings.panelExtractionMs += Number(durationMs) || 0;
+      },
       onPanel: async (panel) => {
         const panelStoragePath = atlasStoragePath({
           tenantKey, generationId, revisionSequence, kind: "panel", contentHash: panel.contentHash,
@@ -2525,10 +2553,15 @@ async function generateOrReuseFlatAtlas(options) {
         // conditionable now. (Close-Up shares Driver's surface, so Driver's cut
         // releases two nodes.)
         progressiveAtlas.callOnePanels.push(progressivePanel);
-        for (const sourceViewType of PROOF_VIEWS) {
-          if (surfaceForProofView(sourceViewType) !== panel.surfaceKey) continue;
-          progressiveAtlas.viewAuthorities[sourceViewType] =
-            await viewAuthorityFromPanel(panel, sourceViewType);
+        const authorityStartedAt = Date.now();
+        try {
+          for (const sourceViewType of PROOF_VIEWS) {
+            if (surfaceForProofView(sourceViewType) !== panel.surfaceKey) continue;
+            progressiveAtlas.viewAuthorities[sourceViewType] =
+              await viewAuthorityFromPanel(panel, sourceViewType);
+          }
+        } finally {
+          timings.viewAuthorityMs += Date.now() - authorityStartedAt;
         }
         const panelPersisted = store.putImmutableBytes({
           storagePath: panelStoragePath,
@@ -2600,7 +2633,9 @@ async function generateOrReuseFlatAtlas(options) {
     ...panelWrites,
   ]);
 
+  const uploadWaitStartedAt = Date.now();
   await persistImmutableAssets();
+  timings.uploadWaitMs += Date.now() - uploadWaitStartedAt;
   // Identity + the design-time size of every side, recorded on the immutable
   // revision. Downstream consumes these; it never re-cuts them.
   const callOnePanelRecords = callOnePanels.map((panel) => ({
@@ -2688,9 +2723,9 @@ async function generateOrReuseFlatAtlas(options) {
       topologyExamplesApplied: 0,
       topologyExampleIdentity: null,
       topologyExampleIdentities: [],
-      atlasDesignTeachingPairApplied: true,
-      atlasDesignTeachingPairIdentity: cohesionExample.identity,
-      atlasDesignTeachingPairSetHash: currentExampleSetHash,
+      atlasDesignTeachingExampleApplied: true,
+      atlasDesignTeachingExampleIdentity: cohesionExample.identity,
+      atlasDesignTeachingExampleSetHash: currentExampleSetHash,
       designPanelArtboardQualityExamplesApplied: 0,
       designPanelArtboardQualityExampleIdentities: [],
       designPanelArtboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
@@ -2799,7 +2834,10 @@ async function generateOrReuseFlatAtlas(options) {
     }
     throw new FlatAtlasError("flat_atlas_revision_insert_failed", error.message, true);
   }
-  logger(`persisted immutable atlas revision 1 ${masterHash}`);
+  logger(
+    `persisted immutable atlas revision 1 ${masterHash}; `
+      + `callOneTimings=${JSON.stringify(rowPayload.metadata.callOneTimings)}`,
+  );
   return rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projection.bytes, {
     reused: false,
     // Already cut, already published. Never cut them twice.

@@ -34,11 +34,14 @@ hash-verifies and promotes those unchanged bytes; it is never their creator and
 never their first UI publication boundary.
 
 The quality baseline remains the proven DesignPanelAI vehicle-wrap designer
-persona and its populated structured inputs. A single hash-pinned, owner-
-approved matching 3D ↔ flattened example pair may teach the mapping relation;
-it is reference-only and may not contribute customer artwork, branding or
-production authority. Do not silently restore a stylistically contaminating
-example.
+persona and its populated structured inputs. Call 1 receives one hash-pinned,
+owner-approved **flat Flamingo A.T.L.A.S. example** plus the neutral target
+guide. An installed/3D vehicle proof is not a Call-1 teaching input: production
+canary `33389124918` proved that the finished-vehicle image overpowered the
+flat-source instructions and leaked vehicle/template anatomy into the canonical
+rectangles. The flat example is reference-only and may not contribute customer
+artwork, branding or production authority. Do not silently restore a
+stylistically or structurally contaminating installed example.
 
 ## 🎯 RULE 0.1 — TWO SEPARATE GOLD STANDARDS. DO NOT MIX THEM. (Trish 2026-08-17)
 
@@ -125,20 +128,30 @@ pixel is opaque, and black is opaque. Two things now stop it:
 
 - **`runtime/flat-first-atlas.cjs`** states the rule positively (SOLID PANELS),
   because negatives make Gemini over-index on the forbidden thing. `PROMPT_VERSION`
-  is `designpro-flat-first-atlas-20260831.v15-pure-rectangles`; older masters are refused for
+  is `designpro-flat-first-atlas-20260831.v16-flat-example-only`; older masters are refused for
   NEW authoring/regeneration only, never migrated — and never hidden: existing
   generations stay readable/viewable/downloadable on every read surface
   (owner protection #1, locked by `tests/atlas-historical-read.test.mjs`).
 
-  **REFERENCE STATUS CORRECTION (2026-08-31, after canary 51ea0e06).** One
-  owner-selected, release-pinned Flamingo pair is active. Its installed Driver
-  proof and flat master come from GenerationID
-  `5b2eb96c-77b5-4705-8cad-fef00af677fe`; the flat teaching derivative was
-  repaired into six solid rectangles before inclusion. Call 1 presents the
-  installed proof first, the matching pure-rectangle flat atlas second and the
-  current target guide last. It teaches only installed↔flat cohesion and must
-  contribute no customer artwork, wording, logo, colour, style, vehicle
-  geometry or production authority. The historical Houdini pair stays dormant.
+  **REFERENCE STATUS CORRECTION (2026-08-31, after production canary
+  `33389124918`).** The earlier installed↔flat teaching pair is historical and
+  must not be sent to Call 1. The accepted master under GenerationID
+  `083d2a70-edac-4e75-9caa-1336542baf7c` preserved wheel-well shapes, white
+  guide/gutter bands and template furniture even though it passed the older
+  deterministic gates. Request inspection proved that the installed Flamingo
+  Driver proof was the strongest visual instruction and reintroduced the
+  anatomy that source rectangles must exclude.
+
+  Call 1 therefore presents the release-pinned, pure-rectangle Flamingo flat
+  teaching example (SHA-256
+  `20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa`)
+  before verified customer references, then presents the current neutral
+  target guide last. The historical GenerationID remains
+  `5b2eb96c-77b5-4705-8cad-fef00af677fe`; its installed proof remains useful as
+  historical/presentation evidence but is not attached to Call 1. Surface
+  names and IDs remain server metadata and prompt mapping only. They must never
+  appear as labels, captions, legends, headers or printable pixels. The
+  historical Houdini pair stays dormant.
 
   **An A.T.L.A.S. master is one flat production atlas FOR a vehicle wrap.**
   Canonical YMM, GENIE body class and the six named surfaces reach the prompt as
@@ -181,6 +194,14 @@ pixel is opaque, and black is opaque. Two things now stop it:
   (`concentratedFlatBlackRatio`); a punched opening is orders of magnitude
   above that floor, so every hole fixture still convicts. Ink scattered as
   specks is design; ink concentrated in shapes is a hole.
+
+  The `2026-08-31` production master exposed a separate deterministic class:
+  **cross-surface structural template leakage**. A repeated signature of
+  mirrored flank gutters beside full-axis guide lines plus matching outlined
+  bands on multiple centre surfaces is a blocking structural failure. The
+  signature is deliberately narrow: a legitimate white-base livery does not
+  fail merely for containing white artwork. This gate does not use semantic AI
+  and does not repaint opaque white anatomy with the dark cut-out fill.
 
 **Do not relax deterministic structural thresholds to get a run through.** A
 master that fails required container coverage, opacity, canonical artifact,
@@ -638,7 +659,7 @@ How it is implemented — DO NOT re-split it:
   verifies the returned master sha256, enforces `imageRequestCount === 1`, and
   records the provenance chain (`metadata.atlasEdgeProvenance`). QC gate,
   cut-out fill, deterministic panel cut and lineage hashes are unchanged.
-  `PROMPT_VERSION` = `designpro-flat-first-atlas-20260831.v15-pure-rectangles`.
+  `PROMPT_VERSION` = `designpro-flat-first-atlas-20260831.v16-flat-example-only`.
 - DELETED from the product path (do not restore): the transpiled vendor bridge
   `runtime/vendor/designpanel-authoring.cjs` + its build script, the
   reconstructed `buildAtlasArtboardDesignIQDirection`, the SIDE-TWIN
@@ -655,8 +676,12 @@ How it is implemented — DO NOT re-split it:
   same cutover as the runtime that emits it — runner and gate may not diverge
   across a customer-visible window again.
 - Acceptance (owner correction 2026-08-31): do not run speculative canaries and
-  do not substitute a canary for the real deployed customer-style DCA. The owner
-  explicitly authorized the current diagnostic production canary while away.
+  do not substitute a canary for the real deployed customer-style DCA. After
+  the earlier no-canary instruction, the owner explicitly authorized a fresh
+  production canary while away so the observed source and Call-8 defects can be
+  verified on the deployed path. That authorization is specific; acceptance is
+  still pending until the corrective release is deployed and the new run
+  produces inspectable evidence.
   Publish the accepted master and six Call-1 panels immediately; continue the
   same lineage through the required views, Call 8 and Call-9 promotion; then
   stop the real DCA in PanelProStudio for owner confirmation before Full QC.
@@ -754,16 +779,17 @@ closing line of every A.T.L.A.S. prompt said *"Match the production quality of
 the provided gold-standard DesignPanel artboards"* — pointing the model at
 images that were never in the request.
 
-The live teaching input does not come from that bucket. It is one release-owned,
-hash-pinned matching pair from Flamingo GenerationID
-`5b2eb96c-77b5-4705-8cad-fef00af677fe`: exact installed Driver proof plus a
-solid-rectangle flat derivative. Their release hashes are
-`4449c3274f7d5cd9c383c49a81b0407f99ae0251b8052cad1ee3927c41ac1fdc`
-and `20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa`.
-The model sees installed proof first, matching flat atlas second and the current
-neutral target guide last. Dedicated role text forbids copying the historical
-artwork, wording, logo, brand, palette, typography, industry, vehicle geometry,
-camera or lighting. A flat-only bucket object remains invalid.
+The live Call-1 teaching input does not come from that bucket. It is one
+release-owned, hash-pinned solid-rectangle flat example from Flamingo
+GenerationID `5b2eb96c-77b5-4705-8cad-fef00af677fe`, SHA-256
+`20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa`.
+The model sees that flat example and the current neutral target guide. It does
+not see the historical installed Driver proof: canary `33389124918` proved that
+finished-vehicle imagery teaches wheel wells, body anatomy and template
+furniture back into the source. Dedicated role text forbids copying the
+historical artwork, wording, logo, brand, palette, typography or industry.
+Surface names/IDs are metadata-only mapping and must never render into the
+canvas.
 
 ### 📏 REPRODUCING THE A/B
 
@@ -797,14 +823,15 @@ rather than left to prose — `tests/designpro-reference-authority.test.mjs`.
 
 | class | what it is | what it may teach | what it may NEVER do |
 |---|---|---|---|
-| **STRUCTURAL** | the one release-pinned Flamingo installed→pure-rectangle flat pair | how ONE cohesive wrapped vehicle corresponds to six flat print-art rectangles | contribute artwork, wording, logo, colour, brand, style, target geometry or production authority |
+| **STRUCTURAL** | the one release-pinned Flamingo pure-rectangle flat example plus neutral target guide | how ONE cohesive wrap composition occupies six flat print-art rectangles | contribute installed vehicle anatomy, artwork, wording, logo, colour, brand, style, target geometry, visible labels or production authority |
 | **CREATIVE** | the customer's own VisionBoard images | artwork authority under `exact_reference`; style authority under `style_inspiration` | — |
 | **PRESENTATION** | the 3D proof example + Studio OS | vehicle presentation, camera, studio, photorealism, wrap realism | contribute artwork or redesign the customer's wrap |
 
-Exactly one structural pair is attached, and its two hashes plus historical
-GenerationID enter the immutable example-set/reuse fence. A flat-only image is
-not a valid pair. The pair teaches only the installed-to-flat relationship and
-never becomes creative or production authority.
+Exactly one flat structural example is attached, and its hash plus historical
+GenerationID enter the immutable example-set/reuse fence. The installed
+Flamingo proof and historical Houdini pair are not Call-1 inputs. The flat
+example teaches cohesive rectangular output only and never becomes creative or
+production authority.
 
 **Authority order for a 3D proof:**
 
@@ -1173,6 +1200,22 @@ may request a new proof or customer revision under the existing lineage rules.
 
 Full spec, acceptance criteria, measured starting position, and the A/B session
 split: **`docs/BEHAVIORAL-SPEC.md`.**
+
+### CALL-8 DIMENSION TOTALS USE ONE ROUNDING BOUNDARY (2026-08-31)
+
+Production canary run `33389124918`, GenerationID
+`083d2a70-edac-4e75-9caa-1336542baf7c`, reached Entice `proof.build` but
+correctly deferred with `genie_total_square_feet_mismatch`. The six verified
+surface dimensions summed to `305.53` square feet when raw areas were summed
+and rounded once. The design-time manifest instead rounded each surface first
+and summed those rounded values, producing `305.54`.
+
+That one-cent mismatch was a contract-construction defect, not a GENIE geometry
+failure and not a reason to change any panel dimensions. Both the design-time
+manifest and Call-8 request must compute total square feet from the same raw
+surface areas and apply `nearest-0.01-after-raw-sum` exactly once. The repair is
+not accepted as live until its release is tested, merged, deployed and a fresh
+authorized production run produces the Call-8 proof.
 
 ## 🔒 RULE 0.25 — DESIGNID COMPLETION CONTRACT (Trish 2026-08-17, verbatim)
 
