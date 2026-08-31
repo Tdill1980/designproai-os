@@ -40,14 +40,18 @@ a second creative prompt and does not make another Call-1 Gemini request.
 
 Current prompt fences:
 
-- pending corrective runtime master:
+- deployed runtime master:
   `designpro-flat-first-atlas-20260831.v16-flat-example-only`;
-- pending corrective edge assembly:
+- deployed edge assembly:
   `atlas-artboard-designiq.20260831.v15-flat-example-only`.
 
-These prompt fences describe the current corrective source, not a deployed or
-accepted release. Production remains the exact release recorded in section 8
-until merge/deploy verification proves otherwise.
+These fences are now DEPLOYED, not pending. Verified 2026-08-31: PR #276 merged
+as `54af7f145d18e57d6cd78dba32b0872afb3f2af8`, and `deploy-production.yml` run
+`33397330081` (job `dark-deploy`, event `workflow_run`, head_sha
+`54af7f14…`) completed `success` at 13:34Z with its "No-op if this exact release
+is already accepted; otherwise dark deploy it once" step executing for 3m26s.
+Deployment is verified; ACCEPTANCE is not — section 9 still governs, and no
+fresh run has yet exercised these fences.
 
 Call 1 receives:
 
@@ -246,12 +250,52 @@ The board reads promoted panels from
 
 ## 8. Current production evidence
 
-Current verified production release before the flat-only/template-leak/Call-8
-corrective release:
+Current verified production release (2026-08-31, corrective release):
+
+- PR #276
+- SHA `54af7f145d18e57d6cd78dba32b0872afb3f2af8`
+- `deploy-production.yml` run `33397330081`, job `dark-deploy`, conclusion
+  `success`, 13:30Z–13:34Z
+
+Preceding verified release, superseded by the above:
 
 - PR #275
 - SHA `1bd4906ab6a7433b32677be9cc5adb87f17d2fed`
 - web, gateway and two runtime replicas deployed at that exact SHA
+
+### Source state of the section-8 defects at `54af7f14…`
+
+Each defect recorded below was re-checked against the deployed source, not
+against a session claim. All five are repaired IN SOURCE and deployed; none is
+accepted, because acceptance requires live artifacts from a fresh run (§9).
+
+| Defect | Evidence at `54af7f14…` |
+|---|---|
+| anonymous `FIELD A–F` conditioning | no `FIELD A`/`neutral-fields` token remains anywhere in `runtime/` or `supabase/functions/`; pinned flat example `20085eb5…` is referenced by both `runtime/flat-atlas-topology-examples.cjs:64` and `supabase/functions/design-panel-ai-generate/index.ts:59`; no installed-proof teaching input remains |
+| PanelPro thin row cast to a hydrated job | `listPanelProStudioJobs` is identity-only and `loadPanelProStudioJob(generationId)` hydrates status + views + artifacts + atlas revisions; every board read is `concept_json.qc_side_panels`, and no top-level `job.qc_side_panels` read exists |
+| `hood_detail` staging allowlist | `runtime/designpro-standalone-claimant.cjs:135` maps `hood: ["hood","hood_detail"]`; `atlas-proof-qc.cjs:309` maps `hood_detail → hood` |
+| Driver-to-Passenger mirroring | no active mirror rewrite in `runtime/flat-first-atlas.cjs`; only the two comments recording the prohibition |
+| Call-8 total-area rounding | `designpro-standalone-claimant.cjs:378`, `:444` and `:571` each `round2(reduce(raw areas))` — raw sum, one rounding boundary — and `:381` asserts the two agree |
+
+Full repository suite (`npm test`) is green at this SHA: 212 checks, 0 failures,
+plus 79 app checks. The 23 failures seen on a first pass were a missing
+`runtime/node_modules` in the checkout, not a source defect.
+
+### PanelProStudio job-click failure — status
+
+The recorded job-click failure was reproduced only as far as the data layer,
+where it does NOT reproduce: as `trish@weprintwraps.com` (a
+`designpro_qc_members` row with `can_preflight`), `designpro_generation_library`
+returns 88 designs, and for all 88 both `designpro_generation_workspace` and
+`designpro_flat_atlas_generation_paths` return non-null. So no listed design is
+unhydratable, and the library/workspace authorization predicates do not diverge
+(`caller_may_read_generation` is a strict superset of `caller_is_design_staff`).
+
+The owner-observed failure predates this release: it was seen against the
+Oasis Pools run (04:45Z) and canary `33389124918` (11:54Z), both before the
+corrective release deployed at 13:34Z. It is NOT confirmed fixed — a UI click
+was never exercised against the deployed build — and it must be re-checked
+first on the next run.
 
 Latest owner-authorized diagnostic production canary:
 
