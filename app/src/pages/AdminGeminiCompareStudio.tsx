@@ -1059,11 +1059,29 @@ function SurfacePairRows({
                   </div>
                   {panelUrl ? (
                     <a href={panelUrl} target="_blank" rel="noreferrer" className="block">
+                      {/* THE BOX IS THE PANEL'S OWN SHAPE, SO BLACK MEANS INK.
+                          (Owner, 2026-08-31: "Determine whether those strips
+                          exist in the persisted panel bytes or are introduced
+                          by PanelPro rendering.")
+                          Every surface used to render into one `h-40` box. A
+                          driver flank is 3.65:1 and a hood is 1.31:1, so
+                          object-contain letterboxed or pillarboxed nearly all of
+                          them -- and those bars read as dead space inside the
+                          artwork. Sizing the frame to the panel's own trim
+                          proportion leaves object-contain nothing to pad, so any
+                          remaining void is genuinely in the bytes and worth
+                          investigating rather than an artifact of this box.
+                          Falls back to the old fixed height when a surface has
+                          no declared dimensions. */}
                       <img
                         src={panelUrl}
                         alt={`${sideKey} ${promoted ? "Call 9 promoted production" : "Call 1 canonical A.T.L.A.S. source"} panel`}
                         loading="lazy"
-                        className="mt-1 h-40 w-full rounded border border-gray-200 bg-gray-50 object-contain"
+                        style={widthInches && heightInches
+                          ? { aspectRatio: `${widthInches} / ${heightInches}` }
+                          : undefined}
+                        className={`mt-1 w-full rounded border border-gray-200 bg-gray-50 object-contain${
+                          widthInches && heightInches ? "" : " h-40"}`}
                       />
                     </a>
                   ) : callOnePanel ? (
@@ -1082,6 +1100,25 @@ function SurfacePairRows({
                       {!promoted && callOnePanel && (
                         <> · sha256 <span className="font-mono">{callOnePanel.contentHash.slice(0, 12)}</span></>
                       )}
+                    </p>
+                  )}
+                  {/* GEOMETRY STATE IS NOT AN AESTHETIC DETAIL. (Owner,
+                      2026-08-31: "Do not claim panel sizing validated from
+                      aspect ratio... If geometryAuthorityState = provisional,
+                      label it provisional.")
+                      `calls-1-7-layout-only` is the runtime's own word for
+                      design-time geometry: the true production dimensions come
+                      from GENIE at manifest.resolve, after purchase. Printing
+                      these inches as bare numbers invites them to be read as
+                      validated vehicle measurements, which they are not. The
+                      PPI is stated for the same reason -- a 4096px master is far
+                      below print resolution on a large flank, and the upscale is
+                      what closes that gap. */}
+                  {!promoted && callOnePanel && (
+                    <p className="mt-0.5 truncate text-[10px] text-amber-700 tabular-nums">
+                      Design-time geometry ({callOnePanel.geometryPurpose}) · not
+                      validated production sizing ·{" "}
+                      {Math.round(callOnePanel.effectivePpi)} PPI before upscale
                     </p>
                   )}
                   {!promoted && callOnePanel && (
