@@ -1,5 +1,87 @@
 # CLAUDE.md — designproai-os
 
+## 📋 DCA PHASE 1 — CURRENT STATUS BOARD (2026-08-31, release `5d3ad9b`)
+
+**This is a status board, not a rule.** It records what is true right now so a
+session does not re-derive it, and so nothing gets reported as proven that a
+live generation has not actually proven. Every rule below still governs.
+
+**Three evidence levels are used, and they are not interchangeable:**
+
+| level | means |
+|---|---|
+| **DEPLOYED-VERIFIED** | read back off the running system this session (deployed edge-function body hashed against the branch, live DB row, workflow log) |
+| **CODE-LOCKED** | in the release and covered by a named test that was verified to fail against the defect it describes — but no fresh live generation has exercised it |
+| **OPEN** | not done, not proven, or deferred |
+
+### Release / deployment state
+
+- Droplet (web, gateway, runtime) is on `37c4807`, deploy run `33433458730`,
+  `Deployed web, gateway, and two exact-SHA DesignPro runtime replicas`,
+  2026-08-31 20:02:34Z. `ops/deploy.sh` switches the `public` pointer after
+  acceptance and exits 12 if it does not land, and Caddy roots
+  `designproai.com` at `/opt/designproai-os/public/web/dist`, so that pointer
+  IS the public path. "Caddy, DNS, and public traffic were not changed" in the
+  log means the ROUTING CONFIG was untouched, not that the release is dark.
+- `deploy-production.yml` does **not** ship Supabase edge functions. They are a
+  separate dispatch-only workflow (`deploy-edge-functions.yml`). On 2026-08-31
+  `persona-photographer-render` was found three days stale on the live project,
+  missing the pickup-bed clause from PR #278; redeployed as v17 and verified
+  byte-identical. **Check both halves before calling a SHA deployed.**
+- `5d3ad9b` (the GENIE ambiguity retry) is merged and deploying at the time of
+  writing. It is NOT yet deployment-verified.
+
+### Contract and authority status
+
+| # | Item | Status | Evidence |
+|---|---|---|---|
+| 1 | Call 1 A.T.L.A.S. is the SOLE creative authority | **DEPLOYED-VERIFIED** | deployed `design-panel-ai-generate` index.ts hashes `a5b3c1e850d7eca4`, byte-identical to the branch; `tests/atlas-sole-design-authority.test.mjs` |
+| 2 | Mandatory Flamingo FLAT teaching example pinned in the live Call-1 edge path | **DEPLOYED-VERIFIED** | SHA-256 `20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa` present in the deployed body; prompt version `atlas-artboard-designiq.20260831.v15-flat-example-only`. The installed Flamingo proof is NOT attached (canary `33389124918`) |
+| 3 | DesignPanelAI Commercial/ReStyle persona + edge stack preserved | **DEPLOYED-VERIFIED** | all 11 shared deps of `design-panel-ai-generate` match the branch; RULE 0.29 pins verified live — `persona-photographer-prompt.ts` `11cb76524211e42a`, `view-angles-os.ts` `8890be50c124a2c5`, `studio-os.ts` `7b02814bb1e9e867` |
+| 4 | Raw Gemini can STILL return silhouette / black-surround invalid A.T.L.A.S. output | **OPEN — by design** | unchanged model behaviour. `normalizeAtlasMaster` only resizes and masks gutters, so it cannot introduce in-zone black: the contract is first violated at the raw Gemini output. This is now CAUGHT, not prevented |
+| 5 | `edgeHoleRatio` blocking acceptance gate | **CODE-LOCKED** | `runtime/atlas-master-qc.cjs`, `MAX_ZONE_EDGE_HOLE_RATIO = 0.35`; commit `cf36b0b`, shipped in `37c4807`. Closes the hole where `edgeOpaqueRatio` measured ALPHA and a silhouette on black scored 1.00000. Fixtures in `tests/atlas-master-qc.test.mjs` |
+| 6 | Structural POST-REPAIR re-validation | **CODE-LOCKED** | `flat_atlas_repaired_master_invalid` in `runtime/flat-first-atlas.cjs`, commit `dbcb051`. Determinism proves a repair is repeatable, not that its result is valid |
+| 7 | Post-repair validated bytes BECOME the canonical accepted master | **CODE-LOCKED** | `acceptedMasterBytes` / `acceptedMasterHash`; `tests/atlas-accepted-master-is-the-repaired-one.test.mjs`. Promotion happens only AFTER re-validation passes. Clean masters are byte-identical and pay no extra transform |
+| 8 | `preRepairMasterHash` is PROVENANCE ONLY | **CODE-LOCKED** | same commit and test; it may never again be called canonical, accepted, or what "Master QC passed" refers to |
+| 9 | All six Call-1 panels bind `sourceMasterHash` to the ACCEPTED master hash | **CODE-LOCKED** | `cutCallOnePanels(surfaceSourceBytes, manifest, acceptedMasterHash, …)` and `sourceMasterHash: acceptedMasterHash`, both asserted. **Not yet proven by a fresh live generation** |
+| 10 | PanelPro / RevisionStudio display the ACCEPTED master and panels, never pre-repair authority | **CODE-LOCKED** | the published root carries `contentHash: acceptedMasterHash`; revision row records it. **Not yet proven by a fresh live generation** |
+| 11 | Exactly six canonical surfaces | **CODE-LOCKED** | `SURFACE_KEYS = ["driver","passenger","hood","roof","front","rear"]`, frozen, `runtime/flat-first-atlas.cjs:98`. Front is the bumper/fascia surface |
+| 12 | No downstream AI panel producer; Call 9 is verification/promotion only | **CODE-LOCKED** | RULE 0.25; Call 9 creates no artwork and changes no bytes |
+| 13 | Customer 2D Proof and internal 2D Production Proof are SIBLING BRANCHES and may not gate panel publication | **CODE-LOCKED** | `docs/ATLAS_ONE_ARTIFACT_GRAPH.md` §7B (PR #278). Call 1 streams panels per cut and builds each proof authority the instant its panel exists; `proof.build` sits after the panel and logo branches. No barrier to remove |
+| 14 | Server-owned orchestration required; browser becomes observer-only | **OPEN** | standing requirement, not fully proven |
+| 15 | False-serialization audit | **OPEN** | remains open wherever not completed |
+| 16 | GENIE `genie_grounding_ambiguous` corrective re-ask | **CODE-LOCKED, DEPLOY IN FLIGHT** | `fd4a35e`, merged as `5d3ad9b` (PR #280). Both new failure tests verified to fail against the pre-fix resolver |
+| 17 | Fresh DCA must verify the PERSISTED vehicle payload before any GENIE/A.T.L.A.S. work | **OPEN — required next** | the 2026-08-31 20:09:20Z failure stored `model: "F150"`; do not assume user error. Read `request_input->'vehicle'` and compare to what was typed BEFORE proceeding |
+| 18 | Input contract drops cab/bed configuration | **OPEN — backlog, NOT this release** | `designpro.calls-1-7-input.v3` carries only `make`/`type`/`year`/`model`. Configuration-critical for F-series: the catalog's own 2008-2010 rows put Crew Cab Long Box at 251″ and Crew Cab Short Box at 234″. Do NOT widen the contract unless a fresh DCA proves it blocks progress |
+| 19 | 2022 F-series geometry is PROVISIONAL / grounded estimation | **DEPLOYED-VERIFIED (data)** | the whole Ford catalog has 5 rows covering 2022 and all five are Transit vans. Every F-150 row ends 2020, every F-250 row ends 2016. Report such runs as estimated/provisional, never catalog-authoritative |
+| 20 | Creative design-quality tuning | **DEFERRED** | deferred until DCA Phase 1 is complete. Do not start it from a documentation pass |
+
+### CURRENT DCA CHECKLIST
+
+**Leave every box unchecked until a FRESH live generation proves it.** Nothing
+below is checked, because no DCA has completed on this release.
+
+- [ ] Fresh DCA submitted on the deployed release; build SHA confirmed in the footer
+- [ ] Persisted `request_input.vehicle` matches exactly what the owner typed
+- [ ] GENIE resolves without `genie_grounding_ambiguous`
+- [ ] Geometry source reported honestly (catalog-authoritative vs grounded/provisional), with the resolved `sub_type` named
+- [ ] Call 1 executes exactly once and returns a master
+- [ ] Deterministic master checks report per-surface measurements
+- [ ] Repair ran / did not run — recorded either way
+- [ ] `preRepairMasterHash` recorded when repair changed the source, null when it did not
+- [ ] Accepted canonical master hash + storage path recorded
+- [ ] Six Call-1 panel hashes recorded
+- [ ] All six `sourceMasterHash` values equal the accepted canonical master hash
+- [ ] Six surface identities correct: Driver, Passenger, Hood, Roof, Front, Rear
+- [ ] A.T.L.A.S. master published to PanelProStudio and RevisionStudio, showing the ACCEPTED sheet
+- [ ] Progressive panel publication timing recorded
+- [ ] Driver proof first, then the remaining six concurrently; fan-out timing recorded
+- [ ] Owner visual inspection at PanelProStudio: master → six clean panels → matching 3D proofs
+- [ ] **STOP HERE.** No Full QC and no creative changes until the owner approves those artifacts
+
+**If Call 1 refuses the master:** report the exact structural rejection and the
+per-surface measurements. Do not work around it and do not change conditioning.
+
 ## 🗺️ RULE 0.0 — A.T.L.A.S. IS ONE VEHICLE-WRAP DESIGN, NOT SIX ANONYMOUS DESIGNS. (Trish 2026-08-31)
 
 This owner correction supersedes any later historical wording in this file
