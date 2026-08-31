@@ -1296,6 +1296,22 @@ function StoredOrGenerated2DProof({
       enticeWorkflowStatus?.workflowRun?.workflow_status || "missing",
     );
     if (["completed", "cancelled"].includes(status)) return;
+    // ⛔ NEVER AUTO-REBUILD A RUN THAT DEFERRED THE PROOF.
+    //
+    // Call 8 defers on a condition of the design -- a dimension total that will
+    // not reconcile, a font the run cannot load -- and a fresh run reproduces
+    // it exactly. So auto-submitting on "no proof yet" turned into a loop:
+    // submit, defer, still no proof, the run id changed so the attempt key
+    // changed, submit again. A run really was always in flight, which is why
+    // the sheet showed "Building Production Proof on Server" indefinitely
+    // instead of the deferral -- the honest state could never be reached
+    // because this effect kept manufacturing an active run in front of it.
+    //
+    // The manual retry stays: a human who has read the reason may still want to
+    // try, and a fix deployed in between makes that the right call.
+    if ((enticeWorkflowStatus as any)?.stages?.some(
+      (s: any) => s?.key === "proof.build" && s?.deferred === true,
+    )) return;
     const proofUrl = String(
       enticeWorkflowStatus?.proofUrl ||
         enticeWorkflowStatus?.activePack?.proof_artifact?.url ||
@@ -1345,6 +1361,21 @@ function StoredOrGenerated2DProof({
     : [];
   const workflowFailedStage = [...stages].reverse().find((s: any) => s?.status === "failed") || null;
   const packStatus = String((enticeWorkflowStatus as any)?.enticePack?.status || "");
+  // A DEFERRED CALL 8 IS AN OUTCOME, NOT A BUILD IN PROGRESS.
+  //
+  // proof.build defers rather than fails so a proof the tool cannot draw does
+  // not hold manufacturing hostage -- it completes with `deferred: true` and no
+  // artifact. Every signal this component had said "fine": the run is
+  // completed, nothing failed, nothing is queued. So the sheet fell through to
+  // its spinner and told the customer the server was "creating and verifying
+  // this proof" about work that finished minutes ago and will never resume.
+  //
+  // `workflowFailedStage` cannot catch it, because a deferral is a SUCCESS row.
+  // This reads the deferral the gateway now projects and reports it as what it
+  // is, with the reason the stage recorded.
+  const deferredProofStage = stages.find(
+    (s: any) => s?.key === "proof.build" && s?.deferred === true,
+  ) || null;
   const hasActiveRun =
     ["queued", "running"].includes(workflowStatus) || packStatus === "building";
 
@@ -1354,7 +1385,19 @@ function StoredOrGenerated2DProof({
         initialProofUrl: observedProofUrl,
         onProofGenerated: persistProofUrl,
         workflowStatus,
-        workflowFailedStage,
+        // The sheet already renders exactly the right thing for this -- "the
+        // durable workflow stopped at proof.build, so no 2D proof was
+        // produced", the reason, and a retry. It just never received it,
+        // because a deferral is not a failed stage. Reported through the
+        // existing surface rather than a new one: the sheet is the migrated
+        // component and does not need another branch.
+        workflowFailedStage: workflowFailedStage
+          || (deferredProofStage && !observedProofUrl
+            ? {
+              stage_key: "proof.build",
+              error_message: `${(deferredProofStage as any).deferredReason}: ${(deferredProofStage as any).deferredMessage || "the stage recorded no message"}`,
+            }
+            : null),
         hasActiveRun,
         onRetryBuild: startOrRetryBuild,
       })}
@@ -2747,6 +2790,48 @@ export default function RevisionStudioIQ() {
       }
     })();
     return () => { cancelled = true; };
+  }, [selectedRender?.id]);
+
+  // ---------------------------------------------------------------------------
+  // RE-SIGN THE VIEWS BEFORE OPENING A PROOF. (Trish 2026-08-31: "show 3d proof
+  // button but when clicked it's blank.")
+  //
+  // Every artifact URL the gateway issues is a SIGNED url into the private
+  // `wrap-files` bucket with `expiresIn: 300` -- five minutes. `render_urls` is
+  // built from those signed urls when the grid loads, the query's `staleTime`
+  // is two minutes, and `refetchOnWindowFocus` is false. So a customer who
+  // lands on RevisionStudio, looks at their design, and then opens a proof is
+  // past the expiry on nearly every real visit: the sheet renders with every
+  // `<img>` pointing at a dead signature, which paints as broken-image glyphs
+  // beside floating labels. Nothing in the client reads `expiresIn` -- it is
+  // typed in five places and acted on in none.
+  //
+  // The effect above only fills GAPS ("a view already in hand is never
+  // replaced"), which is right for an incomplete set and useless here: the
+  // urls are all present and all dead. So this replaces them outright, and only
+  // at the moment a proof is opened -- a sheet is printed, PDF'd and emailed,
+  // which are the longest-lived actions in the product and the worst possible
+  // place for a five-minute url.
+  //
+  // Re-signing rather than lengthening the TTL is deliberate: the bucket is
+  // private, and a short signature is the reason a leaked proof url stops
+  // working. This costs one read at open time and changes no security posture.
+  // ---------------------------------------------------------------------------
+  const openWithFreshViews = useCallback(async (open: (value: boolean) => void) => {
+    const id = selectedRender?.id ? String(selectedRender.id) : null;
+    // Open first. A slow or failed re-read must never swallow the click -- the
+    // stale sheet is still better than a button that does nothing, and it is
+    // exactly what the customer sees today.
+    open(true);
+    if (!id) return;
+    const fresh = await readRevisionStudioDesign(id).catch(() => null);
+    if (!fresh?.render_urls) return;
+    setSelectedRender((prev: any) => {
+      if (prev?.id !== id) return prev;
+      // Replace every url the server re-signed; keep any key it no longer
+      // reports rather than blanking a tile the sheet was already showing.
+      return { ...prev, render_urls: { ...prev.render_urls, ...fresh.render_urls } };
+    });
   }, [selectedRender?.id]);
 
   // ---------------------------------------------------------------------------
@@ -6306,7 +6391,7 @@ export default function RevisionStudioIQ() {
                     <Button
                       className="flex-1 h-11"
                       variant="outline"
-                      onClick={() => setShow2DProofSheet(true)}
+                      onClick={() => { void openWithFreshViews(setShow2DProofSheet); }}
                       disabled={selectedViews.length === 0}
                     >
                       <FileText className="w-4 h-4 mr-2" /> 2D Proof
@@ -6314,7 +6399,7 @@ export default function RevisionStudioIQ() {
                     <Button
                       className="flex-1 bg-green-600 hover:bg-green-700 h-11"
                       onClick={() => {
-                        setShowProofSheet(true);
+                        void openWithFreshViews(setShowProofSheet);
                         // 3D Proof is the approval-view completeness trigger:
                         // preserve every existing approved view and generate
                         // only the missing canonical angles through the existing

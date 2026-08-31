@@ -466,6 +466,83 @@ Changing WHEN a stage runs is explicitly not an owner-level stop (RULE 0.5
 amendment). Changing the artifact contract, the panel/proof counts, storage
 paths, content hashes or receipt shape still is.
 
+## 7B. NEITHER PROOF SHEET MAY GATE THE GRAPH (owner, 2026-08-31, verbatim)
+
+> "Neither the Customer 2D Design Proof nor the internal 2D Production Proof
+> may gate the graph.
+>
+> Immediately after Call-1 A.T.L.A.S. canonicalization succeeds, persist the
+> accepted master and exactly six canonical 4K source panels with correct 5"
+> bleed and publish those panels to RevisionStudioIQ AND PanelProStudio
+> immediately.
+>
+> From that same accepted Call-1 authority, fan out all independent descendants
+> server-side. The seven 3D proofs, Customer 2D Design Proof, internal 2D
+> Production Proof, and logos/assets are sibling branches, not a serial chain.
+> Each begins at its earliest actual dependency.
+>
+> Production Proof must never delay: panel persistence; RevisionStudioIQ
+> publication; PanelProStudio publication; any 3D proof; Customer 2D Design
+> Proof; another independent branch. Likewise, Customer 2D Design Proof must
+> never delay the panels or Production Proof.
+>
+> Customer-facing display order may show the 3D proofs first and Customer 2D
+> Design Proof afterward. That is UI ordering only.
+>
+> Critical path after Call 1 is panel availability, not proof-sheet completion.
+> Do not introduce a barrier waiting for proof.build before publishing Call-1
+> panels. Preserve one creative authority: A.T.L.A.S. Call 1. Everything else
+> consumes that accepted authority independently.
+>
+> That's the clean graph: Call 1 is the fork. Proof sheets are branches, not
+> gates."
+
+**Two further owner rules recorded with it:**
+
+- **The 2D proof buttons are a fallback, not the mechanism.** "Those buttons for
+  2dProof is only their in case bug and client needs it — system must auto
+  create." The server produces the proof in the entice run; the buttons exist so
+  a human can recover a run that did not. A session must never treat a button as
+  the producer, and must never remove them either.
+- **The 2D proof is no longer the print-file source.** "2d proof is no longer
+  used to process output print files we changed to A.T.L.A.S. but we still want
+  2d proof as a value design." Print files descend from the six canonical Call-1
+  panels. The proof sheet is a value/approval artifact. Anything that reads the
+  proof sheet as a cut source is off-contract — RestylePro's Call 9 cut FROM the
+  proof; this system does not.
+
+### Verified against the code, 2026-08-31 — the graph already holds
+
+Checked rather than assumed, because "it should be parallel" has been asserted
+here before without measurement:
+
+- **Call 1 is the fork, and it streams.** `cutCallOnePanels` takes an `onPanel`
+  callback, and each panel is persisted and its proof authority built inside it
+  — "the instant the panel exists — rather than in one batch after the last
+  cut. Every proof view that photographs this surface becomes conditionable
+  now." Driver's cut releases two nodes, because Close-Up shares its surface.
+  So a panel is publishable before the next panel is cut, let alone before any
+  proof or proof sheet exists.
+- **`proof.build` sits AFTER the panel and logo branches** in `STAGES`:
+  `revision.freeze → panels.build → logos.extract → panels.delogo →
+  proof.build → pack.verify → pack.activate`. Nothing that publishes a panel or
+  a logo waits on it.
+- **And it cannot block even what follows it**, because Call 8 defers rather
+  than fails: the stage completes with `deferred: true` and production
+  continues. `pack.verify` reads its receipt either way.
+
+So there is **no barrier to remove** on the critical path — the owner's contract
+describes what the code does. What was wrong was never the graph; it was that a
+deferred proof was invisible, so three surfaces reported an endless build over a
+branch that had already finished. That is repaired separately (§7C).
+
+The one genuine serialization that remains is the one §7A already names: the
+entice stages share a single-flight claimant over one ascending sequence, so
+`logos.extract` cannot actually overlap `panels.build` even though its only real
+dependency is the accepted master. That is a concurrency ceiling, not a barrier
+in front of panel publication, and it does not delay anything the owner lists —
+panels publish at Call 1, upstream of the workflow entirely.
+
 ## 8. Current production evidence
 
 Current verified production release (2026-08-31, corrective release):

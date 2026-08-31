@@ -476,6 +476,18 @@ export type WorkflowStatus = {
     label: string;
     state: "pending" | "running" | "waiting" | "complete" | "failed";
     waitReason?: string;
+    /**
+     * The stage completed WITHOUT producing its artifact.
+     *
+     * Call 8 defers rather than fails on purpose, so a proof the tool cannot
+     * draw does not hold manufacturing hostage. Without these three fields a
+     * deferred stage is indistinguishable from a successful one -- `state` is
+     * "complete" either way -- and every consumer waiting on the artifact waits
+     * forever. Absent on a stage that did not defer.
+     */
+    deferred?: true;
+    deferredReason?: string;
+    deferredMessage?: string;
     artifactPath?: string;
   }>;
   failure?: { stage: string; message: string; retryable: boolean };

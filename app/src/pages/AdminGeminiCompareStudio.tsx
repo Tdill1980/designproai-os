@@ -831,12 +831,30 @@ function AtlasProgressCard({
         {step(counts.proofLabel, counts.proofDone, counts.proofDetail)}
       </div>
 
+      {/* A MISSING MASTER IS STATED, NEVER SILENT. (Owner, 2026-08-31: "Treat
+          absence of A.T.L.A.S. in PanelProStudio as DCA failure.")
+          This block used to be `{atlas?.masterUrl && ...}` alone, so a job whose
+          A.T.L.A.S. failed to load rendered NOTHING here and the board looked
+          merely quiet. That is exactly how source can be green while the one
+          artifact everything descends from is absent from the screen. No proof
+          image may stand in for it -- the master is the only thing that belongs
+          in this slot. */}
+      {!atlas?.masterUrl && (
+        <div
+          data-testid="atlas-master-missing"
+          className="mt-3 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800"
+        >
+          A.T.L.A.S. master not available for this revision. Every panel and proof
+          descends from it, so this job cannot be validated until it loads.
+        </div>
+      )}
+
       {/* THE SHEET ITSELF. Everything above is a status line about the master;
           this is the master. It is the design authority every proof and every
           panel is cut from, so the production board has to render it rather
           than describe it. */}
       {atlas?.masterUrl && (
-        <div className="mt-3 border-t border-gray-200 pt-3">
+        <div data-testid="atlas-master" className="mt-3 border-t border-gray-200 pt-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
               Flattened A.T.L.A.S. master · V{atlas.revisionSequence}
@@ -1041,11 +1059,29 @@ function SurfacePairRows({
                   </div>
                   {panelUrl ? (
                     <a href={panelUrl} target="_blank" rel="noreferrer" className="block">
+                      {/* THE BOX IS THE PANEL'S OWN SHAPE, SO BLACK MEANS INK.
+                          (Owner, 2026-08-31: "Determine whether those strips
+                          exist in the persisted panel bytes or are introduced
+                          by PanelPro rendering.")
+                          Every surface used to render into one `h-40` box. A
+                          driver flank is 3.65:1 and a hood is 1.31:1, so
+                          object-contain letterboxed or pillarboxed nearly all of
+                          them -- and those bars read as dead space inside the
+                          artwork. Sizing the frame to the panel's own trim
+                          proportion leaves object-contain nothing to pad, so any
+                          remaining void is genuinely in the bytes and worth
+                          investigating rather than an artifact of this box.
+                          Falls back to the old fixed height when a surface has
+                          no declared dimensions. */}
                       <img
                         src={panelUrl}
                         alt={`${sideKey} ${promoted ? "Call 9 promoted production" : "Call 1 canonical A.T.L.A.S. source"} panel`}
                         loading="lazy"
-                        className="mt-1 h-40 w-full rounded border border-gray-200 bg-gray-50 object-contain"
+                        style={widthInches && heightInches
+                          ? { aspectRatio: `${widthInches} / ${heightInches}` }
+                          : undefined}
+                        className={`mt-1 w-full rounded border border-gray-200 bg-gray-50 object-contain${
+                          widthInches && heightInches ? "" : " h-40"}`}
                       />
                     </a>
                   ) : callOnePanel ? (
@@ -1064,6 +1100,25 @@ function SurfacePairRows({
                       {!promoted && callOnePanel && (
                         <> · sha256 <span className="font-mono">{callOnePanel.contentHash.slice(0, 12)}</span></>
                       )}
+                    </p>
+                  )}
+                  {/* GEOMETRY STATE IS NOT AN AESTHETIC DETAIL. (Owner,
+                      2026-08-31: "Do not claim panel sizing validated from
+                      aspect ratio... If geometryAuthorityState = provisional,
+                      label it provisional.")
+                      `calls-1-7-layout-only` is the runtime's own word for
+                      design-time geometry: the true production dimensions come
+                      from GENIE at manifest.resolve, after purchase. Printing
+                      these inches as bare numbers invites them to be read as
+                      validated vehicle measurements, which they are not. The
+                      PPI is stated for the same reason -- a 4096px master is far
+                      below print resolution on a large flank, and the upscale is
+                      what closes that gap. */}
+                  {!promoted && callOnePanel && (
+                    <p className="mt-0.5 truncate text-[10px] text-amber-700 tabular-nums">
+                      Design-time geometry ({callOnePanel.geometryPurpose}) · not
+                      validated production sizing ·{" "}
+                      {Math.round(callOnePanel.effectivePpi)} PPI before upscale
                     </p>
                   )}
                   {!promoted && callOnePanel && (
@@ -1298,6 +1353,11 @@ function JobHeader({
       <dl className="grid gap-x-6 gap-y-2 text-xs sm:grid-cols-3">
         {[
           ["Design ID", job.design_id || awaitingPurchase],
+          // THE REVISION IS PART OF THE IDENTITY, NOT A DETAIL. (Owner,
+          // 2026-08-31.) A panel, a proof and a Call-8 sheet are only
+          // comparable within one immutable revision, so the board must name
+          // which revision it is showing beside the generation it belongs to.
+          ["Revision ID", history.current?.revisionId || job.revision_id || "—"],
           ["Design Order #", job.order_number || awaitingPurchase],
           ["Customer vehicle", vehicle || "—"],
           ["Current A.T.L.A.S. version", history.current ? `V${history.current.version}` : "—"],

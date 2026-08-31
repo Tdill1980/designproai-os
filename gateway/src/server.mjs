@@ -309,6 +309,37 @@ function publicState(raw) {
             ? "waiting"
             : s.status === "running" ? "running" : "pending",
       ...(s.status === "waiting" && s.wait_reason ? { waitReason: String(s.wait_reason) } : {}),
+      // A DEFERRED STAGE COMPLETED WITHOUT PRODUCING ITS ARTIFACT, AND THAT
+      // HAS TO BE VISIBLE. (Trish 2026-08-31: "2d proof is broken.")
+      //
+      // Call 8 defers rather than fails, deliberately: "The 2D Production
+      // Proof is a later value-add artifact. A.T.L.A.S. is the manufacturing
+      // authority, so this failure is recorded and production continues." So
+      // the row lands `status: completed`, `error_message: null`, with
+      // `output.deferred = true` and `output.verified = false`.
+      //
+      // That output never reached the browser. The projected stage carried
+      // key/label/state/waitReason/artifactPath only, so a deferred proof.build
+      // arrived as `state: "complete"` -- identical to one that published a
+      // proof. RevisionStudio then found no proof url, no failed stage
+      // (nothing failed) and no active run (the run finished), and rendered
+      // "Building Production Proof on Server ... the durable workflow is
+      // creating and verifying this proof" over work that had already finished
+      // and would never resume. Re-kicking submits a fresh run that defers for
+      // the same reason and spins again.
+      //
+      // The deferral is projected here rather than inferred in the browser
+      // because the server is the only place that knows it: `deferred` and the
+      // failure code are written by the stage itself. Purely additive -- a
+      // stage that did not defer carries neither key, so every existing reader
+      // is unchanged.
+      ...(s.output && typeof s.output === "object" && s.output.deferred === true
+        ? {
+          deferred: true,
+          deferredReason: String(s.output.failure?.code || "stage_deferred"),
+          deferredMessage: String(s.output.failure?.message || ""),
+        }
+        : {}),
       artifactPath: firstArtifactPath(s.output),
     })),
     failure: failed ? { stage: failed.stage_key, message: String(failed.error_message || "Stage failed"), retryable: failed.error_details?.retryable !== false } : undefined,
