@@ -1178,6 +1178,18 @@ function createAtlasDesignPanelProvider(options = {}) {
         vehicleYear: String(vehicle.year || ""),
         vehicleMake: String(vehicle.make || ""),
         vehicleModel: String(vehicle.model || ""),
+        // VEHICLE CONFIG, WHICH IS A.T.L.A.S.'S TO CONTRIBUTE.
+        //
+        // Owner, 2026-08-28: "ATLAS should contribute only: exact panel
+        // artwork; lineage; exact vehicle/config; requested shot." Whether the
+        // target is a pickup is config, and the proof needs it: the pinned
+        // photographer prompt says the wrap covers painted body panels and
+        // names glass, lights, wheels and trim -- it never mentions an open
+        // cargo bed, so nothing in the A.T.L.A.S. proof words stops artwork
+        // being painted down inside one. `pickupVehicle` is the same predicate
+        // that already drives the pickup cab-roof qualification below, so the
+        // proof and the camera authority cannot disagree about the vehicle.
+        isPickup: pickupVehicle(input),
         finish: String(input?.finish || "Gloss"),
       }),
       signal: call.signal,

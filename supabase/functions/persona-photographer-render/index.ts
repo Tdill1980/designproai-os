@@ -17,8 +17,34 @@ import {
   buildPhotographerPrompt,
   PHOTOGRAPHER_SHOT_SEQUENCE,
 } from "../_shared/persona-photographer-prompt.ts";
+import { WRAP_COVERAGE_RULES } from "../_shared/view-angles-os.ts";
 import { geminiImageUrl, PRIMARY_IMAGE_MODEL, FALLBACK_IMAGE_MODEL } from "../_shared/model-config.ts";
 import { upscaleImageBytes } from "../_shared/topaz-upscale.ts";
+
+// THE PICKUP BED CLAUSE, DERIVED FROM THE PIN — NEVER RE-TYPED.
+//
+// Owner, 2026-08-31, looking at the Flamingo flat master beside its installed
+// proof: "Like this but nothing inside truck bed." CLAUDE.md RULE 0.0 states
+// where that belongs: "For pickups, exterior bed sides and tailgate receive the
+// coordinated artwork; the bed floor and inner bed walls remain unwrapped under
+// the downstream vehicle application/proof coverage contract." The proof IS
+// that downstream contract, and the pinned photographer prompt does not carry
+// the rule -- it says only "Wrap covers painted body panels only. Windows,
+// lights, wheels, trim stay factory.", which never mentions an open bed. The
+// Standard path has carried the clause since view-angles-os was written
+// (`WRAP_COVERAGE_RULES`), and design-panel-ai-generate / generate-color-render
+// both import it; the A.T.L.A.S. proof path is the one that never did.
+//
+// It is SLICED from the pinned block rather than restated, so the two homes
+// cannot drift, and a pin edit that removes the line fails the module load
+// instead of silently dropping the rule from every pickup proof. Only this one
+// clause is taken: the other fifteen lines duplicate what the pinned prompt
+// already says in one sentence, and the owner capped this prompt's length.
+const TRUCK_BED_RULE = (() => {
+  const line = WRAP_COVERAGE_RULES.split("\n").map((l) => l.trim()).find((l) => l.startsWith("TRUCK BED:"));
+  if (!line) throw new Error("atlas_proof_truck_bed_rule_missing_from_pin");
+  return line;
+})();
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -499,7 +525,14 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
     // design slot with the one sentence that says so. Every instruction about
     // HOW to photograph it already lives in the pinned stack; restating any of
     // it here would rebuild the 13K prompt one clause at a time.
-    const designAnchorText = `The attached image is this vehicle's exact approved ${surfaceKey} print panel. It is the wrap.`;
+    //
+    // The pickup clause is the ONE exception the owner named, and it is vehicle
+    // CONFIG -- exactly what that quote lists as A.T.L.A.S.'s to contribute. It
+    // is one sentence, only on a pickup, sliced from the pin above.
+    const designAnchorText = [
+      `The attached image is this vehicle's exact approved ${surfaceKey} print panel. It is the wrap.`,
+      body.isPickup === true ? TRUCK_BED_RULE : "",
+    ].filter(Boolean).join("\n");
 
     const prompt = buildPhotographerPrompt({
       designAnchorText,
