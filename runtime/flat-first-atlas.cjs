@@ -1897,7 +1897,9 @@ async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, proje
     viewAuthorities,
     masterAcceptance: {
       contract: row.metadata?.masterQcContract || null,
-      confidence: Number(row.metadata?.masterQcConfidence),
+    confidence: row.metadata?.masterQcConfidence == null
+      ? null
+      : Number(row.metadata.masterQcConfidence),
       model: row.metadata?.masterQcModel || null,
       promptHash: row.metadata?.masterPromptHash || null,
       providerContract: row.metadata?.masterProviderContract || null,
@@ -2245,14 +2247,11 @@ async function generateOrReuseFlatAtlas(options) {
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
   let passengerComposed = null;
-  // The semantic judge is dispatched the moment a master exists so it overlaps
-  // the deterministic measurements and repairs. Its hash-bound verdict gates
-  // release: a design-breaking refusal is corrected by Call 1 before any master
-  // or panel is published; a cut-out-only verdict remains repairable in code.
+  // Semantic review is advisory and off the Call-1 critical path. It is started
+  // only when deterministic passenger-mirror repair needs lettering bands.
+  // Container geometry, pixels, hashes and lineage remain release gates.
   let semanticQc = null;
-  let semanticQcMasterHash = null;
   let semanticVerdict = null;
-  let masterQc = null;
   // The pixel measurements that actually decided acceptance, kept for the row.
   let masterDeterministic = null;
   const edgeProvenance = [];
@@ -2289,22 +2288,24 @@ async function generateOrReuseFlatAtlas(options) {
     masterBytes = normalized.bytes;
     masterDelivery = normalized;
     masterHash = sha256(masterBytes);
-    // Dispatch semantic review immediately. Deterministic checks still run
-    // first and repairs still avoid unnecessary authoring calls, but labeled
-    // geometry cannot prove that the artwork assigned to each label is the
-    // correct artwork. The hash-bound semantic verdict therefore protects the
-    // existing A.T.L.A.S. identity contract before release.
-    semanticQc = Promise.resolve()
-      .then(() => validateMaster({ masterBytes: masterBytes, guideBytes, manifest, input }))
-      .catch((cause) => ({
-        accepted: false,
-        code: "atlas_master_qc_analyzer_failed",
-        reason: String(cause?.message || cause).slice(0, 400),
-      }));
-    // A rejected promise with no synchronous consumer is an unhandled rejection
-    // that can take the worker down; the catch above is attached here, at
-    // creation, precisely so the detached window is never unguarded.
-    semanticQcMasterHash = masterHash;
+    semanticQc = null;
+    semanticVerdict = null;
+    // Lazily start the advisory analyzer only for the deterministic mirror
+    // repair that needs its lettering-band coordinates. A normal accepted
+    // master makes no semantic network call and waits on no subjective verdict.
+    const startSemanticQc = () => {
+      if (!semanticQc) {
+        const reviewedBytes = masterBytes;
+        semanticQc = Promise.resolve()
+          .then(() => validateMaster({ masterBytes: reviewedBytes, guideBytes, manifest, input }))
+          .catch((cause) => ({
+            accepted: false,
+            code: "atlas_master_qc_analyzer_failed",
+            reason: String(cause?.message || cause).slice(0, 400),
+          }));
+      }
+      return semanticQc;
+    };
 
     const deterministicStartedAt = Date.now();
     let deterministic = await deterministicMasterChecks(masterBytes, manifest);
@@ -2335,7 +2336,8 @@ async function generateOrReuseFlatAtlas(options) {
     // waits for the judge at all.
     if (mirrorFailed(deterministic)) {
       const repairStartedAt = Date.now();
-      const bandVerdict = await semanticQc;
+      const bandVerdict = await startSemanticQc();
+      semanticVerdict = bandVerdict;
       timings.semanticWaitMs += Date.now() - repairStartedAt;
       const bands = Array.isArray(bandVerdict?.brandBands) ? bandVerdict.brandBands : [];
       const mirrored = await mirrorPassengerFromDriver({
@@ -2362,17 +2364,9 @@ async function generateOrReuseFlatAtlas(options) {
             attempt,
           };
           logger?.info?.("flat_atlas_passenger_flank_composed", passengerComposed);
-          // The judge graded the pre-composition bytes, so its verdict no
-          // longer describes this master. Re-dispatch it against what will
-          // actually be persisted.
-          semanticQc = Promise.resolve()
-            .then(() => validateMaster({ masterBytes, guideBytes, manifest, input }))
-            .catch((cause) => ({
-              accepted: false,
-              code: "atlas_master_qc_analyzer_failed",
-              reason: String(cause?.message || cause).slice(0, 400),
-            }));
-          semanticQcMasterHash = masterHash;
+          // The advisory verdict describes the pre-composition bytes and is
+          // retained only as repair telemetry. The composed master is accepted
+          // exclusively by its fresh deterministic measurements.
         }
       }
       timings.repairMs += Date.now() - repairStartedAt;
@@ -2392,40 +2386,16 @@ async function generateOrReuseFlatAtlas(options) {
 
     // ── THE GATE ─────────────────────────────────────────────────────────
     //
-    // Pixel failures and design-breaking semantic failures both refuse the
-    // candidate. A cut-out-only semantic result is explicitly repairable and
-    // survives; fillMasterCutouts closes it below without creating new art.
+    // Only deterministic structural failures refuse the candidate. Subjective
+    // semantic review is advisory and cannot stall or terminate Call 1.
     // `deterministic` is the post-repair measurement: when the passenger flank
     // was composed above it was re-measured, so a mirror finding surviving here
     // means the composition did not fix it and another throw is the remedy.
     const stillBlocking = deterministic.blockingFailures || [];
-    let refusalCode = "flat_atlas_master_deterministic_failed";
-    let refusalReason = stillBlocking.join("; ").slice(0, 600);
+    const refusalCode = "flat_atlas_master_deterministic_failed";
+    const refusalReason = stillBlocking.join("; ").slice(0, 600);
     if (!stillBlocking.length) {
-      const semanticStartedAt = Date.now();
-      semanticVerdict = await semanticQc;
-      timings.semanticWaitMs += Date.now() - semanticStartedAt;
-      const semanticBound = semanticVerdict?.metadata?.contract === MASTER_QC_CONTRACT
-        && semanticVerdict.metadata.masterHash === masterHash
-        && semanticVerdict.metadata.masterHash === semanticQcMasterHash
-        && semanticVerdict.metadata.guideHash === guideHash;
-      const repairableCutouts = semanticVerdict?.code === "atlas_master_qc_cutouts_present";
-      if (semanticBound && (semanticVerdict.accepted === true || repairableCutouts)) {
-        masterQc = semanticVerdict;
-        masterCutoutSurfaces = [...new Set([
-          ...masterCutoutSurfaces,
-          ...(semanticVerdict.cutout?.surfaces || []).map(String),
-        ])].sort();
-        masterCutoutFindings = [...new Set([
-          ...masterCutoutFindings,
-          ...(semanticVerdict.cutout?.findings || []).map(String),
-        ])];
-        break;
-      }
-      refusalCode = "flat_atlas_master_semantic_failed";
-      refusalReason = semanticBound
-        ? String(semanticVerdict.reason || semanticVerdict.code || "semantic master QC refused the design").slice(0, 600)
-        : "semantic master QC did not return a verdict bound to the final master and guide hashes";
+      break;
     }
     if (attempt === maxAuthoringAttempts) {
       throw new FlatAtlasError(
@@ -2527,13 +2497,13 @@ async function generateOrReuseFlatAtlas(options) {
     // comparing them byte for byte on a real run.
     masterAcceptance: {
       contract: MASTER_QC_CONTRACT,
-      confidence: masterQc?.metadata?.confidence ?? null,
-      model: masterQc?.metadata?.model ?? null,
+      confidence: null,
+      model: null,
       promptHash,
       providerContract: MASTER_PROVIDER_CONTRACT,
       artboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
       passed: true,
-      basis: "semantic",
+      basis: "deterministic",
     },
     // `manifestHash` was computed at authoring time, long before the
     // deterministic gate ran -- it does not wait on anything this object is
@@ -2792,31 +2762,32 @@ async function generateOrReuseFlatAtlas(options) {
       masterDeliveredHeightPx: masterDelivery?.deliveredHeightPx ?? null,
       masterNativelyFourK: masterDelivery?.nativelyFourK ?? null,
       masterQcContract: MASTER_QC_CONTRACT,
-      // NULL when the judge errored or graded superseded bytes. It is a record,
-      // not a gate, so an absent one is stated honestly rather than faked.
-      masterQcConfidence: masterQc?.metadata?.confidence ?? null,
-      masterQcModel: masterQc?.metadata?.model ?? null,
-      masterQcKeyFingerprint: masterQc?.metadata?.keyFingerprint ?? null,
-      masterQcRequestByteSize: masterQc?.metadata?.requestByteSize ?? null,
+      // Semantic analysis is not run for a normally accepted master. When it
+      // assists passenger composition it grades superseded pre-composition
+      // bytes, so no final-master semantic confidence is claimed here.
+      masterQcConfidence: null,
+      masterQcModel: null,
+      masterQcKeyFingerprint: null,
+      masterQcRequestByteSize: null,
       // The deterministic measurements ARE the gate, so they are always present:
       // the judge's own copy when it returned one, the loop's otherwise.
-      masterQcDeterministic: masterQc?.deterministic || masterDeterministic,
-      masterQcReview: masterQc?.review ?? null,
-      // The pixel gate and hash-bound design review both accepted this master.
-      masterAcceptance: "semantic",
+      masterQcDeterministic: masterDeterministic,
+      masterQcReview: null,
+      // Deterministic container/pixel/hash/lineage checks accepted this master.
+      masterAcceptance: "deterministic",
       // click -> master, in segments, on the immutable revision.
       callOneTimings: {
         ...timings,
         totalMs: Date.now() - callOneStartedAt,
-        // Semantic review begins before deterministic work, so this measures
-        // only the unresolved tail that remained at the acceptance gate.
+        // Zero on a normal master; non-zero only when deterministic passenger
+        // repair explicitly needed advisory lettering-band coordinates.
         semanticOverlapped: timings.semanticWaitMs === 0,
       },
-      masterSemanticVerdict: masterQc
-        ? { accepted: masterQc.accepted === true, code: masterQc.code || null,
-            reason: String(masterQc.reason || "").slice(0, 600) || null }
-        : { accepted: null, code: semanticVerdict?.code || "semantic_qc_unbound", reason: null },
-      masterSemanticBlocking: true,
+      masterSemanticVerdict: semanticVerdict
+        ? { accepted: null, code: "semantic_qc_advisory_precomposition_only",
+            reason: String(semanticVerdict.reason || semanticVerdict.code || "").slice(0, 600) || null }
+        : { accepted: null, code: "semantic_qc_advisory_not_run", reason: null },
+      masterSemanticBlocking: false,
       providerKeyFingerprint: generated.keyFingerprint || null,
       providerResponseContentType: generated.contentType,
       rawProviderResponseHash: sha256(generated.bytes),

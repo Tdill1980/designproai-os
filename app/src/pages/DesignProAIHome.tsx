@@ -137,6 +137,7 @@ export default function DesignProAIHome() {
   const [designPrepVehicle, setDesignPrepVehicle] = useState("");
   const [designPrepBusy, setDesignPrepBusy] = useState(false);
   const [designPrepError, setDesignPrepError] = useState("");
+  const [designPrepGenerationId, setDesignPrepGenerationId] = useState<string | null>(null);
   // Commercial brief (Business & Fleet) — drives the studio's Layer-2 text extraction.
   const [companyName, setCompanyName] = useState("");
   const [phone, setPhone] = useState("");
@@ -165,12 +166,15 @@ export default function DesignProAIHome() {
     setDesignPrepBusy(true);
     setDesignPrepError("");
     try {
+      const generationId = crypto.randomUUID().toLowerCase();
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDesignPrep(prepared);
       setDesignPrepVehicle(currentPrepVehicle);
+      setDesignPrepGenerationId(generationId);
     } catch {
       setDesignPrep(null);
       setDesignPrepVehicle("");
+      setDesignPrepGenerationId(null);
       setDesignPrepError("Vehicle dimensions could not be pulled. Press Enter vehicle to try again.");
     } finally {
       setDesignPrepBusy(false);
@@ -222,6 +226,7 @@ export default function DesignProAIHome() {
       return;
     }
     setStudioBrief({
+      generationId: designPrepGenerationId,
       pipelineMode,
       vehicleType,
       year: year.trim() || undefined,
@@ -235,6 +240,7 @@ export default function DesignProAIHome() {
       return;
     }
     setStudioBrief({
+      generationId: designPrepGenerationId,
       acePrompt: prompt.trim() || undefined,
       mode, vehicleType,
       pipelineMode,

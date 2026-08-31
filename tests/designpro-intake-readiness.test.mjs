@@ -1,10 +1,8 @@
 /**
- * THE INTAKE DOES NOT INTERROGATE THE CUSTOMER, AND DOES NOT DISCARD THEIR DATA.
+ * THE INTAKE PRESERVES THE ORIGINAL MODE CONTROLS AND NEVER DISCARDS DATA.
  *
- * Owner, 2026-08-28: "Don't ask: Commercial or Restyle? The customer shouldn't
- * need to understand your internal design taxonomy. Infer it." And: "No hard
- * blocks — just add the enter button, it sends to DesignProAI to process
- * appropriately."
+ * Owner, 2026-08-31: restore the original Commercial/ReStyle buttons. The
+ * explicit choice is immutable request input and must reach A.T.L.A.S.
  *
  * Two things this locks, and the second is the one that actually cost money.
  *
@@ -31,20 +29,22 @@ const home = readFileSync(
   new URL("../app/src/pages/DesignProAIHome.tsx", import.meta.url),
   "utf8",
 );
+const premium = readFileSync(
+  new URL("../app/src/pages/DesignPanelProPremium.tsx", import.meta.url),
+  "utf8",
+);
 
-test("the customer is never asked to choose Commercial or Restyle", () => {
-  // What is forbidden is a CONTROL that asks them. `setMode` itself is still
-  // legitimate where the system learns the answer on its own -- the LogoPro
-  // handoff injects a logo and sets commercial, which is an inference from a
-  // real event, not a question.
-  assert.equal(/onClick=\{\(\) => setMode\(/.test(intake), false,
-    "a mode selector is back on the intake");
-  assert.equal(/MODES\.map/.test(home), false,
-    "the home page's mode selector is back");
-  // And the cards themselves, by their copy.
-  for (const copy of ["Artistic &amp; Style Wraps", "Business &amp; Fleet Wraps"]) {
-    assert.equal(intake.includes(copy), false, `the "${copy}" card is back`);
+test("the original Commercial and ReStyle controls are present and accessible", () => {
+  for (const [mode, copy] of [
+    ["restyle", "Artistic &amp; Style Wraps"],
+    ["commercial", "Business &amp; Fleet Wraps"],
+  ]) {
+    assert.ok(intake.includes(copy), `the original "${copy}" card is missing`);
+    assert.match(intake, new RegExp(`onClick=\\{\\(\\) => setMode\\("${mode}"\\)\\}`));
   }
+  assert.match(intake, /aria-label="Design type"/);
+  assert.match(intake, /aria-pressed=\{mode === "restyle"\}/);
+  assert.match(intake, /aria-pressed=\{mode === "commercial"\}/);
 });
 
 test("no field the customer filled in is discarded by a mode check", () => {
@@ -81,9 +81,17 @@ test("the readiness strip is informational, and Dimensions is the only chip that
   for (const label of ["Vehicle", "Brief", "Brand", "Logo", "Dimensions"]) {
     assert.ok(chips[0].includes(`"${label}"`), `the ${label} chip is missing`);
   }
-  // Brand and Logo report `neutral` when absent. Marking a restyle customer
-  // deficient for having no company name would be the taxonomy question we just
-  // deleted, smuggled back as an icon.
+  // Brand and Logo report `neutral` when absent; the explicit mode choice does
+  // not turn optional creative inputs into a submission block.
   const brand = chips[0].slice(chips[0].indexOf('"Brand"'), chips[0].indexOf('"Logo"'));
   assert.equal(brand.includes('"warn"'), false, "the Brand chip warns; absent is not wrong");
+});
+
+test("a failure preserves the exact prompt and returns the customer to it", () => {
+  assert.match(intake, /DESIGN_INTAKE_DRAFT_KEY/);
+  assert.match(intake, /sessionStorage\.setItem\(DESIGN_INTAKE_DRAFT_KEY/);
+  assert.match(intake, /initialPrompt \|\| intakeDraftRef\.current\?\.prompt \|\| ""/);
+  assert.match(premium, /\(embedded \|\| !leftColOpen\) && "hidden"/,
+    "the intake should hide, not unmount, while the canvas is open");
+  assert.match(premium, /clearGenerationError\(\);[\s\S]*?invalidateDesignPrep\(\);[\s\S]*?setLeftColOpen\(true\);/);
 });
