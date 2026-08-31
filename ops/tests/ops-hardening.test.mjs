@@ -162,6 +162,8 @@ test("expanded dark env disables email and keeps an exact public-go-live provide
   assert.doesNotMatch(read("configure-env.sh"), /RP_|WPW_|RESEND_API_KEY|RESEND_FROM/);
   assert.match(validator, /runtime\["WORKER_SECRET"\] != gateway\["WORKER_SECRET"\]/);
   assert.match(read("gateway.env.example"), /DESIGNPRO_RUNTIME_INTERNAL_URL=http:\/\/runtime-1:3001/);
+  assert.match(read("gateway.env.example"), /DESIGNPRO_ADDITIONAL_ORIGINS=https:\/\/designproai\.com/);
+  assert.match(read("configure-env.sh"), /DESIGNPRO_ADDITIONAL_ORIGINS=https:\/\/designproai\.com/);
   assert.doesNotMatch(read("gateway.env.example"), /SUPABASE_SERVICE_ROLE_KEY/);
 });
 

@@ -12,6 +12,8 @@ test("the operating UI requires explicit vehicle Design Prep", () => {
   assert.match(ui, /Enter vehicle — begin Design Prep/);
   assert.match(ui, /Beginning Design Prep — pulling vehicle dimensions…/);
   assert.match(ui, /dpApi\.previewGenieDimensions\(vehicle\)/);
+  assert.match(ui, /const generationId = designPrepGenerationId \|\| crypto\.randomUUID\(\)\.toLowerCase\(\)/);
+  assert.match(ui, /setDesignPrepGenerationId\(generationId\);[\s\S]*?previewGenieDimensions\(vehicle\)/);
   assert.match(ui, /if \(!designPrepIsCurrent\)/);
   assert.match(ui, /Press “Enter vehicle — begin Design Prep” before generating the design/);
 });
@@ -24,15 +26,19 @@ test("the customer DesignProAI UI requires the same explicit vehicle handoff", (
   assert.match(vehicleSelector, /allowedTypes\?: VehicleType\[\]/);
   assert.doesNotMatch(customerUi, /onClick=\{\(\) => setPipelineMode\("legacy"\)\}/);
   assert.doesNotMatch(customerUi, /initialDesignProPipelineMode/);
-  assert.match(customerUi, /generationIdRef\.current = crypto\.randomUUID\(\)\.toLowerCase\(\)/);
+  assert.match(customerUi, /generationIdRef\.current \|\|= crypto\.randomUUID\(\)\.toLowerCase\(\)/);
   assert.match(customerUi, /generationId: generationIdRef\.current \|\| undefined/);
+  const prep = customerUi.slice(customerUi.indexOf("const beginDesignPrep"), customerUi.indexOf("const dimensionsState"));
+  assert.doesNotMatch(prep, /catch \{[\s\S]*?invalidateDesignPrep\(\)/,
+    "a technical Design Prep retry clears the GenerationID");
 });
 
 test("the DesignProAI front door starts prep before opening the studio", () => {
   assert.match(homeUi, /Enter vehicle — begin Design Prep/);
   assert.match(homeUi, /Beginning Design Prep — pulling vehicle dimensions…/);
   assert.match(homeUi, /dpApi\.previewGenieDimensions\(vehicle\)/);
-  assert.match(homeUi, /const generationId = crypto\.randomUUID\(\)\.toLowerCase\(\)/);
+  assert.match(homeUi, /const generationId = designPrepGenerationId \|\| crypto\.randomUUID\(\)\.toLowerCase\(\)/);
+  assert.match(homeUi, /setDesignPrepGenerationId\(generationId\);[\s\S]*?previewGenieDimensions\(vehicle\)/);
   assert.match(homeUi, /generationId: designPrepGenerationId/);
   assert.match(homeUi, /if \(!designPrepIsCurrent\)/);
   assert.match(homeUi, /disabled=\{!designPrepIsCurrent \|\| designPrepBusy\}/);

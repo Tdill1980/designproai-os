@@ -404,12 +404,16 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     try {
       // The identity begins with vehicle preparation and is carried unchanged
       // into the immutable generation request.
-      generationIdRef.current = crypto.randomUUID().toLowerCase();
+      generationIdRef.current ||= crypto.randomUUID().toLowerCase();
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDimensionPreview(prepared);
       setDesignPrepVehicle(currentPrepVehicle);
     } catch {
-      invalidateDesignPrep();
+      // A transport failure is a technical retry, not a new customer design.
+      // Keep the GenerationID minted at the Enter boundary; editing the vehicle
+      // still calls invalidateDesignPrep and intentionally starts a new identity.
+      setDimensionPreview(null);
+      setDesignPrepVehicle("");
       toast({
         title: "Design Prep could not start",
         description: "Vehicle dimensions could not be pulled. Please try Enter vehicle again.",

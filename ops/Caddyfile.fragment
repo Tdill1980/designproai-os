@@ -1,7 +1,13 @@
 # The apex is the selling site. It serves the public routes from the exact same
-# immutable web artifact as the OS, but it exposes no gateway or worker path.
+# immutable web artifact as the OS. Authenticated SPA routes can also be opened
+# here by an allowed Supabase magic-link redirect, so their same-origin /api
+# calls must reach the one existing gateway. Worker paths remain unexposed.
 designproai.com {
   encode zstd gzip
+
+  handle /api/* {
+    reverse_proxy 127.0.0.1:8787
+  }
 
   handle {
     root * /opt/designproai-os/public/web/dist
