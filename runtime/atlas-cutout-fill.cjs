@@ -160,38 +160,112 @@ function convictedHoleMask({ data, width, height, channels }) {
  * buffer keeps the result independent of scan order, which is what makes it
  * reproducible rather than merely deterministic-looking.
  */
+const NEIGHBOUR_DX = Object.freeze([-1, 1, 0, 0, -1, 1, -1, 1]);
+const NEIGHBOUR_DY = Object.freeze([0, 0, -1, 1, -1, -1, 1, 1]);
+
 function diffuseInto(data, width, height, channels, mask) {
   const pending = Uint8Array.from(mask);
+  // THE FRONTIER, NOT THE WHOLE ZONE. (2026-08-31)
+  //
+  // This walked every pixel of the zone on every pass and copied the entire
+  // zone buffer on every pass, so the cost was passes x zone area twice over.
+  // A hole closes in roughly its own radius, so a wheel arch ~300px across
+  // needs ~150 passes -- and on the driver flank of a 4096px master that is
+  // gigabytes of copying. Measured on generation 7a1062f4: 174,678ms, against
+  // the ~100ms this step is documented to cost, and 75% of the whole of
+  // Call 1. The customer watched "A.C.E. is designing your wrap" for three
+  // minutes for it.
+  //
+  // Only masked pixels are ever written and only settled pixels are ever read,
+  // so the work was always proportional to the hole; iterating the frontier
+  // just stops paying for the rest of the zone. Indices stay in ascending
+  // order, which is the order the full scan visited them in.
   let remaining = 0;
   for (let index = 0; index < pending.length; index += 1) if (pending[index]) remaining += 1;
 
-  for (let pass = 0; pass < MAX_FILL_PASSES && remaining > 0; pass += 1) {
-    const source = Uint8Array.from(data);
+  // The frontier is the masked pixels that TOUCH settled artwork. A masked
+  // pixel with no settled neighbour samples nothing, writes nothing and stays
+  // pending, so visiting it is pure cost -- and visiting it every pass is what
+  // made the fill quadratic in the hole as well as in the zone. Seeding from
+  // the border and re-seeding from each pass's own settled pixels keeps the
+  // total work proportional to the hole's area instead of its area times its
+  // radius. The written pixels are the same ones either way.
+  const queued = new Uint8Array(pending.length);
+  let frontier = [];
+  for (let index = 0; index < pending.length; index += 1) {
+    if (!pending[index]) continue;
+    const x = index % width;
+    const y = (index - x) / width;
+    for (let n = 0; n < 8; n += 1) {
+      const nx = x + NEIGHBOUR_DX[n];
+      const ny = y + NEIGHBOUR_DY[n];
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      if (pending[ny * width + nx]) continue;
+      frontier.push(index);
+      queued[index] = 1;
+      break;
+    }
+  }
+
+  const totals = new Array(channels).fill(0);
+  for (let pass = 0; pass < MAX_FILL_PASSES && frontier.length; pass += 1) {
     const settledThisPass = [];
-    for (let index = 0; index < pending.length; index += 1) {
-      if (!pending[index]) continue;
+    const stillPending = [];
+    for (let i = 0; i < frontier.length; i += 1) {
+      const index = frontier[i];
       const x = index % width;
       const y = (index - x) / width;
       let count = 0;
-      const totals = new Array(channels).fill(0);
-      const sample = (nx, ny) => {
-        if (nx < 0 || ny < 0 || nx >= width || ny >= height) return;
+      for (let c = 0; c < channels; c += 1) totals[c] = 0;
+      for (let n = 0; n < 8; n += 1) {
+        const nx = x + NEIGHBOUR_DX[n];
+        const ny = y + NEIGHBOUR_DY[n];
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
         const neighbour = ny * width + nx;
-        if (pending[neighbour]) return; // still a hole this pass
+        // Still a hole this pass. A pixel settled EARLIER in this same pass is
+        // also still flagged -- `pending` clears only after the pass -- so a
+        // read can never observe a write from its own pass. That is why the
+        // previous-pass copy this loop used to take is unnecessary rather than
+        // merely wasteful: the result is identical without it.
+        if (pending[neighbour]) continue;
         const offset = neighbour * channels;
-        for (let c = 0; c < channels; c += 1) totals[c] += source[offset + c];
+        for (let c = 0; c < channels; c += 1) totals[c] += data[offset + c];
         count += 1;
-      };
-      sample(x - 1, y); sample(x + 1, y); sample(x, y - 1); sample(x, y + 1);
-      sample(x - 1, y - 1); sample(x + 1, y - 1); sample(x - 1, y + 1); sample(x + 1, y + 1);
-      if (!count) continue;
+      }
+      if (!count) { stillPending.push(index); continue; }
       const offset = index * channels;
       for (let c = 0; c < channels; c += 1) data[offset + c] = Math.round(totals[c] / count);
       if (channels > 3) data[offset + channels - 1] = 255; // closed artwork is opaque
       settledThisPass.push(index);
     }
     if (!settledThisPass.length) break; // nothing borders artwork; cannot close
-    for (const index of settledThisPass) { pending[index] = 0; remaining -= 1; }
+    for (let i = 0; i < settledThisPass.length; i += 1) pending[settledThisPass[i]] = 0;
+    remaining -= settledThisPass.length;
+
+    // Next pass's frontier: what this pass just settled has exposed. Carrying
+    // `stillPending` forward too keeps a pixel that could not close this pass
+    // (its only neighbours were also holes) in the running.
+    const next = stillPending;
+    for (let i = 0; i < settledThisPass.length; i += 1) {
+      const index = settledThisPass[i];
+      queued[index] = 0;
+      const x = index % width;
+      const y = (index - x) / width;
+      for (let n = 0; n < 8; n += 1) {
+        const nx = x + NEIGHBOUR_DX[n];
+        const ny = y + NEIGHBOUR_DY[n];
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbour = ny * width + nx;
+        if (!pending[neighbour] || queued[neighbour]) continue;
+        queued[neighbour] = 1;
+        next.push(neighbour);
+      }
+    }
+    // Ascending order, which is the order the original full scan visited
+    // pending pixels in. Writes within a pass never read each other, so this
+    // cannot change the result -- it keeps the equivalence obvious.
+    next.sort((left, right) => left - right);
+    frontier = next;
   }
   return remaining;
 }

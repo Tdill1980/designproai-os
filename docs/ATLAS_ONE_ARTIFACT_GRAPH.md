@@ -40,14 +40,18 @@ a second creative prompt and does not make another Call-1 Gemini request.
 
 Current prompt fences:
 
-- pending corrective runtime master:
+- deployed runtime master:
   `designpro-flat-first-atlas-20260831.v16-flat-example-only`;
-- pending corrective edge assembly:
+- deployed edge assembly:
   `atlas-artboard-designiq.20260831.v15-flat-example-only`.
 
-These prompt fences describe the current corrective source, not a deployed or
-accepted release. Production remains the exact release recorded in section 8
-until merge/deploy verification proves otherwise.
+These fences are now DEPLOYED, not pending. Verified 2026-08-31: PR #276 merged
+as `54af7f145d18e57d6cd78dba32b0872afb3f2af8`, and `deploy-production.yml` run
+`33397330081` (job `dark-deploy`, event `workflow_run`, head_sha
+`54af7f14…`) completed `success` at 13:34Z with its "No-op if this exact release
+is already accepted; otherwise dark deploy it once" step executing for 3m26s.
+Deployment is verified; ACCEPTANCE is not — section 9 still governs, and no
+fresh run has yet exercised these fences.
 
 Call 1 receives:
 
@@ -244,14 +248,272 @@ The board reads promoted panels from
 `job.concept_json.qc_side_panels`; there is no top-level
 `job.qc_side_panels` contract.
 
+### KNOWN REPORTING DEFECT — a completed design half is reported as parked at purchase (2026-08-31, owner-observed, not yet repaired)
+
+The stage graph is correct: `proof.build` (Call 8) and `panels.build` (Call 9)
+both sit AHEAD of `await_purchase`, so nothing DCA Phase 1 needs is paid work.
+The defect is in the read projection, and it makes a finished design half look
+blocked.
+
+A generation that reaches handoff owns TWO runs. `requestedRun`
+(`gateway/src/server.mjs:542`) is `runs.find(...)` over a list ordered
+`created_at.desc`, so the NEWEST run wins — and the production run is created
+about a minute after the entice run completes, by `trigger:
+designpro.os.auto`. `runState` then queries stages for that one run only.
+
+So `GET /api/jobs/:generationId` answers from the production run alone:
+`state: approval_required`, `currentStage: await_purchase`, and a `stages` rail
+of ten production stages with nine `pending`. The seven completed design stages
+are never returned to any UI.
+
+Measured on canary `083d2a70-edac-4e75-9caa-1336542baf7c`:
+
+| Run | Created | Observed |
+|---|---|---|
+| `designpro.entice_pack` `f041f306…` | 11:57:08Z | `revision.freeze`, `panels.build`, `logos.extract`, `panels.delogo`, `proof.build`, `pack.verify`, `pack.activate` — all seven `completed` |
+| `designpro.production_pack` `07ec1282…` | 11:58:19Z | `await_purchase` `waiting`/`purchase_required`; all later stages `pending` |
+
+Consequences, stated exactly:
+
+- artifacts are NOT affected — `verifiedSourceEnticeRun` merges the entice run's
+  artifacts, and Call-1 panels come from the atlas route regardless, so panels
+  still render;
+- the reported STATE and STAGE RAIL are wrong, and they are what an operator
+  reads as "the system is waiting for purchase";
+- it violates RULE 0.22's requirement that PanelPro preserve the whole
+  chronological lineage: the design half is invisible in the rail.
+
+Proposed minimal repair, NOT yet implemented and NOT authorized: when a
+production run has a verified source entice run, return the union of both runs'
+stages, entice first, and derive the reported state from the whole lineage
+rather than the production run alone. Read projection only — no graph change,
+no new producer, no artifact-contract change, and nothing on the RULE 0.5
+frozen list.
+
+Until it is repaired: on a run that has reached handoff, judge progress from the
+artifacts and receipts, never from the state badge or the stage rail.
+
+#### Owner screenshot, `DID-083D2A70`, Production Jobs
+
+The owner's screenshot of `/designpro/jobs` for this generation shows three
+statements, and the server contradicts all three:
+
+| On screen | Server holds |
+|---|---|
+| `0 of 11 stages verified` | entice run `f041f306…`: seven of seven design stages `completed`, including Call 8 and Call 9 |
+| `REVISE: Waiting for Call 1 to accept the A.T.L.A.S. master.` | `designpro_flat_atlas_generation_paths` returns 1 revision with `qc.masterQcPassed = true` and `callOnePanels` length `6` |
+| `await_purchase · WAITING · PURCHASE REQUIRED`, ten stages pending | correct for the production run in isolation, wrong as a description of the job |
+
+`0 of 11` is the union defect above: `ProductionWorkflow.tsx:774` counts
+`job.stages`, which the gateway populated from the production run alone.
+
+The `Waiting for Call 1` banner is a SEPARATE and un-isolated defect.
+`JobWorkflowHeader` reads `useDesignProJob`, which derives `hasAcceptedMaster`
+from `currentRevision.master.contentHash` plus `qc.masterQcPassed !== false`,
+and `callOnePanelCount` from `callOnePanels`. Both are present and correct in
+the RPC, and the gateway's strict master-path check does match the stored path,
+so the banner should read reachable. Two candidates remain and neither is
+proven:
+
+1. the screenshot predates the corrective deploy at 13:34Z (the canary ran at
+   11:54Z), so it shows the pre-`54af7f14` build;
+2. `GET /api/jobs/:id/atlas` fails for this row and the frontend's `.catch(() =>
+   [])` turns it into an empty revision list, which makes `hasAcceptedMaster`
+   false.
+
+Candidate 2 was NOT reproduced: the gateway validator is not exported and could
+not be exercised in isolation, and the DB layer serves the row correctly. Do not
+record either candidate as the cause until one is demonstrated.
+
+#### Owner rule — only processing layers may await purchase (2026-08-31)
+
+Owner, verbatim: **"The only thing that should be awaiting purchase is any
+processing layers."**
+
+The stage graph already satisfies this and must keep satisfying it. Free:
+`revision.freeze`, `panels.build` (Call 9), `logos.extract` (Call 10),
+`panels.delogo` (Call 11), `proof.build` (Call 8), `pack.verify`,
+`pack.activate`. Behind `await_purchase`, and all of it processing or
+manufacturing: `manifest.resolve` (production GENIE geometry),
+`source.verify`, `await_panelpro_preflight_qc`, `enhance.upscale` (Topaz),
+`output.build`, `output.verify`, `await_final_human_qc`, `stamp.build`,
+`zip.build`, `wrapbox.deliver`.
+
+No design artifact, panel, proof, hash, dimension, metadata record or version
+history entry may be gated on purchase. Nothing above may be moved behind the
+gate, and nothing below it may be moved in front of it, without an owner
+decision.
+
+#### Third surface with the same defect — PanelPro Studio
+
+`AdminGeminiCompareStudio.tsx:1304` renders `Job status` as
+`${job.state} · ${job.current_stage}`. Both come from `studioJobFrom`, which
+takes them from `dpApi.getStatus`, which the gateway answered from the
+production run alone. So PanelPro Studio reports `running · await_purchase` for
+a job whose seven design stages completed. Same root cause as the Production
+Jobs rail; the projection defect is in the shared gateway read, not in either
+page.
+
+Two adjacent strings on that screen are CORRECT and must not be "fixed":
+`Design Order # — Not assigned until Production Pack` is honest under the
+design-first unbound-revision contract, and "a row with no file says so rather
+than showing a substitute" is RULE 0.27's honest-gap rule working.
+
+Note also that Production Jobs is not PanelPro Studio. Per RULE 0.22 the complete
+asset set, metadata and A.T.L.A.S. version history live in PanelPro Studio
+(`/designpro/jobs/:generationId/panelpro`), and no part of that lineage may be
+gated behind purchase, a ZIP, or a production run's state. Production Jobs
+showing a production rail is not itself the violation; stating that Call 1 has
+not accepted an accepted master is.
+
+## 7A. Server-owned orchestration — the browser may not advance the graph (owner, 2026-08-31)
+
+Owner, verbatim: **"The browser must not be required to advance the DesignProAI
+graph. Move the handoff initiation to the server-side orchestration boundary
+that owns master acceptance / durable Call-1 persistence. Preserve idempotency
+and the existing authorization invariants, but refactor them so the server can
+advance its own lineage. The UI becomes observer-only. Then audit every stage
+for false serialization and trigger each branch from its earliest real
+dependency receipt."**
+
+The governing rule:
+
+> Every stage triggers from the earliest server-owned durable receipt that
+> satisfies its ACTUAL dependencies — never from UI completion, and never from
+> an unrelated sibling branch finishing.
+
+Accepting one Call-1 master must fan out server-side and idempotently:
+
+```
+CALL 1 MASTER ACCEPTED
+  ├─ persist/publish the six Call-1 panels
+  ├─ RevisionStudioIQ visibility
+  ├─ PanelProStudio visibility
+  ├─ Driver proof (scheduling priority, never a prerequisite)
+  ├─ Passenger · Hood · Front · Rear · Roof · Close-Up proofs
+  ├─ logo / asset extraction
+  └─ downstream production lineage / handoff receipt
+
+six Call-1 panels ready            → Call 8 eligibility
+handoff lineage + the six panels   → Call 9 verify/promote
+all required proof/panel evidence  → owner-visible PanelPro state
+```
+
+Dependency-driven concurrency, not Calls 1–9 in a straight line.
+
+### The measured violation, and why the obvious fix is not the fix
+
+On generation `7a1062f4`: master accepted t+238s, last proof t+279s, revision
+source and entice run created **t+281s** — 1.7s after the last proof. So Call 9
+promotion, Call 10 logos, Call 11 cleaned panels and Call 8 all waited on the
+slowest of seven independent proofs, which RULE 0.27 forbids by name ("panels
+and logos are never behind the proof set").
+
+The SQL gate is NOT the cause. Migration `20260827120000` already patched
+`handoff_designpro_generation_to_production` to allow a flat-first request to
+hand off on `masterQcPassed` alone. Nothing calls it that way.
+
+The caller is the browser: `useDesignPanelProLogic.ts` awaits
+`waitForGeneration(...)`, checks `finished.handoffReady`, then calls
+`handoffGeneration(...)` — its own comment says "behind the same seven-view
+readiness check". `gateway/src/server.mjs:2355` explains why it is the browser
+at all: *"as the authenticated owner because save_designpro_revision_source
+refuses a service role."*
+
+Both functions enforce it:
+
+```
+handoff_designpro_generation_to_production:
+  IF v_owner IS NULL OR auth.jwt()->>'role' IS DISTINCT FROM 'authenticated'
+     OR is_anonymous='true' THEN RAISE 'authentication_required'
+save_designpro_revision_source:
+  IF auth.jwt()->>'role' IS DISTINCT FROM 'authenticated' OR v_owner IS NULL
+     THEN RAISE 'authenticated_user_required'
+```
+
+**Firing the same browser call earlier — from the `onState` observer when
+`handoffReady` flips true — is a latency patch and is REJECTED as the fix.** It
+moves one client trigger to another client trigger and leaves the browser
+required to advance the graph. It also leaves the real failure intact: a
+customer who closes the tab before the trigger gets a master, six panels and
+seven proofs, and no Call 9, no logos, no cleaned panels and no Call 8, ever.
+
+**The authorization model is therefore the bottleneck, not optional polish.**
+The refactor must let the server advance its own lineage while preserving what
+those checks exist to protect — an owner-scoped, idempotent, non-forgeable
+freeze of a revision. Server execution must not become a way for any caller to
+freeze a revision for a generation it does not own.
+
+Not yet designed, not yet authorized, and not to be started as a side effect of
+a latency fix. What is settled is the principle above and that the browser is
+observer-only.
+
+### False-serialization audit — outstanding
+
+Every stage is to be re-derived from its real dependency receipt. Known
+candidates, none yet actioned:
+
+- `logos.extract` (Call 10) runs after `panels.build` (Call 9); Call 9 is byte
+  promotion of panels Call 1 already cut, so logo extraction depends on the
+  Call-1 panels, not on promotion;
+- `proof.build` (Call 8) sits behind `panels.delogo` (Call 11) in the frozen
+  sequence, but needs only the six panels — it can run alongside the logo and
+  de-logo branch;
+- the entice stages share one single-flight claimant and one ascending sequence,
+  so any independence between them is currently unexpressible.
+
+Changing WHEN a stage runs is explicitly not an owner-level stop (RULE 0.5
+amendment). Changing the artifact contract, the panel/proof counts, storage
+paths, content hashes or receipt shape still is.
+
 ## 8. Current production evidence
 
-Current verified production release before the flat-only/template-leak/Call-8
-corrective release:
+Current verified production release (2026-08-31, corrective release):
+
+- PR #276
+- SHA `54af7f145d18e57d6cd78dba32b0872afb3f2af8`
+- `deploy-production.yml` run `33397330081`, job `dark-deploy`, conclusion
+  `success`, 13:30Z–13:34Z
+
+Preceding verified release, superseded by the above:
 
 - PR #275
 - SHA `1bd4906ab6a7433b32677be9cc5adb87f17d2fed`
 - web, gateway and two runtime replicas deployed at that exact SHA
+
+### Source state of the section-8 defects at `54af7f14…`
+
+Each defect recorded below was re-checked against the deployed source, not
+against a session claim. All five are repaired IN SOURCE and deployed; none is
+accepted, because acceptance requires live artifacts from a fresh run (§9).
+
+| Defect | Evidence at `54af7f14…` |
+|---|---|
+| anonymous `FIELD A–F` conditioning | no `FIELD A`/`neutral-fields` token remains anywhere in `runtime/` or `supabase/functions/`; pinned flat example `20085eb5…` is referenced by both `runtime/flat-atlas-topology-examples.cjs:64` and `supabase/functions/design-panel-ai-generate/index.ts:59`; no installed-proof teaching input remains |
+| PanelPro thin row cast to a hydrated job | `listPanelProStudioJobs` is identity-only and `loadPanelProStudioJob(generationId)` hydrates status + views + artifacts + atlas revisions; every board read is `concept_json.qc_side_panels`, and no top-level `job.qc_side_panels` read exists |
+| `hood_detail` staging allowlist | `runtime/designpro-standalone-claimant.cjs:135` maps `hood: ["hood","hood_detail"]`; `atlas-proof-qc.cjs:309` maps `hood_detail → hood` |
+| Driver-to-Passenger mirroring | no active mirror rewrite in `runtime/flat-first-atlas.cjs`; only the two comments recording the prohibition |
+| Call-8 total-area rounding | `designpro-standalone-claimant.cjs:378`, `:444` and `:571` each `round2(reduce(raw areas))` — raw sum, one rounding boundary — and `:381` asserts the two agree |
+
+Full repository suite (`npm test`) is green at this SHA: 212 checks, 0 failures,
+plus 79 app checks. The 23 failures seen on a first pass were a missing
+`runtime/node_modules` in the checkout, not a source defect.
+
+### PanelProStudio job-click failure — status
+
+The recorded job-click failure was reproduced only as far as the data layer,
+where it does NOT reproduce: as `trish@weprintwraps.com` (a
+`designpro_qc_members` row with `can_preflight`), `designpro_generation_library`
+returns 88 designs, and for all 88 both `designpro_generation_workspace` and
+`designpro_flat_atlas_generation_paths` return non-null. So no listed design is
+unhydratable, and the library/workspace authorization predicates do not diverge
+(`caller_may_read_generation` is a strict superset of `caller_is_design_staff`).
+
+The owner-observed failure predates this release: it was seen against the
+Oasis Pools run (04:45Z) and canary `33389124918` (11:54Z), both before the
+corrective release deployed at 13:34Z. It is NOT confirmed fixed — a UI click
+was never exercised against the deployed build — and it must be re-checked
+first on the next run.
 
 Latest owner-authorized diagnostic production canary:
 
