@@ -2750,6 +2750,48 @@ export default function RevisionStudioIQ() {
   }, [selectedRender?.id]);
 
   // ---------------------------------------------------------------------------
+  // RE-SIGN THE VIEWS BEFORE OPENING A PROOF. (Trish 2026-08-31: "show 3d proof
+  // button but when clicked it's blank.")
+  //
+  // Every artifact URL the gateway issues is a SIGNED url into the private
+  // `wrap-files` bucket with `expiresIn: 300` -- five minutes. `render_urls` is
+  // built from those signed urls when the grid loads, the query's `staleTime`
+  // is two minutes, and `refetchOnWindowFocus` is false. So a customer who
+  // lands on RevisionStudio, looks at their design, and then opens a proof is
+  // past the expiry on nearly every real visit: the sheet renders with every
+  // `<img>` pointing at a dead signature, which paints as broken-image glyphs
+  // beside floating labels. Nothing in the client reads `expiresIn` -- it is
+  // typed in five places and acted on in none.
+  //
+  // The effect above only fills GAPS ("a view already in hand is never
+  // replaced"), which is right for an incomplete set and useless here: the
+  // urls are all present and all dead. So this replaces them outright, and only
+  // at the moment a proof is opened -- a sheet is printed, PDF'd and emailed,
+  // which are the longest-lived actions in the product and the worst possible
+  // place for a five-minute url.
+  //
+  // Re-signing rather than lengthening the TTL is deliberate: the bucket is
+  // private, and a short signature is the reason a leaked proof url stops
+  // working. This costs one read at open time and changes no security posture.
+  // ---------------------------------------------------------------------------
+  const openWithFreshViews = useCallback(async (open: (value: boolean) => void) => {
+    const id = selectedRender?.id ? String(selectedRender.id) : null;
+    // Open first. A slow or failed re-read must never swallow the click -- the
+    // stale sheet is still better than a button that does nothing, and it is
+    // exactly what the customer sees today.
+    open(true);
+    if (!id) return;
+    const fresh = await readRevisionStudioDesign(id).catch(() => null);
+    if (!fresh?.render_urls) return;
+    setSelectedRender((prev: any) => {
+      if (prev?.id !== id) return prev;
+      // Replace every url the server re-signed; keep any key it no longer
+      // reports rather than blanking a tile the sheet was already showing.
+      return { ...prev, render_urls: { ...prev.render_urls, ...fresh.render_urls } };
+    });
+  }, [selectedRender?.id]);
+
+  // ---------------------------------------------------------------------------
   // Fetch version chain for selected render
   // ---------------------------------------------------------------------------
   // FOUR HEURISTICS, REPLACED BY THE RECORD.
@@ -6306,7 +6348,7 @@ export default function RevisionStudioIQ() {
                     <Button
                       className="flex-1 h-11"
                       variant="outline"
-                      onClick={() => setShow2DProofSheet(true)}
+                      onClick={() => { void openWithFreshViews(setShow2DProofSheet); }}
                       disabled={selectedViews.length === 0}
                     >
                       <FileText className="w-4 h-4 mr-2" /> 2D Proof
@@ -6314,7 +6356,7 @@ export default function RevisionStudioIQ() {
                     <Button
                       className="flex-1 bg-green-600 hover:bg-green-700 h-11"
                       onClick={() => {
-                        setShowProofSheet(true);
+                        void openWithFreshViews(setShowProofSheet);
                         // 3D Proof is the approval-view completeness trigger:
                         // preserve every existing approved view and generate
                         // only the missing canonical angles through the existing

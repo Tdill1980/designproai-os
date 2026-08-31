@@ -549,12 +549,37 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
   const hoodView = getViewByType(['hood', 'hood_detail']);
   const frontView = getViewByType(['front'], ['passenger']);
   const rearView = getViewByType(['rear', 'back']);
-  const closeUpView = getViewByType(['close-up', 'closeup', 'detail']);
+  // ⛔ NEVER MATCH 'detail' HERE. IT IS THE HOOD. (Trish 2026-08-31: "3d proof
+  // must have correct sides shown ... yet it's showing two hoods.")
+  //
+  // `getViewByType` matches by SUBSTRING, and the only canonical view type
+  // containing "detail" is `hood_detail` -- the view already bound to the Hood
+  // slot two lines up. So on any generation whose close-up is missing or was
+  // refused, the third pattern silently filled the Close-Up slot with the hood,
+  // and the sheet showed the same photograph twice under two names. A customer
+  // signing that proof approved a wrap they were never shown the detail of.
+  //
+  // A missing close-up must render as the empty placeholder below, not as
+  // another view wearing its label.
+  const closeUpView = getViewByType(['close-up', 'closeup']);
   const roofView = getViewByType(['roof']);
 
-  // Passenger side: use dedicated render if available, otherwise mirror driver side via CSS flip
-  const passengerIsFlipped = !passengerView && !!sideView;
-  const effectivePassengerView = passengerView || sideView;
+  // ⛔ THE PASSENGER SIDE IS NEVER A FLIPPED DRIVER ON A DESIGN TOOL.
+  //
+  // RULE 0: "Passenger is its own named Call-1 authority and must never be
+  // replaced by mirrored Driver pixels, whether automatically or as a hidden
+  // operator shortcut." A CSS scaleX(-1) of the driver render is exactly that,
+  // and on a wrap carrying lettering it puts the customer's own company name,
+  // phone number and domain on the approval sheet BACKWARDS.
+  //
+  // Scoped to the design tools rather than removed outright: on ColorPro and
+  // FadeWraps the flank is a solid colour or gradient with no text and no named
+  // per-side authority, so a mirrored side is a faithful preview there and this
+  // component is shared. DesignProAI renders passenger from its own panel, so a
+  // fallback can only ever be wrong.
+  const mirrorForbidden = resolvedToolKey === 'designpanelpro';
+  const passengerIsFlipped = !passengerView && !!sideView && !mirrorForbidden;
+  const effectivePassengerView = passengerView || (mirrorForbidden ? undefined : sideView);
 
   // All 7 canonical views — top row: 4 views, bottom row: 3 views
   const topRow: Array<{ label: string; view?: RenderView; flipped?: boolean }> = [
