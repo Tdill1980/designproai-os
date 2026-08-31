@@ -36,6 +36,11 @@ const PROOF_SHEET_W = 1800;
 const { outlineString } = require("./opentype-outline.cjs");
 
 const MASTER_PROOF_CONTRACT = "designpro.master-derived-2d-proof.v1";
+// The customer 2D Design Proof. Its own contract, because a consumer must be
+// able to tell the two sheets apart from the artifact alone -- one is signed by
+// a shop against production geometry, the other is approved by a customer and
+// carries none.
+const DESIGN_PROOF_CONTRACT = "designpro.customer-2d-design-proof.v1";
 // Versioned separately from the proof: a consumer that extracts against regions
 // needs to know the region contract it is reading, and the sheet layout can
 // change without the proof contract changing.
@@ -266,10 +271,33 @@ function canonicalIdentities(surfaces) {
  * This runtime's Call 8 already holds the approved per-surface artwork, and no
  * model may run in Calls 8-11.
  */
-async function renderMasterProof({ render, manifest, proofFonts, vehicle, designName, finish, designId, orderNumber, generationId, bleedInches = BLEED_INCHES }) {
+async function renderMasterProof({ render, manifest, proofFonts, vehicle, designName, finish, designId, orderNumber, generationId, bleedInches = BLEED_INCHES, variant = "production" }) {
   if (!render || render.contract !== "designpro.production-surface-render.v1") {
     fail("proof_render_invalid", "the 2D proof must be derived from a completed production render");
   }
+  // TWO SHEETS, ONE COMPOSITION, ONE SET OF ARTWORK BYTES. (Trish 2026-08-31)
+  //
+  // Owner contract §5/§6: the customer 2D DESIGN Proof and the internal
+  // PRODUCTION Proof are different artifacts and were being served by one.
+  // "The customer 2D Proof ... must NOT expose internal production topology,
+  // hashes, manufacturing metadata or production controls." This sheet exposed
+  // all four -- TRIM/PRINT/BLEED rules per tile, the GENIE size band, total sq
+  // ft, the approval block, and a footer naming the revision, generation and
+  // master/render hashes -- and it was stamped `customer-2d-production-proof`
+  // and selected as CUSTOMER_PROOF_ROLE.
+  //
+  // The remedy is a VARIANT of this composer, not a second producer: identical
+  // surface verification, identical GENIE-proportioned tiles, identical vehicle
+  // elevations, identical artwork bytes. The design variant simply does not
+  // draw the production layer. So the two sheets cannot disagree about the
+  // design, because there is one composition and one set of pixels.
+  //
+  // `production` is the default and every production-only push below is gated
+  // on it, so the Production Proof stays byte-identical to what it was.
+  if (variant !== "production" && variant !== "design") {
+    fail("proof_variant_invalid", `${variant} is not a proof variant`);
+  }
+  const showProduction = variant === "production";
   const fonts = { regular: proofFonts?.regular, bold: proofFonts?.bold };
   if (!Buffer.isBuffer(fonts.regular) || !fonts.regular.length) {
     fail("proof_font_required", "the 2D proof must be typeset from a pinned font file, not a system family name");
@@ -288,9 +316,14 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
   const MARGIN = 40;
   const GAP = 18;
   const HEADER_H = 118;
-  const FOOTER_H = 78;
-  const LABEL_H = 108;
-  const DIM_GUTTER = 74;
+  // The footer carries the approval block and the identity/hash lines; the
+  // label block carries the per-tile TRIM/BLEED/PRINT line under the surface
+  // name; the gutter exists to hold the height dimension rule. None of the
+  // three has anything to hold on a design proof, so the design sheet reclaims
+  // that space rather than printing empty bands.
+  const FOOTER_H = showProduction ? 78 : 0;
+  const LABEL_H = showProduction ? 108 : 62;
+  const DIM_GUTTER = showProduction ? 74 : 0;
 
   const bigKeys = SURFACE_ORDER.filter((key) => key === "driver" || key === "passenger");
   const smallKeys = SURFACE_ORDER.filter((key) => key !== "driver" && key !== "passenger");
@@ -322,12 +355,13 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
   });
 
   const coverageLine = `TOTAL COVERAGE: ${totalSqFt.toFixed(2)} SQ FT`;
-  const COVERAGE_H = 52;
+  const COVERAGE_H = showProduction ? 52 : 0;
   // The GENIE size band, the two lines the July proof carried under the sheet.
-  const bandLines = [
+  // It is production geometry by definition, so the design sheet has none.
+  const bandLines = (showProduction ? [
     `TRIM SIZE   ${dimensions.map((d) => `${d.surfaceKey.toUpperCase()} ${inches(d.widthInches)}" x ${inches(d.heightInches)}"`).join("   |   ")}`,
     `PRINT SIZE (+${inches(bleedInches)}" BLEED ALL AROUND)   ${dimensions.map((d) => `${d.surfaceKey.toUpperCase()} ${inches(d.printWidthInches)}" x ${inches(d.printHeightInches)}"`).join("   |   ")}`,
-  ].filter((entry) => String(entry || "").trim());
+  ] : []).filter((entry) => String(entry || "").trim());
   const bandFontSize = fitBandFontSize(bandLines, W - MARGIN * 2);
   const BAND_H = bandHeight(bandLines, bandFontSize);
 
@@ -342,8 +376,13 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
   const proofRegions = [];
 
   // Header.
-  markup.push(label(fonts, "DesignProAI™ — 2D Production Proof", { x: MARGIN, y: 26 + 34, size: 34, fill: INK, bold: true }));
-  markup.push(label(fonts, `${vehicleName}  ·  ${designName || "Approved design"}  ·  ${finish || "Gloss"} finish  ·  ${totalSqFt.toFixed(2)} sq ft`, { x: MARGIN, y: 80 + 17, size: 17, fill: MUTED }));
+  markup.push(label(fonts, showProduction ? "DesignProAI™ — 2D Production Proof" : "DesignProAI™ — 2D Design Proof", { x: MARGIN, y: 26 + 34, size: 34, fill: INK, bold: true }));
+  // Coverage in square feet is production geometry, so the design sheet names
+  // the vehicle, the design and the finish and stops there.
+  markup.push(label(fonts, showProduction
+    ? `${vehicleName}  ·  ${designName || "Approved design"}  ·  ${finish || "Gloss"} finish  ·  ${totalSqFt.toFixed(2)} sq ft`
+    : `${vehicleName}  ·  ${designName || "Approved design"}  ·  ${finish || "Gloss"} finish`,
+    { x: MARGIN, y: 80 + 17, size: 17, fill: MUTED }));
   markup.push(line(MARGIN, HEADER_H, W - MARGIN, HEADER_H));
 
   const bodyTop = HEADER_H + GAP;
@@ -388,39 +427,50 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     const trimTop = y + bleedY;
     const trimBottom = y + h - bleedY;
 
-    // Solid outer rectangle = full print edge. Dashed inner rectangle = trim.
-    // Their proportional separation is exactly the bleed on all four edges,
-    // because the tile itself is sized from trim + twice the bleed.
-    markup.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${INK}" stroke-width="2"/>`);
-    markup.push(`<rect x="${round2(trimLeft)}" y="${round2(trimTop)}" width="${round2(trimRight - trimLeft)}" height="${round2(trimBottom - trimTop)}" fill="none" stroke="${INK}" stroke-width="2" stroke-dasharray="10 7"/>`);
-    markup.push(fittedLabel(fonts, `DASHED = TRIM  ·  SOLID = PRINT EDGE  ·  ${inches(bleedInches)}" BLEED EACH EDGE`, {
-      x: x + w / 2, y: y + Math.max(16, bleedY - 6), maxWidth: w - 8, maxSize: 13, minSize: 8, fill: INK, bold: true,
-    }));
+    // ── THE PRODUCTION LAYER ────────────────────────────────────────────────
+    // Everything from here to the surface name is production topology: the
+    // trim/print boundary, the bleed, and the dimension rules that measure
+    // them. Owner contract §5 forbids all of it on the customer sheet, so the
+    // design variant draws the artwork on the vehicle and nothing else.
+    if (showProduction) {
+      // Solid outer rectangle = full print edge. Dashed inner rectangle = trim.
+      // Their proportional separation is exactly the bleed on all four edges,
+      // because the tile itself is sized from trim + twice the bleed.
+      markup.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${INK}" stroke-width="2"/>`);
+      markup.push(`<rect x="${round2(trimLeft)}" y="${round2(trimTop)}" width="${round2(trimRight - trimLeft)}" height="${round2(trimBottom - trimTop)}" fill="none" stroke="${INK}" stroke-width="2" stroke-dasharray="10 7"/>`);
+      markup.push(fittedLabel(fonts, `DASHED = TRIM  ·  SOLID = PRINT EDGE  ·  ${inches(bleedInches)}" BLEED EACH EDGE`, {
+        x: x + w / 2, y: y + Math.max(16, bleedY - 6), maxWidth: w - 8, maxSize: 13, minSize: 8, fill: INK, bold: true,
+      }));
 
-    // Width rule. It names TRIM width, so its endpoints are the dashed trim
-    // line, not the outer print rectangle that includes the bleed.
-    const ruleY = y + h + 20;
-    markup.push(line(trimLeft, ruleY, trimRight, ruleY));
-    markup.push(arrow(trimLeft, ruleY, 9, 0));
-    markup.push(arrow(trimRight, ruleY, -9, 0));
-    markup.push(line(trimLeft, ruleY - 7, trimLeft, ruleY + 7));
-    markup.push(line(trimRight, ruleY - 7, trimRight, ruleY + 7));
-    markup.push(label(fonts, `${inches(wIn)}" W`, { x: x + w / 2, y: ruleY + 26, size: 16, fill: INK, anchor: "middle" }));
+      // Width rule. It names TRIM width, so its endpoints are the dashed trim
+      // line, not the outer print rectangle that includes the bleed.
+      const ruleY = y + h + 20;
+      markup.push(line(trimLeft, ruleY, trimRight, ruleY));
+      markup.push(arrow(trimLeft, ruleY, 9, 0));
+      markup.push(arrow(trimRight, ruleY, -9, 0));
+      markup.push(line(trimLeft, ruleY - 7, trimLeft, ruleY + 7));
+      markup.push(line(trimRight, ruleY - 7, trimRight, ruleY + 7));
+      markup.push(label(fonts, `${inches(wIn)}" W`, { x: x + w / 2, y: ruleY + 26, size: 16, fill: INK, anchor: "middle" }));
 
-    // Height rule, same truth: the figure spans only the trim boundary.
-    const ruleX = x - Math.round(DIM_GUTTER / 2);
-    markup.push(line(ruleX, trimTop, ruleX, trimBottom));
-    markup.push(line(ruleX - 7, trimTop, ruleX + 7, trimTop));
-    markup.push(line(ruleX - 7, trimBottom, ruleX + 7, trimBottom));
-    const cy = (trimTop + trimBottom) / 2;
-    const verticalAxis = surfaceKey === "hood" || surfaceKey === "roof" ? "L" : "H";
-    markup.push(label(fonts, `${inches(hIn)}" ${verticalAxis}`, { x: ruleX - 10, y: cy, size: 16, fill: INK, anchor: "middle", rotate: -90 }));
+      // Height rule, same truth: the figure spans only the trim boundary.
+      const ruleX = x - Math.round(DIM_GUTTER / 2);
+      markup.push(line(ruleX, trimTop, ruleX, trimBottom));
+      markup.push(line(ruleX - 7, trimTop, ruleX + 7, trimTop));
+      markup.push(line(ruleX - 7, trimBottom, ruleX + 7, trimBottom));
+      const cy = (trimTop + trimBottom) / 2;
+      const verticalAxis = surfaceKey === "hood" || surfaceKey === "roof" ? "L" : "H";
+      markup.push(label(fonts, `${inches(hIn)}" ${verticalAxis}`, { x: ruleX - 10, y: cy, size: 16, fill: INK, anchor: "middle", rotate: -90 }));
+    }
 
-    const labelY = y + h + 46;
+    // The surface NAME is on both sheets: a customer approving a wrap has to
+    // know which side they are looking at. Its measurements do not follow it.
+    const labelY = y + h + (showProduction ? 46 : 8);
     markup.push(label(fonts, PROOF_VIEW_LABEL[surfaceKey], { x: x + w / 2, y: labelY + 17, size: 17, fill: INK, anchor: "middle", bold: true }));
-    markup.push(fittedLabel(fonts, `TRIM ${inches(wIn)}" x ${inches(hIn)}"  ·  BLEED ${inches(bleedInches)}" EACH EDGE  ·  PRINT ${inches(dimension.printWidthInches)}" x ${inches(dimension.printHeightInches)}"`, {
-      x: x + w / 2, y: labelY + 42, maxWidth: w - 8, maxSize: 14, minSize: 9, fill: MUTED,
-    }));
+    if (showProduction) {
+      markup.push(fittedLabel(fonts, `TRIM ${inches(wIn)}" x ${inches(hIn)}"  ·  BLEED ${inches(bleedInches)}" EACH EDGE  ·  PRINT ${inches(dimension.printWidthInches)}" x ${inches(dimension.printHeightInches)}"`, {
+        x: x + w / 2, y: labelY + 42, maxWidth: w - 8, maxSize: 14, minSize: 9, fill: MUTED,
+      }));
+    }
 
     // THE PER-SIDE ANCHOR. One named region per surface, in sheet pixel space,
     // bound to the content hash of the surface drawn into it. This is the
@@ -465,25 +515,32 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     }
   }
 
-  markup.push(label(fonts, coverageLine, { x: W / 2, y: bodyTop + bodyH + 8 + 22, size: 22, fill: ACCENT, anchor: "middle", bold: true }));
-  const footerY = bodyTop + bodyH + COVERAGE_H;
-  markup.push(line(MARGIN, footerY, W - MARGIN, footerY));
-  markup.push(label(fonts, `Approved By: ______________________    Signature: ______________________    Date: ____________`, { x: MARGIN, y: footerY + 20 + 17, size: 17, fill: INK }));
-  // THE GENERATION ID BELONGS ON THE SHEET. (Trish 2026-08-28)
-  //
-  // "Production proof ie a screenshot of the panels on a sheet with vehicle
-  // make model, design order #, generation id, dimensions." Every other item
-  // was already stamped -- the vehicle line above, the per-surface W/H rules
-  // beside each panel, the Design ID and Order # here. The generation id was
-  // the one identity a shop could not read off the page, and it is the id that
-  // every other table carries forward and the one PanelPro is opened on.
-  //
-  // It is the FIRST permanent identity a design has: minted at Create Design,
-  // before Call 1 runs, while the Design ID and Order # are assigned later when
-  // the Production Pack is purchased. So a proof printed before that purchase
-  // could name neither -- and now always names one.
-  markup.push(label(fonts, `${designId || "DesignID pending"}  ·  Order # ${orderNumber || "pending"}  ·  revision ${render.revisionId}  ·  generation ${generationId || "pending"}`, { x: MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED }));
-  markup.push(label(fonts, `master ${String(render.masterHash).slice(0, 16)}  ·  render ${String(render.renderHash).slice(0, 16)}  ·  GENIE ${String(render.dimensionManifestId)}  ·  no image generation`, { x: W - MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED, anchor: "end" }));
+  // THE FOOTER IS ENTIRELY PRODUCTION. Coverage in square feet, the approval
+  // signature block, the DesignID/Order/revision/generation line and the
+  // master/render/GENIE hash line are the four things owner contract §5 names
+  // by category -- topology, manufacturing metadata, hashes, production
+  // controls. The design sheet ends at the artwork.
+  if (showProduction) {
+    markup.push(label(fonts, coverageLine, { x: W / 2, y: bodyTop + bodyH + 8 + 22, size: 22, fill: ACCENT, anchor: "middle", bold: true }));
+    const footerY = bodyTop + bodyH + COVERAGE_H;
+    markup.push(line(MARGIN, footerY, W - MARGIN, footerY));
+    markup.push(label(fonts, `Approved By: ______________________    Signature: ______________________    Date: ____________`, { x: MARGIN, y: footerY + 20 + 17, size: 17, fill: INK }));
+    // THE GENERATION ID BELONGS ON THE SHEET. (Trish 2026-08-28)
+    //
+    // "Production proof ie a screenshot of the panels on a sheet with vehicle
+    // make model, design order #, generation id, dimensions." Every other item
+    // was already stamped -- the vehicle line above, the per-surface W/H rules
+    // beside each panel, the Design ID and Order # here. The generation id was
+    // the one identity a shop could not read off the page, and it is the id that
+    // every other table carries forward and the one PanelPro is opened on.
+    //
+    // It is the FIRST permanent identity a design has: minted at Create Design,
+    // before Call 1 runs, while the Design ID and Order # are assigned later when
+    // the Production Pack is purchased. So a proof printed before that purchase
+    // could name neither -- and now always names one.
+    markup.push(label(fonts, `${designId || "DesignID pending"}  ·  Order # ${orderNumber || "pending"}  ·  revision ${render.revisionId}  ·  generation ${generationId || "pending"}`, { x: MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED }));
+    markup.push(label(fonts, `master ${String(render.masterHash).slice(0, 16)}  ·  render ${String(render.renderHash).slice(0, 16)}  ·  GENIE ${String(render.dimensionManifestId)}  ·  no image generation`, { x: W - MARGIN, y: footerY + 46 + 17, size: 15, fill: MUTED, anchor: "end" }));
+  }
 
   if (BAND_H) {
     const bandTop = H - BAND_H;
@@ -520,7 +577,8 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
   return Object.freeze({
     // Field names the claimant already records for the customer proof, so the
     // approval and UI integration ahead needs no rewrite.
-    contract: MASTER_PROOF_CONTRACT,
+    contract: showProduction ? MASTER_PROOF_CONTRACT : DESIGN_PROOF_CONTRACT,
+    variant,
     bytes,
     contentHash: sha256(bytes),
     byteSize: bytes.length,
@@ -539,8 +597,12 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
     surfaceHashes: SURFACE_ORDER.map((key) => ({ surfaceKey: key, contentHash: surfaceByKey.get(key).contentHash })),
     // The per-side anchor on the approved sheet: one region per surface, in
     // sheet pixel space, each bound to the surface hash drawn into it.
-    proofRegionContract: PROOF_REGION_CONTRACT,
-    proofRegions,
+    // ⛔ THE DESIGN PROOF PUBLISHES NO REGIONS. Owner contract §5: "It is NOT a
+    // source of production artwork." A region set is exactly what an extractor
+    // binds against, so handing one out is how a presentation sheet becomes a
+    // production source. The production proof keeps its six anchors.
+    proofRegionContract: showProduction ? PROOF_REGION_CONTRACT : null,
+    proofRegions: showProduction ? proofRegions : Object.freeze([]),
     textIdentities: identities.text.map(({ textId, string }) => ({ textId, string })),
     logoIdentities: identities.logos.map(({ identityKey, contentHash }) => ({ identityKey, contentHash })),
     perSurfaceDimensions: dimensions,
@@ -550,6 +612,7 @@ async function renderMasterProof({ render, manifest, proofFonts, vehicle, design
 
 module.exports = {
   MASTER_PROOF_CONTRACT,
+  DESIGN_PROOF_CONTRACT,
   PROOF_REGION_CONTRACT,
   SURFACE_ORDER,
   MasterProofError,
