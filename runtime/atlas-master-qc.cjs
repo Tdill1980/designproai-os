@@ -114,6 +114,17 @@ const MAX_ZONE_FLAT_BLACK_RATIO = 0.05;
 const FLAT_BLACK_CHANNEL_MAX = 24;
 const CUTOUT_BRIGHT_MAJORITY = 0.55;
 const MAX_ZONE_CUTOUT_COMPONENT_RATIO = 0.02;
+// How much of a zone's border ring may be hole before the zone is a silhouette
+// rather than a full-bleed rectangle.
+//
+// The number comes from CLAUDE.md's own eleven-run measurement of the v4 flank
+// regression, which used exactly this signal: every good master held a border
+// median of 135-177 luminance, and the failing run read "63-83% of each border
+// dark". 0.35 sits far below that failure band and far above any legitimate
+// design, which reaches its edges on all four sides by contract and can only
+// approach this by painting a genuinely black border -- which the
+// bright-majority guard excludes anyway.
+const MAX_ZONE_EDGE_HOLE_RATIO = 0.35;
 const MIN_CUTOUT_COMPONENT_RATIO = 0.0025;
 const CUTOUT_ALPHA_MAX = 128;
 // A generated vehicle/template sometimes survives as opaque white anatomy, so
@@ -347,6 +358,25 @@ async function zonePixelMetrics(masterBytes, manifest) {
         if (atEdge) {
           edgePixels += 1;
           if (isOpaque) edgeOpaque += 1;
+          // ⛔ A BLACK BORDER IS NOT A FILLED EDGE, AND ALPHA CANNOT SEE IT.
+          //
+          // `edgeOpaqueRatio` above is the blocking full-bleed test, and it
+          // asks only whether the border pixels are OPAQUE -- the exact hole
+          // this file's own header warns about: "opaqueRatio only asks whether
+          // a pixel is opaque, and black is opaque." So a zone containing a
+          // vehicle silhouette floating on a black surround passes it at
+          // 1.00000, because the surround is perfectly opaque black.
+          //
+          // That is what accepted the 2026-08-31 Oasis Pools master: five zones
+          // whose artwork sat inside a vehicle-shaped island, every border
+          // black, every edge check green. Measured the same way CLAUDE.md
+          // measured the v4 flank regression -- "63-83% of each border dark" on
+          // the failing run against a border median of 135-177 on every good
+          // one -- so the separation this counts is the owner's own.
+          //
+          // `holeAt` is defined below over the same buffer; the border ring is
+          // re-walked there rather than inlined here, because the predicate
+          // must stay the ONE definition of "hole" shared with the fill.
         }
         if (isOpaque) {
           const luma = 0.299 * red + 0.587 * green + 0.114 * blue;
@@ -383,6 +413,22 @@ async function zonePixelMetrics(masterBytes, manifest) {
       if (data[offset + info.channels - 1] < CUTOUT_ALPHA_MAX) return true;
       return Math.max(red, green, blue) <= FLAT_BLACK_CHANNEL_MAX;
     };
+    // THE BORDER RING, MEASURED AS HOLE RATHER THAN AS ALPHA.
+    //
+    // Same ring `edgeOpaqueRatio` walks, same `holeAt` predicate the cut-out
+    // detector and the fill share, so there is one definition of "hole" and a
+    // silhouette cannot be a hole to one check and solid to another.
+    let edgeHole = 0;
+    let edgeRing = 0;
+    for (let py = 0; py < info.height; py += 1) {
+      const rowIsEdge = py < edgeDepth || py >= info.height - edgeDepth;
+      for (let px = 0; px < info.width; px += 1) {
+        if (!rowIsEdge && px >= edgeDepth && px < info.width - edgeDepth) continue;
+        edgeRing += 1;
+        if (holeAt(px, py)) edgeHole += 1;
+      }
+    }
+
     // `interior` is the blob mask the component pass labels: marking only
     // interiors is what stops a dark outline or a shadow edge from chaining
     // scattered detail into one apparently large "opening".
@@ -443,6 +489,7 @@ async function zonePixelMetrics(masterBytes, manifest) {
       surfaceKey: String(zone.surfaceKey),
       opaqueRatio: opaque / pixelCount,
       edgeOpaqueRatio: edgePixels ? edgeOpaque / edgePixels : 0,
+      edgeHoleRatio: edgeRing ? edgeHole / edgeRing : 0,
       lumaStddev: Math.sqrt(variance),
       flatBlackRatio: flatBlack / pixelCount,
       concentratedFlatBlackRatio: concentratedFlatBlack / pixelCount,
@@ -648,6 +695,43 @@ async function deterministicMasterChecks(masterBytes, manifest) {
     // holes in the wrap; the installer is the one who cuts an opening, and they
     // cut it out of a solid panel. Both readings of "hole" convict, and the
     // bright-majority guard on each is what keeps a black wrap legal.
+    // ⛔ ARTWORK THAT DOES NOT REACH THE EDGES IS A SILHOUETTE, AND THAT IS
+    //    STRUCTURAL INVALIDITY -- NOT A REPAIRABLE CUT-OUT.
+    //
+    // Owner, 2026-08-31, on the accepted Oasis Pools master: "it's worse then
+    // ai slop no wonder panels are shit". Five zones came back as a vehicle
+    // shape floating on black, and every gate passed: the cut-out class is
+    // non-blocking at ANY size by design, so a single component covering 30.3%
+    // of the roof and 28.7% of the rear was recorded, filled, and published.
+    //
+    // The blast-radius argument for keeping cut-outs non-blocking (RULE 0.15,
+    // "A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN") is sound and is
+    // untouched below. It was reasoned about WHEEL ARCHES -- a minority shape
+    // inside a full-bleed field, in a region the 3D proof masks away anyway. It
+    // was never an argument for accepting a sheet whose artwork never reaches
+    // its own borders, and the fill cannot repair that: it closes a hole as "a
+    // soft continuation of its own border", so a silhouette's black surround
+    // would be smeared inward as fake livery across a third of the panel.
+    //
+    // RULE 0.28 states the contract this enforces: "Filled edge to edge.
+    // Artwork runs off all four sides of its rectangle. No blank margin, white
+    // gap, letterboxing, rounded corner, frame or border."
+    //
+    // Guarded by the SAME bright-majority test the cut-out checks use, for the
+    // same reason: a legitimate black wrap has a black border and must stay
+    // legal. It reads ~10% artwork and never enters this branch. The convicted
+    // master read 58.9-79.3% artwork per zone -- majority livery, with the
+    // livery confined to a vehicle-shaped island.
+    if (zone.nonBlackFraction >= CUTOUT_BRIGHT_MAJORITY
+      && zone.edgeHoleRatio > MAX_ZONE_EDGE_HOLE_RATIO) {
+      blocking(
+        `${zone.surfaceKey} edgeHoleRatio=${zone.edgeHoleRatio.toFixed(5)} `
+        + `-- ${(zone.edgeHoleRatio * 100).toFixed(1)}% of the zone border is hole `
+        + `while ${(zone.nonBlackFraction * 100).toFixed(1)}% of the zone is artwork: `
+        + "the design does not run off its own edges, so this zone is a shape floating "
+        + "on a surround, not a full-bleed printable rectangle",
+      );
+    }
     if (zone.nonBlackFraction >= CUTOUT_BRIGHT_MAJORITY) {
       if (zone.largestCutoutComponentRatio > MAX_ZONE_CUTOUT_COMPONENT_RATIO) {
         cutout(zone.surfaceKey,
@@ -1107,6 +1191,7 @@ module.exports = {
     MIN_ZONE_LUMA_STDDEV,
     MIN_ZONE_OPAQUE_RATIO,
     MAX_ZONE_CUTOUT_COMPONENT_RATIO,
+    MAX_ZONE_EDGE_HOLE_RATIO,
     MAX_ZONE_FLAT_BLACK_RATIO,
     MIN_CUTOUT_COMPONENT_RATIO,
     CUTOUT_BRIGHT_MAJORITY,

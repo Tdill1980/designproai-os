@@ -2430,6 +2430,35 @@ async function generateOrReuseFlatAtlas(options) {
   const surfaceSourceBytes = cutoutFill.bytes;
   const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
 
+  // ⛔ STRUCTURAL RE-VALIDATION AFTER REPAIR. (Owner, 2026-08-31)
+  //
+  // The required Call-1 boundary, verbatim: "one Gemini A.T.L.A.S. generation
+  // -> structural validation -> deterministic void repair if required ->
+  // structural RE-VALIDATION -> six opaque/full-bleed artwork regions
+  // confirmed -> canonical master ACCEPTED ... If repair cannot produce six
+  // valid regions, Call 1 fails. It does NOT publish a malformed master."
+  //
+  // That re-validation did not exist. The fill ran, its output went straight
+  // into the panel cut and the proof conditioning, and nothing ever asked
+  // whether it had actually produced six valid regions -- the repair was
+  // trusted because it is deterministic, which proves it is REPEATABLE, not
+  // that its result is VALID.
+  //
+  // Skipped entirely when the fill changed nothing: on a clean master the
+  // returned buffer IS the master, which the checks above just passed, so
+  // re-running them would be pure latency on the critical path before the
+  // customer sees anything.
+  if (cutoutFill.changed) {
+    const repaired = await deterministicMasterChecks(surfaceSourceBytes, manifest);
+    if (repaired.blockingFailures.length) {
+      throw new FlatAtlasError(
+        "flat_atlas_repaired_master_invalid",
+        "The deterministic repair did not produce six valid printable regions: "
+        + repaired.blockingFailures.join("; "),
+      );
+    }
+  }
+
   // ── THE PROGRESSIVE ATLAS: THE ROOT NODE, PUBLISHED BEFORE ITS BRANCHES ────
   //
   // Owner, 2026-08-27: "Nodes run when their inputs exist. Nothing waits unless
