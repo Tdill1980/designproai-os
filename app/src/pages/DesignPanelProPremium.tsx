@@ -338,8 +338,6 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const isFlatFirstDiagnostic = activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
   const latestFlatAtlas = flatAtlasRevisions[flatAtlasRevisions.length - 1];
   const inlineRevisionEnabled = inlineRevisionEnabledForPipeline(activePipelineMode);
-  const showFlatFirstDiagnostic = isFlatFirstDiagnostic ||
-    (!generationRequestState && !generatedImageUrl && pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE);
 
   // --- Feature flag: persona pipeline ---
   const [searchParams] = useSearchParams();
@@ -2199,24 +2197,18 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     {/* Progress now lives INSIDE the Konva window (GeneratingFloor)
                         — the old DesignIQProgressBar was a duplicate second bar. */}
 
-                    {showFlatFirstDiagnostic && (
-                      <Card className="border-cyan-400/35 bg-cyan-400/5 p-3 text-sm text-cyan-50">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-                          <div>
-                            <p className="font-semibold">Precision Mode</p>
-                            <p className="mt-1 text-xs leading-5 text-cyan-100/70">
-                              Your design appears first, followed by Driver Side. Select See All Views to reveal Driver, Passenger, Hood, Front, Rear, Close-Up, and Roof as each saved proof becomes ready from that same design.
-                            </p>
-                            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">
-                              {generationRequestState
-                                ? "Preview started"
-                                : "Ready to start"}
-                            </p>
-                          </div>
-                        </div>
-                      </Card>
-                    )}
+                    {/* THE "PRECISION MODE" CARD IS GONE. (Owner, 2026-08-31:
+                        "the odd white card /progress bar is causing this! I did
+                        not ask for this".)
+                        It sat between the header and the render, pushing the
+                        preview down and narrating the pipeline to a customer who
+                        did not ask how the pipeline works -- a warning triangle,
+                        a stage list, and a "Preview started" / "Ready to start"
+                        line that duplicated the progress surface already inside
+                        the render window. The one piece of product it carried,
+                        See All Views, is its own control further down and is
+                        unaffected. Nothing gated on it: `showFlatFirstDiagnostic`
+                        existed only for this card. */}
 
                     {/* Persona Pipeline Progress */}
                     {isPersonaMode && isPersonaPipelineActive && (
