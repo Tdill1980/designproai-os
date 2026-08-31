@@ -139,8 +139,8 @@ test("the exact DCA brief retains vehicle-wrap intent and named topology before 
     brandColors: "deep blue, sunrise orange",
   });
   assert.match(prompt, /airflow ribbons sweeping front to rear/);
-  assert.match(prompt, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
-  assert.match(prompt, /BODY CLASS \(GENIE\): truck/);
+  assert.match(prompt, /ARTBOARD for this exact 2022 Ford F250 Crew Cab/);
+  assert.match(prompt, /\(truck\)/);
   // ⚠️ INVERTED 2026-08-31. This ran the REAL builder on a pickup and required
   // the assembled prompt to contain PICKUP COVERAGE, "open bed floor and inner
   // bed walls remain bare factory bedliner", and "no empty bed-shaped opening".
@@ -157,8 +157,8 @@ test("the exact DCA brief retains vehicle-wrap intent and named topology before 
     assert.ok(!prompt.includes(bedAnatomy),
       `a pickup's Call-1 prompt must not carry "${bedAnatomy}"`);
   }
-  assert.match(prompt, /PIXEL CONTENT LOCK:/);
-  assert.match(prompt, /printed poster or a roll of printed vinyl laid flat/);
+  assert.match(prompt, /flat printed graphic art, the same kind of image as a printed poster/);
+  assert.match(prompt, /a printed poster or a roll of printed vinyl laid flat/);
   for (const anatomyNoun of ["wheels", "windows", "doors", "silhouette", "vehicle outline", "shaped openings"]) {
     assert.ok(!prompt.includes(anatomyNoun),
       `the assembled prompt must not hand the image model the noun "${anatomyNoun}"`);
@@ -166,7 +166,7 @@ test("the exact DCA brief retains vehicle-wrap intent and named topology before 
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
     assert.match(prompt, new RegExp(surface, "i"));
   }
-  assert.match(prompt, /SURFACE METADATA IS NEVER VISIBLE ARTWORK/);
+  assert.match(prompt, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
   assert.doesNotMatch(prompt, /FIELD [A-F]|studio photograph|widthInches|heightInches/i);
 });
 
@@ -197,8 +197,8 @@ test("camera, studio and the photograph framing stay out of the flat master", ()
   assert.doesNotMatch(flat, /Canon EOS R5/);
   assert.doesNotMatch(flat, /epoxy floor|LED strip/);
   assert.match(flat, /Design ONE cohesive flattened vehicle-wrap master/);
-  assert.match(flat, /OUTPUT FORMAT — ONE FLAT A.T.L.A.S. MASTER/);
-  assert.match(flat, /TARGET VEHICLE \(CANONICAL\): 2022 Ford F250 Crew Cab/);
+  assert.match(flat, /OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD/);
+  assert.match(flat, /ARTBOARD for this exact 2022 Ford F250 Crew Cab/);
   assert.doesNotMatch(flat, /studio photograph|Canon EOS R5|epoxy floor|LED strip/i);
 
   // And the 3D path is untouched: same assembly, atlasFlatMaster off.
