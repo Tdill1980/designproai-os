@@ -238,7 +238,26 @@ export default function GenerateDesign() {
     setDesignPrepGenerationId(null);
   }
 
-  async function beginDesignPrep() {
+  // PREP RUNS ITSELF AND GATES NOTHING. (Owner, 2026-08-31: "Remove the
+  // mandatory button after vehicle entry it buys nothing. Bad ui.")
+  //
+  // The prepared dimensions were never carried into the generation request --
+  // the server re-resolves them, because browser-supplied geometry may never be
+  // production authority -- so the click bought no latency at all, only a stop.
+  // A complete vehicle now starts the catalog read in the background while the
+  // customer keeps writing, which is what "prepare everything while they fill
+  // out the form" actually meant. Debounced, because a half-typed model is not
+  // a vehicle; silent, because the customer never asked for this preview and
+  // Generate does not depend on it.
+  useEffect(() => {
+    if (!vehicleYear.trim() || !vehicleMake.trim() || !vehicleModel.trim()) return;
+    if (designPrepIsCurrent || designPrepBusy) return;
+    const timer = window.setTimeout(() => { void beginDesignPrep({ silent: true }); }, 700);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicleYear, vehicleMake, vehicleModel, vehicleType, designPrepIsCurrent, designPrepBusy]);
+
+  async function beginDesignPrep({ silent = false }: { silent?: boolean } = {}) {
     const vehicle = {
       year: vehicleYear.trim(),
       make: vehicleMake.trim(),
@@ -246,12 +265,12 @@ export default function GenerateDesign() {
       type: vehicleType,
     };
     if (!vehicle.year || !vehicle.make || !vehicle.model) {
-      setError("Enter the vehicle year, make, and model before beginning Design Prep.");
+      if (!silent) setError("Enter the vehicle year, make, and model before beginning Design Prep.");
       return;
     }
-    setError("");
+    if (!silent) setError("");
     setDesignPrepBusy(true);
-    setProgress("Beginning Design Prep — pulling vehicle dimensions…");
+    if (!silent) setProgress("Pulling vehicle dimensions…");
     try {
       const generationId = designPrepGenerationId || crypto.randomUUID().toLowerCase();
       setDesignPrepGenerationId(generationId);
@@ -261,12 +280,16 @@ export default function GenerateDesign() {
     } catch (cause) {
       setDesignPrep(null);
       setDesignPrepVehicle("");
-      setError(cause instanceof ApiError
-        ? `Design Prep could not pull vehicle dimensions (${cause.code}).`
-        : "Design Prep could not pull vehicle dimensions.");
+      // A background preview failing is not the customer's problem and must not
+      // occupy the form's one error slot -- Generate works without it.
+      if (!silent) {
+        setError(cause instanceof ApiError
+          ? `Design Prep could not pull vehicle dimensions (${cause.code}).`
+          : "Design Prep could not pull vehicle dimensions.");
+      }
     } finally {
       setDesignPrepBusy(false);
-      setProgress("");
+      if (!silent) setProgress("");
     }
   }
 
@@ -369,10 +392,13 @@ export default function GenerateDesign() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!designPrepIsCurrent) {
-      setError("Press “Enter vehicle — begin Design Prep” before generating the design.");
-      return;
-    }
+    // Prep never gates Generate. See the note on the background pass above: the
+    // prepared dimensions are not carried into the request, so this gate made
+    // the customer wait on a catalog read the server repeats regardless. The
+    // GenerationID is minted here when the background pass has not already
+    // done it, so identity continuity across a technical retry is unchanged.
+    const generationIdentity = designPrepGenerationId || crypto.randomUUID().toLowerCase();
+    if (generationIdentity !== designPrepGenerationId) setDesignPrepGenerationId(generationIdentity);
     setBusy(true);
     setError("");
     const form = new FormData(event.currentTarget);
@@ -404,7 +430,7 @@ export default function GenerateDesign() {
       );
       setRequest(
         await dpApi.createGenerationRequest({
-          generationId: designPrepGenerationId || undefined,
+          generationId: generationIdentity,
           // Calls 1-7 are fulfillment-unbound. WrapBox customer/order data is
           // collected only after a Production Pack entitlement exists.
           designName: resolvedDesignName,
@@ -577,17 +603,13 @@ export default function GenerateDesign() {
               </div>
               <div className="sm:col-span-2 flex flex-col gap-3 rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-4">
                 <div>
-                  <p className="text-sm font-semibold text-cyan-100">Required: press Enter to begin Design Prep</p>
+                  <p className="text-sm font-semibold text-cyan-100">Design Prep</p>
                   <p className="mt-1 text-xs leading-5 text-cyan-100/80">
-                    This sends the vehicle identity immediately. The final design is not generated until the creative prompt is submitted.
+                    DesignProAI pulls this vehicle's GENIE dimensions on its own while you write the
+                    creative prompt. Nothing here gates Generate.
                   </p>
                 </div>
-                <div>
-                  <Button type="button" onClick={beginDesignPrep} disabled={designPrepBusy}>
-                    {designPrepBusy ? "Beginning Design Prep…" : "Enter vehicle — begin Design Prep"}
-                  </Button>
-                </div>
-                {designPrepBusy && <Loading label="Beginning Design Prep — pulling vehicle dimensions…" />}
+                {designPrepBusy && <Loading label="Pulling vehicle dimensions…" />}
                 {designPrepIsCurrent && designPrep && (
                   designPrep.surfaces.length === 6 ? (
                     <Notice tone="success">

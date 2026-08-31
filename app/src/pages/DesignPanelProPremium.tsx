@@ -380,24 +380,28 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     generationIdRef.current = null;
   };
 
-  const beginDesignPrep = async () => {
+  const beginDesignPrep = async ({ silent = false }: { silent?: boolean } = {}) => {
     const vehicle = {
       year: year.trim(), make: make.trim(), model: model.trim(), type: vehicleType,
     };
     if (!vehicle.year || !vehicle.make || !vehicle.model) {
-      toast({
-        title: "Vehicle required",
-        description: "Enter year, make, and model, then press Enter vehicle.",
-        variant: "destructive",
-      });
+      if (!silent) {
+        toast({
+          title: "Vehicle required",
+          description: "Enter year, make, and model.",
+          variant: "destructive",
+        });
+      }
       return;
     }
     if (!flatFirstAtlasSupportedVehicleType(vehicle.type)) {
-      toast({
-        title: "A.T.L.A.S. topology unavailable",
-        description: "Current Design Prep supports cars, trucks, SUVs, and vans.",
-        variant: "destructive",
-      });
+      if (!silent) {
+        toast({
+          title: "A.T.L.A.S. topology unavailable",
+          description: "Current Design Prep supports cars, trucks, SUVs, and vans.",
+          variant: "destructive",
+        });
+      }
       return;
     }
     setDesignPrepBusy(true);
@@ -414,15 +418,38 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       // still calls invalidateDesignPrep and intentionally starts a new identity.
       setDimensionPreview(null);
       setDesignPrepVehicle("");
-      toast({
-        title: "Design Prep could not start",
-        description: "Vehicle dimensions could not be pulled. Please try Enter vehicle again.",
-        variant: "destructive",
-      });
+      if (!silent) {
+        toast({
+          title: "Design Prep could not start",
+          description: "Vehicle dimensions could not be pulled.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setDesignPrepBusy(false);
     }
   };
+
+  // PREP RUNS ITSELF, IN THE BACKGROUND, AND NOTHING WAITS ON IT.
+  //
+  // The old flow demanded a click before Generate would work at all. Since the
+  // server re-resolves the geometry anyway, that click was a gate on the
+  // customer and nothing else. Now a complete, supported vehicle simply starts
+  // the catalog read while the customer keeps writing the brief -- which is what
+  // the original intent ("DesignProAI can already parse and prepare everything")
+  // actually asked for.
+  //
+  // Debounced, because year/make/model arrive a keystroke at a time and a
+  // half-typed model is not a vehicle. Failures are silent: this is a preview,
+  // the customer never asked for it, and Generate does not depend on it.
+  useEffect(() => {
+    if (!year.trim() || !make.trim() || !model.trim()) return;
+    if (!flatFirstAtlasSupportedVehicleType(vehicleType)) return;
+    if (designPrepIsCurrent || designPrepBusy) return;
+    const timer = window.setTimeout(() => { void beginDesignPrep({ silent: true }); }, 700);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, make, model, vehicleType, designPrepIsCurrent, designPrepBusy]);
 
   const dimensionsState: "ok" | "warn" | "neutral" = !designPrepIsCurrent || !dimensionPreview
     ? "neutral"
@@ -1180,14 +1207,22 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
         });
         return;
       }
-      if (!designPrepIsCurrent) {
-        toast({
-          title: "Begin Design Prep",
-          description: "Press Enter vehicle so A.T.L.A.S. can pull the exact vehicle dimensions before generation.",
-          variant: "destructive",
-        });
-        return;
-      }
+      // PREP NEVER BLOCKS GENERATION. (Owner, 2026-08-31: "Remove the mandatory
+      // button after vehicle entry it buys nothing. Bad ui.")
+      //
+      // It genuinely bought nothing. The prepared dimensions were never carried
+      // into the request -- `resolveFlatAtlasPreviewDimensions` re-resolves
+      // server-side (generation-worker.cjs:898) because browser-supplied
+      // geometry may never be production authority. So this gate stopped the
+      // customer to wait on a catalog read the server repeats regardless.
+      // Measured on generation 7a1062f4: the entire window between the request
+      // landing and Call 1 starting -- lease pickup included -- was ~6s, against
+      // a 232s Call 1.
+      //
+      // The two things prep DOES contribute need no click: the GenerationID is
+      // minted below if the background pass has not already done it, and the
+      // unsupported-vehicle refusal is the check immediately above this one.
+      generationIdRef.current ||= crypto.randomUUID().toLowerCase();
     }
 
     if (mvp.isMyVehicleMode && !mvp.hasPhotos) {
@@ -2109,23 +2144,15 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                           </div>
                           <div className="mt-3 rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-3">
                             <p className="text-xs font-semibold text-cyan-100">
-                              Required: press Enter vehicle to begin Design Prep
+                              Design Prep
                             </p>
                             <p className="mt-1 text-[11px] leading-4 text-cyan-100/70">
-                              DesignProAI sends the vehicle now and pulls its GENIE dimensions while you continue the creative prompt.
+                              DesignProAI pulls this vehicle's GENIE dimensions on its own while you
+                              write the creative prompt. Nothing here gates Generate.
                             </p>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={beginDesignPrep}
-                              disabled={designPrepBusy}
-                              className="mt-2"
-                            >
-                              {designPrepBusy ? "Beginning Design Prep…" : "Enter vehicle — begin Design Prep"}
-                            </Button>
                             {designPrepBusy && (
                               <p className="mt-2 text-[11px] text-cyan-100/80">
-                                Beginning Design Prep — pulling vehicle dimensions…
+                                Pulling vehicle dimensions…
                               </p>
                             )}
                             {designPrepIsCurrent && dimensionPreview && (

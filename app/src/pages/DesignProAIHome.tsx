@@ -164,14 +164,24 @@ export default function DesignProAIHome() {
     setDesignPrepGenerationId(null);
   };
 
-  const beginDesignPrep = async () => {
+  // PREP RUNS ITSELF AND GATES NOTHING. (Owner, 2026-08-31: "Remove the
+  // mandatory button after vehicle entry it buys nothing. Bad ui.")
+  //
+  // The prepared dimensions never reached the generation request -- the server
+  // re-resolves them, because browser-supplied geometry may never be production
+  // authority -- so the click bought no latency, only a stop. A complete vehicle
+  // now starts the catalog read in the background while the customer keeps
+  // writing. Debounced, because a half-typed model is not a vehicle; silent,
+  // because the customer never asked for this preview and Create does not
+  // depend on it.
+  const beginDesignPrep = async ({ silent = false }: { silent?: boolean } = {}) => {
     const vehicle = { year: year.trim(), make: make.trim(), model: model.trim(), type: vehicleType };
     if (!vehicle.year || !vehicle.make || !vehicle.model) {
-      setDesignPrepError("Enter year, make, and model, then press Enter vehicle.");
+      if (!silent) setDesignPrepError("Enter year, make, and model.");
       return;
     }
     setDesignPrepBusy(true);
-    setDesignPrepError("");
+    if (!silent) setDesignPrepError("");
     try {
       const generationId = designPrepGenerationId || crypto.randomUUID().toLowerCase();
       setDesignPrepGenerationId(generationId);
@@ -181,11 +191,19 @@ export default function DesignProAIHome() {
     } catch {
       setDesignPrep(null);
       setDesignPrepVehicle("");
-      setDesignPrepError("Vehicle dimensions could not be pulled. Press Enter vehicle to try again.");
+      if (!silent) setDesignPrepError("Vehicle dimensions could not be pulled.");
     } finally {
       setDesignPrepBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!year.trim() || !make.trim() || !model.trim()) return;
+    if (designPrepIsCurrent || designPrepBusy) return;
+    const timer = window.setTimeout(() => { void beginDesignPrep({ silent: true }); }, 700);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, make, model, vehicleType, designPrepIsCurrent, designPrepBusy]);
 
   const uploadRef = async (file: File) => {
     setUploadingRef(true);
@@ -227,12 +245,10 @@ export default function DesignProAIHome() {
   const dots = Math.min(Math.max(showcase.length, 1), 5);
   // Open the studio INLINE on this page (no navigation, no new window).
   const startNewDesign = () => {
-    if (!designPrepIsCurrent) {
-      setDesignPrepError("Press “Enter vehicle — begin Design Prep” before creating the design.");
-      return;
-    }
+    const generationIdentity = designPrepGenerationId || crypto.randomUUID().toLowerCase();
+    if (generationIdentity !== designPrepGenerationId) setDesignPrepGenerationId(generationIdentity);
     setStudioBrief({
-      generationId: designPrepGenerationId,
+      generationId: generationIdentity,
       pipelineMode,
       vehicleType,
       year: year.trim() || undefined,
@@ -241,12 +257,10 @@ export default function DesignProAIHome() {
     });
   };
   const startDesign = () => {
-    if (!designPrepIsCurrent) {
-      setDesignPrepError("Press “Enter vehicle — begin Design Prep” before creating the design.");
-      return;
-    }
+    const generationIdentity = designPrepGenerationId || crypto.randomUUID().toLowerCase();
+    if (generationIdentity !== designPrepGenerationId) setDesignPrepGenerationId(generationIdentity);
     setStudioBrief({
-      generationId: designPrepGenerationId,
+      generationId: generationIdentity,
       acePrompt: prompt.trim() || undefined,
       mode, vehicleType,
       pipelineMode,
@@ -287,7 +301,7 @@ export default function DesignProAIHome() {
             </div>
 
             {/* Primary CTA at the top so it's always visible — fill the info below, then Create. */}
-            <button onClick={startDesign} disabled={!designPrepIsCurrent || designPrepBusy} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-pink-500 py-2.5 text-sm font-bold text-white shadow transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+            <button onClick={startDesign} disabled={designPrepBusy} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-pink-500 py-2.5 text-sm font-bold text-white shadow transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
               <Wand2 className="h-4 w-4" /> Create Design
             </button>
 
@@ -312,10 +326,7 @@ export default function DesignProAIHome() {
               <input value={make} onChange={(e) => changeVehicle(setMake, e.target.value)} placeholder="Make" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
               <input value={model} onChange={(e) => changeVehicle(setModel, e.target.value)} placeholder="Model" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
             </div>
-            <button type="button" onClick={beginDesignPrep} disabled={designPrepBusy} className="mt-2 w-full rounded-lg border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-100 transition hover:bg-cyan-400/20 disabled:cursor-wait disabled:opacity-60">
-              {designPrepBusy ? "Beginning Design Prep…" : "Enter vehicle — begin Design Prep"}
-            </button>
-            {designPrepBusy && <p className="mt-1 text-[10px] text-cyan-200">Beginning Design Prep — pulling vehicle dimensions…</p>}
+            {designPrepBusy && <p className="mt-1 text-[10px] text-cyan-200">Pulling vehicle dimensions…</p>}
             {designPrepIsCurrent && designPrep && (
               <p className="mt-1 text-[10px] text-emerald-300">Design Prep ready — {designPrep.surfaces.length} labeled surfaces bound. Continue filling out your prompt.</p>
             )}
