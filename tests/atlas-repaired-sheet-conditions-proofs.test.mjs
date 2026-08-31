@@ -46,7 +46,15 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 test("the projection and the panels are cut from the same repaired sheet", () => {
   // One expression each. If either ever takes `masterBytes` again, the proof
   // half is back on the holed original and the canary failure returns.
-  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash, \{/);
+  //
+  // ⚠️ INVERTED 2026-08-31. This asserted the third argument was `masterHash`,
+  // under the two-master model where the repaired sheet cut the panels while
+  // the PRE-repair sheet stayed canonical. The owner retired that model: after
+  // post-repair re-validation the repaired bytes ARE the accepted canonical
+  // master, so the lineage argument is now `acceptedMasterHash`. On a clean run
+  // the two are the same value; on a repaired one there is no longer a second
+  // master for them to disagree about.
+  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, acceptedMasterHash, \{/);
   assert.match(source, /projectionDerivative\(surfaceSourceBytes\)/);
   assert.doesNotMatch(source, /await projectionDerivative\(masterBytes\)/);
 });
@@ -62,17 +70,31 @@ test("the six exact surface crops the proof QC judges are built from the repaire
   // (owner 2026-08-27: "each proof uses its own extracted panel as immutable
   // artwork authority").
   assert.match(source, /await buildViewAuthorities\(authorityPanels\)/);
-  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, masterHash/);
+  // Same inversion as above: the lineage argument is the ACCEPTED master.
+  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, acceptedMasterHash/);
   assert.doesNotMatch(source, /buildViewAuthorities\(masterBytes/);
   // And a resumed run re-cuts from the repaired sheet, never the authored one.
   assert.match(source, /await cutCallOnePanels\(surfaceSourceBytes, manifest, row\.master_content_hash\)/);
 });
 
-test("the canonical master is still persisted unmodified and stays the lineage identity", () => {
-  // The repair is a duplicate. The authored bytes are what the revision row
-  // and every UI binding are keyed by, exactly as before.
-  assert.match(source, /storagePath: masterStoragePath, bytes: masterBytes, contentType: "image\/png"/);
+test("the ACCEPTED master is what persists and what every binding is keyed by", () => {
+  // ⚠️ INVERTED 2026-08-31, AND THE TITLE CHANGED WITH IT.
+  //
+  // This asserted "the canonical master is still persisted unmodified" -- that
+  // the PRE-repair authored bytes were what the revision row and every UI
+  // binding were keyed by, with the repaired sheet living only as an unstored
+  // duplicate. That is precisely the split the owner rejected: "A.T.L.A.S.
+  // shown to humans = bad original, Panels/proof authority = repaired
+  // derivative. That is not one canonical authority."
+  //
+  // What persists is now the sheet that PASSED structural re-validation. On a
+  // clean master that is byte-identical to what this test used to assert,
+  // because the fill returns the same buffer and the path is the same one.
+  assert.match(source, /storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes, contentType: "image\/png"/);
   assert.match(source, /master: \{\s*storagePath: row\.master_storage_path,/);
+  // The pre-repair sheet is not lost -- it is recorded as provenance, and is
+  // never again called the canonical or accepted master.
+  assert.match(source, /preRepairMasterHash,/);
 });
 
 test("a panel's sourceMasterHash is the canonical master, so PanelPro can pair it with its proof", async () => {
