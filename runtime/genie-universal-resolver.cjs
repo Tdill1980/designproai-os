@@ -636,9 +636,19 @@ function parseGroundedJson(text, raw = {}) {
 }
 
 function groundingPrompt(vehicle, strictRetry = false) {
-  // A parse retry and a sanity retry ask for different corrections, so the
-  // second attempt names the actual defect instead of a generic "try again".
-  const retryInstruction = typeof strictRetry === "string"
+  // A parse retry, a sanity retry and an ambiguity retry ask for different
+  // corrections, so the second attempt names the actual defect instead of a
+  // generic "try again".
+  //
+  // The ambiguity tail is NOT the parse tail. "Your prior answer could not be
+  // parsed" is false here -- every object parsed perfectly, there were just
+  // several of them -- and telling the model its JSON was malformed sends it
+  // to fix the syntax it already got right. What it has to do instead is
+  // CHOOSE, so the correction restates the selection rule the base prompt
+  // already carries and names how many alternatives came back.
+  const retryInstruction = strictRetry && typeof strictRetry === "object" && strictRetry.ambiguous
+    ? ` Your prior answer was rejected: ${strictRetry.ambiguous} Choose the single standard single-rear-wheel short-bed configuration, name that exact configuration in sub_type, and return exactly ONE complete JSON object, with no Markdown fence, prose, comments, trailing text, or alternative objects.`
+    : typeof strictRetry === "string"
     ? ` Your prior answer was rejected: ${strictRetry} Re-check the manufacturer specification and return corrected values; report body dimensions excluding mirrors.`
     : strictRetry
       ? " Your prior answer could not be parsed. Return exactly ONE complete JSON object, with no Markdown fence, prose, comments, trailing text, or alternative objects."
@@ -693,15 +703,46 @@ async function groundedCandidate(vehicle, provider) {
     try {
       parsed = parseGroundedJson(text, raw);
     } catch (error) {
-      if (error?.code !== "genie_grounding_parse_failed" || attempt === 1) {
-        if (error?.code === "genie_grounding_parse_failed" && attempt === 1) {
-          throw new UniversalDimensionError(
-            error.code,
-            `${error.message}; two bounded grounding attempts were exhausted`,
-            true,
-          );
-        }
-        throw error;
+      // AN AMBIGUOUS ANSWER EARNS ONE CORRECTIVE RE-ASK, EXACTLY LIKE A PARSE
+      // FAILURE AND A SANITY FAILURE. (2026-08-31)
+      //
+      // The first real owner DCA on release 37c48076 (GenerationID
+      // e4c16289-a972-4aca-9a37-98429d1745c5, 20:09:20Z) died 25 seconds in,
+      // before Call 1, with `genie_grounding_ambiguous: Grounding returned 3
+      // vehicle candidates`. A 2022 Ford F-150 has three published box lengths,
+      // and the model answered with all three.
+      //
+      // The correction for that already existed and was unreachable. Both
+      // sibling classes retry once, and `groundingPrompt`'s strict tail has
+      // said "or alternative objects" since it was written -- authored for this
+      // exact defect, and no code path could ever reach it, because the catch
+      // below only ever matched `genie_grounding_parse_failed`. So the one
+      // grounding error whose remedy is spelled out verbatim in the prompt was
+      // the one that got no second question.
+      //
+      // This is the same one-noise-event-kills-the-run shape the sanity retry
+      // was added for, and the same remedy: ask once more, name what was
+      // rejected, fail closed on a second offence. `parseGroundedJson` is NOT
+      // relaxed -- it still refuses multiple alternatives outright, and the
+      // lock on that refusal stands untouched. Nothing here widens a
+      // threshold, picks a candidate on the model's behalf, or invents
+      // geometry; a second multi-object answer still ends the run.
+      const earnsReAsk = error?.code === "genie_grounding_parse_failed"
+        || error?.code === "genie_grounding_ambiguous";
+      if (!earnsReAsk) throw error;
+      if (attempt === 1) {
+        throw new UniversalDimensionError(
+          error.code,
+          `${error.message}; two bounded grounding attempts were exhausted`,
+          // Ambiguity stays non-retryable at the caller, exactly as before:
+          // re-running the whole request is not what fixes a model that keeps
+          // offering alternatives. Parse failure keeps its retryable flag.
+          error.code === "genie_grounding_parse_failed",
+        );
+      }
+      if (error.code === "genie_grounding_ambiguous") {
+        strictInstruction = { ambiguous: error.message };
+        continue;
       }
       lastParseError = error;
       continue;
