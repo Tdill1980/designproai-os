@@ -2430,6 +2430,75 @@ async function generateOrReuseFlatAtlas(options) {
   const surfaceSourceBytes = cutoutFill.bytes;
   const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
 
+  // ⛔ STRUCTURAL RE-VALIDATION AFTER REPAIR. (Owner, 2026-08-31)
+  //
+  // The required Call-1 boundary, verbatim: "one Gemini A.T.L.A.S. generation
+  // -> structural validation -> deterministic void repair if required ->
+  // structural RE-VALIDATION -> six opaque/full-bleed artwork regions
+  // confirmed -> canonical master ACCEPTED ... If repair cannot produce six
+  // valid regions, Call 1 fails. It does NOT publish a malformed master."
+  //
+  // That re-validation did not exist. The fill ran, its output went straight
+  // into the panel cut and the proof conditioning, and nothing ever asked
+  // whether it had actually produced six valid regions -- the repair was
+  // trusted because it is deterministic, which proves it is REPEATABLE, not
+  // that its result is VALID.
+  //
+  // Skipped entirely when the fill changed nothing: on a clean master the
+  // returned buffer IS the master, which the checks above just passed, so
+  // re-running them would be pure latency on the critical path before the
+  // customer sees anything.
+  if (cutoutFill.changed) {
+    const repaired = await deterministicMasterChecks(surfaceSourceBytes, manifest);
+    if (repaired.blockingFailures.length) {
+      throw new FlatAtlasError(
+        "flat_atlas_repaired_master_invalid",
+        "The deterministic repair did not produce six valid printable regions: "
+        + repaired.blockingFailures.join("; "),
+      );
+    }
+  }
+
+  // ── THE ACCEPTED MASTER IS THE ONE THAT PASSED. (Owner, 2026-08-31) ────────
+  //
+  // Owner, having read this file after the re-validation landed: "even after
+  // successfully repairing and re-validating the sheet, the progressive/
+  // canonical A.T.L.A.S. object still points to the ORIGINAL pre-repair
+  // masterBytes and masterHash ... A.T.L.A.S. shown to humans = bad original,
+  // Panels/proof authority = repaired derivative. That is not one canonical
+  // authority."
+  //
+  // Correct, and it is the contradiction PanelPro was showing on its face:
+  // "repaired sheet · Master QC passed" printed over a sheet visibly full of
+  // holes, because the object labelled canonical was the pre-repair bytes while
+  // the panels and proofs were cut from a repaired sheet nobody could see.
+  //
+  // ⚠️ THIS OVERRIDES RULE 0.15's "the master is never mutated". That rule
+  // reasoned that publishing the repaired hash as the panel lineage made a
+  // correct pair report "the proof and the panel came from different masters" --
+  // true when TWO masters exist and the panels cite the one that is not
+  // canonical. Promoting the repaired sheet to canonical dissolves that problem
+  // rather than reintroducing it: after this there is exactly ONE accepted
+  // master, the panels cite it, the proofs are conditioned on it, and both UIs
+  // bind to it. The divergence the old rule guarded against is the divergence
+  // this removes.
+  //
+  // The pre-repair bytes are not destroyed -- they stay on the revision as
+  // `preRepairMasterHash` for provenance and forensics. What they no longer do
+  // is wear the words "canonical master", "accepted master" or "Master QC
+  // passed" while a different sheet does the work.
+  //
+  // On a CLEAN master this is identity: `fillMasterCutouts` returns the same
+  // buffer, `changed` is false, and both bindings resolve to exactly the bytes
+  // and hash they always did -- no extra transform, no extra hash, no new
+  // storage object, and byte-identical output.
+  const acceptedMasterBytes = cutoutFill.changed ? surfaceSourceBytes : masterBytes;
+  const acceptedMasterHash = cutoutFill.changed ? panelSourceHash : masterHash;
+  const preRepairMasterHash = cutoutFill.changed ? masterHash : null;
+  const acceptedMasterStoragePath = cutoutFill.changed
+    ? atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: acceptedMasterHash })
+    : masterStoragePath;
+
   // ── THE PROGRESSIVE ATLAS: THE ROOT NODE, PUBLISHED BEFORE ITS BRANCHES ────
   //
   // Owner, 2026-08-27: "Nodes run when their inputs exist. Nothing waits unless
@@ -2464,7 +2533,10 @@ async function generateOrReuseFlatAtlas(options) {
     revisionId: mintedRevisionId,
     revisionSequence,
     manifest,
-    master: { contentHash: masterHash, bytes: masterBytes },
+    // The ACCEPTED master -- the sheet that passed structural validation, which
+    // on a repaired run is the repaired one. Identical to `masterHash`/
+    // `masterBytes` whenever the fill changed nothing.
+    master: { contentHash: acceptedMasterHash, bytes: acceptedMasterBytes },
     // Not a second producer of design and not a second QC pass -- every field
     // here is already known, either a module constant or a local computed
     // upstream of this point (`promptHash` at authoring time, well before the
@@ -2532,7 +2604,7 @@ async function generateOrReuseFlatAtlas(options) {
       timings.projectionMs += Date.now() - projectionStartedAt;
     });
   const [callOnePanels, projection] = await Promise.all([
-    cutCallOnePanels(surfaceSourceBytes, manifest, masterHash, {
+    cutCallOnePanels(surfaceSourceBytes, manifest, acceptedMasterHash, {
       onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
         "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },
       ),
@@ -2623,7 +2695,9 @@ async function generateOrReuseFlatAtlas(options) {
   const persistImmutableAssets = () => Promise.all([
     store.putImmutableBytes({ storagePath: guideStoragePath, bytes: guideBytes, contentType: "image/png" }),
     store.putImmutableBytes({ storagePath: manifestStoragePath, bytes: manifestBytes, contentType: "application/json" }),
-    store.putImmutableBytes({ storagePath: masterStoragePath, bytes: masterBytes, contentType: "image/png" }),
+    // The accepted sheet is what persists under the canonical path. On a
+    // clean run these are the same bytes at the same path they always were.
+    store.putImmutableBytes({ storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes, contentType: "image/png" }),
     store.putImmutableBytes({
       storagePath: projectionStoragePath, bytes: projection.bytes, contentType: projection.contentType,
     }),
@@ -2657,7 +2731,7 @@ async function generateOrReuseFlatAtlas(options) {
     bleedInches: panel.bleedInches,
     effectivePpi: panel.effectivePpi,
     geometryPurpose: panel.geometryPurpose,
-    sourceMasterHash: masterHash,
+    sourceMasterHash: acceptedMasterHash,
     surfaceSourceHash: panel.surfaceSourceHash,
     method: panel.method,
     deterministic: panel.deterministic,
@@ -2690,9 +2764,9 @@ async function generateOrReuseFlatAtlas(options) {
     manifest_content_hash: manifestHash,
     manifest_byte_size: manifestBytes.length,
     manifest_content_type: "application/json",
-    master_storage_path: masterStoragePath,
-    master_content_hash: masterHash,
-    master_byte_size: masterBytes.length,
+    master_storage_path: acceptedMasterStoragePath,
+    master_content_hash: acceptedMasterHash,
+    master_byte_size: acceptedMasterBytes.length,
     master_content_type: "image/png",
     projection_storage_path: projectionStoragePath,
     projection_content_hash: projection.contentHash,
@@ -2749,11 +2823,17 @@ async function generateOrReuseFlatAtlas(options) {
         blocking: false,
         passengerSource: "authored-passenger-region",
       },
-      // What the six panels were actually cut from. Equal to canonicalMasterHash
-      // on a clean master; on a filled one it addresses the duplicate, so the
-      // panel bytes are traceable to their source rather than silently differing
-      // from the master the proofs used.
+      // What the six panels were actually cut from. Equal to the accepted
+      // canonical master in BOTH cases now: on a clean run the fill returns the
+      // same buffer, and on a repaired run the repaired sheet IS the accepted
+      // master. It is kept as its own field because the panel bytes must stay
+      // traceable to their source by name, not by an assumed equality.
       panelSourceHash,
+      // PROVENANCE ONLY -- the pre-repair sheet Gemini returned, kept so a
+      // forensic reader can see what arrived, and null when nothing was
+      // repaired. It is deliberately NOT called a master: it is not canonical,
+      // not accepted, and never what "Master QC passed" refers to.
+      preRepairMasterHash,
       cutoutFillContract: cutoutFill.changed ? FILL_CONTRACT : null,
       cutoutFillApplied: cutoutFill.filled,
       // The optical resolution Gemini actually delivered, before the canvas

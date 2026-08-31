@@ -585,3 +585,83 @@ test("a painted transparency checkerboard convicts, and light artwork does not",
   assert.equal((await paintedCheckerboardSignature(gradient, zone)).convicted, false,
     "a neutral gradient is not a grid");
 });
+
+/**
+ * ⛔ A VEHICLE SILHOUETTE ON A BLACK SURROUND IS A BLOCKING FAILURE.
+ *
+ * Owner, 2026-08-31, looking at the accepted Oasis Pools master: "Look at
+ * A.T.L.A.S. it's worse then ai slop no wonder panels are shit."
+ *
+ * That master was ACCEPTED. Every gate passed, because:
+ *   - `edgeOpaqueRatio` is the blocking full-bleed test and it measures ALPHA.
+ *     A black surround is perfectly opaque, so it scored 1.00000.
+ *   - the cut-out class is deliberately non-blocking at ANY size, so a single
+ *     component covering 30.3% of the roof and 28.7% of the rear was recorded,
+ *     "filled", and published.
+ *
+ * The recorded findings, verbatim from the live revision:
+ *   roof      largest component 30.3%, zone 66.9% artwork
+ *   rear      largest component 28.7%, zone 58.9% artwork
+ *   passenger largest component 11.7%, zone 71.8% artwork
+ *   driver    largest component 11.1%, zone 63.8% artwork
+ *   front     largest component  6.3%, zone 79.3% artwork
+ *
+ * This fixture reproduces that profile: a zone that is MAJORITY artwork, with
+ * the artwork confined to a shape that never reaches the border.
+ */
+async function silhouetteOnBlackMaster() {
+  // Artwork covers a MAJORITY of the tile -- inside the 58.9-79.3% band the
+  // five real zones measured -- and all of it sits inside an island that stops
+  // short of the border on every side, exactly the "shape floating on a
+  // surround" the owner is looking at. The inset is 6px against a 4px border
+  // ring, so the whole ring is black while the zone stays majority artwork:
+  // the precise combination every existing gate scored as a pass.
+  const tile = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+    <rect width="100" height="100" fill="#000000"/>
+    <rect x="6" y="6" width="88" height="88" rx="26" fill="#38bdf8"/>
+    <rect x="20" y="20" width="60" height="60" rx="14" fill="#f97316"/>
+    <rect x="35" y="35" width="30" height="30" fill="#ffffff"/>
+  </svg>`)).png().toBuffer();
+  return sharp({
+    create: { width: 300, height: 200, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  }).composite(manifest.zones.map((zone) => ({ input: tile, left: zone.x, top: zone.y }))).png().toBuffer();
+}
+
+test("a majority-artwork zone whose design never reaches its border is BLOCKING", async () => {
+  const master = await silhouetteOnBlackMaster();
+  const result = await deterministicMasterChecks(master, manifest);
+
+  assert.equal(result.accepted, false, "a silhouette on a surround must never be accepted");
+  const edgeFailures = result.blockingFailures.filter((line) => line.includes("edgeHoleRatio"));
+  assert.ok(edgeFailures.length > 0,
+    `the border-hole rule must convict, and as BLOCKING. failures: ${JSON.stringify(result.failures)}`);
+  assert.match(edgeFailures[0], /not a full-bleed printable rectangle/);
+
+  // And it must be BLOCKING, not filed as a repairable cut-out. The fill closes
+  // a hole as "a soft continuation of its own border" -- on a silhouette that
+  // smears the black surround inward as fake livery, which is why this class
+  // can never be handed to the repair.
+  const asCutout = result.cutoutFindings.filter((entry) => String(entry.finding).includes("edgeHoleRatio"));
+  assert.equal(asCutout.length, 0, "the silhouette rule must never be filed as a repairable cut-out");
+});
+
+test("a legitimate black wrap still passes the border-hole rule", async () => {
+  // THE GUARD THAT KEEPS THIS HONEST. CLAUDE.md: a black wrap is "90% flat
+  // black with 10% artwork (passes)". Its border IS black, so without the
+  // bright-majority guard the rule above would convict every black wrap ever
+  // designed -- the exact class of false conviction this file was built to
+  // prevent twice before.
+  const tile = await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+    <rect width="100" height="100" fill="#050505"/>
+    <rect x="10" y="44" width="80" height="7" fill="#f97316"/>
+    <rect x="10" y="56" width="52" height="4" fill="#38bdf8"/>
+  </svg>`)).png().toBuffer();
+  const master = await sharp({
+    create: { width: 300, height: 200, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  }).composite(manifest.zones.map((zone) => ({ input: tile, left: zone.x, top: zone.y }))).png().toBuffer();
+
+  const result = await deterministicMasterChecks(master, manifest);
+  const edgeFailures = result.blockingFailures.filter((line) => line.includes("edgeHoleRatio"));
+  assert.equal(edgeFailures.length, 0,
+    `a black wrap must not be convicted as a silhouette: ${JSON.stringify(edgeFailures)}`);
+});

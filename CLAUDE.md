@@ -281,6 +281,60 @@ projection and all six surface crops are byte-identical to before. This is also
 what RULE 0.21 already states — *"those SAME surface regions condition the
 matching 3D proof views"*.
 
+### ⚠️ SUPERSEDED — THE ACCEPTED MASTER *IS* THE REPAIRED SHEET (Trish 2026-08-31)
+
+**Owner, reading the code after the post-repair re-validation landed:** *"even
+after successfully repairing and re-validating the sheet, the progressive/
+canonical A.T.L.A.S. object still points to the ORIGINAL pre-repair masterBytes
+and masterHash … A.T.L.A.S. shown to humans = bad original, Panels/proof
+authority = repaired derivative. That is not one canonical authority."*
+
+That is the contradiction PanelPro printed on its face — *"repaired sheet ·
+Master QC passed"* over a sheet visibly full of holes — and it is why the owner
+saw a corrupt A.T.L.A.S. while the panels were cut from something else.
+
+**So the two-master model below is retired.** After structural re-validation
+passes, the repaired bytes BECOME the accepted canonical master:
+
+```text
+acceptedMasterBytes = cutoutFill.changed ? surfaceSourceBytes : masterBytes
+acceptedMasterHash  = cutoutFill.changed ? panelSourceHash    : masterHash
+```
+
+and the published root, the six panels' `sourceMasterHash`, the persisted bytes,
+the revision row, the proof authority and both UIs all cite that one hash.
+
+**Why this does not reintroduce the defect the old rule guarded against.** The
+old warning was real: publishing the repaired hash as the panel lineage made a
+correct pair report *"the proof and the panel came from different masters"* —
+true while TWO masters exist and the panels cite the one that is not canonical.
+Promoting the repaired sheet to canonical DISSOLVES that split rather than
+moving it: afterwards there is exactly one accepted master.
+
+The pre-repair sheet is kept as `preRepairMasterHash` — **provenance only**. It
+may never again be called the canonical master, the accepted master, or the
+thing "Master QC passed" refers to.
+
+On a clean master this is identity: `fillMasterCutouts` returns the same buffer,
+`changed` is false, both bindings fall through to the original bytes and hash,
+the storage path is the one already derived, and the re-validation is skipped —
+no extra transform, no extra hash, byte-identical output. Locked by
+`tests/atlas-accepted-master-is-the-repaired-one.test.mjs`, which convicts a
+pre-repair canonical root, a pre-repair panel lineage, and promotion before
+validation.
+
+**Also blocking now: a zone whose artwork never reaches its own border.**
+`edgeOpaqueRatio` was the full-bleed test and it measures ALPHA — and black is
+opaque, so a vehicle silhouette on a black surround scored 1.00000 and was
+accepted. `edgeHoleRatio` measures the same border ring with the same `holeAt`
+predicate the cut-out detector and the fill share; a majority-artwork zone whose
+border is >35% hole is a BLOCKING structural failure, not a repairable cut-out.
+The threshold is this file's own v4 measurement (good masters: border median
+135–177; the failing run: 63–83% of each border dark). The bright-majority guard
+keeps a legitimate black wrap legal, with its own fixture.
+
+#### HISTORICAL — the two-master model, superseded above
+
 **`sourceMasterHash` is LINEAGE, not provenance.** A panel publishes the
 CANONICAL master hash, because that is the identity PanelPro pairs it with its
 proof by; the repaired sheet it was actually cut from is recorded separately as
