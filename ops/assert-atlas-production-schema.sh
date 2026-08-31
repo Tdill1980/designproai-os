@@ -341,10 +341,22 @@ SELECT
       atlas_valid_definition,
       'v.metadata#>''{provider,anchoredToView1}''=''false'''
     )>0
-    AND pg_catalog.strpos(
-      atlas_valid_definition,
-      '''__ATLAS_PROMPT_VERSION__'''
-    )>0
+    -- Current authoring reuse may be pinned to one exact prompt, while owner
+    -- READS deliberately accept the immutable A.T.L.A.S. prompt family so a
+    -- prompt bump does not erase valid history. Migration
+    -- 20260830233000 installs that family predicate. Accept exactly those two
+    -- safe forms; demanding only the newest literal makes the fence reject the
+    -- repaired schema immediately after applying it.
+    AND (
+      pg_catalog.strpos(
+        atlas_valid_definition,
+        '''__ATLAS_PROMPT_VERSION__'''
+      )>0
+      OR pg_catalog.strpos(
+        atlas_valid_definition,
+        '''^designpro-flat-first-atlas-[A-Za-z0-9._-]{1,96}$'''
+      )>0
+    )
     AND pg_catalog.strpos(
       atlas_valid_definition,
       '''designpro.atlas-master-semantic-qc.v1'''
