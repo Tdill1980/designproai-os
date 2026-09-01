@@ -113,7 +113,7 @@ test("the absolute output class is acceptance logic, never Call-1 authoring cond
   // Both authoring scenes still state the flat output class -- in the proven
   // DesignPanelAI wording recovered from 36e5acc4, which names what the output
   // IS rather than listing what it must not be.
-  const sceneMatches = edge.match(/as ONE FLAT A.T.L.A.S. artboard — flat full-bleed panels of pure printed vinyl artwork, never an on-vehicle photograph/g) || [];
+  const sceneMatches = edge.match(/as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph/g) || [];
   assert.equal(sceneMatches.length, 2, "commercial and restyle scenes both state the flat output class");
   assert.doesNotMatch(edge, /Your output is the same kind of object as this teaching proof/);
 });
