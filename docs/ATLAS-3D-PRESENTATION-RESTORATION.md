@@ -53,143 +53,96 @@ artifact. The master is 1:1 by contract and always was.
 
 ---
 
-## STEP 1 — the restored presentation path, DRIVER ONLY
+## STEP 1 — SUPERSEDED BY THE CANONICAL 3D PROOF CONTRACT (owner, 2026-09-01)
 
-**CODE-LOCKED.**
+Owner: **"recover the legacy rendering capability, not the legacy prompt
+complexity."** The first attempt restored the legacy *words* and hosted them in
+`design-panel-ai-generate`. Both halves of that were wrong, and a live run
+proved it:
 
-```
-design-panel-ai-generate
-├── mode "atlas-artboard"  → handleAtlasArtboard          Call 1, UNCHANGED
-└── mode "atlas-proof"     → handleAtlasProofPresentation presentation, isolated
-```
+- the recovered prompt still enumerated design attributes ("colors, patterns,
+  graphics, composition, lettering, **weathering** and surface treatment"),
+  which is a second interpretation channel competing with the panel;
+- `design-panel-ai-generate` could not physically carry a 5.20 MB panel.
+  `DID-1F7B7BB4` Driver: four attempts, `Memory limit exceeded`, HTTP 546, each
+  dead in 2–3 s **before reaching Gemini**. No Driver proof was ever rendered.
 
-Both discriminators return **before** the creative destructuring, so an
-authoring request never reaches a line of presentation code and a proof request
-never reaches a line of creative assembly. No second independent creative edge
-function was created.
+### The contract now
 
-The words come from `_shared/atlas-proof-presentation.ts`, recovered from the
-**LIBRARY PANEL branch of `restylepro-os` `generate-color-render/index.ts`**
-(~line 2013) — the exact job an A.T.L.A.S. proof does: take flat 2D panel
-artwork and render it installed from one locked camera angle. It is **not**
-adapted from `persona-photographer-prompt.ts`. The three places it is not
-verbatim are named in the module's own header: the `Panel Design:` line becomes
-the contract-required ARTWORK IS LOCKED paragraph; the wheels-and-tires sentence
-is added (DID-134FC3CA returned wheels with no tires); and on a pickup only, the
-TRUCK BED clause is appended, sliced from `WRAP_COVERAGE_RULES` exactly as
-`persona-photographer-render` already slices it.
-
-### Two defects caught by EXECUTING the builder, not by reading it
-
-The module was bundled with the repo's own esbuild and run against all seven
-shots and all five finishes. Reading the source would have caught neither:
-
-1. **`Finish: SATIN — SATIN — soft feathered sheen…`.** The legacy DPP table
-   carried no labels ("High-gloss laminate — …") so the legacy line prefixed
-   one; this table is DPAG's, whose entries already open `GLOSS — `. That is
-   the exact stutter `atlasFinishSpec()` exists to stop on the Call-1 side.
-   Matching on the finish NAME is not enough — `brushed` selects
-   "BRUSHED METAL — ", which a name-based strip leaves as
-   `BRUSHED — BRUSHED METAL — `. The label the table itself wrote is detected
-   and left to stand.
-2. **~900 characters of duplicated coverage rules.** The first draft embedded
-   the whole `WRAP_COVERAGE_RULES` block above the legacy one-line coverage
-   sentence. Fifteen of its sixteen lines restate that sentence; only the TRUCK
-   BED clause is new. Prompt length degrades Gemini output, and this is exactly
-   how the 13K reconstruction RULE 0.29 convicted grew — one clause at a time.
-
-Assembled prompt sizes after both fixes: **3,990–5,113 chars** across the seven
-shots (`STUDIO_ENVIRONMENT` alone is ~1.3K and the owner ordered it restored, so
-the band is a consequence of the recovered stack, not drift). Both defects and
-the size band are locked by executing tests, not source greps.
-
-Carries: `getCameraAngle()` · view-specific framing · `STUDIO_ENVIRONMENT` ·
-finish/material · 16:9 / 4K · `temperature: 1.0` · complete factory geometry
-including wheels **and tires**.
-
-Does not carry, and a test convicts each: designer identity · elevation ·
-`COMMERCIAL_TRANSLATION` · `COMMERCIAL_DEPTH` · design translation · VisionBoard
-· logo architecture · design-name request · the brief.
-
-Two deliberate differences from the photographer path, both owner-specified:
-**temperature 1.0 is stated** rather than inherited from a model default, and
-there is **no Flash fallback** — a proof rendered on a different model than the
-one this product is judged on is not evidence, and this restoration is being
-measured. Retries stay on the GA id and the panel rides every attempt.
-
-Routing: `ATLAS_PRESENTATION_RESTORED_SHOTS = new Set(["side"])`. The other six
-shots are untouched on `persona-photographer-render`, so a regression is
-contained to one view and reverted by emptying that set.
-
-### Byte-identity proof — the owner's safety amendment
-
-`scripts/atlas-call1-regions.mjs` slices each named Call-1 region by brace
-matching and hashes it. Before and after every edit in this change:
-
-| sha256(16) | region |
-|---|---|
-| `95698ac404b5fd4b` | `const ATLAS_ARTBOARD_AUTHORING_MODEL` |
-| `5932f748504f5a52` | `const ATLAS_ARTBOARD_PROMPT_VERSION` |
-| `522ab87bcf962a7a` | `const ATLAS_ARTBOARD_SOURCE_COMMIT` |
-| `1ea38308155d58aa` | `const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES` |
-| `619048b12eda5b39` | `function atlasFinishSpec` |
-| `6f620a66247fd0a6` | `function buildDesignIQPrompt` |
-| `393242f3d54605b9` | `async function handleAtlasArtboard` |
-
-Prompt assembly, multimodal input assembly, topology input, teaching-proof
-handling, model/config and acceptance logic are inside those regions and are
-therefore **byte-identical**. Shared creative dependencies, unchanged:
-`studio-os.ts 7b02814bb1e9e867` · `view-angles-os.ts 8890be50c124a2c5` ·
-`persona-photographer-prompt.ts b7d3da05e6d0aac0` ·
-`model-config.ts 5a90cd8e750b596d`. `persona-photographer-render/index.ts`
-untouched.
-
-Locked by `tests/atlas-proof-presentation-branch.test.mjs`.
-
----
-
-## STEP 2 — a continuity failure becomes actionable
-
-**CODE-LOCKED.**
-
-```
-atlasContinuityContract: fail
-  → candidate cannot publish
-  → exactly ONE proof-only re-render
-  → still fail → stop that proof
+```text
+OS AUTHORITIES          Vehicle · Surface · Camera · Studio · Lighting
+ARTWORK AUTHORITY       the canonical A.T.L.A.S. surface panel
+MODEL INSTRUCTION       three fixed sentences, identical for every proof
 ```
 
-Only an explicit `fail` blocks. `uncertain` is the reviewer hedging and stays
-advisory — the owner's ruling names `fail`, and convicting on hedging is the
-same class of error as blocking on a lighting critique. Studio lighting,
-framing, camera and every other photographic contract remain **advisory**.
+> Apply the supplied canonical wrap panel exactly to its corresponding surface
+> on the specified vehicle.
+>
+> The supplied panel is finished, locked artwork. Preserve it exactly.
+>
+> Render the wrapped vehicle as a photorealistic automotive photograph using
+> the supplied camera, studio, and lighting anchors.
 
-The budget is counted in the validator (constructed once per proof slot), and
-the second verdict is `terminal: true`; `generation-engine` breaks the slot loop
-on a terminal verdict rather than spending the transport budget re-rolling a
-question the inspector has answered the same way twice. A re-render is
-proof-only: same hash-bound canonical panel, same camera contract, plus the
-inspector's findings as a correction that explicitly forbids redesigning
-artwork. **Call-1 artwork is never changed to compensate for a proof failure.**
+Nothing from Call 1's creative brain follows it downstream: no customer brief,
+designer persona, A.C.E. language, translation, amplification, logo/colour/
+composition direction, distress direction, VisionBoard, or design-name request.
+`studio-os` and `view-angles-os` stay byte-pinned and are CONSUMED, never
+restated — they are deterministic presentation anchors, not creative prose.
 
-Locked by `tests/atlas-proof-qc.test.mjs` — blocking, the one re-render, the
-terminal stop, the correction wording, and the uncertain-stays-advisory case.
+**Multimodal parts order:** `[0]` the canonical panel as `inlineData`,
+sha256-verified on arrival and riding every attempt; `[1]` the text above.
+One image, one text part, one image request.
 
-### Lineage now accepts two producers, as matched sets
+### Measured, not estimated
 
-`assertAtlasViewLineage` accepts `persona-photographer-render` /
-`edge-photographer` / `designpro.atlas-photographer-proof.v1` **or**
-`design-panel-ai-generate` / `edge-designpanel-presentation` /
-`designpro.atlas-proof-presentation.v1` — each only as a complete set. Widening
-it to "any of these strings" would let a half-migrated provider stamp one
-producer's stage beside another's contract and still clear lineage, which is the
-drift the assert exists to catch. Five cross-mixed pairs are fixtured and
-refused.
+| shot | OLD deployed | OLD recovered-legacy | NEW anchors |
+|---|---|---|---|
+| side | 3,371 | 4,624 | **3,222** |
+| passenger-side | 3,617 | 5,113 | **3,468** |
+| hood_detail | 3,245 | 4,374 | **3,096** |
+| front | 3,067 | 4,017 | **2,918** |
+| rear | 3,053 | 3,990 | **2,904** |
+| roof | 3,057 | 3,998 | **2,908** |
+| close-up | 3,576 | 5,102 | **3,495** |
+| **mean** | **3,284** | **4,460** | **3,144** |
 
-This is a second producer of **presentation**, never of artwork: both take the
-same hash-bound canonical Call-1 panel as their sole artwork authority.
+**Length is not the win, and saying otherwise would oversell it.** Both the old
+and new prompts are dominated by the two anchors the owner keeps —
+`STUDIO_ENVIRONMENT` (1,927) plus the view angle (~500–900). The instruction
+itself is 299 characters.
 
----
+The win is WHAT was removed. The deployed prompt carried a labelled prose slot,
+`THE WRAP DESIGN (already installed on the vehicle):`, and then:
+
+> COLOR FIDELITY — CRITICAL: Colors must be RICH, VIBRANT, and FULLY SATURATED
+> — **exactly as described above.**
+
+That sentence makes the PROSE the colour authority rather than the panel, which
+is the exact mechanism by which a proof can drift from its artwork. It is gone,
+along with the design slot that invited prose into it.
+
+### Where it lives now
+
+- `_shared/atlas-proof-presentation.ts` — the contract, executed by tests.
+- `persona-photographer-render` builds it for all seven shots. It already
+  carries 5 MB panels in production; that is what the OOM'd branch could not do.
+- `design-panel-ai-generate` is **byte-identical to `fa3fc4a8`** — the state
+  before this work began. It is pure Call-1 authoring again.
+- The wire contract `designpro.atlas-photographer-proof.v1` is UNCHANGED, and
+  deliberately: the database fence
+  `designpro_private.flat_first_atlas_view_set_valid` (migration
+  `20260828100000`) hardcodes that string, so bumping it would make the fence
+  refuse every proof and no seven-view set could validate. The prompt identity
+  rides additively as `promptContract` / `proofPromptContract`.
+
+### Two judgment calls, stated so they can be overruled in one word
+
+- **Dropped** the wheels-and-tires sentence — it is prose. If tires come back
+  missing, that is the cause and it is one line.
+- **Kept** `FINISH` and the pickup `COVERAGE` clause as STRUCTURED OS inputs,
+  not prose. CLAUDE.md v19 requires the customer finish to ride through so the
+  master and its proofs describe the same material; RULE 0.0 requires the bed
+  exclusion, which the owner asked for by name in PR #278.
 
 ## STEP 3 — account for the whole Call-1 tail
 

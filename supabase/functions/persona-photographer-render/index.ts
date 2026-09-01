@@ -17,34 +17,18 @@ import {
   buildPhotographerPrompt,
   PHOTOGRAPHER_SHOT_SEQUENCE,
 } from "../_shared/persona-photographer-prompt.ts";
-import { WRAP_COVERAGE_RULES } from "../_shared/view-angles-os.ts";
+// THE CANONICAL 3D PROOF CONTRACT (owner, 2026-09-01). atlas-proof mode builds
+// its prompt from OS anchors only; `buildPhotographerPrompt` still serves the
+// historical six-shot hero mode below and stays byte-pinned.
+import {
+  ATLAS_PROOF_PROMPT_CONTRACT,
+  ATLAS_REAL_SURFACES,
+  ATLAS_SHOT_SURFACES,
+  buildAtlasProofPresentationPrompt,
+} from "../_shared/atlas-proof-presentation.ts";
 import { geminiImageUrl, PRIMARY_IMAGE_MODEL, FALLBACK_IMAGE_MODEL } from "../_shared/model-config.ts";
 import { upscaleImageBytes } from "../_shared/topaz-upscale.ts";
 
-// THE PICKUP BED CLAUSE, DERIVED FROM THE PIN — NEVER RE-TYPED.
-//
-// Owner, 2026-08-31, looking at the Flamingo flat master beside its installed
-// proof: "Like this but nothing inside truck bed." CLAUDE.md RULE 0.0 states
-// where that belongs: "For pickups, exterior bed sides and tailgate receive the
-// coordinated artwork; the bed floor and inner bed walls remain unwrapped under
-// the downstream vehicle application/proof coverage contract." The proof IS
-// that downstream contract, and the pinned photographer prompt does not carry
-// the rule -- it says only "Wrap covers painted body panels only. Windows,
-// lights, wheels, trim stay factory.", which never mentions an open bed. The
-// Standard path has carried the clause since view-angles-os was written
-// (`WRAP_COVERAGE_RULES`), and design-panel-ai-generate / generate-color-render
-// both import it; the A.T.L.A.S. proof path is the one that never did.
-//
-// It is SLICED from the pinned block rather than restated, so the two homes
-// cannot drift, and a pin edit that removes the line fails the module load
-// instead of silently dropping the rule from every pickup proof. Only this one
-// clause is taken: the other fifteen lines duplicate what the pinned prompt
-// already says in one sentence, and the owner capped this prompt's length.
-const TRUCK_BED_RULE = (() => {
-  const line = WRAP_COVERAGE_RULES.split("\n").map((l) => l.trim()).find((l) => l.startsWith("TRUCK BED:"));
-  if (!line) throw new Error("atlas_proof_truck_bed_rule_missing_from_pin");
-  return line;
-})();
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,35 +39,14 @@ const corsHeaders = {
 // The A.T.L.A.S. contract version this function stamps on every proof it
 // produces in atlas-proof mode. The runtime pins the same string, so a drift
 // between the two homes is caught by a test rather than shipped.
+// THE WIRE CONTRACT IS UNCHANGED, ON PURPOSE. It names the producer and the
+// artifact shape, and the database fence
+// designpro_private.flat_first_atlas_view_set_valid hardcodes this exact
+// string (migration 20260828100000). Bumping it would make the fence refuse
+// every proof. The PROMPT identity rides alongside as `promptContract`.
 const ATLAS_PROOF_CONTRACT = "designpro.atlas-photographer-proof.v1";
 const ATLAS_PROOF_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
-/**
- * THE SEVEN CANONICAL A.T.L.A.S. SHOTS, AND THE SURFACE THAT AUTHORS EACH.
- *
- * PHOTOGRAPHER_SHOT_SEQUENCE is the pinned SIX-shot magazine sequence and has
- * no roof. `CAMERA_ANGLES` in view-angles-os carries all seven, so atlas-proof
- * resolves against this map instead of that sequence — which changes nothing
- * about the camera text, only which of the pinned angles may be requested.
- */
-const ATLAS_SHOT_SURFACES: Record<string, string> = {
-  "side": "driver",
-  "passenger-side": "passenger",
-  "hood_detail": "hood",
-  "front": "front",
-  "rear": "rear",
-  "roof": "roof",
-  // ⚠️ CLOSE-UP HAS NO FIXED SURFACE, AND MAY NOT SILENTLY INHERIT DRIVER.
-  //
-  // Owner, 2026-08-28: "Close-Up must never silently inherit a Driver
-  // photograph unless the requested detail explicitly uses Driver as its
-  // selected artwork surface." So `null` here means "the caller must NAME the
-  // surface", not "anything goes" -- the check below requires it to be one of
-  // the six real surfaces, and the response echoes which was chosen so the
-  // selection is on the record rather than assumed.
-  "close-up": null,
-};
-const ATLAS_REAL_SURFACES = ["driver", "passenger", "hood", "front", "rear", "roof"];
 
 /** Fetch an image URL and return base64 inline data for Gemini */
 async function fetchImageAsInlineData(
@@ -428,9 +391,15 @@ serve(async (req) => {
 //     becomes
 //   sourcePanelPath (this surface's deterministic panel, attached to every shot)
 //
-// Everything else is the pinned stack, untouched: buildPhotographerPrompt owns
-// the words, view-angles-os owns the camera, studio-os owns the room and the
-// light, model-config owns the model and its fallback.
+// The camera, studio and lighting anchors are the pinned stack, untouched:
+// view-angles-os owns the camera, studio-os owns the room and the light,
+// model-config owns the model and its fallback.
+//
+// THE WORDS CHANGED ON 2026-09-01, BY OWNER RULING. atlas-proof no longer
+// calls buildPhotographerPrompt: it builds the anchors-only contract from
+// _shared/atlas-proof-presentation.ts, whose instruction is three fixed
+// sentences that never describe the design. buildPhotographerPrompt still
+// owns the historical six-shot hero mode above and stays byte-pinned.
 //
 // THREE THINGS THE HERO PATH DID THAT THIS MUST NOT.
 //
@@ -514,33 +483,26 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
 
     if (!hasGeminiKey()) return fail("atlas_proof_no_api_key", 500);
 
-    // ⚠️ KEEP THIS SHORT. Owner, 2026-08-28: "The current ATLAS proof prompts
-    // were recorded at roughly 13K characters while the proven photographer
-    // prompt is approximately 1.4K. Restore the real photographer prompt stack
-    // rather than wrapping it in another enormous reconstructed proof prompt.
-    // ATLAS should contribute only: exact panel artwork; lineage; exact
-    // vehicle/config; requested shot."
+    // THE CANONICAL 3D PROOF CONTRACT. (owner ruling, Trish 2026-09-01)
     //
-    // The artwork IS the attached image, so this fills the pinned prompt's
-    // design slot with the one sentence that says so. Every instruction about
-    // HOW to photograph it already lives in the pinned stack; restating any of
-    // it here would rebuild the 13K prompt one clause at a time.
+    // Owner, verbatim: "A.T.L.A.S. designs. GENIE maps. Anchors control
+    // camera/studio/lighting. The proof renderer photographs." The model
+    // instruction is three fixed sentences and never describes the design:
+    // repeating the panel's visual content in prose gives Gemini a second
+    // interpretation channel that competes with the panel itself, which is
+    // how a proof ends up redesigning the wrap (DID-134FC3CA).
     //
-    // The pickup clause is the ONE exception the owner named, and it is vehicle
-    // CONFIG -- exactly what that quote lists as A.T.L.A.S.'s to contribute. It
-    // is one sentence, only on a pickup, sliced from the pin above.
-    const designAnchorText = [
-      `The attached image is this vehicle's exact approved ${surfaceKey} print panel. It is the wrap.`,
-      body.isPickup === true ? TRUCK_BED_RULE : "",
-    ].filter(Boolean).join("\n");
-
-    const prompt = buildPhotographerPrompt({
-      designAnchorText,
-      vehicleYear: String(body.vehicleYear || ""),
-      vehicleMake: String(body.vehicleMake || ""),
-      vehicleModel: String(body.vehicleModel || ""),
-      finish: String(body.finish || "Gloss"),
-      shotKey,
+    // Everything the model needs that is NOT artwork arrives as a structured
+    // OS input -- exact GENIE vehicle, canonical surface, finish, and the
+    // pinned camera/studio/lighting anchors. Nothing from Call 1's creative
+    // brain follows it downstream.
+    const prompt = buildAtlasProofPresentationPrompt({
+      vehicle: [body.vehicleYear, body.vehicleMake, body.vehicleModel]
+        .map((v) => String(v || "").trim()).filter(Boolean).join(" "),
+      surfaceKey,
+      viewType: shotKey,
+      finish: body.finish == null ? null : String(body.finish),
+      isPickup: body.isPickup === true,
     });
 
     // THE PANEL FIRST, THE CAMERA LAST. Gemini weights the final part most
@@ -610,6 +572,8 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
         requestId,
         functionName: "persona-photographer-render",
         contract: ATLAS_PROOF_CONTRACT,
+        // Which WORDS produced this proof, additive to the wire contract.
+        promptContract: ATLAS_PROOF_PROMPT_CONTRACT,
         sourceCommit: ATLAS_PROOF_SOURCE_COMMIT,
         provider: "google",
         model: modelUsed,

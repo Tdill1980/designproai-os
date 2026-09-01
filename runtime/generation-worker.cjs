@@ -33,9 +33,6 @@ const {
   ARTIFACT_AUDIT_CONTRACT,
   ATLAS_PANEL_AUTHORITY_CONTRACT,
   ATLAS_PHOTOGRAPHER_PROOF_CONTRACT,
-  ATLAS_PRESENTATION_EXECUTION,
-  ATLAS_PRESENTATION_FUNCTION,
-  ATLAS_PRESENTATION_PROOF_CONTRACT,
   ATLAS_PROOF_EXECUTION,
   ATLAS_PROOF_STAGE,
   ATLAS_SERVER_PROVIDER_CONTRACT,
@@ -524,50 +521,26 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
     //
     // The strings now come from the provider that writes them, so the two
     // cannot drift apart again.
-    //
-    // TWO SANCTIONED PRODUCERS, AS MATCHED SETS (2026-09-01). The Restoration
-    // Contract routes Driver to the recovered legacy presentation branch of
-    // `design-panel-ai-generate` while the other six stay on the pinned
-    // photographer. That is a second producer of PRESENTATION, never of
-    // artwork -- both take the same hash-bound canonical Call-1 panel as their
-    // sole artwork authority, and the panel/authority asserts below are
-    // unchanged and apply identically to both.
-    //
-    // Each row is a COMPLETE set, matched on the stage. Widening this to "any
-    // of these strings" would let a half-migrated provider stamp one
-    // producer's stage beside another's contract and still clear lineage,
-    // which is the drift this assert exists to catch.
-    const ATLAS_SANCTIONED_PRODUCERS = {
-      [ATLAS_PROOF_STAGE]: {
-        execution: ATLAS_PROOF_EXECUTION,
-        proofContract: ATLAS_PHOTOGRAPHER_PROOF_CONTRACT,
-      },
-      [ATLAS_PRESENTATION_FUNCTION]: {
-        execution: ATLAS_PRESENTATION_EXECUTION,
-        proofContract: ATLAS_PRESENTATION_PROOF_CONTRACT,
-      },
-    };
-    const producer = ATLAS_SANCTIONED_PRODUCERS[String(providerMetadata.stage || "")];
     if (metadata.providerContract !== ATLAS_SERVER_PROVIDER_CONTRACT
-      || !producer
-      || providerMetadata.execution !== producer.execution
+      || providerMetadata.stage !== ATLAS_PROOF_STAGE
+      || providerMetadata.execution !== ATLAS_PROOF_EXECUTION
       || providerMetadata.anchoredToFlatAtlas !== true
       || providerMetadata.atlasConditioningVerified !== true) {
-      throw atlasLineageError(`${sourceViewType} was not produced by a sanctioned A.T.L.A.S. proof stage`);
+      throw atlasLineageError(`${sourceViewType} was not produced by the pinned photographer stage`);
     }
     // The photographer's own provenance, in place of the retired runtime
     // producer's prompt audit. Every field is stamped by the edge function and
     // carried through by the provider, and each one answers a question the old
     // audit answered about the old producer: WHICH function, at WHICH pinned
     // commit, through WHICH provider and model, in exactly ONE image request.
-    if (providerMetadata.proofProducer !== providerMetadata.stage
-      || providerMetadata.proofContract !== producer.proofContract
+    if (providerMetadata.proofProducer !== ATLAS_PROOF_STAGE
+      || providerMetadata.proofContract !== ATLAS_PHOTOGRAPHER_PROOF_CONTRACT
       || !/^[0-9a-f]{40}$/.test(String(providerMetadata.proofSourceCommit || ""))
       || !/^[0-9a-f-]{36}$/.test(String(providerMetadata.proofRequestId || ""))
       || providerMetadata.proofProvider !== "google"
       || !String(providerMetadata.proofModel || "").trim()
       || Number(providerMetadata.proofImageRequestCount) !== 1) {
-      throw atlasLineageError(`${sourceViewType} is missing its producer's provenance audit`);
+      throw atlasLineageError(`${sourceViewType} is missing the photographer's provenance audit`);
     }
     // VISUAL REVIEW IS ADVISORY; IDENTITY IS NOT. Historical accepted proofs
     // predate the explicit policy receipt and remain readable only when their

@@ -39,6 +39,7 @@ const read = (p) => readFileSync(url(p), "utf8");
 
 const angles = read("../supabase/functions/_shared/view-angles-os.ts");
 const photographerFn = read("../supabase/functions/persona-photographer-render/index.ts");
+const proofContract = read("../supabase/functions/_shared/atlas-proof-presentation.ts");
 const photographerPrompt = read("../supabase/functions/_shared/persona-photographer-prompt.ts");
 const provider = read("../runtime/designpanel-server-provider.cjs");
 const call1 = read("../supabase/functions/design-panel-ai-generate/index.ts");
@@ -75,16 +76,20 @@ test("the pinned photographer prompt does NOT cover an open bed on its own", () 
 });
 
 test("the atlas proof derives the bed clause from the pin instead of restating it", () => {
-  assert.match(photographerFn, /import \{ WRAP_COVERAGE_RULES \} from "\.\.\/_shared\/view-angles-os\.ts"/,
+  // MOVED 2026-09-01. The canonical 3D proof contract took the whole prompt
+  // out of the edge function and into _shared/atlas-proof-presentation.ts, so
+  // the slice lives there now. The rule is unchanged: derived from the pin,
+  // never re-typed, so the two homes cannot drift.
+  assert.match(proofContract, /import \{ getCameraAngle, WRAP_COVERAGE_RULES \} from "\.\/view-angles-os\.ts"/,
     "the clause must come from the pinned module, so the two homes cannot drift");
-  assert.match(photographerFn, /startsWith\("TRUCK BED:"\)/,
+  assert.match(proofContract, /startsWith\("TRUCK BED:"\)/,
     "the clause must be sliced out of the pinned block");
-  assert.match(photographerFn, /atlas_proof_truck_bed_rule_missing_from_pin/,
+  assert.match(proofContract, /atlas_proof_truck_bed_rule_missing_from_pin/,
     "a pin that loses the clause must fail loudly, never fall through to no rule");
 
   // Re-typing the sentence would let a future edit change the proof's wording
   // without touching the pinned source every other path reads.
-  const restated = photographerFn.split("\n").filter(
+  const restated = [photographerFn, proofContract].join("\n").split("\n").filter(
     (l) => /bare factory bedliner/.test(l) && !/^\s*\/\//.test(l.trim()),
   );
   assert.equal(restated.length, 0,
@@ -92,11 +97,19 @@ test("the atlas proof derives the bed clause from the pin instead of restating i
 });
 
 test("the bed clause reaches the proof prompt, and only on a pickup", () => {
+  // The producer passes vehicle CONFIG through; the contract module decides
+  // whether the clause is carried. Both halves are asserted.
   const atlas = atlasProofBranch(photographerFn);
-  assert.match(atlas, /body\.isPickup === true \? TRUCK_BED_RULE : ""/,
+  assert.match(atlas, /isPickup: body\.isPickup === true/,
+    "the producer must pass the pickup flag to the proof contract");
+  assert.match(proofContract, /input\.isPickup === true \? `\\nCOVERAGE: \$\{TRUCK_BED_RULE\}` : ""/,
     "the clause must be gated on the vehicle actually being a pickup");
-  assert.match(atlas, /designAnchorText/,
-    "the clause must ride the A.T.L.A.S.-owned design slot of the pinned prompt");
+  // It rides a STRUCTURED OS INPUT line now, not a prose "design slot". The
+  // canonical 3D proof contract carries no design description at all, so the
+  // slot that used to hold this is gone by owner ruling -- the clause is
+  // vehicle CONFIGURATION, which is what A.T.L.A.S. contributes.
+  assert.match(proofContract, /COVERAGE: \$\{TRUCK_BED_RULE\}/,
+    "the clause must ride a structured OS input line");
 
   // RULE 0.29's adaptation seam: A.T.L.A.S. contributes artwork, lineage,
   // vehicle/config and the requested shot. It may not restate presentation.

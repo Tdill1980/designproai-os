@@ -1051,35 +1051,13 @@ function createDesignPanelServerProvider(options = {}) {
  *  deployed photographer rather than an in-runtime generate-color-render port. */
 const ATLAS_PROOF_STAGE = "persona-photographer-render";
 const ATLAS_PROOF_EXECUTION = "edge-photographer";
-/** The contract the deployed photographer stamps on every atlas-proof response. */
+/** The contract the deployed photographer stamps on every atlas-proof response.
+ *  UNCHANGED on purpose: the database fence hardcodes this string, so bumping
+ *  it refuses every proof. The prompt identity travels as proofPromptContract. */
 const ATLAS_PHOTOGRAPHER_PROOF_CONTRACT = "designpro.atlas-photographer-proof.v1";
 const ATLAS_PROOF_BUCKET = "wrap-files";
 /** The proof's artwork authority is the persisted panel, not a transient crop. */
 const ATLAS_PANEL_AUTHORITY_CONTRACT = "designpro.atlas-panel-authority.v1";
-
-/**
- * THE RESTORED LEGACY PRESENTATION PATH — DRIVER ONLY, FOR NOW.
- *
- * Owner directive, 2026-09-01 (Restoration Contract, Step 1): "Restore the
- * proven legacy DesignPanelAI 3D presentation path for DRIVER ONLY", and
- * "do not proceed to Passenger until Driver passes canonical fidelity."
- *
- * So exactly one shot changes producer. `side` (Driver) goes to
- * `design-panel-ai-generate` in its structurally isolated `mode:"atlas-proof"`
- * branch, whose words come from _shared/atlas-proof-presentation.ts -- the
- * recovered generate-color-render LIBRARY PANEL prompt. Every other shot still
- * goes to `persona-photographer-render`, untouched, so a regression here is
- * contained to one view and reverted by emptying this set.
- *
- * Nothing else about the request changes: same panel resolution, same private
- * storage path + sha256, same hash verification on the way back, same
- * refusal on a surface mismatch.
- */
-const ATLAS_PRESENTATION_RESTORED_SHOTS = new Set(["side"]);
-const ATLAS_PRESENTATION_FUNCTION = "design-panel-ai-generate";
-const ATLAS_PRESENTATION_EXECUTION = "edge-designpanel-presentation";
-/** The contract that function stamps on every atlas-proof response. */
-const ATLAS_PRESENTATION_PROOF_CONTRACT = "designpro.atlas-proof-presentation.v1";
 
 /**
  * THE PROVEN PHOTOGRAPHER RENDERS EVERY A.T.L.A.S. PROOF. (Trish 2026-08-28)
@@ -1180,12 +1158,7 @@ function createAtlasDesignPanelProvider(options = {}) {
     const panel = atlas.panelFor(sourceViewType);
     const vehicle = input?.vehicle || {};
 
-    // WHICH PRODUCER PHOTOGRAPHS THIS SHOT. Driver is on the restored legacy
-    // presentation path; the other six stay on the pinned photographer.
-    const restored = ATLAS_PRESENTATION_RESTORED_SHOTS.has(sourceViewType);
-    const proofFunction = restored ? ATLAS_PRESENTATION_FUNCTION : ATLAS_PROOF_STAGE;
-
-    const response = await fetchImpl(`${supabaseUrl}/functions/v1/${proofFunction}`, {
+    const response = await fetchImpl(`${supabaseUrl}/functions/v1/persona-photographer-render`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${serviceRoleKey}`,
@@ -1228,7 +1201,7 @@ function createAtlasDesignPanelProvider(options = {}) {
     if (!response.ok || payload?.success !== true) {
       throw new DesignPanelServerError(
         "designpanel_atlas_proof_failed",
-        `${proofFunction} atlas-proof ${sourceViewType} failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}`,
+        `persona-photographer-render atlas-proof ${sourceViewType} failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}`,
         response.status >= 500 || response.status === 429,
       );
     }
@@ -1260,15 +1233,12 @@ function createAtlasDesignPanelProvider(options = {}) {
         // and the seam refuses any that claims to be.
         anchoredToView1: false,
         atlasConditioningVerified: true,
-        // `...extra` spreads last in atlasMetadata, so these two override the
-        // photographer defaults for a restored shot and change nothing for the
-        // other six. A proof must record which producer actually made it.
-        stage: proofFunction,
-        execution: restored ? ATLAS_PRESENTATION_EXECUTION : ATLAS_PROOF_EXECUTION,
         // The proven stack, named so a later reader can prove which producer
         // made these pixels without re-deriving it.
-        proofProducer: proofFunction,
+        proofProducer: "persona-photographer-render",
         proofContract: String(payload.contract || ""),
+        // Which WORDS produced it. Additive: the DB fence checks proofContract.
+        proofPromptContract: String(payload.promptContract || ""),
         proofSourceCommit: String(payload.sourceCommit || ""),
         proofRequestId: String(payload.requestId || ""),
         proofProvider: String(payload.provider || ""),
@@ -1308,10 +1278,6 @@ module.exports = {
   // refused).
   ATLAS_PANEL_AUTHORITY_CONTRACT,
   ATLAS_PHOTOGRAPHER_PROOF_CONTRACT,
-  ATLAS_PRESENTATION_EXECUTION,
-  ATLAS_PRESENTATION_FUNCTION,
-  ATLAS_PRESENTATION_PROOF_CONTRACT,
-  ATLAS_PRESENTATION_RESTORED_SHOTS,
   ATLAS_PROOF_EXECUTION,
   ATLAS_PROOF_STAGE,
   SERVER_PROVIDER_CONTRACT,
