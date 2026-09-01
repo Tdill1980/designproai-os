@@ -76,11 +76,11 @@ test("edge verifies the teaching bytes and sends no blank target guide and no co
 
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
   const promptPart = handler.indexOf("[{ text: prompt }]");
-  const topology = handler.indexOf("atlasTopologyText(panels", promptPart);
-  const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.", topology);
+  const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.", promptPart);
   const customer = handler.indexOf("for (const ref of references) pushImage(ref)", teaching);
-  assert.ok(promptPart > 0 && promptPart < topology && topology < teaching && teaching < customer,
-    "input order is prompt, normalized topology, teaching proof, customer references");
+  assert.ok(!handler.includes("atlasTopologyText(panels"), "no coordinate table reaches the model");
+  assert.ok(promptPart > 0 && promptPart < teaching && teaching < customer,
+    "input order is prompt, teaching proof, customer references");
   assert.match(edge, /teachingProofIdentity: verifiedTeachingProof/);
   assert.doesNotMatch(handler, /CURRENT TARGET GUIDE|guideStoragePath|guideImageBase64|correctiveNote/);
   assert.doesNotMatch(edge, /cohesionExampleProofStoragePath|ATLAS_COHESION_PROOF_HASH|INSTALLED DRIVER PROOF/);
@@ -164,11 +164,11 @@ test("every bundled atlas-examples asset ships in the release tree", () => {
   }
 });
 
-test("temperature 1.0 and gemini-3-pro-image at 1:1 4K are pinned for Call 1", () => {
+test("gemini-3-pro-image at 1:1 4K, and no explicit temperature, for Call 1", () => {
   assert.match(edge, /ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image"/);
-  assert.match(edge, /ATLAS_ARTBOARD_TEMPERATURE = 1\.0/);
+  assert.doesNotMatch(edge, /ATLAS_ARTBOARD_TEMPERATURE = 1\.0/);
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
-  assert.match(handler, /temperature: ATLAS_ARTBOARD_TEMPERATURE/);
+  assert.doesNotMatch(handler, /temperature:/);
   assert.match(handler, /aspectRatio: "1:1", imageSize: "4K"/);
   assert.doesNotMatch(handler, /negative_prompt/);
 });

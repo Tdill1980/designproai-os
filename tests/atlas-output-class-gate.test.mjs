@@ -103,11 +103,17 @@ test("the runtime gate refuses a vehicle-depiction candidate BEFORE canonicaliza
   assert.match(runtime, /masterOutputClassContract: OUTPUT_CLASS_CONTRACT/);
 });
 
-test("the Call-1 conditioning states the absolute A.T.L.A.S. output class", () => {
-  assert.match(edge, /OUTPUT CLASS — ABSOLUTE \(owner contract\)\. The only valid output is ONE flat A\.T\.L\.A\.S\. panel-layout source/);
-  assert.match(edge, /vehicle presentation exists only in the downstream proofing system, never at this step/);
-  // Both authoring scenes bind the output to the teaching example's object class.
-  const sceneMatches = edge.match(/Output ONE flat A\.T\.L\.A\.S\. panel-layout sheet — the same kind of object as the attached A\.T\.L\.A\.S\. teaching example/g) || [];
-  assert.equal(sceneMatches.length, 2, "commercial and restyle scenes both state the output class");
-  assert.match(edge, /Your output is the same kind of object as this teaching proof: flat print panels on one sheet/);
+test("the absolute output class is acceptance logic, never Call-1 authoring conditioning", () => {
+  // OWNER RULING 2026-09-01: the refusal block is POST-GENERATION acceptance
+  // logic only. It must never be injected into the authoring prompt, where a
+  // long negative displaces creative direction and makes the model over-index
+  // on the forbidden thing. The gate itself is unchanged and still blocking.
+  assert.doesNotMatch(edge, /OUTPUT CLASS — ABSOLUTE/);
+  assert.doesNotMatch(edge, /vehicle presentation exists only in the downstream proofing system/);
+  // Both authoring scenes still state the flat output class -- in the proven
+  // DesignPanelAI wording recovered from 36e5acc4, which names what the output
+  // IS rather than listing what it must not be.
+  const sceneMatches = edge.match(/as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph/g) || [];
+  assert.equal(sceneMatches.length, 2, "commercial and restyle scenes both state the flat output class");
+  assert.doesNotMatch(edge, /Your output is the same kind of object as this teaching proof/);
 });

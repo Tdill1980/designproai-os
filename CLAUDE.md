@@ -1,6 +1,118 @@
 # CLAUDE.md — designproai-os
 
-## 🧭 CALL-1 v17 — THE A.T.L.A.S. AI/OS BOUNDARY CONTRACT IS IN FORCE (owner-approved 2026-09-01)
+## 🧬 CALL-1 v19 — CREATIVE PARITY RECOVERY (owner ruling, Trish 2026-09-01)
+
+**This supersedes the v17 boundary contract and RULE 0.30's authoring half
+below, on every point where they conflict.** It is the result of an executed
+parity diff, not a theory: both prompt builders were run against one identical
+fixture (DID-2D918868's own stored `request_input`) at eleven commits.
+
+### What the measurement found
+
+The creative regression was never `7ee1f868`. Creative conditioning held at
+**exactly 2,490 characters** from the last near-working master
+(**DID-2D918868**, GEN `2d918868-44e9-4121-9a72-3fbbfc85ff33`, 2026-08-27
+10:18:04Z, source `36e5acc4` — the only commit carrying both version strings
+that revision recorded) through 08-28. Then:
+
+| commit | date UTC | creative chars | what it did |
+|---|---|---|---|
+| `36e5acc4` | 08-27 04:14 | **2,490** | the known-good state |
+| **`c5479313`** | **08-30 22:12** | **2,025** | **deleted 465 chars of proven creative direction** |
+| `334c79f0` | 09-01 03:08 | 2,394 | still 96 short; format/refusal text up 54% |
+
+`c5479313` ("Isolate A.T.L.A.S. Call 1 to neutral topology masks") is the
+six-field-livery anonymization. RULE 0.0 later reversed its vocabulary but
+never restored its deleted text. It removed: the customer-selected **finish
+spec**; *"with real dimension rather than flat shapes on bare panel"*;
+*"never an on-vehicle photograph"*; and three persona anchors — *"installed on
+real trucks and vans"*, *"readable at a glance from across a parking lot"*,
+*"worth what the customer paid"*.
+
+**Rewriting creative framing to fix a pixel defect is what RULE 0.1 forbids,
+and it is what happened here.** Four subsequent releases each added more
+format and refusal language on top of the loss.
+
+### The Call-1 request, as of v19
+
+1. the DPAG creative assembly, with `36e5acc4`'s language restored;
+2. the **MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF**
+   — exact owner bytes, SHA-256
+   `684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded`
+   (3,430,273 bytes, 1254×1254 PNG, contract
+   `designpro.atlas-labeled-teaching-proof.v3`). Verified byte-identical to
+   the owner's copy. Never recreate, repair, crop, relabel or re-encode it;
+3. verified customer references, if any.
+
+Two text parts, one teaching image, customer references. That is the whole
+request.
+
+**NOT sent, and not to be restored without owner approval and evidence:**
+
+- the **normalized `[0,1]` topology table**. GENIE and the runtime keep full
+  mathematical authority — `manifest.zones`, `normalizedZoneTopology` and the
+  request-body `normalized` field are unchanged and still validated — but the
+  OS owning the math does not require Gemini to consume it. Layout reaches the
+  model as the prompt's named panel list, which is how the proven RestylePro
+  `mode:'artboard'` call has always worked;
+- the **blank neutral guide / container image**. A blank canvas handed to an
+  image model reads as content to interpret;
+- the **Houdini flat/3D teaching pair**;
+- the authoring-side **`OUTPUT CLASS — ABSOLUTE`** refusal block. See below;
+- an explicit **`temperature`**. DID-2D918868 sent no temperature field, so
+  Gemini applied its own default; `7ee1f868` pinned 1.0 on the same commit
+  that changed six other things and it has never been isolated. Parity
+  recovery does not introduce even a plausible config difference.
+
+### The gate stays; its words do not
+
+RULE 0.30's post-generation output-class gate is **unchanged and still
+blocking** — `classifyAtlasCandidate`, `runtime/atlas-output-class.cjs`,
+`masterOutputClass`. It runs after generation and cannot affect design pixels;
+it only decides whether bad output may become canonical. The same words
+injected into the *authoring* prompt are a long negative that displaces
+creative direction and makes the model over-index on the forbidden thing, so
+they are removed from Call 1's conditioning. **A post-generation gate cannot
+reduce creative quality. Authoring conditioning can.**
+
+### The finish comes from the customer, never from a release
+
+Gloss / Matte / Satin / Chrome / Brushed arrives on the request
+(`input.finish` → `atlasEdgeRequestBody` → `body.finish`) and selects its text
+from the shared `FINISH_SPECS` table exactly as it always has. **That table is
+not edited and no finish is pinned.** `atlasFinishSpec()` applies two flat-
+master-only adjustments: it stops the caller prefixing a label the table
+already opens with (`Finish: GLOSS — GLOSS — …`), and it rewrites the two
+entries that describe sheen landing on physical *body panels* — vehicle
+anatomy Call 1 must never be taught. Calls 2–8 keep the pinned wording
+verbatim, because a body panel is exactly what the photographer photographs.
+
+### Call 1 designs; Calls 2–8 present. Verified from code.
+
+- **A.T.L.A.S. proofs** are rendered by **`persona-photographer-render`**
+  (`ATLAS_PROOF_STAGE`, `runtime/designpanel-server-provider.cjs:1052`) in
+  `mode: "atlas-proof"`. **Standard** proofs use `generate-color-render`
+  (`designpanel-edge-provider.cjs`). Both names in the history are real; they
+  are two different pipelines and neither replaces the other.
+- The proof request carries `sourcePanelStoragePath` + `sourcePanelHash` +
+  `sourceMasterHash`, resolved per shot by `panelFor()` → `surfaceForProofView`.
+  The edge **refuses rather than renders** on mismatch:
+  `atlas_proof_surface_mismatch` and `atlas_proof_panel_hash_mismatch`. The
+  selected finish rides through, so it stays consistent across Call 1 and the
+  proofs.
+
+Prompt versions: runtime `designpro-flat-first-atlas-20260901.v19-creative-parity-recovery`,
+edge `atlas-artboard-designiq.20260901.v19-creative-parity-recovery`.
+
+**Do not re-add creative conditioning to fix a pixel defect.** If a master
+comes back wrong, the gate refuses it; diagnose the input contract, not the
+creative language. Locked by `tests/designpro-persona-contract.test.mjs`,
+`tests/atlas-artboard-edge-call1.test.mjs`,
+`tests/atlas-clean-authoring-contract.test.mjs`,
+`tests/atlas-cohesion-teaching-pair.test.mjs`,
+`tests/atlas-output-class-gate.test.mjs`.
+
+## 🧭 SUPERSEDED — CALL-1 v17 BOUNDARY CONTRACT (kept for history)
 
 The owner's Call-1 boundary contract supersedes the v15/v16 teaching-input
 wording below wherever they conflict. The Call-1 model request is exactly:

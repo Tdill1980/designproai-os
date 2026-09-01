@@ -49,12 +49,15 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v18-atlas-output-class";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v19-creative-parity-recovery";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
-// The Call-1 creative temperature is pinned by the owner boundary contract
-// (2026-09-01); it is never an env lookup and never a caller input.
-const ATLAS_ARTBOARD_TEMPERATURE = 1.0;
+// NO EXPLICIT TEMPERATURE (owner ruling, 2026-09-01). DID-2D918868 -- the
+// last master that came back near-working -- sent no temperature field at all,
+// so Gemini applied its own default. `7ee1f868` pinned 1.0 on the same commit
+// that changed six other things, and it has never been isolated. A parity
+// recovery does not introduce even a plausible config difference: the field
+// stays absent until an A/B proves it earns its place.
 // THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
 // (exact owner bytes, 2026-09-01). Its labels establish panel identity; its
 // physical arrangement is NOT target-vehicle geometry authority — the
@@ -410,6 +413,25 @@ function atlasVehicleBodyClass(declaredType?: string): string {
 //
 // `truckBedClause` is untouched and still serves the 3D render path below.
 
+/**
+ * CALL-1 FINISH, FROM THE CUSTOMER'S OWN SELECTION.
+ *
+ * The selected Gloss / Matte / Satin / Chrome / Brushed value arrives on the
+ * request and picks its spec out of the shared FINISH_SPECS table exactly as it
+ * always has -- no finish is invented or pinned here, and that table is not
+ * edited. Two adjustments apply to the FLAT master only. The entries already
+ * open with the finish name, so the caller must not prefix it a second time
+ * ("Finish: GLOSS - GLOSS - ..."). And two of them describe the sheen landing
+ * on physical BODY PANELS, which is vehicle anatomy Call 1 must never be
+ * taught; Calls 2-8 keep the pinned wording verbatim, because a body panel is
+ * exactly what the photographer is photographing.
+ */
+function atlasFinishSpec(finishSpec: string): string {
+  return finishSpec
+    .replace("visible reflections in the body panels.", "visible reflections in the printed graphic elements.")
+    .replace("the body panel reflects the surroundings like a polished mirror.", "the artwork reflects the surroundings like a polished mirror.");
+}
+
 function atlasFlatMasterContract(
   panels: Array<{
     label: string;
@@ -460,14 +482,12 @@ function atlasFlatMasterContract(
     "• REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom",
   ].join("\n");
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD on one square 4K canvas.
-Design ONE flat, print-ready vehicle-wrap ARTBOARD for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — the full wrap laid out FLAT as rectangular print panels on one sheet, one panel per vehicle side. The output is flat print artwork on a 2D sheet.
-
-OUTPUT CLASS — ABSOLUTE (owner contract). The only valid output is ONE flat A.T.L.A.S. panel-layout source: ONE cohesive vehicle wrap unwrapped flat, the same kind of object as the attached A.T.L.A.S. teaching example. An installed vehicle, a 3D vehicle, a vehicle montage, a presentation board, a camera view, a studio render or a mockup is categorically invalid here — vehicle presentation exists only in the downstream proofing system, never at this step.
+Design ONE flat vehicle-wrap A.T.L.A.S. ARTBOARD for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — the full wrap laid out FLAT as rectangular print panels on one sheet — the complete flattened panel layout of the vehicle. The output is flat print artwork on a 2D sheet.
 
 Lay out these panels, the wrap artwork filling each panel edge to edge, and the SAME cohesive design flowing across every panel as ONE CONNECTED WRAP UNWRAPPED FLAT:
 ${panelLines}
 
-The A.T.L.A.S. TARGET TOPOLOGY block in this request places each panel with normalized [0,1] coordinates — it alone controls placement and relative proportion. Fill every panel region corner to corner; the space between panels is sheet separation. Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet.
+Fill every panel corner to corner; the space between panels is sheet separation. Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet.
 
 One wrap, unwrapped. The left and right flanks are the two sides of the SAME vehicle carrying the SAME design — the palette, the imagery, the motion and the branding continue from one to the other, and a person walking around the finished truck sees one design, not two. The centre panels carry that same composition across the ${bodyClass}'s top and ends. Customer-facing wording reads normally on every panel.
 
@@ -718,7 +738,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions of the A.T.L.A.S. TARGET TOPOLOGY below. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output ONE flat A.T.L.A.S. panel-layout sheet — the same kind of object as the attached A.T.L.A.S. teaching example: flat print panels side by side on one sheet, built from layered background color and texture, mid-ground graphic motion, and foreground accent detail. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+    const atlasScene = `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. The design is built from layered elements — background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare panel. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
@@ -739,7 +759,7 @@ ${commercialScene}
 ${studioEnvironment}`;
 
     const commercialIdentity = atlasFlatMaster
-      ? `You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real vehicles. You amplify each brief into one original, premium, instantly readable wrap design built specifically for this business and this exact vehicle.`
+      ? `You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.`
       : `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.`;
 
     let assembled = `${commercialIdentity}
@@ -829,7 +849,7 @@ CLIENT BRIEF:`;
     if (wantsPhoto) assembled += `\n\n${PHOTO_REALISM_LOCK}`;
 
     if (atlasFlatMaster) {
-      assembled += `\nThe master carries uniform print color only; laminate and physical finish are applied in the downstream proof views.`;
+      assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across every panel — consistent finish on every surface.\nThe artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.`;
       assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass)}`;
       return assembled;
     }
@@ -884,7 +904,7 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions of the A.T.L.A.S. TARGET TOPOLOGY below. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output ONE flat A.T.L.A.S. panel-layout sheet — the same kind of object as the attached A.T.L.A.S. teaching example: flat print panels side by side on one sheet. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
+  const atlasRestyleScene = `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare panel.`;
   const restylePresentation = atlasFlatMaster
     ? atlasRestyleScene
     : `CAMERA ANGLE (LOCKED — read this FIRST):
@@ -961,7 +981,7 @@ ${PROFESSIONAL_JUDGMENT}`;
   if (wantsPhoto) assembled += `\n\n${PHOTO_REALISM_LOCK}`;
 
   if (atlasFlatMaster) {
-    assembled += `\nThe master carries uniform print color only; laminate and physical finish are applied in the downstream proof views.`;
+    assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across every panel — consistent finish on every surface.\nThe artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.`;
     assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass)}`;
     return assembled;
   }
@@ -2284,9 +2304,6 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // pixels inside source rectangles (canary 33389124918). The Houdini/
     // template inputs remain excluded for the same reason.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
-    parts.push({
-      text: atlasTopologyText(panels, [vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" "), atlasVehicleBodyClass(vehicleType)),
-    });
     const pushImage = (b64: unknown, mime = "image/png") => {
       if (typeof b64 === "string" && b64.length > 0) {
         parts.push({ inlineData: { mimeType: mime, data: b64 } });
@@ -2341,7 +2358,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     {
       const identity = validateAtlasTeachingProofIdentity(body.teachingProofIdentity);
       parts.push({
-        text: "MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF. This image is the visual definition of A.T.L.A.S.: ONE complete vehicle wrap unwrapped flat. Passenger, Driver, Rear, Roof, Hood and Front are regions of that ONE design, and the printed labels identify those panel roles only. The labels are instructional annotations — they are not artwork and must never appear in your generated master. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry. Its physical arrangement is not target-vehicle geometry authority; the A.T.L.A.S. TARGET TOPOLOGY above controls the current layout and proportions. Your output is the same kind of object as this teaching proof: flat print panels on one sheet.",
+        text: "MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF. This image is the visual definition of A.T.L.A.S.: ONE complete vehicle wrap unwrapped flat. Passenger, Driver, Rear, Roof, Hood and Front are regions of that ONE design, and the printed labels identify those panel roles only. The labels are instructional annotations — they are not artwork and must never appear in your generated master. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry. Its physical arrangement is not target-vehicle geometry authority; the panel list in the prompt above controls the current layout.",
       });
       const proofVerified = await downloadPart(
         teachingProofPath,
@@ -2373,7 +2390,6 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       contents: [{ role: "user", parts }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
-        temperature: ATLAS_ARTBOARD_TEMPERATURE,
         imageConfig: { aspectRatio: "1:1", imageSize: "4K" },
       },
     });
