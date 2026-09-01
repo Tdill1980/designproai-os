@@ -1030,15 +1030,25 @@ function SurfacePairRows({
                   <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Real design proof</div>
                   {view ? (
                     <a href={view.signedUrl} target="_blank" rel="noreferrer" className="block">
+                      {/* THE FRAME IS THE PROOF'S OWN SHAPE — the same
+                          correction the print panel beside it already got.
+                          A fixed `h-40` box at full column width is far wider
+                          than 16:9, so object-contain pillarboxed every render
+                          into a small strip floating in grey. The proof stack
+                          is locked to 16:9 (`view-angles-os`), so an
+                          aspect-video frame leaves object-contain nothing to
+                          pad and the render fills its container edge to edge.
+                          Falls back to the old fixed height only if the box
+                          cannot resolve. */}
                       <img
                         src={view.signedUrl}
                         alt={`${sideKey} 3D proof`}
                         loading="lazy"
-                        className="mt-1 h-40 w-full rounded border border-gray-200 bg-gray-50 object-contain"
+                        className="mt-1 aspect-video w-full rounded border border-gray-200 bg-gray-50 object-contain"
                       />
                     </a>
                   ) : (
-                    <div className="mt-1 flex h-40 items-center justify-center rounded border border-dashed border-gray-300 text-[11px] text-gray-400">
+                    <div className="mt-1 flex aspect-video w-full items-center justify-center rounded border border-dashed border-gray-300 text-[11px] text-gray-400">
                       3D proof not rendered yet
                     </div>
                   )}
