@@ -79,10 +79,25 @@ test("the six panels ride the request with identity and placement -- the inches 
   // Side, Hood, Roof, Rear and Front."
   assert.deepEqual(labels, ["Driver Side", "Front", "Hood", "Passenger Side", "Rear", "Roof"]);
   for (const panel of b.panels) {
-    assert.deepEqual(Object.keys(panel), ["label", "surfaceId", "placement"]);
+    assert.deepEqual(Object.keys(panel), ["label", "surfaceId", "placement", "normalized"]);
     assert.ok(panel.surfaceId);
     assert.ok(["left-flank", "center-column", "right-flank"].includes(panel.placement));
+    // The GENIE-derived normalized [0,1] mathematical topology (owner boundary
+    // contract 2026-09-01): the ONLY geometry the model receives, four-decimal,
+    // inside the unit square, with an orientation word — never inches/pixels.
+    assert.deepEqual(Object.keys(panel.normalized), ["x", "y", "width", "height", "orientation"]);
+    for (const key of ["x", "y", "width", "height"]) {
+      const value = panel.normalized[key];
+      assert.ok(Number.isFinite(value) && value >= 0 && value <= 1, `${panel.label} ${key} in [0,1]`);
+      assert.equal(value, Number(value.toFixed(4)), `${panel.label} ${key} is four-decimal canonical`);
+    }
+    assert.match(panel.normalized.orientation, /^(upright|rotated [+-]\d{1,3}°)$/);
   }
+  // Both flanks are vertical (rotated) regions; the centre column is upright.
+  const byKey = Object.fromEntries(b.panels.map((p) => [p.surfaceId, p.normalized]));
+  assert.match(byKey.DS.orientation, /^rotated /);
+  assert.match(byKey.PS.orientation, /^rotated /);
+  for (const id of ["HD", "RF", "FR", "RR"]) assert.equal(byKey[id].orientation, "upright");
   // And the geometry the request no longer carries is still held by GENIE, at
   // full precision, where the deterministic crop reads it.
   const manifest = buildAtlasManifest(SURFACES, null);
@@ -115,24 +130,27 @@ test("the mapping contains zero creative language of its own", () => {
   }
 });
 
-test("corrective notes, the guide and customer references ride only through extras", () => {
-  const identity = { contract: "designpro.atlas-design-teaching-example.v2" };
+test("the teaching proof and customer references ride only through extras — no guide, no corrective note", () => {
+  const identity = { contract: "designpro.atlas-labeled-teaching-proof.v3" };
   const b = body(BASE_INPUT, {
-    guideStoragePath: "atlas-call1-inputs/abc.png",
-    cohesionExampleFlatStoragePath: `atlas-call1-inputs/${"b".repeat(64)}.jpg`,
-    cohesionExampleIdentity: identity,
-    correctiveNote: "CORRECTION -- refused",
+    teachingProofStoragePath: `atlas-call1-inputs/${"b".repeat(64)}.png`,
+    teachingProofIdentity: identity,
     referenceImagesBase64: ["YmF6"],
+    // Legacy fields a stale caller might still send — they must NOT survive
+    // onto the request under the 2026-09-01 owner boundary contract.
+    guideStoragePath: "atlas-call1-inputs/abc.png",
+    correctiveNote: "CORRECTION -- refused",
+    cohesionExampleFlatStoragePath: `atlas-call1-inputs/${"c".repeat(64)}.jpg`,
   });
-  // The deterministic guide travels as a STORAGE PATH — a 2.2MB inline-base64
-  // body killed the edge worker twice (2026-08-27).
-  assert.equal(b.guideStoragePath, "atlas-call1-inputs/abc.png");
-  assert.match(b.cohesionExampleFlatStoragePath, /^atlas-call1-inputs\/[a-f0-9]{64}\.jpg$/);
-  assert.equal(b.cohesionExampleProofStoragePath, undefined);
-  assert.equal(b.cohesionExampleIdentity, identity);
+  // The teaching proof travels as a STORAGE PATH — a 2.2MB inline-base64 body
+  // killed the edge worker twice (2026-08-27).
+  assert.match(b.teachingProofStoragePath, /^atlas-call1-inputs\/[a-f0-9]{64}\.png$/);
+  assert.equal(b.teachingProofIdentity, identity);
+  assert.equal(b.guideStoragePath, undefined, "no blank neutral target guide rides the request");
+  assert.equal(b.correctiveNote, undefined, "no corrective note rides the primary-generation request");
+  assert.equal(b.cohesionExampleFlatStoragePath, undefined, "the superseded cohesion field is gone");
   assert.equal(b.structuralReferenceStoragePath, undefined);
   assert.equal(b.structuralPairedProofStoragePath, undefined);
-  assert.equal(b.correctiveNote, "CORRECTION -- refused");
   assert.deepEqual(b.referenceImagesBase64, ["YmF6"]);
   // And no inline blob field survives on the request.
   assert.equal(b.guideImageBase64, undefined);

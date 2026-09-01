@@ -27,13 +27,13 @@ test("ATLAS center topology order stays physical and named in model prose", () =
 });
 
 test("ATLAS creative contract carries named design context and pure rectangular pixels", () => {
-  const contract = block(edge, "function atlasFlatMasterContract(", "function atlasCreativeDirection");
-  assert.match(contract, /The attached guide shows where each panel sits/);
+  const contract = block(edge, "function atlasFlatMasterContract(", "// ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY");
+  assert.match(contract, /The A\.T\.L\.A\.S\. TARGET TOPOLOGY block in this request places each panel with normalized \[0,1\] coordinates/);
   assert.match(contract, /panel identity mismatch/);
   assert.match(contract, /opaque, unbroken and full-bleed to all four edges/);
   assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
   assert.match(contract, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
-  assert.match(contract, /the dark space between them is sheet separation/);
+  assert.match(contract, /the space between panels is sheet separation/);
   assert.match(contract, /ARTBOARD for this exact \$\{vehicle/);
   assert.match(contract, /\(\$\{bodyClass\}\)/);
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
@@ -71,33 +71,34 @@ test("ATLAS creative contract carries named design context and pure rectangular 
   assert.match(contract, /produced downstream by the seven proof projections and are absent here/);
 });
 
-test("ATLAS request exposes exact identity and placement but no dimensions or component topology", () => {
+test("ATLAS request exposes exact identity, placement and normalized topology but no inch dimensions", () => {
   const request = block(runtime, "function atlasEdgeRequestBody", "async function callAtlasArtboardEdge");
-  const panelBlock = block(request, "panels: manifest.zones.map", "guideStoragePath:");
+  const panelBlock = block(request, "panels: manifest.zones.map", "teachingProofStoragePath:");
   assert.match(panelBlock, /label:/);
   assert.match(panelBlock, /surfaceId:/);
   assert.match(panelBlock, /placement:/);
+  assert.match(panelBlock, /normalized: normalizedZoneTopology\(zone, manifest\)/);
   assert.doesNotMatch(panelBlock, /widthInches:|heightInches:|topology:/);
   assert.match(request, /vehicleType:/);
-  assert.match(request, /cohesionExampleFlatStoragePath:/);
-  assert.doesNotMatch(request, /cohesionExampleProofStoragePath:/);
-  assert.match(request, /cohesionExampleIdentity:/);
-  assert.doesNotMatch(request, /referenceImagesBase64:[^\n]*cohesionExample/);
+  assert.match(request, /teachingProofStoragePath:/);
+  assert.doesNotMatch(request, /cohesionExample|guideStoragePath|correctiveNote/);
+  assert.match(request, /teachingProofIdentity:/);
+  assert.doesNotMatch(request, /referenceImagesBase64:[^\n]*teachingProof/);
 });
 
-test("ATLAS teaching is solid-flat first and the current guide remains last", () => {
+test("ATLAS parts run prompt, topology, teaching proof, references — and no guide", () => {
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
-  const flat = handler.indexOf("RELEASE-PINNED FLAT A.T.L.A.S. OUTPUT EXAMPLE");
-  const customer = handler.indexOf("for (const ref of references) pushImage(ref)", flat);
-  const target = handler.indexOf("CURRENT TARGET GUIDE", customer);
-  const guide = handler.indexOf("await downloadPart(body.guideStoragePath", target);
-  assert.ok(flat > 0 && flat < customer && customer < target && target < guide);
-  assert.match(handler, /ATLAS_COHESION_EXAMPLE_CONTRACT/);
-  assert.doesNotMatch(handler, /cohesionExampleProofStoragePath|INSTALLED DRIVER PROOF/);
+  const promptPart = handler.indexOf("[{ text: prompt }]");
+  const topology = handler.indexOf("atlasTopologyText(panels", promptPart);
+  const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.", topology);
+  const customer = handler.indexOf("for (const ref of references) pushImage(ref)", teaching);
+  assert.ok(promptPart > 0 && promptPart < topology && topology < teaching && teaching < customer);
+  assert.match(handler, /ATLAS_TEACHING_PROOF_CONTRACT/);
+  assert.doesNotMatch(handler, /CURRENT TARGET GUIDE|guideStoragePath|guideImageBase64|INSTALLED DRIVER PROOF/);
   assert.match(handler, /atlas_artboard_input_hash_mismatch/);
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v16-one-connected-wrap"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v16-one-connected-wrap"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v17-labeled-teaching-topology"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v17-labeled-teaching-topology"/);
 });

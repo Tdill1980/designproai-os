@@ -49,33 +49,43 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v16-one-connected-wrap";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v17-labeled-teaching-topology";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
-const ATLAS_COHESION_EXAMPLE_MAX_BYTES = 2 * 1024 * 1024;
-const ATLAS_COHESION_EXAMPLE_CONTRACT = "designpro.atlas-design-teaching-example.v2";
-const ATLAS_COHESION_EXAMPLE_PURPOSE = "flat-output-cohesion-only";
-const ATLAS_COHESION_EXAMPLE_VERSION = 2;
-const ATLAS_COHESION_FLAT_HASH = "20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa";
-const ATLAS_COHESION_FLAT_BYTES = 619255;
+// The Call-1 creative temperature is pinned by the owner boundary contract
+// (2026-09-01); it is never an env lookup and never a caller input.
+const ATLAS_ARTBOARD_TEMPERATURE = 1.0;
+// THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
+// (exact owner bytes, 2026-09-01). Its labels establish panel identity; its
+// physical arrangement is NOT target-vehicle geometry authority — the
+// GENIE-derived normalized [0,1] topology in the request is. The labels are
+// instructional annotations only and must never appear in a generated master.
+const ATLAS_TEACHING_PROOF_MAX_BYTES = 6 * 1024 * 1024;
+const ATLAS_TEACHING_PROOF_CONTRACT = "designpro.atlas-labeled-teaching-proof.v3";
+const ATLAS_TEACHING_PROOF_PURPOSE = "atlas-object-model-and-panel-identity";
+const ATLAS_TEACHING_PROOF_VERSION = 3;
+const ATLAS_TEACHING_PROOF_HASH = "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded";
+const ATLAS_TEACHING_PROOF_BYTES = 3430273;
+// The normalized mathematical topology contract folded into provenance.
+const ATLAS_TOPOLOGY_CONTRACT = "designpro.atlas-normalized-topology.v1";
 
 /**
  * The Edge function is an independent deployment, so it must enforce the same
  * immutable teaching identity as the runtime instead of trusting a caller to
- * describe whichever two Storage objects it supplied.
+ * describe whichever Storage object it supplied.
  */
-export function validateAtlasCohesionExampleIdentity(value: unknown): Record<string, unknown> {
+export function validateAtlasTeachingProofIdentity(value: unknown): Record<string, unknown> {
   const identity = value && typeof value === "object"
     ? value as Record<string, unknown>
     : null;
   if (!identity
-    || identity.contract !== ATLAS_COHESION_EXAMPLE_CONTRACT
-    || identity.purpose !== ATLAS_COHESION_EXAMPLE_PURPOSE
-    || identity.version !== ATLAS_COHESION_EXAMPLE_VERSION
-    || identity.flattenedTopViewContentHash !== ATLAS_COHESION_FLAT_HASH
-    || identity.flattenedTopViewByteSize !== ATLAS_COHESION_FLAT_BYTES
-    || ATLAS_COHESION_FLAT_BYTES > ATLAS_COHESION_EXAMPLE_MAX_BYTES) {
-    throw new Error("atlas_artboard_cohesion_example_identity_invalid");
+    || identity.contract !== ATLAS_TEACHING_PROOF_CONTRACT
+    || identity.purpose !== ATLAS_TEACHING_PROOF_PURPOSE
+    || identity.version !== ATLAS_TEACHING_PROOF_VERSION
+    || identity.flattenedTopViewContentHash !== ATLAS_TEACHING_PROOF_HASH
+    || identity.flattenedTopViewByteSize !== ATLAS_TEACHING_PROOF_BYTES
+    || ATLAS_TEACHING_PROOF_BYTES > ATLAS_TEACHING_PROOF_MAX_BYTES) {
+    throw new Error("atlas_artboard_teaching_proof_identity_invalid");
   }
   return identity;
 }
@@ -455,13 +465,66 @@ Design ONE flat, print-ready vehicle-wrap ARTBOARD for this exact ${vehicle || "
 Lay out these panels, the wrap artwork filling each panel edge to edge, and the SAME cohesive design flowing across every panel as ONE CONNECTED WRAP UNWRAPPED FLAT:
 ${panelLines}
 
-The attached guide shows where each panel sits. Fill every light region corner to corner; the dark space between them is sheet separation. Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet.
+The A.T.L.A.S. TARGET TOPOLOGY block in this request places each panel with normalized [0,1] coordinates — it alone controls placement and relative proportion. Fill every panel region corner to corner; the space between panels is sheet separation. Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet.
 
 One wrap, unwrapped. The left and right flanks are the two sides of the SAME vehicle carrying the SAME design — the palette, the imagery, the motion and the branding continue from one to the other, and a person walking around the finished truck sees one design, not two. The centre panels carry that same composition across the ${bodyClass}'s top and ends. Customer-facing wording reads normally on every panel.
 
 Every panel is opaque, unbroken and full-bleed to all four edges: flat printed graphic art, the same kind of image as a printed poster or a roll of printed vinyl laid flat on a table. It is the artwork by itself, before anything is cut or applied. Customer-requested photographic imagery is a photograph printed INTO that flat art. Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the seven proof projections and are absent here.
 
 Gallery-grade custom artwork with real depth, movement and a wow factor — never generic AI filler, never a template. Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing.`;
+}
+
+// ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY ────────────────────
+// The OS owns the math; the AI owns only the creative pixels. Each region
+// arrives as x/y/width/height already divided by the canvas (computed by the
+// runtime from `manifest.zones`), serialized to exactly four decimals. The
+// edge re-validates every value so a malformed caller cannot hand Gemini a
+// topology the manifest never produced. Only
+// `surface | x | y | width | height | orientation` reaches the model — no
+// IDs, hashes, storage paths, gutters or production metadata.
+type AtlasNormalizedRect = { x: string; y: string; width: string; height: string; orientation: string };
+
+function atlasNormalizedRect(value: unknown, label: string): AtlasNormalizedRect {
+  const raw = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  if (!raw) throw new Error(`atlas_artboard_topology_invalid:${label}`);
+  const dim = (key: string) => {
+    const n = Number(raw[key]);
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+      throw new Error(`atlas_artboard_topology_invalid:${label}:${key}`);
+    }
+    return n.toFixed(4);
+  };
+  const orientation = String(raw.orientation || "").trim();
+  if (!/^(upright|rotated [+-]\d{1,3}°)$/.test(orientation)) {
+    throw new Error(`atlas_artboard_topology_invalid:${label}:orientation`);
+  }
+  return { x: dim("x"), y: dim("y"), width: dim("width"), height: dim("height"), orientation };
+}
+
+/**
+ * The model-facing A.T.L.A.S. TARGET TOPOLOGY text part. The rule paragraph is
+ * the owner boundary contract's model-facing topology rule, verbatim in
+ * substance: placement and relative proportion only, ONE cohesive design,
+ * ONE CONNECTED WRAP UNWRAPPED FLAT.
+ */
+function atlasTopologyText(
+  panels: Array<{ label: string; normalized?: AtlasNormalizedRect }>,
+  vehicle: string,
+  bodyClass: string,
+): string {
+  const rows = panels.map((panel) => {
+    const n = panel.normalized;
+    if (!n) throw new Error(`atlas_artboard_topology_invalid:${panel.label}`);
+    return `${panel.label} | ${n.x} | ${n.y} | ${n.width} | ${n.height} | ${n.orientation}`;
+  });
+  return `A.T.L.A.S. TARGET TOPOLOGY — ${vehicle || "customer vehicle"} (${bodyClass}).
+
+These coordinates describe the panel layout of ONE complete vehicle wrap unwrapped flat. They define placement and relative proportion only. All regions belong to ONE cohesive design. Passenger and Driver are the two sides of the SAME vehicle and must clearly carry the SAME design system. Rear, Roof, Hood, and Front continue that same composition. Create ONE CONNECTED WRAP UNWRAPPED FLAT across the complete A.T.L.A.S. topology.
+
+surface | x | y | width | height | orientation
+${rows.join("\n")}`;
 }
 
 /**
@@ -653,7 +716,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions in the attached mask. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces, built from layered background color and texture, mid-ground graphic motion, and foreground accent detail. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+    const atlasScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions of the A.T.L.A.S. TARGET TOPOLOGY below. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces, built from layered background color and texture, mid-ground graphic motion, and foreground accent detail. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
@@ -819,7 +882,7 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions in the attached mask. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
+  const atlasRestyleScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions of the A.T.L.A.S. TARGET TOPOLOGY below. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
   const restylePresentation = atlasFlatMaster
     ? atlasRestyleScene
     : `CAMERA ANGLE (LOCKED — read this FIRST):
@@ -2150,24 +2213,28 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     const vehicleType = String(body.vehicleType || "").trim();
     const authoringMode = String(body.authoringMode || "commercial") === "restyle" ? "restyle" : "commercial";
 
-    // The six labeled panels: caller-supplied GENIE dimensions win; the PVO
-    // table (artboard-template-os) is the fallback — the same resolver the
-    // legacy artboard mode uses.
-    type PanelIn = { label?: unknown; surfaceId?: unknown; placement?: unknown; widthInches?: unknown; heightInches?: unknown; topology?: unknown };
+    // The six labeled panels WITH their GENIE-derived normalized [0,1] target
+    // topology. Under the owner boundary contract (2026-09-01) the topology is
+    // MANDATORY — there is no blank target-guide image and therefore no
+    // PVO-table fallback for this mode: a request without all six normalized
+    // regions is refused before any creative work.
+    type PanelIn = { label?: unknown; surfaceId?: unknown; placement?: unknown; widthInches?: unknown; heightInches?: unknown; topology?: unknown; normalized?: unknown };
     const suppliedPanels = Array.isArray(body.panels) ? (body.panels as PanelIn[]) : [];
-    const panels = suppliedPanels.length
-      ? suppliedPanels.map((p) => ({
-          label: String(p.label || "").toUpperCase(),
-          surfaceId: String((p as Record<string, unknown>).surfaceId || "").toUpperCase() || undefined,
-          placement: String((p as Record<string, unknown>).placement || "") || undefined,
-          widthInches: Number(p.widthInches) || undefined,
-          heightInches: Number(p.heightInches) || undefined,
-          // Guidance only, and only on the two flanks. Read as strings and
-          // nothing else: it names structure, it never becomes a surface, a
-          // panel record, an output or a ZIP entry.
-          topology: atlasPanelTopology(p.topology),
-        }))
-      : await resolveArtboardPanels(svc, vehicleYear, vehicleMake, vehicleModel);
+    if (suppliedPanels.length !== 6) {
+      throw new Error(`atlas_artboard_topology_required:${suppliedPanels.length}`);
+    }
+    const panels = suppliedPanels.map((p) => ({
+      label: String(p.label || "").toUpperCase(),
+      surfaceId: String((p as Record<string, unknown>).surfaceId || "").toUpperCase() || undefined,
+      placement: String((p as Record<string, unknown>).placement || "") || undefined,
+      widthInches: Number(p.widthInches) || undefined,
+      heightInches: Number(p.heightInches) || undefined,
+      // Guidance only, and only on the two flanks. Read as strings and
+      // nothing else: it names structure, it never becomes a surface, a
+      // panel record, an output or a ZIP entry.
+      topology: atlasPanelTopology(p.topology),
+      normalized: atlasNormalizedRect(p.normalized, String(p.label || "")),
+    }));
 
     // THE REAL DPAG CREATIVE ASSEMBLY. buildDesignIQPrompt is this file's own
     // commercial/restyle branch — LOGO_REQUIREMENT, buildLogoArchitecture,
@@ -2204,15 +2271,20 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       atlasPanels: panels,
     } as any);
 
-    // 3 — parts: designer prompt, one release-pinned flat-output cohesion
-    // example, verified customer references, optional correction, then the
-    // CURRENT target mask as the final image. A finished vehicle proof is
-    // deliberately excluded: it is a stronger anatomy/camera instruction than
-    // prose and previously induced vehicle pixels inside source rectangles.
-    // The old Houdini/template inputs remain excluded: their cutouts and vehicle
-    // anatomy taught the exact wrong pixels. The selected Flamingo flat half was
-    // repaired to six solid rectangles before it entered the release.
+    // 3 — parts, in the owner boundary contract's exact order:
+    //   PROMPT / DESIGN CONTEXT
+    //   → NORMALIZED MATHEMATICAL TOPOLOGY
+    //   → MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
+    //   → CUSTOMER REFERENCES, IF ANY
+    // There is NO blank target-guide image and NO corrective-note text in
+    // this contract. A finished vehicle proof remains excluded: it is a stronger
+    // anatomy/camera instruction than prose and previously induced vehicle
+    // pixels inside source rectangles (canary 33389124918). The Houdini/
+    // template inputs remain excluded for the same reason.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+    parts.push({
+      text: atlasTopologyText(panels, [vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" "), atlasVehicleBodyClass(vehicleType)),
+    });
     const pushImage = (b64: unknown, mime = "image/png") => {
       if (typeof b64 === "string" && b64.length > 0) {
         parts.push({ inlineData: { mimeType: mime, data: b64 } });
@@ -2259,43 +2331,32 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       parts.push({ inlineData: { mimeType: mime, data: btoa(binary) } });
       return { contentHash: actualHash, byteSize: bytes.length };
     };
-    const cohesionFlatPath = String(body.cohesionExampleFlatStoragePath || "").trim();
-    if (!cohesionFlatPath) {
-      throw new Error("atlas_artboard_cohesion_example_incomplete");
+    const teachingProofPath = String(body.teachingProofStoragePath || "").trim();
+    if (!teachingProofPath) {
+      throw new Error("atlas_artboard_teaching_proof_incomplete");
     }
-    let verifiedCohesionExample: Record<string, unknown> | null = null;
+    let verifiedTeachingProof: Record<string, unknown> | null = null;
     {
-      const identity = validateAtlasCohesionExampleIdentity(body.cohesionExampleIdentity);
+      const identity = validateAtlasTeachingProofIdentity(body.teachingProofIdentity);
       parts.push({
-        text: "RELEASE-PINNED FLAT A.T.L.A.S. OUTPUT EXAMPLE. Learn only the requested output type: one cohesive vehicle-wrap composition already flattened into six solid, opaque, full-bleed print-art rectangles with no vehicle anatomy, openings, artboard labels or caption bands. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry. It is not target-vehicle geometry authority; the final neutral target guide controls the current layout.",
+        text: "MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF. This image is the visual definition of A.T.L.A.S.: ONE complete vehicle wrap unwrapped flat. Passenger, Driver, Rear, Roof, Hood and Front are regions of that ONE design, and the printed labels identify those panel roles only. The labels are instructional annotations — they are not artwork and must never appear in your generated master. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry. Its physical arrangement is not target-vehicle geometry authority; the A.T.L.A.S. TARGET TOPOLOGY above controls the current layout and proportions.",
       });
-      const flatVerified = await downloadPart(
-        cohesionFlatPath,
-        "image/jpeg",
-        ATLAS_COHESION_FLAT_HASH,
-        ATLAS_COHESION_FLAT_BYTES,
+      const proofVerified = await downloadPart(
+        teachingProofPath,
+        "image/png",
+        ATLAS_TEACHING_PROOF_HASH,
+        ATLAS_TEACHING_PROOF_BYTES,
       );
-      verifiedCohesionExample = {
+      verifiedTeachingProof = {
         ...identity,
-        contract: ATLAS_COHESION_EXAMPLE_CONTRACT,
-        purpose: ATLAS_COHESION_EXAMPLE_PURPOSE,
-        version: ATLAS_COHESION_EXAMPLE_VERSION,
-        flattenedTopViewContentHash: flatVerified?.contentHash,
-        flattenedTopViewByteSize: flatVerified?.byteSize,
+        contract: ATLAS_TEACHING_PROOF_CONTRACT,
+        purpose: ATLAS_TEACHING_PROOF_PURPOSE,
+        version: ATLAS_TEACHING_PROOF_VERSION,
+        flattenedTopViewContentHash: proofVerified?.contentHash,
+        flattenedTopViewByteSize: proofVerified?.byteSize,
       };
     }
     for (const ref of references) pushImage(ref);
-    // Re-roll corrective direction from the caller's QC gate (text only).
-    if (typeof body.correctiveNote === "string" && body.correctiveNote.trim()) {
-      parts.push({ text: body.correctiveNote.trim().slice(0, 2000) });
-    }
-    parts.push({
-      text: "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Fill its six regions with the NEW customer design from the canonical target vehicle and brief above. Return flat printable rectangles only; never return a vehicle image.",
-    });
-    await downloadPart(body.guideStoragePath, "image/png");
-    // Legacy inline path kept for callers that still send bytes (harness
-    // capture-only, tests); production sends it LAST for the same reason.
-    pushImage(body.guideImageBase64);
 
     // 4 — exactly ONE Gemini image request. No retries, no second asset.
     //
@@ -2310,6 +2371,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       contents: [{ role: "user", parts }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
+        temperature: ATLAS_ARTBOARD_TEMPERATURE,
         imageConfig: { aspectRatio: "1:1", imageSize: "4K" },
       },
     });
@@ -2369,7 +2431,8 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         modelRequestByteSize,
         modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
         modelInputImageCount,
-        cohesionExampleIdentity: verifiedCohesionExample,
+        teachingProofIdentity: verifiedTeachingProof,
+        topologyContract: ATLAS_TOPOLOGY_CONTRACT,
         promptChars: prompt.length,
         masterUrl: signed?.signedUrl || null,
         masterStoragePath: storagePath,

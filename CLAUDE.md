@@ -1,5 +1,36 @@
 # CLAUDE.md — designproai-os
 
+## 🧭 CALL-1 v17 — THE A.T.L.A.S. AI/OS BOUNDARY CONTRACT IS IN FORCE (owner-approved 2026-09-01)
+
+The owner's Call-1 boundary contract supersedes the v15/v16 teaching-input
+wording below wherever they conflict. The Call-1 model request is exactly:
+
+1. the DPAG creative assembly (unchanged);
+2. the **GENIE-derived normalized `[0,1]` mathematical topology** — a text part
+   (`surface | x | y | width | height | orientation`, four decimals, computed
+   from `manifest.zones`; contract `designpro.atlas-normalized-topology.v1`).
+   It is the SOLE target-vehicle geometry/proportion authority;
+3. the **MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF**
+   — exact owner bytes, SHA-256
+   `684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded`
+   (3,430,273 bytes, 1254×1254 PNG,
+   `runtime/atlas-examples/flamingo-labeled-atlas-teaching-proof.png`,
+   contract `designpro.atlas-labeled-teaching-proof.v3`). Its labels establish
+   panel identity ONLY; its arrangement is NOT target geometry; never
+   recreate, repair, crop, relabel or re-encode it;
+4. verified customer references, if any.
+
+**NO blank neutral target-guide image** (suspected conditioning regression —
+do not restore it), **NO correctiveNote** on any attempt, `temperature: 1.0`
+pinned, `gemini-3-pro-image`, `1:1`, native `4K`, exactly ONE image request.
+Prompt versions: runtime `designpro-flat-first-atlas-20260901.v17-labeled-teaching-topology`,
+edge `atlas-artboard-designiq.20260901.v17-labeled-teaching-topology`. The
+superseded unlabeled "repaired flat cohesion example" (`20085eb5…`) must not
+reach Call 1. Locked by `tests/atlas-cohesion-teaching-pair.test.mjs`,
+`tests/atlas-artboard-edge-call1.test.mjs`,
+`tests/atlas-clean-authoring-contract.test.mjs`,
+`tests/atlas-designiq-artboard.test.mjs`.
+
 ## 📋 DCA PHASE 1 — CURRENT STATUS BOARD (2026-08-31, release `5d3ad9b`)
 
 **This is a status board, not a rule.** It records what is true right now so a

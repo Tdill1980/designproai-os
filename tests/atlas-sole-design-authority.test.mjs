@@ -105,8 +105,8 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   ]) {
     assert.ok(loaded.has(module), `runtime/index.js must load ${module}`);
   }
-  assert.match(atlas, /loadBundledAtlasCohesionExample/,
-    "the example module may supply only the release-pinned cohesion input to active Call 1");
+  assert.match(atlas, /loadBundledAtlasTeachingProof/,
+    "the example module may supply only the owner-approved labeled teaching proof to active Call 1");
 
   // request → worker: the pipeline is chosen from the request's own contract,
   // not from an environment variable or a deploy-wide flag.
