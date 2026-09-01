@@ -147,6 +147,23 @@ test("the normalized [0,1] topology is mandatory, six-region, four-decimal and v
   assert.match(runtime, /toFixed\(4\)/);
 });
 
+test("every bundled atlas-examples asset ships in the release tree", () => {
+  // Canary run 33459887409 (2026-09-01): the droplet release omitted the
+  // teaching proof because ops/release-files.txt never listed it, and every
+  // generation died at flat_atlas_bundled_example_missing before any creative
+  // work. The bundled-example module and the release manifest must name the
+  // same files, exactly.
+  const releaseFiles = readFileSync(new URL("../ops/release-files.txt", import.meta.url), "utf8");
+  const exampleSource = readFileSync(new URL("../runtime/flat-atlas-topology-examples.cjs", import.meta.url), "utf8");
+  const bundled = [...exampleSource.matchAll(/join\(__dirname, "atlas-examples", "([^"]+)"\)/g)].map((m) => m[1]);
+  assert.ok(bundled.includes("flamingo-labeled-atlas-teaching-proof.png"),
+    "the mandatory teaching proof must be a bundled example");
+  for (const file of bundled) {
+    assert.ok(releaseFiles.includes(`runtime/atlas-examples/${file}`),
+      `ops/release-files.txt must ship runtime/atlas-examples/${file}`);
+  }
+});
+
 test("temperature 1.0 and gemini-3-pro-image at 1:1 4K are pinned for Call 1", () => {
   assert.match(edge, /ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image"/);
   assert.match(edge, /ATLAS_ARTBOARD_TEMPERATURE = 1\.0/);
