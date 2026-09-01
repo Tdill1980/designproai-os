@@ -109,7 +109,18 @@ export function normalizeDesignProVehicleTypeForIdentity(
   model: unknown,
 ): VehicleType {
   const declared = normalizeDesignProVehicleType(value);
+  // AN EXPLICIT CHOICE IS NEVER OVERRIDDEN. Identity resolution exists only to
+  // correct the historical `car` default; if the customer picked truck, suv or
+  // van, that is the answer.
+  if (declared !== "car") return declared;
   const identity = `${String(make || "").trim()} ${String(model || "").trim()}`.toLowerCase();
+  // VAN IS TESTED FIRST, AND THE ORDER IS LOAD-BEARING. The truck pattern
+  // contains `\bram\b`, so "RAM ProMaster 1500" matches it and would resolve
+  // truck before ever reaching a van branch placed after it. A specific van
+  // MODEL identity beats a generic truck MAKE identity.
+  if (/\b(?:transit|sprinter|promaster|econoline|e[\s-]?(?:150|250|350)|express|savana|nv\s?(?:200|1500|2500|3500)|metris|ducato|boxer|crafter|master|movano|city\s?express)\b/.test(identity)) {
+    return "van";
+  }
   if (/\b(ford\s+)?f[\s-]?(?:150|250|350|450|550)\b|\b(?:silverado|sierra|ram|tundra|tacoma|colorado|canyon|ranger|maverick|frontier|titan|ridgeline|gladiator)\b/.test(identity)) {
     return "truck";
   }

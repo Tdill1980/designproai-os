@@ -146,6 +146,33 @@ describe("flat-first generation input", () => {
     expect(normalizeDesignProVehicleTypeForIdentity("car", "Toyota", "Camry")).toBe("car");
   });
 
+  // VAN IDENTITY, AND THE PRECEDENCE THAT MAKES IT WORK.
+  //
+  // A 2022 Ford Transit High Roof entered the canonical lifecycle as `car`
+  // because the identity override had a truck branch and no van branch.
+  //
+  // The order is load-bearing: the truck pattern contains `\bram\b`, so
+  // "RAM ProMaster 1500" matches it and resolves TRUCK if van is tested second.
+  // A specific van MODEL beats a generic truck MAKE.
+  it("corrects unmistakable van identities, and van model beats truck make", () => {
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "Ford", "Transit High Roof 135 WB")).toBe("van");
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "Mercedes-Benz", "Sprinter 2500")).toBe("van");
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "Ford", "Transit Connect")).toBe("van");
+    // THE CONFLICT CASE: RAM is a truck make, ProMaster is a van model.
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "RAM", "ProMaster 1500")).toBe("van");
+    // ...and the same make without a van model still resolves truck.
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "RAM", "1500")).toBe("truck");
+    expect(normalizeDesignProVehicleTypeForIdentity("car", "Ford", "F-250 Super Duty")).toBe("truck");
+  });
+
+  // An explicit customer choice is never overridden by identity inference.
+  it("never overrides an explicitly selected non-car type", () => {
+    expect(normalizeDesignProVehicleTypeForIdentity("van", "Ford", "Transit")).toBe("van");
+    expect(normalizeDesignProVehicleTypeForIdentity("suv", "Toyota", "4Runner")).toBe("suv");
+    expect(normalizeDesignProVehicleTypeForIdentity("suv", "Ford", "F150")).toBe("suv");
+    expect(normalizeDesignProVehicleTypeForIdentity("truck", "Ford", "Transit")).toBe("truck");
+  });
+
   it("fails closed when MyVehicle photos would bypass the atlas master", () => {
     expect(myVehiclePhotoFlowEnabledForPipeline(FLAT_FIRST_ATLAS_PIPELINE_MODE)).toBe(false);
     expect(myVehiclePhotoFlowEnabledForPipeline("legacy")).toBe(true);
