@@ -235,14 +235,18 @@ test("an advisory semantic finding persists the first proof without an image rer
   const f = await fixture();
   let imageCalls = 0;
   let persisted = null;
+  // A PHOTOGRAPHIC critique. This fixture used to raise
+  // `atlasContinuityContract: "fail"`, which the owner ruled BLOCKING on
+  // 2026-09-01 -- see the two tests below. Studio lighting is the class that
+  // stays advisory: "keep things like studio-light streaks advisory for now."
   const validate = createAtlasProofValidator({
     provider: {
       generateRaw: async ({ body }) => {
         const identity = responseIdentity(body);
         return {
           payload: payload(passingReview(identity, {
-            atlasContinuityContract: "fail",
-            reasons: ["The visual reviewer could not establish continuity."],
+            studioLightingContract: "fail",
+            reasons: ["The LED strips read as streaks on the upper body."],
           })),
           model: "gemini-2.5-flash",
         };
@@ -292,7 +296,145 @@ test("an advisory semantic finding persists the first proof without an image rer
   assert.equal(result.providerCalls, 1);
   assert.equal(imageCalls, 1);
   assert.equal(persisted.metadata.validation.semanticDisposition, "review_required");
-  assert.equal(persisted.metadata.validation.semanticCode, "atlas_qc_design_drift");
+  assert.equal(persisted.metadata.validation.semanticCode, "atlas_qc_studio_failed");
+});
+
+// ═══ CONTINUITY IS BLOCKING, AND IT BUYS EXACTLY ONE RE-RENDER.
+//
+// Owner ruling, 2026-09-01: "atlasContinuityContract: fail -> candidate cannot
+// publish -> one proof-only rerender -> if still fail, stop that proof. But
+// keep things like studio-light streaks advisory for now."
+//
+// DID-134FC3CA is why: the inspector CORRECTLY reported that the Driver proof
+// had changed the customer's wrap, and the proof published anyway. Detection
+// without consequence is what these two tests convict.
+
+test("an explicit continuity failure blocks publication and buys exactly one proof-only re-render", async () => {
+  const f = await fixture();
+  let imageCalls = 0;
+  let failedReason = null;
+  const validate = createAtlasProofValidator({
+    provider: {
+      generateRaw: async ({ body }) => {
+        const identity = responseIdentity(body);
+        return {
+          payload: payload(passingReview(identity, {
+            atlasContinuityContract: "fail",
+            reasons: ["The vehicle carries a different wrap than the authority crop."],
+          })),
+          model: "gemini-2.5-flash",
+        };
+      },
+    },
+    atlas: f.atlas,
+    input: f.input,
+  });
+  const store = {
+    async findAcceptedSlot() { return null; },
+    async acquireSlotLease() { return { token: "lease" }; },
+    async releaseSlotLease() {},
+    async recordAttemptStarted() {},
+    async recordAttemptFinished() {},
+    async putImmutableBytes() {},
+    async persistAcceptedSlot() { throw new Error("a blocked proof may not be persisted"); },
+    async markSlotFailed(row) { failedReason = row; return row; },
+  };
+  const result = await runSlot({
+    requestId: "request",
+    tenantKey: "user_owner",
+    generationId: "generation",
+    sourceViewType: "side",
+    consumerRole: "side",
+    provider: {
+      async generateImage() {
+        imageCalls += 1;
+        return {
+          bytes: f.proofBytes,
+          contentType: "image/png",
+          model: "gemini-3-pro-image",
+          keyFingerprint: "000000000000",
+        };
+      },
+    },
+    store,
+    promptParts: [],
+    aspectRatio: "16:9",
+    imageSize: "4K",
+    validate,
+    allowOrphanReconciliation: false,
+    // The slot's own budget is deliberately larger than the continuity budget:
+    // this proves the STOP comes from the terminal verdict, not from running
+    // the transport budget out.
+    maxProviderAttempts: 4,
+    maxRegenerations: 4,
+  });
+
+  assert.notEqual(result.state, "accepted");
+  // The original render, plus exactly ONE proof-only re-render. Not four.
+  assert.equal(imageCalls, 2);
+  assert.equal(result.providerCalls, 2);
+  assert.ok(failedReason, "a blocked proof must terminate the slot rather than publish");
+});
+
+test("the first continuity failure carries a correction and does not redesign the artwork", async () => {
+  const f = await fixture();
+  const validate = createAtlasProofValidator({
+    provider: {
+      generateRaw: async ({ body }) => {
+        const identity = responseIdentity(body);
+        return {
+          payload: payload(passingReview(identity, {
+            atlasContinuityContract: "fail",
+            reasons: ["The dominant wordmark from the crop is absent."],
+          })),
+          model: "gemini-2.5-flash",
+        };
+      },
+    },
+    atlas: f.atlas,
+    input: f.input,
+  });
+  const first = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
+  assert.equal(first.accepted, false);
+  assert.equal(first.code, "atlas_qc_design_drift");
+  assert.equal(first.terminal, false, "the first verdict must buy a re-render");
+  assert.equal(first.metadata.semanticDisposition, "blocked");
+  assert.equal(first.metadata.continuityAttempt, 1);
+  // A re-render is PROOF-ONLY. The correction may not tell the renderer to
+  // change the wrap to satisfy the inspector -- Call-1 artwork is never edited
+  // to compensate for a presentation failure.
+  assert.match(first.correction, /Do not redesign, restyle, recolor or move any artwork/);
+
+  const second = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
+  assert.equal(second.accepted, false);
+  assert.equal(second.terminal, true, "the second verdict must stop that proof");
+  assert.equal(second.metadata.continuityAttempt, 2);
+});
+
+test("an UNCERTAIN continuity verdict stays advisory and still publishes", async () => {
+  const f = await fixture();
+  const validate = createAtlasProofValidator({
+    provider: {
+      generateRaw: async ({ body }) => {
+        const identity = responseIdentity(body);
+        return {
+          payload: payload(passingReview(identity, {
+            atlasContinuityContract: "uncertain",
+            reasons: ["Reviewer could not resolve the flank at this resolution."],
+          })),
+          model: "gemini-2.5-flash",
+        };
+      },
+    },
+    atlas: f.atlas,
+    input: f.input,
+  });
+  const verdict = await validate({ bytes: f.proofBytes, contentType: "image/png", sourceViewType: "side" });
+  // The owner's ruling names `fail`. Convicting on the reviewer hedging is the
+  // same error as blocking on a lighting critique.
+  assert.equal(verdict.accepted, true);
+  assert.equal(verdict.advisory, true);
+  assert.equal(verdict.metadata.semanticDisposition, "review_required");
 });
 
 test("an oversized advisory payload persists the first proof without reviewer or image reroll", async () => {

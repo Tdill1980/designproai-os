@@ -360,6 +360,14 @@ async function runSlot(options) {
         };
         await store.recordAttemptFinished(record);
         attempts.push(record);
+        // A TERMINAL VERDICT MEANS ANOTHER RENDER CANNOT FIX IT. The A.T.L.A.S.
+        // continuity gate issues one after its bounded re-render (owner, 2026-09-01:
+        // "one proof-only rerender -> if still fail, stop that proof"). Spending
+        // the rest of the slot's budget re-rolling a question the inspector has
+        // already answered the same way twice buys nothing and delays the run.
+        // The rejection is still recorded above, so the slot terminates with the
+        // reviewed state a human acts on rather than a silent exhaustion.
+        if (verdict?.terminal === true) break;
         continue;
       }
 
