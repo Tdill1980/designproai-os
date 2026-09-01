@@ -115,7 +115,7 @@ function ViewCard({
         <StatePill state={state} />
       </div>
 
-      <div className="relative flex aspect-[4/3] items-center justify-center bg-muted/30">
+      <div className="relative flex aspect-video items-center justify-center bg-muted/30">
         {view?.signedUrl ? (
           <a href={view.signedUrl} target="_blank" rel="noreferrer" className="block h-full w-full">
             <img
@@ -718,11 +718,11 @@ export default function GenerateDesign() {
                     <article key={label} className="overflow-hidden rounded-xl border border-border bg-card">
                       <div className="border-b border-border px-4 py-3 text-sm font-semibold">{label}</div>
                       {signedUrl ? (
-                        <a href={signedUrl} target="_blank" rel="noreferrer" className="block aspect-[4/3] bg-white">
+                        <a href={signedUrl} target="_blank" rel="noreferrer" className="block aspect-video bg-white">
                           <img src={signedUrl} alt={label} className="h-full w-full object-contain" />
                         </a>
                       ) : (
-                        <div className="flex aspect-[4/3] items-center justify-center px-6 text-center text-xs text-muted-foreground">
+                        <div className="flex aspect-video items-center justify-center px-6 text-center text-xs text-muted-foreground">
                           Stored and hash-locked; preview is not signed yet.
                         </div>
                       )}

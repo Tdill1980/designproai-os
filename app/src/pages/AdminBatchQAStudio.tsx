@@ -277,7 +277,7 @@ function QAGridCard({
       )}
       onClick={onClick}
     >
-      <div className="relative aspect-[16/10] bg-zinc-800">
+      <div className="relative aspect-video bg-zinc-800">
         {heroUrl ? (
           <img src={heroUrl} alt={render.design_name} className="w-full h-full object-cover" loading="lazy" />
         ) : (

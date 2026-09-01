@@ -1128,12 +1128,12 @@ export default function PanelProStudioBoard() {
                   {url ? (
                     <>
                       <a href={url} target="_blank" rel="noreferrer">
-                        <img src={url} alt={label} className="aspect-[4/3] w-full rounded bg-white object-contain" />
+                        <img src={url} alt={label} className="aspect-video w-full rounded bg-white object-contain" />
                       </a>
                       <SaveLink url={url} name={name} />
                     </>
                   ) : (
-                    <div className="flex aspect-[4/3] items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+                    <div className="flex aspect-video items-center justify-center rounded bg-muted text-xs text-muted-foreground">
                       <ImageOff className="mr-1.5 h-4 w-4" /> Not signed
                     </div>
                   )}
@@ -1353,7 +1353,7 @@ export default function PanelProStudioBoard() {
                           <img
                             src={view.signedUrl}
                             alt={SURFACE_LABEL[view.surfaceKey] || view.surfaceKey}
-                            className="aspect-[4/3] w-full rounded bg-white object-contain"
+                            className="aspect-video w-full rounded bg-white object-contain"
                           />
                         </a>
                         <div className="mt-1 truncate text-[11px] font-semibold">

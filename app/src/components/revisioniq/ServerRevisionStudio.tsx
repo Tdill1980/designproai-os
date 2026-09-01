@@ -328,7 +328,7 @@ function StudioWorkspace({
                     : "border-zinc-800 hover:border-zinc-600",
                 )}
               >
-                <div className="aspect-[16/10] bg-black">
+                <div className="aspect-video bg-black">
                   {view ? (
                     <img src={view.signedUrl} alt={SURFACE_LABEL[role]} className="h-full w-full object-cover" />
                   ) : (
