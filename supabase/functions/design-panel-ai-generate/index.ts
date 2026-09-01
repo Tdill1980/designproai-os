@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v21-guide-last-labeled-reference";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v22-atlas-is-the-object";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 // NO EXPLICIT TEMPERATURE (owner ruling, 2026-09-01). DID-2D918868 -- the
@@ -738,7 +738,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. The design is built from layered elements — background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare panel. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+    const atlasScene = `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT A.T.L.A.S. artboard — flat full-bleed panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. The design is built from layered elements — background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare panel. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
@@ -904,7 +904,7 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare panel.`;
+  const atlasRestyleScene = `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT A.T.L.A.S. artboard — flat full-bleed panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare panel.`;
   const restylePresentation = atlasFlatMaster
     ? atlasRestyleScene
     : `CAMERA ANGLE (LOCKED — read this FIRST):
