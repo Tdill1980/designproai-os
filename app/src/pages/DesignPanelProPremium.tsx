@@ -2392,34 +2392,21 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   >
                                     <ChevronRight className="w-5 h-5" />
                                   </button>
-                                  {/* Thumbnail filmstrip */}
-                                  <div className={cn("absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/70 to-transparent px-2", isMobile ? "pt-3 pb-1" : "pt-6 pb-2")}>
-                                    <div className="flex gap-1.5 justify-center">
-                                      {displayedAllViews.map((view, i) => (
-                                        <button
-                                          key={view.type}
-                                          type="button"
-                                          className={cn(
-                                            "rounded overflow-hidden border-2 transition-all shrink-0",
-                                            isMobile ? "w-10 h-6" : "w-14 h-9",
-                                            i === clampedViewIndex
-                                              ? "border-pink-500 shadow-[0_0_8px_rgba(236,72,153,0.4)]"
-                                              : "animate-thumbnail-sparkle border-pink-500/50 hover:opacity-100"
-                                          )}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setActiveViewIndex(i);
-                                          }}
-                                        >
-                                          <img
-                                            src={view.url}
-                                            alt={VIEW_LABEL_MAP[view.type] || view.type}
-                                            className="w-full h-full object-cover"
-                                          />
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
+                                  {/* THE OVERLAID FILMSTRIP IS GONE (owner,
+                                      2026-09-01: "Its duplicating the car angle
+                                      highlight pics").
+
+                                      It rendered the same seven views as the
+                                      LABELLED filmstrip ~200 lines below, but
+                                      tiny (w-14 h-9), caption-less, and laid
+                                      over the canvas behind a black gradient --
+                                      so it covered the bottom of the design it
+                                      was advertising. The labelled row does the
+                                      same job legibly and the arrows still
+                                      cycle views, so this was pure duplication.
+                                      The workflow stepper now reads directly
+                                      under the hero, which is where the owner
+                                      asked for it. Do not restore it. */}
                                 </>
                               )}
                               {/* Hide DesignIDBadge on mobile — info bar below shows same data */}
