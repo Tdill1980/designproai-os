@@ -5022,13 +5022,13 @@ export default function RevisionStudioIQ() {
                       <img
                         src={displayUrl}
                         alt={VIEW_LABELS[displayedHeroView.key]}
-                        className="w-full aspect-[16/10] object-contain bg-black cursor-pointer"
+                        className="w-full aspect-video object-contain bg-black cursor-pointer"
                         onClick={() => setExpandedImage({ url: displayUrl, title: `${formatVehicleInfo(selectedRender)} - ${VIEW_LABELS[displayedHeroView.key]}` })}
                         onError={(e) => { (e.target as HTMLImageElement).style.opacity = "0"; }}
                       />
                     );
                   })() : (
-                    <div className="w-full aspect-[16/10] flex items-center justify-center text-zinc-600 bg-black">
+                    <div className="w-full aspect-video flex items-center justify-center text-zinc-600 bg-black">
                       <div className="flex flex-col items-center gap-2">
                         <ImageIcon className="w-10 h-10 opacity-30" />
                         <span className="text-sm opacity-60">
