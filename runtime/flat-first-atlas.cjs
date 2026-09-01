@@ -61,7 +61,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v19-creative-parity-recovery";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v21-guide-last-labeled-reference";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -139,7 +139,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v19-creative-parity-recovery";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v21-guide-last-labeled-reference";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1562,6 +1562,9 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     // text in this contract.
     teachingProofStoragePath: extras.teachingProofStoragePath,
     teachingProofIdentity: extras.teachingProofIdentity,
+    // The deterministic neutral mask travels by STORAGE PATH: a 2.2MB inline
+    // base64 body killed the edge worker twice (2026-08-27).
+    guideStoragePath: extras.guideStoragePath,
     referenceImagesBase64: extras.referenceImagesBase64,
   };
 }
@@ -2252,17 +2255,23 @@ async function generateOrReuseFlatAtlas(options) {
   const revisionSequence = 1;
   const manifestBytes = canonicalBytes(manifest);
   const manifestHash = sha256(manifestBytes);
-  // ONE RENDER OF THE GEOMETRY, FOR HUMANS ONLY (owner contract 2026-09-01).
+  // TWO RENDERS OF ONE GEOMETRY, SPLIT BY CONSUMER.
   //
   // `guideBytes` is the labelled installer map: it is what enters storage, what
   // the design team reads, and what the QC inspector compares the master
   // against -- so `artifactFreeContract` still has annotations to look for.
-  // The neutral authoring mask is no longer rendered or sent: the model's
-  // target geometry authority is the GENIE-derived normalized [0,1] topology
-  // in the request body, and its A.T.L.A.S. object model comes from the
-  // owner-approved labeled Flamingo teaching proof.
+  // `authoringGuideBytes` is the same six rectangles as a neutral, unlabelled,
+  // unstroked mask, and it is the one the authoring model is shown, LAST.
+  //
+  // `7ee1f868` stopped rendering it and made a normalized [0,1] coordinate
+  // table the model's geometry authority instead. 083d2a70 (edge v14) is the
+  // last run that reached print panels 6/6 and it had this mask as its final
+  // image; nothing since has matched it. Surface identity still travels in the
+  // schema-bound panel list, and the normalized topology stays on the request
+  // as OS data that never reaches the model.
   const guideBytes = await renderAtlasGuide(manifest);
   const guideHash = sha256(guideBytes);
+  const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
@@ -2273,13 +2282,11 @@ async function generateOrReuseFlatAtlas(options) {
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
-  // Stage the teaching proof where the edge function can read it with its own
-  // service client. Content-addressed and upserted, so a retry or a second
-  // revision re-uses the same object instead of writing another copy. The
-  // neutral authoring-guide mask is NO LONGER a Call-1 model input (owner
-  // boundary contract 2026-09-01: no blank target-guide image; the normalized
-  // [0,1] topology carries target geometry). The labelled installer guide is
-  // still persisted below for humans and QC.
+  // Stage the teaching proof and the neutral target mask where the edge
+  // function can read them with its own service client. Content-addressed and
+  // upserted, so a retry or a second revision re-uses the same object instead
+  // of writing another copy. The LABELLED installer guide is a different
+  // artifact and is still persisted below for humans and QC.
   const stageEdgeInput = async (bytes, contentType) => {
     if (!bytes || !bytes.length) return undefined;
     const path = `atlas-call1-inputs/${sha256(bytes)}.${contentType === "image/jpeg" ? "jpg" : "png"}`;
@@ -2289,13 +2296,18 @@ async function generateOrReuseFlatAtlas(options) {
     }
     return path;
   };
-  const teachingProofStoragePath = await stageEdgeInput(
-    teachingProof.flattenedTopView.bytes,
-    teachingProof.flattenedTopView.contentType,
-  );
+  const [teachingProofStoragePath, targetGuideStoragePath] = await Promise.all([
+    stageEdgeInput(
+      teachingProof.flattenedTopView.bytes,
+      teachingProof.flattenedTopView.contentType,
+    ),
+    stageEdgeInput(authoringGuideBytes, "image/png"),
+  ]);
   const edgeExtras = {
     teachingProofStoragePath,
     teachingProofIdentity: teachingProof.identity,
+    // The TARGET guide is intentionally staged for the LAST image slot.
+    guideStoragePath: targetGuideStoragePath,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
