@@ -305,7 +305,7 @@ test("the solid-panel output contract lives in the edge function's flat contract
 test("the prompt version fences vehicle-atlas masters from every obsolete authoring contract", () => {
   const { readFileSync } = require("node:fs");
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  assert.match(atlasSource, /designpro-flat-first-atlas-20260901\.v22-atlas-is-the-object/);
+  assert.match(atlasSource, /designpro-flat-first-atlas-20260901\.v23-orthographic-restored/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260831\.v16-flat-example-only"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260831\.v14-vehicle-atlas"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260830\.v13-neutral-fields"/);

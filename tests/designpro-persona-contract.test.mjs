@@ -105,7 +105,7 @@ test("the restyle branch keeps its layered-depth elevation in flat-master mode",
   const prompt = authored({ mode: "restyle", brief: "Distressed Martini racing livery" });
   assert.match(prompt, /layered thematic elements/);
   assert.match(prompt, /depth and texture/);
-  assert.match(prompt, /as ONE FLAT A.T.L.A.S. artboard — flat full-bleed panels of pure printed vinyl artwork, never an on-vehicle photograph/);
+  assert.match(prompt, /as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph/);
 });
 
 // EXACT CUSTOMER DATA IN; NOTHING INVENTED WHEN ABSENT.
@@ -200,7 +200,7 @@ test("camera, studio and the photograph framing stay out of the flat master", ()
   assert.doesNotMatch(flat, /CAMERA ANGLE \(LOCKED/);
   assert.doesNotMatch(flat, /Canon EOS R5/);
   assert.doesNotMatch(flat, /epoxy floor|LED strip/);
-  assert.match(flat, /as ONE FLAT A.T.L.A.S. artboard — flat full-bleed panels of pure printed vinyl artwork, never an on-vehicle photograph/);
+  assert.match(flat, /as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph/);
   assert.match(flat, /OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD/);
   assert.match(flat, /ARTBOARD for this exact 2022 Ford F250 Crew Cab/);
   assert.doesNotMatch(flat, /studio photograph|Canon EOS R5|epoxy floor|LED strip/i);
