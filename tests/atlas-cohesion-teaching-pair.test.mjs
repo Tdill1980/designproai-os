@@ -1,3 +1,13 @@
+// THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
+// (A.T.L.A.S. AI/OS Boundary Contract, owner-approved 2026-09-01).
+//
+// These locks supersede the 2026-08-31 "repaired flat cohesion example"
+// contract by the owner's explicit decision: Call 1 receives the LABELED
+// Flamingo teaching proof — exact owner bytes, never recreated, repaired,
+// cropped, relabeled or re-encoded — plus the GENIE-derived normalized [0,1]
+// mathematical topology, and NO blank neutral target-guide image and NO
+// corrective-note text. The labels establish panel identity only; the
+// topology is the sole target-vehicle geometry/proportion authority.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
@@ -10,107 +20,89 @@ const sharp = require("../runtime/node_modules/sharp");
 const examples = require("../runtime/flat-atlas-topology-examples.cjs");
 const runtime = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
 const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-const { validateAtlasCohesionExampleIdentity } = await loadDesignIQ();
+const { validateAtlasTeachingProofIdentity } = await loadDesignIQ();
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const CANONICAL_EDGE_IDENTITY = Object.freeze({
-  contract: "designpro.atlas-design-teaching-example.v2",
-  purpose: "flat-output-cohesion-only",
-  version: 2,
-  flattenedTopViewContentHash: "20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa",
-  flattenedTopViewByteSize: 619255,
+  contract: "designpro.atlas-labeled-teaching-proof.v3",
+  purpose: "atlas-object-model-and-panel-identity",
+  version: 3,
+  flattenedTopViewContentHash: "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded",
+  flattenedTopViewByteSize: 3430273,
 });
 
-test("the owner-selected Flamingo flat example is release-pinned and historically identified", () => {
-  const example = examples.loadBundledAtlasCohesionExample();
-  assert.equal(example.identity.contract, "designpro.atlas-design-teaching-example.v2");
-  assert.equal(example.identity.purpose, "flat-output-cohesion-only");
-  assert.equal(example.identity.historicalGenerationId, "5b2eb96c-77b5-4705-8cad-fef00af677fe");
-  assert.equal(example.identity.historicalRevisionId, "b1941528-e375-4d93-bef7-2fd48213370a");
-  assert.equal(example.identity.historicalVehicle, "2022 Ford F-250 Crew Cab");
-  assert.equal(example.identity.outputRule, "six-solid-full-bleed-print-art-rectangles");
-  assert.equal(example.flattenedTopView.bytes.length, 619255);
-  assert.equal(Object.hasOwn(example, "finished3dProof"), false);
-  assert.equal(sha256(example.flattenedTopView.bytes),
-    "20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa");
+test("the owner-approved labeled Flamingo teaching proof is release-pinned, byte-exact and historically identified", () => {
+  const proof = examples.loadBundledAtlasTeachingProof();
+  assert.equal(proof.identity.contract, "designpro.atlas-labeled-teaching-proof.v3");
+  assert.equal(proof.identity.purpose, "atlas-object-model-and-panel-identity");
+  assert.equal(proof.identity.labelRule, "labels-are-instructional-annotations-only-never-artwork");
+  assert.equal(proof.identity.historicalGenerationId, "5b2eb96c-77b5-4705-8cad-fef00af677fe");
+  assert.equal(proof.identity.historicalRevisionId, "b1941528-e375-4d93-bef7-2fd48213370a");
+  assert.equal(proof.identity.historicalVehicle, "2022 Ford F-250 Crew Cab");
+  assert.equal(proof.identity.outputRule, "six-solid-full-bleed-print-art-rectangles");
+  assert.equal(proof.flattenedTopView.bytes.length, 3430273);
+  assert.equal(Object.hasOwn(proof, "finished3dProof"), false);
+  assert.equal(sha256(proof.flattenedTopView.bytes),
+    "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded");
 });
 
-test("the flat teaching derivative has six filled rectangles and no wheel-well-sized black void", async () => {
-  const pair = examples.loadBundledAtlasCohesionExample();
-  const { data, info } = await sharp(pair.flattenedTopView.bytes).raw().toBuffer({ resolveWithObject: true });
+test("the teaching proof decodes as the exact 1254x1254 owner canvas", async () => {
+  const proof = examples.loadBundledAtlasTeachingProof();
+  const info = await sharp(proof.flattenedTopView.bytes).metadata();
   assert.equal(info.width, 1254);
   assert.equal(info.height, 1254);
-  assert.equal(info.channels, 3);
-
-  // Insets of the exact six visible rectangles. Small dark artwork details are
-  // legitimate; a wheel/bed hole consumes far more than this two-percent cap.
-  const zones = [
-    [52, 56, 338, 1160],
-    [423, 56, 412, 235],
-    [423, 312, 412, 452],
-    [423, 786, 412, 285],
-    [423, 1094, 412, 124],
-    [866, 56, 337, 1160],
-  ];
-  for (const [x, y, width, height] of zones) {
-    let nearlyBlack = 0;
-    const total = width * height;
-    for (let py = y; py < y + height; py += 1) {
-      for (let px = x; px < x + width; px += 1) {
-        const offset = (py * info.width + px) * info.channels;
-        if (Math.max(data[offset], data[offset + 1], data[offset + 2]) < 18) nearlyBlack += 1;
-      }
-    }
-    assert.ok(nearlyBlack / total < 0.02, `flat teaching rectangle has a black void ratio ${nearlyBlack / total}`);
-  }
+  assert.equal(info.format, "png");
 });
 
-test("Call 1 keeps the flat teaching example outside customer-reference authority and hashes it into reuse", () => {
-  assert.match(runtime, /loadBundledAtlasCohesionExample/);
-  assert.match(runtime, /atlasDesignTeachingExample: cohesionExample\.identity/);
-  assert.match(runtime, /cohesionExampleIdentity: cohesionExample\.identity/);
+test("Call 1 keeps the teaching proof outside customer-reference authority and hashes it into reuse", () => {
+  assert.match(runtime, /loadBundledAtlasTeachingProof/);
+  assert.match(runtime, /atlasDesignTeachingExample: teachingProof\.identity/);
+  assert.match(runtime, /teachingProofIdentity: teachingProof\.identity/);
   assert.match(runtime, /atlasDesignTeachingExampleApplied: true/);
   assert.match(runtime, /topologyExamplesApplied: 0/);
-  assert.doesNotMatch(runtime, /referenceImagesBase64:[^\n]*cohesionExample/);
+  assert.doesNotMatch(runtime, /referenceImagesBase64:[^\n]*teachingProof/);
   assert.doesNotMatch(runtime, /loadBundledFlatToFinishedExample/,
     "the historical Houdini pair must remain dormant");
+  assert.doesNotMatch(runtime, /loadBundledAtlasCohesionExample/,
+    "the superseded unlabeled cohesion example must not reach Call 1");
 });
 
-test("edge verifies the flat teaching bytes and leaves the current target guide as the final image", () => {
-  assert.match(edge, /ATLAS_COHESION_EXAMPLE_CONTRACT = "designpro\.atlas-design-teaching-example\.v2"/);
+test("edge verifies the teaching bytes and sends no blank target guide and no corrective note", () => {
+  assert.match(edge, /ATLAS_TEACHING_PROOF_CONTRACT = "designpro\.atlas-labeled-teaching-proof\.v3"/);
   assert.match(edge, /atlas_artboard_input_hash_mismatch/);
   assert.match(edge, /atlas_artboard_input_size_mismatch/);
-  assert.match(edge, /ATLAS_COHESION_EXAMPLE_MAX_BYTES/);
+  assert.match(edge, /ATLAS_TEACHING_PROOF_MAX_BYTES/);
   assert.match(edge, /modelRequestByteSize > ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES/);
 
-  const flat = edge.indexOf("RELEASE-PINNED FLAT A.T.L.A.S. OUTPUT EXAMPLE");
-  const customer = edge.indexOf("for (const ref of references) pushImage(ref)", flat);
-  const corrective = edge.indexOf("body.correctiveNote", customer);
-  const target = edge.indexOf("CURRENT TARGET GUIDE", corrective);
-  const guide = edge.indexOf("await downloadPart(body.guideStoragePath", target);
-  assert.ok(flat > 0 && flat < customer && customer < corrective
-    && corrective < target && target < guide);
-  assert.match(edge, /cohesionExampleIdentity: verifiedCohesionExample/);
+  const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
+  const promptPart = handler.indexOf("[{ text: prompt }]");
+  const topology = handler.indexOf("atlasTopologyText(panels", promptPart);
+  const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.", topology);
+  const customer = handler.indexOf("for (const ref of references) pushImage(ref)", teaching);
+  assert.ok(promptPart > 0 && promptPart < topology && topology < teaching && teaching < customer,
+    "input order is prompt, normalized topology, teaching proof, customer references");
+  assert.match(edge, /teachingProofIdentity: verifiedTeachingProof/);
+  assert.doesNotMatch(handler, /CURRENT TARGET GUIDE|guideStoragePath|guideImageBase64|correctiveNote/);
   assert.doesNotMatch(edge, /cohesionExampleProofStoragePath|ATLAS_COHESION_PROOF_HASH|INSTALLED DRIVER PROOF/);
   assert.match(edge, /modelInputImageCount/);
 });
 
-test("edge independently pins the exact release teaching identity", () => {
-  assert.equal(validateAtlasCohesionExampleIdentity(CANONICAL_EDGE_IDENTITY), CANONICAL_EDGE_IDENTITY);
+test("edge independently pins the exact owner teaching identity", () => {
+  assert.equal(validateAtlasTeachingProofIdentity(CANONICAL_EDGE_IDENTITY), CANONICAL_EDGE_IDENTITY);
   assert.throws(
-    () => validateAtlasCohesionExampleIdentity(null),
-    /atlas_artboard_cohesion_example_identity_invalid/,
+    () => validateAtlasTeachingProofIdentity(null),
+    /atlas_artboard_teaching_proof_identity_invalid/,
   );
   for (const [field, substituted] of [
-    ["contract", "designpro.atlas-design-teaching-example.v1"],
+    ["contract", "designpro.atlas-design-teaching-example.v2"],
     ["purpose", "style-authority"],
-    ["version", 1],
+    ["version", 2],
     ["flattenedTopViewContentHash", "f".repeat(64)],
-    ["flattenedTopViewByteSize", 619254],
+    ["flattenedTopViewByteSize", 3430272],
   ]) {
     assert.throws(
-      () => validateAtlasCohesionExampleIdentity({ ...CANONICAL_EDGE_IDENTITY, [field]: substituted }),
-      /atlas_artboard_cohesion_example_identity_invalid/,
+      () => validateAtlasTeachingProofIdentity({ ...CANONICAL_EDGE_IDENTITY, [field]: substituted }),
+      /atlas_artboard_teaching_proof_identity_invalid/,
       `${field} cannot be caller-substituted`,
     );
   }
@@ -121,11 +113,11 @@ test("edge independently pins the exact release teaching identity", () => {
     CANONICAL_EDGE_IDENTITY.flattenedTopViewContentHash,
     String(CANONICAL_EDGE_IDENTITY.flattenedTopViewByteSize),
   ]) {
-    assert.ok(edge.includes(literal), `edge must contain exact pair identity ${literal}`);
+    assert.ok(edge.includes(literal), `edge must contain exact teaching identity ${literal}`);
   }
 });
 
-test("atlas-artboard is internal-only and requires the flat example without changing normal modes", () => {
+test("atlas-artboard is internal-only and requires the teaching proof without changing normal modes", () => {
   const atlasBranch = edge.indexOf('if (body?.mode === "atlas-artboard")');
   const internalOnly = edge.indexOf("if (!internalCaller.internal)", atlasBranch);
   const refusal = edge.indexOf('error: "atlas_artboard_internal_only"', internalOnly);
@@ -137,21 +129,29 @@ test("atlas-artboard is internal-only and requires the flat example without chan
   assert.match(edge.slice(atlasBranch, call), /status: 403/);
 
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
-  assert.match(handler, /if \(!cohesionFlatPath\)/);
-  assert.match(handler, /atlas_artboard_cohesion_example_incomplete/);
-  assert.match(handler, /validateAtlasCohesionExampleIdentity\(body\.cohesionExampleIdentity\)/);
+  assert.match(handler, /if \(!teachingProofPath\)/);
+  assert.match(handler, /atlas_artboard_teaching_proof_incomplete/);
+  assert.match(handler, /validateAtlasTeachingProofIdentity\(body\.teachingProofIdentity\)/);
 });
 
-test("canonical input order is prompt, flat, customer, correction, target guide", () => {
+test("the normalized [0,1] topology is mandatory, six-region, four-decimal and value-checked", () => {
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
-  const prompt = handler.indexOf("[{ text: prompt }]");
-  const flat = handler.indexOf("RELEASE-PINNED FLAT A.T.L.A.S. OUTPUT EXAMPLE", prompt);
-  const customer = handler.indexOf("for (const ref of references) pushImage(ref)", flat);
-  const corrective = handler.indexOf("body.correctiveNote", customer);
-  const target = handler.indexOf("CURRENT TARGET GUIDE", corrective);
-  const guide = handler.indexOf("await downloadPart(body.guideStoragePath", target);
-  assert.ok(prompt >= 0 && prompt < flat && flat < customer
-    && customer < corrective && corrective < target && target < guide);
-  assert.doesNotMatch(runtime, /guideImageBase64:/,
-    "the production runtime must leave the downloaded target guide as the final model image");
+  assert.match(handler, /atlas_artboard_topology_required/);
+  assert.match(edge, /atlas_artboard_topology_invalid/);
+  assert.match(edge, /surface \| x \| y \| width \| height \| orientation/);
+  assert.match(edge, /Passenger and Driver are the two sides of the SAME vehicle and must clearly carry the SAME design system/);
+  assert.match(edge, /Create ONE CONNECTED WRAP UNWRAPPED FLAT across the complete A\.T\.L\.A\.S\. topology/);
+  // Runtime side: pure arithmetic on the OS-owned manifest, refused outside [0,1].
+  assert.match(runtime, /function normalizedZoneTopology\(zone, manifest\)/);
+  assert.match(runtime, /flat_atlas_topology_zone_invalid/);
+  assert.match(runtime, /toFixed\(4\)/);
+});
+
+test("temperature 1.0 and gemini-3-pro-image at 1:1 4K are pinned for Call 1", () => {
+  assert.match(edge, /ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image"/);
+  assert.match(edge, /ATLAS_ARTBOARD_TEMPERATURE = 1\.0/);
+  const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
+  assert.match(handler, /temperature: ATLAS_ARTBOARD_TEMPERATURE/);
+  assert.match(handler, /aspectRatio: "1:1", imageSize: "4K"/);
+  assert.doesNotMatch(handler, /negative_prompt/);
 });

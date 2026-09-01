@@ -65,6 +65,31 @@ const COHESION_EXAMPLE = Object.freeze({
     contentType: "image/jpeg",
   }),
 });
+// THE MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF (owner-approved,
+// 2026-09-01, A.T.L.A.S. AI/OS Boundary Contract). These are the OWNER'S EXACT
+// BYTES — never recreated, repaired, cropped, relabeled or re-encoded. It is
+// the visual definition of what A.T.L.A.S. is and which region is which; its
+// physical arrangement is NOT target-vehicle geometry authority. The
+// GENIE-derived normalized [0,1] mathematical topology is the sole
+// target-vehicle geometry/proportion authority. The labels are instructional
+// annotations only and must never appear in a generated master.
+const LABELED_TEACHING_PROOF = Object.freeze({
+  contract: "designpro.atlas-labeled-teaching-proof.v3",
+  purpose: "atlas-object-model-and-panel-identity",
+  exampleKey: "flamingo-labeled-atlas",
+  version: 3,
+  historicalVehicle: "2022 Ford F-250 Crew Cab",
+  historicalGenerationId: "5b2eb96c-77b5-4705-8cad-fef00af677fe",
+  historicalRevisionId: "b1941528-e375-4d93-bef7-2fd48213370a",
+  historicalCanonicalMasterHash: "f9015398d87eca57d16b121ba83d5dcf7843d8086b2f0a697ffc4cc6271921bb",
+  outputRule: "six-solid-full-bleed-print-art-rectangles",
+  labelRule: "labels-are-instructional-annotations-only-never-artwork",
+  flattenedTopView: Object.freeze({
+    path: join(__dirname, "atlas-examples", "flamingo-labeled-atlas-teaching-proof.png"),
+    contentHash: "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded",
+    contentType: "image/png",
+  }),
+});
 const HASH_RE = /^[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXAMPLE_KEY_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
@@ -182,6 +207,36 @@ function loadBundledAtlasCohesionExample() {
       historicalVehicle: COHESION_EXAMPLE.historicalVehicle,
       historicalCanonicalMasterHash: COHESION_EXAMPLE.historicalCanonicalMasterHash,
       outputRule: COHESION_EXAMPLE.outputRule,
+      flattenedTopViewContentHash: flattenedTopView.contentHash,
+      flattenedTopViewByteSize: flattenedTopView.byteSize,
+      flattenedTopViewContentType: flattenedTopView.contentType,
+      flattenedTopViewDimensions: "1254x1254",
+    }),
+    flattenedTopView,
+  });
+}
+
+function loadBundledAtlasTeachingProof() {
+  const flattenedTopView = readBundledPairAsset(
+    LABELED_TEACHING_PROOF.flattenedTopView,
+    "Owner-approved labeled Flamingo A.T.L.A.S. teaching proof",
+  );
+  return Object.freeze({
+    kind: "atlas-labeled-teaching-proof",
+    purpose: LABELED_TEACHING_PROOF.purpose,
+    identity: Object.freeze({
+      contract: LABELED_TEACHING_PROOF.contract,
+      purpose: LABELED_TEACHING_PROOF.purpose,
+      exampleId: null,
+      exampleKey: LABELED_TEACHING_PROOF.exampleKey,
+      version: LABELED_TEACHING_PROOF.version,
+      source: "exact-server-release",
+      historicalGenerationId: LABELED_TEACHING_PROOF.historicalGenerationId,
+      historicalRevisionId: LABELED_TEACHING_PROOF.historicalRevisionId,
+      historicalVehicle: LABELED_TEACHING_PROOF.historicalVehicle,
+      historicalCanonicalMasterHash: LABELED_TEACHING_PROOF.historicalCanonicalMasterHash,
+      outputRule: LABELED_TEACHING_PROOF.outputRule,
+      labelRule: LABELED_TEACHING_PROOF.labelRule,
       flattenedTopViewContentHash: flattenedTopView.contentHash,
       flattenedTopViewByteSize: flattenedTopView.byteSize,
       flattenedTopViewContentType: flattenedTopView.contentType,
@@ -486,6 +541,7 @@ module.exports = {
   EXAMPLE_PURPOSE,
   FlatAtlasTopologyExampleError,
   loadBundledAtlasCohesionExample,
+  loadBundledAtlasTeachingProof,
   loadBundledFlatToFinishedExample,
   loadDesignPanelArtboardExamples,
   loadActiveFlatAtlasTopologyExamples,

@@ -34,10 +34,14 @@ test("what Gemini actually delivered is measured, not assumed", () => {
   assert.match(runtime, /masterNativelyFourK: masterDelivery\?\.nativelyFourK/);
 });
 
-test("a short delivery is asked for again when an attempt is being spent anyway", () => {
-  assert.match(runtime, /const shortDelivery = masterDelivery && masterDelivery\.nativelyFourK === false/);
-  assert.match(runtime, /below the 4096x4096 production canvas/);
-  assert.match(runtime, /\$\{refusalReason\}\.\$\{shortDelivery\}/);
+test("a re-roll is the identical primary request — no corrective note rides any attempt", () => {
+  // Owner boundary contract 2026-09-01: NO correctiveNote for the primary
+  // generation. Every authoring attempt sends the same request; temperature
+  // 1.0 supplies the variation, and the delivered size stays measured (above)
+  // rather than negotiated in prose.
+  assert.doesNotMatch(runtime, /correctiveNote/);
+  assert.doesNotMatch(runtime, /CORRECTION -- the previous sheet was refused/);
+  assert.match(runtime, /atlasEdgeRequestBody\(authoringInput, manifest, edgeExtras\)/);
 });
 
 test("PanelPro shows the delivered size, so 4K is checkable rather than claimed", () => {

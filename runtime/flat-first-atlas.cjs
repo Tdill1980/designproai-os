@@ -37,7 +37,7 @@ const {
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
-const { loadBundledAtlasCohesionExample } = require("./flat-atlas-topology-examples.cjs");
+const { loadBundledAtlasTeachingProof } = require("./flat-atlas-topology-examples.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -60,7 +60,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260831.v16-flat-example-only";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v17-labeled-teaching-topology";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -138,7 +138,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260831.v16-one-connected-wrap";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v17-labeled-teaching-topology";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1540,27 +1540,56 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     visionboard_intent: ["exact_reference", "artboard_projection"].includes(String(input?.visionboardIntent || "").trim())
       ? "exact_reference"
       : "style_inspiration",
-    // `surfaceId` and `placement` bind each neutral guide rectangle to server
-    // metadata. They are never visual captions: the guide is deliberately
-    // unlabelled, and the edge explicitly forbids rendering names/IDs into the
-    // artwork that will be cropped as a production surface.
+    // `surfaceId` and `placement` bind each region to server metadata; they
+    // are never visual captions. `normalized` is the GENIE-derived [0,1]
+    // mathematical target topology (A.T.L.A.S. AI/OS Boundary Contract,
+    // 2026-09-01): x/y/width/height are the zone's print rectangle divided by
+    // the canvas, and it is the SOLE target-vehicle geometry/proportion
+    // authority the model receives. No blank neutral guide image is sent.
     panels: manifest.zones.map((zone) => ({
       label: SURFACE_LABELS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
       surfaceId: SURFACE_IDS[zone.surfaceKey] || String(zone.surfaceKey).toUpperCase(),
       placement: zone.placement,
+      normalized: normalizedZoneTopology(zone, manifest),
     })),
-    // The deterministic guide travels by STORAGE PATH: a 2.2MB inline-base64
-    // body killed the edge worker twice (2026-08-27). Customer references stay
-    // inline — they are already size-capped at 1600px by the verified loader.
-    guideStoragePath: extras.guideStoragePath,
-    // Release-owned flat teaching example. It travels as a content-addressed
-    // server storage path, never as browser-controlled reference input. No
-    // finished vehicle proof reaches Call 1; the solid rectangular atlas is
-    // followed by the current neutral target guide.
-    cohesionExampleFlatStoragePath: extras.cohesionExampleFlatStoragePath,
-    cohesionExampleIdentity: extras.cohesionExampleIdentity,
+    // MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF.
+    // It travels as a content-addressed server storage path, never as
+    // browser-controlled reference input, and never inline (a 2.2MB inline
+    // base64 body killed the edge worker twice, 2026-08-27). Customer
+    // references stay inline — they are size-capped at 1600px by the verified
+    // loader. There is NO blank target-guide image and NO corrective-note
+    // text in this contract.
+    teachingProofStoragePath: extras.teachingProofStoragePath,
+    teachingProofIdentity: extras.teachingProofIdentity,
     referenceImagesBase64: extras.referenceImagesBase64,
-    correctiveNote: extras.correctiveNote,
+  };
+}
+
+// GENIE-derived normalized [0,1] mathematical topology for one zone. Pure
+// arithmetic on the OS-owned manifest: x/canvasWidth, y/canvasHeight, etc.,
+// serialized to exactly four decimal places so the model-facing block and the
+// lock tests share one canonical form. Orientation is the zone's own
+// rotationDegrees, reported as upright / rotated ±90°.
+function normalizedZoneTopology(zone, manifest) {
+  const canvasWidth = Number(manifest?.canvas?.widthPx);
+  const canvasHeight = Number(manifest?.canvas?.heightPx);
+  if (!Number.isFinite(canvasWidth) || canvasWidth < 1 || !Number.isFinite(canvasHeight) || canvasHeight < 1) {
+    throw new FlatAtlasError("flat_atlas_topology_canvas_invalid", "The manifest canvas is required to normalize the target topology");
+  }
+  const norm = (value, span) => {
+    const n = Number(value) / span;
+    if (!Number.isFinite(n) || n < 0 || n > 1) {
+      throw new FlatAtlasError("flat_atlas_topology_zone_invalid", `Zone ${zone?.surfaceKey} does not normalize into [0,1]`);
+    }
+    return Number(n.toFixed(4));
+  };
+  const rotation = Number(zone?.rotationDegrees) || 0;
+  return {
+    x: norm(zone.x, canvasWidth),
+    y: norm(zone.y, canvasHeight),
+    width: norm(zone.w, canvasWidth),
+    height: norm(zone.h, canvasHeight),
+    orientation: rotation === 0 ? "upright" : `rotated ${rotation > 0 ? "+" : ""}${rotation}°`,
   };
 }
 
@@ -1595,15 +1624,15 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   if (Number(payload.imageRequestCount) !== 1) {
     throw new FlatAtlasError("flat_atlas_edge_call_count_invalid", `The edge function reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
   }
-  const expectedTeaching = body?.cohesionExampleIdentity || null;
+  const expectedTeaching = body?.teachingProofIdentity || null;
   if (expectedTeaching) {
-    const returned = payload?.cohesionExampleIdentity || null;
+    const returned = payload?.teachingProofIdentity || null;
     if (!returned
       || returned.contract !== expectedTeaching.contract
       || returned.flattenedTopViewContentHash !== expectedTeaching.flattenedTopViewContentHash) {
       throw new FlatAtlasError(
         "flat_atlas_edge_teaching_example_identity_mismatch",
-        "The edge function did not prove the release-pinned flat A.T.L.A.S. teaching identity",
+        "The edge function did not prove the owner-approved labeled A.T.L.A.S. teaching-proof identity",
       );
     }
   }
@@ -1634,7 +1663,8 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       imageRequestCount: 1,
       modelRequestByteSize: Number(payload.modelRequestByteSize) || null,
       modelInputImageCount: Number(payload.modelInputImageCount) || null,
-      cohesionExampleIdentity: payload.cohesionExampleIdentity || null,
+      teachingProofIdentity: payload.teachingProofIdentity || null,
+      topologyContract: payload.topologyContract || null,
       masterSha256: digest,
       designText: String(payload.designText || ""),
     },
@@ -2128,13 +2158,14 @@ async function generateOrReuseFlatAtlas(options) {
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
   const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
-  // OWNER-SELECTED FLAT TEACHING EXAMPLE. It contains six cohesive solid
-  // rectangles with no wheel wells, bed opening or vehicle anatomy. The
-  // installed Driver proof is intentionally not a Call-1 input: finished
-  // vehicle imagery overpowers prose and reintroduces the anatomy the source
-  // rectangles must exclude. The flat bytes are release-pinned and their
-  // identity enters the reuse fence below.
-  const cohesionExample = loadBundledAtlasCohesionExample();
+  // THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
+  // (A.T.L.A.S. AI/OS Boundary Contract, 2026-09-01). Its labels establish
+  // panel identity; its physical arrangement is NOT target-vehicle geometry —
+  // the GENIE-derived normalized [0,1] topology in the request is. The
+  // installed Driver proof remains excluded (finished-vehicle imagery
+  // overpowers prose, canary 33389124918). Exact owner bytes, release-pinned;
+  // the identity enters the reuse fence below.
+  const teachingProof = loadBundledAtlasTeachingProof();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
   if (geometryResolution) manifest.geometryResolution = geometryResolution;
@@ -2182,7 +2213,7 @@ async function generateOrReuseFlatAtlas(options) {
   // historical Houdini/template examples that taught doors, windows, handles
   // and wheel arches. Its identity is part of the immutable reuse contract.
   const currentExampleSetHash = sha256(canonicalBytes({
-    atlasDesignTeachingExample: cohesionExample.identity,
+    atlasDesignTeachingExample: teachingProof.identity,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
@@ -2220,17 +2251,17 @@ async function generateOrReuseFlatAtlas(options) {
   const revisionSequence = 1;
   const manifestBytes = canonicalBytes(manifest);
   const manifestHash = sha256(manifestBytes);
-  // TWO RENDERS OF ONE GEOMETRY, SPLIT BY CONSUMER.
+  // ONE RENDER OF THE GEOMETRY, FOR HUMANS ONLY (owner contract 2026-09-01).
   //
   // `guideBytes` is the labelled installer map: it is what enters storage, what
   // the design team reads, and what the QC inspector compares the master
   // against -- so `artifactFreeContract` still has annotations to look for.
-  // `authoringGuideBytes` is the same six rectangles as a neutral, unlabelled,
-  // unstroked mask; it is the one the authoring model is shown. Surface identity
-  // travels separately in the schema-bound panel list.
+  // The neutral authoring mask is no longer rendered or sent: the model's
+  // target geometry authority is the GENIE-derived normalized [0,1] topology
+  // in the request body, and its A.T.L.A.S. object model comes from the
+  // owner-approved labeled Flamingo teaching proof.
   const guideBytes = await renderAtlasGuide(manifest);
   const guideHash = sha256(guideBytes);
-  const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
@@ -2241,9 +2272,13 @@ async function generateOrReuseFlatAtlas(options) {
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
-  // Stage the guide where the edge function can read it with its
-  // own service client. Content-addressed and upserted, so a retry or a second
-  // revision re-uses the same object instead of writing another copy.
+  // Stage the teaching proof where the edge function can read it with its own
+  // service client. Content-addressed and upserted, so a retry or a second
+  // revision re-uses the same object instead of writing another copy. The
+  // neutral authoring-guide mask is NO LONGER a Call-1 model input (owner
+  // boundary contract 2026-09-01: no blank target-guide image; the normalized
+  // [0,1] topology carries target geometry). The labelled installer guide is
+  // still persisted below for humans and QC.
   const stageEdgeInput = async (bytes, contentType) => {
     if (!bytes || !bytes.length) return undefined;
     const path = `atlas-call1-inputs/${sha256(bytes)}.${contentType === "image/jpeg" ? "jpg" : "png"}`;
@@ -2253,18 +2288,13 @@ async function generateOrReuseFlatAtlas(options) {
     }
     return path;
   };
-  const [cohesionExampleFlatStoragePath, targetGuideStoragePath] = await Promise.all([
-    stageEdgeInput(
-      cohesionExample.flattenedTopView.bytes,
-      cohesionExample.flattenedTopView.contentType,
-    ),
-    stageEdgeInput(authoringGuideBytes, "image/png"),
-  ]);
+  const teachingProofStoragePath = await stageEdgeInput(
+    teachingProof.flattenedTopView.bytes,
+    teachingProof.flattenedTopView.contentType,
+  );
   const edgeExtras = {
-    cohesionExampleFlatStoragePath,
-    cohesionExampleIdentity: cohesionExample.identity,
-    // The TARGET guide is intentionally staged last in the edge image order.
-    guideStoragePath: targetGuideStoragePath,
+    teachingProofStoragePath,
+    teachingProofIdentity: teachingProof.identity,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
@@ -2287,7 +2317,6 @@ async function generateOrReuseFlatAtlas(options) {
   // The pixel measurements that actually decided acceptance, kept for the row.
   let masterDeterministic = null;
   const edgeProvenance = [];
-  let correctiveNote = "";
   // OPTIMIZE TIME TO DRIVER, AND MEASURE IT. (Owner, 2026-08-27: "click->master,
   // master->Driver, click->Driver ... those are the primary latency metrics.")
   // Call 1 owns the first of those three, so it records its own segments on the
@@ -2307,10 +2336,10 @@ async function generateOrReuseFlatAtlas(options) {
   };
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
     masterAuthoringAttempts = attempt;
-    const attemptBody = atlasEdgeRequestBody(authoringInput, manifest, {
-      ...edgeExtras,
-      correctiveNote: correctiveNote || undefined,
-    });
+    // NO corrective-note text (owner boundary contract 2026-09-01): every attempt is
+    // the identical primary-generation request; temperature 1.0 supplies the
+    // re-roll variation. The bounded attempt budget above is unchanged.
+    const attemptBody = atlasEdgeRequestBody(authoringInput, manifest, edgeExtras);
     masterRequestByteSize = Buffer.byteLength(JSON.stringify(attemptBody), "utf8");
     if (masterRequestByteSize > masterRequestMaxBytes) {
       throw new FlatAtlasError(
@@ -2381,20 +2410,10 @@ async function generateOrReuseFlatAtlas(options) {
         `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times: ${refusalReason.slice(0, 700)}`,
       );
     }
-    // ASK FOR THE FULL CANVAS BACK WHEN IT ARRIVED SHORT.
-    //
-    // Owner 2026-08-27: "Make sure atlas is highest possible 4K or more
-    // resolution." The request already pins Gemini's maximum
-    // (imageConfig.imageSize "4K" at 1:1) and the canvas is 4096x4096 -- but a
-    // smaller return is stretched onto it by normalizeAtlasMaster, so the
-    // master reports 4K either way and only `masterNativelyFourK` knows the
-    // difference. Nothing acted on it. Since this attempt is being spent
-    // anyway, spend it asking for the pixels too.
-    const shortDelivery = masterDelivery && masterDelivery.nativelyFourK === false
-      ? ` The previous sheet came back at ${masterDelivery.deliveredWidthPx}x${masterDelivery.deliveredHeightPx}, below the 4096x4096 production canvas -- return the full 4K square so the panels carry real detail rather than an upscale.`
-      : "";
-    correctiveNote = `CORRECTION -- the previous sheet was refused by production QC and discarded: ${refusalReason}.${shortDelivery} Author a NEW sheet. `
-      + "Every panel is one SOLID rectangle of continuous artwork, opaque corner to corner: paint the artwork straight through every position where a window, glass panel, wheel, wheel arch, lamp, bed opening or trim piece would sit. The installer cuts those openings out of the printed vinyl; the artwork itself never contains a dark or empty shape standing in for one.";
+    // No corrective-note text is carried into the next attempt (owner boundary
+    // contract 2026-09-01): a re-roll is the identical primary request and
+    // temperature 1.0 supplies the variation. The refusal itself is recorded
+    // above in `edgeProvenance` / the thrown error on exhaustion.
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
   // ONE REPAIRED SHEET FEEDS BOTH HALVES OF THE FAN-OUT.
@@ -2798,7 +2817,7 @@ async function generateOrReuseFlatAtlas(options) {
       topologyExampleIdentity: null,
       topologyExampleIdentities: [],
       atlasDesignTeachingExampleApplied: true,
-      atlasDesignTeachingExampleIdentity: cohesionExample.identity,
+      atlasDesignTeachingExampleIdentity: teachingProof.identity,
       atlasDesignTeachingExampleSetHash: currentExampleSetHash,
       designPanelArtboardQualityExamplesApplied: 0,
       designPanelArtboardQualityExampleIdentities: [],

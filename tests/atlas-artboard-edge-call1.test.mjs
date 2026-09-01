@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260831\.v16-one-connected-wrap"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v17-labeled-teaching-topology"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -115,7 +115,7 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.equal(runtimeVersion[1], edge[1]);
 });
 
-test("only the release-pinned flat cohesion example reaches Call 1 and the target guide stays last", () => {
+test("only the owner-approved labeled teaching proof reaches Call 1, after the topology, with no blank guide", () => {
   assert.ok(!handler.includes("body.structuralReferenceStoragePath"));
   assert.ok(!handler.includes("body.structuralPairedProofStoragePath"));
   assert.ok(!handler.includes("body.structuralReferenceBase64"));
@@ -127,19 +127,42 @@ test("only the release-pinned flat cohesion example reaches Call 1 and the targe
   assert.ok(!liveAuthoring.includes("topologyExampleParts("));
   assert.ok(!liveAuthoring.includes("structuralReferenceStoragePath"));
   assert.ok(!liveAuthoring.includes("structuralPairedProofStoragePath"));
-  assert.match(liveAuthoring, /loadBundledAtlasCohesionExample/);
-  assert.match(liveAuthoring, /const \[cohesionExampleFlatStoragePath, targetGuideStoragePath\] = await Promise\.all/);
-  assert.match(liveAuthoring, /cohesionExampleFlatStoragePath,/);
-  assert.match(liveAuthoring, /guideStoragePath: targetGuideStoragePath/);
+  assert.match(liveAuthoring, /loadBundledAtlasTeachingProof/);
+  assert.match(liveAuthoring, /teachingProofStoragePath/);
+  // The blank neutral target-guide image is no longer a Call-1 model input
+  // (owner boundary contract 2026-09-01). The labelled installer map is still
+  // persisted, but nothing stages an authoring mask for the edge request.
+  assert.ok(!liveAuthoring.includes("renderAtlasAuthoringGuide("), "no neutral authoring mask is rendered for Call 1");
+  assert.ok(!liveAuthoring.includes("guideStoragePath: targetGuideStoragePath"), "no target guide rides the edge request");
 
-  const flat = handler.indexOf("RELEASE-PINNED FLAT A.T.L.A.S. OUTPUT EXAMPLE");
-  const target = handler.indexOf("CURRENT TARGET GUIDE");
-  const guide = handler.indexOf("await downloadPart(body.guideStoragePath");
-  assert.ok(flat > 0 && flat < target && target < guide,
-    "solid flat atlas must precede the current target guide, which remains last");
+  // Exact multimodal order: PROMPT → TOPOLOGY → TEACHING PROOF → REFERENCES.
+  const promptPart = handler.indexOf("[{ text: prompt }]");
+  const topology = handler.indexOf("atlasTopologyText(panels");
+  const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.");
+  const refs = handler.indexOf("for (const ref of references) pushImage(ref)");
+  assert.ok(promptPart > 0 && promptPart < topology && topology < teaching && teaching < refs,
+    "parts must run prompt, then normalized topology, then teaching proof, then customer references");
+  assert.ok(!handler.includes("CURRENT TARGET GUIDE"), "no blank target-guide part");
+  assert.ok(!handler.includes("guideStoragePath"), "no guide storage download");
+  assert.ok(!handler.includes("guideImageBase64"), "no legacy inline guide bytes");
+  assert.ok(!handler.includes("correctiveNote"), "no correctiveNote in the primary-generation contract");
   assert.doesNotMatch(handler, /cohesionExampleProofStoragePath|INSTALLED DRIVER PROOF/);
   assert.match(handler, /Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry/);
-  assert.match(handler, /Return flat printable rectangles only; never return a vehicle image/);
+  assert.match(handler, /they are not artwork and must never appear in your generated master/);
+});
+
+test("the teaching proof and temperature are release-pinned in the edge function", () => {
+  assert.match(assembly, /ATLAS_TEACHING_PROOF_HASH = "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"/);
+  assert.match(assembly, /ATLAS_TEACHING_PROOF_BYTES = 3430273/);
+  assert.match(assembly, /ATLAS_TEACHING_PROOF_CONTRACT = "designpro\.atlas-labeled-teaching-proof\.v3"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_TEMPERATURE = 1\.0/);
+  assert.match(handler, /temperature: ATLAS_ARTBOARD_TEMPERATURE/);
+  // The normalized topology is mandatory: six panels or refusal, every value
+  // re-validated into [0,1] at exactly four decimals.
+  assert.match(handler, /atlas_artboard_topology_required/);
+  assert.match(edgeSource, /atlas_artboard_topology_invalid/);
+  assert.match(edgeSource, /toFixed\(4\)/);
+  assert.match(edgeSource, /surface \| x \| y \| width \| height \| orientation/);
 });
 
 test("the flat contract teaches one named vehicle atlas without leaking dimensions", () => {
@@ -152,17 +175,17 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
   );
   const contract = flatFunction.slice(flatFunction.indexOf(MARK));
 
-  assert.match(contract, /The attached guide shows where each panel sits/);
+  assert.match(contract, /The A\.T\.L\.A\.S\. TARGET TOPOLOGY block in this request places each panel with normalized \[0,1\] coordinates/);
   assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
   assert.match(contract, /ARTBOARD for this exact \$\{vehicle/);
   assert.match(contract, /\(\$\{bodyClass\}\)/);
   assert.match(flatFunction, /REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom/);
   assert.match(contract, /\$\{panelLines\}/);
   assert.match(contract, /\$\{panelLines\}/);
-  assert.match(contract, /Fill every light region corner to corner/);
+  assert.match(contract, /Fill every panel region corner to corner/);
   assert.match(contract, /opaque, unbroken and full-bleed to all four edges/);
   assert.match(contract, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
-  assert.match(contract, /the dark space between them is sheet separation/);
+  assert.match(contract, /the space between panels is sheet separation/);
   assert.match(contract, /a person walking around the finished truck sees one design, not two/);
   assert.match(contract, /flat printed graphic art, the same kind of image as a printed poster/);
 
