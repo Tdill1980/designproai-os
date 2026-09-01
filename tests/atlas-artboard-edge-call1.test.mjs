@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v19-creative-parity-recovery"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v21-guide-last-labeled-reference"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -115,7 +115,7 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.equal(runtimeVersion[1], edge[1]);
 });
 
-test("only the owner-approved labeled teaching proof reaches Call 1, after the topology, with no blank guide", () => {
+test("the labeled teaching proof reaches Call 1, and the neutral target guide is LAST", () => {
   assert.ok(!handler.includes("body.structuralReferenceStoragePath"));
   assert.ok(!handler.includes("body.structuralPairedProofStoragePath"));
   assert.ok(!handler.includes("body.structuralReferenceBase64"));
@@ -132,25 +132,42 @@ test("only the owner-approved labeled teaching proof reaches Call 1, after the t
   // The blank neutral target-guide image is no longer a Call-1 model input
   // (owner boundary contract 2026-09-01). The labelled installer map is still
   // persisted, but nothing stages an authoring mask for the edge request.
-  assert.ok(!liveAuthoring.includes("renderAtlasAuthoringGuide("), "no neutral authoring mask is rendered for Call 1");
-  assert.ok(!liveAuthoring.includes("guideStoragePath: targetGuideStoragePath"), "no target guide rides the edge request");
+  assert.ok(liveAuthoring.includes("renderAtlasAuthoringGuide("), "the neutral authoring mask is rendered for Call 1 again");
+  assert.ok(liveAuthoring.includes("guideStoragePath: targetGuideStoragePath"), "the target guide rides the edge request again");
+  assert.match(liveAuthoring, /renderAtlasAuthoringGuide\(manifest\)/);
 
   // Exact multimodal order: PROMPT → TEACHING PROOF → REFERENCES. The
   // normalized coordinate table is OS data and no longer reaches the model
   // (owner ruling 2026-09-01); layout travels in the prompt's panel list.
   const promptPart = handler.indexOf("[{ text: prompt }]");
-  const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.");
+  const teaching = handler.indexOf("This example shows ONE cohesive vehicle-wrap design");
   const refs = handler.indexOf("for (const ref of references) pushImage(ref)");
   assert.ok(!handler.includes("atlasTopologyText(panels"), "no coordinate table reaches the model");
   assert.ok(promptPart > 0 && promptPart < teaching && teaching < refs,
     "parts must run prompt, then the teaching proof, then customer references");
-  assert.ok(!handler.includes("CURRENT TARGET GUIDE"), "no blank target-guide part");
-  assert.ok(!handler.includes("guideStoragePath"), "no guide storage download");
-  assert.ok(!handler.includes("guideImageBase64"), "no legacy inline guide bytes");
+  // THE NEUTRAL TARGET GUIDE IS BACK, AND IT IS LAST.
+  //
+  // 083d2a70 (edge v14) is the last run that reached print panels 6/6, and it
+  // sent this mask as the FINAL image. `7ee1f868` deleted it for a normalized
+  // [0,1] coordinate table and three releases since came back as vehicle
+  // depictions. The guide conditions layout only: it is unlabelled and
+  // unstroked, and `normalizeAtlasMaster` masks the sheet to those same zones.
+  const teachingIdx = handler.indexOf("This example shows ONE cohesive vehicle-wrap design");
+  const refsIdx = handler.indexOf("for (const ref of references) pushImage(ref)");
+  const guideIdx = handler.indexOf("CURRENT TARGET GUIDE");
+  const guideDownload = handler.indexOf("downloadPart(body.guideStoragePath");
+  assert.ok(teachingIdx > 0 && teachingIdx < refsIdx && refsIdx < guideIdx && guideIdx < guideDownload,
+    "order: teaching proof, customer references, then the target guide LAST");
+  assert.ok(!handler.includes("atlasTopologyText(panels"), "no coordinate table reaches the model");
   assert.ok(!handler.includes("correctiveNote"), "no correctiveNote in the primary-generation contract");
   assert.doesNotMatch(handler, /cohesionExampleProofStoragePath|INSTALLED DRIVER PROOF/);
-  assert.match(handler, /Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry/);
-  assert.match(handler, /they are not artwork and must never appear in your generated master/);
+  // The wrapper is POSITIVE instruction now (owner, 2026-09-01): it names the
+  // six surface identities the labels teach, and asks for an original design
+  // instead of listing forbidden anatomy nouns.
+  assert.match(handler, /six flat A\.T\.L\.A\.S\. surfaces: DRIVER SIDE, PASSENGER SIDE, HOOD, ROOF, FRONT and REAR/);
+  assert.match(handler, /The printed labels identify the surface roles and sit in the separation space between artwork regions/);
+  assert.match(handler, /Create an original design for the current customer; do not copy the example's branding or artwork/);
+  
 });
 
 test("the teaching proof is release-pinned and Call 1 sends no explicit temperature", () => {

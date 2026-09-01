@@ -146,13 +146,14 @@ test("the teaching proof and customer references ride only through extras — no
   // killed the edge worker twice (2026-08-27).
   assert.match(b.teachingProofStoragePath, /^atlas-call1-inputs\/[a-f0-9]{64}\.png$/);
   assert.equal(b.teachingProofIdentity, identity);
-  assert.equal(b.guideStoragePath, undefined, "no blank neutral target guide rides the request");
+  assert.equal(b.guideStoragePath, "atlas-call1-inputs/abc.png", "the neutral target guide rides the request again");
   assert.equal(b.correctiveNote, undefined, "no corrective note rides the primary-generation request");
   assert.equal(b.cohesionExampleFlatStoragePath, undefined, "the superseded cohesion field is gone");
   assert.equal(b.structuralReferenceStoragePath, undefined);
   assert.equal(b.structuralPairedProofStoragePath, undefined);
   assert.deepEqual(b.referenceImagesBase64, ["YmF6"]);
   // And no inline blob field survives on the request.
+  // no legacy inline guide bytes: it travels by storage path only.
   assert.equal(b.guideImageBase64, undefined);
   assert.equal(b.structuralReferenceBase64, undefined);
 });

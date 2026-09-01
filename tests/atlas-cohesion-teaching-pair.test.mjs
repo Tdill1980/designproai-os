@@ -67,7 +67,7 @@ test("Call 1 keeps the teaching proof outside customer-reference authority and h
     "the superseded unlabeled cohesion example must not reach Call 1");
 });
 
-test("edge verifies the teaching bytes and sends no blank target guide and no corrective note", () => {
+test("edge verifies the teaching bytes, sends the target guide LAST, and no corrective note", () => {
   assert.match(edge, /ATLAS_TEACHING_PROOF_CONTRACT = "designpro\.atlas-labeled-teaching-proof\.v3"/);
   assert.match(edge, /atlas_artboard_input_hash_mismatch/);
   assert.match(edge, /atlas_artboard_input_size_mismatch/);
@@ -76,13 +76,14 @@ test("edge verifies the teaching bytes and sends no blank target guide and no co
 
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
   const promptPart = handler.indexOf("[{ text: prompt }]");
-  const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.", promptPart);
+  const teaching = handler.indexOf("This example shows ONE cohesive vehicle-wrap design", promptPart);
   const customer = handler.indexOf("for (const ref of references) pushImage(ref)", teaching);
   assert.ok(!handler.includes("atlasTopologyText(panels"), "no coordinate table reaches the model");
   assert.ok(promptPart > 0 && promptPart < teaching && teaching < customer,
-    "input order is prompt, teaching proof, customer references");
+    "input order is prompt, teaching proof, customer references, guide last");
   assert.match(edge, /teachingProofIdentity: verifiedTeachingProof/);
-  assert.doesNotMatch(handler, /CURRENT TARGET GUIDE|guideStoragePath|guideImageBase64|correctiveNote/);
+  assert.doesNotMatch(handler, /correctiveNote/);
+  assert.match(handler, /CURRENT TARGET GUIDE/);
   assert.doesNotMatch(edge, /cohesionExampleProofStoragePath|ATLAS_COHESION_PROOF_HASH|INSTALLED DRIVER PROOF/);
   assert.match(edge, /modelInputImageCount/);
 });

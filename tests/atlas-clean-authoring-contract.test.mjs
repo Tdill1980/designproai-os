@@ -81,24 +81,28 @@ test("ATLAS request exposes exact identity, placement and normalized topology bu
   assert.doesNotMatch(panelBlock, /widthInches:|heightInches:|topology:/);
   assert.match(request, /vehicleType:/);
   assert.match(request, /teachingProofStoragePath:/);
-  assert.doesNotMatch(request, /cohesionExample|guideStoragePath|correctiveNote/);
+  assert.doesNotMatch(request, /cohesionExample|correctiveNote/);
+  assert.match(request, /guideStoragePath: extras\.guideStoragePath/);
   assert.match(request, /teachingProofIdentity:/);
   assert.doesNotMatch(request, /referenceImagesBase64:[^\n]*teachingProof/);
 });
 
-test("ATLAS parts run prompt, teaching proof, references — no guide, no coordinates", () => {
+test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", () => {
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
   const promptPart = handler.indexOf("[{ text: prompt }]");
-  const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.", promptPart);
+  const teaching = handler.indexOf("This example shows ONE cohesive vehicle-wrap design", promptPart);
   const customer = handler.indexOf("for (const ref of references) pushImage(ref)", teaching);
   assert.ok(!handler.includes("atlasTopologyText(panels"), "no coordinate table reaches the model");
   assert.ok(promptPart > 0 && promptPart < teaching && teaching < customer);
   assert.match(handler, /ATLAS_TEACHING_PROOF_CONTRACT/);
-  assert.doesNotMatch(handler, /CURRENT TARGET GUIDE|guideStoragePath|guideImageBase64|INSTALLED DRIVER PROOF/);
+  assert.doesNotMatch(handler, /INSTALLED DRIVER PROOF/);
+  assert.match(handler, /CURRENT TARGET GUIDE/);
+  assert.ok(handler.indexOf("CURRENT TARGET GUIDE") > handler.indexOf("for (const ref of references) pushImage(ref)"),
+    "the target guide is the LAST image, after the customer references");
   assert.match(handler, /atlas_artboard_input_hash_mismatch/);
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v19-creative-parity-recovery"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v19-creative-parity-recovery"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v21-guide-last-labeled-reference"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v21-guide-last-labeled-reference"/);
 });

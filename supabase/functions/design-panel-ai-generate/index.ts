@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v19-creative-parity-recovery";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v21-guide-last-labeled-reference";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 // NO EXPLICIT TEMPERATURE (owner ruling, 2026-09-01). DID-2D918868 -- the
@@ -2293,13 +2293,20 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       atlasPanels: panels,
     } as any);
 
-    // 3 — parts, in the owner boundary contract's exact order:
+    // 3 — parts, in v14's proven order. 083d2a70 (edge v14, 2026-08-31) is the
+    // last configuration that reached print panels 6/6, and it sent the neutral
+    // target guide as the FINAL image:
     //   PROMPT / DESIGN CONTEXT
-    //   → NORMALIZED MATHEMATICAL TOPOLOGY
-    //   → MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
+    //   → LABELED A.T.L.A.S. TEACHING REFERENCE
     //   → CUSTOMER REFERENCES, IF ANY
-    // There is NO blank target-guide image and NO corrective-note text in
-    // this contract. A finished vehicle proof remains excluded: it is a stronger
+    //   → the neutral target guide, LAST
+    // `7ee1f868` deleted the guide and substituted a normalized [0,1]
+    // coordinate table; no run since has matched v14, and three releases came
+    // back as vehicle depictions. The table is gone from the model request
+    // (GENIE still owns the math) and the guide is back in its proven final
+    // position. The installed Flamingo 3D proof stays out of this test, so the
+    // guide is the ONLY variable moving against the deployed v19 prompt, which
+    // is unchanged byte for byte. No corrective note in this contract. A finished vehicle proof remains excluded: it is a stronger
     // anatomy/camera instruction than prose and previously induced vehicle
     // pixels inside source rectangles (canary 33389124918). The Houdini/
     // template inputs remain excluded for the same reason.
@@ -2358,7 +2365,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     {
       const identity = validateAtlasTeachingProofIdentity(body.teachingProofIdentity);
       parts.push({
-        text: "MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF. This image is the visual definition of A.T.L.A.S.: ONE complete vehicle wrap unwrapped flat. Passenger, Driver, Rear, Roof, Hood and Front are regions of that ONE design, and the printed labels identify those panel roles only. The labels are instructional annotations — they are not artwork and must never appear in your generated master. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry. Its physical arrangement is not target-vehicle geometry authority; the panel list in the prompt above controls the current layout.",
+        text: "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design represented as six flat A.T.L.A.S. surfaces: DRIVER SIDE, PASSENGER SIDE, HOOD, ROOF, FRONT and REAR. The printed labels identify the surface roles and sit in the separation space between artwork regions. Learn the A.T.L.A.S. format, surface identities and relationship of the six surfaces as one connected wrap. Create an original design for the current customer; do not copy the example's branding or artwork.",
       });
       const proofVerified = await downloadPart(
         teachingProofPath,
@@ -2376,6 +2383,19 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       };
     }
     for (const ref of references) pushImage(ref);
+    // THE NEUTRAL TARGET GUIDE, LAST — v14's proven position.
+    //
+    // It is an unlabelled, unstroked six-rectangle mask (renderAtlasAuthoringGuide
+    // fail-closes on any text, stroke or path), and `normalizeAtlasMaster` masks
+    // the delivered sheet to those same zones, so it cannot contribute a pixel
+    // to a panel. It conditions layout only.
+    parts.push({
+      text: "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Fill its six regions with the NEW customer design from the canonical target vehicle and brief above. Return flat printable rectangles only; never return a vehicle image.",
+    });
+    await downloadPart(body.guideStoragePath, "image/png");
+    // Legacy inline path for callers that still send bytes (harness/tests);
+    // production sends the storage path.
+    pushImage(body.guideImageBase64);
 
     // 4 — exactly ONE Gemini image request. No retries, no second asset.
     //
