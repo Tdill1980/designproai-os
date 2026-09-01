@@ -83,5 +83,5 @@ COLOR FIDELITY — CRITICAL:
 CAMERA SHOT:
 ${cameraAngle}
 
-4:3 landscape, 4K. REAL PRINTED VINYL on the vehicle. Canon EOS R5, tack-sharp. INDISTINGUISHABLE from a real photograph. No text overlays.`;
+16:9 landscape, 4K. REAL PRINTED VINYL on the vehicle. Canon EOS R5, tack-sharp. INDISTINGUISHABLE from a real photograph. No text overlays.`;
 }
