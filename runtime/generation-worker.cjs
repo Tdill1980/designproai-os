@@ -924,10 +924,29 @@ function createGenerationWorker({
           // UIs must all be able to name the same GENIE manifest -- so it
           // travels with the geometry rather than being re-derived per stage.
           geometryResolution: dimensionRow.geometryResolution,
-          // The customer critical path is exactly one creative authoring call.
-          // A refused design becomes an explicit new revision; it never buys a
-          // second hidden A.T.L.A.S. call while the customer waits for Driver.
-          maxAuthoringAttempts: 1,
+          // THE PRODUCTION AUTHORING BUDGET. This call-site value is the real
+          // switch: `resolveMaxAuthoringAttempts` reads `explicit ?? env`, so
+          // DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS cannot reach the customer
+          // path while a number is passed here. Setting that env var alone
+          // changes nothing.
+          //
+          // Owner ruling 2026-09-01, and the two halves are not in tension:
+          //
+          //   Normal path -- attempt 1 is accepted, the authoring loop breaks
+          //   before a second request is ever built, and the run pays NOTHING
+          //   extra. A.T.L.A.S. accepted <60s, Driver visible <90s, unchanged.
+          //   This is why raising the budget cannot slow a healthy run down.
+          //
+          //   Refusal fallback -- a blocking Call-1 gate refused attempt 1, so
+          //   the alternative is not a faster run, it is a failure page shown
+          //   for one stochastic refusal. Exactly ONE more attempt is allowed,
+          //   and that run is explicitly exempt from the normal SLA. If
+          //   attempt 2 is also refused the customer sees the real failure;
+          //   there is no third automatic attempt.
+          //
+          // The customer stays on the authoring copy throughout, because the
+          // progress UI advances on an ACCEPTED master, never on an attempt.
+          maxAuthoringAttempts: 2,
           onMasterReady: (atlas) => {
             progressiveAtlas = atlas;
           },

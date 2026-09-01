@@ -5,10 +5,50 @@ import test from "node:test";
 const atlas = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
 const worker = readFileSync(new URL("../runtime/generation-worker.cjs", import.meta.url), "utf8");
 
-test("the customer path spends exactly one A.T.L.A.S. creative call", () => {
+test("a SUCCESSFUL A.T.L.A.S. authoring spends exactly one creative call", () => {
+  // This is the invariant that protects the <60s / <90s SLA, and it is a
+  // property of the LOOP, not of the budget: acceptance breaks out before a
+  // second request body is ever built, so raising the ceiling cannot add a
+  // millisecond to a healthy run. Asserting `maxAuthoringAttempts: 1` at the
+  // call site only ever tested the ceiling, which is the weaker claim.
   assert.match(atlas, /const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 1;/);
-  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 1,/);
   assert.match(atlas, /geminiImageRequestCount: masterAuthoringAttempts/);
+
+  const loop = atlas.slice(
+    atlas.indexOf("for (let attempt = 1; attempt <= maxAuthoringAttempts"),
+    atlas.indexOf("const masterStoragePath = atlasStoragePath("),
+  );
+  assert.ok(loop.length > 0, "the bounded authoring loop must still exist");
+  // `stillBlocking` is tested TWICE in the loop -- first to decide whether the
+  // output-class question is even worth asking, then to accept. Anchor on the
+  // one that breaks, or this passes against the wrong branch.
+  const acceptance = /if \(!stillBlocking\.length\) \{\s*break;\s*\}/;
+  assert.match(
+    loop,
+    acceptance,
+    "an accepted candidate must break immediately, never fall through to another attempt",
+  );
+  const accepted = loop.search(acceptance);
+  const nextRequest = loop.indexOf("const attemptBody = atlasEdgeRequestBody(");
+  assert.ok(
+    nextRequest >= 0 && nextRequest < accepted,
+    "the request body is built at the top of the iteration, so acceptance must break after it and before the next one",
+  );
+});
+
+test("a REFUSED A.T.L.A.S. authoring gets exactly one re-roll, and no third", () => {
+  // Owner ruling 2026-09-01. The call site is the real production switch --
+  // resolveMaxAuthoringAttempts reads `explicit ?? env`, so the env var is
+  // unreachable while a number is passed here. A run that takes this branch is
+  // explicitly exempt from the normal SLA; the alternative is a failure page
+  // for one stochastic refusal.
+  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 2,/);
+  assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 3;/);
+  assert.match(
+    atlas,
+    /if \(attempt === maxAuthoringAttempts\) \{\s*throw new FlatAtlasError\(/,
+    "exhausting the budget must surface the real refusal, never a silent retry",
+  );
 });
 
 test("panel.ready is a non-blocking graph release with durable prerequisites", () => {
