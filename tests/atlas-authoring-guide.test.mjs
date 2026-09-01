@@ -285,8 +285,8 @@ test("the solid-panel output contract lives in the edge function's flat contract
   // handler instead, stated once and positively.
   const { readFileSync } = require("node:fs");
   const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edge, /Fill every panel region corner to corner/);
-  assert.match(edge, /The A\.T\.L\.A\.S\. TARGET TOPOLOGY block in this request places each panel with normalized \[0,1\] coordinates/);
+  assert.match(edge, /Fill every panel corner to corner/);
+  assert.doesNotMatch(edge, /TARGET TOPOLOGY block in this request/);
   assert.match(edge, /\$\{panelLines\}/);
   assert.match(edge, /REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom/);
   // Scoped to the ATLAS contract, not the file: `mode === 'artboard'` is the
@@ -305,7 +305,7 @@ test("the solid-panel output contract lives in the edge function's flat contract
 test("the prompt version fences vehicle-atlas masters from every obsolete authoring contract", () => {
   const { readFileSync } = require("node:fs");
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  assert.match(atlasSource, /designpro-flat-first-atlas-20260901\.v18-atlas-output-class/);
+  assert.match(atlasSource, /designpro-flat-first-atlas-20260901\.v19-creative-parity-recovery/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260831\.v16-flat-example-only"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260831\.v14-vehicle-atlas"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260830\.v13-neutral-fields"/);

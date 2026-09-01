@@ -91,7 +91,7 @@ test("a customer reference declares artwork authority and distinguishes itself f
   // authority; the neutral mask remains layout geometry only while vehicle
   // identity and surface semantics remain explicit.
   assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's approved artwork authority/);
-  assert.match(exact, /The A\.T\.L\.A\.S\. TARGET TOPOLOGY block in this request places each panel with normalized \[0,1\] coordinates/);
+  assert.match(exact, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
   assert.match(exact, /ARTBOARD for this exact 2022 Ford F250 Crew Cab/);
   assert.match(exact, /the two sides of the SAME vehicle carrying the SAME design/);
   assert.doesNotMatch(exact, /studio photograph|widthInches|heightInches/i);
@@ -101,7 +101,7 @@ test("a customer reference declares artwork authority and distinguishes itself f
     visionboardIntent: "style_inspiration", visionBoardImages: [{}],
   });
   assert.match(inspiration, /STYLE INSPIRATION: Transform/);
-  assert.match(inspiration, /The A\.T\.L\.A\.S\. TARGET TOPOLOGY block in this request places each panel with normalized \[0,1\] coordinates/);
+  assert.match(inspiration, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
 });
 
 // WITH NO CUSTOMER REFERENCE, THE PROMPT STILL CARRIES ONLY CURRENT CUSTOMER
@@ -109,7 +109,7 @@ test("a customer reference declares artwork authority and distinguishes itself f
 test("with no customer reference, the Call 1 prompt keeps current vehicle and brief authority", () => {
   const prompt = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
   assert.match(prompt, /opaque, unbroken and full-bleed to all four edges/);
-  assert.match(prompt, /The A\.T\.L\.A\.S\. TARGET TOPOLOGY block in this request places each panel with normalized \[0,1\] coordinates/);
+  assert.match(prompt, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
   assert.match(prompt, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
   assert.match(prompt, /ARTBOARD for this exact 2022 Ford F250 Crew Cab/);
   assert.doesNotMatch(prompt, /studio photograph|widthInches|heightInches/i);

@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v18-atlas-output-class"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v19-creative-parity-recovery"/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
@@ -135,13 +135,15 @@ test("only the owner-approved labeled teaching proof reaches Call 1, after the t
   assert.ok(!liveAuthoring.includes("renderAtlasAuthoringGuide("), "no neutral authoring mask is rendered for Call 1");
   assert.ok(!liveAuthoring.includes("guideStoragePath: targetGuideStoragePath"), "no target guide rides the edge request");
 
-  // Exact multimodal order: PROMPT → TOPOLOGY → TEACHING PROOF → REFERENCES.
+  // Exact multimodal order: PROMPT → TEACHING PROOF → REFERENCES. The
+  // normalized coordinate table is OS data and no longer reaches the model
+  // (owner ruling 2026-09-01); layout travels in the prompt's panel list.
   const promptPart = handler.indexOf("[{ text: prompt }]");
-  const topology = handler.indexOf("atlasTopologyText(panels");
   const teaching = handler.indexOf("This image is the visual definition of A.T.L.A.S.");
   const refs = handler.indexOf("for (const ref of references) pushImage(ref)");
-  assert.ok(promptPart > 0 && promptPart < topology && topology < teaching && teaching < refs,
-    "parts must run prompt, then normalized topology, then teaching proof, then customer references");
+  assert.ok(!handler.includes("atlasTopologyText(panels"), "no coordinate table reaches the model");
+  assert.ok(promptPart > 0 && promptPart < teaching && teaching < refs,
+    "parts must run prompt, then the teaching proof, then customer references");
   assert.ok(!handler.includes("CURRENT TARGET GUIDE"), "no blank target-guide part");
   assert.ok(!handler.includes("guideStoragePath"), "no guide storage download");
   assert.ok(!handler.includes("guideImageBase64"), "no legacy inline guide bytes");
@@ -151,18 +153,20 @@ test("only the owner-approved labeled teaching proof reaches Call 1, after the t
   assert.match(handler, /they are not artwork and must never appear in your generated master/);
 });
 
-test("the teaching proof and temperature are release-pinned in the edge function", () => {
+test("the teaching proof is release-pinned and Call 1 sends no explicit temperature", () => {
   assert.match(assembly, /ATLAS_TEACHING_PROOF_HASH = "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"/);
   assert.match(assembly, /ATLAS_TEACHING_PROOF_BYTES = 3430273/);
   assert.match(assembly, /ATLAS_TEACHING_PROOF_CONTRACT = "designpro\.atlas-labeled-teaching-proof\.v3"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_TEMPERATURE = 1\.0/);
-  assert.match(handler, /temperature: ATLAS_ARTBOARD_TEMPERATURE/);
-  // The normalized topology is mandatory: six panels or refusal, every value
-  // re-validated into [0,1] at exactly four decimals.
+  // NO EXPLICIT TEMPERATURE. DID-2D918868 -- the last near-working master --
+  // sent no temperature field, so Gemini used its own default. Parity recovery
+  // does not introduce even a plausible config difference.
+  assert.doesNotMatch(assembly, /ATLAS_ARTBOARD_TEMPERATURE = 1\.0/);
+  assert.doesNotMatch(handler, /temperature:/);
+  // The six-region topology is still MANDATORY as OS data on the request; it
+  // is validated exactly as before, it just no longer reaches the model.
   assert.match(handler, /atlas_artboard_topology_required/);
   assert.match(edgeSource, /atlas_artboard_topology_invalid/);
   assert.match(edgeSource, /toFixed\(4\)/);
-  assert.match(edgeSource, /surface \| x \| y \| width \| height \| orientation/);
 });
 
 test("the flat contract teaches one named vehicle atlas without leaking dimensions", () => {
@@ -175,14 +179,14 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
   );
   const contract = flatFunction.slice(flatFunction.indexOf(MARK));
 
-  assert.match(contract, /The A\.T\.L\.A\.S\. TARGET TOPOLOGY block in this request places each panel with normalized \[0,1\] coordinates/);
+  assert.doesNotMatch(contract, /normalized \[0,1\] coordinates|TARGET TOPOLOGY block/);
   assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
   assert.match(contract, /ARTBOARD for this exact \$\{vehicle/);
   assert.match(contract, /\(\$\{bodyClass\}\)/);
   assert.match(flatFunction, /REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom/);
   assert.match(contract, /\$\{panelLines\}/);
   assert.match(contract, /\$\{panelLines\}/);
-  assert.match(contract, /Fill every panel region corner to corner/);
+  assert.match(contract, /Fill every panel corner to corner/);
   assert.match(contract, /opaque, unbroken and full-bleed to all four edges/);
   assert.match(contract, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
   assert.match(contract, /the space between panels is sheet separation/);

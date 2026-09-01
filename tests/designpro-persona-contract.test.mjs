@@ -88,9 +88,9 @@ test("persona, depth, translation and professional judgment fire on every commer
     const prompt = authored(input);
     // PERSONA — DPAG's proven vehicle-wrap designer identity.
     assert.match(prompt, /senior vehicle-wrap designer at a sign and wrap company/);
-    assert.match(prompt, /one original, premium, instantly readable wrap design/);
+    assert.match(prompt, /an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid/);
     // COMMERCIAL_DEPTH survives in the one cohesive vehicle atlas.
-    assert.match(prompt, /layered background color and texture, mid-ground graphic motion, and foreground accent detail/);
+    assert.match(prompt, /background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail/);
     // COMMERCIAL_TRANSLATION.
     assert.match(prompt, /Translate anything the brief names into concrete design/);
     // PROFESSIONAL_JUDGMENT.
@@ -105,7 +105,7 @@ test("the restyle branch keeps its layered-depth elevation in flat-master mode",
   const prompt = authored({ mode: "restyle", brief: "Distressed Martini racing livery" });
   assert.match(prompt, /layered thematic elements/);
   assert.match(prompt, /depth and texture/);
-  assert.match(prompt, /Design ONE cohesive flattened vehicle-wrap master/);
+  assert.match(prompt, /as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph/);
 });
 
 // EXACT CUSTOMER DATA IN; NOTHING INVENTED WHEN ABSENT.
@@ -118,16 +118,20 @@ test("contact data is exact when supplied and never invented when not", () => {
 });
 
 // BRAND + INDUSTRY RIDE CALL 1; PHYSICAL FINISH BELONGS TO PROOFS.
-test("brand colours and industry reach Call 1 while physical finish is deferred", () => {
+test("brand colours, industry and the selected finish all reach Call 1", () => {
   const prompt = authored({
     mode: "commercial", brief: "Wrap for Acme", companyName: "Acme",
     industry: "HVAC and climate control", brandColors: "deep blue, sunrise orange",
   });
   assert.match(prompt, /Industry: HVAC and climate control/);
   assert.match(prompt, /Brand colors: deep blue, sunrise orange — build the entire design from this palette/);
-  assert.match(prompt, /uniform print color only/);
-  assert.match(prompt, /physical finish are applied in the downstream proof views/);
-  assert.doesNotMatch(prompt, /Finish: GLOSS|wet-look surface|specular highlights/);
+  // THE CUSTOMER'S SELECTED FINISH REACHES CALL 1 (owner ruling 2026-09-01).
+  // It was deleted at c5479313 and deferred to the proofs; the parity recovery
+  // restores it from the same FINISH_SPECS table, with the physical-anatomy
+  // noun neutralized for the flat master only.
+  assert.match(prompt, /Finish: GLOSS — wet-look surface, mirror-sharp specular highlights/);
+  assert.match(prompt, /visible reflections in the printed graphic elements/);
+  assert.doesNotMatch(prompt, /reflections in the body panels/);
 });
 
 test("the exact DCA brief retains vehicle-wrap intent and named topology before Call 1", () => {
@@ -196,7 +200,7 @@ test("camera, studio and the photograph framing stay out of the flat master", ()
   assert.doesNotMatch(flat, /CAMERA ANGLE \(LOCKED/);
   assert.doesNotMatch(flat, /Canon EOS R5/);
   assert.doesNotMatch(flat, /epoxy floor|LED strip/);
-  assert.match(flat, /Design ONE cohesive flattened vehicle-wrap master/);
+  assert.match(flat, /as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph/);
   assert.match(flat, /OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD/);
   assert.match(flat, /ARTBOARD for this exact 2022 Ford F250 Crew Cab/);
   assert.doesNotMatch(flat, /studio photograph|Canon EOS R5|epoxy floor|LED strip/i);
