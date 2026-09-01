@@ -141,14 +141,37 @@ test("the runtime does not author its own studio or lighting text", () => {
  */
 test("the A.T.L.A.S. proof provider is a transport, not a second producer", () => {
   const provider = readFileSync(join(ROOT, "runtime/designpanel-server-provider.cjs"), "utf8");
+  // TWO SLICES, ON PURPOSE. The producer constants and the Driver-only
+  // restoration set are declared just ABOVE the factory, so the name
+  // assertions read the wider region; the "builds no prompt" assertions read
+  // the factory body only, because the factory's own header comment NAMES the
+  // retired producer in order to record that it was deleted.
+  const atlasRegion = provider.slice(
+    provider.indexOf('const ATLAS_PROOF_STAGE = "persona-photographer-render"'),
+    provider.indexOf("module.exports = {"),
+  );
   const atlasProvider = provider.slice(
     provider.indexOf("function createAtlasDesignPanelProvider"),
     provider.indexOf("module.exports = {"),
   );
   assert.ok(atlasProvider.length > 500, "the atlas provider is gone");
-  assert.match(atlasProvider, /functions\/v1\/persona-photographer-render/,
-    "A.T.L.A.S. proofs must be produced by the deployed photographer");
+  // TWO SANCTIONED PRESENTATION PRODUCERS, ONE ARTWORK AUTHORITY.
+  //
+  // The Restoration Contract (owner, 2026-09-01) routes DRIVER ONLY to the
+  // recovered legacy presentation branch of `design-panel-ai-generate`; the
+  // other six shots stay on the pinned photographer. Both take the same
+  // hash-bound canonical Call-1 panel as their sole artwork authority, so this
+  // is a second producer of PHOTOGRAPHY, never of design -- which is what the
+  // rest of this test proves.
+  assert.match(atlasRegion, /const ATLAS_PROOF_STAGE = "persona-photographer-render"/,
+    "the pinned photographer must still be a producer") ;
+  assert.match(atlasRegion, /const ATLAS_PRESENTATION_FUNCTION = "design-panel-ai-generate"/,
+    "the restored legacy presentation path must be named");
   assert.match(atlasProvider, /mode: "atlas-proof"/);
+  // The restoration is DRIVER ONLY until Driver passes canonical fidelity.
+  // Widening this set is an owner decision, not a session's.
+  assert.match(atlasRegion, /ATLAS_PRESENTATION_RESTORED_SHOTS = new Set\(\["side"\]\)/,
+    "the restored presentation route must stay Driver-only");
   // It resolves THIS surface's panel and sends its path + hash as the artwork.
   assert.match(atlasProvider, /atlas\.panelFor\(sourceViewType\)/);
   assert.match(atlasProvider, /sourcePanelStoragePath: panel\.storagePath/);
@@ -233,7 +256,7 @@ test("no runtime code writes the Driver continuity metadata key", async () => {
 test("the A.T.L.A.S. transport makes no image request of its own", () => {
   const provider = readFileSync(join(ROOT, "runtime/designpanel-server-provider.cjs"), "utf8");
   const transport = provider.slice(
-    provider.indexOf("function createAtlasDesignPanelProvider"),
+    provider.indexOf('const ATLAS_PROOF_STAGE = "persona-photographer-render"'),
     provider.indexOf("module.exports = {"),
   );
   // It calls the photographer and nothing else. No key pool, no Gemini, no
@@ -241,6 +264,14 @@ test("the A.T.L.A.S. transport makes no image request of its own", () => {
   assert.ok(!transport.includes("generativelanguage"), "the transport reaches Gemini directly");
   assert.ok(!transport.includes("provider.generateImage"), "the transport generates its own image");
   assert.ok(!/\btext:\s*`/.test(transport), "the transport assembles prompt text");
-  assert.deepEqual([...new Set(transport.match(/\/functions\/v1\/[a-z-]+/g) || [])],
-    ["/functions/v1/persona-photographer-render"]);
+  // The ONE edge call it makes is `/functions/v1/${proofFunction}`, and
+  // `proofFunction` can only ever be one of the two sanctioned producers. A
+  // third name — or a hardcoded path to anything else — fails here.
+  assert.match(transport, /functions\/v1\/\$\{proofFunction\}/,
+    "the transport must route through the sanctioned producer variable");
+  assert.deepEqual([...new Set(transport.match(/\/functions\/v1\/[a-z-]+/g) || [])], [],
+    "the transport hardcodes an edge function path");
+  const producers = [...transport.matchAll(/^const ATLAS_(?:PROOF_STAGE|PRESENTATION_FUNCTION) = "([a-z-]+)";$/gm)]
+    .map((m) => m[1]).sort();
+  assert.deepEqual(producers, ["design-panel-ai-generate", "persona-photographer-render"]);
 });

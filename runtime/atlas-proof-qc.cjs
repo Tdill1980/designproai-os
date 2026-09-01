@@ -662,6 +662,35 @@ function createAtlasProofValidator({
   const threshold = Number(confidenceThreshold);
   const boundedTimeoutMs = Number(timeoutMs);
 
+  // ═══ CONTINUITY IS THE ONE SEMANTIC FINDING THAT BLOCKS. (Trish 2026-09-01)
+  //
+  // Owner, verbatim: "atlasContinuityContract: fail -> candidate cannot publish
+  // -> one proof-only rerender -> if still fail, stop that proof. But keep
+  // things like studio-light streaks advisory for now."
+  //
+  // Why this one and nothing else: continuity is the contract that asks
+  // whether the photograph shows THE CUSTOMER'S DESIGN. DID-134FC3CA is what
+  // made it blocking -- the inspector correctly reported that the Driver proof
+  // had changed the wrap, and the proof published anyway, so the customer saw
+  // one design on the flank and a different one on the panel. Every other
+  // contract here grades PHOTOGRAPHY (camera height, streaky LEDs, framing).
+  // Turning a subjective photographic critique into a customer-visible failure
+  // is the error this deliberately does not make, and RULE 0.15's "semantic
+  // review is advisory" still governs all of them.
+  //
+  // The budget is counted HERE, per validator, because a validator is
+  // constructed once per proof slot: the first drift verdict rejects and buys
+  // exactly one re-render; the second is terminal and the engine stops that
+  // proof rather than spending the rest of the slot's budget re-rolling a
+  // question the model has now answered the same way twice.
+  //
+  // NOTHING about Call-1 artwork changes in response to either verdict. A
+  // re-render is proof-only: the same hash-bound canonical panel, the same
+  // camera contract, plus the inspector's findings as a correction.
+  const BLOCKING_SEMANTIC_CODE = "atlas_qc_design_drift";
+  const MAX_CONTINUITY_ATTEMPTS = 2;
+  let continuityFailures = 0;
+
   // Reviewer configuration belongs to the advisory branch. Keeping it as a
   // constructor throw would let a missing Gemini seam, bad model name or bad
   // timeout prevent a valid, hash-bound presentation proof from ever reaching
@@ -772,6 +801,36 @@ function createAtlasProofValidator({
         { ...VIEW_CONTRACTS[sourceViewType], expectedView: request.metadata.expectedView },
         threshold,
       );
+      // ONLY AN EXPLICIT `fail` BLOCKS. `uncertain` is the inspector hedging,
+      // and the owner's ruling names `fail`: "atlasContinuityContract: fail ->
+      // candidate cannot publish". Convicting a proof because the reviewer was
+      // unsure is the same class of error as blocking on a lighting critique,
+      // so an uncertain continuity verdict stays advisory exactly as before.
+      if (rejection?.code === BLOCKING_SEMANTIC_CODE && review.atlasContinuityContract === "fail") {
+        continuityFailures += 1;
+        return {
+          accepted: false,
+          code: rejection.code,
+          reason: rejection.reason,
+          correction: rejection.correction,
+          review,
+          // Terminal on the second verdict: another render will not change a
+          // design-identity finding the inspector has now issued twice.
+          terminal: continuityFailures >= MAX_CONTINUITY_ATTEMPTS,
+          metadata: {
+            ...request.metadata,
+            policyContract: ADVISORY_POLICY_CONTRACT,
+            semanticDisposition: "blocked",
+            semanticCode: rejection.code,
+            semanticReason: rejection.reason,
+            semanticReview: review,
+            continuityAttempt: continuityFailures,
+            model: result?.model || model,
+            keyFingerprint: result?.keyFingerprint || null,
+            confidence: review.confidence,
+          },
+        };
+      }
       return {
         accepted: true,
         code: null,

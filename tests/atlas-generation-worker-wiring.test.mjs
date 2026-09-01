@@ -313,6 +313,55 @@ test("Atlas keeps historical strict-confidence receipts readable", () => {
   );
 });
 
+/**
+ * TWO SANCTIONED PRODUCERS, AS MATCHED SETS. (Restoration Contract, 2026-09-01)
+ *
+ * Driver is photographed by the recovered legacy presentation branch of
+ * `design-panel-ai-generate`; the other six stay on the pinned photographer.
+ * Lineage must accept BOTH — and must accept each only as a complete set, so a
+ * half-migrated provider cannot stamp one producer's stage beside another's
+ * contract and still clear the assert. That mixing is precisely the drift this
+ * assert exists to catch, and widening it to "any of these strings" would have
+ * lost it.
+ */
+test("Atlas lineage accepts the restored Driver presentation producer as a complete set", () => {
+  const restored = {
+    stage: "design-panel-ai-generate",
+    execution: "edge-designpanel-presentation",
+    proofProducer: "design-panel-ai-generate",
+    proofContract: "designpro.atlas-proof-presentation.v1",
+  };
+  const driver = atlasView("side", "a".repeat(64), restored);
+  assert.doesNotThrow(() => assertAtlasViewLineage({ views: [driver], flatAtlas: FLAT_ATLAS }));
+
+  // An unknown stage is refused outright.
+  assert.throws(
+    () => assertAtlasViewLineage({
+      views: [atlasView("side", "a".repeat(64), { ...restored, stage: "some-other-renderer" })],
+      flatAtlas: FLAT_ATLAS,
+    }),
+    /sanctioned A\.T\.L\.A\.S\. proof stage/,
+  );
+
+  // And every cross-mixed pair is refused, in both directions.
+  const mixes = [
+    { ...restored, execution: "edge-photographer" },
+    { ...restored, proofContract: "designpro.atlas-photographer-proof.v1" },
+    { ...restored, proofProducer: "persona-photographer-render" },
+    { stage: "persona-photographer-render", execution: "edge-designpanel-presentation",
+      proofProducer: "persona-photographer-render", proofContract: "designpro.atlas-photographer-proof.v1" },
+    { stage: "persona-photographer-render", execution: "edge-photographer",
+      proofProducer: "persona-photographer-render", proofContract: "designpro.atlas-proof-presentation.v1" },
+  ];
+  for (const mix of mixes) {
+    assert.throws(
+      () => assertAtlasViewLineage({ views: [atlasView("side", "a".repeat(64), mix)], flatAtlas: FLAT_ATLAS }),
+      (error) => error.code === "generation_atlas_lineage_invalid",
+      `a cross-mixed producer set cleared lineage: ${JSON.stringify(mix)}`,
+    );
+  }
+});
+
 test("Atlas refuses generic accepted rows and dependents from a previous Driver", () => {
   const driverHash = "d".repeat(64);
   const generic = atlasView("side", driverHash);
@@ -320,7 +369,7 @@ test("Atlas refuses generic accepted rows and dependents from a previous Driver"
   delete generic.metadata.provider.anchoredToFlatAtlas;
   assert.throws(
     () => assertAtlasViewLineage({ views: [generic], flatAtlas: FLAT_ATLAS }),
-    (error) => error.code === "generation_atlas_lineage_invalid" && /pinned photographer stage/.test(error.message),
+    (error) => error.code === "generation_atlas_lineage_invalid" && /sanctioned A\.T\.L\.A\.S\. proof stage/.test(error.message),
   );
 
   // Any of the four retired anchor/mirror keys is refused on ANY view --

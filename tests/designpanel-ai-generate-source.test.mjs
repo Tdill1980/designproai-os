@@ -65,10 +65,20 @@ test("the Standard standalone worker executes Calls 1-7 on this server", () => {
   );
   assert.ok(standardHalf.length > 1000, "the Standard half of the provider is gone");
   assert.doesNotMatch(standardHalf, /\/functions\/v1|supabase\.functions|createSignedUrl/);
-  // ...and the ONE edge call in the file is the sanctioned photographer.
-  assert.deepEqual([...new Set(provider.match(/\/functions\/v1\/[a-z-]+/g) || [])],
-    ["/functions/v1/persona-photographer-render"],
-    "the provider gained an edge call other than the proven 3D photographer");
+  // ...and the ONE edge call in the file routes through `proofFunction`, which
+  // can only be one of the two sanctioned proof producers. Since the
+  // Restoration Contract (owner, 2026-09-01) there are two: the pinned
+  // photographer for six shots, and the recovered legacy presentation branch
+  // of design-panel-ai-generate for DRIVER ONLY. Neither authors artwork — both
+  // photograph the same hash-bound canonical Call-1 panel.
+  assert.deepEqual([...new Set(provider.match(/\/functions\/v1\/[a-z-]+/g) || [])], [],
+    "the provider hardcodes an edge function path instead of routing through the sanctioned set");
+  assert.match(provider, /functions\/v1\/\$\{proofFunction\}/);
+  assert.deepEqual(
+    [...provider.matchAll(/^const ATLAS_(?:PROOF_STAGE|PRESENTATION_FUNCTION) = "([a-z-]+)";$/gm)]
+      .map((m) => m[1]).sort(),
+    ["design-panel-ai-generate", "persona-photographer-render"],
+    "the provider gained an edge call other than the two sanctioned 3D producers");
   assert.doesNotMatch(productionDeploy, /repair-designpanel-edge-chain/);
   assert.doesNotMatch(productionDeploy, /functions deploy generate-color-render/);
   assert.match(provider, /maxProviderAttempts:\s*4/);
