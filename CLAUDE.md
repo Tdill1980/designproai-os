@@ -31,6 +31,42 @@ reach Call 1. Locked by `tests/atlas-cohesion-teaching-pair.test.mjs`,
 `tests/atlas-clean-authoring-contract.test.mjs`,
 `tests/atlas-designiq-artboard.test.mjs`.
 
+## 🎯 RULE 0.30 — CALL 1 IS A.T.L.A.S. AUTHORITY ONLY (owner ruling, Trish 2026-09-01)
+
+Owner, verbatim: **"The only valid Call-1 image output is ONE flat A.T.L.A.S.
+panel-layout source containing ONE cohesive vehicle wrap unwrapped flat. Any
+installed vehicle, 3D vehicle, vehicle montage, presentation board, camera
+view, studio render, or mockup is categorically invalid at Call 1. The 3D
+presentation system exists downstream and has zero authority over Call 1. Do
+not allow any Call-1 candidate that is not A.T.L.A.S. to become canonical or
+fan out downstream."**
+
+Why it exists: DCA generation `470cb0e9` (v17, 2026-09-01) proved Gemini can
+answer the approved request with a photoreal vehicle-mockup montage (edge
+master `6200fd41…`) that passes EVERY deterministic structural gate — those
+gates convict silhouettes/voids/template leakage, and a bright render measures
+as 94%+ "artwork" — after which the six canonical panels faithfully cut
+pictures of a van. Provenance proved the montage bytes were authored directly
+by Call 1 (`atlas-call1/aba7fbbf….png`, hash-equal to the edge `masterSha256`,
+written before any proof existed), so the fix is Call-1 conditioning +
+blocking acceptance, never artifact-authority wiring.
+
+Enforced twice (prompt version `…20260901.v18-atlas-output-class`):
+1. **Conditioning** — the flat-master contract carries "OUTPUT CLASS —
+   ABSOLUTE"; both authoring scenes bind the output to the teaching example's
+   object class.
+2. **`runtime/atlas-output-class.cjs`** — one binary Gemini class question
+   (temp 0, `gemini-2.5-flash`) inside the authoring gate, AFTER deterministic
+   checks and BEFORE acceptance. An explicit `vehicle_depiction` verdict fails
+   CLOSED (`flat_atlas_master_output_class_invalid`, re-roll within the
+   bounded budget, never canonical, never fans out). Inspector transport
+   failure fails OPEN with a durable `unavailable` receipt
+   (`metadata.masterOutputClass`) — an outage must not brick authoring, and
+   this is the ONE semantic question allowed to refuse Call 1; all other
+   semantic review remains advisory. Locked by
+   `tests/atlas-output-class-gate.test.mjs` and
+   `tests/atlas-repair-before-reroll.test.mjs`.
+
 ## 📋 DCA PHASE 1 — CURRENT STATUS BOARD (2026-08-31, release `5d3ad9b`)
 
 **This is a status board, not a rule.** It records what is true right now so a

@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v17-labeled-teaching-topology";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v18-atlas-output-class";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 // The Call-1 creative temperature is pinned by the owner boundary contract
@@ -462,6 +462,8 @@ function atlasFlatMasterContract(
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD on one square 4K canvas.
 Design ONE flat, print-ready vehicle-wrap ARTBOARD for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — the full wrap laid out FLAT as rectangular print panels on one sheet, one panel per vehicle side. The output is flat print artwork on a 2D sheet.
 
+OUTPUT CLASS — ABSOLUTE (owner contract). The only valid output is ONE flat A.T.L.A.S. panel-layout source: ONE cohesive vehicle wrap unwrapped flat, the same kind of object as the attached A.T.L.A.S. teaching example. An installed vehicle, a 3D vehicle, a vehicle montage, a presentation board, a camera view, a studio render or a mockup is categorically invalid here — vehicle presentation exists only in the downstream proofing system, never at this step.
+
 Lay out these panels, the wrap artwork filling each panel edge to edge, and the SAME cohesive design flowing across every panel as ONE CONNECTED WRAP UNWRAPPED FLAT:
 ${panelLines}
 
@@ -716,7 +718,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions of the A.T.L.A.S. TARGET TOPOLOGY below. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces, built from layered background color and texture, mid-ground graphic motion, and foreground accent detail. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+    const atlasScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions of the A.T.L.A.S. TARGET TOPOLOGY below. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output ONE flat A.T.L.A.S. panel-layout sheet — the same kind of object as the attached A.T.L.A.S. teaching example: flat print panels side by side on one sheet, built from layered background color and texture, mid-ground graphic motion, and foreground accent detail. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
@@ -882,7 +884,7 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions of the A.T.L.A.S. TARGET TOPOLOGY below. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output the final straight-on two-dimensional wrap surfaces. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
+  const atlasRestyleScene = `Design ONE cohesive flattened vehicle-wrap master for this exact ${vehicle} (${atlasBodyClass}) across the six server-mapped regions of the A.T.L.A.S. TARGET TOPOLOGY below. The surface names and IDs are metadata only and must not appear in the image. This is the single design authority for the complete vehicle, not six independent graphics. Output ONE flat A.T.L.A.S. panel-layout sheet — the same kind of object as the attached A.T.L.A.S. teaching example: flat print panels side by side on one sheet. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture.`;
   const restylePresentation = atlasFlatMaster
     ? atlasRestyleScene
     : `CAMERA ANGLE (LOCKED — read this FIRST):
@@ -2339,7 +2341,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     {
       const identity = validateAtlasTeachingProofIdentity(body.teachingProofIdentity);
       parts.push({
-        text: "MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF. This image is the visual definition of A.T.L.A.S.: ONE complete vehicle wrap unwrapped flat. Passenger, Driver, Rear, Roof, Hood and Front are regions of that ONE design, and the printed labels identify those panel roles only. The labels are instructional annotations — they are not artwork and must never appear in your generated master. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry. Its physical arrangement is not target-vehicle geometry authority; the A.T.L.A.S. TARGET TOPOLOGY above controls the current layout and proportions.",
+        text: "MANDATORY LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF. This image is the visual definition of A.T.L.A.S.: ONE complete vehicle wrap unwrapped flat. Passenger, Driver, Rear, Roof, Hood and Front are regions of that ONE design, and the printed labels identify those panel roles only. The labels are instructional annotations — they are not artwork and must never appear in your generated master. Copy none of its artwork, subject, wording, logo, brand, colors, typography or industry. Its physical arrangement is not target-vehicle geometry authority; the A.T.L.A.S. TARGET TOPOLOGY above controls the current layout and proportions. Your output is the same kind of object as this teaching proof: flat print panels on one sheet.",
       });
       const proofVerified = await downloadPart(
         teachingProofPath,
