@@ -268,7 +268,7 @@ function GridCard({
       onClick={onClick}
     >
       {/* Thumbnail */}
-      <div className="relative aspect-[16/10] bg-zinc-800">
+      <div className="relative aspect-video bg-zinc-800">
         {heroUrl ? (
           <img src={heroUrl} alt={render.design_name} className="w-full h-full object-cover" loading="lazy" />
         ) : (
@@ -691,7 +691,7 @@ function DetailDialog({
               <div className="bg-zinc-900 rounded-lg p-3 border border-zinc-800">
                 <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Design Panel</h4>
                 <div className="rounded overflow-hidden border border-zinc-700">
-                  <img src={render.panel_url} alt="Design Panel" className="w-full aspect-[16/10] object-contain bg-white" />
+                  <img src={render.panel_url} alt="Design Panel" className="w-full aspect-video object-contain bg-white" />
                 </div>
               </div>
             )}

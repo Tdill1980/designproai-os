@@ -244,11 +244,11 @@ function JobRow({ job }: { job: PipelineJob }) {
               <img
                 src={job.renderUrl}
                 alt={`${job.vehicle.year} ${job.vehicle.make} ${job.vehicle.model}`}
-                className="w-full aspect-[16/10] object-cover"
+                className="w-full aspect-video object-cover"
               />
             </div>
           ) : (
-            <div className="w-full aspect-[16/10] bg-zinc-800 rounded-lg flex items-center justify-center border border-zinc-700">
+            <div className="w-full aspect-video bg-zinc-800 rounded-lg flex items-center justify-center border border-zinc-700">
               {job.status === "rendering" && <Loader2 className="h-6 w-6 text-blue-400 animate-spin" />}
               {job.status === "queued" && <Clock className="h-6 w-6 text-zinc-600" />}
               {job.status === "failed" && <XCircle className="h-6 w-6 text-red-400" />}
@@ -2866,11 +2866,11 @@ export default function AdminBatchRender() {
                             <img
                               src={job.renderUrl}
                               alt={`${job.vehicle.year} ${job.vehicle.make} ${job.vehicle.model}`}
-                              className="w-full aspect-[16/10] object-cover"
+                              className="w-full aspect-video object-cover"
                             />
                           </div>
                         ) : (
-                          <div className="w-full aspect-[16/10] bg-zinc-800 rounded-lg flex items-center justify-center border border-zinc-700">
+                          <div className="w-full aspect-video bg-zinc-800 rounded-lg flex items-center justify-center border border-zinc-700">
                             {job.status === "rendering" && <Loader2 className="h-5 w-5 text-pink-400 animate-spin" />}
                             {job.status === "queued" && <Clock className="h-5 w-5 text-zinc-600" />}
                             {job.status === "failed" && <XCircle className="h-5 w-5 text-red-400" />}

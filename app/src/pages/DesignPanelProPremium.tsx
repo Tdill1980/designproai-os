@@ -2369,12 +2369,24 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   />
                                 );
                               })()}
-                              {/* Arrow navigation for cycling through views */}
+                              {/* ARROW NAVIGATION — ALWAYS VISIBLE (owner,
+                                  2026-09-01: "CLIENTS SEE THIS FIRST THEY MUST
+                                  BE ABLE TO SEE IT AT ITS BEST AND EASILY
+                                  SCROLL THROUGH EACH ANGLE").
+
+                                  These were `opacity-0 group-hover:opacity-100`.
+                                  A touch device has no hover, so on a phone the
+                                  only way through the seven angles was the
+                                  labelled filmstrip further down the page --
+                                  and this hero is the first thing a customer
+                                  ever sees. They sit at opacity-80 now and
+                                  brighten on hover, so they read as controls
+                                  without competing with the design. */}
                               {displayedAllViews.length > 1 && (
                                 <>
                                   <button
                                     type="button"
-                                    className="absolute left-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity opacity-0 group-hover:opacity-100"
+                                    className="absolute left-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity opacity-80 hover:opacity-100"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setActiveViewIndex((prev) => (prev - 1 + displayedAllViews.length) % displayedAllViews.length);
@@ -2384,7 +2396,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                   </button>
                                   <button
                                     type="button"
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity opacity-0 group-hover:opacity-100"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 z-30 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-opacity opacity-80 hover:opacity-100"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setActiveViewIndex((prev) => (prev + 1) % displayedAllViews.length);

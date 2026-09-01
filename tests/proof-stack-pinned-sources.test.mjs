@@ -22,7 +22,31 @@ test("the three AUTHORITY sources are byte-identical to the pin", () => {
   // Verified against the pinned commit 2026-08-27. These three are the ones
   // RULE 0.29 calls authorities -- the words, the room, the light. Nothing in
   // this repository may edit them.
-  assert.equal(sha("supabase/functions/_shared/persona-photographer-prompt.ts"), "11cb76524211e42a");
+  //
+  // ONE TOKEN RE-PINNED, 2026-09-01, BY OWNER RULING: "ATLAS IS CORRECT AT 4K
+  // 16:9". The prompt's closing line read "4:3 landscape, 4K" and the render
+  // config asked Gemini for 4:3, so every proof came back 4:3 -- about 12.6MP
+  // against the 16.9MP of a 16:9 4K frame, and then pillarboxed again by
+  // viewports that are 16:9. That is the whole of "the old system looked
+  // better".
+  //
+  // It was never a proven value. RULE 0.29 adopted this stack as "the REAL
+  // RestylePro photographer", but `grep -rn persona-photographer-render src/`
+  // in restylepro-os returns NOTHING: its own CLAUDE.md says "the persona
+  // pipeline is BYPASSED -- not called by any frontend code. All renders go
+  // through design-panel-ai-generate", whose golden config is
+  // `{ aspectRatio: "16:9", imageSize: "4K" }`. So the pinned bytes came from
+  // a function that never rendered anything, and 4:3 rode in with them.
+  //
+  // This repo's own runtime always disagreed: runtime/view-angles.cjs pins all
+  // nine views to "16:9" at "4K" and generation-worker passes that through --
+  // the edge function ignored the caller and hardcoded its own.
+  //
+  // The camera, the room, the light and every other word are untouched: "Canon
+  // EOS R5, tack-sharp. INDISTINGUISHABLE from a real photograph." The pin
+  // still forbids editing these files; it now pins the aspect the system
+  // actually asks for.
+  assert.equal(sha("supabase/functions/_shared/persona-photographer-prompt.ts"), "b7d3da05e6d0aac0");
   assert.equal(sha("supabase/functions/_shared/studio-os.ts"), "7b02814bb1e9e867");
 });
 

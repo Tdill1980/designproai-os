@@ -252,7 +252,7 @@ serve(async (req) => {
                 contents: [{ parts: attempt === 1 ? parts : [{ text: prompt }] }],
                 generationConfig: {
                   responseModalities: ["TEXT", "IMAGE"],
-                  imageConfig: { imageSize: "4K", aspectRatio: "4:3" },
+                  imageConfig: { imageSize: "4K", aspectRatio: "16:9" },
                 },
               }),
               signal: AbortSignal.timeout(60_000),
@@ -567,7 +567,7 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
             contents: [{ parts }],
             generationConfig: {
               responseModalities: ["TEXT", "IMAGE"],
-              imageConfig: { imageSize: "4K", aspectRatio: "4:3" },
+              imageConfig: { imageSize: "4K", aspectRatio: "16:9" },
             },
           }),
           signal: AbortSignal.timeout(90_000),
