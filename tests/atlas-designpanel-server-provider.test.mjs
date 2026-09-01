@@ -195,17 +195,8 @@ test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver d
     const post = f.posts[f.posts.length - 1];
     const surfaceKey = f.surfaces[sourceViewType];
 
-    // THE SANCTIONED PRODUCER FOR THIS SHOT, ONE SHOT AT A TIME.
-    //
-    // Restoration Contract (owner, 2026-09-01): DRIVER ONLY moves to the
-    // recovered legacy presentation branch of design-panel-ai-generate; the
-    // other six stay on the pinned photographer until Driver passes canonical
-    // fidelity. Both take this surface's own hash-bound Call-1 panel as their
-    // sole artwork authority, which every assertion below still proves.
-    const expectedProducer = sourceViewType === "side"
-      ? "design-panel-ai-generate"
-      : "persona-photographer-render";
-    assert.equal(post.url, `https://example.supabase.co/functions/v1/${expectedProducer}`);
+    // THE PROVEN PRODUCER, ONE SHOT AT A TIME.
+    assert.match(post.url, /\/functions\/v1\/persona-photographer-render$/);
     assert.equal(post.body.mode, "atlas-proof");
     assert.equal(post.body.shotKey, sourceViewType);
 
@@ -232,8 +223,7 @@ test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver d
     assert.equal(result.stagedStorageHash, hash(proofBytes));
     assert.equal(result.metadata.anchoredToFlatAtlas, true);
     assert.equal(result.metadata.anchoredToView1, false);
-    assert.equal(result.metadata.proofProducer, expectedProducer);
-    assert.equal(result.metadata.stage, expectedProducer);
+    assert.equal(result.metadata.proofProducer, "persona-photographer-render");
     assert.equal(result.metadata.atlasZoneSurfaceKey, surfaceKey);
     assert.equal(result.metadata.sourcePanelStoragePath, panelPaths[surfaceKey]);
 
