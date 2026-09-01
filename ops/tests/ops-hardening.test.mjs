@@ -14,8 +14,11 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 59);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 60);
   for (const name of [
+    // The Call-1 output-class gate (owner ruling 2026-09-01): a vehicle-
+    // depiction candidate is refused before canonicalization or fan-out.
+    "runtime/atlas-output-class.cjs",
     // THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
     // (owner boundary contract 2026-09-01). Call 1 refuses to author without
     // it: canary 33459887409 died at flat_atlas_bundled_example_missing when

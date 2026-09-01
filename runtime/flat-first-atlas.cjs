@@ -38,6 +38,7 @@ const {
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 const { loadBundledAtlasTeachingProof } = require("./flat-atlas-topology-examples.cjs");
+const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -60,7 +61,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v17-labeled-teaching-topology";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v18-atlas-output-class";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -138,7 +139,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v17-labeled-teaching-topology";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v18-atlas-output-class";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -2316,6 +2317,10 @@ async function generateOrReuseFlatAtlas(options) {
   let masterCutoutFindings = [];
   // The pixel measurements that actually decided acceptance, kept for the row.
   let masterDeterministic = null;
+  // The output-class receipt for the accepted candidate (owner ruling
+  // 2026-09-01): flat_atlas, or unavailable when the inspector transport
+  // failed. A vehicle_depiction verdict never reaches acceptance.
+  let outputClassReceipt = null;
   const edgeProvenance = [];
   // OPTIMIZE TIME TO DRIVER, AND MEASURE IT. (Owner, 2026-08-27: "click->master,
   // master->Driver, click->Driver ... those are the primary latency metrics.")
@@ -2394,12 +2399,28 @@ async function generateOrReuseFlatAtlas(options) {
 
     // ── THE GATE ─────────────────────────────────────────────────────────
     //
-    // Only deterministic structural failures refuse the candidate. Subjective
-    // semantic review is advisory and cannot stall or terminate Call 1.
-    // `deterministic` measures the exact candidate bytes. Passenger continuity
-    // telemetry never enters this structural refusal set.
-    const stillBlocking = deterministic.blockingFailures || [];
-    const refusalCode = "flat_atlas_master_deterministic_failed";
+    // Deterministic structural failures refuse the candidate, and — owner
+    // ruling 2026-09-01 — so does an explicit OUTPUT-CLASS verdict that the
+    // candidate depicts a vehicle instead of ONE flat A.T.L.A.S. panel-layout
+    // sheet. Generation 470cb0e9 proved a photoreal vehicle-mockup montage
+    // passes every structural gate (a bright render measures as 94% artwork),
+    // so the class question is asked point-blank before anything becomes
+    // canonical or fans out. The class gate fails OPEN only on inspector
+    // transport failure (durable `unavailable` receipt); an explicit
+    // vehicle_depiction verdict always refuses. All other subjective semantic
+    // review remains advisory. Passenger continuity telemetry never enters
+    // this refusal set.
+    const stillBlocking = [...(deterministic.blockingFailures || [])];
+    let refusalCode = "flat_atlas_master_deterministic_failed";
+    if (!stillBlocking.length) {
+      outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes });
+      if (outputClassReceipt.blocking) {
+        refusalCode = "flat_atlas_master_output_class_invalid";
+        stillBlocking.push(
+          `output class ${outputClassReceipt.disposition} (confidence ${outputClassReceipt.confidence ?? "n/a"}): ${outputClassReceipt.evidence || "vehicle depicted"} -- Call 1 must return ONE flat A.T.L.A.S. panel-layout sheet, never a vehicle image`,
+        );
+      }
+    }
     const refusalReason = stillBlocking.join("; ").slice(0, 600);
     if (!stillBlocking.length) {
       break;
@@ -2829,6 +2850,13 @@ async function generateOrReuseFlatAtlas(options) {
       // Semantic design judgement is advisory and is not run on this blocking
       // path; any panel cut-out remains durable evidence for PanelPro human QC.
       masterQcPassed: true,
+      // OWNER RULING 2026-09-01: Call 1 is A.T.L.A.S. authority only. The
+      // output-class receipt for the ACCEPTED candidate — "flat_atlas", or
+      // "unavailable" when the inspector transport failed (fail-open, but
+      // durable and auditable). A "vehicle_depiction" verdict can never reach
+      // this row: it refuses the candidate in the authoring gate above.
+      masterOutputClass: outputClassReceipt,
+      masterOutputClassContract: OUTPUT_CLASS_CONTRACT,
       // Empty on a clean master. Non-empty means the sheet arrived with a hole
       // in these surfaces; their panels were closed deterministically below and
       // still must not print until a human has seen them on a template.

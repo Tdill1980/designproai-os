@@ -27,15 +27,23 @@ const loop = source.slice(
 );
 const afterLoop = source.slice(source.indexOf("const masterStoragePath = atlasStoragePath"));
 
-test("the release gate is deterministic and semantic review cannot refuse Call 1", () => {
-  assert.match(loop, /const stillBlocking = deterministic\.blockingFailures \|\| \[\];/);
+test("the release gate is deterministic plus the one owner-ruled output-class refusal", () => {
+  // OWNER RULING 2026-09-01 narrows the old advisory-only doctrine by exactly
+  // one question: Call 1 is A.T.L.A.S. authority only, and an explicit
+  // vehicle-depiction verdict refuses the candidate before canonicalization.
+  // Every other subjective semantic judgement remains advisory and still
+  // cannot refuse Call 1. Generation 470cb0e9 is why: a photoreal vehicle
+  // mockup passed every deterministic gate and fanned out as van pictures.
+  assert.match(loop, /const stillBlocking = \[\.\.\.\(deterministic\.blockingFailures \|\| \[\]\)\];/);
   assert.match(loop, /deterministicMasterChecks\(masterBytes, manifest\)/);
   assert.match(loop, /if \(!stillBlocking\.length\) \{\s*break;\s*\}/);
+  assert.match(loop, /classifyAtlasCandidate\(\{ provider, bytes: masterBytes \}\)/);
+  assert.match(loop, /flat_atlas_master_output_class_invalid/);
   assert.doesNotMatch(loop, /flat_atlas_master_semantic_failed/);
   assert.doesNotMatch(loop, /semanticVerdict = await semanticQc/);
 });
 
-test("active Call 1 never starts semantic analysis", () => {
+test("active Call 1 starts no broad semantic analysis beyond the output-class question", () => {
   assert.doesNotMatch(loop, /startSemanticQc/);
   assert.doesNotMatch(loop, /createAtlasMasterValidator/);
   assert.doesNotMatch(loop, /await\s+validateMaster/);
@@ -57,9 +65,10 @@ test("the surfaces that arrived holed are still recorded for human QC", () => {
   assert.match(loop, /masterCutoutFindings = \(deterministic\.cutoutFindings \|\| \[\]\)/);
 });
 
-test("only a deterministic refusal can spend an authoring retry", () => {
+test("only a deterministic or output-class refusal can spend an authoring retry", () => {
   assert.match(loop, /const refusalReason = stillBlocking\.join\("; "\)/);
   assert.match(loop, /flat_atlas_master_deterministic_failed/);
+  assert.match(loop, /flat_atlas_master_output_class_invalid/);
   assert.doesNotMatch(loop, /flat_atlas_master_semantic_failed/);
 });
 

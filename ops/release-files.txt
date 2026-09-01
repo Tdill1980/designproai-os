@@ -61,6 +61,10 @@ runtime/generation-worker.cjs
 # rollback fail at startup rather than merely disable the experiment.
 runtime/flat-first-atlas.cjs
 runtime/flat-atlas-topology-examples.cjs
+# Call-1 output-class gate (owner ruling 2026-09-01): refuses a vehicle-
+# depiction candidate before it can become canonical. Required at require
+# time by flat-first-atlas.cjs, so a release without it dies at startup.
+runtime/atlas-output-class.cjs
 # Historical immutable Houdini pair, retained for forensic compatibility and
 # not attached to active Call 1.
 runtime/atlas-examples/houdini-flattened-top-view.jpg
