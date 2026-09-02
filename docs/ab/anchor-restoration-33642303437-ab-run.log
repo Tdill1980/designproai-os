@@ -1,0 +1,62 @@
+runtime image: designproai-runtime:fb58f702537ae9c5fefc90f67abdd1b1f47ad5b0
+test: 10-anchor-restoration -> scripts/atlas-anchor-recovery.mjs
+  resolving GENIE preview dimensions …
+  topology: rectangular-preview-v1 — centre rear → roof → hood → front, min native 9.07 px/in, guide 7c10d6ae0a3249ef
+      driver     (2751, 624, 1153, 2848) rot -90  163×66 in  17.47 px/in  trim (2838, 711, 979, 2674)
+      passenger  (192, 624, 1153, 2848) rot  90  163×66 in  17.47 px/in  trim (279, 711, 979, 2674)
+      hood       (1417, 2310, 1262, 1022) rot   0  81.5×66 in  15.48 px/in  trim (1494, 2387, 1108, 868)
+      roof       (1417, 1304, 1262, 970) rot   0  84.3×64.8 in  14.97 px/in  trim (1492, 1379, 1112, 820)
+      front      (1417, 3368, 1262, 399) rot   0  139×44 in  9.07 px/in  trim (1462, 3413, 1172, 309)
+      rear       (1417, 329, 1262, 939) rot   0  86×64 in  14.67 px/in  trim (1490, 402, 1116, 793)
+  deployed prompt reproduced: sha dcb73e9eae229cd8, 4587 chars
+  creative assembly byte-identical: 2622 chars, sha 7e011c6c20b5fa29
+  tail: 1965 chars → 1574 chars, sha 352498f8b2c7714c
+  request: 5 parts, 2 images, 4761699 bytes (deployed 4762109); parts 1–4 unchanged: {"teachingText":true,"teachingImage":true,"guideText":true,"guideImage":true}
+  
+  DRAW 1: calling gemini-3-pro-image (5 parts, 2 structural images) …
+  draw 1: 8285KB in 42.0s, raw sha 4ec49cc542434758 — saved before interpretation
+  normalized: delivered 4096×4096, nativelyFourK=true, master sha 032f31ee0bad0599
+  edge-to-edge (telemetry): bleed rects 0/6 · trim rects 0/6
+      driver     bleed NO  nonArt  51.6% largest  33.9% border  41.8% contour 0.516   trim NO  nonArt  51.1%
+      passenger  bleed NO  nonArt  35.8% largest  20.1% border  54.8% contour 0.358   trim NO  nonArt  38.0%
+      hood       bleed NO  nonArt  36.0% largest  31.0% border  66.8% contour 0.360   trim NO  nonArt  41.3%
+      roof       bleed NO  nonArt  38.0% largest  25.5% border  41.8% contour 0.380   trim NO  nonArt  31.9%
+      front      bleed NO  nonArt  51.8% largest   8.2% border  43.4% contour 0.487   trim NO  nonArt  54.5%
+      rear       bleed NO  nonArt  24.7% largest  10.4% border  45.1% contour 0.244   trim NO  nonArt  15.9%
+  legacy gate (record): accepted=true blocking=0 cutouts=0 passengerMirrorMae=0.06979490059912855
+  output class (record): vehicle_depiction — The image displays a mockup of vehicle body parts with applied graphics, showing body contours and multiple vi
+      cut driver     2848×1153px  163×66in print  17.47 px/in native  5abdacab5a8c1969
+      cut passenger  2848×1153px  163×66in print  17.47 px/in native  8703ac26391ee11c
+      cut hood       1262×1022px  81.5×66in print  15.48 px/in native  834f7226a759a344
+      cut front      1262×399px  139×44in print  9.07 px/in native  f2ef721450a1c751
+      cut rear       1262×939px  86×64in print  14.67 px/in native  69957f6442aaab6a
+      cut roof       1262×970px  84.3×64.8in print  14.97 px/in native  9ece78086df755e5
+Fontconfig warning: using without calling FcInit()
+Fontconfig error: Cannot load default config file: No such file: (null)
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+  
+  draw 1 written; results.json, REPORT.md, contact-sheet.png and panels/ in /work/ab-evidence
+  canonical integrity: sixDistinct=true lineageOk=true driverPassengerDistinct=true
