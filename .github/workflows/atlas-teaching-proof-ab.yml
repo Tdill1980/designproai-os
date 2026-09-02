@@ -61,6 +61,15 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            variables have changed everything about the example except its
 #            morphology, and its morphology is the defect: panels floating in a
 #            separation field, which is exactly what the outputs return.
+#            CANCELLED before results by owner ruling: stop modifying the
+#            teaching image, six image-side variables are enough.
+#
+#   7b     — the model-facing OUTPUT/OBJECT description. The deployed prompt is
+#            [creative assembly] + [output contract]; arm B keeps the creative
+#            assembly byte for byte and reframes only the tail from
+#            "artboard / panel layout / panels placed on a sheet" to one positive
+#            print-media contract. No negative added. Screening size: 2 draws per
+#            arm. PASS = 6/6 panes filled edge to edge; flat_atlas is not a pass.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
@@ -76,7 +85,7 @@ on:
         description: "Which isolated variable"
         required: true
         type: choice
-        default: "7-tiled-proof"
+        default: "7b-object-model"
         options:
           - 1-teaching-proof-field
           - 2-guide-ablation
@@ -85,6 +94,7 @@ on:
           - 5-object-clause
           - 6-label-erasure
           - 7-tiled-proof
+          - 7b-object-model
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -240,6 +250,8 @@ jobs:
             scripts/atlas-teaching-proof-delabel.mjs \
             scripts/atlas-teaching-proof-tile-ab.mjs \
             scripts/atlas-teaching-proof-tile.mjs \
+            scripts/atlas-object-model-ab.mjs \
+            scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
             atlas-call1-build \
@@ -294,6 +306,7 @@ jobs:
             5-object-clause)        runner=scripts/atlas-object-clause-ab.mjs ;;
             6-label-erasure)        runner=scripts/atlas-teaching-proof-delabel-ab.mjs ;;
             7-tiled-proof)          runner=scripts/atlas-teaching-proof-tile-ab.mjs ;;
+            7b-object-model)        runner=scripts/atlas-object-model-ab.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs

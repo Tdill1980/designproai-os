@@ -705,3 +705,80 @@ test("Test 7 swaps only the teaching image, and both arms keep one image", async
   assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256);
   assert.throws(() => tileAb.buildTileRequests({ ...base, tiledBytes: sourceBytes }), /arm B carries the unmodified proof/);
 });
+
+// ── TEST 7b's INSTRUMENT ───────────────────────────────────────────────────
+// The hypothesis moved off the teaching image and onto the model-facing
+// description of the output OBJECT. Two things are load-bearing: the
+// DesignPanelAI creative assembly must survive byte for byte, and arm B must
+// carry no negative — the owner ruled out wheel-well/anatomy language and any
+// added negative prompting by name.
+const printMedia = await import("../scripts/atlas-print-media-contract.mjs");
+const objectModel = await import("../scripts/atlas-object-model-ab.mjs");
+
+const DEPLOYED_TAIL = [
+  "OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD on one square 4K canvas.",
+  "Design ONE flat vehicle-wrap A.T.L.A.S. ARTBOARD for this exact 2022 Ford F250 Crew Cab (truck) — the full wrap laid out FLAT as rectangular print panels on one sheet — the complete flattened panel layout of the vehicle.",
+  "",
+  "Lay out these panels:",
+  "• PASSENGER SIDE — the tall panel down the left",
+  "• DRIVER SIDE — the tall panel down the right",
+  "• REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom",
+].join("\n");
+const DEPLOYED_PROMPT = `CREATIVE ASSEMBLY THAT MUST NOT MOVE.\n\n${DEPLOYED_TAIL}`;
+
+test("arm B reframes the object and carries no negative", () => {
+  const tail = printMedia.printMediaContract(DEPLOYED_TAIL);
+
+  assert.ok(tail.includes(printMedia.OWNER_CONTRACT), "the owner's print-media contract is not in arm B");
+  assert.equal(
+    printMedia.OWNER_CONTRACT,
+    "Create one cohesive vehicle-wrap print design across the six supplied rectangular print areas."
+    + " Each entire rectangle is printable vinyl artwork."
+    + " Fill every rectangle completely edge-to-edge with the continuous design.",
+  );
+
+  for (const word of printMedia.FORBIDDEN_IN_B) {
+    assert.ok(!tail.toLowerCase().includes(word), `arm B still contains "${word}"`);
+  }
+  assert.ok(tail.includes("2022 Ford F250 Crew Cab (truck)"));
+  for (const name of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
+    assert.ok(tail.includes(name), `${name} is missing from arm B's region list`);
+  }
+  assert.ok(!/\bpanel\b/i.test(tail), "arm B still calls the regions panels");
+
+  assert.throws(() => printMedia.printMediaContract("no vehicle context here"), /could not read the vehicle context/);
+});
+
+test("Test 7b swaps only the output tail — the creative assembly is byte-identical", () => {
+  const { creative, prompt } = printMedia.buildPrintMediaPrompt(DEPLOYED_PROMPT);
+  assert.equal(creative, "CREATIVE ASSEMBLY THAT MUST NOT MOVE.\n\n");
+  assert.ok(DEPLOYED_PROMPT.startsWith(creative));
+  assert.ok(prompt.startsWith(creative), "the creative assembly did not survive the swap");
+  assert.notEqual(prompt, DEPLOYED_PROMPT);
+
+  const { requests } = objectModel.buildObjectModelRequests({
+    prompt: DEPLOYED_PROMPT,
+    teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. …",
+    targetGuideText: "CURRENT TARGET GUIDE — this final neutral mask …",
+    teachingBytes: sourceBytes,
+    guideBytes: Buffer.from("a-neutral-six-rectangle-mask"),
+    model: "gemini-3-pro-image",
+  });
+
+  assert.equal(requests.A.partCount, 5);
+  assert.equal(requests.B.partCount, 5);
+  assert.equal(requests.A.modelInputImageCount, 2);
+  assert.equal(requests.B.modelInputImageCount, 2);
+  for (let i = 1; i < 5; i += 1) {
+    assert.equal(requests.A.parts[i].sha256, requests.B.parts[i].sha256, `part ${i} drifted between arms`);
+  }
+  assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256);
+  assert.notEqual(requests.A.parts[0].sha256, requests.B.parts[0].sha256);
+});
+
+test("Test 7b refuses a prompt whose output contract it cannot find", () => {
+  assert.throws(
+    () => printMedia.buildPrintMediaPrompt("a prompt with no output contract at all"),
+    /no longer opens its output contract with the pinned header/,
+  );
+});
