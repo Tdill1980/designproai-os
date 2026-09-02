@@ -229,3 +229,86 @@ test("Test 2 refuses a request that is not the ablation it claims to be", () => 
     /part 3 is not the target-guide instruction/,
   );
 });
+
+// ── TEST 3's INSTRUMENT ────────────────────────────────────────────────────
+// The topology text must be the ONLY thing that changes, and it must carry the
+// manifest's own numbers rather than a re-typed table.
+const topologyAb = await import("../scripts/atlas-topology-text-ab.mjs");
+
+const NORMALIZED = [
+  ["Passenger Side", 0.0224, 0.0225, 0.2705, 0.9550],
+  ["Driver Side", 0.7071, 0.0225, 0.2705, 0.9550],
+  ["Rear", 0.3235, 0.6120, 0.3530, 0.1810],
+  ["Roof", 0.3235, 0.2680, 0.3530, 0.3195],
+  ["Hood", 0.3235, 0.0225, 0.3530, 0.2210],
+  ["Front", 0.3235, 0.8180, 0.3530, 0.1595],
+].map(([label, x, y, width, height]) => ({ label, normalized: { x, y, width, height, orientation: "upright" } }));
+
+test("the topology text is the manifest's own coordinates, and nothing else", () => {
+  const text = topologyAb.topologyText(NORMALIZED);
+
+  assert.match(text, /^TARGET A\.T\.L\.A\.S\. TOPOLOGY — normalized canvas coordinates \[0,1\]/);
+  for (const name of ["PASSENGER", "DRIVER", "REAR", "ROOF", "HOOD", "FRONT"]) {
+    assert.match(text, new RegExp(`^${name}: +[\\d.]+, [\\d.]+, [\\d.]+, [\\d.]+$`, "m"), `${name} row missing or malformed`);
+  }
+  // x1/y1 are x+width and y+height, at the manifest's own four decimals.
+  assert.match(text, /^DRIVER: +0\.7071, 0\.0225, 0\.9776, 0\.9775$/m);
+  assert.match(text, /^PASSENGER: +0\.0224, 0\.0225, 0\.2929, 0\.9775$/m);
+
+  // No vehicle-anatomy prose, no negatives, no creative direction rode in.
+  for (const word of ["wheel", "window", "arch", "glass", "door", "bumper", "vehicle", "truck", "do not", "never"]) {
+    assert.ok(!text.toLowerCase().includes(word), `the topology block smuggled in "${word}"`);
+  }
+  assert.ok(text.length < 500, `the topology block is ${text.length} chars — it is meant to be compact`);
+
+  assert.throws(() => topologyAb.topologyText(NORMALIZED.slice(1)), /no normalized rect for Passenger Side/);
+});
+
+test("Test 3 adds the topology text and changes nothing else", () => {
+  const { requests } = topologyAb.buildTopologyRequests({
+    prompt: "P".repeat(4587),
+    teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows …",
+    teachingBytes: sourceBytes,
+    topology: topologyAb.topologyText(NORMALIZED),
+    model: "gemini-3-pro-image",
+  });
+
+  assert.equal(requests.A.partCount, 3, "arm A is not test 2's guide-absent control");
+  assert.equal(requests.B.partCount, 4);
+  // The teaching proof is the only image in EITHER arm — the guide stays gone.
+  assert.equal(requests.A.modelInputImageCount, 1);
+  assert.equal(requests.B.modelInputImageCount, 1);
+  for (let i = 0; i < 3; i += 1) {
+    assert.equal(requests.A.parts[i].sha256, requests.B.parts[i].sha256, `part ${i} drifted between arms`);
+  }
+  assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256);
+  assert.equal(requests.A.promptChars, requests.B.promptChars);
+  assert.match(requests.B.parts[3].preview, /^TARGET A\.T\.L\.A\.S\. TOPOLOGY/);
+  // The whole difference between the two bodies is one appended text part —
+  // computed, not a magic constant, because the block carries an em dash (3
+  // UTF-8 bytes) and newlines that JSON escapes.
+  const appended = Buffer.byteLength(`,${JSON.stringify({ text: topologyAb.topologyText(NORMALIZED) })}`, "utf8");
+  assert.equal(
+    requests.B.modelRequestByteSize - requests.A.modelRequestByteSize,
+    appended,
+    "arm B differs from arm A by more than the topology part",
+  );
+});
+
+test("Test 3 refuses a request that is not the topology addition it claims to be", () => {
+  const base = {
+    prompt: "P".repeat(4587),
+    teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. …",
+    teachingBytes: sourceBytes,
+    topology: topologyAb.topologyText(NORMALIZED),
+    model: "gemini-3-pro-image",
+  };
+  assert.throws(
+    () => topologyAb.buildTopologyRequests({ ...base, teachingBytes: Buffer.from("not the proof") }),
+    /the teaching proof moved/,
+  );
+  assert.throws(
+    () => topologyAb.buildTopologyRequests({ ...base, topology: "PAINT THE PANELS AS SOLID RECTANGLES" }),
+    /not the normalized topology text/,
+  );
+});

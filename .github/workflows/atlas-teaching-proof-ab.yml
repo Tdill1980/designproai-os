@@ -13,8 +13,17 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #   test 2 — the neutral target guide PAIR (the instruction and the image) is
 #            absent. Not replaced, not recoloured. `draws` image calls per arm,
 #            interleaved A,B,A,B,…, because test 1 measured within-condition
-#            variance larger than any single-pair effect could clear. The
-#            primary endpoint is output-class STABILITY.
+#            variance larger than any single-pair effect could clear.
+#            RESULT: the flank black holes went with the guide -- complete
+#            separation, 3 draws to 3 -- but the panels stayed contoured
+#            silhouettes in a field that merely changed colour, which `holeAt`
+#            cannot see. Removing the guide fixed the black, not the shape.
+#
+#   test 3 — the compact normalized [0,1] topology text is ADDED to the
+#            guide-absent request. Primary endpoint is full-bleed rectangular
+#            compliance, measured COLOUR-BLIND: `holeAt` is
+#            near-black-or-transparent, so an acceptance rate measured with it is
+#            a number about the background's colour.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
@@ -30,12 +39,13 @@ on:
         description: "Which isolated variable"
         required: true
         type: choice
-        default: "2-guide-ablation"
+        default: "3-topology-text"
         options:
           - 1-teaching-proof-field
           - 2-guide-ablation
+          - 3-topology-text
       draws:
-        description: "test 2 only — independent draws PER ARM (2 arms, so 2x this many image calls)"
+        description: "tests 2 and 3 — independent draws PER ARM (2 arms, so 2x this many image calls)"
         required: true
         type: string
         default: "3"
@@ -173,6 +183,8 @@ jobs:
             --exclude runtime/node_modules \
             scripts/atlas-teaching-proof-ab.mjs \
             scripts/atlas-guide-ablation-ab.mjs \
+            scripts/atlas-topology-text-ab.mjs \
+            scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
             atlas-call1-build \
             runtime > "$RUNNER_TEMP/ab-payload.tgz"
@@ -218,6 +230,7 @@ jobs:
           case "$AB_TEST" in
             1-teaching-proof-field) runner=scripts/atlas-teaching-proof-ab.mjs ;;
             2-guide-ablation)       runner=scripts/atlas-guide-ablation-ab.mjs ;;
+            3-topology-text)        runner=scripts/atlas-topology-text-ab.mjs ;;
             *) echo "unknown test: $AB_TEST"; exit 44 ;;
           esac
           echo "test: $AB_TEST -> $runner"
