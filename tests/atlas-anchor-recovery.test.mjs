@@ -17,7 +17,18 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   ANCHOR_CONTRACT,
+  APPROVED_OBJECT_PHRASES,
   CREATIVE_OBJECT_SWAPS,
+  DEPLOYED_GUIDE_TEXT_SHA256,
+  DEPLOYED_TEACHING_TEXT_SHA256,
+  EXPECTED_GUIDE_TEXT_CHARS_V3,
+  EXPECTED_GUIDE_TEXT_SHA256_PREFIX_V3,
+  EXPECTED_TEACHING_TEXT_CHARS_V3,
+  EXPECTED_TEACHING_TEXT_SHA256_PREFIX_V3,
+  GUIDE_TEXT_SWAPS,
+  TEACHING_TEXT_SWAPS,
+  cleanGuideText,
+  cleanTeachingText,
   EXPECTED_ANCHOR_PROMPT_CHARS_F250,
   EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250,
   EXPECTED_SWAPPED_CREATIVE_CHARS_F250,
@@ -45,12 +56,16 @@ const DEPLOYED_PROMPT = readFileSync(new URL("../docs/ab/object-model-3359525051
 // The deployed five-part request, captured on run 33597621527 (arm A).
 const DEPLOYED_REQUEST = JSON.parse(readFileSync(new URL("../docs/ab/teaching-proof-absent-33597621527-requests.json", import.meta.url), "utf8")).requests.A;
 const TEACHING_PROOF = readFileSync(new URL("../runtime/atlas-examples/flamingo-labeled-atlas-teaching-proof.png", import.meta.url));
+const EDGE_SOURCE = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
+const edgeLiteral = (head) => { const i = EDGE_SOURCE.indexOf(head); const q = EDGE_SOURCE.lastIndexOf('"', i); const e = EDGE_SOURCE.indexOf('",', i); return JSON.parse(EDGE_SOURCE.slice(q, e + 1)); };
+const DEPLOYED_TEACHING_TEXT = edgeLiteral("LABELED A.T.L.A.S. TEACHING REFERENCE.");
+const DEPLOYED_GUIDE_TEXT = edgeLiteral("CURRENT TARGET GUIDE —");
 const build = () => buildAnchorPrompt(DEPLOYED_PROMPT, { centerOrder: atlas.CENTER_ORDER });
 
 test("the deployed-prompt fixture is the one the edge sends", () => {
   assert.equal(DEPLOYED_PROMPT.length, 4587);
   assert.equal(sha256(DEPLOYED_PROMPT), "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2");
-  assert.equal(ANCHOR_CONTRACT, "designpro.atlas-anchor-restoration.v2");
+  assert.equal(ANCHOR_CONTRACT, "designpro.atlas-anchor-restoration.v3");
 });
 
 test("production CENTER_ORDER is the known-good order and the placement phrase follows it", () => {
@@ -100,10 +115,11 @@ test("the prompt is persona · object definition · swapped creative · placemen
   assert.ok(r.persona.startsWith("You are the senior vehicle-wrap designer at a sign and wrap company"));
   assert.equal(r.objectBlock, objectDefinitionBlock("2022 Ford F250 Crew Cab", "truck"));
   assert.ok(r.objectBlock.startsWith("A.T.L.A.S. — DesignProAI’s canonical flattened design topology, on one square 4K canvas.\n"));
-  assert.ok(r.objectBlock.includes("For the vehicle-design embodiment, A.T.L.A.S. represents a top-view vehicle-wrap design as a flattened 2D topology: conceptually, the printable exterior skin of the completely wrapped 3D vehicle is pressed flat from above and unfolded into one dimensionally governed design space. Here that vehicle is this exact 2022 Ford F250 Crew Cab (truck)."));
+  assert.ok(r.objectBlock.includes("For the vehicle-design embodiment, A.T.L.A.S. represents a top-view vehicle-wrap design as a flattened 2D topology: the six rectangular printed vinyl sheets for this vehicle, as they come off the printer before installation, arranged in one dimensionally governed top-view layout. Flattened means zero body lines: each region is one continuous rectangle of printed artwork running unbroken to all four edges, because the vinyl is rectangular. Trimming to the vehicle happens after printing, by the installer. Here that vehicle is this exact 2022 Ford F250 Crew Cab (truck)."));
+  assert.ok(!/\bskin\b/i.test(r.prompt), "the unfolded-skin metaphor is gone from the whole prompt");
+  assert.ok(r.placement.includes("all subdivisions of the same one flattened printed topology"));
   assert.ok(r.objectBlock.includes("Create one cohesive professional vehicle-wrap design across this flattened topology. Every defined topology region is printable artwork and must be filled completely edge-to-edge with intentional finished design. The complete flattened topology represents one coordinated vehicle-wrap design."));
   assert.ok(r.creativeBody.startsWith("Design the printed wrap artwork for a 2022 Ford F250 Crew Cab (truck) as ONE FLAT print-production master — the flattened A.T.L.A.S. design topology of pure printed vinyl artwork, never an on-vehicle photograph."));
-  assert.ok(r.placement.includes("all subdivisions of the same one flattened printable skin"));
   assert.ok(r.placement.includes("Driver and Passenger are coordinated but independently composed; they are not mirrored artwork."));
   assert.ok(r.placement.includes(NO_CAPTIONS_SENTENCE));
   assert.ok(r.prompt.endsWith("Gallery-grade custom artwork with real depth, movement and a wow factor, drawn straight-on and flat for printing."));
@@ -114,7 +130,8 @@ test("the prompt is persona · object definition · swapped creative · placemen
 
 test("ordering: the object definition precedes the first design-space instruction and the first region", () => {
   const r = build();
-  const object = r.prompt.indexOf("design space");
+  const object = r.prompt.indexOf("Flattened means zero body lines");
+  assert.ok(object > 0);
   assert.ok(object > r.prompt.indexOf("worth what the customer paid"), "the persona comes first");
   assert.ok(object < r.prompt.indexOf("Design the printed wrap artwork for"));
   assert.ok(object < r.prompt.search(/\bregion/i));
@@ -122,14 +139,16 @@ test("ordering: the object definition precedes the first design-space instructio
 
 test("no panel / body-object word survives before the placement tail; the added text carries no anatomy or negative", () => {
   const r = build();
-  const beforeTail = r.persona + r.objectBlock + r.creativeBody;
+  const strip = (t) => APPROVED_OBJECT_PHRASES.reduce((o, p) => o.replace(p, ""), t);
+  const beforeTail = strip(r.persona + r.objectBlock + r.creativeBody);
   assert.doesNotThrow(() => assertNoObjectWords(beforeTail, "x"));
   assert.equal(beforeTail.match(/\b(panel|panels|artboard|orthographic|body|rectangle|rectangles|sheet|template|mockup|silhouette)\b/gi), null);
+  assert.deepEqual([...APPROVED_OBJECT_PHRASES], ["the six rectangular printed vinyl sheets for this vehicle", "Flattened means zero body lines", "one continuous rectangle of printed artwork"]);
   for (const { word } of FORBIDDEN_OBJECT_WORDS) {
     assert.throws(() => assertNoObjectWords(`${beforeTail}\n${word} appears here`, "x"), new RegExp(`forbidden object framing "${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`), `guard did not convict "${word}"`);
   }
   for (const { word } of FORBIDDEN_IN_ADDED_TEXT) {
-    assert.throws(() => assertNoObjectWords(`${r.objectBlock}\n${word} appears here`, "x", FORBIDDEN_IN_ADDED_TEXT), /forbidden object framing/, `added-text guard did not convict "${word}"`);
+    assert.throws(() => assertNoObjectWords(`${strip(r.objectBlock)}\n${word} appears here`, "x", FORBIDDEN_IN_ADDED_TEXT), /forbidden object framing/, `added-text guard did not convict "${word}"`);
   }
   // "sheet" survives only inside the carried-across no-captions sentence
   assert.equal(r.prompt.match(/\bsheet\b/g).length, 1);
@@ -159,6 +178,34 @@ test("every non-object creative instruction survives byte for byte", () => {
   ]) assert.ok(r.prompt.includes(literal), `creative instruction missing: ${literal.slice(0, 60)}`);
 });
 
+test("parts 1 and 3: the deployed texts are the pinned ones, the cleanup is exact-match, and it reverses byte for byte", () => {
+  assert.equal(sha256(DEPLOYED_TEACHING_TEXT), DEPLOYED_TEACHING_TEXT_SHA256);
+  assert.equal(sha256(DEPLOYED_GUIDE_TEXT), DEPLOYED_GUIDE_TEXT_SHA256);
+  assert.equal(DEPLOYED_TEACHING_TEXT_SHA256, DEPLOYED_REQUEST.parts[1].sha256);
+  assert.equal(DEPLOYED_GUIDE_TEXT_SHA256, DEPLOYED_REQUEST.parts[3].sha256);
+  const t = cleanTeachingText(DEPLOYED_TEACHING_TEXT);
+  const g = cleanGuideText(DEPLOYED_GUIDE_TEXT);
+  assert.equal(t.reverseProof, true);
+  assert.equal(g.reverseProof, true);
+  assert.equal(t.text.length, EXPECTED_TEACHING_TEXT_CHARS_V3);
+  assert.ok(t.sha256.startsWith(EXPECTED_TEACHING_TEXT_SHA256_PREFIX_V3), t.sha256.slice(0, 16));
+  assert.equal(g.text.length, EXPECTED_GUIDE_TEXT_CHARS_V3);
+  assert.ok(g.sha256.startsWith(EXPECTED_GUIDE_TEXT_SHA256_PREFIX_V3), g.sha256.slice(0, 16));
+  assert.equal(TEACHING_TEXT_SWAPS.length, 4);
+  assert.equal(GUIDE_TEXT_SWAPS.length, 2);
+  for (const [from, to] of [...TEACHING_TEXT_SWAPS, ...GUIDE_TEXT_SWAPS]) {
+    assert.ok(!t.text.includes(from) && !g.text.includes(from), `"${from}" survived`);
+    assert.ok(t.text.includes(to) || g.text.includes(to), `"${to}" missing`);
+  }
+  assert.equal(t.text, "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design represented as six flat A.T.L.A.S. regions: DRIVER SIDE, PASSENGER SIDE, HOOD, ROOF, FRONT and REAR. The printed labels identify the region roles and sit outside the artwork regions. Learn the A.T.L.A.S. format, region identities and relationship of the six regions as one connected wrap. Create an original design for the current customer with its own branding and artwork.");
+  assert.equal(g.text, "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Fill its six regions completely, edge to edge, with the NEW customer design from the canonical target vehicle and brief above. Return the flat printed A.T.L.A.S. topology.");
+  assert.ok(!/\bsurfaces?\b|never|do not/i.test(t.text));
+  assert.ok(!/vehicle image|never|rectangles/i.test(g.text));
+  // a drifted deployed text is refused before any swap
+  assert.throws(() => cleanTeachingText(`${DEPLOYED_TEACHING_TEXT} `), /not the pinned deployed teaching instruction/);
+  assert.throws(() => cleanGuideText("CURRENT TARGET GUIDE — drifted"), /not the pinned deployed guide instruction/);
+});
+
 test("the pinned deployed shas in the recovery script match the captured deployed request", () => {
   const source = readFileSync(new URL("../scripts/atlas-anchor-recovery.mjs", import.meta.url), "utf8");
   const pin = (key) => new RegExp(`${key}: "([a-f0-9]{64})"`).exec(source)?.[1];
@@ -174,6 +221,9 @@ test("the pinned deployed shas in the recovery script match the captured deploye
   assert.ok(source.includes("if (DRAWS !== 1) throw new Error"));
   assert.ok(source.includes("EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250"));
   assert.ok(source.includes("reverseProof"));
+  assert.ok(source.includes("cleanTeachingText(call1.TEACHING_REFERENCE_TEXT)"));
+  assert.ok(source.includes("cleanGuideText(call1.TARGET_GUIDE_TEXT)"));
+  assert.ok(source.includes("teachingText: teaching.sha256, guideText: guideText.sha256"));
 });
 
 test("the anchor request is the deployed five-part shape with every other part pinned", () => {
@@ -200,9 +250,9 @@ test("the anchor request is the deployed five-part shape with every other part p
   assert.equal(withRef.request.modelInputImageCount, 3);
   assert.deepEqual(withRef.request.parts.map((p) => p.kind), ["text", "text", "image", "image", "text", "image"]);
   const base = { prompt: "p", teachingReferenceText: teachingText, teachingBytes: TEACHING_PROOF, targetGuideText: guideText, guideBytes, model: "m", expected };
-  assert.throws(() => buildAnchorRequest({ ...base, teachingReferenceText: "drifted" }), /not the deployed teaching instruction/);
+  assert.throws(() => buildAnchorRequest({ ...base, teachingReferenceText: "drifted" }), /not the approved teaching instruction/);
   assert.throws(() => buildAnchorRequest({ ...base, teachingBytes: Buffer.from("substitute") }), /not the pinned owner teaching proof/);
-  assert.throws(() => buildAnchorRequest({ ...base, targetGuideText: "drifted" }), /not the deployed guide text/);
+  assert.throws(() => buildAnchorRequest({ ...base, targetGuideText: "drifted" }), /not the approved guide text/);
   assert.throws(() => buildAnchorRequest({ ...base, guideBytes: Buffer.from("other guide") }), /not the production guide/);
   assert.throws(() => buildAnchorRequest({ ...base, expected: null }), /expected part shas are required/);
   assert.doesNotThrow(() => buildAnchorRequest({ ...base, guideBytes: Buffer.from("other guide"), expected: { ...expected, guideImage: null } }));

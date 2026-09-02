@@ -33,13 +33,27 @@ import { replaceExactlyOnce } from "./atlas-field-contract.mjs";
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 
-export const ANCHOR_CONTRACT = "designpro.atlas-anchor-restoration.v2";
+export const ANCHOR_CONTRACT = "designpro.atlas-anchor-restoration.v3";
 
 /** Pinned on the F250 fixture (2022 Ford F250 Crew Cab (truck), CENTER_ORDER). */
-export const EXPECTED_ANCHOR_PROMPT_CHARS_F250 = 4293;
-export const EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250 = "8014a3665f40bd24";
+export const EXPECTED_ANCHOR_PROMPT_CHARS_F250 = 4531;
+export const EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250 = "571cde0adce5f33d";
+export const EXPECTED_TEACHING_TEXT_CHARS_V3 = 465;
+export const EXPECTED_TEACHING_TEXT_SHA256_PREFIX_V3 = "4f45d370380c7dcc";
+export const EXPECTED_GUIDE_TEXT_CHARS_V3 = 262;
+export const EXPECTED_GUIDE_TEXT_SHA256_PREFIX_V3 = "3eebedb6096f9409";
 export const EXPECTED_SWAPPED_CREATIVE_CHARS_F250 = 2720;
 export const EXPECTED_SWAPPED_CREATIVE_SHA256_PREFIX_F250 = "458ea7a537cf9940";
+
+/** The owner-approved object phrase (v3) — the one place "sheets" is object-correct: the printed vinyl itself. */
+export const OBJECT_SHEET_PHRASE = "the six rectangular printed vinyl sheets for this vehicle";
+/** Owner-approved v3 object sentences whose words ("body", "rectangle", "sheets") are the object-correct usage; exempt from the guard. */
+export const APPROVED_OBJECT_PHRASES = Object.freeze([
+  OBJECT_SHEET_PHRASE,
+  "Flattened means zero body lines",
+  "one continuous rectangle of printed artwork",
+]);
+const stripApproved = (text) => APPROVED_OBJECT_PHRASES.reduce((out, phrase) => out.replace(phrase, ""), text);
 
 /** The one deployed sentence carried across verbatim (it names "the sheet"). */
 export const NO_CAPTIONS_SENTENCE =
@@ -97,8 +111,10 @@ export function objectDefinitionBlock(vehicleName, bodyClass) {
   return [
     "A.T.L.A.S. — DesignProAI’s canonical flattened design topology, on one square 4K canvas.",
     "For the vehicle-design embodiment, A.T.L.A.S. represents a top-view vehicle-wrap design as a flattened 2D topology: "
-    + "conceptually, the printable exterior skin of the completely wrapped 3D vehicle is pressed flat from above and unfolded "
-    + `into one dimensionally governed design space. Here that vehicle is this exact ${vehicleName} (${bodyClass}).`,
+    + `${OBJECT_SHEET_PHRASE}, as they come off the printer before installation, arranged in one dimensionally governed `
+    + "top-view layout. Flattened means zero body lines: each region is one continuous rectangle of printed artwork running "
+    + "unbroken to all four edges, because the vinyl is rectangular. Trimming to the vehicle happens after printing, by the "
+    + `installer. Here that vehicle is this exact ${vehicleName} (${bodyClass}).`,
     "",
     "Create one cohesive professional vehicle-wrap design across this flattened topology. Every defined topology region is "
     + "printable artwork and must be filled completely edge-to-edge with intentional finished design. The complete flattened "
@@ -111,11 +127,11 @@ export function objectDefinitionBlock(vehicleName, bodyClass) {
 export function placementTail(centerOrder) {
   const centre = centerOrderPhrase(centerOrder);
   return [
-    "The supplied A.T.L.A.S. example shows how that flattened skin is spatially organized; the supplied neutral guide is this "
-    + "vehicle’s own flattened skin at its real proportions. Within it, the two long flank regions (passenger side down the "
+    "The supplied A.T.L.A.S. example shows how that flattened topology is spatially organized; the supplied neutral guide is this "
+    + "vehicle’s own flattened topology at its real proportions. Within it, the two long flank regions (passenger side down the "
     + "left, driver side down the right) carry the wrap’s primary compositions, and the four central regions "
     + `(${centre}, stacked top to bottom in the centre) carry its supporting compositions — all subdivisions of the same one `
-    + "flattened printable skin. Driver and Passenger are coordinated but independently composed; they are not mirrored "
+    + "flattened printed topology. Driver and Passenger are coordinated but independently composed; they are not mirrored "
     + `artwork. ${NO_CAPTIONS_SENTENCE}`,
     "",
     "Gallery-grade custom artwork with real depth, movement and a wow factor, drawn straight-on and flat for printing.",
@@ -168,11 +184,11 @@ export function buildAnchorPrompt(deployedPrompt, { centerOrder } = {}) {
   // Object-first: nothing before the placement tail may name a panel / body object / negative,
   // and the object definition must precede the first design-space instruction and the first "region".
   const beforeTail = persona + objectBlock + creativeBody;
-  assertNoObjectWords(beforeTail, "the prompt before the placement tail");
-  assertNoObjectWords(objectBlock, "the object definition", FORBIDDEN_IN_ADDED_TEXT);
+  assertNoObjectWords(stripApproved(beforeTail), "the prompt before the placement tail");
+  assertNoObjectWords(stripApproved(objectBlock), "the object definition", FORBIDDEN_IN_ADDED_TEXT);
   assertNoObjectWords(placement.replace(NO_CAPTIONS_SENTENCE, ""), "the placement tail", FORBIDDEN_IN_ADDED_TEXT);
-  const object = prompt.indexOf("design space");
-  if (object < 0) throw new Error("anchor contract: the object definition (\"design space\") is missing");
+  const object = prompt.indexOf("Flattened means zero body lines");
+  if (object < 0) throw new Error("anchor contract: the object definition (\"Flattened means zero body lines\") is missing");
   if (prompt.indexOf("Design the printed wrap artwork for") < object) throw new Error("anchor contract: the design-space instruction precedes the object definition");
   if (prompt.search(/\bregion/i) < object) throw new Error("anchor contract: a region is named before the object is defined — not object-first");
 
@@ -183,6 +199,46 @@ export function buildAnchorPrompt(deployedPrompt, { centerOrder } = {}) {
     creativeSha256: sha(creative),
     swappedCreativeSha256: sha(swappedCreative),
   };
+}
+
+/**
+ * v3 (owner-approved 2026-09-02): the same object-schema cleanup applied to the
+ * two deployed text parts that follow Part 0. Exact-match, exactly once,
+ * reverse-provable against the deployed shas. Parts 2 and 4 (the Flamingo
+ * proof bytes and the GENIE guide image) are untouched.
+ */
+export const DEPLOYED_TEACHING_TEXT_SHA256 = "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259";
+export const DEPLOYED_GUIDE_TEXT_SHA256 = "a93e2c7a16fea22ae78c3e18fdc02b0ec08c7b6e8dd992e7ebf66ec41f480d4d";
+export const TEACHING_TEXT_SWAPS = Object.freeze([
+  ["six flat A.T.L.A.S. surfaces:", "six flat A.T.L.A.S. regions:"],
+  ["identify the surface roles and sit in the separation space between artwork regions", "identify the region roles and sit outside the artwork regions"],
+  ["surface identities and relationship of the six surfaces", "region identities and relationship of the six regions"],
+  ["Create an original design for the current customer; do not copy the example's branding or artwork.", "Create an original design for the current customer with its own branding and artwork."],
+].map((pair) => Object.freeze(pair)));
+export const GUIDE_TEXT_SWAPS = Object.freeze([
+  ["Fill its six regions with the NEW customer design", "Fill its six regions completely, edge to edge, with the NEW customer design"],
+  ["Return flat printable rectangles only; never return a vehicle image.", "Return the flat printed A.T.L.A.S. topology."],
+].map((pair) => Object.freeze(pair)));
+
+function applySwaps(text, swaps) { let out = text; for (const [from, to] of swaps) out = replaceExactlyOnce(out, from, to); return out; }
+function reverseSwaps(text, swaps) { let out = text; for (const [from, to] of [...swaps].reverse()) out = replaceExactlyOnce(out, to, from); return out; }
+
+/** @returns { text, deployedSha256, sha256, reverseProof } — refuses a deployed text that is not the pinned one. */
+export function cleanTeachingText(deployedTeachingText) {
+  if (sha(deployedTeachingText) !== DEPLOYED_TEACHING_TEXT_SHA256) throw new Error("teaching text: the deployed text is not the pinned deployed teaching instruction");
+  const text = applySwaps(deployedTeachingText, TEACHING_TEXT_SWAPS);
+  const reverseProof = reverseSwaps(text, TEACHING_TEXT_SWAPS) === deployedTeachingText;
+  if (!reverseProof) throw new Error("teaching text: reverse proof failed");
+  assertNoObjectWords(text, "the teaching text", FORBIDDEN_IN_ADDED_TEXT.filter((w) => w.word !== "field"));
+  return { text, deployedSha256: DEPLOYED_TEACHING_TEXT_SHA256, sha256: sha(text), reverseProof, swaps: TEACHING_TEXT_SWAPS.map(([from, to]) => ({ from, to })) };
+}
+export function cleanGuideText(deployedGuideText) {
+  if (sha(deployedGuideText) !== DEPLOYED_GUIDE_TEXT_SHA256) throw new Error("guide text: the deployed text is not the pinned deployed guide instruction");
+  const text = applySwaps(deployedGuideText, GUIDE_TEXT_SWAPS);
+  const reverseProof = reverseSwaps(text, GUIDE_TEXT_SWAPS) === deployedGuideText;
+  if (!reverseProof) throw new Error("guide text: reverse proof failed");
+  assertNoObjectWords(text, "the guide text", FORBIDDEN_IN_ADDED_TEXT);
+  return { text, deployedSha256: DEPLOYED_GUIDE_TEXT_SHA256, sha256: sha(text), reverseProof, swaps: GUIDE_TEXT_SWAPS.map(([from, to]) => ({ from, to })) };
 }
 
 export const GENERATION_CONFIG = {
@@ -201,9 +257,11 @@ function partSummary(part, index) {
 /**
  * The anchor request: the deployed FIVE-part shape, in the deployed order —
  *   [0] prompt  [1] teaching text  [2] Flamingo proof  [refs…]  [n-2] guide text  [n-1] guide image
- * — with only part 0 changed. Every other part is asserted against the sha the
- * deployed edge sent (`expected`), so a drifted teaching text, a substituted
- * proof, a moved guide or a missing part is refused before any provider call.
+ * — parts 0, 1 and 3 are the v3 texts (each reverse-provable to the deployed
+ * text); parts 2 and 4 are asserted against the sha the deployed edge sent.
+ * `expected.teachingText` / `expected.guideText` are the CLEANED text shas, so
+ * a drifted text, a substituted proof, a moved guide or a missing part is
+ * refused before any provider call.
  */
 export function buildAnchorRequest({
   prompt, teachingReferenceText, teachingBytes, targetGuideText, guideBytes, referenceParts = [], model, expected,
@@ -238,9 +296,9 @@ export function buildAnchorRequest({
     throw new Error("anchor request must carry exactly the teaching proof and the target guide as structural images");
   }
   if (request.parts[0].kind !== "text") throw new Error("anchor request must open with the prompt");
-  if (request.parts[1].sha256 !== expected.teachingText) throw new Error("part 1 is not the deployed teaching instruction");
+  if (request.parts[1].sha256 !== expected.teachingText) throw new Error("part 1 is not the approved teaching instruction");
   if (request.parts[2].sha256 !== expected.teachingImage) throw new Error("part 2 is not the pinned owner teaching proof");
-  if (request.parts[n - 2].sha256 !== expected.guideText) throw new Error("the guide instruction is not the deployed guide text");
+  if (request.parts[n - 2].sha256 !== expected.guideText) throw new Error("the guide instruction is not the approved guide text");
   if (expected.guideImage && request.parts[n - 1].sha256 !== expected.guideImage) throw new Error("the guide image is not the production guide for this fixture");
   if (request.parts[n - 1].kind !== "image") throw new Error("the request must end with the neutral guide image, as production does");
   return { parts, request, serialize };

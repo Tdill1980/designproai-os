@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * ANCHOR RESTORATION HARNESS v2 — ONE DRAW. Harness only. Not production.
+ * ANCHOR RESTORATION HARNESS v3 — ONE DRAW. Harness only. Not production.
+ *
+ * v3 (owner-approved 2026-09-02, "flattened as in zero body lines"): the
+ * embodiment sentence becomes the printed-sheet object (RULE 0.32) instead of
+ * an unfolded skin; parts 1 and 3 get the same object-schema cleanup, each
+ * reverse-provable to the deployed text. Parts 2 and 4 untouched.
  *
  * v2 (owner finding after run 33642303437): the object definition moves to
  * the front of Part 0 and six exact-match object-schema phrases inside the
@@ -34,7 +39,7 @@ import { join } from "node:path";
 import { fullBleedMetrics } from "./atlas-fullbleed-metrics.mjs";
 import {
   ANCHOR_CONTRACT, EXPECTED_ANCHOR_PROMPT_CHARS_F250, EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250,
-  GENERATION_CONFIG, buildAnchorPrompt, buildAnchorRequest,
+  GENERATION_CONFIG, buildAnchorPrompt, buildAnchorRequest, cleanTeachingText, cleanGuideText,
 } from "./atlas-anchor-contract.mjs";
 
 const require_ = (await import("node:module")).createRequire(join(process.cwd(), "runtime/"));
@@ -238,14 +243,18 @@ async function main() {
     throw new Error(`the anchor prompt is not the owner-approved text (sha ${promptSha.slice(0, 16)}, ${anchor.prompt.length} chars)`);
   }
 
+  // v3: parts 1 and 3 get the same object-schema cleanup; each is refused unless the
+  // deployed text is the pinned one and the cleaned text reverses to it byte for byte.
+  const teaching = cleanTeachingText(call1.TEACHING_REFERENCE_TEXT);
+  const guideText = cleanGuideText(call1.TARGET_GUIDE_TEXT);
   const { parts, request, serialize } = buildAnchorRequest({
     prompt: anchor.prompt,
-    teachingReferenceText: call1.TEACHING_REFERENCE_TEXT,
+    teachingReferenceText: teaching.text,
     teachingBytes,
-    targetGuideText: call1.TARGET_GUIDE_TEXT,
+    targetGuideText: guideText.text,
     guideBytes,
     model: call1.AUTHORING_MODEL,
-    expected: { ...DEPLOYED, guideImage: DEFAULT_FIXTURE ? DEPLOYED.guideImage : null },
+    expected: { ...DEPLOYED, teachingText: teaching.sha256, guideText: guideText.sha256, guideImage: DEFAULT_FIXTURE ? DEPLOYED.guideImage : null },
   });
 
   const parity = {
@@ -262,10 +271,12 @@ async function main() {
     tail: { deployedChars: anchor.deployedTail.length, deployedSha256: sha(anchor.deployedTail), objectBlockChars: anchor.objectBlock.length, placementChars: anchor.placement.length },
     anchorPrompt: { chars: anchor.prompt.length, sha256: promptSha, expectedChars: EXPECTED_ANCHOR_PROMPT_CHARS_F250, expectedSha256Prefix: EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250, pinned: DEFAULT_FIXTURE },
     parts: request.parts,
+    textParts: {
+      teaching: { deployedSha256: teaching.deployedSha256, chars: teaching.text.length, sha256: teaching.sha256, swaps: teaching.swaps, reverseProof: teaching.reverseProof },
+      guide: { deployedSha256: guideText.deployedSha256, chars: guideText.text.length, sha256: guideText.sha256, swaps: guideText.swaps, reverseProof: guideText.reverseProof },
+    },
     unchangedParts: {
-      teachingText: request.parts[1].sha256 === DEPLOYED.teachingText,
       teachingImage: request.parts[2].sha256 === DEPLOYED.teachingImage,
-      guideText: request.parts[3].sha256 === DEPLOYED.guideText,
       guideImage: DEFAULT_FIXTURE ? request.parts[4].sha256 === DEPLOYED.guideImage : "not pinned off the default fixture",
     },
     request: { partCount: request.partCount, modelInputImageCount: request.modelInputImageCount, modelRequestByteSize: request.modelRequestByteSize, deployedModelRequestByteSize: DEPLOYED.modelRequestByteSize, model: request.model, generationConfig: GENERATION_CONFIG },
@@ -279,11 +290,15 @@ async function main() {
   writeFileSync(join(OUT, "tail-deployed.txt"), anchor.deployedTail);
   writeFileSync(join(OUT, "tail-placement.txt"), anchor.placement);
   writeFileSync(join(OUT, "creative-swaps.json"), JSON.stringify(anchor.swaps, null, 2));
+  writeFileSync(join(OUT, "teaching-text-v3.txt"), teaching.text);
+  writeFileSync(join(OUT, "guide-text-v3.txt"), guideText.text);
+  writeFileSync(join(OUT, "text-part-swaps.json"), JSON.stringify({ teaching: teaching.swaps, guide: guideText.swaps }, null, 2));
   writeFileSync(join(OUT, "requests.json"), JSON.stringify({ vehicle: VEHICLE, brief: BRIEF, draws: DRAWS, request }, null, 2));
   log(`deployed prompt reproduced: sha ${deployedSha.slice(0, 16)}, ${assembled.prompt.length} chars`);
   log(`creative assembly: deployed ${anchor.creative.length} chars ${creativeSha.slice(0, 16)} → six object-schema swaps → ${anchor.swappedCreative.length} chars ${anchor.swappedCreativeSha256.slice(0, 16)}; reverse proof ${anchor.reverseProof}`);
   log(`order: persona · object definition (${anchor.objectBlock.length} chars) · swapped creative · placement (${anchor.placement.length} chars); prompt ${anchor.prompt.length} chars, sha ${promptSha.slice(0, 16)}`);
-  log(`request: ${request.partCount} parts, ${request.modelInputImageCount} images, ${request.modelRequestByteSize} bytes (deployed ${DEPLOYED.modelRequestByteSize}); parts 1–4 unchanged: ${JSON.stringify(parity.unchangedParts)}`);
+  log(`teaching text: deployed ${teaching.deployedSha256.slice(0, 16)} → ${teaching.text.length} chars ${teaching.sha256.slice(0, 16)}, reverse proof ${teaching.reverseProof}; guide text: deployed ${guideText.deployedSha256.slice(0, 16)} → ${guideText.text.length} chars ${guideText.sha256.slice(0, 16)}, reverse proof ${guideText.reverseProof}`);
+  log(`request: ${request.partCount} parts, ${request.modelInputImageCount} images, ${request.modelRequestByteSize} bytes (deployed ${DEPLOYED.modelRequestByteSize}); images unchanged: ${JSON.stringify(parity.unchangedParts)}`);
 
   if (captureOnly) {
     log("capture-only: request written, no provider call made");
@@ -395,9 +410,9 @@ async function main() {
 
   const pct = (v) => `${(v * 100).toFixed(1)}%`;
   writeFileSync(join(OUT, "REPORT.md"), [
-    "# Anchor restoration v2 — object-schema cleanup, Draw 1 (production topology, option A)",
+    "# Anchor restoration v3 — printed-sheet object, zero body lines, Draw 1 (production topology, option A)",
     "",
-    "Harness only. ONE Gemini image call. Part 0 = persona · owner object definition · deployed creative with six object-schema swaps (reverse proof true) · placement tail; parts 1–4, model, config and the extractor are production's. Every number here is telemetry; nothing is a gate.",
+    "Harness only. ONE Gemini image call. Part 0 = persona · owner object definition (v3: the six printed vinyl sheets; flattened means zero body lines) · deployed creative with six object-schema swaps · placement tail; parts 1 and 3 carry the same object-schema cleanup (reverse-provable); parts 2 and 4, model, config and the extractor are production's. Every number here is telemetry; nothing is a gate.",
     "",
     `Raw master \`draw1-anchor-raw.png\` sha256 \`${sha(rawBytes)}\` (${rawBytes.length} B, delivered ${normalized.deliveredWidthPx}×${normalized.deliveredHeightPx}) — look at this FIRST.`,
     "",
