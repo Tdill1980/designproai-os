@@ -134,6 +134,37 @@ const GENIE_CATALOG_TABLE = "vehicle_dimensions";
  * change beyond deleting the derivation branch.
  */
 const FRONT_DERIVATION_CONTRACT = "designpro.genie-front-derived.v1";
+/**
+ * THE MANIFEST CONTRACT, NAMED ONCE. `stampGeometryResolution` writes it onto
+ * every resolution and the GENIE Prep row keys on it, so a prepared geometry
+ * authored under an older manifest contract is simply never consumed.
+ */
+const GENIE_MANIFEST_CONTRACT = "designpro.genie-manifest.v1";
+/**
+ * GENIE PREP — the early lifecycle (owner ruling 2026-09-02). The prep row is
+ * keyed by (generationId, vehicleIdentityHash, GENIE_PREP_CONTRACT); the
+ * contract string folds in the manifest contract so the two move together.
+ */
+const GENIE_PREP_CONTRACT = `designpro.genie-prep.v1+${GENIE_MANIFEST_CONTRACT}`;
+
+/**
+ * ONE vehicle identity for the whole OS. The browser never computes this: it
+ * sends the typed vehicle, the runtime normalizes it exactly the way the
+ * resolver does (`normalizedVehicle`, including the F-Series class correction)
+ * and hashes the canonical identity. A changed year, make, model or class is a
+ * different hash, so a stale prep can never be matched by a changed vehicle.
+ */
+function vehicleIdentityHash(rawVehicle) {
+  const vehicle = normalizedVehicle(rawVehicle || {});
+  const material = JSON.stringify({
+    contract: "designpro.vehicle-identity.v1",
+    vehicleClass: vehicle.vehicleClass,
+    make: vehicle.make.toLowerCase(),
+    model: vehicle.model.toLowerCase().replace(/\s+/g, " "),
+    year: vehicle.year,
+  });
+  return createHash("sha256").update(material, "utf8").digest("hex");
+}
 
 /**
  * FOUR CORRUPT ROWS PASS THE YEAR FILTER AND WOULD MATCH ANYTHING.
@@ -418,7 +449,7 @@ function stampGeometryResolution(row, resolution) {
     surfaces[surfaceKey] = expectedSurfacesFromRow(row)?.[surfaceKey] || null;
   }
   const material = JSON.stringify({
-    contract: "designpro.genie-manifest.v1",
+    contract: GENIE_MANIFEST_CONTRACT,
     state: resolution.state,
     sourceRowId: resolution.geometrySourceRowId || null,
     derivationContract: resolution.derivationContract || null,
@@ -426,7 +457,7 @@ function stampGeometryResolution(row, resolution) {
   });
   const genieManifestHash = createHash("sha256").update(material, "utf8").digest("hex");
   row.geometryResolution = {
-    contract: "designpro.genie-manifest.v1",
+    contract: GENIE_MANIFEST_CONTRACT,
     genieManifestId: genieManifestHash.slice(0, 32),
     genieManifestHash,
     ...resolution,
@@ -1140,9 +1171,12 @@ module.exports = {
   PROOF_GEOMETRY_CONTRACT,
   PROVISIONAL_ESTIMATOR_CONTRACT,
   FRONT_DERIVATION_CONTRACT,
+  GENIE_MANIFEST_CONTRACT,
+  GENIE_PREP_CONTRACT,
   SURFACES,
   UniversalDimensionError,
   expectedSurfacesFromRow,
+  vehicleIdentityHash,
   resolveFlatAtlasPreviewDimensions,
   previewGenieDimensionsFromCatalog,
   resolveOrQueueUniversalDimensions,

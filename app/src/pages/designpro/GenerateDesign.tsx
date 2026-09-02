@@ -20,7 +20,7 @@
  * prompt, model, seed and camera angle are server-owned. This page does not
  * send them and the gateway rejects them if it did.
  */
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import {
@@ -31,6 +31,7 @@ import {
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type FlatAtlasRevision,
   type GenieDimensionPreview,
+  type GeniePrepReceipt,
   type GenerationPipelineMode,
   GenerationRequestState,
   GenerationVehicle,
@@ -40,6 +41,7 @@ import {
   SOURCE_VIEW_TYPE_FOR_ROLE,
   SURFACE_LABEL,
 } from "@/lib/designpro-api";
+import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -214,6 +216,9 @@ export default function GenerateDesign() {
   const [vehicleModel, setVehicleModel] = useState("");
   const [designPrep, setDesignPrep] = useState<GenieDimensionPreview | null>(null);
   const [designPrepVehicle, setDesignPrepVehicle] = useState("");
+  // GENIE PREP receipt (owner ruling 2026-09-02): the server-side lifecycle
+  // that starts at Enter on the GenerationID. Status and provenance only.
+  const [geniePrep, setGeniePrep] = useState<GeniePrepReceipt | null>(null);
   const [designPrepBusy, setDesignPrepBusy] = useState(false);
   const [designPrepGenerationId, setDesignPrepGenerationId] = useState<string | null>(null);
   const [requestPipelineMode, setRequestPipelineMode] = useState<GenerationPipelineMode>(FLAT_FIRST_ATLAS_PIPELINE_MODE);
@@ -229,6 +234,8 @@ export default function GenerateDesign() {
   const currentVehicleIdentity = [vehicleYear, vehicleMake, vehicleModel, vehicleType]
     .map((value) => value.trim().toLowerCase())
     .join("|");
+  const prepVehicleRef = useRef(currentVehicleIdentity);
+  prepVehicleRef.current = currentVehicleIdentity;
   const designPrepIsCurrent = Boolean(designPrep && designPrepVehicle === currentVehicleIdentity);
 
   function changeVehicle(setter: (value: string) => void, value: string) {
@@ -236,6 +243,7 @@ export default function GenerateDesign() {
     setDesignPrep(null);
     setDesignPrepVehicle("");
     setDesignPrepGenerationId(null);
+    setGeniePrep(null);
   }
 
   // PREP RUNS ITSELF AND GATES NOTHING. (Owner, 2026-08-31: "Remove the
@@ -274,6 +282,16 @@ export default function GenerateDesign() {
     try {
       const generationId = designPrepGenerationId || crypto.randomUUID().toLowerCase();
       setDesignPrepGenerationId(generationId);
+      // The server-owned lifecycle starts NOW on that GenerationID and runs
+      // while the operator writes. Never a gate.
+      const vehicleKey = currentVehicleIdentity;
+      void runGeniePrep({
+        generationId,
+        vehicle,
+        clientEnteredAt: new Date().toISOString(),
+        isCurrent: () => prepVehicleRef.current === vehicleKey,
+        onUpdate: (receipt) => { if (prepVehicleRef.current === vehicleKey) setGeniePrep(receipt); },
+      });
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDesignPrep(prepared);
       setDesignPrepVehicle(currentVehicleIdentity);
@@ -570,12 +588,12 @@ export default function GenerateDesign() {
             className="order-2"
             eyebrow="Vehicle identity"
             title="Enter the vehicle, then begin Design Prep"
-            description="After Year, Make, and Model are complete, press Enter vehicle. DesignProAI immediately pulls GENIE dimensions and prepares the labeled A.T.L.A.S. topology while you continue the creative brief."
+            description="Once Year, Make, and Model are complete (or on Enter), DesignProAI acknowledges the GenerationID and starts GENIE dimension resolution on the server while you continue the creative brief. Nothing here gates Generate."
           >
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Year" name="year" required value={vehicleYear} onChange={(event) => changeVehicle(setVehicleYear, event.target.value)} />
-              <Field label="Make" name="make" required value={vehicleMake} onChange={(event) => changeVehicle(setVehicleMake, event.target.value)} />
-              <Field label="Model" name="model" required value={vehicleModel} onChange={(event) => changeVehicle(setVehicleModel, event.target.value)} />
+              <Field label="Year" name="year" required value={vehicleYear} onChange={(event) => changeVehicle(setVehicleYear, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void beginDesignPrep(); } }} />
+              <Field label="Make" name="make" required value={vehicleMake} onChange={(event) => changeVehicle(setVehicleMake, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void beginDesignPrep(); } }} />
+              <Field label="Model" name="model" required value={vehicleModel} onChange={(event) => changeVehicle(setVehicleModel, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void beginDesignPrep(); } }} />
               <div>
                 <Label htmlFor="type" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Vehicle type
@@ -609,6 +627,9 @@ export default function GenerateDesign() {
                     creative prompt. Nothing here gates Generate.
                   </p>
                 </div>
+                {designPrepIsCurrent && geniePrepCopy(geniePrep) && (
+                  <Notice tone={geniePrep?.status === "ready" ? "success" : "info"}>{geniePrepCopy(geniePrep)}</Notice>
+                )}
                 {designPrepBusy && <Loading label="Pulling vehicle dimensions…" />}
                 {designPrepIsCurrent && designPrep && (
                   designPrep.surfaces.length === 6 ? (

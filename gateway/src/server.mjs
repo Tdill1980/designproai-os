@@ -1162,6 +1162,28 @@ async function resolveRun(fetchImpl, token, cfg, requestedGenerationId) {
   return requestedRun(runs, requestedGenerationId);
 }
 
+/** The GENIE prep receipt a browser may see: lifecycle and provenance, never the inches. */
+function publicGeniePrepReceipt(row) {
+  return {
+    prepId: row.id,
+    generationId: row.generation_id,
+    vehicleIdentityHash: row.vehicle_identity_hash,
+    genieContractVersion: row.genie_contract_version,
+    status: row.status,
+    attempt: row.attempt,
+    geometryState: row.geometry_state ?? null,
+    productionEligible: row.production_eligible ?? null,
+    geometryManifestHash: row.geometry_manifest_hash ?? null,
+    errorCode: row.error_code ?? null,
+    clientEnteredAt: row.client_entered_at ?? null,
+    requestedAt: row.requested_at ?? null,
+    startedAt: row.started_at ?? null,
+    preparedAt: row.prepared_at ?? null,
+    durationMs: row.duration_ms ?? null,
+    consumedAt: row.consumed_at ?? null,
+  };
+}
+
 async function rpc(fetchImpl, token, cfg, name, body) {
   const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/rpc/${name}`, { method: "POST", body: JSON.stringify(body) }, token, cfg);
   const payload = await response.json().catch(() => ({ error: `invalid_${name}_response` }));
@@ -2432,6 +2454,56 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       //
       // It never gates anything -- a failure answers "unresolved" and Generate
       // stays live, per the no-hard-blocks rule.
+      // GENIE PREP — THE EARLY LIFECYCLE (owner ruling, Trish 2026-09-02).
+      //
+      // Year / Make / Model → ENTER → the browser posts the GenerationID it
+      // minted plus the typed vehicle. The runtime acknowledges the identity,
+      // records the prep row and starts the SAME GENIE resolver the worker
+      // would otherwise run inline at Generate, while the customer keeps
+      // writing. The receipt is lifecycle and provenance only -- the prepared
+      // inches are private OS state and never reach the browser. It never
+      // gates anything: a failure answers `unavailable` and Generate stays live.
+      if (req.method === "POST" && url.pathname === "/api/genie/prep") {
+        const body = await readBody(req);
+        const generationId = String(body?.generationId || "").trim().toLowerCase();
+        const vehicle = body?.vehicle && typeof body.vehicle === "object" ? body.vehicle : {};
+        if (!UUID_PATTERN.test(generationId)) return json(res, 400, { error: "genie_prep_request_invalid" });
+        for (const key of ["year", "make", "model"]) {
+          if (!String(vehicle[key] || "").trim()) return json(res, 400, { error: "genie_prep_request_invalid", field: key });
+        }
+        if (!cfg.internalRuntimeUrl || cfg.workerSecret.length < 32) {
+          return json(res, 200, { status: "unavailable", reason: "runtime_not_configured" });
+        }
+        const upstreamRes = await fetchImpl(`${cfg.internalRuntimeUrl}/internal/genie/prep`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${cfg.workerSecret}` },
+          body: JSON.stringify({
+            ownerId: user.id,
+            generationId,
+            vehicle: {
+              year: String(vehicle.year || "").trim(),
+              make: String(vehicle.make || "").trim(),
+              model: String(vehicle.model || "").trim(),
+              type: String(vehicle.type || "").trim(),
+            },
+            clientEnteredAt: typeof body?.clientEnteredAt === "string" ? body.clientEnteredAt : null,
+          }),
+        }).catch(() => null);
+        const receipt = await upstreamRes?.json().catch(() => null);
+        return json(res, 200, receipt && typeof receipt === "object" ? receipt : { status: "unavailable", reason: "runtime_unreachable" });
+      }
+      const geniePrepMatch = url.pathname.match(/^\/api\/genie\/prep\/([0-9a-f-]{36})$/);
+      if (req.method === "GET" && geniePrepMatch) {
+        // The owner's own prep rows under RLS; newest first. Status and
+        // provenance only -- `geometry` is deliberately not selected.
+        const columns = "id,generation_id,vehicle_identity_hash,genie_contract_version,status,attempt,geometry_state,production_eligible,geometry_manifest_hash,error_code,client_entered_at,requested_at,started_at,prepared_at,duration_ms,consumed_at";
+        const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_genie_preps?generation_id=eq.${geniePrepMatch[1]}&select=${columns}&order=requested_at.desc&limit=1`, { method: "GET" }, token, cfg);
+        const rows = await response.json().catch(() => []);
+        const row = Array.isArray(rows) ? rows[0] : null;
+        if (!response.ok || !row) return json(res, 200, { status: "absent", generationId: geniePrepMatch[1] });
+        return json(res, 200, publicGeniePrepReceipt(row));
+      }
+
       if (req.method === "POST" && url.pathname === "/api/genie/dimensions/preview") {
         const body = await readBody(req);
         const vehicle = body?.vehicle || body || {};

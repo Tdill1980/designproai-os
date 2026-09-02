@@ -94,7 +94,9 @@ import {
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type GenerationPipelineMode,
   type GenieDimensionPreview,
+  type GeniePrepReceipt,
 } from "@/lib/designpro-api";
+import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
 import {
   flatFirstAtlasSupportedVehicleType,
   inlineRevisionEnabledForPipeline,
@@ -386,10 +388,16 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     .map((value) => String(value || "").trim().toLowerCase())
     .join("|");
   const designPrepIsCurrent = Boolean(dimensionPreview && designPrepVehicle === currentPrepVehicle);
+  // GENIE PREP receipt (owner ruling 2026-09-02): the server-side lifecycle
+  // that starts at Enter on the GenerationID. Status and provenance only.
+  const [geniePrep, setGeniePrep] = useState<GeniePrepReceipt | null>(null);
+  const prepVehicleRef = useRef(currentPrepVehicle);
+  prepVehicleRef.current = currentPrepVehicle;
 
   const invalidateDesignPrep = () => {
     setDimensionPreview(null);
     setDesignPrepVehicle("");
+    setGeniePrep(null);
     generationIdRef.current = null;
   };
 
@@ -422,6 +430,17 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       // The identity begins with vehicle preparation and is carried unchanged
       // into the immutable generation request.
       generationIdRef.current ||= crypto.randomUUID().toLowerCase();
+      // The server-owned lifecycle starts NOW on that GenerationID and runs
+      // while the customer writes. Never a gate; the preview still answers
+      // the readiness strip.
+      const vehicleKey = currentPrepVehicle;
+      void runGeniePrep({
+        generationId: generationIdRef.current,
+        vehicle,
+        clientEnteredAt: new Date().toISOString(),
+        isCurrent: () => prepVehicleRef.current === vehicleKey,
+        onUpdate: (receipt) => { if (prepVehicleRef.current === vehicleKey) setGeniePrep(receipt); },
+      });
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDimensionPreview(prepared);
       setDesignPrepVehicle(currentPrepVehicle);
@@ -2108,6 +2127,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               <Input
                                 ref={yearInputRef}
                                 id="premium-year"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    void beginDesignPrep();
+                                  }
+                                }}
                                 type="text"
                                 placeholder="2024"
                                 value={year}
@@ -2128,6 +2153,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               </Label>
                               <Input
                                 id="premium-make"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    void beginDesignPrep();
+                                  }
+                                }}
                                 type="text"
                                 placeholder={isNonStandardVehicle(vehicleType) ? "Kawasaki" : "Ford"}
                                 value={make}
@@ -2144,6 +2175,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               </Label>
                               <Input
                                 id="premium-model"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    void beginDesignPrep();
+                                  }
+                                }}
                                 type="text"
                                 placeholder={isNonStandardVehicle(vehicleType) ? "Ninja 650" : "Mustang"}
                                 value={model}
@@ -2163,6 +2200,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                               DesignProAI pulls this vehicle's GENIE dimensions on its own while you
                               write the creative prompt. Nothing here gates Generate.
                             </p>
+                            {designPrepIsCurrent && geniePrepCopy(geniePrep) && (
+                              <p className={cn("mt-1 text-[11px] leading-4", geniePrep?.status === "ready" ? "text-emerald-300" : "text-cyan-100/70")}>
+                                {geniePrepCopy(geniePrep)}
+                              </p>
+                            )}
                             {designPrepBusy && (
                               <p className="mt-2 text-[11px] text-cyan-100/80">
                                 Pulling vehicle dimensions…

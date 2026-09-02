@@ -2846,3 +2846,118 @@ test("a superseded flat-first view set is withheld and said so, not served", asy
     "flat_first_atlas_new_run_required",
   );
 });
+
+// ── GENIE PREP — the early lifecycle (owner ruling 2026-09-02) ───────────────
+
+test("GENIE prep: Enter posts the GenerationID + vehicle, the gateway binds the session owner and proxies to the runtime; the answer is a receipt without geometry", async (t) => {
+  const ownerId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const calls = [];
+  const server = createGateway({
+    env: { ...env, DESIGNPRO_RUNTIME_INTERNAL_URL: "http://runtime-1:3001", WORKER_SECRET: "w".repeat(32) },
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: ownerId, email: "customer@designproai.test" });
+      if (String(url) === "http://runtime-1:3001/internal/genie/prep") {
+        assert.equal(init.headers.authorization, `Bearer ${"w".repeat(32)}`);
+        const body = JSON.parse(init.body);
+        assert.deepEqual(body, {
+          ownerId,
+          generationId,
+          vehicle: { year: "2022", make: "Ford", model: "F250 Crew Cab", type: "truck" },
+          clientEnteredAt: "2026-09-02T16:59:59.000Z",
+        });
+        return new Response(JSON.stringify({
+          prepId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", generationId, status: "resolving",
+          vehicleIdentityHash: "f".repeat(64), genieContractVersion: "designpro.genie-prep.v1+designpro.genie-manifest.v1",
+          requestedAt: "2026-09-02T17:00:00.000Z", startedAt: "2026-09-02T17:00:00.100Z",
+        }), { status: 202, headers: { "content-type": "application/json" } });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/genie/prep`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({
+      generationId: generationId.toUpperCase(),
+      // the browser may not name the owner; the session does
+      ownerId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      vehicle: { year: " 2022 ", make: "Ford ", model: " F250 Crew Cab", type: "truck" },
+      clientEnteredAt: "2026-09-02T16:59:59.000Z",
+    }),
+  });
+  assert.equal(response.status, 200);
+  const receipt = await response.json();
+  assert.equal(receipt.status, "resolving");
+  assert.equal(receipt.generationId, generationId);
+  assert.equal("geometry" in receipt, false);
+  assert.equal(calls.filter((c) => c.url.includes("/internal/genie/prep")).length, 1);
+});
+
+test("GENIE prep: an invalid GenerationID or an incomplete vehicle is refused before the runtime; a runtime outage answers unavailable and never gates", async (t) => {
+  let runtimeCalls = 0;
+  const server = createGateway({
+    env: { ...env, DESIGNPRO_RUNTIME_INTERNAL_URL: "http://runtime-1:3001", WORKER_SECRET: "w".repeat(32) },
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (String(url).includes("/internal/genie/prep")) { runtimeCalls += 1; throw new Error("runtime down"); }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const post = (body) => fetch(`${base}/api/genie/prep`, {
+    method: "POST", headers: { cookie: "dp_session=test-token", "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  assert.equal((await post({ generationId: "not-a-uuid", vehicle: { year: "2022", make: "Ford", model: "F250" } })).status, 400);
+  assert.equal((await post({ generationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", vehicle: { year: "2022", make: "Ford" } })).status, 400);
+  assert.equal(runtimeCalls, 0);
+  const down = await post({ generationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", vehicle: { year: "2022", make: "Ford", model: "F250" } });
+  assert.equal(down.status, 200);
+  assert.deepEqual(await down.json(), { status: "unavailable", reason: "runtime_unreachable" });
+  assert.equal(runtimeCalls, 1);
+  // No session → no prep.
+  const anonymous = await fetch(`${base}/api/genie/prep`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ generationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", vehicle: { year: "2022", make: "Ford", model: "F250" } }),
+  });
+  assert.equal(anonymous.status, 401);
+});
+
+test("GENIE prep status reads the owner's newest row under RLS and never selects or returns the geometry", async (t) => {
+  const generationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  let selectUrl = "";
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      if (String(url).endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (String(url).includes("/rest/v1/designpro_genie_preps?")) {
+        selectUrl = String(url);
+        assert.equal(init.headers.authorization, "Bearer test-token", "the read runs as the session user, under RLS");
+        return Response.json([{
+          id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", generation_id: generationId, vehicle_identity_hash: "f".repeat(64),
+          genie_contract_version: "designpro.genie-prep.v1+designpro.genie-manifest.v1", status: "ready", attempt: 1,
+          geometry_state: "measured", production_eligible: true, geometry_manifest_hash: "1".repeat(64), error_code: null,
+          client_entered_at: "2026-09-02T16:59:59+00:00", requested_at: "2026-09-02T17:00:00+00:00",
+          started_at: "2026-09-02T17:00:00.1+00:00", prepared_at: "2026-09-02T17:00:00.9+00:00", duration_ms: 812, consumed_at: null,
+        }]);
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/genie/prep/${generationId}`, { headers: { cookie: "dp_session=test-token" } });
+  assert.equal(response.status, 200);
+  const receipt = await response.json();
+  assert.equal(receipt.status, "ready");
+  assert.equal(receipt.durationMs, 812);
+  assert.equal(receipt.geometryManifestHash, "1".repeat(64));
+  assert.equal("geometry" in receipt, false);
+  assert.match(selectUrl, /generation_id=eq\.dddddddd-dddd-4ddd-8ddd-dddddddddddd/);
+  assert.match(selectUrl, /order=requested_at\.desc&limit=1/);
+  assert.doesNotMatch(selectUrl, /[,=]geometry[,&]/, "the geometry blob is never selected");
+});
