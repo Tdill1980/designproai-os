@@ -59,6 +59,9 @@ const truthy = (v) => String(v).toLowerCase() === "true";
 const HASH_RE = /^[a-f0-9]{64}$/;
 const pct = (v) => `${(v * 100).toFixed(1)}%`;
 
+// OWNER (Draw 1): do not spend the output-class inspection or the six per-file
+// inspections. Both run ONLY with --inspect true; the default spends zero Flash calls.
+const INSPECT = truthy(args.inspect ?? "false");
 const DRAWS = Number(args.draws ?? 1);
 if (DRAWS !== 1) throw new Error(`field recovery v2: the owner approved exactly ONE draw; --draws ${args.draws} refused`);
 
@@ -365,9 +368,13 @@ async function main() {
   // ── 7. for the record: legacy checks, output class ────────────────────────
   const checks = await qc.deterministicMasterChecks(masterBytes, fieldManifest);
   const legacy = legacyZoneMetrics(checks);
-  const verdict = await outputClass.classifyAtlasCandidate({ provider, bytes: rawBytes });
-  log(`legacy gate (record): accepted=${checks.accepted} blocking=${checks.blockingFailures.length} passengerMirrorMae=${checks.passengerMirrorMae}`);
-  log(`output class (record): ${verdict.disposition}${verdict.evidence ? ` — ${String(verdict.evidence).slice(0, 110)}` : ""}`);
+  const verdict = INSPECT
+    ? await outputClass.classifyAtlasCandidate({ provider, bytes: rawBytes })
+    : { disposition: "skipped", blocking: false, confidence: null, evidence: null, model: null, skipped: true, reason: "owner: do not spend an output-class inspection on Draw 1" };
+  log(`legacy checks (record, pixel math only): accepted=${checks.accepted} blocking=${checks.blockingFailures.length} passengerMirrorMae=${checks.passengerMirrorMae}`);
+  log(`output class: ${verdict.disposition}${verdict.evidence ? ` — ${String(verdict.evidence).slice(0, 110)}` : ""}`);
+  const rawVsNormalizedHashesDiffer = sha(rawBytes) !== masterHash;
+  log(`raw sha ${sha(rawBytes).slice(0, 16)} vs normalized sha ${masterHash.slice(0, 16)} — differ: ${rawVsNormalizedHashesDiffer}`);
 
   // ── 8. continuity across territory boundaries ─────────────────────────────
   const raw = await sharp(unmasked, { limitInputPixels: false }).raw().toBuffer({ resolveWithObject: true });
@@ -397,11 +404,15 @@ async function main() {
   writeFileSync(join(OUT, "panels.json"), JSON.stringify(panelRecords, null, 2));
 
   // ── 10. per-file branding inspection (record only) ────────────────────────
-  const inspections = {};
-  for (const p of panels) {
-    inspections[p.surfaceKey] = await inspectFileBranding({ provider, sharp, bytes: p.bytes, companyName: COMPANY_NAME });
-    const r = inspections[p.surfaceKey];
-    log(`    inspect ${p.surfaceKey.padEnd(10)} ${r.disposition === "inspected" ? `name ${r.companyName} · mark ${r.brandMark} · cutAtEdge ${r.cutAtEdge} — ${r.evidence}` : `unavailable (${r.reason})`}`);
+  const inspections = INSPECT ? {} : { skipped: true, reason: "owner: do not spend the six Flash inspections on Draw 1" };
+  if (INSPECT) {
+    for (const p of panels) {
+      inspections[p.surfaceKey] = await inspectFileBranding({ provider, sharp, bytes: p.bytes, companyName: COMPANY_NAME });
+      const r = inspections[p.surfaceKey];
+      log(`    inspect ${p.surfaceKey.padEnd(10)} ${r.disposition === "inspected" ? `name ${r.companyName} · mark ${r.brandMark} · cutAtEdge ${r.cutAtEdge} — ${r.evidence}` : `unavailable (${r.reason})`}`);
+    }
+  } else {
+    log("per-file inspections: skipped (owner: zero Flash calls on Draw 1)");
   }
   writeFileSync(join(OUT, "inspections.json"), JSON.stringify(inspections, null, 2));
 
@@ -418,7 +429,7 @@ async function main() {
     contract: "designpro.atlas-field-recovery.v2",
     ranAt: new Date().toISOString(),
     imageRequestsExecuted: 1,
-    flashInspections: 1 + panels.length,
+    flashInspections: INSPECT ? 1 + panels.length : 0,
     topology: FIELD_TOPOLOGY_V2,
     vehicle: VEHICLE,
     brief: BRIEF,
@@ -428,13 +439,15 @@ async function main() {
     draw: {
       elapsedMs, rawSha256: sha(rawBytes), rawByteSize: rawBytes.length,
       deliveredWidthPx: normalized.deliveredWidthPx, deliveredHeightPx: normalized.deliveredHeightPx, nativelyFourK: normalized.nativelyFourK,
-      masterSha256: masterHash, designText: textOut.slice(0, 2000),
+      masterSha256: masterHash, normalizedSha256: masterHash, rawVsNormalizedHashesDiffer,
+      normalization: "resize to 4096x4096 (fit: fill, lanczos3) + ensureAlpha + zone mask (dest-in) + PNG re-encode; artwork pixels inside the territories are not repainted",
+      designText: textOut.slice(0, 2000),
     },
     territories: fieldManifest.fieldLayout,
     genieManifestHash: geometryResolution.genieManifestHash,
     fullBleedTelemetry: { bleedRects: bleedMetrics, trimRects: trimMetrics, wholeField },
     legacyChecksForRecord: { accepted: checks.accepted, blockingFailures: checks.blockingFailures, passengerMirrorMae: checks.passengerMirrorMae, structuralTemplateLeak: checks.structuralTemplateLeak, zones: legacy },
-    outputClassForRecord: { disposition: verdict.disposition, blocking: verdict.blocking, confidence: verdict.confidence, evidence: verdict.evidence, model: verdict.model },
+    outputClassForRecord: { disposition: verdict.disposition, blocking: verdict.blocking, confidence: verdict.confidence, evidence: verdict.evidence, model: verdict.model, skipped: verdict.skipped === true },
     continuity,
     panels: panelRecords,
     inspections,
@@ -444,29 +457,30 @@ async function main() {
   };
   writeFileSync(join(OUT, "results.json"), JSON.stringify(results, null, 2));
 
-  const insp = (k) => { const r = inspections[k]; return r?.disposition === "inspected" ? `${r.companyName} / ${r.brandMark} / ${r.cutAtEdge ? "cut" : "clean"}` : "unavailable"; };
+  const insp = (k) => { const r = inspections[k]; return r?.disposition === "inspected" ? `${r.companyName} / ${r.brandMark} / ${r.cutAtEdge ? "cut" : "clean"}` : "not spent"; };
+  const P = (k) => panelRecords.find((q) => q.surfaceKey === k);
+  const Z = (k) => fieldManifest.zones.find((q) => q.surfaceKey === k);
   writeFileSync(join(OUT, "REPORT.md"), [
     "# Field recovery v2 — Draw 1 (`field-thirds-v2`)",
     "",
-    "Harness only. ONE Gemini image call. Every metric below is telemetry; nothing here is a production gate. Look at `draw1-field-v2-raw.png` FIRST.",
+    "Harness only. ONE Gemini image call, ZERO Flash calls. No repair, no gate, no second draw. Every number below is telemetry.",
     "",
-    `Raw master sha256 \`${sha(rawBytes)}\` (${rawBytes.length} B, delivered ${normalized.deliveredWidthPx}×${normalized.deliveredHeightPx}) · canonical master \`${masterHash}\` · GENIE manifest \`${geometryResolution.genieManifestHash}\` (${geometryResolution.state})`,
+    "## In the owner's order — look, then read",
     "",
-    "## CREATIVE PARITY — OWNER JUDGEMENT",
+    `1. **RAW MASTER** — \`draw1-field-v2-raw.png\`, exactly what Gemini returned, hashed and written before any transformation: sha256 \`${sha(rawBytes)}\` (${rawBytes.length} B, delivered ${normalized.deliveredWidthPx}×${normalized.deliveredHeightPx}, nativelyFourK ${normalized.nativelyFourK}).`,
+    ...["driver", "passenger", "hood", "roof", "front", "rear"].map((k, i) => `${i + 2}. **${k.toUpperCase()}** — \`panels/panel-${k}.png\` ${P(k).pixelWidth}×${P(k).pixelHeight} px · sha256 \`${P(k).contentHash}\``),
     "",
-    "Does the raw master look like the professional wraps DesignPanelAI created before the migration — intentional company-name placement, hero imagery, commercial hierarchy — and not generic wallpaper?",
+    "## Raw vs normalized",
     "",
-    "## PRODUCTION PARITY — six deterministic files from the one authority",
+    `Normalized master \`draw1-field-v2-master-masked.png\` sha256 \`${masterHash}\`. Hashes differ: **${rawVsNormalizedHashesDiffer}**. Normalization = ${results.draw.normalization}. The six files are cut from the normalized master (the existing production path); the raw bytes are preserved untouched beside it.`,
     "",
-    "| surface | territory (x, y, w, h) | trim (x, y, w, h) | print in | file px | native px/in | sha256 | source = master | name / mark / edge (record) |",
-    "|---|---|---|---|---|---|---|---|---|",
-    ...SURFACE_ORDER.map((k) => {
-      const zz = fieldManifest.zones.find((q) => q.surfaceKey === k);
-      const p = panelRecords.find((q) => q.surfaceKey === k);
-      return `| ${k} | (${zz.x}, ${zz.y}, ${zz.w}, ${zz.h}) | (${zz.trim.x}, ${zz.trim.y}, ${zz.trim.w}, ${zz.trim.h}) | ${zz.printWidthIn}×${zz.printHeightIn} | ${p.pixelWidth}×${p.pixelHeight} | ${p.effectivePpiNative} | \`${p.contentHash.slice(0, 16)}\` | ${p.sourceMasterHash === masterHash} | ${insp(k)} |`;
-    }),
+    "## Coordinates, hashes, native PPI",
     "",
-    `Six distinct files: ${hashes.size === 6} · Driver ≠ Passenger bytes: ${panelRecords[0].contentHash !== panelRecords[1].contentHash} (passengerMirrorMae ${checks.passengerMirrorMae}) · method \`${panelRecords[0].method}\`, deterministic ${panelRecords.every((p) => p.deterministic)} · extracted ${pct(fieldManifest.fieldLayout.extractedRatio)} of canvas`,
+    "| surface | territory (x, y, w, h) | trim (x, y, w, h) | print in | file px | native px/in | sha256 | sourceMasterHash = normalized master |",
+    "|---|---|---|---|---|---|---|---|",
+    ...SURFACE_ORDER.map((k) => `| ${k} | (${Z(k).x}, ${Z(k).y}, ${Z(k).w}, ${Z(k).h}) | (${Z(k).trim.x}, ${Z(k).trim.y}, ${Z(k).trim.w}, ${Z(k).trim.h}) | ${Z(k).printWidthIn}×${Z(k).printHeightIn} | ${P(k).pixelWidth}×${P(k).pixelHeight} | ${P(k).effectivePpiNative} | \`${P(k).contentHash.slice(0, 16)}\` | ${P(k).sourceMasterHash === masterHash} |`),
+    "",
+    `Six distinct files: ${hashes.size === 6} · Driver ≠ Passenger bytes: ${P("driver").contentHash !== P("passenger").contentHash} · **Passenger mirror MAE ${checks.passengerMirrorMae}** (pixel math from the production checks; low = Passenger is a mirror of Driver) · method \`${panelRecords[0].method}\`, deterministic ${panelRecords.every((p) => p.deterministic)} · GENIE manifest \`${geometryResolution.genieManifestHash}\` (${geometryResolution.state}) · extracted ${pct(fieldManifest.fieldLayout.extractedRatio)} of canvas`,
     "",
     "## Edge-to-edge (colour-blind, telemetry)",
     "",
@@ -488,7 +502,7 @@ async function main() {
     "",
     "## For the record (last)",
     "",
-    `Legacy gate: accepted=${checks.accepted}, blocking=${checks.blockingFailures.length} · output class: \`${verdict.disposition}\` — ${verdict.evidence || ""} · latency ${(elapsedMs / 1000).toFixed(1)}s · image calls 1 · flash inspections ${1 + panels.length}`,
+    `Legacy checks (pixel math, record only): accepted=${checks.accepted}, blocking=${checks.blockingFailures.length} · output class: ${verdict.disposition} · per-file inspections: ${inspections.skipped ? "not spent" : SURFACE_ORDER.map((k) => `${k} ${insp(k)}`).join(", ")} · latency ${(elapsedMs / 1000).toFixed(1)}s · image calls 1 · Flash inspections ${results.flashInspections}`,
     "",
     `Receipts: ${receipts.length ? receipts.map((m) => `\n- ${m}`).join("") : "none"}`,
     "",

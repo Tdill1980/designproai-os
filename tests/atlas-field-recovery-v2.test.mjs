@@ -254,3 +254,16 @@ test("the REAL extractor cuts six distinct canonical files from a synthetic fiel
   }
   assert.deepEqual(panels.map((p) => p.surfaceKey), ["driver", "passenger", "hood", "front", "rear", "roof"], "PANEL_EXTRACTION_ORDER, driver first");
 });
+
+test("Draw 1 spends zero Flash calls by default: both inspections sit behind --inspect, and the raw hash is compared to the normalized hash", () => {
+  const src = readFileSync(new URL("../scripts/atlas-field-recovery-v2.mjs", import.meta.url), "utf8");
+  assert.ok(src.includes('const INSPECT = truthy(args.inspect ?? "false");'), "the --inspect flag must default to false");
+  assert.ok(/const verdict = INSPECT\s*\?\s*await outputClass\.classifyAtlasCandidate/.test(src), "the output-class inspection must be conditional on --inspect");
+  assert.ok(/if \(INSPECT\) \{\s*for \(const p of panels\) \{\s*inspections\[p\.surfaceKey\] = await inspectFileBranding/.test(src), "the per-file inspections must be conditional on --inspect");
+  assert.equal((src.match(/classifyAtlasCandidate\(/g) || []).length, 1);
+  assert.equal((src.match(/inspectFileBranding\(\{/g) || []).length, 1);
+  assert.ok(src.includes("flashInspections: INSPECT ? 1 + panels.length : 0"));
+  assert.ok(src.includes("const rawVsNormalizedHashesDiffer = sha(rawBytes) !== masterHash;"));
+  // raw bytes are written before normalizeAtlasMaster runs
+  assert.ok(src.indexOf('writeFileSync(join(OUT, "draw1-field-v2-raw.png"), rawBytes);') < src.indexOf("await atlas.normalizeAtlasMaster(rawBytes, fieldManifest)"));
+});
