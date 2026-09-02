@@ -33,11 +33,11 @@ import { replaceExactlyOnce } from "./atlas-field-contract.mjs";
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 
-export const ANCHOR_CONTRACT = "designpro.atlas-anchor-restoration.v3";
+export const ANCHOR_CONTRACT = "designpro.atlas-anchor-restoration.v4";
 
 /** Pinned on the F250 fixture (2022 Ford F250 Crew Cab (truck), CENTER_ORDER). */
-export const EXPECTED_ANCHOR_PROMPT_CHARS_F250 = 4531;
-export const EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250 = "571cde0adce5f33d";
+export const EXPECTED_ANCHOR_PROMPT_CHARS_F250 = 4548;
+export const EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250 = "a653eba8f22f426e";
 export const EXPECTED_TEACHING_TEXT_CHARS_V3 = 465;
 export const EXPECTED_TEACHING_TEXT_SHA256_PREFIX_V3 = "4f45d370380c7dcc";
 export const EXPECTED_GUIDE_TEXT_CHARS_V3 = 262;
@@ -53,6 +53,22 @@ export const APPROVED_OBJECT_PHRASES = Object.freeze([
   "Flattened means zero body lines",
   "one continuous rectangle of printed artwork",
 ]);
+/**
+ * v4 (owner-approved 2026-09-02): exactly ONE short negative, naming the last
+ * surviving body line. It is the only negative sentence permitted anywhere in
+ * the added text, and `assertOneNegative` refuses a second one.
+ */
+export const THE_ONE_NEGATIVE = "No tire cutouts.";
+export function assertOneNegative(addedText) {
+  const count = addedText.split(THE_ONE_NEGATIVE).length - 1;
+  if (count !== 1) throw new Error(`anchor contract: the one negative must appear exactly once in the added text (found ${count})`);
+  const others = addedText.replace(THE_ONE_NEGATIVE, "").match(/\b(no|never|not|do not|avoid|without)\b\s+\w+/gi) || [];
+  // "not mirrored artwork" and "never for the sheet" are the two deployed-era sentences carried across; nothing else may be negative.
+  const allowed = new Set(["not mirrored", "never for", "no region"]);
+  const stray = others.filter((m) => !allowed.has(m.toLowerCase()));
+  if (stray.length) throw new Error(`anchor contract: a second negative entered the added text: ${JSON.stringify(stray)}`);
+  return addedText;
+}
 const stripApproved = (text) => APPROVED_OBJECT_PHRASES.reduce((out, phrase) => out.replace(phrase, ""), text);
 
 /** The one deployed sentence carried across verbatim (it names "the sheet"). */
@@ -113,8 +129,8 @@ export function objectDefinitionBlock(vehicleName, bodyClass) {
     "For the vehicle-design embodiment, A.T.L.A.S. represents a top-view vehicle-wrap design as a flattened 2D topology: "
     + `${OBJECT_SHEET_PHRASE}, as they come off the printer before installation, arranged in one dimensionally governed `
     + "top-view layout. Flattened means zero body lines: each region is one continuous rectangle of printed artwork running "
-    + "unbroken to all four edges, because the vinyl is rectangular. Trimming to the vehicle happens after printing, by the "
-    + `installer. Here that vehicle is this exact ${vehicleName} (${bodyClass}).`,
+    + `unbroken to all four edges, because the vinyl is rectangular. ${THE_ONE_NEGATIVE} Trimming to the vehicle happens after `
+    + `printing, by the installer. Here that vehicle is this exact ${vehicleName} (${bodyClass}).`,
     "",
     "Create one cohesive professional vehicle-wrap design across this flattened topology. Every defined topology region is "
     + "printable artwork and must be filled completely edge-to-edge with intentional finished design. The complete flattened "
@@ -184,6 +200,7 @@ export function buildAnchorPrompt(deployedPrompt, { centerOrder } = {}) {
   // Object-first: nothing before the placement tail may name a panel / body object / negative,
   // and the object definition must precede the first design-space instruction and the first "region".
   const beforeTail = persona + objectBlock + creativeBody;
+  assertOneNegative(objectBlock + placement);
   assertNoObjectWords(stripApproved(beforeTail), "the prompt before the placement tail");
   assertNoObjectWords(stripApproved(objectBlock), "the object definition", FORBIDDEN_IN_ADDED_TEXT);
   assertNoObjectWords(placement.replace(NO_CAPTIONS_SENTENCE, ""), "the placement tail", FORBIDDEN_IN_ADDED_TEXT);

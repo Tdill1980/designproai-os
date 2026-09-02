@@ -117,6 +117,10 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            arches, seams, handles) on a black surround. v3: the embodiment
 #            sentence becomes the printed-sheet object, "flattened means zero
 #            body lines"; parts 1 and 3 get the same object-schema cleanup.
+#            v3 RESULT (run 33649706183): rectangles inside the topology, body
+#            detail gone, three centre regions filled; the last body line is
+#            two wheel-arch notches per flank. v4: v3 plus exactly ONE
+#            three-word negative, "No tire cutouts.", the single variable.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
