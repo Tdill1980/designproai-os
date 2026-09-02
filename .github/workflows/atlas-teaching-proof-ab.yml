@@ -54,6 +54,12 @@ on:
           - 2-guide-ablation
           - 3-topology-text
           - 4-teaching-proof-order
+          - measure-accepted-master
+      generation:
+        description: "measure-accepted-master only — generation id or 8-char prefix"
+        required: false
+        type: string
+        default: ""
       draws:
         description: "tests 2, 3 and 4 — independent draws PER ARM (2 arms, so 2x this many image calls)"
         required: true
@@ -179,6 +185,7 @@ jobs:
           AB_CAPTURE_ONLY: ${{ inputs.capture_only }}
           AB_TEST: ${{ inputs.test }}
           AB_DRAWS: ${{ inputs.draws }}
+          AB_GENERATION: ${{ inputs.generation }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -196,6 +203,7 @@ jobs:
             scripts/atlas-topology-text-ab.mjs \
             scripts/atlas-teaching-proof-order-ab.mjs \
             scripts/atlas-teaching-proof-reorder.mjs \
+            scripts/atlas-measure-master.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
             atlas-call1-build \
@@ -207,7 +215,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -239,11 +247,19 @@ jobs:
 
           brief=$(printf '%s' "$AB_BRIEF_B64" | base64 -d)
 
+          # Declared before the case: the remote script runs under `set -u`, so an
+          # array first referenced inside a branch is an unbound-variable abort.
+          extra_args=()
           case "$AB_TEST" in
             1-teaching-proof-field) runner=scripts/atlas-teaching-proof-ab.mjs ;;
             2-guide-ablation)       runner=scripts/atlas-guide-ablation-ab.mjs ;;
             3-topology-text)        runner=scripts/atlas-topology-text-ab.mjs ;;
             4-teaching-proof-order) runner=scripts/atlas-teaching-proof-order-ab.mjs ;;
+            measure-accepted-master)
+              # READ-ONLY. No provider call, no image generation, no write.
+              runner=scripts/atlas-measure-master.mjs
+              extra_args=(--generation "$AB_GENERATION")
+              ;;
             *) echo "unknown test: $AB_TEST"; exit 44 ;;
           esac
           echo "test: $AB_TEST -> $runner"
@@ -260,7 +276,8 @@ jobs:
               --draws "$AB_DRAWS" \
               --brief "$brief" \
               --vehicle-year "$AB_YEAR" --vehicle-make "$AB_MAKE" \
-              --vehicle-model "$AB_MODEL" --vehicle-type "$AB_TYPE"
+              --vehicle-model "$AB_MODEL" --vehicle-type "$AB_TYPE" \
+              "${extra_args[@]+"${extra_args[@]}"}"
           status=$?
           set -e
 
