@@ -1,38 +1,45 @@
 #!/usr/bin/env node
 /**
- * ANCHOR CONTRACT — the ONLY change to the model-facing Call-1 request for the
- * anchor-restoration harness. Not production.
+ * ANCHOR CONTRACT v2 — OBJECT-SCHEMA CLEANUP. Harness only. Not production.
  *
- * Owner decision (2026-09-02): keep production `CENTER_ORDER`
- * (REAR → ROOF → HOOD → FRONT — the order the known-good Flamingo master
- * `5b2eb96c` was authored on); keep the DesignPanelAI creative assembly byte
- * for byte; keep the Flamingo labeled teaching proof, the neutral guide and the
- * two text parts that introduce them; keep model, config and ONE image request.
- * Replace ONLY the output tail of part 0 with the owner's object-first anchor:
+ * Draw 1 of v1 (run 33642303437) put the owner's object-first A.T.L.A.S.
+ * anchor at the END of Part 0, after a creative assembly whose third line had
+ * already told the model the object is "flat orthographic panels" with texture
+ * "flowing across the panels". The earlier instruction won: Gemini drew
+ * vehicle-body-piece mockups and ignored the guide.
  *
- *   A.T.L.A.S. is DesignProAI's canonical flattened design topology. For the
- *   vehicle-design embodiment it represents a top-view vehicle-wrap design as a
- *   flattened 2D topology — the printable exterior skin of the completely
- *   wrapped 3D vehicle pressed flat from above and unfolded into one
- *   dimensionally governed design space. The six regions are subdivisions of
- *   that one skin, not six objects laid out on a sheet.
+ * Owner finding (2026-09-02): the creative intelligence is worth preserving;
+ * the object-schema phrases inside it are not creative intelligence. So v2:
  *
- * The object comes first; the regions appear afterwards, in prose, as
- * subdivisions. No bullet list of panels. No negative list of forbidden
- * gestalts. The centre-order phrase is generated from the SAME order the guide
- * is drawn from, so text and mask cannot disagree.
+ *   1. the governing object definition MOVES to directly after the persona
+ *      line, BEFORE any creative instruction that refers to the design space;
+ *   2. exactly SIX exact-match phrase swaps remove the remaining panel /
+ *      body-object semantics from the creative assembly (each must match
+ *      exactly once, and reversing them plus removing the inserted block must
+ *      reproduce the deployed creative assembly byte for byte);
+ *   3. the placement paragraph (example, guide, six regions as subdivisions,
+ *      Driver/Passenger, no captions) and the gallery-grade close stay at the
+ *      end, because the example and guide follow as parts 1–4.
+ *
+ * Persona, concept, brief, translation, logo architecture, contact lock,
+ * photographic-realism rule, the FINISH_SPECS text, style, movement, depth:
+ * untouched. No negative added. No wheel/window/body-part word added. The
+ * centre-order phrase is generated from the SAME order the guide is drawn
+ * from, so text and mask cannot disagree.
  */
 import { createHash } from "node:crypto";
 import { splitDeployedPrompt } from "./atlas-print-media-contract.mjs";
+import { replaceExactlyOnce } from "./atlas-field-contract.mjs";
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 
-export const ANCHOR_CONTRACT = "designpro.atlas-anchor-restoration.v1";
-export const ANCHOR_TAIL_MAX_CHARS = 1700;
+export const ANCHOR_CONTRACT = "designpro.atlas-anchor-restoration.v2";
 
 /** Pinned on the F250 fixture (2022 Ford F250 Crew Cab (truck), CENTER_ORDER). */
-export const EXPECTED_ANCHOR_TAIL_CHARS_F250 = 1574;
-export const EXPECTED_ANCHOR_TAIL_SHA256_PREFIX_F250 = "352498f8b2c7714c";
+export const EXPECTED_ANCHOR_PROMPT_CHARS_F250 = 4293;
+export const EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250 = "8014a3665f40bd24";
+export const EXPECTED_SWAPPED_CREATIVE_CHARS_F250 = 2720;
+export const EXPECTED_SWAPPED_CREATIVE_SHA256_PREFIX_F250 = "458ea7a537cf9940";
 
 /** The one deployed sentence carried across verbatim (it names "the sheet"). */
 export const NO_CAPTIONS_SENTENCE =
@@ -41,35 +48,40 @@ export const NO_CAPTIONS_SENTENCE =
 const CENTER_SURFACES = Object.freeze(["rear", "roof", "hood", "front"]);
 
 /**
- * Word-boundary patterns the tail may not carry: container / panel-object
- * vocabulary, vehicle anatomy, presentation, and every negative. "sheet" is
- * checked after the one carried-across sentence is removed.
+ * The six exact-match swaps inside the deployed creative assembly. Each is
+ * object-schema language (or, for #6, the last bare "panels" before the
+ * anchor); none is creative direction. Order matters only for the reverse
+ * proof, which undoes them in reverse.
  */
-export const FORBIDDEN_IN_ANCHOR_TAIL = [
-  "panel", "artboard", "layout", "template", "sheet", "band", "field", "wheel", "window", "glass",
-  "silhouette", "render", "mockup", "container", "box", "do not", "never a", "avoid",
-].map((word) => ({ word, pattern: new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i") }));
+export const CREATIVE_OBJECT_SWAPS = Object.freeze([
+  ["flat orthographic panels of pure printed vinyl artwork", "the flattened A.T.L.A.S. design topology of pure printed vinyl artwork"],
+  ["background color and texture flowing across the panels", "background color and texture flowing continuously across the flattened A.T.L.A.S. design topology"],
+  ["rather than flat shapes on bare panel", "rather than flat shapes on bare vinyl"],
+  ["The vinyl finish is gloss across every panel — consistent finish on every surface.", "The vinyl finish is gloss across the whole flattened A.T.L.A.S. design topology — one consistent finish throughout."],
+  ["The artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.", "The artwork fills every topology region edge to edge — solid printed vinyl, corner to corner."],
+  ["angular faceted panels with sharp swept edges", "angular faceted plates with sharp swept edges"],
+].map((pair) => Object.freeze(pair)));
 
-export function assertAnchorTailClean(tail) {
-  if (!tail.includes(NO_CAPTIONS_SENTENCE)) throw new Error("anchor contract: the no-captions sentence is missing");
-  const checked = tail.replace(NO_CAPTIONS_SENTENCE, "");
-  for (const { word, pattern } of FORBIDDEN_IN_ANCHOR_TAIL) {
-    if (pattern.test(checked)) throw new Error(`anchor contract: tail contains forbidden framing "${word}"`);
-  }
-  if (tail.length > ANCHOR_TAIL_MAX_CHARS) {
-    throw new Error(`anchor contract: tail is ${tail.length} chars, over the ${ANCHOR_TAIL_MAX_CHARS} ceiling`);
-  }
-  return tail;
-}
+/**
+ * Object-schema and negative vocabulary that may not appear anywhere in the
+ * prompt BEFORE the placement tail (word-boundary, case-insensitive). "sheet"
+ * survives only inside the carried-across no-captions sentence in the tail.
+ */
+const wordPatterns = (words) => words.map((word) => ({ word, pattern: new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i") }));
+export const FORBIDDEN_OBJECT_WORDS = wordPatterns([
+  "panel", "panels", "artboard", "orthographic", "body", "rectangle", "rectangles", "layout of", "template", "sheet",
+  "mockup", "silhouette",
+]);
+/** The ADDED text (object block + placement tail) additionally carries no anatomy, presentation or negative framing. */
+export const FORBIDDEN_IN_ADDED_TEXT = wordPatterns([
+  "wheel", "window", "glass", "render", "container", "box", "band", "field", "do not", "never a", "avoid",
+]);
 
-/** Object-first: the six regions may only be named AFTER the one design space is defined. */
-export function assertObjectFirst(tail) {
-  const object = tail.indexOf("design space");
-  const region = tail.search(/\bregion/i);
-  if (object < 0) throw new Error("anchor contract: the object definition (\"design space\") is missing");
-  if (region < 0) throw new Error("anchor contract: the regions are never named");
-  if (region < object) throw new Error("anchor contract: a region is named before the object is defined — not object-first");
-  return tail;
+export function assertNoObjectWords(text, where, extra = []) {
+  for (const { word, pattern } of [...FORBIDDEN_OBJECT_WORDS, ...extra]) {
+    if (pattern.test(text)) throw new Error(`anchor contract: ${where} contains forbidden object framing "${word}"`);
+  }
+  return text;
 }
 
 /** "rear, roof, hood and front" — from the SAME order the guide is drawn from. */
@@ -80,17 +92,9 @@ export function centerOrderPhrase(centerOrder) {
   return `${centerOrder.slice(0, 3).join(", ")} and ${centerOrder[3]}`;
 }
 
-/**
- * Build the anchor tail from the deployed tail, so the vehicle context is
- * lifted by the existing regex rather than retyped.
- */
-export function anchorContract(deployedTail, { centerOrder } = {}) {
-  const vehicle = /for this exact (.+?) \((.+?)\)/.exec(deployedTail);
-  if (!vehicle) throw new Error("anchor contract: could not read the vehicle context out of the deployed tail");
-  const [, vehicleName, bodyClass] = vehicle;
-  const centre = centerOrderPhrase(centerOrder);
-
-  const tail = [
+/** The governing object definition — the owner's two paragraphs, vehicle lifted from the deployed tail. */
+export function objectDefinitionBlock(vehicleName, bodyClass) {
+  return [
     "A.T.L.A.S. — DesignProAI’s canonical flattened design topology, on one square 4K canvas.",
     "For the vehicle-design embodiment, A.T.L.A.S. represents a top-view vehicle-wrap design as a flattened 2D topology: "
     + "conceptually, the printable exterior skin of the completely wrapped 3D vehicle is pressed flat from above and unfolded "
@@ -100,6 +104,13 @@ export function anchorContract(deployedTail, { centerOrder } = {}) {
     + "printable artwork and must be filled completely edge-to-edge with intentional finished design. The complete flattened "
     + "topology represents one coordinated vehicle-wrap design.",
     "",
+  ].join("\n");
+}
+
+/** The placement paragraph + close — stays at the end, after the creative assembly. */
+export function placementTail(centerOrder) {
+  const centre = centerOrderPhrase(centerOrder);
+  return [
     "The supplied A.T.L.A.S. example shows how that flattened skin is spatially organized; the supplied neutral guide is this "
     + "vehicle’s own flattened skin at its real proportions. Within it, the two long flank regions (passenger side down the "
     + "left, driver side down the right) carry the wrap’s primary compositions, and the four central regions "
@@ -109,23 +120,69 @@ export function anchorContract(deployedTail, { centerOrder } = {}) {
     "",
     "Gallery-grade custom artwork with real depth, movement and a wow factor, drawn straight-on and flat for printing.",
   ].join("\n");
+}
 
-  return assertObjectFirst(assertAnchorTailClean(tail));
+/** Apply the six swaps (each exactly once) to the deployed creative assembly. */
+export function applyCreativeObjectSwaps(creative) {
+  let out = creative;
+  for (const [from, to] of CREATIVE_OBJECT_SWAPS) out = replaceExactlyOnce(out, from, to);
+  return out;
+}
+
+/** Undo the six swaps in reverse order — the reverse proof. */
+export function reverseCreativeObjectSwaps(swapped) {
+  let out = swapped;
+  for (const [from, to] of [...CREATIVE_OBJECT_SWAPS].reverse()) out = replaceExactlyOnce(out, to, from);
+  return out;
 }
 
 /**
- * @returns { creative, deployedTail, anchorTail, prompt } with the byte
- * identity of the creative assembly PROVEN: the prompt is exactly the deployed
- * creative prefix followed by the anchor tail.
+ * Build the v2 prompt from the deployed prompt:
+ *   persona (deployed L1) · object definition · swapped creative (deployed L3…L19) · placement tail
+ *
+ * @returns { creative, swappedCreative, persona, objectBlock, creativeBody, deployedTail, placement, prompt, swaps, reverseProof }
  */
-export function buildAnchorPrompt(deployedPrompt, opts = {}) {
+export function buildAnchorPrompt(deployedPrompt, { centerOrder } = {}) {
   const { creative, tail } = splitDeployedPrompt(deployedPrompt);
-  const anchorTail = anchorContract(tail, opts);
-  const prompt = creative + anchorTail;
-  if (!prompt.startsWith(creative) || prompt.slice(creative.length) !== anchorTail) {
-    throw new Error("anchor contract: the creative assembly did not survive");
-  }
-  return { creative, deployedTail: tail, anchorTail, prompt };
+  const vehicle = /for this exact (.+?) \((.+?)\)/.exec(tail);
+  if (!vehicle) throw new Error("anchor contract: could not read the vehicle context out of the deployed tail");
+  const [, vehicleName, bodyClass] = vehicle;
+
+  const swappedCreative = applyCreativeObjectSwaps(creative);
+  const cut = swappedCreative.indexOf("\n\n");
+  if (cut < 0) throw new Error("anchor contract: the creative assembly has no persona paragraph break");
+  const persona = swappedCreative.slice(0, cut + 2);
+  const creativeBody = swappedCreative.slice(cut + 2);
+  if (!persona.startsWith("You are the senior vehicle-wrap designer")) throw new Error("anchor contract: the first paragraph is not the persona");
+  if (!creativeBody.startsWith("Design the printed wrap artwork for")) throw new Error("anchor contract: the second paragraph is not the design-space instruction");
+
+  const objectBlock = objectDefinitionBlock(vehicleName, bodyClass);
+  const placement = placementTail(centerOrder);
+  const prompt = persona + objectBlock + creativeBody + placement;
+
+  // Reverse proof: remove the block, undo the swaps → the deployed creative assembly, byte for byte.
+  const reverseProof = reverseCreativeObjectSwaps(persona + creativeBody) === creative
+    && prompt === persona + objectBlock + creativeBody + placement;
+  if (!reverseProof) throw new Error("anchor contract: the reverse proof failed — the creative assembly did not survive");
+
+  // Object-first: nothing before the placement tail may name a panel / body object / negative,
+  // and the object definition must precede the first design-space instruction and the first "region".
+  const beforeTail = persona + objectBlock + creativeBody;
+  assertNoObjectWords(beforeTail, "the prompt before the placement tail");
+  assertNoObjectWords(objectBlock, "the object definition", FORBIDDEN_IN_ADDED_TEXT);
+  assertNoObjectWords(placement.replace(NO_CAPTIONS_SENTENCE, ""), "the placement tail", FORBIDDEN_IN_ADDED_TEXT);
+  const object = prompt.indexOf("design space");
+  if (object < 0) throw new Error("anchor contract: the object definition (\"design space\") is missing");
+  if (prompt.indexOf("Design the printed wrap artwork for") < object) throw new Error("anchor contract: the design-space instruction precedes the object definition");
+  if (prompt.search(/\bregion/i) < object) throw new Error("anchor contract: a region is named before the object is defined — not object-first");
+
+  return {
+    creative, swappedCreative, persona, objectBlock, creativeBody, deployedTail: tail, placement, prompt,
+    swaps: CREATIVE_OBJECT_SWAPS.map(([from, to]) => ({ from, to })),
+    reverseProof,
+    creativeSha256: sha(creative),
+    swappedCreativeSha256: sha(swappedCreative),
+  };
 }
 
 export const GENERATION_CONFIG = {
@@ -144,10 +201,9 @@ function partSummary(part, index) {
 /**
  * The anchor request: the deployed FIVE-part shape, in the deployed order —
  *   [0] prompt  [1] teaching text  [2] Flamingo proof  [refs…]  [n-2] guide text  [n-1] guide image
- * — with only part 0's tail changed. Every other part is asserted against the
- * sha the deployed edge sent (`expected`), so a drifted teaching text, a
- * substituted proof, a moved guide or a missing part is refused before any
- * provider call.
+ * — with only part 0 changed. Every other part is asserted against the sha the
+ * deployed edge sent (`expected`), so a drifted teaching text, a substituted
+ * proof, a moved guide or a missing part is refused before any provider call.
  */
 export function buildAnchorRequest({
   prompt, teachingReferenceText, teachingBytes, targetGuideText, guideBytes, referenceParts = [], model, expected,

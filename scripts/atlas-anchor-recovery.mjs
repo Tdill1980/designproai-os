@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 /**
- * ANCHOR RESTORATION HARNESS — ONE DRAW. Harness only. Not production.
+ * ANCHOR RESTORATION HARNESS v2 — ONE DRAW. Harness only. Not production.
+ *
+ * v2 (owner finding after run 33642303437): the object definition moves to
+ * the front of Part 0 and six exact-match object-schema phrases inside the
+ * creative assembly are replaced (`scripts/atlas-anchor-contract.mjs`). The
+ * reverse proof — undo the swaps, remove the block, get the deployed creative
+ * byte for byte — runs before any provider call.
  *
  * Owner decision (2026-09-02): OPTION A. Production topology, production
  * `CENTER_ORDER` (REAR → ROOF → HOOD → FRONT), the known-good Flamingo labeled
@@ -27,7 +33,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fullBleedMetrics } from "./atlas-fullbleed-metrics.mjs";
 import {
-  ANCHOR_CONTRACT, ANCHOR_TAIL_MAX_CHARS, EXPECTED_ANCHOR_TAIL_CHARS_F250, EXPECTED_ANCHOR_TAIL_SHA256_PREFIX_F250,
+  ANCHOR_CONTRACT, EXPECTED_ANCHOR_PROMPT_CHARS_F250, EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250,
   GENERATION_CONFIG, buildAnchorPrompt, buildAnchorRequest,
 } from "./atlas-anchor-contract.mjs";
 
@@ -222,13 +228,14 @@ async function main() {
     throw new Error(`the harness did not reproduce the deployed prompt (sha ${deployedSha.slice(0, 16)}, ${assembled.prompt.length} chars) — refusing to swap anything on a request production does not send`);
   }
   const anchor = buildAnchorPrompt(assembled.prompt, { centerOrder: atlas.CENTER_ORDER });
-  const creativeSha = sha(anchor.creative);
+  const creativeSha = anchor.creativeSha256;
   if (DEFAULT_FIXTURE && (!creativeSha.startsWith(DEPLOYED.creativeSha256Prefix) || anchor.creative.length !== DEPLOYED.creativeChars)) {
     throw new Error("the creative assembly is not the deployed creative assembly");
   }
-  const tailSha = sha(anchor.anchorTail);
-  if (DEFAULT_FIXTURE && (!tailSha.startsWith(EXPECTED_ANCHOR_TAIL_SHA256_PREFIX_F250) || anchor.anchorTail.length !== EXPECTED_ANCHOR_TAIL_CHARS_F250)) {
-    throw new Error(`the anchor tail is not the owner-approved text (sha ${tailSha.slice(0, 16)}, ${anchor.anchorTail.length} chars)`);
+  if (!anchor.reverseProof) throw new Error("the reverse proof failed — the creative assembly changed by more than the six approved swaps");
+  const promptSha = sha(anchor.prompt);
+  if (DEFAULT_FIXTURE && (!promptSha.startsWith(EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250) || anchor.prompt.length !== EXPECTED_ANCHOR_PROMPT_CHARS_F250)) {
+    throw new Error(`the anchor prompt is not the owner-approved text (sha ${promptSha.slice(0, 16)}, ${anchor.prompt.length} chars)`);
   }
 
   const { parts, request, serialize } = buildAnchorRequest({
@@ -245,8 +252,15 @@ async function main() {
     contract: ANCHOR_CONTRACT,
     source: "the deployed design-panel-ai-generate edge, runs 33577484230 / 33595250518 / 33597621527, same fixture",
     deployedPrompt: { sha256: deployedSha, chars: assembled.prompt.length, expectedSha256: DEPLOYED.promptSha256, expectedChars: DEPLOYED.promptChars, pinned: DEFAULT_FIXTURE },
-    creativeAssembly: { chars: anchor.creative.length, sha256: creativeSha, byteIdentical: true },
-    tail: { deployedChars: anchor.deployedTail.length, deployedSha256: sha(anchor.deployedTail), anchorChars: anchor.anchorTail.length, anchorSha256: tailSha, ceiling: ANCHOR_TAIL_MAX_CHARS },
+    creativeAssembly: {
+      deployedChars: anchor.creative.length, deployedSha256: creativeSha,
+      swappedChars: anchor.swappedCreative.length, swappedSha256: anchor.swappedCreativeSha256,
+      byteIdentical: false, swaps: anchor.swaps, reverseProof: anchor.reverseProof,
+      note: "six exact-match object-schema swaps; reversing them and removing the object block reproduces the deployed creative byte for byte",
+    },
+    order: ["persona (deployed L1)", "object definition (owner)", "swapped creative (deployed L3–L19)", "placement tail"],
+    tail: { deployedChars: anchor.deployedTail.length, deployedSha256: sha(anchor.deployedTail), objectBlockChars: anchor.objectBlock.length, placementChars: anchor.placement.length },
+    anchorPrompt: { chars: anchor.prompt.length, sha256: promptSha, expectedChars: EXPECTED_ANCHOR_PROMPT_CHARS_F250, expectedSha256Prefix: EXPECTED_ANCHOR_PROMPT_SHA256_PREFIX_F250, pinned: DEFAULT_FIXTURE },
     parts: request.parts,
     unchangedParts: {
       teachingText: request.parts[1].sha256 === DEPLOYED.teachingText,
@@ -260,12 +274,15 @@ async function main() {
   writeFileSync(join(OUT, "prompt-deployed.txt"), assembled.prompt);
   writeFileSync(join(OUT, "prompt-anchor.txt"), anchor.prompt);
   writeFileSync(join(OUT, "creative-deployed.txt"), anchor.creative);
+  writeFileSync(join(OUT, "creative-swapped.txt"), anchor.swappedCreative);
+  writeFileSync(join(OUT, "object-block.txt"), anchor.objectBlock);
   writeFileSync(join(OUT, "tail-deployed.txt"), anchor.deployedTail);
-  writeFileSync(join(OUT, "tail-anchor.txt"), anchor.anchorTail);
+  writeFileSync(join(OUT, "tail-placement.txt"), anchor.placement);
+  writeFileSync(join(OUT, "creative-swaps.json"), JSON.stringify(anchor.swaps, null, 2));
   writeFileSync(join(OUT, "requests.json"), JSON.stringify({ vehicle: VEHICLE, brief: BRIEF, draws: DRAWS, request }, null, 2));
   log(`deployed prompt reproduced: sha ${deployedSha.slice(0, 16)}, ${assembled.prompt.length} chars`);
-  log(`creative assembly byte-identical: ${anchor.creative.length} chars, sha ${creativeSha.slice(0, 16)}`);
-  log(`tail: ${anchor.deployedTail.length} chars → ${anchor.anchorTail.length} chars, sha ${tailSha.slice(0, 16)}`);
+  log(`creative assembly: deployed ${anchor.creative.length} chars ${creativeSha.slice(0, 16)} → six object-schema swaps → ${anchor.swappedCreative.length} chars ${anchor.swappedCreativeSha256.slice(0, 16)}; reverse proof ${anchor.reverseProof}`);
+  log(`order: persona · object definition (${anchor.objectBlock.length} chars) · swapped creative · placement (${anchor.placement.length} chars); prompt ${anchor.prompt.length} chars, sha ${promptSha.slice(0, 16)}`);
   log(`request: ${request.partCount} parts, ${request.modelInputImageCount} images, ${request.modelRequestByteSize} bytes (deployed ${DEPLOYED.modelRequestByteSize}); parts 1–4 unchanged: ${JSON.stringify(parity.unchangedParts)}`);
 
   if (captureOnly) {
@@ -378,9 +395,9 @@ async function main() {
 
   const pct = (v) => `${(v * 100).toFixed(1)}%`;
   writeFileSync(join(OUT, "REPORT.md"), [
-    "# Anchor restoration — Draw 1 (production topology, option A)",
+    "# Anchor restoration v2 — object-schema cleanup, Draw 1 (production topology, option A)",
     "",
-    "Harness only. ONE Gemini image call. Only the output tail of part 0 changed; parts 1–4, model, config and the extractor are production's. Every number here is telemetry; nothing is a gate.",
+    "Harness only. ONE Gemini image call. Part 0 = persona · owner object definition · deployed creative with six object-schema swaps (reverse proof true) · placement tail; parts 1–4, model, config and the extractor are production's. Every number here is telemetry; nothing is a gate.",
     "",
     `Raw master \`draw1-anchor-raw.png\` sha256 \`${sha(rawBytes)}\` (${rawBytes.length} B, delivered ${normalized.deliveredWidthPx}×${normalized.deliveredHeightPx}) — look at this FIRST.`,
     "",

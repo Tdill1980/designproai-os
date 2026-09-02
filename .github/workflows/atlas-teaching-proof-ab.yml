@@ -105,6 +105,12 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            (`scripts/atlas-anchor-contract.mjs`). Raw master saved first;
 #            the REAL `cutCallOnePanels` cuts the six files; three reports.
 #            Every metric is telemetry; no gate; no repeatability; STOP after.
+#            v1 RESULT (run 33642303437): vehicle-body-piece mockup; the
+#            anchor at the END of Part 0 was overridden by "flat orthographic
+#            panels" / "flowing across the panels" earlier in the creative
+#            assembly. v2: the object definition moves to the front of Part 0
+#            and six exact-match object-schema phrases are replaced, with a
+#            reverse proof that the creative assembly changed by nothing else.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
