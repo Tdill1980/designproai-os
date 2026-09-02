@@ -1,0 +1,72 @@
+{
+  "source": "the deployed design-panel-ai-generate edge, runs 33595250518 / 33597621527 / 33603368628, same fixture",
+  "deployedPrompt": {
+    "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+    "chars": 4587,
+    "expectedSha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+    "expectedChars": 4587,
+    "pinned": true
+  },
+  "creativeAssembly": {
+    "deployedChars": 2622,
+    "deployedSha256": "7e011c6c20b5fa29b51174ee5d8bbc8d97e137475e00e9d3d96b62e22556a6f2",
+    "fieldChars": 2698,
+    "fieldSha256": "f8326f407ccc26d24f7d0ef15583e900d4f1f59bcfbad663829dcaa691d8a978",
+    "swaps": [
+      {
+        "from": "as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph.",
+        "to": "as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph."
+      },
+      {
+        "from": "This is the single design authority for the complete vehicle, not six independent graphics.",
+        "to": "This is the single design authority for the complete vehicle — one design, one composition."
+      },
+      {
+        "from": "background color and texture flowing across the panels",
+        "to": "background color and texture flowing continuously across the whole field"
+      },
+      {
+        "from": "rather than flat shapes on bare panel",
+        "to": "rather than flat shapes on bare vinyl"
+      },
+      {
+        "from": "The vinyl finish is gloss across every panel — consistent finish on every surface.",
+        "to": "The vinyl finish is gloss across the whole field — one consistent finish throughout."
+      },
+      {
+        "from": "The artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.",
+        "to": "The artwork fills the entire field edge to edge — solid printed vinyl, corner to corner."
+      },
+      {
+        "from": "angular faceted panels with sharp swept edges",
+        "to": "angular faceted plates with sharp swept edges"
+      }
+    ],
+    "reverseProof": true
+  },
+  "tail": {
+    "deployedChars": 1965,
+    "deployedSha256": "655632686d7e76c1d81c65cecb7872fd9cf6404d8c96bf17a8e17f9df47efe2b",
+    "fieldChars": 1354,
+    "fieldSha256": "052e8b3b35fc7e97c751db70b4c4e5f88249176eab65efac9022bf7f464c2064",
+    "ceiling": 1400
+  },
+  "request": {
+    "contract": "designpro.atlas-field-prompt.v2",
+    "partCount": 1,
+    "modelInputImageCount": 0,
+    "structuralImages": 0,
+    "modelRequestByteSize": 4294,
+    "model": "gemini-3-pro-image",
+    "generationConfig": {
+      "responseModalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "imageConfig": {
+        "aspectRatio": "1:1",
+        "imageSize": "4K"
+      }
+    }
+  }
+}
