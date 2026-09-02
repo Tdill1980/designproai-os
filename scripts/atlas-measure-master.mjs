@@ -99,13 +99,16 @@ async function main() {
   if (!generation) throw new Error("--generation <id or 8-char prefix> is required");
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
-  const { data: rows, error } = await supabase
-    .from("designpro_flat_atlas_revisions")
-    .select("generation_id, revision_sequence, master_storage_path, master_content_hash, master_byte_size, manifest, metadata, prompt_version, created_at")
-    .like("generation_id", `${generation}%`)
-    .order("created_at", { ascending: false })
-    .limit(1);
+  // `generation_id` is a uuid column, so a LIKE prefix match is a type error in
+  // Postgres, not a no-match. An exact id filters server-side; a short prefix
+  // scans the recent revisions and matches here.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(generation);
+  const columns = "generation_id, revision_sequence, master_storage_path, master_content_hash, master_byte_size, manifest, metadata, prompt_version, created_at";
+  let query = supabase.from("designpro_flat_atlas_revisions").select(columns).order("created_at", { ascending: false });
+  query = isUuid ? query.eq("generation_id", generation).limit(1) : query.limit(200);
+  const { data: found, error } = await query;
   if (error) throw new Error(`revision lookup failed: ${error.message}`);
+  const rows = isUuid ? found : (found || []).filter((r) => String(r.generation_id).startsWith(generation.toLowerCase()));
   if (!rows?.length) throw new Error(`no revision for generation ${generation}`);
   const row = rows[0];
   log(`generation ${row.generation_id} rev ${row.revision_sequence}, ${row.prompt_version}`);
