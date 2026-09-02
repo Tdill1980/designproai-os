@@ -119,8 +119,12 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            body lines"; parts 1 and 3 get the same object-schema cleanup.
 #            v3 RESULT (run 33649706183): rectangles inside the topology, body
 #            detail gone, three centre regions filled; the last body line is
-#            two wheel-arch notches per flank. v4: v3 plus exactly ONE
-#            three-word negative, "No tire cutouts.", the single variable.
+#            two wheel-arch notches per flank. v4 (run 33650898106): v3 plus
+#            exactly ONE three-word negative, "No tire cutouts." -- REGRESSED
+#            to full body pieces with larger tire cutouts and burned-in labels.
+#            Owner ruling 2026-09-02: no further negative wording; the harness
+#            wording is returned to v3 and Call-1 six-pane conditioning work
+#            stops here. The next move is architectural (test 11).
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
@@ -149,6 +153,7 @@ on:
           - 8-teaching-proof-absent
           - 9-field-recovery
           - 10-anchor-restoration
+          - 11-field-recovery-v2
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -312,6 +317,10 @@ jobs:
             scripts/atlas-field-recovery.mjs \
             scripts/atlas-anchor-contract.mjs \
             scripts/atlas-anchor-recovery.mjs \
+            scripts/atlas-field-territories-v2.mjs \
+            scripts/atlas-field-contract-v2.mjs \
+            scripts/atlas-field-inspection.mjs \
+            scripts/atlas-field-recovery-v2.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -371,6 +380,7 @@ jobs:
             8-teaching-proof-absent) runner=scripts/atlas-teaching-proof-ablation-ab.mjs ;;
             9-field-recovery)        runner=scripts/atlas-field-recovery.mjs ;;
             10-anchor-restoration)   runner=scripts/atlas-anchor-recovery.mjs ;;
+            11-field-recovery-v2)    runner=scripts/atlas-field-recovery-v2.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs

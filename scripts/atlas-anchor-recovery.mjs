@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 /**
- * ANCHOR RESTORATION HARNESS v4 — ONE DRAW. Harness only. Not production.
- *
- * v4 (owner-approved 2026-09-02): v3 plus exactly ONE three-word negative in
- * the embodiment sentence — "No tire cutouts." — the single variable for this
- * draw. The contract refuses any second negative in the added text.
+ * ANCHOR RESTORATION HARNESS v3 — ONE DRAW. Harness only. Not production.
  *
  * v3 (owner-approved 2026-09-02, "flattened as in zero body lines"): the
  * embodiment sentence becomes the printed-sheet object (RULE 0.32) instead of
@@ -414,7 +410,7 @@ async function main() {
 
   const pct = (v) => `${(v * 100).toFixed(1)}%`;
   writeFileSync(join(OUT, "REPORT.md"), [
-    "# Anchor restoration v4 — v3 plus the one negative (\"No tire cutouts.\"), Draw 1 (production topology, option A)",
+    "# Anchor restoration v3 — printed-sheet object, zero body lines, Draw 1 (production topology, option A)",
     "",
     "Harness only. ONE Gemini image call. Part 0 = persona · owner object definition (v3: the six printed vinyl sheets; flattened means zero body lines) · deployed creative with six object-schema swaps · placement tail; parts 1 and 3 carry the same object-schema cleanup (reverse-provable); parts 2 and 4, model, config and the extractor are production's. Every number here is telemetry; nothing is a gate.",
     "",

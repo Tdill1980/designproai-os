@@ -27,8 +27,6 @@ import {
   EXPECTED_TEACHING_TEXT_SHA256_PREFIX_V3,
   GUIDE_TEXT_SWAPS,
   TEACHING_TEXT_SWAPS,
-  THE_ONE_NEGATIVE,
-  assertOneNegative,
   cleanGuideText,
   cleanTeachingText,
   EXPECTED_ANCHOR_PROMPT_CHARS_F250,
@@ -67,7 +65,7 @@ const build = () => buildAnchorPrompt(DEPLOYED_PROMPT, { centerOrder: atlas.CENT
 test("the deployed-prompt fixture is the one the edge sends", () => {
   assert.equal(DEPLOYED_PROMPT.length, 4587);
   assert.equal(sha256(DEPLOYED_PROMPT), "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2");
-  assert.equal(ANCHOR_CONTRACT, "designpro.atlas-anchor-restoration.v4");
+  assert.equal(ANCHOR_CONTRACT, "designpro.atlas-anchor-restoration.v3");
 });
 
 test("production CENTER_ORDER is the known-good order and the placement phrase follows it", () => {
@@ -117,7 +115,7 @@ test("the prompt is persona · object definition · swapped creative · placemen
   assert.ok(r.persona.startsWith("You are the senior vehicle-wrap designer at a sign and wrap company"));
   assert.equal(r.objectBlock, objectDefinitionBlock("2022 Ford F250 Crew Cab", "truck"));
   assert.ok(r.objectBlock.startsWith("A.T.L.A.S. — DesignProAI’s canonical flattened design topology, on one square 4K canvas.\n"));
-  assert.ok(r.objectBlock.includes("For the vehicle-design embodiment, A.T.L.A.S. represents a top-view vehicle-wrap design as a flattened 2D topology: the six rectangular printed vinyl sheets for this vehicle, as they come off the printer before installation, arranged in one dimensionally governed top-view layout. Flattened means zero body lines: each region is one continuous rectangle of printed artwork running unbroken to all four edges, because the vinyl is rectangular. No tire cutouts. Trimming to the vehicle happens after printing, by the installer. Here that vehicle is this exact 2022 Ford F250 Crew Cab (truck)."));
+  assert.ok(r.objectBlock.includes("For the vehicle-design embodiment, A.T.L.A.S. represents a top-view vehicle-wrap design as a flattened 2D topology: the six rectangular printed vinyl sheets for this vehicle, as they come off the printer before installation, arranged in one dimensionally governed top-view layout. Flattened means zero body lines: each region is one continuous rectangle of printed artwork running unbroken to all four edges, because the vinyl is rectangular. Trimming to the vehicle happens after printing, by the installer. Here that vehicle is this exact 2022 Ford F250 Crew Cab (truck)."));
   assert.ok(!/\bskin\b/i.test(r.prompt), "the unfolded-skin metaphor is gone from the whole prompt");
   assert.ok(r.placement.includes("all subdivisions of the same one flattened printed topology"));
   assert.ok(r.objectBlock.includes("Create one cohesive professional vehicle-wrap design across this flattened topology. Every defined topology region is printable artwork and must be filled completely edge-to-edge with intentional finished design. The complete flattened topology represents one coordinated vehicle-wrap design."));
@@ -178,23 +176,6 @@ test("every non-object creative instruction survives byte for byte", () => {
     "Finish: GLOSS — wet-look surface, mirror-sharp specular highlights, deep saturated color, visible reflections in the printed graphic elements.",
     "solid printed vinyl, corner to corner.",
   ]) assert.ok(r.prompt.includes(literal), `creative instruction missing: ${literal.slice(0, 60)}`);
-});
-
-test("v4: exactly one negative, exactly the approved three words, and no second negative can ride in", () => {
-  assert.equal(THE_ONE_NEGATIVE, "No tire cutouts.");
-  const r = build();
-  const added = r.objectBlock + r.placement;
-  assert.equal(added.split(THE_ONE_NEGATIVE).length - 1, 1);
-  assert.doesNotThrow(() => assertOneNegative(added));
-  assert.throws(() => assertOneNegative(added.replace(THE_ONE_NEGATIVE, "")), /exactly once/);
-  assert.throws(() => assertOneNegative(`${added} ${THE_ONE_NEGATIVE}`), /exactly once/);
-  assert.throws(() => assertOneNegative(`${added} No wheel wells.`), /second negative/);
-  assert.throws(() => assertOneNegative(`${added} Never draw windows.`), /second negative/);
-  assert.throws(() => assertOneNegative(`${added} Avoid seams.`), /second negative/);
-  // the negative sits inside the embodiment sentence, right after the rectangle clause
-  assert.ok(r.objectBlock.includes("because the vinyl is rectangular. No tire cutouts. Trimming to the vehicle happens after printing"));
-  // nothing else in the whole prompt is a negative beyond the deployed-era carry-overs
-  assert.equal((r.prompt.match(/\bNo tire cutouts\.\s/g) || []).length, 1);
 });
 
 test("parts 1 and 3: the deployed texts are the pinned ones, the cleanup is exact-match, and it reverses byte for byte", () => {
