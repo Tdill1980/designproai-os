@@ -1,0 +1,637 @@
+{
+  "contract": "designpro.atlas-anchor-restoration.v3",
+  "ranAt": "2026-09-02T15:38:20.493Z",
+  "imageRequestsExecuted": 1,
+  "outputClassInspections": 1,
+  "topology": "rectangular-preview-v1",
+  "centerOrderTopToBottom": [
+    "rear",
+    "roof",
+    "hood",
+    "front"
+  ],
+  "vehicle": {
+    "type": "truck",
+    "year": "2022",
+    "make": "Ford",
+    "model": "F250 Crew Cab"
+  },
+  "brief": "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif company name, high contrast and legible at highway distance.",
+  "model": "gemini-3-pro-image",
+  "parity": {
+    "contract": "designpro.atlas-anchor-restoration.v3",
+    "source": "the deployed design-panel-ai-generate edge, runs 33577484230 / 33595250518 / 33597621527, same fixture",
+    "deployedPrompt": {
+      "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+      "chars": 4587,
+      "expectedSha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+      "expectedChars": 4587,
+      "pinned": true
+    },
+    "creativeAssembly": {
+      "deployedChars": 2622,
+      "deployedSha256": "7e011c6c20b5fa29b51174ee5d8bbc8d97e137475e00e9d3d96b62e22556a6f2",
+      "swappedChars": 2720,
+      "swappedSha256": "458ea7a537cf99404c9e8ddc6a7b439c57b4e04655ea2efd3730938b61cb3612",
+      "byteIdentical": false,
+      "swaps": [
+        {
+          "from": "flat orthographic panels of pure printed vinyl artwork",
+          "to": "the flattened A.T.L.A.S. design topology of pure printed vinyl artwork"
+        },
+        {
+          "from": "background color and texture flowing across the panels",
+          "to": "background color and texture flowing continuously across the flattened A.T.L.A.S. design topology"
+        },
+        {
+          "from": "rather than flat shapes on bare panel",
+          "to": "rather than flat shapes on bare vinyl"
+        },
+        {
+          "from": "The vinyl finish is gloss across every panel — consistent finish on every surface.",
+          "to": "The vinyl finish is gloss across the whole flattened A.T.L.A.S. design topology — one consistent finish throughout."
+        },
+        {
+          "from": "The artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.",
+          "to": "The artwork fills every topology region edge to edge — solid printed vinyl, corner to corner."
+        },
+        {
+          "from": "angular faceted panels with sharp swept edges",
+          "to": "angular faceted plates with sharp swept edges"
+        }
+      ],
+      "reverseProof": true,
+      "note": "six exact-match object-schema swaps; reversing them and removing the object block reproduces the deployed creative byte for byte"
+    },
+    "order": [
+      "persona (deployed L1)",
+      "object definition (owner)",
+      "swapped creative (deployed L3–L19)",
+      "placement tail"
+    ],
+    "tail": {
+      "deployedChars": 1965,
+      "deployedSha256": "655632686d7e76c1d81c65cecb7872fd9cf6404d8c96bf17a8e17f9df47efe2b",
+      "objectBlockChars": 957,
+      "placementChars": 854
+    },
+    "anchorPrompt": {
+      "chars": 4531,
+      "sha256": "571cde0adce5f33da414166909daddf94aad8a5ee5040b72949eb2ea54c726fc",
+      "expectedChars": 4531,
+      "expectedSha256Prefix": "571cde0adce5f33d",
+      "pinned": true
+    },
+    "parts": [
+      {
+        "index": 0,
+        "kind": "text",
+        "chars": 4531,
+        "sha256": "571cde0adce5f33da414166909daddf94aad8a5ee5040b72949eb2ea54c726fc",
+        "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+      },
+      {
+        "index": 1,
+        "kind": "text",
+        "chars": 465,
+        "sha256": "4f45d370380c7dcceebc9be5e3480ec6a4b1e954539f7e34b808d2167fb863db",
+        "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+      },
+      {
+        "index": 2,
+        "kind": "image",
+        "mimeType": "image/png",
+        "bytes": 3430273,
+        "sha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"
+      },
+      {
+        "index": 3,
+        "kind": "text",
+        "chars": 262,
+        "sha256": "3eebedb6096f94099b46d77eeef7de546489dc79b43c2feac7271d7d23fdba45",
+        "preview": "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout."
+      },
+      {
+        "index": 4,
+        "kind": "image",
+        "mimeType": "image/png",
+        "bytes": 137010,
+        "sha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5"
+      }
+    ],
+    "textParts": {
+      "teaching": {
+        "deployedSha256": "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259",
+        "chars": 465,
+        "sha256": "4f45d370380c7dcceebc9be5e3480ec6a4b1e954539f7e34b808d2167fb863db",
+        "swaps": [
+          {
+            "from": "six flat A.T.L.A.S. surfaces:",
+            "to": "six flat A.T.L.A.S. regions:"
+          },
+          {
+            "from": "identify the surface roles and sit in the separation space between artwork regions",
+            "to": "identify the region roles and sit outside the artwork regions"
+          },
+          {
+            "from": "surface identities and relationship of the six surfaces",
+            "to": "region identities and relationship of the six regions"
+          },
+          {
+            "from": "Create an original design for the current customer; do not copy the example's branding or artwork.",
+            "to": "Create an original design for the current customer with its own branding and artwork."
+          }
+        ],
+        "reverseProof": true
+      },
+      "guide": {
+        "deployedSha256": "a93e2c7a16fea22ae78c3e18fdc02b0ec08c7b6e8dd992e7ebf66ec41f480d4d",
+        "chars": 262,
+        "sha256": "3eebedb6096f94099b46d77eeef7de546489dc79b43c2feac7271d7d23fdba45",
+        "swaps": [
+          {
+            "from": "Fill its six regions with the NEW customer design",
+            "to": "Fill its six regions completely, edge to edge, with the NEW customer design"
+          },
+          {
+            "from": "Return flat printable rectangles only; never return a vehicle image.",
+            "to": "Return the flat printed A.T.L.A.S. topology."
+          }
+        ],
+        "reverseProof": true
+      }
+    },
+    "unchangedParts": {
+      "teachingImage": true,
+      "guideImage": true
+    },
+    "request": {
+      "partCount": 5,
+      "modelInputImageCount": 2,
+      "modelRequestByteSize": 4761998,
+      "deployedModelRequestByteSize": 4762109,
+      "model": "gemini-3-pro-image",
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT",
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "4K"
+        }
+      }
+    }
+  },
+  "request": {
+    "label": "ANCHOR-restoration",
+    "contract": "designpro.atlas-anchor-restoration.v3",
+    "model": "gemini-3-pro-image",
+    "generationConfig": {
+      "responseModalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "imageConfig": {
+        "aspectRatio": "1:1",
+        "imageSize": "4K"
+      }
+    },
+    "promptChars": 4531,
+    "promptSha256": "571cde0adce5f33da414166909daddf94aad8a5ee5040b72949eb2ea54c726fc",
+    "partCount": 5,
+    "modelInputImageCount": 2,
+    "customerReferenceCount": 0,
+    "modelRequestByteSize": 4761998,
+    "parts": [
+      {
+        "index": 0,
+        "kind": "text",
+        "chars": 4531,
+        "sha256": "571cde0adce5f33da414166909daddf94aad8a5ee5040b72949eb2ea54c726fc",
+        "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+      },
+      {
+        "index": 1,
+        "kind": "text",
+        "chars": 465,
+        "sha256": "4f45d370380c7dcceebc9be5e3480ec6a4b1e954539f7e34b808d2167fb863db",
+        "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+      },
+      {
+        "index": 2,
+        "kind": "image",
+        "mimeType": "image/png",
+        "bytes": 3430273,
+        "sha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"
+      },
+      {
+        "index": 3,
+        "kind": "text",
+        "chars": 262,
+        "sha256": "3eebedb6096f94099b46d77eeef7de546489dc79b43c2feac7271d7d23fdba45",
+        "preview": "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout."
+      },
+      {
+        "index": 4,
+        "kind": "image",
+        "mimeType": "image/png",
+        "bytes": 137010,
+        "sha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5"
+      }
+    ]
+  },
+  "draw": {
+    "elapsedMs": 34959,
+    "rawSha256": "2d006f494d72b3b2bed1673500706f426c8de2ed3343541fdcc38b2017abbd39",
+    "rawByteSize": 6333029,
+    "deliveredWidthPx": 4096,
+    "deliveredHeightPx": 4096,
+    "nativelyFourK": true,
+    "masterSha256": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+    "designText": ""
+  },
+  "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+  "geometryState": "measured",
+  "edgeToEdgeTelemetry": {
+    "bleedRects": {
+      "contract": "designpro.atlas-fullbleed-colourblind.v1",
+      "zones": {
+        "driver": {
+          "surfaceKey": "driver",
+          "sampledAt": "415x1024",
+          "sampleFactor": 2.78125,
+          "artworkRatio": 0.54361,
+          "nonArtworkRatio": 0.45639,
+          "largestNonArtworkComponentRatio": 0.10365,
+          "edgeReachableFieldRatio": 0.4272,
+          "interiorFieldRatio": 0.02919,
+          "nonArtworkComponentCount": 10,
+          "borderArtworkRatio": 0.56263,
+          "contourScore": 0.45639,
+          "fullBleedCompliant": false
+        },
+        "passenger": {
+          "surfaceKey": "passenger",
+          "sampledAt": "415x1024",
+          "sampleFactor": 2.78125,
+          "artworkRatio": 0.49546,
+          "nonArtworkRatio": 0.50454,
+          "largestNonArtworkComponentRatio": 0.1027,
+          "edgeReachableFieldRatio": 0.44401,
+          "interiorFieldRatio": 0.06053,
+          "nonArtworkComponentCount": 11,
+          "borderArtworkRatio": 0.58177,
+          "contourScore": 0.50454,
+          "fullBleedCompliant": false
+        },
+        "hood": {
+          "surfaceKey": "hood",
+          "sampledAt": "1024x829",
+          "sampleFactor": 1.23242,
+          "artworkRatio": 0.24976,
+          "nonArtworkRatio": 0.75024,
+          "largestNonArtworkComponentRatio": 0.25923,
+          "edgeReachableFieldRatio": 0,
+          "interiorFieldRatio": 0.75024,
+          "nonArtworkComponentCount": 11,
+          "borderArtworkRatio": 1,
+          "contourScore": 0.75024,
+          "fullBleedCompliant": false
+        },
+        "roof": {
+          "surfaceKey": "roof",
+          "sampledAt": "1024x787",
+          "sampleFactor": 1.23242,
+          "artworkRatio": 0.57865,
+          "nonArtworkRatio": 0.42135,
+          "largestNonArtworkComponentRatio": 0.10947,
+          "edgeReachableFieldRatio": 0,
+          "interiorFieldRatio": 0.42135,
+          "nonArtworkComponentCount": 16,
+          "borderArtworkRatio": 1,
+          "contourScore": 0.42135,
+          "fullBleedCompliant": false
+        },
+        "front": {
+          "surfaceKey": "front",
+          "sampledAt": "1024x324",
+          "sampleFactor": 1.23242,
+          "artworkRatio": 0.38938,
+          "nonArtworkRatio": 0.61062,
+          "largestNonArtworkComponentRatio": 0.28019,
+          "edgeReachableFieldRatio": 0,
+          "interiorFieldRatio": 0.61062,
+          "nonArtworkComponentCount": 10,
+          "borderArtworkRatio": 1,
+          "contourScore": 0.61062,
+          "fullBleedCompliant": false
+        },
+        "rear": {
+          "surfaceKey": "rear",
+          "sampledAt": "1024x762",
+          "sampleFactor": 1.23242,
+          "artworkRatio": 0.27761,
+          "nonArtworkRatio": 0.72239,
+          "largestNonArtworkComponentRatio": 0.15677,
+          "edgeReachableFieldRatio": 0.32798,
+          "interiorFieldRatio": 0.39441,
+          "nonArtworkComponentCount": 14,
+          "borderArtworkRatio": 0.18918,
+          "contourScore": 0.72239,
+          "fullBleedCompliant": false
+        }
+      },
+      "fullBleedCompliantSurfaces": [],
+      "fullBleedCompliantCount": 0,
+      "worstNonArtworkRatio": 0.75024,
+      "worstContourScore": 0.75024
+    },
+    "trimRects": {
+      "contract": "designpro.atlas-fullbleed-colourblind.v1",
+      "zones": {
+        "driver": {
+          "surfaceKey": "driver",
+          "sampledAt": "375x1024",
+          "sampleFactor": 2.61133,
+          "artworkRatio": 0.53196,
+          "nonArtworkRatio": 0.46804,
+          "largestNonArtworkComponentRatio": 0.12024,
+          "edgeReachableFieldRatio": 0.38796,
+          "interiorFieldRatio": 0.08009,
+          "nonArtworkComponentCount": 13,
+          "borderArtworkRatio": 0.50895,
+          "contourScore": 0.46804,
+          "fullBleedCompliant": false
+        },
+        "passenger": {
+          "surfaceKey": "passenger",
+          "sampledAt": "375x1024",
+          "sampleFactor": 2.61133,
+          "artworkRatio": 0.48352,
+          "nonArtworkRatio": 0.51648,
+          "largestNonArtworkComponentRatio": 0.1162,
+          "edgeReachableFieldRatio": 0.45806,
+          "interiorFieldRatio": 0.05842,
+          "nonArtworkComponentCount": 12,
+          "borderArtworkRatio": 0.49749,
+          "contourScore": 0.51648,
+          "fullBleedCompliant": false
+        },
+        "hood": {
+          "surfaceKey": "hood",
+          "sampledAt": "1024x802",
+          "sampleFactor": 1.08203,
+          "artworkRatio": 0.29769,
+          "nonArtworkRatio": 0.70231,
+          "largestNonArtworkComponentRatio": 0.24422,
+          "edgeReachableFieldRatio": 0.65487,
+          "interiorFieldRatio": 0.04744,
+          "nonArtworkComponentCount": 7,
+          "borderArtworkRatio": 0.15132,
+          "contourScore": 0.70194,
+          "fullBleedCompliant": false
+        },
+        "roof": {
+          "surfaceKey": "roof",
+          "sampledAt": "1024x755",
+          "sampleFactor": 1.08594,
+          "artworkRatio": 0.61633,
+          "nonArtworkRatio": 0.38367,
+          "largestNonArtworkComponentRatio": 0.07308,
+          "edgeReachableFieldRatio": 0.25405,
+          "interiorFieldRatio": 0.12961,
+          "nonArtworkComponentCount": 19,
+          "borderArtworkRatio": 0.51604,
+          "contourScore": 0.38367,
+          "fullBleedCompliant": false
+        },
+        "front": {
+          "surfaceKey": "front",
+          "sampledAt": "1024x270",
+          "sampleFactor": 1.14453,
+          "artworkRatio": 0.34925,
+          "nonArtworkRatio": 0.65075,
+          "largestNonArtworkComponentRatio": 0.33465,
+          "edgeReachableFieldRatio": 0.63001,
+          "interiorFieldRatio": 0.02074,
+          "nonArtworkComponentCount": 10,
+          "borderArtworkRatio": 0.49768,
+          "contourScore": 0.65075,
+          "fullBleedCompliant": false
+        },
+        "rear": {
+          "surfaceKey": "rear",
+          "sampledAt": "1024x728",
+          "sampleFactor": 1.08984,
+          "artworkRatio": 0.35207,
+          "nonArtworkRatio": 0.64793,
+          "largestNonArtworkComponentRatio": 0.099,
+          "edgeReachableFieldRatio": 0.36836,
+          "interiorFieldRatio": 0.27957,
+          "nonArtworkComponentCount": 13,
+          "borderArtworkRatio": 0.32657,
+          "contourScore": 0.64793,
+          "fullBleedCompliant": false
+        }
+      },
+      "fullBleedCompliantSurfaces": [],
+      "fullBleedCompliantCount": 0,
+      "worstNonArtworkRatio": 0.70231,
+      "worstContourScore": 0.70194
+    },
+    "caveat": "colour-blind edge flood; a smooth or dark painted ground can read as non-artwork (Draw 1 of the field harness). Telemetry does not overrule visual evidence."
+  },
+  "legacyChecksForRecord": {
+    "accepted": false,
+    "blockingFailures": [
+      "rear edgeHoleRatio=0.80871 -- 80.9% of the zone border is hole while 82.7% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+    ],
+    "cutoutSurfaces": [],
+    "passengerMirrorMae": 0.004540611383442266,
+    "structuralTemplateLeak": {
+      "convicted": false,
+      "mirroredFlankGutters": false,
+      "centerSurfaces": []
+    },
+    "zones": {
+      "driver": {
+        "edgeHoleRatio": 0.1497,
+        "largestCutoutComponentRatio": 0.03767,
+        "flatBlackRatio": 0.0687,
+        "opaqueRatio": 1,
+        "lumaStddev": 59.27
+      },
+      "passenger": {
+        "edgeHoleRatio": 0.14967,
+        "largestCutoutComponentRatio": 0.03779,
+        "flatBlackRatio": 0.06891,
+        "opaqueRatio": 1,
+        "lumaStddev": 58.37
+      },
+      "hood": {
+        "edgeHoleRatio": 0,
+        "largestCutoutComponentRatio": 0,
+        "flatBlackRatio": 0,
+        "opaqueRatio": 1,
+        "lumaStddev": 40.63
+      },
+      "roof": {
+        "edgeHoleRatio": 0,
+        "largestCutoutComponentRatio": 0,
+        "flatBlackRatio": 0,
+        "opaqueRatio": 1,
+        "lumaStddev": 52.78
+      },
+      "front": {
+        "edgeHoleRatio": 0,
+        "largestCutoutComponentRatio": 0,
+        "flatBlackRatio": 0,
+        "opaqueRatio": 1,
+        "lumaStddev": 49.55
+      },
+      "rear": {
+        "edgeHoleRatio": 0.80871,
+        "largestCutoutComponentRatio": 0.09881,
+        "flatBlackRatio": 0.17027,
+        "opaqueRatio": 1,
+        "lumaStddev": 42.38
+      }
+    }
+  },
+  "outputClassForRecord": {
+    "disposition": "flat_atlas",
+    "blocking": false,
+    "confidence": 1,
+    "evidence": "The image displays multiple flat, irregularly shaped panels of print artwork laid out on a sheet, with no vehicle body depicted.",
+    "model": "gemini-2.5-flash"
+  },
+  "panels": [
+    {
+      "surfaceKey": "driver",
+      "contentHash": "a46b71059c75fe8f69bbea91cb217511beb61faa75d800bd85f48e0d7309a361",
+      "byteSize": 4684662,
+      "pixelWidth": 2848,
+      "pixelHeight": 1153,
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "bleedInches": 5,
+      "effectivePpiNative": 17.47,
+      "sourceMasterHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "surfaceSourceHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "method": "deterministic_atlas_crop",
+      "deterministic": true,
+      "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+      "geometryAuthorityState": "measured"
+    },
+    {
+      "surfaceKey": "passenger",
+      "contentHash": "e10fea3f8f43b446ca77717dccd80ab50100eaa15d91fbe000ae41187dd448e1",
+      "byteSize": 4471788,
+      "pixelWidth": 2848,
+      "pixelHeight": 1153,
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "bleedInches": 5,
+      "effectivePpiNative": 17.47,
+      "sourceMasterHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "surfaceSourceHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "method": "deterministic_atlas_crop",
+      "deterministic": true,
+      "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+      "geometryAuthorityState": "measured"
+    },
+    {
+      "surfaceKey": "hood",
+      "contentHash": "28e891f0624355146ec7a0bbbd9935d98345b3ccd781e7efb10a27c2860e1f7d",
+      "byteSize": 1526869,
+      "pixelWidth": 1262,
+      "pixelHeight": 1022,
+      "trimWidthIn": 71.5,
+      "trimHeightIn": 56,
+      "printWidthIn": 81.5,
+      "printHeightIn": 66,
+      "bleedInches": 5,
+      "effectivePpiNative": 15.48,
+      "sourceMasterHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "surfaceSourceHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "method": "deterministic_atlas_crop",
+      "deterministic": true,
+      "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+      "geometryAuthorityState": "measured"
+    },
+    {
+      "surfaceKey": "front",
+      "contentHash": "372bd37f40458e319f597e1996020a015918fdd25c16da7aa7a4ce0103707d6c",
+      "byteSize": 717924,
+      "pixelWidth": 1262,
+      "pixelHeight": 399,
+      "trimWidthIn": 129,
+      "trimHeightIn": 34,
+      "printWidthIn": 139,
+      "printHeightIn": 44,
+      "bleedInches": 5,
+      "effectivePpiNative": 9.07,
+      "sourceMasterHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "surfaceSourceHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "method": "deterministic_atlas_crop",
+      "deterministic": true,
+      "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+      "geometryAuthorityState": "measured"
+    },
+    {
+      "surfaceKey": "rear",
+      "contentHash": "31ec214fb8ffc6192bde78506892c3b0d33bb43c48e52e3b57ec72f43645338f",
+      "byteSize": 1426244,
+      "pixelWidth": 1262,
+      "pixelHeight": 939,
+      "trimWidthIn": 76,
+      "trimHeightIn": 54,
+      "printWidthIn": 86,
+      "printHeightIn": 64,
+      "bleedInches": 5,
+      "effectivePpiNative": 14.67,
+      "sourceMasterHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "surfaceSourceHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "method": "deterministic_atlas_crop",
+      "deterministic": true,
+      "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+      "geometryAuthorityState": "measured"
+    },
+    {
+      "surfaceKey": "roof",
+      "contentHash": "5f3dbac6dc7f8158097357c4fd0e256ac997afd7f0f43284855c69b78da55b70",
+      "byteSize": 1979451,
+      "pixelWidth": 1262,
+      "pixelHeight": 970,
+      "trimWidthIn": 74.3,
+      "trimHeightIn": 54.8,
+      "printWidthIn": 84.3,
+      "printHeightIn": 64.8,
+      "bleedInches": 5,
+      "effectivePpiNative": 14.97,
+      "sourceMasterHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "surfaceSourceHash": "5b9195acd1a9f9731c48c2ceba571b90df78cb500a73f967091a767b700f1847",
+      "method": "deterministic_atlas_crop",
+      "deterministic": true,
+      "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+      "geometryAuthorityState": "measured"
+    }
+  ],
+  "canonicalIntegrity": {
+    "sixDistinct": true,
+    "allSourceMasterHashEqualMaster": true,
+    "lineageOk": true,
+    "driverPassengerDistinct": true
+  },
+  "ownerJudgementRequired": [
+    "visual A.T.L.A.S. acceptance",
+    "edge-to-edge acceptance where telemetry and the eye disagree",
+    "one cohesive professional wrap"
+  ],
+  "resolutionStatement": "Native effective PPI per surface is recorded above. No 150 PPI, 300 PPI or 1500 DPI claim is made by this harness."
+}
