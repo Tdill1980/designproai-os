@@ -782,3 +782,72 @@ test("Test 7b refuses a prompt whose output contract it cannot find", () => {
     /no longer opens its output contract with the pinned header/,
   );
 });
+
+// ── TEST 8 — TEACHING PROOF PRESENT vs ABSENT ──────────────────────────────
+//
+// The last unisolated visual variable, and the one with the most ways to stop
+// being an ablation: the wrong pair removed, the prompt drifting with it, a
+// substitute image quietly taking the proof's place, the guide leaving too so
+// two things changed at once, or the proof surviving under another index.
+// Each of those is convicted below without a provider call.
+const teachingAblation = await import("../scripts/atlas-teaching-proof-ablation-ab.mjs");
+
+const ablationInput8 = (overrides = {}) => ({
+  prompt: "CREATIVE ASSEMBLY THAT MUST NOT MOVE.\n\nOUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD",
+  teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows …",
+  targetGuideText: "CURRENT TARGET GUIDE — this final neutral mask alone controls …",
+  teachingBytes: sourceBytes,
+  guideBytes: Buffer.from("a-neutral-six-rectangle-mask"),
+  model: "gemini-3-pro-image",
+  ...overrides,
+});
+
+test("Test 8 removes exactly the teaching pair and keeps the production guide", () => {
+  const { requests } = teachingAblation.buildTeachingAblationRequests(ablationInput8());
+
+  assert.equal(requests.A.partCount, 5);
+  assert.equal(requests.B.partCount, 3);
+  assert.equal(requests.A.modelInputImageCount, 2);
+  assert.equal(requests.B.modelInputImageCount, 1);
+
+  // The prompt does not move.
+  assert.equal(requests.A.parts[0].sha256, requests.B.parts[0].sha256);
+  assert.equal(requests.A.promptChars, requests.B.promptChars);
+
+  // A carries the pinned owner proof; B carries no trace of it.
+  assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256);
+  assert.ok(!requests.B.parts.some((p) => p.sha256 === SOURCE_SHA256), "the proof survived into arm B");
+  assert.ok(!requests.B.parts.some((p) => p.preview?.startsWith("LABELED A.T.L.A.S. TEACHING REFERENCE")));
+
+  // The guide pair is present, unchanged, in BOTH arms — guide state matches
+  // production on both sides, so guide presence is not a second variable.
+  assert.equal(requests.B.parts[1].sha256, requests.A.parts[3].sha256);
+  assert.equal(requests.B.parts[2].sha256, requests.A.parts[4].sha256);
+
+  // B is strictly smaller by the proof it dropped, and by nothing else.
+  assert.ok(requests.B.modelRequestByteSize < requests.A.modelRequestByteSize);
+});
+
+test("Test 8 refuses every way the ablation could stop being one variable", () => {
+  // a substitute image standing in for the removed proof
+  assert.throws(
+    () => teachingAblation.buildTeachingAblationRequests(ablationInput8({
+      guideBytes: sourceBytes,
+    })),
+    /the teaching proof moved|arm B still carries the teaching proof/,
+  );
+  // the proof itself swapped for something that is not the owner's bytes
+  assert.throws(
+    () => teachingAblation.buildTeachingAblationRequests(ablationInput8({
+      teachingBytes: Buffer.from("not the owner proof"),
+    })),
+    /the teaching proof moved/,
+  );
+  // the wrong text part identified as the teaching instruction
+  assert.throws(
+    () => teachingAblation.buildTeachingAblationRequests(ablationInput8({
+      teachingReferenceText: "SOME OTHER INSTRUCTION ENTIRELY",
+    })),
+    /part 1 is not the teaching instruction/,
+  );
+});
