@@ -1,0 +1,2182 @@
+{
+  "contract": "designpro.call1-object-clause.v1",
+  "ranAt": "2026-09-02T03:41:04.590Z",
+  "imageRequestsExecuted": 12,
+  "outputClassInspections": 12,
+  "drawsPerArm": 6,
+  "order": [
+    "A1",
+    "B1",
+    "A2",
+    "B2",
+    "A3",
+    "B3",
+    "A4",
+    "B4",
+    "A5",
+    "B5",
+    "A6",
+    "B6"
+  ],
+  "vehicle": {
+    "type": "truck",
+    "year": "2022",
+    "make": "Ford",
+    "model": "F250 Crew Cab"
+  },
+  "brief": "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif company name, high contrast and legible at highway distance.",
+  "model": "gemini-3-pro-image",
+  "clause": {
+    "A": "the complete flattened panel layout of the vehicle",
+    "B": "the complete layout of the continuous rectangular printed wrap sheets, unwrapped flat before installation and trimming"
+  },
+  "parity": {
+    "source": "the deployed design-panel-ai-generate edge, run 33577484230, same fixture",
+    "modelRequestByteSize": {
+      "measured": 4762109,
+      "harnessArmA": 4762109
+    },
+    "promptChars": {
+      "measured": 4587,
+      "harnessArmA": 4587
+    },
+    "modelInputImageCount": {
+      "measured": 2,
+      "harnessArmA": 2
+    }
+  },
+  "requests": {
+    "A": {
+      "label": "A-deployed-request",
+      "model": "gemini-3-pro-image",
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT",
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "4K"
+        }
+      },
+      "promptChars": 4587,
+      "partCount": 5,
+      "modelInputImageCount": 2,
+      "modelRequestByteSize": 4762109,
+      "parts": [
+        {
+          "index": 0,
+          "kind": "text",
+          "chars": 4587,
+          "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+          "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+        },
+        {
+          "index": 1,
+          "kind": "text",
+          "chars": 502,
+          "sha256": "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259",
+          "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+        },
+        {
+          "index": 2,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 3430273,
+          "sha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"
+        },
+        {
+          "index": 3,
+          "kind": "text",
+          "chars": 260,
+          "sha256": "a93e2c7a16fea22ae78c3e18fdc02b0ec08c7b6e8dd992e7ebf66ec41f480d4d",
+          "preview": "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout."
+        },
+        {
+          "index": 4,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 137010,
+          "sha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5"
+        }
+      ]
+    },
+    "B": {
+      "label": "B-print-media-clause",
+      "model": "gemini-3-pro-image",
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT",
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "4K"
+        }
+      },
+      "promptChars": 4655,
+      "partCount": 5,
+      "modelInputImageCount": 2,
+      "modelRequestByteSize": 4762177,
+      "parts": [
+        {
+          "index": 0,
+          "kind": "text",
+          "chars": 4655,
+          "sha256": "1f491da6a9232d12ecdbd2766d19320583ae56b5cfe5c77a674d012213bd287d",
+          "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+        },
+        {
+          "index": 1,
+          "kind": "text",
+          "chars": 502,
+          "sha256": "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259",
+          "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+        },
+        {
+          "index": 2,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 3430273,
+          "sha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"
+        },
+        {
+          "index": 3,
+          "kind": "text",
+          "chars": 260,
+          "sha256": "a93e2c7a16fea22ae78c3e18fdc02b0ec08c7b6e8dd992e7ebf66ec41f480d4d",
+          "preview": "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout."
+        },
+        {
+          "index": 4,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 137010,
+          "sha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5"
+        }
+      ]
+    }
+  },
+  "draws": [
+    {
+      "draw": 1,
+      "arm": "A",
+      "label": "A1",
+      "file": "A1-deployed.png",
+      "elapsedMs": 45762,
+      "rawSha256": "3e95babfa2161d4547d4946e3b4ea29584f88541a11c81ba97e361d7ea13ae45",
+      "rawByteSize": 6523141,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.38528,
+            "nonArtworkRatio": 0.61472,
+            "largestNonArtworkComponentRatio": 0.25604,
+            "edgeReachableFieldRatio": 0.414,
+            "interiorFieldRatio": 0.20072,
+            "nonArtworkComponentCount": 9,
+            "borderArtworkRatio": 0.34516,
+            "contourScore": 0.61472,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.37644,
+            "nonArtworkRatio": 0.62356,
+            "largestNonArtworkComponentRatio": 0.25772,
+            "edgeReachableFieldRatio": 0.41019,
+            "interiorFieldRatio": 0.21337,
+            "nonArtworkComponentCount": 11,
+            "borderArtworkRatio": 0.33542,
+            "contourScore": 0.62356,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.48233,
+            "nonArtworkRatio": 0.51767,
+            "largestNonArtworkComponentRatio": 0.15604,
+            "edgeReachableFieldRatio": 0.11942,
+            "interiorFieldRatio": 0.39825,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.99946,
+            "contourScore": 0.51767,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.5818,
+            "nonArtworkRatio": 0.4182,
+            "largestNonArtworkComponentRatio": 0.14077,
+            "edgeReachableFieldRatio": 0.12833,
+            "interiorFieldRatio": 0.28987,
+            "nonArtworkComponentCount": 11,
+            "borderArtworkRatio": 0.99945,
+            "contourScore": 0.4182,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.6191,
+            "nonArtworkRatio": 0.3809,
+            "largestNonArtworkComponentRatio": 0.11867,
+            "edgeReachableFieldRatio": 0,
+            "interiorFieldRatio": 0.3809,
+            "nonArtworkComponentCount": 8,
+            "borderArtworkRatio": 1,
+            "contourScore": 0.3809,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.33819,
+            "nonArtworkRatio": 0.66181,
+            "largestNonArtworkComponentRatio": 0.37584,
+            "edgeReachableFieldRatio": 0.53665,
+            "interiorFieldRatio": 0.12515,
+            "nonArtworkComponentCount": 9,
+            "borderArtworkRatio": 0.18834,
+            "contourScore": 0.66181,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.66181,
+        "worstContourScore": 0.66181
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple flat 2D print artwork panels laid out side by side, representing different parts of a vehicle wrap without depicting the vehicle itself.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [
+        "rear edgeHoleRatio=0.66154 -- 66.2% of the zone border is hole while 84.3% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "passengerMirrorMae": 0.0157046568627451,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.21466,
+          "largestCutoutComponentRatio": 0.06292,
+          "flatBlackRatio": 0.12469,
+          "cutoutComponentCount": 404,
+          "opaqueRatio": 1,
+          "lumaStddev": 56.53
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.22079,
+          "largestCutoutComponentRatio": 0.06579,
+          "flatBlackRatio": 0.13151,
+          "cutoutComponentCount": 8,
+          "opaqueRatio": 1,
+          "lumaStddev": 56.66
+        },
+        "front": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 55.23
+        },
+        "hood": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 61.51
+        },
+        "rear": {
+          "edgeHoleRatio": 0.66154,
+          "largestCutoutComponentRatio": 0.09094,
+          "flatBlackRatio": 0.15003,
+          "cutoutComponentCount": 235,
+          "opaqueRatio": 1,
+          "lumaStddev": 47.79
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 47.69
+        }
+      }
+    },
+    {
+      "draw": 1,
+      "arm": "B",
+      "label": "B1",
+      "file": "B1-print-media.png",
+      "elapsedMs": 40807,
+      "rawSha256": "b862282426387c2c41a7ff27676d0579e916b6c9a9f5489a191f796e3fa343f5",
+      "rawByteSize": 7004385,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.54174,
+            "nonArtworkRatio": 0.45826,
+            "largestNonArtworkComponentRatio": 0.18176,
+            "edgeReachableFieldRatio": 0.45826,
+            "interiorFieldRatio": 0,
+            "nonArtworkComponentCount": 9,
+            "borderArtworkRatio": 0.61552,
+            "contourScore": 0.45826,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.52904,
+            "nonArtworkRatio": 0.47096,
+            "largestNonArtworkComponentRatio": 0.33045,
+            "edgeReachableFieldRatio": 0.37762,
+            "interiorFieldRatio": 0.09334,
+            "nonArtworkComponentCount": 8,
+            "borderArtworkRatio": 0.53827,
+            "contourScore": 0.47096,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.2987,
+            "nonArtworkRatio": 0.7013,
+            "largestNonArtworkComponentRatio": 0.33089,
+            "edgeReachableFieldRatio": 0.35876,
+            "interiorFieldRatio": 0.34254,
+            "nonArtworkComponentCount": 5,
+            "borderArtworkRatio": 0.6302,
+            "contourScore": 0.70101,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.32843,
+            "nonArtworkRatio": 0.67157,
+            "largestNonArtworkComponentRatio": 0.1903,
+            "edgeReachableFieldRatio": 0.30581,
+            "interiorFieldRatio": 0.36576,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.31067,
+            "contourScore": 0.66355,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.40661,
+            "nonArtworkRatio": 0.59339,
+            "largestNonArtworkComponentRatio": 0.22259,
+            "edgeReachableFieldRatio": 0.42123,
+            "interiorFieldRatio": 0.17216,
+            "nonArtworkComponentCount": 14,
+            "borderArtworkRatio": 0.22808,
+            "contourScore": 0.58879,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.56593,
+            "nonArtworkRatio": 0.43407,
+            "largestNonArtworkComponentRatio": 0.12295,
+            "edgeReachableFieldRatio": 0.30067,
+            "interiorFieldRatio": 0.1334,
+            "nonArtworkComponentCount": 14,
+            "borderArtworkRatio": 0.65359,
+            "contourScore": 0.43407,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.7013,
+        "worstContourScore": 0.70101
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays multiple views of a truck, showing its body contours and specific parts like the hood, roof, and sides.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": true,
+      "legacyBlockingFailures": [],
+      "passengerMirrorMae": 0.15090430964052287,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.00157,
+          "largestCutoutComponentRatio": 0.00002,
+          "flatBlackRatio": 0.00005,
+          "cutoutComponentCount": 43,
+          "opaqueRatio": 1,
+          "lumaStddev": 72.25
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.00063,
+          "largestCutoutComponentRatio": 0.00016,
+          "flatBlackRatio": 0.00062,
+          "cutoutComponentCount": 9,
+          "opaqueRatio": 1,
+          "lumaStddev": 79.35
+        },
+        "front": {
+          "edgeHoleRatio": 0.02132,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 1,
+          "opaqueRatio": 1,
+          "lumaStddev": 68.74
+        },
+        "hood": {
+          "edgeHoleRatio": 0.01098,
+          "largestCutoutComponentRatio": 0.00041,
+          "flatBlackRatio": 0.00071,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "lumaStddev": 74.31
+        },
+        "rear": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "lumaStddev": 61.27
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0.00043,
+          "flatBlackRatio": 0.00309,
+          "cutoutComponentCount": 10,
+          "opaqueRatio": 1,
+          "lumaStddev": 73.82
+        }
+      }
+    },
+    {
+      "draw": 2,
+      "arm": "A",
+      "label": "A2",
+      "file": "A2-deployed.png",
+      "elapsedMs": 51705,
+      "rawSha256": "fa5396739da5a63d2a7b6ce27e2ae0ddab60235cf545b50db100d4180e72e8eb",
+      "rawByteSize": 7340437,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.28804,
+            "nonArtworkRatio": 0.71196,
+            "largestNonArtworkComponentRatio": 0.53231,
+            "edgeReachableFieldRatio": 0.59977,
+            "interiorFieldRatio": 0.11219,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.46138,
+            "contourScore": 0.71196,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.39464,
+            "nonArtworkRatio": 0.60536,
+            "largestNonArtworkComponentRatio": 0.53573,
+            "edgeReachableFieldRatio": 0.54583,
+            "interiorFieldRatio": 0.05953,
+            "nonArtworkComponentCount": 5,
+            "borderArtworkRatio": 0.5849,
+            "contourScore": 0.60536,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.26414,
+            "nonArtworkRatio": 0.73586,
+            "largestNonArtworkComponentRatio": 0.38356,
+            "edgeReachableFieldRatio": 0.51273,
+            "interiorFieldRatio": 0.22313,
+            "nonArtworkComponentCount": 13,
+            "borderArtworkRatio": 0.47272,
+            "contourScore": 0.73586,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.34215,
+            "nonArtworkRatio": 0.65785,
+            "largestNonArtworkComponentRatio": 0.316,
+            "edgeReachableFieldRatio": 0.55273,
+            "interiorFieldRatio": 0.10512,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.2681,
+            "contourScore": 0.52366,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.4897,
+            "nonArtworkRatio": 0.5103,
+            "largestNonArtworkComponentRatio": 0.06973,
+            "edgeReachableFieldRatio": 0.29831,
+            "interiorFieldRatio": 0.21199,
+            "nonArtworkComponentCount": 22,
+            "borderArtworkRatio": 0.70394,
+            "contourScore": 0.5103,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.53972,
+            "nonArtworkRatio": 0.46028,
+            "largestNonArtworkComponentRatio": 0.11806,
+            "edgeReachableFieldRatio": 0.34611,
+            "interiorFieldRatio": 0.11417,
+            "nonArtworkComponentCount": 15,
+            "borderArtworkRatio": 0.31979,
+            "contourScore": 0.45238,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.73586,
+        "worstContourScore": 0.73586
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 0.95,
+        "evidence": "The image displays a montage of flattened vehicle body parts with their specific contours, not just generic rectangular panels.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": true,
+      "legacyBlockingFailures": [],
+      "passengerMirrorMae": 0.0057552083333333335,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.00307,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0.00009,
+          "cutoutComponentCount": 243,
+          "opaqueRatio": 1,
+          "lumaStddev": 33.83
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.00247,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0.00006,
+          "cutoutComponentCount": 167,
+          "opaqueRatio": 1,
+          "lumaStddev": 35.08
+        },
+        "front": {
+          "edgeHoleRatio": 0.00174,
+          "largestCutoutComponentRatio": 0.00001,
+          "flatBlackRatio": 0.00001,
+          "cutoutComponentCount": 4,
+          "opaqueRatio": 1,
+          "lumaStddev": 65.96
+        },
+        "hood": {
+          "edgeHoleRatio": 0.00961,
+          "largestCutoutComponentRatio": 0.00001,
+          "flatBlackRatio": 0.0001,
+          "cutoutComponentCount": 87,
+          "opaqueRatio": 1,
+          "lumaStddev": 33.31
+        },
+        "rear": {
+          "edgeHoleRatio": 0.00074,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0.00001,
+          "cutoutComponentCount": 7,
+          "opaqueRatio": 1,
+          "lumaStddev": 54.69
+        },
+        "roof": {
+          "edgeHoleRatio": 0.00337,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0.0001,
+          "cutoutComponentCount": 83,
+          "opaqueRatio": 1,
+          "lumaStddev": 38.11
+        }
+      }
+    },
+    {
+      "draw": 2,
+      "arm": "B",
+      "label": "B2",
+      "file": "B2-print-media.png",
+      "elapsedMs": 34962,
+      "rawSha256": "5857d0f7ebf0e9c444767c645f805b760842b0c2358c6aadf33230e3b57cedf0",
+      "rawByteSize": 5278745,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.53707,
+            "nonArtworkRatio": 0.46293,
+            "largestNonArtworkComponentRatio": 0.23161,
+            "edgeReachableFieldRatio": 0.36725,
+            "interiorFieldRatio": 0.09568,
+            "nonArtworkComponentCount": 8,
+            "borderArtworkRatio": 0.08699,
+            "contourScore": 0.41191,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.54525,
+            "nonArtworkRatio": 0.45475,
+            "largestNonArtworkComponentRatio": 0.23119,
+            "edgeReachableFieldRatio": 0.37914,
+            "interiorFieldRatio": 0.07561,
+            "nonArtworkComponentCount": 7,
+            "borderArtworkRatio": 0.08281,
+            "contourScore": 0.40296,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.55237,
+            "nonArtworkRatio": 0.44763,
+            "largestNonArtworkComponentRatio": 0.21727,
+            "edgeReachableFieldRatio": 0.34024,
+            "interiorFieldRatio": 0.10739,
+            "nonArtworkComponentCount": 11,
+            "borderArtworkRatio": 0.43652,
+            "contourScore": 0.43039,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.559,
+            "nonArtworkRatio": 0.441,
+            "largestNonArtworkComponentRatio": 0.28736,
+            "edgeReachableFieldRatio": 0.31421,
+            "interiorFieldRatio": 0.1268,
+            "nonArtworkComponentCount": 10,
+            "borderArtworkRatio": 0.44527,
+            "contourScore": 0.42063,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.59982,
+            "nonArtworkRatio": 0.40018,
+            "largestNonArtworkComponentRatio": 0.04987,
+            "edgeReachableFieldRatio": 0.36898,
+            "interiorFieldRatio": 0.0312,
+            "nonArtworkComponentCount": 17,
+            "borderArtworkRatio": 0.35996,
+            "contourScore": 0.37452,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.5994,
+            "nonArtworkRatio": 0.4006,
+            "largestNonArtworkComponentRatio": 0.2708,
+            "edgeReachableFieldRatio": 0.37473,
+            "interiorFieldRatio": 0.02587,
+            "nonArtworkComponentCount": 5,
+            "borderArtworkRatio": 0.43778,
+            "contourScore": 0.33139,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.46293,
+        "worstContourScore": 0.43039
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays a flat layout of vehicle body panels with contours and window cutouts, indicating vehicle parts.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [
+        "driver edgeHoleRatio=0.91366 -- 91.4% of the zone border is hole while 56.6% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "passenger edgeHoleRatio=0.91372 -- 91.4% of the zone border is hole while 56.7% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "hood edgeHoleRatio=0.46551 -- 46.6% of the zone border is hole while 77.8% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "roof edgeHoleRatio=0.48915 -- 48.9% of the zone border is hole while 70.8% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "rear edgeHoleRatio=0.50205 -- 50.2% of the zone border is hole while 72.6% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "passengerMirrorMae": 0.0023733660130718956,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.91366,
+          "largestCutoutComponentRatio": 0.36727,
+          "flatBlackRatio": 0.42704,
+          "cutoutComponentCount": 312,
+          "opaqueRatio": 1,
+          "lumaStddev": 68.02
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.91372,
+          "largestCutoutComponentRatio": 0.36693,
+          "flatBlackRatio": 0.42628,
+          "cutoutComponentCount": 291,
+          "opaqueRatio": 1,
+          "lumaStddev": 68.27
+        },
+        "front": {
+          "edgeHoleRatio": 0.29681,
+          "largestCutoutComponentRatio": 0.03654,
+          "flatBlackRatio": 0.07267,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "lumaStddev": 72.61
+        },
+        "hood": {
+          "edgeHoleRatio": 0.46551,
+          "largestCutoutComponentRatio": 0.21599,
+          "flatBlackRatio": 0.21792,
+          "cutoutComponentCount": 4,
+          "opaqueRatio": 1,
+          "lumaStddev": 63.19
+        },
+        "rear": {
+          "edgeHoleRatio": 0.50205,
+          "largestCutoutComponentRatio": 0.26897,
+          "flatBlackRatio": 0.26951,
+          "cutoutComponentCount": 4,
+          "opaqueRatio": 1,
+          "lumaStddev": 66.21
+        },
+        "roof": {
+          "edgeHoleRatio": 0.48915,
+          "largestCutoutComponentRatio": 0.28635,
+          "flatBlackRatio": 0.28799,
+          "cutoutComponentCount": 4,
+          "opaqueRatio": 1,
+          "lumaStddev": 60.2
+        }
+      }
+    },
+    {
+      "draw": 3,
+      "arm": "A",
+      "label": "A3",
+      "file": "A3-deployed.png",
+      "elapsedMs": 34667,
+      "rawSha256": "df8cd8d03f59cc6f3180f3f63b1338f5319318cf247c60c7403967983e4277ec",
+      "rawByteSize": 4717380,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.38078,
+            "nonArtworkRatio": 0.61922,
+            "largestNonArtworkComponentRatio": 0.21098,
+            "edgeReachableFieldRatio": 0.35095,
+            "interiorFieldRatio": 0.26827,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.08212,
+            "contourScore": 0.61174,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.3896,
+            "nonArtworkRatio": 0.6104,
+            "largestNonArtworkComponentRatio": 0.21092,
+            "edgeReachableFieldRatio": 0.35086,
+            "interiorFieldRatio": 0.25954,
+            "nonArtworkComponentCount": 11,
+            "borderArtworkRatio": 0.08246,
+            "contourScore": 0.60274,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.24183,
+            "nonArtworkRatio": 0.75817,
+            "largestNonArtworkComponentRatio": 0.17904,
+            "edgeReachableFieldRatio": 0.59686,
+            "interiorFieldRatio": 0.16131,
+            "nonArtworkComponentCount": 6,
+            "borderArtworkRatio": 0.29254,
+            "contourScore": 0.75817,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.24143,
+            "nonArtworkRatio": 0.75857,
+            "largestNonArtworkComponentRatio": 0.40377,
+            "edgeReachableFieldRatio": 0.62546,
+            "interiorFieldRatio": 0.1331,
+            "nonArtworkComponentCount": 10,
+            "borderArtworkRatio": 0.0749,
+            "contourScore": 0.61238,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.52169,
+            "nonArtworkRatio": 0.47831,
+            "largestNonArtworkComponentRatio": 0.08157,
+            "edgeReachableFieldRatio": 0.05329,
+            "interiorFieldRatio": 0.42502,
+            "nonArtworkComponentCount": 11,
+            "borderArtworkRatio": 0.38187,
+            "contourScore": 0.46679,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.31958,
+            "nonArtworkRatio": 0.68042,
+            "largestNonArtworkComponentRatio": 0.29267,
+            "edgeReachableFieldRatio": 0.34782,
+            "interiorFieldRatio": 0.3326,
+            "nonArtworkComponentCount": 13,
+            "borderArtworkRatio": 0.22982,
+            "contourScore": 0.62198,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.75857,
+        "worstContourScore": 0.75817
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays individual, flat pieces of vehicle wrap artwork laid out on a sheet, not a depiction of a vehicle.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [
+        "hood edgeHoleRatio=0.52263 -- 52.3% of the zone border is hole while 69.8% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "roof edgeHoleRatio=0.78237 -- 78.2% of the zone border is hole while 59.4% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "front edgeHoleRatio=0.62137 -- 62.1% of the zone border is hole while 94.3% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "rear edgeHoleRatio=0.75405 -- 75.4% of the zone border is hole while 70.5% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "passengerMirrorMae": 0.0014239515250544662,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.90577,
+          "largestCutoutComponentRatio": 0.2107,
+          "flatBlackRatio": 0.48257,
+          "cutoutComponentCount": 31,
+          "opaqueRatio": 1,
+          "lumaStddev": 71.32
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.90543,
+          "largestCutoutComponentRatio": 0.21057,
+          "flatBlackRatio": 0.48231,
+          "cutoutComponentCount": 33,
+          "opaqueRatio": 1,
+          "lumaStddev": 71.43
+        },
+        "front": {
+          "edgeHoleRatio": 0.62137,
+          "largestCutoutComponentRatio": 0.05235,
+          "flatBlackRatio": 0.05235,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "lumaStddev": 59.72
+        },
+        "hood": {
+          "edgeHoleRatio": 0.52263,
+          "largestCutoutComponentRatio": 0.17908,
+          "flatBlackRatio": 0.29675,
+          "cutoutComponentCount": 5,
+          "opaqueRatio": 1,
+          "lumaStddev": 62.79
+        },
+        "rear": {
+          "edgeHoleRatio": 0.75405,
+          "largestCutoutComponentRatio": 0.29238,
+          "flatBlackRatio": 0.29238,
+          "cutoutComponentCount": 1,
+          "opaqueRatio": 1,
+          "lumaStddev": 65.66
+        },
+        "roof": {
+          "edgeHoleRatio": 0.78237,
+          "largestCutoutComponentRatio": 0.40414,
+          "flatBlackRatio": 0.40414,
+          "cutoutComponentCount": 1,
+          "opaqueRatio": 1,
+          "lumaStddev": 68.21
+        }
+      }
+    },
+    {
+      "draw": 3,
+      "arm": "B",
+      "label": "B3",
+      "file": "B3-print-media.png",
+      "elapsedMs": 41244,
+      "rawSha256": "7060e1dfe8a341844bd3d4588e171113f122ef9eb0dce3913843ebadd922ddf3",
+      "rawByteSize": 7795625,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.57362,
+            "nonArtworkRatio": 0.42638,
+            "largestNonArtworkComponentRatio": 0.24137,
+            "edgeReachableFieldRatio": 0.37168,
+            "interiorFieldRatio": 0.05471,
+            "nonArtworkComponentCount": 5,
+            "borderArtworkRatio": 0.12422,
+            "contourScore": 0.38804,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.57437,
+            "nonArtworkRatio": 0.42563,
+            "largestNonArtworkComponentRatio": 0.24136,
+            "edgeReachableFieldRatio": 0.37175,
+            "interiorFieldRatio": 0.05389,
+            "nonArtworkComponentCount": 5,
+            "borderArtworkRatio": 0.12422,
+            "contourScore": 0.38724,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.66667,
+            "nonArtworkRatio": 0.33333,
+            "largestNonArtworkComponentRatio": 0.18665,
+            "edgeReachableFieldRatio": 0.23598,
+            "interiorFieldRatio": 0.09735,
+            "nonArtworkComponentCount": 9,
+            "borderArtworkRatio": 0.41491,
+            "contourScore": 0.3143,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.43587,
+            "nonArtworkRatio": 0.56413,
+            "largestNonArtworkComponentRatio": 0.24079,
+            "edgeReachableFieldRatio": 0.30214,
+            "interiorFieldRatio": 0.26199,
+            "nonArtworkComponentCount": 13,
+            "borderArtworkRatio": 0.21697,
+            "contourScore": 0.49851,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.52478,
+            "nonArtworkRatio": 0.47522,
+            "largestNonArtworkComponentRatio": 0.1027,
+            "edgeReachableFieldRatio": 0.32337,
+            "interiorFieldRatio": 0.15184,
+            "nonArtworkComponentCount": 13,
+            "borderArtworkRatio": 0.63113,
+            "contourScore": 0.47522,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.47366,
+            "nonArtworkRatio": 0.52634,
+            "largestNonArtworkComponentRatio": 0.2168,
+            "edgeReachableFieldRatio": 0.33511,
+            "interiorFieldRatio": 0.19123,
+            "nonArtworkComponentCount": 16,
+            "borderArtworkRatio": 0.52775,
+            "contourScore": 0.52634,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.56413,
+        "worstContourScore": 0.52634
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays a montage of vehicle body parts including contours, windows, mirrors, and lights, laid out flat.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [],
+      "passengerMirrorMae": 0.003640556917211329,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.00282,
+          "largestCutoutComponentRatio": 0.00656,
+          "flatBlackRatio": 0.02058,
+          "cutoutComponentCount": 471,
+          "opaqueRatio": 1,
+          "lumaStddev": 46.39
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.00301,
+          "largestCutoutComponentRatio": 0.00592,
+          "flatBlackRatio": 0.01953,
+          "cutoutComponentCount": 577,
+          "opaqueRatio": 1,
+          "lumaStddev": 46.35
+        },
+        "front": {
+          "edgeHoleRatio": 0.12016,
+          "largestCutoutComponentRatio": 0.0445,
+          "flatBlackRatio": 0.22498,
+          "cutoutComponentCount": 141,
+          "opaqueRatio": 1,
+          "lumaStddev": 54.94
+        },
+        "hood": {
+          "edgeHoleRatio": 0.02301,
+          "largestCutoutComponentRatio": 0.01659,
+          "flatBlackRatio": 0.0286,
+          "cutoutComponentCount": 291,
+          "opaqueRatio": 1,
+          "lumaStddev": 54.13
+        },
+        "rear": {
+          "edgeHoleRatio": 0.02337,
+          "largestCutoutComponentRatio": 0.00276,
+          "flatBlackRatio": 0.0082,
+          "cutoutComponentCount": 19,
+          "opaqueRatio": 1,
+          "lumaStddev": 49.2
+        },
+        "roof": {
+          "edgeHoleRatio": 0.0199,
+          "largestCutoutComponentRatio": 0.00381,
+          "flatBlackRatio": 0.00861,
+          "cutoutComponentCount": 55,
+          "opaqueRatio": 1,
+          "lumaStddev": 41.96
+        }
+      }
+    },
+    {
+      "draw": 4,
+      "arm": "A",
+      "label": "A4",
+      "file": "A4-deployed.png",
+      "elapsedMs": 35090,
+      "rawSha256": "9c36cb33adfd443ed8774a6bf7ac726ace68507fdd1b106692da8b40f94013e7",
+      "rawByteSize": 6449481,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.50113,
+            "nonArtworkRatio": 0.49887,
+            "largestNonArtworkComponentRatio": 0.10857,
+            "edgeReachableFieldRatio": 0.39473,
+            "interiorFieldRatio": 0.10414,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.19798,
+            "contourScore": 0.49152,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.47554,
+            "nonArtworkRatio": 0.52446,
+            "largestNonArtworkComponentRatio": 0.13137,
+            "edgeReachableFieldRatio": 0.43206,
+            "interiorFieldRatio": 0.09241,
+            "nonArtworkComponentCount": 11,
+            "borderArtworkRatio": 0.18998,
+            "contourScore": 0.52446,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.4691,
+            "nonArtworkRatio": 0.5309,
+            "largestNonArtworkComponentRatio": 0.06557,
+            "edgeReachableFieldRatio": 0.46596,
+            "interiorFieldRatio": 0.06494,
+            "nonArtworkComponentCount": 17,
+            "borderArtworkRatio": 0.13749,
+            "contourScore": 0.5309,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.23506,
+            "nonArtworkRatio": 0.76494,
+            "largestNonArtworkComponentRatio": 0.11615,
+            "edgeReachableFieldRatio": 0.72466,
+            "interiorFieldRatio": 0.04027,
+            "nonArtworkComponentCount": 21,
+            "borderArtworkRatio": 0.13129,
+            "contourScore": 0.76494,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.46448,
+            "nonArtworkRatio": 0.53552,
+            "largestNonArtworkComponentRatio": 0.19548,
+            "edgeReachableFieldRatio": 0.37874,
+            "interiorFieldRatio": 0.15678,
+            "nonArtworkComponentCount": 18,
+            "borderArtworkRatio": 0.53938,
+            "contourScore": 0.53552,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.47726,
+            "nonArtworkRatio": 0.52274,
+            "largestNonArtworkComponentRatio": 0.23008,
+            "edgeReachableFieldRatio": 0.3095,
+            "interiorFieldRatio": 0.21324,
+            "nonArtworkComponentCount": 19,
+            "borderArtworkRatio": 0.20768,
+            "contourScore": 0.52274,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.76494,
+        "worstContourScore": 0.76494
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple rectangular panels with graphics, laid out flat, representing different parts of a vehicle wrap design.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [
+        "driver edgeHoleRatio=0.66707 -- 66.7% of the zone border is hole while 92.4% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "front edgeHoleRatio=0.35662 -- 35.7% of the zone border is hole while 80.8% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "rear edgeHoleRatio=0.52331 -- 52.3% of the zone border is hole while 76.6% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "passengerMirrorMae": 0.04771871595860566,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.66707,
+          "largestCutoutComponentRatio": 0.05887,
+          "flatBlackRatio": 0.07228,
+          "cutoutComponentCount": 211,
+          "opaqueRatio": 1,
+          "lumaStddev": 51.27
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.32407,
+          "largestCutoutComponentRatio": 0.055,
+          "flatBlackRatio": 0.06054,
+          "cutoutComponentCount": 189,
+          "opaqueRatio": 1,
+          "lumaStddev": 51.56
+        },
+        "front": {
+          "edgeHoleRatio": 0.35662,
+          "largestCutoutComponentRatio": 0.18742,
+          "flatBlackRatio": 0.18753,
+          "cutoutComponentCount": 28,
+          "opaqueRatio": 1,
+          "lumaStddev": 50.58
+        },
+        "hood": {
+          "edgeHoleRatio": 0.26439,
+          "largestCutoutComponentRatio": 0.04517,
+          "flatBlackRatio": 0.0766,
+          "cutoutComponentCount": 124,
+          "opaqueRatio": 1,
+          "lumaStddev": 64.29
+        },
+        "rear": {
+          "edgeHoleRatio": 0.52331,
+          "largestCutoutComponentRatio": 0.10892,
+          "flatBlackRatio": 0.22042,
+          "cutoutComponentCount": 387,
+          "opaqueRatio": 1,
+          "lumaStddev": 56.13
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 39.26
+        }
+      }
+    },
+    {
+      "draw": 4,
+      "arm": "B",
+      "label": "B4",
+      "file": "B4-print-media.png",
+      "elapsedMs": 35150,
+      "rawSha256": "c84b54048b4f339cf63f0a6b876bcbdcc6f967c3673f23321e14fbdc37bb7b8a",
+      "rawByteSize": 7172414,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.45094,
+            "nonArtworkRatio": 0.54906,
+            "largestNonArtworkComponentRatio": 0.08931,
+            "edgeReachableFieldRatio": 0.17634,
+            "interiorFieldRatio": 0.37272,
+            "nonArtworkComponentCount": 19,
+            "borderArtworkRatio": 0.54245,
+            "contourScore": 0.54906,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.45557,
+            "nonArtworkRatio": 0.54443,
+            "largestNonArtworkComponentRatio": 0.08886,
+            "edgeReachableFieldRatio": 0.32446,
+            "interiorFieldRatio": 0.21997,
+            "nonArtworkComponentCount": 18,
+            "borderArtworkRatio": 0.76931,
+            "contourScore": 0.54443,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.22372,
+            "nonArtworkRatio": 0.77628,
+            "largestNonArtworkComponentRatio": 0.20515,
+            "edgeReachableFieldRatio": 0,
+            "interiorFieldRatio": 0.77628,
+            "nonArtworkComponentCount": 13,
+            "borderArtworkRatio": 1,
+            "contourScore": 0.77628,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.33744,
+            "nonArtworkRatio": 0.66256,
+            "largestNonArtworkComponentRatio": 0.11423,
+            "edgeReachableFieldRatio": 0.05468,
+            "interiorFieldRatio": 0.60789,
+            "nonArtworkComponentCount": 19,
+            "borderArtworkRatio": 0.88557,
+            "contourScore": 0.66256,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.45345,
+            "nonArtworkRatio": 0.54655,
+            "largestNonArtworkComponentRatio": 0.20797,
+            "edgeReachableFieldRatio": 0,
+            "interiorFieldRatio": 0.54655,
+            "nonArtworkComponentCount": 6,
+            "borderArtworkRatio": 1,
+            "contourScore": 0.54655,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.34509,
+            "nonArtworkRatio": 0.65491,
+            "largestNonArtworkComponentRatio": 0.14256,
+            "edgeReachableFieldRatio": 0.14256,
+            "interiorFieldRatio": 0.51235,
+            "nonArtworkComponentCount": 16,
+            "borderArtworkRatio": 0.99916,
+            "contourScore": 0.65491,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.77628,
+        "worstContourScore": 0.77628
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple rectangular regions of flat 2D print artwork laid out side by side, representing panels for a vehicle wrap without depicting the vehicle itself.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [],
+      "passengerMirrorMae": 0.005076763344226579,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.10831,
+          "largestCutoutComponentRatio": 0.0651,
+          "flatBlackRatio": 0.06581,
+          "cutoutComponentCount": 3,
+          "opaqueRatio": 1,
+          "lumaStddev": 53.74
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.10813,
+          "largestCutoutComponentRatio": 0.06512,
+          "flatBlackRatio": 0.06583,
+          "cutoutComponentCount": 3,
+          "opaqueRatio": 1,
+          "lumaStddev": 53.41
+        },
+        "front": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 52.24
+        },
+        "hood": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 54.01
+        },
+        "rear": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 48.21
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 39.9
+        }
+      }
+    },
+    {
+      "draw": 5,
+      "arm": "A",
+      "label": "A5",
+      "file": "A5-deployed.png",
+      "elapsedMs": 36662,
+      "rawSha256": "75dec4d429373e0a6621389d67a4523b281ed8ffe379e6b02aa9dd995f76ca3d",
+      "rawByteSize": 7604038,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.61363,
+            "nonArtworkRatio": 0.38637,
+            "largestNonArtworkComponentRatio": 0.17046,
+            "edgeReachableFieldRatio": 0.10691,
+            "interiorFieldRatio": 0.27946,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.62491,
+            "contourScore": 0.38637,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.69435,
+            "nonArtworkRatio": 0.30565,
+            "largestNonArtworkComponentRatio": 0.05423,
+            "edgeReachableFieldRatio": 0.20134,
+            "interiorFieldRatio": 0.1043,
+            "nonArtworkComponentCount": 14,
+            "borderArtworkRatio": 0.58629,
+            "contourScore": 0.30565,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.60626,
+            "nonArtworkRatio": 0.39374,
+            "largestNonArtworkComponentRatio": 0.16289,
+            "edgeReachableFieldRatio": 0.1123,
+            "interiorFieldRatio": 0.28144,
+            "nonArtworkComponentCount": 7,
+            "borderArtworkRatio": 0.99217,
+            "contourScore": 0.39374,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.56947,
+            "nonArtworkRatio": 0.43053,
+            "largestNonArtworkComponentRatio": 0.14548,
+            "edgeReachableFieldRatio": 0.10927,
+            "interiorFieldRatio": 0.32126,
+            "nonArtworkComponentCount": 10,
+            "borderArtworkRatio": 0.99862,
+            "contourScore": 0.43053,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.47973,
+            "nonArtworkRatio": 0.52027,
+            "largestNonArtworkComponentRatio": 0.10431,
+            "edgeReachableFieldRatio": 0,
+            "interiorFieldRatio": 0.52027,
+            "nonArtworkComponentCount": 11,
+            "borderArtworkRatio": 1,
+            "contourScore": 0.52027,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.49071,
+            "nonArtworkRatio": 0.50929,
+            "largestNonArtworkComponentRatio": 0.14183,
+            "edgeReachableFieldRatio": 0.21577,
+            "interiorFieldRatio": 0.29352,
+            "nonArtworkComponentCount": 13,
+            "borderArtworkRatio": 0.18414,
+            "contourScore": 0.5067,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.52027,
+        "worstContourScore": 0.52027
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays panels shaped like vehicle parts, including a car hood and the front of a vehicle with a grille and body contours.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [
+        "rear edgeHoleRatio=0.79372 -- 79.4% of the zone border is hole while 78.9% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "passengerMirrorMae": 0.1203109681372549,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.07053,
+          "largestCutoutComponentRatio": 0.16386,
+          "flatBlackRatio": 0.1969,
+          "cutoutComponentCount": 239,
+          "opaqueRatio": 1,
+          "lumaStddev": 60.92
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.07047,
+          "largestCutoutComponentRatio": 0.00316,
+          "flatBlackRatio": 0.01501,
+          "cutoutComponentCount": 205,
+          "opaqueRatio": 1,
+          "lumaStddev": 59.25
+        },
+        "front": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 41.68
+        },
+        "hood": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0.0001,
+          "flatBlackRatio": 0.00104,
+          "cutoutComponentCount": 67,
+          "opaqueRatio": 1,
+          "lumaStddev": 59.96
+        },
+        "rear": {
+          "edgeHoleRatio": 0.79372,
+          "largestCutoutComponentRatio": 0.13573,
+          "flatBlackRatio": 0.20491,
+          "cutoutComponentCount": 96,
+          "opaqueRatio": 1,
+          "lumaStddev": 58.93
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0.00007,
+          "flatBlackRatio": 0.00047,
+          "cutoutComponentCount": 56,
+          "opaqueRatio": 1,
+          "lumaStddev": 57.18
+        }
+      }
+    },
+    {
+      "draw": 5,
+      "arm": "B",
+      "label": "B5",
+      "file": "B5-print-media.png",
+      "elapsedMs": 35266,
+      "rawSha256": "7e60c99d204ee94cfdeb8cf53a30fea52f0848771858f88ace9885db74e9a1a9",
+      "rawByteSize": 6831978,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.57852,
+            "nonArtworkRatio": 0.42148,
+            "largestNonArtworkComponentRatio": 0.06723,
+            "edgeReachableFieldRatio": 0.23558,
+            "interiorFieldRatio": 0.1859,
+            "nonArtworkComponentCount": 14,
+            "borderArtworkRatio": 0.77488,
+            "contourScore": 0.42148,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.55485,
+            "nonArtworkRatio": 0.44515,
+            "largestNonArtworkComponentRatio": 0.05189,
+            "edgeReachableFieldRatio": 0.22175,
+            "interiorFieldRatio": 0.2234,
+            "nonArtworkComponentCount": 19,
+            "borderArtworkRatio": 0.57342,
+            "contourScore": 0.44515,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.38411,
+            "nonArtworkRatio": 0.61589,
+            "largestNonArtworkComponentRatio": 0.10715,
+            "edgeReachableFieldRatio": 0.31485,
+            "interiorFieldRatio": 0.30105,
+            "nonArtworkComponentCount": 10,
+            "borderArtworkRatio": 0.89087,
+            "contourScore": 0.61589,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.46419,
+            "nonArtworkRatio": 0.53581,
+            "largestNonArtworkComponentRatio": 0.15943,
+            "edgeReachableFieldRatio": 0.34094,
+            "interiorFieldRatio": 0.19487,
+            "nonArtworkComponentCount": 18,
+            "borderArtworkRatio": 0.44085,
+            "contourScore": 0.53581,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.43495,
+            "nonArtworkRatio": 0.56505,
+            "largestNonArtworkComponentRatio": 0.07621,
+            "edgeReachableFieldRatio": 0.18177,
+            "interiorFieldRatio": 0.38329,
+            "nonArtworkComponentCount": 14,
+            "borderArtworkRatio": 0.82467,
+            "contourScore": 0.56505,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.46821,
+            "nonArtworkRatio": 0.53179,
+            "largestNonArtworkComponentRatio": 0.19231,
+            "edgeReachableFieldRatio": 0.25384,
+            "interiorFieldRatio": 0.27794,
+            "nonArtworkComponentCount": 11,
+            "borderArtworkRatio": 0.33156,
+            "contourScore": 0.53179,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.61589,
+        "worstContourScore": 0.61589
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image shows a top-down layout of vehicle wrap panels, with the central panels shaped to represent the body contours of a car's hood, roof, and trunk.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [
+        "rear edgeHoleRatio=0.63908 -- 63.9% of the zone border is hole while 75.0% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "passengerMirrorMae": 0.014093137254901961,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.00091,
+          "largestCutoutComponentRatio": 0.00001,
+          "flatBlackRatio": 0.00081,
+          "cutoutComponentCount": 1362,
+          "opaqueRatio": 1,
+          "lumaStddev": 60.83
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.00066,
+          "largestCutoutComponentRatio": 0.00001,
+          "flatBlackRatio": 0.00028,
+          "cutoutComponentCount": 575,
+          "opaqueRatio": 1,
+          "lumaStddev": 61
+        },
+        "front": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 54.86
+        },
+        "hood": {
+          "edgeHoleRatio": 0.00077,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 46.84
+        },
+        "rear": {
+          "edgeHoleRatio": 0.63908,
+          "largestCutoutComponentRatio": 0.18817,
+          "flatBlackRatio": 0.24468,
+          "cutoutComponentCount": 93,
+          "opaqueRatio": 1,
+          "lumaStddev": 56.47
+        },
+        "roof": {
+          "edgeHoleRatio": 0.23915,
+          "largestCutoutComponentRatio": 0.15526,
+          "flatBlackRatio": 0.15532,
+          "cutoutComponentCount": 28,
+          "opaqueRatio": 1,
+          "lumaStddev": 52.01
+        }
+      }
+    },
+    {
+      "draw": 6,
+      "arm": "A",
+      "label": "A6",
+      "file": "A6-deployed.png",
+      "elapsedMs": 44310,
+      "rawSha256": "53b58982ef19fada73d7a71dd77c5769aaad2488304e2dcdcb23d049b101e908",
+      "rawByteSize": 6652700,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.55312,
+            "nonArtworkRatio": 0.44688,
+            "largestNonArtworkComponentRatio": 0.06215,
+            "edgeReachableFieldRatio": 0.09642,
+            "interiorFieldRatio": 0.35046,
+            "nonArtworkComponentCount": 18,
+            "borderArtworkRatio": 0.31489,
+            "contourScore": 0.44013,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.51777,
+            "nonArtworkRatio": 0.48223,
+            "largestNonArtworkComponentRatio": 0.06974,
+            "edgeReachableFieldRatio": 0.12993,
+            "interiorFieldRatio": 0.35229,
+            "nonArtworkComponentCount": 19,
+            "borderArtworkRatio": 0.47042,
+            "contourScore": 0.48223,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.58693,
+            "nonArtworkRatio": 0.41307,
+            "largestNonArtworkComponentRatio": 0.17069,
+            "edgeReachableFieldRatio": 0.35435,
+            "interiorFieldRatio": 0.05872,
+            "nonArtworkComponentCount": 10,
+            "borderArtworkRatio": 0.29173,
+            "contourScore": 0.41307,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.69398,
+            "nonArtworkRatio": 0.30602,
+            "largestNonArtworkComponentRatio": 0.07857,
+            "edgeReachableFieldRatio": 0.11615,
+            "interiorFieldRatio": 0.18987,
+            "nonArtworkComponentCount": 14,
+            "borderArtworkRatio": 0.5047,
+            "contourScore": 0.30602,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.47868,
+            "nonArtworkRatio": 0.52132,
+            "largestNonArtworkComponentRatio": 0.19874,
+            "edgeReachableFieldRatio": 0.34166,
+            "interiorFieldRatio": 0.17966,
+            "nonArtworkComponentCount": 17,
+            "borderArtworkRatio": 0.29272,
+            "contourScore": 0.52132,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.41345,
+            "nonArtworkRatio": 0.58655,
+            "largestNonArtworkComponentRatio": 0.20993,
+            "edgeReachableFieldRatio": 0.4598,
+            "interiorFieldRatio": 0.12675,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.50673,
+            "contourScore": 0.58655,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.58655,
+        "worstContourScore": 0.58655
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays car body contours for the hood and front bumper/grille, indicating vehicle parts.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [
+        "driver edgeHoleRatio=0.67277 -- 67.3% of the zone border is hole while 92.4% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "hood edgeHoleRatio=0.59529 -- 59.5% of the zone border is hole while 67.2% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "front edgeHoleRatio=0.36139 -- 36.1% of the zone border is hole while 80.0% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "passengerMirrorMae": 0.01298968545751634,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.67277,
+          "largestCutoutComponentRatio": 0.0616,
+          "flatBlackRatio": 0.07385,
+          "cutoutComponentCount": 5,
+          "opaqueRatio": 1,
+          "lumaStddev": 56.35
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.34341,
+          "largestCutoutComponentRatio": 0.06853,
+          "flatBlackRatio": 0.06916,
+          "cutoutComponentCount": 5,
+          "opaqueRatio": 1,
+          "lumaStddev": 55.82
+        },
+        "front": {
+          "edgeHoleRatio": 0.36139,
+          "largestCutoutComponentRatio": 0.19712,
+          "flatBlackRatio": 0.19717,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "lumaStddev": 64.03
+        },
+        "hood": {
+          "edgeHoleRatio": 0.59529,
+          "largestCutoutComponentRatio": 0.17038,
+          "flatBlackRatio": 0.31336,
+          "cutoutComponentCount": 295,
+          "opaqueRatio": 1,
+          "lumaStddev": 63.76
+        },
+        "rear": {
+          "edgeHoleRatio": 0.21101,
+          "largestCutoutComponentRatio": 0.20898,
+          "flatBlackRatio": 0.21443,
+          "cutoutComponentCount": 5,
+          "opaqueRatio": 1,
+          "lumaStddev": 56.18
+        },
+        "roof": {
+          "edgeHoleRatio": 0.33847,
+          "largestCutoutComponentRatio": 0.01549,
+          "flatBlackRatio": 0.02611,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "lumaStddev": 52.2
+        }
+      }
+    },
+    {
+      "draw": 6,
+      "arm": "B",
+      "label": "B6",
+      "file": "B6-print-media.png",
+      "elapsedMs": 35233,
+      "rawSha256": "53b6d0995c5553a8c76b13138c6173fce2dbc0ff2f354d2fb0d5b23dead774d6",
+      "rawByteSize": 7072329,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "fullBleed": {
+        "contract": "designpro.atlas-fullbleed-colourblind.v1",
+        "zones": {
+          "driver": {
+            "surfaceKey": "driver",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.48126,
+            "nonArtworkRatio": 0.51874,
+            "largestNonArtworkComponentRatio": 0.31974,
+            "edgeReachableFieldRatio": 0.44491,
+            "interiorFieldRatio": 0.07383,
+            "nonArtworkComponentCount": 7,
+            "borderArtworkRatio": 0.3135,
+            "contourScore": 0.49559,
+            "fullBleedCompliant": false
+          },
+          "passenger": {
+            "surfaceKey": "passenger",
+            "sampledAt": "415x1024",
+            "sampleFactor": 2.78125,
+            "artworkRatio": 0.52196,
+            "nonArtworkRatio": 0.47804,
+            "largestNonArtworkComponentRatio": 0.32053,
+            "edgeReachableFieldRatio": 0.43243,
+            "interiorFieldRatio": 0.04561,
+            "nonArtworkComponentCount": 3,
+            "borderArtworkRatio": 0.36743,
+            "contourScore": 0.45294,
+            "fullBleedCompliant": false
+          },
+          "hood": {
+            "surfaceKey": "hood",
+            "sampledAt": "1024x829",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.68781,
+            "nonArtworkRatio": 0.31219,
+            "largestNonArtworkComponentRatio": 0.08256,
+            "edgeReachableFieldRatio": 0,
+            "interiorFieldRatio": 0.31219,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 1,
+            "contourScore": 0.31219,
+            "fullBleedCompliant": false
+          },
+          "roof": {
+            "surfaceKey": "roof",
+            "sampledAt": "1024x787",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.55964,
+            "nonArtworkRatio": 0.44036,
+            "largestNonArtworkComponentRatio": 0.15281,
+            "edgeReachableFieldRatio": 0,
+            "interiorFieldRatio": 0.44036,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 1,
+            "contourScore": 0.44036,
+            "fullBleedCompliant": false
+          },
+          "front": {
+            "surfaceKey": "front",
+            "sampledAt": "1024x324",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.40922,
+            "nonArtworkRatio": 0.59078,
+            "largestNonArtworkComponentRatio": 0.32573,
+            "edgeReachableFieldRatio": 0.07322,
+            "interiorFieldRatio": 0.51755,
+            "nonArtworkComponentCount": 8,
+            "borderArtworkRatio": 0.99851,
+            "contourScore": 0.59078,
+            "fullBleedCompliant": false
+          },
+          "rear": {
+            "surfaceKey": "rear",
+            "sampledAt": "1024x762",
+            "sampleFactor": 1.23242,
+            "artworkRatio": 0.69932,
+            "nonArtworkRatio": 0.30068,
+            "largestNonArtworkComponentRatio": 0.07,
+            "edgeReachableFieldRatio": 0.03227,
+            "interiorFieldRatio": 0.26841,
+            "nonArtworkComponentCount": 12,
+            "borderArtworkRatio": 0.84417,
+            "contourScore": 0.30068,
+            "fullBleedCompliant": false
+          }
+        },
+        "fullBleedCompliantSurfaces": [],
+        "fullBleedCompliantCount": 0,
+        "worstNonArtworkRatio": 0.59078,
+        "worstContourScore": 0.59078
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 0.9,
+        "evidence": "The image displays various vehicle body panels laid out flat, clearly showing vehicle contours and labels for vehicle parts like 'HOOD' and 'DRIVER SIDE'.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "legacyAccepted": false,
+      "legacyBlockingFailures": [
+        "driver edgeHoleRatio=0.67499 -- 67.5% of the zone border is hole while 57.4% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "passenger edgeHoleRatio=0.62913 -- 62.9% of the zone border is hole while 58.1% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "passengerMirrorMae": 0.02546245234204793,
+      "legacySurfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.67499,
+          "largestCutoutComponentRatio": 0.30342,
+          "flatBlackRatio": 0.41399,
+          "cutoutComponentCount": 667,
+          "opaqueRatio": 1,
+          "lumaStddev": 54.46
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.62913,
+          "largestCutoutComponentRatio": 0.28122,
+          "flatBlackRatio": 0.39133,
+          "cutoutComponentCount": 3855,
+          "opaqueRatio": 1,
+          "lumaStddev": 66.34
+        },
+        "front": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 50.1
+        },
+        "hood": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "lumaStddev": 45.62
+        },
+        "rear": {
+          "edgeHoleRatio": 0.22652,
+          "largestCutoutComponentRatio": 0.02985,
+          "flatBlackRatio": 0.04471,
+          "cutoutComponentCount": 68,
+          "opaqueRatio": 1,
+          "lumaStddev": 49.38
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0.00002,
+          "flatBlackRatio": 0.00002,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "lumaStddev": 54.97
+        }
+      }
+    }
+  ]
+}
