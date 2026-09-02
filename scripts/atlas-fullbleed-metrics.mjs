@@ -75,8 +75,31 @@ export async function fullBleedMetrics(masterBytes, manifest, { sharp = require_
   };
 }
 
+/**
+ * A manifest zone is `{ surfaceKey, x, y, w, h, … }`. `width`/`height` are
+ * accepted too, but only as an alias -- and an unreadable rect FAILS rather than
+ * producing NaN. The first live run of this module died at
+ * "Expected integer for width but received NaN" after spending an image call,
+ * because it read `width`/`height` and the fixtures it was tested against had
+ * been written to match that assumption instead of the real manifest.
+ */
+export function zoneRect(zone) {
+  const source = zone?.rect || zone || {};
+  const x = Number(source.x);
+  const y = Number(source.y);
+  const w = Number(source.w ?? source.width);
+  const h = Number(source.h ?? source.height);
+  if (![x, y, w, h].every(Number.isFinite) || w < 1 || h < 1) {
+    throw new Error(
+      `atlas_fullbleed_zone_rect_unreadable:${zone?.surfaceKey || "?"}:`
+      + `${JSON.stringify({ x: source.x, y: source.y, w: source.w, h: source.h, width: source.width, height: source.height })}`,
+    );
+  }
+  return { x, y, width: w, height: h };
+}
+
 async function measureZone(masterBytes, zone, sharp) {
-  const { x, y, width, height } = zone.rect || zone;
+  const { x, y, width, height } = zoneRect(zone);
   const factor = Math.max(1, Math.max(width, height) / MAX_SAMPLE_EDGE);
   const w = Math.max(8, Math.round(width / factor));
   const h = Math.max(8, Math.round(height / factor));

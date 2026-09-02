@@ -17,13 +17,18 @@ import {
   MAX_NON_ARTWORK_RATIO,
   MIN_BORDER_ARTWORK_RATIO,
   fullBleedMetrics,
+  zoneRect,
 } from "../scripts/atlas-fullbleed-metrics.mjs";
 
 const require = createRequire(import.meta.url);
 const sharp = require("../runtime/node_modules/sharp");
+const atlas = require("../runtime/flat-first-atlas.cjs");
 
 const SIZE = 256;
-const manifestOf = (n = SIZE) => ({ zones: [{ surfaceKey: "zone", rect: { x: 0, y: 0, width: n, height: n } }] });
+// The REAL manifest zone shape — `{ surfaceKey, x, y, w, h }`. Writing the
+// fixture to match the module's assumption instead of the manifest is exactly
+// how the first live run died on NaN after spending an image call.
+const manifestOf = (n = SIZE) => ({ zones: [{ surfaceKey: "zone", x: 0, y: 0, w: n, h: n }] });
 
 // Deterministic pseudo-texture: real artwork varies pixel to pixel, so the flood
 // cannot cross it. A flat colour block would be indistinguishable from a field
@@ -121,4 +126,35 @@ test("the flood cannot cross artwork, and tolerance stays tight", async () => {
   assert.ok(FIELD_TOLERANCE <= 16, "FIELD_TOLERANCE is loose enough to flood through artwork");
   const m = await fullBleedMetrics(await fullBleed(), manifestOf(), { sharp });
   assert.equal(m.zones.zone.nonArtworkComponentCount, 0, "the flood crossed into artwork");
+});
+
+test("the rect reader speaks the REAL manifest's field names, and fails closed", () => {
+  // Built by the real buildAtlasManifest, not by hand — the defect this convicts
+  // is a fixture that agreed with the code instead of with production.
+  const surface = (surfaceKey, trimWidthIn, trimHeightIn) => ({
+    surfaceKey,
+    trimWidthIn,
+    trimHeightIn,
+    printWidthIn: trimWidthIn + 10,
+    printHeightIn: trimHeightIn + 10,
+    surfaceSqFt: (trimWidthIn * trimHeightIn) / 144,
+  });
+  const manifest = atlas.buildAtlasManifest([
+    surface("driver", 140, 31), surface("passenger", 140, 31), surface("hood", 64, 40),
+    surface("roof", 60, 58), surface("front", 64, 30), surface("rear", 64, 23),
+  ], null); // null = the module's own operator-validated layout-only default
+
+  assert.equal(manifest.zones.length, 6);
+  for (const zone of manifest.zones) {
+    assert.ok(Number.isFinite(zone.w) && Number.isFinite(zone.h),
+      `manifest zone ${zone.surfaceKey} does not expose w/h — the reader's assumption is wrong`);
+    const rect = zoneRect(zone);
+    assert.equal(rect.width, zone.w);
+    assert.equal(rect.height, zone.h);
+    assert.ok(rect.width >= 1 && rect.height >= 1);
+  }
+
+  // No silent NaN, ever.
+  assert.throws(() => zoneRect({ surfaceKey: "driver", x: 0, y: 0 }), /atlas_fullbleed_zone_rect_unreadable:driver/);
+  assert.throws(() => zoneRect(undefined), /atlas_fullbleed_zone_rect_unreadable/);
 });
