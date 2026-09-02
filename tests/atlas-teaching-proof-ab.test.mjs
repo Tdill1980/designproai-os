@@ -312,3 +312,102 @@ test("Test 3 refuses a request that is not the topology addition it claims to be
     /not the normalized topology text/,
   );
 });
+
+// ── TEST 4's INSTRUMENT ────────────────────────────────────────────────────
+// The reordered proof is only a one-variable change if exactly the HOOD and
+// REAR blocks move, each carrying its own label, and nothing else in the image
+// is touched. A label left behind would mislabel the panel that arrived — a
+// second variable, and a worse one.
+const reorder = await import("../scripts/atlas-teaching-proof-reorder.mjs");
+const orderAb = await import("../scripts/atlas-teaching-proof-order-ab.mjs");
+
+test("the reordered proof swaps HOOD and REAR and touches nothing else", async () => {
+  const { bytes, report } = await reorder.buildReorderedTeachingProof(sourceBytes, { sharp });
+
+  assert.equal(report.sourceSha256, SOURCE_SHA256);
+  assert.notEqual(report.variantSha256, SOURCE_SHA256, "nothing moved");
+  assert.deepEqual(report.centerOrderBefore, ["HOOD", "ROOF", "REAR", "FRONT"]);
+  assert.deepEqual(report.centerOrderAfter, ["REAR", "ROOF", "HOOD", "FRONT"]);
+  assert.equal(report.hoodBlock.movedTo, reorder.REAR_BLOCK.y0);
+  assert.equal(report.rearBlock.movedTo, reorder.HOOD_BLOCK.y0);
+  assert.ok(report.changedPixels > 100_000, `only ${report.changedPixels} pixels changed`);
+
+  // Re-derive independently of the builder's own report.
+  const src = await sharp(sourceBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const out = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = src.info;
+  assert.deepEqual({ w: out.info.width, h: out.info.height, c: out.info.channels }, { w: width, h: height, c: channels });
+
+  const at = (x, y) => (y * width + x) * channels;
+  const same = (a, ia, b, ib) => {
+    for (let c = 0; c < channels; c += 1) if (a[ia + c] !== b[ib + c]) return false;
+    return true;
+  };
+
+  // Flanks, ROOF and FRONT are untouched.
+  let flankDiffs = 0; let roofDiffs = 0; let frontDiffs = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (same(out.data, at(x, y), src.data, at(x, y))) continue;
+      if (x < reorder.CENTER_X.x0 || x > reorder.CENTER_X.x1) { flankDiffs += 1; continue; }
+      if (y >= reorder.ROOF_REGION.y0 && y <= reorder.ROOF_REGION.y1) roofDiffs += 1;
+      if (y >= reorder.FRONT_REGION.y0 && y <= reorder.FRONT_REGION.y1) frontDiffs += 1;
+    }
+  }
+  assert.equal(flankDiffs, 0, "a pixel outside the centre column changed — Driver/Passenger moved");
+  assert.equal(roofDiffs, 0, "the ROOF region changed");
+  assert.equal(frontDiffs, 0, "the FRONT region changed");
+
+  // Each relocated block is its source block, pixel for pixel — artwork AND its
+  // label travelled together.
+  const movedBlockMatches = (block, destY0) => {
+    for (let n = 0; n <= block.y1 - block.y0; n += 1) {
+      for (let x = reorder.CENTER_X.x0; x <= reorder.CENTER_X.x1; x += 1) {
+        if (!same(out.data, at(x, destY0 + n), src.data, at(x, block.y0 + n))) return false;
+      }
+    }
+    return true;
+  };
+  assert.ok(movedBlockMatches(reorder.REAR_BLOCK, reorder.HOOD_BLOCK.y0), "the REAR block was altered in transit");
+  assert.ok(movedBlockMatches(reorder.HOOD_BLOCK, reorder.REAR_BLOCK.y0), "the HOOD block was altered in transit");
+});
+
+test("the reorder builder refuses anything that is not the owner's proof", async () => {
+  const notTheProof = await sharp({ create: { width: 8, height: 8, channels: 4, background: "#000000" } }).png().toBuffer();
+  await assert.rejects(
+    () => reorder.buildReorderedTeachingProof(notTheProof, { sharp }),
+    /source is not the owner proof/,
+  );
+});
+
+test("Test 4 swaps only the teaching image, and both arms keep one image", async () => {
+  const { bytes } = await reorder.buildReorderedTeachingProof(sourceBytes, { sharp });
+  const base = {
+    prompt: "P".repeat(4587),
+    teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. …",
+    teachingBytes: sourceBytes,
+    reorderedBytes: bytes,
+    model: "gemini-3-pro-image",
+  };
+  const { requests } = orderAb.buildReorderRequests(base);
+
+  assert.equal(requests.A.partCount, 3);
+  assert.equal(requests.B.partCount, 3);
+  assert.equal(requests.A.modelInputImageCount, 1, "the guide came back into arm A");
+  assert.equal(requests.B.modelInputImageCount, 1, "the guide came back into arm B");
+  assert.equal(requests.A.parts[0].sha256, requests.B.parts[0].sha256);
+  assert.equal(requests.A.parts[1].sha256, requests.B.parts[1].sha256);
+  assert.notEqual(requests.A.parts[2].sha256, requests.B.parts[2].sha256);
+  assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256);
+  assert.equal(requests.A.promptChars, requests.B.promptChars);
+
+  // Arm B carrying the pinned bytes would mean nothing was swapped.
+  assert.throws(
+    () => orderAb.buildReorderRequests({ ...base, reorderedBytes: sourceBytes }),
+    /arm B carries the unmodified proof/,
+  );
+  assert.throws(
+    () => orderAb.buildReorderRequests({ ...base, teachingBytes: Buffer.from("not the proof") }),
+    /arm A is not the owner's pinned teaching proof/,
+  );
+});
