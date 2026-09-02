@@ -17,6 +17,7 @@ import {
   buildFieldTerritories,
   fieldTrimRectangle,
   internalBoundaries,
+  aspectTolerance,
   FIELD_TOPOLOGY,
   NOSE_EDGE,
 } from "../scripts/atlas-field-territories.mjs";
@@ -89,6 +90,37 @@ test("field-bands-v1 places the F250 territories exactly where §L says, rotatio
   assert.equal(f.fieldLayout.paintedNotExtractedRatio, 0.1717);
   assert.equal(f.zones.length, 6);
   assert.deepEqual(f.zones.map((z) => z.surfaceKey), ["driver", "passenger", "hood", "roof", "front", "rear"], "SURFACE_KEYS order is preserved");
+});
+
+test("the aspect check tolerates integer pixel rounding on every plausible vehicle, and nothing more", () => {
+  // The live GENIE row for the F250 is a grounded/provisional row whose inches
+  // differ from the catalog fixture; the first capture-only run failed closed
+  // on hood at 0.143% -- pixel rounding on a ~700-px territory, not drift.
+  assert.ok(aspectTolerance({ w: 1390, h: 939 }) > 0.00143);
+  assert.ok(aspectTolerance({ w: 4096, h: 1099 }) < 0.0015);
+  let seed = 11;
+  const rnd = (lo, hi) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return lo + (seed / 0x7fffffff) * (hi - lo); };
+  for (let i = 0; i < 200; i += 1) {
+    const sideH = Math.round(rnd(40, 80));
+    const side = [Math.round(sideH * rnd(2.2, 4.5)), sideH];
+    const set = [
+      surface("driver", side[0], side[1]), surface("passenger", side[0], side[1]),
+      surface("hood", Math.round(rnd(40, 90)), Math.round(rnd(20, 70))),
+      surface("roof", Math.round(rnd(40, 90)), Math.round(rnd(30, 200))),
+      surface("front", Math.round(rnd(40, 90)), Math.round(rnd(15, 60))),
+      surface("rear", Math.round(rnd(40, 90)), Math.round(rnd(15, 70))),
+    ];
+    const f = buildFieldTerritories(atlas.buildAtlasManifest(set, null, "truck"));
+    assert.equal(f.zones.length, 6);
+    for (const z of f.zones) assert.ok(z.x + z.w <= 4096 && z.y + z.h <= 4096, `${z.surfaceKey} out of bounds on fixture ${i}`);
+  }
+  // a genuinely distorted rect is still refused
+  assert.ok(0.05 > aspectTolerance({ w: 1390, h: 939 }));
+  // a box body (short, tall side) still leaves the centre surfaces a band
+  const box = buildFieldTerritories(atlas.buildAtlasManifest([surface("driver", 140, 80), surface("passenger", 140, 80), surface("hood", 60, 40), surface("roof", 60, 100), surface("front", 60, 40), surface("rear", 60, 80)], null, "van"));
+  const boxDriver = box.zones.find((z) => z.surfaceKey === "driver");
+  assert.ok(boxDriver.w < 4096, "flanks scale below full width when they would starve the centre");
+  assert.ok(boxDriver.h * 2 <= 4096 * 0.72 + 2);
 });
 
 test("territories never overlap and the boundary list is derived from the rects", () => {

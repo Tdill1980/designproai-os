@@ -32,12 +32,26 @@ export const FIELD_CONTRACT = "designpro.atlas-field-territories.v1";
 /** Facing the driver side, the nose is at the viewer's LEFT; passenger, RIGHT. */
 export const NOSE_EDGE = Object.freeze({ driver: "left", passenger: "right" });
 export const BLEED_INCHES = 5;
-/** A territory's pixel aspect may differ from its print aspect by at most this. */
+/**
+ * A territory's pixel aspect may differ from its print aspect by at most this,
+ * OR by what integer pixel rounding on its own two axes can introduce
+ * (half a pixel per axis: 0.5/w + 0.5/h, doubled for margin) -- whichever is
+ * larger. A 700-px territory rounds to ~0.15%; that is rounding, not drift.
+ */
 export const MAX_ASPECT_ERROR = 0.001;
+export function aspectTolerance(rect) {
+  return Math.max(MAX_ASPECT_ERROR, 1 / rect.w + 1 / rect.h);
+}
 
 const CENTER_ROW_ONE = Object.freeze(["roof", "hood", "front"]);
 const CENTER_ROW_TWO = Object.freeze(["rear"]);
 const BAND_ORDER = Object.freeze(["driver", "passenger"]);
+/**
+ * The two flank bands may take at most this share of the canvas height, so a
+ * short, tall-sided vehicle (a box body) still leaves the centre surfaces a
+ * usable band. On the F250 (261:70) the flanks need 53.7% and this never binds.
+ */
+export const FLANK_MAX_HEIGHT_SHARE = 0.72;
 
 const round2 = (v) => Math.round(v * 100) / 100;
 
@@ -101,12 +115,18 @@ export function buildFieldTerritories(legacyManifest) {
 
   // ── bands 1 and 2: the flanks, each at its own uniform scale ──────────────
   const rects = new Map();
+  const flankHeightAtFullWidth = BAND_ORDER.reduce((t, key) => {
+    const z = legacy.get(key);
+    return t + z.printHeightIn * (W / z.printWidthIn);
+  }, 0);
+  const flankShare = Math.min(1, (H * FLANK_MAX_HEIGHT_SHARE) / flankHeightAtFullWidth);
   let y = 0;
   for (const key of BAND_ORDER) {
     const z = legacy.get(key);
-    const scale = W / z.printWidthIn;
+    const scale = (W / z.printWidthIn) * flankShare;
+    const w = Math.max(1, Math.round(z.printWidthIn * scale));
     const h = Math.max(1, Math.round(z.printHeightIn * scale));
-    rects.set(key, { x: 0, y, w: W, h });
+    rects.set(key, { x: 0, y, w, h });
     y += h;
   }
   const centerTop = y;
@@ -114,32 +134,50 @@ export function buildFieldTerritories(legacyManifest) {
   if (R < 64) throw new Error(`atlas_field_center_band_too_short:${R}`);
 
   // ── band 3: one uniform scale for the four centre surfaces ────────────────
+  // Row 1 = roof · hood · front abreast; row 2 = rear, below whichever row-1
+  // territories it horizontally overlaps (on the F250 that is the roof alone).
+  // The overlap set depends on the scale and the scale on the overlap set, so
+  // settle it by a short monotone iteration.
   const roof = legacy.get("roof");
   const hood = legacy.get("hood");
   const front = legacy.get("front");
   const rear = legacy.get("rear");
-  const rowOneWidthIn = roof.printWidthIn + hood.printWidthIn + front.printWidthIn;
-  const scaleCenter = Math.min(
-    W / rowOneWidthIn,
-    R / (roof.printHeightIn + rear.printHeightIn),
-    R / hood.printHeightIn,
-    R / front.printHeightIn,
-  );
+  const rowOne = [roof, hood, front];
+  const rowOneWidthIn = rowOne.reduce((t, z) => t + z.printWidthIn, 0);
+  let underRearHeightIn = roof.printHeightIn;
+  let scaleCenter = 0;
+  for (let pass = 0; pass < 4; pass += 1) {
+    scaleCenter = Math.min(
+      W / rowOneWidthIn,
+      R / (underRearHeightIn + rear.printHeightIn),
+      ...rowOne.map((z) => R / z.printHeightIn),
+    );
+    // which row-1 territories does the rear overlap horizontally at this scale?
+    let x = 0; let tallest = 0;
+    for (const z of rowOne) {
+      if (x < rear.printWidthIn * scaleCenter) tallest = Math.max(tallest, z.printHeightIn);
+      x += z.printWidthIn * scaleCenter;
+    }
+    if (tallest === underRearHeightIn) break;
+    underRearHeightIn = tallest;
+  }
   const px = (inches) => Math.max(1, Math.round(inches * scaleCenter));
   let x = 0;
-  for (const key of CENTER_ROW_ONE) {
-    const z = legacy.get(key);
+  const rowOneRects = [];
+  for (const z of rowOne) {
     let w = px(z.printWidthIn);
     if (x + w > W) w = W - x; // rounding guard, at most 1px
-    rects.set(key, { x, y: centerTop, w, h: px(z.printHeightIn) });
+    const rect = { x, y: centerTop, w, h: px(z.printHeightIn) };
+    rects.set(z.surfaceKey, rect);
+    rowOneRects.push(rect);
     x += w;
   }
-  const roofRect = rects.get("roof");
-  for (const key of CENTER_ROW_TWO) {
-    const z = legacy.get(key);
-    let h = px(z.printHeightIn);
-    if (roofRect.y + roofRect.h + h > H) h = H - roofRect.y - roofRect.h;
-    rects.set(key, { x: 0, y: roofRect.y + roofRect.h, w: px(z.printWidthIn), h });
+  {
+    const w = px(rear.printWidthIn);
+    const below = Math.max(...rowOneRects.filter((r) => r.x < w).map((r) => r.y + r.h));
+    let h = px(rear.printHeightIn);
+    if (below + h > H) h = H - below;
+    rects.set("rear", { x: 0, y: below, w, h });
   }
 
   // ── the zone objects, same shape as production, rotation 0 ───────────────
@@ -149,8 +187,8 @@ export function buildFieldTerritories(legacyManifest) {
       throw new Error(`atlas_field_zone_out_of_bounds:${z.surfaceKey}:${JSON.stringify(rect)}`);
     }
     const aspectError = Math.abs((rect.w / rect.h) / (z.printWidthIn / z.printHeightIn) - 1);
-    if (aspectError > MAX_ASPECT_ERROR) {
-      throw new Error(`atlas_field_zone_aspect_drift:${z.surfaceKey}:${aspectError.toFixed(5)}`);
+    if (aspectError > aspectTolerance(rect)) {
+      throw new Error(`atlas_field_zone_aspect_drift:${z.surfaceKey}:${aspectError.toFixed(5)}:tolerance=${aspectTolerance(rect).toFixed(5)}`);
     }
     const effectivePpi = round2(Math.min(rect.w / z.printWidthIn, rect.h / z.printHeightIn));
     const placement = z.surfaceKey === "driver" ? "band-1"
