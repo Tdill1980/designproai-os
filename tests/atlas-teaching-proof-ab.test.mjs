@@ -170,3 +170,62 @@ test("the A/B executes the DEPLOYED Call-1 assembly, never a re-description of i
   assert.equal(assembled.panels.length, 6);
   assert.ok(assembled.prompt.includes("F250 Crew Cab"));
 });
+
+// ── TEST 2's INSTRUMENT ────────────────────────────────────────────────────
+// The guide ablation is only an ablation if exactly the guide pair leaves and
+// nothing else moves. These convict every way that could quietly stop being
+// true: a shared part drifting between arms, the wrong pair removed, arm B
+// still carrying a guide, or the teaching proof moving.
+const ablation = await import("../scripts/atlas-guide-ablation-ab.mjs");
+
+const ablationInput = (overrides = {}) => ({
+  prompt: "P".repeat(4587),
+  teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows …",
+  targetGuideText: "CURRENT TARGET GUIDE — this final neutral mask alone controls …",
+  teachingBytes: sourceBytes,
+  guideBytes: Buffer.from("a-neutral-six-rectangle-mask"),
+  model: "gemini-3-pro-image",
+  ...overrides,
+});
+
+test("Test 2 removes exactly the target-guide pair and nothing else", () => {
+  const { requests } = ablation.buildAblationRequests(ablationInput());
+
+  assert.equal(requests.A.partCount, 5, "arm A is not the deployed 5-part request");
+  assert.equal(requests.B.partCount, 3, "arm B is not the 3-part ablation");
+  assert.equal(requests.A.modelInputImageCount, 2);
+  assert.equal(requests.B.modelInputImageCount, 1);
+
+  for (let i = 0; i < 3; i += 1) {
+    assert.equal(requests.A.parts[i].sha256, requests.B.parts[i].sha256, `part ${i} drifted between arms`);
+  }
+  assert.equal(requests.A.promptChars, requests.B.promptChars);
+  assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256, "the teaching proof is not the owner's pinned bytes");
+  assert.equal(requests.B.parts[2].sha256, SOURCE_SHA256);
+  assert.match(requests.A.parts[3].preview, /^CURRENT TARGET GUIDE/);
+  assert.equal(requests.A.parts[4].kind, "image");
+
+  // The removed pair is the guide, and only the guide.
+  const removed = requests.A.parts.slice(3);
+  assert.equal(removed.length, 2);
+  assert.ok(!requests.B.parts.some((p) => removed.some((r) => r.sha256 === p.sha256)));
+
+  assert.deepEqual(requests.A.generationConfig, {
+    responseModalities: ["TEXT", "IMAGE"],
+    imageConfig: { aspectRatio: "1:1", imageSize: "4K" },
+  });
+  assert.deepEqual(requests.B.generationConfig, requests.A.generationConfig);
+});
+
+test("Test 2 refuses a request that is not the ablation it claims to be", () => {
+  // The teaching proof swapped for something else.
+  assert.throws(
+    () => ablation.buildAblationRequests(ablationInput({ teachingBytes: Buffer.from("not the proof") })),
+    /the teaching proof moved/,
+  );
+  // The wrong pair targeted for removal.
+  assert.throws(
+    () => ablation.buildAblationRequests(ablationInput({ targetGuideText: "SOME OTHER INSTRUCTION" })),
+    /part 3 is not the target-guide instruction/,
+  );
+});

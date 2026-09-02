@@ -1,13 +1,20 @@
-name: A.T.L.A.S. teaching proof — black-field A/B (Test 1)
+name: A.T.L.A.S. Call-1 — isolated-variable A/B
 
-# Owner's Test 1. Changes ONE variable in the Call-1 request — the black
-# separation/background field around the teaching proof's six panels becomes a
-# neutral field — and measures the RAW PRE-REPAIR master.
+# One dispatch surface, one isolated variable per test, measured on the RAW
+# PRE-REPAIR master.
 #
-# Three image calls: P (the deployed edge, production proof), A (the harness,
-# production proof), B (the harness, neutral-field proof). P and A are the same
-# condition drawn twice, which is the only way an n=1 arm can be read: Call 1
-# sends no temperature, so B only means something if it moves further than P↔A.
+#   test 1 — the teaching proof's black separation/background field becomes a
+#            neutral field. Three image calls: P (the deployed edge), A (the
+#            harness, production proof), B (the harness, neutral field). P and A
+#            are the same condition drawn twice.
+#            RESULT: refuted. B produced the flank holes rather than removing
+#            them, and P↔A variance spanned a whole output class.
+#
+#   test 2 — the neutral target guide PAIR (the instruction and the image) is
+#            absent. Not replaced, not recoloured. `draws` image calls per arm,
+#            interleaved A,B,A,B,…, because test 1 measured within-condition
+#            variance larger than any single-pair effect could clear. The
+#            primary endpoint is output-class STABILITY.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
@@ -19,8 +26,21 @@ name: A.T.L.A.S. teaching proof — black-field A/B (Test 1)
 on:
   workflow_dispatch:
     inputs:
+      test:
+        description: "Which isolated variable"
+        required: true
+        type: choice
+        default: "2-guide-ablation"
+        options:
+          - 1-teaching-proof-field
+          - 2-guide-ablation
+      draws:
+        description: "test 2 only — independent draws PER ARM (2 arms, so 2x this many image calls)"
+        required: true
+        type: string
+        default: "3"
       confirmation:
-        description: "Protected live-provider action — spends 3 real Gemini image calls (0 with capture_only)"
+        description: "Protected live-provider action — real Gemini image calls (0 with capture_only)"
         required: true
         type: choice
         default: DO_NOT_RUN
@@ -137,6 +157,8 @@ jobs:
           AB_MODEL: ${{ inputs.vehicle_model }}
           AB_TYPE: ${{ inputs.vehicle_type }}
           AB_CAPTURE_ONLY: ${{ inputs.capture_only }}
+          AB_TEST: ${{ inputs.test }}
+          AB_DRAWS: ${{ inputs.draws }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -150,6 +172,7 @@ jobs:
           tar -cz \
             --exclude runtime/node_modules \
             scripts/atlas-teaching-proof-ab.mjs \
+            scripts/atlas-guide-ablation-ab.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
             atlas-call1-build \
             runtime > "$RUNNER_TEMP/ab-payload.tgz"
@@ -160,7 +183,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -192,15 +215,23 @@ jobs:
 
           brief=$(printf '%s' "$AB_BRIEF_B64" | base64 -d)
 
+          case "$AB_TEST" in
+            1-teaching-proof-field) runner=scripts/atlas-teaching-proof-ab.mjs ;;
+            2-guide-ablation)       runner=scripts/atlas-guide-ablation-ab.mjs ;;
+            *) echo "unknown test: $AB_TEST"; exit 44 ;;
+          esac
+          echo "test: $AB_TEST -> $runner"
+
           set +e
           docker run --rm \
             --env-file "$env_file" \
             -v "$work:/work" -w /work \
             --entrypoint node "$image" \
-            scripts/atlas-teaching-proof-ab.mjs \
+            "$runner" \
               --out /work/ab-evidence \
               --call1 ./atlas-call1-build/atlas-call1-prompt.mjs \
               --capture-only "$AB_CAPTURE_ONLY" \
+              --draws "$AB_DRAWS" \
               --brief "$brief" \
               --vehicle-year "$AB_YEAR" --vehicle-make "$AB_MAKE" \
               --vehicle-model "$AB_MODEL" --vehicle-type "$AB_TYPE"
@@ -248,14 +279,19 @@ jobs:
           cat <<'NOTE'
           Green is not a pass. This run produces evidence, not a verdict.
 
-            requests.json    both complete pre-Gemini requests; they differ in one part
-            parity.json      the harness request against the deployed edge's own numbers
-            COMPARISON.md    edgeHoleRatio and largest-dark-component, per surface, per arm
-            P/A/B *.png      the three raw masters
-            teaching-proof-A-production.png / -B-neutral-field.png
+            requests.json    the complete pre-Gemini requests, per arm
+            parity.json      arm A against the deployed edge's own measured numbers
+            COMPARISON.md    output class, then edgeHole / largest-shape / flatBlack per surface
+            *.png            every raw master, one per draw
 
-          P and A are the SAME condition drawn twice. B is a result only if it
-          moves further than the P↔A gap. Design quality and Driver/Passenger
-          cohesion are the owner's judgement, on the images — no number here
-          decides either, and no production change follows from this run alone.
+          Two arms of one draw each cannot resolve an effect smaller than the
+          within-condition variance, and on this fixture that variance spans a
+          whole output class. Read arm-to-arm differences against the spread
+          WITHIN each arm, never against zero.
+
+          The production output-class gate's question is binary and cannot name a
+          die-cut body template. Design quality, label/text contamination and
+          Driver/Passenger cohesion are the owner's judgement, on the images — no
+          number here decides them, and no production change follows from any run
+          of this workflow.
           NOTE
