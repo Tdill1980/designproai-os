@@ -90,6 +90,16 @@ inches (every 2026-09-02 draw reported `879291d3…`). v2 (`designpro.genie-mani
 `hashContract: designpro.genie-manifest-hash.v2`) hashes the six surfaces. Historical rows are NOT
 rewritten: `docs/GENIE-MANIFEST-HASH-CUTOVER.md`, locked by `tests/genie-manifest-hash.test.mjs`.
 
+**DEPLOYED-VERIFIED 2026-09-02 on `24a8b446` through the real intake at os.designproai.com**
+(`docs/GENIE-PREP-LIVE-VALIDATION-2026-09-02.md`): Enter → prep READY in 78 ms resolver time, zero
+provider calls; vehicle change mints a new GenerationID (stale prep unreadable by construction) and the
+same-GenerationID RPC path marks the old row `superseded` and the worker reclaims the queued one;
+Generate on GenerationID `84a3eadf…` consumed prep `a377be67…` (`prepHit: true`, `genieMs: 67`, inline
+resolver skipped, manifest hash `766258a0…` identical on prep and revision) and the unchanged v23 Call-1
+request produced master `1564c66d…`, six panels, seven views, Calls 8–11 and `pack.activate` in 3 m 49 s.
+Creative defects seen on that master (wheel-arch/body-line drawing, inverted rear, mirrored passenger)
+are the frozen conditioning question, not the lifecycle.
+
 ## 🧬 CALL-1 v19 — CREATIVE PARITY RECOVERY (owner ruling, Trish 2026-09-01)
 
 **This supersedes the v17 boundary contract and RULE 0.30's authoring half
