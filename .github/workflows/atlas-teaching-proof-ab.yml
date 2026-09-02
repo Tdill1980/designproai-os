@@ -33,6 +33,18 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            swapped so its centre column matches CENTER_ORDER. Guide absent, no
 #            topology text. Primary endpoint is output-class stability. Resolves
 #            the contradiction test 3 ran into.
+#            RESULT: null. A is approximately B, compliance 0/6 in every draw of
+#            both arms -- and the two runs' shared control arm exposed that
+#            output class cannot be measured at n=3 (the same request returned
+#            flat_atlas 3/3 and vehicle_depiction 3/3 an hour apart).
+#
+#   test 5 — the deployed output contract asks for two different objects at once:
+#            "a roll of printed vinyl laid flat on a table" AND "the complete
+#            flattened panel layout of the vehicle". ONE clause is reframed from
+#            vehicle anatomy to print media; nothing else changes. SIX draws per
+#            arm. Primary endpoint is RULE 0.32's contract: six continuous
+#            rectangular artwork regions, edge to edge, no missing-artwork
+#            fields, no anatomy contours -- measured colour-blind.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
@@ -48,12 +60,13 @@ on:
         description: "Which isolated variable"
         required: true
         type: choice
-        default: "4-teaching-proof-order"
+        default: "5-object-clause"
         options:
           - 1-teaching-proof-field
           - 2-guide-ablation
           - 3-topology-text
           - 4-teaching-proof-order
+          - 5-object-clause
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -61,10 +74,10 @@ on:
         type: string
         default: ""
       draws:
-        description: "tests 2, 3 and 4 — independent draws PER ARM (2 arms, so 2x this many image calls)"
+        description: "tests 2-5 — independent draws PER ARM (2 arms, so 2x this many image calls). Test 5 uses 6."
         required: true
         type: string
-        default: "3"
+        default: "6"
       confirmation:
         description: "Protected live-provider action — real Gemini image calls (0 with capture_only)"
         required: true
@@ -204,6 +217,7 @@ jobs:
             scripts/atlas-teaching-proof-order-ab.mjs \
             scripts/atlas-teaching-proof-reorder.mjs \
             scripts/atlas-measure-master.mjs \
+            scripts/atlas-object-clause-ab.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
             atlas-call1-build \
@@ -255,6 +269,7 @@ jobs:
             2-guide-ablation)       runner=scripts/atlas-guide-ablation-ab.mjs ;;
             3-topology-text)        runner=scripts/atlas-topology-text-ab.mjs ;;
             4-teaching-proof-order) runner=scripts/atlas-teaching-proof-order-ab.mjs ;;
+            5-object-clause)        runner=scripts/atlas-object-clause-ab.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs

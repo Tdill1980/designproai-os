@@ -411,3 +411,106 @@ test("Test 4 swaps only the teaching image, and both arms keep one image", async
     /arm A is not the owner's pinned teaching proof/,
   );
 });
+
+// ── TEST 5's INSTRUMENT ────────────────────────────────────────────────────
+// One clause of the flat-master output contract, reframed from vehicle anatomy
+// to print media (RULE 0.32). The whole experiment rests on that clause being
+// the ONLY difference, so these convict a second edit, a clause that is not
+// found, a missing guide, or a moved teaching proof.
+const objectClause = await import("../scripts/atlas-object-clause-ab.mjs");
+
+test("the clause is the owner's exact wording, and carries no negative", () => {
+  assert.equal(objectClause.ANATOMY_CLAUSE, "the complete flattened panel layout of the vehicle");
+  assert.equal(
+    objectClause.MEDIA_CLAUSE,
+    "the complete layout of the continuous rectangular printed wrap sheets, unwrapped flat before installation and trimming",
+  );
+  // No wheel-well language, no negatives — the owner forbade both by name.
+  for (const word of ["wheel", "well", "arch", "window", "glass", "do not", "never", "avoid", "without"]) {
+    assert.ok(!objectClause.MEDIA_CLAUSE.toLowerCase().includes(word), `the replacement clause smuggled in "${word}"`);
+  }
+});
+
+test("Test 5 changes one clause of the deployed prompt and nothing else", () => {
+  const deployedPrompt = [
+    "SOME CREATIVE PREAMBLE that must not move.",
+    "OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD on one square 4K canvas.",
+    `Design ONE flat wrap for this vehicle — on one sheet — ${objectClause.ANATOMY_CLAUSE}. The output is flat print artwork.`,
+    "Every panel is opaque, unbroken and full-bleed to all four edges.",
+  ].join("\n");
+
+  const { requests, reframed } = objectClause.buildObjectClauseRequests({
+    prompt: deployedPrompt,
+    teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. …",
+    targetGuideText: "CURRENT TARGET GUIDE — this final neutral mask …",
+    teachingBytes: sourceBytes,
+    guideBytes: Buffer.from("a-neutral-six-rectangle-mask"),
+    model: "gemini-3-pro-image",
+  });
+
+  // Both arms are the deployed shape: 5 parts, teaching proof AND guide.
+  assert.equal(requests.A.partCount, 5);
+  assert.equal(requests.B.partCount, 5);
+  assert.equal(requests.A.modelInputImageCount, 2);
+  assert.equal(requests.B.modelInputImageCount, 2);
+  for (let i = 1; i < 5; i += 1) {
+    assert.equal(requests.A.parts[i].sha256, requests.B.parts[i].sha256, `part ${i} drifted between arms`);
+  }
+  assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256, "arm A is not carrying the owner's pinned teaching proof");
+  assert.notEqual(requests.A.parts[0].sha256, requests.B.parts[0].sha256);
+
+  // The reframed prompt is the deployed prompt with exactly one substring swapped.
+  assert.ok(!reframed.includes(objectClause.ANATOMY_CLAUSE));
+  assert.ok(reframed.includes(objectClause.MEDIA_CLAUSE));
+  assert.equal(reframed.replace(objectClause.MEDIA_CLAUSE, objectClause.ANATOMY_CLAUSE), deployedPrompt);
+  assert.equal(
+    reframed.length - deployedPrompt.length,
+    objectClause.MEDIA_CLAUSE.length - objectClause.ANATOMY_CLAUSE.length,
+  );
+  // Everything either side of the clause survives untouched.
+  assert.ok(reframed.startsWith("SOME CREATIVE PREAMBLE that must not move."));
+  assert.ok(reframed.includes("Every panel is opaque, unbroken and full-bleed to all four edges."));
+});
+
+test("Test 5 refuses a prompt that does not carry the clause exactly once", () => {
+  const base = {
+    teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. …",
+    targetGuideText: "CURRENT TARGET GUIDE — …",
+    teachingBytes: sourceBytes,
+    guideBytes: Buffer.from("guide"),
+    model: "gemini-3-pro-image",
+  };
+  assert.throws(
+    () => objectClause.buildObjectClauseRequests({ ...base, prompt: "a prompt with no such clause" }),
+    /appears 0 times in the deployed prompt/,
+  );
+  assert.throws(
+    () => objectClause.buildObjectClauseRequests({
+      ...base,
+      prompt: `${objectClause.ANATOMY_CLAUSE} and again ${objectClause.ANATOMY_CLAUSE}`,
+    }),
+    /appears 2 times in the deployed prompt/,
+  );
+});
+
+test("the clause is present exactly once in the DEPLOYED assembly", async () => {
+  const outDir = mkdtempSync(join(tmpdir(), "atlas-clause-"));
+  const bundle = buildAtlasCall1Prompt({ outDir, esbuild: resolveEsbuild() });
+  const mod = await import(`file://${bundle}`);
+  const panels = [
+    ["Driver Side", "DS", "right-flank"], ["Passenger Side", "PS", "left-flank"],
+    ["Hood", "HD", "center-column"], ["Roof", "RF", "center-column"],
+    ["Front", "FR", "center-column"], ["Rear", "RR", "center-column"],
+  ].map(([label, surfaceId, placement]) => ({
+    label, surfaceId, placement, normalized: { x: 0.1, y: 0.1, width: 0.2, height: 0.3, orientation: "upright" },
+  }));
+  const { prompt } = mod.buildAtlasCall1Prompt({
+    authoringMode: "commercial", prompt: "Bold commercial HVAC wrap.", finish: "Gloss",
+    vehicleYear: "2022", vehicleMake: "Ford", vehicleModel: "F250 Crew Cab", vehicleType: "truck",
+    panels, visionboard_intent: "style_inspiration",
+  });
+  // If the deployed contract ever stops carrying this clause, the experiment is
+  // testing something that is no longer there and must fail rather than run.
+  assert.equal(prompt.split(objectClause.ANATOMY_CLAUSE).length - 1, 1,
+    "the deployed output contract no longer contains the anatomy clause exactly once");
+});
