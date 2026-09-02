@@ -54,11 +54,17 @@ test("the teaching proof decodes as the exact 1254x1254 owner canvas", async () 
   assert.equal(info.format, "png");
 });
 
-test("Call 1 keeps the teaching proof outside customer-reference authority and hashes it into reuse", () => {
-  assert.match(runtime, /loadBundledAtlasTeachingProof/);
-  assert.match(runtime, /atlasDesignTeachingExample: teachingProof\.identity/);
-  assert.match(runtime, /teachingProofIdentity: teachingProof\.identity/);
-  assert.match(runtime, /atlasDesignTeachingExampleApplied: true/);
+test("Call 1 no longer sends the teaching proof (one-field contract) and records that honestly", () => {
+  // Owner ruling 2026-09-02: the labeled teaching sheet is not a Call-1 model
+  // input. The bytes stay release-pinned and hash-verified above for history
+  // and for the harness slice; the live runtime never loads or stages them,
+  // and the revision says so (`atlasDesignTeachingExampleApplied: false`).
+  assert.doesNotMatch(runtime, /loadBundledAtlasTeachingProof/);
+  assert.doesNotMatch(runtime, /teachingProofIdentity: teachingProof\.identity/);
+  assert.match(runtime, /atlasDesignTeachingExample: null/);
+  assert.match(runtime, /atlasDesignTeachingExampleApplied: false/);
+  assert.match(runtime, /atlasDesignTeachingExampleIdentity: null/);
+  assert.match(runtime, /atlasFieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
   assert.match(runtime, /topologyExamplesApplied: 0/);
   assert.doesNotMatch(runtime, /referenceImagesBase64:[^\n]*teachingProof/);
   assert.doesNotMatch(runtime, /loadBundledFlatToFinishedExample/,

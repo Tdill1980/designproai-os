@@ -49,7 +49,15 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orthographic-restored";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260902.v24-one-field";
+// ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
+// runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
+// composition and receives NO six-region guide, NO labeled teaching sheet, NO
+// topology text and NO panel-object vocabulary. GENIE/runtime owns the six
+// territories as code and serializes them after the one image call. The
+// legacy six-container request stays callable for the harness slice and for
+// history; production sends the field contract.
+const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 // NO EXPLICIT TEMPERATURE (owner ruling, 2026-09-01). DID-2D918868 -- the
@@ -198,6 +206,11 @@ const COMMERCIAL_DEPTH =
 // which is the convergence failure this file has already been around twice.
 const COMMERCIAL_TRANSLATION =
   "Translate anything the brief names into concrete design — color story, layout, graphic motifs, focal treatment (\"stealth bomber\" becomes angular faceted panels with sharp swept edges). What the client named should be obvious at a glance.";
+// The one-field call keeps this sentence byte for byte except its example
+// object: "panels" is production vocabulary the field contract keeps out of the
+// model request (harness swap 7, run 33659500846).
+const COMMERCIAL_TRANSLATION_FIELD =
+  "Translate anything the brief names into concrete design — color story, layout, graphic motifs, focal treatment (\"stealth bomber\" becomes angular faceted plates with sharp swept edges). What the client named should be obvious at a glance.";
 
 function buildLogoArchitecture(companyName: string, industryType?: string): string {
   // NO FORM PRESCRIBED, DELIBERATELY (owner, 2026-08-01: "remove all word mark
@@ -496,6 +509,54 @@ Every panel is opaque, unbroken and full-bleed to all four edges: flat printed g
 Gallery-grade custom artwork with real depth, movement and a wow factor — never generic AI filler, never a template. Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing.`;
 }
 
+// ── ONE-FIELD OUTPUT CONTRACT (designpro.atlas-field-prompt.v2) ─────────────
+// The tail of the one-field Call 1, ported verbatim from the harness that drew
+// the only clean flanks this product has produced (scripts/
+// atlas-field-contract-v2.mjs, run 33659500846). It names THIRDS — the
+// fractions the model draws and the fractions the code-owned territories
+// occupy — and nothing else: no containers, no panel objects, no labels, no
+// negatives, no vehicle-body-piece framing. The nose edges are OS data (the
+// runtime's installer map) so the two hero passages sweep the way the
+// installed sides do.
+type AtlasNoseEdge = { driver: "left" | "right"; passenger: "left" | "right" };
+
+function atlasNoseEdgeInput(value: unknown): AtlasNoseEdge {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const edge = (key: string, fallback: "left" | "right") => {
+    const v = String(raw[key] || fallback).trim().toLowerCase();
+    if (v !== "left" && v !== "right") throw new Error(`atlas_artboard_nose_edge_invalid:${key}`);
+    return v as "left" | "right";
+  };
+  return { driver: edge("driver", "left"), passenger: edge("passenger", "right") };
+}
+
+function atlasSweepPhrase(noseEdge: "left" | "right"): string {
+  return noseEdge === "left" ? "Forward energy sweeps left to right." : "Forward energy sweeps right to left.";
+}
+
+function atlasFieldContract(vehicle: string, bodyClass: string, noseEdge: AtlasNoseEdge, hasBrandName: boolean): string {
+  const focal = hasBrandName
+    ? "the company name whole and legible inside it"
+    : "its focal treatment whole inside it";
+  const focalToo = hasBrandName
+    ? "the company name whole and legible inside it too"
+    : "its focal treatment whole inside it too";
+  const lowerMark = hasBrandName
+    ? "The brand mark may appear here once, compact and whole; every other letter lives in the upper two thirds."
+    : "Any lettering the brief asks for lives in the upper two thirds.";
+  return [
+    "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.",
+    `Paint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.`,
+    "",
+    "Compose it in three equal horizontal thirds that read as one picture:",
+    `• THE UPPER THIRD — the primary hero passage: a complete, wide statement of the design, ${focal}, clear of the third's top and bottom edges. ${atlasSweepPhrase(noseEdge.driver)}`,
+    `• THE MIDDLE THIRD — a second hero passage telling the brand story in full, composed afresh as its own arrangement, ${focalToo}. ${atlasSweepPhrase(noseEdge.passenger)}`,
+    `• THE LOWER THIRD — the supporting register: the same ground, palette and motion at a calmer intensity, secondary motifs, finished artwork everywhere. ${lowerMark}`,
+    "",
+    "Lettering reads left to right throughout. Each focal element sits inside one third; the ground and its motion flow through all three continuously, so the transitions are invisible. Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+  ].join("\n");
+}
+
 // ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY ────────────────────
 // The OS owns the math; the AI owns only the creative pixels. Each region
 // arrives as x/y/width/height already divided by the canvas (computed by the
@@ -597,6 +658,14 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   const canonicalMakeModel = canonicalizeVehicle(vehicleMake, vehicleModel, vehicleYear);
   const atlasFlatMaster = (params as any).atlasFlatMaster === true;
   const atlasPanels = Array.isArray((params as any).atlasPanels) ? (params as any).atlasPanels : [];
+  // ONE-FIELD CONTRACT: the same creative assembly, with the seven exact
+  // presentation phrases that name panel/rectangle objects swapped for their
+  // field wording (harness swaps 1-7), and the field tail instead of the
+  // six-container tail. Persona, concept, brief, translation, logo, contact
+  // lock, photo-realism rule, FINISH_SPECS text, style, movement and depth are
+  // untouched.
+  const atlasField = atlasFlatMaster && (params as any).atlasField === true;
+  const atlasNoseEdge: AtlasNoseEdge = atlasNoseEdgeInput((params as any).atlasNoseEdge);
   const vehicle = [vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(' ');
@@ -738,7 +807,9 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. The design is built from layered elements — background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare panel. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
+    const atlasScene = atlasField
+      ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph. This is the single design authority for the complete vehicle — one design, one composition. The design is built from layered elements — background color and texture flowing continuously across the whole field, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare vinyl. The company name reads clearly at a glance; how the branding is composed is your creative call.`
+      : `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. The design is built from layered elements — background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare panel. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
     // PERSONA — #3948 ("A.C.E. is a sign-and-wrap-company designer, not a SEMA
     // builder") replaced an "elite… SEMA-caliber" identity, and that call stands:
@@ -768,7 +839,7 @@ ${commercialPresentation}
 
 THE CONCEPT — the heart of this design; build everything around it:
 Client's creative direction: "${creativeDirection}"
-${COMMERCIAL_TRANSLATION}
+${atlasField ? COMMERCIAL_TRANSLATION_FIELD : COMMERCIAL_TRANSLATION}
 
 CLIENT BRIEF:`;
 
@@ -834,13 +905,13 @@ CLIENT BRIEF:`;
     if (visionBoardImages && visionBoardImages.length > 0) {
       if (visionboard_intent === 'exact_reference') {
         assembled += atlasFlatMaster
-          ? `\n\nEXACT REFERENCE: The provided reference is the customer's approved artwork authority. Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully across the six mapped livery fields.`
+          ? `\n\nEXACT REFERENCE: The provided reference is the customer's approved artwork authority. Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully across ${atlasField ? "the whole continuous field" : "the six mapped livery fields"}.`
           : `\n\nEXACT REFERENCE: The provided reference is the customer's own approved wrap design for their vehicle. Recreate it faithfully on the ${vehicle} — keep the colors, patterns, typography, logos, layout, and composition true to the reference, adapting only to fit the ${vehicle}'s body lines and preserving the design's identity, proportions, and visual hierarchy.`;
       } else if (styleDescriptors) {
         assembled += `\n\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA extracted from references:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the reference images directly.`;
       } else {
         assembled += atlasFlatMaster
-          ? `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL six-field livery. Use them as style inspiration only — create something new that captures their energy.`
+          ? `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL ${atlasField ? "continuous livery field" : "six-field livery"}. Use them as style inspiration only — create something new that captures their energy.`
           : `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new that captures their energy.`;
       }
     }
@@ -848,6 +919,11 @@ CLIENT BRIEF:`;
     // PHOTOGRAPHIC REALISM LOCK — only when the brief names a real photo scene.
     if (wantsPhoto) assembled += `\n\n${PHOTO_REALISM_LOCK}`;
 
+    if (atlasField) {
+      assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole field — one consistent finish throughout.\nThe artwork fills the entire field edge to edge — solid printed vinyl, corner to corner.`;
+      assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, atlasNoseEdge, true)}`;
+      return assembled;
+    }
     if (atlasFlatMaster) {
       assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across every panel — consistent finish on every surface.\nThe artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.`;
       assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass)}`;
@@ -904,7 +980,9 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare panel.`;
+  const atlasRestyleScene = atlasField
+    ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph. This is the single design authority for the complete vehicle — one design, one composition. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare vinyl.`
+    : `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare panel.`;
   const restylePresentation = atlasFlatMaster
     ? atlasRestyleScene
     : `CAMERA ANGLE (LOCKED — read this FIRST):
@@ -914,7 +992,9 @@ ${restyleScene}
 
 ${studioEnvironment}`;
 
-  const restyleFinish = atlasFlatMaster
+  const restyleFinish = atlasField
+    ? `PRINT COLOR: uniform artwork color across the whole field. Physical finish is applied only in downstream proof projections.`
+    : atlasFlatMaster
     ? `PRINT COLOR: uniform artwork color across all six fields. Physical finish is applied only in downstream proof projections.`
     : `FINISH LOCK (LOCKED — read this FIRST, applies to every body panel):
 ${(finish || 'Gloss').toUpperCase()} — ${finishSpec}`;
@@ -956,13 +1036,13 @@ ${PROFESSIONAL_JUDGMENT}`;
       }
     } else if (visionboard_intent === 'exact_reference') {
       assembled += atlasFlatMaster
-        ? `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's approved artwork authority. Reproduce its exact colors, patterns, graphics, typography, layout, composition, logos, wordmarks and supplied text faithfully across the six mapped livery fields. Preserve its proportions, hierarchy, coverage and texture density.`
+        ? `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's approved artwork authority. Reproduce its exact colors, patterns, graphics, typography, layout, composition, logos, wordmarks and supplied text faithfully across ${atlasField ? "the whole continuous field" : "the six mapped livery fields"}. Preserve its proportions, hierarchy, coverage and texture density.`
         : `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's own approved wrap design. Reproduce it faithfully on the ${vehicle} — keep the exact colors, patterns, graphics, typography, layout, and composition true to the reference, adapting ONLY to fit the ${vehicle}'s body lines while preserving the design's identity, proportions, and visual hierarchy. Reproduce EVERY logo, wordmark, and line of text exactly once, in the same place and style as the reference — branding is PART of this design, never a separate layer to strip, relocate, duplicate, or reinvent. Do NOT redesign, reinterpret, recolor, simplify, or add elements; the ONLY thing that changes is the vehicle the design is applied to. Match the reference's full coverage and texture density — if it is an all-over textured wrap, cover the entire body edge to edge; where the reference leaves the body plain, keep it plain.`;
     } else if (styleDescriptors) {
       assembled += `\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the references directly.`;
     } else {
       assembled += atlasFlatMaster
-        ? `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL six-field livery. Use them as style inspiration only — create something new.`
+        ? `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL ${atlasField ? "continuous livery field" : "six-field livery"}. Use them as style inspiration only — create something new.`
         : `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new.`;
     }
   }
@@ -980,6 +1060,11 @@ ${PROFESSIONAL_JUDGMENT}`;
   // PHOTOGRAPHIC REALISM LOCK — only when the brief names a real photo scene.
   if (wantsPhoto) assembled += `\n\n${PHOTO_REALISM_LOCK}`;
 
+  if (atlasField) {
+    assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole field — one consistent finish throughout.\nThe artwork fills the entire field edge to edge — solid printed vinyl, corner to corner.`;
+    assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, atlasNoseEdge, false)}`;
+    return assembled;
+  }
   if (atlasFlatMaster) {
     assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across every panel — consistent finish on every surface.\nThe artwork fills every rectangle edge to edge — solid printed vinyl, corner to corner.`;
     assembled += `\n\n${atlasFlatMasterContract(atlasPanels, vehicle, atlasBodyClass)}`;
@@ -2234,6 +2319,15 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     const vehicleModel = String(body.vehicleModel || "").trim();
     const vehicleType = String(body.vehicleType || "").trim();
     const authoringMode = String(body.authoringMode || "commercial") === "restyle" ? "restyle" : "commercial";
+    // ONE-FIELD CONTRACT (owner ruling 2026-09-02). Production sends it; the
+    // legacy six-container request (no contract field) stays callable for the
+    // harness slice and history. An unknown contract is refused, never guessed.
+    const fieldContract = String(body.fieldContract || "").trim();
+    if (fieldContract && fieldContract !== ATLAS_FIELD_PROMPT_CONTRACT) {
+      throw new Error(`atlas_artboard_field_contract_unknown:${fieldContract.slice(0, 80)}`);
+    }
+    const atlasField = fieldContract === ATLAS_FIELD_PROMPT_CONTRACT;
+    const atlasNoseEdge = atlasNoseEdgeInput(body.noseEdge);
 
     // The six labeled panels WITH their GENIE-derived normalized [0,1] target
     // topology. Under the owner boundary contract (2026-09-01) the topology is
@@ -2291,6 +2385,8 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       styleDescriptors: String(body.styleDescriptors || "").trim() || undefined,
       atlasFlatMaster: true,
       atlasPanels: panels,
+      atlasField,
+      atlasNoseEdge,
     } as any);
 
     // 3 — parts, in v14's proven order. 083d2a70 (edge v14, 2026-08-31) is the
@@ -2357,11 +2453,18 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       parts.push({ inlineData: { mimeType: mime, data: btoa(binary) } });
       return { contentHash: actualHash, byteSize: bytes.length };
     };
+    // ONE-FIELD CONTRACT: the model receives the prompt and the verified
+    // customer references ONLY. No labeled teaching sheet, no neutral
+    // six-region guide, no topology text. Everything below this branch is the
+    // legacy six-container request, kept callable for the harness slice.
+    let verifiedTeachingProof: Record<string, unknown> | null = null;
+    if (atlasField) {
+      for (const ref of references) pushImage(ref);
+    } else {
     const teachingProofPath = String(body.teachingProofStoragePath || "").trim();
     if (!teachingProofPath) {
       throw new Error("atlas_artboard_teaching_proof_incomplete");
     }
-    let verifiedTeachingProof: Record<string, unknown> | null = null;
     {
       const identity = validateAtlasTeachingProofIdentity(body.teachingProofIdentity);
       parts.push({
@@ -2396,6 +2499,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // Legacy inline path for callers that still send bytes (harness/tests);
     // production sends the storage path.
     pushImage(body.guideImageBase64);
+    }
 
     // 4 — exactly ONE Gemini image request. No retries, no second asset.
     //
@@ -2470,6 +2574,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
         modelInputImageCount,
         teachingProofIdentity: verifiedTeachingProof,
+        fieldContract: atlasField ? ATLAS_FIELD_PROMPT_CONTRACT : null,
         topologyContract: ATLAS_TOPOLOGY_CONTRACT,
         promptChars: prompt.length,
         masterUrl: signed?.signedUrl || null,

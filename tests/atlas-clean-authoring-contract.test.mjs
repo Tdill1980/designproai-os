@@ -73,18 +73,36 @@ test("ATLAS creative contract carries named design context and pure rectangular 
 
 test("ATLAS request exposes exact identity, placement and normalized topology but no inch dimensions", () => {
   const request = block(runtime, "function atlasEdgeRequestBody", "async function callAtlasArtboardEdge");
-  const panelBlock = block(request, "panels: manifest.zones.map", "teachingProofStoragePath:");
+  const panelBlock = block(request, "panels: manifest.zones.map", "fieldContract:");
   assert.match(panelBlock, /label:/);
   assert.match(panelBlock, /surfaceId:/);
   assert.match(panelBlock, /placement:/);
   assert.match(panelBlock, /normalized: normalizedZoneTopology\(zone, manifest\)/);
   assert.doesNotMatch(panelBlock, /widthInches:|heightInches:|topology:/);
   assert.match(request, /vehicleType:/);
-  assert.match(request, /teachingProofStoragePath:/);
-  assert.doesNotMatch(request, /cohesionExample|correctiveNote/);
-  assert.match(request, /guideStoragePath: extras\.guideStoragePath/);
-  assert.match(request, /teachingProofIdentity:/);
+  // ONE-FIELD CONTRACT (owner ruling 2026-09-02): the request names the field
+  // contract and the code-owned nose edges; no teaching proof, no guide, no
+  // corrective note travels. The panel list stays as OS data the edge
+  // validates and never puts in the field prompt.
+  assert.match(request, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
+  assert.match(request, /noseEdge: manifest\?\.installerMap\?\.noseEdge \|\| NOSE_EDGE/);
+  assert.doesNotMatch(request, /cohesionExample|correctiveNote|teachingProofStoragePath|teachingProofIdentity|guideStoragePath/);
   assert.doesNotMatch(request, /referenceImagesBase64:[^\n]*teachingProof/);
+});
+
+test("ATLAS field branch sends the prompt and customer references only", () => {
+  const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
+  const fieldBranch = handler.slice(handler.indexOf("if (atlasField) {"), handler.indexOf("} else {", handler.indexOf("if (atlasField) {")));
+  assert.match(fieldBranch, /for \(const ref of references\) pushImage\(ref\)/);
+  assert.doesNotMatch(fieldBranch, /downloadPart\(|TEACHING REFERENCE|TARGET GUIDE|atlasTopologyText/);
+  assert.match(handler, /atlas_artboard_field_contract_unknown/);
+  const fieldTail = block(edge, "function atlasFieldContract(", "// ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY");
+  assert.match(fieldTail, /ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image/);
+  assert.match(fieldTail, /three equal horizontal thirds that read as one picture/);
+  for (const forbidden of ["panel", "artboard", "orthographic", "rectangle", "sheet", "template", "silhouette", "container", "wheel", "window", "do not", "never a", "A.T.L.A.S."]) {
+    assert.ok(!new RegExp(`\\b${forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(fieldTail.slice(fieldTail.indexOf("return ["))),
+      `the field tail must not hand the image model "${forbidden}"`);
+  }
 });
 
 test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", () => {
@@ -103,6 +121,8 @@ test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", 
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260902\.v24-one-field"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260902\.v24-one-field"/);
+  assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
+  assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
 });

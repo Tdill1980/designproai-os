@@ -14,13 +14,16 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 61);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 62);
   for (const name of [
     // GENIE Prep (owner ruling 2026-09-02): the early lifecycle module is
     // required by generation-worker.cjs and index.js at module load, so a
     // release without it dies at require time (the runtime-closure lock caught
     // it unpackaged on run 33667466817).
     "runtime/genie-prep.cjs",
+    // ONE-FIELD CALL 1 (owner ruling 2026-09-02): the six code-only territories
+    // the field is serialized into. flat-first-atlas.cjs requires it at load.
+    "runtime/atlas-field-territories.cjs",
     // The Call-1 output-class gate (owner ruling 2026-09-01): a vehicle-
     // depiction candidate is refused before canonicalization or fan-out.
     "runtime/atlas-output-class.cjs",

@@ -1,5 +1,39 @@
 # CLAUDE.md — designproai-os
 
+## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
+
+**Supersedes the authoring half of v19, v23, RULE 0.30's conditioning clause,
+RULE 0.28 §2 and every earlier "teaching proof / neutral guide / topology
+text" input rule below wherever they conflict.** The gates are untouched.
+
+Gemini authors **ONE uninterrupted full-bleed vehicle-wrap composition** and is
+shown **no production topology**: no six-region guide, no labeled Flamingo
+teaching sheet, no normalized `[0,1]` text, no six named production objects,
+no panel/artboard/template framing, no wheel/window/body-piece negatives. The
+model request is **one text part plus verified customer references**.
+GENIE/runtime owns Driver, Passenger, Hood, Roof, Front and Rear as **code-only
+territories** (`runtime/atlas-field-territories.cjs`, `field-thirds-v2`) and
+cuts them AFTER the one image call. Passenger is its own territory, never
+mirrored Driver.
+
+Why: the live v23 generation `84a3eadf…` (2026-09-02, the GENIE-prep
+validation run) passed every gate and still painted wheel arches and body lines
+into both flanks, an inverted rear and a mirrored passenger. Field Recovery v2
+draw `33659500846` is the only measured configuration with clean, continuous,
+anatomy-free flanks, so it is the product now. The edge assembly emits that
+harness prompt **byte for byte** for its fixture (`37e4137e8ae8c8bb…`) while
+the legacy six-container branch still emits the deployed v23 pin — locked by
+`tests/atlas-one-field-call1.test.mjs`. Full contract:
+`docs/ATLAS-ONE-FIELD-CALL1.md`. Versions
+`designpro-flat-first-atlas-20260902.v24-one-field` /
+`atlas-artboard-designiq.20260902.v24-one-field`.
+
+**The thirds language in the tail is scaffolding the owner has not approved as
+permanent architecture.** Draw 1 drew the thirds as framed passages with thin
+white margins inside the bleed insets. That is the next creative variable to
+measure on a real product generation, not a reason to re-add containers,
+guides, teaching sheets or negatives.
+
 ## 📐 RULE 0.32 — A.T.L.A.S. IS PRINTED MEDIA, NOT A VEHICLE (owner ruling, Trish 2026-09-02)
 
 **A.T.L.A.S. = the continuous printed wrap sheets, unwrapped flat, BEFORE
