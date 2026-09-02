@@ -88,7 +88,7 @@ select is(public.claim_designpro_genie_prep('worker-2',180,NULL),NULL,
 select throws_ok(
   $$select public.complete_designpro_genie_prep(
     (select prep_id from prep_fixture),'00000000-0000-4000-8000-00000000dead',
-    '{"geometryResolution":{"genieManifestHash":"'||repeat('1',64)||'"}}'::jsonb,
+    ('{"geometryResolution":{"genieManifestHash":"'||repeat('1',64)||'"}}')::jsonb,
     repeat('1',64),'measured',true,812)$$,
   'P0001','genie_prep_lease_stale',
   'a stale lease cannot complete a prep');
@@ -96,7 +96,7 @@ select is(
   (public.complete_designpro_genie_prep(
     (select prep_id from prep_fixture),
     (select lease_token from public.designpro_genie_preps where id=(select prep_id from prep_fixture)),
-    '{"geometryResolution":{"genieManifestHash":"'||repeat('1',64)||'","state":"measured"}}'::jsonb,
+    ('{"geometryResolution":{"genieManifestHash":"'||repeat('1',64)||'","state":"measured"}}')::jsonb,
     repeat('1',64),'measured',true,812))->>'status','ready',
   'the lease holder completes the prep');
 select ok((select prepared_at is not null and duration_ms=812 and lease_token is null
