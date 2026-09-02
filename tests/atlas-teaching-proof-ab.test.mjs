@@ -514,3 +514,106 @@ test("the clause is present exactly once in the DEPLOYED assembly", async () => 
   assert.equal(prompt.split(objectClause.ANATOMY_CLAUSE).length - 1, 1,
     "the deployed output contract no longer contains the anatomy clause exactly once");
 });
+
+// ── TEST 6's INSTRUMENT ────────────────────────────────────────────────────
+// Erasing the six technical labels is only a one-variable change if the artwork
+// and the Flamingo branding are untouchable BY CONSTRUCTION, not by care. These
+// assert that, and that the labels are gone rather than ghosted — a half-erased
+// label is a worse input than an intact one, because it is neither condition.
+const delabel = await import("../scripts/atlas-teaching-proof-delabel.mjs");
+const delabelAb = await import("../scripts/atlas-teaching-proof-delabel-ab.mjs");
+
+test("every technical-label box is disjoint from every artwork panel", () => {
+  const overlaps = (a, b) => a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0;
+  assert.equal(delabel.LABEL_BOXES.length, 6);
+  assert.deepEqual(
+    delabel.LABEL_BOXES.map((l) => l.key).sort(),
+    ["DRIVER SIDE", "FRONT", "HOOD", "PASSENGER SIDE", "REAR", "ROOF"],
+  );
+  for (const label of delabel.LABEL_BOXES) {
+    for (const panel of delabel.PANEL_RECTS) {
+      assert.ok(!overlaps(label, panel), `${label.key} overlaps panel ${panel.key} — it could erase artwork`);
+    }
+  }
+});
+
+test("the de-labelled proof erases the six marks and nothing else", async () => {
+  const { bytes, report } = await delabel.buildDelabelledTeachingProof(sourceBytes, { sharp });
+
+  assert.equal(report.sourceSha256, SOURCE_SHA256);
+  assert.notEqual(report.variantSha256, SOURCE_SHA256);
+  assert.equal(report.changedInsideAnyPanel, 0);
+  assert.equal(report.changedOutsideLabelBoxes, 0);
+  assert.equal(report.everyLabelBoxIsUniformField, true);
+  for (const key of ["DRIVER SIDE", "PASSENGER SIDE", "HOOD", "ROOF", "REAR", "FRONT"]) {
+    assert.ok(report.erasedByLabel[key] > 500, `${key} barely changed: ${report.erasedByLabel[key]}`);
+  }
+
+  // Re-derive independently of the builder's own report.
+  const src = await sharp(sourceBytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const out = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = src.info;
+  const at = (x, y) => (y * width + x) * channels;
+  const inBox = (boxes, x, y) => boxes.some((b) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1);
+
+  let outsideLabels = 0;
+  let insidePanels = 0;
+  let notField = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = at(x, y);
+      let differs = false;
+      for (let c = 0; c < channels; c += 1) if (out.data[i + c] !== src.data[i + c]) { differs = true; break; }
+      if (!differs) continue;
+      if (inBox(delabel.PANEL_RECTS, x, y)) insidePanels += 1;
+      if (!inBox(delabel.LABEL_BOXES, x, y)) outsideLabels += 1;
+      if (!(out.data[i] === 0 && out.data[i + 1] === 0 && out.data[i + 2] === 0)) notField += 1;
+    }
+  }
+  assert.equal(insidePanels, 0, `${insidePanels} pixels changed inside a panel — artwork or branding was altered`);
+  assert.equal(outsideLabels, 0, `${outsideLabels} pixels changed outside every label box`);
+  assert.equal(notField, 0, `${notField} changed pixels did not become the field colour`);
+
+  // Gone, not ghosted: no bright OR mid-grey remnant survives in any box.
+  for (const label of delabel.LABEL_BOXES) {
+    for (let y = label.y0; y <= label.y1; y += 1) {
+      for (let x = label.x0; x <= label.x1; x += 1) {
+        const i = at(x, y);
+        assert.ok(out.data[i] === 0 && out.data[i + 1] === 0 && out.data[i + 2] === 0,
+          `${label.key} still carries a non-field pixel at ${x},${y}`);
+      }
+    }
+  }
+});
+
+test("the de-label builder refuses anything that is not the owner's proof", async () => {
+  const notTheProof = await sharp({ create: { width: 8, height: 8, channels: 4, background: "#000000" } }).png().toBuffer();
+  await assert.rejects(
+    () => delabel.buildDelabelledTeachingProof(notTheProof, { sharp }),
+    /source is not the owner proof/,
+  );
+});
+
+test("Test 6 swaps only the teaching image, and both arms keep one image", async () => {
+  const { bytes } = await delabel.buildDelabelledTeachingProof(sourceBytes, { sharp });
+  const base = {
+    prompt: "P".repeat(4587),
+    teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. …",
+    teachingBytes: sourceBytes,
+    delabelledBytes: bytes,
+    model: "gemini-3-pro-image",
+  };
+  const { requests } = delabelAb.buildDelabelRequests(base);
+  assert.equal(requests.A.partCount, 3);
+  assert.equal(requests.B.partCount, 3);
+  assert.equal(requests.A.modelInputImageCount, 1);
+  assert.equal(requests.B.modelInputImageCount, 1);
+  assert.equal(requests.A.parts[0].sha256, requests.B.parts[0].sha256);
+  assert.equal(requests.A.parts[1].sha256, requests.B.parts[1].sha256);
+  assert.notEqual(requests.A.parts[2].sha256, requests.B.parts[2].sha256);
+  assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256);
+  assert.throws(
+    () => delabelAb.buildDelabelRequests({ ...base, delabelledBytes: sourceBytes }),
+    /arm B carries the unmodified proof/,
+  );
+});
