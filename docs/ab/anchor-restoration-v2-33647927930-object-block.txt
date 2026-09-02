@@ -1,0 +1,4 @@
+A.T.L.A.S. — DesignProAI’s canonical flattened design topology, on one square 4K canvas.
+For the vehicle-design embodiment, A.T.L.A.S. represents a top-view vehicle-wrap design as a flattened 2D topology: conceptually, the printable exterior skin of the completely wrapped 3D vehicle is pressed flat from above and unfolded into one dimensionally governed design space. Here that vehicle is this exact 2022 Ford F250 Crew Cab (truck).
+
+Create one cohesive professional vehicle-wrap design across this flattened topology. Every defined topology region is printable artwork and must be filled completely edge-to-edge with intentional finished design. The complete flattened topology represents one coordinated vehicle-wrap design.
