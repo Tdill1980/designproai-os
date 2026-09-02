@@ -1,0 +1,840 @@
+{
+  "contract": "designpro.call1-guide-ablation.v1",
+  "ranAt": "2026-09-02T01:29:17.059Z",
+  "imageRequestsExecuted": 6,
+  "outputClassInspections": 6,
+  "drawsPerArm": 3,
+  "order": [
+    "A1",
+    "B1",
+    "A2",
+    "B2",
+    "A3",
+    "B3"
+  ],
+  "vehicle": {
+    "type": "truck",
+    "year": "2022",
+    "make": "Ford",
+    "model": "F250 Crew Cab"
+  },
+  "brief": "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif company name, high contrast and legible at highway distance.",
+  "model": "gemini-3-pro-image",
+  "parity": {
+    "source": "deployed design-panel-ai-generate, run 33577484230, same fixture",
+    "modelRequestByteSize": {
+      "edge": 4762109,
+      "harnessArmA": 4762109
+    },
+    "promptChars": {
+      "edge": 4587,
+      "harnessArmA": 4587
+    },
+    "modelInputImageCount": {
+      "edge": 2,
+      "harnessArmA": 2
+    },
+    "model": {
+      "edge": "gemini-3-pro-image",
+      "harnessArmA": "gemini-3-pro-image"
+    }
+  },
+  "requests": {
+    "A": {
+      "label": "A-deployed-request",
+      "model": "gemini-3-pro-image",
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT",
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "4K"
+        }
+      },
+      "promptChars": 4587,
+      "partCount": 5,
+      "modelInputImageCount": 2,
+      "modelRequestByteSize": 4762109,
+      "parts": [
+        {
+          "index": 0,
+          "kind": "text",
+          "chars": 4587,
+          "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+          "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+        },
+        {
+          "index": 1,
+          "kind": "text",
+          "chars": 502,
+          "sha256": "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259",
+          "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+        },
+        {
+          "index": 2,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 3430273,
+          "sha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"
+        },
+        {
+          "index": 3,
+          "kind": "text",
+          "chars": 260,
+          "sha256": "a93e2c7a16fea22ae78c3e18fdc02b0ec08c7b6e8dd992e7ebf66ec41f480d4d",
+          "preview": "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout."
+        },
+        {
+          "index": 4,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 137010,
+          "sha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5"
+        }
+      ]
+    },
+    "B": {
+      "label": "B-guide-absent",
+      "model": "gemini-3-pro-image",
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT",
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "4K"
+        }
+      },
+      "promptChars": 4587,
+      "partCount": 3,
+      "modelInputImageCount": 1,
+      "modelRequestByteSize": 4579105,
+      "parts": [
+        {
+          "index": 0,
+          "kind": "text",
+          "chars": 4587,
+          "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+          "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+        },
+        {
+          "index": 1,
+          "kind": "text",
+          "chars": 502,
+          "sha256": "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259",
+          "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+        },
+        {
+          "index": 2,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 3430273,
+          "sha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"
+        }
+      ]
+    }
+  },
+  "draws": [
+    {
+      "draw": 1,
+      "arm": "A",
+      "label": "A1",
+      "file": "A1-deployed-request.png",
+      "elapsedMs": 31880,
+      "rawSha256": "359327a953eed3ea995d62111c2bc963d9a71b1d889efc963d0b11b5a48a8af8",
+      "rawByteSize": 6028803,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays vehicle body contours, including wheel wells and mirror cutouts, indicating a vehicle mockup.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "accepted": false,
+      "blockingFailures": [
+        "driver edgeHoleRatio=0.71384 -- 71.4% of the zone border is hole while 83.4% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "passenger edgeHoleRatio=0.38521 -- 38.5% of the zone border is hole while 83.7% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "front edgeHoleRatio=0.36063 -- 36.1% of the zone border is hole while 80.0% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "rear edgeHoleRatio=0.35813 -- 35.8% of the zone border is hole while 82.7% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "cutoutFindings": [
+        {
+          "surfaceKey": "driver",
+          "finding": "driver largestCutoutComponentRatio=0.14973 (flatBlackRatio=0.16360) inside a zone that is 83.4% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "passenger",
+          "finding": "passenger largestCutoutComponentRatio=0.16109 (flatBlackRatio=0.16173) inside a zone that is 83.7% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "hood",
+          "finding": "hood largestCutoutComponentRatio=0.05138 (flatBlackRatio=0.08576) inside a zone that is 91.1% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "front",
+          "finding": "front largestCutoutComponentRatio=0.19637 (flatBlackRatio=0.19640) inside a zone that is 80.0% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "rear",
+          "finding": "rear largestCutoutComponentRatio=0.13503 (flatBlackRatio=0.16885) inside a zone that is 82.7% artwork -- one wheel/glass/bed shape cut out of the panel"
+        }
+      ],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.04005106209150327,
+      "surfacePresence": {
+        "driver": true,
+        "passenger": true,
+        "front": true,
+        "hood": true,
+        "rear": true,
+        "roof": true,
+        "count": 6
+      },
+      "templateSignature": {
+        "surfaces": [
+          "driver",
+          "passenger",
+          "front",
+          "rear"
+        ],
+        "count": 4
+      },
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.71384,
+          "largestCutoutComponentRatio": 0.14973,
+          "concentratedFlatBlackRatio": 0.16349,
+          "flatBlackRatio": 0.1636,
+          "cutoutComponentCount": 5,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 60.99
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.38521,
+          "largestCutoutComponentRatio": 0.16109,
+          "concentratedFlatBlackRatio": 0.16109,
+          "flatBlackRatio": 0.16173,
+          "cutoutComponentCount": 5,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 61.28
+        },
+        "front": {
+          "edgeHoleRatio": 0.36063,
+          "largestCutoutComponentRatio": 0.19637,
+          "concentratedFlatBlackRatio": 0.19637,
+          "flatBlackRatio": 0.1964,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 60.07
+        },
+        "hood": {
+          "edgeHoleRatio": 0.26768,
+          "largestCutoutComponentRatio": 0.05138,
+          "concentratedFlatBlackRatio": 0.08509,
+          "flatBlackRatio": 0.08576,
+          "cutoutComponentCount": 5,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 55.43
+        },
+        "rear": {
+          "edgeHoleRatio": 0.35813,
+          "largestCutoutComponentRatio": 0.13503,
+          "concentratedFlatBlackRatio": 0.16469,
+          "flatBlackRatio": 0.16885,
+          "cutoutComponentCount": 6,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 56.01
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 47.22
+        }
+      }
+    },
+    {
+      "draw": 1,
+      "arm": "B",
+      "label": "B1",
+      "file": "B1-guide-absent.png",
+      "elapsedMs": 42471,
+      "rawSha256": "19025627d0b5080dee061d30cafe8533fbd24aa25199d234cbdebc36a090cd3e",
+      "rawByteSize": 7707543,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays vehicle body contours for side panels and hoods, indicating a vehicle mockup.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "accepted": true,
+      "blockingFailures": [],
+      "cutoutFindings": [],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.0886650667211329,
+      "surfacePresence": {
+        "driver": true,
+        "passenger": true,
+        "front": true,
+        "hood": true,
+        "rear": true,
+        "roof": true,
+        "count": 6
+      },
+      "templateSignature": {
+        "surfaces": [],
+        "count": 0
+      },
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 41.87
+        },
+        "passenger": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 39.5
+        },
+        "front": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 65.38
+        },
+        "hood": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 49.15
+        },
+        "rear": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 64.42
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 65.95
+        }
+      }
+    },
+    {
+      "draw": 2,
+      "arm": "A",
+      "label": "A2",
+      "file": "A2-deployed-request.png",
+      "elapsedMs": 35724,
+      "rawSha256": "ced03e6379eac1a8d2cd53e368baf1cc468e56ca53ffefe4b1a9c28120ba4795",
+      "rawByteSize": 7091545,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays multiple panels shaped to fit specific vehicle body parts, including fenders, a cab, and a hood, indicating a vehicle wrap mockup.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "accepted": false,
+      "blockingFailures": [],
+      "cutoutFindings": [
+        {
+          "surfaceKey": "driver",
+          "finding": "driver largestCutoutComponentRatio=0.09873 (flatBlackRatio=0.18511) inside a zone that is 81.3% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "passenger",
+          "finding": "passenger largestCutoutComponentRatio=0.09879 (flatBlackRatio=0.17410) inside a zone that is 82.4% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "rear",
+          "finding": "rear largestCutoutComponentRatio=0.11389 (flatBlackRatio=0.19738) inside a zone that is 79.8% artwork -- one wheel/glass/bed shape cut out of the panel"
+        }
+      ],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.0062493191721132895,
+      "surfacePresence": {
+        "driver": true,
+        "passenger": true,
+        "front": true,
+        "hood": true,
+        "rear": true,
+        "roof": true,
+        "count": 6
+      },
+      "templateSignature": {
+        "surfaces": [],
+        "count": 0
+      },
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.30463,
+          "largestCutoutComponentRatio": 0.09873,
+          "concentratedFlatBlackRatio": 0.18511,
+          "flatBlackRatio": 0.18511,
+          "cutoutComponentCount": 9,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 63.64
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.24512,
+          "largestCutoutComponentRatio": 0.09879,
+          "concentratedFlatBlackRatio": 0.17193,
+          "flatBlackRatio": 0.1741,
+          "cutoutComponentCount": 49,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 59.71
+        },
+        "front": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 52.28
+        },
+        "hood": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00001,
+          "cutoutComponentCount": 7,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 58.26
+        },
+        "rear": {
+          "edgeHoleRatio": 0.00422,
+          "largestCutoutComponentRatio": 0.11389,
+          "concentratedFlatBlackRatio": 0.19725,
+          "flatBlackRatio": 0.19738,
+          "cutoutComponentCount": 79,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 65.34
+        },
+        "roof": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 54.95
+        }
+      }
+    },
+    {
+      "draw": 2,
+      "arm": "B",
+      "label": "B2",
+      "file": "B2-guide-absent.png",
+      "elapsedMs": 40424,
+      "rawSha256": "d3b0d11b1f78cdca2891f3f0b82eee6239593679273836563b97e26852bd3495",
+      "rawByteSize": 7799894,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple flat 2D print artwork panels laid out side by side on a single sheet, representing vehicle wrap components without depicting an actual vehicle.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "accepted": true,
+      "blockingFailures": [],
+      "cutoutFindings": [],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.004064882897603486,
+      "surfacePresence": {
+        "driver": true,
+        "passenger": true,
+        "front": true,
+        "hood": true,
+        "rear": true,
+        "roof": true,
+        "count": 6
+      },
+      "templateSignature": {
+        "surfaces": [],
+        "count": 0
+      },
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.00482,
+          "largestCutoutComponentRatio": 0.00144,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00483,
+          "cutoutComponentCount": 929,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 48.68
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.00451,
+          "largestCutoutComponentRatio": 0.00174,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00504,
+          "cutoutComponentCount": 870,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 48.68
+        },
+        "front": {
+          "edgeHoleRatio": 0.00295,
+          "largestCutoutComponentRatio": 0.0016,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00501,
+          "cutoutComponentCount": 56,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 61.5
+        },
+        "hood": {
+          "edgeHoleRatio": 0.00412,
+          "largestCutoutComponentRatio": 0.00166,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00565,
+          "cutoutComponentCount": 48,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 52.01
+        },
+        "rear": {
+          "edgeHoleRatio": 0.00581,
+          "largestCutoutComponentRatio": 0.00069,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00326,
+          "cutoutComponentCount": 323,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 56.38
+        },
+        "roof": {
+          "edgeHoleRatio": 0.00489,
+          "largestCutoutComponentRatio": 0.00057,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00164,
+          "cutoutComponentCount": 115,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 41.8
+        }
+      }
+    },
+    {
+      "draw": 3,
+      "arm": "A",
+      "label": "A3",
+      "file": "A3-deployed-request.png",
+      "elapsedMs": 42578,
+      "rawSha256": "4a6c09053e340fb8cbc4183f34545c53c6ee043743bb9c146f0171a994ebb443",
+      "rawByteSize": 5212241,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image displays multiple views of a truck with graphics applied, including driver side, roof, rear, and front views.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "accepted": false,
+      "blockingFailures": [
+        "passenger edgeHoleRatio=0.51537 -- 51.5% of the zone border is hole while 69.4% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "roof edgeHoleRatio=0.71369 -- 71.4% of the zone border is hole while 66.5% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "rear edgeHoleRatio=0.62016 -- 62.0% of the zone border is hole while 65.6% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "cutoutFindings": [
+        {
+          "surfaceKey": "passenger",
+          "finding": "passenger largestCutoutComponentRatio=0.18868 (flatBlackRatio=0.30284) inside a zone that is 69.4% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "hood",
+          "finding": "hood largestCutoutComponentRatio=0.21916 (flatBlackRatio=0.24001) inside a zone that is 75.7% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "roof",
+          "finding": "roof largestCutoutComponentRatio=0.28742 (flatBlackRatio=0.33228) inside a zone that is 66.5% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "front",
+          "finding": "front largestCutoutComponentRatio=0.02377 (flatBlackRatio=0.02377) inside a zone that is 97.5% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "rear",
+          "finding": "rear largestCutoutComponentRatio=0.22535 (flatBlackRatio=0.34053) inside a zone that is 65.6% artwork -- one wheel/glass/bed shape cut out of the panel"
+        }
+      ],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.14062993600217866,
+      "surfacePresence": {
+        "driver": true,
+        "passenger": true,
+        "front": true,
+        "hood": true,
+        "rear": true,
+        "roof": true,
+        "count": 6
+      },
+      "templateSignature": {
+        "surfaces": [
+          "driver",
+          "passenger",
+          "rear",
+          "roof"
+        ],
+        "count": 4
+      },
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.83972,
+          "largestCutoutComponentRatio": 0.29698,
+          "concentratedFlatBlackRatio": 0.60672,
+          "flatBlackRatio": 0.60687,
+          "cutoutComponentCount": 10,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 63.28
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.51537,
+          "largestCutoutComponentRatio": 0.18868,
+          "concentratedFlatBlackRatio": 0.30099,
+          "flatBlackRatio": 0.30284,
+          "cutoutComponentCount": 7,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 59.88
+        },
+        "front": {
+          "edgeHoleRatio": 0.13702,
+          "largestCutoutComponentRatio": 0.02377,
+          "concentratedFlatBlackRatio": 0.02377,
+          "flatBlackRatio": 0.02377,
+          "cutoutComponentCount": 1,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 51.58
+        },
+        "hood": {
+          "edgeHoleRatio": 0.34957,
+          "largestCutoutComponentRatio": 0.21916,
+          "concentratedFlatBlackRatio": 0.23912,
+          "flatBlackRatio": 0.24001,
+          "cutoutComponentCount": 6,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 57.47
+        },
+        "rear": {
+          "edgeHoleRatio": 0.62016,
+          "largestCutoutComponentRatio": 0.22535,
+          "concentratedFlatBlackRatio": 0.34051,
+          "flatBlackRatio": 0.34053,
+          "cutoutComponentCount": 6,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 68.64
+        },
+        "roof": {
+          "edgeHoleRatio": 0.71369,
+          "largestCutoutComponentRatio": 0.28742,
+          "concentratedFlatBlackRatio": 0.33155,
+          "flatBlackRatio": 0.33228,
+          "cutoutComponentCount": 7,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 59.31
+        }
+      }
+    },
+    {
+      "draw": 3,
+      "arm": "B",
+      "label": "B3",
+      "file": "B3-guide-absent.png",
+      "elapsedMs": 38049,
+      "rawSha256": "6d28139fec3a15f32571029ab5df57c6f0b52c6c4c4c96280a4b225448d55ac2",
+      "rawByteSize": 7691266,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 0.9,
+        "evidence": "The image displays distinct vehicle body contours on the driver and passenger side panels, including wheel arches and door lines, even though the panels are laid out flat.",
+        "code": null,
+        "model": "gemini-2.5-flash"
+      },
+      "accepted": true,
+      "blockingFailures": [],
+      "cutoutFindings": [],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.005540747549019608,
+      "surfacePresence": {
+        "driver": true,
+        "passenger": true,
+        "front": true,
+        "hood": true,
+        "rear": true,
+        "roof": true,
+        "count": 6
+      },
+      "templateSignature": {
+        "surfaces": [],
+        "count": 0
+      },
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.00197,
+          "largestCutoutComponentRatio": 0.00002,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00045,
+          "cutoutComponentCount": 501,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 52.4
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.00235,
+          "largestCutoutComponentRatio": 0.00006,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00065,
+          "cutoutComponentCount": 594,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 52.1
+        },
+        "front": {
+          "edgeHoleRatio": 0.00348,
+          "largestCutoutComponentRatio": 0.00014,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00073,
+          "cutoutComponentCount": 118,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 58.61
+        },
+        "hood": {
+          "edgeHoleRatio": 0.00516,
+          "largestCutoutComponentRatio": 0.00023,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00179,
+          "cutoutComponentCount": 328,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 55.59
+        },
+        "rear": {
+          "edgeHoleRatio": 0.01607,
+          "largestCutoutComponentRatio": 0.00008,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00094,
+          "cutoutComponentCount": 283,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 52.39
+        },
+        "roof": {
+          "edgeHoleRatio": 0.00214,
+          "largestCutoutComponentRatio": 0.00023,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.0008,
+          "cutoutComponentCount": 79,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 56.48
+        }
+      }
+    }
+  ]
+}
