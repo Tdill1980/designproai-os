@@ -1,0 +1,305 @@
+{
+  "topology": "field-bands-v1",
+  "canvas": {
+    "widthPx": 4096,
+    "heightPx": 4096,
+    "colorSpace": "srgb",
+    "alphaOutsideZones": true
+  },
+  "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+  "geometryState": "measured",
+  "fieldLayout": {
+    "contract": "designpro.atlas-field-territories.v1",
+    "bands": [
+      {
+        "band": 1,
+        "surfaces": [
+          "driver"
+        ],
+        "y": 0,
+        "h": 1475
+      },
+      {
+        "band": 2,
+        "surfaces": [
+          "passenger"
+        ],
+        "y": 1475,
+        "h": 1475
+      },
+      {
+        "band": 3,
+        "surfaces": [
+          "roof",
+          "hood",
+          "front",
+          "rear"
+        ],
+        "y": 2950,
+        "h": 1146,
+        "scaleCenterPxPerIn": 8.82
+      }
+    ],
+    "canvasPx": 16777216,
+    "extractedPx": 12488841,
+    "extractedRatio": 0.7444,
+    "paintedNotExtractedPx": 4288375,
+    "paintedNotExtractedRatio": 0.2556,
+    "boundaries": [
+      {
+        "between": [
+          "driver",
+          "passenger"
+        ],
+        "axis": "y",
+        "at": 1475,
+        "from": 0,
+        "to": 3642
+      },
+      {
+        "between": [
+          "passenger",
+          "hood"
+        ],
+        "axis": "y",
+        "at": 2950,
+        "from": 743,
+        "to": 1461
+      },
+      {
+        "between": [
+          "passenger",
+          "roof"
+        ],
+        "axis": "y",
+        "at": 2950,
+        "from": 0,
+        "to": 743
+      },
+      {
+        "between": [
+          "passenger",
+          "front"
+        ],
+        "axis": "y",
+        "at": 2950,
+        "from": 1461,
+        "to": 2686
+      },
+      {
+        "between": [
+          "hood",
+          "front"
+        ],
+        "axis": "x",
+        "at": 1461,
+        "from": 2950,
+        "to": 3338
+      },
+      {
+        "between": [
+          "hood",
+          "rear"
+        ],
+        "axis": "y",
+        "at": 3532,
+        "from": 743,
+        "to": 758
+      },
+      {
+        "between": [
+          "roof",
+          "hood"
+        ],
+        "axis": "x",
+        "at": 743,
+        "from": 2950,
+        "to": 3521
+      }
+    ]
+  },
+  "zones": [
+    {
+      "surfaceKey": "driver",
+      "placement": "band-1",
+      "x": 0,
+      "y": 0,
+      "w": 3642,
+      "h": 1475,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 112,
+        "y": 112,
+        "w": 3418,
+        "h": 1251
+      },
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "effectivePpiNative": 22.34,
+      "noseEdge": "left"
+    },
+    {
+      "surfaceKey": "passenger",
+      "placement": "band-2",
+      "x": 0,
+      "y": 1475,
+      "w": 3642,
+      "h": 1475,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 112,
+        "y": 1587,
+        "w": 3418,
+        "h": 1251
+      },
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "effectivePpiNative": 22.34,
+      "noseEdge": "right"
+    },
+    {
+      "surfaceKey": "hood",
+      "placement": "band-3-row-1",
+      "x": 743,
+      "y": 2950,
+      "w": 718,
+      "h": 582,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 787,
+        "y": 2994,
+        "w": 630,
+        "h": 494
+      },
+      "trimWidthIn": 71.5,
+      "trimHeightIn": 56,
+      "printWidthIn": 81.5,
+      "printHeightIn": 66,
+      "effectivePpiNative": 8.81,
+      "noseEdge": null
+    },
+    {
+      "surfaceKey": "roof",
+      "placement": "band-3-row-1",
+      "x": 0,
+      "y": 2950,
+      "w": 743,
+      "h": 571,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 44,
+        "y": 2994,
+        "w": 655,
+        "h": 483
+      },
+      "trimWidthIn": 74.3,
+      "trimHeightIn": 54.8,
+      "printWidthIn": 84.3,
+      "printHeightIn": 64.8,
+      "effectivePpiNative": 8.81,
+      "noseEdge": null
+    },
+    {
+      "surfaceKey": "front",
+      "placement": "band-3-row-1",
+      "x": 1461,
+      "y": 2950,
+      "w": 1225,
+      "h": 388,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 1505,
+        "y": 2994,
+        "w": 1137,
+        "h": 300
+      },
+      "trimWidthIn": 129,
+      "trimHeightIn": 34,
+      "printWidthIn": 139,
+      "printHeightIn": 44,
+      "effectivePpiNative": 8.81,
+      "noseEdge": null
+    },
+    {
+      "surfaceKey": "rear",
+      "placement": "band-3-row-2",
+      "x": 0,
+      "y": 3532,
+      "w": 758,
+      "h": 564,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 44,
+        "y": 3576,
+        "w": 670,
+        "h": 476
+      },
+      "trimWidthIn": 76,
+      "trimHeightIn": 54,
+      "printWidthIn": 86,
+      "printHeightIn": 64,
+      "effectivePpiNative": 8.81,
+      "noseEdge": null
+    }
+  ],
+  "legacyZones": [
+    {
+      "surfaceKey": "driver",
+      "x": 2751,
+      "y": 624,
+      "w": 1153,
+      "h": 2848,
+      "rotationDegrees": -90,
+      "effectivePpiNative": 17.47
+    },
+    {
+      "surfaceKey": "passenger",
+      "x": 192,
+      "y": 624,
+      "w": 1153,
+      "h": 2848,
+      "rotationDegrees": 90,
+      "effectivePpiNative": 17.47
+    },
+    {
+      "surfaceKey": "hood",
+      "x": 1417,
+      "y": 2310,
+      "w": 1262,
+      "h": 1022,
+      "rotationDegrees": 0,
+      "effectivePpiNative": 15.48
+    },
+    {
+      "surfaceKey": "roof",
+      "x": 1417,
+      "y": 1304,
+      "w": 1262,
+      "h": 970,
+      "rotationDegrees": 0,
+      "effectivePpiNative": 14.97
+    },
+    {
+      "surfaceKey": "front",
+      "x": 1417,
+      "y": 3368,
+      "w": 1262,
+      "h": 399,
+      "rotationDegrees": 0,
+      "effectivePpiNative": 9.07
+    },
+    {
+      "surfaceKey": "rear",
+      "x": 1417,
+      "y": 329,
+      "w": 1262,
+      "h": 939,
+      "rotationDegrees": 0,
+      "effectivePpiNative": 14.67
+    }
+  ]
+}
