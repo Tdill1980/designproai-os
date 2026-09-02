@@ -1,0 +1,14 @@
+runtime image: designproai-runtime:fb58f702537ae9c5fefc90f67abdd1b1f47ad5b0
+test: 11-field-recovery-v2 -> scripts/atlas-field-recovery-v2.mjs
+  resolving GENIE preview dimensions …
+  territories: field-thirds-v2 — extracted 76.3% of canvas, min native 12.64 px/in (legacy 9.07)
+      driver     third-1        (362, 0, 3371, 1365)  163×66 in  20.68 px/in  trim (465, 103, 3165, 1159)
+      passenger  third-2        (362, 1365, 3371, 1365)  163×66 in  20.68 px/in  trim (465, 1468, 3165, 1159)
+      hood       third-3-row-1  (1186, 2730, 1031, 835)  81.5×66 in  12.65 px/in  trim (1249, 2793, 905, 709)
+      roof       third-3-row-1  (120, 2730, 1066, 820)  84.3×64.8 in  12.65 px/in  trim (183, 2793, 940, 694)
+      front      third-3-row-1  (2217, 2730, 1758, 557)  139×44 in  12.65 px/in  trim (2280, 2793, 1632, 431)
+      rear       third-3-row-2  (2217, 3287, 1088, 809)  86×64 in  12.64 px/in  trim (2280, 3350, 962, 683)
+  deployed prompt reproduced: sha dcb73e9eae229cd8, 4587 chars
+  creative assembly 2622 chars → 2698 chars, 7 swaps, reverse proof true
+  field tail 1354 chars (ceiling 1400); prompt 4052 chars sha 37e4137e8ae8c8bb; request 1 part(s), 0 image(s), 4294 bytes
+  capture-only: PLAN.md and the request written, no provider call made
