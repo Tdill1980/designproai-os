@@ -1,5 +1,80 @@
 # CLAUDE.md — designproai-os
 
+## 📐 RULE 0.32 — A.T.L.A.S. IS PRINTED MEDIA, NOT A VEHICLE (owner ruling, Trish 2026-09-02)
+
+**A.T.L.A.S. = the continuous printed wrap sheets, unwrapped flat, BEFORE
+installation and trimming.**
+
+This is the governing definition. Where any other section of this file describes
+A.T.L.A.S. in terms of vehicle panels, body layout or "the flattened panel
+layout of the vehicle", THIS WINS.
+
+Owner, from the Avery Dennison installation reference (*Wrapping the Side of a
+Vehicle with one Panel*): a Driver/Passenger print panel is **ONE CONTINUOUS
+RECTANGULAR SHEET OF PRINTED VINYL BEFORE INSTALLATION**. The artwork prints
+continuously through the physical location of the wheel opening. The installer
+lays that continuous sheet onto the vehicle and trims the opening **during
+installation**.
+
+Therefore, for every A.T.L.A.S. surface:
+
+> **the entire rectangular region is printable artwork.**
+
+**Vehicle anatomy has no authority over the shape of the print artwork.** A wheel
+opening, window, fender, door seam, glass area, light, handle or any other
+physical vehicle feature must NEVER become missing artwork inside the rectangular
+A.T.L.A.S. panel. The vehicle is where the media goes; it is not what the media
+looks like.
+
+### The acceptance contract
+
+Not "no black pixels" — that is a proxy, and a colour-conditional one:
+
+> **SIX CONTINUOUS RECTANGULAR ARTWORK REGIONS, EDGE TO EDGE, WITH NO
+> MISSING-ARTWORK FIELDS OR VEHICLE-ANATOMY CONTOURS.**
+
+A missing-artwork field is a missing-artwork field whatever colour it is. Measured
+2026-09-02 on GenerationID `5d727ea9`: `cutoutFillApplied` reported 303,861 px
+closed on the driver flank with `unresolvedPixels: 0`, and by the gate's own
+near-black predicate only **22 px** survived — while **7.55% of that flank was
+still one uniform non-artwork field**, visually a solid black wheel well.
+`FLAT_BLACK_CHANNEL_MAX` is 24 and the filled disc measures ~`rgb(25,19,23)`. The
+fill moved the defect one value on one channel out of the only predicate watching
+it, and every downstream check keys on that same predicate. **Turning a
+missing-artwork field into nearly-black pixels is not repair, and must not make an
+invalid master canonical.**
+
+### The objective is FIRST-ATTEMPT correct authoring
+
+Owner, verbatim: *"I do not want the architecture to become: Gemini draws wheel
+hole → reject → ask Gemini again → hope. I want: Gemini understands A.T.L.A.S. as
+continuous rectangular printed media → produces continuous artwork first
+attempt."*
+
+A re-roll is a **failsafe, not the root-cause fix**. A large missing-artwork
+region may ultimately fail closed as a safety measure, and small genuine edge
+defects may retain the proven deterministic repair — **those are safeguards.**
+
+**Until the conditioning root cause is identified by controlled experiment, do
+NOT:** add wheel-well negative prompting · add another repair heuristic · relax a
+threshold · change the DesignPanelAI creative intelligence · deploy re-roll as the
+fix.
+
+### What is established, and what is not
+
+| established by measurement | still open |
+|---|---|
+| DesignPanelAI can produce excellent cohesive A.T.L.A.S. artwork (`5d727ea9`) | which Call-1 input teaches vehicle-body-piece interpretation |
+| deterministic panel extraction is correct | first-attempt output-class stability |
+| the wheel/glass voids originate in Gemini Call 1, painted opaque (`opaqueRatio` 1.00000) | |
+| large-hole repair cannot recreate artwork Gemini never generated | |
+| Call-1 output class is unstable — the SAME request returned `flat_atlas` 3/3 and `vehicle_depiction` 3/3 an hour apart | |
+
+Investigation record: `docs/ATLAS-TEACHING-PROOF-FIELD-AB.md`,
+`docs/ATLAS-CALL1-GUIDE-ABLATION.md`, `docs/ATLAS-CALL1-TOPOLOGY-TEXT.md`,
+`docs/ATLAS-CALL1-TEACHING-PROOF-ORDER.md`, `docs/ATLAS-WHEEL-WELL-ROOT-CAUSE.md`,
+raw evidence under `docs/ab/`.
+
 ## 🧬 CALL-1 v19 — CREATIVE PARITY RECOVERY (owner ruling, Trish 2026-09-01)
 
 **This supersedes the v17 boundary contract and RULE 0.30's authoring half
