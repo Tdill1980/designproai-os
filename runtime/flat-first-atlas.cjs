@@ -37,7 +37,12 @@ const {
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
-const { loadBundledAtlasTeachingProof } = require("./flat-atlas-topology-examples.cjs");
+// ONE-FIELD CALL 1 (owner ruling 2026-09-02, unfrozen the same day): the
+// labeled Flamingo teaching proof and the neutral six-region guide are no
+// longer Call-1 model inputs. GENIE's six-region layout stays the production
+// geometry authority; the model paints ONE continuous field and the OS
+// serializes six code-only territories out of it AFTER the call.
+const { buildFieldTerritories, NOSE_EDGE } = require("./atlas-field-territories.cjs");
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -61,7 +66,11 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v23-orthographic-restored";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260902.v24-one-field";
+// The model-facing contract the runtime asks the edge for: one continuous
+// full-bleed composition, one text part plus verified customer references,
+// zero structural images. Echoed back by the edge and verified on receipt.
+const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -139,7 +148,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orthographic-restored";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260902.v24-one-field";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1553,18 +1562,14 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       placement: zone.placement,
       normalized: normalizedZoneTopology(zone, manifest),
     })),
-    // MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF.
-    // It travels as a content-addressed server storage path, never as
-    // browser-controlled reference input, and never inline (a 2.2MB inline
-    // base64 body killed the edge worker twice, 2026-08-27). Customer
-    // references stay inline — they are size-capped at 1600px by the verified
-    // loader. There is NO blank target-guide image and NO corrective-note
-    // text in this contract.
-    teachingProofStoragePath: extras.teachingProofStoragePath,
-    teachingProofIdentity: extras.teachingProofIdentity,
-    // The deterministic neutral mask travels by STORAGE PATH: a 2.2MB inline
-    // base64 body killed the edge worker twice (2026-08-27).
-    guideStoragePath: extras.guideStoragePath,
+    // ONE-FIELD CONTRACT (owner ruling 2026-09-02). The edge assembles the
+    // same DesignPanelAI creative brief with the field wording and the field
+    // tail, and sends the model ONE text part plus the verified customer
+    // references. No teaching proof, no guide, no topology text travels. The
+    // `panels` list above stays on the request as OS data the edge validates;
+    // it never enters the field prompt.
+    fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+    noseEdge: manifest?.installerMap?.noseEdge || NOSE_EDGE,
     referenceImagesBase64: extras.referenceImagesBase64,
   };
 }
@@ -1628,16 +1633,27 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   if (Number(payload.imageRequestCount) !== 1) {
     throw new FlatAtlasError("flat_atlas_edge_call_count_invalid", `The edge function reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
   }
-  const expectedTeaching = body?.teachingProofIdentity || null;
-  if (expectedTeaching) {
-    const returned = payload?.teachingProofIdentity || null;
-    if (!returned
-      || returned.contract !== expectedTeaching.contract
-      || returned.flattenedTopViewContentHash !== expectedTeaching.flattenedTopViewContentHash) {
+  // THE EDGE MUST PROVE IT RAN THE FIELD CONTRACT. A response that echoes a
+  // different contract, or carries more model-input images than the verified
+  // customer references, means a structural image or the legacy six-container
+  // request reached the model — refused, never accepted as a master.
+  const expectedFieldContract = String(body?.fieldContract || "").trim();
+  if (expectedFieldContract) {
+    if (String(payload?.fieldContract || "").trim() !== expectedFieldContract) {
       throw new FlatAtlasError(
-        "flat_atlas_edge_teaching_example_identity_mismatch",
-        "The edge function did not prove the owner-approved labeled A.T.L.A.S. teaching-proof identity",
+        "flat_atlas_edge_field_contract_mismatch",
+        `The edge function answered contract ${String(payload?.fieldContract || "none")}; the request asked for ${expectedFieldContract}`,
       );
+    }
+    const customerImageCount = Array.isArray(body?.referenceImagesBase64) ? body.referenceImagesBase64.length : 0;
+    if (Number(payload?.modelInputImageCount) !== customerImageCount) {
+      throw new FlatAtlasError(
+        "flat_atlas_edge_structural_image_detected",
+        `The edge function sent ${payload?.modelInputImageCount} model-input images; the field contract allows exactly the ${customerImageCount} verified customer reference(s)`,
+      );
+    }
+    if (payload?.teachingProofIdentity) {
+      throw new FlatAtlasError("flat_atlas_edge_structural_image_detected", "A teaching sheet reached the one-field Call 1");
     }
   }
   // The master comes back by STORAGE PATH and is read with the server client:
@@ -1666,8 +1682,9 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       model: String(payload.model),
       imageRequestCount: 1,
       modelRequestByteSize: Number(payload.modelRequestByteSize) || null,
-      modelInputImageCount: Number(payload.modelInputImageCount) || null,
+      modelInputImageCount: Number.isFinite(Number(payload.modelInputImageCount)) ? Number(payload.modelInputImageCount) : null,
       teachingProofIdentity: payload.teachingProofIdentity || null,
+      fieldContract: payload.fieldContract || null,
       topologyContract: payload.topologyContract || null,
       masterSha256: digest,
       designText: String(payload.designText || ""),
@@ -2164,15 +2181,15 @@ async function generateOrReuseFlatAtlas(options) {
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
-  const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
-  // THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
-  // (A.T.L.A.S. AI/OS Boundary Contract, 2026-09-01). Its labels establish
-  // panel identity; its physical arrangement is NOT target-vehicle geometry —
-  // the GENIE-derived normalized [0,1] topology in the request is. The
-  // installed Driver proof remains excluded (finished-vehicle imagery
-  // overpowers prose, canary 33389124918). Exact owner bytes, release-pinned;
-  // the identity enters the reuse fence below.
-  const teachingProof = loadBundledAtlasTeachingProof();
+  // GENIE's six-region layout is built first — inches, square feet, bleed,
+  // proof dependencies and the human installer map all come from it — and the
+  // ONE FIELD the model paints is then serialized onto code-only territories
+  // (`field-thirds-v2`): Driver centred in the top third, Passenger centred in
+  // the middle third, roof · hood · front abreast in the lower third with the
+  // rear beneath the shortest of them. Same zone shape, rotation 0 everywhere.
+  // The model is shown none of it.
+  const legacyManifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
+  const manifest = buildFieldTerritories(legacyManifest);
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
   if (geometryResolution) manifest.geometryResolution = geometryResolution;
@@ -2219,8 +2236,14 @@ async function generateOrReuseFlatAtlas(options) {
   // The current solid-rectangle pair is deliberately distinct from the
   // historical Houdini/template examples that taught doors, windows, handles
   // and wheel arches. Its identity is part of the immutable reuse contract.
+  // No release-owned example image is attached under the one-field contract;
+  // the fence now carries the contract and the territory layout instead, so a
+  // master authored against the six-container request is never reused here.
   const currentExampleSetHash = sha256(canonicalBytes({
-    atlasDesignTeachingExample: teachingProof.identity,
+    atlasDesignTeachingExample: null,
+    fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+    territories: manifest.contract,
+    topology: manifest.topology,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
@@ -2272,45 +2295,21 @@ async function generateOrReuseFlatAtlas(options) {
   // image; nothing since has matched it. Surface identity still travels in the
   // schema-bound panel list, and the normalized topology stays on the request
   // as OS data that never reaches the model.
+  // ONE RENDER OF THE GEOMETRY, FOR HUMANS ONLY. The labelled installer map
+  // enters storage and PanelPro; the model never sees a guide of any kind.
   const guideBytes = await renderAtlasGuide(manifest);
   const guideHash = sha256(guideBytes);
-  const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
-  // Customer-owned imagery remains a separate authority class. The release-
-  // owned pair below can teach only the flat↔installed relationship; it may
-  // never become style or artwork authority for this customer.
+  // Customer-owned imagery is the ONLY imagery in the one-field request: the
+  // verified logo and the verified VisionBoard references, inline, size-capped.
+  // Nothing release-owned is staged for the edge any more.
   const customerImageParts = [
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
-  // Stage the teaching proof and the neutral target mask where the edge
-  // function can read them with its own service client. Content-addressed and
-  // upserted, so a retry or a second revision re-uses the same object instead
-  // of writing another copy. The LABELLED installer guide is a different
-  // artifact and is still persisted below for humans and QC.
-  const stageEdgeInput = async (bytes, contentType) => {
-    if (!bytes || !bytes.length) return undefined;
-    const path = `atlas-call1-inputs/${sha256(bytes)}.${contentType === "image/jpeg" ? "jpg" : "png"}`;
-    const { error } = await supabase.storage.from(BUCKET).upload(path, bytes, { contentType, upsert: true });
-    if (error) {
-      throw new FlatAtlasError("flat_atlas_edge_input_upload_failed", error.message || `Could not stage ${path}`, true);
-    }
-    return path;
-  };
-  const [teachingProofStoragePath, targetGuideStoragePath] = await Promise.all([
-    stageEdgeInput(
-      teachingProof.flattenedTopView.bytes,
-      teachingProof.flattenedTopView.contentType,
-    ),
-    stageEdgeInput(authoringGuideBytes, "image/png"),
-  ]);
   const edgeExtras = {
-    teachingProofStoragePath,
-    teachingProofIdentity: teachingProof.identity,
-    // The TARGET guide is intentionally staged for the LAST image slot.
-    guideStoragePath: targetGuideStoragePath,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
@@ -2843,7 +2842,8 @@ async function generateOrReuseFlatAtlas(options) {
       contract: ATLAS_CONTRACT,
       inputContract: INPUT_CONTRACT,
       pipelineMode: PIPELINE_MODE,
-      topology: TOPOLOGY,
+      topology: manifest.topology,
+      legacyTopology: manifest.legacyTopology || TOPOLOGY,
       geometryAuthority: manifest.geometryAuthority,
       // GENIE PREP receipt: which authority produced the geometry (prep or
       // inline), when it was requested/ready, and the time Generate avoided.
@@ -2855,9 +2855,15 @@ async function generateOrReuseFlatAtlas(options) {
       topologyExamplesApplied: 0,
       topologyExampleIdentity: null,
       topologyExampleIdentities: [],
-      atlasDesignTeachingExampleApplied: true,
-      atlasDesignTeachingExampleIdentity: teachingProof.identity,
+      atlasDesignTeachingExampleApplied: false,
+      atlasDesignTeachingExampleIdentity: null,
       atlasDesignTeachingExampleSetHash: currentExampleSetHash,
+      // The one-field contract the model was asked for, and the code-only
+      // territory layout the six panels were cut from (thirds, extracted
+      // ratio, boundaries). Forensic; never a model input.
+      atlasFieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+      territoriesContract: manifest.contract,
+      fieldLayout: manifest.fieldLayout || null,
       designPanelArtboardQualityExamplesApplied: 0,
       designPanelArtboardQualityExampleIdentities: [],
       designPanelArtboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,

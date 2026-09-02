@@ -1,5 +1,39 @@
 # CLAUDE.md — designproai-os
 
+## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
+
+**Supersedes the authoring half of v19, v23, RULE 0.30's conditioning clause,
+RULE 0.28 §2 and every earlier "teaching proof / neutral guide / topology
+text" input rule below wherever they conflict.** The gates are untouched.
+
+Gemini authors **ONE uninterrupted full-bleed vehicle-wrap composition** and is
+shown **no production topology**: no six-region guide, no labeled Flamingo
+teaching sheet, no normalized `[0,1]` text, no six named production objects,
+no panel/artboard/template framing, no wheel/window/body-piece negatives. The
+model request is **one text part plus verified customer references**.
+GENIE/runtime owns Driver, Passenger, Hood, Roof, Front and Rear as **code-only
+territories** (`runtime/atlas-field-territories.cjs`, `field-thirds-v2`) and
+cuts them AFTER the one image call. Passenger is its own territory, never
+mirrored Driver.
+
+Why: the live v23 generation `84a3eadf…` (2026-09-02, the GENIE-prep
+validation run) passed every gate and still painted wheel arches and body lines
+into both flanks, an inverted rear and a mirrored passenger. Field Recovery v2
+draw `33659500846` is the only measured configuration with clean, continuous,
+anatomy-free flanks, so it is the product now. The edge assembly emits that
+harness prompt **byte for byte** for its fixture (`37e4137e8ae8c8bb…`) while
+the legacy six-container branch still emits the deployed v23 pin — locked by
+`tests/atlas-one-field-call1.test.mjs`. Full contract:
+`docs/ATLAS-ONE-FIELD-CALL1.md`. Versions
+`designpro-flat-first-atlas-20260902.v24-one-field` /
+`atlas-artboard-designiq.20260902.v24-one-field`.
+
+**The thirds language in the tail is scaffolding the owner has not approved as
+permanent architecture.** Draw 1 drew the thirds as framed passages with thin
+white margins inside the bleed insets. That is the next creative variable to
+measure on a real product generation, not a reason to re-add containers,
+guides, teaching sheets or negatives.
+
 ## 📐 RULE 0.32 — A.T.L.A.S. IS PRINTED MEDIA, NOT A VEHICLE (owner ruling, Trish 2026-09-02)
 
 **A.T.L.A.S. = the continuous printed wrap sheets, unwrapped flat, BEFORE
@@ -89,6 +123,16 @@ defect: `docs/GENIE-LIFECYCLE-TRACE-2026-09-02.md`.
 inches (every 2026-09-02 draw reported `879291d3…`). v2 (`designpro.genie-manifest.v2`, explicit
 `hashContract: designpro.genie-manifest-hash.v2`) hashes the six surfaces. Historical rows are NOT
 rewritten: `docs/GENIE-MANIFEST-HASH-CUTOVER.md`, locked by `tests/genie-manifest-hash.test.mjs`.
+
+**DEPLOYED-VERIFIED 2026-09-02 on `24a8b446` through the real intake at os.designproai.com**
+(`docs/GENIE-PREP-LIVE-VALIDATION-2026-09-02.md`): Enter → prep READY in 78 ms resolver time, zero
+provider calls; vehicle change mints a new GenerationID (stale prep unreadable by construction) and the
+same-GenerationID RPC path marks the old row `superseded` and the worker reclaims the queued one;
+Generate on GenerationID `84a3eadf…` consumed prep `a377be67…` (`prepHit: true`, `genieMs: 67`, inline
+resolver skipped, manifest hash `766258a0…` identical on prep and revision) and the unchanged v23 Call-1
+request produced master `1564c66d…`, six panels, seven views, Calls 8–11 and `pack.activate` in 3 m 49 s.
+Creative defects seen on that master (wheel-arch/body-line drawing, inverted rear, mirrored passenger)
+are the frozen conditioning question, not the lifecycle.
 
 ## 🧬 CALL-1 v19 — CREATIVE PARITY RECOVERY (owner ruling, Trish 2026-09-01)
 

@@ -7,6 +7,7 @@ runtime/designpro-standalone-claimant.cjs
 runtime/runtime-contract.cjs
 runtime/runtime-readiness.cjs
 runtime/genie-prep.cjs
+runtime/atlas-field-territories.cjs
 runtime/genie-universal-resolver.cjs
 runtime/gemini-flat-surface.cjs
 runtime/gemini-flat-wrap.cjs

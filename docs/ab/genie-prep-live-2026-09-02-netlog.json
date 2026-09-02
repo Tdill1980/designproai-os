@@ -1,0 +1,265 @@
+[
+ {
+  "t": "2026-09-02T20:12:09.146Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/genie/prep",
+  "body": "{\"generationId\":\"ea05e270-6a22-48a9-b4df-7d0dc06fa449\",\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F250 Crew Cab\",\"type\":\"truck\"},\"clientEnteredAt\":\"2026-09-02T20:12:09.123Z\"}"
+ },
+ {
+  "t": "2026-09-02T20:12:09.146Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/genie/dimensions/preview",
+  "body": "{\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F250 Crew Cab\",\"type\":\"truck\"}}"
+ },
+ {
+  "t": "2026-09-02T20:12:09.382Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep",
+  "body": "{\"prepId\":\"c464abb7-3472-4ef3-9ab2-212dfce9d1ce\",\"generationId\":\"ea05e270-6a22-48a9-b4df-7d0dc06fa449\",\"vehicleIdentityHash\":\"6f0f38594c5f5b74f36db24b9593a3fc847e116f4931f467ba4b3a08fdace67a\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":0,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:12:09.123+00:00\",\"requestedAt\":\"2026-09-02T20:12:09.305737+00:00\",\"startedAt\":\"2026-09-02T20:12:09.341721+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null,\"idempotent\":false}"
+ },
+ {
+  "t": "2026-09-02T20:12:09.396Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/dimensions/preview",
+  "body": "{\"resolution\":{\"contract\":\"designpro.genie-manifest.v2\",\"hashContract\":\"designpro.genie-manifest-hash.v2\",\"genieManifestId\":\"766258a022b2a2da16007affc37ade77\",\"genieManifestHash\":\"766258a022b2a2da16007affc37ade77ee0af79f7b25f4f74a2039821de75b96\",\"state\":\"measured\",\"measuredSurfaces\":[\"driver\",\"passenger\",\"hood\",\"roof\",\"front\",\"rear\"],\"derivedSurfaces\":[],\"geometrySourceRowId\":\"690ad298-6c8e-4ae2-9571-ea532d6bd6c5\",\"productionEligible\":true,\"operatorValidated\":true},\"surfaces\":[{\"surfaceKey\":\"driver\",\"widthInches\":153,\"heightInches\":56,\"surfaceSqFt\":59.5,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"passenger\",\"widthInches\":153,\"heightInches\":56,\"surfaceSqFt\":59.5,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"hood\",\"widthInches\":71.5,\"heightInches\":56,\"surfaceSqFt\":27.81,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"roof\",\"widthInches\":74.3,\"heightInches\":54.8,\"surfaceSqFt\":28.28,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"front\",\"widthInches\":129,\"heightInches\":34,\"surfaceSqFt\":30.46,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"rear\",\"widthInches\":76,\"heightInches\":54,\"surfaceSqFt\":28.5,\"bl"
+ },
+ {
+  "t": "2026-09-02T20:12:11.383Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/ea05e270-6a22-48a9-b4df-7d0dc06fa449"
+ },
+ {
+  "t": "2026-09-02T20:12:11.598Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/ea05e270-6a22-48a9-b4df-7d0dc06fa449",
+  "body": "{\"prepId\":\"c464abb7-3472-4ef3-9ab2-212dfce9d1ce\",\"generationId\":\"ea05e270-6a22-48a9-b4df-7d0dc06fa449\",\"vehicleIdentityHash\":\"6f0f38594c5f5b74f36db24b9593a3fc847e116f4931f467ba4b3a08fdace67a\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"ready\",\"attempt\":1,\"geometryState\":\"measured\",\"productionEligible\":true,\"geometryManifestHash\":\"766258a022b2a2da16007affc37ade77ee0af79f7b25f4f74a2039821de75b96\",\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:12:09.123+00:00\",\"requestedAt\":\"2026-09-02T20:12:09.305737+00:00\",\"startedAt\":\"2026-09-02T20:12:09.341721+00:00\",\"preparedAt\":\"2026-09-02T20:12:09.446812+00:00\",\"durationMs\":78,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:13:01.497Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/genie/prep",
+  "body": "{\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F350 Crew Cab\",\"type\":\"truck\"},\"clientEnteredAt\":\"2026-09-02T20:13:01.476Z\"}"
+ },
+ {
+  "t": "2026-09-02T20:13:01.498Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/genie/dimensions/preview",
+  "body": "{\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F350 Crew Cab\",\"type\":\"truck\"}}"
+ },
+ {
+  "t": "2026-09-02T20:13:01.794Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":0,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null,\"idempotent\":false}"
+ },
+ {
+  "t": "2026-09-02T20:13:01.844Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/dimensions/preview",
+  "body": "{\"resolution\":{\"contract\":\"designpro.genie-manifest.v2\",\"state\":\"unresolved\",\"productionEligible\":false,\"operatorValidated\":false,\"reason\":\"no_authoritative_genie_row_for_year_and_configuration\",\"vehicle\":\"2022 Ford F350 Crew Cab\"},\"surfaces\":[],\"candidates\":[{\"id\":\"a5bfdc7c-d60f-4227-a196-3a06ef8b0218\",\"model\":\"F350 Crew Cab 8 ft box\",\"yearRange\":\"2011-2016\",\"sideWidthIn\":246.8,\"sideHeightIn\":58.5},{\"id\":\"f45b0622-eae9-4855-8dc1-452220de11b7\",\"model\":\"F350 Crew Cab 6.5 ft box\",\"yearRange\":\"2011-2016\",\"sideWidthIn\":230.8,\"sideHeightIn\":58.5},{\"id\":\"3fff6f4a-0ac1-468d-8ca8-78748b22ed33\",\"model\":\"F350 Crew Cab 8 ft box Dually\",\"yearRange\":\"2011-2016\",\"sideWidthIn\":246.8,\"sideHeightIn\":58.5},{\"id\":\"3fb1d9c6-38a7-4bcb-88f4-84cfc588a092\",\"model\":\"F250, F350, F450 Crew Cab 8ft Box\",\"yearRange\":\"2017-2020\",\"sideWidthIn\":259.8,\"sideHeightIn\":57.6},{\"id\":\"60dc75be-74aa-4319-acb0-76d9e5ce07c5\",\"model\":\"F250, F350, F450 Crew Cab 6.5ft Box\",\"yearRange\":\"2017-2020\",\"sideWidthIn\":242.2,\"sideHeightIn\":57.6},{\"id\":\"a2ad6c8b-f5e8-4ed7-a960-ee2ab7509d7a\",\"model\":\"F250, F350, F450 Crew Cab 8ft Dually Box\",\"yearRange\":\"2017-2020\",\"sideWidthIn\":259.8,\"sideHeightIn\":57.6}]}"
+ },
+ {
+  "t": "2026-09-02T20:13:03.795Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932"
+ },
+ {
+  "t": "2026-09-02T20:13:03.971Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":1,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:13:05.971Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932"
+ },
+ {
+  "t": "2026-09-02T20:13:06.145Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":1,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:13:08.145Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932"
+ },
+ {
+  "t": "2026-09-02T20:13:08.379Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":1,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:13:10.381Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932"
+ },
+ {
+  "t": "2026-09-02T20:13:10.571Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":1,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:13:12.572Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932"
+ },
+ {
+  "t": "2026-09-02T20:13:12.745Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":1,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:13:14.746Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932"
+ },
+ {
+  "t": "2026-09-02T20:13:14.961Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":1,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:13:16.962Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932"
+ },
+ {
+  "t": "2026-09-02T20:13:17.164Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":1,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:13:19.165Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932"
+ },
+ {
+  "t": "2026-09-02T20:13:19.351Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/85249116-72ea-4884-ad50-d21ffcc3a932",
+  "body": "{\"prepId\":\"b4b5a5b0-53f2-4aa6-9b21-6bd38754ec9f\",\"generationId\":\"85249116-72ea-4884-ad50-d21ffcc3a932\",\"vehicleIdentityHash\":\"62c9c6da2da27a939c6dfc7fad03f230ca73a8168120210a4a74bb9c13a96e2d\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"ready\",\"attempt\":1,\"geometryState\":\"unresolved\",\"productionEligible\":false,\"geometryManifestHash\":\"513fd3f291b5b3498716c450b972f2dc7913d45b5ae779b137391d9fe39c6dc0\",\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:13:01.476+00:00\",\"requestedAt\":\"2026-09-02T20:13:01.719009+00:00\",\"startedAt\":\"2026-09-02T20:13:01.749275+00:00\",\"preparedAt\":\"2026-09-02T20:13:17.538663+00:00\",\"durationMs\":15763,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:14:28.291Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/genie/prep",
+  "body": "{\"generationId\":\"84a3eadf-bc81-4096-8dd0-a63509e84fb7\",\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F250 Crew Cab\",\"type\":\"truck\"},\"clientEnteredAt\":\"2026-09-02T20:14:28.282Z\"}"
+ },
+ {
+  "t": "2026-09-02T20:14:28.292Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/genie/dimensions/preview",
+  "body": "{\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F250 Crew Cab\",\"type\":\"truck\"}}"
+ },
+ {
+  "t": "2026-09-02T20:14:28.539Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep",
+  "body": "{\"prepId\":\"a377be67-8dc4-42c9-aeec-8cbd5c314d26\",\"generationId\":\"84a3eadf-bc81-4096-8dd0-a63509e84fb7\",\"vehicleIdentityHash\":\"6f0f38594c5f5b74f36db24b9593a3fc847e116f4931f467ba4b3a08fdace67a\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"resolving\",\"attempt\":0,\"geometryState\":null,\"productionEligible\":null,\"geometryManifestHash\":null,\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:14:28.282+00:00\",\"requestedAt\":\"2026-09-02T20:14:28.465618+00:00\",\"startedAt\":\"2026-09-02T20:14:28.498831+00:00\",\"preparedAt\":null,\"durationMs\":null,\"consumedAt\":null,\"idempotent\":false}"
+ },
+ {
+  "t": "2026-09-02T20:14:28.544Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/dimensions/preview",
+  "body": "{\"resolution\":{\"contract\":\"designpro.genie-manifest.v2\",\"hashContract\":\"designpro.genie-manifest-hash.v2\",\"genieManifestId\":\"766258a022b2a2da16007affc37ade77\",\"genieManifestHash\":\"766258a022b2a2da16007affc37ade77ee0af79f7b25f4f74a2039821de75b96\",\"state\":\"measured\",\"measuredSurfaces\":[\"driver\",\"passenger\",\"hood\",\"roof\",\"front\",\"rear\"],\"derivedSurfaces\":[],\"geometrySourceRowId\":\"690ad298-6c8e-4ae2-9571-ea532d6bd6c5\",\"productionEligible\":true,\"operatorValidated\":true},\"surfaces\":[{\"surfaceKey\":\"driver\",\"widthInches\":153,\"heightInches\":56,\"surfaceSqFt\":59.5,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"passenger\",\"widthInches\":153,\"heightInches\":56,\"surfaceSqFt\":59.5,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"hood\",\"widthInches\":71.5,\"heightInches\":56,\"surfaceSqFt\":27.81,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"roof\",\"widthInches\":74.3,\"heightInches\":54.8,\"surfaceSqFt\":28.28,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"front\",\"widthInches\":129,\"heightInches\":34,\"surfaceSqFt\":30.46,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"rear\",\"widthInches\":76,\"heightInches\":54,\"surfaceSqFt\":28.5,\"bl"
+ },
+ {
+  "t": "2026-09-02T20:14:30.540Z",
+  "dir": "req",
+  "m": "GET",
+  "u": "https://os.designproai.com/api/genie/prep/84a3eadf-bc81-4096-8dd0-a63509e84fb7"
+ },
+ {
+  "t": "2026-09-02T20:14:30.716Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep/84a3eadf-bc81-4096-8dd0-a63509e84fb7",
+  "body": "{\"prepId\":\"a377be67-8dc4-42c9-aeec-8cbd5c314d26\",\"generationId\":\"84a3eadf-bc81-4096-8dd0-a63509e84fb7\",\"vehicleIdentityHash\":\"6f0f38594c5f5b74f36db24b9593a3fc847e116f4931f467ba4b3a08fdace67a\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"ready\",\"attempt\":1,\"geometryState\":\"measured\",\"productionEligible\":true,\"geometryManifestHash\":\"766258a022b2a2da16007affc37ade77ee0af79f7b25f4f74a2039821de75b96\",\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:14:28.282+00:00\",\"requestedAt\":\"2026-09-02T20:14:28.465618+00:00\",\"startedAt\":\"2026-09-02T20:14:28.498831+00:00\",\"preparedAt\":\"2026-09-02T20:14:28.696186+00:00\",\"durationMs\":166,\"consumedAt\":null}"
+ },
+ {
+  "t": "2026-09-02T20:14:57.905Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/generation/requests",
+  "body": "{\"generationId\":\"84a3eadf-bc81-4096-8dd0-a63509e84fb7\",\"input\":{\"contractVersion\":\"designpro.calls-1-7-input.v3\",\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F250 Crew Cab\",\"type\":\"truck\"},\"brief\":\"Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif company name, high contrast and legible at highway distance.\",\"designName\":\"Precision Climate Solutions\",\"pipelineMode\":\"flat-first-atlas-v1\",\"finish\":\"Gloss\",\"mode\":\"commercial\",\"companyName\":\"Precision Climate Solutions\"},\"requiredPipelineMode\":\"flat-first-atlas-v1\"}"
+ },
+ {
+  "t": "2026-09-02T20:14:58.402Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/genie/prep",
+  "body": "{\"generationId\":\"84a3eadf-bc81-4096-8dd0-a63509e84fb7\",\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F250 Crew Cab\",\"type\":\"truck\"},\"clientEnteredAt\":\"2026-09-02T20:14:58.368Z\"}"
+ },
+ {
+  "t": "2026-09-02T20:14:58.402Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/genie/dimensions/preview",
+  "body": "{\"vehicle\":{\"year\":\"2022\",\"make\":\"Ford\",\"model\":\"F250 Crew Cab\",\"type\":\"truck\"}}"
+ },
+ {
+  "t": "2026-09-02T20:14:58.567Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/prep",
+  "body": "{\"prepId\":\"a377be67-8dc4-42c9-aeec-8cbd5c314d26\",\"generationId\":\"84a3eadf-bc81-4096-8dd0-a63509e84fb7\",\"vehicleIdentityHash\":\"6f0f38594c5f5b74f36db24b9593a3fc847e116f4931f467ba4b3a08fdace67a\",\"genieContractVersion\":\"designpro.genie-prep.v1+designpro.genie-manifest.v2\",\"status\":\"ready\",\"attempt\":1,\"geometryState\":\"measured\",\"productionEligible\":true,\"geometryManifestHash\":\"766258a022b2a2da16007affc37ade77ee0af79f7b25f4f74a2039821de75b96\",\"errorCode\":null,\"clientEnteredAt\":\"2026-09-02T20:14:28.282+00:00\",\"requestedAt\":\"2026-09-02T20:14:28.465618+00:00\",\"startedAt\":\"2026-09-02T20:14:28.498831+00:00\",\"preparedAt\":\"2026-09-02T20:14:28.696186+00:00\",\"durationMs\":166,\"consumedAt\":null,\"idempotent\":true}"
+ },
+ {
+  "t": "2026-09-02T20:14:58.649Z",
+  "dir": "res",
+  "s": 200,
+  "u": "https://os.designproai.com/api/genie/dimensions/preview",
+  "body": "{\"resolution\":{\"contract\":\"designpro.genie-manifest.v2\",\"hashContract\":\"designpro.genie-manifest-hash.v2\",\"genieManifestId\":\"766258a022b2a2da16007affc37ade77\",\"genieManifestHash\":\"766258a022b2a2da16007affc37ade77ee0af79f7b25f4f74a2039821de75b96\",\"state\":\"measured\",\"measuredSurfaces\":[\"driver\",\"passenger\",\"hood\",\"roof\",\"front\",\"rear\"],\"derivedSurfaces\":[],\"geometrySourceRowId\":\"690ad298-6c8e-4ae2-9571-ea532d6bd6c5\",\"productionEligible\":true,\"operatorValidated\":true},\"surfaces\":[{\"surfaceKey\":\"driver\",\"widthInches\":153,\"heightInches\":56,\"surfaceSqFt\":59.5,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"passenger\",\"widthInches\":153,\"heightInches\":56,\"surfaceSqFt\":59.5,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"hood\",\"widthInches\":71.5,\"heightInches\":56,\"surfaceSqFt\":27.81,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"roof\",\"widthInches\":74.3,\"heightInches\":54.8,\"surfaceSqFt\":28.28,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"front\",\"widthInches\":129,\"heightInches\":34,\"surfaceSqFt\":30.46,\"bleed\":{\"top\":5,\"right\":5,\"bottom\":5,\"left\":5}},{\"surfaceKey\":\"rear\",\"widthInches\":76,\"heightInches\":54,\"surfaceSqFt\":28.5,\"bl"
+ },
+ {
+  "t": "2026-09-02T20:17:47.300Z",
+  "dir": "req",
+  "m": "POST",
+  "u": "https://os.designproai.com/api/generation/requests/5a95603e-ff44-41f8-a14b-1bdc047fb33d/handoff",
+  "body": ""
+ },
+ {
+  "t": "2026-09-02T20:17:47.572Z",
+  "dir": "res",
+  "s": 202,
+  "u": "https://os.designproai.com/api/generation/requests/5a95603e-ff44-41f8-a14b-1bdc047fb33d/handoff",
+  "body": "{\"revisionId\":\"802d802c-c22e-459b-914d-8188024605ef\",\"generationId\":\"84a3eadf-bc81-4096-8dd0-a63509e84fb7\",\"runId\":\"3513f9fa-fa7d-433b-8abb-d43b6199bdf9\",\"alreadyHandedOff\":false}"
+ }
+]
