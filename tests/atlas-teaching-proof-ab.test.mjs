@@ -617,3 +617,91 @@ test("Test 6 swaps only the teaching image, and both arms keep one image", async
     /arm B carries the unmodified proof/,
   );
 });
+
+// ── TEST 7's INSTRUMENT ────────────────────────────────────────────────────
+// Tiling is only a clean variable if the six panels PARTITION the canvas — no
+// overlap, no remainder, no field — and each tile is nothing but its own source
+// panel scaled. These assert both, and that no panel was cropped or reordered.
+const { fullBleedMetrics } = await import("../scripts/atlas-fullbleed-metrics.mjs");
+const tile = await import("../scripts/atlas-teaching-proof-tile.mjs");
+const tileAb = await import("../scripts/atlas-teaching-proof-tile-ab.mjs");
+
+test("the tile layout partitions the canvas exactly", () => {
+  const rects = tile.tileLayout();
+  assert.equal(rects.length, 6);
+  const covered = new Uint8Array(tile.CANVAS.width * tile.CANVAS.height);
+  for (const r of rects) {
+    assert.ok(r.w >= 1 && r.h >= 1, `${r.key} tiles to ${r.w}x${r.h}`);
+    assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= tile.CANVAS.width && r.y + r.h <= tile.CANVAS.height,
+      `${r.key} falls outside the canvas`);
+    for (let y = r.y; y < r.y + r.h; y += 1) {
+      for (let x = r.x; x < r.x + r.w; x += 1) {
+        const i = y * tile.CANVAS.width + x;
+        assert.equal(covered[i], 0, `${r.key} overlaps another tile at ${x},${y}`);
+        covered[i] = 1;
+      }
+    }
+  }
+  assert.equal(covered.reduce((n, v) => n + (v ? 0 : 1), 0), 0, "the tiles leave canvas pixels uncovered");
+
+  // The proof's own centre order survives — test 4 showed order is null, so it
+  // must not become a second variable here.
+  const centre = rects.filter((r) => r.source.column === "centre").sort((a, b) => a.y - b.y);
+  assert.deepEqual(centre.map((r) => r.source.order), [1, 2, 3, 4], "the centre panels were reordered");
+});
+
+test("the tiled proof is the same six panels, scaled, with no field left", async () => {
+  const { bytes, report } = await tile.buildTiledTeachingProof(sourceBytes, { sharp });
+
+  assert.equal(report.sourceSha256, SOURCE_SHA256);
+  assert.notEqual(report.variantSha256, SOURCE_SHA256);
+  assert.equal(report.canvasFullyCovered, true);
+  assert.equal(report.tilesOverlapping, 0);
+  assert.ok(report.residualFieldShare < 0.005, `${report.residualFieldShare} of the canvas is still field`);
+  assert.equal(report.tiles.length, 6);
+
+  // Every tile grew: the point is that the artwork now reaches the boundary.
+  for (const t of report.tiles) {
+    assert.ok(t.to.w >= t.from.w || t.to.h >= t.from.h, `${t.key} shrank in both axes`);
+  }
+
+  // Independently, and colour-blind: the whole point of this variant is that the
+  // separation field is gone, so measure it with the instrument that asks "is
+  // this artwork" rather than "is this black". Counting exact (0,0,0) would
+  // undercount — the proof's field is NEAR-black, only 16.7% of it is pure.
+  const whole = { zones: [{ surfaceKey: "sheet", x: 0, y: 0, w: 1254, h: 1254 }] };
+  const before = (await fullBleedMetrics(sourceBytes, whole, { sharp })).zones.sheet;
+  const after = (await fullBleedMetrics(bytes, whole, { sharp })).zones.sheet;
+  assert.ok(before.nonArtworkRatio > 0.2,
+    `the source proof is only ${(before.nonArtworkRatio * 100).toFixed(1)}% non-artwork field — the premise is wrong`);
+  assert.ok(after.nonArtworkRatio < 0.02,
+    `the tiled proof is still ${(after.nonArtworkRatio * 100).toFixed(1)}% non-artwork field`);
+  assert.ok(after.borderArtworkRatio > 0.98,
+    `the tiled proof's border is only ${(after.borderArtworkRatio * 100).toFixed(1)}% artwork — it does not reach its own edges`);
+});
+
+test("the tile builder refuses anything that is not the owner's proof", async () => {
+  const notTheProof = await sharp({ create: { width: 8, height: 8, channels: 4, background: "#000000" } }).png().toBuffer();
+  await assert.rejects(() => tile.buildTiledTeachingProof(notTheProof, { sharp }), /source is not the owner proof/);
+});
+
+test("Test 7 swaps only the teaching image, and both arms keep one image", async () => {
+  const { bytes } = await tile.buildTiledTeachingProof(sourceBytes, { sharp });
+  const base = {
+    prompt: "P".repeat(4587),
+    teachingReferenceText: "LABELED A.T.L.A.S. TEACHING REFERENCE. …",
+    teachingBytes: sourceBytes,
+    tiledBytes: bytes,
+    model: "gemini-3-pro-image",
+  };
+  const { requests } = tileAb.buildTileRequests(base);
+  assert.equal(requests.A.partCount, 3);
+  assert.equal(requests.B.partCount, 3);
+  assert.equal(requests.A.modelInputImageCount, 1);
+  assert.equal(requests.B.modelInputImageCount, 1);
+  assert.equal(requests.A.parts[0].sha256, requests.B.parts[0].sha256);
+  assert.equal(requests.A.parts[1].sha256, requests.B.parts[1].sha256);
+  assert.notEqual(requests.A.parts[2].sha256, requests.B.parts[2].sha256);
+  assert.equal(requests.A.parts[2].sha256, SOURCE_SHA256);
+  assert.throws(() => tileAb.buildTileRequests({ ...base, tiledBytes: sourceBytes }), /arm B carries the unmodified proof/);
+});
