@@ -304,7 +304,8 @@ async function main() {
     );
   }
 
-  log(`arm A reproduces test 2's guide-absent control: ${requests.A.modelRequestByteSize} bytes, ${requests.A.partCount} parts, 1 image`);
+  log(`arm A reproduces the DEPLOYED request: ${requests.A.modelRequestByteSize} bytes, ${requests.A.partCount} parts, ${requests.A.modelInputImageCount} images, prompt ${requests.A.promptChars} chars`);
+  log(`arm B reframes one clause: ${requests.B.modelRequestByteSize} bytes, ${requests.B.partCount} parts, ${requests.B.modelInputImageCount} images, prompt ${requests.B.promptChars} chars`);
   log("");
   log(`  A: "...on one sheet -- ${ANATOMY_CLAUSE}."`);
   log(`  B: "...on one sheet -- ${MEDIA_CLAUSE}."`);
