@@ -1,0 +1,75 @@
+runtime image: designproai-runtime:fb58f702537ae9c5fefc90f67abdd1b1f47ad5b0
+test: 8-teaching-proof-absent -> scripts/atlas-teaching-proof-ablation-ab.mjs
+  resolving GENIE preview dimensions …
+  arm A reproduces the DEPLOYED request: 4762109 bytes, 5 parts, 2 images, prompt 4587 chars
+  arm B removes exactly parts [1] teaching instruction and [2] labeled Flamingo — 187845 bytes, 3 parts, 1 image
+    prompt sha dcb73e9eae229cd8, byte-identical in both arms
+    guide pair present in both arms: text a93e2c7a16fea22a, image 7c10d6ae0a3249ef
+  
+  A1: calling gemini-3-pro-image (5 parts) …
+  A1: 6699KB in 38.1s → A1-deployed.png
+  A1: fullBleed 0/6  worstNonArtwork 81.1%  worstContour 0.750  class=vehicle_depiction  legacyAccepted=true
+      inspector: The image displays individual vehicle body panels with their specific contours, laid out flat, which constitutes a mocku
+      driver     bleed NO  nonArtwork  56.5%  largestField  26.3%  borderArtwork   8.2%  contour 0.508  [legacy edgeHole 0.002]
+      passenger  bleed NO  nonArtwork  54.9%  largestField  26.2%  borderArtwork   8.2%  contour 0.491  [legacy edgeHole 0.002]
+      front      bleed NO  nonArtwork  67.6%  largestField  11.1%  borderArtwork  13.4%  contour 0.661  [legacy edgeHole 0.003]
+      hood       bleed NO  nonArtwork  81.1%  largestField  54.5%  borderArtwork  14.0%  contour 0.750  [legacy edgeHole 0.001]
+      rear       bleed NO  nonArtwork  63.5%  largestField  49.1%  borderArtwork  19.4%  contour 0.580  [legacy edgeHole 0.001]
+      roof       bleed NO  nonArtwork  57.5%  largestField  34.6%  borderArtwork  17.7%  contour 0.385  [legacy edgeHole 0.001]
+  
+  B1: calling gemini-3-pro-image (3 parts) …
+  B1: 8587KB in 46.1s → B1-proof-absent.png
+  B1: fullBleed 0/6  worstNonArtwork 51.9%  worstContour 0.519  class=vehicle_depiction  legacyAccepted=true
+      inspector: The image shows a 3D render of a truck body with applied graphics, clearly depicting vehicle body contours and implied l
+      driver     bleed NO  nonArtwork  51.9%  largestField  19.9%  borderArtwork  53.8%  contour 0.519  [legacy edgeHole 0.010]
+      passenger  bleed NO  nonArtwork  47.8%  largestField  20.3%  borderArtwork  60.7%  contour 0.478  [legacy edgeHole 0.020]
+      front      bleed NO  nonArtwork  11.1%  largestField   1.9%  borderArtwork  98.3%  contour 0.111  [legacy edgeHole 0.005]
+      hood       bleed NO  nonArtwork  49.0%  largestField  32.7%  borderArtwork  64.7%  contour 0.490  [legacy edgeHole 0.012]
+      rear       bleed NO  nonArtwork  26.1%  largestField  17.8%  borderArtwork  46.2%  contour 0.106  [legacy edgeHole 0.006]
+      roof       bleed NO  nonArtwork  51.3%  largestField  27.1%  borderArtwork  26.5%  contour 0.432  [legacy edgeHole 0.020]
+  
+  A2: calling gemini-3-pro-image (5 parts) …
+  A2: 7271KB in 36.0s → A2-deployed.png
+  A2: fullBleed 0/6  worstNonArtwork 73.4%  worstContour 0.734  class=vehicle_depiction  legacyAccepted=true
+      inspector: The image displays various vehicle parts like the hood, roof, and front, showing body contours and reflections.
+      driver     bleed NO  nonArtwork  35.2%  largestField   9.8%  borderArtwork  66.2%  contour 0.352  [legacy edgeHole 0.000]
+      passenger  bleed NO  nonArtwork  49.2%  largestField  20.0%  borderArtwork  62.5%  contour 0.492  [legacy edgeHole 0.000]
+      front      bleed NO  nonArtwork  61.6%  largestField  24.7%  borderArtwork  52.9%  contour 0.616  [legacy edgeHole 0.000]
+      hood       bleed NO  nonArtwork  73.4%  largestField  38.1%  borderArtwork  50.1%  contour 0.734  [legacy edgeHole 0.000]
+      rear       bleed NO  nonArtwork  51.1%  largestField   9.3%  borderArtwork  41.4%  contour 0.495  [legacy edgeHole 0.000]
+      roof       bleed NO  nonArtwork  65.3%  largestField  29.8%  borderArtwork  35.1%  contour 0.617  [legacy edgeHole 0.000]
+  
+  B2: calling gemini-3-pro-image (3 parts) …
+  B2: 7021KB in 39.2s → B2-proof-absent.png
+  B2: fullBleed 0/6  worstNonArtwork 51.5%  worstContour 0.515  class=flat_atlas  legacyAccepted=false
+      inspector: The image displays multiple flat 2D print artwork panels laid out side by side, with no vehicle body depicted.
+      driver     bleed NO  nonArtwork  39.8%  largestField  10.2%  borderArtwork  18.9%  contour 0.398  [legacy edgeHole 0.023]
+      passenger  bleed NO  nonArtwork  38.8%  largestField  10.3%  borderArtwork  24.3%  contour 0.388  [legacy edgeHole 0.022]
+      front      bleed NO  nonArtwork  51.5%  largestField  28.1%  borderArtwork  70.5%  contour 0.515  [legacy edgeHole 0.094]
+      hood       bleed NO  nonArtwork  37.3%  largestField  17.1%  borderArtwork  29.0%  contour 0.373  [legacy edgeHole 0.012]
+      rear       bleed NO  nonArtwork  29.7%  largestField  14.2%  borderArtwork  72.2%  contour 0.297  [legacy edgeHole 0.013]
+      roof       bleed NO  nonArtwork  46.9%  largestField  27.5%  borderArtwork  19.2%  contour 0.332  [legacy edgeHole 0.004]
+  
+  A3: calling gemini-3-pro-image (5 parts) …
+  A3: 5578KB in 32.6s → A3-deployed.png
+  A3: fullBleed 0/6  worstNonArtwork 65.6%  worstContour 0.655  class=flat_atlas  legacyAccepted=false
+      inspector: The image displays multiple flat 2D print artwork panels laid out on a single sheet, without any vehicle body depiction.
+      driver     bleed NO  nonArtwork  48.4%  largestField  15.9%  borderArtwork  11.7%  contour 0.441  [legacy edgeHole 0.851]
+      passenger  bleed NO  nonArtwork  50.9%  largestField  15.9%  borderArtwork   9.9%  contour 0.468  [legacy edgeHole 0.851]
+      front      bleed NO  nonArtwork  65.6%  largestField  43.6%  borderArtwork  72.9%  contour 0.655  [legacy edgeHole 0.237]
+      hood       bleed NO  nonArtwork  43.5%  largestField  23.7%  borderArtwork  63.2%  contour 0.435  [legacy edgeHole 0.396]
+      rear       bleed NO  nonArtwork  57.2%  largestField  15.3%  borderArtwork  29.1%  contour 0.569  [legacy edgeHole 0.797]
+      roof       bleed NO  nonArtwork  53.2%  largestField  26.8%  borderArtwork  21.9%  contour 0.387  [legacy edgeHole 0.781]
+  
+  B3: calling gemini-3-pro-image (3 parts) …
+  B3: 6973KB in 36.5s → B3-proof-absent.png
+  B3: fullBleed 0/6  worstNonArtwork 71.2%  worstContour 0.712  class=flat_atlas  legacyAccepted=true
+      inspector: The image displays multiple rectangular print artworks laid out side by side on a single sheet, with no vehicle depicted
+      driver     bleed NO  nonArtwork  35.5%  largestField   5.5%  borderArtwork  55.0%  contour 0.355  [legacy edgeHole 0.000]
+      passenger  bleed NO  nonArtwork  53.8%  largestField   9.4%  borderArtwork  51.0%  contour 0.538  [legacy edgeHole 0.000]
+      front      bleed NO  nonArtwork  71.2%  largestField  17.2%  borderArtwork  84.6%  contour 0.712  [legacy edgeHole 0.000]
+      hood       bleed NO  nonArtwork  47.3%  largestField   9.9%  borderArtwork  98.6%  contour 0.473  [legacy edgeHole 0.000]
+      rear       bleed NO  nonArtwork  52.0%  largestField  11.2%  borderArtwork  75.1%  contour 0.520  [legacy edgeHole 0.000]
+      roof       bleed NO  nonArtwork  20.9%  largestField   6.5%  borderArtwork  81.4%  contour 0.209  [legacy edgeHole 0.000]
+  
+  6 draws written; results.json and COMPARISON.md in /work/ab-evidence
