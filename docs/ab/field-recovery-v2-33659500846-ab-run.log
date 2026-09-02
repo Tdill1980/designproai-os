@@ -1,0 +1,63 @@
+runtime image: designproai-runtime:fb58f702537ae9c5fefc90f67abdd1b1f47ad5b0
+test: 11-field-recovery-v2 -> scripts/atlas-field-recovery-v2.mjs
+  resolving GENIE preview dimensions …
+  territories: field-thirds-v2 — extracted 76.3% of canvas, min native 12.64 px/in (legacy 9.07)
+      driver     third-1        (362, 0, 3371, 1365)  163×66 in  20.68 px/in  trim (465, 103, 3165, 1159)
+      passenger  third-2        (362, 1365, 3371, 1365)  163×66 in  20.68 px/in  trim (465, 1468, 3165, 1159)
+      hood       third-3-row-1  (1186, 2730, 1031, 835)  81.5×66 in  12.65 px/in  trim (1249, 2793, 905, 709)
+      roof       third-3-row-1  (120, 2730, 1066, 820)  84.3×64.8 in  12.65 px/in  trim (183, 2793, 940, 694)
+      front      third-3-row-1  (2217, 2730, 1758, 557)  139×44 in  12.65 px/in  trim (2280, 2793, 1632, 431)
+      rear       third-3-row-2  (2217, 3287, 1088, 809)  86×64 in  12.64 px/in  trim (2280, 3350, 962, 683)
+  deployed prompt reproduced: sha dcb73e9eae229cd8, 4587 chars
+  creative assembly 2622 chars → 2698 chars, 7 swaps, reverse proof true
+  field tail 1354 chars (ceiling 1400); prompt 4052 chars sha 37e4137e8ae8c8bb; request 1 part(s), 0 image(s), 4294 bytes
+  
+  DRAW 1: calling gemini-3-pro-image (1 part, 0 structural images) …
+  draw 1: 10534KB in 45.4s — raw master written FIRST
+  normalized: delivered 4096×4096, nativelyFourK=true, master sha c94b28b70ad3e9b8
+  full-bleed (telemetry; a smooth painted ground can read as non-artwork): bleed rects 0/6 · trim rects 0/6 · whole field nonArtwork 9.8%, border 0.0%
+      driver     bleed NO  nonArt  23.3% border  19.0%   trim NO  nonArt  14.1% border  70.5%
+      passenger  bleed NO  nonArt  21.1% border  21.3%   trim NO  nonArt  13.5% border  64.2%
+      hood       bleed NO  nonArt  43.6% border  53.3%   trim NO  nonArt  53.8% border  79.7%
+      roof       bleed NO  nonArt  41.8% border  49.9%   trim NO  nonArt  49.5% border  42.4%
+      front      bleed NO  nonArt  58.4% border  47.6%   trim NO  nonArt  66.8% border  47.4%
+      rear       bleed NO  nonArt  41.1% border  56.9%   trim NO  nonArt  43.5% border  76.1%
+  legacy checks (record, pixel math only): accepted=true blocking=0 passengerMirrorMae=0.06703380310457516
+  output class: skipped
+  raw sha e13b65f685f9dfb6 vs normalized sha c94b28b70ad3e9b8 — differ: true
+  continuity: anyDivider=true deepest 16px, worst boundaryMae 0.24709
+      driver→passenger     y=1365  mae 0.24709  divider no (84%)
+      passenger→hood       y=2730  mae 0.06087  divider YES depth 16px
+      passenger→roof       y=2730  mae 0.09709  divider YES depth 16px
+      passenger→front      y=2730  mae 0.07303  divider YES depth 16px
+      hood→front           x=2217  mae 0.02411  divider no (0%)
+      hood→rear            x=2217  mae 0.12287  divider no (23%)
+      roof→hood            x=1186  mae 0.03447  divider no (2%)
+      front→rear           y=3287  mae 0.03031  divider no (18%)
+      cut driver     3371×1365px  163×66in print  20.68 px/in native  42424f58ae1fd6d6
+      cut passenger  3371×1365px  163×66in print  20.68 px/in native  7c34af27f9a72d82
+      cut hood       1031×835px  81.5×66in print  12.65 px/in native  59b2c447e7762a9e
+      cut front      1758×557px  139×44in print  12.65 px/in native  8fa9dd9a547f6099
+      cut rear       1088×809px  86×64in print  12.64 px/in native  a6858848caff80d9
+      cut roof       1066×820px  84.3×64.8in print  12.65 px/in native  78625b3ed6850d56
+  per-file inspections: skipped (owner: zero Flash calls on Draw 1)
+
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+  
+  draw 1 written; results.json, REPORT.md, PLAN.md, contact-sheet.png and panels/ in /work/ab-evidence
