@@ -143,20 +143,44 @@ async function main() {
       + (claim ? `   [fill claimed ${claim.pixels.toLocaleString()} px in ${claim.components} component(s), unresolved ${claim.unresolvedPixels}]` : ""));
   }
 
+  // ⛔ THE VERDICT IS COLOUR-BLIND, AND THE FIRST VERSION OF IT WAS NOT.
+  //
+  // Judged by the gate's own near-black predicate this master reported "repair
+  // EFFECTIVE" on both flanks — 22 and 25 surviving dark pixels against 300,000
+  // claimed — while the sheet plainly still carries a solid black disc on each
+  // flank. FLAT_BLACK_CHANNEL_MAX is 24 and the filled disc measures about
+  // rgb(25,19,23): the fill lifted it ONE VALUE on ONE CHANNEL out of the
+  // predicate's reach without turning it into artwork. Every gate downstream
+  // that keys on `holeAt` is blind to it for the same reason.
+  //
+  // So the question a verdict must ask is "is this region artwork", not "is
+  // this region black" — the surviving UNIFORM FIELD, whatever its colour.
   const verdicts = manifest.zones.map((zone) => {
     const s = surfaces[zone.surfaceKey];
     const claim = fillByKey.get(zone.surfaceKey);
     if (!claim) return null;
-    // The fill said it closed this surface. Did it?
-    const survivedPx = s.largestDarkComponentFullResPx;
-    const survived = survivedPx > claim.pixels * 0.25;
-    return { surfaceKey: zone.surfaceKey, claimedPx: claim.pixels, survivingLargestDarkPx: survivedPx, repairEffective: !survived };
+    const zonePx = zone.w * zone.h;
+    const claimedRatio = claim.pixels / zonePx;
+    const survivingFieldRatio = s.fullBleed ? s.fullBleed.largestNonArtworkComponentRatio : null;
+    // The filled region is gone only if the field it left behind is a small
+    // fraction of what the fill said it closed.
+    const removed = survivingFieldRatio != null && survivingFieldRatio < claimedRatio * 0.25;
+    return {
+      surfaceKey: zone.surfaceKey,
+      claimedPx: claim.pixels,
+      claimedRatio: Number(claimedRatio.toFixed(5)),
+      survivingLargestNonArtworkRatio: survivingFieldRatio,
+      survivingLargestNearBlackPx: s.largestDarkComponentFullResPx,
+      repairRemovedTheRegion: removed,
+    };
   }).filter(Boolean);
 
   log("");
   for (const v of verdicts) {
-    log(`  ${v.surfaceKey}: fill claimed ${v.claimedPx.toLocaleString()} px; largest dark component still present ${v.survivingLargestDarkPx.toLocaleString()} px `
-      + `-> repair ${v.repairEffective ? "EFFECTIVE" : "DID NOT REMOVE THE DARK REGION"}`);
+    log(`  ${v.surfaceKey}: fill claimed ${v.claimedPx.toLocaleString()} px (${(v.claimedRatio * 100).toFixed(2)}% of zone); `
+      + `surviving uniform non-artwork field ${(v.survivingLargestNonArtworkRatio * 100).toFixed(2)}% `
+      + `(near-black by the gate's predicate: only ${v.survivingLargestNearBlackPx.toLocaleString()} px) `
+      + `-> repair ${v.repairRemovedTheRegion ? "REMOVED THE REGION" : "DID NOT REMOVE THE REGION — it recoloured it out of the predicate's reach"}`);
   }
 
   writeFileSync(join(OUT, "measure-master.json"), JSON.stringify({
