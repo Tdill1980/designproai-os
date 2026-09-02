@@ -83,6 +83,17 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            filled edge to edge. If B is also 0/6, Call-1 prompt/reference
 #            experimentation is finished and the question becomes architectural.
 #
+#            RESULT: null. 0/6 in all six draws; with no example image at all
+#            the model still drew six objects on a sheet. Conditioning closed.
+#
+#   test 9 — FIELD RECOVERY (owner-approved Phase 1, ONE draw). Not an A/B.
+#            Gemini authors ONE uninterrupted full-bleed composition from the
+#            DesignPanelAI creative assembly (byte-identical except one scene
+#            clause) + a field contract; it receives NO images. The OS owns six
+#            canonical territories (`field-bands-v1`, flanks landscape, no
+#            rotation) and the REAL `cutCallOnePanels` cuts the six files.
+#            Every metric is telemetry; native effective PPI only; no gate.
+#
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
 # proof and the edge function's hash pin on it are untouched — the variant is
@@ -97,7 +108,7 @@ on:
         description: "Which isolated variable"
         required: true
         type: choice
-        default: "8-teaching-proof-absent"
+        default: "9-field-recovery"
         options:
           - 1-teaching-proof-field
           - 2-guide-ablation
@@ -108,6 +119,7 @@ on:
           - 7-tiled-proof
           - 7b-object-model
           - 8-teaching-proof-absent
+          - 9-field-recovery
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -115,10 +127,10 @@ on:
         type: string
         default: ""
       draws:
-        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Test 8 uses 3."
+        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Test 9 (field recovery) accepts ONLY 1 — owner ruling — and refuses anything else."
         required: true
         type: string
-        default: "3"
+        default: "1"
       confirmation:
         description: "Protected live-provider action — real Gemini image calls (0 with capture_only)"
         required: true
@@ -265,6 +277,10 @@ jobs:
             scripts/atlas-teaching-proof-tile.mjs \
             scripts/atlas-object-model-ab.mjs \
             scripts/atlas-teaching-proof-ablation-ab.mjs \
+            scripts/atlas-field-territories.mjs \
+            scripts/atlas-field-contract.mjs \
+            scripts/atlas-field-continuity.mjs \
+            scripts/atlas-field-recovery.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -322,6 +338,7 @@ jobs:
             7-tiled-proof)          runner=scripts/atlas-teaching-proof-tile-ab.mjs ;;
             7b-object-model)        runner=scripts/atlas-object-model-ab.mjs ;;
             8-teaching-proof-absent) runner=scripts/atlas-teaching-proof-ablation-ab.mjs ;;
+            9-field-recovery)        runner=scripts/atlas-field-recovery.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs
@@ -370,6 +387,7 @@ jobs:
         shell: bash
         run: |
           if [ -f ab-evidence/COMPARISON.md ]; then cat ab-evidence/COMPARISON.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f ab-evidence/REPORT.md ]; then cat ab-evidence/REPORT.md >> "$GITHUB_STEP_SUMMARY"; fi
           if [ -f ab-evidence/parity.json ]; then
             { echo; echo '## harness ↔ deployed-edge request parity'; echo '```json'; cat ab-evidence/parity.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi
