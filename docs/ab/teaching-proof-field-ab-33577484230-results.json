@@ -1,0 +1,489 @@
+{
+  "contract": "designpro.teaching-proof-field-ab.v1",
+  "ranAt": "2026-09-02T01:00:52.296Z",
+  "imageRequestsExecuted": 3,
+  "vehicle": {
+    "type": "truck",
+    "year": "2022",
+    "make": "Ford",
+    "model": "F250 Crew Cab"
+  },
+  "brief": "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif company name, high contrast and legible at highway distance.",
+  "promptVersion": "atlas-artboard-designiq.20260901.v23-orthographic-restored",
+  "edgeSourceCommit": "113d137dbe8813ca3bf70c8d7265ad081ebd4524",
+  "model": "gemini-3-pro-image",
+  "parity": {
+    "modelRequestByteSize": {
+      "edge": 4762109,
+      "harness": 4762109
+    },
+    "modelInputImageCount": {
+      "edge": 2,
+      "harness": 2
+    },
+    "model": {
+      "edge": "gemini-3-pro-image",
+      "harness": "gemini-3-pro-image"
+    }
+  },
+  "variant": {
+    "sourceSha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded",
+    "variantSha256": "268fa27395800b7c64f2c36c39a10e53e0287fa8b1bc454b9a56c3e2170a4fc3",
+    "variantByteSize": 3237699,
+    "canvas": {
+      "width": 1254,
+      "height": 1254
+    },
+    "panelRects": [
+      {
+        "key": "driver",
+        "x0": 86,
+        "y0": 92,
+        "x1": 412,
+        "y1": 1190
+      },
+      {
+        "key": "passenger",
+        "x0": 848,
+        "y0": 98,
+        "x1": 1170,
+        "y1": 1190
+      },
+      {
+        "key": "roof",
+        "x0": 432,
+        "y0": 360,
+        "x1": 822,
+        "y1": 757
+      },
+      {
+        "key": "rear",
+        "x0": 432,
+        "y0": 770,
+        "x1": 823,
+        "y1": 998
+      },
+      {
+        "key": "hood",
+        "x0": 432,
+        "y0": 90,
+        "x1": 822,
+        "y1": 312
+      },
+      {
+        "key": "front",
+        "x0": 432,
+        "y0": 1056,
+        "x1": 822,
+        "y1": 1182
+      }
+    ],
+    "recolouredPixels": 456178,
+    "recolouredShareOfCanvas": 0.290094,
+    "darkPixelsPreservedInsidePanels": 8396,
+    "neutral": [
+      128,
+      128,
+      128
+    ],
+    "darkMax": 40,
+    "changedPixelsVerified": 456178,
+    "changedInsidePanels": 0,
+    "changedThatWereNotNearBlack": 0
+  },
+  "requests": {
+    "A": {
+      "label": "A-control-production-proof",
+      "model": "gemini-3-pro-image",
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT",
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "4K"
+        }
+      },
+      "promptChars": 4587,
+      "partCount": 5,
+      "modelInputImageCount": 2,
+      "modelRequestByteSize": 4762109,
+      "parts": [
+        {
+          "index": 0,
+          "kind": "text",
+          "chars": 4587,
+          "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+          "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+        },
+        {
+          "index": 1,
+          "kind": "text",
+          "chars": 502,
+          "sha256": "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259",
+          "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+        },
+        {
+          "index": 2,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 3430273,
+          "sha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"
+        },
+        {
+          "index": 3,
+          "kind": "text",
+          "chars": 260,
+          "sha256": "a93e2c7a16fea22ae78c3e18fdc02b0ec08c7b6e8dd992e7ebf66ec41f480d4d",
+          "preview": "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout."
+        },
+        {
+          "index": 4,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 137010,
+          "sha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5"
+        }
+      ]
+    },
+    "B": {
+      "label": "B-variant-neutral-field",
+      "model": "gemini-3-pro-image",
+      "generationConfig": {
+        "responseModalities": [
+          "TEXT",
+          "IMAGE"
+        ],
+        "imageConfig": {
+          "aspectRatio": "1:1",
+          "imageSize": "4K"
+        }
+      },
+      "promptChars": 4587,
+      "partCount": 5,
+      "modelInputImageCount": 2,
+      "modelRequestByteSize": 4505341,
+      "parts": [
+        {
+          "index": 0,
+          "kind": "text",
+          "chars": 4587,
+          "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+          "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+        },
+        {
+          "index": 1,
+          "kind": "text",
+          "chars": 502,
+          "sha256": "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259",
+          "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+        },
+        {
+          "index": 2,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 3237699,
+          "sha256": "268fa27395800b7c64f2c36c39a10e53e0287fa8b1bc454b9a56c3e2170a4fc3"
+        },
+        {
+          "index": 3,
+          "kind": "text",
+          "chars": 260,
+          "sha256": "a93e2c7a16fea22ae78c3e18fdc02b0ec08c7b6e8dd992e7ebf66ec41f480d4d",
+          "preview": "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout."
+        },
+        {
+          "index": 4,
+          "kind": "image",
+          "mimeType": "image/png",
+          "bytes": 137010,
+          "sha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5"
+        }
+      ]
+    }
+  },
+  "measurements": {
+    "P": {
+      "rawSha256": "9dd5b5e76746eb5ecc146523997b82d49be05d8d9ae3931cc7ade9abf5a33039",
+      "rawByteSize": 6711946,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "normalizedSha256": "e370f204b550e5fb35d8f36fd2eabfac90657d4ae500653ff0a6a794a45a4b13",
+      "accepted": false,
+      "blockingFailures": [
+        "front edgeHoleRatio=0.37356 -- 37.4% of the zone border is hole while 75.2% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "rear edgeHoleRatio=0.44710 -- 44.7% of the zone border is hole while 94.2% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "cutoutFindings": [
+        {
+          "surfaceKey": "front",
+          "finding": "front largestCutoutComponentRatio=0.11564 (flatBlackRatio=0.22132) inside a zone that is 75.2% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "rear",
+          "finding": "rear largestCutoutComponentRatio=0.02782 (flatBlackRatio=0.05561) inside a zone that is 94.2% artwork -- one wheel/glass/bed shape cut out of the panel"
+        }
+      ],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.0034060117102396514,
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.00445,
+          "largestCutoutComponentRatio": 0.00001,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00033,
+          "cutoutComponentCount": 445,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 71.11
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.00501,
+          "largestCutoutComponentRatio": 0.00008,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00049,
+          "cutoutComponentCount": 424,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 70.99
+        },
+        "front": {
+          "edgeHoleRatio": 0.37356,
+          "largestCutoutComponentRatio": 0.11564,
+          "concentratedFlatBlackRatio": 0.21493,
+          "flatBlackRatio": 0.22132,
+          "cutoutComponentCount": 74,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 78.91
+        },
+        "hood": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0.00007,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00019,
+          "cutoutComponentCount": 56,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 52.13
+        },
+        "rear": {
+          "edgeHoleRatio": 0.4471,
+          "largestCutoutComponentRatio": 0.02782,
+          "concentratedFlatBlackRatio": 0.0555,
+          "flatBlackRatio": 0.05561,
+          "cutoutComponentCount": 17,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 59.67
+        },
+        "roof": {
+          "edgeHoleRatio": 0.00028,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0.00001,
+          "cutoutComponentCount": 7,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 50.32
+        }
+      }
+    },
+    "A": {
+      "rawSha256": "a9d04d1934486b7c886422749284b6821aa060860a172f4f3ba3c6b10760130b",
+      "rawByteSize": 6667092,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "normalizedSha256": "cd46ff7be9316fba7338cb613c589541612e7271b5b5b8fbb7285e5a4b23c8a0",
+      "accepted": false,
+      "blockingFailures": [
+        "rear edgeHoleRatio=0.93639 -- 93.6% of the zone border is hole while 81.4% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "cutoutFindings": [
+        {
+          "surfaceKey": "roof",
+          "finding": "roof largestCutoutComponentRatio=0.11181 (flatBlackRatio=0.11416) inside a zone that is 88.2% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "rear",
+          "finding": "rear largestCutoutComponentRatio=0.07371 (flatBlackRatio=0.17932) inside a zone that is 81.4% artwork -- one wheel/glass/bed shape cut out of the panel"
+        }
+      ],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.00496578839869281,
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 53.15
+        },
+        "passenger": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 53.34
+        },
+        "front": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 49.19
+        },
+        "hood": {
+          "edgeHoleRatio": 0,
+          "largestCutoutComponentRatio": 0,
+          "concentratedFlatBlackRatio": 0,
+          "flatBlackRatio": 0,
+          "cutoutComponentCount": 0,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 53.65
+        },
+        "rear": {
+          "edgeHoleRatio": 0.93639,
+          "largestCutoutComponentRatio": 0.07371,
+          "concentratedFlatBlackRatio": 0.1767,
+          "flatBlackRatio": 0.17932,
+          "cutoutComponentCount": 129,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 51.35
+        },
+        "roof": {
+          "edgeHoleRatio": 0.33352,
+          "largestCutoutComponentRatio": 0.11181,
+          "concentratedFlatBlackRatio": 0.11181,
+          "flatBlackRatio": 0.11416,
+          "cutoutComponentCount": 104,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 35.12
+        }
+      }
+    },
+    "B": {
+      "rawSha256": "693a7e1c627ba4c1cf4df345f82cfc694c64f6a9a575dd2265746839ab84689f",
+      "rawByteSize": 4831695,
+      "deliveredWidthPx": 4096,
+      "deliveredHeightPx": 4096,
+      "nativelyFourK": true,
+      "normalizedSha256": "0b7a3a1fcb6f0927093166acff5c437f1b7d37c8f95206f7da679ed2b6c31772",
+      "accepted": false,
+      "blockingFailures": [
+        "hood edgeHoleRatio=0.50456 -- 50.5% of the zone border is hole while 70.3% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "roof edgeHoleRatio=0.63737 -- 63.7% of the zone border is hole while 78.8% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle",
+        "rear edgeHoleRatio=0.61092 -- 61.1% of the zone border is hole while 70.6% of the zone is artwork: the design does not run off its own edges, so this zone is a shape floating on a surround, not a full-bleed printable rectangle"
+      ],
+      "cutoutFindings": [
+        {
+          "surfaceKey": "hood",
+          "finding": "hood largestCutoutComponentRatio=0.29001 (flatBlackRatio=0.29121) inside a zone that is 70.3% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "roof",
+          "finding": "roof largestCutoutComponentRatio=0.11124 (flatBlackRatio=0.21039) inside a zone that is 78.8% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "front",
+          "finding": "front largestCutoutComponentRatio=0.02988 (flatBlackRatio=0.05781) inside a zone that is 94.1% artwork -- one wheel/glass/bed shape cut out of the panel"
+        },
+        {
+          "surfaceKey": "rear",
+          "finding": "rear largestCutoutComponentRatio=0.25915 (flatBlackRatio=0.29168) inside a zone that is 70.6% artwork -- one wheel/glass/bed shape cut out of the panel"
+        }
+      ],
+      "structuralTemplateLeak": {
+        "convicted": false,
+        "mirroredFlankGutters": false,
+        "centerSurfaces": []
+      },
+      "passengerMirrorMae": 0.002964835239651416,
+      "surfaces": {
+        "driver": {
+          "edgeHoleRatio": 0.90931,
+          "largestCutoutComponentRatio": 0.23272,
+          "concentratedFlatBlackRatio": 0.48824,
+          "flatBlackRatio": 0.48842,
+          "cutoutComponentCount": 89,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 68.16
+        },
+        "passenger": {
+          "edgeHoleRatio": 0.90925,
+          "largestCutoutComponentRatio": 0.23042,
+          "concentratedFlatBlackRatio": 0.48803,
+          "flatBlackRatio": 0.48821,
+          "cutoutComponentCount": 95,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 68.26
+        },
+        "front": {
+          "edgeHoleRatio": 0.30195,
+          "largestCutoutComponentRatio": 0.02988,
+          "concentratedFlatBlackRatio": 0.05781,
+          "flatBlackRatio": 0.05781,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 68.23
+        },
+        "hood": {
+          "edgeHoleRatio": 0.50456,
+          "largestCutoutComponentRatio": 0.29001,
+          "concentratedFlatBlackRatio": 0.29001,
+          "flatBlackRatio": 0.29121,
+          "cutoutComponentCount": 8,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 61.04
+        },
+        "rear": {
+          "edgeHoleRatio": 0.61092,
+          "largestCutoutComponentRatio": 0.25915,
+          "concentratedFlatBlackRatio": 0.28891,
+          "flatBlackRatio": 0.29168,
+          "cutoutComponentCount": 6,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 70.09
+        },
+        "roof": {
+          "edgeHoleRatio": 0.63737,
+          "largestCutoutComponentRatio": 0.11124,
+          "concentratedFlatBlackRatio": 0.21039,
+          "flatBlackRatio": 0.21039,
+          "cutoutComponentCount": 2,
+          "opaqueRatio": 1,
+          "edgeOpaqueRatio": 1,
+          "lumaStddev": 63.37
+        }
+      }
+    }
+  }
+}
