@@ -93,6 +93,18 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            canonical territories (`field-bands-v1`, flanks landscape, no
 #            rotation) and the REAL `cutCallOnePanels` cuts the six files.
 #            Every metric is telemetry; native effective PPI only; no gate.
+#            RESULT: the anatomy left with the containers, and the composition
+#            became three horizontal bands. Owner: closed; not the direction.
+#
+#   test 10 — ANCHOR RESTORATION (owner-approved, OPTION A, ONE draw). Not an
+#            A/B. The deployed FIVE-part request — creative assembly byte for
+#            byte, teaching text, Flamingo labeled proof, guide text, the
+#            GENIE-proportioned neutral guide on production CENTER_ORDER
+#            (REAR → ROOF → HOOD → FRONT) — with ONLY the output tail of part 0
+#            replaced by the owner's object-first A.T.L.A.S. anchor
+#            (`scripts/atlas-anchor-contract.mjs`). Raw master saved first;
+#            the REAL `cutCallOnePanels` cuts the six files; three reports.
+#            Every metric is telemetry; no gate; no repeatability; STOP after.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
@@ -108,7 +120,7 @@ on:
         description: "Which isolated variable"
         required: true
         type: choice
-        default: "9-field-recovery"
+        default: "10-anchor-restoration"
         options:
           - 1-teaching-proof-field
           - 2-guide-ablation
@@ -120,6 +132,7 @@ on:
           - 7b-object-model
           - 8-teaching-proof-absent
           - 9-field-recovery
+          - 10-anchor-restoration
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -127,7 +140,7 @@ on:
         type: string
         default: ""
       draws:
-        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Test 9 (field recovery) accepts ONLY 1 — owner ruling — and refuses anything else."
+        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else."
         required: true
         type: string
         default: "1"
@@ -281,6 +294,8 @@ jobs:
             scripts/atlas-field-contract.mjs \
             scripts/atlas-field-continuity.mjs \
             scripts/atlas-field-recovery.mjs \
+            scripts/atlas-anchor-contract.mjs \
+            scripts/atlas-anchor-recovery.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -339,6 +354,7 @@ jobs:
             7b-object-model)        runner=scripts/atlas-object-model-ab.mjs ;;
             8-teaching-proof-absent) runner=scripts/atlas-teaching-proof-ablation-ab.mjs ;;
             9-field-recovery)        runner=scripts/atlas-field-recovery.mjs ;;
+            10-anchor-restoration)   runner=scripts/atlas-anchor-recovery.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs
