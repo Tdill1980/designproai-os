@@ -1,0 +1,45 @@
+{
+  "source": "the deployed design-panel-ai-generate edge, runs 33595250518 / 33597621527, same fixture",
+  "deployedPrompt": {
+    "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+    "chars": 4587,
+    "expectedSha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+    "expectedChars": 4587,
+    "pinned": true
+  },
+  "creativeAssembly": {
+    "deployedChars": 2622,
+    "deployedSha256": "7e011c6c20b5fa29b51174ee5d8bbc8d97e137475e00e9d3d96b62e22556a6f2",
+    "fieldChars": 2677,
+    "fieldSha256": "7c273b5926d7b738b1bfa510d365f6aa16cbdc583092c2a13dd3a3a382d71761",
+    "byteIdenticalExceptSceneClause": true,
+    "sceneSwap": {
+      "from": "as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph.",
+      "to": "as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph."
+    }
+  },
+  "tail": {
+    "deployedChars": 1965,
+    "deployedSha256": "655632686d7e76c1d81c65cecb7872fd9cf6404d8c96bf17a8e17f9df47efe2b",
+    "fieldChars": 1384,
+    "fieldSha256": "49caedd3398510e2f1008d1102ebf99ae7d0bd7ab160beb898547c9b05b18e14",
+    "ceiling": 1400
+  },
+  "request": {
+    "partCount": 1,
+    "modelInputImageCount": 0,
+    "structuralImages": 0,
+    "modelRequestByteSize": 4301,
+    "model": "gemini-3-pro-image",
+    "generationConfig": {
+      "responseModalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "imageConfig": {
+        "aspectRatio": "1:1",
+        "imageSize": "4K"
+      }
+    }
+  }
+}

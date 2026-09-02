@@ -2136,6 +2136,9 @@ async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
     claimToken, input, surfaces, geometryAuthority, geometryResolution = null,
+    // GENIE PREP lifecycle receipt (prepHit, genieMs, geometry time avoided).
+    // Persisted on the revision; never part of the model-facing request.
+    geniePrep = null,
     // panel.ready(surfaceKey). Called with that surface's identity and
     // dimensions the moment its panel exists, before the next cut starts, so a
     // consumer can publish it and release its 3D proof without waiting for the
@@ -2842,6 +2845,9 @@ async function generateOrReuseFlatAtlas(options) {
       pipelineMode: PIPELINE_MODE,
       topology: TOPOLOGY,
       geometryAuthority: manifest.geometryAuthority,
+      // GENIE PREP receipt: which authority produced the geometry (prep or
+      // inline), when it was requested/ready, and the time Generate avoided.
+      geniePrep: geniePrep && typeof geniePrep === "object" ? geniePrep : null,
       // The six panels Call 1 cut, with the design-time size of each side.
       callOnePanelContract: CALL_ONE_PANEL_CONTRACT,
       callOnePanels: callOnePanelRecords,
@@ -2918,6 +2924,10 @@ async function generateOrReuseFlatAtlas(options) {
       // click -> master, in segments, on the immutable revision.
       callOneTimings: {
         ...timings,
+        // The GENIE segment BEFORE this call: prep read + (inline resolve or
+        // consume). It was previously untimed (trace 2026-09-02).
+        genieMs: Number.isFinite(geniePrep?.genieMs) ? geniePrep.genieMs : null,
+        geniePrepHit: geniePrep?.prepHit === true,
         totalMs: Date.now() - callOneStartedAt,
         // Always zero in active Call 1; retained for timing-schema continuity.
         semanticOverlapped: timings.semanticWaitMs === 0,

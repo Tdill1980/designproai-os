@@ -236,6 +236,40 @@ app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(r
  * week they were written, and the gateway is browser-facing and holds no
  * service role in any case.
  */
+/**
+ * GENIE PREP — THE EARLY LIFECYCLE (owner ruling, Trish 2026-09-02).
+ *
+ * Year / Make / Model → ENTER → GenerationID → this endpoint. It acknowledges
+ * the GenerationID, records an idempotent prep row keyed by
+ * (generationId, vehicleIdentityHash, GENIE_PREP_CONTRACT) and starts the SAME
+ * resolver the generation worker uses inline -- without waiting for it. The
+ * customer keeps writing; Generate later consumes the READY geometry or falls
+ * back to the inline resolver. The answer carries lifecycle and provenance
+ * only: the prepared inches are private OS state and never reach the browser
+ * or the model-facing request.
+ */
+app.post("/internal/genie/prep", authMiddleware, async (req, res) => {
+  const service = generationWorker?.geniePrep;
+  if (!service) return res.status(503).json({ status: "unavailable", reason: "generation_worker_not_started" });
+  try {
+    const body = req.body || {};
+    const { receipt } = await service.requestPrep({
+      ownerId: body.ownerId,
+      generationId: body.generationId,
+      vehicle: body.vehicle || {},
+      clientEnteredAt: body.clientEnteredAt || null,
+    });
+    return res.status(202).json(receipt);
+  } catch (error) {
+    // Prep is an assist, never a gate: an unusable vehicle answers a receipt
+    // that says so, and Generate stays live with the inline resolver.
+    return res.status(200).json({
+      status: "unavailable",
+      reason: String(error?.code || error?.message || "genie_prep_unavailable"),
+    });
+  }
+});
+
 app.post("/internal/genie/dimensions/preview", authMiddleware, async (req, res) => {
   try {
     const { previewGenieDimensionsFromCatalog } = require("./genie-universal-resolver.cjs");

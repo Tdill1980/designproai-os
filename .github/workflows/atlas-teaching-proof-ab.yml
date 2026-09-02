@@ -71,6 +71,61 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            print-media contract. No negative added. Screening size: 2 draws per
 #            arm. PASS = 6/6 panes filled edge to edge; flat_atlas is not a pass.
 #
+#            RESULT: null. 0/6 in all four draws, and B's worst pane was WORSE
+#            than A's in draw 1 (69.5% vs 55.4% non-artwork).
+#
+#   test 8 — the teaching proof PRESENT vs ABSENT. Seven variables have changed
+#            properties OF the example; this removes the example. Arm B drops
+#            parts [1] and [2] and nothing else — not replaced, no topology
+#            added, no new format clause, and the production neutral guide stays
+#            in BOTH arms. The creative prompt cites no attachment, so nothing
+#            is left dangling. 3 draws per arm, interleaved. PASS = 6/6 panes
+#            filled edge to edge. If B is also 0/6, Call-1 prompt/reference
+#            experimentation is finished and the question becomes architectural.
+#
+#            RESULT: null. 0/6 in all six draws; with no example image at all
+#            the model still drew six objects on a sheet. Conditioning closed.
+#
+#   test 9 — FIELD RECOVERY (owner-approved Phase 1, ONE draw). Not an A/B.
+#            Gemini authors ONE uninterrupted full-bleed composition from the
+#            DesignPanelAI creative assembly (byte-identical except one scene
+#            clause) + a field contract; it receives NO images. The OS owns six
+#            canonical territories (`field-bands-v1`, flanks landscape, no
+#            rotation) and the REAL `cutCallOnePanels` cuts the six files.
+#            Every metric is telemetry; native effective PPI only; no gate.
+#            RESULT: the anatomy left with the containers, and the composition
+#            became three horizontal bands. Owner: closed; not the direction.
+#
+#   test 10 — ANCHOR RESTORATION (owner-approved, OPTION A, ONE draw). Not an
+#            A/B. The deployed FIVE-part request — creative assembly byte for
+#            byte, teaching text, Flamingo labeled proof, guide text, the
+#            GENIE-proportioned neutral guide on production CENTER_ORDER
+#            (REAR → ROOF → HOOD → FRONT) — with ONLY the output tail of part 0
+#            replaced by the owner's object-first A.T.L.A.S. anchor
+#            (`scripts/atlas-anchor-contract.mjs`). Raw master saved first;
+#            the REAL `cutCallOnePanels` cuts the six files; three reports.
+#            Every metric is telemetry; no gate; no repeatability; STOP after.
+#            v1 RESULT (run 33642303437): vehicle-body-piece mockup; the
+#            anchor at the END of Part 0 was overridden by "flat orthographic
+#            panels" / "flowing across the panels" earlier in the creative
+#            assembly. v2: the object definition moves to the front of Part 0
+#            and six exact-match object-schema phrases are replaced, with a
+#            reverse proof that the creative assembly changed by nothing else.
+#            v2 RESULT (run 33647927930): the production topology was followed
+#            for the first time — two flank columns, four centre regions, one
+#            design — but each region still held a vehicle body piece (die-cut
+#            arches, seams, handles) on a black surround. v3: the embodiment
+#            sentence becomes the printed-sheet object, "flattened means zero
+#            body lines"; parts 1 and 3 get the same object-schema cleanup.
+#            v3 RESULT (run 33649706183): rectangles inside the topology, body
+#            detail gone, three centre regions filled; the last body line is
+#            two wheel-arch notches per flank. v4 (run 33650898106): v3 plus
+#            exactly ONE three-word negative, "No tire cutouts." -- REGRESSED
+#            to full body pieces with larger tire cutouts and burned-in labels.
+#            Owner ruling 2026-09-02: no further negative wording; the harness
+#            wording is returned to v3 and Call-1 six-pane conditioning work
+#            stops here. The next move is architectural (test 11).
+#
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
 # proof and the edge function's hash pin on it are untouched — the variant is
@@ -85,7 +140,7 @@ on:
         description: "Which isolated variable"
         required: true
         type: choice
-        default: "7b-object-model"
+        default: "10-anchor-restoration"
         options:
           - 1-teaching-proof-field
           - 2-guide-ablation
@@ -95,6 +150,10 @@ on:
           - 6-label-erasure
           - 7-tiled-proof
           - 7b-object-model
+          - 8-teaching-proof-absent
+          - 9-field-recovery
+          - 10-anchor-restoration
+          - 11-field-recovery-v2
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -102,10 +161,10 @@ on:
         type: string
         default: ""
       draws:
-        description: "tests 2-5 — independent draws PER ARM (2 arms, so 2x this many image calls). Test 5 uses 6."
+        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else."
         required: true
         type: string
-        default: "6"
+        default: "1"
       confirmation:
         description: "Protected live-provider action — real Gemini image calls (0 with capture_only)"
         required: true
@@ -251,6 +310,17 @@ jobs:
             scripts/atlas-teaching-proof-tile-ab.mjs \
             scripts/atlas-teaching-proof-tile.mjs \
             scripts/atlas-object-model-ab.mjs \
+            scripts/atlas-teaching-proof-ablation-ab.mjs \
+            scripts/atlas-field-territories.mjs \
+            scripts/atlas-field-contract.mjs \
+            scripts/atlas-field-continuity.mjs \
+            scripts/atlas-field-recovery.mjs \
+            scripts/atlas-anchor-contract.mjs \
+            scripts/atlas-anchor-recovery.mjs \
+            scripts/atlas-field-territories-v2.mjs \
+            scripts/atlas-field-contract-v2.mjs \
+            scripts/atlas-field-inspection.mjs \
+            scripts/atlas-field-recovery-v2.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -307,6 +377,10 @@ jobs:
             6-label-erasure)        runner=scripts/atlas-teaching-proof-delabel-ab.mjs ;;
             7-tiled-proof)          runner=scripts/atlas-teaching-proof-tile-ab.mjs ;;
             7b-object-model)        runner=scripts/atlas-object-model-ab.mjs ;;
+            8-teaching-proof-absent) runner=scripts/atlas-teaching-proof-ablation-ab.mjs ;;
+            9-field-recovery)        runner=scripts/atlas-field-recovery.mjs ;;
+            10-anchor-restoration)   runner=scripts/atlas-anchor-recovery.mjs ;;
+            11-field-recovery-v2)    runner=scripts/atlas-field-recovery-v2.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs
@@ -355,6 +429,7 @@ jobs:
         shell: bash
         run: |
           if [ -f ab-evidence/COMPARISON.md ]; then cat ab-evidence/COMPARISON.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f ab-evidence/REPORT.md ]; then cat ab-evidence/REPORT.md >> "$GITHUB_STEP_SUMMARY"; fi
           if [ -f ab-evidence/parity.json ]; then
             { echo; echo '## harness ↔ deployed-edge request parity'; echo '```json'; cat ab-evidence/parity.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi

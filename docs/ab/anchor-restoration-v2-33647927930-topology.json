@@ -1,0 +1,140 @@
+{
+  "topology": "rectangular-preview-v1",
+  "canvas": {
+    "widthPx": 4096,
+    "heightPx": 4096,
+    "colorSpace": "srgb",
+    "alphaOutsideZones": true
+  },
+  "centerOrderTopToBottom": [
+    "rear",
+    "roof",
+    "hood",
+    "front"
+  ],
+  "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+  "geometryState": "measured",
+  "guideSha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5",
+  "zones": [
+    {
+      "surfaceKey": "driver",
+      "placement": "right-flank",
+      "x": 2751,
+      "y": 624,
+      "w": 1153,
+      "h": 2848,
+      "rotationDegrees": -90,
+      "trim": {
+        "x": 2838,
+        "y": 711,
+        "w": 979,
+        "h": 2674
+      },
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "effectivePpiNative": 17.47
+    },
+    {
+      "surfaceKey": "passenger",
+      "placement": "left-flank",
+      "x": 192,
+      "y": 624,
+      "w": 1153,
+      "h": 2848,
+      "rotationDegrees": 90,
+      "trim": {
+        "x": 279,
+        "y": 711,
+        "w": 979,
+        "h": 2674
+      },
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "effectivePpiNative": 17.47
+    },
+    {
+      "surfaceKey": "hood",
+      "placement": "center-column",
+      "x": 1417,
+      "y": 2310,
+      "w": 1262,
+      "h": 1022,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 1494,
+        "y": 2387,
+        "w": 1108,
+        "h": 868
+      },
+      "trimWidthIn": 71.5,
+      "trimHeightIn": 56,
+      "printWidthIn": 81.5,
+      "printHeightIn": 66,
+      "effectivePpiNative": 15.48
+    },
+    {
+      "surfaceKey": "roof",
+      "placement": "center-column",
+      "x": 1417,
+      "y": 1304,
+      "w": 1262,
+      "h": 970,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 1492,
+        "y": 1379,
+        "w": 1112,
+        "h": 820
+      },
+      "trimWidthIn": 74.3,
+      "trimHeightIn": 54.8,
+      "printWidthIn": 84.3,
+      "printHeightIn": 64.8,
+      "effectivePpiNative": 14.97
+    },
+    {
+      "surfaceKey": "front",
+      "placement": "center-column",
+      "x": 1417,
+      "y": 3368,
+      "w": 1262,
+      "h": 399,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 1462,
+        "y": 3413,
+        "w": 1172,
+        "h": 309
+      },
+      "trimWidthIn": 129,
+      "trimHeightIn": 34,
+      "printWidthIn": 139,
+      "printHeightIn": 44,
+      "effectivePpiNative": 9.07
+    },
+    {
+      "surfaceKey": "rear",
+      "placement": "center-column",
+      "x": 1417,
+      "y": 329,
+      "w": 1262,
+      "h": 939,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 1490,
+        "y": 402,
+        "w": 1116,
+        "h": 793
+      },
+      "trimWidthIn": 76,
+      "trimHeightIn": 54,
+      "printWidthIn": 86,
+      "printHeightIn": 64,
+      "effectivePpiNative": 14.67
+    }
+  ]
+}

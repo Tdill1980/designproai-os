@@ -1,0 +1,68 @@
+runtime image: designproai-runtime:fb58f702537ae9c5fefc90f67abdd1b1f47ad5b0
+test: 9-field-recovery -> scripts/atlas-field-recovery.mjs
+  resolving GENIE preview dimensions …
+  territories: field-bands-v1 — extracted 74.4% of canvas, min native 8.81 px/in (legacy 9.07)
+      driver     (0, 0, 3642, 1475)  163×66 in  22.34 px/in  trim (112, 112, 3418, 1251)
+      passenger  (0, 1475, 3642, 1475)  163×66 in  22.34 px/in  trim (112, 1587, 3418, 1251)
+      hood       (743, 2950, 718, 582)  81.5×66 in  8.81 px/in  trim (787, 2994, 630, 494)
+      roof       (0, 2950, 743, 571)  84.3×64.8 in  8.81 px/in  trim (44, 2994, 655, 483)
+      front      (1461, 2950, 1225, 388)  139×44 in  8.81 px/in  trim (1505, 2994, 1137, 300)
+      rear       (0, 3532, 758, 564)  86×64 in  8.81 px/in  trim (44, 3576, 670, 476)
+  deployed prompt reproduced: sha dcb73e9eae229cd8, 4587 chars
+  creative assembly 2622 chars → 2677 chars, one scene clause swapped, reversible
+  field tail 1384 chars (ceiling 1400); request 1 part(s), 0 image(s), 4301 bytes
+  
+  DRAW 1: calling gemini-3-pro-image (1 part, 0 structural images) …
+  draw 1: 9111KB in 41.4s
+  normalized: delivered 4096×4096, nativelyFourK=true, master sha 379040ce270882a7
+  full-bleed (telemetry): bleed rects 0/6 · trim rects 0/6 · whole field 0/1 (nonArtwork 21.7%, border 82.1%)
+      driver     bleed NO  nonArt  29.6% border  88.0%   trim NO  nonArt  29.4% border  74.9%
+      passenger  bleed NO  nonArt  27.5% border  53.4%   trim NO  nonArt  22.2% border  63.9%
+      hood       bleed NO  nonArt  87.2% border  27.4%   trim NO  nonArt  89.7% border  14.8%
+      roof       bleed NO  nonArt  79.1% border  40.5%   trim NO  nonArt  79.0% border  19.0%
+      front      bleed NO  nonArt  75.3% border  32.9%   trim NO  nonArt  78.5% border  27.5%
+      rear       bleed NO  nonArt  67.8% border  72.3%   trim NO  nonArt  68.2% border  42.6%
+  legacy gate (record): accepted=true blocking=0 passengerMirrorMae=0.09102719907407407
+  output class (record, last): flat_atlas — The image displays three rectangular panels of pure graphic artwork laid out side by side, with no vehicle dep
+  continuity: anyDivider=true deepest 5px, worst boundaryMae 0.03197
+      driver→passenger     y=1475  mae 0.01764  divider no (0%)
+      passenger→hood       y=2950  mae 0.00255  divider no (0%)
+      passenger→roof       y=2950  mae 0.00553  divider no (0%)
+      passenger→front      y=2950  mae 0.01032  divider no (0%)
+      hood→front           x=1461  mae 0.00669  divider no (0%)
+      hood→rear            y=3532  mae 0.03197  divider YES depth 5px
+      roof→hood            x=743  mae 0.02715  divider no (0%)
+      cut driver     3642×1475px  163×66in print  22.34 px/in native  e14e26aaf3251c57
+      cut passenger  3642×1475px  163×66in print  22.34 px/in native  afbc32c89a16f747
+      cut hood       718×582px  81.5×66in print  8.81 px/in native  49724362cf6c4d83
+      cut front      1225×388px  139×44in print  8.81 px/in native  17ef43e0da1bc018
+      cut rear       758×564px  86×64in print  8.81 px/in native  217e8bda2c45a32d
+      cut roof       743×571px  84.3×64.8in print  8.81 px/in native  cd441652a82c52a0
+Fontconfig error: Cannot load default config file: No such file: (null)
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+  
+  draw 1 written; results.json, REPORT.md, contact-sheet.png and panels/ in /work/ab-evidence
+  mechanical stop conditions: the model drew an object on a surround: whole-field border artwork 82.1%, edge-reachable field 7.9% · concept proven mechanically: false

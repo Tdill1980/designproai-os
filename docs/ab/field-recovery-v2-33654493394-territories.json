@@ -1,0 +1,335 @@
+{
+  "topology": "field-thirds-v2",
+  "contract": "designpro.atlas-field-territories.v2",
+  "canvas": {
+    "widthPx": 4096,
+    "heightPx": 4096,
+    "colorSpace": "srgb",
+    "alphaOutsideZones": true
+  },
+  "genieManifestHash": "879291d3a9120666dda28205807fdee7e6cce8e7caabf116aa7b4b078327008b",
+  "geometryState": "measured",
+  "installerMap": {
+    "driver": "third-1",
+    "passenger": "third-2",
+    "centerRowOneLeftToRight": [
+      "roof",
+      "hood",
+      "front"
+    ],
+    "centerRowTwo": [
+      "rear"
+    ],
+    "rearUnder": "front",
+    "noseEdge": {
+      "driver": "left",
+      "passenger": "right"
+    },
+    "flankRotationDegrees": 0
+  },
+  "fieldLayout": {
+    "contract": "designpro.atlas-field-territories.v2",
+    "thirds": [
+      {
+        "third": 1,
+        "y": 0,
+        "h": 1365,
+        "surfaces": [
+          "driver"
+        ]
+      },
+      {
+        "third": 2,
+        "y": 1365,
+        "h": 1365,
+        "surfaces": [
+          "passenger"
+        ]
+      },
+      {
+        "third": 3,
+        "y": 2730,
+        "h": 1366,
+        "surfaces": [
+          "roof",
+          "hood",
+          "front",
+          "rear"
+        ],
+        "scaleCenterPxPerIn": 12.65,
+        "rearUnder": "front"
+      }
+    ],
+    "canvasPx": 16777216,
+    "extractedPx": 12797233,
+    "extractedRatio": 0.7628,
+    "paintedNotExtractedPx": 3979983,
+    "paintedNotExtractedRatio": 0.2372,
+    "boundaries": [
+      {
+        "between": [
+          "driver",
+          "passenger"
+        ],
+        "axis": "y",
+        "at": 1365,
+        "from": 362,
+        "to": 3733
+      },
+      {
+        "between": [
+          "passenger",
+          "hood"
+        ],
+        "axis": "y",
+        "at": 2730,
+        "from": 1186,
+        "to": 2217
+      },
+      {
+        "between": [
+          "passenger",
+          "roof"
+        ],
+        "axis": "y",
+        "at": 2730,
+        "from": 362,
+        "to": 1186
+      },
+      {
+        "between": [
+          "passenger",
+          "front"
+        ],
+        "axis": "y",
+        "at": 2730,
+        "from": 2217,
+        "to": 3733
+      },
+      {
+        "between": [
+          "hood",
+          "front"
+        ],
+        "axis": "x",
+        "at": 2217,
+        "from": 2730,
+        "to": 3287
+      },
+      {
+        "between": [
+          "hood",
+          "rear"
+        ],
+        "axis": "x",
+        "at": 2217,
+        "from": 3287,
+        "to": 3565
+      },
+      {
+        "between": [
+          "roof",
+          "hood"
+        ],
+        "axis": "x",
+        "at": 1186,
+        "from": 2730,
+        "to": 3550
+      },
+      {
+        "between": [
+          "front",
+          "rear"
+        ],
+        "axis": "y",
+        "at": 3287,
+        "from": 2217,
+        "to": 3305
+      }
+    ]
+  },
+  "zones": [
+    {
+      "surfaceKey": "driver",
+      "placement": "third-1",
+      "x": 362,
+      "y": 0,
+      "w": 3371,
+      "h": 1365,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 465,
+        "y": 103,
+        "w": 3165,
+        "h": 1159
+      },
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "effectivePpiNative": 20.68,
+      "noseEdge": "left"
+    },
+    {
+      "surfaceKey": "passenger",
+      "placement": "third-2",
+      "x": 362,
+      "y": 1365,
+      "w": 3371,
+      "h": 1365,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 465,
+        "y": 1468,
+        "w": 3165,
+        "h": 1159
+      },
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "effectivePpiNative": 20.68,
+      "noseEdge": "right"
+    },
+    {
+      "surfaceKey": "hood",
+      "placement": "third-3-row-1",
+      "x": 1186,
+      "y": 2730,
+      "w": 1031,
+      "h": 835,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 1249,
+        "y": 2793,
+        "w": 905,
+        "h": 709
+      },
+      "trimWidthIn": 71.5,
+      "trimHeightIn": 56,
+      "printWidthIn": 81.5,
+      "printHeightIn": 66,
+      "effectivePpiNative": 12.65,
+      "noseEdge": null
+    },
+    {
+      "surfaceKey": "roof",
+      "placement": "third-3-row-1",
+      "x": 120,
+      "y": 2730,
+      "w": 1066,
+      "h": 820,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 183,
+        "y": 2793,
+        "w": 940,
+        "h": 694
+      },
+      "trimWidthIn": 74.3,
+      "trimHeightIn": 54.8,
+      "printWidthIn": 84.3,
+      "printHeightIn": 64.8,
+      "effectivePpiNative": 12.65,
+      "noseEdge": null
+    },
+    {
+      "surfaceKey": "front",
+      "placement": "third-3-row-1",
+      "x": 2217,
+      "y": 2730,
+      "w": 1758,
+      "h": 557,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 2280,
+        "y": 2793,
+        "w": 1632,
+        "h": 431
+      },
+      "trimWidthIn": 129,
+      "trimHeightIn": 34,
+      "printWidthIn": 139,
+      "printHeightIn": 44,
+      "effectivePpiNative": 12.65,
+      "noseEdge": null
+    },
+    {
+      "surfaceKey": "rear",
+      "placement": "third-3-row-2",
+      "x": 2217,
+      "y": 3287,
+      "w": 1088,
+      "h": 809,
+      "rotationDegrees": 0,
+      "trim": {
+        "x": 2280,
+        "y": 3350,
+        "w": 962,
+        "h": 683
+      },
+      "trimWidthIn": 76,
+      "trimHeightIn": 54,
+      "printWidthIn": 86,
+      "printHeightIn": 64,
+      "effectivePpiNative": 12.64,
+      "noseEdge": null
+    }
+  ],
+  "legacyZones": [
+    {
+      "surfaceKey": "driver",
+      "x": 2751,
+      "y": 624,
+      "w": 1153,
+      "h": 2848,
+      "rotationDegrees": -90,
+      "effectivePpiNative": 17.47
+    },
+    {
+      "surfaceKey": "passenger",
+      "x": 192,
+      "y": 624,
+      "w": 1153,
+      "h": 2848,
+      "rotationDegrees": 90,
+      "effectivePpiNative": 17.47
+    },
+    {
+      "surfaceKey": "hood",
+      "x": 1417,
+      "y": 2310,
+      "w": 1262,
+      "h": 1022,
+      "rotationDegrees": 0,
+      "effectivePpiNative": 15.48
+    },
+    {
+      "surfaceKey": "roof",
+      "x": 1417,
+      "y": 1304,
+      "w": 1262,
+      "h": 970,
+      "rotationDegrees": 0,
+      "effectivePpiNative": 14.97
+    },
+    {
+      "surfaceKey": "front",
+      "x": 1417,
+      "y": 3368,
+      "w": 1262,
+      "h": 399,
+      "rotationDegrees": 0,
+      "effectivePpiNative": 9.07
+    },
+    {
+      "surfaceKey": "rear",
+      "x": 1417,
+      "y": 329,
+      "w": 1262,
+      "h": 939,
+      "rotationDegrees": 0,
+      "effectivePpiNative": 14.67
+    }
+  ]
+}

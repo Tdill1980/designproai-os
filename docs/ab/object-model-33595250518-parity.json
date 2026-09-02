@@ -1,0 +1,15 @@
+{
+  "source": "the deployed design-panel-ai-generate edge, run 33577484230, same fixture",
+  "modelRequestByteSize": {
+    "measured": 4762109,
+    "harnessArmA": 4762109
+  },
+  "promptChars": {
+    "measured": 4587,
+    "harnessArmA": 4587
+  },
+  "modelInputImageCount": {
+    "measured": 2,
+    "harnessArmA": 2
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "contract": "designpro.atlas-anchor-restoration.v1",
+  "source": "the deployed design-panel-ai-generate edge, runs 33577484230 / 33595250518 / 33597621527, same fixture",
+  "deployedPrompt": {
+    "sha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+    "chars": 4587,
+    "expectedSha256": "dcb73e9eae229cd88af6bcdb4a3874e1050b266fa98a55b79fee65d0b7e610b2",
+    "expectedChars": 4587,
+    "pinned": true
+  },
+  "creativeAssembly": {
+    "chars": 2622,
+    "sha256": "7e011c6c20b5fa29b51174ee5d8bbc8d97e137475e00e9d3d96b62e22556a6f2",
+    "byteIdentical": true
+  },
+  "tail": {
+    "deployedChars": 1965,
+    "deployedSha256": "655632686d7e76c1d81c65cecb7872fd9cf6404d8c96bf17a8e17f9df47efe2b",
+    "anchorChars": 1574,
+    "anchorSha256": "352498f8b2c7714c80e4c12fa28bd01514811258e6b7b2a48ed622caeb6f4d49",
+    "ceiling": 1700
+  },
+  "parts": [
+    {
+      "index": 0,
+      "kind": "text",
+      "chars": 4196,
+      "sha256": "59e58cb94f9820d0db75f53627cbc2c46dcd5fac33bdbb428989344614aa509f",
+      "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+    },
+    {
+      "index": 1,
+      "kind": "text",
+      "chars": 502,
+      "sha256": "6f92d8ae60d392a5f144d71ae4bb1d7282053dc38165deb6f8908f9af5f8e259",
+      "preview": "LABELED A.T.L.A.S. TEACHING REFERENCE. This example shows ONE cohesive vehicle-wrap design"
+    },
+    {
+      "index": 2,
+      "kind": "image",
+      "mimeType": "image/png",
+      "bytes": 3430273,
+      "sha256": "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"
+    },
+    {
+      "index": 3,
+      "kind": "text",
+      "chars": 260,
+      "sha256": "a93e2c7a16fea22ae78c3e18fdc02b0ec08c7b6e8dd992e7ebf66ec41f480d4d",
+      "preview": "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout."
+    },
+    {
+      "index": 4,
+      "kind": "image",
+      "mimeType": "image/png",
+      "bytes": 137010,
+      "sha256": "7c10d6ae0a3249eff6a65805d181794ee386dc9f2ff4080294f52870e5b1ccf5"
+    }
+  ],
+  "unchangedParts": {
+    "teachingText": true,
+    "teachingImage": true,
+    "guideText": true,
+    "guideImage": true
+  },
+  "request": {
+    "partCount": 5,
+    "modelInputImageCount": 2,
+    "modelRequestByteSize": 4761699,
+    "deployedModelRequestByteSize": 4762109,
+    "model": "gemini-3-pro-image",
+    "generationConfig": {
+      "responseModalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "imageConfig": {
+        "aspectRatio": "1:1",
+        "imageSize": "4K"
+      }
+    }
+  }
+}

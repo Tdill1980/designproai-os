@@ -882,6 +882,34 @@ export type CreateGenerationRequestOptions = {
   pipelineMode?: GenerationPipelineMode;
 };
 
+/**
+ * GENIE PREP — the early lifecycle receipt (owner ruling 2026-09-02). Vehicle
+ * complete → Enter → the server acknowledges the GenerationID and starts GENIE
+ * dimension resolution while the customer keeps writing. Lifecycle and
+ * provenance only: the prepared geometry is private OS state and never
+ * reaches the browser.
+ */
+export interface GeniePrepReceipt {
+  status: "queued" | "resolving" | "ready" | "failed" | "superseded" | "absent" | "unavailable";
+  prepId?: string | null;
+  generationId?: string | null;
+  vehicleIdentityHash?: string | null;
+  genieContractVersion?: string | null;
+  attempt?: number | null;
+  geometryState?: "measured" | "derived" | "provisional" | "unresolved" | null;
+  productionEligible?: boolean | null;
+  geometryManifestHash?: string | null;
+  errorCode?: string | null;
+  reason?: string | null;
+  clientEnteredAt?: string | null;
+  requestedAt?: string | null;
+  startedAt?: string | null;
+  preparedAt?: string | null;
+  durationMs?: number | null;
+  consumedAt?: string | null;
+  idempotent?: boolean;
+}
+
 /** What `previewGenieDimensions` answers with. `state` is GENIE's own verdict. */
 export interface GenieDimensionPreview {
   resolution: {
@@ -1086,6 +1114,19 @@ export const dpApi = {
       method: "POST",
       body: JSON.stringify({ vehicle }),
     }),
+  /**
+   * GENIE PREP: acknowledge the GenerationID and start dimension resolution on
+   * the server while the customer writes. Never gates Generate; the same
+   * GenerationID rides the Generate request and the worker consumes the
+   * prepared geometry if it is READY, else resolves inline as before.
+   */
+  requestGeniePrep: (body: {
+    generationId: string;
+    vehicle: { year?: string; make?: string; model?: string; type?: string };
+    clientEnteredAt?: string;
+  }) => request<GeniePrepReceipt>("/genie/prep", { method: "POST", body: JSON.stringify(body) }),
+  getGeniePrep: (generationId: string) =>
+    request<GeniePrepReceipt>(`/genie/prep/${encodeURIComponent(generationId)}`),
   listGenieCandidates: () => request<GenieCandidate[]>("/genie/candidates"),
   validateGenieCandidate: (
     candidateId: string,

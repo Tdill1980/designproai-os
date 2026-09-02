@@ -78,6 +78,7 @@ const {
   expectedSurfacesFromRow,
   resolveFlatAtlasPreviewDimensions,
 } = require("./genie-universal-resolver.cjs");
+const { createGeniePrepService, GENIE_PREP_CONTRACT } = require("./genie-prep.cjs");
 const {
   atlasProjectionParts,
   atlasReceipt,
@@ -757,12 +758,17 @@ function createGenerationWorker({
   atlasProviderFactory = createAtlasDesignPanelProvider,
   atlasProofValidatorFactory = createAtlasProofValidator,
   intervalMs = POLL_MS,
+  geniePrepService = null,
 }) {
   if (!supabase) throw new Error("generation worker requires a Supabase client");
   const store = createGenerationStore({ supabase, workerId });
   // Constructed once so per-key health and cooldown persist across requests
   // rather than resetting on every claim.
   const imageProvider = provider || createProvider({});
+  // GENIE PREP (owner ruling 2026-09-02): the early lifecycle shares this
+  // worker's provider and Supabase client, so the prepared geometry is produced
+  // by exactly the resolver the inline fallback below would run.
+  const geniePrep = geniePrepService || createGeniePrepService({ supabase, provider: imageProvider, workerId: `${workerId}-genie-prep` });
 
   let timer = null;
   let busy = false;
@@ -818,6 +824,7 @@ function createGenerationWorker({
       enteredFlatFirst = isFlatFirst;
       let flatAtlas = null;
       let dimensionRow = null;
+      let geniePrepReceipt = null;
       let executionInput = claim.input;
       const ownerId = String(claim.tenantKey || "").replace(/^user_/, "");
       const standardProvider = isFlatFirst ? null : standardProviderFactory({
@@ -895,11 +902,52 @@ function createGenerationWorker({
         // The exact v3 contract + pipelineMode pair is the server-side feature
         // gate. v1/v2 never reach this branch, so the UI can roll back by
         // ceasing to issue v3 without requiring a deployment-wide env change.
-        dimensionRow = await resolveFlatAtlasPreviewDimensions(
-          supabase,
-          claim.input?.vehicle,
-          imageProvider,
-        );
+        //
+        // GENIE PREP FIRST, INLINE RESOLVER AS FALLBACK (owner ruling
+        // 2026-09-02). A READY prep for this exact owner + GenerationID +
+        // vehicle identity + GENIE contract is consumed as-is: it is the same
+        // resolver's output, persisted while the customer was still writing.
+        // Anything else -- absent, still resolving, failed, superseded, a
+        // changed vehicle, an older contract, another owner -- runs the inline
+        // resolver exactly as before. Either way the geometry stays private OS
+        // state; nothing below places it in the model-facing request.
+        const genieStartedAt = Date.now();
+        geniePrepReceipt = {
+          contract: GENIE_PREP_CONTRACT,
+          prepHit: false,
+          source: "inline_resolver",
+          prepId: null,
+          requestedAt: null,
+          preparedAt: null,
+          prepDurationMs: null,
+          geometryMsAvoided: 0,
+          genieMs: 0,
+        };
+        const prepared = await geniePrep.readReadyPrep({
+          ownerId, generationId: claim.generationId, vehicle: claim.input?.vehicle,
+        });
+        if (prepared) {
+          dimensionRow = prepared.geometry;
+          geniePrepReceipt = {
+            ...geniePrepReceipt,
+            prepHit: true,
+            source: "genie_prep",
+            prepId: prepared.receipt.prepId,
+            requestedAt: prepared.receipt.requestedAt,
+            preparedAt: prepared.receipt.preparedAt,
+            prepDurationMs: prepared.receipt.durationMs,
+            geometryMsAvoided: Number(prepared.receipt.durationMs) || 0,
+          };
+          await geniePrep.consumePrep(prepared.receipt.prepId, requestId);
+        }
+        if (!prepared) {
+          dimensionRow = await resolveFlatAtlasPreviewDimensions(
+            supabase,
+            claim.input?.vehicle,
+            imageProvider,
+          );
+        }
+        geniePrepReceipt.genieMs = Date.now() - genieStartedAt;
         if (dimensionRow.resolvedVehicleClass
           && dimensionRow.resolvedVehicleClass !== claim.input?.vehicle?.type) {
           executionInput = {
@@ -924,6 +972,9 @@ function createGenerationWorker({
           // UIs must all be able to name the same GENIE manifest -- so it
           // travels with the geometry rather than being re-derived per stage.
           geometryResolution: dimensionRow.geometryResolution,
+          // Lifecycle receipt only (prepHit, genieMs, geometry time avoided);
+          // it is persisted on the revision metadata and never enters the request.
+          geniePrep: geniePrepReceipt,
           // THE PRODUCTION AUTHORING BUDGET. This call-site value is the real
           // switch: `resolveMaxAuthoringAttempts` reads `explicit ?? env`, so
           // DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS cannot reach the customer
@@ -1215,7 +1266,13 @@ function createGenerationWorker({
       const claim = await rpc("claim_designpro_generation_request", {
         p_worker_id: workerId, p_lease_seconds: REQUEST_LEASE_SECONDS,
       });
-      if (!claim) return null;
+      if (!claim) {
+        // Idle tick: recover a GENIE prep whose lease expired (a runtime
+        // restart mid-resolution). The claim is awaited; the resolution is
+        // not, so a customer's Generate is never queued behind it.
+        await geniePrep.reclaimOne().catch(() => null);
+        return null;
+      }
       return await processClaim(claim);
     } catch (error) {
       console.error(`[DESIGNPRO-OS] generation worker: ${error.message}`);
@@ -1239,7 +1296,7 @@ function createGenerationWorker({
     timer = null;
   }
 
-  return { start, stop, tick, store, provider: imageProvider, contract: RECEIPT_CONTRACT };
+  return { start, stop, tick, store, provider: imageProvider, geniePrep, contract: RECEIPT_CONTRACT };
 }
 
 module.exports = {

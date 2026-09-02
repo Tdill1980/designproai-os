@@ -1,0 +1,63 @@
+runtime image: designproai-runtime:fb58f702537ae9c5fefc90f67abdd1b1f47ad5b0
+test: 10-anchor-restoration -> scripts/atlas-anchor-recovery.mjs
+  resolving GENIE preview dimensions …
+  topology: rectangular-preview-v1 — centre rear → roof → hood → front, min native 9.07 px/in, guide 7c10d6ae0a3249ef
+      driver     (2751, 624, 1153, 2848) rot -90  163×66 in  17.47 px/in  trim (2838, 711, 979, 2674)
+      passenger  (192, 624, 1153, 2848) rot  90  163×66 in  17.47 px/in  trim (279, 711, 979, 2674)
+      hood       (1417, 2310, 1262, 1022) rot   0  81.5×66 in  15.48 px/in  trim (1494, 2387, 1108, 868)
+      roof       (1417, 1304, 1262, 970) rot   0  84.3×64.8 in  14.97 px/in  trim (1492, 1379, 1112, 820)
+      front      (1417, 3368, 1262, 399) rot   0  139×44 in  9.07 px/in  trim (1462, 3413, 1172, 309)
+      rear       (1417, 329, 1262, 939) rot   0  86×64 in  14.67 px/in  trim (1490, 402, 1116, 793)
+  deployed prompt reproduced: sha dcb73e9eae229cd8, 4587 chars
+  creative assembly: deployed 2622 chars 7e011c6c20b5fa29 → six object-schema swaps → 2720 chars 458ea7a537cf9940; reverse proof true
+  order: persona · object definition (957 chars) · swapped creative · placement (854 chars); prompt 4531 chars, sha 571cde0adce5f33d
+  teaching text: deployed 6f92d8ae60d392a5 → 465 chars 4f45d370380c7dcc, reverse proof true; guide text: deployed a93e2c7a16fea22a → 262 chars 3eebedb6096f9409, reverse proof true
+  request: 5 parts, 2 images, 4761998 bytes (deployed 4762109); images unchanged: {"teachingImage":true,"guideImage":true}
+  
+  DRAW 1: calling gemini-3-pro-image (5 parts, 2 structural images) …
+  draw 1: 6185KB in 35.0s, raw sha 2d006f494d72b3b2 — saved before interpretation
+  normalized: delivered 4096×4096, nativelyFourK=true, master sha 5b9195acd1a9f973
+  edge-to-edge (telemetry): bleed rects 0/6 · trim rects 0/6
+      driver     bleed NO  nonArt  45.6% largest  10.4% border  56.3% contour 0.456   trim NO  nonArt  46.8%
+      passenger  bleed NO  nonArt  50.5% largest  10.3% border  58.2% contour 0.505   trim NO  nonArt  51.6%
+      hood       bleed NO  nonArt  75.0% largest  25.9% border 100.0% contour 0.750   trim NO  nonArt  70.2%
+      roof       bleed NO  nonArt  42.1% largest  10.9% border 100.0% contour 0.421   trim NO  nonArt  38.4%
+      front      bleed NO  nonArt  61.1% largest  28.0% border 100.0% contour 0.611   trim NO  nonArt  65.1%
+      rear       bleed NO  nonArt  72.2% largest  15.7% border  18.9% contour 0.722   trim NO  nonArt  64.8%
+  legacy gate (record): accepted=false blocking=1 cutouts=0 passengerMirrorMae=0.004540611383442266
+  output class (record): flat_atlas — The image displays multiple flat, irregularly shaped panels of print artwork laid out on a sheet, with no vehi
+      cut driver     2848×1153px  163×66in print  17.47 px/in native  a46b71059c75fe8f
+      cut passenger  2848×1153px  163×66in print  17.47 px/in native  e10fea3f8f43b446
+      cut hood       1262×1022px  81.5×66in print  15.48 px/in native  28e891f062435514
+      cut front      1262×399px  139×44in print  9.07 px/in native  372bd37f40458e31
+      cut rear       1262×939px  86×64in print  14.67 px/in native  31ec214fb8ffc619
+      cut roof       1262×970px  84.3×64.8in print  14.97 px/in native  5f3dbac6dc7f8158
+Fontconfig warning: using without calling FcInit()
+Fontconfig error: Cannot load default config file: No such file: (null)
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+
+Fontconfig error: No writable cache directories
+	/var/cache/fontconfig
+	/nonexistent/.cache/fontconfig
+  
+  draw 1 written; results.json, REPORT.md, contact-sheet.png and panels/ in /work/ab-evidence
+  canonical integrity: sixDistinct=true lineageOk=true driverPassengerDistinct=true

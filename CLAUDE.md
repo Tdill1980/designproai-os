@@ -75,6 +75,21 @@ Investigation record: `docs/ATLAS-TEACHING-PROOF-FIELD-AB.md`,
 `docs/ATLAS-CALL1-TEACHING-PROOF-ORDER.md`, `docs/ATLAS-WHEEL-WELL-ROOT-CAUSE.md`,
 raw evidence under `docs/ab/`.
 
+## 🧞 GENIE PREP LIFECYCLE + MANIFEST HASH v2 (owner ruling, Trish 2026-09-02)
+
+**GENIE knows dimensions before DesignPanelAI generates.** Vehicle complete / Enter → the browser posts its
+GenerationID + vehicle → the server acknowledges, records `designpro_genie_preps` keyed by (generationId,
+vehicleIdentityHash, genieContractVersion) and runs `resolveFlatAtlasPreviewDimensions` while the customer
+writes. Generate consumes a READY prep for the exact owner + GenerationID + vehicle identity + contract;
+anything else runs the inline resolver exactly as before. **Prepared geometry is private OS state and never
+enters the model-facing request** (locked). `docs/GENIE-PREP-LIFECYCLE.md`; the trace that located the
+defect: `docs/GENIE-LIFECYCLE-TRACE-2026-09-02.md`.
+
+**Manifest hash v2.** v1 hashed `null` for every surface, so `genieManifestHash` never varied with the
+inches (every 2026-09-02 draw reported `879291d3…`). v2 (`designpro.genie-manifest.v2`, explicit
+`hashContract: designpro.genie-manifest-hash.v2`) hashes the six surfaces. Historical rows are NOT
+rewritten: `docs/GENIE-MANIFEST-HASH-CUTOVER.md`, locked by `tests/genie-manifest-hash.test.mjs`.
+
 ## 🧬 CALL-1 v19 — CREATIVE PARITY RECOVERY (owner ruling, Trish 2026-09-01)
 
 **This supersedes the v17 boundary contract and RULE 0.30's authoring half

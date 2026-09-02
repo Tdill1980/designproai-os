@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { inferDesignMode } from "@/lib/inferDesignMode";
 import { useNavigate } from "react-router-dom";
 import {
@@ -17,7 +17,9 @@ import {
   FLAT_FIRST_ATLAS_PIPELINE_MODE,
   type GenerationPipelineMode,
   type GenieDimensionPreview,
+  type GeniePrepReceipt,
 } from "@/lib/designpro-api";
+import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
 import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
 
 /**
@@ -138,6 +140,9 @@ export default function DesignProAIHome() {
   const [designPrepBusy, setDesignPrepBusy] = useState(false);
   const [designPrepError, setDesignPrepError] = useState("");
   const [designPrepGenerationId, setDesignPrepGenerationId] = useState<string | null>(null);
+  // GENIE PREP receipt (owner ruling 2026-09-02): the server-side lifecycle
+  // that starts at Enter. Status and provenance only, never geometry.
+  const [geniePrep, setGeniePrep] = useState<GeniePrepReceipt | null>(null);
   // Commercial brief (Business & Fleet) — drives the studio's Layer-2 text extraction.
   const [companyName, setCompanyName] = useState("");
   const [phone, setPhone] = useState("");
@@ -156,12 +161,15 @@ export default function DesignProAIHome() {
     .map((value) => String(value || "").trim().toLowerCase())
     .join("|");
   const designPrepIsCurrent = Boolean(designPrep && designPrepVehicle === currentPrepVehicle);
+  const prepVehicleRef = useRef(currentPrepVehicle);
+  prepVehicleRef.current = currentPrepVehicle;
 
   const changeVehicle = <T,>(setter: (value: T) => void, value: T) => {
     setter(value);
     setDesignPrep(null);
     setDesignPrepVehicle("");
     setDesignPrepGenerationId(null);
+    setGeniePrep(null);
   };
 
   // PREP RUNS ITSELF AND GATES NOTHING. (Owner, 2026-08-31: "Remove the
@@ -185,6 +193,17 @@ export default function DesignProAIHome() {
     try {
       const generationId = designPrepGenerationId || crypto.randomUUID().toLowerCase();
       setDesignPrepGenerationId(generationId);
+      // The server-owned lifecycle starts NOW, on the GenerationID, and runs
+      // while the customer writes. It never gates anything; the preview below
+      // still answers the readiness strip.
+      const vehicleKey = currentPrepVehicle;
+      void runGeniePrep({
+        generationId,
+        vehicle,
+        clientEnteredAt: new Date().toISOString(),
+        isCurrent: () => prepVehicleRef.current === vehicleKey,
+        onUpdate: (receipt) => { if (prepVehicleRef.current === vehicleKey) setGeniePrep(receipt); },
+      });
       const prepared = await dpApi.previewGenieDimensions(vehicle);
       setDesignPrep(prepared);
       setDesignPrepVehicle(currentPrepVehicle);
@@ -322,13 +341,16 @@ export default function DesignProAIHome() {
 
             {/* Exact vehicle snapshot for the embedded studio. */}
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <input value={year} onChange={(e) => changeVehicle(setYear, e.target.value)} inputMode="numeric" placeholder="Year" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
-              <input value={make} onChange={(e) => changeVehicle(setMake, e.target.value)} placeholder="Make" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
-              <input value={model} onChange={(e) => changeVehicle(setModel, e.target.value)} placeholder="Model" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
+              <input value={year} onChange={(e) => changeVehicle(setYear, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void beginDesignPrep(); } }} inputMode="numeric" placeholder="Year" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
+              <input value={make} onChange={(e) => changeVehicle(setMake, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void beginDesignPrep(); } }} placeholder="Make" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
+              <input value={model} onChange={(e) => changeVehicle(setModel, e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void beginDesignPrep(); } }} placeholder="Model" className="rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-xs text-white placeholder:text-white/30 focus:border-blue-500/50 focus:outline-none" />
             </div>
             {designPrepBusy && <p className="mt-1 text-[10px] text-cyan-200">Pulling vehicle dimensions…</p>}
             {designPrepIsCurrent && designPrep && (
               <p className="mt-1 text-[10px] text-emerald-300">Design Prep ready — {designPrep.surfaces.length} labeled surfaces bound. Continue filling out your prompt.</p>
+            )}
+            {designPrepIsCurrent && geniePrepCopy(geniePrep) && (
+              <p className={`mt-1 text-[10px] ${geniePrep?.status === "ready" ? "text-emerald-300" : "text-cyan-200"}`}>{geniePrepCopy(geniePrep)}</p>
             )}
             {designPrepError && <p role="alert" className="mt-1 text-[10px] text-red-300">{designPrepError}</p>}
 

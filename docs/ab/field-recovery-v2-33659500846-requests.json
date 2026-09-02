@@ -1,0 +1,40 @@
+{
+  "vehicle": {
+    "type": "truck",
+    "year": "2022",
+    "make": "Ford",
+    "model": "F250 Crew Cab"
+  },
+  "brief": "Bold commercial HVAC wrap for Precision Climate Solutions: deep blue base with sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif company name, high contrast and legible at highway distance.",
+  "draws": 1,
+  "request": {
+    "label": "FIELD-v2-one-continuous-composition",
+    "contract": "designpro.atlas-field-prompt.v2",
+    "model": "gemini-3-pro-image",
+    "generationConfig": {
+      "responseModalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "imageConfig": {
+        "aspectRatio": "1:1",
+        "imageSize": "4K"
+      }
+    },
+    "promptChars": 4052,
+    "promptSha256": "37e4137e8ae8c8bb4284080fe15c159479447f754cd7b6fa09c734b9b3e9dae5",
+    "partCount": 1,
+    "modelInputImageCount": 0,
+    "customerReferenceCount": 0,
+    "modelRequestByteSize": 4294,
+    "parts": [
+      {
+        "index": 0,
+        "kind": "text",
+        "chars": 4052,
+        "sha256": "37e4137e8ae8c8bb4284080fe15c159479447f754cd7b6fa09c734b9b3e9dae5",
+        "preview": "You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-p"
+      }
+    ]
+  }
+}
