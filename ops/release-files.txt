@@ -24,6 +24,11 @@ runtime/output-qc.cjs
 # The QC certificate page stamp.build emits beside the seal. Omitting it would
 # kill the claimant at require time rather than merely drop the certificate.
 runtime/qc-certificate.cjs
+# The panel map (authority 3, one JSON per run) and the panel data slug that is
+# rendered from it onto every production file and QC panel (owner, 2026-09-02).
+# Both are required at claimant require time.
+runtime/panel-map.cjs
+runtime/panel-data-slug.cjs
 runtime/resend-transport.cjs
 runtime/wrapbox-delivery.cjs
 runtime/zip-spool.cjs

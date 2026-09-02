@@ -11,6 +11,18 @@ const FULL_SCALE_PIXELS_PER_INCH = 150;
 const FILE_DPI = 1500;
 const OUTPUT_SCALE = 0.1;
 const BLEED_INCHES_PER_EDGE = 5;
+// THE PANEL DATA SLUG (owner, 2026-09-02). Every production file carries a
+// 1.5" data strip on its BOTTOM edge, outside the bleed, rendered from the
+// panel map (`panel-data-slug.cjs`). It is declared on the artifact and in the
+// EPS header and verified here as exact geometry: the artwork is exactly
+// trim + 10" at 150 px/in, the strip is exactly 225 px below it, and a file
+// that does not declare the strip is not a production file.
+const PANEL_DATA_SLUG = Object.freeze({
+  contract: "designpro.panel-data-slug.v1",
+  edge: "bottom",
+  inches: 1.5,
+  pixels: 1.5 * FULL_SCALE_PIXELS_PER_INCH,
+});
 const FIXED_ZIP_DATE = Object.freeze({ dosDate: 0x0021, dosTime: 0x0000 }); // 1980-01-01 00:00:00
 const FIXED_ZIP_MODE = 0o100644;
 const MAX_UINT32 = 0xffffffff;
@@ -109,17 +121,24 @@ function parseManifest(manifest) {
     if (row.surfaceSqFt !== undefined && Number(row.surfaceSqFt) !== trimSquareFeet) {
       fail("output_manifest_square_feet_invalid", `${surfaceKey}.surfaceSqFt does not match raw trim geometry`, { expected: trimSquareFeet, observed: row.surfaceSqFt });
     }
+    const heightPixels = exactRasterPixels(heightInches, `${surfaceKey}.heightInches`);
     bySurface.set(surfaceKey, Object.freeze({
       surfaceKey,
       widthInches,
       heightInches,
       trimSquareFeet,
       widthPixels: exactRasterPixels(widthInches, `${surfaceKey}.widthInches`),
-      heightPixels: exactRasterPixels(heightInches, `${surfaceKey}.heightInches`),
+      // The ARTWORK height: trim + bleed at 150 px/in. The file is taller by
+      // the panel data slug, which is declared and verified separately.
+      heightPixels,
+      slugPixels: PANEL_DATA_SLUG.pixels,
+      fileHeightPixels: heightPixels + PANEL_DATA_SLUG.pixels,
       outputWidthInches: (widthInches + BLEED_INCHES_PER_EDGE * 2) * OUTPUT_SCALE,
       outputHeightInches: (heightInches + BLEED_INCHES_PER_EDGE * 2) * OUTPUT_SCALE,
       outputWidthPoints: (widthInches + BLEED_INCHES_PER_EDGE * 2) * OUTPUT_SCALE * 72,
       outputHeightPoints: (heightInches + BLEED_INCHES_PER_EDGE * 2) * OUTPUT_SCALE * 72,
+      fileHeightInches: (heightInches + BLEED_INCHES_PER_EDGE * 2 + PANEL_DATA_SLUG.inches) * OUTPUT_SCALE,
+      fileHeightPoints: (heightInches + BLEED_INCHES_PER_EDGE * 2 + PANEL_DATA_SLUG.inches) * OUTPUT_SCALE * 72,
     }));
   }
   for (const surface of SURFACES) {
@@ -276,10 +295,10 @@ async function verifyRaster(bytes, format, geometry) {
   } catch (error) {
     fail(`output_${format}_decode_failed`, `${format.toUpperCase()} could not be decoded`, { cause: error.message });
   }
-  if (metadata.format !== format || metadata.width !== geometry.widthPixels || metadata.height !== geometry.heightPixels) {
-    fail("output_raster_geometry_invalid", `${geometry.surfaceKey}.${format} pixel geometry is incorrect`, { expected: [geometry.widthPixels, geometry.heightPixels], observed: [metadata.width, metadata.height] });
+  if (metadata.format !== format || metadata.width !== geometry.widthPixels || metadata.height !== geometry.fileHeightPixels) {
+    fail("output_raster_geometry_invalid", `${geometry.surfaceKey}.${format} pixel geometry is incorrect`, { expected: [geometry.widthPixels, geometry.fileHeightPixels], observed: [metadata.width, metadata.height] });
   }
-  if (parsed.width !== geometry.widthPixels || parsed.height !== geometry.heightPixels) {
+  if (parsed.width !== geometry.widthPixels || parsed.height !== geometry.fileHeightPixels) {
     fail("output_raster_header_geometry_invalid", `${geometry.surfaceKey}.${format} header geometry is incorrect`);
   }
   if (metadata.density !== FILE_DPI || metadata.resolutionUnit !== "inch") {
@@ -436,22 +455,25 @@ function decodeAscii85(encoded, expectedDecodedLength) {
   return output;
 }
 
-function buildDeterministicRasterEps({ rgb, widthPixels, heightPixels, trimWidthInches, trimHeightInches }) {
+function buildDeterministicRasterEps({ rgb, widthPixels, heightPixels, trimWidthInches, trimHeightInches, slug }) {
   const raster = Buffer.isBuffer(rgb) ? rgb : (rgb instanceof Uint8Array ? Buffer.from(rgb.buffer, rgb.byteOffset, rgb.byteLength) : Buffer.alloc(0));
   if (!Number.isInteger(widthPixels) || !Number.isInteger(heightPixels) || widthPixels <= 0 || heightPixels <= 0 || raster.length !== widthPixels * heightPixels * 3) {
     fail("output_eps_raster_invalid", "EPS raster bytes must be exact width × height × 3 RGB bytes");
   }
   const resourcePlan = planEpsResources({ trimWidthInches, trimHeightInches });
   if (!resourcePlan.allowed) fail("output_eps_resource_limit", "EPS geometry exceeds the single-worker deterministic memory/file envelope", resourcePlan);
+  if (!slug || slug.edge !== PANEL_DATA_SLUG.edge || Number(slug.inches) !== PANEL_DATA_SLUG.inches || Number(slug.pixels) !== PANEL_DATA_SLUG.pixels) {
+    fail("output_eps_slug_required", `EPS output must carry the panel data slug: ${PANEL_DATA_SLUG.edge} edge, ${PANEL_DATA_SLUG.inches} in, ${PANEL_DATA_SLUG.pixels} px`);
+  }
   const expectedWidth = resourcePlan.widthPixels;
-  const expectedHeight = resourcePlan.heightPixels;
-  if (widthPixels !== expectedWidth || heightPixels !== expectedHeight) fail("output_eps_raster_geometry_invalid", "EPS raster dimensions do not match 1:10 geometry with 5-inch bleed");
+  const expectedHeight = resourcePlan.heightPixels + PANEL_DATA_SLUG.pixels;
+  if (widthPixels !== expectedWidth || heightPixels !== expectedHeight) fail("output_eps_raster_geometry_invalid", "EPS raster dimensions do not match 1:10 geometry with 5-inch bleed plus the panel data slug");
   const compressed = deflateSync(raster, { level: 9, windowBits: 15, memLevel: 8, strategy: zlibConstants.Z_DEFAULT_STRATEGY });
   const encodedCharacters = ascii85CharacterCount(compressed);
   const maximumEncodedBytes = encodedCharacters + Math.ceil(encodedCharacters / ASCII85_LINE_WIDTH) + 1;
   if (maximumEncodedBytes > MAX_EPS_ENCODED_BYTES) fail("output_eps_resource_limit", "Compressed EPS exceeds the deterministic file-size envelope", { maximumEncodedBytes });
   const widthPoints = (Number(trimWidthInches) + 10) * OUTPUT_SCALE * 72;
-  const heightPoints = (Number(trimHeightInches) + 10) * OUTPUT_SCALE * 72;
+  const heightPoints = (Number(trimHeightInches) + 10 + PANEL_DATA_SLUG.inches) * OUTPUT_SCALE * 72;
   const header = [
     "%!PS-Adobe-3.0 EPSF-3.0",
     `%%BoundingBox: 0 0 ${Math.ceil(widthPoints - 1e-9)} ${Math.ceil(heightPoints - 1e-9)}`,
@@ -464,6 +486,8 @@ function buildDeterministicRasterEps({ rgb, widthPixels, heightPixels, trimWidth
     `%%DesignProAI-Density: ${FILE_DPI}`,
     `%%DesignProAI-OutputScale: ${OUTPUT_SCALE}`,
     `%%DesignProAI-FullScaleBleedInches: ${BLEED_INCHES_PER_EDGE}`,
+    `%%DesignProAI-PanelDataSlug: ${PANEL_DATA_SLUG.edge} ${PANEL_DATA_SLUG.inches} ${PANEL_DATA_SLUG.pixels}`,
+    `%%DesignProAI-ArtworkHeightPixels: ${resourcePlan.heightPixels}`,
     `%%DesignProAI-RasterGeometry: ${widthPixels} ${heightPixels} 3 8`,
     `%%DesignProAI-Raster-SHA256: ${sha256(raster)}`,
     "%%DesignProAI-Compression: ASCII85Decode+FlateDecode",
@@ -520,16 +544,20 @@ function verifyEps(bytes, geometry) {
   const header = bytes.toString("ascii", 0, headerEnd);
   const boundingBox = numericTuple(uniqueHeaderValue(header, "%%BoundingBox"), 4, "EPS BoundingBox");
   const hires = numericTuple(uniqueHeaderValue(header, "%%HiResBoundingBox"), 4, "EPS HiResBoundingBox");
-  const expectedBox = [0, 0, Math.ceil(geometry.outputWidthPoints - 1e-9), Math.ceil(geometry.outputHeightPoints - 1e-9)];
+  const expectedBox = [0, 0, Math.ceil(geometry.outputWidthPoints - 1e-9), Math.ceil(geometry.fileHeightPoints - 1e-9)];
   if (!boundingBox.every((value, index) => value === expectedBox[index])) fail("output_eps_bounding_box_invalid", "EPS BoundingBox is not the enclosing 1:10 point geometry", { expected: expectedBox, observed: boundingBox });
-  const expectedHiRes = [0, 0, geometry.outputWidthPoints, geometry.outputHeightPoints];
+  const expectedHiRes = [0, 0, geometry.outputWidthPoints, geometry.fileHeightPoints];
   if (!hires.every((value, index) => nearlyEqual(value, expectedHiRes[index]))) fail("output_eps_hires_bounding_box_invalid", "EPS HiResBoundingBox is not exact 1:10 point geometry", { expected: expectedHiRes, observed: hires });
   if (uniqueHeaderValue(header, "%%DesignProAI-ColorSpace") !== "sRGB" || bytes.indexOf(Buffer.from("\n/DeviceRGB setcolorspace\n")) < 0) fail("output_eps_srgb_missing", "EPS must explicitly declare the deterministic sRGB/DeviceRGB contract");
   if (Number(uniqueHeaderValue(header, "%%DesignProAI-Density")) !== FILE_DPI || Number(uniqueHeaderValue(header, "%%DesignProAI-OutputScale")) !== OUTPUT_SCALE || Number(uniqueHeaderValue(header, "%%DesignProAI-FullScaleBleedInches")) !== BLEED_INCHES_PER_EDGE) {
     fail("output_eps_physical_contract_invalid", "EPS physical-scale declarations are invalid");
   }
+  if (uniqueHeaderValue(header, "%%DesignProAI-PanelDataSlug") !== `${PANEL_DATA_SLUG.edge} ${PANEL_DATA_SLUG.inches} ${PANEL_DATA_SLUG.pixels}`) {
+    fail("output_eps_slug_invalid", "EPS does not declare the panel data slug contract");
+  }
+  if (Number(uniqueHeaderValue(header, "%%DesignProAI-ArtworkHeightPixels")) !== geometry.heightPixels) fail("output_eps_slug_invalid", "EPS artwork height does not match the production geometry");
   const rasterGeometry = numericTuple(uniqueHeaderValue(header, "%%DesignProAI-RasterGeometry"), 4, "EPS raster geometry");
-  if (rasterGeometry[0] !== geometry.widthPixels || rasterGeometry[1] !== geometry.heightPixels || rasterGeometry[2] !== 3 || rasterGeometry[3] !== 8) fail("output_eps_raster_geometry_invalid", "EPS raster geometry is incorrect");
+  if (rasterGeometry[0] !== geometry.widthPixels || rasterGeometry[1] !== geometry.fileHeightPixels || rasterGeometry[2] !== 3 || rasterGeometry[3] !== 8) fail("output_eps_raster_geometry_invalid", "EPS raster geometry is incorrect");
   const declaredHash = uniqueHeaderValue(header, "%%DesignProAI-Raster-SHA256");
   if (!/^[0-9a-f]{64}$/.test(declaredHash)) fail("output_eps_raster_hash_invalid", "EPS raster hash declaration is invalid");
   if (uniqueHeaderValue(header, "%%DesignProAI-Compression") !== "ASCII85Decode+FlateDecode") fail("output_eps_compression_invalid", "EPS must use deterministic ASCII85 + Flate compression");
@@ -547,7 +575,7 @@ function verifyEps(bytes, geometry) {
   const encoded = bytes.subarray(dataStart + dataStartMarker.length, dataEnd);
   const compressed = decodeAscii85(encoded, declaredCompressedBytes);
   if (compressed.length !== declaredCompressedBytes || sha256(compressed) !== declaredCompressedHash) fail("output_eps_compression_invalid", "EPS compressed bytes do not match their declaration");
-  const expectedBytes = geometry.widthPixels * geometry.heightPixels * 3;
+  const expectedBytes = geometry.widthPixels * geometry.fileHeightPixels * 3;
   if (expectedBytes > MAX_EPS_RAW_BYTES) fail("output_eps_resource_limit", "EPS decoded raster exceeds the verified resource envelope");
   let raster;
   try {
@@ -556,7 +584,7 @@ function verifyEps(bytes, geometry) {
     fail("output_eps_raster_decode_failed", "EPS Flate raster could not be decoded inside its exact bound", { cause: error.message });
   }
   if (raster.length !== expectedBytes || sha256(raster) !== declaredHash) fail("output_eps_raster_hash_invalid", "EPS raster bytes do not match the declared hash");
-  return { widthPixels: geometry.widthPixels, heightPixels: geometry.heightPixels, dpi: FILE_DPI, colorSpace: "sRGB", boundingBoxPoints: boundingBox, highResolutionBoundingBoxPoints: hires, rasterHash: declaredHash };
+  return { widthPixels: geometry.widthPixels, heightPixels: geometry.fileHeightPixels, dpi: FILE_DPI, colorSpace: "sRGB", boundingBoxPoints: boundingBox, highResolutionBoundingBoxPoints: hires, rasterHash: declaredHash };
 }
 
 function normalizeStoragePath(value) {
@@ -583,6 +611,10 @@ function normalizeArtifact(row) {
   if (!Number.isSafeInteger(byteSize) || byteSize <= 0) fail("output_artifact_size_invalid", `${storagePath} has an invalid byte size`);
   if (Number(metadata.dpi) !== FILE_DPI || Number(metadata.outputScale) !== OUTPUT_SCALE || Number(metadata.fullScaleBleedInches) !== BLEED_INCHES_PER_EDGE) {
     fail("output_artifact_physical_metadata_invalid", `${storagePath} metadata does not declare 1500 DPI, 1:10 scale, and 5-inch bleed`);
+  }
+  if (metadata.slugContract !== PANEL_DATA_SLUG.contract || metadata.slugEdge !== PANEL_DATA_SLUG.edge
+    || Number(metadata.slugInches) !== PANEL_DATA_SLUG.inches || Number(metadata.slugPixels) !== PANEL_DATA_SLUG.pixels) {
+    fail("output_artifact_slug_missing", `${storagePath} does not declare the panel data slug (${PANEL_DATA_SLUG.edge} edge, ${PANEL_DATA_SLUG.inches} in, ${PANEL_DATA_SLUG.pixels} px)`);
   }
   return { row, metadata, surfaceKey, format, kind, storagePath, contentHash, byteSize };
 }
@@ -615,7 +647,8 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
     for (const format of FORMATS) {
       const artifact = identities.get(`${surfaceKey}:${format}`);
       if (!artifact) fail("output_artifact_missing", `Missing output artifact: ${surfaceKey}:${format}`);
-      if (Number(artifact.metadata.width) !== geometry.widthPixels || Number(artifact.metadata.height) !== geometry.heightPixels) {
+      if (Number(artifact.metadata.width) !== geometry.widthPixels || Number(artifact.metadata.height) !== geometry.fileHeightPixels
+        || Number(artifact.metadata.artworkHeightPixels) !== geometry.heightPixels) {
         fail("output_artifact_metadata_geometry_invalid", `${artifact.storagePath} metadata geometry is incorrect`);
       }
       const bytes = await artifactBytes(artifact, readBytes);
@@ -630,7 +663,11 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
         contentHash: observedHash,
         byteSize: bytes.length,
         widthPixels: geometry.widthPixels,
-        heightPixels: geometry.heightPixels,
+        heightPixels: geometry.fileHeightPixels,
+        artworkHeightPixels: geometry.heightPixels,
+        slugEdge: PANEL_DATA_SLUG.edge,
+        slugInches: PANEL_DATA_SLUG.inches,
+        slugPixels: PANEL_DATA_SLUG.pixels,
         trimWidthInches: geometry.widthInches,
         trimHeightInches: geometry.heightInches,
         trimSquareFeet: geometry.trimSquareFeet,
@@ -644,7 +681,7 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
     }
   }
   const receiptBody = {
-    contract: "designpro.output-verification.v1",
+    contract: "designpro.output-verification.v2",
     exactSurfaceSet: SURFACES,
     exactFormatSet: FORMATS,
     fileCount: files.length,
@@ -652,6 +689,7 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
     fileDpi: FILE_DPI,
     outputScale: OUTPUT_SCALE,
     fullScaleBleedInchesPerEdge: BLEED_INCHES_PER_EDGE,
+    panelDataSlug: PANEL_DATA_SLUG,
     files,
   };
   return Object.freeze({ ...receiptBody, verified: true, outputHashes: files.map((file) => file.contentHash), outputSetHash: sha256(Buffer.from(stableJson(receiptBody))) });
@@ -908,6 +946,7 @@ module.exports = Object.freeze({
   MAX_EPS_ENCODED_BYTES,
   MAX_EPS_RAW_BYTES,
   OUTPUT_SCALE,
+  PANEL_DATA_SLUG,
   OutputVerificationError,
   SURFACES,
   buildDeterministicRasterEps,

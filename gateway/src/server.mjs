@@ -12,8 +12,11 @@ const PREFLIGHT_CHECKS = [
   "panelHashesVerified",
   "logoInventoryVerified",
   "textLockVerified",
+  // The panel data slug (owner, 2026-09-02): read on every Call 11 QC panel
+  // against the panel map before the pack is released into Topaz and output.
+  "panelDataSlugVerified",
 ];
-const FINAL_CHECKS = ["outputHashesVerified", "printDimensionsVerified", "colorModeVerified"];
+const FINAL_CHECKS = ["outputHashesVerified", "printDimensionsVerified", "colorModeVerified", "productionSlugVerified"];
 const PRODUCTION_SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
 // The physical judgements only a person standing at a vehicle template can
 // make. The board's derived checks (version, lineage, resolution) are absent on

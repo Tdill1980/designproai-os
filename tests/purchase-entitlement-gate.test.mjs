@@ -220,7 +220,7 @@ test("the certificate names what was actually approved", () => {
 test("the ZIP carries the purchased deliverable and not the other one", () => {
   const pack = manifestFor(["print_pack_entitlement"]);
   const logo = manifestFor(["logo_pack"]);
-  assert.deepEqual(pack.zipKinds, ["flat-proof", "panel", "output", "stamp"]);
+  assert.deepEqual(pack.zipKinds, ["flat-proof", "panel", "output", "panel-map", "stamp"], "the panel map ships with the production files it describes");
   assert.ok(!pack.zipKinds.includes("logo"), "a Production Pack ZIP must not give away the $29 product");
   assert.deepEqual(logo.zipKinds, ["logo", "stamp"]);
   assert.ok(!logo.zipKinds.includes("output"), "a Logo Pack ZIP must not give away the $299 product");

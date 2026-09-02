@@ -2242,7 +2242,7 @@ async function generateOrReuseFlatAtlas(options) {
   const currentExampleSetHash = sha256(canonicalBytes({
     atlasDesignTeachingExample: null,
     fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
-    territories: manifest.contract,
+    territories: manifest.territoriesContract || null,
     topology: manifest.topology,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
@@ -2862,7 +2862,7 @@ async function generateOrReuseFlatAtlas(options) {
       // territory layout the six panels were cut from (thirds, extracted
       // ratio, boundaries). Forensic; never a model input.
       atlasFieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
-      territoriesContract: manifest.contract,
+      territoriesContract: manifest.territoriesContract || null,
       fieldLayout: manifest.fieldLayout || null,
       designPanelArtboardQualityExamplesApplied: 0,
       designPanelArtboardQualityExampleIdentities: [],
@@ -3070,6 +3070,7 @@ module.exports = {
   viewAuthorityFor,
   _test: {
     activeZoneMaskSvg,
+    atlasProjectionParts,
     // Exported so the GENIE resolver's authority can be validated by its real
     // consumer in one test, across the seam that separates them.
     normalizedGeometryAuthority,

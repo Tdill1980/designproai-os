@@ -344,6 +344,22 @@ history entry may be gated on purchase. Nothing above may be moved behind the
 gate, and nothing below it may be moved in front of it, without an owner
 decision.
 
+#### The panel map and the panel data slug (owner, 2026-09-02)
+
+Two artifacts joined the graph, both downstream of the canonical panels and
+neither a producer of artwork:
+
+- **`panel-map`** — one JSON per run and phase (`design` at Call 9,
+  `production` at `output.build`), the single mapped-metadata record every
+  consumer reads: identity, vehicle, GENIE manifest, master hash, and per
+  surface the trim, print, bleed, square feet, file hash, native and target
+  density, and master lineage. Carried in the ZIP and to WrapBox.
+- **the panel data slug** — the strip rendered from that map onto the bottom
+  edge of every production output (1.5", outside the bleed) and every Call 11
+  QC duplicate (120 px). Read by the team at both human gates
+  (`panelDataSlugVerified`, `productionSlugVerified`) and verified as exact
+  geometry by `output.verify`. Full contract: `docs/PANEL-DATA-SLUG.md`.
+
 #### Third surface with the same defect — PanelPro Studio
 
 `AdminGeminiCompareStudio.tsx:1304` renders `Job status` as

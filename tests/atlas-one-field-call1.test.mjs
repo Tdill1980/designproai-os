@@ -75,7 +75,20 @@ async function slice() {
 test("the six code-only territories reproduce Draw 1's recorded geometry exactly", () => {
   const { field } = fixtureManifests();
   assert.equal(field.topology, "field-thirds-v2");
-  assert.equal(field.contract, "designpro.atlas-field-territories.v2");
+  // THE LIVE FAILURE, LOCKED. Generation 1a0e6b70 (2026-09-02) authored a clean
+  // master and six panels and then died at its first proof with
+  // flat_atlas_conditioning_invalid, because this builder overwrote the atlas
+  // manifest's identity with the territory contract. The manifest keeps its
+  // own identity; the territory layout is its own named field.
+  assert.equal(field.contract, atlas.MANIFEST_CONTRACT);
+  assert.equal(field.territoriesContract, "designpro.atlas-field-territories.v2");
+  assert.equal(field.fieldLayout.contract, "designpro.atlas-field-territories.v2");
+  const refusal = (() => {
+    try { atlas._test.atlasProjectionParts({ master: { bytes: Buffer.alloc(1), contentHash: "x" }, manifest: field, revisionSequence: 1 }, "side"); }
+    catch (error) { return error?.code || String(error); }
+    return null;
+  })();
+  assert.notEqual(refusal, "flat_atlas_conditioning_invalid", "a field manifest must pass the proof-conditioning identity check");
   for (const recorded of DRAW1_TERRITORIES.zones) {
     const zone = field.zones.find((z) => z.surfaceKey === recorded.surfaceKey);
     assert.ok(zone, recorded.surfaceKey);

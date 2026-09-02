@@ -559,6 +559,8 @@ export type PreflightQc = {
   panelHashesVerified: boolean;
   logoInventoryVerified: boolean;
   textLockVerified: boolean;
+  /** The panel data slug on every QC panel was read against the panel map. */
+  panelDataSlugVerified: boolean;
   /**
    * The six sides the designer approved individually, each against its own proof
    * and its own panel. The board has always gated its button on all six; they
@@ -625,6 +627,8 @@ export type FinalQc = {
   outputHashesVerified: boolean;
   printDimensionsVerified: boolean;
   colorModeVerified: boolean;
+  /** Every production file carries the panel data slug and it matches the panel map. */
+  productionSlugVerified: boolean;
 };
 
 export type GenieCandidate = {

@@ -36,6 +36,7 @@ export const PREFLIGHT_CHECKS: Array<[string, string]> = [
   ["panelHashesVerified", "Every promoted production panel hash matches its frozen Call-1 A.T.L.A.S. source panel"],
   ["logoInventoryVerified", "Call 10 logo count, identity and surface assignment exactly match the frozen inventory"],
   ["textLockVerified", "Every required body-text character matches the frozen revision text lock"],
+  ["panelDataSlugVerified", "The panel data slug on every QC panel was read and every field matches the panel map (surface, vehicle, trim, print, bleed, DID, revision, hashes)"],
 ];
 
 /**
@@ -75,6 +76,7 @@ export const FINAL_CHECKS: Array<[string, string]> = [
   ["outputHashesVerified", "Every PNG, TIFF and EPS output hash matches the verified output receipt"],
   ["printDimensionsVerified", "Final print dimensions, resolution and bleed match GENIE"],
   ["colorModeVerified", "Final production color-mode requirements are verified"],
+  ["productionSlugVerified", "Every production PNG, TIFF and EPS carries the panel data slug on its bottom edge (1.5\" outside the bleed) and its fields match the panel map"],
 ];
 
 /**

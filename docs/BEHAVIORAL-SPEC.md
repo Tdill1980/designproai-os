@@ -146,6 +146,14 @@ wrapbox.deliver
 already runs after the PanelPro gate. That constraint is satisfied today and
 must not be reordered.
 
+**Every production file carries the panel data slug (owner, 2026-09-02).**
+`output.build` renders a 1.5" data strip on the bottom edge of every PNG, TIFF
+and EPS, outside the bleed, from the run's panel map (`panel-map` artifact,
+`designpro.atlas-panel-map.v1`); Call 11's QC duplicates carry the same strip
+at a fixed 120 px so the team reads it at preflight. `output.verify` refuses a
+file without it. The canonical Call-1 panels are never touched. Contract:
+`docs/PANEL-DATA-SLUG.md`.
+
 **Call 11's insertion point is between `logos.extract` and
 `await_panelpro_preflight_qc`** — its output is precisely what the PanelPro
 gate is supposed to be validating.

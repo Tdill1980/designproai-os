@@ -24,12 +24,17 @@ const {
 // served -- see `buildCall8Proof` and the fail-closed arm in `panels.build`.
 const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-proof-material.cjs");
 const { assertRunProductionAncestry } = require("./production-provenance.cjs");
-const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet } = require("./output-qc.cjs");
+const { PANEL_DATA_SLUG, buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 const { CERTIFICATE_CONTRACT, buildQcCertificatePng } = require("./qc-certificate.cjs");
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
+// THE PANEL MAP AND THE PANEL DATA SLUG (owner, 2026-09-02). The map is the one
+// mapped-metadata record every consumer reads; the slug is the strip rendered
+// from it onto every production file and every QC duplicate. docs/PANEL-DATA-SLUG.md.
+const { PANEL_MAP_CONTRACT, buildPanelMap, panelMapBytes, parsePanelMap, slugLines } = require("./panel-map.cjs");
+const { OUTPUT_SLUG_PIXELS, QC_SLUG_PIXELS, SLUG_INCHES, applyPanelDataSlug, slugMetadata } = require("./panel-data-slug.cjs");
 
 const CLAIM_SECONDS = 900;
 const HEARTBEAT_MS = 30_000;
@@ -88,6 +93,11 @@ const ARTIFACT_KINDS = Object.freeze([
   // exactly-six-distinct-surface_key assertion keeps working untouched, and no
   // downstream consumer can mistake a QC instrument for production artwork.
   "flat-proof", "panel", "qc-panel", "corrected-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
+  // "panel-map" is the run's mapped metadata: one JSON per phase (design at
+  // Call 9, production at output.build) naming every surface's identity,
+  // geometry, lineage and file. It is the source of the panel data slug and
+  // travels in the ZIP and to WrapBox. It carries no artwork and no surface.
+  "panel-map",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
 // The Call 9 rule the database enforces. Every output is the deterministic
@@ -488,6 +498,90 @@ function artifact(kind, storagePath, contentHash, bytes, surfaceKey = "", metada
 }
 
 /**
+ * The immutable revision source this run was frozen from, with the columns the
+ * panel map and the business identity read. Refused if it is not the snapshot
+ * the run was created against.
+ */
+async function revisionSnapshotFor(sb, run) {
+  const { data, error } = await sb.from("designpro_revision_sources")
+    .select("generation_id,snapshot,snapshot_hash,owner_id,tenant_key").eq("revision_id", run.revision_id).maybeSingle();
+  if (error || !data) throw new StageError("revision_source_missing", error?.message || "Immutable revision source is missing", false);
+  if (data.snapshot_hash !== run.revision_snapshot_hash) throw new StageError("revision_source_drift", "Immutable revision source changed", false);
+  return data;
+}
+
+function revisionSequenceFromPath(storagePath) {
+  const match = /\/revisions\/(\d+)\//.exec(String(storagePath || ""));
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * THE DESIGN-PHASE PANEL MAP. Built from the six Call-1 panels the snapshot
+ * carries and this run's promoted copies. Marked NOT production-validated,
+ * because until manifest.resolve the inches are calls-1-7-layout-only, and the
+ * order number is whatever the snapshot has bound (null before purchase).
+ */
+function designPanelMap({ run, revisionSource, callOnePanels, promoted, builtAt }) {
+  const snapshot = revisionSource.snapshot || {};
+  const generationId = String(snapshot.generationId || revisionSource.generation_id || "").toLowerCase();
+  const byKey = new Map(callOnePanels.map((panel) => [String(panel.surfaceKey), panel]));
+  const masterHashes = new Set(callOnePanels.map((panel) => String(panel.sourceMasterHash || "").toLowerCase()));
+  if (masterHashes.size !== 1) throw new StageError("panel_map_master_split", "Call 1 panels do not name exactly one master", false);
+  const masterHash = [...masterHashes][0];
+  const first = callOnePanels[0];
+  const masterPath = String(first.storagePath || "").replace(/\/panels\/[0-9a-f]{64}\.png$/, `/master/${masterHash}.png`);
+  try {
+    return buildPanelMap({
+      phase: "design",
+      generationId,
+      revisionId: run.revision_id,
+      revisionSequence: revisionSequenceFromPath(first.storagePath),
+      designId: canonicalDesignId(generationId),
+      orderNumber: snapshot.orderNumber || null,
+      customerName: snapshot.delivery?.customerName || snapshot.brandIdentity?.companyName || null,
+      vehicle: snapshot.vehicle || {},
+      genie: { manifestId: first.genieManifestId || null, manifestHash: first.genieManifestHash || null },
+      master: { sha256: masterHash, storagePath: masterPath !== first.storagePath ? masterPath : null, px: null },
+      geometrySource: first.geometryAuthorityState || null,
+      productionSizingValidated: false,
+      builtAt,
+      surfaces: promoted.map((row) => {
+        const source = byKey.get(row.surfaceKey) || {};
+        return {
+          surfaceKey: row.surfaceKey,
+          contentHash: row.contentHash,
+          storagePath: row.storagePath,
+          pixelWidth: source.pixelWidth, pixelHeight: source.pixelHeight,
+          trimWidthIn: row.trimWidthIn, trimHeightIn: row.trimHeightIn,
+          printWidthIn: row.printWidthIn, printHeightIn: row.printHeightIn,
+          bleedInches: row.bleedInches, surfaceSqFt: row.surfaceSqFt,
+          nativePpi: source.effectivePpi, sourceMasterHash: source.sourceMasterHash,
+          fileRole: "atlas-call1-panel-promoted",
+        };
+      }),
+    });
+  } catch (error) {
+    if (error instanceof StageError) throw error;
+    throw new StageError(error.code || "panel_map_invalid", error.message, false);
+  }
+}
+
+/**
+ * The stored panel map for a phase, hash-verified. Null when none was stored --
+ * a run that passed Call 9 before the map existed rebuilds a design map in
+ * memory from the same inputs rather than failing.
+ */
+async function storedPanelMap(sb, run, phase) {
+  const rows = (await artifacts(sb, run.id, ["panel-map"])).filter((row) => row.metadata?.phase === phase);
+  if (!rows.length) return null;
+  const row = rows[0];
+  const bytes = await storageBytes(sb, row.storage_path);
+  if (hashBytes(bytes) !== String(row.content_hash).toLowerCase()) throw new StageError("panel_map_changed", `${phase} panel map changed after it was written`, false);
+  try { return parsePanelMap(bytes); }
+  catch (error) { throw new StageError(error.code || "panel_map_invalid", error.message, false); }
+}
+
+/**
  * The six panels A.T.L.A.S. cut at Call 1, or null for a run with no atlas.
  *
  * Read off the immutable revision snapshot -- the interface this side of the
@@ -756,7 +850,7 @@ function authorizedAssetManifest(paidProducts) {
     // What the archive carries. The stamp is in both: it is the QC evidence for
     // whatever was approved, and each product needs its own.
     zipKinds: Object.freeze([
-      ...(production ? ["flat-proof", "panel", "output"] : []),
+      ...(production ? ["flat-proof", "panel", "output", "panel-map"] : []),
       ...(logos ? ["logo"] : []),
       "stamp",
     ]),
@@ -764,7 +858,7 @@ function authorizedAssetManifest(paidProducts) {
     // Logo Pack buys separated assets, not the design's proof set.
     zipIncludesSourceViews: production,
     delivery: Object.freeze([
-      ...(production ? ["output", "stamp", "flat-proof"] : []),
+      ...(production ? ["output", "stamp", "flat-proof", "panel-map"] : []),
       ...(logos ? ["logo"] : []),
     ]),
     // What the customer bought, named so WrapBox can tell one from the other
@@ -1240,6 +1334,17 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       if (new Set(Object.values(panelHashes)).size !== SURFACE_KEYS.length) {
         throw new StageError("call9_panel_identity_collision", "Call 1 panels are not six distinct surfaces", false);
       }
+      // THE DESIGN-PHASE PANEL MAP, written once beside the six promoted panels.
+      // Call 11 renders the QC panels' data slug from it, and PanelPro shows it
+      // beside the strip so the designer reads one against the other.
+      const panelMap = designPanelMap({ run, revisionSource: await revisionSnapshotFor(sb, run), callOnePanels, promoted: produced, builtAt: new Date().toISOString() });
+      const mapBytes = panelMapBytes(panelMap);
+      const mapStored = await uploadProducedBytes(sb, run, stage, runtimeConfig, runScopedStoragePath(run, "panel-map.design.json"), mapBytes, "application/json");
+      if (mapStored.spool) spools.push(mapStored.spool);
+      panelArtifacts.push(artifact("panel-map", mapStored.storagePath, mapStored.hash, mapStored.bytes, "", {
+        contract: PANEL_MAP_CONTRACT, phase: "design", productionSizingValidated: false,
+        masterHash: panelMap.master.sha256, revisionId: run.revision_id, surfaceCount: SURFACE_KEYS.length,
+      }));
       const completed = await complete(sb, stage, run, {
         verified: true,
         receiptKind: "call9.surface-panels",
@@ -1264,6 +1369,8 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         // the panel hash, stated rather than left missing. It is the same value
         // as `panelHashes` and deliberately not a second derivation of it.
         sourceRegionHashes: panelHashes,
+        panelMapHash: mapStored.hash,
+        panelMapContract: PANEL_MAP_CONTRACT,
       }, null, panelArtifacts);
       for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 1 panel promotion spool cleanup failed: ${error.message}`));
       return completed;
@@ -1407,6 +1514,24 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
     const spools = [];
     const produced = [];
     const removals = {};
+    // THE PANEL DATA SLUG ON EVERY QC PANEL (owner, 2026-09-02). The team reads
+    // it on the PanelPro board at preflight, before Topaz and output exist, so
+    // it is rendered here at a fixed legible height from the design-phase map.
+    // A run promoted before the map existed rebuilds the same map from the
+    // same inputs rather than failing; the metadata records which it was.
+    let qcMap = await storedPanelMap(sb, run, "design");
+    let qcMapSource = "panel-map-artifact";
+    if (!qcMap) {
+      const callOnePanels = await callOnePanelSet(sb, run);
+      if (!callOnePanels) throw new StageError("call11_panel_map_source_missing", "Call 11 needs the Call-1 panel set to render the panel data slug", false);
+      const promoted = SURFACE_KEYS.map((surfaceKey) => {
+        const row = brandedPanels.find((item) => item.surface_key === surfaceKey);
+        const source = callOnePanels.find((panel) => panel.surfaceKey === surfaceKey) || {};
+        return { surfaceKey, storagePath: row.storage_path, contentHash: String(row.content_hash).toLowerCase(), trimWidthIn: source.trimWidthIn, trimHeightIn: source.trimHeightIn, printWidthIn: source.printWidthIn, printHeightIn: source.printHeightIn, bleedInches: source.bleedInches, surfaceSqFt: source.surfaceSqFt };
+      });
+      qcMap = designPanelMap({ run, revisionSource: await revisionSnapshotFor(sb, run), callOnePanels, promoted, builtAt: new Date().toISOString() });
+      qcMapSource = "rebuilt-from-call1-panels";
+    }
     for (const surface of SURFACE_KEYS) {
       const row = brandedPanels.find((item) => item.surface_key === surface);
       if (!row) throw new StageError("call11_branded_panel_missing", surface, false);
@@ -1440,8 +1565,12 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
             })))
             .png().toBuffer();
 
+      const qcSlugLines = slugLines(qcMap, surface, { fileName: `${surface}-qc-panel.png` });
+      let slugged;
+      try { slugged = await applyPanelDataSlug(edited, { lines: qcSlugLines, heightPx: QC_SLUG_PIXELS }); }
+      catch (error) { throw new StageError(error.code || "call11_panel_data_slug_failed", error.message, false); }
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-panels/${surface}.png`;
-      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, edited, "image/png");
+      const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, slugged.bytes, "image/png");
       if (stored.spool) spools.push(stored.spool);
       removals[surface] = rects.length;
       produced.push(artifact("qc-panel", stored.storagePath, stored.hash, stored.bytes, surface, {
@@ -1454,6 +1583,12 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
         trimWidthInches: row.metadata?.trimWidthInches ?? null,
         trimHeightInches: row.metadata?.trimHeightInches ?? null,
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+        // The strip below the artwork, declared so the board can crop it at 1:1
+        // and the attestation names what was read.
+        ...slugMetadata({ heightPx: QC_SLUG_PIXELS, inches: null, lines: qcSlugLines }),
+        artworkHeightPixels: slugged.artworkHeight,
+        pixelWidth: slugged.width, pixelHeight: slugged.height,
+        panelMapContract: PANEL_MAP_CONTRACT, panelMapSource: qcMapSource,
       }));
     }
 
@@ -1565,6 +1700,61 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
   const dimensions = new Map((dimensionManifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
   const produced = [];
   const spools = [];
+  // THE PRODUCTION-PHASE PANEL MAP, written once before any file, from the
+  // validated GENIE inches, the enhanced panels and the bound order. Every
+  // output's slug is rendered from it and every output names its hash.
+  const revisionSource = await revisionSnapshotFor(sb, run);
+  const callOnePanels = await callOnePanelSet(sb, run);
+  if (!callOnePanels) throw new StageError("output_panel_map_source_missing", "Production outputs need the Call-1 panel set to build the panel map", false);
+  let orderNumber = null;
+  try { orderNumber = immutableBusinessIdentity(revisionSource, run).orderNumber; } catch { orderNumber = null; }
+  const snapshot = revisionSource.snapshot || {};
+  const generationId = String(snapshot.generationId || revisionSource.generation_id || "").toLowerCase();
+  const masterHashes = new Set(callOnePanels.map((panel) => String(panel.sourceMasterHash || "").toLowerCase()));
+  if (masterHashes.size !== 1) throw new StageError("panel_map_master_split", "Call 1 panels do not name exactly one master", false);
+  let productionMap;
+  try {
+    productionMap = buildPanelMap({
+      phase: "production",
+      generationId,
+      revisionId: run.revision_id,
+      revisionSequence: revisionSequenceFromPath(callOnePanels[0].storagePath),
+      designId: canonicalDesignId(generationId),
+      orderNumber,
+      customerName: snapshot.delivery?.customerName || snapshot.brandIdentity?.companyName || null,
+      vehicle: snapshot.vehicle || {},
+      genie: { manifestId: dimensionManifest.manifestId || callOnePanels[0].genieManifestId || null, manifestHash: dimensionManifest.manifestHash || dimensionManifest.dimensionBasisHash || callOnePanels[0].genieManifestHash || null },
+      master: { sha256: [...masterHashes][0], storagePath: null, px: null },
+      geometrySource: dimensionManifest.source || dimensionManifest.derivationContract || "genie-manifest",
+      productionSizingValidated: true,
+      builtAt: new Date().toISOString(),
+      surfaces: panels.map((panel) => {
+        const dims = dimensions.get(String(panel.surface_key)) || {};
+        const source = callOnePanels.find((item) => item.surfaceKey === panel.surface_key) || {};
+        return {
+          surfaceKey: panel.surface_key,
+          contentHash: panel.content_hash, storagePath: panel.storage_path,
+          pixelWidth: Number(panel.metadata?.widthPx), pixelHeight: Number(panel.metadata?.heightPx),
+          trimWidthIn: Number(dims.widthInches), trimHeightIn: Number(dims.heightInches),
+          printWidthIn: Number(dims.widthInches) + 10, printHeightIn: Number(dims.heightInches) + 10,
+          bleedInches: 5, surfaceSqFt: dims.surfaceSqFt,
+          nativePpi: Number(panel.metadata?.widthPx) > 0 ? Math.round(Number(panel.metadata.widthPx) / (Number(dims.widthInches) + 10) * 100) / 100 : undefined,
+          sourceMasterHash: source.sourceMasterHash,
+          fileRole: "call12-enhanced-panel",
+        };
+      }),
+    });
+  } catch (error) {
+    if (error instanceof StageError) throw error;
+    throw new StageError(error.code || "panel_map_invalid", error.message, false);
+  }
+  const mapBytes = panelMapBytes(productionMap);
+  const mapStored = await uploadProducedBytes(sb, run, stage, runtimeConfig, `designpro/${tenantKey(run.tenant_key)}/${run.id}/outputs/panel-map.production.json`, mapBytes, "application/json");
+  if (mapStored.spool) spools.push(mapStored.spool);
+  produced.push(artifact("panel-map", mapStored.storagePath, mapStored.hash, mapStored.bytes, "", {
+    contract: PANEL_MAP_CONTRACT, phase: "production", productionSizingValidated: true,
+    masterHash: productionMap.master.sha256, revisionId: run.revision_id, orderNumber, surfaceCount: SURFACE_KEYS.length,
+  }));
   for (const panel of panels) {
     const dims = dimensions.get(String(panel.surface_key));
     if (!dims || !Object.values(dims.bleed || {}).every((value) => Number(value) === 5)) throw new StageError("output_dimensions_missing", `GENIE dimensions missing for ${panel.surface_key}`, false);
@@ -1578,28 +1768,47 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
     const left = Math.floor((width - containedMeta.width) / 2); const right = width - containedMeta.width - left;
     const top = Math.floor((height - containedMeta.height) / 2); const bottom = height - containedMeta.height - top;
     if (left || right || top || bottom) contained = await sharp(contained).extend({ left, right, top, bottom, extendWith: "mirror" }).png().toBuffer();
-    const raster = await sharp(contained).removeAlpha().toColourspace("srgb").png({ compressionLevel: 6 }).withMetadata({ density: 1500 }).toBuffer();
+    // THE PANEL DATA SLUG: 1.5" at the file's full-scale 150 PPI on the bottom
+    // edge, outside the bleed. The artwork above it is exactly `contained`;
+    // the file is 225 px taller and says so in every format.
     const slug = String(panel.surface_key).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const lines = slugLines(productionMap, panel.surface_key, { fileName: `${slug}.tiff`, outputPpi: 150 });
+    let slugged;
+    try { slugged = await applyPanelDataSlug(contained, { lines, heightPx: OUTPUT_SLUG_PIXELS }); }
+    catch (error) { throw new StageError(error.code || "output_panel_data_slug_failed", error.message, false); }
+    contained = null;
+    const fileHeight = slugged.height;
+    if (slugged.width !== width || slugged.artworkHeight !== height || fileHeight !== height + OUTPUT_SLUG_PIXELS) throw new StageError("output_panel_data_slug_geometry_invalid", panel.surface_key, false);
+    const outputMetadata = (format, extra = {}) => ({
+      format, width, height: fileHeight, artworkHeightPixels: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB",
+      physicalWidthInches: width / 1500, physicalHeightInches: fileHeight / 1500,
+      productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10,
+      panelMapHash: mapStored.hash, panelMapContract: PANEL_MAP_CONTRACT,
+      ...slugMetadata({ heightPx: OUTPUT_SLUG_PIXELS, inches: SLUG_INCHES, lines }),
+      ...extra,
+    });
+    const raster = await sharp(slugged.bytes).removeAlpha().toColourspace("srgb").png({ compressionLevel: 6 }).withMetadata({ density: 1500 }).toBuffer();
     const base = `designpro/${tenantKey(run.tenant_key)}/${run.id}/outputs/${slug}`;
     const png = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.png`, raster, "image/png");
     if (png.spool) spools.push(png.spool);
-    produced.push(artifact("output", png.storagePath, png.hash, png.bytes, panel.surface_key, { format: "png", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
-    const tiffBytes = await sharp(contained).removeAlpha().toColourspace("srgb").tiff({ compression: "lzw", predictor: "horizontal", bitdepth: 8 }).withMetadata({ density: 1500 }).toBuffer();
+    produced.push(artifact("output", png.storagePath, png.hash, png.bytes, panel.surface_key, outputMetadata("png")));
+    const tiffBytes = await sharp(slugged.bytes).removeAlpha().toColourspace("srgb").tiff({ compression: "lzw", predictor: "horizontal", bitdepth: 8 }).withMetadata({ density: 1500 }).toBuffer();
     const tiff = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.tiff`, tiffBytes, "image/tiff");
     if (tiff.spool) spools.push(tiff.spool);
-    produced.push(artifact("output", tiff.storagePath, tiff.hash, tiff.bytes, panel.surface_key, { format: "tiff", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
-    const { data: rgb, info } = await sharp(contained).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-    if (info.width !== width || info.height !== height || info.channels !== 3) throw new StageError("eps_raster_geometry_invalid", panel.surface_key, false);
+    produced.push(artifact("output", tiff.storagePath, tiff.hash, tiff.bytes, panel.surface_key, outputMetadata("tiff")));
+    const { data: rgb, info } = await sharp(slugged.bytes).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    if (info.width !== width || info.height !== fileHeight || info.channels !== 3) throw new StageError("eps_raster_geometry_invalid", panel.surface_key, false);
     const epsBytes = buildDeterministicRasterEps({
       rgb,
       widthPixels: width,
-      heightPixels: height,
+      heightPixels: fileHeight,
       trimWidthInches: Number(dims.widthInches),
       trimHeightInches: Number(dims.heightInches),
+      slug: PANEL_DATA_SLUG,
     });
     const eps = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.eps`, epsBytes, "application/postscript");
     if (eps.spool) spools.push(eps.spool);
-    produced.push(artifact("output", eps.storagePath, eps.hash, eps.bytes, panel.surface_key, { format: "eps", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", rasterSha256: hashBytes(rgb), physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
+    produced.push(artifact("output", eps.storagePath, eps.hash, eps.bytes, panel.surface_key, outputMetadata("eps", { rasterSha256: hashBytes(rgb) })));
   }
   return { produced, spools };
 }

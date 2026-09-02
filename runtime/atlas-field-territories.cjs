@@ -231,7 +231,13 @@ function buildFieldTerritories(legacyManifest) {
   const canvasPx = W * H;
   return {
     ...legacyManifest,
-    contract: FIELD_TERRITORIES_CONTRACT,
+    // The atlas manifest keeps its own identity (`contract` stays
+    // MANIFEST_CONTRACT from the legacy manifest): every runtime consumer --
+    // the revision read-back and the proof conditioning -- keys on it. Live
+    // generation 1a0e6b70 (2026-09-02) died at its first proof with
+    // flat_atlas_conditioning_invalid because this field overwrote it. The
+    // territory layout is its own named field.
+    territoriesContract: FIELD_TERRITORIES_CONTRACT,
     topology: FIELD_TOPOLOGY,
     legacyTopology: legacyManifest.topology,
     installerMap: {

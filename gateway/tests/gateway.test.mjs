@@ -210,6 +210,7 @@ const preflightQc = {
   panelHashesVerified: true,
   logoInventoryVerified: true,
   textLockVerified: true,
+  panelDataSlugVerified: true,
   // The six per-side attestations the board gates its button on. They used to
   // stop at the browser, so the receipt said nothing about whether a designer
   // had looked at the rear panel.
@@ -234,6 +235,7 @@ const finalQc = {
   outputHashesVerified: true,
   printDimensionsVerified: true,
   colorModeVerified: true,
+  productionSlugVerified: true,
 };
 
 for (const [gate, expectedStage, qc] of [

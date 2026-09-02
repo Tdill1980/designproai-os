@@ -1523,6 +1523,17 @@ approval metadata.
 
 **Do not hide files behind only a final ZIP.**
 
+**Every production panel and every Call 11 QC panel carries the PANEL DATA SLUG
+on its bottom edge, and the PANEL MAP is its source (owner, 2026-09-02, from
+Brice's print sample).** The slug is the design-side twin of the RIP's info
+band: order, DID, generation, revision, customer, vehicle, surface, trim, print,
+bleed, sq ft, hashes, density, build time, QC line — rendered by code from the
+`panel-map` artifact, 1.5" outside the bleed on production PNG/TIFF/EPS
+(verified by `output.verify`), 120 px on QC duplicates. Never on the canonical
+Call-1 panel. The team reads it at preflight (`panelDataSlugVerified`) and at
+final QC (`productionSlugVerified`); both keys are required by the gate RPC.
+Contract: `docs/PANEL-DATA-SLUG.md`.
+
 ### PanelPro QC is HUMAN design-team QC, not AI scoring
 
 The team verifies each output against the **actual vehicle template** and

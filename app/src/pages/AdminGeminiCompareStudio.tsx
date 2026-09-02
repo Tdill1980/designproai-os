@@ -1817,6 +1817,46 @@ function SurfaceQcPanel({
                     )}
                   </div>
 
+                  {/* THE PANEL DATA SLUG, READABLE HERE. (owner, 2026-09-02:
+                      "Design team must be able to see it and read it during
+                      PanelProStudio mandatory qc checks.") The strip printed on
+                      the bottom of this surface's Call 11 QC panel is shown at
+                      1:1 pixels, beside the same fields as text from the panel
+                      map, so the designer verifies by comparison. The gate's
+                      panelDataSlugVerified box attests to exactly this read. */}
+                  {(() => {
+                    const qcPanel = job.qc_panels.find((artifact) => artifact.surfaceKey === row.surfaceKey);
+                    const meta = (qcPanel?.metadata || {}) as Record<string, unknown>;
+                    const slugPixels = Number(meta.slugPixels);
+                    const artworkHeight = Number(meta.artworkHeightPixels);
+                    const slugLines = Array.isArray(meta.slugLines) ? (meta.slugLines as string[]) : [];
+                    if (!qcPanel || !(slugPixels > 0) || !(artworkHeight > 0)) {
+                      return (
+                        <p className="mb-3 rounded bg-amber-50 p-2 text-[10px] text-amber-800">
+                          No panel data slug on this surface's QC panel yet. The strip is rendered by
+                          Call 11; a QC panel without it cannot be attested at preflight.
+                        </p>
+                      );
+                    }
+                    return (
+                      <div className="mb-3 rounded border border-gray-200 bg-white p-2">
+                        <div className="mb-1 text-[10px] font-semibold text-gray-700">
+                          Panel data slug on the QC panel (1:1 pixels) — read it against the fields below
+                        </div>
+                        <div className="overflow-x-auto overflow-y-hidden rounded border border-gray-300 bg-white" style={{ height: slugPixels }}>
+                          <img
+                            src={qcPanel.signedUrl}
+                            alt={`${row.surfaceKey} panel data slug`}
+                            style={{ display: "block", maxWidth: "none", width: "auto", height: "auto", transform: `translateY(-${artworkHeight}px)` }}
+                          />
+                        </div>
+                        <ol className="mt-2 space-y-0.5 font-mono text-[10px] text-gray-800">
+                          {slugLines.map((line, index) => <li key={index}>{line}</li>)}
+                        </ol>
+                      </div>
+                    );
+                  })()}
+
                   {/* Machine evidence, shown so the person deciding can see it.
                       It is never a tick and never counts toward the thirteen. */}
                   {row.evidence && (
@@ -3250,6 +3290,7 @@ export default function AdminGeminiCompareStudio() {
           panelHashesVerified: true,
           logoInventoryVerified: true,
           textLockVerified: true,
+          panelDataSlugVerified: true,
           approvedSides: VIEW_DEFS.map((def) => SURFACE_FOR_SIDE_KEY[def.sideKey]).filter(Boolean).sort(),
           surfaceQc: approvedSurfaceChecklists(surfaceQcRef.current),
         } as any,

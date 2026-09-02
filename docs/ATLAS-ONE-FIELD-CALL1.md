@@ -51,6 +51,19 @@ guide fills all lifted, never re-derived — and replaces only the geometry:
 | rear | third 3, row 2, under the shortest | (2217, 3287, 1088, 809) | 12.64 |
 
 Rotation 0 everywhere, so the flank files come out landscape as installed.
+
+**Wiring correction (2026-09-02, after live generation `1a0e6b70`).** The
+field manifest keeps the atlas manifest's own identity
+(`contract: designpro.flat-first-atlas-manifest.v1`) and carries the territory
+layout as `territoriesContract: designpro.atlas-field-territories.v2`. The
+first product generation authored a clean master and six panels and then died
+at its first proof with `flat_atlas_conditioning_invalid`, because the builder
+had overwritten `contract` with the territory string and both the revision
+read-back and the proof conditioning key on the manifest identity. Locked in
+`tests/atlas-one-field-call1.test.mjs`. This corrects the wiring only; whether
+`field-thirds-v2` remains the product's composition is an open owner decision
+(the run's three-banner output and rendered third labels are on record in
+the session report).
 Passenger is its own territory — never mirrored Driver bytes. 76.3% of the
 canvas is extracted; the painted remainder is discarded by the zone mask (a
 resolution cost, reported on the revision as `metadata.fieldLayout`).

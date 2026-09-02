@@ -40,12 +40,14 @@ const PREFLIGHT_LABELS = Object.freeze([
   ["panelHashesVerified", "Panel content hashes match the frozen set"],
   ["logoInventoryVerified", "Separated logo inventory reviewed"],
   ["textLockVerified", "Lettering matches the approved design"],
+  ["panelDataSlugVerified", "Panel data slug read on every QC panel and matches the panel map"],
 ]);
 
 const FINAL_LABELS = Object.freeze([
   ["outputHashesVerified", "Output file hashes verified"],
   ["printDimensionsVerified", "Print dimensions verified"],
   ["colorModeVerified", "Colour mode verified"],
+  ["productionSlugVerified", "Production files carry the panel data slug on the bottom edge and match the panel map"],
 ]);
 
 /** XML-escape every interpolated string. A design name is customer text. */
