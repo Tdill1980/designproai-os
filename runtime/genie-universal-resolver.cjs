@@ -139,7 +139,18 @@ const FRONT_DERIVATION_CONTRACT = "designpro.genie-front-derived.v1";
  * every resolution and the GENIE Prep row keys on it, so a prepared geometry
  * authored under an older manifest contract is simply never consumed.
  */
-const GENIE_MANIFEST_CONTRACT = "designpro.genie-manifest.v1";
+const GENIE_MANIFEST_CONTRACT = "designpro.genie-manifest.v2";
+/**
+ * THE HASH CONTRACT, NAMED EXPLICITLY (owner ruling 2026-09-02, commit 2 of 2).
+ *
+ * v1 hashed `{contract, state, sourceRowId, derivationContract, surfaces}` --
+ * but `surfaces` was built by indexing the ARRAY `expectedSurfacesFromRow`
+ * returns by surface name, so every entry was `null` and the hash never varied
+ * with the inches. Two different geometries under the same state and source
+ * row collided (`docs/GENIE-MANIFEST-HASH-CUTOVER.md`). v2 hashes the six
+ * resolved surfaces' inches and bleed. Historical rows keep their v1 hashes.
+ */
+const GENIE_MANIFEST_HASH_CONTRACT = "designpro.genie-manifest-hash.v2";
 /**
  * GENIE PREP — the early lifecycle (owner ruling 2026-09-02). The prep row is
  * keyed by (generationId, vehicleIdentityHash, GENIE_PREP_CONTRACT); the
@@ -443,13 +454,27 @@ function catalogDimensionRow(match, vehicle) {
  * computed here, at the single resolver, because a manifest identity minted
  * downstream would be an identity for the copy rather than the source.
  */
-function stampGeometryResolution(row, resolution) {
+function canonicalManifestSurfaces(row) {
+  const byKey = new Map((expectedSurfacesFromRow(row) || []).map((surface) => [surface.surfaceKey, surface]));
   const surfaces = {};
   for (const surfaceKey of SURFACES) {
-    surfaces[surfaceKey] = expectedSurfacesFromRow(row)?.[surfaceKey] || null;
+    const surface = byKey.get(surfaceKey);
+    surfaces[surfaceKey] = surface
+      ? {
+        widthInches: Number(surface.widthInches),
+        heightInches: Number(surface.heightInches),
+        bleed: { top: Number(surface.bleed?.top ?? 0), right: Number(surface.bleed?.right ?? 0), bottom: Number(surface.bleed?.bottom ?? 0), left: Number(surface.bleed?.left ?? 0) },
+      }
+      : null;
   }
+  return surfaces;
+}
+
+function stampGeometryResolution(row, resolution) {
+  const surfaces = canonicalManifestSurfaces(row);
   const material = JSON.stringify({
     contract: GENIE_MANIFEST_CONTRACT,
+    hashContract: GENIE_MANIFEST_HASH_CONTRACT,
     state: resolution.state,
     sourceRowId: resolution.geometrySourceRowId || null,
     derivationContract: resolution.derivationContract || null,
@@ -458,6 +483,7 @@ function stampGeometryResolution(row, resolution) {
   const genieManifestHash = createHash("sha256").update(material, "utf8").digest("hex");
   row.geometryResolution = {
     contract: GENIE_MANIFEST_CONTRACT,
+    hashContract: GENIE_MANIFEST_HASH_CONTRACT,
     genieManifestId: genieManifestHash.slice(0, 32),
     genieManifestHash,
     ...resolution,
@@ -962,7 +988,7 @@ async function previewGenieDimensionsFromCatalog(sb, rawVehicle) {
   // the customer can recognise their own configuration.
   return {
     resolution: {
-      contract: "designpro.genie-manifest.v1",
+      contract: GENIE_MANIFEST_CONTRACT,
       state: "unresolved",
       productionEligible: false,
       operatorValidated: false,
@@ -1172,6 +1198,7 @@ module.exports = {
   PROVISIONAL_ESTIMATOR_CONTRACT,
   FRONT_DERIVATION_CONTRACT,
   GENIE_MANIFEST_CONTRACT,
+  GENIE_MANIFEST_HASH_CONTRACT,
   GENIE_PREP_CONTRACT,
   SURFACES,
   UniversalDimensionError,
@@ -1192,5 +1219,6 @@ module.exports = {
     validatedSurfaces,
     catalogRowIsIntact,
     stampGeometryResolution,
+    canonicalManifestSurfaces,
   },
 };
