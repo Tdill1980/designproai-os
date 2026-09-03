@@ -412,13 +412,26 @@ live generation has not actually proven. Every rule below still governs.
 
 ### Release / deployment state
 
-- **Both runtime replicas reported release `f2deb79c` through `/health`;
-  `design-panel-ai-generate` edge version 24 was deployed** (owner-supplied
-  readback, 2026-09-03). The edge function is NOT bound to that Git SHA
-  without a deployed-byte readback receipt. The product Call-1 path calls the
-  edge's one-field branch (rejected, RULE 0.34); the earlier single-call
-  six-surface A.T.L.A.S. topology branch of the same function is still
-  present and, for its fixture, byte-identical to the v23 assembly.
+- **Both runtime replicas reported release `f2deb79c` through `/health`**
+  (owner-supplied readback, 2026-09-03). The runtime `/health` ports bind to
+  localhost on the droplet and Caddy answers 404 for every `/worker/*` path,
+  so this cannot be re-read without droplet shell access.
+- **`design-panel-ai-generate` is at Supabase edge deployment VERSION 74**,
+  deployed 2026-09-02T20:59:40Z — 28 minutes before generation `1a0e6b70`
+  began, so that run executed against these exact bytes. Measured 2026-09-03
+  through the Management API.
+  **"v24" is prompt/architecture release terminology
+  (`atlas-artboard-designiq.20260902.v24-one-field`,
+  `designpro-flat-first-atlas-20260902.v24-one-field`) and is NEVER the edge
+  deployment version. Do not compare the two numbers.**
+  Deployed-byte readback: all 12 files shipped with the function hash
+  byte-identical to `origin/main`, deployed `index.ts` `4e8fde920142c6b5`,
+  including the RULE 0.29 pins `studio-os.ts` `7b02814bb1e9e867` and
+  `view-angles-os.ts` `8890be50c124a2c5`.
+- The product Call-1 path calls the edge's one-field branch (rejected,
+  RULE 0.34). **The earlier single-call six-surface A.T.L.A.S. topology branch
+  of the same function is still deployed and merely BYPASSED**: it is selected
+  whenever the request body carries no `fieldContract`.
 - **The working branch `claude/dca-phase-1-execution-47019t` is DIVERGED from
   `main`: 5 ahead, 4 behind** (measured 2026-09-03 immediately before this
   commit). Behind by `f2deb79c` (#299 v24), `24a8b446` (#298), `25e4342a`
@@ -443,7 +456,7 @@ live generation has not actually proven. Every rule below still governs.
 
 | # | Item | Status | Evidence |
 |---|---|---|---|
-| 1 | Call 1 A.T.L.A.S. is the SOLE creative authority | **DEPLOYED-VERIFIED** | deployed `design-panel-ai-generate` index.ts hashes `a5b3c1e850d7eca4`, byte-identical to the branch; `tests/atlas-sole-design-authority.test.mjs` |
+| 1 | Call 1 A.T.L.A.S. is the SOLE creative authority | **DEPLOYED-VERIFIED (re-measured 2026-09-03)** | deployed `design-panel-ai-generate` **v74** index.ts hashes `4e8fde920142c6b5`, byte-identical to `origin/main`; all 11 shared deps match; `tests/atlas-sole-design-authority.test.mjs`. The older reading `a5b3c1e850d7eca4` predates the v24 deploy |
 | 2 | Call-1 teaching image | **SUPERSEDED (2026-09-03)** | The deployed v24 product path sends NO teaching image (one text part plus verified customer references). The earlier single-call six-surface A.T.L.A.S. topology branch of the same edge function still pins the labeled proof `684534d2…` (v23). The v15 flat example `20085eb5…` and the installed-proof exclusion (canary `33389124918`) are history |
 | 3 | DesignPanelAI Commercial/ReStyle persona + edge stack preserved | **DEPLOYED-VERIFIED** | all 11 shared deps of `design-panel-ai-generate` match the branch; RULE 0.29 pins verified live — `persona-photographer-prompt.ts` `11cb76524211e42a`, `view-angles-os.ts` `8890be50c124a2c5`, `studio-os.ts` `7b02814bb1e9e867` |
 | 4 | Raw Gemini can STILL return silhouette / black-surround invalid A.T.L.A.S. output | **OPEN — by design** | unchanged model behaviour. `normalizeAtlasMaster` only resizes and masks gutters, so it cannot introduce in-zone black: the contract is first violated at the raw Gemini output. This is now CAUGHT, not prevented |
@@ -1202,6 +1215,13 @@ How it is implemented — DO NOT re-split it:
   returns the flattened master + full provenance (requestId, functionName,
   sourceCommit, promptVersion `atlas-artboard-persona.20260827.v1`, model,
   imageRequestCount, masterSha256).
+- **CORRECTION, measured 2026-09-03: the module named below does not exist on
+  `main`, and `_shared/persona-designer-prompt.ts` is NOT among the 12 files
+  deployed with the function. The real Call-1 prompt assembly is
+  `buildDesignIQPrompt`, defined INSIDE
+  `supabase/functions/design-panel-ai-generate/index.ts` and invoked by
+  `handleAtlasArtboard` with `atlasFlatMaster: true`. Everything in this
+  bullet below is retained as the historical intent, not as a file map.**
 - The prompt assembly is ONE canonical module,
   `supabase/functions/_shared/atlas-artboard-prompt.ts`: it EXECUTES the real
   `buildDesignerPrompt` (never re-types it), swaps ONLY the presentation tail
