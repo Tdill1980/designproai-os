@@ -232,29 +232,52 @@ function inches(value) {
 }
 
 /**
- * The lines the slug prints for one surface, in order. Every value comes from
- * the map (identity, geometry, lineage) or from the caller's file facts
- * (file name, output density, media, QC line). The RIP's own fields -- printer,
- * profiles, screening -- are the RIP's and are deliberately absent.
+ * The rows the slug prints for one surface, in Brice's form: two column blocks
+ * of `Key ....: Value`. Left block = job identity (his Printer/Date/Job/File
+ * block); right block = geometry, lineage and approval (his profile/scale
+ * block). Every value comes from the map or from the caller's file facts
+ * (file name, output density, media, QC line). The RIP's own fields --
+ * printer, profiles, screening -- are the RIP's and are deliberately absent.
  */
-function slugLines(map, surfaceKey, { fileName, outputPpi = null, media = null, qcApproved = null } = {}) {
+function slugRows(map, surfaceKey, { fileName, outputPpi = null, media = null, qcApproved = null } = {}) {
   const entry = panelMapSurface(map, surfaceKey);
-  const orientation = ["[UP ^]", entry.noseEdge ? `[FRONT ${entry.noseEdge === "left" ? "<-" : "->"}]` : null].filter(Boolean).join("  ");
+  const orientation = ["[UP ^]", entry.noseEdge ? `[FRONT ${entry.noseEdge === "left" ? "<-" : "->"}]` : null].filter(Boolean).join(" ");
   const vehicle = [map.vehicle?.year, map.vehicle?.make, map.vehicle?.model].filter(Boolean).join(" ") || "vehicle not recorded";
   const body = map.vehicle?.body ? ` (${map.vehicle.body})` : "";
-  const sizing = map.vehicle?.productionSizingValidated ? "GENIE validated" : "design-time sizing, NOT validated";
-  const density = outputPpi
-    ? `Output ${inches(outputPpi)} PPI full scale (native ${inches(entry.nativePpi)} PPI, x${inches(entry.upscaleFactorRequired)})`
-    : `Native ${inches(entry.nativePpi)} PPI (print target ${inches(entry.printTargetPpi)} PPI, x${inches(entry.upscaleFactorRequired)} required)`;
-  return Object.freeze([
-    `DESIGNPROAI | PANEL DATA   ${entry.label}   ${orientation}`,
-    `Order ${map.orderNumber || "not assigned"}   ${map.designId}   Gen ${map.generationId.slice(0, 8)}   Rev ${map.revisionId.slice(0, 8)}${map.revisionSequence ? ` (V${map.revisionSequence})` : ""}`,
-    `Customer: ${map.customerName || "-"}   Vehicle: ${vehicle}${body}`,
-    `Trim ${inches(entry.trimIn[0])} x ${inches(entry.trimIn[1])} in   Print ${inches(entry.printIn[0])} x ${inches(entry.printIn[1])} in (${inches(entry.bleedIn)} in bleed all sides)   ${inches(entry.sqFt)} sq ft   ${sizing}`,
-    `File ${fileName || entry.file.storagePath.split("/").pop()}   sha256 ${entry.file.sha256.slice(0, 12)}...   Master ${map.master.sha256.slice(0, 12)}...   GENIE ${(map.genie?.manifestHash || "n/a").slice(0, 8)}`,
-    `${density}   sRGB   Media: ${media || "per order"}`,
-    `Built ${map.builtAt}   QC approved: ${qcApproved || "________________________  (blank until stamped)"}`,
-  ]);
+  const sizing = map.vehicle?.productionSizingValidated ? "GENIE validated" : "design-time, NOT validated";
+  const resolution = outputPpi
+    ? `${inches(outputPpi)} PPI full scale (native ${inches(entry.nativePpi)}, x${inches(entry.upscaleFactorRequired)})`
+    : `native ${inches(entry.nativePpi)} PPI (print target ${inches(entry.printTargetPpi)}, x${inches(entry.upscaleFactorRequired)} required)`;
+  const file = fileName || entry.file.storagePath.split("/").pop();
+  return Object.freeze({
+    left: Object.freeze([
+      ["Order", map.orderNumber || "not assigned"],
+      ["Design ID", map.designId],
+      ["Generation", map.generationId],
+      ["Revision", `${map.revisionId.slice(0, 8)}${map.revisionSequence ? ` (V${map.revisionSequence})` : ""}`],
+      ["Customer", map.customerName || "-"],
+      ["Vehicle", `${vehicle}${body}`],
+      ["Surface", `${entry.label}  ${orientation}`],
+      ["File", `${file} (sha256 ${entry.file.sha256.slice(0, 12)})`],
+    ]),
+    right: Object.freeze([
+      ["Trim", `${inches(entry.trimIn[0])} x ${inches(entry.trimIn[1])} in`],
+      ["Print", `${inches(entry.printIn[0])} x ${inches(entry.printIn[1])} in (${inches(entry.bleedIn)} in bleed all sides)`],
+      ["Sq ft", inches(entry.sqFt)],
+      ["Sizing", sizing],
+      ["Resolution", resolution],
+      ["Color", `sRGB${media ? `   Media: ${media}` : ""}`],
+      ["Master", `${map.master.sha256.slice(0, 12)} / GENIE ${(map.genie?.manifestHash || "n/a").slice(0, 8)}`],
+      ["Built", map.builtAt],
+      ["QC approved", qcApproved || "______________________"],
+    ]),
+  });
+}
+
+/** The same rows flattened to `Key: Value` strings, for metadata and the board. */
+function slugLines(map, surfaceKey, options = {}) {
+  const rows = slugRows(map, surfaceKey, options);
+  return Object.freeze([...rows.left, ...rows.right].map(([key, value]) => `${key}: ${value}`));
 }
 
 module.exports = Object.freeze({
@@ -268,4 +291,5 @@ module.exports = Object.freeze({
   parsePanelMap,
   panelMapSurface,
   slugLines,
+  slugRows,
 });

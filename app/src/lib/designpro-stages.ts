@@ -76,7 +76,7 @@ export const FINAL_CHECKS: Array<[string, string]> = [
   ["outputHashesVerified", "Every PNG, TIFF and EPS output hash matches the verified output receipt"],
   ["printDimensionsVerified", "Final print dimensions, resolution and bleed match GENIE"],
   ["colorModeVerified", "Final production color-mode requirements are verified"],
-  ["productionSlugVerified", "Every production PNG, TIFF and EPS carries the panel data slug on its bottom edge (1.5\" outside the bleed) and its fields match the panel map"],
+  ["productionSlugVerified", "Every production PNG, TIFF and EPS carries the panel data slug on its top edge (1.5\" outside the bleed) and its fields match the panel map"],
 ];
 
 /**

@@ -33,7 +33,7 @@ const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./l
 // THE PANEL MAP AND THE PANEL DATA SLUG (owner, 2026-09-02). The map is the one
 // mapped-metadata record every consumer reads; the slug is the strip rendered
 // from it onto every production file and every QC duplicate. docs/PANEL-DATA-SLUG.md.
-const { PANEL_MAP_CONTRACT, buildPanelMap, panelMapBytes, parsePanelMap, slugLines } = require("./panel-map.cjs");
+const { PANEL_MAP_CONTRACT, buildPanelMap, panelMapBytes, parsePanelMap, slugRows } = require("./panel-map.cjs");
 const { OUTPUT_SLUG_PIXELS, QC_SLUG_PIXELS, SLUG_INCHES, applyPanelDataSlug, slugMetadata } = require("./panel-data-slug.cjs");
 
 const CLAIM_SECONDS = 900;
@@ -1565,9 +1565,9 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
             })))
             .png().toBuffer();
 
-      const qcSlugLines = slugLines(qcMap, surface, { fileName: `${surface}-qc-panel.png` });
+      const qcSlugRows = slugRows(qcMap, surface, { fileName: `${surface}-qc-panel.png` });
       let slugged;
-      try { slugged = await applyPanelDataSlug(edited, { lines: qcSlugLines, heightPx: QC_SLUG_PIXELS }); }
+      try { slugged = await applyPanelDataSlug(edited, { rows: qcSlugRows, heightPx: QC_SLUG_PIXELS }); }
       catch (error) { throw new StageError(error.code || "call11_panel_data_slug_failed", error.message, false); }
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-panels/${surface}.png`;
       const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, slugged.bytes, "image/png");
@@ -1585,7 +1585,7 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
         bleed: { top: 5, right: 5, bottom: 5, left: 5 },
         // The strip below the artwork, declared so the board can crop it at 1:1
         // and the attestation names what was read.
-        ...slugMetadata({ heightPx: QC_SLUG_PIXELS, inches: null, lines: qcSlugLines }),
+        ...slugMetadata({ heightPx: QC_SLUG_PIXELS, inches: null, rows: qcSlugRows }),
         artworkHeightPixels: slugged.artworkHeight,
         pixelWidth: slugged.width, pixelHeight: slugged.height,
         panelMapContract: PANEL_MAP_CONTRACT, panelMapSource: qcMapSource,
@@ -1772,9 +1772,9 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
     // edge, outside the bleed. The artwork above it is exactly `contained`;
     // the file is 225 px taller and says so in every format.
     const slug = String(panel.surface_key).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const lines = slugLines(productionMap, panel.surface_key, { fileName: `${slug}.tiff`, outputPpi: 150 });
+    const rows = slugRows(productionMap, panel.surface_key, { fileName: `${slug}.tiff`, outputPpi: 150 });
     let slugged;
-    try { slugged = await applyPanelDataSlug(contained, { lines, heightPx: OUTPUT_SLUG_PIXELS }); }
+    try { slugged = await applyPanelDataSlug(contained, { rows, heightPx: OUTPUT_SLUG_PIXELS }); }
     catch (error) { throw new StageError(error.code || "output_panel_data_slug_failed", error.message, false); }
     contained = null;
     const fileHeight = slugged.height;
@@ -1784,7 +1784,7 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
       physicalWidthInches: width / 1500, physicalHeightInches: fileHeight / 1500,
       productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10,
       panelMapHash: mapStored.hash, panelMapContract: PANEL_MAP_CONTRACT,
-      ...slugMetadata({ heightPx: OUTPUT_SLUG_PIXELS, inches: SLUG_INCHES, lines }),
+      ...slugMetadata({ heightPx: OUTPUT_SLUG_PIXELS, inches: SLUG_INCHES, rows }),
       ...extra,
     });
     const raster = await sharp(slugged.bytes).removeAlpha().toColourspace("srgb").png({ compressionLevel: 6 }).withMetadata({ density: 1500 }).toBuffer();

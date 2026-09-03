@@ -354,7 +354,7 @@ neither a producer of artwork:
   consumer reads: identity, vehicle, GENIE manifest, master hash, and per
   surface the trim, print, bleed, square feet, file hash, native and target
   density, and master lineage. Carried in the ZIP and to WrapBox.
-- **the panel data slug** — the strip rendered from that map onto the bottom
+- **the panel data slug** — the strip rendered from that map, in the form of Brice's RIP band, onto the top
   edge of every production output (1.5", outside the bleed) and every Call 11
   QC duplicate (120 px). Read by the team at both human gates
   (`panelDataSlugVerified`, `productionSlugVerified`) and verified as exact

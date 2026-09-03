@@ -147,7 +147,7 @@ already runs after the PanelPro gate. That constraint is satisfied today and
 must not be reordered.
 
 **Every production file carries the panel data slug (owner, 2026-09-02).**
-`output.build` renders a 1.5" data strip on the bottom edge of every PNG, TIFF
+`output.build` renders a 1.5" data strip on the top (leading) edge of every PNG, TIFF
 and EPS, outside the bleed, from the run's panel map (`panel-map` artifact,
 `designpro.atlas-panel-map.v1`); Call 11's QC duplicates carry the same strip
 at a fixed 120 px so the team reads it at preflight. `output.verify` refuses a

@@ -47,7 +47,7 @@ const FINAL_LABELS = Object.freeze([
   ["outputHashesVerified", "Output file hashes verified"],
   ["printDimensionsVerified", "Print dimensions verified"],
   ["colorModeVerified", "Colour mode verified"],
-  ["productionSlugVerified", "Production files carry the panel data slug on the bottom edge and match the panel map"],
+  ["productionSlugVerified", "Production files carry the panel data slug on the top edge and match the panel map"],
 ]);
 
 /** XML-escape every interpolated string. A design name is customer text. */

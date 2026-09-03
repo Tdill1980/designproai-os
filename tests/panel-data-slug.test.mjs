@@ -2,12 +2,12 @@
 //
 // Brice's floor needs every printed panel to carry its data on one edge. These
 // locks prove, on real bytes:
-//   1. the strip is exactly the declared height on the bottom edge, and every
-//      artwork pixel above it is untouched;
+//   1. the strip is exactly the declared height on the TOP edge in Brice's
+//      key/value form, and every artwork pixel below it is untouched;
 //   2. the strip is ink only -- white ground, black text and marks -- so it can
 //      never be mistaken for artwork;
 //   3. the panel map refuses a split lineage and a missing surface, and the
-//      slug lines carry the surface, DID, sizes, hashes and validation state;
+//      slug rows carry the surface, DID, sizes, hashes and validation state;
 //   4. the production output contract: a full six-surface set built exactly as
 //      output.build builds it verifies, a set without the strip declaration is
 //      refused, and a raster whose height is not artwork + strip is refused;
@@ -26,7 +26,7 @@ const outputQc = require("../runtime/output-qc.cjs");
 const certificate = require("../runtime/qc-certificate.cjs");
 
 const { applyPanelDataSlug, renderPanelDataSlug, slugMetadata, OUTPUT_SLUG_PIXELS, QC_SLUG_PIXELS, SLUG_INCHES, PANEL_DATA_SLUG_CONTRACT } = slugModule;
-const { buildPanelMap, panelMapBytes, parsePanelMap, slugLines, PANEL_MAP_CONTRACT } = mapModule;
+const { buildPanelMap, panelMapBytes, parsePanelMap, slugLines, slugRows, PANEL_MAP_CONTRACT } = mapModule;
 const { PANEL_DATA_SLUG, buildDeterministicRasterEps, verifyProductionOutputSet } = outputQc;
 const byCode = (...codes) => (error) => codes.includes(error?.code) || codes.some((code) => String(error?.message || "").includes(code));
 
@@ -77,48 +77,60 @@ async function artwork(width, height) {
   return sharp(raw, { raw: { width, height, channels: 3 } }).png().toBuffer();
 }
 
-test("the strip is exactly the declared height on the bottom edge and the artwork above it is untouched", async () => {
+test("the strip is exactly the declared height on the TOP edge, in Brice's key/value form, and the artwork below it is untouched", async () => {
   const width = 900; const height = 300;
   const source = await artwork(width, height);
   const map = fixtureMap();
-  const lines = slugLines(map, "driver", { fileName: "driver-qc-panel.png" });
-  const out = await applyPanelDataSlug(source, { lines, heightPx: QC_SLUG_PIXELS });
+  const rows = slugRows(map, "driver", { fileName: "driver-qc-panel.png" });
+  const out = await applyPanelDataSlug(source, { rows, heightPx: QC_SLUG_PIXELS });
   assert.equal(out.width, width);
   assert.equal(out.height, height + QC_SLUG_PIXELS);
   assert.equal(out.artworkHeight, height);
-  assert.equal(out.slug.edge, "bottom");
+  assert.equal(out.artworkTop, QC_SLUG_PIXELS);
+  assert.equal(out.slug.edge, "top");
   const before = await sharp(source).raw().toBuffer({ resolveWithObject: true });
   const after = await sharp(out.bytes).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   assert.equal(after.info.width, width);
   assert.equal(after.info.channels, 3);
-  const artworkBytes = width * height * 3;
-  assert.ok(before.data.subarray(0, artworkBytes).equals(after.data.subarray(0, artworkBytes)), "artwork pixels above the strip are byte-identical");
-  // The strip is ink only: every pixel is neutral (no chroma), and both black
-  // and white are present -- ground, hairline, marks and text.
-  let dark = 0; let light = 0;
-  for (let i = artworkBytes; i < after.data.length; i += 3) {
+  const stripBytes = width * QC_SLUG_PIXELS * 3;
+  assert.ok(before.data.equals(after.data.subarray(stripBytes)), "artwork pixels below the strip are byte-identical");
+  // The strip is ink only, like the RIP band: every pixel neutral, black text
+  // on a white ground, and no decoration -- no rule across its top edge.
+  // Nine rows in 120 px is small type (8 px on this fixture), so most ink is
+  // anti-aliased grey: count ink as anything below mid-grey.
+  let ink = 0; let light = 0;
+  for (let i = 0; i < stripBytes; i += 3) {
     const [r, g, b] = [after.data[i], after.data[i + 1], after.data[i + 2]];
     assert.ok(Math.abs(r - g) <= 4 && Math.abs(g - b) <= 4, "strip pixels carry no colour");
-    if (r < 40) dark += 1; else if (r > 240) light += 1;
+    if (r < 128) ink += 1; else if (r > 240) light += 1;
   }
-  assert.ok(dark > 200 && light > (width * QC_SLUG_PIXELS) * 0.5, "the strip is black ink on a white ground");
-  // Hairline across the top of the strip.
-  const stripTop = artworkBytes;
-  let hairline = 0;
-  for (let x = 0; x < width; x += 1) if (after.data[stripTop + x * 3] < 40) hairline += 1;
-  assert.ok(hairline > width * 0.95, "a hairline runs the full width of the strip's top edge");
-  const meta = slugMetadata({ heightPx: QC_SLUG_PIXELS, inches: null, lines });
+  assert.ok(ink > 1000 && light > (width * QC_SLUG_PIXELS) * 0.5, "the strip is black ink on a white ground");
+  let topRowDark = 0;
+  for (let x = 0; x < width; x += 1) if (after.data[x * 3] < 40) topRowDark += 1;
+  assert.equal(topRowDark, 0, "no rule or mark: Brice's band is a plain white field with text");
+  // Brice's form: two blocks, every key present, dotted leaders, one weight.
+  const svg = slugModule._test.slugSvg({ rows, widthPx: width, heightPx: QC_SLUG_PIXELS }).toString("utf8");
+  for (const key of ["Order", "Design ID", "Generation", "Revision", "Customer", "Vehicle", "Surface", "File", "Trim", "Print", "Sq ft", "Sizing", "Resolution", "Color", "Master", "Built", "QC approved"]) {
+    assert.ok(svg.includes(`${key} .`), `row ${key} with a leader`);
+  }
+  assert.ok(!/font-weight/.test(svg), "one regular weight, nothing bold");
+  assert.ok(!/TRIM STRIP|<rect[^>]*fill="#000000"/.test(svg), "no title, no rule, no cut marks");
+  const meta = slugMetadata({ heightPx: QC_SLUG_PIXELS, inches: null, rows });
   assert.equal(meta.slugContract, PANEL_DATA_SLUG_CONTRACT);
+  assert.equal(meta.slugEdge, "top");
   assert.equal(meta.slugPixels, QC_SLUG_PIXELS);
-  assert.equal(meta.slugLines.length, 7);
+  assert.equal(meta.slugRows.left.length, 8);
+  assert.equal(meta.slugRows.right.length, 9);
+  assert.equal(meta.slugLines.length, 17);
+  assert.equal(meta.slugLines[0], "Order: not assigned");
 });
 
 test("the slug refuses any edge but the contract's and any strip too small to read", async () => {
   const source = await artwork(200, 100);
-  const lines = slugLines(fixtureMap(), "hood", {});
-  await assert.rejects(applyPanelDataSlug(source, { lines, heightPx: 120, edge: "top" }), byCode("panel_data_slug_edge_unsupported"));
-  await assert.rejects(applyPanelDataSlug(source, { lines, heightPx: 10 }), byCode("panel_data_slug_geometry_invalid"));
-  await assert.rejects(renderPanelDataSlug({ lines: [], widthPx: 200, heightPx: 120 }), byCode("panel_data_slug_lines_invalid"));
+  const rows = slugRows(fixtureMap(), "hood", {});
+  await assert.rejects(applyPanelDataSlug(source, { rows, heightPx: 120, edge: "bottom" }), byCode("panel_data_slug_edge_unsupported"));
+  await assert.rejects(applyPanelDataSlug(source, { rows, heightPx: 10 }), byCode("panel_data_slug_geometry_invalid"));
+  await assert.rejects(renderPanelDataSlug({ rows: { left: [], right: [] }, widthPx: 200, heightPx: 120 }), byCode("panel_data_slug_rows_invalid"));
 });
 
 test("the panel map refuses a split lineage and a missing surface, and its bytes round-trip", () => {
@@ -132,16 +144,22 @@ test("the panel map refuses a split lineage and a missing surface, and its bytes
   assert.throws(() => fixtureMap({ master: { sha256: HASHES.driver } }), byCode("panel_map_master_split"));
   assert.throws(() => fixtureMap({ surfaces: fixtureSurfaces().slice(0, 5) }), byCode("panel_map_surface_missing"));
   assert.throws(() => fixtureMap({ phase: "production" }), byCode("panel_map_phase_invalid"), "a production map must carry validated sizing");
-  const lines = slugLines(map, "driver", { fileName: "driver.tiff", outputPpi: 150 });
-  assert.equal(lines.length, 7);
-  assert.match(lines[0], /DRIVER SIDE/);
-  assert.match(lines[0], /\[FRONT <-\]/);
-  assert.match(lines[1], /DID-1A0E6B70/);
-  assert.match(lines[1], /Order not assigned/);
-  assert.match(lines[3], /Trim 153 x 56 in   Print 163 x 66 in \(5 in bleed all sides\)   59.5 sq ft   design-time sizing, NOT validated/);
-  assert.match(lines[4], /sha256 e0e19b53bfa7\.\.\.   Master e391c2cca6a7\.\.\./);
-  assert.match(lines[5], /Output 150 PPI full scale \(native 20.68 PPI, x7.25\)/);
-  assert.match(lines[6], /blank until stamped/);
+  const rows = slugRows(map, "driver", { fileName: "driver.tiff", outputPpi: 150 });
+  const left = Object.fromEntries(rows.left); const right = Object.fromEntries(rows.right);
+  assert.equal(left.Order, "not assigned");
+  assert.equal(left["Design ID"], "DID-1A0E6B70");
+  assert.equal(left.Generation, "1a0e6b70-272d-487c-b275-6b49206bc0ba");
+  assert.equal(left.Revision, "16154e4d (V1)");
+  assert.equal(left.Surface, "DRIVER SIDE  [UP ^] [FRONT <-]");
+  assert.equal(left.File, "driver.tiff (sha256 e0e19b53bfa7)");
+  assert.equal(right.Trim, "153 x 56 in");
+  assert.equal(right.Print, "163 x 66 in (5 in bleed all sides)");
+  assert.equal(right["Sq ft"], "59.5");
+  assert.equal(right.Sizing, "design-time, NOT validated");
+  assert.equal(right.Resolution, "150 PPI full scale (native 20.68, x7.25)");
+  assert.equal(right.Master, "e391c2cca6a7 / GENIE 766258a0");
+  assert.match(right["QC approved"], /^_+$/);
+  assert.equal(slugLines(map, "driver", { fileName: "driver.tiff" }).length, 17);
 });
 
 // The production contract, on real bytes, built exactly as output.build builds
@@ -157,8 +175,8 @@ async function buildOutputSet({ withSlug = true, withDeclaration = true } = {}) 
   for (const [surfaceKey, [w, h]] of Object.entries(TINY_TRIM)) {
     const width = Math.round((w + 10) * 150); const height = Math.round((h + 10) * 150);
     const contained = await sharp(await artwork(width, height)).flatten().png().toBuffer();
-    const lines = slugLines(map, surfaceKey, { fileName: `${surfaceKey}.tiff`, outputPpi: 150 });
-    const slugged = withSlug ? await applyPanelDataSlug(contained, { lines, heightPx: OUTPUT_SLUG_PIXELS }) : { bytes: contained, height, artworkHeight: height };
+    const rows = slugRows(map, surfaceKey, { fileName: `${surfaceKey}.tiff`, outputPpi: 150 });
+    const slugged = withSlug ? await applyPanelDataSlug(contained, { rows, heightPx: OUTPUT_SLUG_PIXELS }) : { bytes: contained, height, artworkHeight: height };
     const fileHeight = slugged.height;
     const raster = await sharp(slugged.bytes).removeAlpha().toColourspace("srgb").png({ compressionLevel: 6 }).withMetadata({ density: 1500 }).toBuffer();
     const tiff = await sharp(slugged.bytes).removeAlpha().toColourspace("srgb").tiff({ compression: "lzw", predictor: "horizontal", bitdepth: 8 }).withMetadata({ density: 1500 }).toBuffer();
@@ -168,7 +186,7 @@ async function buildOutputSet({ withSlug = true, withDeclaration = true } = {}) 
       : null;
     const meta = (format) => ({
       format, width, height: fileHeight, artworkHeightPixels: slugged.artworkHeight, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB",
-      ...(withDeclaration ? slugMetadata({ heightPx: OUTPUT_SLUG_PIXELS, inches: SLUG_INCHES, lines }) : {}),
+      ...(withDeclaration ? slugMetadata({ heightPx: OUTPUT_SLUG_PIXELS, inches: SLUG_INCHES, rows }) : {}),
     });
     const push = (format, bytes) => artifacts.push({ kind: "output", surfaceKey, storagePath: `designpro/t/run/outputs/${surfaceKey}.${format}`, contentHash: outputQc.sha256(bytes), byteSize: bytes.length, metadata: meta(format), bytes });
     push("png", raster); push("tiff", tiff);

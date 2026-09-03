@@ -1841,13 +1841,13 @@ function SurfaceQcPanel({
                     return (
                       <div className="mb-3 rounded border border-gray-200 bg-white p-2">
                         <div className="mb-1 text-[10px] font-semibold text-gray-700">
-                          Panel data slug on the QC panel (1:1 pixels) — read it against the fields below
+                          Panel data slug on the QC panel (top edge, 1:1 pixels) — read it against the fields below
                         </div>
                         <div className="overflow-x-auto overflow-y-hidden rounded border border-gray-300 bg-white" style={{ height: slugPixels }}>
                           <img
                             src={qcPanel.signedUrl}
                             alt={`${row.surfaceKey} panel data slug`}
-                            style={{ display: "block", maxWidth: "none", width: "auto", height: "auto", transform: `translateY(-${artworkHeight}px)` }}
+                            style={{ display: "block", maxWidth: "none", width: "auto", height: "auto" }}
                           />
                         </div>
                         <ol className="mt-2 space-y-0.5 font-mono text-[10px] text-gray-800">

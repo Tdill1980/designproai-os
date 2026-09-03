@@ -1524,9 +1524,9 @@ approval metadata.
 **Do not hide files behind only a final ZIP.**
 
 **Every production panel and every Call 11 QC panel carries the PANEL DATA SLUG
-on its bottom edge, and the PANEL MAP is its source (owner, 2026-09-02, from
-Brice's print sample).** The slug is the design-side twin of the RIP's info
-band: order, DID, generation, revision, customer, vehicle, surface, trim, print,
+on its top (leading) edge in the form of Brice's RIP band, and the PANEL MAP is its
+source (owner, 2026-09-02, from Brice's print sample).** The slug is the
+design-side twin of the RIP's info band, two blocks of `Key ....: Value` rows: order, DID, generation, revision, customer, vehicle, surface, trim, print,
 bleed, sq ft, hashes, density, build time, QC line — rendered by code from the
 `panel-map` artifact, 1.5" outside the bleed on production PNG/TIFF/EPS
 (verified by `output.verify`), 120 px on QC duplicates. Never on the canonical

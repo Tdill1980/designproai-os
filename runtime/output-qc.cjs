@@ -12,14 +12,15 @@ const FILE_DPI = 1500;
 const OUTPUT_SCALE = 0.1;
 const BLEED_INCHES_PER_EDGE = 5;
 // THE PANEL DATA SLUG (owner, 2026-09-02). Every production file carries a
-// 1.5" data strip on its BOTTOM edge, outside the bleed, rendered from the
+// 1.5" data strip on its TOP (leading) edge, outside the bleed, in the form of
+// Brice's RIP band, rendered from the
 // panel map (`panel-data-slug.cjs`). It is declared on the artifact and in the
 // EPS header and verified here as exact geometry: the artwork is exactly
-// trim + 10" at 150 px/in, the strip is exactly 225 px below it, and a file
+// trim + 10" at 150 px/in, the strip is exactly 225 px above it, and a file
 // that does not declare the strip is not a production file.
 const PANEL_DATA_SLUG = Object.freeze({
   contract: "designpro.panel-data-slug.v1",
-  edge: "bottom",
+  edge: "top",
   inches: 1.5,
   pixels: 1.5 * FULL_SCALE_PIXELS_PER_INCH,
 });
