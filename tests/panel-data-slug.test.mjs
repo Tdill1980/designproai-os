@@ -111,8 +111,11 @@ test("the strip is exactly the declared height on the TOP edge, in Brice's key/v
   // Brice's form: two blocks, every key present, dotted leaders, one weight.
   const svg = slugModule._test.slugSvg({ rows, widthPx: width, heightPx: QC_SLUG_PIXELS }).toString("utf8");
   for (const key of ["Order", "Design ID", "Generation", "Revision", "Customer", "Vehicle", "Surface", "File", "Trim", "Print", "Sq ft", "Sizing", "Resolution", "Color", "Master", "Built", "QC approved"]) {
-    assert.ok(svg.includes(`${key} .`), `row ${key} with a leader`);
+    assert.ok(svg.includes(`>${key}</text>`), `row ${key} present as its own key`);
   }
+  assert.ok(/text-anchor="end"[^>]*>\.{8,}<\/text>/.test(svg), "dotted leaders run to the block's colon column");
+  const stops = [...svg.matchAll(/<text x="(\d+)" y="\d+" font-family[^>]*>: /g)].map((m) => m[1]);
+  assert.equal(new Set(stops).size, 2, "the colons stand in exactly one column per block, as on Brice's band");
   assert.ok(!/font-weight/.test(svg), "one regular weight, nothing bold");
   assert.ok(!/TRIM STRIP|<rect[^>]*fill="#000000"/.test(svg), "no title, no rule, no cut marks");
   const meta = slugMetadata({ heightPx: QC_SLUG_PIXELS, inches: null, rows });

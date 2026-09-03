@@ -104,31 +104,75 @@ function rowsToLines(rows) {
 
 /**
  * Layout, matching Brice's band: two blocks side by side, each block a column
- * of keys, a run of leader dots to a shared stop, a colon, and the value.
- * One regular-weight sans face at one size, chosen so every row fits both the
- * row height and the block width -- on a narrow QC panel the type gets
- * smaller rather than a value getting cut.
+ * of keys, a run of leader dots, and the colons standing in ONE exact column
+ * per block (his widest key -- "Color Management" -- shows a space and the
+ * colon, no dots; the shorter keys fill the gap with dots). One regular-weight
+ * sans face at one size, the rows tight so the type fills the band as his
+ * does, sized so every row fits both the row height and the block width -- on
+ * a narrow QC panel the type gets smaller rather than a value getting cut.
+ *
+ * The renderer does not honour `textLength`, so the colon column is placed
+ * explicitly: the dot run is right-anchored at the block's stop, the key is
+ * painted over the start of that run on a white cover, and the colon and
+ * value start at the stop. Widths come from the Arial/Helvetica advance
+ * table (Liberation Sans, which the renderer resolves "Arial" to, is
+ * metric-compatible), so the cover ends where the key ends and the gap
+ * before the dots is one narrow space on every row, as on his band.
  */
+// Arial / Helvetica / Liberation Sans horizontal advances, per 1000 em.
+const ADVANCE = (() => {
+  const table = {};
+  const set = (chars, w) => { for (const c of chars) table[c] = w; };
+  set(" ", 278); set(".:,;!|", 278); set("ijl", 222); set("ftI/[]\\", 278); set("r", 333); set("-()", 333);
+  set("cksvxyzJ", 500); set("abdeghnopqu0123456789#$_", 556); set("mM", 833); set("w", 722); set("W", 944);
+  set("ABEFKPSTVXYZ", 667); set("F", 611); set("T", 611); set("L", 556); set("CDHNRU", 722); set("GOQ", 778);
+  set("<>=+~", 584); set("^", 469); set("@", 1015); set("%", 889); set("&", 667); set("*", 389); set("\"", 355); set("'", 191); set("?", 556);
+  return table;
+})();
+function advance(text, fontSize) {
+  let total = 0;
+  for (const c of String(text)) total += ADVANCE[c] ?? 600;
+  return total * fontSize / 1000;
+}
+
 function slugSvg({ rows, widthPx, heightPx }) {
   const blocks = cleanRows(rows);
   const width = Number(widthPx);
   const height = Number(heightPx);
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 64 || height < 24) fail("panel_data_slug_geometry_invalid", "slug geometry is too small");
-  const pad = Math.max(4, Math.round(height * 0.07));
+  const pad = Math.max(3, Math.round(height * 0.04));
   const rowCount = Math.max(blocks.left.length, blocks.right.length);
   const rowHeight = (height - pad * 2) / rowCount;
   const blockWidth = (width - pad * 3) / 2;
-  const keyChars = Math.max(...[...blocks.left, ...blocks.right].map(([key]) => key.length)) + 3; // key + " ..:"
-  const longest = Math.max(...[...blocks.left, ...blocks.right].map(([key, value]) => keyChars + 1 + value.length));
-  // 0.62em is the average advance of a sans-serif glyph at these sizes.
-  const widthFit = Math.floor(blockWidth / (longest * 0.62));
-  const fontSize = Math.max(6, Math.min(Math.floor(rowHeight * 0.72), widthFit));
-  const leaderStop = Math.round(keyChars * fontSize * 0.62);
-  const draw = (list, originX) => list.map(([key, value], index) => {
-    const y = Math.round(pad + rowHeight * index + rowHeight * 0.5 + fontSize * 0.35);
-    const dots = Math.max(1, Math.floor((leaderStop - key.length * fontSize * 0.62) / (fontSize * 0.5)));
-    return `<text x="${originX}" y="${y}" font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" fill="#000000" xml:space="preserve">${esc(key)} ${LEADER.repeat(dots)}: ${esc(value)}</text>`;
-  }).join("\n  ");
+  // Per block, at 1 em: the colon column sits one space past the widest key,
+  // and the block must hold its widest "key ...: value" row.
+  const stopEm = (list) => Math.max(...list.map(([key]) => advance(key, 1))) + 0.4;
+  const longestEm = Math.max(...[blocks.left, blocks.right].map((list) => {
+    const stop = stopEm(list);
+    return Math.max(...list.map(([, value]) => stop + advance(`: ${value}`, 1)));
+  }));
+  const widthFit = Math.floor(blockWidth / longestEm);
+  const fontSize = Math.max(6, Math.min(Math.floor(rowHeight * 0.86), widthFit));
+  const font = `font-family="Arial,Helvetica,sans-serif" font-size="${fontSize}" fill="#000000" xml:space="preserve"`;
+  const draw = (list, originX) => {
+    const stop = Math.round(originX + stopEm(list) * fontSize);
+    // The run ends one space short of the colon, so the widest key reads
+    // "key :" with no partial dot, exactly as "Color Management :" does.
+    const dotsEnd = stop - Math.round(advance(" ", fontSize));
+    const dots = Math.ceil((dotsEnd - originX) / advance(LEADER, fontSize));
+    const coverX = Math.max(0, originX - Math.round(fontSize * 1.5));
+    return list.map(([key, value], index) => {
+      const y = Math.round(pad + rowHeight * index + rowHeight * 0.5 + fontSize * 0.35);
+      const coverWidth = Math.round(originX - coverX + advance(key, fontSize) + fontSize * 0.2);
+      const coverTop = Math.round(y - fontSize * 0.9);
+      return [
+        `<text x="${dotsEnd}" y="${y}" text-anchor="end" ${font}>${LEADER.repeat(dots)}</text>`,
+        `<rect x="${coverX}" y="${coverTop}" width="${coverWidth}" height="${Math.round(fontSize * 1.2)}" fill="#ffffff"/>`,
+        `<text x="${originX}" y="${y}" ${font}>${esc(key)}</text>`,
+        `<text x="${stop}" y="${y}" ${font}>: ${esc(value)}</text>`,
+      ].join("\n  ");
+    }).join("\n  ");
+  };
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
   ${draw(blocks.left, pad)}
