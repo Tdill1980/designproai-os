@@ -44,10 +44,11 @@ height is not artwork + strip, or that does not declare the strip
 (`output_artifact_slug_missing`, `output_eps_slug_required`,
 `output_eps_slug_invalid`).
 
-Owner defaults until Brice overrides them: **top edge, 1.5"**. His band is
-about an inch and sized by its row count; ours has nine rows. Edge and height
-are constants in `runtime/panel-data-slug.cjs` and `runtime/output-qc.cjs`;
-changing them is a contract change and moves the verification with it.
+**Top edge, 1.5" -- confirmed by the owner 2026-09-03 ("1.5 yes").** His band
+is about an inch and sized by its row count; ours has nine rows and the
+owner-approved height. Edge and height are constants in
+`runtime/panel-data-slug.cjs` and `runtime/output-qc.cjs`; changing either
+is a contract change and moves the verification with it.
 
 ## The rows (rendered from the map, in his layout)
 
