@@ -1,3 +1,13 @@
+**EXPERIMENTAL EVIDENCE — SUPERSEDED — NOT AN ACTIVE PRODUCT CONTRACT**
+
+Superseded by `CLAUDE.md` RULE 0.34 (owner ruling, 2026-09-02/03). The v24
+product run `1a0e6b70` failed creative acceptance: the one-field / thirds
+composition is rejected and is not creative authority. The owner-approved
+direction is to restore the single-master six-surface A.T.L.A.S. flattened
+topology and solve holes at the original generative source. The measurements
+below are retained unchanged as evidence of what removing vehicle-anatomy
+conditioning did to holes; nothing below is a live contract.
+
 # A.T.L.A.S. ONE-FIELD CALL 1 — v24 (owner ruling 2026-09-02, unfrozen 20:30Z)
 
 Owner, after the live v23 generation `84a3eadf…` came back with wheel arches

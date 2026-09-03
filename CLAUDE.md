@@ -1,6 +1,89 @@
 # CLAUDE.md — designproai-os
 
+## ⛔ RULE 0.34 — v24 ONE-FIELD IS REJECTED; RESTORE THE FLATTENED TOPOLOGY AND SOLVE HOLES AT THE SOURCE (owner ruling, Trish 2026-09-02/03)
+
+**Supersedes RULE 0.33's "is the product" conclusion.** RULE 0.33 stays below
+as the record of what was measured. `docs/ATLAS-ONE-FIELD-CALL1.md` is
+**EXPERIMENTAL EVIDENCE — SUPERSEDED — NOT AN ACTIVE PRODUCT CONTRACT.**
+
+### The v24 product run, reclassified by the owner (GenerationID `1a0e6b70-272d-487c-b275-6b49206bc0ba`)
+
+| item | result |
+|---|---|
+| Design Prep + early GENIE persistence | PASS (prep `83a3f8eb…` READY 92 ms, consumed `prepHit true`) |
+| GenerationID / manifest continuity | PASS (GENIE hash `766258a0…` identical on prep and revision) |
+| Call-1 latency | PASS (canonical at ≈56 s, six panels ≈58 s) |
+| Call-1 creative acceptance | **FAIL** — three horizontal banners, not the flattened vehicle |
+| Call-1 acceptance gates | **DEFECTIVE** — accepted grey frame strips, rendered "UPPER THIRD / MIDDLE THIRD" labels, no composition on Hood / Roof / Front / Rear |
+| Proof handoff | **FAIL** — `manifest.contract` was overwritten by the territories contract, zero proofs. A separate wiring defect: fixed on the branch as `territoriesContract` (`runtime/atlas-field-territories.cjs`, `tests/atlas-one-field-call1.test.mjs`), **not deployed** |
+| DCA | **FAIL** |
+
+### The architectural direction — owner-approved
+
+> **Restore the single-master six-surface A.T.L.A.S. flattened topology —
+> PASSENGER | REAR / ROOF / HOOD / FRONT | DRIVER — and require the original
+> Call 1 draw to fill every production territory with intentional,
+> anatomy-free, full-bleed artwork.**
+
+That direction is decided. What remains owner-gated is the exact code diff,
+the prompt diff, the acceptance gates and the provider call. Those are
+specified in `docs/ATLAS-SECOND-OPINION-BRIEF-2026-09-03.md` §4 (v23 request
+restoration, the RULE 0.32 sentence, deletion of the edge's one-field branch,
+the frame-band and structured-inspector gates); none is applied. There is no
+conditioning proposal yet for anatomy-free full-bleed artwork inside the
+six-surface request.
+
+v24 is **diagnostic evidence** that removing vehicle-anatomy conditioning
+eliminated holes. Its one-field / thirds composition is **rejected** and is not
+creative authority. Holes are solved at the original generative source. Do not
+combine v24's three-banner design with the topology, and do not fill defects
+afterwards.
+
+Owner, verbatim: *"'Fill the holes' means the original Call-1 authoring must
+generate real design artwork through those locations. Do not clone adjacent
+pixels, inpaint, add a black-pixel repair, use vehicle masks or create
+replacement artwork after generation."* Standing prohibitions until the
+conditioning root cause is identified by controlled experiment: no wheel-well
+negative prompting, no new repair heuristic, no relaxed threshold, no
+DesignPanelAI persona edits, no re-roll as the fix. One image call. No second
+producer of design anywhere downstream.
+
+### What the evidence proves, and does not
+
+**The only currently verified six-panel anatomy-free evidence is Field
+Recovery v2 Draw 1 (`33659500846`) and live v24 GenerationID `1a0e6b70…`.
+Both used the rejected topology-hidden one-field/thirds method. No run has yet
+combined correct A.T.L.A.S. flattened topology with six anatomy-free panels.**
+
+The live v24 Driver panel from `1a0e6b70` proves: Driver artwork has no wheel
+cutout or vehicle anatomy; the v24 master produced opaque artwork in its coded
+territory; the proposed 1.5-inch data band can render above that panel. It
+does not prove: the required flattened six-surface topology; correct
+intentional compositions for Hood, Roof, Front and Rear; successful 3D proofs
+or end-to-end DCA; a deployable data band (branch-only, filename/hash
+provenance defect — see the status board).
+
+Defects are attributed to the exact run that proved them, never to a version
+family:
+
+| GenerationID | request | proven defect |
+|---|---|---|
+| `84a3eadf` (2026-09-02) | v23 | wheel arches and body lines painted as artwork, inverted rear, mirrored passenger |
+| `5d727ea9` (2026-09-01) | v23 | opaque voids on driver and passenger; 7.55% of the driver flank one uniform non-artwork field after fill |
+| `134fc3ca` (2026-09-01) | v23 | voids on driver, front, passenger |
+| `1a0e6b70` (2026-09-02) | v24 | three banners, grey frame strips, rendered layout labels, uncomposed Hood/Roof/Front/Rear; proof handoff failed on the manifest-contract collision |
+| `470cb0e9` (2026-09-01) | v17 | photoreal vehicle-mockup montage passed every structural gate |
+
+A run with no proven defect on this table is not thereby evidence of a clean
+result: only retained master and six-panel bytes plus owner visual confirmation
+make a result canonical evidence.
+
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
+
+> **SUPERSEDED by RULE 0.34 above.** The v24 product run `1a0e6b70` failed
+> creative acceptance; the one-field / thirds composition is rejected and is
+> not creative authority. Kept as measured history. `docs/ATLAS-ONE-FIELD-CALL1.md`
+> is EXPERIMENTAL EVIDENCE — SUPERSEDED — NOT AN ACTIVE PRODUCT CONTRACT.
 
 **Supersedes the authoring half of v19, v23, RULE 0.30's conditioning clause,
 RULE 0.28 §2 and every earlier "teaching proof / neutral guide / topology
@@ -313,7 +396,7 @@ Enforced twice (prompt version `…20260901.v18-atlas-output-class`):
    `tests/atlas-output-class-gate.test.mjs` and
    `tests/atlas-repair-before-reroll.test.mjs`.
 
-## 📋 DCA PHASE 1 — CURRENT STATUS BOARD (2026-08-31, release `5d3ad9b`)
+## 📋 DCA PHASE 1 — CURRENT STATUS BOARD (2026-09-03, release `f2deb79c` = v24, PR #299)
 
 **This is a status board, not a rule.** It records what is true right now so a
 session does not re-derive it, and so nothing gets reported as proven that a
@@ -329,9 +412,23 @@ live generation has not actually proven. Every rule below still governs.
 
 ### Release / deployment state
 
-- Droplet (web, gateway, runtime) is on `37c4807`, deploy run `33433458730`,
-  `Deployed web, gateway, and two exact-SHA DesignPro runtime replicas`,
-  2026-08-31 20:02:34Z. `ops/deploy.sh` switches the `public` pointer after
+- **Both runtime replicas reported release `f2deb79c` through `/health`;
+  `design-panel-ai-generate` edge version 24 was deployed** (owner-supplied
+  readback, 2026-09-03). The edge function is NOT bound to that Git SHA
+  without a deployed-byte readback receipt. The product Call-1 path calls the
+  edge's one-field branch (rejected, RULE 0.34); the earlier single-call
+  six-surface A.T.L.A.S. topology branch of the same function is still
+  present and, for its fixture, byte-identical to the v23 assembly.
+- **The working branch `claude/dca-phase-1-execution-47019t` is DIVERGED from
+  `main`: 5 ahead, 4 behind** (measured 2026-09-03 immediately before this
+  commit). Behind by `f2deb79c` (#299 v24), `24a8b446` (#298), `25e4342a`
+  (#297), `6e09bfd9` (#296). Ahead by `4dabdb69` (panel map + data band +
+  manifest identity fix), `f1719844`, `8596a72e`, `429b53c2` (band
+  corrections), `b270a107` (second-opinion brief). Nothing on the branch is
+  deployed and no branch migration is applied; it must be merged with `main`
+  before any deploy.
+- Historical: the droplet was on `37c4807` (deploy run `33433458730`,
+  2026-08-31 20:02:34Z). `ops/deploy.sh` switches the `public` pointer after
   acceptance and exits 12 if it does not land, and Caddy roots
   `designproai.com` at `/opt/designproai-os/public/web/dist`, so that pointer
   IS the public path. "Caddy, DNS, and public traffic were not changed" in the
@@ -341,15 +438,13 @@ live generation has not actually proven. Every rule below still governs.
   `persona-photographer-render` was found three days stale on the live project,
   missing the pickup-bed clause from PR #278; redeployed as v17 and verified
   byte-identical. **Check both halves before calling a SHA deployed.**
-- `5d3ad9b` (the GENIE ambiguity retry) is merged and deploying at the time of
-  writing. It is NOT yet deployment-verified.
 
 ### Contract and authority status
 
 | # | Item | Status | Evidence |
 |---|---|---|---|
 | 1 | Call 1 A.T.L.A.S. is the SOLE creative authority | **DEPLOYED-VERIFIED** | deployed `design-panel-ai-generate` index.ts hashes `a5b3c1e850d7eca4`, byte-identical to the branch; `tests/atlas-sole-design-authority.test.mjs` |
-| 2 | Mandatory Flamingo FLAT teaching example pinned in the live Call-1 edge path | **DEPLOYED-VERIFIED** | SHA-256 `20085eb547251d46c8113014108b088e35a4d41e2ce77b9a152b2786e79c37fa` present in the deployed body; prompt version `atlas-artboard-designiq.20260831.v15-flat-example-only`. The installed Flamingo proof is NOT attached (canary `33389124918`) |
+| 2 | Call-1 teaching image | **SUPERSEDED (2026-09-03)** | The deployed v24 product path sends NO teaching image (one text part plus verified customer references). The earlier single-call six-surface A.T.L.A.S. topology branch of the same edge function still pins the labeled proof `684534d2…` (v23). The v15 flat example `20085eb5…` and the installed-proof exclusion (canary `33389124918`) are history |
 | 3 | DesignPanelAI Commercial/ReStyle persona + edge stack preserved | **DEPLOYED-VERIFIED** | all 11 shared deps of `design-panel-ai-generate` match the branch; RULE 0.29 pins verified live — `persona-photographer-prompt.ts` `11cb76524211e42a`, `view-angles-os.ts` `8890be50c124a2c5`, `studio-os.ts` `7b02814bb1e9e867` |
 | 4 | Raw Gemini can STILL return silhouette / black-surround invalid A.T.L.A.S. output | **OPEN — by design** | unchanged model behaviour. `normalizeAtlasMaster` only resizes and masks gutters, so it cannot introduce in-zone black: the contract is first violated at the raw Gemini output. This is now CAUGHT, not prevented |
 | 5 | `edgeHoleRatio` blocking acceptance gate | **CODE-LOCKED** | `runtime/atlas-master-qc.cjs`, `MAX_ZONE_EDGE_HOLE_RATIO = 0.35`; commit `cf36b0b`, shipped in `37c4807`. Closes the hole where `edgeOpaqueRatio` measured ALPHA and a silhouette on black scored 1.00000. Fixtures in `tests/atlas-master-qc.test.mjs` |
@@ -361,36 +456,49 @@ live generation has not actually proven. Every rule below still governs.
 | 11 | Exactly six canonical surfaces | **CODE-LOCKED** | `SURFACE_KEYS = ["driver","passenger","hood","roof","front","rear"]`, frozen, `runtime/flat-first-atlas.cjs:98`. Front is the bumper/fascia surface |
 | 12 | No downstream AI panel producer; Call 9 is verification/promotion only | **CODE-LOCKED** | RULE 0.25; Call 9 creates no artwork and changes no bytes |
 | 13 | Customer 2D Proof and internal 2D Production Proof are SIBLING BRANCHES and may not gate panel publication | **CODE-LOCKED** | `docs/ATLAS_ONE_ARTIFACT_GRAPH.md` §7B (PR #278). Call 1 streams panels per cut and builds each proof authority the instant its panel exists; `proof.build` sits after the panel and logo branches. No barrier to remove |
-| 14 | Server-owned orchestration required; browser becomes observer-only | **OPEN** | standing requirement, not fully proven |
+| 14 | Server-owned orchestration required; browser becomes observer-only | **DEPLOYED-VERIFIED for the A.T.L.A.S. path** | GenerationID `84a3eadf` (2026-09-02): prep consumed, one Call 1, six panels, seven views, Calls 8–11 and `pack.activate` in 3 m 49 s with the browser observing only. Creative result of that run: FAIL (RULE 0.34) |
 | 15 | False-serialization audit | **OPEN** | remains open wherever not completed |
-| 16 | GENIE `genie_grounding_ambiguous` corrective re-ask | **CODE-LOCKED, DEPLOY IN FLIGHT** | `fd4a35e`, merged as `5d3ad9b` (PR #280). Both new failure tests verified to fail against the pre-fix resolver |
+| 16 | GENIE `genie_grounding_ambiguous` corrective re-ask | **DEPLOYED (in the release line); retry path not itself exercised live** | `fd4a35e`, merged as `5d3ad9b` (PR #280), carried by every later release. The 2026-09-02 runs resolved without ambiguity, so the re-ask branch has no live receipt |
 | 17 | Fresh DCA must verify the PERSISTED vehicle payload before any GENIE/A.T.L.A.S. work | **OPEN — required next** | the 2026-08-31 20:09:20Z failure stored `model: "F150"`; do not assume user error. Read `request_input->'vehicle'` and compare to what was typed BEFORE proceeding |
 | 18 | Input contract drops cab/bed configuration | **OPEN — backlog, NOT this release** | `designpro.calls-1-7-input.v3` carries only `make`/`type`/`year`/`model`. Configuration-critical for F-series: the catalog's own 2008-2010 rows put Crew Cab Long Box at 251″ and Crew Cab Short Box at 234″. Do NOT widen the contract unless a fresh DCA proves it blocks progress |
 | 19 | 2022 F-series geometry is PROVISIONAL / grounded estimation | **DEPLOYED-VERIFIED (data)** | the whole Ford catalog has 5 rows covering 2022 and all five are Transit vans. Every F-150 row ends 2020, every F-250 row ends 2016. Report such runs as estimated/provisional, never catalog-authoritative |
-| 20 | Creative design-quality tuning | **DEFERRED** | deferred until DCA Phase 1 is complete. Do not start it from a documentation pass |
+| 20 | Creative design-quality tuning | **DEFERRED** | Call-1 conditioning is now the blocking question (RULE 0.34), and any change to it is owner-gated per RULE 0.32. Do not start it from a documentation pass |
+| 21 | GENIE prep lifecycle (dimensions before generation) | **DEPLOYED-VERIFIED** | `docs/GENIE-PREP-LIVE-VALIDATION-2026-09-02.md`: prep READY in 78–92 ms, zero provider calls, consumed by Generate on `84a3eadf` and `1a0e6b70` |
+| 22 | GENIE manifest hash v2 | **DEPLOYED-VERIFIED** | `766258a0…` identical on prep and revision for both 2026-09-02 runs; `docs/GENIE-MANIFEST-HASH-CUTOVER.md` |
+| 23 | Call-1 creative acceptance | **OPEN — FAILED on every 2026-09-01/02 run** | per-run defects in RULE 0.34's table. No run has yet combined correct A.T.L.A.S. flattened topology with six anatomy-free panels |
+| 24 | Acceptance gates for the v24 class (frame band, rendered instruction text, per-surface composition) | **OPEN — specified, owner decision** | `docs/ATLAS-SECOND-OPINION-BRIEF-2026-09-03.md` §4; the frame-band measurement convicts all six `1a0e6b70` zones and none on `84a3eadf` / `5d727ea9` |
+| 25 | Manifest identity fix (`territoriesContract`) | **CODE-LOCKED, NOT DEPLOYED** | `4dabdb69`; `tests/atlas-one-field-call1.test.mjs` locks the proof-conditioning identity check |
+| 26 | Panel map `designpro.atlas-panel-map.v1` | **CODE-LOCKED, NOT DEPLOYED** | `runtime/panel-map.cjs`; emitted at `panels.build` and `output.build`; artifact kind `panel-map` |
+| 27 | Panel data band `designpro.panel-data-slug.v1` | **BLOCKED — NOT DEPLOYABLE** | Provenance defect at `runtime/designpro-standalone-claimant.cjs:1774-1777` and `:1789-1800`: the band is rendered ONCE with `fileName: "<surface>.tiff"` and a `File` row hash equal to the panel map entry's `file.sha256` — the Call-9-promoted SOURCE panel hash — and that one raster is embedded into PNG, TIFF and EPS. So PNG and EPS carry a false filename and the printed hash is a source-panel hash, not the named output file's hash. Must be resolved before deployment. Form (Brice's `Key ....: Value` two-block band), top edge and 1.5" are owner-confirmed 2026-09-03. Gate keys `panelDataSlugVerified` / `productionSlugVerified` via migration `20260903000000`, NOT applied. Stale "bottom edge" comment at `:1772` |
+| 28 | RevisionStudioIQ usable on this release | **OPEN** | not opened on either 2026-09-02 run. PanelPro board: opened through the live app and rendered master + six panels on `1a0e6b70`; master, six panels, six qc-panels, flat proof and proofs opened through the live UI's signed links on `84a3eadf` |
+| 29 | RULE 0.27 acceptance — both UIs populated from the same artifact ids | **OPEN** | artifact records exist; usable-UI proof exists for PanelPro only (row 28) |
 
 ### CURRENT DCA CHECKLIST
 
 **Leave every box unchecked until a FRESH live generation proves it.** Nothing
 below is checked, because no DCA has completed on this release.
 
-- [ ] Fresh DCA submitted on the deployed release; build SHA confirmed in the footer
-- [ ] Persisted `request_input.vehicle` matches exactly what the owner typed
-- [ ] GENIE resolves without `genie_grounding_ambiguous`
-- [ ] Geometry source reported honestly (catalog-authoritative vs grounded/provisional), with the resolved `sub_type` named
-- [ ] Call 1 executes exactly once and returns a master
-- [ ] Deterministic master checks report per-surface measurements
-- [ ] Repair ran / did not run — recorded either way
-- [ ] `preRepairMasterHash` recorded when repair changed the source, null when it did not
-- [ ] Accepted canonical master hash + storage path recorded
-- [ ] Six Call-1 panel hashes recorded
-- [ ] All six `sourceMasterHash` values equal the accepted canonical master hash
-- [ ] Six surface identities correct: Driver, Passenger, Hood, Roof, Front, Rear
-- [ ] A.T.L.A.S. master published to PanelProStudio and RevisionStudio, showing the ACCEPTED sheet
-- [ ] Progressive panel publication timing recorded
-- [ ] Driver proof first, then the remaining six concurrently; fan-out timing recorded
-- [ ] Owner visual inspection at PanelProStudio: master → six clean panels → matching 3D proofs
+Annotation key: **[84a3eadf]** proven by the v23 run of 2026-09-02 · **[1a0e6b70]** proven by the v24 run of 2026-09-02 · a box with no annotation has no live proof on this release. "Proven" means the artifact was opened through the live interface or its bytes were read back, never that a database record exists.
+
+- [ ] Fresh DCA submitted on the deployed release; build SHA confirmed in the footer — [84a3eadf] [1a0e6b70] submitted through os.designproai.com; both FAILED creative acceptance, so no box below counts as a passed DCA
+- [ ] Persisted `request_input.vehicle` matches exactly what the owner typed — not verified on either run
+- [ ] GENIE resolves without `genie_grounding_ambiguous` — [84a3eadf] [1a0e6b70] (prep consumed, `prepHit true`)
+- [ ] Geometry source reported honestly (catalog-authoritative vs grounded/provisional), with the resolved `sub_type` named — 2022 F250 is grounded estimation on both runs (row 19); `sub_type` naming not verified
+- [ ] Call 1 executes exactly once and returns a master — [84a3eadf] [1a0e6b70]
+- [ ] Deterministic master checks report per-surface measurements — [84a3eadf] [1a0e6b70]
+- [ ] Repair ran / did not run — recorded either way — [84a3eadf] [1a0e6b70] recorded; on `5d727ea9` the fill closed a void into near-black, which RULE 0.32 rules is not repair
+- [ ] `preRepairMasterHash` recorded when repair changed the source, null when it did not — [84a3eadf] [1a0e6b70]
+- [ ] Accepted canonical master hash + storage path recorded — [84a3eadf] `1564c66d…` · [1a0e6b70] `e391c2cc…`
+- [ ] Six Call-1 panel hashes recorded — [84a3eadf] [1a0e6b70]
+- [ ] All six `sourceMasterHash` values equal the accepted canonical master hash — [84a3eadf] [1a0e6b70]
+- [ ] Six surface identities correct: Driver, Passenger, Hood, Roof, Front, Rear — FAILED: [1a0e6b70] had no six-surface topology; [84a3eadf] mirrored passenger and inverted rear
+- [ ] A.T.L.A.S. master published to PanelProStudio and RevisionStudio, showing the ACCEPTED sheet — PanelPro board rendered it [84a3eadf] [1a0e6b70]; RevisionStudioIQ not opened on either run (row 28)
+- [ ] Progressive panel publication timing recorded — [1a0e6b70] canonical ≈56 s, six panels ≈58 s
+- [ ] Driver proof first, then the remaining six concurrently; fan-out timing recorded — [84a3eadf] seven views; [1a0e6b70] zero proofs (manifest-contract collision)
+- [ ] Owner visual inspection at PanelProStudio: master → six clean panels → matching 3D proofs — FAILED on both runs (RULE 0.34)
 - [ ] **STOP HERE.** No Full QC and no creative changes until the owner approves those artifacts
+
+**No run has passed creative acceptance on this release.**
 
 **If Call 1 refuses the master:** report the exact structural rejection and the
 per-surface measurements. Do not work around it and do not change conditioning.
@@ -2053,3 +2161,4 @@ should ship, and then do not dispatch anything until that gate has finished.
 | Calls 1–7 port scope and named-surface authority | `docs/CALLS-1-7-PORT-SCOPE.md` |
 | What ships first and what is unproven | `docs/GO-LIVE-READINESS.md` |
 | Reference checkout | `restylepro-os` alongside this repo (clone it if absent) |
+| Current state for a newcomer or reviewer (2026-09-03) | `docs/ATLAS-SECOND-OPINION-BRIEF-2026-09-03.md` |
