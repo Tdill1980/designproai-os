@@ -126,6 +126,63 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            wording is returned to v3 and Call-1 six-pane conditioning work
 #            stops here. The next move is architectural (test 11).
 #
+#   test 12 — SIX-REGION TOPOLOGY TEXT (owner-approved candidate, ONE draw).
+#            Not an A/B. RULE 0.34 rejected the v24 one-field/thirds
+#            composition and approved the direction: restore the single-master
+#            six-surface A.T.L.A.S. flattened topology — PASSENGER | REAR /
+#            ROOF / HOOD / FRONT | DRIVER — and require the ORIGINAL Call-1
+#            draw to fill every production territory with intentional,
+#            anatomy-free, full-bleed artwork.
+#            The request is the v2 machinery with ONE change: the tail. Same
+#            seven reversible creative swaps, same reverse proof, same guards,
+#            same request builder that refuses a structural image. ONE text
+#            part, ZERO images, `gemini-3-pro-image`, 1:1, 4K, no temperature.
+#            The territories are the PRODUCTION six-region `buildAtlasManifest`
+#            zones, not `field-thirds-v2`.
+#            HONEST CLASSIFICATION: this is a topology-text experiment, the
+#            same family as test 3, which was null. The untested cell is zero
+#            images + zero surface names + the edge-to-edge extent sentence +
+#            a positional description of the arrangement. It is a hypothesis,
+#            not a prediction, and one draw is one draw.
+#            The exact bytes are OWNER-APPROVED and PINNED. Before the call the
+#            runner reproduces and asserts every locked value — prompt sha256
+#            2c460057a646f12722bf0f50019987d1506b2215a72f1ae26a642901ca4ccc24,
+#            3,983 chars, 4,210 request bytes, 1 text part, 0 image parts, the
+#            exact model and generationConfig, no temperature — and REFUSES the
+#            draw on any drift. A global fence around `globalThis.fetch` caps
+#            the process at ONE image request; there is no retry and no reroll
+#            on any outcome, including HTTP failure or a text-only return.
+#            It stops after the raw master, the deterministic canonicalization
+#            and the six crops: no repair, no cut-out fill, no gate retry, no
+#            output-class inspection, no per-file inspection, no proofs, no
+#            second draw. It mints no GenerationID/DesignID/RevisionID and
+#            uploads nothing.
+#            ⛔ NO runtime.env, NO DATABASE. Tests 9-11 read GENIE live, which
+#            needs the SERVICE-ROLE key: designpro_vehicle_specs_universal and
+#            designpro_vehicle_dimensions are both REVOKE ALL ... FROM PUBLIC,
+#            anon, authenticated with GRANT ALL ... TO service_role, so no
+#            lesser credential can read them. The owner forbids that key here,
+#            so test 12 reads no database at all: the GENIE PHYSICAL DIMENSIONS
+#            are pinned from run 33659500846 (territories.json
+#            $.zones[*].trimWidthIn/.trimHeightIn, sha256 408250fc...) and the
+#            six-surface topology is rebuilt by the production
+#            buildAtlasManifest, cross-checked against $.legacyZones of that
+#            same run.
+#            ⚠️ PROVENANCE, STATED EXACTLY. Run 33659500846 RECORDED those
+#            tall-column legacy zones and CUT NOTHING FROM THEM. Its panels were
+#            cut by field-thirds-v2 ($.zones): driver (362,0,3371,1365),
+#            passenger (362,1365,3371,1365) and four smaller areas from y=2730,
+#            all at rotation 0 -- panels.json confirms driver at 3371x1365 px.
+#            Test 12 uses the tall-column six-surface topology DELIBERATELY,
+#            because RULE 0.34 makes it the target architecture. It is the
+#            target, never that run's extraction receipt.
+#            Environment allowlist: capture_only receives NO variables and runs
+#            with --network none; the draw receives exactly one variable,
+#            GEMINI_API_KEY, in a 0600 file that dies with the work directory.
+#            The value never reaches a command line or the log. An allowlist
+#            fence inside the script lets the process reach exactly ONE URL and
+#            refuses every other request.
+#
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
 # proof and the edge function's hash pin on it are untouched — the variant is
@@ -154,6 +211,7 @@ on:
           - 9-field-recovery
           - 10-anchor-restoration
           - 11-field-recovery-v2
+          - 12-six-region
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -161,7 +219,7 @@ on:
         type: string
         default: ""
       draws:
-        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else."
+        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9, 10, 11 and 12 (field recovery, anchor restoration, field recovery v2, six-region) accept ONLY 1 — owner ruling — and refuse anything else."
         required: true
         type: string
         default: "1"
@@ -242,7 +300,12 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          npm i --no-audit --no-fund --no-save esbuild
+          # Pinned to the version this repository already locks
+          # (app/package-lock.json -> node_modules/esbuild 0.21.5). An unpinned
+          # install would let a fresh esbuild bundle the Call-1 assembly the
+          # locked toolchain has never produced.
+          npm i --no-audit --no-fund --no-save esbuild@0.21.5
+          "$PWD/node_modules/.bin/esbuild" --version | grep -qx '0.21.5'
           ESBUILD_BIN="$PWD/node_modules/.bin/esbuild" node scripts/build-atlas-call1-prompt.mjs atlas-call1-build
           test -s atlas-call1-build/atlas-call1-prompt.mjs
 
@@ -381,6 +444,10 @@ jobs:
             9-field-recovery)        runner=scripts/atlas-field-recovery.mjs ;;
             10-anchor-restoration)   runner=scripts/atlas-anchor-recovery.mjs ;;
             11-field-recovery-v2)    runner=scripts/atlas-field-recovery-v2.mjs ;;
+            # The six-region candidate carries its own runner inside the pinned
+            # contract module, so the approved bytes and the code that sends
+            # them cannot drift apart. One image request, fenced; no retries.
+            12-six-region)           runner=scripts/atlas-field-contract-v2.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs
@@ -390,9 +457,38 @@ jobs:
           esac
           echo "test: $AB_TEST -> $runner"
 
+          # ⛔ ENVIRONMENT ALLOWLIST FOR TEST 12 (owner ruling 2026-09-03).
+          # runtime.env carries the service-role key, the database password, the
+          # storage and deploy credentials and every provider secret. Test 12
+          # never receives it: capture-only gets NO variables at all, and the
+          # draw gets exactly ONE, GEMINI_API_KEY, in a 0600 file that dies with
+          # $work. The value never appears on a command line, in an environment
+          # listing, or in the log. Tests 1-11 are unchanged.
+          docker_args=(--env-file "$env_file")
+          if [ "$AB_TEST" = "12-six-region" ]; then
+            if [ "$AB_CAPTURE_ONLY" = "true" ]; then
+              # No credential and nothing to fetch, so take the network away
+              # entirely: the container cannot reach anything at all.
+              docker_args=(--network none)
+              echo "env policy: test 12 capture-only -> NO variables are passed, and --network none"
+            else
+              key_env="$work/gemini.env"
+              : > "$key_env"
+              chmod 600 "$key_env"
+              raw=$(grep -m1 -E '^(GEMINI_API_KEY|GOOGLE_AI_API_KEY|GOOGLE_AI_API_KEY_POOL)=' "$env_file" \
+                | cut -d= -f2- | cut -d, -f1 | tr -d '\r' \
+                | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")
+              if [ -z "$raw" ]; then echo "no Gemini key found in runtime.env"; exit 45; fi
+              printf 'GEMINI_API_KEY=%s\n' "$raw" > "$key_env"
+              unset raw
+              docker_args=(--env-file "$key_env")
+              echo "env policy: test 12 draw -> exactly one variable is passed: GEMINI_API_KEY"
+            fi
+          fi
+
           set +e
           docker run --rm \
-            --env-file "$env_file" \
+            "${docker_args[@]+"${docker_args[@]}"}" \
             -v "$work:/work" -w /work \
             --entrypoint node "$image" \
             "$runner" \
