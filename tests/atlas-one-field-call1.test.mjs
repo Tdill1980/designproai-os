@@ -112,21 +112,68 @@ test("the runtime request names the field contract and carries no structural ima
   assert.ok(body.panels.every((panel) => panel.normalized.orientation === "upright"));
 });
 
-test("the DEPLOYED edge assembly produces Draw 1's field prompt byte for byte", async () => {
+/**
+ * THE CREATIVE HALF IS STILL DRAW 1'S, TO THE BYTE. THE TAIL IS NOT, ON PURPOSE.
+ *
+ * This test used to assert the WHOLE prompt equalled Draw 1's. It cannot any
+ * more, and pretending otherwise would be the dishonest way to keep a green
+ * lock: on product run 1a0e6b70 (2026-09-02 21:27, a genuine v24 request with
+ * zero image inputs) the model returned a master with UPPER THIRD lettered
+ * into the artwork. Draw 1's tail named the pieces of the canvas — "• THE
+ * UPPER THIRD —", "three equal horizontal thirds", "the third's top and bottom
+ * edges" — and a text-capable image model draws the structural nouns it is
+ * given. Draw 1 got away with it once; the product run did not.
+ *
+ * So the pin is split. Everything that carries the CREATIVE quality — the
+ * designer identity, the brief, the concept, the finish, and the first two
+ * lines of the output contract — is byte-identical to the run that produced
+ * the only clean flanks this product has made. The tail that names structure
+ * is pinned separately, to its own hash, and must name none.
+ */
+const DRAW1_SHARED_PREFIX_BYTES = 3029;
+const FIELD_TAIL_SHA256 = "a14c3d2e62ccfa1e2bf4985ca72355a310e8d625bc8de38443acde563b77f328";
+const TAIL_MARK = "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.";
+
+test("the DEPLOYED edge assembly still carries Draw 1's creative half byte for byte", async () => {
   const mod = await slice();
   const { field } = fixtureManifests();
   const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {});
   const { prompt, references } = mod.buildAtlasCall1Prompt(body);
   assert.equal(references.length, 0);
-  assert.equal(prompt.length, DRAW1_PROMPT.length);
-  assert.equal(sha(prompt), sha(DRAW1_PROMPT));
-  assert.equal(prompt, DRAW1_PROMPT);
+  assert.equal(
+    prompt.slice(0, DRAW1_SHARED_PREFIX_BYTES),
+    DRAW1_PROMPT.slice(0, DRAW1_SHARED_PREFIX_BYTES),
+    "the creative half diverged from the run that drew the only clean flanks",
+  );
   // The seven creative swaps landed inside the assembly — every "to" phrase is
   // present and every "from" phrase is gone.
   for (const [from, to] of CREATIVE_FIELD_SWAPS) {
     assert.ok(prompt.includes(to), `field wording present: ${to.slice(0, 40)}…`);
     assert.ok(!prompt.includes(from), `six-container wording gone: ${from.slice(0, 40)}…`);
   }
+});
+
+test("the field tail is pinned to its own hash and names no piece of the canvas", async () => {
+  const mod = await slice();
+  const { field } = fixtureManifests();
+  const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {});
+  const { prompt } = mod.buildAtlasCall1Prompt(body);
+  const tail = prompt.slice(prompt.indexOf(TAIL_MARK));
+  assert.equal(sha(tail), FIELD_TAIL_SHA256, "the field tail changed without its pin being updated");
+  // The exact strings the model painted, and the wording that returned as
+  // divider bands and frames. None of them may come back.
+  for (const banned of [
+    "THE UPPER THIRD", "THE MIDDLE THIRD", "THE LOWER THIRD",
+    "equal horizontal thirds", "top and bottom edges", "transitions are invisible",
+  ]) {
+    assert.ok(!tail.includes(banned), `the tail must not carry "${banned}"`);
+  }
+  assert.ok(!/third/i.test(tail), "the tail must not name a third, in any case");
+  assert.ok(!/[\u2022\u25aa\u25cf\u2023\u2043]/.test(tail), "the tail must carry no bullet glyph");
+  // Position replaces the compartment names; the sweep directions survive.
+  assert.match(tail, /across the top, the primary hero passage[^\n]*left to right\./);
+  assert.match(tail, /through the centre, a second hero passage[^\n]*right to left\./);
+  assert.match(tail, /across the bottom, the supporting register/);
 });
 
 test("the whole model-facing field prompt carries no object-schema, topology or negative vocabulary", async () => {

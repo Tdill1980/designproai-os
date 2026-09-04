@@ -28,7 +28,7 @@
  */
 import { createHash } from "node:crypto";
 import { splitDeployedPrompt } from "./atlas-print-media-contract.mjs";
-import { replaceExactlyOnce, sweepPhrase, GENERATION_CONFIG, FORBIDDEN_IN_FIELD_TAIL, assertFieldTailClean, FIELD_TAIL_MAX_CHARS } from "./atlas-field-contract.mjs";
+import { replaceExactlyOnce, sweepPhrase, GENERATION_CONFIG, FORBIDDEN_IN_FIELD_TAIL, assertFieldTailClean, assertFieldTailCleanV2, FIELD_TAIL_MAX_CHARS } from "./atlas-field-contract.mjs";
 import { NOSE_EDGE } from "./atlas-field-territories.mjs";
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
@@ -101,9 +101,14 @@ export function reverseCreativeFieldSwaps(swapped) {
 }
 
 /**
- * The v2 tail: one continuous composition in three equal horizontal thirds —
- * the same thirds the code-owned territories occupy. No topology words, no
- * negatives. Vehicle context is lifted from the deployed tail, never restated.
+ * The v2 tail: one continuous composition stated three times over, in equal
+ * measure, top to bottom — the same measures the code-owned territories occupy.
+ * No topology words, no negatives, and no structural noun the model could paint:
+ * the caps compartment names this tail used to carry came back RENDERED as
+ * lettering ("UPPER THIRD") on the 2026-09-02 21:27 product run, and the words
+ * for a division of the canvas came back as divider bands and frames. GENIE
+ * cuts at 1365px; the model is never told that boundary exists.
+ * Vehicle context is lifted from the deployed tail, never restated.
  */
 export function fieldContractV2(deployedTail, { noseEdge = NOSE_EDGE } = {}) {
   const vehicle = /for this exact (.+?) \((.+?)\)/.exec(deployedTail);
@@ -113,14 +118,14 @@ export function fieldContractV2(deployedTail, { noseEdge = NOSE_EDGE } = {}) {
     "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.",
     `Paint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact ${vehicleName} (${bodyClass}) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.`,
     "",
-    "Compose it in three equal horizontal thirds that read as one picture:",
-    `• THE UPPER THIRD — the primary hero passage: a complete, wide statement of the design, the company name whole and legible inside it, clear of the third's top and bottom edges. ${sweepPhrase(noseEdge.driver)}`,
-    `• THE MIDDLE THIRD — a second hero passage telling the brand story in full, composed afresh as its own arrangement, the company name whole and legible inside it too. ${sweepPhrase(noseEdge.passenger)}`,
-    "• THE LOWER THIRD — the supporting register: the same ground, palette and motion at a calmer intensity, secondary motifs, finished artwork everywhere. The brand mark may appear here once, compact and whole; every other letter lives in the upper two thirds.",
+    "The design states itself three times in equal measure down the image, each spanning the full width, each composed afresh, all sharing one unbroken ground:",
+    `across the top, the primary hero passage — a wide, complete statement, the company name whole and legible inside it, held clear of the artwork above and below. ${sweepPhrase(noseEdge.driver)}`,
+    `through the centre, a second hero passage telling the brand story in full, the company name whole and legible inside it too. ${sweepPhrase(noseEdge.passenger)}`,
+    "across the bottom, the supporting register — the same ground, palette and motion at a calmer intensity, secondary motifs, finished artwork everywhere. The brand mark may appear here once, compact and whole; all other lettering stays with the hero passages above.",
     "",
-    "Lettering reads left to right throughout. Each focal element sits inside one third; the ground and its motion flow through all three continuously, so the transitions are invisible. Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+    "Lettering reads left to right throughout. Ground colour, texture and motion run continuously from top to bottom as one single piece of art. Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
   ].join("\n");
-  return assertFieldTailClean(tail);
+  return assertFieldTailCleanV2(tail);
 }
 
 /**

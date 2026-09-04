@@ -98,7 +98,11 @@ test("ATLAS field branch sends the prompt and customer references only", () => {
   assert.match(handler, /atlas_artboard_field_contract_unknown/);
   const fieldTail = block(edge, "function atlasFieldContract(", "// ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY");
   assert.match(fieldTail, /ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image/);
-  assert.match(fieldTail, /three equal horizontal thirds that read as one picture/);
+  assert.match(fieldTail, /The design states itself three times in equal measure down the image/);
+  // No compartment name and no bullet: both came back rendered as lettering
+  // and divider bands on product run 1a0e6b70 (2026-09-02 21:27).
+  assert.doesNotMatch(fieldTail.slice(fieldTail.indexOf("return [")), /third/i);
+  assert.doesNotMatch(fieldTail.slice(fieldTail.indexOf("return [")), /[\u2022\u25aa\u25cf]/);
   for (const forbidden of ["panel", "artboard", "orthographic", "rectangle", "sheet", "template", "silhouette", "container", "wheel", "window", "do not", "never a", "A.T.L.A.S."]) {
     assert.ok(!new RegExp(`\\b${forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(fieldTail.slice(fieldTail.indexOf("return ["))),
       `the field tail must not hand the image model "${forbidden}"`);

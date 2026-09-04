@@ -542,18 +542,18 @@ function atlasFieldContract(vehicle: string, bodyClass: string, noseEdge: AtlasN
     ? "the company name whole and legible inside it too"
     : "its focal treatment whole inside it too";
   const lowerMark = hasBrandName
-    ? "The brand mark may appear here once, compact and whole; every other letter lives in the upper two thirds."
-    : "Any lettering the brief asks for lives in the upper two thirds.";
+    ? "The brand mark may appear here once, compact and whole; all other lettering stays with the hero passages above."
+    : "Any lettering the brief asks for stays with the hero passages above.";
   return [
     "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.",
     `Paint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.`,
     "",
-    "Compose it in three equal horizontal thirds that read as one picture:",
-    `• THE UPPER THIRD — the primary hero passage: a complete, wide statement of the design, ${focal}, clear of the third's top and bottom edges. ${atlasSweepPhrase(noseEdge.driver)}`,
-    `• THE MIDDLE THIRD — a second hero passage telling the brand story in full, composed afresh as its own arrangement, ${focalToo}. ${atlasSweepPhrase(noseEdge.passenger)}`,
-    `• THE LOWER THIRD — the supporting register: the same ground, palette and motion at a calmer intensity, secondary motifs, finished artwork everywhere. ${lowerMark}`,
+    "The design states itself three times in equal measure down the image, each spanning the full width, each composed afresh, all sharing one unbroken ground:",
+    `across the top, the primary hero passage — a wide, complete statement, ${focal}, held clear of the artwork above and below. ${atlasSweepPhrase(noseEdge.driver)}`,
+    `through the centre, a second hero passage telling the brand story in full, ${focalToo}. ${atlasSweepPhrase(noseEdge.passenger)}`,
+    `across the bottom, the supporting register — the same ground, palette and motion at a calmer intensity, secondary motifs, finished artwork everywhere. ${lowerMark}`,
     "",
-    "Lettering reads left to right throughout. Each focal element sits inside one third; the ground and its motion flow through all three continuously, so the transitions are invisible. Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+    "Lettering reads left to right throughout. Ground colour, texture and motion run continuously from top to bottom as one single piece of art. Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
   ].join("\n");
 }
 

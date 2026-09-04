@@ -159,21 +159,29 @@ test("the WHOLE model-facing prompt carries no object-schema, topology or negati
   assert.doesNotThrow(() => assertFieldPromptClean("the whole field of faceted plates"));
 });
 
-test("the v2 tail is thirds, no negatives, under the ceiling, and passes the v1 tail guard too", () => {
+test("the v2 tail states three passages by position, names no compartment, and passes the v1 tail guard too", () => {
   const tail = fieldContractV2(buildFieldPromptV2(DEPLOYED_PROMPT).deployedTail);
   assert.doesNotThrow(() => assertFieldTailClean(tail));
   for (const { word } of FORBIDDEN_IN_FIELD_TAIL) assert.throws(() => assertFieldTailClean(`${tail}\n${word} appears here`), undefined, word);
-  assert.ok(tail.includes("THE UPPER THIRD"));
-  assert.ok(tail.includes("THE MIDDLE THIRD"));
-  assert.ok(tail.includes("THE LOWER THIRD"));
+  // THE NAME OF A PIECE OF THE CANVAS COMES BACK PAINTED (product run
+  // 1a0e6b70, 2026-09-02 21:27): the tail carried "• THE UPPER THIRD —" and
+  // the master returned with UPPER THIRD lettered into the artwork. Position
+  // is described instead, and no structural noun survives for the model to
+  // draw. GENIE still cuts at 1365px; the model is never told that.
+  assert.ok(!/third/i.test(tail), "the tail must not name a third, in any case");
+  assert.ok(!/[\u2022\u25aa\u25cf]/.test(tail), "the tail must carry no bullet glyph");
+  assert.ok(tail.includes("across the top, the primary hero passage"));
+  assert.ok(tail.includes("through the centre, a second hero passage"));
+  assert.ok(tail.includes("across the bottom, the supporting register"));
   assert.ok(!/MOVEMENT/.test(tail), "the v1 movement language is gone");
-  assert.ok(/UPPER THIRD[^\n]*left to right\./.test(tail));
-  assert.ok(/MIDDLE THIRD[^\n]*right to left\./.test(tail));
+  assert.ok(/across the top[^\n]*left to right\./.test(tail));
+  assert.ok(/through the centre[^\n]*right to left\./.test(tail));
   assert.ok(tail.includes("company name whole and legible inside it"));
   assert.ok(!/\b(do not|never a|avoid|no drawn)\b/i.test(tail));
   assert.ok(tail.length <= 1400);
   const swapped = fieldContractV2(buildFieldPromptV2(DEPLOYED_PROMPT).deployedTail, { noseEdge: { driver: "right", passenger: "left" } });
-  assert.ok(/UPPER THIRD[^\n]*right to left\./.test(swapped));
+  assert.ok(/across the top[^\n]*right to left\./.test(swapped));
+  assert.ok(!/third/i.test(swapped), "the flipped tail must not name a third either");
 });
 
 test("the v2 request carries exactly one text part and zero structural images", () => {

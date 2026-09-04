@@ -46,12 +46,52 @@ export const FORBIDDEN_IN_FIELD_TAIL = [
   "avoid", "container", "box", "region", "six", "surface", "A.T.L.A.S.",
 ].map((word) => ({ word, pattern: new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i") }));
 
+/**
+ * A NAME FOR A PIECE OF THE CANVAS COMES BACK PAINTED — v24 field prose only.
+ *
+ * On product run 1a0e6b70 (2026-09-02 21:27, a genuine v24 request with zero
+ * image inputs) the tail carried "• THE UPPER THIRD —" and the model returned a
+ * master with UPPER THIRD lettered into the artwork; "three equal horizontal
+ * thirds" came back as divider bands and "the third's top and bottom edges" as
+ * frames. These are not topology leaks in the old sense -- they are ordinary
+ * structural nouns, and a text-capable image model draws the ones it is handed.
+ *
+ * GENIE cuts at 1365px and the model is never told that boundary exists, so v24
+ * field prose has no legitimate use for any of these. They are scoped to v2
+ * DELIBERATELY: the v1 contract and its recorded harness runs are history, and
+ * rewriting them to satisfy a rule written after the fact would falsify the
+ * record rather than fix anything.
+ */
+export const FORBIDDEN_STRUCTURAL_NOUNS_V2 = [
+  "third", "band", "frame", "separator", "divider", "gutter", "border", "compartment",
+].map((word) => ({ word, pattern: new RegExp(`\\b${word}`, "i") }));
+
+/**
+ * A bullet is a printable glyph, not a word, so no word-boundary pattern
+ * catches it. The old tail opened three lines with one, and that is three more
+ * marks the model could transcribe.
+ */
+export const FORBIDDEN_TAIL_GLYPHS = ["\u2022", "\u25aa", "\u25cf", "\u2023", "\u2043"];
+
 export function assertFieldTailClean(tail) {
   for (const { word, pattern } of FORBIDDEN_IN_FIELD_TAIL) {
     if (pattern.test(tail)) throw new Error(`field contract: tail contains forbidden framing "${word}"`);
   }
+
   if (tail.length > FIELD_TAIL_MAX_CHARS) {
     throw new Error(`field contract: tail is ${tail.length} chars, over the ${FIELD_TAIL_MAX_CHARS} ceiling`);
+  }
+  return tail;
+}
+
+/** The v1 guard, plus the structural nouns and glyphs v24 field prose may not carry. */
+export function assertFieldTailCleanV2(tail) {
+  assertFieldTailClean(tail);
+  for (const { word, pattern } of FORBIDDEN_STRUCTURAL_NOUNS_V2) {
+    if (pattern.test(tail)) throw new Error(`field contract v2: tail names the structural noun "${word}", which the model can render`);
+  }
+  for (const glyph of FORBIDDEN_TAIL_GLYPHS) {
+    if (tail.includes(glyph)) throw new Error(`field contract v2: tail contains the printable glyph ${JSON.stringify(glyph)}, which the model can transcribe`);
   }
   return tail;
 }
