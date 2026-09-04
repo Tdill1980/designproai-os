@@ -1,0 +1,386 @@
+{
+  "genieManifestHash": "ef62fb78a51d8a6383a1e757bc9b29ed6ab14b2e66da610e6dbbf1932f34d3d4",
+  "creativeFieldHash": "414d6f7520975e0e9ae6535331a5d7879447b5b858f8f351d064fabb92095ef8",
+  "masterContentHash": "542085ddd9cfeb9ac228d492c5666443f96413dd2da1069bea6dde2e541d2941",
+  "logoHash": "1ca956d28f3fad44d6ccf342c7dfde001f3428b9c06680b575aedae8c33eeebe",
+  "fontHash": "3973aa5054fb467dd5627245d3dc82e37bf16fe075756156a570455871351582",
+  "windows": [
+    {
+      "surfaceKey": "driver",
+      "source": {
+        "left": 184,
+        "top": 184,
+        "width": 3371,
+        "height": 1365
+      },
+      "destination": {
+        "left": 362,
+        "top": 0,
+        "width": 3371,
+        "height": 1365
+      },
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printAspect": 2.469697,
+      "windowAspect": 2.469597,
+      "effectivePpi": 20.68,
+      "contentHash": "24a55b61a0f0c7c28859ceffa0511eb2f4595e5f8b515382e5d54ea9b6ea6d2f"
+    },
+    {
+      "surfaceKey": "passenger",
+      "source": {
+        "left": 184,
+        "top": 1733,
+        "width": 3371,
+        "height": 1365
+      },
+      "destination": {
+        "left": 362,
+        "top": 1365,
+        "width": 3371,
+        "height": 1365
+      },
+      "printWidthIn": 163,
+      "printHeightIn": 66,
+      "trimWidthIn": 153,
+      "trimHeightIn": 56,
+      "printAspect": 2.469697,
+      "windowAspect": 2.469597,
+      "effectivePpi": 20.68,
+      "contentHash": "8d15281eb0543e77e7401fafdcb4cab9292123a8d32e639913bdc5636760b47b"
+    },
+    {
+      "surfaceKey": "hood",
+      "source": {
+        "left": 184,
+        "top": 3282,
+        "width": 1031,
+        "height": 835
+      },
+      "destination": {
+        "left": 1186,
+        "top": 2730,
+        "width": 1031,
+        "height": 835
+      },
+      "printWidthIn": 81.5,
+      "printHeightIn": 66,
+      "trimWidthIn": 71.5,
+      "trimHeightIn": 56,
+      "printAspect": 1.234848,
+      "windowAspect": 1.234731,
+      "effectivePpi": 12.65,
+      "contentHash": "a67af190d2607d2b65e44359aa118cc6c2d7de7c255141d2a09e048c13964668"
+    },
+    {
+      "surfaceKey": "roof",
+      "source": {
+        "left": 1399,
+        "top": 3282,
+        "width": 1066,
+        "height": 820
+      },
+      "destination": {
+        "left": 120,
+        "top": 2730,
+        "width": 1066,
+        "height": 820
+      },
+      "printWidthIn": 84.3,
+      "printHeightIn": 64.8,
+      "trimWidthIn": 74.3,
+      "trimHeightIn": 54.8,
+      "printAspect": 1.300926,
+      "windowAspect": 1.3,
+      "effectivePpi": 12.65,
+      "contentHash": "f8597e105d5104ef6b4161c3fc98e8aba319f7973a2d301dc7a9ad65df63cd78"
+    },
+    {
+      "surfaceKey": "front",
+      "source": {
+        "left": 2649,
+        "top": 3282,
+        "width": 1758,
+        "height": 557
+      },
+      "destination": {
+        "left": 2217,
+        "top": 2730,
+        "width": 1758,
+        "height": 557
+      },
+      "printWidthIn": 139,
+      "printHeightIn": 44,
+      "trimWidthIn": 129,
+      "trimHeightIn": 34,
+      "printAspect": 3.159091,
+      "windowAspect": 3.156194,
+      "effectivePpi": 12.65,
+      "contentHash": "5380d2f797f0d9fdeb71e1da8fc7f43de461c8e04b158c860aa121700ebc47c9"
+    },
+    {
+      "surfaceKey": "rear",
+      "source": {
+        "left": 184,
+        "top": 4301,
+        "width": 1088,
+        "height": 809
+      },
+      "destination": {
+        "left": 2217,
+        "top": 3287,
+        "width": 1088,
+        "height": 809
+      },
+      "printWidthIn": 86,
+      "printHeightIn": 64,
+      "trimWidthIn": 76,
+      "trimHeightIn": 54,
+      "printAspect": 1.34375,
+      "windowAspect": 1.34487,
+      "effectivePpi": 12.65,
+      "contentHash": "f0fe6c5cca3cd38f7ae26f12ed5158c86f6040667f437f682d4fe7ddf91101c1"
+    }
+  ],
+  "placements": [
+    {
+      "kind": "text",
+      "surfaceKey": "driver",
+      "string": "Precision Climate Solutions",
+      "widthPx": 2736,
+      "heightPx": 232,
+      "scaled": false,
+      "spellingAuthority": "frozen-fixture-string"
+    },
+    {
+      "kind": "text",
+      "surfaceKey": "driver",
+      "string": "555-0142",
+      "widthPx": 612,
+      "heightPx": 162,
+      "scaled": false,
+      "spellingAuthority": "frozen-fixture-string"
+    },
+    {
+      "kind": "logo",
+      "surfaceKey": "driver",
+      "identityKey": "primary-mark",
+      "contentHash": "1ca956d28f3fad44d6ccf342c7dfde001f3428b9c06680b575aedae8c33eeebe",
+      "sourcePx": "960x320",
+      "placedPx": "869x290",
+      "uniformScale": true,
+      "aspectDrift": 0.001149
+    },
+    {
+      "kind": "text",
+      "surfaceKey": "passenger",
+      "string": "Precision Climate Solutions",
+      "widthPx": 2736,
+      "heightPx": 232,
+      "scaled": false,
+      "spellingAuthority": "frozen-fixture-string"
+    },
+    {
+      "kind": "text",
+      "surfaceKey": "passenger",
+      "string": "555-0142",
+      "widthPx": 612,
+      "heightPx": 162,
+      "scaled": false,
+      "spellingAuthority": "frozen-fixture-string"
+    },
+    {
+      "kind": "logo",
+      "surfaceKey": "passenger",
+      "identityKey": "primary-mark",
+      "contentHash": "1ca956d28f3fad44d6ccf342c7dfde001f3428b9c06680b575aedae8c33eeebe",
+      "sourcePx": "960x320",
+      "placedPx": "869x290",
+      "uniformScale": true,
+      "aspectDrift": 0.001149
+    },
+    {
+      "kind": "logo",
+      "surfaceKey": "hood",
+      "identityKey": "primary-mark",
+      "contentHash": "1ca956d28f3fad44d6ccf342c7dfde001f3428b9c06680b575aedae8c33eeebe",
+      "sourcePx": "960x320",
+      "placedPx": "531x177",
+      "uniformScale": true,
+      "aspectDrift": 0
+    },
+    {
+      "kind": "text",
+      "surfaceKey": "rear",
+      "string": "precisionclimate.com",
+      "widthPx": 647,
+      "heightPx": 71,
+      "scaled": false,
+      "spellingAuthority": "frozen-fixture-string"
+    }
+  ],
+  "operations": [
+    "driver: extract 3371x1365 @ 184,184 (no resize)",
+    "driver: outline \"Precision Climate Solutions\" 2736x232px from pinned font, composite @ 290,496 (no scale)",
+    "driver: outline \"555-0142\" 612x162px from pinned font, composite @ 290,889 (no scale)",
+    "driver: logo primary-mark 960x320 -> 869x290 uniform (fit:inside), composite @ 290,124",
+    "passenger: extract 3371x1365 @ 184,1733 (no resize)",
+    "passenger: outline \"Precision Climate Solutions\" 2736x232px from pinned font, composite @ 269,496 (no scale)",
+    "passenger: outline \"555-0142\" 612x162px from pinned font, composite @ 269,889 (no scale)",
+    "passenger: logo primary-mark 960x320 -> 869x290 uniform (fit:inside), composite @ 2213,124",
+    "hood: extract 1031x835 @ 184,3282 (no resize)",
+    "hood: logo primary-mark 960x320 -> 531x177 uniform (fit:inside), composite @ 253,278",
+    "roof: extract 1066x820 @ 1399,3282 (no resize)",
+    "front: extract 1758x557 @ 2649,3282 (no resize)",
+    "rear: extract 1088x809 @ 184,4301 (no resize)",
+    "rear: outline \"precisionclimate.com\" 647x71px from pinned font, composite @ 139,556 (no scale)",
+    "atlas: paste driver 3371x1365 @ 362,0 (1:1, rotation 0, no resize)",
+    "atlas: paste passenger 3371x1365 @ 362,1365 (1:1, rotation 0, no resize)",
+    "atlas: paste hood 1031x835 @ 1186,2730 (1:1, rotation 0, no resize)",
+    "atlas: paste roof 1066x820 @ 120,2730 (1:1, rotation 0, no resize)",
+    "atlas: paste front 1758x557 @ 2217,2730 (1:1, rotation 0, no resize)",
+    "atlas: paste rear 1088x809 @ 2217,3287 (1:1, rotation 0, no resize)"
+  ],
+  "resampling": {
+    "fieldResized": false,
+    "windowsResized": false,
+    "textScaled": false,
+    "panelsResized": false,
+    "logoScale": "uniform-only"
+  },
+  "coverage": {
+    "territoryPixels": 12797233,
+    "canvasPixels": 16777216,
+    "coveredFraction": 0.7628
+  },
+  "timings": {
+    "fieldFixtureMs": 2833,
+    "genieMs": 3,
+    "atlasCompileMs": 1724,
+    "panelExtractionMs": 515,
+    "totalMs": 5075
+  },
+  "panelReadyMs": {
+    "driver": 4683,
+    "passenger": 4823,
+    "hood": 4885,
+    "front": 4946,
+    "rear": 5010,
+    "roof": 5075
+  },
+  "panels": [
+    {
+      "surfaceKey": "driver",
+      "contentHash": "cd3e8feb968af2f5b855444a37548a2973e78c29b0ff5439d8d639fb9c1f618c",
+      "px": "3371x1365",
+      "trimIn": "153x56",
+      "bleedIn": 5,
+      "effectivePpi": 20.68,
+      "sourceMasterHash": "542085ddd9cfeb9ac228d492c5666443f96413dd2da1069bea6dde2e541d2941"
+    },
+    {
+      "surfaceKey": "passenger",
+      "contentHash": "87b6745ccfd9e87e4a6c1ed9c54406f941c68b4dc4743b03603f8e8173d7a64e",
+      "px": "3371x1365",
+      "trimIn": "153x56",
+      "bleedIn": 5,
+      "effectivePpi": 20.68,
+      "sourceMasterHash": "542085ddd9cfeb9ac228d492c5666443f96413dd2da1069bea6dde2e541d2941"
+    },
+    {
+      "surfaceKey": "hood",
+      "contentHash": "6d1aa012e4faaa8504a2e2cb57e10ec8c01384b9838667c7944ea2ed7db8aa05",
+      "px": "1031x835",
+      "trimIn": "71.5x56",
+      "bleedIn": 5,
+      "effectivePpi": 12.65,
+      "sourceMasterHash": "542085ddd9cfeb9ac228d492c5666443f96413dd2da1069bea6dde2e541d2941"
+    },
+    {
+      "surfaceKey": "front",
+      "contentHash": "01021d1ad0198f06134d7a153210a9cb8b3aa0fcc904176fc79f9a449af7614d",
+      "px": "1758x557",
+      "trimIn": "129x34",
+      "bleedIn": 5,
+      "effectivePpi": 12.65,
+      "sourceMasterHash": "542085ddd9cfeb9ac228d492c5666443f96413dd2da1069bea6dde2e541d2941"
+    },
+    {
+      "surfaceKey": "rear",
+      "contentHash": "bba211cb4789311948c5b9ad31986675269d0943a77367d560aa5d7d72fed1da",
+      "px": "1088x809",
+      "trimIn": "76x54",
+      "bleedIn": 5,
+      "effectivePpi": 12.64,
+      "sourceMasterHash": "542085ddd9cfeb9ac228d492c5666443f96413dd2da1069bea6dde2e541d2941"
+    },
+    {
+      "surfaceKey": "roof",
+      "contentHash": "d00023a528a256f576ab82181c138b6f7281642abaf0d9e9f0369d4215668a90",
+      "px": "1066x820",
+      "trimIn": "74.3x54.8",
+      "bleedIn": 5,
+      "effectivePpi": 12.65,
+      "sourceMasterHash": "542085ddd9cfeb9ac228d492c5666443f96413dd2da1069bea6dde2e541d2941"
+    }
+  ],
+  "gates": [
+    {
+      "name": "six windows at GENIE surface proportions",
+      "pass": true,
+      "detail": "driver 0.004%, passenger 0.004%, hood 0.009%, roof 0.071%, front 0.092%, rear 0.083%  (was +37.8% flanks / +76.3% front under fit:\"fill\")"
+    },
+    {
+      "name": "no stretch: field, windows, type and panels are never resized",
+      "pass": true,
+      "detail": "{\"fieldResized\":false,\"windowsResized\":false,\"textScaled\":false,\"panelsResized\":false,\"logoScale\":\"uniform-only\"}"
+    },
+    {
+      "name": "approved logo scaled uniformly only",
+      "pass": true,
+      "detail": "driver 960x320->869x290 drift 0.115%, passenger 960x320->869x290 drift 0.115%, hood 960x320->531x177 drift 0.000%"
+    },
+    {
+      "name": "creative field is overscanned and carries no lettering or logo",
+      "pass": true,
+      "detail": "6144x6144, margin 184px; every string and the mark are composited after the crop"
+    },
+    {
+      "name": "exact GENIE trim and 5\" bleed on all six",
+      "pass": true,
+      "detail": "driver 153x56+5\", passenger 153x56+5\", hood 71.5x56+5\", roof 74.3x54.8+5\", front 129x34+5\", rear 76x54+5\""
+    },
+    {
+      "name": "Driver and Passenger are distinct artwork",
+      "pass": true,
+      "detail": "cut from different field rows (y=184 vs 1733); panel hashes cd3e8feb96 vs 87b6745ccf"
+    },
+    {
+      "name": "no missing pixels in any panel",
+      "pass": true,
+      "detail": "driver t=0 g=0, passenger t=0 g=0, hood t=0 g=0, roof t=0 g=0, front t=0 g=0, rear t=0 g=0"
+    },
+    {
+      "name": "exact spelling and exact approved logo bytes",
+      "pass": true,
+      "detail": "strings from the frozen fixture only; logo digest 1ca956d28f3f verified before every placement"
+    },
+    {
+      "name": "every panel binds to masterContentHash (semantics unchanged)",
+      "pass": true,
+      "detail": "sourceMasterHash == masterContentHash 542085ddd9cfeb9a on all six"
+    },
+    {
+      "name": "existing extractor and downstream consumer shapes unchanged",
+      "pass": true,
+      "detail": "17 contract fields present on all six; contract=designpro.flat-first-atlas-call1-panel.v1; extractor used as-is"
+    },
+    {
+      "name": "preview resolution only -- not claimed as 150 PPI",
+      "pass": true,
+      "detail": "flanks 20.68 PPI, centre 12.65 PPI; production resolution is out of scope for this proof"
+    }
+  ]
+}
