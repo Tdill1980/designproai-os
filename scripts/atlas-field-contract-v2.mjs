@@ -618,7 +618,31 @@ async function runSixRegionDraw() {
   }
 
   // ── 2. the deployed assembly, then the approved six-region prompt ──────────
-  const assembled = call1.buildAtlasCall1Prompt(atlas._test.atlasEdgeRequestBody(V3_INPUT, manifest, {}));
+  //
+  // ⛔ HARNESS-ONLY BRANCH SELECTION. Since v24, `atlasEdgeRequestBody` sets
+  // `fieldContract` unconditionally (runtime/flat-first-atlas.cjs:1571), which
+  // selects the edge's ONE-FIELD branch — the branch RULE 0.34 rejected. The
+  // still-deployed six-surface A.T.L.A.S. branch of the same function is
+  // selected by the ABSENCE of that field, so test 12 removes it from ITS OWN
+  // COPY of the request body. Nothing in production changes: this deletes a key
+  // from a local object, and `atlasEdgeRequestBody` itself is untouched.
+  //
+  // Asserted both ways, so the run refuses rather than drifts: the product path
+  // must still be setting the field, and it must be gone before assembly.
+  const edgeBody = atlas._test.atlasEdgeRequestBody(V3_INPUT, manifest, {});
+  if (edgeBody.fieldContract !== FIELD_CONTRACT_V2) {
+    throw new Error(`six-region: expected the product path to set fieldContract ${JSON.stringify(FIELD_CONTRACT_V2)}, found ${JSON.stringify(edgeBody.fieldContract ?? null)} — the branch this test selects is no longer the one it was written against`);
+  }
+  const { fieldContract: removedFieldContract, ...sixSurfaceBody } = edgeBody;
+  if ("fieldContract" in sixSurfaceBody) throw new Error("six-region: fieldContract survived removal; the one-field branch would be selected");
+  const branchSelection = {
+    productPathSet: removedFieldContract,
+    removedForThisTest: true,
+    selects: "the deployed six-surface A.T.L.A.S. branch of design-panel-ai-generate",
+    scope: "harness only — a key deleted from a local copy of the request body; atlasEdgeRequestBody is unchanged",
+  };
+  log(`branch selection: the product path set fieldContract ${removedFieldContract}; removed from this test's own copy to select the six-surface branch (harness only)`);
+  const assembled = call1.buildAtlasCall1Prompt(sixSurfaceBody);
   if (assembled.references.length) throw new Error("this fixture must carry no customer references");
   const field = buildSixRegionPromptV2(assembled.prompt);
   const { parts, request, serialize } = buildFieldRequestV2({ prompt: field.prompt, referenceParts: [], model: call1.AUTHORING_MODEL });
@@ -639,6 +663,7 @@ async function runSixRegionDraw() {
     creativeAssembly: { deployedChars: field.creative.length, deployedSha256: field.creativeSha256, fieldChars: field.creativeField.length, fieldSha256: field.creativeFieldSha256, swaps: field.swaps, reverseProof: field.reverseProof },
     tail: { deployedChars: field.deployedTail.length, deployedSha256: sha(field.deployedTail), sixRegionChars: field.fieldTail.length, sixRegionSha256: field.tailSha256, ceiling: FIELD_TAIL_MAX_CHARS },
     approvedLock: APPROVED_SIX_REGION,
+    branchSelection,
     pinnedGeometry: PINNED_GENIE,
     geometryProvenance: provenance,
     preflight,
@@ -851,6 +876,7 @@ async function runSixRegionDraw() {
     `| image requests sent | **${fence.imageRequestsSent}** of budget ${fence.budget} |`,
     `| other network requests | ${fence.refused.length} attempted, all refused by the fence |`,
     `| database reads / writes | 0 / 0 |`,
+    `| branch selection | product path set \`${branchSelection.productPathSet}\`; removed from this test's own copy of the body to select ${branchSelection.selects}. ${branchSelection.scope} |`,
     "",
     "## 3. Deterministic flattened A.T.L.A.S. master",
     "",
