@@ -75,7 +75,11 @@ async function slice() {
 test("the six code-only territories reproduce Draw 1's recorded geometry exactly", () => {
   const { field } = fixtureManifests();
   assert.equal(field.topology, "field-thirds-v2");
-  assert.equal(field.contract, "designpro.atlas-field-territories.v2");
+  // The territory layout identity travels under its own name; `contract` stays
+  // the A.T.L.A.S. manifest identity the proof stage conditions on.
+  assert.equal(field.territoriesContract, "designpro.atlas-field-territories.v2");
+  assert.equal(field.fieldLayout.contract, "designpro.atlas-field-territories.v2");
+  assert.equal(field.contract, atlas.MANIFEST_CONTRACT);
   for (const recorded of DRAW1_TERRITORIES.zones) {
     const zone = field.zones.find((z) => z.surfaceKey === recorded.surfaceKey);
     assert.ok(zone, recorded.surfaceKey);
@@ -165,4 +169,66 @@ test("the edge refuses an unknown field contract and echoes the one it ran", () 
   assert.match(verify, /flat_atlas_edge_field_contract_mismatch/);
   assert.match(verify, /flat_atlas_edge_structural_image_detected/);
   assert.match(verify, /Number\(payload\?\.modelInputImageCount\) !== customerImageCount/);
+});
+
+/**
+ * THE LINE THAT COST EVERY PROOF SINCE v24.
+ *
+ * `buildFieldTerritories` returned `contract: FIELD_TERRITORIES_CONTRACT`,
+ * overwriting the A.T.L.A.S. manifest identity on the manifest it is a layout
+ * OF. `atlasProjectionParts` conditions every proof on
+ * `atlas.manifest.contract !== MANIFEST_CONTRACT`, so the field manifest failed
+ * that gate and threw `flat_atlas_conditioning_invalid`: the run cut all six
+ * panels and then rendered zero of seven proofs.
+ *
+ * Live, twice. Arctic Air `586abc83`: master persisted 2026-09-04 17:40:34.081,
+ * request failed 17:40:34.535 -- 454ms later, on the first proof, with
+ * `{"code":"flat_atlas_conditioning_invalid"}`. `1a0e6b70` before it. Both read
+ * `6/6 panels · 0/7 proofs · calls_1_7_failed`.
+ *
+ * So this drives the REAL call with a REAL authority built by the runtime's own
+ * `viewAuthorityFromPanel`, not a hand-shaped object that could agree with a
+ * predicate while disagreeing with the system.
+ */
+test("atlasProjectionParts accepts the field manifest and conditions a proof", async () => {
+  const { field } = fixtureManifests();
+  const sharp = require("../runtime/node_modules/sharp");
+
+  const masterBytes = Buffer.from("atlas-master-bytes-for-conditioning");
+  const masterHash = sha(masterBytes);
+  const panelBytes = await sharp({ create: { width: 96, height: 48, channels: 3, background: "#123a6b" } })
+    .png().toBuffer();
+  const panel = {
+    surfaceKey: "driver",
+    bytes: panelBytes,
+    contentHash: sha(panelBytes),
+    byteSize: panelBytes.length,
+    surfaceSourceHash: masterHash,
+  };
+  const authority = await atlas._test.viewAuthorityFromPanel(panel, "side");
+  const conditioned = {
+    master: { bytes: masterBytes, contentHash: masterHash },
+    manifest: field,
+    viewAuthorities: { side: authority },
+    callOnePanels: [{ surfaceKey: "driver", contentHash: panel.contentHash }],
+  };
+
+  // THE REGRESSION: this threw for every run since v24.
+  const parts = atlas.atlasProjectionParts(conditioned, "side");
+  assert.ok(Array.isArray(parts) && parts.length > 0, "a conditioned proof must produce parts");
+  assert.equal(parts[0].inlineData.mimeType, "image/jpeg");
+  assert.equal(parts[0].inlineData.data, authority.bytes.toString("base64"));
+
+  // The fix restores the identity; it does not remove the check. A manifest
+  // that genuinely is not an A.T.L.A.S. manifest is still refused, and so is a
+  // proof with no master behind it.
+  assert.throws(
+    () => atlas.atlasProjectionParts(
+      { ...conditioned, manifest: { ...field, contract: "designpro.something-else.v1" } }, "side"),
+    (error) => error.code === "flat_atlas_conditioning_invalid",
+  );
+  assert.throws(
+    () => atlas.atlasProjectionParts({ ...conditioned, master: null }, "side"),
+    (error) => error.code === "flat_atlas_conditioning_invalid",
+  );
 });
