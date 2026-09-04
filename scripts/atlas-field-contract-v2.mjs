@@ -656,6 +656,12 @@ async function runSixRegionDraw() {
   const LOCK = PROPORTIONS ? APPROVED_SIX_REGION_PROPORTIONS : APPROVED_SIX_REGION;
   const CONTRACT = PROPORTIONS ? SIX_REGION_PROPORTIONS_CONTRACT : SIX_REGION_CONTRACT;
   const TAG = PROPORTIONS ? "six-region-proportions" : "six-region";
+  // The ceiling the tail was actually checked against. Test 13's tail is 1602
+  // chars, legally, under its own 1700 ceiling; reporting test 12's 1400 here
+  // would put a contradiction into machine-verifiable evidence. Receipt only —
+  // the guards inside sixRegionContract / sixRegionProportionsContract are
+  // unchanged and remain the things that can refuse.
+  const ACTIVE_TAIL_CEILING = PROPORTIONS ? SIX_REGION_PROPORTIONS_TAIL_MAX_CHARS : FIELD_TAIL_MAX_CHARS;
 
   // Requirement, enforced rather than asserted: a capture-only run receives no
   // Gemini credential at all, and refuses to continue if one was handed to it.
@@ -743,7 +749,7 @@ async function runSixRegionDraw() {
   if (PROPORTIONS) log(`    parent (test 12)  sha ${field.parentPromptSha256.slice(0, 16)}  ${field.parentPromptChars} chars — reproduced by removing the ${LOCK.insertionChars}-char insertion at offset ${LOCK.insertionOffset}`);
   log(`    deployed prompt   sha ${sha(assembled.prompt).slice(0, 16)}  ${assembled.prompt.length} chars`);
   log(`    creative assembly ${field.creative.length} → ${field.creativeField.length} chars, ${field.swaps.length} swaps, reverse proof ${field.reverseProof}`);
-  log(`    tail              sha ${field.tailSha256.slice(0, 16)}  ${field.fieldTail.length} chars (ceiling ${FIELD_TAIL_MAX_CHARS})`);
+  log(`    tail              sha ${field.tailSha256.slice(0, 16)}  ${field.fieldTail.length} chars (ceiling ${ACTIVE_TAIL_CEILING})`);
   log(`    prompt            sha ${field.promptSha256}  ${field.prompt.length} chars`);
   log(`    request           ${request.partCount} text part, ${request.modelInputImageCount} images, ${request.modelRequestByteSize} bytes, model ${request.model}, ${JSON.stringify(GENERATION_CONFIG)}, no temperature`);
 
@@ -753,7 +759,7 @@ async function runSixRegionDraw() {
     honestClassification: "topology-text experiment, same family as Test 3; the untested cell is zero images + zero surface names + the extent sentence + a positional description",
     deployedPrompt: { sha256: sha(assembled.prompt), chars: assembled.prompt.length },
     creativeAssembly: { deployedChars: field.creative.length, deployedSha256: field.creativeSha256, fieldChars: field.creativeField.length, fieldSha256: field.creativeFieldSha256, swaps: field.swaps, reverseProof: field.reverseProof },
-    tail: { deployedChars: field.deployedTail.length, deployedSha256: sha(field.deployedTail), sixRegionChars: field.fieldTail.length, sixRegionSha256: field.tailSha256, ceiling: FIELD_TAIL_MAX_CHARS },
+    tail: { deployedChars: field.deployedTail.length, deployedSha256: sha(field.deployedTail), sixRegionChars: field.fieldTail.length, sixRegionSha256: field.tailSha256, ceiling: ACTIVE_TAIL_CEILING },
     approvedLock: LOCK,
     branchSelection,
     pinnedGeometry: PINNED_GENIE,
