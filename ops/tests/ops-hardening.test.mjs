@@ -14,7 +14,7 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 62);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 63);
   for (const name of [
     // GENIE Prep (owner ruling 2026-09-02): the early lifecycle module is
     // required by generation-worker.cjs and index.js at module load, so a
@@ -27,6 +27,11 @@ test("one canonical policy includes every required runtime file and five deploy 
     // The Call-1 output-class gate (owner ruling 2026-09-01): a vehicle-
     // depiction candidate is refused before canonicalization or fan-out.
     "runtime/atlas-output-class.cjs",
+    // The deterministic A.T.L.A.S. composer. It places the six rendered
+    // surfaces into the manifest's zones so the flattened master can be
+    // CONSTRUCTED from GENIE geometry instead of requested from a model in
+    // words -- the control surface Tests 12 and 13 showed does not exist.
+    "runtime/atlas-surface-compose.cjs",
     // THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
     // (owner boundary contract 2026-09-01). Call 1 refuses to author without
     // it: canary 33459887409 died at flat_atlas_bundled_example_missing when

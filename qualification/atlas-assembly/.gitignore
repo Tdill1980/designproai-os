@@ -1,0 +1,5 @@
+# Generated artifacts. Every one of them is reproducible byte-for-byte by
+# running the qualification, which is the property under test -- so committing
+# them would add ~50MB and prove nothing the receipt does not already state.
+out/*.png
+assets/

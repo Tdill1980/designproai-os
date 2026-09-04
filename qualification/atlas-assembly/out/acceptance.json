@@ -1,0 +1,94 @@
+{
+  "genieManifestHash": "021edc1ceb3069ca4b7d6572e6d9cc606cde710eb865839a852cf095cacbb9d6",
+  "designMasterHash": "211a3c5d35b4944ab39eec49cd9b868cbd13356d08ebdee7f874f8bc69dd9bd5",
+  "renderHash": "154fd01fa4a704a35fb576e6717c84f048a40f5ec2fa8a85c1c005595bf1387c",
+  "masterContentHash": "51d85eeb669bea9a59b3f7d097ac85cf90379ef8a56f24bab43a3200eba8edbd",
+  "compositionHash": "42f952041f14ce6793817ddff3c7c54de5577f0ef2ebf77a79a9c467f2cd3cb1",
+  "timings": {
+    "designMasterAndSurfacesMs": 6073,
+    "atlasManifestMs": 2,
+    "atlasComposeMs": 1650,
+    "panelExtractionMs": 1253,
+    "totalMs": 8978
+  },
+  "panelReadyMs": {
+    "driver": 8085,
+    "passenger": 8429,
+    "hood": 8595,
+    "front": 8752,
+    "rear": 8839,
+    "roof": 8978
+  },
+  "results": [
+    {
+      "name": "exactly six canonical surfaces (driver/passenger/hood/roof/front/rear)",
+      "pass": true,
+      "detail": "6 panels: driver, passenger, hood, front, rear, roof"
+    },
+    {
+      "name": "exact GENIE trim and print dimensions on all six",
+      "pass": true,
+      "detail": "driver: trim 153x56 (want 153x56) print 163x66 bleed 5\" px 2848x1153 | passenger: trim 153x56 (want 153x56) print 163x66 bleed 5\" px 2848x1153 | hood: trim 71.5x56 (want 71.5x56) print 81.5x66 bleed 5\" px 1262x1022 | roof: trim 74.3x54.8 (want 74.3x54.8) print 84.3x64.8 bleed 5\" px 1262x970 | front: trim 129x34 (want 129x34) print 139x44 bleed 5\" px 1262x399 | rear: trim 76x54 (want 76x54) print 86x64 bleed 5\" px 1262x939"
+    },
+    {
+      "name": "exact contracted 5\" bleed on all six",
+      "pass": true,
+      "detail": "5\" px 2848x1153, 5\" px 2848x1153, 5\" px 1262x1022, 5\" px 1262x970, 5\" px 1262x399, 5\" px 1262x939"
+    },
+    {
+      "name": "every printable pixel filled by authored artwork (zero transparent)",
+      "pass": true,
+      "detail": "driver: filled 100.00% transparent 0 ground 0 | passenger: filled 100.00% transparent 0 ground 0 | hood: filled 100.00% transparent 0 ground 0 | roof: filled 100.00% transparent 0 ground 0 | front: filled 100.00% transparent 0 ground 0 | rear: filled 100.00% transparent 0 ground 0"
+    },
+    {
+      "name": "no gutters or foreign-surface strips inside any panel",
+      "pass": true,
+      "detail": "driver: filled 100.00% transparent 0 ground 0 | passenger: filled 100.00% transparent 0 ground 0 | hood: filled 100.00% transparent 0 ground 0 | roof: filled 100.00% transparent 0 ground 0 | front: filled 100.00% transparent 0 ground 0 | rear: filled 100.00% transparent 0 ground 0"
+    },
+    {
+      "name": "no crop or stretch of protected logo/text",
+      "pass": true,
+      "detail": "max aspect drift 0.1207% (limit 0.50%); renderer enforces render_text_overflows_extent; logos carry neverMirror + neverRasterizeIntoBase"
+    },
+    {
+      "name": "exact spelling from frozen customer strings",
+      "pass": true,
+      "detail": "spellingAuthority=revision-snapshot; strings pinned: Precision Climate Solutions | 555-0142 | precisionclimate.com (renderer typesets from the frozen snapshot, never from model output)"
+    },
+    {
+      "name": "exact approved logo bytes/identity",
+      "pass": true,
+      "detail": "logo contentHash 9b0cf9971d90d8f5…; renderer fails render_asset_hash_mismatch on any substitution"
+    },
+    {
+      "name": "Driver and Passenger are distinct surfaces",
+      "pass": true,
+      "detail": "driver f15f5d34fa6e5afe… vs passenger 1540704dba387906…"
+    },
+    {
+      "name": "both flanks upright after production extraction",
+      "pass": true,
+      "detail": "driver 2848x1153, passenger 2848x1153 (landscape = upright for a flank)"
+    },
+    {
+      "name": "flattened A.T.L.A.S. composed deterministically from the six surface renders",
+      "pass": true,
+      "detail": "designpro.atlas-surface-compose.v1, canvas 4096x4096, compositionHash 42f952041f14ce67…"
+    },
+    {
+      "name": "final six panels derive from the canonical master and bind to its hash",
+      "pass": true,
+      "detail": "sourceMasterHash == masterContentHash 51d85eeb669bea9a… on all six"
+    },
+    {
+      "name": "Call-8 / Call-9 / source.verify / RevisionStudioIQ / PanelProStudio consumer shapes satisfied",
+      "pass": true,
+      "detail": "all 17 contract fields present on all six panels; contract=designpro.flat-first-atlas-call1-panel.v1"
+    },
+    {
+      "name": "panels report their own determinism honestly",
+      "pass": true,
+      "detail": "method=deterministic_atlas_crop, deterministic=true (zero AI touched these pixels: seeded fixture art + code assembly)"
+    }
+  ]
+}
