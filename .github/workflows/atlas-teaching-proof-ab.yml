@@ -182,6 +182,31 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            The value never reaches a command line or the log. An allowlist
 #            fence inside the script lets the process reach exactly ONE URL and
 #            refuses every other request.
+#            RESULT (run 33823909617, one draw): the first evidenced result
+#            combining recognizable six-territory topology, anatomy-free
+#            artwork and no instructional labels. FAILED registration to the
+#            canonical GENIE territories, printable full bleed, passenger
+#            orientation and all six production panels: the model composed the
+#            arrangement at its own proportions (flanks 4.0:1, centre 2.0:1)
+#            against GENIE's, with 6-8 px gutters, so every cut crossed a drawn
+#            boundary. Offline registration was deterministic for that one
+#            master but discards 33-38% of every territory; it is evidence
+#            only and must never enter production.
+#
+#   test 13 — TEST 12 PLUS NORMALIZED GENIE-DERIVED PROPORTIONS (ONE draw).
+#            Exactly one change from test 12: a single paragraph of normalized
+#            territory extents, derived by code from the production
+#            buildAtlasManifest zones (four decimals, no names, no coordinates
+#            table, no image), inserted after the arrangement paragraph. The
+#            brief, topology order, orientation wording, model, configuration,
+#            zero-image input and every other byte are unchanged, and the
+#            preflight proves it: removing the 317-char insertion at offset
+#            3631 must reproduce test 12's sha 2c460057.... Locked at
+#            4906f932e57d68cc125ab0c37bebac049885ad25f2093259d68b06a7a71df98a,
+#            4,300 chars, 4,529 request bytes. Passenger orientation is NOT
+#            addressed. Same runner, same credential isolation, same fence.
+#            GENIE supplies the authoritative proportions; the model is
+#            conditioned to compose within them.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
@@ -212,6 +237,7 @@ on:
           - 10-anchor-restoration
           - 11-field-recovery-v2
           - 12-six-region
+          - 13-six-region-proportions
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -219,7 +245,7 @@ on:
         type: string
         default: ""
       draws:
-        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9, 10, 11 and 12 (field recovery, anchor restoration, field recovery v2, six-region) accept ONLY 1 — owner ruling — and refuse anything else."
+        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9-13 (field recovery, anchor restoration, field recovery v2, six-region, six-region + proportions) accept ONLY 1 — owner ruling — and refuse anything else."
         required: true
         type: string
         default: "1"
@@ -448,6 +474,10 @@ jobs:
             # contract module, so the approved bytes and the code that sends
             # them cannot drift apart. One image request, fenced; no retries.
             12-six-region)           runner=scripts/atlas-field-contract-v2.mjs ;;
+            13-six-region-proportions)
+              runner=scripts/atlas-field-contract-v2.mjs
+              extra_args=(--variant proportions)
+              ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs
@@ -463,14 +493,15 @@ jobs:
           # never receives it: capture-only gets NO variables at all, and the
           # draw gets exactly ONE, GEMINI_API_KEY, in a 0600 file that dies with
           # $work. The value never appears on a command line, in an environment
-          # listing, or in the log. Tests 1-11 are unchanged.
+          # listing, or in the log. Tests 1-11 are unchanged. Test 13 is the
+          # same runner under the same policy.
           docker_args=(--env-file "$env_file")
-          if [ "$AB_TEST" = "12-six-region" ]; then
+          if [ "$AB_TEST" = "12-six-region" ] || [ "$AB_TEST" = "13-six-region-proportions" ]; then
             if [ "$AB_CAPTURE_ONLY" = "true" ]; then
               # No credential and nothing to fetch, so take the network away
               # entirely: the container cannot reach anything at all.
               docker_args=(--network none)
-              echo "env policy: test 12 capture-only -> NO variables are passed, and --network none"
+              echo "env policy: test $AB_TEST capture-only -> NO variables are passed, and --network none"
             else
               key_env="$work/gemini.env"
               : > "$key_env"
@@ -482,7 +513,7 @@ jobs:
               printf 'GEMINI_API_KEY=%s\n' "$raw" > "$key_env"
               unset raw
               docker_args=(--env-file "$key_env")
-              echo "env policy: test 12 draw -> exactly one variable is passed: GEMINI_API_KEY"
+              echo "env policy: test $AB_TEST draw -> exactly one variable is passed: GEMINI_API_KEY"
             fi
           fi
 

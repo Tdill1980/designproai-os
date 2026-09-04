@@ -378,6 +378,84 @@ export function buildSixRegionPromptV2(deployedPrompt) {
   };
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * TEST 13 — TEST 12 PLUS NORMALIZED GENIE-DERIVED TERRITORY PROPORTIONS
+ *
+ * Run 33823909617 (test 12) was the first evidenced result combining a
+ * recognizable six-territory topology, anatomy-free artwork and no
+ * instructional labels — and it failed registration: the model composed the
+ * right arrangement at ITS OWN proportions (flanks 4.0:1, centre rows 2.0:1)
+ * against GENIE's (2.47:1 and 1.2–3.2:1), so every canonical cut crossed a
+ * drawn boundary. The offline registration proof showed identification is
+ * deterministic on that master but any mapping discards 33–38% of each
+ * territory. Registration was deterministic for that ONE master; it is not
+ * proven generally. GENIE supplies the authoritative proportions; the model is
+ * conditioned to compose within them — it never "carries" production geometry.
+ *
+ * Test 13 changes ONE thing: a single paragraph of normalized proportions,
+ * derived by code from `manifest.zones`, inserted after the arrangement
+ * paragraph. Brief, topology order, orientation wording, model, request
+ * configuration, zero-image input and every other byte are unchanged, and the
+ * preflight proves it — removing the insertion must reproduce test 12's sha.
+ * Passenger orientation is deliberately NOT addressed here. No labels, no
+ * surface names, no teaching image, no guide.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export const SIX_REGION_PROPORTIONS_CONTRACT = "designpro.atlas-six-region-prompt.v2-proportions";
+/** Test 12's tail was 1285 chars under the 1400 harness ceiling; the proportions add 317. */
+export const SIX_REGION_PROPORTIONS_TAIL_MAX_CHARS = 1700;
+const PROPORTIONS_ANCHOR = "each intentionally finished with its own focal detail.";
+
+/** The owner-approved test-13 request, to the byte, plus its exact relationship to test 12. */
+export const APPROVED_SIX_REGION_PROPORTIONS = Object.freeze({
+  ...APPROVED_SIX_REGION,
+  promptSha256: "4906f932e57d68cc125ab0c37bebac049885ad25f2093259d68b06a7a71df98a",
+  promptChars: 4300,
+  modelRequestByteSize: 4529,
+  tailChars: 1602,
+  tailSha256: "31318e8523141ce789785fb2dc3614324a66ba88d2eab73d4dc60b20bcc1a942",
+  parentPromptSha256: APPROVED_SIX_REGION.promptSha256,
+  insertionOffset: 3631,
+  insertionChars: 317,
+  proportionsText: "Proportions, measured as fractions of the square, across then down: the left part 0.0469 to 0.3284 and 0.1523 to 0.8477; the right part 0.6716 to 0.9531 and 0.1523 to 0.8477; the four between them 0.3459 to 0.6541 across, and down from the top 0.0803 to 0.3096, 0.3184 to 0.5552, 0.5640 to 0.8135, 0.8223 to 0.9197.",
+});
+
+/** Normalized zone extents, four decimals, derived from the production manifest — never typed. */
+export function genieProportionsSentence(manifest) {
+  const Z = Object.fromEntries(manifest.zones.map((z) => [z.surfaceKey, z]));
+  const W = manifest.canvas.widthPx, H = manifest.canvas.heightPx;
+  const f = (v) => (Math.round(v * 10000) / 10000).toFixed(4);
+  const xs = (z) => `${f(z.x / W)} to ${f((z.x + z.w) / W)}`;
+  const ys = (z) => `${f(z.y / H)} to ${f((z.y + z.h) / H)}`;
+  const centre = ["rear", "roof", "hood", "front"];
+  if (centre.some((k) => xs(Z[k]) !== xs(Z.rear))) throw new Error("proportions: the centre column is not one horizontal span");
+  if (ys(Z.passenger) !== ys(Z.driver)) throw new Error("proportions: the flanks differ vertically");
+  return `Proportions, measured as fractions of the square, across then down: the left part ${xs(Z.passenger)} and ${ys(Z.passenger)}; the right part ${xs(Z.driver)} and ${ys(Z.driver)}; the four between them ${xs(Z.rear)} across, and down from the top ${centre.map((k) => ys(Z[k])).join(", ")}.`;
+}
+
+/** Test 12's tail with the proportions paragraph inserted after the arrangement paragraph. */
+export function sixRegionProportionsContract(deployedTail, manifest) {
+  const base = sixRegionContract(deployedTail);
+  const at = base.indexOf(PROPORTIONS_ANCHOR);
+  if (at < 0 || base.indexOf(PROPORTIONS_ANCHOR, at + 1) >= 0) throw new Error("proportions: the insertion anchor is not unique in the test-12 tail");
+  const cut = at + PROPORTIONS_ANCHOR.length;
+  const sentence = genieProportionsSentence(manifest);
+  if (sentence !== APPROVED_SIX_REGION_PROPORTIONS.proportionsText) throw new Error("proportions: the sentence derived from the manifest is not the owner-approved sentence — refusing");
+  const tail = base.slice(0, cut) + "\n\n" + sentence + base.slice(cut);
+  for (const { word, pattern } of FORBIDDEN_IN_FIELD_TAIL) if (pattern.test(tail)) throw new Error(`proportions: tail contains forbidden framing "${word}"`);
+  if (tail.length > SIX_REGION_PROPORTIONS_TAIL_MAX_CHARS) throw new Error(`proportions: tail is ${tail.length} chars, over the ${SIX_REGION_PROPORTIONS_TAIL_MAX_CHARS} ceiling`);
+  return tail;
+}
+
+/** Identical to buildSixRegionPromptV2 except the tail; also returns the parent (test-12) sha for the proof. */
+export function buildSixRegionProportionsPromptV2(deployedPrompt, manifest) {
+  const t12 = buildSixRegionPromptV2(deployedPrompt);
+  const fieldTail = sixRegionProportionsContract(t12.deployedTail, manifest);
+  const prompt = t12.creativeField + fieldTail;
+  assertFieldPromptClean(prompt);
+  return { ...t12, fieldTail, prompt, tailSha256: sha(fieldTail), promptSha256: sha(prompt), parentPromptSha256: t12.promptSha256, parentPromptChars: t12.prompt.length };
+}
+
 /**
  * Build the target six-surface A.T.L.A.S. topology from the pinned GENIE inches
  * with the REAL production `buildAtlasManifest`, then cross-check it against the
@@ -439,8 +517,8 @@ export function sixRegionManifest(buildAtlasManifest) {
  * runner. Any drift — a re-worded tail, a different fixture, a model swap, an
  * added temperature, an extra part, any image part — throws here.
  */
-export function assertApprovedSixRegionRequest({ deployedPrompt, field, request, serialize, parts }) {
-  const A = APPROVED_SIX_REGION;
+export function assertApprovedSixRegionRequest({ deployedPrompt, field, request, serialize, parts, lock = APPROVED_SIX_REGION }) {
+  const A = lock;
   const fail = (what, expected, actual) => {
     throw new Error(`six-region preflight: ${what} is ${JSON.stringify(actual)}, the owner approved ${JSON.stringify(expected)} — refusing the draw`);
   };
@@ -464,8 +542,15 @@ export function assertApprovedSixRegionRequest({ deployedPrompt, field, request,
     fail("the serialized body", "contents[0].parts = [the approved prompt] and nothing else", "a different body shape");
   }
   if (/"temperature"/.test(body)) fail("temperature", "absent", "present");
+  if (A.parentPromptSha256) {
+    // test 13 is test 12 plus ONE inserted paragraph: removing it must reproduce test 12 byte for byte
+    const { insertionOffset: off, insertionChars: n } = A;
+    const parent = field.prompt.slice(0, off) + field.prompt.slice(off + n);
+    if (sha(parent) !== A.parentPromptSha256) fail("the prompt with the proportions removed", `the parent prompt ${A.parentPromptSha256}`, sha(parent));
+    if (field.prompt.slice(off + 2, off + n) !== A.proportionsText) fail("the inserted paragraph", A.proportionsText.slice(0, 40) + "…", field.prompt.slice(off + 2, off + 42) + "…");
+  }
   return {
-    contract: SIX_REGION_CONTRACT, promptSha256: field.promptSha256, promptChars: field.prompt.length,
+    contract: A.parentPromptSha256 ? SIX_REGION_PROPORTIONS_CONTRACT : SIX_REGION_CONTRACT, promptSha256: field.promptSha256, promptChars: field.prompt.length,
     modelRequestByteSize: request.modelRequestByteSize, partCount: request.partCount,
     modelInputImageCount: request.modelInputImageCount, model: request.model,
     generationConfig: request.generationConfig, temperature: null,
@@ -565,6 +650,12 @@ async function runSixRegionDraw() {
 
   if (Number(args.draws ?? 1) !== 1) throw new Error(`six-region: the owner approved exactly ONE draw; --draws ${args.draws} refused`);
   const captureOnly = String(args["capture-only"]).toLowerCase() === "true";
+  const variant = String(args.variant || "six-region");
+  if (variant !== "six-region" && variant !== "proportions") throw new Error(`unknown --variant ${variant}`);
+  const PROPORTIONS = variant === "proportions";
+  const LOCK = PROPORTIONS ? APPROVED_SIX_REGION_PROPORTIONS : APPROVED_SIX_REGION;
+  const CONTRACT = PROPORTIONS ? SIX_REGION_PROPORTIONS_CONTRACT : SIX_REGION_CONTRACT;
+  const TAG = PROPORTIONS ? "six-region-proportions" : "six-region";
 
   // Requirement, enforced rather than asserted: a capture-only run receives no
   // Gemini credential at all, and refuses to continue if one was handed to it.
@@ -644,11 +735,12 @@ async function runSixRegionDraw() {
   log(`branch selection: the product path set fieldContract ${removedFieldContract}; removed from this test's own copy to select the six-surface branch (harness only)`);
   const assembled = call1.buildAtlasCall1Prompt(sixSurfaceBody);
   if (assembled.references.length) throw new Error("this fixture must carry no customer references");
-  const field = buildSixRegionPromptV2(assembled.prompt);
+  const field = PROPORTIONS ? buildSixRegionProportionsPromptV2(assembled.prompt, manifest) : buildSixRegionPromptV2(assembled.prompt);
   const { parts, request, serialize } = buildFieldRequestV2({ prompt: field.prompt, referenceParts: [], model: call1.AUTHORING_MODEL });
-  const preflight = assertApprovedSixRegionRequest({ deployedPrompt: assembled.prompt, field, request, serialize, parts });
+  const preflight = assertApprovedSixRegionRequest({ deployedPrompt: assembled.prompt, field, request, serialize, parts, lock: LOCK });
   log("");
-  log(`PREFLIGHT ${preflight.verdict}`);
+  log(`PREFLIGHT ${preflight.verdict} (${CONTRACT})`);
+  if (PROPORTIONS) log(`    parent (test 12)  sha ${field.parentPromptSha256.slice(0, 16)}  ${field.parentPromptChars} chars — reproduced by removing the ${LOCK.insertionChars}-char insertion at offset ${LOCK.insertionOffset}`);
   log(`    deployed prompt   sha ${sha(assembled.prompt).slice(0, 16)}  ${assembled.prompt.length} chars`);
   log(`    creative assembly ${field.creative.length} → ${field.creativeField.length} chars, ${field.swaps.length} swaps, reverse proof ${field.reverseProof}`);
   log(`    tail              sha ${field.tailSha256.slice(0, 16)}  ${field.fieldTail.length} chars (ceiling ${FIELD_TAIL_MAX_CHARS})`);
@@ -656,13 +748,13 @@ async function runSixRegionDraw() {
   log(`    request           ${request.partCount} text part, ${request.modelInputImageCount} images, ${request.modelRequestByteSize} bytes, model ${request.model}, ${JSON.stringify(GENERATION_CONFIG)}, no temperature`);
 
   const parity = {
-    contract: SIX_REGION_CONTRACT,
-    label: "TEST 12 — six-region topology text (owner-approved candidate)",
+    contract: CONTRACT,
+    label: PROPORTIONS ? "TEST 13 — test 12 plus normalized GENIE-derived proportions" : "TEST 12 — six-region topology text (owner-approved candidate)",
     honestClassification: "topology-text experiment, same family as Test 3; the untested cell is zero images + zero surface names + the extent sentence + a positional description",
     deployedPrompt: { sha256: sha(assembled.prompt), chars: assembled.prompt.length },
     creativeAssembly: { deployedChars: field.creative.length, deployedSha256: field.creativeSha256, fieldChars: field.creativeField.length, fieldSha256: field.creativeFieldSha256, swaps: field.swaps, reverseProof: field.reverseProof },
     tail: { deployedChars: field.deployedTail.length, deployedSha256: sha(field.deployedTail), sixRegionChars: field.fieldTail.length, sixRegionSha256: field.tailSha256, ceiling: FIELD_TAIL_MAX_CHARS },
-    approvedLock: APPROVED_SIX_REGION,
+    approvedLock: LOCK,
     branchSelection,
     pinnedGeometry: PINNED_GENIE,
     geometryProvenance: provenance,
@@ -673,11 +765,11 @@ async function runSixRegionDraw() {
   const writeEvidence = (name, body) => writeFileSync(join(OUT, name), body);
   writeEvidence("parity.json", JSON.stringify(parity, null, 2));
   writeEvidence("prompt-deployed.txt", assembled.prompt);
-  writeEvidence("prompt-six-region.txt", field.prompt);
+  writeEvidence(`prompt-${TAG}.txt`, field.prompt);
   writeEvidence("creative-deployed.txt", field.creative);
-  writeEvidence("creative-six-region.txt", field.creativeField);
+  writeEvidence(`creative-${TAG}.txt`, field.creativeField);
   writeEvidence("tail-deployed.txt", field.deployedTail);
-  writeEvidence("tail-six-region.txt", field.fieldTail);
+  writeEvidence(`tail-${TAG}.txt`, field.fieldTail);
   writeEvidence("swaps.json", JSON.stringify(field.swaps, null, 2));
   writeEvidence("requests.json", JSON.stringify({ vehicle: VEHICLE, brief: BRIEF, request, body: serialize(parts) }, null, 2));
 
@@ -689,7 +781,7 @@ async function runSixRegionDraw() {
 
   if (captureOnly) {
     writeEvidence("results.json", JSON.stringify({
-      contract: SIX_REGION_CONTRACT, captureOnly: true, imageRequestsExecuted: 0,
+      contract: CONTRACT, captureOnly: true, imageRequestsExecuted: 0,
       geminiCredentialPresent: false, databaseReads: 0, databaseWrites: 0, parity, request,
     }, null, 2));
     const scrubReceipt = await scrub();
@@ -717,7 +809,7 @@ async function runSixRegionDraw() {
   // ── 4. the RAW bytes, written and hashed before anything touches them ─────
   const rawBytes = Buffer.from(image.inlineData.data, "base64");
   const rawSha = sha(rawBytes);
-  writeFileSync(join(OUT, "draw1-six-region-raw.png"), rawBytes);
+  writeFileSync(join(OUT, `draw1-${TAG}-raw.png`), rawBytes);
   writeEvidence("draw1-design-text.txt", textOut.slice(0, 4000));
   const rawMeta = await sharp(rawBytes, { limitInputPixels: false }).metadata();
   log(`draw 1: ${(rawBytes.length / 1024).toFixed(0)}KB, ${rawMeta.width}×${rawMeta.height}, in ${(elapsedMs / 1000).toFixed(1)}s — RAW written FIRST, sha ${rawSha.slice(0, 16)}`);
@@ -727,11 +819,11 @@ async function runSixRegionDraw() {
   const normalized = await atlas.normalizeAtlasMaster(rawBytes, manifest);
   const masterBytes = normalized.bytes;
   const masterHash = sha(masterBytes);
-  writeFileSync(join(OUT, "draw1-six-region-master-masked.png"), masterBytes);
+  writeFileSync(join(OUT, `draw1-${TAG}-master-masked.png`), masterBytes);
   const unmasked = await sharp(rawBytes, { limitInputPixels: false }).rotate()
     .resize(manifest.canvas.widthPx, manifest.canvas.heightPx, { fit: "fill", kernel: "lanczos3" })
     .removeAlpha().png({ compressionLevel: 6 }).toBuffer();
-  writeFileSync(join(OUT, "draw1-six-region-unmasked-4096.png"), unmasked);
+  writeFileSync(join(OUT, `draw1-${TAG}-unmasked-4096.png`), unmasked);
   log(`canonical master: delivered ${normalized.deliveredWidthPx}×${normalized.deliveredHeightPx}, nativelyFourK=${normalized.nativelyFourK}, sha ${masterHash.slice(0, 16)}`);
 
   // ── 6. pixel measurements (colour-blind, telemetry, no gate) ──────────────
@@ -808,7 +900,7 @@ async function runSixRegionDraw() {
 
   // ── 9. receipts and report. No verdict is issued here. ────────────────────
   const results = {
-    contract: SIX_REGION_CONTRACT,
+    contract: CONTRACT,
     ranAt: new Date().toISOString(),
     imageRequestsExecuted: fence.imageRequestsSent,
     imageRequestBudget: fence.budget,
@@ -850,7 +942,7 @@ async function runSixRegionDraw() {
 
   const P = (k) => panelRecords.find((q) => q.surfaceKey === k);
   writeEvidence("REPORT.md", [
-    "# Test 12 — six-region topology text, Draw 1",
+    PROPORTIONS ? "# Test 13 — six-region topology text + GENIE proportions, Draw 1" : "# Test 12 — six-region topology text, Draw 1",
     "",
     "Harness only. ONE Gemini image call, ZERO inspections, ZERO database access. No repair, no fill, no gate, no second draw. **Green is not a pass** — every number here is telemetry and the verdict is the owner's, on the images.",
     "",
@@ -858,7 +950,7 @@ async function runSixRegionDraw() {
     "",
     "## 1. Untouched raw master",
     "",
-    `\`draw1-six-region-raw.png\` — exactly what Gemini returned, written and hashed before any transformation. sha256 \`${rawSha}\`, ${rawBytes.length} B, ${rawMeta.width}×${rawMeta.height}.`,
+    `\`draw1-${TAG}-raw.png\` — exactly what Gemini returned, written and hashed before any transformation. sha256 \`${rawSha}\`, ${rawBytes.length} B, ${rawMeta.width}×${rawMeta.height}.`,
     "",
     "## 2. Request / provider receipt",
     "",
@@ -880,7 +972,7 @@ async function runSixRegionDraw() {
     "",
     "## 3. Deterministic flattened A.T.L.A.S. master",
     "",
-    `\`draw1-six-region-master-masked.png\` sha256 \`${masterHash}\`. Raw and canonical hashes differ: **${rawSha !== masterHash}**. Normalization = ${results.draw.normalization}. Topology \`${manifest.topology}\`, manifest contract \`${manifest.contract}\`, GENIE \`${PINNED_GENIE.genieManifestHash}\`.`,
+    `\`draw1-${TAG}-master-masked.png\` sha256 \`${masterHash}\`. Raw and canonical hashes differ: **${rawSha !== masterHash}**. Normalization = ${results.draw.normalization}. Topology \`${manifest.topology}\`, manifest contract \`${manifest.contract}\`, GENIE \`${PINNED_GENIE.genieManifestHash}\`.`,
     "",
     "### Geometry provenance — three different objects, kept apart",
     "",
