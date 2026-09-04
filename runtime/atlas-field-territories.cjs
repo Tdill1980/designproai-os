@@ -231,7 +231,21 @@ function buildFieldTerritories(legacyManifest) {
   const canvasPx = W * H;
   return {
     ...legacyManifest,
-    contract: FIELD_TERRITORIES_CONTRACT,
+    // `contract` STAYS THE A.T.L.A.S. MANIFEST IDENTITY.
+    //
+    // This used to be overwritten with FIELD_TERRITORIES_CONTRACT, and that one
+    // line stopped every proof this product has tried to render since v24.
+    // `atlasProjectionParts` conditions each proof on
+    // `atlas.manifest.contract !== MANIFEST_CONTRACT` and throws
+    // `flat_atlas_conditioning_invalid` when it does not match -- so a run cut
+    // all six panels, then failed at 0/7 proofs, half a second after the master
+    // landed. Live twice: Arctic Air 586abc83 (master 2026-09-04 17:40:34.081,
+    // request failed 17:40:34.535) and 1a0e6b70 before it.
+    //
+    // The territory LAYOUT is a different identity from the MANIFEST it is a
+    // layout of, so it travels beside it under its own name. `fieldLayout`
+    // already carried the same value; nothing that reads geometry changes.
+    territoriesContract: FIELD_TERRITORIES_CONTRACT,
     topology: FIELD_TOPOLOGY,
     legacyTopology: legacyManifest.topology,
     installerMap: {

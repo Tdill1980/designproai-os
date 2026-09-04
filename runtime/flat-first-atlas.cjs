@@ -2242,7 +2242,12 @@ async function generateOrReuseFlatAtlas(options) {
   const currentExampleSetHash = sha256(canonicalBytes({
     atlasDesignTeachingExample: null,
     fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
-    territories: manifest.contract,
+    // The TERRITORY layout identity, which is what this hash is about. It read
+    // `manifest.contract` while that field was being overwritten with the
+    // territories contract; now that `contract` is the manifest identity again,
+    // the reuse key names the layout explicitly instead of relying on a
+    // collision. Same value, so the hash does not move.
+    territories: manifest.territoriesContract,
     topology: manifest.topology,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
@@ -2862,7 +2867,9 @@ async function generateOrReuseFlatAtlas(options) {
       // territory layout the six panels were cut from (thirds, extracted
       // ratio, boundaries). Forensic; never a model input.
       atlasFieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
-      territoriesContract: manifest.contract,
+      // Same rename, same value: this forensic field records the LAYOUT the six
+      // panels were cut from, not the manifest identity.
+      territoriesContract: manifest.territoriesContract,
       fieldLayout: manifest.fieldLayout || null,
       designPanelArtboardQualityExamplesApplied: 0,
       designPanelArtboardQualityExampleIdentities: [],
