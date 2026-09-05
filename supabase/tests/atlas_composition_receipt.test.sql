@@ -20,7 +20,7 @@
 -- without any of this; so would any check on the migration's text. Only
 -- execution over data separates "this parsed" from "this runs".
 begin;
-select plan(12);
+select plan(14);
 
 select has_function(
   'public','designpro_flat_atlas_generation_paths',ARRAY['uuid'],
@@ -211,16 +211,77 @@ select is(
 
 -- A revision authored BEFORE the ground split must stay readable, with every
 -- composition key resolving to null rather than raising (owner protection #1).
-update public.designpro_flat_atlas_revisions
-set metadata = jsonb_build_object('masterQcPassed',true,'canonicalMasterHash',repeat('c',64))
-where id='64000000-0000-4000-8000-000000000001';
+--
+-- Seeded as its OWN generation rather than by updating the row above: atlas
+-- revisions are immutable by trigger (`designpro_flat_atlas_row_is_immutable`),
+-- which is exactly the guarantee that makes a published master citable.
+create temporary table historical_input on commit drop as
+select jsonb_build_object(
+  'contractVersion','designpro.calls-1-7-input.v3',
+  'pipelineMode','flat-first-atlas-v1','mode','commercial',
+  'companyName','Arctic Air','brief','pre-composition fixture',
+  'designName','Arctic Air',
+  'vehicle',jsonb_build_object('year','2022','make','Toyota','model','Prius','type','car')
+) as input;
+
+insert into public.designpro_generation_requests(
+  id,generation_id,owner_id,tenant_key,idempotency_key,state,request_input,
+  input_hash,engine_contract,engine_contract_hash,output_set_hash,engine_receipt,completed_at
+)
+select
+  '62000000-0000-4000-8000-000000000002',
+  '63000000-0000-4000-8000-000000000002',
+  '61000000-0000-4000-8000-000000000001',
+  'user_61000000-0000-4000-8000-000000000001',
+  'calls17:63000000-0000-4000-8000-000000000002:'
+    ||encode(extensions.digest(convert_to(historical_input.input::text,'UTF8'),'sha256'),'hex'),
+  'outputs_ready',
+  historical_input.input,
+  encode(extensions.digest(convert_to(historical_input.input::text,'UTF8'),'sha256'),'hex'),
+  designpro_private.calls_1_7_engine_contract(),
+  encode(extensions.digest(convert_to(
+    designpro_private.calls_1_7_engine_contract()::text,'UTF8'),'sha256'),'hex'),
+  repeat('9',64),
+  jsonb_build_object('contractVersion','designpro.calls-1-7-receipt.v1'),now()
+from historical_input;
+
+insert into public.designpro_flat_atlas_revisions(
+  id,request_id,generation_id,owner_id,tenant_key,revision_sequence,
+  guide_storage_path,guide_content_hash,guide_byte_size,guide_content_type,
+  manifest_storage_path,manifest_content_hash,manifest_byte_size,manifest_content_type,
+  master_storage_path,master_content_hash,master_byte_size,master_content_type,
+  projection_storage_path,projection_content_hash,projection_byte_size,projection_content_type,
+  manifest,model,prompt_version,width_px,height_px,effective_ppi,metadata
+)
+select
+  '64000000-0000-4000-8000-000000000002',
+  '62000000-0000-4000-8000-000000000002',
+  '63000000-0000-4000-8000-000000000002',
+  '61000000-0000-4000-8000-000000000001',
+  'user_61000000-0000-4000-8000-000000000001',1,
+  prefix.p||'guide/'||repeat('a',64)||'.png',repeat('a',64),10,'image/png',
+  prefix.p||'manifest/'||repeat('b',64)||'.json',repeat('b',64),10,'application/json',
+  prefix.p||'revisions/1/master/'||repeat('c',64)||'.png',repeat('c',64),10,'image/png',
+  prefix.p||'revisions/1/projection/'||repeat('d',64)||'.jpg',repeat('d',64),10,'image/jpeg',
+  '{}'::jsonb,'gemini-3-pro-image',
+  'designpro-flat-first-atlas-20260902.v24-one-field',4096,4096,16.35,
+  jsonb_build_object('masterQcPassed',true,'canonicalMasterHash',repeat('c',64))
+from (select 'designpro/user_61000000-0000-4000-8000-000000000001/'
+  ||'63000000-0000-4000-8000-000000000002/flat-first/v1/' as p) as prefix;
 
 select is(
   (select (public.designpro_flat_atlas_generation_paths(
-     '63000000-0000-4000-8000-000000000001'::uuid
+     '63000000-0000-4000-8000-000000000002'::uuid
    )->0->'qc'->>'groundContract')),
   null,
   'a pre-composition revision projects null composition keys and still reads'
+);
+select isnt(
+  (select (public.designpro_flat_atlas_generation_paths(
+     '63000000-0000-4000-8000-000000000002'::uuid
+   )->0->>'masterContentHash')),
+  null,
+  'and its master is still readable, viewable and downloadable'
 );
 
 select * from finish();
