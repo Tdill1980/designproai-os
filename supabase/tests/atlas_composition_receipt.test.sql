@@ -125,10 +125,13 @@ select
   '63000000-0000-4000-8000-000000000001',
   '61000000-0000-4000-8000-000000000001',
   'user_61000000-0000-4000-8000-000000000001',1,
-  'designpro/x/guide/'||repeat('a',64)||'.png',repeat('a',64),10,'image/png',
-  'designpro/x/manifest/'||repeat('b',64)||'.json',repeat('b',64),10,'application/json',
-  'designpro/x/revisions/1/master/'||repeat('c',64)||'.png',repeat('c',64),10,'image/png',
-  'designpro/x/revisions/1/projection/'||repeat('d',64)||'.jpg',repeat('d',64),10,'image/jpeg',
+  -- `designpro_flat_atlas_revision_paths` pins every path to
+  -- designpro/<tenant_key>/<generation_id>/flat-first/v1/..., and pins the
+  -- master and projection names to their own content hashes and content types.
+  prefix.p||'guide/'||repeat('a',64)||'.png',repeat('a',64),10,'image/png',
+  prefix.p||'manifest/'||repeat('b',64)||'.json',repeat('b',64),10,'application/json',
+  prefix.p||'revisions/1/master/'||repeat('c',64)||'.png',repeat('c',64),10,'image/png',
+  prefix.p||'revisions/1/projection/'||repeat('d',64)||'.jpg',repeat('d',64),10,'image/jpeg',
   '{}'::jsonb,'gemini-3-pro-image',
   'designpro-flat-first-atlas-20260905.v25-ground-and-elements',4096,4096,16.35,
   jsonb_build_object(
@@ -150,7 +153,8 @@ select
       'canonicalStrings',jsonb_build_object(
         'wordmark','Arctic Air','contact','Www.ArcticAir.com'))
   )
-from composition;
+from composition, (select 'designpro/user_61000000-0000-4000-8000-000000000001/'
+  ||'63000000-0000-4000-8000-000000000001/flat-first/v1/' as p) as prefix;
 
 -- ── EXECUTION, over the seeded row ────────────────────────────────────────
 create temporary table projected on commit drop as
