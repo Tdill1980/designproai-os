@@ -223,7 +223,7 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // confidence-passed rows remain readable under the old receipt shape.
     "20260831103000_designpro_atlas_proof_semantic_advisory.sql",
     "20260902120000_designpro_genie_prep.sql",
-    "20260905120000_designpro_atlas_composition_receipt.sql",
+    "20260905120000_designpro_atlas_panel_qc_receipt.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

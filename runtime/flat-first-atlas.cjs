@@ -44,22 +44,7 @@ const { BUCKET } = require("./generation-store.cjs");
 // serializes six code-only territories out of it AFTER the call.
 const { buildFieldTerritories, NOSE_EDGE } = require("./atlas-field-territories.cjs");
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
-// COMPOSITION BEFORE ACCEPTANCE (owner ruling 2026-09-05). Call 1 authors the
-// GROUND; these three own everything a crop could destroy. `resolveAtlasElements`
-// finds each element's real source and measures it, `planAtlasElements` proves a
-// rectangle inside one surface's trim box for every one of them, and
-// `composeAtlasMaster` paints them on -- all of it before the master is
-// accepted, so every downstream consumer sees the finished sheet and none of
-// them has to know composition happened.
-const { ELEMENT_PLAN_CONTRACT, planAtlasElements } = require("./atlas-element-plan.cjs");
-const {
-  COMPOSE_CONTRACT,
-  composeAtlasMaster,
-  measureImageAsset,
-  measureOutlinedString,
-  textVariants,
-} = require("./atlas-compose-master.cjs");
-const { ELEMENTS_CONTRACT, resolveAtlasElements } = require("./atlas-elements.cjs");
+const { inspectAtlasPanels, PANEL_QC_CONTRACT } = require("./atlas-panel-qc.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -82,17 +67,11 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260905.v25-ground-and-elements";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260902.v24-one-field";
 // The model-facing contract the runtime asks the edge for: one continuous
 // full-bleed composition, one text part plus verified customer references,
 // zero structural images. Echoed back by the edge and verified on receipt.
-// v3 -- the GROUND contract. Call 1 paints palette, texture, depth, motion and
-// imagery and paints no glyph at all; the runtime composites the lettering, the
-// brand mark and the focal photograph afterwards, at rectangles proved to lie
-// inside one surface's trim box. v2 remains defined and callable so the locked
-// harness fixture keeps measuring the arm it was captured from.
-const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v3";
-const ATLAS_FIELD_PROMPT_CONTRACT_V2 = "designpro.atlas-field-prompt.v2";
+const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -170,7 +149,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260905.v25-ground-and-elements";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260902.v24-one-field";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1624,28 +1603,6 @@ function normalizedZoneTopology(zone, manifest) {
   };
 }
 
-/**
- * Does the brief actually ask for a PHOTOGRAPH?
- *
- * Mirrors `briefWantsPhoto` in the deployed edge function byte for byte in
- * behaviour, deliberately: the edge uses it to switch on the photorealism lock,
- * and the runtime uses it to decide whether to spend an isolated photo element
- * call. Two answers to the same question would mean a wrap whose ground was
- * conditioned for a photograph that was never resolved, or an element call spent
- * on a brief that never asked for one. If the edge's predicate changes, change
- * this one in the same commit.
- *
- * DesignPro ILLUSTRATES by default. Scene words alone (ranch, sunset, cabin) do
- * not trigger it -- a customer can absolutely want a stylised ranch.
- */
-function briefWantsPhoto(raw) {
-  const t = String(raw || "").toLowerCase();
-  if (/\b(photo|photos|photograph|photographs|photographic|photo-?realistic|photorealism|photoreal)\b/.test(t)) return true;
-  if (/\b(lifelike|true[-\s]to[-\s]life)\b/.test(t)) return true;
-  if (/\brealistic\b/.test(t) && /\b(photo|image|render|look|looking|scene|imagery)\b/.test(t)) return true;
-  return false;
-}
-
 async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetch, ownerId, supabase } = {}) {
   const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
@@ -2373,15 +2330,6 @@ async function generateOrReuseFlatAtlas(options) {
   let generated;
   let masterBytes;
   let masterHash;
-  // The Call-1 ground, before composition. Kept distinct from the master for
-  // the whole of this function: `groundHash` is provenance -- what the model
-  // actually authored -- and `masterHash` is the composed sheet everything
-  // downstream consumes.
-  let groundBytes;
-  let groundHash = null;
-  let elementsReceipt = null;
-  let elementPlan = null;
-  let composeReceipt = null;
   let masterRequestByteSize = 0;
   let masterAuthoringAttempts = 0;
   let masterDelivery = null;
@@ -2406,39 +2354,12 @@ async function generateOrReuseFlatAtlas(options) {
     deterministicMs: 0,
     repairMs: 0,
     panelExtractionMs: 0,
+    panelQcMs: 0,
     viewAuthorityMs: 0,
     projectionMs: 0,
     uploadWaitMs: 0,
     semanticWaitMs: 0,
-    composeMs: 0,
-    elementResolveMs: 0,
   };
-
-  // ── ELEMENT SOURCES RESOLVE CONCURRENTLY WITH CALL 1 ──────────────────────
-  //
-  // Neither the brand mark nor the photograph depends on the ground, so their
-  // image calls overlap Call 1's ~40s instead of following it. Measured on
-  // Arctic Air `63e6629a`, Call 1 authoring was 40,257ms of a 70,986ms Call-1
-  // stage; an element call at 2K is well inside that window, so the composed
-  // master costs the customer no additional wait.
-  const elementResolveStartedAt = Date.now();
-  const elementsPromise = resolveAtlasElements({
-    input: authoringInput,
-    supabase,
-    ownerId,
-    measureOutlinedString,
-    measureImageAsset,
-    textVariants,
-    wantsPhoto: briefWantsPhoto(authoringInput?.brief),
-    logger,
-  }).then((resolved) => {
-    timings.elementResolveMs = Date.now() - elementResolveStartedAt;
-    return resolved;
-  });
-  // An unhandled rejection here would be a process-level crash while Call 1 is
-  // still in flight. The real handling is at the await inside the loop.
-  elementsPromise.catch(() => {});
-
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
     masterAuthoringAttempts = attempt;
     // NO corrective-note text (owner boundary contract 2026-09-01): every attempt is
@@ -2463,47 +2384,9 @@ async function generateOrReuseFlatAtlas(options) {
     const normalizeStartedAt = Date.now();
     const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
     timings.normalizeMs += Date.now() - normalizeStartedAt;
-    groundBytes = normalized.bytes;
-    groundHash = sha256(groundBytes);
+    masterBytes = normalized.bytes;
     masterDelivery = normalized;
-
-    // ── COMPOSITION, BEFORE ACCEPTANCE ────────────────────────────────────
-    //
-    // "Fix composition before canonical master acceptance." Everything below
-    // this point -- the deterministic checks, the output-class gate, the
-    // cut-out fill, acceptance, the six panels, the seven proofs, Call 8, the
-    // ZIP -- sees the COMPOSED sheet, so nothing downstream needs to know that
-    // the ground and the elements arrived separately.
-    //
-    // The element resolution was started before the Call-1 request and is
-    // awaited here: neither the mark nor the photograph depends on the ground,
-    // so their image calls overlap Call 1's 40s rather than following it.
-    const composeStartedAt = Date.now();
-    const resolvedElements = await elementsPromise;
-    elementsReceipt = resolvedElements.receipt;
-    // A REQUIRED element that will not fit throws `atlas_element_unplaceable`
-    // here, and the run fails without a master. That is the intended blast
-    // radius: a wrap missing the customer's URL, or carrying a cropped one, is
-    // not a cheaper outcome than a refusal -- Arctic Air shipped twelve panels
-    // of it and every gate said pass.
-    elementPlan = planAtlasElements({ manifest, elements: resolvedElements.elements });
-    const composedMaster = await composeAtlasMaster({
-      groundBytes,
-      manifest,
-      plan: elementPlan,
-      sources: resolvedElements.sources,
-      fontBytes: resolvedElements.font.bytes,
-      groundContract: ATLAS_FIELD_PROMPT_CONTRACT,
-    });
-    composeReceipt = composedMaster.receipt;
-    timings.composeMs += Date.now() - composeStartedAt;
-    masterBytes = composedMaster.bytes;
     masterHash = sha256(masterBytes);
-    logger(
-      `atlas composition: ${composeReceipt.placedCount} elements placed across `
-      + `${new Set(elementPlan.placements.map((p) => p.surfaceKey)).size} surfaces `
-      + `(ground ${groundHash.slice(0, 12)} -> master ${masterHash.slice(0, 12)})`,
-    );
 
     const deterministicStartedAt = Date.now();
     const deterministic = await deterministicMasterChecks(masterBytes, manifest);
@@ -2859,6 +2742,47 @@ async function generateOrReuseFlatAtlas(options) {
     }),
     projectionPromise,
   ]);
+  // ── PER-SURFACE PANEL QC ──────────────────────────────────────────────────
+  //
+  // Every gate before this one measures the SHEET, and all of them passed on
+  // Arctic Air `63e6629a` -- correctly, because the sheet is cohesive, opaque,
+  // anatomy-free and full-bleed. None of them asks whether a WORDMARK straddles
+  // a cut line, and one did: the contact lockup came back as `Www.Arct` on the
+  // hood and `ticAir.com` on the rear. `Print panels 6/6` then reported six
+  // files, which is true and useless.
+  //
+  // Started HERE, the instant the six panels exist, so it overlaps the upload
+  // batch instead of sitting on the critical path. It is REPORTING only in this
+  // release: it names the surfaces a repair must aim at and leaves the passing
+  // ones alone. It does not refuse the master, and it must never redesign one.
+  const panelQcStartedAt = Date.now();
+  const panelQcPromise = inspectAtlasPanels({
+    masterBytes: acceptedMasterBytes,
+    panels: callOnePanels,
+    manifest,
+    provider,
+    log: (message) => logger?.warn?.("flat_atlas_panel_qc", { generationId, message }),
+  })
+    .catch((cause) => {
+      // A defect in the CHECK must never destroy a design that passed every
+      // acceptance gate. It is recorded as unavailable, exactly as a locator
+      // outage is, and no surface is reported as passing on the strength of it.
+      logger?.warn?.("flat_atlas_panel_qc_failed", {
+        generationId, reason: String(cause?.message || cause || "unknown"),
+      });
+      return {
+        contract: PANEL_QC_CONTRACT,
+        elementsLocated: null,
+        locateUnavailable: String(cause?.message || cause || "unknown"),
+        surfaces: [],
+        failing: [],
+        passing: [],
+      };
+    })
+    .finally(() => {
+      timings.panelQcMs = Date.now() - panelQcStartedAt;
+    });
+
   // Every content-addressed path the write batch below needs must be resolved
   // BEFORE that batch is defined -- `persistImmutableAssets` is now invoked
   // thirty lines earlier than the write it replaced, so a declaration left at
@@ -2890,6 +2814,7 @@ async function generateOrReuseFlatAtlas(options) {
   timings.uploadWaitMs += Date.now() - uploadWaitStartedAt;
   // Identity + the design-time size of every side, recorded on the immutable
   // revision. Downstream consumes these; it never re-cuts them.
+  const panelQc = await panelQcPromise;
   const callOnePanelRecords = callOnePanels.map((panel) => ({
     contract: panel.contract,
     surfaceKey: panel.surfaceKey,
@@ -3012,6 +2937,18 @@ async function generateOrReuseFlatAtlas(options) {
       // still must not print until a human has seen them on a template.
       masterCutoutSurfaces,
       masterCutoutFindings,
+      // ── PANEL QC (designpro.atlas-panel-qc.v1) ─────────────────────────────
+      // Which surfaces carry their required elements whole, and which the cut
+      // severed -- by name, with the element and the edges. `Print panels 6/6`
+      // counts files; this counts panels that can actually print.
+      panelQcContract: PANEL_QC_CONTRACT,
+      panelQcFailingSurfaces: panelQc.failing,
+      panelQcSurfaces: panelQc.surfaces,
+      panelQcElements: panelQc.elementsLocated,
+      // Set when the locator could not be reached. A run carrying this has NOT
+      // been panel-checked: "we could not look" must never read as "we looked
+      // and it was fine", so no surface is reported as passing either.
+      panelQcUnavailable: panelQc.locateUnavailable,
       // Historical readers may inspect this key. New Call-1 revisions never
       // populate it: Passenger's authored bytes are preserved verbatim.
       passengerComposed: null,
@@ -3070,23 +3007,6 @@ async function generateOrReuseFlatAtlas(options) {
       providerResponseContentType: generated.contentType,
       rawProviderResponseHash: sha256(generated.bytes),
       canonicalMasterHash: masterHash,
-      // ── COMPOSITION PROVENANCE ────────────────────────────────────────────
-      // `groundHash` is what Gemini authored; `masterHash` is what the customer
-      // buys. The element receipt records the exact strings that printed, the
-      // font they were outlined from, and every provider call spent; the plan
-      // records the rectangle each element occupies, in pixels AND in vehicle
-      // inches, so a PanelPro reviewer can measure a panel against a template
-      // without opening the image.
-      groundContract: ATLAS_FIELD_PROMPT_CONTRACT,
-      groundMasterHash: groundHash,
-      elementsContract: ELEMENTS_CONTRACT,
-      elementsReceipt,
-      elementPlanContract: ELEMENT_PLAN_CONTRACT,
-      elementPlanHash: elementPlan?.planHash || null,
-      elementPlacements: elementPlan?.placements || [],
-      elementPlacementsSkipped: elementPlan?.skipped || [],
-      composeContract: COMPOSE_CONTRACT,
-      composeReceipt,
       projectionContract: PROJECTION_CONTRACT,
       projectionHash: projection.contentHash,
       projectionSourceMasterHash: masterHash,

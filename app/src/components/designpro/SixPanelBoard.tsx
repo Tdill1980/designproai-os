@@ -10,10 +10,10 @@
  *
  * So this shows each panel as an IMAGE, next to the four things that decide
  * whether it can print: which surface it is, which way up it is, what it
- * measures on the vehicle, and what its effective density is. And it states its
- * composition: which elements were placed inside it, the exact string that
- * printed, and -- when a surface was left bare -- the measurement that decided
- * that, rather than silence.
+ * measures on the vehicle, and what its effective density is. And it states the
+ * panel-QC verdict the server recorded: which required elements this surface
+ * carries whole, and which ones the cut severed, naming the element and the
+ * edges it runs off.
  *
  * IT NEVER SYNTHESIZES. RULE 0.27 §3: "neither UI may synthesize its own
  * representation of a missing canonical artifact." A panel with no signed URL
@@ -74,46 +74,56 @@ export function panelState(
 ): PanelState {
   const qc = revision?.qc;
 
-  // ── COMPOSITION FIRST ─────────────────────────────────────────────────────
+  // ── THE PANEL VERDICT FIRST ───────────────────────────────────────────────
   //
   // The first cut of this function returned "structurally clean" from two
   // signals -- sufficient PPI and no recorded cut-out repair -- neither of which
-  // knows whether the customer's name, URL or photograph actually landed on the
-  // panel. That is the same overclaim as `Print panels 6/6`: it reports on the
-  // FILE and calls it a verdict on the ARTWORK. Arctic Air's front panel had
-  // perfect structure and no brand element at all.
-  const composed = Boolean(qc?.composeContract || qc?.elementPlanContract);
-  if (!composed) {
-    // A revision authored before the ground split was never composition
-    // checked. Saying so is honest; calling it clean is not.
+  // knows whether the customer's wordmark, URL or mascot actually survived the
+  // cut. That is the same overclaim as `Print panels 6/6`: it reports on the
+  // FILE and calls it a verdict on the ARTWORK. Arctic Air's rear panel had
+  // perfect structure and read `ticAir.com`.
+  if (qc?.panelQcUnavailable) {
+    // "We could not look" must never render as "we looked and it was fine".
     return {
       tone: "warn",
-      label: "not composition-checked",
-      reason: "authored before composition ran — its lettering and marks were painted by the model and were never proved to sit inside this surface",
+      label: "not panel-checked",
+      reason: `the element locator was unavailable (${qc.panelQcUnavailable}) — no surface on this revision has been checked for severed lettering or marks`,
+    };
+  }
+  if (!qc?.panelQcContract) {
+    // A revision authored before panel QC existed was never checked. Saying so
+    // is honest; calling it clean is not.
+    return {
+      tone: "warn",
+      label: "not panel-checked",
+      reason: "authored before per-surface panel QC ran — its lettering and marks were never proved to sit inside this surface",
     };
   }
 
-  // A required element the run could not produce fails every panel: the design
-  // is missing something the customer asked for, wherever it was going to go.
-  const missing = (qc?.elementsReceipt?.unresolved || []).filter((entry) => entry?.reason);
-  if (missing.length > 0) {
+  const surface = (qc.panelQcSurfaces || []).find((entry) => entry?.surfaceKey === panel.surfaceKey);
+  const severed = (surface?.findings || []).filter((finding) => finding?.code === "atlas_panel_element_severed");
+  if (severed.length > 0) {
     return {
       tone: "fail",
-      label: "requested artwork missing",
-      reason: `the run could not produce ${missing.map((m) => m.reason).join("; ")}`,
+      label: severed.length === 1 ? "element cut off" : `${severed.length} elements cut off`,
+      reason: severed
+        .map((finding) => `${finding.element || "an element"} runs off the ${(finding.edges || []).join(" and ") || "panel"} edge`)
+        .join("; "),
     };
   }
-
-  const skipped = (qc?.elementPlacementsSkipped || []).filter((entry) => entry?.surfaceKey === panel.surfaceKey);
-  if (skipped.length > 0) {
-    const entry = skipped[0];
+  const inBleed = (surface?.findings || []).filter((finding) => finding?.code === "atlas_panel_element_in_bleed");
+  if (inBleed.length > 0) {
     return {
       tone: "warn",
-      label: "element left off this panel",
-      reason: entry.reason === "below_minimum_legible_height"
-        ? `${entry.kind} would print ${entry.heightIn}″ tall here; ${entry.minHeightIn}″ is the legible minimum for this surface`
-        : `${entry.kind}: ${entry.reason}`,
+      label: "element in the bleed",
+      reason: inBleed.map((finding) => finding.detail).filter(Boolean).join("; "),
     };
+  }
+  const wrongShape = (surface?.findings || []).find(
+    (finding) => finding?.code === "atlas_panel_orientation_mismatch" || finding?.code === "atlas_panel_print_aspect_mismatch",
+  );
+  if (wrongShape) {
+    return { tone: "fail", label: "wrong shape for this surface", reason: wrongShape.detail };
   }
 
   // ── STRUCTURE ─────────────────────────────────────────────────────────────
@@ -135,22 +145,13 @@ export function panelState(
     };
   }
 
-  // A surface the policy dresses, that ended up with nothing on it, is worth
-  // saying out loud even when it is structurally perfect -- that is exactly
-  // what Arctic Air's front panel looked like from every other angle.
-  const placed = (qc?.elementPlacements || []).filter((p) => p?.surfaceKey === panel.surfaceKey);
-  if (placed.length === 0) {
-    return {
-      tone: "warn",
-      label: "ground only",
-      reason: "no lettering, mark or imagery was composed onto this surface — it carries the design's ground and nothing else",
-    };
-  }
-
+  const intact = surface?.elementsIntact || [];
   return {
     tone: "ok",
-    label: "composed and clean",
-    reason: `${placed.length} element${placed.length === 1 ? "" : "s"} placed inside this surface's trim box`,
+    label: intact.length > 0 ? "elements intact" : "ground only — clean",
+    reason: intact.length > 0
+      ? `${intact.join(", ")} print${intact.length === 1 ? "s" : ""} whole on this panel`
+      : "this surface carries the design's ground; no lettering or mark was placed on it, and nothing is cut",
   };
 }
 
@@ -181,10 +182,9 @@ function PanelCard({
   }
 
   const state = panelState(panel, revision);
-  const placements = (revision?.qc?.elementPlacements || []).filter((p) => p?.surfaceKey === surfaceKey);
-  const skipped = (revision?.qc?.elementPlacementsSkipped || []).filter((p) => p?.surfaceKey === surfaceKey);
-  const printed = (revision?.qc?.composeReceipt?.elements || [])
-    .filter((e) => e?.surfaceKey === surfaceKey && typeof e.string === "string" && e.string.length > 0);
+  const surface = (revision?.qc?.panelQcSurfaces || []).find((entry) => entry?.surfaceKey === surfaceKey);
+  const intact = surface?.elementsIntact || [];
+  const cut = (surface?.findings || []).filter((finding) => finding?.code === "atlas_panel_element_severed");
 
   return (
     <article className="overflow-hidden rounded-xl border border-border bg-card">
@@ -227,39 +227,25 @@ function PanelCard({
         </div>
       </dl>
 
-      {(placements.length > 0 || printed.length > 0) && (
+      {intact.length > 0 && (
         <div className="border-t border-border px-3 py-2 text-[11px]">
-          <p className="font-semibold text-foreground">Composed onto this panel</p>
+          <p className="font-semibold text-foreground">Carried whole on this panel</p>
           <ul className="mt-1 space-y-0.5 text-muted-foreground">
-            {placements.map((placement) => {
-              const text = printed.find((e) => e.elementId === placement.elementId)?.string;
-              return (
-                <li key={placement.elementId} className="flex justify-between gap-2">
-                  <span>
-                    {placement.kind}
-                    {text ? <span className="font-mono text-foreground"> “{text}”</span> : null}
-                  </span>
-                  {placement.rectIn && (
-                    <span className="shrink-0 tabular-nums">
-                      {placement.rectIn.w}″ × {placement.rectIn.h}″ @ {placement.rectIn.x},{placement.rectIn.y}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
+            {intact.map((label) => <li key={label}>{label}</li>)}
           </ul>
         </div>
       )}
 
-      {skipped.length > 0 && (
-        <div className="border-t border-border px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
-          <p className="font-semibold">Left off this panel</p>
+      {cut.length > 0 && (
+        <div className="border-t border-border px-3 py-2 text-[11px] text-red-700 dark:text-red-300">
+          <p className="font-semibold">Cut by the panel boundary</p>
           <ul className="mt-1 space-y-0.5">
-            {skipped.map((entry) => (
-              <li key={entry.elementId}>
-                {entry.kind} — {entry.reason === "below_minimum_legible_height"
-                  ? `would print ${entry.heightIn}″ tall; ${entry.minHeightIn}″ is the legible minimum`
-                  : entry.reason}
+            {cut.map((finding, index) => (
+              <li key={`${finding.element}-${index}`}>
+                {finding.element} — runs off the {(finding.edges || []).join(" and ") || "panel"} edge
+                {(finding.acrossSurfaces?.length ?? 0) > 1 && (
+                  <span className="opacity-80"> (also lands on {finding.acrossSurfaces!.filter((s) => s !== surfaceKey).join(", ")})</span>
+                )}
               </li>
             ))}
           </ul>
@@ -295,7 +281,8 @@ export function SixPanelBoard({
     .map((key) => byKey.get(key))
     .filter((panel): panel is FlatAtlasCallOnePanel => Boolean(panel))
     .filter((panel) => panelState(panel, revision).tone === "ok").length;
-  const receipt = revision?.qc?.elementsReceipt;
+  const failing = revision?.qc?.panelQcFailingSurfaces || [];
+  const unavailable = revision?.qc?.panelQcUnavailable;
 
   return (
     <section className={className}>
@@ -328,24 +315,23 @@ export function SixPanelBoard({
         ))}
       </div>
 
-      {(receipt?.unresolved?.length ?? 0) > 0 && (
+      {unavailable && (
         <p className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
-          <span className="font-semibold">Some elements were not resolved:</span>{" "}
-          {receipt?.unresolved?.map((entry) => entry.reason).filter(Boolean).join("; ")}. The ground and
-          the lettering were composed without them.
+          <span className="font-semibold">These panels were not checked for severed elements.</span>{" "}
+          The element locator was unavailable ({unavailable}). Nothing above is reported as passing on the
+          strength of a check that did not run.
         </p>
       )}
 
-      {receipt?.canonicalStrings && (
-        <p className="mt-3 text-[11px] text-muted-foreground">
-          Typeset from the frozen request, outlined from a pinned font file
-          {receipt.fontSha256 ? <span className="font-mono"> ({receipt.fontSha256.slice(0, 12)})</span> : null}:{" "}
-          {[receipt.canonicalStrings.wordmark, receipt.canonicalStrings.contact, receipt.canonicalStrings.tagline]
-            .filter(Boolean)
-            .map((value) => `“${value}”`)
-            .join(" · ") || "no customer copy was supplied"}
+      {failing.length > 0 && (
+        <p className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-800 dark:text-red-200">
+          <span className="font-semibold">
+            {failing.length} of 6 surfaces carry an element the cut severed: {failing.join(", ")}.
+          </span>{" "}
+          The remaining panels carry their elements whole and are not to be re-authored.
         </p>
       )}
+
     </section>
   );
 }

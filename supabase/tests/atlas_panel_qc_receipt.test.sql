@@ -1,8 +1,8 @@
--- THE COMPOSITION PROJECTION IS TESTED BY CALLING IT OVER A ROW.
+-- THE PANEL-QC PROJECTION IS TESTED BY CALLING IT OVER A ROW.
 --
 -- `20260905120000` patches `designpro_flat_atlas_generation_paths` to project
--- the composition record -- which elements were placed, where, and the exact
--- string that printed -- into the `qc` object PanelPro Studio and
+-- the panel-QC record -- which surfaces failed, which element the cut severed
+-- on each, and at which edges -- into the `qc` object PanelPro Studio and
 -- RevisionStudioIQ read.
 --
 -- The first cut of that migration ended with a DO block calling the function
@@ -16,11 +16,11 @@
 -- that actually had data.
 --
 -- So every assertion here runs the function against a seeded revision whose
--- metadata carries a real composition receipt. `has_function` would pass
+-- metadata carries a real panel-QC report. `has_function` would pass
 -- without any of this; so would any check on the migration's text. Only
 -- execution over data separates "this parsed" from "this runs".
 begin;
-select plan(14);
+select plan(16);
 
 select has_function(
   'public','designpro_flat_atlas_generation_paths',ARRAY['uuid'],
@@ -36,43 +36,66 @@ insert into auth.users(
 ) values(
   '00000000-0000-0000-0000-000000000000',
   '61000000-0000-4000-8000-000000000001','authenticated','authenticated',
-  'atlas-composition@designproai.test','',now(),'{}'::jsonb,'{}'::jsonb,now(),now()
+  'atlas-panel-qc@designproai.test','',now(),'{}'::jsonb,'{}'::jsonb,now(),now()
 ) on conflict(id) do nothing;
 
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 
--- The Arctic Air geometry, and the composition that repairs it. `contact` is
--- the string that came back as `Www.Arct` on the hood and `ticAir.com` on the
--- rear; here it is one rectangle wholly inside the rear's trim box.
-create temporary table composition on commit drop as
+-- ARCTIC AIR `63e6629a`, AS MEASURED. The bottom band carries ONE contact
+-- lockup; the cut lines x=1071, x=2198 and y=3335 all run through it, so the
+-- badge lands on two surfaces and the banner on three. Driver and passenger
+-- survive because they map 1:1 onto a third.
+create temporary table panel_qc on commit drop as
 select
+  jsonb_build_array('roof','hood','front','rear') as failing,
   jsonb_build_array(
-    jsonb_build_object(
-      'elementId','wordmark@rear','elementRef','wordmark','kind','wordmark',
-      'surfaceKey','rear','safeInsetInches',2,
-      'rectPx',jsonb_build_object('x',2389,'y',3468,'w',745,'h',162),
-      'rectIn',jsonb_build_object('x',6.67,'y',3.12,'w',45.57,'h',9.91)),
-    jsonb_build_object(
-      'elementId','contact@rear','elementRef','contact','kind','contact',
-      'surfaceKey','rear','safeInsetInches',2,
-      'rectPx',jsonb_build_object('x',2349,'y',3668,'w',825,'h',90),
-      'rectIn',jsonb_build_object('x',4.22,'y',15.35,'w',50.46,'h',5.51))
-  ) as placements,
+    jsonb_build_object('label','yeti shield lockup','status','contained',
+      'surfaces',jsonb_build_array('driver'),
+      'rect',jsonb_build_object('x',688,'y',332,'w',2601,'h',667)),
+    jsonb_build_object('label','installer photograph','status','contained',
+      'surfaces',jsonb_build_array('passenger'),
+      'rect',jsonb_build_object('x',504,'y',1577,'w',2359,'h',946)),
+    jsonb_build_object('label','arctic air badge','status','severed',
+      'surfaces',jsonb_build_array('roof','hood'),
+      'rect',jsonb_build_object('x',983,'y',3240,'w',258,'h',319)),
+    jsonb_build_object('label','www.arcticair.com contact banner','status','severed',
+      'surfaces',jsonb_build_array('hood','front','rear'),
+      'rect',jsonb_build_object('x',1249,'y',3256,'w',1831,'h',299))
+  ) as elements,
   jsonb_build_array(
-    jsonb_build_object('elementId','tagline@front','surfaceKey','front',
-      'kind','tagline','reason','below_minimum_legible_height',
-      'heightIn',0.9,'minHeightIn',1.5)
-  ) as skipped,
-  jsonb_build_object(
-    'contract','designpro.atlas-compose-master.v1',
-    'groundHash',repeat('e',64),'composedHash',repeat('c',64),
-    'planHash',repeat('f',64),'layerCount',3,'placedCount',2,
-    'plateApplied',jsonb_build_array('contact'),
-    'elements',jsonb_build_array(
-      jsonb_build_object('elementId','contact@rear','kind','contact',
-        'surfaceKey','rear','sourceKind','outlined-type',
-        'string','Www.ArcticAir.com','fontSha256',repeat('a',64)))
-  ) as compose_receipt;
+    jsonb_build_object('surfaceKey','driver','ok',true,'orientation','landscape',
+      'elementsIntact',jsonb_build_array('yeti shield lockup'),
+      'elementsSevered',jsonb_build_array(),'findings',jsonb_build_array()),
+    jsonb_build_object('surfaceKey','passenger','ok',true,'orientation','landscape',
+      'elementsIntact',jsonb_build_array('installer photograph'),
+      'elementsSevered',jsonb_build_array(),'findings',jsonb_build_array()),
+    jsonb_build_object('surfaceKey','roof','ok',false,'orientation','portrait',
+      'elementsIntact',jsonb_build_array(),
+      'elementsSevered',jsonb_build_array('arctic air badge'),
+      'findings',jsonb_build_array(jsonb_build_object(
+        'code','atlas_panel_element_severed','surfaceKey','roof',
+        'element','arctic air badge','edges',jsonb_build_array('right')))),
+    jsonb_build_object('surfaceKey','hood','ok',false,'orientation','landscape',
+      'elementsIntact',jsonb_build_array(),
+      'elementsSevered',jsonb_build_array('arctic air badge','www.arcticair.com contact banner'),
+      'findings',jsonb_build_array(jsonb_build_object(
+        'code','atlas_panel_element_severed','surfaceKey','hood',
+        'element','www.arcticair.com contact banner','edges',jsonb_build_array('right')))),
+    jsonb_build_object('surfaceKey','front','ok',false,'orientation','landscape',
+      'elementsIntact',jsonb_build_array(),
+      'elementsSevered',jsonb_build_array('www.arcticair.com contact banner'),
+      'findings',jsonb_build_array(jsonb_build_object(
+        'code','atlas_panel_element_severed','surfaceKey','front',
+        'element','www.arcticair.com contact banner',
+        'edges',jsonb_build_array('left','bottom')))),
+    jsonb_build_object('surfaceKey','rear','ok',false,'orientation','landscape',
+      'elementsIntact',jsonb_build_array(),
+      'elementsSevered',jsonb_build_array('www.arcticair.com contact banner'),
+      'findings',jsonb_build_array(jsonb_build_object(
+        'code','atlas_panel_element_severed','surfaceKey','rear',
+        'element','www.arcticair.com contact banner',
+        'edges',jsonb_build_array('left','top'))))
+  ) as surfaces;
 
 -- `designpro_generation_request_identity` requires the idempotency key to be
 -- 'calls17:'||generation_id||':'||input_hash, and input_hash to be the sha256
@@ -84,7 +107,7 @@ select
     'contractVersion','designpro.calls-1-7-input.v3',
     'pipelineMode','flat-first-atlas-v1','mode','commercial',
     'companyName','Arctic Air','website','Www.ArcticAir.com',
-    'brief','composition receipt fixture',
+    'brief','panel qc receipt fixture',
     -- REQUIRED by calls_1_7_input_v3_valid; omitting it is what CI rejected.
     'designName','Arctic Air',
     'vehicle',jsonb_build_object('year','2022','make','Toyota','model','Prius','type','car')
@@ -133,27 +156,17 @@ select
   prefix.p||'revisions/1/master/'||repeat('c',64)||'.png',repeat('c',64),10,'image/png',
   prefix.p||'revisions/1/projection/'||repeat('d',64)||'.jpg',repeat('d',64),10,'image/jpeg',
   '{}'::jsonb,'gemini-3-pro-image',
-  'designpro-flat-first-atlas-20260905.v25-ground-and-elements',4096,4096,16.35,
+  'designpro-flat-first-atlas-20260902.v24-one-field',4096,4096,16.35,
   jsonb_build_object(
     'masterQcPassed',true,
     'canonicalMasterHash',repeat('c',64),
-    -- The composition record the migration must surface.
-    'groundContract','designpro.atlas-field-prompt.v3',
-    'groundMasterHash',repeat('e',64),
-    'composeContract','designpro.atlas-compose-master.v1',
-    'composeReceipt',composition.compose_receipt,
-    'elementPlanContract','designpro.atlas-element-plan.v1',
-    'elementPlanHash',repeat('f',64),
-    'elementPlacements',composition.placements,
-    'elementPlacementsSkipped',composition.skipped,
-    'elementsContract','designpro.atlas-elements.v1',
-    'elementsReceipt',jsonb_build_object(
-      'fontSha256',repeat('a',64),
-      'elementImageCallCount',2,
-      'canonicalStrings',jsonb_build_object(
-        'wordmark','Arctic Air','contact','Www.ArcticAir.com'))
+    -- The panel-QC record the migration must surface.
+    'panelQcContract','designpro.atlas-panel-qc.v1',
+    'panelQcFailingSurfaces',panel_qc.failing,
+    'panelQcSurfaces',panel_qc.surfaces,
+    'panelQcElements',panel_qc.elements
   )
-from composition, (select 'designpro/user_61000000-0000-4000-8000-000000000001/'
+from panel_qc, (select 'designpro/user_61000000-0000-4000-8000-000000000001/'
   ||'63000000-0000-4000-8000-000000000001/flat-first/v1/' as p) as prefix;
 
 -- ── EXECUTION, over the seeded row ────────────────────────────────────────
@@ -171,46 +184,58 @@ create temporary table qc on commit drop as
 select (payload->0->'qc') as qc from projected;
 
 select is(
-  (select qc->>'groundContract' from qc),'designpro.atlas-field-prompt.v3',
-  'the ground contract reaches the board'
+  (select qc->>'panelQcContract' from qc),'designpro.atlas-panel-qc.v1',
+  'the panel QC contract reaches the board'
 );
 select is(
-  (select qc->>'groundMasterHash' from qc),repeat('e',64),
-  'what the model authored is projected beside what the customer buys'
-);
-select isnt(
-  (select qc->>'groundMasterHash' from qc),
-  (select qc->>'canonicalMasterHash' from qc),
-  'the ground hash and the canonical master hash are distinguishable'
+  (select jsonb_array_length(qc->'panelQcFailingSurfaces') from qc),4,
+  'the four surfaces the cut broke are named'
 );
 select is(
-  (select jsonb_array_length(qc->'elementPlacements') from qc),2,
-  'every placement is projected'
+  (select qc->'panelQcFailingSurfaces' from qc),
+  jsonb_build_array('roof','hood','front','rear'),
+  'and they are named individually, so a repair can be aimed'
 );
 select is(
-  (select qc->'elementPlacements'->1->>'surfaceKey' from qc),'rear',
-  'a placement names the surface it was proved into'
+  (select jsonb_array_length(qc->'panelQcSurfaces') from qc),6,
+  'every surface is reported, passing ones included'
 );
 select is(
-  (select qc->'elementPlacements'->1->'rectIn'->>'w' from qc),'50.46',
-  'the rectangle is projected in VEHICLE INCHES, which is what a reviewer measures'
+  (select s->>'surfaceKey' from qc, jsonb_array_elements(qc->'panelQcSurfaces') s
+    where (s->>'ok')::boolean limit 1),'driver',
+  'a passing panel is visibly reported as passing, not merely omitted'
 );
 select is(
-  (select qc->'composeReceipt'->'elements'->0->>'string' from qc),
-  'Www.ArcticAir.com',
-  'the exact string that printed is answerable from the record'
+  (select s->'findings'->0->>'element' from qc, jsonb_array_elements(qc->'panelQcSurfaces') s
+    where s->>'surfaceKey'='rear'),'www.arcticair.com contact banner',
+  'the rear panel names the element the cut severed'
 );
 select is(
-  (select jsonb_array_length(qc->'elementPlacementsSkipped') from qc),1,
-  'a surface left bare is a stated fact, not a silent omission'
+  (select s->'findings'->0->'edges' from qc, jsonb_array_elements(qc->'panelQcSurfaces') s
+    where s->>'surfaceKey'='rear'),jsonb_build_array('left','top'),
+  'and the edges it was severed at, which is what the panel file shows'
 );
 select is(
-  (select qc->'elementPlacementsSkipped'->0->>'minHeightIn' from qc),'1.5',
-  'and it carries the measurement that decided it'
+  (select jsonb_array_length(qc->'panelQcElements') from qc),4,
+  'every located element is projected, contained ones included'
+);
+select is(
+  (select e->>'status' from qc, jsonb_array_elements(qc->'panelQcElements') e
+    where e->>'label'='yeti shield lockup'),'contained',
+  'the driver lockup is recorded as printing whole — this is why driver is left alone'
+);
+select is(
+  (select e->'rect'->>'w' from qc, jsonb_array_elements(qc->'panelQcElements') e
+    where e->>'label'='www.arcticair.com contact banner'),'1831',
+  'the contact banner rectangle is auditable in master pixels'
+);
+select is(
+  (select qc->>'panelQcUnavailable' from qc),null,
+  'a run that was actually checked carries no unavailable marker'
 );
 
--- A revision authored BEFORE the ground split must stay readable, with every
--- composition key resolving to null rather than raising (owner protection #1).
+-- A revision authored BEFORE panel QC existed must stay readable, with every
+-- panel-QC key resolving to null rather than raising (owner protection #1).
 --
 -- Seeded as its OWN generation rather than by updating the row above: atlas
 -- revisions are immutable by trigger (`designpro_flat_atlas_row_is_immutable`),
@@ -219,7 +244,7 @@ create temporary table historical_input on commit drop as
 select jsonb_build_object(
   'contractVersion','designpro.calls-1-7-input.v3',
   'pipelineMode','flat-first-atlas-v1','mode','commercial',
-  'companyName','Arctic Air','brief','pre-composition fixture',
+  'companyName','Arctic Air','brief','pre-panel-qc fixture',
   'designName','Arctic Air',
   'vehicle',jsonb_build_object('year','2022','make','Toyota','model','Prius','type','car')
 ) as input;
@@ -272,9 +297,9 @@ from (select 'designpro/user_61000000-0000-4000-8000-000000000001/'
 select is(
   (select (public.designpro_flat_atlas_generation_paths(
      '63000000-0000-4000-8000-000000000002'::uuid
-   )->0->'qc'->>'groundContract')),
+   )->0->'qc'->>'panelQcContract')),
   null,
-  'a pre-composition revision projects null composition keys and still reads'
+  'a pre-panel-qc revision projects null panel-QC keys and still reads'
 );
 select isnt(
   (select (public.designpro_flat_atlas_generation_paths(

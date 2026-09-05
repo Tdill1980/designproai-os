@@ -4,9 +4,12 @@ import { panelState } from "./SixPanelBoard";
 
 /**
  * `Print panels 6/6` counted FILES. Arctic Air `63e6629a` cut six of them and
- * every one was unusable. These lock the distinction the board now draws: a
- * panel's state comes from what the server RECORDED about that surface, never
- * from the fact that an object exists.
+ * four were unusable. These lock the distinction the board now draws: a panel's
+ * state comes from what the server RECORDED about that surface, never from the
+ * fact that an object exists.
+ *
+ * The fixtures are that run's real verdict — `runtime/atlas-panel-qc.cjs` over
+ * its own master, panels and manifest (`docs/ATLAS-PANEL-QC.md` §5).
  */
 const panel = (over: Partial<FlatAtlasCallOnePanel> = {}): FlatAtlasCallOnePanel => ({
   surfaceKey: "driver",
@@ -30,40 +33,76 @@ const panel = (over: Partial<FlatAtlasCallOnePanel> = {}): FlatAtlasCallOnePanel
 const revision = (qc: Partial<NonNullable<FlatAtlasRevision["qc"]>> = {}) =>
   ({ qc: { masterCutoutSurfaces: [], cutoutFillApplied: [], ...qc } } as unknown as FlatAtlasRevision);
 
-describe("panelState", () => {
-  const composed = { composeContract: "designpro.atlas-compose-master.v1", elementPlanContract: "designpro.atlas-element-plan.v1" };
-  const placed = [{ surfaceKey: "driver", kind: "wordmark", elementId: "wordmark@driver" }];
+/** Arctic Air's own verdict, per surface. */
+const CHECKED = { panelQcContract: "designpro.atlas-panel-qc.v1" };
+const DRIVER_CLEAN = {
+  ...CHECKED,
+  panelQcFailingSurfaces: ["roof", "hood", "front", "rear"],
+  panelQcSurfaces: [
+    { surfaceKey: "driver", ok: true, elementsIntact: ["yeti shield lockup"], findings: [] },
+  ],
+};
+const REAR_SEVERED = {
+  ...CHECKED,
+  panelQcFailingSurfaces: ["roof", "hood", "front", "rear"],
+  panelQcSurfaces: [
+    {
+      surfaceKey: "rear",
+      ok: false,
+      elementsIntact: [],
+      elementsSevered: ["www.arcticair.com contact banner"],
+      findings: [{
+        code: "atlas_panel_element_severed",
+        surfaceKey: "rear",
+        element: "www.arcticair.com contact banner",
+        edges: ["left", "top"],
+        acrossSurfaces: ["hood", "front", "rear"],
+        detail: "the element is cut across 3 surfaces (hood, front, rear)",
+      }],
+    },
+  ],
+};
 
-  it("refuses to call a pre-composition revision clean", () => {
+describe("panelState", () => {
+  it("refuses to call a revision that was never panel-checked clean", () => {
     // The overclaim this replaces: sufficient PPI and no recorded cut-out
     // repair once returned "structurally clean" without ever asking whether the
-    // customer's name landed on the panel.
+    // customer's wordmark survived the cut.
     const state = panelState(panel({ effectivePpi: 400 }), revision());
     expect(state.tone).toBe("warn");
-    expect(state.label).toBe("not composition-checked");
+    expect(state.label).toBe("not panel-checked");
   });
 
-  it("fails every panel when requested artwork could not be produced", () => {
+  it("never reports a pass when the locator was unavailable", () => {
     const state = panelState(
       panel({ effectivePpi: 400 }),
-      revision({ ...composed, elementPlacements: placed, elementsReceipt: { unresolved: [{ reason: "atlas_elements_call_failed" }] } }),
-    );
-    expect(state.tone).toBe("fail");
-    expect(state.label).toBe("requested artwork missing");
-  });
-
-  it("names an element the layout had to leave off, with the number that decided it", () => {
-    const state = panelState(
-      panel({ effectivePpi: 400 }),
-      revision({ ...composed, elementPlacements: placed, elementPlacementsSkipped: [{ surfaceKey: "driver", kind: "tagline", reason: "below_minimum_legible_height", heightIn: 0.9, minHeightIn: 1.5 }] }),
+      revision({ ...DRIVER_CLEAN, panelQcUnavailable: "provider unreachable" }),
     );
     expect(state.tone).toBe("warn");
-    expect(state.reason).toContain("0.9″");
-    expect(state.reason).toContain("1.5″");
+    expect(state.label).toBe("not panel-checked");
+    expect(state.reason).toContain("provider unreachable");
   });
 
-  it("reports Arctic Air's real density as below the print target", () => {
-    const state = panelState(panel(), revision({ ...composed, elementPlacements: placed }));
+  it("fails the rear panel by name, naming the element and the edges — Arctic Air's real defect", () => {
+    const state = panelState(panel({ surfaceKey: "rear", effectivePpi: 400 }), revision(REAR_SEVERED));
+    expect(state.tone).toBe("fail");
+    expect(state.label).toBe("element cut off");
+    expect(state.reason).toContain("www.arcticair.com contact banner");
+    expect(state.reason).toContain("left and top");
+  });
+
+  it("a severed element outranks every structural signal, however good they are", () => {
+    // 400 PPI and no cut-out repair. Structure is perfect and the panel still
+    // reads `ticAir.com`.
+    const state = panelState(
+      panel({ surfaceKey: "rear", effectivePpi: 400 }),
+      revision({ ...REAR_SEVERED, masterCutoutSurfaces: [] }),
+    );
+    expect(state.tone).toBe("fail");
+  });
+
+  it("reports Arctic Air's real density as below the print target once the elements are intact", () => {
+    const state = panelState(panel(), revision(DRIVER_CLEAN));
     expect(state.tone).toBe("warn");
     expect(state.label).toBe("below print density");
     expect(state.reason).toContain("22.61 PPI");
@@ -73,8 +112,8 @@ describe("panelState", () => {
     const state = panelState(
       panel({ surfaceKey: "roof", effectivePpi: 200 }),
       revision({
-        ...composed,
-        elementPlacements: [{ surfaceKey: "roof", kind: "wordmark", elementId: "wordmark@roof" }],
+        ...CHECKED,
+        panelQcSurfaces: [{ surfaceKey: "roof", ok: true, elementsIntact: [], findings: [] }],
         masterCutoutSurfaces: ["front", "roof"],
         cutoutFillApplied: [{ surfaceKey: "roof", pixels: 47_847, components: 3, zoneFraction: 0.037013, unresolvedPixels: 0 }],
       }),
@@ -85,19 +124,36 @@ describe("panelState", () => {
     expect(state.reason).toContain("3.70%");
   });
 
-  it("calls out a structurally perfect panel that carries nothing — Arctic Air's front", () => {
+  it("a bare surface reads as clean when nothing was cut — it is not a defect on its own", () => {
+    // RULE 0.28: not every surface must carry a mark. What must never happen is
+    // a mark HALF on it.
     const state = panelState(
       panel({ surfaceKey: "front", effectivePpi: 400 }),
-      revision({ ...composed, elementPlacements: placed }),
+      revision({ ...CHECKED, panelQcSurfaces: [{ surfaceKey: "front", ok: true, elementsIntact: [], findings: [] }] }),
     );
-    expect(state.tone).toBe("warn");
-    expect(state.label).toBe("ground only");
+    expect(state.tone).toBe("ok");
+    expect(state.label).toBe("ground only — clean");
   });
 
-  it("only a composed, dressed, dense, unrepaired panel reads as clean", () => {
-    const state = panelState(panel({ effectivePpi: 150 }), revision({ ...composed, elementPlacements: placed }));
+  it("only a checked, uncut, dense panel reads as intact", () => {
+    const state = panelState(panel({ effectivePpi: 150 }), revision(DRIVER_CLEAN));
     expect(state.tone).toBe("ok");
-    expect(state.label).toBe("composed and clean");
-    expect(state.reason).toContain("1 element placed");
+    expect(state.label).toBe("elements intact");
+    expect(state.reason).toContain("yeti shield lockup");
+  });
+
+  it("a panel cut to the wrong shape fails even with every element intact", () => {
+    const state = panelState(
+      panel({ effectivePpi: 400 }),
+      revision({
+        ...CHECKED,
+        panelQcSurfaces: [{
+          surfaceKey: "driver", ok: false, elementsIntact: ["yeti shield lockup"],
+          findings: [{ code: "atlas_panel_print_aspect_mismatch", surfaceKey: "driver", detail: "the panel is 0.30:1 and driver prints 3.35:1" }],
+        }],
+      }),
+    );
+    expect(state.tone).toBe("fail");
+    expect(state.label).toBe("wrong shape for this surface");
   });
 });

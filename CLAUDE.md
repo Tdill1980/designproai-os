@@ -1,75 +1,96 @@
 # CLAUDE.md — designproai-os
 
-## 🧱 RULE 0.34 — CALL 1 AUTHORS THE GROUND; CODE OWNS WHAT A CUT CAN DESTROY (owner ruling, Trish 2026-09-05)
+## 🧱 RULE 0.34 — THE DESIGN WAS NEVER THE DEFECT. THE CUT WAS. (owner ruling, Trish 2026-09-05)
 
-**Supersedes RULE 0.33's authoring half wherever they conflict. The gates,
-the territories, the manifest identity and the extraction are untouched.**
+**This rule REPLACES an earlier RULE 0.34 that told Call 1 to author a
+glyph-free "ground" and have code composite the lettering. That was reverted at
+the owner's instruction and must not be revived.** RULE 0.33's one-field Call 1
+is intact and authoritative; the gates, territories, manifest identity and
+deterministic extraction are untouched.
 
-Owner, verbatim: *"Fix composition before canonical master acceptance. Required
-lettering, logos and focal imagery must fit their intended surfaces. Resolve
-their asset sources before assembly; layering new text over already-clipped
-lettering is not a fix."*
+Owner, verbatim: *"The system was already working. PR #301 changes too much. Its
+'Gemini makes a background, code adds DejaVu text in fixed slots' approach
+removes the creative composition that was already working. Preserve the existing
+v24 Call-1 prompt, creative output, A.T.L.A.S. master, region arrangement and
+Gemini-designed branding byte for byte."*
 
-**Measured, on two live runs.** Arctic Air `586abc83` and `63e6629a`
-(2026-09-04) produced twelve panels and twelve failures with every deterministic
-gate green. v24 asked for **three equal horizontal thirds** and Gemini obeyed
-exactly; the cutter then took **six unequal territories** across four boundaries
-the model was never shown (`x=1071`, `x=2198`, `x=3325`, `y=3335`). One contact
-bar came back as `Www.Arct` on the hood and `ticAir.com` on the rear; Run A lost
-`www.GoArcticAC.com` and shipped a shield reading `ARCTI`. **The two flanks
-survived because, and only because, `driver` and `passenger` map 1:1 onto a
-third.** The exact geometry was already on the Call-1 request
-(`flat-first-atlas.cjs:1563` → `index.ts:2352` → `:2387`) and was discarded at
-`index.ts:924`, five lines from the legacy branch that consumes it.
+**So the v24 Call-1 path is FROZEN and is the creative authority.**
+`supabase/functions/design-panel-ai-generate/index.ts` and
+`runtime/flat-first-atlas.cjs` are byte-identical to what production runs
+(`4e8fde920142c6b5` / `bb88fb90f4364b5f`), prompt version
+`designpro-flat-first-atlas-20260902.v24-one-field`.
 
-**So the job splits at the only line that can carry a guarantee.** Call 1
-authors the GROUND — palette, texture, depth, motion, the mascot's world, the
-photographic scene — and paints **no glyph at all**. Its tail carries the six
-real territory rectangles as conditioning. The runtime then resolves each
-element's source, MEASURES it, plans a rectangle proved to lie inside one
-surface's `zone.trim` (inset a further 2″ for installer tolerance), and
-composites — **before canonical master acceptance**, so QC, the output-class
-gate, the fill, the six panels, the seven proofs, Call 8 and the ZIP all see the
-finished sheet unchanged.
+### What is actually broken, measured on the real run
 
-- **Containment is computed, never requested.** `atlas-element-plan.cjs`
-  partitions each surface into disjoint slots and fails the run
-  (`atlas_element_unplaceable`) rather than place a required element that a cut
-  would sever or that would print below its legible minimum. Sizing and
-  legibility are in INCHES ON THE VEHICLE, never pixels.
-- **Sources resolve first.** Lettering is outlined from a **pinned font file**
-  (never a family name — libvips substitutes silently). The brand mark is the
-  customer's upload, else one isolated `atlas-element` call. The photograph is
-  one isolated call, only when the brief asks. Both run **concurrently with
-  Call 1**, and their briefs are **redacted of every canonical string**.
-- **A v2 ground is refused by version.** `atlas_compose_ground_contract_unsupported`.
-  Compositing over a sheet that already carries its own lettering is the move
-  the owner ruled out by name.
-- **`groundMasterHash` is what the model authored; `canonicalMasterHash` is what
-  the customer buys.** The receipt records the exact printed string beside its
-  rectangle in px and vehicle inches, plus the font digest.
+Arctic Air `63e6629a` (2022 Prius, master `10779204…`) produced a **cohesive,
+excellent sheet**: a yeti lockup on the driver band, an installer photograph and
+a second lockup on the passenger band, one contact lockup across the bottom
+band. v24 asks for three equal horizontal thirds and Gemini obeyed exactly.
 
-**Do not treat "Gemini obeys coordinates" as the guarantee.** Test 3
-(`docs/ATLAS-CALL1-TOPOLOGY-TEXT.md`) measured 0/6 compliance in both arms when
-coordinates were asked to be one. The coordinates in v3 condition composition;
-`clipTo`-style containment in code is what guarantees it.
+**The cutter then took six unequal territories.** The bottom third alone is
+crossed by three boundaries the model was never shown — `x=1071` (roof|hood),
+`x=2198` (hood|front, hood|rear), `y=3335` (front|rear) — and the contact lockup
+spans `x 985..3080`. All three run through it:
 
-**`PANELS ✓` no longer means "six files exist."** `SixPanelBoard` states files
-cut and panels that passed their gates as two separate numbers, per surface, with
-orientation, trim, effective PPI and refusal reason — and a run that dies after
-the panels keeps its artwork visible and names the stage that stopped it.
+| surface | delivered |
+|---|---|
+| driver | the full yeti lockup — **clean** |
+| passenger | the photograph and the wordmark — **clean** |
+| roof | a sliver of the badge, severed at its right edge |
+| hood | the rest of the badge, then `Www.Arct`, severed at its right edge |
+| front | the top sliver of the banner, severed at left and bottom |
+| rear | `ticAir.com`, severed at left and clipped at top |
 
-**One primitive is reused from the dormant Design Master cluster and only one:**
-`opentype-outline.cjs`, which authors nothing. The thirteen producers stay
-dormant and `tests/atlas-sole-design-authority.test.mjs` now also proves the
-compositor cannot reach them.
+**The two flanks survived because, and only because, `driver` and `passenger`
+map 1:1 onto a third.**
 
-Full contract, evidence and open questions: `docs/ATLAS-GROUND-AND-ELEMENTS.md`.
-Locked by `tests/atlas-element-containment.test.mjs` (which reproduces the
-Arctic Air severing from the real manifest, then proves the repair),
-`tests/atlas-clean-authoring-contract.test.mjs`,
-`tests/atlas-artboard-edge-call1.test.mjs`, `tests/atlas-one-field-call1.test.mjs`
-and `app/src/components/designpro/SixPanelBoard.test.ts`.
+Every existing gate passed, and every one of them was right to: they measure the
+SHEET — coverage, opacity, holes, edge holes, flat-black blobs, template
+leakage, RULE 0.30 output class. **None of them asks whether a wordmark
+straddles a cut line.** `Print panels 6/6` then reported six files, which is
+true and useless.
+
+### What the repair is, and is not
+
+- **Validate each extracted panel, repair only the failing surfaces.** A panel
+  that already prints whole is never re-authored. Driver and passenger are not
+  touched.
+- **A failing surface is repaired using its OWN artwork and style as context**,
+  and reassembled into the SAME canonical A.T.L.A.S. revision, so master,
+  panels and 3D proofs stay one lineage.
+- **No placeholder ground. No generic typography. No fixed slots. No DejaVu
+  wordmark. No new architecture project.** Any of those is the move the owner
+  ruled out by name.
+
+### How the failing surfaces are identified
+
+`runtime/atlas-panel-qc.cjs`, contract `designpro.atlas-panel-qc.v1`. It locates
+the required elements ONCE on the accepted master — reusing the Call 11 detector
+already ported from RestylePro (`runtime/logo-removal.cjs`, re-ask/never
+guess/never drop; RULE 1) — then tests containment against the manifest's own
+zones with integer arithmetic: `contained` · `in_bleed` · `severed`.
+
+**Do not replace this with a pixel statistic.** Three were built and measured
+against the six real panels first, and all three failed: a wrap panel is
+full-bleed by contract, so ice bleeding off the front panel's top edge and
+`ticAir.com` severed on the rear panel's left edge are the same measurement to
+every edge statistic tried. The worst of them cleared the rear panel while
+convicting hood and front on the masked gutter. Evidence, thresholds and the
+verdict on the real run: `docs/ATLAS-PANEL-QC.md`.
+
+A locator outage fails OPEN with a durable receipt, the same shape RULE 0.30
+fixed for the output-class gate — **"we could not look" must never read as "we
+looked and it was fine"**, so no surface is reported as passing.
+
+**`PANELS ✓` no longer means "six files exist."** `SixPanelBoard` shows each
+panel as an image with its surface, orientation, vehicle inches, effective PPI,
+the elements it carries whole and the elements the cut severed, and states files
+cut and panels that passed as two separate numbers.
+
+Locked by `tests/atlas-panel-qc.test.mjs` (which reproduces the Arctic Air
+severing from the real manifest geometry and measured element boxes),
+`app/src/components/designpro/SixPanelBoard.test.ts` and
+`supabase/tests/atlas_panel_qc_receipt.test.sql`.
 
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
 
