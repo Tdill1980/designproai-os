@@ -85,6 +85,8 @@ select
     'pipelineMode','flat-first-atlas-v1','mode','commercial',
     'companyName','Arctic Air','website','Www.ArcticAir.com',
     'brief','composition receipt fixture',
+    -- REQUIRED by calls_1_7_input_v3_valid; omitting it is what CI rejected.
+    'designName','Arctic Air',
     'vehicle',jsonb_build_object('year','2022','make','Toyota','model','Prius','type','car')
   ) as input;
 
