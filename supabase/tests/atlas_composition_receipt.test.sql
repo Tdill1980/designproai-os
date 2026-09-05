@@ -74,28 +74,40 @@ select
         'string','Www.ArcticAir.com','fontSha256',repeat('a',64)))
   ) as compose_receipt;
 
-insert into public.designpro_generation_requests(
-  id,generation_id,owner_id,tenant_key,idempotency_key,state,request_input,
-  input_hash,engine_contract,engine_contract_hash,output_set_hash,engine_receipt,completed_at
-) values(
-  '62000000-0000-4000-8000-000000000001',
-  '63000000-0000-4000-8000-000000000001',
-  '61000000-0000-4000-8000-000000000001',
-  'user_61000000-0000-4000-8000-000000000001',
-  'calls17:composition-fixture','outputs_ready',
+-- `designpro_generation_request_identity` requires the idempotency key to be
+-- 'calls17:'||generation_id||':'||input_hash, and input_hash to be the sha256
+-- of request_input. Building both from the same value is what the runtime does
+-- and what the constraint checks.
+create temporary table request_fixture on commit drop as
+select
   jsonb_build_object(
     'contractVersion','designpro.calls-1-7-input.v3',
     'pipelineMode','flat-first-atlas-v1','mode','commercial',
     'companyName','Arctic Air','website','Www.ArcticAir.com',
     'brief','composition receipt fixture',
-    'vehicle',jsonb_build_object('year','2022','make','Toyota','model','Prius','type','car')),
-  repeat('7',64),
+    'vehicle',jsonb_build_object('year','2022','make','Toyota','model','Prius','type','car')
+  ) as input;
+
+insert into public.designpro_generation_requests(
+  id,generation_id,owner_id,tenant_key,idempotency_key,state,request_input,
+  input_hash,engine_contract,engine_contract_hash,output_set_hash,engine_receipt,completed_at
+)
+select
+  '62000000-0000-4000-8000-000000000001',
+  '63000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  'user_61000000-0000-4000-8000-000000000001',
+  'calls17:63000000-0000-4000-8000-000000000001:'
+    ||encode(extensions.digest(convert_to(request_fixture.input::text,'UTF8'),'sha256'),'hex'),
+  'outputs_ready',
+  request_fixture.input,
+  encode(extensions.digest(convert_to(request_fixture.input::text,'UTF8'),'sha256'),'hex'),
   designpro_private.calls_1_7_engine_contract(),
   encode(extensions.digest(convert_to(
     designpro_private.calls_1_7_engine_contract()::text,'UTF8'),'sha256'),'hex'),
   repeat('9',64),
   jsonb_build_object('contractVersion','designpro.calls-1-7-receipt.v1'),now()
-);
+from request_fixture;
 
 insert into public.designpro_flat_atlas_revisions(
   id,request_id,generation_id,owner_id,tenant_key,revision_sequence,
@@ -150,7 +162,7 @@ select isnt(
 );
 
 create temporary table qc on commit drop as
-select (payload->'revisions'->0->'qc') as qc from projected;
+select (payload->0->'qc') as qc from projected;
 
 select is(
   (select qc->>'groundContract' from qc),'designpro.atlas-field-prompt.v3',
@@ -200,7 +212,7 @@ where id='64000000-0000-4000-8000-000000000001';
 select is(
   (select (public.designpro_flat_atlas_generation_paths(
      '63000000-0000-4000-8000-000000000001'::uuid
-   )->'revisions'->0->'qc'->>'groundContract')),
+   )->0->'qc'->>'groundContract')),
   null,
   'a pre-composition revision projects null composition keys and still reads'
 );
