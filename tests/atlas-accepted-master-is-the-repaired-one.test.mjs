@@ -25,6 +25,12 @@
  *
  * The pre-repair bytes survive as `preRepairMasterHash` -- provenance, never
  * called canonical, accepted, or "Master QC passed".
+ *
+ * 2026-09-05: the severed-element repair joins the SAME chain rather than
+ * forking it. `repairCandidateBytes` is what the hole fill produced (or the
+ * authored master when it changed nothing); the accepted sheet is that, or the
+ * one whose severed lockup was moved back inside a surface. There is still
+ * exactly ONE accepted master, and every assertion below still names it.
  */
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
@@ -38,10 +44,29 @@ const acceptance = source.slice(
   source.indexOf("preRepairMasterHash,") + 40,
 );
 
-test("the accepted master is chosen from the repair result, not assumed", () => {
-  assert.match(acceptance, /const acceptedMasterBytes = cutoutFill\.changed \? surfaceSourceBytes : masterBytes;/);
-  assert.match(acceptance, /const acceptedMasterHash = cutoutFill\.changed \? panelSourceHash : masterHash;/);
-  assert.match(acceptance, /const preRepairMasterHash = cutoutFill\.changed \? masterHash : null;/);
+test("the accepted master is chosen from the repair results, not assumed", () => {
+  // The hole fill picks `repairCandidateBytes`; the severed-element repair may
+  // then replace it. Neither is assumed -- both selections are written out.
+  assert.match(acceptance, /const repairCandidateBytes = cutoutFill\.changed \? surfaceSourceBytes : masterBytes;/);
+  assert.match(acceptance, /const acceptedMasterBytes = panelRepairApplied \? panelRepair\.bytes : repairCandidateBytes;/);
+  assert.match(acceptance, /const acceptedMasterHash = panelRepairApplied\s*\n\s*\? panelRepair\.contentHash\s*\n\s*: \(cutoutFill\.changed \? panelSourceHash : masterHash\);/);
+  assert.match(acceptance, /const preRepairMasterHash = \(cutoutFill\.changed \|\| panelRepairApplied\) \? masterHash : null;/);
+});
+
+test("a severed element is repaired BEFORE acceptance, and an unverified repair fails closed", () => {
+  // Owner, 2026-09-05: "Fix composition before canonical master acceptance."
+  const repair = acceptance.indexOf("repairMasterPanels(");
+  const promote = acceptance.indexOf("const acceptedMasterBytes");
+  assert.ok(repair !== -1, "the severed-element repair is gone");
+  assert.ok(repair < promote, "a severed element must be repaired before the sheet is accepted");
+  // A repair that cannot be verified is not a repair.
+  assert.match(acceptance, /flat_atlas_panel_repaired_master_invalid/);
+  assert.match(acceptance, /flat_atlas_panel_repair_unverified/);
+  // ...and the verification RE-LOCATES on the repaired bytes, because the
+  // element moved. Re-using the old boxes would verify nothing.
+  const relocate = acceptance.indexOf("masterBytes: panelRepair.bytes");
+  assert.ok(relocate !== -1 && relocate < promote,
+    "the repair must be verified by looking again at the repaired sheet");
 });
 
 test("acceptance happens AFTER the post-repair re-validation, never before", () => {
@@ -60,8 +85,10 @@ test("every canonical binding cites the accepted master, not the pre-repair one"
   // root, the panel lineage, the persisted bytes, and the revision row.
   assert.match(source, /master: \{ contentHash: acceptedMasterHash, bytes: acceptedMasterBytes \}/,
     "the published A.T.L.A.S. root must carry the accepted master");
-  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, acceptedMasterHash, \{/,
-    "the six panels must cite the accepted master as their lineage");
+  assert.match(source, /cutCallOnePanels\(acceptedMasterBytes, manifest, acceptedMasterHash, \{/,
+    "the six panels must be cut from, and cite, the accepted master");
+  assert.match(source, /projectionDerivative\(acceptedMasterBytes\)/,
+    "the proof-conditioning projection must be made from the accepted master");
   assert.match(source, /storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes/,
     "the accepted bytes are what persists under the canonical path");
   assert.match(source, /master_storage_path: acceptedMasterStoragePath,\s*\n\s*master_content_hash: acceptedMasterHash,\s*\n\s*master_byte_size: acceptedMasterBytes\.length,/,
@@ -98,9 +125,13 @@ test("a CLEAN master is byte-identical and pays no extra transform", () => {
   // the storage path is the one already derived -- no second hash, no second
   // path derivation, no re-encode.
   assert.match(acceptance, /: masterBytes;/, "clean path must fall through to the original bytes");
-  assert.match(acceptance, /: masterHash;/, "clean path must fall through to the original hash");
-  assert.match(acceptance, /const acceptedMasterStoragePath = cutoutFill\.changed\s*\n\s*\? atlasStoragePath\([^)]*\)\s*\n\s*: masterStoragePath;/,
+  assert.match(acceptance, /: masterHash\);/, "clean path must fall through to the original hash");
+  assert.match(acceptance, /const acceptedMasterStoragePath = \(cutoutFill\.changed \|\| panelRepairApplied\)\s*\n\s*\? atlasStoragePath\([^)]*\)\s*\n\s*: masterStoragePath;/,
     "clean path must reuse the already-derived storage path, not re-derive one");
+  // The severed-element repair is skipped too: with nothing severed,
+  // `repairMasterPanels` is never called and `panelRepairApplied` is false.
+  assert.match(acceptance, /if \(!panelQc\.locateUnavailable && panelQc\.severedElements\.length\) \{/,
+    "the repair must be skipped entirely when nothing was severed");
 
   // And the re-validation itself is skipped when nothing changed, so a clean
   // run pays no extra structural pass on the critical path either.

@@ -408,7 +408,7 @@ function inspectOrientation({ widthPx, heightPx, zone, surfaceKey }) {
  * Returns findings, never a repair. WHICH surfaces fail is the whole output,
  * because a repair that touches a passing panel is a redesign nobody asked for.
  */
-async function inspectAtlasPanels({ masterBytes, panels = [], manifest, locateElements, geminiJson, provider, log = () => {} } = {}) {
+async function inspectAtlasPanels({ masterBytes, panels = [], manifest, containment: knownContainment, locateElements, geminiJson, provider, log = () => {} } = {}) {
   if (!Buffer.isBuffer(masterBytes)) {
     throw new PanelQcError("atlas_panel_qc_master_missing", "panel QC requires the accepted master bytes");
   }
@@ -423,6 +423,15 @@ async function inspectAtlasPanels({ masterBytes, panels = [], manifest, locateEl
         { geminiJson: typeof geminiJson === "function" ? geminiJson : providerLocator(provider), log },
       );
 
+  // A caller that has ALREADY resolved containment on these exact bytes passes
+  // it back rather than paying for a second localization. The repair path does
+  // this: it locates once, repairs, re-locates to verify, then cuts -- and the
+  // per-panel report over the cut panels reuses the verified result instead of
+  // asking a third time.
+  if (Array.isArray(knownContainment)) {
+    return buildSurfaceReport({ containment: knownContainment, panels, manifest, masterWidth, masterHeight, locateUnavailable: null });
+  }
+
   let elements = null;
   let locateUnavailable = null;
   try {
@@ -436,14 +445,26 @@ async function inspectAtlasPanels({ masterBytes, panels = [], manifest, locateEl
     log(`[DESIGNPRO-OS] A.T.L.A.S. panel QC element locate unavailable: ${locateUnavailable}`);
   }
 
-  const containment = elements ? planElementContainment(elements, manifest, masterWidth, masterHeight) : [];
+  const containment = elements ? planElementContainment(elements, manifest, masterWidth, masterHeight) : null;
+  return buildSurfaceReport({ containment, panels, manifest, masterWidth, masterHeight, locateUnavailable });
+}
+
+/**
+ * Turn resolved containment into the per-surface report. Split out so the
+ * repair path can reuse a containment it already paid for, and so this half --
+ * which is pure geometry over recorded findings -- is testable on its own.
+ */
+async function buildSurfaceReport({ containment, panels, manifest, masterWidth, masterHeight, locateUnavailable }) {
+  const items = Array.isArray(containment) ? containment : [];
   const zonesByKey = new Map((manifest?.zones || []).map((zone) => [zone.surfaceKey, zone]));
 
   const surfaces = [];
   for (const panel of panels) {
     const key = String(panel.surfaceKey || "");
     const zone = zonesByKey.get(key);
-    const meta = Buffer.isBuffer(panel.bytes) ? await sharp(panel.bytes).metadata() : { width: zone?.width, height: zone?.height };
+    const meta = Buffer.isBuffer(panel.bytes)
+      ? await sharp(panel.bytes).metadata()
+      : { width: panel.pixelWidth ?? zone?.width, height: panel.pixelHeight ?? zone?.height };
     const { orientation, findings } = inspectOrientation({
       widthPx: meta.width,
       heightPx: meta.height,
@@ -451,16 +472,16 @@ async function inspectAtlasPanels({ masterBytes, panels = [], manifest, locateEl
       surfaceKey: key,
     });
 
-    const severed = containment.filter((item) => item.status === "severed" && item.surfaces.includes(key));
-    const clipped = containment.filter((item) => item.status === "in_bleed" && item.surfaces.includes(key));
-    const intact = containment.filter((item) => item.status === "contained" && item.surfaces.includes(key));
+    const severed = items.filter((item) => item.status === "severed" && item.surfaces.includes(key));
+    const clipped = items.filter((item) => item.status === "in_bleed" && item.surfaces.includes(key));
+    const intact = items.filter((item) => item.status === "contained" && item.surfaces.includes(key));
 
     for (const item of severed) {
       findings.push({
         code: "atlas_panel_element_severed",
         surfaceKey: key,
         element: item.label,
-        edges: item.crossings.find((c) => c.surfaceKey === key)?.edges || [],
+        edges: item.crossings.find((crossing) => crossing.surfaceKey === key)?.edges || [],
         acrossSurfaces: item.surfaces,
         detail: item.detail,
       });
@@ -470,7 +491,7 @@ async function inspectAtlasPanels({ masterBytes, panels = [], manifest, locateEl
         code: "atlas_panel_element_in_bleed",
         surfaceKey: key,
         element: item.label,
-        edges: item.crossings.find((c) => c.surfaceKey === key)?.edges || [],
+        edges: item.crossings.find((crossing) => crossing.surfaceKey === key)?.edges || [],
         detail: item.detail,
       });
     }
@@ -493,11 +514,12 @@ async function inspectAtlasPanels({ masterBytes, panels = [], manifest, locateEl
     contract: PANEL_QC_CONTRACT,
     masterWidthPx: masterWidth,
     masterHeightPx: masterHeight,
-    elementsLocated: elements ? containment : null,
-    locateUnavailable,
+    elementsLocated: containment,
+    locateUnavailable: locateUnavailable || null,
     surfaces,
     failing: surfaces.filter((surface) => !surface.ok).map((surface) => surface.surfaceKey),
     passing: surfaces.filter((surface) => surface.ok).map((surface) => surface.surfaceKey),
+    severedElements: items.filter((item) => item.status === "severed"),
   };
 }
 
@@ -511,6 +533,7 @@ module.exports = {
   PanelQcError,
   boxToMasterRect,
   crossedEdges,
+  buildSurfaceReport,
   inspectAtlasPanels,
   locateMasterElements,
   planElementContainment,

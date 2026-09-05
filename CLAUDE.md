@@ -82,6 +82,47 @@ A locator outage fails OPEN with a durable receipt, the same shape RULE 0.30
 fixed for the output-class gate — **"we could not look" must never read as "we
 looked and it was fine"**, so no surface is reported as passing.
 
+### How a failing surface is repaired
+
+`runtime/atlas-panel-repair.cjs`, contract `designpro.atlas-panel-repair.v1`.
+**It moves Gemini's own pixels; it never redraws them and it never asks a model
+for anything.** Three deterministic steps: LIFT the element out of the accepted
+master, HEAL the rectangle it came from with `diffuseInto` (the cut-out fill's
+own boundary averaging, now a shared export), PLACE it scaled-to-fit and never
+enlarged inside one surface's trim with a 2″ installer tolerance in VEHICLE
+INCHES.
+
+- **Which surface it lands on is not a design opinion.** It goes to the one that
+  already holds most of it — minimise the move. Any other rule is code inventing
+  wrap layout, which is the half of the reverted work the owner rejected.
+- **Elements that read as one lockup move as one unit.** The badge and the
+  banner sit 8 px apart; moving them separately would re-space them, which IS a
+  redesign.
+- **An element that cannot print at 3″ on the vehicle is refused, never shrunk
+  to fit.**
+- **It runs before canonical acceptance**, so QC, the panel cut, the projection,
+  the seven proofs, Call 8 and the ZIP see one finished sheet. The accepted
+  sheet is the last one that passed; `preRepairMasterHash` keeps what Gemini
+  returned.
+- **It fails closed.** After a repair the sheet is re-validated structurally AND
+  the elements are re-located on the repaired bytes, because the element moved.
+  Still severed raises `flat_atlas_panel_repair_unverified` and never becomes
+  canonical.
+- **A passing panel is byte-identical afterwards**, asserted raw-buffer by
+  raw-buffer.
+
+Measured on Arctic Air: one MOVE (badge + banner, 2097×319 px) from four
+surfaces onto the hood at 897×136 px / 8.31″ tall, 668,943 px healed, 3.5 s,
+and all six surfaces pass. Driver and passenger are untouched.
+
+**"Minimise the move" is a safety net, not the root fix, and it has a design
+consequence**: on Arctic Air it puts the contact lockup on the hood and leaves
+the rear bare. The root cause is that v24 asks the model to compose in THREE
+fields while the runtime cuts SIX unequal territories; the flanks are clean
+precisely because there the field IS the surface. Changing the field layout is a
+creative variable RULE 0.33 requires be measured on a real product generation,
+not assumed.
+
 **`PANELS ✓` no longer means "six files exist."** `SixPanelBoard` shows each
 panel as an image with its surface, orientation, vehicle inches, effective PPI,
 the elements it carries whole and the elements the cut severed, and states files
@@ -89,8 +130,10 @@ cut and panels that passed as two separate numbers.
 
 Locked by `tests/atlas-panel-qc.test.mjs` (which reproduces the Arctic Air
 severing from the real manifest geometry and measured element boxes),
-`app/src/components/designpro/SixPanelBoard.test.ts` and
-`supabase/tests/atlas_panel_qc_receipt.test.sql`.
+`tests/atlas-panel-repair.test.mjs` (which severs a bar across a real cut line
+and proves it lands whole, that the vacated area heals, and that driver and
+passenger come back byte-identical), `app/src/components/designpro/SixPanelBoard.test.ts`
+and `supabase/tests/atlas_panel_qc_receipt.test.sql`.
 
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
 

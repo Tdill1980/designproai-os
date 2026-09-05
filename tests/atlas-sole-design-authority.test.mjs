@@ -132,7 +132,7 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   // repaired bytes are the accepted canonical master, so the lineage argument
   // is `acceptedMasterHash` -- identical to `masterHash` whenever the fill
   // changed nothing.
-  assert.match(atlas, /cutCallOnePanels\(surfaceSourceBytes, manifest, acceptedMasterHash[,)]/);
+  assert.match(atlas, /cutCallOnePanels\(acceptedMasterBytes, manifest, acceptedMasterHash[,)]/);
   assert.match(atlas, /async function cutCallOnePanels\(/);
 
   // → server-native 3D proof provider, conditioned on the canonical master's

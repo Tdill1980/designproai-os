@@ -1,7 +1,10 @@
 # A.T.L.A.S. PANEL QC — does a required element survive the cut?
 
-**Contract:** `designpro.atlas-panel-qc.v1` · `runtime/atlas-panel-qc.cjs`
-**Locked by:** `tests/atlas-panel-qc.test.mjs`, `supabase/tests/atlas_panel_qc_receipt.test.sql`
+**Contracts:** `designpro.atlas-panel-qc.v1` · `runtime/atlas-panel-qc.cjs`
+and `designpro.atlas-panel-repair.v1` · `runtime/atlas-panel-repair.cjs`
+**Locked by:** `tests/atlas-panel-qc.test.mjs`, `tests/atlas-panel-repair.test.mjs`,
+`app/src/components/designpro/SixPanelBoard.test.ts`,
+`supabase/tests/atlas_panel_qc_receipt.test.sql`
 
 ---
 
@@ -156,3 +159,91 @@ rather than calling a provider, so the containment half is provable in CI. Those
 boxes are **measured off the master's own pixels** — see §1 — not estimated. The
 localization half is the already-proven ported detector, exercised by its own
 tests here and by Call 11's in `source-tests/runtime/logo-removal.test.mjs`.
+
+---
+
+## 8. The repair — move Gemini's own pixels, never redraw them
+
+The obvious repair is to ask an image model to re-author the failing surface.
+The owner ruled that out, and it is wrong twice over: it would **redraw** the
+branding rather than preserve it, and it would give the system a second design
+producer — the exact thing RULE 0.30 and
+`tests/atlas-sole-design-authority.test.mjs` exist to prevent.
+
+So `runtime/atlas-panel-repair.cjs` moves the element instead. Its pixels are
+still on the master, intact, because **the master was never the problem — the
+cut was.** Three deterministic steps, no provider, ~3.5 s on a 4096 sheet:
+
+1. **LIFT** the element's exact pixels out of the accepted master.
+2. **HEAL** the rectangle it came from with `diffuseInto` — the same
+   boundary-averaging the cut-out fill already uses, promoted from `_test` to a
+   shared export. It grows the surrounding design inward from every side and
+   invents nothing (RULE 0.15).
+3. **PLACE** it, scaled to fit and never enlarged, wholly inside one surface's
+   trim box with a 2″ installer tolerance held clear — in vehicle inches, so the
+   tolerance is 2″ on the vehicle whatever a surface's pixel density is.
+
+**Which surface it lands on is not a design opinion.** It goes to the surface
+that **already holds most of it** — minimise the move — because any other rule
+is code inventing wrap layout, which is the half of the reverted work the owner
+rejected by name. On Arctic Air that is the hood, which is where the fragment
+`[ARCTIC AIR badge] Www.Arct` already reads as one intended lockup. The repair
+completes what the composition was already doing.
+
+**Elements that belong together move together.** The badge and the banner are
+separately located and sit 8 px apart on one contact bar. Moving them
+independently would re-space or re-order them, which IS a redesign. Adjacent
+severed elements resolving to the same surface are merged into one rectangle and
+moved as a unit, so their relative geometry survives exactly.
+
+**An element that cannot print legibly anywhere is refused, never shrunk to
+fit** (`MIN_ELEMENT_HEIGHT_IN` = 3″ on the vehicle).
+
+### Where it sits, and how it fails
+
+Immediately after the cut-out fill's re-validation and **before canonical
+acceptance**, so QC, the panel cut, the projection, the seven proofs, Call 8 and
+the ZIP all see one finished sheet and there is never a second master. The
+accepted sheet is the last one that passed — the authored master, the hole-filled
+one, or the one whose lockup was moved — and `preRepairMasterHash` records what
+Gemini returned in every repaired case.
+
+After a repair the sheet is **re-validated structurally** and the elements are
+**re-located on the repaired bytes**, because the element has moved and the only
+honest verification is to look again at where it actually is. A sheet whose
+lettering is still cut raises `flat_atlas_panel_repair_unverified` and never
+becomes canonical: **a repair that cannot be verified is not a repair.**
+
+### Measured on Arctic Air `63e6629a`
+
+```
+BEFORE  failing: roof, hood, front, rear   passing: driver, passenger
+
+REPAIR PLAN
+  MOVE [arctic air badge + www.arcticair.com contact banner]
+       from px(983,3240 2097x319) across [hood, rear, front, roof]
+       -> hood px(1186,3307 897x136)  scale 0.4278  height 8.31"
+
+repaired: changed=true  vacated=668,943 px  in 3,472 ms
+
+AFTER   failing: none   passing: driver, passenger, roof, hood, front, rear
+```
+
+Driver and passenger come back **byte-identical** — a repair aimed elsewhere
+must never touch a panel that already prints whole, and
+`tests/atlas-panel-repair.test.mjs` asserts it raw-buffer by raw-buffer.
+
+### The honest caveat
+
+"Minimise the move" is the least inventive rule available, and it has a design
+consequence: on Arctic Air it concentrates the contact lockup on the hood and
+leaves the rear bare. That is a legitimate wrap and it prints, but whether the
+website belongs on the hood or the rear is a **layout judgement**, and this code
+deliberately does not make it.
+
+The repair is a safety net, not the root fix. The root fix is upstream: v24 asks
+the model to compose in **three** fields while the runtime cuts **six** unequal
+territories, and the bottom third is where that mismatch lives. Driver and
+passenger are clean precisely because there the field IS the surface. Changing
+the field layout is a creative variable RULE 0.33 says must be measured on a
+real product generation, not assumed.

@@ -84,7 +84,7 @@ test("the authored master is never mutated", () => {
 
 test("the deterministic gate precedes master and panel publication", () => {
   const acceptance = loop.indexOf("if (!stillBlocking.length)");
-  const panels = afterLoop.indexOf("cutCallOnePanels(surfaceSourceBytes");
+  const panels = afterLoop.indexOf("cutCallOnePanels(acceptedMasterBytes");
   assert.ok(acceptance > 0 && panels > 0);
   assert.match(afterLoop, /await persistImmutableAssets\(\);/);
   assert.match(afterLoop, /const persistImmutableAssets = \(\) => Promise\.all\(\[/);

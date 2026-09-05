@@ -72,6 +72,11 @@ runtime/atlas-output-class.cjs
 # flat-first-atlas.cjs, and it in turn requires logo-removal.cjs for the ported
 # element detector -- a release missing either dies at startup.
 runtime/atlas-panel-qc.cjs
+
+# Severed-element repair (designpro.atlas-panel-repair.v1). Moves Gemini's own
+# pixels back inside a surface and heals what they came out of, using the
+# cut-out fill's own diffusion. No provider, no second design producer.
+runtime/atlas-panel-repair.cjs
 # Historical immutable Houdini pair, retained for forensic compatibility and
 # not attached to active Call 1.
 runtime/atlas-examples/houdini-flattened-top-view.jpg

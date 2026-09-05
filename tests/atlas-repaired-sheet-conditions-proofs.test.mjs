@@ -54,8 +54,8 @@ test("the projection and the panels are cut from the same repaired sheet", () =>
   // master, so the lineage argument is now `acceptedMasterHash`. On a clean run
   // the two are the same value; on a repaired one there is no longer a second
   // master for them to disagree about.
-  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, acceptedMasterHash, \{/);
-  assert.match(source, /projectionDerivative\(surfaceSourceBytes\)/);
+  assert.match(source, /cutCallOnePanels\(acceptedMasterBytes, manifest, acceptedMasterHash, \{/);
+  assert.match(source, /projectionDerivative\(acceptedMasterBytes\)/);
   assert.doesNotMatch(source, /await projectionDerivative\(masterBytes\)/);
 });
 
@@ -64,14 +64,14 @@ test("the six exact surface crops the proof QC judges are built from the repaire
   //
   // The authorities used to be a SECOND crop of the repaired sheet, taken with
   // the same rects the panels use. They are now an encode OF THE PANELS, and
-  // the panels are cut from `surfaceSourceBytes` -- so the proof half is still
+  // the panels are cut from `acceptedMasterBytes` -- so the proof half is still
   // conditioned on the repaired sheet and can no longer diverge from what the
   // customer buys, because there is one crop instead of two that agree
   // (owner 2026-08-27: "each proof uses its own extracted panel as immutable
   // artwork authority").
   assert.match(source, /await buildViewAuthorities\(authorityPanels\)/);
   // Same inversion as above: the lineage argument is the ACCEPTED master.
-  assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, acceptedMasterHash/);
+  assert.match(source, /cutCallOnePanels\(acceptedMasterBytes, manifest, acceptedMasterHash/);
   assert.doesNotMatch(source, /buildViewAuthorities\(masterBytes/);
   // And a resumed run re-cuts from the repaired sheet, never the authored one.
   assert.match(source, /await cutCallOnePanels\(surfaceSourceBytes, manifest, row\.master_content_hash\)/);
