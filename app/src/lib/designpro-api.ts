@@ -277,6 +277,72 @@ export type FlatAtlasRevision = {
     /** What the panels were cut from; equals the master on a clean sheet. */
     panelSourceHash?: string | null;
     canonicalMasterHash?: string | null;
+    /**
+     * COMPOSITION — what the model authored vs what the customer buys.
+     *
+     * Call 1 authors the GROUND and paints no glyph. The runtime composites the
+     * customer's name, URL, phone, brand mark and focal photograph onto it
+     * BEFORE the master is accepted, at rectangles proved to lie inside one
+     * surface's trim box. `groundMasterHash` is the sheet Gemini returned;
+     * `canonicalMasterHash` is the composed sheet everything downstream cuts.
+     *
+     * Absent on every revision authored before the ground split. A historical
+     * row reads these as null and stays fully viewable.
+     */
+    groundContract?: string | null;
+    groundMasterHash?: string | null;
+    composeContract?: string | null;
+    composeReceipt?: {
+      groundHash?: string;
+      composedHash?: string;
+      planHash?: string | null;
+      layerCount?: number;
+      placedCount?: number;
+      plateApplied?: string[];
+      elements?: Array<{
+        elementId?: string;
+        kind?: string;
+        surfaceKey?: string;
+        sourceKind?: string;
+        /** For typeset elements: the exact string that printed. */
+        string?: string;
+        rectPx?: { x: number; y: number; w: number; h: number };
+        rectIn?: { x: number; y: number; w: number; h: number };
+        fontSha256?: string;
+        sourceContentHash?: string;
+      }>;
+    } | null;
+    elementPlanContract?: string | null;
+    elementPlanHash?: string | null;
+    /** Every placed element: its surface, and its rectangle in px and inches. */
+    elementPlacements?: Array<{
+      elementId?: string;
+      elementRef?: string;
+      kind?: string;
+      surfaceKey?: string;
+      rectPx?: { x: number; y: number; w: number; h: number };
+      rectIn?: { x: number; y: number; w: number; h: number };
+      safeInsetInches?: number;
+    }>;
+    /** A surface left bare, with the measurement that decided it. */
+    elementPlacementsSkipped?: Array<{
+      elementId?: string;
+      surfaceKey?: string;
+      kind?: string;
+      reason?: string;
+      heightIn?: number;
+      minHeightIn?: number;
+    }>;
+    elementsContract?: string | null;
+    elementsReceipt?: {
+      fontPath?: string;
+      fontSha256?: string;
+      canonicalStrings?: { wordmark?: string | null; contact?: string | null; tagline?: string | null };
+      elementImageCallCount?: number;
+      providerCalls?: Array<{ kind?: string; model?: string; requestId?: string; assetSha256?: string }>;
+      /** An element whose own image call failed; the run continued without it. */
+      unresolved?: Array<{ reason?: string }>;
+    } | null;
   } | null;
   /** How this master was produced: pipeline, contracts, provider, delivery. */
   provenance?: {

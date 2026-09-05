@@ -264,12 +264,47 @@ test("the dormant Design Master cluster stays out of the active runtime", () => 
     "master-proof-sheet.cjs",
     "procedural-view-plates.cjs",
     "mesh-warp.cjs",
-    "opentype-outline.cjs",
   ]) {
     assert.ok(
       !loaded.has(dormant),
       `${dormant} is a dormant Design Master module and must not be wired into runtime/index.js — A.T.L.A.S. is the only design authority`,
     );
+  }
+});
+
+test("opentype-outline is reachable, and ONLY as the compositor's typography primitive", () => {
+  // ⚠️ THIS NARROWS THE FENCE ABOVE, DELIBERATELY (owner ruling 2026-09-05:
+  // "Reuse existing components where they help; do not deploy the dormant
+  // pipeline wholesale").
+  //
+  // `opentype-outline.cjs` was in the dormant list because it arrived with the
+  // Design Master cluster, not because it is a design authority. It is not one:
+  // it takes a string and font BYTES and returns a glyph path. It authors
+  // nothing, decides nothing, and cannot produce artwork. The other thirteen
+  // modules are producers -- an author, a renderer, a revision cycle, proof
+  // derivation -- and every one of them stays dormant and still asserted above.
+  //
+  // The runtime needs exactly this primitive and nothing else from that
+  // cluster: the customer's name, URL and phone are outlined from a pinned font
+  // file and composited into proven rectangles, because libvips resolves a
+  // font-FAMILY through fontconfig and substitutes silently, and type set that
+  // way is not the type the master specifies.
+  const loaded = requireClosure();
+  assert.ok(loaded.has("opentype-outline.cjs"), "the compositor's typography primitive is wired in");
+
+  // THE BACK DOOR THIS CLOSES. Reaching one module of a cluster must not make
+  // the cluster reachable: the compositor may depend on the primitive and on
+  // the element plan, and on nothing else that ships with the Design Master.
+  const compose = readFileSync(new URL("../runtime/atlas-compose-master.cjs", import.meta.url), "utf8");
+  const required = [...compose.matchAll(/require\("\.\/([a-z0-9-]+\.cjs)"\)/g)].map((m) => m[1]).sort();
+  assert.deepEqual(required, ["atlas-element-plan.cjs", "opentype-outline.cjs"],
+    "the compositor may reach the typography primitive and the element plan, and nothing else");
+  for (const producer of [
+    "creative-authoring.cjs", "design-master.cjs", "design-master-author.cjs",
+    "design-master-renderer.cjs", "design-master-revision.cjs", "design-revision-cycle.cjs",
+    "designpro-master-cycle.cjs", "master-derived-3d-proof.cjs", "master-proof-sheet.cjs",
+  ]) {
+    assert.ok(!loaded.has(producer), `${producer} must stay dormant — it is a design producer`);
   }
 });
 

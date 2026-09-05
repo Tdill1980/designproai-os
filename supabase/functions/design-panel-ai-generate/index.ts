@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260902.v24-one-field";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260905.v25-ground-and-elements";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
 // composition and receives NO six-region guide, NO labeled teaching sheet, NO
@@ -58,6 +58,36 @@ const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260902.v24-one-
 // legacy six-container request stays callable for the harness slice and for
 // history; production sends the field contract.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
+// GROUND CONTRACT (owner ruling 2026-09-05, "fix composition before canonical
+// master acceptance"). v2 asked one model to draw the ground AND the lettering
+// AND the marks, in fractions the cutter does not use. It obeyed -- Arctic Air
+// `63e6629a` composed the three equal thirds it was asked for -- and the six
+// unequal territories then sawed one contact bar into `Www.Arct` on the hood
+// and `ticAir.com` on the rear.
+//
+// v3 splits the job at the only line that can carry a guarantee. Call 1 authors
+// the GROUND: palette, texture, motion, depth, the mascot illustration, the
+// photographic scene -- everything the model is genuinely better at, and the
+// whole of what made the Arctic Air artwork worth keeping. It authors NO
+// lettering, NO wordmark and NO contact bar, because those are the elements a
+// crop can destroy and a customer can be harmed by. The runtime composites them
+// afterwards at rectangles `atlas-element-plan.cjs` proved lie inside one
+// surface's trim box.
+//
+// The v3 tail carries the SIX REAL TERRITORY RECTANGLES from
+// `panels[].normalized` -- the same numbers `cutCallOnePanels` extracts with.
+// They are conditioning, not the guarantee: they tell the model where the calm
+// passages need to be so the composited elements land on ground that suits
+// them. Containment is still owned by code. Test 3
+// (`docs/ATLAS-CALL1-TOPOLOGY-TEXT.md`) measured what happens when coordinates
+// are asked to BE the guarantee -- 0/6 compliant in both arms -- and this
+// contract does not repeat that mistake.
+const ATLAS_FIELD_GROUND_CONTRACT = "designpro.atlas-field-prompt.v3";
+// Isolated element assets. One small image request per element, wordless by
+// construction, so a mascot or a photograph can be PLACED inside a territory
+// instead of being discovered halfway across a cut line.
+const ATLAS_ELEMENT_PROMPT_CONTRACT = "designpro.atlas-element-asset.v1";
+const ATLAS_ELEMENT_KINDS = ["brandmark", "photo"] as const;
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 // NO EXPLICIT TEMPERATURE (owner ruling, 2026-09-01). DID-2D918868 -- the
@@ -557,6 +587,69 @@ function atlasFieldContract(vehicle: string, bodyClass: string, noseEdge: AtlasN
   ].join("\n");
 }
 
+// ── GROUND CONTRACT (designpro.atlas-field-prompt.v3) ───────────────────────
+// The tail of the v3 Call 1. Two jobs, and only two:
+//
+//   1. ask for ONE continuous full-bleed GROUND -- no lettering, no wordmark,
+//      no contact bar, no signage;
+//   2. hand the model the SIX REAL RECTANGLES the cutter uses, so the calm
+//      passages land where the runtime is about to composite an element.
+//
+// The rectangles are anonymous on purpose. They arrive as fractions of the
+// square and carry no surface names, no ordinals and no object nouns, because
+// a name in the prompt is a name the model can render into the artwork -- which
+// is the leak `renderAtlasAuthoringGuide` fail-closes on and the reason the
+// six-container vocabulary was removed in the first place.
+function atlasGroundContract(
+  panels: Array<{ normalized?: AtlasNormalizedRect }>,
+  vehicle: string,
+  bodyClass: string,
+  noseEdge: AtlasNoseEdge,
+): string {
+  const rows = panels
+    .map((panel) => panel.normalized)
+    .filter((rect): rect is AtlasNormalizedRect => Boolean(rect))
+    .map((rect) => {
+      const right = (Number(rect.x) + Number(rect.width)).toFixed(4);
+      const bottom = (Number(rect.y) + Number(rect.height)).toFixed(4);
+      return `• x ${rect.x}–${right}, y ${rect.y}–${bottom}`;
+    });
+  return [
+    "OUTPUT — ONE CONTINUOUS FULL-BLEED GROUND on one square 4K image.",
+    `Paint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — ground colour, texture, depth and motion running continuously across the whole image, straight-on and flat.`,
+    "",
+    "THIS IMAGE CARRIES NO WORDS. No company name, no website, no phone number, no tagline, no contact bar, no signage, no lettering, no numerals and no readable marks of any kind — not one glyph anywhere on the square. Those are set separately as type and composited onto this ground afterwards, so anything you write here would print twice. Illustration, pattern, texture, photographic imagery and the brand character are yours; letterforms are not.",
+    "",
+    `Six areas of the square carry the finished artwork. Fractions are of the square's width and height from its top-left corner. ${atlasSweepPhrase(noseEdge.driver)}`,
+    ...rows,
+    "",
+    "Compose so each of those six areas reads as a complete, self-contained passage of one design — its own arrangement, not a repeat of its neighbour — and so the ground, its palette and its motion flow through the whole square continuously, making the transitions between them invisible. Inside each area leave one calmer passage with room to breathe, where type will later sit; keep the busiest detail, the strongest contrast and the focal imagery away from those calm passages and away from the edges of the six areas. Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+  ].join("\n");
+}
+
+// ── ISOLATED ELEMENT ASSET (designpro.atlas-element-asset.v1) ───────────────
+// A brand character or a photographic scene as its OWN image, on transparency,
+// so the runtime can place it inside a proven rectangle. Wordless by
+// construction: an element that came back carrying the customer's domain would
+// reintroduce exactly the raster-lettering defect v3 exists to remove.
+function atlasElementPrompt(kind: string, brief: string, palette: string): string {
+  const shared = "Fill the frame with the subject and nothing else. Absolutely no words, letters, numerals, logos, watermarks, captions or readable marks of any kind — output zero glyphs. No vehicle, no wrap, no mockup, no presentation scene, no drop shadow on an implied surface.";
+  if (kind === "brandmark") {
+    return [
+      "ONE original brand character illustration, centred on a fully TRANSPARENT background, drawn as a premium mascot emblem in the spirit of a pro sports or esports badge: clean bold shapes, a dynamic heroic pose, confident personality, instantly readable at a glance from across a parking lot.",
+      brief ? `The character: ${brief}` : "",
+      palette ? `Palette: ${palette} — build the character from this palette alone.` : "",
+      shared,
+      "Transparent background — no plate, no card, no circle behind the character unless the character's own emblem shape calls for one.",
+    ].filter(Boolean).join("\n\n");
+  }
+  return [
+    "ONE photographic scene, edge to edge, as a real camera image: natural light, true-to-life colour, real depth of field and real surface texture, crisp and high-resolution as if professionally photographed.",
+    brief ? `The scene: ${brief}` : "",
+    shared,
+  ].filter(Boolean).join("\n\n");
+}
+
 // ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY ────────────────────
 // The OS owns the math; the AI owns only the creative pixels. Each region
 // arrives as x/y/width/height already divided by the canvas (computed by the
@@ -665,6 +758,11 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   // lock, photo-realism rule, FINISH_SPECS text, style, movement and depth are
   // untouched.
   const atlasField = atlasFlatMaster && (params as any).atlasField === true;
+  // v3 is v2's continuous-field scene MINUS every lettering instruction, PLUS
+  // the real territory rectangles. It implies `atlasField` for the creative
+  // half so the persona, the concept translation and the reference handling
+  // stay byte-identical to the arm that produced Arctic Air's artwork.
+  const atlasFieldGround = atlasField && (params as any).atlasFieldGround === true;
   const atlasNoseEdge: AtlasNoseEdge = atlasNoseEdgeInput((params as any).atlasNoseEdge);
   const vehicle = [vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
     .filter(Boolean)
@@ -807,7 +905,9 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = atlasField
+    const atlasScene = atlasFieldGround
+      ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph. This is the single design authority for the complete vehicle — one design, one composition. The design is built from layered elements — background color and texture flowing continuously across the whole field, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare vinyl. You are designing the GROUND this business's identity will sit on: the concept, the palette, the imagery and the motion are entirely yours, and the words are set separately and composited on top, so this field carries none of them.`
+      : atlasField
       ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph. This is the single design authority for the complete vehicle — one design, one composition. The design is built from layered elements — background color and texture flowing continuously across the whole field, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare vinyl. The company name reads clearly at a glance; how the branding is composed is your creative call.`
       : `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. The design is built from layered elements — background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare panel. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
@@ -843,7 +943,20 @@ ${atlasField ? COMMERCIAL_TRANSLATION_FIELD : COMMERCIAL_TRANSLATION}
 
 CLIENT BRIEF:`;
 
-    if (companyName) {
+    // GROUND CONTRACT: the business is named as CONTEXT so the concept is built
+    // for this business, and the logo/lettering architecture is withheld,
+    // because under v3 no glyph is drawn here at all. The brand character is
+    // requested as its own isolated asset (`atlas-element`) and composited into
+    // a proven rectangle; the name, URL and phone are outlined from the frozen
+    // snapshot. Leaving `buildLogoArchitecture` in would ask for the very
+    // lettering the composer is about to place, and the customer would get it
+    // twice -- once cropped by the cut, once correct.
+    if (atlasFieldGround) {
+      assembled += companyName
+        ? `\nBusiness: ${companyName} — this is design CONTEXT, so the concept, palette and imagery fit this business. Do not letter it, sign it, or draw its name anywhere in the artwork.`
+        : `\nRead the business and its industry from the creative direction above and design for it — as context only. Do not letter any name, and draw no signage of any kind.`;
+      assembled += `\nNo contact information, website, phone number, tagline or company name is drawn in this artwork. Every one of those is set as type and composited onto this ground afterwards.`;
+    } else if (companyName) {
       assembled += `\nBusiness: ${companyName}.${buildLogoArchitecture(companyName, industryType)}`;
     } else {
       // Company name wasn't supplied as a field (the customer typed everything in
@@ -859,7 +972,12 @@ CLIENT BRIEF:`;
       // interpolating the SAME const rather than by matching prose.
       assembled += `\nIdentify the business name from the creative direction above. Spell it exactly as written in the brief. ${LOGO_REQUIREMENT}`;
     }
-    if (phone) {
+    if (atlasFieldGround) {
+      // Deliberately nothing. The exact phone, website and customer copy reach
+      // the sheet through `atlas-compose-master.cjs`, outlined from the pinned
+      // font at rectangles proved to sit inside one surface's trim box. Naming
+      // them here would put a second, unguaranteed copy in the raster.
+    } else if (phone) {
       assembled += `\nContact info (place in the contact bar): ${phone} — display this EXACT number, digit for digit. Never alter or invent any digits.`;
     } else {
       assembled += atlasFlatMaster
@@ -871,12 +989,16 @@ CLIENT BRIEF:`;
     // "keep exact supplied text/contact data; never invent customer
     // information") so the website half and the customer-authored tagline
     // cannot be dropped by a branch that only guards the phone.
-    if (website) {
+    if (atlasFieldGround) {
+      // Same reason as the phone branch above: composited, not painted.
+    } else if (website) {
       assembled += `\nWebsite (place in the contact bar): ${website} — display this EXACT URL, character for character. Never alter or invent it.`;
     } else {
       assembled += `\nNo website was supplied — invent no website, email address or street address, and display none anywhere on the design.`;
     }
-    if (textLayerPrompt) {
+    if (atlasFieldGround && textLayerPrompt) {
+      assembled += `\nTEXT LAYER DIRECTION (customer-authored, for TONE only — this artwork carries no glyphs): ${textLayerPrompt}`;
+    } else if (textLayerPrompt) {
       assembled += `\nTEXT LAYER DIRECTION (customer-authored): ${textLayerPrompt} Preserve every supplied name, slogan, service and contact string exactly; do not invent replacement copy.`;
     }
     if (industryType) assembled += `\nIndustry: ${industryType}`;
@@ -887,7 +1009,13 @@ CLIENT BRIEF:`;
     }
 
     if (mascot) {
-      assembled += atlasFlatMaster
+      assembled += atlasFieldGround
+        // The character is authored as its own isolated asset and composited
+        // into a proven rectangle, so the GROUND is asked to make room for it
+        // and to belong to it -- not to draw it a second time in a position
+        // nothing can guarantee.
+        ? `\n\nBRAND CHARACTER: this design belongs to a business whose brand character is ${mascot}. That character is illustrated separately and placed onto this ground afterwards. Build the world it lives in — the palette, the energy and the imagery that suit it — and leave it uncluttered room to land. Do not draw the character itself.`
+        : atlasFlatMaster
         ? `\n\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${mascot} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Integrate it as a coordinated hero graphic in both flank fields, sized to complement the company name without crowding it.`
         : `\n\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${mascot} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Anchor the mascot as a hero graphic on the rear quarter panel, sized to complement the company name without crowding it.`;
     }
@@ -921,7 +1049,9 @@ CLIENT BRIEF:`;
 
     if (atlasField) {
       assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole field — one consistent finish throughout.\nThe artwork fills the entire field edge to edge — solid printed vinyl, corner to corner.`;
-      assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, atlasNoseEdge, true)}`;
+      assembled += atlasFieldGround
+        ? `\n\n${atlasGroundContract(atlasPanels, vehicle, atlasBodyClass, atlasNoseEdge)}`
+        : `\n\n${atlasFieldContract(vehicle, atlasBodyClass, atlasNoseEdge, true)}`;
       return assembled;
     }
     if (atlasFlatMaster) {
@@ -1200,6 +1330,18 @@ serve(async (req) => {
         );
       }
       return await handleAtlasArtboard(body);
+    }
+    // ═══ ATLAS-ELEMENT — one isolated, wordless element asset. Same internal-
+    // only fence as Call 1: these assets are composited into the canonical
+    // master, so a browser may not mint one.
+    if (body?.mode === "atlas-element") {
+      if (!internalCaller.internal) {
+        return new Response(
+          JSON.stringify({ success: false, error: "atlas_element_internal_only" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      return await handleAtlasElement(body);
     }
     const {
       mode,
@@ -2323,10 +2465,16 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // legacy six-container request (no contract field) stays callable for the
     // harness slice and history. An unknown contract is refused, never guessed.
     const fieldContract = String(body.fieldContract || "").trim();
-    if (fieldContract && fieldContract !== ATLAS_FIELD_PROMPT_CONTRACT) {
+    const knownFieldContracts = [ATLAS_FIELD_PROMPT_CONTRACT, ATLAS_FIELD_GROUND_CONTRACT];
+    if (fieldContract && !knownFieldContracts.includes(fieldContract)) {
       throw new Error(`atlas_artboard_field_contract_unknown:${fieldContract.slice(0, 80)}`);
     }
-    const atlasField = fieldContract === ATLAS_FIELD_PROMPT_CONTRACT;
+    // v3 is v2 plus the ground split. Both take the one-field request shape --
+    // one text part and the verified customer references, no teaching sheet and
+    // no guide image -- so the parts assembly below is shared, and only the
+    // prompt the assembly produces differs.
+    const atlasFieldGround = fieldContract === ATLAS_FIELD_GROUND_CONTRACT;
+    const atlasField = fieldContract === ATLAS_FIELD_PROMPT_CONTRACT || atlasFieldGround;
     const atlasNoseEdge = atlasNoseEdgeInput(body.noseEdge);
 
     // The six labeled panels WITH their GENIE-derived normalized [0,1] target
@@ -2386,6 +2534,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
       atlasFlatMaster: true,
       atlasPanels: panels,
       atlasField,
+      atlasFieldGround,
       atlasNoseEdge,
     } as any);
 
@@ -2574,7 +2723,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
         modelInputImageCount,
         teachingProofIdentity: verifiedTeachingProof,
-        fieldContract: atlasField ? ATLAS_FIELD_PROMPT_CONTRACT : null,
+        fieldContract: atlasField ? (atlasFieldGround ? ATLAS_FIELD_GROUND_CONTRACT : ATLAS_FIELD_PROMPT_CONTRACT) : null,
         topologyContract: ATLAS_TOPOLOGY_CONTRACT,
         promptChars: prompt.length,
         masterUrl: signed?.signedUrl || null,
@@ -2582,6 +2731,131 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         masterSha256,
         masterBytes: masterBytes.length,
         designText: textOut.slice(0, 2000),
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        promptVersion: ATLAS_ARTBOARD_PROMPT_VERSION,
+        imageRequestCount: 0,
+        error: String((err as Error)?.message || err).slice(0, 500),
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATLAS-ELEMENT — ONE ISOLATED, WORDLESS ELEMENT ASSET
+//
+// Requirement, verbatim (owner, 2026-09-05): "Required lettering, logos and
+// focal imagery must fit their intended surfaces. Resolve their asset sources
+// before assembly." A mascot painted INTO the ground is not a resolvable asset
+// -- it is pixels at coordinates nobody chose, and Arctic Air `586abc83` proved
+// what that costs: the shield came off the roof panel reading `ARCTI`, cut by
+// `x=1071`. An element with its own bytes can be MEASURED, PLANNED and PLACED
+// inside a rectangle `atlas-element-plan.cjs` proved is contained.
+//
+// Same transport as Call 1, deliberately: same key pool, same model, same
+// deadline, same one-request discipline, same private bucket and storage-path
+// contract. The only differences are the aspect ratio (the element's own, so it
+// is not letterboxed before it is placed) and the size (2K -- an element is
+// composited at a few hundred pixels, and 4K would be four times the latency
+// for detail the panel cannot resolve at 22 PPI).
+// ═══════════════════════════════════════════════════════════════════════════
+async function handleAtlasElement(body: Record<string, unknown>): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  const svc = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  try {
+    const kind = String(body.elementKind || "").trim();
+    if (!ATLAS_ELEMENT_KINDS.includes(kind as typeof ATLAS_ELEMENT_KINDS[number])) {
+      throw new Error(`atlas_element_kind_unknown:${kind.slice(0, 40)}`);
+    }
+    const contract = String(body.elementContract || "").trim();
+    if (contract && contract !== ATLAS_ELEMENT_PROMPT_CONTRACT) {
+      throw new Error(`atlas_element_contract_unknown:${contract.slice(0, 80)}`);
+    }
+    const aspectRatio = String(body.aspectRatio || "1:1").trim();
+    if (!/^\d{1,2}:\d{1,2}$/.test(aspectRatio)) throw new Error(`atlas_element_aspect_invalid:${aspectRatio.slice(0, 16)}`);
+
+    // THE BRIEF REACHING THIS CALL CARRIES NO CANONICAL STRINGS. The caller
+    // redacts them; this refuses the request if any survived, because an
+    // element that came back with the customer's domain painted into it would
+    // put an unguaranteed copy of that domain on the wrap -- the exact defect
+    // the ground split removes.
+    const brief = String(body.elementBrief || "").trim().slice(0, 600);
+    const forbidden = Array.isArray(body.forbiddenStrings) ? (body.forbiddenStrings as string[]) : [];
+    for (const term of forbidden) {
+      const needle = String(term || "").trim();
+      if (needle.length >= 3 && brief.toLowerCase().includes(needle.toLowerCase())) {
+        throw new Error(`atlas_element_brief_carries_canonical_string:${needle.slice(0, 40)}`);
+      }
+    }
+    const palette = String(body.palette || "").trim().slice(0, 200);
+    const prompt = atlasElementPrompt(kind, brief, palette);
+
+    const model = ATLAS_ARTBOARD_AUTHORING_MODEL;
+    const t0 = Date.now();
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiKey()}`;
+    const modelRequest = JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { aspectRatio, imageSize: "2K" },
+      },
+    });
+    const modelRequestByteSize = new TextEncoder().encode(modelRequest).byteLength;
+    const geminiRes = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(115_000),
+      body: modelRequest,
+    });
+    if (!geminiRes.ok) {
+      throw new Error(`atlas_element_gemini_http_${geminiRes.status}: ${(await geminiRes.text()).slice(0, 300)}`);
+    }
+    const payload = await geminiRes.json();
+    const candidateParts: Array<Record<string, any>> = payload?.candidates?.[0]?.content?.parts || [];
+    const imagePart = candidateParts.find((p) => p?.inlineData?.data);
+    const textOut = candidateParts.filter((p) => typeof p?.text === "string").map((p) => p.text).join("\n").trim();
+    if (!imagePart) {
+      throw new Error(`atlas_element_no_image: finishReason=${payload?.candidates?.[0]?.finishReason || "unknown"} text=${textOut.slice(0, 200)}`);
+    }
+
+    const binary = atob(imagePart.inlineData.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const sha256 = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const storagePath = `atlas-elements/${requestId}.png`;
+    const { error: upErr } = await svc.storage.from("wrap-files").upload(storagePath, bytes, {
+      contentType: "image/png",
+      upsert: false,
+    });
+    if (upErr) throw new Error(`atlas_element_upload_failed: ${upErr.message}`);
+    console.log(`atlas-element ${requestId}: ${kind} in ${Date.now() - t0}ms, ${bytes.length} bytes`);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        sourceCommit: ATLAS_ARTBOARD_SOURCE_COMMIT,
+        promptVersion: ATLAS_ARTBOARD_PROMPT_VERSION,
+        elementContract: ATLAS_ELEMENT_PROMPT_CONTRACT,
+        elementKind: kind,
+        model,
+        imageRequestCount: 1,
+        modelRequestByteSize,
+        aspectRatio,
+        assetStoragePath: storagePath,
+        assetSha256: sha256,
+        assetBytes: bytes.length,
+        promptChars: prompt.length,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
