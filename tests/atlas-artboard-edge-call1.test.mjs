@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260902\.v24-one-field"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260904\.v25-field-coordinates"/);
   assert.match(assembly, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(handler, /fieldContract: atlasField \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
@@ -191,9 +191,15 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
   // The neutral-mask experiment hid so much context that Gemini received six
   // anonymous canvases rather than one flattened vehicle. Restore semantic
   // identity while keeping all inch/pixel/cut geometry server authoritative.
+  // Ends at the ONE-FIELD boundary, not at atlasCreativeDirection. The old end
+  // ran past this function and swallowed the whole field-contract region,
+  // comments included, so prose written ABOUT the one-field tail was convicted
+  // as if the six-container contract had said it to the model. The field tail
+  // has its own locks in atlas-clean-authoring-contract and the whole-prompt
+  // guard in atlas-one-field-call1; nothing loses coverage.
   const flatFunction = edgeSource.slice(
     edgeSource.indexOf("function atlasFlatMasterContract("),
-    edgeSource.indexOf("function atlasCreativeDirection("),
+    edgeSource.indexOf("// ── ONE-FIELD OUTPUT CONTRACT"),
   );
   const contract = flatFunction.slice(flatFunction.indexOf(MARK));
 

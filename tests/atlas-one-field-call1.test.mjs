@@ -116,21 +116,78 @@ test("the runtime request names the field contract and carries no structural ima
   assert.ok(body.panels.every((panel) => panel.normalized.orientation === "upright"));
 });
 
-test("the DEPLOYED edge assembly produces Draw 1's field prompt byte for byte", async () => {
+// v25 splits the prompt at the tail boundary, and the split is the point.
+//
+// Draw 1 is the only clean-flank draw this product has produced, so its prompt
+// stays provable byte for byte OUT OF THIS REPOSITORY -- head + recorded v24
+// tail must still reassemble it exactly. What Test 14 deliberately replaces is
+// the tail alone. Everything above it -- persona, concept, brief, translation,
+// logo, contact lock, photo-realism rule, FINISH_SPECS text, style, movement,
+// depth, and all seven creative field swaps -- must stay byte-identical to
+// Draw 1, because that half is what the creative-parity rules protect and
+// nothing here is licensed to touch it.
+const TAIL_MARK = "\n\nOUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.";
+const DRAW1_SPLIT = DRAW1_PROMPT.indexOf(TAIL_MARK);
+const DRAW1_HEAD = DRAW1_PROMPT.slice(0, DRAW1_SPLIT);
+const DRAW1_V24_TAIL = DRAW1_PROMPT.slice(DRAW1_SPLIT);
+
+test("Draw 1's recorded prompt is still reassembled byte for byte from this repo", () => {
+  assert.ok(DRAW1_SPLIT > 0, "the Draw-1 fixture must contain the tail boundary");
+  assert.equal(DRAW1_HEAD + DRAW1_V24_TAIL, DRAW1_PROMPT);
+  assert.equal(sha(DRAW1_HEAD + DRAW1_V24_TAIL), sha(DRAW1_PROMPT));
+  // The v24 tail the clean-flank draw actually used, kept readable as history.
+  assert.match(DRAW1_V24_TAIL, /three equal horizontal thirds that read as one picture/);
+  assert.match(DRAW1_V24_TAIL, /THE LOWER THIRD — the supporting register/);
+});
+
+test("the DEPLOYED edge assembly reproduces Draw 1's creative half byte for byte", async () => {
   const mod = await slice();
   const { field } = fixtureManifests();
   const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {});
   const { prompt, references } = mod.buildAtlasCall1Prompt(body);
   assert.equal(references.length, 0);
-  assert.equal(prompt.length, DRAW1_PROMPT.length);
-  assert.equal(sha(prompt), sha(DRAW1_PROMPT));
-  assert.equal(prompt, DRAW1_PROMPT);
+  const split = prompt.indexOf(TAIL_MARK);
+  assert.ok(split > 0, "the assembled prompt must carry the field tail");
+  const head = prompt.slice(0, split);
+  assert.equal(head.length, DRAW1_HEAD.length);
+  assert.equal(sha(head), sha(DRAW1_HEAD));
+  assert.equal(head, DRAW1_HEAD);
   // The seven creative swaps landed inside the assembly — every "to" phrase is
   // present and every "from" phrase is gone.
   for (const [from, to] of CREATIVE_FIELD_SWAPS) {
     assert.ok(prompt.includes(to), `field wording present: ${to.slice(0, 40)}…`);
     assert.ok(!prompt.includes(from), `six-container wording gone: ${from.slice(0, 40)}…`);
   }
+});
+
+test("the v25 tail emits the fixture's own six normalized rectangles, anonymously", async () => {
+  const mod = await slice();
+  const { field } = fixtureManifests();
+  const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {});
+  const { prompt } = mod.buildAtlasCall1Prompt(body);
+  const tail = prompt.slice(prompt.indexOf(TAIL_MARK));
+  assert.notEqual(tail, DRAW1_V24_TAIL, "Test 14 replaces the tail");
+  assert.doesNotMatch(tail, /three equal horizontal thirds|THE UPPER THIRD|supporting register/);
+
+  // Every emitted row is one of the request's own normalized rectangles, and
+  // every rectangle is emitted exactly once. This is the whole experiment: the
+  // conditioning and the cutter now read the same geometry.
+  const rows = tail.split("\n").filter((line) => /^ {2}[\d.]+ [\d.]+ [\d.]+ [\d.]+/.test(line));
+  assert.equal(rows.length, 6);
+  const expected = body.panels.map((p) => [
+    Number(p.normalized.x).toFixed(4),
+    Number(p.normalized.y).toFixed(4),
+    (Number(p.normalized.x) + Number(p.normalized.width)).toFixed(4),
+    (Number(p.normalized.y) + Number(p.normalized.height)).toFixed(4),
+  ].join(" "));
+  const emitted = rows.map((line) => line.trim().split(/\s+/).slice(0, 4).join(" "));
+  assert.deepEqual([...emitted].sort(), [...expected].sort());
+  // Reading order, not manifest order — row position reveals no surface.
+  const ys = rows.map((line) => Number(line.trim().split(/\s+/)[1]));
+  assert.deepEqual(ys, [...ys].sort((a, b) => a - b));
+  // Exactly the two flanks carry a sweep, and neither is named.
+  assert.equal(rows.filter((line) => /forward energy sweeps/i.test(line)).length, 2);
+  assert.doesNotMatch(tail, /\b(driver|passenger|hood|roof|front|rear)\b/i);
 });
 
 test("the whole model-facing field prompt carries no object-schema, topology or negative vocabulary", async () => {

@@ -58,6 +58,14 @@ export const CREATIVE_FIELD_SWAPS = Object.freeze([
 /** Creative literals production owns that the whole-prompt guard must not convict. */
 export const APPROVED_CREATIVE_PHRASES = Object.freeze([
   "wet-look surface",
+  // PHOTOGRAPHIC IMAGERY fires only when briefWantsPhoto() is true, so no
+  // fixture in this repo exercised it until the Arctic Air brief (GEN
+  // 63e6629a) asked for a photograph. It describes how a real camera image
+  // renders, not a production object — the same category as "wet-look
+  // surface" above. Measured 2026-09-04: the guard convicts the CURRENTLY
+  // DEPLOYED v24 prompt for that brief, identically, so this is a
+  // pre-existing false positive and not a v25 regression.
+  "real surface texture",
   "never an on-vehicle photograph",
   "color story, layout, graphic motifs",
 ]);
