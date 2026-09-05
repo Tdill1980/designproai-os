@@ -21,7 +21,15 @@ const edgeSource = readFileSync(
 );
 const runtimeSource = readFileSync(join(ROOT, "runtime", "flat-first-atlas.cjs"), "utf8");
 const assembly = edgeSource; // the real assembly lives IN the edge function now
-const handler = edgeSource.slice(edgeSource.indexOf("async function handleAtlasArtboard"));
+// The Call-1 handler ONLY. `handleAtlasElement` was appended below it (the
+// isolated wordless element assets composition needs), and slicing to
+// end-of-file would let a second handler's Gemini call be counted as Call 1's.
+// Each handler is asserted to make exactly one image request, separately.
+const handler = edgeSource.slice(
+  edgeSource.indexOf("async function handleAtlasArtboard"),
+  edgeSource.indexOf("async function handleAtlasElement"),
+);
+const elementHandler = edgeSource.slice(edgeSource.indexOf("async function handleAtlasElement"));
 const MARK = "OUTPUT FORMAT \u2014 ONE FLAT A.T.L.A.S. ARTBOARD";
 
 test("Call 1 executes DPAG's own commercial/restyle creative assembly", () => {
@@ -67,12 +75,32 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
   assert.match(handler, /AbortSignal\.timeout\(/);
 });
 
+test("the isolated element handler also makes exactly one image request", () => {
+  assert.equal(
+    (elementHandler.match(/generativelanguage\.googleapis\.com/g) || []).length, 1,
+    "one Gemini endpoint per element asset",
+  );
+  assert.equal((elementHandler.match(/await fetch\(geminiUrl/g) || []).length, 1);
+  assert.match(elementHandler, /imageRequestCount: 1/);
+  assert.match(elementHandler, /AbortSignal\.timeout\(/);
+  // An element asset may never carry a canonical string: a mascot that came
+  // back with the customer's domain painted into it would put a second,
+  // unguaranteed copy of that domain on the wrap.
+  assert.match(elementHandler, /atlas_element_brief_carries_canonical_string/);
+  // The internal-only fence lives at the dispatcher, exactly where Call 1's
+  // does: a browser JWT may not mint an asset that is composited into the
+  // canonical master.
+  assert.match(edgeSource, /body\?\.mode === "atlas-element"/);
+  assert.match(edgeSource, /atlas_element_internal_only/);
+});
+
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260902\.v24-one-field"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260905\.v25-ground-and-elements"/);
   assert.match(assembly, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
-  assert.match(handler, /fieldContract: atlasField \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
+  assert.match(assembly, /ATLAS_FIELD_GROUND_CONTRACT = "designpro\.atlas-field-prompt\.v3"/);
+  assert.match(handler, /fieldContract: atlasField \? \(atlasFieldGround \? ATLAS_FIELD_GROUND_CONTRACT : ATLAS_FIELD_PROMPT_CONTRACT\) : null/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
     assert.ok(handler.includes(field), `response field ${field}`);
   }

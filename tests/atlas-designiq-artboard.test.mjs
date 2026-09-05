@@ -141,7 +141,7 @@ test("ONE-FIELD request: customer references ride through extras; no teaching pr
     correctiveNote: "CORRECTION -- refused",
     cohesionExampleFlatStoragePath: `atlas-call1-inputs/${"c".repeat(64)}.jpg`,
   });
-  assert.equal(b.fieldContract, "designpro.atlas-field-prompt.v2");
+  assert.equal(b.fieldContract, "designpro.atlas-field-prompt.v3");
   assert.deepEqual(b.noseEdge, { driver: "left", passenger: "right" });
   assert.equal(b.teachingProofStoragePath, undefined, "no teaching proof reaches the one-field Call 1");
   assert.equal(b.teachingProofIdentity, undefined);

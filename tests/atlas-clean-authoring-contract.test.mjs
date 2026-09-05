@@ -96,7 +96,7 @@ test("ATLAS field branch sends the prompt and customer references only", () => {
   assert.match(fieldBranch, /for \(const ref of references\) pushImage\(ref\)/);
   assert.doesNotMatch(fieldBranch, /downloadPart\(|TEACHING REFERENCE|TARGET GUIDE|atlasTopologyText/);
   assert.match(handler, /atlas_artboard_field_contract_unknown/);
-  const fieldTail = block(edge, "function atlasFieldContract(", "// ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY");
+  const fieldTail = block(edge, "function atlasFieldContract(", "// ── GROUND CONTRACT (designpro.atlas-field-prompt.v3)");
   assert.match(fieldTail, /ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image/);
   assert.match(fieldTail, /three equal horizontal thirds that read as one picture/);
   for (const forbidden of ["panel", "artboard", "orthographic", "rectangle", "sheet", "template", "silhouette", "container", "wheel", "window", "do not", "never a", "A.T.L.A.S."]) {
@@ -121,8 +121,37 @@ test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", 
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260902\.v24-one-field"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260902\.v24-one-field"/);
-  assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260905\.v25-ground-and-elements"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260905\.v25-ground-and-elements"/);
+  // The runtime ASKS for the ground contract; the edge still DEFINES both, so
+  // the locked harness fixture can keep measuring the v2 arm it was captured
+  // from while production runs v3.
+  assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v3"/);
+  assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT_V2 = "designpro\.atlas-field-prompt\.v2"/);
+  assert.match(edge, /ATLAS_FIELD_GROUND_CONTRACT = "designpro\.atlas-field-prompt\.v3"/);
   assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
+});
+
+test("the GROUND tail asks for no glyphs and hands over the real territories", () => {
+  const groundTail = block(edge, "function atlasGroundContract(", "// ── ISOLATED ELEMENT ASSET");
+  const emitted = groundTail.slice(groundTail.indexOf("return ["));
+  // The whole point of v3: the ground carries no lettering at all.
+  assert.match(emitted, /THIS IMAGE CARRIES NO WORDS/);
+  assert.match(emitted, /not one glyph anywhere on the square/);
+  // The rectangles come from the request's own normalized geometry -- the SAME
+  // numbers cutCallOnePanels extracts with -- never from a constant.
+  assert.match(groundTail, /panel\.normalized/);
+  assert.doesNotMatch(emitted, /three equal horizontal thirds/);
+  // The forbidden-vocabulary check runs on the EMITTED prompt, not on this
+  // source: `atlasSweepPhrase(noseEdge.driver)` mentions a surface name in code
+  // and renders "Forward energy sweeps left to right." Asserting on the source
+  // would fail on a reference the model never sees. See
+  // tests/atlas-one-field-call1.test.mjs, which builds the real prompt.
+});
+
+test("the element asset prompt is wordless and carries no vehicle", () => {
+  const elementTail = block(edge, "function atlasElementPrompt(", "function atlasNormalizedRect(");
+  assert.match(elementTail, /no words, letters, numerals, logos, watermarks, captions or readable marks/i);
+  assert.match(elementTail, /output zero glyphs/i);
+  assert.match(elementTail, /No vehicle, no wrap, no mockup/i);
 });

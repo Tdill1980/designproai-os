@@ -67,6 +67,9 @@ runtime/flat-atlas-topology-examples.cjs
 # depiction candidate before it can become canonical. Required at require
 # time by flat-first-atlas.cjs, so a release without it dies at startup.
 runtime/atlas-output-class.cjs
+runtime/atlas-element-plan.cjs
+runtime/atlas-compose-master.cjs
+runtime/atlas-elements.cjs
 # Historical immutable Houdini pair, retained for forensic compatibility and
 # not attached to active Call 1.
 runtime/atlas-examples/houdini-flattened-top-view.jpg

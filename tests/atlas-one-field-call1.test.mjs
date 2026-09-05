@@ -104,7 +104,9 @@ test("the runtime request names the field contract and carries no structural ima
   const { field } = fixtureManifests();
   const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, { referenceImagesBase64: ["YmF6"] });
   assert.equal(body.mode, "atlas-artboard");
-  assert.equal(body.fieldContract, "designpro.atlas-field-prompt.v2");
+  // The runtime asks for the GROUND contract now; the ground carries no glyphs
+  // and the runtime composites the lettering before acceptance.
+  assert.equal(body.fieldContract, "designpro.atlas-field-prompt.v3");
   assert.deepEqual(body.noseEdge, { driver: "left", passenger: "right" });
   assert.equal(body.teachingProofStoragePath, undefined);
   assert.equal(body.teachingProofIdentity, undefined);
@@ -119,7 +121,10 @@ test("the runtime request names the field contract and carries no structural ima
 test("the DEPLOYED edge assembly produces Draw 1's field prompt byte for byte", async () => {
   const mod = await slice();
   const { field } = fixtureManifests();
-  const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {});
+  // Draw 1 was captured on the v2 field arm. That arm is unchanged and still
+  // callable, so the fixture keeps measuring exactly what it was captured from
+  // -- the v3 ground contract is asserted separately below.
+  const body = { ...atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {}), fieldContract: "designpro.atlas-field-prompt.v2" };
   const { prompt, references } = mod.buildAtlasCall1Prompt(body);
   assert.equal(references.length, 0);
   assert.equal(prompt.length, DRAW1_PROMPT.length);
@@ -137,7 +142,7 @@ test("the whole model-facing field prompt carries no object-schema, topology or 
   const mod = await slice();
   const { field } = fixtureManifests();
   for (const mode of ["commercial", "restyle"]) {
-    const body = atlas._test.atlasEdgeRequestBody({ ...FIXTURE_INPUT, mode }, field, {});
+    const body = { ...atlas._test.atlasEdgeRequestBody({ ...FIXTURE_INPUT, mode }, field, {}), fieldContract: "designpro.atlas-field-prompt.v2" };
     const { prompt } = mod.buildAtlasCall1Prompt(body);
     assert.doesNotThrow(() => assertFieldPromptClean(prompt, `the ${mode} field prompt`));
     assert.match(prompt, /OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image\./);
@@ -160,9 +165,9 @@ test("the legacy six-container assembly still reproduces the deployed v23 prompt
 test("the edge refuses an unknown field contract and echoes the one it ran", () => {
   const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
-  assert.match(handler, /if \(fieldContract && fieldContract !== ATLAS_FIELD_PROMPT_CONTRACT\)/);
+  assert.match(handler, /if \(fieldContract && !knownFieldContracts\.includes\(fieldContract\)\)/);
   assert.match(handler, /atlas_artboard_field_contract_unknown/);
-  assert.match(handler, /fieldContract: atlasField \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
+  assert.match(handler, /fieldContract: atlasField \? \(atlasFieldGround \? ATLAS_FIELD_GROUND_CONTRACT : ATLAS_FIELD_PROMPT_CONTRACT\) : null/);
   // The runtime verifies the echo and the image count on receipt.
   const runtime = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   const verify = runtime.slice(runtime.indexOf("async function callAtlasArtboardEdge"), runtime.indexOf("async function verifiedCustomerLogoPart"));

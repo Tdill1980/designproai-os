@@ -1,5 +1,76 @@
 # CLAUDE.md — designproai-os
 
+## 🧱 RULE 0.34 — CALL 1 AUTHORS THE GROUND; CODE OWNS WHAT A CUT CAN DESTROY (owner ruling, Trish 2026-09-05)
+
+**Supersedes RULE 0.33's authoring half wherever they conflict. The gates,
+the territories, the manifest identity and the extraction are untouched.**
+
+Owner, verbatim: *"Fix composition before canonical master acceptance. Required
+lettering, logos and focal imagery must fit their intended surfaces. Resolve
+their asset sources before assembly; layering new text over already-clipped
+lettering is not a fix."*
+
+**Measured, on two live runs.** Arctic Air `586abc83` and `63e6629a`
+(2026-09-04) produced twelve panels and twelve failures with every deterministic
+gate green. v24 asked for **three equal horizontal thirds** and Gemini obeyed
+exactly; the cutter then took **six unequal territories** across four boundaries
+the model was never shown (`x=1071`, `x=2198`, `x=3325`, `y=3335`). One contact
+bar came back as `Www.Arct` on the hood and `ticAir.com` on the rear; Run A lost
+`www.GoArcticAC.com` and shipped a shield reading `ARCTI`. **The two flanks
+survived because, and only because, `driver` and `passenger` map 1:1 onto a
+third.** The exact geometry was already on the Call-1 request
+(`flat-first-atlas.cjs:1563` → `index.ts:2352` → `:2387`) and was discarded at
+`index.ts:924`, five lines from the legacy branch that consumes it.
+
+**So the job splits at the only line that can carry a guarantee.** Call 1
+authors the GROUND — palette, texture, depth, motion, the mascot's world, the
+photographic scene — and paints **no glyph at all**. Its tail carries the six
+real territory rectangles as conditioning. The runtime then resolves each
+element's source, MEASURES it, plans a rectangle proved to lie inside one
+surface's `zone.trim` (inset a further 2″ for installer tolerance), and
+composites — **before canonical master acceptance**, so QC, the output-class
+gate, the fill, the six panels, the seven proofs, Call 8 and the ZIP all see the
+finished sheet unchanged.
+
+- **Containment is computed, never requested.** `atlas-element-plan.cjs`
+  partitions each surface into disjoint slots and fails the run
+  (`atlas_element_unplaceable`) rather than place a required element that a cut
+  would sever or that would print below its legible minimum. Sizing and
+  legibility are in INCHES ON THE VEHICLE, never pixels.
+- **Sources resolve first.** Lettering is outlined from a **pinned font file**
+  (never a family name — libvips substitutes silently). The brand mark is the
+  customer's upload, else one isolated `atlas-element` call. The photograph is
+  one isolated call, only when the brief asks. Both run **concurrently with
+  Call 1**, and their briefs are **redacted of every canonical string**.
+- **A v2 ground is refused by version.** `atlas_compose_ground_contract_unsupported`.
+  Compositing over a sheet that already carries its own lettering is the move
+  the owner ruled out by name.
+- **`groundMasterHash` is what the model authored; `canonicalMasterHash` is what
+  the customer buys.** The receipt records the exact printed string beside its
+  rectangle in px and vehicle inches, plus the font digest.
+
+**Do not treat "Gemini obeys coordinates" as the guarantee.** Test 3
+(`docs/ATLAS-CALL1-TOPOLOGY-TEXT.md`) measured 0/6 compliance in both arms when
+coordinates were asked to be one. The coordinates in v3 condition composition;
+`clipTo`-style containment in code is what guarantees it.
+
+**`PANELS ✓` no longer means "six files exist."** `SixPanelBoard` states files
+cut and panels that passed their gates as two separate numbers, per surface, with
+orientation, trim, effective PPI and refusal reason — and a run that dies after
+the panels keeps its artwork visible and names the stage that stopped it.
+
+**One primitive is reused from the dormant Design Master cluster and only one:**
+`opentype-outline.cjs`, which authors nothing. The thirteen producers stay
+dormant and `tests/atlas-sole-design-authority.test.mjs` now also proves the
+compositor cannot reach them.
+
+Full contract, evidence and open questions: `docs/ATLAS-GROUND-AND-ELEMENTS.md`.
+Locked by `tests/atlas-element-containment.test.mjs` (which reproduces the
+Arctic Air severing from the real manifest, then proves the repair),
+`tests/atlas-clean-authoring-contract.test.mjs`,
+`tests/atlas-artboard-edge-call1.test.mjs`, `tests/atlas-one-field-call1.test.mjs`
+and `app/src/components/designpro/SixPanelBoard.test.ts`.
+
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
 
 **Supersedes the authoring half of v19, v23, RULE 0.30's conditioning clause,
