@@ -86,6 +86,30 @@ const MIN_HEIGHT_INCHES = Object.freeze({
 });
 
 /**
+ * READING DISTANCE IS NOT THE SAME ON EVERY SURFACE, SO THE MINIMUM IS NOT
+ * EITHER.
+ *
+ * The table above is calibrated for a FLANK -- the surface a customer reads
+ * from across a parking lot, roughly 60ft, at about an inch of cap height per
+ * ten feet. Applying that same 5" floor to a 58.9" x 26.06" rear hatch is a
+ * category error, and it showed: "Precision Climate Solutions" set on two lines
+ * reaches 4.96in on the rear and the flat floor refused the entire design over
+ * four hundredths of an inch -- on a surface that is read from the next car,
+ * about 25ft away, where 2.5in is comfortably legible.
+ *
+ * Scaling by where the surface is actually read keeps the flanks strict, keeps
+ * the small surfaces honest, and stops a long company name being a refusal.
+ */
+const SURFACE_LEGIBILITY_SCALE = Object.freeze({
+  driver: 1,      // across a parking lot
+  passenger: 1,
+  rear: 0.5,      // the next car in traffic
+  hood: 0.6,      // standing at the vehicle
+  roof: 0.6,
+  front: 0.6,
+});
+
+/**
  * THE SLOTS. Fractions of each surface's safe box, disjoint within a surface,
  * fixed policy -- never derived from the model's opinion, so the same brief on
  * the same vehicle plans the same rectangles every time.
@@ -302,6 +326,7 @@ function planAtlasElements({
   safeInsetInches = SAFE_INSET_INCHES,
   slots = SURFACE_SLOTS,
   minHeightInches = MIN_HEIGHT_INCHES,
+  legibilityScale = SURFACE_LEGIBILITY_SCALE,
 } = {}) {
   if (!Array.isArray(elements)) fail("atlas_element_plan_invalid", "elements must be an array");
   assertSlotsDisjoint(slots);
@@ -320,12 +345,39 @@ function planAtlasElements({
       const element = elements.find((item) => item.kind === kind);
       if (!element) continue;
 
-      const aspect = finite(element.aspect, `${element.id}.aspect`);
-      if (aspect <= 0) fail("atlas_element_plan_invalid", `${element.id}.aspect must be positive`);
+      // A CUSTOMER PLACEMENT REQUEST IS HONOURED WHERE THE POLICY HAS A SLOT.
+      // "photo on the rear" names a surface; it cannot name a rectangle, and it
+      // never gets to move one outside its trim box. When the requested surface
+      // has no slot for that kind, the request is recorded as unhonoured rather
+      // than silently ignored.
+      const requested = Array.isArray(element.preferredSurfaces) ? element.preferredSurfaces : [];
+      if (requested.length > 0 && !requested.includes(surfaceKey)) continue;
 
-      const rectPx = fitInSlot(slotRect(safe, slot), aspect);
-      const heightIn = rectPx.h / ppi.y;
-      const minHeight = Number.isFinite(element.minHeightIn) ? element.minHeightIn : minHeightInches[kind];
+      // EVERY WAY THIS ELEMENT COULD BE SET, and the one that reads largest
+      // wins. A short name stays on one line; a long one reflows rather than
+      // refusing the design. Images carry exactly one variant.
+      const variants = Array.isArray(element.variants) && element.variants.length > 0
+        ? element.variants
+        : [{ aspect: element.aspect, lines: 1, textLines: null }];
+      const box = slotRect(safe, slot);
+      let best = null;
+      for (const variant of variants) {
+        const aspect = finite(variant.aspect, `${element.id}.aspect`);
+        if (aspect <= 0) fail("atlas_element_plan_invalid", `${element.id}.aspect must be positive`);
+        const candidate = fitInSlot(box, aspect);
+        // Physical height PER LINE is what legibility depends on: a two-line
+        // block twice as tall as a one-line block is not twice as readable.
+        const perLine = (candidate.h / ppi.y) / Math.max(1, variant.lines || 1);
+        if (!best || perLine > best.perLine) best = { rectPx: candidate, perLine, variant };
+      }
+
+      const rectPx = best.rectPx;
+      const heightIn = best.perLine;
+      // The floor is the kind's flank minimum, scaled to where THIS surface is
+      // read from. An explicit per-element minimum still wins.
+      const minHeight = Number.isFinite(element.minHeightIn)
+        ? element.minHeightIn
+        : minHeightInches[kind] * (legibilityScale[surfaceKey] ?? 1);
       const elementId = `${element.id}@${surfaceKey}`;
 
       if (heightIn + 1e-9 < minHeight) {
@@ -335,14 +387,15 @@ function planAtlasElements({
         if (element.required) {
           fail(
             "atlas_element_unplaceable",
-            `required ${kind} "${element.id}" fits ${surfaceKey} at ${heightIn.toFixed(2)}in; ${minHeight}in is the legible minimum`,
+            `required ${kind} "${element.id}" fits ${surfaceKey} at ${heightIn.toFixed(2)}in; ${minHeight.toFixed(2)}in is the legible minimum there`,
           );
         }
         skipped.push({
           elementId, surfaceKey, kind,
           reason: "below_minimum_legible_height",
           heightIn: Number(heightIn.toFixed(2)),
-          minHeightIn: minHeight,
+          minHeightIn: Number(minHeight.toFixed(2)),
+          linesTried: variants.map((v) => v.lines || 1),
         });
         continue;
       }
@@ -362,6 +415,13 @@ function planAtlasElements({
           h: Number((rectPx.h / ppi.y).toFixed(2)),
         },
         safeInsetInches,
+        // How the type is set, carried to the compositor so it renders the
+        // same block the plan measured and sized the rectangle for.
+        lines: best.variant.lines || 1,
+        textLines: best.variant.textLines || null,
+        // Cap-height-equivalent per line, which is the number legibility is
+        // judged on and the one a reviewer can check against the vehicle.
+        lineHeightIn: Number(heightIn.toFixed(2)),
         source: element.source || null,
       };
       assertContained(placement, surface, safe);
@@ -381,6 +441,31 @@ function planAtlasElements({
     }
   }
 
+  // A REQUESTED SURFACE THAT COULD NOT TAKE THE ELEMENT IS STATED.
+  // The request is retried against the default policy rather than dropped, so
+  // "photo on the front" -- a surface that carries no slots at all -- still
+  // yields a photo somewhere, and the receipt says the request was not honoured.
+  const unhonouredPlacementRequests = [];
+  for (const element of elements) {
+    const requested = Array.isArray(element.preferredSurfaces) ? element.preferredSurfaces : [];
+    if (requested.length === 0) continue;
+    if (placements.some((p) => p.elementRef === element.id)) continue;
+    unhonouredPlacementRequests.push({
+      elementRef: element.id, kind: element.kind, requestedSurfaces: requested,
+      reason: "requested_surface_has_no_slot_for_this_element",
+    });
+    const fallback = planAtlasElements({
+      manifest,
+      elements: [{ ...element, preferredSurfaces: [] }],
+      safeInsetInches, slots, minHeightInches, legibilityScale,
+    });
+    for (const placement of fallback.placements) {
+      if (placements.some((p) => p.surfaceKey === placement.surfaceKey
+        && overlaps(p.rectPx, placement.rectPx))) continue;
+      placements.push({ ...placement, placementRequestHonoured: false });
+    }
+  }
+
   // A required element that no surface wanted is a policy/brief mismatch, and
   // it is louder to say so than to ship a wrap with no phone number on it.
   for (const element of elements) {
@@ -390,7 +475,7 @@ function planAtlasElements({
     }
   }
 
-  const plan = { contract: ELEMENT_PLAN_CONTRACT, safeInsetInches, placements, skipped };
+  const plan = { contract: ELEMENT_PLAN_CONTRACT, safeInsetInches, placements, skipped, unhonouredPlacementRequests };
   plan.planHash = createHash("sha256").update(JSON.stringify({
     contract: plan.contract,
     safeInsetInches,
@@ -438,6 +523,7 @@ module.exports = {
   SURFACE_KEYS,
   SAFE_INSET_INCHES,
   MIN_HEIGHT_INCHES,
+  SURFACE_LEGIBILITY_SCALE,
   SURFACE_SLOTS,
   ElementPlanError,
   planAtlasElements,

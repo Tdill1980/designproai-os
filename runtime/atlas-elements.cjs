@@ -98,8 +98,44 @@ function canonicalStrings(input) {
     companyName: trimmed(input?.companyName || input?.businessName),
     website: trimmed(input?.website),
     phone: trimmed(input?.phone),
-    tagline: trimmed(input?.tagline),
+    // SUPPLIED SERVICE COPY IS CUSTOMER COPY, AND IT PRINTS.
+    //
+    // `textLayerPrompt` and `bulletPoints` are the fields a customer types their
+    // services into ("24/7 Service · Repairs · Installs"). The ground contract
+    // correctly stops the MODEL drawing them -- but the typesetter was reading
+    // only `tagline`, so anything supplied through those two fields had no
+    // deterministic path onto the artwork at all and simply vanished.
+    tagline: trimmed(input?.tagline) || customerCopyLine(input),
   };
+}
+
+/**
+ * The customer's own service copy, as ONE line the typesetter can set.
+ *
+ * Bullet points join with a separator the way a real wrap sets them. A long
+ * free-text direction is not forced onto the vehicle: prose belongs to the
+ * creative brief, and only a short, wrap-shaped line is treated as copy.
+ */
+const MAX_COPY_CHARS = 64;
+function customerCopyLine(input) {
+  const bullets = Array.isArray(input?.bulletPoints)
+    ? input.bulletPoints.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (bullets.length > 0) {
+    const joined = bullets.join("  \u00b7  ");
+    if (joined.length <= MAX_COPY_CHARS) return joined;
+    // Keep as many whole bullets as fit rather than truncating mid-word.
+    const kept = [];
+    for (const bullet of bullets) {
+      const next = [...kept, bullet].join("  \u00b7  ");
+      if (next.length > MAX_COPY_CHARS) break;
+      kept.push(bullet);
+    }
+    if (kept.length > 0) return kept.join("  \u00b7  ");
+  }
+  const supplied = String(input?.textLayerPrompt || "").trim();
+  if (supplied && supplied.length <= MAX_COPY_CHARS && !/[.!?]\s/.test(supplied)) return supplied;
+  return "";
 }
 
 /**
@@ -109,6 +145,73 @@ function canonicalStrings(input) {
  */
 function contactLine(strings) {
   return [strings.phone, strings.website].filter(Boolean).join("   ·   ");
+}
+
+/**
+ * WHICH SURFACE THE CUSTOMER ASKED FOR.
+ *
+ * Arctic Air's first brief said "in 3/ sides and rear add a photo of a arctic
+ * air tech installing an ac". Nothing in the pipeline read it: `briefWantsPhoto`
+ * returns a boolean and the placement policy is fixed, so a named surface was
+ * silently discarded and the photo landed wherever the model put it.
+ *
+ * This reads the request. It is deliberately conservative -- it matches a
+ * SUBJECT word near a SURFACE word, and it returns surface names, never
+ * rectangles. A request can choose which territory an element goes to; it can
+ * never move one outside that territory's trim box, because the planner still
+ * owns every coordinate and `assertContained` still runs.
+ */
+const SURFACE_WORDS = Object.freeze({
+  driver: ["driver", "driver's side", "driver side"],
+  passenger: ["passenger", "passenger side"],
+  rear: ["rear", "back", "tailgate", "hatch", "rear door"],
+  hood: ["hood", "bonnet"],
+  roof: ["roof", "top"],
+  front: ["front", "bumper", "nose", "fascia"],
+});
+const SUBJECT_WORDS = Object.freeze({
+  photo: ["photo", "photograph", "picture", "image", "scene"],
+  brandmark: ["logo", "mascot", "character", "emblem", "badge", "mark", "yeti"],
+});
+/** "both sides" / "3 sides" name the flanks without naming either one. */
+const BOTH_FLANKS = /\b(both sides|all sides|3\s*\/?\s*sides|three sides|each side)\b/i;
+
+function placementRequests(brief) {
+  const text = String(brief || "").toLowerCase();
+  const found = {};
+  for (const [kind, subjects] of Object.entries(SUBJECT_WORDS)) {
+    const surfaces = new Set();
+    for (const subject of subjects) {
+      let at = text.indexOf(subject);
+      while (at >= 0) {
+        // A window around the subject: "photo ... on the rear" and "on the rear
+        // ... a photo" both count, and a surface named a paragraph away does not.
+        const window = text.slice(Math.max(0, at - 60), at + subject.length + 60);
+        for (const [surfaceKey, words] of Object.entries(SURFACE_WORDS)) {
+          if (words.some((word) => new RegExp(`\\b${word}\\b`).test(window))) surfaces.add(surfaceKey);
+        }
+        if (BOTH_FLANKS.test(window)) { surfaces.add("driver"); surfaces.add("passenger"); }
+        at = text.indexOf(subject, at + 1);
+      }
+    }
+    if (surfaces.size > 0) found[kind] = [...surfaces].sort();
+  }
+  return found;
+}
+
+/**
+ * Did the customer ASK for this element? If they did it is REQUIRED, and a
+ * failed asset call fails the run rather than quietly shipping a wrap without
+ * the mascot they asked for. A receipt warning is not a delivered brief.
+ */
+function elementRequested(input, kind) {
+  const brief = `${String(input?.brief || "")} ${String(input?.textLayerPrompt || "")}`.toLowerCase();
+  if (kind === "brandmark") {
+    if (String(input?.mascot || "").trim()) return true;
+    return SUBJECT_WORDS.brandmark.some((word) => new RegExp(`\\b${word}\\b`).test(brief));
+  }
+  if (kind === "photo") return Boolean(input?.__wantsPhoto);
+  return false;
 }
 
 /** Strip canonical strings out of a brief before it reaches a model. */
@@ -186,12 +289,14 @@ async function resolveAtlasElements({
   ownerId,
   measureOutlinedString,
   measureImageAsset,
+  textVariants,
   wantsPhoto = false,
   fetchImpl = fetch,
   logger = () => {},
   fontPath,
 } = {}) {
-  if (typeof measureOutlinedString !== "function" || typeof measureImageAsset !== "function") {
+  if (typeof measureOutlinedString !== "function" || typeof measureImageAsset !== "function"
+    || typeof textVariants !== "function") {
     fail("atlas_elements_measurement_missing", "the compositor's measurement helpers are required");
   }
   const strings = canonicalStrings(input);
@@ -199,43 +304,72 @@ async function resolveAtlasElements({
   const elements = [];
   const sources = {};
   const providerCalls = [];
+  const attemptsSpent = [];
   const brief = redactBrief(input?.brief, strings);
   const palette = String(input?.brandColors || "").trim();
 
   // ── LETTERING. Outlined from the frozen strings. No model involved.
-  if (strings.companyName) {
-    const measured = measureOutlinedString({ fontBytes: font.bytes, string: strings.companyName });
-    elements.push({ id: "wordmark", kind: "wordmark", required: true, aspect: measured.aspect, source: { kind: "outlined-type" } });
-    sources.wordmark = { kind: "outlined-type", string: strings.companyName, fill: "#ffffff" };
-  }
-  const contact = contactLine(strings);
-  if (contact) {
-    const measured = measureOutlinedString({ fontBytes: font.bytes, string: contact });
-    // REQUIRED. A customer who supplied a URL and received a wrap without one
-    // has been failed, and it is better to refuse the master than to ship it.
-    elements.push({ id: "contact", kind: "contact", required: true, aspect: measured.aspect, source: { kind: "outlined-type" } });
-    sources.contact = { kind: "outlined-type", string: contact, fill: "#ffffff" };
-  }
-  if (strings.tagline) {
-    const measured = measureOutlinedString({ fontBytes: font.bytes, string: strings.tagline });
-    elements.push({ id: "tagline", kind: "tagline", required: false, aspect: measured.aspect, source: { kind: "outlined-type" } });
-    sources.tagline = { kind: "outlined-type", string: strings.tagline, fill: "#ffffff" };
-  }
+  //
+  // Every typeset element carries EVERY line-count it could be set on, and the
+  // planner picks the one that reads largest inside the slot it has. That is
+  // what makes a long name placeable: "Precision Climate Solutions" is 13.3:1
+  // on one line and cannot reach a legible cap height on a flank, and 4.2:1 on
+  // two, which fits. Refusing the design instead was correct and useless.
+  const typeset = (id, kind, string, required) => {
+    if (!string) return;
+    elements.push({
+      id, kind, required,
+      variants: textVariants({ fontBytes: font.bytes, string }),
+      aspect: measureOutlinedString({ fontBytes: font.bytes, string }).aspect,
+      source: { kind: "outlined-type" },
+    });
+    sources[id] = { kind: "outlined-type", string, fill: "#ffffff" };
+  };
 
-  // ── IMAGE ELEMENTS. The customer's own logo wins over a generated mark every
-  //    time: it is their identity, it is already exact, and it costs no call.
-  const jobs = [];
+  typeset("wordmark", "wordmark", strings.companyName, true);
+  // REQUIRED. A customer who supplied a URL and received a wrap without one has
+  // been failed, and refusing the master is the cheaper outcome.
+  const contact = contactLine(strings);
+  typeset("contact", "contact", contact, true);
+  // SUPPLIED SERVICE COPY IS REQUIRED TOO. If the customer typed their services
+  // in, they are on the wrap or the run says why -- they do not evaporate
+  // between a "tone only" prompt and a typesetter that was reading a different
+  // field.
+  typeset("tagline", "tagline", strings.tagline, Boolean(strings.tagline));
+
+  // ── IMAGE ELEMENTS ────────────────────────────────────────────────────────
+  //
+  // The customer's own logo wins over a generated mark every time: it is their
+  // identity, it is already exact, and it costs no call.
+  //
+  // AN ELEMENT THE CUSTOMER ASKED FOR IS REQUIRED. The first cut of this module
+  // marked both optional and let `Promise.allSettled` swallow a failure into a
+  // receipt warning -- so a brief that said "create a yeti mascot" could return
+  // a wrap with no mascot and a green run. A receipt warning does not fulfil a
+  // brief. A requested element is retried once and then FAILS THE RUN.
+  const requested = placementRequests(`${input?.brief || ""} ${input?.textLayerPrompt || ""}`);
+  const wantsMark = elementRequested(input, "brandmark");
   const customerLogo = input?.logoAsset || null;
+
+  const attempt = async (label, run) => {
+    try { return await run(); } catch (first) {
+      logger(`atlas element ${label} attempt 1 failed (${first.code || first.message}); retrying once`);
+      attemptsSpent.push({ kind: label, attempt: 1, outcome: "failed", reason: String(first.code || first.message).slice(0, 160) });
+      return run();
+    }
+  };
+
+  const jobs = [];
   if (customerLogo?.storagePath) {
-    jobs.push((async () => {
+    jobs.push({ kind: "brandmark", required: wantsMark, run: async () => {
       const bytes = await readElementAsset(supabase, {
         assetStoragePath: customerLogo.storagePath,
         assetSha256: customerLogo.contentHash,
       });
-      return { kind: "brandmark", bytes, provenance: { source: "customer-upload", contentHash: sha256(bytes) } };
-    })());
-  } else if (String(input?.mascot || "").trim() || /\b(logo|mascot|character|emblem|badge)\b/i.test(String(input?.brief || ""))) {
-    jobs.push((async () => {
+      return { bytes, provenance: { source: "customer-upload", contentHash: sha256(bytes) } };
+    } });
+  } else if (wantsMark) {
+    jobs.push({ kind: "brandmark", required: true, run: () => attempt("brandmark", async () => {
       const payload = await callAtlasElementEdge({
         mode: "atlas-element",
         elementKind: "brandmark",
@@ -246,13 +380,12 @@ async function resolveAtlasElements({
         forbiddenStrings: Object.values(strings).filter(Boolean),
       }, { fetchImpl, ownerId, logger });
       providerCalls.push({ kind: "brandmark", model: payload.model, requestId: payload.requestId, assetSha256: payload.assetSha256 });
-      const bytes = await readElementAsset(supabase, payload);
-      return { kind: "brandmark", bytes, provenance: { source: "generated", contentHash: payload.assetSha256, requestId: payload.requestId } };
-    })());
+      return { bytes: await readElementAsset(supabase, payload), provenance: { source: "generated", contentHash: payload.assetSha256, requestId: payload.requestId } };
+    }) });
   }
 
   if (wantsPhoto) {
-    jobs.push((async () => {
+    jobs.push({ kind: "photo", required: true, run: () => attempt("photo", async () => {
       const payload = await callAtlasElementEdge({
         mode: "atlas-element",
         elementKind: "photo",
@@ -263,27 +396,41 @@ async function resolveAtlasElements({
         forbiddenStrings: Object.values(strings).filter(Boolean),
       }, { fetchImpl, ownerId, logger });
       providerCalls.push({ kind: "photo", model: payload.model, requestId: payload.requestId, assetSha256: payload.assetSha256 });
-      const bytes = await readElementAsset(supabase, payload);
-      return { kind: "photo", bytes, provenance: { source: "generated", contentHash: payload.assetSha256, requestId: payload.requestId } };
-    })());
+      return { bytes: await readElementAsset(supabase, payload), provenance: { source: "generated", contentHash: payload.assetSha256, requestId: payload.requestId } };
+    }) });
   }
 
-  // AN ELEMENT CALL THAT FAILS IS NOT FATAL. The mark and the photograph are
-  // optional by policy: a ground with correct, contained lettering is a usable
-  // wrap, and refusing the whole design because a mascot request timed out
-  // would be a worse outcome than shipping without the mascot and saying so.
-  const settled = await Promise.allSettled(jobs);
+  const settled = await Promise.allSettled(jobs.map((job) => job.run()));
   const unresolved = [];
-  for (const result of settled) {
+  for (let index = 0; index < settled.length; index += 1) {
+    const job = jobs[index];
+    const result = settled[index];
     if (result.status === "rejected") {
-      unresolved.push({ reason: String(result.reason?.code || result.reason?.message || result.reason).slice(0, 200) });
-      logger(`atlas element unresolved: ${unresolved[unresolved.length - 1].reason}`);
+      const reason = String(result.reason?.code || result.reason?.message || result.reason).slice(0, 200);
+      unresolved.push({ kind: job.kind, required: job.required, reason });
+      logger(`atlas element ${job.kind} unresolved after retry: ${reason}`);
       continue;
     }
-    const { kind, bytes, provenance } = result.value;
-    const measured = await measureImageAsset(bytes);
-    elements.push({ id: kind, kind, required: false, aspect: measured.aspect, source: { kind: "image" } });
-    sources[kind] = { kind: "image", bytes, contentHash: provenance.contentHash };
+    const measured = await measureImageAsset(result.value.bytes);
+    elements.push({
+      id: job.kind, kind: job.kind, required: job.required, aspect: measured.aspect,
+      preferredSurfaces: requested[job.kind] || [],
+      source: { kind: "image" },
+    });
+    sources[job.kind] = { kind: "image", bytes: result.value.bytes, contentHash: result.value.provenance.contentHash };
+  }
+
+  // FAIL CLOSED ON A REQUESTED ELEMENT THAT NEVER ARRIVED. Two attempts have
+  // already been spent; a third would not change the answer, and shipping the
+  // wrap without it would deliver a brief the customer did not write.
+  const missing = unresolved.filter((entry) => entry.required);
+  if (missing.length > 0) {
+    fail(
+      "atlas_elements_required_asset_unresolved",
+      `the brief asks for ${missing.map((m) => m.kind).join(" and ")}, and ${missing.length === 1 ? "it" : "they"} could not be produced after a retry: `
+      + missing.map((m) => `${m.kind}: ${m.reason}`).join("; "),
+      true,
+    );
   }
 
   return {
@@ -304,6 +451,10 @@ async function resolveAtlasElements({
       resolved: elements.map((e) => ({ id: e.id, kind: e.kind, required: e.required, aspect: Number(e.aspect.toFixed(4)), source: e.source.kind })),
       providerCalls,
       elementImageCallCount: providerCalls.length,
+      // Every FAILED attempt, kept: a run that spent two calls to get one asset
+      // costs what it costs, and the receipt says so.
+      failedAttempts: attemptsSpent,
+      placementRequests: requested,
       unresolved,
     },
   };
@@ -321,5 +472,8 @@ module.exports = {
   canonicalStrings,
   contactLine,
   redactBrief,
+  placementRequests,
+  elementRequested,
+  customerCopyLine,
   _test: { callAtlasElementEdge, readElementAsset },
 };

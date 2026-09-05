@@ -57,6 +57,7 @@ const {
   composeAtlasMaster,
   measureImageAsset,
   measureOutlinedString,
+  textVariants,
 } = require("./atlas-compose-master.cjs");
 const { ELEMENTS_CONTRACT, resolveAtlasElements } = require("./atlas-elements.cjs");
 
@@ -2427,6 +2428,7 @@ async function generateOrReuseFlatAtlas(options) {
     ownerId,
     measureOutlinedString,
     measureImageAsset,
+    textVariants,
     wantsPhoto: briefWantsPhoto(authoringInput?.brief),
     logger,
   }).then((resolved) => {

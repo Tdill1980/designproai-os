@@ -31,19 +31,50 @@ const revision = (qc: Partial<NonNullable<FlatAtlasRevision["qc"]>> = {}) =>
   ({ qc: { masterCutoutSurfaces: [], cutoutFillApplied: [], ...qc } } as unknown as FlatAtlasRevision);
 
 describe("panelState", () => {
-  it("reports Arctic Air's real density as below the print target, not as a pass", () => {
-    // 22.61 PPI on the flanks, 16.35 on the front -- measured on the live run.
-    const state = panelState(panel(), revision());
+  const composed = { composeContract: "designpro.atlas-compose-master.v1", elementPlanContract: "designpro.atlas-element-plan.v1" };
+  const placed = [{ surfaceKey: "driver", kind: "wordmark", elementId: "wordmark@driver" }];
+
+  it("refuses to call a pre-composition revision clean", () => {
+    // The overclaim this replaces: sufficient PPI and no recorded cut-out
+    // repair once returned "structurally clean" without ever asking whether the
+    // customer's name landed on the panel.
+    const state = panelState(panel({ effectivePpi: 400 }), revision());
+    expect(state.tone).toBe("warn");
+    expect(state.label).toBe("not composition-checked");
+  });
+
+  it("fails every panel when requested artwork could not be produced", () => {
+    const state = panelState(
+      panel({ effectivePpi: 400 }),
+      revision({ ...composed, elementPlacements: placed, elementsReceipt: { unresolved: [{ reason: "atlas_elements_call_failed" }] } }),
+    );
+    expect(state.tone).toBe("fail");
+    expect(state.label).toBe("requested artwork missing");
+  });
+
+  it("names an element the layout had to leave off, with the number that decided it", () => {
+    const state = panelState(
+      panel({ effectivePpi: 400 }),
+      revision({ ...composed, elementPlacements: placed, elementPlacementsSkipped: [{ surfaceKey: "driver", kind: "tagline", reason: "below_minimum_legible_height", heightIn: 0.9, minHeightIn: 1.5 }] }),
+    );
+    expect(state.tone).toBe("warn");
+    expect(state.reason).toContain("0.9″");
+    expect(state.reason).toContain("1.5″");
+  });
+
+  it("reports Arctic Air's real density as below the print target", () => {
+    const state = panelState(panel(), revision({ ...composed, elementPlacements: placed }));
     expect(state.tone).toBe("warn");
     expect(state.label).toBe("below print density");
     expect(state.reason).toContain("22.61 PPI");
-    expect(state.reason).toContain("150 PPI target");
   });
 
   it("surfaces a repaired cut-out with the measurement that convicted it", () => {
     const state = panelState(
       panel({ surfaceKey: "roof", effectivePpi: 200 }),
       revision({
+        ...composed,
+        elementPlacements: [{ surfaceKey: "roof", kind: "wordmark", elementId: "wordmark@roof" }],
         masterCutoutSurfaces: ["front", "roof"],
         cutoutFillApplied: [{ surfaceKey: "roof", pixels: 47_847, components: 3, zoneFraction: 0.037013, unresolvedPixels: 0 }],
       }),
@@ -51,29 +82,22 @@ describe("panelState", () => {
     expect(state.tone).toBe("warn");
     expect(state.label).toBe("repaired — human QC required");
     expect(state.reason).toContain("47,847");
-    expect(state.reason).toContain("3 components");
     expect(state.reason).toContain("3.70%");
   });
 
-  it("a repaired surface is never reported clean, however dense it is", () => {
-    const dense = panelState(
+  it("calls out a structurally perfect panel that carries nothing — Arctic Air's front", () => {
+    const state = panelState(
       panel({ surfaceKey: "front", effectivePpi: 400 }),
-      revision({ masterCutoutSurfaces: ["front"] }),
+      revision({ ...composed, elementPlacements: placed }),
     );
-    expect(dense.tone).not.toBe("ok");
-  });
-
-  it("only an unrepaired panel at print density reads as clean", () => {
-    const state = panelState(panel({ effectivePpi: 150 }), revision());
-    expect(state.tone).toBe("ok");
-    expect(state.label).toBe("structurally clean");
-  });
-
-  it("treats a revision with no QC record as unproven rather than passing", () => {
-    // A historical row carries no composition or cut-out metadata. It must not
-    // be upgraded to "clean" by the absence of evidence -- the density check is
-    // still real, and it is the one that fires.
-    const state = panelState(panel(), { } as FlatAtlasRevision);
     expect(state.tone).toBe("warn");
+    expect(state.label).toBe("ground only");
+  });
+
+  it("only a composed, dressed, dense, unrepaired panel reads as clean", () => {
+    const state = panelState(panel({ effectivePpi: 150 }), revision({ ...composed, elementPlacements: placed }));
+    expect(state.tone).toBe("ok");
+    expect(state.label).toBe("composed and clean");
+    expect(state.reason).toContain("1 element placed");
   });
 });

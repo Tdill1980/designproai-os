@@ -6,8 +6,8 @@ const require = createRequire(import.meta.url);
 const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
 const sharp = runtimeRequire("sharp");
 const { planAtlasElements, verifyPlanContainment, assertSlotsDisjoint, SURFACE_SLOTS } = require("../runtime/atlas-element-plan.cjs");
-const { composeAtlasMaster, measureOutlinedString, measureImageAsset } = require("../runtime/atlas-compose-master.cjs");
-const { loadPinnedFont, contactLine, redactBrief, canonicalStrings } = require("../runtime/atlas-elements.cjs");
+const { composeAtlasMaster, measureOutlinedString, measureImageAsset, textVariants } = require("../runtime/atlas-compose-master.cjs");
+const { loadPinnedFont, contactLine, redactBrief, canonicalStrings, placementRequests, elementRequested } = require("../runtime/atlas-elements.cjs");
 
 /**
  * THE ARCTIC AIR REGRESSION.
@@ -61,8 +61,8 @@ async function arcticElements() {
   return {
     elements: [
       { id: "brandmark", kind: "brandmark", required: false, aspect: (await measureImageAsset(mark)).aspect, source: { kind: "image" } },
-      { id: "wordmark", kind: "wordmark", required: true, aspect: wordmark.aspect, source: { kind: "outlined-type" } },
-      { id: "contact", kind: "contact", required: true, aspect: contact.aspect, source: { kind: "outlined-type" } },
+      { id: "wordmark", kind: "wordmark", required: true, aspect: wordmark.aspect, variants: textVariants({ fontBytes: font.bytes, string: COMPANY }), source: { kind: "outlined-type" } },
+      { id: "contact", kind: "contact", required: true, aspect: contact.aspect, variants: textVariants({ fontBytes: font.bytes, string: WEBSITE }), source: { kind: "outlined-type" } },
       { id: "photo", kind: "photo", required: false, aspect: (await measureImageAsset(photo)).aspect, source: { kind: "image" } },
     ],
     sources: {
@@ -254,3 +254,176 @@ test("canonical strings are read from the request and redacted out of any model 
     assert.ok(!redacted.toLowerCase().includes(value.toLowerCase()), `${value} must not survive into a model brief`);
   }
 });
+
+test("A LONG COMPANY NAME REFLOWS INSTEAD OF REFUSING THE DESIGN", () => {
+  // Reported against 61ae0be: on this exact Prius geometry, changing the name
+  // to "Precision Climate Solutions" made the fixed layout refuse the design.
+  // 13.3:1 on one line cannot reach a legible cap height in a flank's wordmark
+  // slot; 4.2:1 on two lines fits with room to spare.
+  const LONG = "Precision Climate Solutions";
+  const single = measureOutlinedString({ fontBytes: font.bytes, string: LONG });
+  assert.ok(single.aspect > 12, `the single-line aspect is what refused it: ${single.aspect.toFixed(2)}`);
+
+  const plan = planAtlasElements({
+    manifest: ARCTIC_MANIFEST,
+    elements: [
+      { id: "wordmark", kind: "wordmark", required: true, variants: textVariants({ fontBytes: font.bytes, string: LONG }), aspect: single.aspect, source: { kind: "outlined-type" } },
+      { id: "contact", kind: "contact", required: true, variants: textVariants({ fontBytes: font.bytes, string: "Www.PrecisionClimate.com" }), aspect: 9, source: { kind: "outlined-type" } },
+    ],
+  });
+  assert.ok(plan.placements.length >= 5, `the long name places: ${plan.placements.length} placements`);
+  assert.deepEqual(verifyPlanContainment(plan, ARCTIC_MANIFEST), { contained: true, violations: [] });
+
+  // It reflowed rather than shrinking below legibility, and every line still
+  // clears the minimum for the surface it is on.
+  const wordmarks = plan.placements.filter((p) => p.kind === "wordmark");
+  assert.ok(wordmarks.some((p) => p.lines > 1), "at least one surface set the name on more than one line");
+  for (const placement of wordmarks) {
+    assert.ok(Array.isArray(placement.textLines) && placement.textLines.length === placement.lines);
+    assert.equal(placement.textLines.join(" "), LONG, "reflowing never changes the customer's name");
+    assert.ok(placement.lineHeightIn >= 2.5, `${placement.elementId} is ${placement.lineHeightIn}in per line`);
+  }
+});
+
+test("legibility scales with reading distance, so a rear hatch is not held to a flank's floor", () => {
+  const flank = planAtlasElements({
+    manifest: ARCTIC_MANIFEST,
+    elements: [{ id: "wordmark", kind: "wordmark", required: true, aspect: 4.5, source: { kind: "outlined-type" } }],
+  }).placements.find((p) => p.surfaceKey === "driver");
+  const rear = planAtlasElements({
+    manifest: ARCTIC_MANIFEST,
+    elements: [{ id: "wordmark", kind: "wordmark", required: true, aspect: 4.5, source: { kind: "outlined-type" } }],
+  }).placements.find((p) => p.surfaceKey === "rear");
+  assert.ok(flank && rear);
+  // A flank is read across a parking lot; a rear from the next car. The floor
+  // that refused "Precision Climate Solutions" over four hundredths of an inch
+  // was the flank's, applied to a 26in-tall hatch.
+  assert.ok(flank.lineHeightIn > rear.lineHeightIn);
+});
+
+test("a customer placement request chooses the surface and never the rectangle", () => {
+  const requested = placementRequests("in 3/ sides and rear add a photo of a tech installing an ac");
+  assert.ok(requested.photo, "the request names surfaces for the photo");
+  assert.ok(requested.photo.includes("rear"), `rear was named: ${requested.photo.join(", ")}`);
+
+  const plan = planAtlasElements({
+    manifest: ARCTIC_MANIFEST,
+    elements: [
+      { id: "wordmark", kind: "wordmark", required: true, aspect: 4.5, source: { kind: "outlined-type" } },
+      { id: "photo", kind: "photo", required: true, aspect: 1.5, preferredSurfaces: ["passenger"], source: { kind: "image" } },
+    ],
+  });
+  const photos = plan.placements.filter((p) => p.kind === "photo");
+  assert.ok(photos.length > 0);
+  for (const photo of photos) assert.equal(photo.surfaceKey, "passenger");
+  // The honoured request still went through containment.
+  assert.deepEqual(verifyPlanContainment(plan, ARCTIC_MANIFEST), { contained: true, violations: [] });
+});
+
+test("a placement request no slot can honour is recorded, and the element still lands", () => {
+  // `front` carries no slots by policy. The request cannot be honoured, and the
+  // photo must not vanish because of it.
+  const plan = planAtlasElements({
+    manifest: ARCTIC_MANIFEST,
+    elements: [
+      { id: "wordmark", kind: "wordmark", required: true, aspect: 4.5, source: { kind: "outlined-type" } },
+      { id: "photo", kind: "photo", required: true, aspect: 1.5, preferredSurfaces: ["front"], source: { kind: "image" } },
+    ],
+  });
+  assert.equal(plan.unhonouredPlacementRequests.length, 1);
+  assert.equal(plan.unhonouredPlacementRequests[0].kind, "photo");
+  assert.ok(plan.placements.some((p) => p.kind === "photo"), "the photo still placed somewhere");
+  assert.ok(plan.placements.filter((p) => p.kind === "photo").every((p) => p.placementRequestHonoured === false));
+  assert.deepEqual(verifyPlanContainment(plan, ARCTIC_MANIFEST), { contained: true, violations: [] });
+});
+
+test("artwork the customer asked for is REQUIRED, not optional", () => {
+  // Reported against 61ae0be: both were marked optional, so a failed asset call
+  // returned successfully with only lettering and a receipt warning.
+  assert.equal(elementRequested({ brief: "create a custom logo and a yeti mascot" }, "brandmark"), true);
+  assert.equal(elementRequested({ mascot: "a yeti" }, "brandmark"), true);
+  assert.equal(elementRequested({ brief: "blue and white swooshes" }, "brandmark"), false);
+  assert.equal(elementRequested({ __wantsPhoto: true }, "photo"), true);
+  assert.equal(elementRequested({ __wantsPhoto: false }, "photo"), false);
+});
+
+test("supplied service copy reaches the typesetter instead of evaporating", () => {
+  // Reported against 61ae0be: the ground prompt demoted `textLayerPrompt` to
+  // "tone only" while the typesetter read `tagline`, so copy supplied through
+  // the field customers actually use had no deterministic path to the artwork.
+  const fromBullets = canonicalStrings({ companyName: "Arctic Air", bulletPoints: ["24/7 Service", "Repairs", "Installs"] });
+  assert.equal(fromBullets.tagline, "24/7 Service  ·  Repairs  ·  Installs");
+
+  const fromText = canonicalStrings({ companyName: "Arctic Air", textLayerPrompt: "24/7 Emergency Service" });
+  assert.equal(fromText.tagline, "24/7 Emergency Service");
+
+  // An explicit tagline still wins, and prose is not forced onto a vehicle.
+  assert.equal(canonicalStrings({ tagline: "Cool Since 1998", bulletPoints: ["a"] }).tagline, "Cool Since 1998");
+  assert.equal(
+    canonicalStrings({ textLayerPrompt: "Please make it feel premium. We want something modern and clean." }).tagline,
+    "",
+  );
+});
+
+test("INK ACTUALLY LANDS: every placed element marks the pixels its rectangle claims", async () => {
+  // THE BUG THIS EXISTS TO CATCH, WHICH THE WHOLE SUITE ABOVE MISSED.
+  //
+  // `composeAtlasMaster` passed `placement.textLines` -- an ARRAY -- into the
+  // renderer's `lines` COUNT. `wrapStringToLines(string, ["Arctic Air"])`
+  // computed `Math.ceil(2 / [...])` = NaN, sliced zero words, and set the empty
+  // string. Every geometry assertion stayed green: the rectangles were right,
+  // contained, disjoint and inside trim. The artwork was blank.
+  //
+  // Containment is not composition. This measures the pixels.
+  const { elements, sources } = await arcticElements();
+  const plan = planAtlasElements({ manifest: ARCTIC_MANIFEST, elements });
+  const ground = await sharp({ create: { width: 4096, height: 4096, channels: 4, background: { r: 12, g: 50, b: 100, alpha: 255 } } }).png().toBuffer();
+  const composed = await composeAtlasMaster({
+    groundBytes: ground, manifest: ARCTIC_MANIFEST, plan, sources, fontBytes: font.bytes, groundContract: GROUND_CONTRACT,
+  });
+
+  for (const placement of plan.placements) {
+    const crop = await sharp(composed.bytes)
+      .extract({ left: placement.rectPx.x, top: placement.rectPx.y, width: placement.rectPx.w, height: placement.rectPx.h })
+      .raw().toBuffer({ resolveWithObject: true });
+    let differing = 0;
+    for (let i = 0; i < crop.data.length; i += crop.info.channels) {
+      // Anything that is not the flat ground colour is ink this element put there.
+      if (Math.abs(crop.data[i] - 12) > 24 || Math.abs(crop.data[i + 1] - 50) > 24 || Math.abs(crop.data[i + 2] - 100) > 24) differing += 1;
+    }
+    const coverage = differing / (crop.info.width * crop.info.height);
+    assert.ok(coverage > 0.02,
+      `${placement.elementId} claims ${placement.rectPx.w}x${placement.rectPx.h}px and marked only ${(coverage * 100).toFixed(2)}% of it`);
+  }
+
+  // And the ground OUTSIDE every placement is untouched, so composition adds
+  // ink where it planned to and nowhere else.
+  const outside = await sharp(composed.bytes).extract({ left: 40, top: 2700, width: 200, height: 20 }).raw().toBuffer({ resolveWithObject: true });
+  let marked = 0;
+  for (let i = 0; i < outside.data.length; i += outside.info.channels) {
+    if (Math.abs(outside.data[i] - 12) > 24) marked += 1;
+  }
+  assert.equal(marked, 0, "the gutter between territories carries no composited ink");
+});
+
+test("a multi-line wordmark renders every line, not just the first", async () => {
+  const LONG = "Precision Climate Solutions";
+  const variants = textVariants({ fontBytes: font.bytes, string: LONG });
+  const twoLine = variants.find((v) => v.lines === 2);
+  assert.ok(twoLine, "a two-line variant exists");
+
+  const rect = { w: 1200, h: 600 };
+  const single = composeTypeInk({ string: LONG, rect, lines: 1 });
+  const double = composeTypeInk({ string: LONG, rect, lines: 2 });
+  // Two lines at the same box height means bigger glyphs and more ink than one
+  // line squeezed into the same width.
+  assert.ok(double > single, `two lines mark more of the box (${double}) than one (${single})`);
+});
+
+function composeTypeInk({ string, rect, lines }) {
+  const { _test: composeInternals } = require("../runtime/atlas-compose-master.cjs");
+  const typed = composeInternals.typeLayerSvg({ fontBytes: font.bytes, string, rect, fill: "#ffffff", lines });
+  assert.equal(typed.textLines.join(" "), string, "reflowing never changes the string");
+  assert.equal(typed.lines, lines);
+  return typed.drawnWidthPx * typed.drawnHeightPx;
+}

@@ -73,6 +73,50 @@ export function panelState(
   revision: FlatAtlasRevision | null | undefined,
 ): PanelState {
   const qc = revision?.qc;
+
+  // ── COMPOSITION FIRST ─────────────────────────────────────────────────────
+  //
+  // The first cut of this function returned "structurally clean" from two
+  // signals -- sufficient PPI and no recorded cut-out repair -- neither of which
+  // knows whether the customer's name, URL or photograph actually landed on the
+  // panel. That is the same overclaim as `Print panels 6/6`: it reports on the
+  // FILE and calls it a verdict on the ARTWORK. Arctic Air's front panel had
+  // perfect structure and no brand element at all.
+  const composed = Boolean(qc?.composeContract || qc?.elementPlanContract);
+  if (!composed) {
+    // A revision authored before the ground split was never composition
+    // checked. Saying so is honest; calling it clean is not.
+    return {
+      tone: "warn",
+      label: "not composition-checked",
+      reason: "authored before composition ran — its lettering and marks were painted by the model and were never proved to sit inside this surface",
+    };
+  }
+
+  // A required element the run could not produce fails every panel: the design
+  // is missing something the customer asked for, wherever it was going to go.
+  const missing = (qc?.elementsReceipt?.unresolved || []).filter((entry) => entry?.reason);
+  if (missing.length > 0) {
+    return {
+      tone: "fail",
+      label: "requested artwork missing",
+      reason: `the run could not produce ${missing.map((m) => m.reason).join("; ")}`,
+    };
+  }
+
+  const skipped = (qc?.elementPlacementsSkipped || []).filter((entry) => entry?.surfaceKey === panel.surfaceKey);
+  if (skipped.length > 0) {
+    const entry = skipped[0];
+    return {
+      tone: "warn",
+      label: "element left off this panel",
+      reason: entry.reason === "below_minimum_legible_height"
+        ? `${entry.kind} would print ${entry.heightIn}″ tall here; ${entry.minHeightIn}″ is the legible minimum for this surface`
+        : `${entry.kind}: ${entry.reason}`,
+    };
+  }
+
+  // ── STRUCTURE ─────────────────────────────────────────────────────────────
   if ((qc?.masterCutoutSurfaces || []).includes(panel.surfaceKey)) {
     const finding = (qc?.cutoutFillApplied || []).find((f) => f?.surfaceKey === panel.surfaceKey);
     return {
@@ -90,7 +134,24 @@ export function panelState(
       reason: `${panel.effectivePpi} PPI against a ${TARGET_PRINT_PPI} PPI target — upscaling is required before any production export`,
     };
   }
-  return { tone: "ok", label: "structurally clean" };
+
+  // A surface the policy dresses, that ended up with nothing on it, is worth
+  // saying out loud even when it is structurally perfect -- that is exactly
+  // what Arctic Air's front panel looked like from every other angle.
+  const placed = (qc?.elementPlacements || []).filter((p) => p?.surfaceKey === panel.surfaceKey);
+  if (placed.length === 0) {
+    return {
+      tone: "warn",
+      label: "ground only",
+      reason: "no lettering, mark or imagery was composed onto this surface — it carries the design's ground and nothing else",
+    };
+  }
+
+  return {
+    tone: "ok",
+    label: "composed and clean",
+    reason: `${placed.length} element${placed.length === 1 ? "" : "s"} placed inside this surface's trim box`,
+  };
 }
 
 const TONE_CLASS: Record<PanelState["tone"], string> = {

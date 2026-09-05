@@ -83,26 +83,24 @@ BEGIN
 END
 $migration$;
 
--- AND THEN RUN IT, over a row that exercises the expression.
+-- WHY THERE IS NO SMOKE-TEST CALL HERE.
 --
--- Applying clean proves the text parsed. It does not prove the body compiles:
--- PL/pgSQL compiles an expression the first time it is EVALUATED, which is how
--- `pg_catalog.coalesce(...)` -- COALESCE is grammar, not a function -- once
--- shipped through shadow AND production and then raised for every generation
--- that actually had proofs. A call over a generation id that does not exist
--- still evaluates the function body, so this is the cheap version of that
--- lesson.
-DO $verify$
-DECLARE
-  v_result jsonb;
-BEGIN
-  SELECT public.designpro_flat_atlas_generation_paths(
-    '00000000-0000-4000-8000-000000000000'::uuid
-  ) INTO v_result;
-  IF v_result IS NULL THEN
-    RAISE EXCEPTION 'designpro_atlas_composition_projection_returned_null';
-  END IF;
-END
-$verify$;
+-- The first cut of this migration ended with a DO block that called the
+-- function for a generation id that does not exist and raised if the result was
+-- NULL. That assertion was wrong twice over, and CI caught it:
+-- `designpro_atlas_composition_projection_returned_null`.
+--
+--   1. NULL is the CORRECT answer for an unknown generation. The function's
+--      third statement is `IF v_owner IS NULL THEN RETURN NULL; END IF;`.
+--   2. Worse, it proved nothing even when it passed. Returning at that guard
+--      means the `jsonb_build_object` below it is never EVALUATED, and PL/pgSQL
+--      compiles an expression the first time it is evaluated -- which is exactly
+--      how `pg_catalog.coalesce(...)` once shipped through shadow AND production
+--      and then raised for every generation that actually had proofs.
+--
+-- So the real gate is a seeded row that reaches the projection, and it lives in
+-- `supabase/tests/atlas_composition_receipt.test.sql`, where a fixture can be
+-- inserted and rolled back. Applying this file proves the patched text parses;
+-- that test proves the body runs and returns the composition keys.
 
 GRANT EXECUTE ON FUNCTION public.designpro_flat_atlas_generation_paths(uuid) TO authenticated, service_role;

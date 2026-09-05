@@ -57,6 +57,9 @@ const COMPOSABLE_GROUND_CONTRACTS = Object.freeze(["designpro.atlas-field-prompt
 /** Nominal outlining resolution for measuring a string's intrinsic aspect. */
 const MEASURE_PPI = 1000;
 
+/** A wrap sets a name on one, two or three lines. Four is a paragraph. */
+const MAX_TEXT_LINES = 3;
+
 /**
  * A contact line has to stay legible over whatever the ground did, and a wrap
  * designer solves that with a bar rather than by hoping. The scrim is a flat
@@ -83,17 +86,68 @@ const fail = (code, message) => { throw new ComposeError(code, message); };
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 /**
+ * Break a string into `lines` roughly balanced lines, on word boundaries.
+ *
+ * Greedy-balanced rather than greedy: a two-line set of "Precision Climate
+ * Solutions" reads "Precision Climate / Solutions", not "Precision / Climate
+ * Solutions". A word longer than a whole line is never split -- hyphenating a
+ * company name is a worse outcome than a wide line, and the caller can always
+ * fall back to fewer lines.
+ */
+function wrapStringToLines(string, lines) {
+  const words = String(string).trim().split(/\s+/).filter(Boolean);
+  if (lines <= 1 || words.length <= 1) return [words.join(" ")];
+  const target = Math.ceil(words.length / lines);
+  const out = [];
+  for (let i = 0; i < words.length; i += target) out.push(words.slice(i, i + target).join(" "));
+  // Never return more rows than asked for: the remainder joins the last line.
+  while (out.length > lines) out[out.length - 2] = `${out[out.length - 2]} ${out.pop()}`;
+  return out;
+}
+
+/**
  * Measure a string's intrinsic aspect from the pinned font, so the planner
  * sizes a rectangle the type actually fills. Outlined once at a nominal size;
  * the ratio is resolution-independent.
+ *
+ * `lines` measures the string SET ON THAT MANY LINES -- width is the widest
+ * line, height is the line count times the em box. This is what makes a long
+ * company name placeable: "Precision Climate Solutions" is 13.3:1 on one line
+ * and cannot reach a legible cap height inside a flank's wordmark slot, and is
+ * 6.0:1 on two, which fits with room to spare. Refusing the design instead
+ * would have been correct and useless.
  */
-function measureOutlinedString({ fontBytes, string }) {
-  const outlined = outlineString({ fontBytes, string, sizeIn: 1, pxPerInch: MEASURE_PPI });
-  return {
-    aspect: outlined.widthPx / outlined.heightPx,
-    widthPx: outlined.widthPx,
-    heightPx: outlined.heightPx,
-  };
+function measureOutlinedString({ fontBytes, string, lines = 1 }) {
+  const textLines = wrapStringToLines(string, lines);
+  let widthPx = 0;
+  let lineHeightPx = 0;
+  for (const line of textLines) {
+    const outlined = outlineString({ fontBytes, string: line || " ", sizeIn: 1, pxPerInch: MEASURE_PPI });
+    widthPx = Math.max(widthPx, outlined.widthPx);
+    lineHeightPx = Math.max(lineHeightPx, outlined.heightPx);
+  }
+  const heightPx = lineHeightPx * textLines.length;
+  return { aspect: widthPx / heightPx, widthPx, heightPx, lines: textLines.length, textLines };
+}
+
+/**
+ * Every line-count a string could reasonably be set on, cheapest first.
+ *
+ * The planner picks the variant that yields the greatest physical cap height
+ * inside the slot it has -- so a short name stays on one line and a long one
+ * reflows, and neither outcome is a refusal.
+ */
+function textVariants({ fontBytes, string, maxLines = MAX_TEXT_LINES }) {
+  const words = String(string).trim().split(/\s+/).filter(Boolean).length;
+  const ceiling = Math.max(1, Math.min(maxLines, words));
+  const variants = [];
+  for (let lines = 1; lines <= ceiling; lines += 1) {
+    const measured = measureOutlinedString({ fontBytes, string, lines });
+    // Two line counts that wrap identically are one variant.
+    if (variants.some((v) => v.textLines.join("\u0000") === measured.textLines.join("\u0000"))) continue;
+    variants.push({ lines: measured.lines, textLines: measured.textLines, aspect: measured.aspect });
+  }
+  return variants;
 }
 
 /** Measure a resolved image asset's intrinsic aspect and pixel size. */
@@ -108,22 +162,36 @@ async function measureImageAsset(bytes) {
 }
 
 /** The outlined string as an SVG buffer that exactly fills `rect`. */
-function typeLayerSvg({ fontBytes, string, rect, fill }) {
-  const measured = outlineString({ fontBytes, string, sizeIn: 1, pxPerInch: MEASURE_PPI });
+function typeLayerSvg({ fontBytes, string, rect, fill, lines = 1 }) {
+  const measured = measureOutlinedString({ fontBytes, string, lines });
   const scale = Math.min(rect.w / measured.widthPx, rect.h / measured.heightPx);
   if (!(scale > 0)) fail("atlas_compose_type_unscalable", `"${string}" does not scale into ${rect.w}x${rect.h}px`);
-  const outlined = outlineString({ fontBytes, string, sizeIn: 1, pxPerInch: MEASURE_PPI * scale });
-  // Centre the drawn glyphs inside the rectangle the plan proved. The path is
-  // in its own pixel space, so a translate is the whole placement.
-  const dx = Math.max(0, Math.round((rect.w - outlined.widthPx) / 2));
-  const dy = Math.max(0, Math.round((rect.h - outlined.heightPx) / 2));
+
+  // Each line is outlined at the SAME size, so the set reads as one block and
+  // a two-line name does not arrive with mismatched cap heights.
+  const drawn = measured.textLines.map((line) =>
+    outlineString({ fontBytes, string: line || " ", sizeIn: 1, pxPerInch: MEASURE_PPI * scale }));
+  const lineHeight = Math.max(...drawn.map((d) => d.heightPx));
+  const blockWidth = Math.max(...drawn.map((d) => d.widthPx));
+  const blockHeight = lineHeight * drawn.length;
+  const originY = Math.max(0, Math.round((rect.h - blockHeight) / 2));
+
+  // Lines are CENTRED on each other, which is how a wrap sets a stacked name.
+  const paths = drawn.map((d, index) => {
+    const dx = Math.round((rect.w - d.widthPx) / 2);
+    const dy = originY + index * lineHeight;
+    return `<g transform="translate(${dx} ${dy})"><path d="${d.path}" fill="${fill}" fill-rule="nonzero"/></g>`;
+  }).join("");
+
   return {
     svg: Buffer.from(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${rect.w}" height="${rect.h}" viewBox="0 0 ${rect.w} ${rect.h}">`
-      + `<g transform="translate(${dx} ${dy})"><path d="${outlined.path}" fill="${fill}" fill-rule="nonzero"/></g></svg>`,
+      + `${paths}</svg>`,
     ),
-    drawnWidthPx: outlined.widthPx,
-    drawnHeightPx: outlined.heightPx,
+    drawnWidthPx: blockWidth,
+    drawnHeightPx: blockHeight,
+    lines: drawn.length,
+    textLines: measured.textLines,
   };
 }
 
@@ -221,7 +289,13 @@ async function composeAtlasMaster({
       }
       const string = String(source.string || "");
       if (!string) fail("atlas_compose_string_empty", `element ${placement.elementRef} has no canonical string`);
-      const typed = typeLayerSvg({ fontBytes, string, rect, fill: source.fill || "#ffffff" });
+      // The planner already chose how many lines this element is set on and
+      // sized the rectangle for it; rendering must use the same choice or the
+      // block will not fill the box the plan proved.
+      const typed = typeLayerSvg({
+        fontBytes, string, rect, fill: source.fill || "#ffffff",
+        lines: placement.lines || source.lines || 1,
+      });
       layers.push({ input: typed.svg, left: rect.x, top: rect.y });
       composed.push({
         elementId: placement.elementId,
@@ -234,6 +308,9 @@ async function composeAtlasMaster({
         // The exact string that printed, recorded next to the rectangle it
         // printed in, so a spelling question is answerable from the receipt.
         string,
+        // The exact lines that printed, so a two-line set is answerable from
+        // the receipt as well as a one-line one.
+        textLines: typed.textLines,
         drawnPx: { w: typed.drawnWidthPx, h: typed.drawnHeightPx },
         fontSha256: sha256(fontBytes),
       });
@@ -297,5 +374,8 @@ module.exports = {
   composeAtlasMaster,
   measureOutlinedString,
   measureImageAsset,
+  textVariants,
+  wrapStringToLines,
+  MAX_TEXT_LINES,
   _test: { typeLayerSvg, plateSvg, padRect },
 };
