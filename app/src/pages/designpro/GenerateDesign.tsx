@@ -47,6 +47,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { SixPanelBoard } from "@/components/designpro/SixPanelBoard";
 import { FlatAtlasPanelSchedule } from "@/components/designpro/FlatAtlasPanelSchedule";
 import {
   ContentHash,
@@ -758,6 +759,19 @@ export default function GenerateDesign() {
                     {atlasRevisions.length} immutable version{atlasRevisions.length === 1 ? "" : "s"} saved. Model {latestAtlas.model}; prompt {latestAtlas.promptVersion}; structural example conditioning {latestAtlas.exampleUsed ? "locked" : "not used"}; manifest sha256 {latestAtlas.manifest.contentHash.slice(0, 16)}…. Production eligibility: {latestAtlas.productionEligible ? "passed" : "awaiting geometry validation"}.
                   </div>
                   <FlatAtlasPanelSchedule panels={latestAtlas.panelMap} className="sm:col-span-2" />
+                  {/* THE SIX PANELS THEMSELVES, NOT A COUNT OF THEM.
+                      Rendered inside the atlas panel so a run that cut six
+                      panels and then died before its first proof -- Arctic Air
+                      586abc83, `Print panels 6/6` with `3D proofs 0/7` -- still
+                      shows the artwork it finished, and names the stage that
+                      actually stopped it. */}
+                  <SixPanelBoard
+                    revision={latestAtlas}
+                    failedStage={request.state === "failed"
+                      ? (request.failureCode || "an unnamed stage")
+                      : null}
+                    className="sm:col-span-2"
+                  />
                 </div>
               ) : request.state === "failed" ? (
                 <Notice tone="error">No A.T.L.A.S. master was promoted. Nothing was handed to production.</Notice>

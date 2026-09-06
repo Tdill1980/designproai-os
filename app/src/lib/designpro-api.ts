@@ -277,6 +277,52 @@ export type FlatAtlasRevision = {
     /** What the panels were cut from; equals the master on a clean sheet. */
     panelSourceHash?: string | null;
     canonicalMasterHash?: string | null;
+    /**
+     * PANEL QC — did each required element survive the cut?
+     *
+     * Call 1 is unchanged and stays the creative authority. What is recorded
+     * here is the verdict on the SIX EXTRACTED PANELS: every gate before it
+     * measures the sheet, and none of them asks whether a wordmark straddles a
+     * cut line. Arctic Air `63e6629a` passed all of them and shipped
+     * `Www.Arct` on the hood and `ticAir.com` on the rear.
+     *
+     * Absent on every revision authored before panel QC existed. A historical
+     * row reads these as null and stays fully viewable.
+     */
+    panelQcContract?: string | null;
+    /** The surfaces a repair must aim at. Empty = all six carry their elements whole. */
+    panelQcFailingSurfaces?: string[];
+    panelQcSurfaces?: Array<{
+      surfaceKey?: string;
+      ok?: boolean;
+      orientation?: string;
+      widthPx?: number;
+      heightPx?: number;
+      elementsIntact?: string[];
+      elementsSevered?: string[];
+      elementsInBleed?: string[];
+      findings?: Array<{
+        code?: string;
+        surfaceKey?: string;
+        element?: string;
+        edges?: string[];
+        acrossSurfaces?: string[];
+        detail?: string;
+      }>;
+    }>;
+    /** Every located element, its master-pixel rectangle and its containment status. */
+    panelQcElements?: Array<{
+      label?: string;
+      status?: "contained" | "in_bleed" | "severed";
+      surfaces?: string[];
+      rect?: { x: number; y: number; w: number; h: number };
+      detail?: string;
+    }> | null;
+    /**
+     * Set when the locator could not be reached. A run carrying this has NOT
+     * been panel-checked, and no surface may be reported as passing.
+     */
+    panelQcUnavailable?: string | null;
   } | null;
   /** How this master was produced: pipeline, contracts, provider, delivery. */
   provenance?: {

@@ -48,6 +48,7 @@ import {
 // rendering validation results threw `cn is not defined` and white-screened the
 // whole board into the ErrorBoundary (caught in the 2026-07-24 button audit).
 import { cn } from "@/lib/utils";
+import { SixPanelBoard } from "@/components/designpro/SixPanelBoard";
 import { VersionAssetManifest } from "@/components/designpro/VersionAssetManifest";
 import {
   getProductionPanelPackState,
@@ -921,6 +922,9 @@ function AtlasProgressCard({
           with the dimensions that make them checkable, the seven proofs, and
           the 2D Production Proof, all bound to the SELECTED version so V1 stays
           reachable after V2 is made. */}
+      {/* The six panels as artwork, above the file manifest: a reviewer looks
+          at the compositions first and takes the files second. */}
+      <SixPanelBoard revision={atlas} className="mb-6" />
       <VersionAssetManifest job={job} atlas={atlas} />
     </div>
   );

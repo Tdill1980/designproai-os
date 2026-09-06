@@ -44,6 +44,8 @@ const { BUCKET } = require("./generation-store.cjs");
 // serializes six code-only territories out of it AFTER the call.
 const { buildFieldTerritories, NOSE_EDGE } = require("./atlas-field-territories.cjs");
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
+const { inspectAtlasPanels, PANEL_QC_CONTRACT } = require("./atlas-panel-qc.cjs");
+const { repairMasterPanels, PANEL_REPAIR_CONTRACT, SURFACE_CONTENT_CONTRACT, PanelRepairError } = require("./atlas-panel-repair.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -2353,6 +2355,7 @@ async function generateOrReuseFlatAtlas(options) {
     deterministicMs: 0,
     repairMs: 0,
     panelExtractionMs: 0,
+    panelQcMs: 0,
     viewAuthorityMs: 0,
     projectionMs: 0,
     uploadWaitMs: 0,
@@ -2518,6 +2521,91 @@ async function generateOrReuseFlatAtlas(options) {
     }
   }
 
+  // ── SEVERED-ELEMENT REPAIR, BEFORE ACCEPTANCE ─────────────────────────────
+  //
+  // Owner, 2026-09-05: *"Fix composition before canonical master acceptance.
+  // Required lettering, logos and focal imagery must fit their intended
+  // surfaces."* Everything above measures the SHEET, and on Arctic Air
+  // `63e6629a` all of it passed -- correctly, because the sheet is cohesive,
+  // opaque, anatomy-free and full-bleed. None of it asks whether a WORDMARK
+  // straddles a cut line, and one did: the contact lockup came back as
+  // `Www.Arct` on the hood and `ticAir.com` on the rear.
+  //
+  // The repair moves GEMINI'S OWN PIXELS. It never asks a model for anything,
+  // never typesets a glyph and never touches a surface that already prints
+  // whole -- `runtime/atlas-panel-repair.cjs` explains why any of those would
+  // be the redesign the owner rejected by name.
+  //
+  // Positioned HERE so the accepted master already carries it: QC, the panel
+  // cut, the projection, the seven proofs, Call 8 and the ZIP all see one
+  // finished sheet, and there is never a second master.
+  const panelQcStartedAt = Date.now();
+  const repairCandidateBytes = cutoutFill.changed ? surfaceSourceBytes : masterBytes;
+  let panelQc = await inspectAtlasPanels({
+    masterBytes: repairCandidateBytes,
+    manifest,
+    provider,
+    log: (message) => logger?.warn?.("flat_atlas_panel_qc", { generationId, message }),
+  });
+  let panelRepair = null;
+  if (!panelQc.locateUnavailable && panelQc.severedElements.length) {
+    try {
+      panelRepair = await repairMasterPanels({
+        masterBytes: repairCandidateBytes,
+        manifest,
+        containment: panelQc.elementsLocated,
+        // Explicit customer placement always wins (owner contract). The v3
+        // input carries no structured field for it yet, so this is the hook:
+        // `{ kind|label: surface }` on the request when one exists, else the
+        // owner's defaults -- contact to the rear, the mark to the hood.
+        placements: input?.placements && typeof input.placements === "object" ? input.placements : null,
+      });
+    } catch (cause) {
+      if (cause instanceof PanelRepairError && cause.code === "atlas_panel_element_unplaceable") {
+        // REFUSE THE MASTER. A required element that cannot fit entirely
+        // within its assigned panel-safe area is not silently relocated
+        // elsewhere and not shrunk below legibility. The reason names the
+        // element and the surface, so the refusal is actionable.
+        throw new FlatAtlasError(
+          "flat_atlas_required_element_unplaceable",
+          `A required element cannot be placed whole on its assigned surface (${SURFACE_CONTENT_CONTRACT}): ${cause.message}`,
+        );
+      }
+      throw cause;
+    }
+    if (panelRepair.changed) {
+      // Same discipline the cut-out fill's re-validation established: a
+      // deterministic repair is REPEATABLE, which is not the same as VALID.
+      const revalidated = await deterministicMasterChecks(panelRepair.bytes, manifest);
+      if (revalidated.blockingFailures.length) {
+        throw new FlatAtlasError(
+          "flat_atlas_panel_repaired_master_invalid",
+          "Moving a severed element left the sheet structurally invalid: "
+          + revalidated.blockingFailures.join("; "),
+        );
+      }
+      // RE-LOCATE ON THE REPAIRED BYTES. The element has moved, so the only
+      // honest verification is to look again at where it actually is.
+      panelQc = await inspectAtlasPanels({
+        masterBytes: panelRepair.bytes,
+        manifest,
+        provider,
+        log: (message) => logger?.warn?.("flat_atlas_panel_qc", { generationId, message }),
+      });
+      if (!panelQc.locateUnavailable && panelQc.severedElements.length) {
+        // FAIL CLOSED. A repair that cannot be verified is not a repair, and a
+        // sheet whose lettering is still cut must never become canonical.
+        throw new FlatAtlasError(
+          "flat_atlas_panel_repair_unverified",
+          "A required element is still severed after repair: "
+          + panelQc.severedElements.map((item) => `${item.label} across ${item.surfaces.join("/")}`).join("; "),
+        );
+      }
+    }
+  }
+  timings.panelQcMs += Date.now() - panelQcStartedAt;
+  const panelRepairApplied = Boolean(panelRepair?.changed);
+
   // ── THE ACCEPTED MASTER IS THE ONE THAT PASSED. (Owner, 2026-08-31) ────────
   //
   // Owner, having read this file after the re-validation landed: "even after
@@ -2551,10 +2639,18 @@ async function generateOrReuseFlatAtlas(options) {
   // buffer, `changed` is false, and both bindings resolve to exactly the bytes
   // and hash they always did -- no extra transform, no extra hash, no new
   // storage object, and byte-identical output.
-  const acceptedMasterBytes = cutoutFill.changed ? surfaceSourceBytes : masterBytes;
-  const acceptedMasterHash = cutoutFill.changed ? panelSourceHash : masterHash;
-  const preRepairMasterHash = cutoutFill.changed ? masterHash : null;
-  const acceptedMasterStoragePath = cutoutFill.changed
+  //
+  // The severed-element repair joins the same chain: the sheet that reaches
+  // acceptance is the last one that passed, whether that is the authored
+  // master, the hole-filled one, or the one whose lockup was moved back inside
+  // a surface. `preRepairMasterHash` records what Gemini returned in every
+  // repaired case, and stays null when nothing was repaired at all.
+  const acceptedMasterBytes = panelRepairApplied ? panelRepair.bytes : repairCandidateBytes;
+  const acceptedMasterHash = panelRepairApplied
+    ? panelRepair.contentHash
+    : (cutoutFill.changed ? panelSourceHash : masterHash);
+  const preRepairMasterHash = (cutoutFill.changed || panelRepairApplied) ? masterHash : null;
+  const acceptedMasterStoragePath = (cutoutFill.changed || panelRepairApplied)
     ? atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: acceptedMasterHash })
     : masterStoragePath;
 
@@ -2654,7 +2750,7 @@ async function generateOrReuseFlatAtlas(options) {
   // Sharp/hash work on bytes already in memory (no network, no AI), so this is
   // milliseconds after the master itself was accepted.
   const projectionStartedAt = Date.now();
-  const projectionPromise = projectionDerivative(surfaceSourceBytes)
+  const projectionPromise = projectionDerivative(acceptedMasterBytes)
     .then((result) => {
       progressiveAtlas.projection = result;
       return result;
@@ -2663,7 +2759,7 @@ async function generateOrReuseFlatAtlas(options) {
       timings.projectionMs += Date.now() - projectionStartedAt;
     });
   const [callOnePanels, projection] = await Promise.all([
-    cutCallOnePanels(surfaceSourceBytes, manifest, acceptedMasterHash, {
+    cutCallOnePanels(acceptedMasterBytes, manifest, acceptedMasterHash, {
       onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
         "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },
       ),
@@ -2771,6 +2867,19 @@ async function generateOrReuseFlatAtlas(options) {
   timings.uploadWaitMs += Date.now() - uploadWaitStartedAt;
   // Identity + the design-time size of every side, recorded on the immutable
   // revision. Downstream consumes these; it never re-cuts them.
+  // The per-panel report, over the panels that were actually cut. It reuses the
+  // containment already verified on these exact bytes, so the orientation and
+  // print-aspect checks run without a third localization call.
+  const panelReport = await inspectAtlasPanels({
+    masterBytes: acceptedMasterBytes,
+    panels: callOnePanels,
+    manifest,
+    containment: panelQc.locateUnavailable ? null : panelQc.elementsLocated,
+  });
+  const panelQcReport = panelQc.locateUnavailable
+    ? { ...panelReport, locateUnavailable: panelQc.locateUnavailable, passing: [], failing: panelReport.surfaces.map((s) => s.surfaceKey) }
+    : panelReport;
+
   const callOnePanelRecords = callOnePanels.map((panel) => ({
     contract: panel.contract,
     surfaceKey: panel.surfaceKey,
@@ -2893,6 +3002,25 @@ async function generateOrReuseFlatAtlas(options) {
       // still must not print until a human has seen them on a template.
       masterCutoutSurfaces,
       masterCutoutFindings,
+      // ── PANEL QC (designpro.atlas-panel-qc.v1) ─────────────────────────────
+      // Which surfaces carry their required elements whole, and which the cut
+      // severed -- by name, with the element and the edges. `Print panels 6/6`
+      // counts files; this counts panels that can actually print.
+      panelQcContract: PANEL_QC_CONTRACT,
+      panelQcFailingSurfaces: panelQcReport.failing,
+      panelQcSurfaces: panelQcReport.surfaces,
+      panelQcElements: panelQcReport.elementsLocated,
+      // Which elements were moved back inside a surface, from where, to where.
+      // Null when nothing was severed -- the overwhelmingly common case, and
+      // byte-identical output.
+      panelRepairContract: panelRepairApplied ? PANEL_REPAIR_CONTRACT : null,
+      panelRepairSurfaceContentContract: panelRepairApplied ? SURFACE_CONTENT_CONTRACT : null,
+      panelRepairApplied: panelRepairApplied ? panelRepair.repairs : null,
+      panelRepairVacatedPixels: panelRepairApplied ? panelRepair.vacatedPixels : null,
+      // Set when the locator could not be reached. A run carrying this has NOT
+      // been panel-checked: "we could not look" must never read as "we looked
+      // and it was fine", so no surface is reported as passing either.
+      panelQcUnavailable: panelQcReport.locateUnavailable,
       // Historical readers may inspect this key. New Call-1 revisions never
       // populate it: Passenger's authored bytes are preserved verbatim.
       passengerComposed: null,
@@ -3000,7 +3128,10 @@ async function generateOrReuseFlatAtlas(options) {
     `persisted immutable atlas revision 1 ${masterHash}; `
       + `callOneTimings=${JSON.stringify(rowPayload.metadata.callOneTimings)}`,
   );
-  return rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projection.bytes, {
+  // The ACCEPTED sheet, not the hole-filled intermediate: after the
+  // severed-element repair those are no longer the same buffer, and the
+  // projection's `sourceMasterHash` has to name the sheet it was made from.
+  return rowIdentity(row, manifest, masterBytes, acceptedMasterBytes, projection.bytes, {
     reused: false,
     // Already cut, already published. Never cut them twice.
     panels: callOnePanels,

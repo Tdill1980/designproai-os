@@ -339,5 +339,12 @@ module.exports = {
   FILL_CONTRACT,
   MAX_FILL_PASSES,
   fillMasterCutouts,
+  // PROMOTED FROM `_test` (2026-09-05). `diffuseInto` is the repo's only
+  // sanctioned way to close a region of a master: it grows the SURROUNDING
+  // design inward from every side and invents nothing (RULE 0.15). The panel
+  // repair needs exactly that operation on a different mask -- the rectangle an
+  // element was lifted out of -- so it is a shared primitive now rather than a
+  // second implementation of the same averaging.
+  diffuseInto,
   _test: { convictedHoleMask, diffuseInto },
 };
