@@ -27,7 +27,7 @@ on:
       vehicle_year:
         required: true
         type: string
-        default: "2020"
+        default: "2022"
       vehicle_make:
         required: true
         type: string
@@ -35,7 +35,12 @@ on:
       vehicle_model:
         required: true
         type: string
-        default: F250 Crew Cab 6.5ft Box
+        default: F250 Crew Cab
+      resume_request_id:
+        description: "Optional completed Calls 1-7 request to continue without another provider call"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -105,6 +110,7 @@ jobs:
           CANARY_MAKE: ${{ inputs.vehicle_make }}
           CANARY_MODEL: ${{ inputs.vehicle_model }}
           CANARY_TYPE: ${{ inputs.vehicle_type }}
+          CANARY_RESUME_REQUEST_ID: ${{ inputs.resume_request_id }}
           CANARY_EMAIL: atlas-canary-customer@designproai.com
           EXPECTED_RELEASE_SHA: ${{ github.sha }}
         shell: bash
@@ -153,6 +159,7 @@ jobs:
             "$image" node /app/production-canary.mjs \
               --out /canary/output \
               --year "$YEAR" --make "$MAKE" --model "$MODEL" --type "$VTYPE" \
+              --resume-request-id "$CANARY_RESUME_REQUEST_ID" \
               --design "Precision Climate Solutions — A.T.L.A.S. graph canary"
           status=$?
           set -e
