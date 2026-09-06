@@ -975,8 +975,14 @@ function createGenerationWorker({
           // Lifecycle receipt only (prepHit, genieMs, geometry time avoided);
           // it is persisted on the revision metadata and never enters the request.
           geniePrep: geniePrepReceipt,
-          // Owner restoration: one draw, no hidden re-roll on rejection.
-          maxAuthoringAttempts: 1,
+          // Production permits exactly one refusal-only fallback. An accepted
+          // first candidate still breaks the authoring loop immediately, so a
+          // healthy run spends one creative call. This restores the measured
+          // behavior of generation 84a3eadf: its first raw candidate was
+          // refused and its second became canonical master 1564c66d.... If
+          // candidate 2 is also refused, the real gate error is surfaced; no
+          // third automatic attempt is permitted.
+          maxAuthoringAttempts: 2,
           onMasterReady: (atlas) => {
             progressiveAtlas = atlas;
           },

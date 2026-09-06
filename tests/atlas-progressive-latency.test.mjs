@@ -36,9 +36,11 @@ test("a SUCCESSFUL A.T.L.A.S. authoring spends exactly one creative call", () =>
   );
 });
 
-test("a REFUSED A.T.L.A.S. authoring stops without a re-roll", () => {
-  // The restoration runs one draw; a rejected master must not silently re-roll.
-  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 1,/);
+test("a REFUSED A.T.L.A.S. authoring gets exactly one fallback, and no third", () => {
+  // The last accepted six-surface production run needed candidate 2. Keep the
+  // fallback bounded at the product call site, while the loop-level test above
+  // proves an accepted candidate never incurs it.
+  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 2,/);
   assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 3;/);
   assert.match(
     atlas,
