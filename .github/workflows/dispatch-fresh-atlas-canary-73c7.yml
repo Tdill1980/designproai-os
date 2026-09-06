@@ -1,0 +1,48 @@
+name: Dispatch fresh A.T.L.A.S. canary after exact deploy
+
+on:
+  push:
+    branches:
+      - codex/dispatch-fresh-atlas-canary-73c7
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_MAIN_SHA: 73c7a2aa402731fb9fe835922a3c3eda6b252c71
+      DEPLOY_RUN_ID: "34048698818"
+    steps:
+      - name: Wait for the exact deployment and dispatch one clean canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$actual" = "$EXPECTED_MAIN_SHA"
+
+          for _ in $(seq 1 120); do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$DEPLOY_RUN_ID" --jq '.status')"
+            deployed_sha="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$DEPLOY_RUN_ID" --jq '.head_sha')"
+            test "$deployed_sha" = "$EXPECTED_MAIN_SHA"
+            if [ "$status" = completed ]; then
+              conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$DEPLOY_RUN_ID" --jq '.conclusion')"
+              test "$conclusion" = success
+              break
+            fi
+            sleep 10
+          done
+          test "$status" = completed
+
+          gh workflow run production-canary.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f confirmation=RUN_PRODUCTION_CANARY \
+            -f vehicle_type=truck \
+            -f vehicle_year=2022 \
+            -f vehicle_make=Ford \
+            -f vehicle_model="F250 Crew Cab"
