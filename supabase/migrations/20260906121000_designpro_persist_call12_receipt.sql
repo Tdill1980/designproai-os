@@ -35,10 +35,33 @@ BEGIN
 END
 $migration$;
 
+-- Recover any already-completed Call 12 whose generic stage completion landed
+-- before this mapping existed.  Use only the exact verified stage output and
+-- identity that complete_designpro_stage itself persisted; no provider call or
+-- artifact rewrite is involved.  Unexpected duplicate identities still fail
+-- instead of being overwritten.
+INSERT INTO public.designpro_stage_receipts(
+  run_id, stage_id, receipt_kind, identity, receipt, receipt_hash
+)
+SELECT
+  s.run_id,
+  s.id,
+  'call12.topaz-upscale',
+  s.verification->'identity',
+  s.output,
+  lower(s.output_hash)
+FROM public.designpro_workflow_stages s
+WHERE s.stage_key='enhance.upscale'
+  AND s.status='completed'
+  AND s.verification @> '{"verified":true}'::jsonb
+  AND pg_catalog.jsonb_typeof(s.verification->'identity')='object'
+  AND s.output @> '{"verified":true,"receiptKind":"call12.topaz-upscale"}'::jsonb
+  AND lower(s.output_hash) ~ '^[0-9a-f]{64}$'
+ON CONFLICT (stage_id) DO NOTHING;
+
 REVOKE ALL ON FUNCTION public.complete_designpro_stage(
   uuid,uuid,jsonb,jsonb,text,jsonb
 ) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.complete_designpro_stage(
   uuid,uuid,jsonb,jsonb,text,jsonb
 ) TO service_role;
-

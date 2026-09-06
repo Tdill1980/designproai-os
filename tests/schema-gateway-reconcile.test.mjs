@@ -260,6 +260,13 @@ test("production-heavy stages share one DB-owned race fence with expiry and exac
   ]) assert.match(migrations, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("a completed pre-fix Call 12 is recovered without rerunning Topaz", () => {
+  assert.match(
+    migrations,
+    /INSERT INTO public\.designpro_stage_receipts[\s\S]*?s\.stage_key='enhance\.upscale'[\s\S]*?s\.status='completed'[\s\S]*?receiptKind":"call12\.topaz-upscale"[\s\S]*?ON CONFLICT \(stage_id\) DO NOTHING/,
+  );
+});
+
 test("output verification is the exact byte-verified 6 x 3 production matrix", () => {
   for (const marker of [
     "designpro.output-verification.v1",
