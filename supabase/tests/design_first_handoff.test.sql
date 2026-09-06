@@ -1,5 +1,5 @@
 begin;
-select plan(38);
+select plan(43);
 
 select has_table(
   'designpro_private','revision_fulfillment_bindings',
@@ -535,6 +535,103 @@ select ok(
    from public.designpro_revision_sources
    where revision_id='33000000-0000-4000-8000-000000000003'),
   'final QC never rewrites the immutable design-first snapshot'
+);
+
+-- The runtime creates a seal, a stamped Call-8 proof and the human-readable
+-- QC certificate.  Completion must resolve the same late binding as final QC,
+-- reject a partial pair, and ledger the exact three-file set ZIP consumes.
+insert into public.designpro_workflow_stages(
+  id,run_id,stage_key,sequence,status,idempotency_key,
+  lease_owner,lease_token,lease_expires_at,started_at
+) values(
+  '36000000-0000-4000-8000-000000000006',
+  '34000000-0000-4000-8000-000000000003',
+  'stamp.build',70,'running',
+  '34000000-0000-4000-8000-000000000003:stamp.build',
+  'pgTAP-stamp-worker','38000000-0000-4000-8000-000000000003',
+  now()+interval '10 minutes',now()
+);
+update public.designpro_workflow_runs
+set status='running'
+where id='34000000-0000-4000-8000-000000000003';
+
+select throws_ok(
+  $$select public.complete_designpro_stage(
+    '36000000-0000-4000-8000-000000000006',
+    '38000000-0000-4000-8000-000000000003',
+    jsonb_build_object(
+      'workflowRunId','34000000-0000-4000-8000-000000000003',
+      'revisionId','33000000-0000-4000-8000-000000000003',
+      'enticePackId',(select entice_pack_id::text from public.designpro_workflow_runs where id='34000000-0000-4000-8000-000000000003'),
+      'dimensionManifestId','35000000-0000-4000-8000-000000000003',
+      'sourceContractHash',repeat('a',64),'manifestHash',repeat('b',64),
+      'artifactSetHash',repeat('c',64)
+    ),
+    jsonb_build_object(
+      'verified',true,'receiptKind','stamp','designId','DID-32000000',
+      'orderNumber','FP-2026-0001',
+      'verifiedBy',(select receipt->>'verifiedBy' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
+      'approvalRef',(select receipt->>'approvalRef' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
+      'approvedAt',(select receipt->>'approvedAt' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
+      'stampHash',repeat('1',64),'sealHash',repeat('2',64),
+      'sourceProofHash',repeat('3',64),'certificateHash',repeat('4',64)
+    ),repeat('1',64),
+    jsonb_build_array(
+      jsonb_build_object('kind','stamp','surfaceKey','seal','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/qc-approval-stamp.png','contentHash',repeat('2',64),'byteSize',100,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001')),
+      jsonb_build_object('kind','stamp','surfaceKey','stamped-proof','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/stamped-call8-proof.png','contentHash',repeat('1',64),'byteSize',200,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001','sourceProofHash',repeat('3',64)))
+    )
+  )$$,
+  'P0001','exact_stamp_artifact_set_required',
+  'stamp completion refuses the old two-file set without its QC certificate'
+);
+
+select ok(
+  public.complete_designpro_stage(
+    '36000000-0000-4000-8000-000000000006',
+    '38000000-0000-4000-8000-000000000003',
+    jsonb_build_object(
+      'workflowRunId','34000000-0000-4000-8000-000000000003',
+      'revisionId','33000000-0000-4000-8000-000000000003',
+      'enticePackId',(select entice_pack_id::text from public.designpro_workflow_runs where id='34000000-0000-4000-8000-000000000003'),
+      'dimensionManifestId','35000000-0000-4000-8000-000000000003',
+      'sourceContractHash',repeat('a',64),'manifestHash',repeat('b',64),
+      'artifactSetHash',repeat('c',64)
+    ),
+    jsonb_build_object(
+      'verified',true,'receiptKind','stamp','designId','DID-32000000',
+      'orderNumber','FP-2026-0001',
+      'verifiedBy',(select receipt->>'verifiedBy' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
+      'approvalRef',(select receipt->>'approvalRef' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
+      'approvedAt',(select receipt->>'approvedAt' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
+      'stampHash',repeat('1',64),'sealHash',repeat('2',64),
+      'sourceProofHash',repeat('3',64),'certificateHash',repeat('4',64)
+    ),repeat('1',64),
+    jsonb_build_array(
+      jsonb_build_object('kind','stamp','surfaceKey','seal','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/qc-approval-stamp.png','contentHash',repeat('2',64),'byteSize',100,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001')),
+      jsonb_build_object('kind','stamp','surfaceKey','stamped-proof','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/stamped-call8-proof.png','contentHash',repeat('1',64),'byteSize',200,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001','sourceProofHash',repeat('3',64))),
+      jsonb_build_object('kind','stamp','surfaceKey','certificate','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/qc-certificate.png','contentHash',repeat('4',64),'byteSize',300,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001'))
+    )
+  ),
+  'stamp completion accepts the exact runtime-produced three-file set'
+);
+select is(
+  (select count(*)::integer from public.designpro_artifacts
+   where run_id='34000000-0000-4000-8000-000000000003'
+     and artifact_kind='stamp'),3,
+  'all three stamp artifacts are persisted'
+);
+select is(
+  (select receipt->>'certificateHash' from public.designpro_stage_receipts
+   where run_id='34000000-0000-4000-8000-000000000003'
+     and receipt_kind='stamp'),repeat('4',64),
+  'the persisted stamp receipt binds the certificate hash'
+);
+select ok(
+  (select snapshot#>>'{fulfillment,state}'='unbound'
+     AND NOT (snapshot ?| ARRAY['orderNumber','delivery'])
+   from public.designpro_revision_sources
+   where revision_id='33000000-0000-4000-8000-000000000003'),
+  'stamp completion never rewrites the immutable design-first snapshot'
 );
 
 select * from finish();

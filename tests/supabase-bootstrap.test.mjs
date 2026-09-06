@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered eighty-eight-migration chain', () => {
-  assert.equal(migrationNames.length, 88);
+test('fresh bootstrap contains one ordered eighty-nine-migration chain', () => {
+  assert.equal(migrationNames.length, 89);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -81,8 +81,22 @@ test('fresh bootstrap contains one ordered eighty-eight-migration chain', () => 
       '20260831103000', '20260902120000',
       '20260906121000',
       '20260906132000',
+      '20260906143000',
     ],
   );
+});
+
+test('stamp completion resolves late fulfillment and requires the full three-file stamp set', async () => {
+  const stampCompletion = await readFile(
+    path.join(migrationDir, '20260906143000_designpro_stamp_certificate_and_late_fulfillment.sql'),
+    'utf8',
+  );
+  assert.match(stampCompletion, /designpro_private\.revision_fulfillment\(v_run\.revision_id\)/);
+  assert.match(stampCompletion, /v_run\.input->'fulfillment' IS DISTINCT FROM v_fulfillment/);
+  assert.match(stampCompletion, /jsonb_array_length\(COALESCE\(p_artifacts,'\[\]'::jsonb\)\) IS DISTINCT FROM 3/);
+  assert.match(stampCompletion, /'seal','stamped-proof','certificate'/);
+  assert.match(stampCompletion, /a->>'surfaceKey'='certificate'[\s\S]*p_receipt->>'certificateHash'/);
+  assert.match(stampCompletion, /q\.receipt#>>'\{qc,orderNumber\}'=v_order_number/);
 });
 
 test('PostgreSQL-incompatible and deprecated role helpers are absent', () => {
