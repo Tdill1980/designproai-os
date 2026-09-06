@@ -1,5 +1,5 @@
 begin;
-select plan(33);
+select plan(34);
 
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 
@@ -272,6 +272,11 @@ select matches(
   pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure),
   'placementKey',
   'Call 10 completion is placement-aware for repeated logo identity/hash'
+);
+select matches(
+  pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure),
+  'v_stage\.stage_key=''enhance\.upscale'' THEN[[:space:]]+v_kind:=''call12\.topaz-upscale''',
+  'Call 12 completion persists the receipt kind consumed by output.build'
 );
 select matches(
   pg_get_functiondef('public.approve_designpro_human_gate(uuid,text,uuid,text,jsonb)'::regprocedure),
