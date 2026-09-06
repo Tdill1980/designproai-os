@@ -73,16 +73,16 @@ test("ATLAS creative contract carries named design context and pure rectangular 
 
 test("ATLAS request exposes exact identity, placement and normalized topology but no inch dimensions", () => {
   const request = block(runtime, "function atlasEdgeRequestBody", "async function callAtlasArtboardEdge");
-  const panelBlock = block(request, "panels: manifest.zones.map", "fieldContract:");
+  const panelBlock = block(request, "panels: manifest.zones.map", "teachingProofStoragePath:");
   assert.match(panelBlock, /label:/);
   assert.match(panelBlock, /surfaceId:/);
   assert.match(panelBlock, /placement:/);
   assert.match(panelBlock, /normalized: normalizedZoneTopology\(zone, manifest\)/);
   assert.doesNotMatch(panelBlock, /widthInches:|heightInches:|topology:/);
   assert.match(request, /vehicleType:/);
-  assert.match(request, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.match(request, /noseEdge: NOSE_EDGE/);
-  assert.doesNotMatch(request, /teachingProofStoragePath:|teachingProofIdentity:|guideStoragePath:/);
+  assert.doesNotMatch(request, /fieldContract:|noseEdge:/);
+  assert.match(request, /teachingProofStoragePath: extras.teachingProofStoragePath/);
+  assert.match(request, /guideStoragePath: extras.guideStoragePath/);
   assert.doesNotMatch(request, /cohesionExample|correctiveNote/);
   assert.doesNotMatch(request, /referenceImagesBase64:[^\n]*teachingProof/);
 });

@@ -54,13 +54,13 @@ test("the teaching proof decodes as the exact 1254x1254 owner canvas", async () 
   assert.equal(info.format, "png");
 });
 
-test("the active field call records that no teaching sheet reached the model", () => {
-  assert.doesNotMatch(runtime, /loadBundledAtlasTeachingProof/);
-  assert.match(runtime, /atlasDesignTeachingExampleApplied: false/);
-  assert.match(runtime, /atlasDesignTeachingExampleIdentity: null/);
-  assert.match(runtime, /atlasFieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.match(runtime, /atlasFieldComposeContract: FIELD_COMPOSE_CONTRACT/);
-  assert.match(runtime, /composeAtlasFromField\(\{ fieldBytes: generated\.bytes, manifest \}\)/);
+test("Call 1 restores the pinned teaching proof and records its identity", () => {
+  assert.match(runtime, /loadBundledAtlasTeachingProof/);
+  assert.match(runtime, /teachingProofIdentity: teachingProof\.identity/);
+  assert.match(runtime, /atlasDesignTeachingExample: teachingProof\.identity/);
+  assert.match(runtime, /atlasDesignTeachingExampleApplied: true/);
+  assert.match(runtime, /atlasDesignTeachingExampleIdentity: teachingProof\.identity/);
+  assert.match(runtime, /atlasFieldContract: null/);
   assert.match(runtime, /topologyExamplesApplied: 0/);
   assert.doesNotMatch(runtime, /referenceImagesBase64:[^\n]*teachingProof/);
   assert.doesNotMatch(runtime, /loadBundledFlatToFinishedExample/,
@@ -69,7 +69,7 @@ test("the active field call records that no teaching sheet reached the model", (
     "the superseded unlabeled cohesion example must not reach Call 1");
 });
 
-test("the legacy edge branch still verifies its pinned teaching bytes", () => {
+test("edge verifies the teaching bytes, sends the target guide LAST, and no corrective note", () => {
   assert.match(edge, /ATLAS_TEACHING_PROOF_CONTRACT = "designpro\.atlas-labeled-teaching-proof\.v3"/);
   assert.match(edge, /atlas_artboard_input_hash_mismatch/);
   assert.match(edge, /atlas_artboard_input_size_mismatch/);
@@ -77,13 +77,12 @@ test("the legacy edge branch still verifies its pinned teaching bytes", () => {
   assert.match(edge, /modelRequestByteSize > ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES/);
 
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
-  const legacy = handler.slice(handler.indexOf("} else {", handler.indexOf("if (atlasField) {")));
   const promptPart = handler.indexOf("[{ text: prompt }]");
-  const teaching = legacy.indexOf("This example shows ONE cohesive vehicle-wrap design");
-  const customer = legacy.indexOf("for (const ref of references) pushImage(ref)", teaching);
+  const teaching = handler.indexOf("This example shows ONE cohesive vehicle-wrap design", promptPart);
+  const customer = handler.indexOf("for (const ref of references) pushImage(ref)", teaching);
   assert.ok(!handler.includes("atlasTopologyText(panels"), "no coordinate table reaches the model");
-  assert.ok(promptPart > 0 && teaching > 0 && teaching < customer,
-    "the legacy order remains teaching proof, customer references, guide last");
+  assert.ok(promptPart > 0 && promptPart < teaching && teaching < customer,
+    "input order is prompt, teaching proof, customer references, guide last");
   assert.match(edge, /teachingProofIdentity: verifiedTeachingProof/);
   assert.doesNotMatch(handler, /correctiveNote/);
   assert.match(handler, /CURRENT TARGET GUIDE/);
@@ -121,7 +120,7 @@ test("edge independently pins the exact owner teaching identity", () => {
   }
 });
 
-test("atlas-artboard is internal-only and only the legacy branch requires the teaching proof", () => {
+test("atlas-artboard is internal-only and requires the teaching proof without changing normal modes", () => {
   const atlasBranch = edge.indexOf('if (body?.mode === "atlas-artboard")');
   const internalOnly = edge.indexOf("if (!internalCaller.internal)", atlasBranch);
   const refusal = edge.indexOf('error: "atlas_artboard_internal_only"', internalOnly);
@@ -133,9 +132,6 @@ test("atlas-artboard is internal-only and only the legacy branch requires the te
   assert.match(edge.slice(atlasBranch, call), /status: 403/);
 
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
-  const fieldBranch = handler.slice(handler.indexOf("if (atlasField) {"), handler.indexOf("} else {", handler.indexOf("if (atlasField) {")));
-  assert.doesNotMatch(fieldBranch, /teachingProofPath|guideStoragePath|downloadPart/);
-  assert.match(fieldBranch, /for \(const ref of references\) pushImage\(ref\)/);
   assert.match(handler, /if \(!teachingProofPath\)/);
   assert.match(handler, /atlas_artboard_teaching_proof_incomplete/);
   assert.match(handler, /validateAtlasTeachingProofIdentity\(body\.teachingProofIdentity\)/);
@@ -154,7 +150,7 @@ test("the normalized [0,1] topology is mandatory, six-region, four-decimal and v
   assert.match(runtime, /toFixed\(4\)/);
 });
 
-test("every historical atlas-examples asset still ships in the release tree", () => {
+test("every bundled atlas-examples asset ships in the release tree", () => {
   // Canary run 33459887409 (2026-09-01): the droplet release omitted the
   // teaching proof because ops/release-files.txt never listed it, and every
   // generation died at flat_atlas_bundled_example_missing before any creative
@@ -164,7 +160,7 @@ test("every historical atlas-examples asset still ships in the release tree", ()
   const exampleSource = readFileSync(new URL("../runtime/flat-atlas-topology-examples.cjs", import.meta.url), "utf8");
   const bundled = [...exampleSource.matchAll(/join\(__dirname, "atlas-examples", "([^"]+)"\)/g)].map((m) => m[1]);
   assert.ok(bundled.includes("flamingo-labeled-atlas-teaching-proof.png"),
-    "the historical teaching proof remains available to the legacy harness");
+    "the mandatory teaching proof must be a bundled example");
   for (const file of bundled) {
     assert.ok(releaseFiles.includes(`runtime/atlas-examples/${file}`),
       `ops/release-files.txt must ship runtime/atlas-examples/${file}`);
