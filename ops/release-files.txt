@@ -53,7 +53,6 @@ runtime/designpanel-edge-provider.cjs
 runtime/atlas-master-qc.cjs
 runtime/atlas-cutout-fill.cjs
 runtime/atlas-artwork-compose.cjs
-runtime/atlas-field-compose.cjs
 runtime/atlas-passenger-mirror.cjs
 runtime/atlas-proof-qc.cjs
 runtime/generation-store.cjs
@@ -76,10 +75,11 @@ runtime/atlas-examples/houdini-finished-3d-proof.jpg
 # attached to active Call 1 since the 2026-09-01 owner boundary contract.
 runtime/atlas-examples/flamingo-installed-driver-proof.jpg
 runtime/atlas-examples/flamingo-rectangular-atlas.jpg
-# Historical owner-approved labeled Flamingo A.T.L.A.S. teaching proof
-# (exact owner bytes, SHA-256 684534d2…). It remains release-pinned for the
-# legacy harness and forensic reproduction; active field Call 1 does not send
-# it to the model.
+# THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
+# (exact owner bytes, SHA-256 684534d2…, owner boundary contract 2026-09-01).
+# Call 1 refuses to author without it, so a release that omits this file
+# fails every generation with flat_atlas_bundled_example_missing — which is
+# exactly what canary run 33459887409 measured when this line was absent.
 runtime/atlas-examples/flamingo-labeled-atlas-teaching-proof.png
 # The authoring boundary. The generation worker requires it to record the
 # canonical design master while Calls 1-7 run, so a release without it dies at
