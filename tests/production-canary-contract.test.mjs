@@ -177,6 +177,8 @@ test("the canary binds the exact operator-validated GENIE row prepared before Ca
 
 test("the canary can resume one accepted request without spending another Calls 1-7 provider call", () => {
   assert.match(workflow, /resume_request_id:/);
+  assert.match(workflow, /RESUME_REQUEST_ID='\$CANARY_RESUME_REQUEST_ID' bash -s/,
+    "the workflow must forward the resume identity into the remote shell");
   assert.match(workflow, /--resume-request-id "\$CANARY_RESUME_REQUEST_ID"/);
   assert.match(canary, /resuming accepted A\.T\.L\.A\.S\. request \$\{requestId\}; no provider call/);
   assert.match(canary, /resumable\.state !== "outputs_ready"/);
