@@ -67,11 +67,12 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
 const SERVICE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 const OUT = arg("out", "./canary-output");
 const ORDER_NUMBER = arg("order", `CANARY-${Date.now().toString(36).toUpperCase()}`);
+const RESUME_REQUEST_ID = String(arg("resume-request-id", "") || "").trim().toLowerCase();
 const VEHICLE = Object.freeze({
   type: arg("type", "truck"),
-  year: arg("year", "2020"),
+  year: arg("year", "2022"),
   make: arg("make", "Ford"),
-  model: arg("model", "F250 Crew Cab 6.5ft Box"),
+  model: arg("model", "F250 Crew Cab"),
 });
 const DESIGN_NAME = arg("design", "Precision Climate Solutions — A.T.L.A.S. graph canary");
 // A.T.L.A.S. authors from a brief, so the canary has to carry a real one. v3
@@ -111,6 +112,7 @@ const evidence = {
   customer: CUSTOMER_EMAIL,
   revisionId: null,
   generationId: null,
+  resumedRequestId: RESUME_REQUEST_ID || null,
   visualizationId: null,
   enticeRunId: null,
   enticePackId: null,
@@ -599,7 +601,7 @@ function assertLatencySlo() {
  * get_designpro_generation_request deliberately does not return it -- that is a
  * read; the revision itself is still saved by the operator's own JWT.
  */
-async function runCallsOneToSeven({ operator, operatorId, generationId }) {
+async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRequestId = "" }) {
   // THE CANARY RUNS A.T.L.A.S., BECAUSE THAT IS WHAT PRODUCTION RUNS.
   //
   // It used to submit `designpro.calls-1-7-input.v1` -- an obsolete replay
@@ -630,17 +632,45 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
     style: "modern commercial",
   };
 
-  step("creating a new A.T.L.A.S. Calls 1-7 generation request");
-  const created = await rpc(operator, "create_designpro_flat_first_generation_request", {
-    p_generation_id: generationId,
-    p_input: input,
-    // The v3 RPC recomputes its own key from the Postgres rendering of the
-    // input jsonb, which a client cannot reproduce byte for byte. It accepts
-    // NULL and derives the canonical key itself.
-    p_idempotency_key: null,
-  });
-  const requestId = String(created?.requestId || created?.id || "");
-  if (!requestId) throw new Error(`generation request was not created: ${JSON.stringify(created).slice(0, 300)}`);
+  let requestId = String(resumeRequestId || "").trim().toLowerCase();
+  if (requestId) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(requestId)) {
+      throw new Error("resume request id is not a UUID");
+    }
+    const { data: resumable, error: resumeError } = await service
+      .from("designpro_generation_requests")
+      .select("id,generation_id,owner_id,state,request_input")
+      .eq("id", requestId)
+      .maybeSingle();
+    if (resumeError || !resumable) {
+      throw new Error(`resume request ${requestId} was not found: ${resumeError?.message || "no row"}`);
+    }
+    if (String(resumable.generation_id || "").toLowerCase() !== generationId.toLowerCase()
+      || String(resumable.owner_id || "").toLowerCase() !== operatorId.toLowerCase()
+      || resumable.state !== "outputs_ready") {
+      throw new Error(`resume request ${requestId} is not this operator's completed GenerationID`);
+    }
+    const resumedVehicle = resumable.request_input?.vehicle || {};
+    const sameVehicle = ["type", "year", "make", "model"].every((field) =>
+      String(resumedVehicle[field] || "").trim().toLowerCase()
+        === String(VEHICLE[field] || "").trim().toLowerCase());
+    if (!sameVehicle) {
+      throw new Error(`resume request ${requestId} belongs to a different vehicle`);
+    }
+    step(`resuming accepted A.T.L.A.S. request ${requestId}; no provider call`);
+  } else {
+    step("creating a new A.T.L.A.S. Calls 1-7 generation request");
+    const created = await rpc(operator, "create_designpro_flat_first_generation_request", {
+      p_generation_id: generationId,
+      p_input: input,
+      // The v3 RPC recomputes its own key from the Postgres rendering of the
+      // input jsonb, which a client cannot reproduce byte for byte. It accepts
+      // NULL and derives the canonical key itself.
+      p_idempotency_key: null,
+    });
+    requestId = String(created?.requestId || created?.id || "");
+    if (!requestId) throw new Error(`generation request was not created: ${JSON.stringify(created).slice(0, 300)}`);
+  }
   evidence.generationRequestId = requestId;
   evidence.visualizationId = requestId;
   step(`request ${requestId}`);
@@ -710,8 +740,11 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   if (![1, 2].includes(imageRequestCount)) {
     throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; expected one accepted first attempt or one bounded refusal-only fallback`);
   }
-  if (atlasRow.metadata?.geometryAuthority?.source !== "genie-panelizer-catalog") {
-    throw new Error(`A.T.L.A.S. used non-current geometry authority: ${String(atlasRow.metadata?.geometryAuthority?.source || "missing")}`);
+  const geometryAuthority = atlasRow.metadata?.geometryAuthority || {};
+  if (geometryAuthority.operatorValidated !== true
+    || String(geometryAuthority.candidateId || "").toLowerCase()
+      !== String(evidence.geniePrep?.sourceRowId || "").toLowerCase()) {
+    throw new Error(`A.T.L.A.S. did not use the exact operator-validated GENIE row prepared before Call 1: ${JSON.stringify(geometryAuthority).slice(0, 300)}`);
   }
   const atlasPanelManifestHashes = new Set((atlasRow.metadata?.callOnePanels || [])
     .map((panel) => panel?.genieManifestHash).filter(Boolean));
@@ -864,7 +897,18 @@ async function main() {
   const { operator, operatorId } = await ensureOperatorAndCustomer();
   await assertCurrentGeniePrep();
 
-  const generationId = randomUUID();
+  let generationId = randomUUID();
+  if (RESUME_REQUEST_ID) {
+    const { data: resumable, error: resumeError } = await service
+      .from("designpro_generation_requests")
+      .select("generation_id")
+      .eq("id", RESUME_REQUEST_ID)
+      .maybeSingle();
+    if (resumeError || !resumable?.generation_id) {
+      throw new Error(`resume request ${RESUME_REQUEST_ID} has no GenerationID: ${resumeError?.message || "no row"}`);
+    }
+    generationId = String(resumable.generation_id).toLowerCase();
+  }
   const designId = `DID-${generationId.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
   evidence.generationId = generationId;
 
@@ -874,7 +918,7 @@ async function main() {
   // job enters this request. Calls 1-7 run through the current one-artifact
   // A.T.L.A.S. graph and record its canonical design as they author it.
   const { requestId, revisionId, renderAssets } = await runCallsOneToSeven({
-    operator, operatorId, generationId,
+    operator, operatorId, generationId, resumeRequestId: RESUME_REQUEST_ID,
   });
   evidence.revisionId = revisionId;
   evidence.renderAssets = renderAssets;
