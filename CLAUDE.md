@@ -7,9 +7,18 @@ copied unchanged from the verified trace supplied in this session (not 170909).
 The current request supersedes RULE 0.33's one-field product selection and the
 source document's historical stop-before-proofs instruction: restore the existing
 six-surface branch, preserve its prompt, and verify one fresh Arctic Air generation
-through seven proofs, Call 8, QC, Topaz, production ZIP and WrapBox before deployment.
-Do not use or merge PR #301; do not reconstruct, relocate, heal, or re-roll artwork.
+through seven proofs, Call 8, QC, Topaz, production ZIP and WrapBox.
+Do not use or merge PR #301; do not reconstruct, relocate, or heal artwork.
 Do not merge `claude/dca-phase-1-execution-47019t`.
+
+Measured production correction (2026-09-06): the last accepted six-surface run,
+generation `84a3eadf-bc81-4096-8dd0-a63509e84fb7`, made two bounded Call-1
+attempts. Raw candidate `c96603df-8b02-48cc-adca-41336f7316ab` was refused;
+43 seconds later candidate `05f04553-cdf6-4a2e-bf02-d5d1a3e1055e` became
+canonical master `1564c66d...` and reached seven proofs. Production therefore
+permits exactly one unchanged fallback only after a blocking master refusal.
+An accepted first candidate exits immediately, and a refused second candidate
+fails closed. Do not add corrective prompt text or a third attempt.
 
 Implementation corrections measured against the source document's proposed diff:
 - `atlasNoseEdgeInput` runs before branch selection and accepts only left/right;
