@@ -179,7 +179,8 @@ test("the canary can resume one accepted request without spending another Calls 
   assert.match(workflow, /resume_request_id:/);
   assert.match(workflow, /RESUME_REQUEST_ID='\$CANARY_RESUME_REQUEST_ID' bash -s/,
     "the workflow must forward the resume identity into the remote shell");
-  assert.match(workflow, /--resume-request-id "\$CANARY_RESUME_REQUEST_ID"/);
+  assert.match(workflow, /--resume-request-id "\$RESUME_REQUEST_ID"/,
+    "the remote command must consume the forwarded resume identity");
   assert.match(canary, /resuming accepted A\.T\.L\.A\.S\. request \$\{requestId\}; no provider call/);
   assert.match(canary, /resumable\.state !== "outputs_ready"/);
   assert.match(canary, /resumable\.owner_id/);
