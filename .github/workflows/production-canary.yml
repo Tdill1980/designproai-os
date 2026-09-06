@@ -126,7 +126,8 @@ jobs:
             "PAYLOAD='$payload' \
              EXPECTED_SHA='$EXPECTED_RELEASE_SHA' \
              YEAR='$CANARY_YEAR' MAKE='$CANARY_MAKE' MODEL='$CANARY_MODEL' \
-             VTYPE='$CANARY_TYPE' CEMAIL='$CANARY_EMAIL' bash -s" \
+             VTYPE='$CANARY_TYPE' CEMAIL='$CANARY_EMAIL' \
+             RESUME_REQUEST_ID='$CANARY_RESUME_REQUEST_ID' bash -s" \
             > "$RUNNER_TEMP/canary.log" 2>&1 <<'REMOTE'
           set -Eeuo pipefail
           release=/opt/designproai-os/current
