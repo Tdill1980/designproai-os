@@ -37,8 +37,8 @@ const {
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
-// Restore the existing six-surface authoring path; field territories remain harness-only.
-const { loadBundledAtlasTeachingProof } = require("./flat-atlas-topology-examples.cjs");
+const { NOSE_EDGE } = require("./atlas-field-territories.cjs");
+const { FIELD_COMPOSE_CONTRACT, composeAtlasFromField } = require("./atlas-field-compose.cjs");
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -62,9 +62,10 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260906.v26-rectangular-media";
-// Historical field contract retained for harness compatibility; the product
-// selects the unchanged six-surface branch by omitting this request key.
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260906.v27-field-compose";
+// The measured Field Recovery v2 creative request remains byte-for-byte the
+// authoring contract. Code, not Gemini, turns its three creative registers into
+// the six exact GENIE rectangles before canonical acceptance.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
@@ -1557,13 +1558,12 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       placement: zone.placement,
       normalized: normalizedZoneTopology(zone, manifest),
     })),
-    // Omitting fieldContract selects the unchanged deployed six-surface prompt.
-    // Do not send drawn nose edges: the edge validates only left/right even on
-    // this branch, where the field-only nose-edge value is not consumed.
-    // The manifest extraction rotations remain the orientation authority.
-    teachingProofStoragePath: extras.teachingProofStoragePath,
-    teachingProofIdentity: extras.teachingProofIdentity,
-    guideStoragePath: extras.guideStoragePath,
+    // The edge authors the proven three-register creative field and receives no
+    // six-surface guide or teaching sheet. `panels` stays server-side identity;
+    // the field branch validates it but never exposes its geometry to Gemini.
+    // The runtime maps the returned registers into the exact manifest zones.
+    fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+    noseEdge: NOSE_EDGE,
     referenceImagesBase64: extras.referenceImagesBase64,
   };
 }
@@ -2175,9 +2175,9 @@ async function generateOrReuseFlatAtlas(options) {
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
-  // The original GENIE six-surface manifest retains its canonical identity.
+  // The original GENIE six-surface manifest is the target geometry and retains
+  // its canonical identity. The model never sees or draws these rectangles.
   const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
-  const teachingProof = loadBundledAtlasTeachingProof();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
   if (geometryResolution) manifest.geometryResolution = geometryResolution;
@@ -2221,11 +2221,13 @@ async function generateOrReuseFlatAtlas(options) {
     `${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
     "utf8",
   ));
-  // Fence the restored teaching input and topology against one-field reuse.
+  // Fence a field-composed master against every historical prompt-drawn
+  // six-surface master. The compose contract is part of reuse identity because
+  // it decides which source register produces each canonical surface.
   const currentExampleSetHash = sha256(canonicalBytes({
-    atlasDesignTeachingExample: teachingProof.identity,
-    fieldContract: null,
-    territories: manifest.territoriesContract || null,
+    atlasDesignTeachingExample: null,
+    fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+    compositionContract: FIELD_COMPOSE_CONTRACT,
     topology: manifest.topology,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
@@ -2264,44 +2266,20 @@ async function generateOrReuseFlatAtlas(options) {
   const revisionSequence = 1;
   const manifestBytes = canonicalBytes(manifest);
   const manifestHash = sha256(manifestBytes);
-  // TWO RENDERS OF ONE GEOMETRY, SPLIT BY CONSUMER.
-  //
-  // `guideBytes` is the labelled installer map: it is what enters storage, what
-  // the design team reads, and what the QC inspector compares the master
-  // against -- so `artifactFreeContract` still has annotations to look for.
-  // `authoringGuideBytes` is the same six rectangles as a neutral, unlabelled,
-  // unstroked mask, and it is the one the authoring model is shown, LAST.
-  //
-  // `7ee1f868` stopped rendering it and made a normalized [0,1] coordinate
-  // table the model's geometry authority instead. 083d2a70 (edge v14) is the
-  // last run that reached print panels 6/6 and it had this mask as its final
-  // image; nothing since has matched it. Surface identity still travels in the
-  // schema-bound panel list, and the normalized topology stays on the request
-  // as OS data that never reaches the model.
-  // The labelled installer map is for humans; the neutral authoring mask
-  // is separately staged below for the existing edge branch.
+  // The labelled guide is a human installer map only. It is persisted beside
+  // the canonical master and never conditions the creative model.
   const guideBytes = await renderAtlasGuide(manifest);
   const guideHash = sha256(guideBytes);
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
-  // Restore the two hash-addressed inputs required by the deployed branch.
-  const teachingBytes = Buffer.from(teachingProof.flattenedTopView.bytes);
-  const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
-  const teachingInputPath = `atlas-call1-inputs/${sha256(teachingBytes)}.png`;
-  const guideInputPath = `atlas-call1-inputs/${sha256(authoringGuideBytes)}.png`;
-  await Promise.all([
-    store.putImmutableBytes({ storagePath: teachingInputPath, bytes: teachingBytes, contentType: "image/png" }),
-    store.putImmutableBytes({ storagePath: guideInputPath, bytes: authoringGuideBytes, contentType: "image/png" }),
-  ]);
+  // Verified customer-owned imagery is the only image input. Structural
+  // examples and neutral masks are deliberately absent from the field call.
   const customerImageParts = [
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
   const edgeExtras = {
-    teachingProofStoragePath: teachingInputPath,
-    teachingProofIdentity: teachingProof.identity,
-    guideStoragePath: guideInputPath,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
@@ -2319,6 +2297,7 @@ async function generateOrReuseFlatAtlas(options) {
   let masterRequestByteSize = 0;
   let masterAuthoringAttempts = 0;
   let masterDelivery = null;
+  let masterComposition = null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
   // The pixel measurements that actually decided acceptance, kept for the row.
@@ -2367,10 +2346,15 @@ async function generateOrReuseFlatAtlas(options) {
     timings.authoringMs += Date.now() - authoringStartedAt;
     edgeProvenance.push(generated.provenance);
     const normalizeStartedAt = Date.now();
-    const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
+    const composed = await composeAtlasFromField({ fieldBytes: generated.bytes, manifest });
     timings.normalizeMs += Date.now() - normalizeStartedAt;
-    masterBytes = normalized.bytes;
-    masterDelivery = normalized;
+    masterBytes = composed.bytes;
+    masterComposition = composed;
+    masterDelivery = {
+      deliveredWidthPx: composed.source.width,
+      deliveredHeightPx: composed.source.height,
+      nativelyFourK: composed.source.width >= CANVAS.widthPx && composed.source.height >= CANVAS.heightPx,
+    };
     masterHash = sha256(masterBytes);
 
     const deterministicStartedAt = Date.now();
@@ -2850,15 +2834,20 @@ async function generateOrReuseFlatAtlas(options) {
       topologyExamplesApplied: 0,
       topologyExampleIdentity: null,
       topologyExampleIdentities: [],
-      atlasDesignTeachingExampleApplied: true,
-      atlasDesignTeachingExampleIdentity: teachingProof.identity,
+      atlasDesignTeachingExampleApplied: false,
+      atlasDesignTeachingExampleIdentity: null,
       atlasDesignTeachingExampleSetHash: currentExampleSetHash,
-      // Restored six-surface authoring has no one-field contract or layout.
-      atlasFieldContract: null,
-      // Same rename, same value: this forensic field records the LAYOUT the six
-      // panels were cut from, not the manifest identity.
-      territoriesContract: manifest.territoriesContract || null,
-      fieldLayout: manifest.fieldLayout || null,
+      atlasFieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+      atlasFieldComposeContract: FIELD_COMPOSE_CONTRACT,
+      atlasFieldComposeMappings: masterComposition?.mappings || [],
+      atlasFieldSource: masterComposition ? {
+        contentHash: generated?.provenance?.masterSha256 || null,
+        widthPx: masterComposition.source.width,
+        heightPx: masterComposition.source.height,
+        byteSize: masterComposition.source.byteSize,
+      } : null,
+      territoriesContract: null,
+      fieldLayout: null,
       designPanelArtboardQualityExamplesApplied: 0,
       designPanelArtboardQualityExampleIdentities: [],
       designPanelArtboardPortVersion: DESIGNPANEL_ARTBOARD_PORT_VERSION,
