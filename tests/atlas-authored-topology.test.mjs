@@ -48,7 +48,7 @@ test('one authored topology preserves all six distinct source regions through pe
     input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
     generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
     tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',
-    maxAuthoringAttempts:1,provider:{},
+    maxAuthoringAttempts:2,provider:{},
     supabase:{from(){return query},async rpc(){return {data:true,error:null}}},
     store:{async putImmutableBytes(row){stored.set(row.storagePath,row.bytes);return {storagePath:row.storagePath,contentHash:sha(row.bytes),byteSize:row.bytes.length}}},
     callEdge:async body=>{
@@ -92,7 +92,9 @@ test('six-surface transport rejects field-mode, missing teaching identity and mi
     masterStoragePath:'fixture.png',masterSha256:sha(bytes)};
   const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},
     fetchImpl:async()=>({ok:true,status:200,json:async()=>reply})};
-  assert.equal(sha((await atlas._test.callAtlasArtboardEdge(body,transport)).bytes),sha(bytes));
+  const downloaded=await atlas._test.callAtlasArtboardEdge(body,transport);
+  assert.equal(sha(downloaded.bytes),sha(bytes));
+  assert.equal(downloaded.provenance.masterStoragePath,reply.masterStoragePath);
   assert.equal(downloads,1);
   for(const override of [{fieldContract:'designpro.atlas-field-prompt.v2'}, {teachingProofIdentity:null},
     {modelInputImageCount:0},{promptVersion:'stale'},
@@ -104,4 +106,90 @@ test('six-surface transport rejects field-mode, missing teaching identity and mi
   await assert.rejects(atlas._test.callAtlasArtboardEdge({...body,guideStoragePath:undefined},transport),
     error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
   assert.equal(downloads,1,'invalid responses must fail before master download');
+});
+
+// Exercise the actual acceptance loop. A cutout classification is a refusal
+// under the restored no-heal contract, and must consume the same bounded
+// fallback as any other refused candidate. This fixture isolates control flow;
+// it does not stand in for the inaccessible 3b9b3209 production artwork.
+async function cutoutLoopFixtures() {
+  const manifest=atlas.buildAtlasManifest(surfaces,undefined,'truck');
+  const layers=await Promise.all(manifest.zones.map(async z=>({
+    input:await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${z.w}" height="${z.h}">
+      <defs><linearGradient id="g"><stop stop-color="#227daa"/><stop offset="1" stop-color="#f9b85a"/></linearGradient></defs>
+      <rect width="100%" height="100%" fill="url(#g)"/>
+    </svg>`)).png().toBuffer(),left:z.x,top:z.y,
+  })));
+  const clean=await sharp({create:{width:4096,height:4096,channels:4,background:{r:0,g:0,b:0,alpha:0}}})
+    .composite(layers).png().toBuffer();
+  const hood=manifest.zones.find(z=>z.surfaceKey==='hood');
+  const hole=await sharp(clean).composite([{
+    input:await sharp({create:{width:Math.round(hood.w*.25),height:Math.round(hood.h*.25),
+      channels:3,background:'#000000'}}).png().toBuffer(),
+    left:hood.x+Math.round(hood.w*.4),top:hood.y+Math.round(hood.h*.4),
+  }]).png().toBuffer();
+  const qc=require('../runtime/atlas-master-qc.cjs');
+  const checks=await qc.deterministicMasterChecks(hole,manifest);
+  assert.deepEqual(checks.blockingFailures,[],'isolate a cutout-only refusal');
+  assert.deepEqual([...new Set(checks.cutoutFindings.map(x=>x.surfaceKey))],['hood']);
+  assert.equal((await qc.deterministicMasterChecks(clean,manifest)).accepted,true);
+  return {clean,hole};
+}
+
+function runCutoutLoop(candidates) {
+  const requests=[],stored=new Map();let inserted=null;let publications=0;
+  const query={select(){return this},eq(){return this},order(){return this},limit(){return this},
+    async maybeSingle(){return {data:null,error:null}},
+    insert(row){inserted=row;return this},async single(){return {data:inserted,error:null}}};
+  const paths=candidates.map((_,i)=>`atlas-call1/55555555-5555-4555-8555-55555555555${i}.png`);
+  const done=atlas.generateOrReuseFlatAtlas({
+    input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
+    generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
+    tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',
+    maxAuthoringAttempts:2,provider:{},
+    supabase:{from(){return query},async rpc(){return {data:true,error:null}}},
+    store:{async putImmutableBytes(row){stored.set(row.storagePath,row.bytes);return {storagePath:row.storagePath,contentHash:sha(row.bytes),byteSize:row.bytes.length}}},
+    onMasterReady(){publications++},
+    callEdge:async body=>{
+      const index=requests.length;requests.push(body);
+      assert.ok(index<candidates.length,'must not make a third authoring request');
+      return {bytes:candidates[index],provenance:{imageRequestCount:1,
+        masterStoragePath:paths[index],masterSha256:sha(candidates[index])}};
+    },
+  });
+  return {done,requests,stored,paths,get inserted(){return inserted},get publications(){return publications}};
+}
+
+test('cutout-only first candidate uses the unchanged fallback and publishes only a clean master',async()=>{
+  const {clean,hole}=await cutoutLoopFixtures();
+  const run=runCutoutLoop([hole,clean]);
+  const result=await run.done;
+  assert.equal(run.requests.length,2);
+  assert.deepEqual(run.requests[1],run.requests[0],'the fallback cannot rewrite the brief or prompt');
+  assert.equal(run.publications,1);
+  assert.equal(result.metadata.masterAuthoringAttempts,2);
+  const actual=await sharp(run.stored.get(run.inserted.master_storage_path)).ensureAlpha().raw().toBuffer();
+  const expected=await sharp(clean).ensureAlpha().raw().toBuffer();
+  assert.equal(sha(actual),sha(expected),'accepted artwork must be the clean authored candidate, with no healing');
+  assert.equal(run.inserted.metadata.callOnePanels.length,6);
+});
+
+test('two cutout candidates fail closed with retrievable paths and the measured surface finding',async()=>{
+  const {hole}=await cutoutLoopFixtures();
+  const run=runCutoutLoop([hole,hole]);
+  await assert.rejects(run.done,error=>{
+    assert.equal(error.code,'flat_atlas_unrepaired_cutout');
+    assert.equal(error.retryable,false,'the worker must not restart the provider budget');
+    assert.match(error.message,/hood/);
+    assert.match(error.message,/largestCutoutComponentRatio=/);
+    assert.ok(error.message.length<=1000,'the worker persists at most 1000 characters');
+    for(const path of run.paths) assert.ok(error.message.includes(path));
+    assert.ok(error.message.includes(sha(hole)),'retain the raw-byte identity, never a signed URL');
+    return true;
+  });
+  assert.equal(run.requests.length,2,'a cutout refusal must use exactly the existing two-attempt budget');
+  assert.deepEqual(run.requests[1],run.requests[0]);
+  assert.equal(run.inserted,null,'refused artwork cannot become an atlas revision');
+  assert.equal(run.publications,0,'refused artwork cannot start proofs');
+  assert.equal([...run.stored.keys()].some(path=>path.includes('/master/')||path.includes('/panels/')),false);
 });
