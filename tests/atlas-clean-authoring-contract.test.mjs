@@ -118,8 +118,8 @@ test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", 
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260902\.v24-one-field"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260902\.v24-one-field"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260906\.v25-rectangular-media"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260906\.v25-rectangular-media"/);
   assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
 });
