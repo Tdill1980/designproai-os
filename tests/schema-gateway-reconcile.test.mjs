@@ -17,7 +17,7 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-71), [
+  assert.deepEqual(names.slice(-72), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -228,6 +228,9 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // Final QC resolves the same append-only late-fulfillment binding the
     // production runtime froze, without rewriting the design-first snapshot.
     "20260906132000_designpro_final_qc_resolves_late_fulfillment.sql",
+    // Stamp completion reads the same late binding and persists all three
+    // runtime-produced files, including the QC certificate ZIP requires.
+    "20260906143000_designpro_stamp_certificate_and_late_fulfillment.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

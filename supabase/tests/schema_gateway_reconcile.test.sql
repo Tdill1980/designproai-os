@@ -289,11 +289,13 @@ select matches(
   'final QC receipt binds canonical DesignID and business Order #'
 );
 select ok(
-  position('jsonb_array_length(COALESCE(p_artifacts,''[]''::jsonb)) IS DISTINCT FROM 2'
+  position('jsonb_array_length(COALESCE(p_artifacts,''[]''::jsonb)) IS DISTINCT FROM 3'
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
-  AND position('exact_seal_and_stamped_proof_identity_required'
+  AND position('exact_stamp_artifact_set_required'
+    in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
+  AND position('certificateHash'
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0,
-  'one generic stamp artifact is rejected; exact seal plus stamped proof are required'
+  'stamp completion requires the exact seal, stamped proof and QC certificate set'
 );
 select ok(
   (select count(*)=2 from pg_attribute

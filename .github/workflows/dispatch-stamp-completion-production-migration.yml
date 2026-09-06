@@ -1,0 +1,49 @@
+name: Dispatch protected stamp completion production migration
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: dispatch-stamp-completion-production-migration
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: contains(github.event.head_commit.message, '[dispatch-stamp-completion-production-migration]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Prove the one-time dispatch target
+        env:
+          EXPECTED_PARENT_SHA: 1d87374bd940568568cf931b25134f8025749ccf
+          EXPECTED_MIGRATION_SHA256: 9ca5833cc98369fb4ce78dc7a361ac0c27ece24589fe617a03bdc50258b0ec2f
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
+          test "$(sha256sum supabase/migrations/20260906143000_designpro_stamp_certificate_and_late_fulfillment.sql | awk '{print $1}')" = "$EXPECTED_MIGRATION_SHA256"
+      - name: Invoke the existing protected release gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          jq -n '{
+            ref: "main",
+            inputs: {
+              production_migration: "APPLY_DESIGNPRO_PRODUCTION"
+            }
+          }' > "$RUNNER_TEMP/dispatch.json"
+          gh api \
+            --method POST \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/dispatches" \
+            --input "$RUNNER_TEMP/dispatch.json"
