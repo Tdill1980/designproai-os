@@ -83,7 +83,7 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   for (const module of [
     "designiq-prompt.cjs",          // A.C.E. / DesignIQ creative intelligence
     "flat-first-atlas.cjs",         // A.T.L.A.S. authoring
-    "atlas-field-compose.cjs",     // code-owned six-surface composition
+    "flat-atlas-topology-examples.cjs", // the release-pinned teaching input
     "atlas-master-qc.cjs",          // master QC
     "atlas-cutout-fill.cjs",
     "atlas-proof-qc.cjs",           // proof QC
@@ -106,7 +106,7 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
     assert.ok(loaded.has(module), `runtime/index.js must load ${module}`);
   }
   assert.match(atlas, /const manifest = buildAtlasManifest\(surfaces, geometryAuthority/);
-  assert.match(atlas, /composeAtlasFromField\(\{ fieldBytes: generated\.bytes, manifest \}\)/);
+  assert.match(atlas, /loadBundledAtlasTeachingProof/);
 
   // request → worker: the pipeline is chosen from the request's own contract,
   // not from an environment variable or a deploy-wide flag.
