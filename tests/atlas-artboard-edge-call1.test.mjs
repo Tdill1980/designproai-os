@@ -129,9 +129,10 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.equal(runtimeVersion[1], edge[1]);
 });
 
-test("field composition: the model receives prompt and customer references while GENIE owns all six rectangles", () => {
-  // The proven three-register creative field contains no production geometry.
-  // Runtime maps it into the original GENIE manifest before acceptance.
+test("Six-surface restoration sends the pinned teaching proof and target guide without a coordinate table", () => {
+  // Owner ruling 2026-09-02 ("UNFREEZE GET ME A WORKING OS"): Gemini authors
+  // ONE uninterrupted full-bleed composition and is shown NO production
+  // topology. GENIE/runtime owns the six territories as code.
   assert.ok(!handler.includes("body.structuralReferenceStoragePath"));
   assert.ok(!handler.includes("body.structuralPairedProofStoragePath"));
   assert.ok(!handler.includes("body.structuralReferenceBase64"));
@@ -143,22 +144,22 @@ test("field composition: the model receives prompt and customer references while
   assert.ok(!liveAuthoring.includes("topologyExampleParts("));
   assert.ok(!liveAuthoring.includes("structuralReferenceStoragePath"));
   assert.ok(!liveAuthoring.includes("structuralPairedProofStoragePath"));
-  assert.doesNotMatch(runtimeSource, /loadBundledAtlasTeachingProof/);
-  assert.doesNotMatch(liveAuthoring, /teachingProofStoragePath|teachingProofIdentity/);
-  assert.doesNotMatch(liveAuthoring, /renderAtlasAuthoringGuide\(manifest\)/);
-  assert.doesNotMatch(liveAuthoring, /guideStoragePath: guideInputPath/);
+  assert.match(runtimeSource, /loadBundledAtlasTeachingProof/);
+  assert.match(liveAuthoring, /teachingProofStoragePath: teachingInputPath/);
+  assert.match(liveAuthoring, /renderAtlasAuthoringGuide\(manifest\)/);
+  assert.match(liveAuthoring, /guideStoragePath: guideInputPath/);
   assert.match(liveAuthoring, /renderAtlasGuide\(manifest\)/);
   assert.match(liveAuthoring, /const manifest = buildAtlasManifest\(surfaces, geometryAuthority/);
   assert.doesNotMatch(liveAuthoring, /buildFieldTerritories\(/);
-  assert.match(liveAuthoring, /composeAtlasFromField\(\{ fieldBytes: generated\.bytes, manifest \}\)/);
 
   const requestBody = runtimeSource.slice(
     runtimeSource.indexOf("function atlasEdgeRequestBody("),
     runtimeSource.indexOf("function normalizedZoneTopology("),
   );
-  assert.match(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.match(requestBody, /noseEdge: NOSE_EDGE/);
-  assert.doesNotMatch(requestBody, /teachingProofStoragePath|teachingProofIdentity|guideStoragePath/);
+  assert.doesNotMatch(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
+  assert.doesNotMatch(requestBody, /noseEdge:/);
+  assert.match(requestBody, /teachingProofStoragePath: extras.teachingProofStoragePath/);
+  assert.match(requestBody, /guideStoragePath: extras.guideStoragePath/);
 
   // The edge's field branch: prompt, then verified customer references, then
   // the single image request. The legacy six-container branch survives only
