@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { Readable } from "node:stream";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -118,7 +119,7 @@ class FakeQuery {
   then(resolve, reject) { return Promise.resolve({ data: this.matches(), error: null }).then(resolve, reject); }
 }
 
-function publicationFixture({ tamperDeliveredZip = false, lateFulfillment = false } = {}) {
+function publicationFixture({ tamperDeliveredZip = false, lateFulfillment = false, streamDownloads = false } = {}) {
   const sourceZip = Buffer.from("approved exact production ZIP");
   const deliveredZip = tamperDeliveredZip ? Buffer.from("tampered production ZIP") : sourceZip;
   const zipHash = sha(sourceZip);
@@ -221,12 +222,27 @@ function publicationFixture({ tamperDeliveredZip = false, lateFulfillment = fals
     [manifestPath, manifestBytes],
   ]);
   const rpcCalls = [];
+  const streamedPaths = [];
   const supabase = {
     from(table) { return new FakeQuery(tableRows[table] || []); },
     storage: {
       from(bucket) {
         assert.equal(bucket, closure.BUCKET);
-        return { async download(path) { return objects.has(path) ? { data: objects.get(path), error: null } : { data: null, error: { message: "missing" } }; } };
+        return {
+          download(path) {
+            if (!objects.has(path)) return Promise.resolve({ data: null, error: { message: "missing" } });
+            const bytes = objects.get(path);
+            if (!streamDownloads || !path.endsWith(".zip")) return Promise.resolve({ data: bytes, error: null });
+            return {
+              asStream() {
+                streamedPaths.push(path);
+                const split = Math.max(1, Math.floor(bytes.length / 2));
+                return Promise.resolve({ data: Readable.from([bytes.subarray(0, split), bytes.subarray(split)]), error: null });
+              },
+              then() { throw new Error("ZIP download was buffered instead of streamed"); },
+            };
+          },
+        };
       },
     },
     async rpc(name, args) {
@@ -234,7 +250,7 @@ function publicationFixture({ tamperDeliveredZip = false, lateFulfillment = fals
       return { data: { packId: ids.pack, customerId: ids.customer }, error: null };
     },
   };
-  return { supabase, rpcCalls, zipHash, manifestHash, logos };
+  return { supabase, rpcCalls, zipHash, manifestHash, logos, streamedPaths };
 }
 
 test("publisher verifies both ZIP copies, manifest, customer, and repeated logo placements before commit", async () => {
@@ -267,6 +283,15 @@ test("publisher resolves the exact post-purchase fulfillment binding for A.T.L.A
   assert.equal(result.packId, ids.pack);
   assert.equal(fixture.rpcCalls.length, 1);
   assert.equal(fixture.rpcCalls[0].name, "commit_designpro_wrapbox_pack");
+});
+
+test("publisher hashes both ZIP copies as streams without taking the Blob path", async () => {
+  const fixture = publicationFixture({ lateFulfillment: true, streamDownloads: true });
+  const result = await closure.publishCompletedWrapboxDelivery({ supabase: fixture.supabase, runId: ids.run });
+  assert.equal(result.packId, ids.pack);
+  assert.equal(fixture.rpcCalls.length, 1);
+  assert.equal(fixture.streamedPaths.length, 2);
+  assert.ok(fixture.streamedPaths.every((path) => path.endsWith("production-pack.zip")));
 });
 
 test("notification requires provider idempotency and completes the exact leased row", async () => {
