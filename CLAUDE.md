@@ -6,8 +6,8 @@ The owner's complete source document is `docs/ATLAS-RESTORATION-WORKING-MODEL.md
 copied unchanged from the verified trace supplied in this session (not 170909).
 The current request supersedes RULE 0.33's one-field product selection and the
 source document's historical stop-before-proofs instruction: restore the existing
-six-surface branch, preserve its prompt, and verify one fresh Arctic Air generation
-through seven proofs, Call 8, QC, Topaz, production ZIP and WrapBox.
+six-surface branch and verify one fresh generation through seven proofs, Call 8,
+QC, Topaz, production ZIP and WrapBox.
 Do not use or merge PR #301; do not reconstruct, relocate, or heal artwork.
 Do not merge `claude/dca-phase-1-execution-47019t`.
 
@@ -18,15 +18,26 @@ attempts. Raw candidate `c96603df-8b02-48cc-adca-41336f7316ab` was refused;
 canonical master `1564c66d...` and reached seven proofs. Production therefore
 permits exactly one unchanged fallback only after a blocking master refusal.
 An accepted first candidate exits immediately, and a refused second candidate
-fails closed. Do not add corrective prompt text or a third attempt.
+fails closed. Do not add retry-specific corrective text or a third attempt.
+
+Measured production correction (2026-09-06, canary `34021490632`): four raw
+returns from the restored six-surface prompt were inspected. All four drew
+vehicle anatomy into the print sheet (wheel arches, doors, hood/tailgate body
+shapes, and in one return literal panel labels); the blocking output-class and
+full-bleed gates correctly refused them. The static Call-1 output contract now
+states the already-governing RULE 0.32 directly at the final target guide: six
+plain rectangular printed-media regions only, stated as positive output geometry
+without repeating the anatomy vocabulary that earlier tests proved can leak.
+This is a prompt correction for a measured failure, not
+a repair pass, alternate pipeline, relaxed gate, or retry-specific prompt.
 
 Implementation corrections measured against the source document's proposed diff:
 - `atlasNoseEdgeInput` runs before branch selection and accepts only left/right;
   the proposed helper returns top (its inverse mapping is reversed), and even the
   intended bottom is rejected. Omit this unused field on the six-surface branch;
   keep the existing manifest and extraction rotations unchanged.
-- The deployed edge version string stays unchanged because no edge bytes change;
-  only the runtime authoring reuse version advances to the source's v25 value.
+- Runtime and edge prompt versions advance together when the rectangular-media
+  rule changes; stale masters cannot be reused across that creative contract.
 - PR #300 already preserved `MANIFEST_CONTRACT`; retain that correction.
 
 This header is implementation context, not a live acceptance or deployment receipt.
