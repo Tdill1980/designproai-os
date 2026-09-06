@@ -26,7 +26,7 @@ jobs:
       - name: Prove the one-time dispatch target
         env:
           EXPECTED_PARENT_SHA: 1d87374bd940568568cf931b25134f8025749ccf
-          EXPECTED_MIGRATION_SHA256: 82bc7b829f7198a27aae9dc237d4d06a11e6e26eacc8e55f0d7faa1c41f38650
+          EXPECTED_MIGRATION_SHA256: 9ca5833cc98369fb4ce78dc7a361ac0c27ece24589fe617a03bdc50258b0ec2f
         run: |
           set -Eeuo pipefail
           test "$GITHUB_REF" = refs/heads/main

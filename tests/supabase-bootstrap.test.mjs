@@ -92,6 +92,10 @@ test('stamp completion resolves late fulfillment and requires the full three-fil
     'utf8',
   );
   assert.match(stampCompletion, /designpro_private\.revision_fulfillment\(v_run\.revision_id\)/);
+  assert.match(stampCompletion, /pg_catalog\.pg_get_functiondef/);
+  assert.doesNotMatch(stampCompletion, /CREATE OR REPLACE FUNCTION public\.complete_designpro_stage/);
+  assert.match(stampCompletion, /call9_atlas_panel_promotion_contract_failed/);
+  assert.match(stampCompletion, /call12\.topaz-upscale/);
   assert.match(stampCompletion, /v_run\.input->'fulfillment' IS DISTINCT FROM v_fulfillment/);
   assert.match(stampCompletion, /jsonb_array_length\(COALESCE\(p_artifacts,'\[\]'::jsonb\)\) IS DISTINCT FROM 3/);
   assert.match(stampCompletion, /'seal','stamped-proof','certificate'/);

@@ -6,7 +6,10 @@ const sql = readFileSync(new URL(
   import.meta.url,
 ), "utf8");
 
-assert.match(sql, /CREATE OR REPLACE FUNCTION public\.complete_designpro_stage/);
+assert.match(sql, /pg_catalog\.pg_get_functiondef/);
+assert.doesNotMatch(sql, /CREATE OR REPLACE FUNCTION public\.complete_designpro_stage/);
+assert.match(sql, /call9_atlas_panel_promotion_contract_failed/);
+assert.match(sql, /call12\.topaz-upscale/);
 assert.match(sql, /v_fulfillment:=designpro_private\.revision_fulfillment\(v_run\.revision_id\)/);
 assert.match(sql, /v_run\.input->'fulfillment' IS DISTINCT FROM v_fulfillment/);
 assert.match(sql, /jsonb_array_length\(COALESCE\(p_artifacts,'\[\]'::jsonb\)\) IS DISTINCT FROM 3/);
