@@ -50,6 +50,8 @@ test("released claimant archives the seal, the stamped proof and the QC certific
   assert.match(claimantSource, /qc-certificate\.png/);
   assert.match(claimantSource, /buildQcCertificatePng\(/);
   assert.match(claimantSource, /\[seal, stamped, certificate\]/);
+  assert.match(claimantSource, /const approvedAt = requiredString\(finalQc\.receipt\?\.approvedAt[\s\S]*?approvalRef, approvedAt, stampHash:/);
+  assert.doesNotMatch(claimantSource, /approvalRef, approvedAt: approvalDate\.toISOString\(\), stampHash:/);
   assert.match(claimantSource, /counts\.stamp !== 3/);
   assert.match(claimantSource, /identity\/design-order\.json/);
   // Seven when the Production Pack was bought -- they are its design proofs.
