@@ -1698,6 +1698,7 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       teachingProofIdentity: payload.teachingProofIdentity || null,
       fieldContract: payload.fieldContract || null,
       topologyContract: payload.topologyContract || null,
+      masterStoragePath: masterPath,
       masterSha256: digest,
       designText: String(payload.designText || ""),
     },
@@ -2409,15 +2410,10 @@ async function generateOrReuseFlatAtlas(options) {
     // Passenger look structurally "better" than the actual accepted design.
     // No semantic call or image rewrite occurs here.
 
-    // ── REPAIR 2: A CUT-OUT IS FILLED, NEVER RE-ROLLED FOR ────────────────
-    //
-    // RULE 0.15 / the 2026-08-24 owner ruling: re-rolling for a hole costs ~60s
-    // and buys nothing, because `atlas-cutout-fill` closes it in ~100ms by
-    // growing the surrounding livery inward. The surfaces that arrived holed
-    // are still recorded so PanelPro's human QC sees them flagged.
-    //
-    // The fill itself is applied once, below, to the SURFACE SOURCE duplicate --
-    // the authored master is never mutated. This only classifies.
+    // The restored six-surface contract forbids healing. A classified cutout
+    // therefore refuses this candidate inside the existing bounded loop.
+    // A first-attempt cutout previously skipped the unchanged fallback. Terminal
+    // cutout errors also discarded surface findings (3b9b3209, 2026-09-06).
     masterCutoutSurfaces = cutoutSurfacesOf(deterministic);
     masterCutoutFindings = (deterministic.cutoutFindings || []).map((item) => String(item.finding));
 
@@ -2436,6 +2432,12 @@ async function generateOrReuseFlatAtlas(options) {
     // this refusal set.
     const stillBlocking = [...(deterministic.blockingFailures || [])];
     let refusalCode = "flat_atlas_master_deterministic_failed";
+    if (masterCutoutSurfaces.length) {
+      if (!stillBlocking.length) refusalCode = "flat_atlas_unrepaired_cutout";
+      stillBlocking.unshift(
+        `unrepaired cutouts on ${masterCutoutSurfaces.join(", ")}: ${masterCutoutFindings.join("; ")}`,
+      );
+    }
     if (!stillBlocking.length) {
       outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes });
       if (outputClassReceipt.blocking) {
@@ -2449,10 +2451,20 @@ async function generateOrReuseFlatAtlas(options) {
     if (!stillBlocking.length) {
       break;
     }
+    // The worker persists only the code and the first 1000 message characters.
+    // Retain exact raw identities before the findings so a refused master can
+    // be retrieved without guessing from Storage timestamps. Never persist a
+    // signed URL, token, or a false canonical-master receipt.
+    const rawCandidates = edgeProvenance
+      .filter((item) => item?.masterStoragePath && HASH_RE.test(String(item.masterSha256 || "")))
+      .map((item) => `${item.masterStoragePath} sha256=${item.masterSha256}`)
+      .join(", ");
     if (attempt === maxAuthoringAttempts) {
       throw new FlatAtlasError(
         refusalCode,
-        `The flattened A.T.L.A.S. design call failed acceptance ${attempt} times: ${refusalReason.slice(0, 700)}`,
+        (`The flattened A.T.L.A.S. design call failed acceptance ${attempt} times. `
+          + (rawCandidates ? `Raw candidates: ${rawCandidates}. ` : "")
+          + refusalReason).slice(0, 1000),
       );
     }
     // No corrective-note text is carried into the next attempt (owner boundary
