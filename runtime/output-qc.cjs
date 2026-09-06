@@ -18,6 +18,7 @@ const MAX_EPS_RAW_BYTES = 1_000_000_000;
 const MAX_EPS_COMPRESSED_BYTES = 1_001_000_000;
 const MAX_EPS_ENCODED_BYTES = 1_500_000_000;
 const ASCII85_LINE_WIDTH = 100;
+const RASTER_DECODE_PROBE_MAX_EDGE = 2048;
 
 class OutputVerificationError extends Error {
   constructor(code, message, details = undefined) {
@@ -270,11 +271,36 @@ async function verifyRaster(bytes, format, geometry) {
   else parsed = parseTiff(bytes);
   let metadata;
   try {
-    const image = sharp(bytes, { failOn: "error", limitInputPixels: false, sequentialRead: true });
-    metadata = await image.metadata();
-    await image.stats(); // Force a real decode, not just header recognition.
+    const options = { failOn: "error", limitInputPixels: false, sequentialRead: true };
+    metadata = await sharp(bytes, options).metadata();
+
+    // parsePng/parseTiff above already validate the complete container, while
+    // the artifact SHA-256 binds every stored byte. Force the codec to decode
+    // pixels as a bounded probe instead of stats(), which expands a full-size
+    // 24k x 10k production raster immediately after the build stage and can
+    // exhaust the worker despite producing only a tiny statistics record.
+    // The bounded output still traverses the source decoder and fails closed
+    // on invalid compressed image data without materializing the full raster.
+    const probe = await sharp(bytes, options)
+      .resize({
+        width: RASTER_DECODE_PROBE_MAX_EDGE,
+        height: RASTER_DECODE_PROBE_MAX_EDGE,
+        fit: "inside",
+        withoutEnlargement: true,
+        kernel: "lanczos3",
+      })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (probe.data.length !== probe.info.width * probe.info.height * probe.info.channels) {
+      fail(`output_${format}_decode_failed`, `${geometry.surfaceKey}.${format} decoded probe is incomplete`);
+    }
   } catch (error) {
-    fail(`output_${format}_decode_failed`, `${format.toUpperCase()} could not be decoded`, { cause: error.message });
+    if (error instanceof OutputVerificationError) throw error;
+    fail(
+      `output_${format}_decode_failed`,
+      `${geometry.surfaceKey}.${format} could not be decoded: ${error.message}`,
+      { cause: error.message, surfaceKey: geometry.surfaceKey, format },
+    );
   }
   if (metadata.format !== format || metadata.width !== geometry.widthPixels || metadata.height !== geometry.heightPixels) {
     fail("output_raster_geometry_invalid", `${geometry.surfaceKey}.${format} pixel geometry is incorrect`, { expected: [geometry.widthPixels, geometry.heightPixels], observed: [metadata.width, metadata.height] });
