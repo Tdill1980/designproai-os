@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { before, test } from "node:test";
 
 const require = createRequire(import.meta.url);
 const sharp = require("../../runtime/node_modules/sharp");
+const outputQcSource = readFileSync(new URL("../../runtime/output-qc.cjs", import.meta.url), "utf8");
 const {
   FILE_DPI,
   FIXED_ZIP_DATE,
@@ -55,6 +57,23 @@ function replaceBytes(row, bytes) {
   row.bytes = bytes;
   row.byteSize = bytes.length;
   row.contentHash = sha256(bytes);
+}
+
+function corruptFirstIdatWithValidCrc(bytes) {
+  const output = Buffer.from(bytes);
+  let offset = 8;
+  while (offset + 12 <= output.length) {
+    const length = output.readUInt32BE(offset);
+    const type = output.toString("ascii", offset + 4, offset + 8);
+    if (type === "IDAT" && length > 8) {
+      const dataStart = offset + 8;
+      output[dataStart + Math.floor(length / 2)] ^= 0xff;
+      output.writeUInt32BE(crc32(output.subarray(offset + 4, dataStart + length)), dataStart + length);
+      return output;
+    }
+    offset += length + 12;
+  }
+  throw new Error("fixture contains no usable IDAT chunk");
 }
 
 function expectCode(code) {
@@ -117,6 +136,25 @@ test("rejects wrong format magic even when the attacker recomputes the outer has
   const rows = cloneArtifacts();
   replaceBytes(rows[0], formatBytes.tiff);
   await assert.rejects(() => verifyProductionOutputSet({ artifacts: rows, dimensionManifest }), expectCode("output_png_magic_invalid"));
+});
+
+test("bounded pixel probe still rejects CRC-valid corrupt PNG image data and identifies the surface", async () => {
+  const rows = cloneArtifacts();
+  replaceBytes(rows[0], corruptFirstIdatWithValidCrc(rows[0].bytes));
+  await assert.rejects(
+    () => verifyProductionOutputSet({ artifacts: rows, dimensionManifest }),
+    (error) => {
+      assert.equal(error?.code, "output_png_decode_failed", error?.stack || String(error));
+      assert.match(error.message, /^driver\.png could not be decoded:/);
+      return true;
+    },
+  );
+});
+
+test("production raster verification cannot regress to an unbounded full-image statistics scan", () => {
+  assert.match(outputQcSource, /const RASTER_DECODE_PROBE_MAX_EDGE = 2048;/);
+  assert.doesNotMatch(outputQcSource, /await\s+[A-Za-z_$][\w$]*\.stats\(\)/);
+  assert.match(outputQcSource, /\.resize\(\{[\s\S]*?RASTER_DECODE_PROBE_MAX_EDGE[\s\S]*?\.raw\(\)[\s\S]*?resolveWithObject: true/);
 });
 
 test("rejects a valid PNG whose decoded pixel geometry is wrong", async () => {
