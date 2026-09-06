@@ -161,9 +161,11 @@ test("the canary crosses purchase with one real Generation-bound owner promotion
   assert.doesNotMatch(canary, /paid\s*=\s*true|paid:\s*true/);
 });
 
-test("the canary prepares geometry from the current GENIE catalog only", () => {
+test("the canary binds the exact operator-validated GENIE row prepared before Call 1", () => {
   assert.match(canary, /previewGenieDimensionsFromCatalog/);
-  assert.match(canary, /genie-panelizer-catalog/);
+  assert.match(canary, /geometryAuthority\.operatorValidated !== true/);
+  assert.match(canary, /geometryAuthority\.candidateId/);
+  assert.match(canary, /evidence\.geniePrep\?\.sourceRowId/);
   assert.match(canary, /current GENIE preparation returned no immutable manifest hash/);
   assert.match(canary, /A\.T\.L\.A\.S\. did not use the GENIE manifest prepared before Call 1/);
   assert.doesNotMatch(canary, /designpro_vehicle_specs_universal/);
@@ -171,6 +173,16 @@ test("the canary prepares geometry from the current GENIE catalog only", () => {
   assert.doesNotMatch(canary, /July 24|July24|kfapjdyythzyvnpdeghu/);
   assert.doesNotMatch(workflow, /views_json|VIEWS_B64|July 24|July24|kfapjdyythzyvnpdeghu/);
   assert.match(canary, /DID-\$\{generationId\.replaceAll/);
+});
+
+test("the canary can resume one accepted request without spending another Calls 1-7 provider call", () => {
+  assert.match(workflow, /resume_request_id:/);
+  assert.match(workflow, /--resume-request-id "\$CANARY_RESUME_REQUEST_ID"/);
+  assert.match(canary, /resuming accepted A\.T\.L\.A\.S\. request \$\{requestId\}; no provider call/);
+  assert.match(canary, /resumable\.state !== "outputs_ready"/);
+  assert.match(canary, /resumable\.owner_id/);
+  assert.match(canary, /resumable\.request_input\?\.vehicle/);
+  assert.match(canary, /resumeRequestId: RESUME_REQUEST_ID/);
 });
 
 test("canary uses the real QC gates and returns both Entice and Production artifacts", () => {
