@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const atlas = require('../runtime/flat-first-atlas.cjs');
+const sharp = require('../runtime/node_modules/sharp');
+const teaching = require('../runtime/flat-atlas-topology-examples.cjs').loadBundledAtlasTeachingProof();
+const sha = atlas._test.sha256;
+const surfaces = [ ['driver',153,56], ['passenger',153,56], ['hood',71.5,56],
+  ['roof',74.3,54.8], ['front',129,34], ['rear',76,54] ].map(([surfaceKey,widthInches,heightInches]) => ({
+    surfaceKey,widthInches,heightInches,bleed:{top:5,right:5,bottom:5,left:5},
+  }));
+const geometryResolution = { contract:'designpro.genie-manifest.v1', genieManifestId:'0'.repeat(32),
+  genieManifestHash:'0'.repeat(64), state:'derived', derivationContract:'designpro.genie-front-derived.v1',
+  derivedSurfaces:['front'], geometrySourceRowId:'fixture', productionEligible:false, operatorValidated:false };
+const input = {contractVersion:atlas.INPUT_CONTRACT,pipelineMode:atlas.PIPELINE_MODE,mode:'commercial',
+  companyName:'Precision Climate Solutions',brief:'Blue and orange HVAC wrap',
+  vehicle:{year:'2022',make:'Ford',model:'F250 Crew Cab',type:'truck'}};
+const extras = {teachingProofStoragePath:`atlas-call1-inputs/${teaching.flattenedTopView.contentHash}.png`,
+  teachingProofIdentity:teaching.identity,guideStoragePath:`atlas-call1-inputs/${'a'.repeat(64)}.png`,referenceImagesBase64:[]};
+
+// Execute the real authoring function, including normalization, gates, storage,
+// extraction and lineage. The provider is replaced only at its network seam.
+// Six different pixel patterns expose a duplicated register even when its
+// dimensions, PNG hashes and opacity are otherwise valid.
+test('one authored topology preserves all six distinct source regions through persistence', async () => {
+  const manifest = atlas.buildAtlasManifest(surfaces, undefined, 'truck');
+  manifest.geometryResolution = geometryResolution;
+  const layers = [];
+  for (const [i,z] of manifest.zones.entries()) {
+    const raw = Buffer.alloc(z.w*z.h*3);
+    for (let y=0;y<z.h;y++) for(let x=0;x<z.w;x++) {
+      const offset=(y*z.w+x)*3;
+      raw[offset]=45+i*25;
+      raw[offset+1]=50+Math.round(x/z.w*145);
+      raw[offset+2]=55+Math.round(y/z.h*140);
+    }
+    layers.push({input:await sharp(raw,{raw:{width:z.w,height:z.h,channels:3}}).png().toBuffer(),left:z.x,top:z.y});
+  }
+  const source=await sharp({create:{width:4096,height:4096,channels:4,background:{r:0,g:0,b:0,alpha:0}}})
+    .composite(layers).png().toBuffer();
+  const expected=await atlas.cutCallOnePanels(source,manifest,sha(source));
+  const stored=new Map();let inserted;let calls=0;
+  const query={select(){return this},eq(){return this},order(){return this},limit(){return this},
+    async maybeSingle(){return {data:null,error:null}},
+    insert(row){inserted=row;return this},async single(){return {data:inserted,error:null}}};
+  const result=await atlas.generateOrReuseFlatAtlas({
+    input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
+    generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
+    tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',
+    maxAuthoringAttempts:1,provider:{},
+    supabase:{from(){return query},async rpc(){return {data:true,error:null}}},
+    store:{async putImmutableBytes(row){stored.set(row.storagePath,row.bytes);return {storagePath:row.storagePath,contentHash:sha(row.bytes),byteSize:row.bytes.length}}},
+    callEdge:async body=>{
+      calls++;
+      assert.equal(body.fieldContract,undefined);
+      assert.equal(body.noseEdge,undefined);
+      assert.equal(body.panels.length,6);
+      assert.equal(sha(stored.get(body.teachingProofStoragePath)),teaching.flattenedTopView.contentHash);
+      assert.ok(stored.get(body.guideStoragePath));
+      return {bytes:source,provenance:{imageRequestCount:1,masterSha256:sha(source)}};
+    },
+  });
+  assert.equal(calls,1);
+  assert.equal(result.metadata.atlasFieldContract,null);
+  assert.equal(result.metadata.atlasFieldComposeContract,undefined);
+  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,true);
+  assert.equal(inserted.metadata.callOnePanels.length,6);
+  for(const original of expected){
+    const panel=inserted.metadata.callOnePanels.find(p=>p.surfaceKey===original.surfaceKey);
+    const actual=await sharp(stored.get(panel.storagePath)).ensureAlpha().raw().toBuffer();
+    const wanted=await sharp(original.bytes).ensureAlpha().raw().toBuffer();
+    assert.equal(sha(actual),sha(wanted),`${panel.surfaceKey} must preserve its own authored pixels`);
+    assert.equal(panel.sourceMasterHash,inserted.master_content_hash);
+    assert.equal(panel.bleedInches,5);
+    assert.equal(panel.printWidthIn,panel.trimWidthIn+10);
+    assert.equal(panel.printHeightIn,panel.trimHeightIn+10);
+  }
+});
+
+test('six-surface transport rejects field-mode, missing teaching identity and missing guide inputs', async t=>{
+  const previous={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SERVICE_ROLE_KEY};
+  process.env.SUPABASE_URL='https://fixture.invalid';
+  process.env.SUPABASE_SERVICE_ROLE_KEY='test-only-not-a-real-key-'.repeat(3);
+  t.after(()=>{for(const [name,value] of [['SUPABASE_URL',previous.url],['SUPABASE_SERVICE_ROLE_KEY',previous.key]]){
+    if(value===undefined) delete process.env[name];else process.env[name]=value;
+  }});
+  const bytes=Buffer.from('mock transport bytes');let downloads=0;
+  const body=atlas._test.atlasEdgeRequestBody(input,atlas.buildAtlasManifest(surfaces),extras);
+  const reply={success:true,imageRequestCount:1,fieldContract:null,teachingProofIdentity:teaching.identity,
+    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260906.v25-rectangular-media',
+    masterStoragePath:'fixture.png',masterSha256:sha(bytes)};
+  const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},
+    fetchImpl:async()=>({ok:true,status:200,json:async()=>reply})};
+  assert.equal(sha((await atlas._test.callAtlasArtboardEdge(body,transport)).bytes),sha(bytes));
+  assert.equal(downloads,1);
+  for(const override of [{fieldContract:'designpro.atlas-field-prompt.v2'}, {teachingProofIdentity:null},
+    {modelInputImageCount:0},{promptVersion:'stale'},
+    {teachingProofIdentity:{...teaching.identity,flattenedTopViewContentHash:'f'.repeat(64)}}]){
+    await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
+      fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,...override})})}),
+      error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
+  }
+  await assert.rejects(atlas._test.callAtlasArtboardEdge({...body,guideStoragePath:undefined},transport),
+    error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
+  assert.equal(downloads,1,'invalid responses must fail before master download');
+});
