@@ -1,5 +1,27 @@
 # CLAUDE.md — designproai-os
 
+## Current owner instruction — six-surface restoration (2026-09-06)
+
+The owner's complete source document is `docs/ATLAS-RESTORATION-WORKING-MODEL.md`,
+copied unchanged from the verified trace supplied in this session (not 170909).
+The current request supersedes RULE 0.33's one-field product selection and the
+source document's historical stop-before-proofs instruction: restore the existing
+six-surface branch, preserve its prompt, and verify one fresh Arctic Air generation
+through seven proofs, Call 8, QC, Topaz, production ZIP and WrapBox before deployment.
+Do not use or merge PR #301; do not reconstruct, relocate, heal, or re-roll artwork.
+Do not merge `claude/dca-phase-1-execution-47019t`.
+
+Implementation corrections measured against the source document's proposed diff:
+- `atlasNoseEdgeInput` runs before branch selection and accepts only left/right;
+  the proposed helper returns top (its inverse mapping is reversed), and even the
+  intended bottom is rejected. Omit this unused field on the six-surface branch;
+  keep the existing manifest and extraction rotations unchanged.
+- The deployed edge version string stays unchanged because no edge bytes change;
+  only the runtime authoring reuse version advances to the source's v25 value.
+- PR #300 already preserved `MANIFEST_CONTRACT`; retain that correction.
+
+This header is implementation context, not a live acceptance or deployment receipt.
+
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
 
 **Supersedes the authoring half of v19, v23, RULE 0.30's conditioning clause,

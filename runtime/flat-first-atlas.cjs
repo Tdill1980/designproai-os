@@ -37,12 +37,8 @@ const {
 } = require("./atlas-master-qc.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
-// ONE-FIELD CALL 1 (owner ruling 2026-09-02, unfrozen the same day): the
-// labeled Flamingo teaching proof and the neutral six-region guide are no
-// longer Call-1 model inputs. GENIE's six-region layout stays the production
-// geometry authority; the model paints ONE continuous field and the OS
-// serializes six code-only territories out of it AFTER the call.
-const { buildFieldTerritories, NOSE_EDGE } = require("./atlas-field-territories.cjs");
+// Restore the existing six-surface authoring path; field territories remain harness-only.
+const { loadBundledAtlasTeachingProof } = require("./flat-atlas-topology-examples.cjs");
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -66,10 +62,9 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260902.v24-one-field";
-// The model-facing contract the runtime asks the edge for: one continuous
-// full-bleed composition, one text part plus verified customer references,
-// zero structural images. Echoed back by the edge and verified on receipt.
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260903.v25-topology-restored";
+// Historical field contract retained for harness compatibility; the product
+// selects the unchanged six-surface branch by omitting this request key.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
@@ -1562,14 +1557,13 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       placement: zone.placement,
       normalized: normalizedZoneTopology(zone, manifest),
     })),
-    // ONE-FIELD CONTRACT (owner ruling 2026-09-02). The edge assembles the
-    // same DesignPanelAI creative brief with the field wording and the field
-    // tail, and sends the model ONE text part plus the verified customer
-    // references. No teaching proof, no guide, no topology text travels. The
-    // `panels` list above stays on the request as OS data the edge validates;
-    // it never enters the field prompt.
-    fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
-    noseEdge: manifest?.installerMap?.noseEdge || NOSE_EDGE,
+    // Omitting fieldContract selects the unchanged deployed six-surface prompt.
+    // Do not send drawn nose edges: the edge validates only left/right even on
+    // this branch, where the field-only nose-edge value is not consumed.
+    // The manifest extraction rotations remain the orientation authority.
+    teachingProofStoragePath: extras.teachingProofStoragePath,
+    teachingProofIdentity: extras.teachingProofIdentity,
+    guideStoragePath: extras.guideStoragePath,
     referenceImagesBase64: extras.referenceImagesBase64,
   };
 }
@@ -2181,15 +2175,9 @@ async function generateOrReuseFlatAtlas(options) {
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
-  // GENIE's six-region layout is built first — inches, square feet, bleed,
-  // proof dependencies and the human installer map all come from it — and the
-  // ONE FIELD the model paints is then serialized onto code-only territories
-  // (`field-thirds-v2`): Driver centred in the top third, Passenger centred in
-  // the middle third, roof · hood · front abreast in the lower third with the
-  // rear beneath the shortest of them. Same zone shape, rotation 0 everywhere.
-  // The model is shown none of it.
-  const legacyManifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
-  const manifest = buildFieldTerritories(legacyManifest);
+  // The original GENIE six-surface manifest retains its canonical identity.
+  const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
+  const teachingProof = loadBundledAtlasTeachingProof();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
   if (geometryResolution) manifest.geometryResolution = geometryResolution;
@@ -2233,21 +2221,11 @@ async function generateOrReuseFlatAtlas(options) {
     `${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
     "utf8",
   ));
-  // The current solid-rectangle pair is deliberately distinct from the
-  // historical Houdini/template examples that taught doors, windows, handles
-  // and wheel arches. Its identity is part of the immutable reuse contract.
-  // No release-owned example image is attached under the one-field contract;
-  // the fence now carries the contract and the territory layout instead, so a
-  // master authored against the six-container request is never reused here.
+  // Fence the restored teaching input and topology against one-field reuse.
   const currentExampleSetHash = sha256(canonicalBytes({
-    atlasDesignTeachingExample: null,
-    fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
-    // The TERRITORY layout identity, which is what this hash is about. It read
-    // `manifest.contract` while that field was being overwritten with the
-    // territories contract; now that `contract` is the manifest identity again,
-    // the reuse key names the layout explicitly instead of relying on a
-    // collision. Same value, so the hash does not move.
-    territories: manifest.territoriesContract,
+    atlasDesignTeachingExample: teachingProof.identity,
+    fieldContract: null,
+    territories: manifest.territoriesContract || null,
     topology: manifest.topology,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
@@ -2300,21 +2278,30 @@ async function generateOrReuseFlatAtlas(options) {
   // image; nothing since has matched it. Surface identity still travels in the
   // schema-bound panel list, and the normalized topology stays on the request
   // as OS data that never reaches the model.
-  // ONE RENDER OF THE GEOMETRY, FOR HUMANS ONLY. The labelled installer map
-  // enters storage and PanelPro; the model never sees a guide of any kind.
+  // The labelled installer map is for humans; the neutral authoring mask
+  // is separately staged below for the existing edge branch.
   const guideBytes = await renderAtlasGuide(manifest);
   const guideHash = sha256(guideBytes);
   const guideStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "guide", contentHash: guideHash });
   const manifestStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "manifest", contentHash: manifestHash });
 
-  // Customer-owned imagery is the ONLY imagery in the one-field request: the
-  // verified logo and the verified VisionBoard references, inline, size-capped.
-  // Nothing release-owned is staged for the edge any more.
+  // Restore the two hash-addressed inputs required by the deployed branch.
+  const teachingBytes = Buffer.from(teachingProof.flattenedTopView.bytes);
+  const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
+  const teachingInputPath = `atlas-call1-inputs/${sha256(teachingBytes)}.png`;
+  const guideInputPath = `atlas-call1-inputs/${sha256(authoringGuideBytes)}.png`;
+  await Promise.all([
+    store.putImmutableBytes({ storagePath: teachingInputPath, bytes: teachingBytes, contentType: "image/png" }),
+    store.putImmutableBytes({ storagePath: guideInputPath, bytes: authoringGuideBytes, contentType: "image/png" }),
+  ]);
   const customerImageParts = [
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
   const edgeExtras = {
+    teachingProofStoragePath: teachingInputPath,
+    teachingProofIdentity: teachingProof.identity,
+    guideStoragePath: guideInputPath,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
   };
   // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
@@ -2483,6 +2470,9 @@ async function generateOrReuseFlatAtlas(options) {
   // views". Nothing changes on a clean master: `fillMasterCutouts` returns the
   // same buffer, `panelSourceHash` equals `masterHash`, and the projection and
   // view authorities are byte-identical to what they were before.
+  if (masterCutoutSurfaces.length) {
+    throw new FlatAtlasError("flat_atlas_unrepaired_cutout", "The authored master contains cutouts; restoration does not heal or reconstruct artwork");
+  }
   const repairStartedAt = Date.now();
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
   timings.repairMs += Date.now() - repairStartedAt;
@@ -2860,16 +2850,14 @@ async function generateOrReuseFlatAtlas(options) {
       topologyExamplesApplied: 0,
       topologyExampleIdentity: null,
       topologyExampleIdentities: [],
-      atlasDesignTeachingExampleApplied: false,
-      atlasDesignTeachingExampleIdentity: null,
+      atlasDesignTeachingExampleApplied: true,
+      atlasDesignTeachingExampleIdentity: teachingProof.identity,
       atlasDesignTeachingExampleSetHash: currentExampleSetHash,
-      // The one-field contract the model was asked for, and the code-only
-      // territory layout the six panels were cut from (thirds, extracted
-      // ratio, boundaries). Forensic; never a model input.
-      atlasFieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+      // Restored six-surface authoring has no one-field contract or layout.
+      atlasFieldContract: null,
       // Same rename, same value: this forensic field records the LAYOUT the six
       // panels were cut from, not the manifest identity.
-      territoriesContract: manifest.territoriesContract,
+      territoriesContract: manifest.territoriesContract || null,
       fieldLayout: manifest.fieldLayout || null,
       designPanelArtboardQualityExamplesApplied: 0,
       designPanelArtboardQualityExampleIdentities: [],

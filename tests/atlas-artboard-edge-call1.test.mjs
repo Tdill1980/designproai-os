@@ -117,7 +117,7 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.equal(runtimeVersion[1], edge[1]);
 });
 
-test("ONE-FIELD CALL 1: the model receives the prompt and customer references only — no teaching sheet, no guide, no topology text", () => {
+test("Six-surface restoration: the model receives the prompt and customer references only — no teaching sheet, no guide, no topology text", () => {
   // Owner ruling 2026-09-02 ("UNFREEZE GET ME A WORKING OS"): Gemini authors
   // ONE uninterrupted full-bleed composition and is shown NO production
   // topology. GENIE/runtime owns the six territories as code.
@@ -132,26 +132,22 @@ test("ONE-FIELD CALL 1: the model receives the prompt and customer references on
   assert.ok(!liveAuthoring.includes("topologyExampleParts("));
   assert.ok(!liveAuthoring.includes("structuralReferenceStoragePath"));
   assert.ok(!liveAuthoring.includes("structuralPairedProofStoragePath"));
-  // Nothing release-owned is staged for the edge any more: no teaching proof,
-  // no neutral authoring mask. The labelled installer map is still rendered
-  // and persisted for humans and QC.
-  assert.ok(!runtimeSource.includes("loadBundledAtlasTeachingProof"), "the teaching proof is no longer a Call-1 input");
-  assert.ok(!liveAuthoring.includes("teachingProofStoragePath"), "no teaching proof is staged for the edge");
-  assert.ok(!liveAuthoring.includes("renderAtlasAuthoringGuide("), "no model-facing guide is rendered for Call 1");
-  assert.ok(!liveAuthoring.includes("guideStoragePath: targetGuideStoragePath"), "no guide rides the edge request");
-  assert.match(liveAuthoring, /renderAtlasGuide\(manifest\)/, "the human installer map is still rendered");
-  assert.match(liveAuthoring, /const manifest = buildFieldTerritories\(legacyManifest\)/, "the six territories are code-only");
+  assert.match(runtimeSource, /loadBundledAtlasTeachingProof/);
+  assert.match(liveAuthoring, /teachingProofStoragePath: teachingInputPath/);
+  assert.match(liveAuthoring, /renderAtlasAuthoringGuide\(manifest\)/);
+  assert.match(liveAuthoring, /guideStoragePath: guideInputPath/);
+  assert.match(liveAuthoring, /renderAtlasGuide\(manifest\)/);
+  assert.match(liveAuthoring, /const manifest = buildAtlasManifest\(surfaces, geometryAuthority/);
+  assert.doesNotMatch(liveAuthoring, /buildFieldTerritories\(/);
 
-  // The request body names the field contract and the code-owned nose edges
-  // and carries no teaching/guide keys at all.
   const requestBody = runtimeSource.slice(
     runtimeSource.indexOf("function atlasEdgeRequestBody("),
     runtimeSource.indexOf("function normalizedZoneTopology("),
   );
-  assert.match(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.match(requestBody, /noseEdge: manifest\?\.installerMap\?\.noseEdge \|\| NOSE_EDGE/);
-  assert.ok(!requestBody.includes("teachingProofStoragePath"));
-  assert.ok(!requestBody.includes("guideStoragePath"));
+  assert.doesNotMatch(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
+  assert.doesNotMatch(requestBody, /noseEdge:/);
+  assert.match(requestBody, /teachingProofStoragePath: extras.teachingProofStoragePath/);
+  assert.match(requestBody, /guideStoragePath: extras.guideStoragePath/);
 
   // The edge's field branch: prompt, then verified customer references, then
   // the single image request. The legacy six-container branch survives only

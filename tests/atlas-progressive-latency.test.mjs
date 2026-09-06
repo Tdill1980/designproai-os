@@ -36,13 +36,9 @@ test("a SUCCESSFUL A.T.L.A.S. authoring spends exactly one creative call", () =>
   );
 });
 
-test("a REFUSED A.T.L.A.S. authoring gets exactly one re-roll, and no third", () => {
-  // Owner ruling 2026-09-01. The call site is the real production switch --
-  // resolveMaxAuthoringAttempts reads `explicit ?? env`, so the env var is
-  // unreachable while a number is passed here. A run that takes this branch is
-  // explicitly exempt from the normal SLA; the alternative is a failure page
-  // for one stochastic refusal.
-  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 2,/);
+test("a REFUSED A.T.L.A.S. authoring stops without a re-roll", () => {
+  // The restoration runs one draw; a rejected master must not silently re-roll.
+  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 1,/);
   assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 3;/);
   assert.match(
     atlas,

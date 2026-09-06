@@ -249,7 +249,7 @@ test("4K atlas reports effective PPI honestly and cannot masquerade as print rea
   assert.equal(manifest.zones.some((zone) => zone.surfaceKey === "closeup" || zone.surfaceKey === "hero3d"), false);
 });
 
-test("historical topology examples remain parseable while active authoring uses only the solid cohesion pair", async () => {
+test("historical examples remain parseable while restored authoring uses the pinned teaching proof", async () => {
   // Historical rows remain readable for forensics, but their bytes are never
   // attached to current Call 1. The helper's own firewall remains intact in
   // case an operator exports the old lesson outside the live path.
@@ -262,7 +262,7 @@ test("historical topology examples remain parseable while active authoring uses 
     runtimeSource.indexOf("async function updateAtlasRevision"),
   );
   assert.doesNotMatch(live, /topologyExampleParts\(/);
-  assert.match(live, /loadBundledAtlasCohesionExample\(/);
+  assert.match(live, /loadBundledAtlasTeachingProof\(/);
   assert.doesNotMatch(live, /loadBundledFlatToFinishedExample\(/);
   // And the zone map the model follows is the deterministic guide, not prose.
   const manifest = atlas.buildAtlasManifest(surfaces);
@@ -526,6 +526,12 @@ test("initial authoring makes one image call, passes deterministic acceptance, s
   const stored = [];
   const store = {
     async putImmutableBytes(row) {
+      if (row.storagePath.startsWith("atlas-call1-inputs/")) {
+        assert.match(row.storagePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/);
+        assert.equal(row.storagePath.split("/").pop().slice(0, -4), atlas._test.sha256(row.bytes));
+        events.push("stage-input");
+        return { storagePath: row.storagePath, contentHash: atlas._test.sha256(row.bytes), byteSize: row.bytes.length };
+      }
       events.push(`put:${row.storagePath}`);
       stored.push(row);
       return { storagePath: row.storagePath, contentHash: atlas._test.sha256(row.bytes), byteSize: row.bytes.length };
@@ -626,9 +632,9 @@ test("initial authoring makes one image call, passes deterministic acceptance, s
   assert.equal(providerOptions.mode, "atlas-artboard");
   assert.equal(providerOptions.panels.length, 6);
   assert.match(providerOptions.guideStoragePath, /^atlas-call1-inputs\//, "the deterministic guide is staged, not inlined");
-  assert.match(providerOptions.cohesionExampleFlatStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.jpg$/);
+  assert.match(providerOptions.teachingProofStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/);
   assert.equal(providerOptions.cohesionExampleProofStoragePath, undefined);
-  assert.equal(providerOptions.cohesionExampleIdentity.contract, "designpro.atlas-design-teaching-example.v2");
+  assert.equal(providerOptions.teachingProofIdentity.contract, "designpro.atlas-labeled-teaching-proof.v3");
   assert.equal(events.filter((event) => event === "stage-input").length, 2);
   assert.equal(providerOptions.structuralReferenceStoragePath, undefined, "obsolete vehicle/template examples never reach Call 1");
   assert.equal(providerOptions.structuralPairedProofStoragePath, undefined, "finished 3D examples never reach Call 1");
@@ -666,7 +672,7 @@ test("initial authoring makes one image call, passes deterministic acceptance, s
   assert.equal(inserted.metadata.topologyExamplesApplied, 0);
   assert.equal(inserted.metadata.atlasDesignTeachingExampleApplied, true);
   assert.equal(inserted.metadata.atlasDesignTeachingExampleIdentity.contract,
-    "designpro.atlas-design-teaching-example.v2");
+    "designpro.atlas-labeled-teaching-proof.v3");
   assert.match(inserted.metadata.atlasDesignTeachingExampleSetHash, /^[0-9a-f]{64}$/);
   assert.equal(inserted.metadata.masterQcPassed, true);
   assert.equal(inserted.metadata.masterQcContract, "designpro.atlas-master-semantic-qc.v1");
