@@ -79,7 +79,7 @@ const RECEIPTS = Object.freeze([
   // reader can mistake a recorded failure for a proof that was built.
   "views.seven-source", "call8.flat-proof", "call8.flat-proof-deferred",
   "call9.surface-panels", "call10.logo-inventory",
-  "call11.qc-panels",
+  "call11.qc-panels", "panelpro.preflight",
   "call12.topaz-upscale", "output.verified", "final.human-qc", "stamp", "zip", "wrapbox.delivery",
 ]);
 const ARTIFACT_KINDS = Object.freeze([
