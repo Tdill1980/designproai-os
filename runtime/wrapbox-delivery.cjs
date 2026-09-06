@@ -102,8 +102,59 @@ function assertDeliverySnapshot(snapshot) {
   });
 }
 
-function immutableBusinessIdentity(source) {
+function resolvedFulfillmentSnapshot(source, run = null) {
   const snapshot = source?.snapshot;
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    fail("delivery_recipient_snapshot_required", "The immutable revision snapshot is missing");
+  }
+  const frozen = run?.input?.fulfillment;
+  const snapshotBound = snapshot.delivery && typeof snapshot.delivery === "object"
+    && !Array.isArray(snapshot.delivery) && String(snapshot.orderNumber || "");
+
+  if (snapshotBound) {
+    const delivery = assertDeliverySnapshot(snapshot);
+    if (frozen != null) {
+      const frozenDelivery = frozen && typeof frozen === "object" && !Array.isArray(frozen)
+        ? assertDeliverySnapshot({ delivery: frozen.delivery }) : null;
+      if (!frozenDelivery
+        || frozen.contractVersion !== "designpro.fulfillment-binding.v1"
+        || frozen.revisionId !== run.revision_id
+        || !HASH_RE.test(String(frozen.bindingHash || ""))
+        || frozen.orderNumber !== snapshot.orderNumber
+        || !sameJson(frozenDelivery, delivery)) {
+        fail("production_fulfillment_binding_drift", "Frozen production fulfillment differs from the immutable bound revision");
+      }
+    }
+    return Object.freeze({ ...snapshot, delivery, orderNumber: snapshot.orderNumber });
+  }
+
+  const exactKeys = ["bindingHash", "contractVersion", "delivery", "orderNumber", "revisionId"];
+  if (!["designpro.calls-1-7-input.v2", "designpro.calls-1-7-input.v3"].includes(snapshot.sourceInputContract)
+    || snapshot.fulfillment?.contractVersion !== "designpro.fulfillment-state.v1"
+    || snapshot.fulfillment?.state !== "unbound"
+    || snapshot.orderNumber != null || snapshot.delivery != null
+    || !frozen || typeof frozen !== "object" || Array.isArray(frozen)
+    || JSON.stringify(Object.keys(frozen).sort()) !== JSON.stringify(exactKeys)
+    || frozen.contractVersion !== "designpro.fulfillment-binding.v1"
+    || frozen.revisionId !== run?.revision_id
+    || !HASH_RE.test(String(frozen.bindingHash || ""))) {
+    fail("production_fulfillment_binding_missing", "The paid production run is not frozen to an exact late fulfillment binding");
+  }
+  const delivery = assertDeliverySnapshot({ delivery: frozen.delivery });
+  const orderNumber = String(frozen.orderNumber || "");
+  if (delivery.orderNumber !== orderNumber || delivery.designName !== snapshot.designName) {
+    fail("production_fulfillment_binding_drift", "Late fulfillment does not match the frozen design identity");
+  }
+  return Object.freeze({ ...snapshot, delivery, orderNumber });
+}
+
+function immutableBusinessIdentity(source, run = null) {
+  const proposedOrderNumber = String(source?.snapshot?.orderNumber ?? run?.input?.fulfillment?.orderNumber ?? "");
+  if (!proposedOrderNumber || proposedOrderNumber !== proposedOrderNumber.trim()
+    || proposedOrderNumber.length > 120 || !/^[A-Za-z0-9][A-Za-z0-9._/# -]*$/.test(proposedOrderNumber)) {
+    fail("delivery_business_identity_invalid", "Immutable DesignID or Order # is missing or noncanonical");
+  }
+  const snapshot = resolvedFulfillmentSnapshot(source, run);
   const generationId = String(snapshot?.generationId || "").trim().toLowerCase();
   const designId = `DID-${generationId.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
   const orderNumber = String(snapshot?.orderNumber || "");
@@ -243,7 +294,7 @@ async function publishCompletedWrapboxDelivery({ supabase, runId }) {
   const run = requireRow(await maybeSingle(
     supabase,
     "designpro_workflow_runs",
-    "id,workflow_type,status,owner_id,tenant_key,revision_id,revision_snapshot_hash,entice_pack_id",
+    "id,workflow_type,status,owner_id,tenant_key,revision_id,revision_snapshot_hash,entice_pack_id,input",
     { id: String(runId).toLowerCase() },
   ), "production_workflow_not_found", "Production workflow not found");
   if (run.workflow_type !== "designpro.production_pack" || run.status !== "completed") {
@@ -259,8 +310,8 @@ async function publishCompletedWrapboxDelivery({ supabase, runId }) {
     || source.snapshot_hash !== run.revision_snapshot_hash) {
     fail("immutable_revision_identity_mismatch", "Revision, operator, tenant, or snapshot identity drifted");
   }
-  const delivery = assertDeliverySnapshot(source.snapshot);
-  const businessIdentity = immutableBusinessIdentity(source);
+  const delivery = resolvedFulfillmentSnapshot(source, run).delivery;
+  const businessIdentity = immutableBusinessIdentity(source, run);
 
   const zipReceipt = requireRow(await maybeSingle(
     supabase, "designpro_stage_receipts", "stage_id,receipt,receipt_hash",
@@ -476,6 +527,7 @@ module.exports = {
   normalizeLogoInventory,
   publishCompletedWrapboxDelivery,
   reconcileCompletedWrapboxDeliveries,
+  resolvedFulfillmentSnapshot,
   sanitizedError,
   validateManifest,
 };
