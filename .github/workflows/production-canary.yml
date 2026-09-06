@@ -160,7 +160,7 @@ jobs:
             "$image" node /app/production-canary.mjs \
               --out /canary/output \
               --year "$YEAR" --make "$MAKE" --model "$MODEL" --type "$VTYPE" \
-              --resume-request-id "$CANARY_RESUME_REQUEST_ID" \
+              --resume-request-id "$RESUME_REQUEST_ID" \
               --design "Precision Climate Solutions — A.T.L.A.S. graph canary"
           status=$?
           set -e
