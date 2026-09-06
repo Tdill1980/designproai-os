@@ -14,24 +14,23 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 63);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 62);
   for (const name of [
     // GENIE Prep (owner ruling 2026-09-02): the early lifecycle module is
     // required by generation-worker.cjs and index.js at module load, so a
     // release without it dies at require time (the runtime-closure lock caught
     // it unpackaged on run 33667466817).
     "runtime/genie-prep.cjs",
-    // The measured field contract's orientation authority. Call 1 uses its
-    // fixed nose-edge mapping while GENIE owns the six target rectangles.
+    // ONE-FIELD CALL 1 (owner ruling 2026-09-02): the six code-only territories
+    // the field is serialized into. flat-first-atlas.cjs requires it at load.
     "runtime/atlas-field-territories.cjs",
-    // The active field compositor maps the proven three-register artwork into
-    // the exact six GENIE rectangles before the unchanged master gate.
-    "runtime/atlas-field-compose.cjs",
     // The Call-1 output-class gate (owner ruling 2026-09-01): a vehicle-
     // depiction candidate is refused before canonicalization or fan-out.
     "runtime/atlas-output-class.cjs",
-    // Historical pinned teaching bytes remain available to the legacy harness;
-    // the active field call does not send them to the model.
+    // THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
+    // (owner boundary contract 2026-09-01). Call 1 refuses to author without
+    // it: canary 33459887409 died at flat_atlas_bundled_example_missing when
+    // the release omitted this file.
     "runtime/atlas-examples/flamingo-labeled-atlas-teaching-proof.png",
     // stamp.build requires it at module load, so a release without it dies at
     // require time rather than merely shipping a pack with no certificate.
