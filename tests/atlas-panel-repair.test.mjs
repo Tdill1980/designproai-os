@@ -30,40 +30,89 @@ const ZONES = [
 ];
 const MANIFEST = { zones: ZONES };
 
-const severed = (label, rect, surfaces) => ({ label, status: "severed", rect, surfaces, crossings: [] });
-const BADGE = severed("arctic air badge", { x: 983, y: 3240, w: 258, h: 319 }, ["roof", "hood"]);
-const BANNER = severed("www.arcticair.com contact banner", { x: 1249, y: 3256, w: 1831, h: 299 }, ["hood", "front", "rear"]);
+const severed = (label, kind, rect, surfaces) => ({ label, kind, status: "severed", rect, surfaces, crossings: [] });
+const BADGE = severed("arctic air badge", "logo", { x: 983, y: 3240, w: 258, h: 319 }, ["roof", "hood"]);
+const BANNER = severed("www.arcticair.com contact banner", "website", { x: 1249, y: 3256, w: 1831, h: 299 }, ["hood", "front", "rear"]);
 
 test("a lockup that reads as one unit MOVES as one unit", () => {
   // Moving the badge and the banner independently would re-space or re-order
-  // them, which IS a redesign. They sit 8 px apart on one contact bar.
+  // them, which IS a redesign. They sit 8 px apart on one contact bar. The
+  // lifted rectangle is the union plus the halo dilation on every side.
   const plan = planPanelRepair({ containment: [BADGE, BANNER], manifest: MANIFEST, masterWidth: 4096 });
   assert.equal(plan.length, 1);
   assert.deepEqual(plan[0].labels, ["arctic air badge", "www.arcticair.com contact banner"]);
-  assert.deepEqual(plan[0].sourceRect, { x: 983, y: 3240, w: 2097, h: 319 });
+  assert.ok(plan[0].sourceRect.x < 983 && plan[0].sourceRect.x + plan[0].sourceRect.w > 3080);
+  assert.ok(plan[0].sourceRect.y < 3240 && plan[0].sourceRect.y + plan[0].sourceRect.h > 3559);
 });
 
-test("the element goes to the surface that already holds most of it — minimise the move", () => {
-  // hood holds 949x318, rear 882x220, front 882x79, roof 88x319. Any other
-  // rule is code inventing wrap layout, which is what the owner rejected.
+test("THE OWNER'S CONTRACT: contact information goes to the REAR by default, badge and all", () => {
+  // Not "whichever surface already holds most of it" -- that rule put the
+  // website on the hood and left the rear bare, and the owner rejected it by
+  // name. A lockup carrying a website IS contact information; the badge beside
+  // it rides along.
   const [entry] = planPanelRepair({ containment: [BADGE, BANNER], manifest: MANIFEST, masterWidth: 4096 });
   assert.equal(entry.placeable, true);
-  assert.equal(entry.surfaceKey, "hood");
+  assert.equal(entry.kind, "contact");
+  assert.equal(entry.surfaceKey, "rear");
+  assert.equal(entry.assignmentBasis, "default");
   assert.deepEqual(entry.acrossSurfaces, ["hood", "rear", "front", "roof"]);
 });
 
-test("the placed rectangle lies inside the hood's trim, with the installer tolerance clear", () => {
+test("a severed brand mark goes to the HOOD by default", () => {
+  const [entry] = planPanelRepair({ containment: [BADGE], manifest: MANIFEST, masterWidth: 4096 });
+  assert.equal(entry.kind, "logo");
+  assert.equal(entry.surfaceKey, "hood");
+  assert.equal(entry.assignmentBasis, "default");
+});
+
+test("an explicit customer placement always wins over the default", () => {
+  const [entry] = planPanelRepair({
+    containment: [BADGE, BANNER], manifest: MANIFEST, masterWidth: 4096,
+    placements: { contact: "hood" },
+  });
+  assert.equal(entry.surfaceKey, "hood");
+  assert.equal(entry.assignmentBasis, "customer");
+});
+
+test("a kind the contract does not assign is REFUSED, never guessed a home", () => {
+  // Roof and front carry continuous artwork by default; a severed photograph
+  // has no default surface, and inventing one is the heuristic this replaces.
+  const photo = severed("installer photograph", "photograph", { x: 1500, y: 3200, w: 1200, h: 300 }, ["hood", "front"]);
+  const [entry] = planPanelRepair({ containment: [photo], manifest: MANIFEST, masterWidth: 4096 });
+  assert.equal(entry.placeable, false);
+  assert.equal(entry.code, "atlas_panel_element_unassigned");
+  // ...unless the customer said where it goes.
+  const [placed] = planPanelRepair({ containment: [photo], manifest: MANIFEST, masterWidth: 4096, placements: { photograph: "front" } });
+  assert.equal(placed.placeable, true);
+  assert.equal(placed.surfaceKey, "front");
+});
+
+test("driver and passenger are never a relocation target by default", () => {
+  const [entry] = planPanelRepair({
+    containment: [BANNER], manifest: MANIFEST, masterWidth: 4096,
+    // a default table entry can never name a flank; only the customer can
+  });
+  assert.notEqual(entry.surfaceKey, "driver");
+  assert.notEqual(entry.surfaceKey, "passenger");
+  const contact = severed("contact", "contact", { x: 1500, y: 3300, w: 800, h: 100 }, ["hood", "front"]);
+  const [forced] = planPanelRepair({ containment: [contact], manifest: MANIFEST, masterWidth: 4096, placements: { contact: "driver" } });
+  // explicit customer instruction may target a flank; the default never does
+  assert.equal(forced.surfaceKey, "driver");
+  assert.equal(forced.assignmentBasis, "customer");
+});
+
+test("the placed rectangle lies inside the rear's trim, with the installer tolerance clear", () => {
   const [entry] = planPanelRepair({ containment: [BADGE, BANNER], manifest: MANIFEST, masterWidth: 4096 });
-  const hood = ZONES.find((zone) => zone.surfaceKey === "hood");
-  const box = _test.placeableRect(hood);
+  const rear = ZONES.find((zone) => zone.surfaceKey === "rear");
+  const box = _test.placeableRect(rear);
   const rect = entry.targetRect;
   assert.ok(rect.x >= box.x, `${rect.x} >= ${box.x}`);
   assert.ok(rect.y >= box.y, `${rect.y} >= ${box.y}`);
   assert.ok(rect.x + rect.w <= box.x + box.w);
   assert.ok(rect.y + rect.h <= box.y + box.h);
   // ...and the tolerance is 2 VEHICLE INCHES, not 2 pixels.
-  const inPerPx = hood.printWidthIn / hood.trim.width;
-  assert.ok(Math.abs((box.x - hood.trim.x) * inPerPx - INSTALLER_INSET_IN) < 0.1);
+  const inPerPx = rear.printWidthIn / rear.trim.width;
+  assert.ok(Math.abs((box.x - rear.trim.x) * inPerPx - INSTALLER_INSET_IN) < 0.1);
 });
 
 test("aspect ratio is preserved and the element is never enlarged", () => {
@@ -74,20 +123,25 @@ test("aspect ratio is preserved and the element is never enlarged", () => {
   assert.ok(entry.scale <= 1);
 });
 
-test("an element that cannot print legibly anywhere is refused, not shrunk to fit", () => {
-  // A band the full width of the sheet: every surface would have to print it
-  // under the legible minimum.
-  const huge = severed("full-width bar", { x: 0, y: 3240, w: 4096, h: 20 }, ["roof", "hood", "front"]);
+test("an element that cannot fit its ASSIGNED surface is refused — never shrunk, never relocated elsewhere", () => {
+  // A contact bar the full width of the sheet: on the rear it would print
+  // under the legible minimum. The hood could hold it larger; that is not an
+  // option the contract offers.
+  const huge = severed("full-width contact bar", "contact", { x: 0, y: 3240, w: 4096, h: 20 }, ["roof", "hood", "front"]);
   const [entry] = planPanelRepair({ containment: [huge], manifest: MANIFEST, masterWidth: 4096 });
   assert.equal(entry.placeable, false);
+  assert.equal(entry.code, "atlas_panel_element_does_not_fit");
+  assert.equal(entry.assignedSurface, "rear");
   assert.match(entry.reason, new RegExp(`${MIN_ELEMENT_HEIGHT_IN}"`));
 });
 
-test("an element outside every container is refused", () => {
-  const orphan = severed("stray mark", { x: 3400, y: 3700, w: 200, h: 200 }, []);
-  const [entry] = planPanelRepair({ containment: [orphan], manifest: MANIFEST, masterWidth: 4096 });
-  assert.equal(entry.placeable, false);
-  assert.match(entry.reason, /outside every surface container/);
+test("a refused element fails the whole repair with the reason, rather than repairing around it", async () => {
+  const master = await sharp({ create: { width: 4096, height: 4096, channels: 3, background: { r: 20, g: 60, b: 120 } } }).png().toBuffer();
+  const huge = severed("full-width contact bar", "contact", { x: 0, y: 3240, w: 4096, h: 20 }, ["roof", "hood", "front"]);
+  await assert.rejects(
+    () => repairMasterPanels({ masterBytes: master, manifest: MANIFEST, containment: [huge] }),
+    (error) => error instanceof PanelRepairError && error.code === "atlas_panel_element_unplaceable" && /does not fit|minimum/.test(error.message),
+  );
 });
 
 test("nothing severed means nothing changes, byte for byte", async () => {
@@ -95,7 +149,7 @@ test("nothing severed means nothing changes, byte for byte", async () => {
   const result = await repairMasterPanels({
     masterBytes: master,
     manifest: MANIFEST,
-    containment: [{ label: "lockup", status: "contained", rect: { x: 10, y: 10, w: 20, h: 20 }, surfaces: ["driver"] }],
+    containment: [{ label: "lockup", kind: "logo", status: "contained", rect: { x: 10, y: 10, w: 20, h: 20 }, surfaces: ["driver"] }],
   });
   assert.equal(result.changed, false);
   assert.equal(result.bytes, master);
@@ -132,27 +186,32 @@ test("the severed bar leaves the boundary and lands whole inside one surface", a
   const result = await repairMasterPanels({
     masterBytes: master,
     manifest: MANIFEST,
-    containment: [severed("contact bar", source, ["hood", "front", "rear"])],
+    containment: [severed("contact bar", "contact", source, ["hood", "front", "rear"])],
   });
   assert.equal(result.changed, true);
 
   const [entry] = result.repairs;
   assert.equal(entry.placeable, true);
+  assert.equal(entry.surfaceKey, "rear");
 
-  // It is whole where it landed...
-  assert.ok(await redAt(result.bytes, entry.targetRect) > 0.95, "the moved element is not intact at its target");
+  // It is whole where it landed. The lifted crop carries its halo (15% of the
+  // element's shorter side, so a glow or a hair tuft travels with it), so the
+  // bar fills the INTERIOR of the target, not its outermost ring.
+  const t = entry.targetRect;
+  const inset = Math.ceil(Math.min(t.w, t.h) * 0.15) + 2;
+  const interior = { x: t.x + inset, y: t.y + inset, w: t.w - 2 * inset, h: t.h - 2 * inset };
+  assert.ok(await redAt(result.bytes, interior) > 0.98, "the moved element is not intact at its target");
+  assert.ok(await redAt(result.bytes, t) > 0.6, "the target does not carry the element");
 
-  // ...and it no longer crosses the cut. The target rectangle may overlap where
-  // the element used to be -- "minimise the move" is the point -- so the test
-  // is that NOTHING red survives outside it, not that the old rectangle is
-  // empty. A strip on the far side of x=2198 is exactly the defect.
-  const beyondCut = { x: 2198, y: source.y - 20, w: 900, h: source.h + 40 };
-  assert.ok(await redAt(result.bytes, beyondCut) < 0.01, "the element still crosses the hood|front boundary");
+  // ...and it is GONE from where it was cut: nothing red survives on the hood
+  // side of x=2198 or the front side of y=3335.
+  assert.ok(await redAt(result.bytes, { x: source.x, y: source.y, w: 2198 - source.x, h: source.h }) < 0.01, "the element still sits on the hood");
+  assert.ok(await redAt(result.bytes, { x: 2198, y: source.y, w: 700, h: 3335 - source.y }) < 0.01, "the element still sits on the front");
 
   // The vacated area is HEALED, not left transparent or black: it now carries
   // the surrounding artwork's own colour.
   const { data } = await sharp(result.bytes)
-    .extract({ left: 2400, top: source.y + 40, width: 8, height: 8 })
+    .extract({ left: 1900, top: source.y + 40, width: 8, height: 8 })
     .raw()
     .toBuffer({ resolveWithObject: true });
   assert.ok(data[2] > 80, "the vacated region did not heal to the surrounding ground");
@@ -164,7 +223,7 @@ test("a passing surface is byte-identical after the repair — a repair is never
   const result = await repairMasterPanels({
     masterBytes: master,
     manifest: MANIFEST,
-    containment: [severed("contact bar", source, ["hood", "front", "rear"])],
+    containment: [severed("contact bar", "contact", source, ["hood", "front", "rear"])],
   });
   for (const key of ["driver", "passenger"]) {
     const zone = ZONES.find((z) => z.surfaceKey === key);
@@ -176,7 +235,7 @@ test("a passing surface is byte-identical after the repair — a repair is never
 test("the repaired sheet passes the panel QC that convicted the original", async () => {
   const master = await severedSheet();
   const source = { x: 1700, y: 3200, w: 1200, h: 200 };
-  const containment = [severed("contact bar", source, ["hood", "front", "rear"])];
+  const containment = [severed("contact bar", "contact", source, ["hood", "front", "rear"])];
 
   const result = await repairMasterPanels({ masterBytes: master, manifest: MANIFEST, containment });
   const [entry] = result.repairs;
@@ -196,6 +255,7 @@ test("the repaired sheet passes the panel QC that convicted the original", async
     manifest: MANIFEST,
     locateElements: async () => [{
       label: "contact bar",
+      kind: "contact",
       b: [
         Math.round((entry.targetRect.y / 4096) * 1000),
         Math.round((entry.targetRect.x / 4096) * 1000),
@@ -206,6 +266,26 @@ test("the repaired sheet passes the panel QC that convicted the original", async
   });
   assert.deepEqual(after.failing, []);
   assert.equal(after.passing.length, 6);
+});
+
+test("the repaired sheet keeps the master's density, so an untouched panel hashes identically through the real cutter", async () => {
+  const master = await sharp({ create: { width: 4096, height: 4096, channels: 3, background: { r: 20, g: 60, b: 120 } } })
+    .withMetadata({ density: 300 }).png().toBuffer();
+  const source = { x: 1700, y: 3200, w: 1200, h: 200 };
+  const bar = await sharp({ create: { width: 1200, height: 200, channels: 3, background: { r: 220, g: 30, b: 40 } } }).png().toBuffer();
+  const sheet = await sharp(master).composite([{ input: bar, left: source.x, top: source.y }]).withMetadata({ density: 300 }).png().toBuffer();
+  const result = await repairMasterPanels({ masterBytes: sheet, manifest: MANIFEST, containment: [severed("contact bar", "contact", source, ["hood", "front", "rear"])] });
+  assert.equal((await sharp(result.bytes).metadata()).density, 300);
+});
+
+test("nothing outside a zone is painted by a single byte", async () => {
+  const master = await severedSheet();
+  const source = { x: 1700, y: 3200, w: 1200, h: 200 };
+  const result = await repairMasterPanels({ masterBytes: master, manifest: MANIFEST, containment: [severed("contact bar", "contact", source, ["hood", "front", "rear"])] });
+  // The strip directly under the hood container (y >= 3558, x 1071..2198) is
+  // outside every zone. Its bytes must be exactly what they were.
+  const crop = (bytes) => sharp(bytes).extract({ left: 1071, top: 3558, width: 1127, height: 300 }).raw().toBuffer();
+  assert.deepEqual(await crop(result.bytes), await crop(master));
 });
 
 test("panel repair never asks a model for anything", () => {

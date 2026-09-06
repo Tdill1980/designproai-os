@@ -92,14 +92,20 @@ own boundary averaging, now a shared export), PLACE it scaled-to-fit and never
 enlarged inside one surface's trim with a 2″ installer tolerance in VEHICLE
 INCHES.
 
-- **Which surface it lands on is not a design opinion.** It goes to the one that
-  already holds most of it — minimise the move. Any other rule is code inventing
-  wrap layout, which is the half of the reverted work the owner rejected.
+- **Which surface it lands on is the owner's surface-content contract**
+  (`designpro.atlas-surface-content.v1`), not a heuristic. "Whichever surface
+  already holds most of it" was rejected by name. Explicit customer placement
+  always wins; default REAR = website/contact (the badge beside a contact bar
+  rides with it); default HOOD = complete logo/mascot or uninterrupted artwork;
+  default ROOF and FRONT = continuous artwork; driver and passenger are never a
+  default target. A kind with no default (photograph, focal, tagline) and no
+  customer instruction is **refused, not guessed.**
+- **An element that does not fit its ASSIGNED surface at 3″ refuses the master**
+  (`flat_atlas_required_element_unplaceable`). Never shrunk below legibility,
+  never relocated to a second choice.
 - **Elements that read as one lockup move as one unit.** The badge and the
   banner sit 8 px apart; moving them separately would re-space them, which IS a
   redesign.
-- **An element that cannot print at 3″ on the vehicle is refused, never shrunk
-  to fit.**
 - **It runs before canonical acceptance**, so QC, the panel cut, the projection,
   the seven proofs, Call 8 and the ZIP see one finished sheet. The accepted
   sheet is the last one that passed; `preRepairMasterHash` keeps what Gemini
@@ -111,17 +117,19 @@ INCHES.
 - **A passing panel is byte-identical afterwards**, asserted raw-buffer by
   raw-buffer.
 
-Measured on Arctic Air: one MOVE (badge + banner, 2097×319 px) from four
-surfaces onto the hood at 897×136 px / 8.31″ tall, 668,943 px healed, 3.5 s,
-and all six surfaces pass. Driver and passenger are untouched.
+Measured on Arctic Air: one MOVE (badge + banner as one contact lockup, with
+its halo) from four surfaces onto the REAR at 897×164 px / 10.03″ tall; all six
+surfaces pass; driver and passenger come out of the real `cutCallOnePanels`
+with the SAME hashes as the exported production panels. The vacated band is
+healed by row-wise mirrored continuation of the design's own neighbouring
+pixels (the RULE 0.15 bleed reflection across a straight-edged rectangle);
+boundary averaging alone streaks on a long thin rectangle and was measured to.
 
-**"Minimise the move" is a safety net, not the root fix, and it has a design
-consequence**: on Arctic Air it puts the contact lockup on the hood and leaves
-the rear bare. The root cause is that v24 asks the model to compose in THREE
-fields while the runtime cuts SIX unequal territories; the flanks are clean
-precisely because there the field IS the surface. Changing the field layout is a
-creative variable RULE 0.33 requires be measured on a real product generation,
-not assumed.
+**The repair is a safety net, not the root fix.** The root cause is that v24
+asks the model to compose in THREE fields while the runtime cuts SIX unequal
+territories; the flanks are clean precisely because there the field IS the
+surface. Changing the field layout is a creative variable RULE 0.33 requires be
+measured on a real product generation, not assumed.
 
 **`PANELS ✓` no longer means "six files exist."** `SixPanelBoard` shows each
 panel as an image with its surface, orientation, vehicle inches, effective PPI,

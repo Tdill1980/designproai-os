@@ -71,10 +71,12 @@ Box each of these when present: logo marks, emblems, badges, crests and mascot c
 
 Box a lockup that reads as ONE unit (a badge sitting against its wordmark, a contact bar) as ONE element, not as its parts.
 
+Give each element a kind from exactly this list: logo, mascot, wordmark, tagline, website, phone, email, address, photograph, focal.
+
 Do NOT box background artwork: gradients, ice, scenery, stripes, swooshes, repeated pattern motifs, textures.
 
 If the sheet carries no such element, return an empty elements array. EVERY element you return MUST carry its box_2d array; omit the element entirely rather than returning it without coordinates. Respond ONLY with this JSON (box_2d is [ymin,xmin,ymax,xmax] normalized 0-1000):
-{"elements":[{"label":"yeti shield lockup","box_2d":[0,0,0,0]}]}`;
+{"elements":[{"label":"yeti shield lockup","kind":"logo","box_2d":[0,0,0,0]}]}`;
 
 const LOCATE_ATTEMPTS = 3;
 
@@ -242,6 +244,7 @@ async function locateMasterElements(masterB64, { geminiJson, attempts = LOCATE_A
       if (!Array.isArray(elements)) throw new Error("element locate response did not contain an elements array");
       located = elements.map((element, index) => ({
         label: String(element?.label || "element"),
+        kind: String(element?.kind || ""),
         b: strictGeminiBox2d(element, index),
       }));
     } catch (error) {
@@ -255,7 +258,13 @@ async function locateMasterElements(masterB64, { geminiJson, attempts = LOCATE_A
       `A.T.L.A.S. element locate returned nothing usable after ${attempts} attempts: ${lastError?.message || lastError}`,
     );
   }
-  return collapseContainedLogoElements(located);
+  // The ported collapse keeps labels and boxes; carry each element's kind back
+  // onto the merged result by label so the surface-content contract can read it.
+  const kinds = new Map(located.map((element) => [element.label, element.kind]));
+  return collapseContainedLogoElements(located).map((element) => ({
+    ...element,
+    kind: element.label.split(" + ").map((label) => kinds.get(label)).filter(Boolean).join(" + "),
+  }));
 }
 
 /**
@@ -286,6 +295,7 @@ function planElementContainment(elements, manifest, masterWidth, masterHeight) {
     if (touched.length === 0) {
       return {
         label: element.label,
+        kind: element.kind || null,
         box: element.b,
         rect,
         status: "severed",
@@ -297,6 +307,7 @@ function planElementContainment(elements, manifest, masterWidth, masterHeight) {
     if (touched.length > 1) {
       return {
         label: element.label,
+        kind: element.kind || null,
         box: element.b,
         rect,
         status: "severed",
@@ -315,6 +326,7 @@ function planElementContainment(elements, manifest, masterWidth, masterHeight) {
     if (overContainer.length) {
       return {
         label: element.label,
+        kind: element.kind || null,
         box: element.b,
         rect,
         status: "severed",
@@ -326,6 +338,7 @@ function planElementContainment(elements, manifest, masterWidth, masterHeight) {
     if (overTrim.length) {
       return {
         label: element.label,
+        kind: element.kind || null,
         box: element.b,
         rect,
         status: "in_bleed",
@@ -336,6 +349,7 @@ function planElementContainment(elements, manifest, masterWidth, masterHeight) {
     }
     return {
       label: element.label,
+      kind: element.kind || null,
       box: element.b,
       rect,
       status: "contained",

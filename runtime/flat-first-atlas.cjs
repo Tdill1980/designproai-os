@@ -45,7 +45,7 @@ const { BUCKET } = require("./generation-store.cjs");
 const { buildFieldTerritories, NOSE_EDGE } = require("./atlas-field-territories.cjs");
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
 const { inspectAtlasPanels, PANEL_QC_CONTRACT } = require("./atlas-panel-qc.cjs");
-const { repairMasterPanels, PANEL_REPAIR_CONTRACT } = require("./atlas-panel-repair.cjs");
+const { repairMasterPanels, PANEL_REPAIR_CONTRACT, SURFACE_CONTENT_CONTRACT, PanelRepairError } = require("./atlas-panel-repair.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -2044,7 +2044,7 @@ async function loadLatestAtlasRevision(supabase, requestId) {
       "The deterministic cut-out repair no longer reproduces the surface source this revision recorded",
     );
   }
-  const expectedProjection = await projectionDerivative(acceptedMasterBytes);
+  const expectedProjection = await projectionDerivative(surfaceSourceBytes);
   if (expectedProjection.contentHash !== row.projection_content_hash
     || expectedProjection.byteSize !== Number(row.projection_byte_size)) {
     throw new FlatAtlasError("flat_atlas_projection_source_mismatch", "Stored proof-conditioning derivative is not the deterministic child of the canonical PNG master");
@@ -2549,11 +2549,30 @@ async function generateOrReuseFlatAtlas(options) {
   });
   let panelRepair = null;
   if (!panelQc.locateUnavailable && panelQc.severedElements.length) {
-    panelRepair = await repairMasterPanels({
-      masterBytes: repairCandidateBytes,
-      manifest,
-      containment: panelQc.elementsLocated,
-    });
+    try {
+      panelRepair = await repairMasterPanels({
+        masterBytes: repairCandidateBytes,
+        manifest,
+        containment: panelQc.elementsLocated,
+        // Explicit customer placement always wins (owner contract). The v3
+        // input carries no structured field for it yet, so this is the hook:
+        // `{ kind|label: surface }` on the request when one exists, else the
+        // owner's defaults -- contact to the rear, the mark to the hood.
+        placements: input?.placements && typeof input.placements === "object" ? input.placements : null,
+      });
+    } catch (cause) {
+      if (cause instanceof PanelRepairError && cause.code === "atlas_panel_element_unplaceable") {
+        // REFUSE THE MASTER. A required element that cannot fit entirely
+        // within its assigned panel-safe area is not silently relocated
+        // elsewhere and not shrunk below legibility. The reason names the
+        // element and the surface, so the refusal is actionable.
+        throw new FlatAtlasError(
+          "flat_atlas_required_element_unplaceable",
+          `A required element cannot be placed whole on its assigned surface (${SURFACE_CONTENT_CONTRACT}): ${cause.message}`,
+        );
+      }
+      throw cause;
+    }
     if (panelRepair.changed) {
       // Same discipline the cut-out fill's re-validation established: a
       // deterministic repair is REPEATABLE, which is not the same as VALID.
@@ -2995,6 +3014,7 @@ async function generateOrReuseFlatAtlas(options) {
       // Null when nothing was severed -- the overwhelmingly common case, and
       // byte-identical output.
       panelRepairContract: panelRepairApplied ? PANEL_REPAIR_CONTRACT : null,
+      panelRepairSurfaceContentContract: panelRepairApplied ? SURFACE_CONTENT_CONTRACT : null,
       panelRepairApplied: panelRepairApplied ? panelRepair.repairs : null,
       panelRepairVacatedPixels: panelRepairApplied ? panelRepair.vacatedPixels : null,
       // Set when the locator could not be reached. A run carrying this has NOT

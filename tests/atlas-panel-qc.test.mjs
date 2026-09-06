@@ -180,7 +180,7 @@ test("the ported locator re-asks rather than guessing a missing box", async () =
   };
   const located = await locateMasterElements("Zm9v", { geminiJson });
   assert.equal(calls, 3);
-  assert.deepEqual(located, [{ label: "wordmark", b: [10, 10, 90, 90] }]);
+  assert.deepEqual(located, [{ label: "wordmark", kind: "", b: [10, 10, 90, 90] }]);
 });
 
 test("a locator that never returns a usable box raises, it does not return empty", async () => {
@@ -188,6 +188,14 @@ test("a locator that never returns a usable box raises, it does not return empty
     () => locateMasterElements("Zm9v", { geminiJson: async () => ({ elements: [{ label: "x" }] }) }),
     (error) => error instanceof PanelQcError && error.code === "atlas_panel_qc_locate_unavailable",
   );
+});
+
+test("the locator carries each element's KIND through to containment, for the surface-content contract", async () => {
+  const geminiJson = async () => ({ elements: [{ label: "site", kind: "website", box_2d: [10, 10, 90, 90] }] });
+  const located = await locateMasterElements("Zm9v", { geminiJson });
+  assert.equal(located[0].kind, "website");
+  const containment = planElementContainment(located, ARCTIC_AIR_MANIFEST, 4096, 4096);
+  assert.equal(containment[0].kind, "website");
 });
 
 test("panel QC never asks the model to author anything", () => {

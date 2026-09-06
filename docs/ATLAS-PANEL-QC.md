@@ -183,12 +183,23 @@ cut was.** Three deterministic steps, no provider, ~3.5 s on a 4096 sheet:
    trim box with a 2″ installer tolerance held clear — in vehicle inches, so the
    tolerance is 2″ on the vehicle whatever a surface's pixel density is.
 
-**Which surface it lands on is not a design opinion.** It goes to the surface
-that **already holds most of it** — minimise the move — because any other rule
-is code inventing wrap layout, which is the half of the reverted work the owner
-rejected by name. On Arctic Air that is the hood, which is where the fragment
-`[ARCTIC AIR badge] Www.Arct` already reads as one intended lockup. The repair
-completes what the composition was already doing.
+**Which surface it lands on is the owner's surface-content contract
+(`designpro.atlas-surface-content.v1`), not a heuristic.** An earlier cut sent
+the element to "whichever surface already holds most of it"; the owner rejected
+that by name (2026-09-05) — on Arctic Air it put the website on the hood and
+left the rear bare. The contract that replaces it:
+
+| | |
+|---|---|
+| driver, passenger | never a relocation target by default; byte-identical when valid |
+| explicit customer placement | always wins (`placements: { kind or label: surface }` on the request; the v3 input carries no structured field yet, so today the defaults apply) |
+| default **rear** | website / contact information — and the badge beside a contact bar rides with it |
+| default **hood** | complete logo / mascot / wordmark, or uninterrupted artwork |
+| default **roof, front** | continuous artwork unless requested otherwise |
+| any other kind (photograph, focal subject, tagline) | **no default — refused** unless the customer said where it goes |
+| does not fit its assigned panel-safe area at ≥ 3″ | **the master is refused** (`flat_atlas_required_element_unplaceable`) — never shrunk below legibility, never relocated elsewhere |
+
+There is no fallback surface and no second choice.
 
 **Elements that belong together move together.** The badge and the banner are
 separately located and sit 8 px apart on one contact bar. Moving them
@@ -219,31 +230,42 @@ becomes canonical: **a repair that cannot be verified is not a repair.**
 ```
 BEFORE  failing: roof, hood, front, rear   passing: driver, passenger
 
-REPAIR PLAN
-  MOVE [arctic air badge + www.arcticair.com contact banner]
-       from px(983,3240 2097x319) across [hood, rear, front, roof]
-       -> hood px(1186,3307 897x136)  scale 0.4278  height 8.31"
-
-repaired: changed=true  vacated=668,943 px  in 3,472 ms
+REPAIR PLAN  (designpro.atlas-surface-content.v1)
+  MOVE [arctic air badge + www.arcticair.com contact banner]   kind: contact   basis: default
+       from px(983,3240 2097x319) + halo, across [hood, rear, front, roof]
+       -> REAR px(2313,3548 897x164)   scale 0.4113   10.03" tall
 
 AFTER   failing: none   passing: driver, passenger, roof, hood, front, rear
 ```
 
-Driver and passenger come back **byte-identical** — a repair aimed elsewhere
-must never touch a panel that already prints whole, and
-`tests/atlas-panel-repair.test.mjs` asserts it raw-buffer by raw-buffer.
+Fidelity is proved through the real cutter, not a crop: `cutCallOnePanels` over
+the ORIGINAL master reproduces all six exported production panel hashes
+(`0af8ddf2…`, `4d7c9f7a…`, `47abc2c5…`, `46ebd8ff…`, `8cf181a6…`, `cf46a716…`),
+and over the REPAIRED master the driver and passenger panels come out with
+**those same two hashes**. The first measured run lost the master's
+`density: 300` and every panel hash moved on identical pixels; the repaired
+sheet now carries it.
+
+### How the vacated band is healed, and what it took
+
+The lockup sat on the design's own repeating gear-and-snowflake band. Three
+fills were measured on the real bytes:
+
+| fill | result on the hood |
+|---|---|
+| boundary averaging (`diffuseInto`) alone | vertical streaks, dark wedges in from the corners at 45°, and it healed DARK from the unpainted sheet just below the hood container |
+| the same, sampling artwork only | streaks and wedges remain — inherent to a frontier walking in from the two short ends of a long thin rectangle |
+| **row-wise mirrored continuation** (each vacated row filled from its own settled neighbours, left and right, reflection folded so a run wider than its neighbour still has a source, crossfaded through the middle; artwork only; diffusion only for a pixel with no source) | a continuous band. A soft horizontal seam remains at the top of the healed area where the plate's glow met the band; the lift carries a 15% halo for exactly that and 8% was not enough |
+
+This is the reflection RULE 0.15 already uses for the 5″ bleed, applied across
+a rectangle with straight edges. Nothing outside a zone is painted by a single
+byte — asserted.
 
 ### The honest caveat
-
-"Minimise the move" is the least inventive rule available, and it has a design
-consequence: on Arctic Air it concentrates the contact lockup on the hood and
-leaves the rear bare. That is a legitimate wrap and it prints, but whether the
-website belongs on the hood or the rear is a **layout judgement**, and this code
-deliberately does not make it.
 
 The repair is a safety net, not the root fix. The root fix is upstream: v24 asks
 the model to compose in **three** fields while the runtime cuts **six** unequal
 territories, and the bottom third is where that mismatch lives. Driver and
 passenger are clean precisely because there the field IS the surface. Changing
 the field layout is a creative variable RULE 0.33 says must be measured on a
-real product generation, not assumed.
+real product generation, not assumed — and it is not part of this change.
