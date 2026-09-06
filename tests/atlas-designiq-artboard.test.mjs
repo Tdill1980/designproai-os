@@ -130,7 +130,7 @@ test("the mapping contains zero creative language of its own", () => {
   }
 });
 
-test("ONE-FIELD request: customer references ride through extras; no teaching proof, no guide, no corrective note survive", () => {
+test("Restored request keeps customer references and verified teaching inputs without corrective notes", () => {
   const b = body(BASE_INPUT, {
     referenceImagesBase64: ["YmF6"],
     // Legacy fields a stale caller might still send — none may survive onto
@@ -141,11 +141,11 @@ test("ONE-FIELD request: customer references ride through extras; no teaching pr
     correctiveNote: "CORRECTION -- refused",
     cohesionExampleFlatStoragePath: `atlas-call1-inputs/${"c".repeat(64)}.jpg`,
   });
-  assert.equal(b.fieldContract, "designpro.atlas-field-prompt.v2");
-  assert.deepEqual(b.noseEdge, { driver: "left", passenger: "right" });
-  assert.equal(b.teachingProofStoragePath, undefined, "no teaching proof reaches the one-field Call 1");
-  assert.equal(b.teachingProofIdentity, undefined);
-  assert.equal(b.guideStoragePath, undefined, "no guide reaches the one-field Call 1");
+  assert.equal(b.fieldContract, undefined);
+  assert.equal(b.noseEdge, undefined);
+  assert.equal(b.teachingProofStoragePath, `atlas-call1-inputs/${"b".repeat(64)}.png`);
+  assert.equal(b.teachingProofIdentity.contract, "designpro.atlas-labeled-teaching-proof.v3");
+  assert.equal(b.guideStoragePath, "atlas-call1-inputs/abc.png");
   assert.equal(b.correctiveNote, undefined, "no corrective note rides the primary-generation request");
   assert.equal(b.cohesionExampleFlatStoragePath, undefined, "the superseded cohesion field is gone");
   assert.equal(b.structuralReferenceStoragePath, undefined);
