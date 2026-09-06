@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(38);
 
 select has_table(
   'designpro_private','revision_fulfillment_bindings',
@@ -457,6 +457,84 @@ select is(
     '33000000-0000-4000-8000-000000000003'
   )->>'orderNumber','FP-2026-0001',
   'owner and runtime resolve the same frozen late-bound Order #'
+);
+
+-- Final QC must consume that same append-only binding.  The source snapshot
+-- remains fulfillment-unbound by design; looking for snapshot.orderNumber here
+-- is the exact production deadlock this test prevents.
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+update public.designpro_qc_members
+set can_final_qc=true
+where user_id='11000000-0000-4000-8000-000000000001';
+
+insert into public.designpro_workflow_stages(
+  id,run_id,stage_key,sequence,status,idempotency_key,
+  verification,output_hash,completed_at
+) values(
+  '36000000-0000-4000-8000-000000000004',
+  '34000000-0000-4000-8000-000000000003',
+  'output.verify',55,'completed',
+  '34000000-0000-4000-8000-000000000003:output.verify',
+  '{"verified":true}'::jsonb,repeat('e',64),now()
+);
+insert into public.designpro_stage_receipts(
+  run_id,stage_id,receipt_kind,identity,receipt,receipt_hash
+) values(
+  '34000000-0000-4000-8000-000000000003',
+  '36000000-0000-4000-8000-000000000004',
+  'output.verified','{}'::jsonb,'{"verified":true}'::jsonb,repeat('e',64)
+);
+insert into public.designpro_workflow_stages(
+  id,run_id,stage_key,sequence,status,idempotency_key,wait_reason
+) values(
+  '36000000-0000-4000-8000-000000000005',
+  '34000000-0000-4000-8000-000000000003',
+  'await_final_human_qc',60,'waiting',
+  '34000000-0000-4000-8000-000000000003:await_final_human_qc',
+  'final_human_qc_required'
+);
+update public.designpro_workflow_runs
+set status='approval_required'
+where id='34000000-0000-4000-8000-000000000003';
+
+select throws_ok(
+  $$select public.approve_designpro_human_gate(
+    '34000000-0000-4000-8000-000000000003',
+    'await_final_human_qc',
+    '11000000-0000-4000-8000-000000000001',
+    'LATE-BOUND-FINAL-QC-WRONG',
+    '{"known":true,"pass":true,"outputHashesVerified":true,"printDimensionsVerified":true,"colorModeVerified":true,"designId":"DID-32000000","orderNumber":"WRONG-ORDER"}'::jsonb
+  )$$,
+  'P0001','final_qc_evidence_or_business_identity_incomplete',
+  'final QC refuses an Order # other than the frozen late binding'
+);
+
+select public.approve_designpro_human_gate(
+  '34000000-0000-4000-8000-000000000003',
+  'await_final_human_qc',
+  '11000000-0000-4000-8000-000000000001',
+  'LATE-BOUND-FINAL-QC-PASS',
+  '{"known":true,"pass":true,"outputHashesVerified":true,"printDimensionsVerified":true,"colorModeVerified":true,"designId":"DID-32000000","orderNumber":"FP-2026-0001"}'::jsonb
+);
+select is(
+  (select status from public.designpro_workflow_stages
+   where id='36000000-0000-4000-8000-000000000005'),
+  'completed',
+  'final QC completes from the exact frozen late-fulfillment binding'
+);
+select is(
+  (select receipt#>>'{qc,orderNumber}'
+   from public.designpro_stage_receipts
+   where stage_id='36000000-0000-4000-8000-000000000005'),
+  'FP-2026-0001',
+  'the final QC receipt freezes the late-bound Order #'
+);
+select ok(
+  (select snapshot#>>'{fulfillment,state}'='unbound'
+     AND NOT (snapshot ?| ARRAY['orderNumber','delivery'])
+   from public.designpro_revision_sources
+   where revision_id='33000000-0000-4000-8000-000000000003'),
+  'final QC never rewrites the immutable design-first snapshot'
 );
 
 select * from finish();
