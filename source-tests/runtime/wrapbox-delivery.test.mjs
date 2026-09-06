@@ -118,7 +118,7 @@ class FakeQuery {
   then(resolve, reject) { return Promise.resolve({ data: this.matches(), error: null }).then(resolve, reject); }
 }
 
-function publicationFixture({ tamperDeliveredZip = false } = {}) {
+function publicationFixture({ tamperDeliveredZip = false, lateFulfillment = false } = {}) {
   const sourceZip = Buffer.from("approved exact production ZIP");
   const deliveredZip = tamperDeliveredZip ? Buffer.from("tampered production ZIP") : sourceZip;
   const zipHash = sha(sourceZip);
@@ -167,15 +167,33 @@ function publicationFixture({ tamperDeliveredZip = false } = {}) {
   const manifestBytes = Buffer.from(JSON.stringify(manifest));
   const manifestHash = sha(manifestBytes);
   const sourceZipPath = `designpro/user_${ids.operator}/${ids.run}/production-pack.zip`;
+  const boundSnapshot = deliverySnapshot();
+  const sourceSnapshot = lateFulfillment ? {
+    contractVersion: "designpro.revision-snapshot.v1",
+    generationId: ids.generation,
+    designId: "DID-EEEEEEEE",
+    sourceInputContract: "designpro.calls-1-7-input.v3",
+    designName: boundSnapshot.delivery.designName,
+    fulfillment: { contractVersion: "designpro.fulfillment-state.v1", state: "unbound" },
+  } : boundSnapshot;
+  const runInput = lateFulfillment ? {
+    fulfillment: {
+      bindingHash: "f".repeat(64),
+      contractVersion: "designpro.fulfillment-binding.v1",
+      delivery: boundSnapshot.delivery,
+      orderNumber: boundSnapshot.orderNumber,
+      revisionId: ids.revision,
+    },
+  } : {};
   const tableRows = {
     designpro_workflow_runs: [{
       id: ids.run, workflow_type: "designpro.production_pack", status: "completed",
       owner_id: ids.operator, tenant_key: `user_${ids.operator}`, revision_id: ids.revision,
-      revision_snapshot_hash: "c".repeat(64), entice_pack_id: ids.entice,
+      revision_snapshot_hash: "c".repeat(64), entice_pack_id: ids.entice, input: runInput,
     }],
     designpro_revision_sources: [{
       revision_id: ids.revision, owner_id: ids.operator, tenant_key: `user_${ids.operator}`,
-      generation_id: ids.generation, snapshot: deliverySnapshot(), snapshot_hash: "c".repeat(64),
+      generation_id: ids.generation, snapshot: sourceSnapshot, snapshot_hash: "c".repeat(64),
     }],
     designpro_stage_receipts: [
       { run_id: ids.run, receipt_kind: "zip", stage_id: ids.zipStage, receipt_hash: zipHash, receipt: { verified: true, receiptKind: "zip", zipHash } },
@@ -241,6 +259,14 @@ test("publisher rejects changed delivered ZIP bytes before database commit", asy
     (error) => error.code === "delivery_zip_bytes_changed",
   );
   assert.equal(fixture.rpcCalls.length, 0);
+});
+
+test("publisher resolves the exact post-purchase fulfillment binding for A.T.L.A.S.", async () => {
+  const fixture = publicationFixture({ lateFulfillment: true });
+  const result = await closure.publishCompletedWrapboxDelivery({ supabase: fixture.supabase, runId: ids.run });
+  assert.equal(result.packId, ids.pack);
+  assert.equal(fixture.rpcCalls.length, 1);
+  assert.equal(fixture.rpcCalls[0].name, "commit_designpro_wrapbox_pack");
 });
 
 test("notification requires provider idempotency and completes the exact leased row", async () => {
