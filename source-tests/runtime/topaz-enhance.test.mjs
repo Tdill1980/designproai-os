@@ -24,10 +24,11 @@ test("the enhancement mode is explicit and fails closed when half-configured", (
 });
 
 test("the upscale plan is clamped to the documented engine ceilings", () => {
-  // 5216x2112 panel cut -> 24450x9900 print target is about 4.7x, inside 6x.
-  const inside = topaz.upscalePlan({ sourceWidthPx: 5216, sourceHeightPx: 2112, targetWidthPx: 24450, targetHeightPx: 9900 });
+  // An ordinary 4.5x request stays below every engine ceiling.
+  const inside = topaz.upscalePlan({ sourceWidthPx: 2000, sourceHeightPx: 800, targetWidthPx: 9000, targetHeightPx: 3600 });
   assert.equal(inside.clampedByEngineCeiling, false);
-  assert.equal(inside.outputWidth, 24450);
+  assert.equal(inside.clampedByMegapixelCeiling, false);
+  assert.equal(inside.outputWidth, 9000);
   assert.ok(inside.appliedScale <= topaz.TOPAZ_MAX_SCALE);
 
   // A demand beyond 6x is clamped and the receipt says so rather than implying
@@ -37,9 +38,16 @@ test("the upscale plan is clamped to the documented engine ceilings", () => {
   assert.equal(clamped.appliedScale, topaz.TOPAZ_MAX_SCALE);
   assert.equal(clamped.outputWidth, 6000);
 
-  // The 32,000 px edge ceiling binds before 6x on very wide panels.
-  const edge = topaz.upscalePlan({ sourceWidthPx: 8000, sourceHeightPx: 2000, targetWidthPx: 48000, targetHeightPx: 12000 });
-  assert.ok(edge.outputWidth <= topaz.TOPAZ_MAX_OUTPUT_EDGE_PX);
+  // The 32,000 px edge ceiling binds before 6x on a very wide, thin panel.
+  const edge = topaz.upscalePlan({ sourceWidthPx: 8000, sourceHeightPx: 100, targetWidthPx: 48000, targetHeightPx: 600 });
+  assert.equal(edge.outputWidth, topaz.TOPAZ_MAX_OUTPUT_EDGE_PX);
+  assert.equal(edge.clampedByMegapixelCeiling, false);
+
+  // Real generation 634c5b28 previously requested 118.21 MP and received a
+  // provider HTTP 413. The plan must stay under High Fidelity V2's 96 MP cap.
+  const realDriver = topaz.upscalePlan({ sourceWidthPx: 2848, sourceHeightPx: 1153, targetWidthPx: 24450, targetHeightPx: 9900 });
+  assert.equal(realDriver.clampedByMegapixelCeiling, true);
+  assert.ok(realDriver.outputPixels <= topaz.TOPAZ_MAX_OUTPUT_PIXELS);
 
   assert.throws(() => topaz.upscalePlan({ sourceWidthPx: 4000, sourceHeightPx: 1000, targetWidthPx: 400, targetHeightPx: 100 }), /not larger/);
   assert.throws(() => topaz.upscalePlan({ sourceWidthPx: 0, sourceHeightPx: 1, targetWidthPx: 2, targetHeightPx: 2 }), /whole positive/);

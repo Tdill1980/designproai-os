@@ -26,12 +26,14 @@ const { createHash } = require("node:crypto");
 const sharp = require("sharp");
 
 const TOPAZ_ENDPOINT = "https://api.topazlabs.com/image/v1/enhance";
-// High Fidelity V2 is the sharp photographic model and carries a far higher
-// megapixel ceiling than Standard V2, whose 96 MP cap is what made large flat
-// panels 413 and fall back to a soft resize.
+// High Fidelity V2 currently refuses outputs above 96 MP. Keep this provider
+// ceiling in the deterministic plan: Call 12 may finish the remaining distance
+// with its recorded Lanczos conformance resize, but it must never ask Topaz for
+// geometry the selected model will reject.
 const TOPAZ_DEFAULT_MODEL = "High Fidelity V2";
 const TOPAZ_MAX_SCALE = 6;
 const TOPAZ_MAX_OUTPUT_EDGE_PX = 32_000;
+const TOPAZ_MAX_OUTPUT_PIXELS = 96_000_000;
 const TOPAZ_CONTRACT = "designpro.call12-topaz-enhance.v1";
 const ALLOWED_OUTPUT_TYPES = new Set(["image/png", "image/tiff", "image/jpeg"]);
 
@@ -62,8 +64,9 @@ function topazReadiness(env = process.env) {
 
 /**
  * Pure geometry. Decides the exact output pixels Topaz is asked for, clamped to
- * the documented 6x scale ceiling and 32,000 px edge. Deterministic, so the
- * plan can be recorded in the receipt and re-checked independently.
+ * the documented 6x scale ceiling, 32,000 px edge and the provider-enforced
+ * 96 MP High Fidelity V2 ceiling. Deterministic, so the plan can be recorded
+ * in the receipt and re-checked independently.
  */
 function upscalePlan({ sourceWidthPx, sourceHeightPx, targetWidthPx, targetHeightPx }) {
   const source = [sourceWidthPx, sourceHeightPx].map(Number);
@@ -75,10 +78,17 @@ function upscalePlan({ sourceWidthPx, sourceHeightPx, targetWidthPx, targetHeigh
   if (requestedScale <= 1) {
     throw new UpscaleError("upscale_not_required", "Target geometry is not larger than the source panel");
   }
-  const scaleCeiling = Math.min(TOPAZ_MAX_SCALE, TOPAZ_MAX_OUTPUT_EDGE_PX / Math.max(source[0], source[1]));
+  const edgeScaleCeiling = TOPAZ_MAX_OUTPUT_EDGE_PX / Math.max(source[0], source[1]);
+  const pixelScaleCeiling = Math.sqrt(TOPAZ_MAX_OUTPUT_PIXELS / (source[0] * source[1]));
+  const scaleCeiling = Math.min(TOPAZ_MAX_SCALE, edgeScaleCeiling, pixelScaleCeiling);
   const scale = Math.min(requestedScale, scaleCeiling);
-  const outputWidth = Math.min(TOPAZ_MAX_OUTPUT_EDGE_PX, Math.max(1, Math.round(source[0] * scale)));
-  const outputHeight = Math.min(TOPAZ_MAX_OUTPUT_EDGE_PX, Math.max(1, Math.round(source[1] * scale)));
+  // Floor both axes. Rounding either one up at the megapixel boundary can turn
+  // a valid plan into the same HTTP 413 this clamp exists to prevent.
+  const outputWidth = Math.min(TOPAZ_MAX_OUTPUT_EDGE_PX, Math.max(1, Math.floor(source[0] * scale)));
+  const outputHeight = Math.min(TOPAZ_MAX_OUTPUT_EDGE_PX, Math.max(1, Math.floor(source[1] * scale)));
+  if (outputWidth * outputHeight > TOPAZ_MAX_OUTPUT_PIXELS) {
+    throw new UpscaleError("upscale_geometry_invalid", "Call 12 planned more pixels than the Topaz model permits");
+  }
   return {
     contract: TOPAZ_CONTRACT,
     sourceWidthPx: source[0], sourceHeightPx: source[1],
@@ -86,10 +96,14 @@ function upscalePlan({ sourceWidthPx, sourceHeightPx, targetWidthPx, targetHeigh
     requestedScale: Math.round(requestedScale * 10000) / 10000,
     appliedScale: Math.round(scale * 10000) / 10000,
     outputWidth, outputHeight,
+    outputPixels: outputWidth * outputHeight,
+    maxOutputPixels: TOPAZ_MAX_OUTPUT_PIXELS,
     // True when Topaz cannot reach the full print target in one request. The
     // remainder is a plain resample and the receipt says so rather than
     // implying the whole distance was enhanced.
     clampedByEngineCeiling: scale < requestedScale,
+    clampedByMegapixelCeiling: scale < requestedScale
+      && pixelScaleCeiling <= Math.min(TOPAZ_MAX_SCALE, edgeScaleCeiling),
   };
 }
 
@@ -188,6 +202,7 @@ module.exports = {
   TOPAZ_DEFAULT_MODEL,
   TOPAZ_ENDPOINT,
   TOPAZ_MAX_OUTPUT_EDGE_PX,
+  TOPAZ_MAX_OUTPUT_PIXELS,
   TOPAZ_MAX_SCALE,
   UpscaleError,
   enhancePanel,
