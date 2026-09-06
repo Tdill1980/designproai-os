@@ -1,5 +1,32 @@
 # CLAUDE.md — designproai-os
 
+## Current owner instruction — finish A.T.L.A.S. end to end (2026-09-06)
+
+This section supersedes the immediately following six-surface-restoration
+header and RULE 0.33 wherever either conflicts with this implementation.
+
+The restored prompt-drawn six-surface branch is no longer the product path.
+Production canary `14efa530-1382-4596-be12-576d8d4c88b2` ran it twice at exact
+SHA `a8c039ec946377dced06cf73587e504f3812015b`; both candidates floated contoured
+shapes on a surround and the unchanged deterministic gate correctly refused
+them before a canonical master existed. The controlled prompt/reference tests
+already record 0/6 compliant panes, so do not spend another release or provider
+call on six-rectangle wording.
+
+The product keeps the measured Field Recovery v2 creative request unchanged:
+Gemini authors one square, full-bleed, three-register creative field and sees no
+production topology, teaching sheet or neutral guide. Runtime code then maps
+the complete upper register to Driver, the complete middle register to
+Passenger, and the complete supporting lower register independently to Hood,
+Roof, Front and Rear, filling the exact original GENIE rectangles before the
+canonical acceptance gate. `cutCallOnePanels` cuts those same rectangles.
+
+This is geometry-by-construction, not artwork repair: do not heal, reconstruct,
+infer from a proof, or relocate accepted pixels. Do not use or merge PR #301.
+The master gate, six Call-1 panels, seven proof projections, Call 8, QC, Topaz,
+production ZIP and WrapBox remain the existing downstream path and must be
+verified by one fresh production GenerationID before success is claimed.
+
 ## Current owner instruction — six-surface restoration (2026-09-06)
 
 The owner's complete source document is `docs/ATLAS-RESTORATION-WORKING-MODEL.md`,
