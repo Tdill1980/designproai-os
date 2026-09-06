@@ -158,6 +158,10 @@ test("production preserves Call 10 logos through source verify, ZIP, and WrapBox
   assert.match(claimantSource, /zipKinds: Object\.freeze\(\[[\s\S]{0,200}logos \? \["logo"\] : \[\]/);
   assert.match(claimantSource, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/);
   assert.match(claimantSource, /contract: MANIFEST_CONTRACT[\s\S]*?logos,[\s\S]*?files/);
+  assert.match(claimantSource, /revisionId: run\.revision_id, sourceEnticeRunId: sourceRunId, designId:/,
+    "WrapBox must bind the manifest to executeProduction's validated source Entice run ID");
+  assert.doesNotMatch(claimantSource, /revisionId: run\.revision_id, sourceEnticeRunId, designId:/,
+    "WrapBox must not reference an undeclared sourceEnticeRunId shorthand");
   assert.match(claimantSource, /publicationPending: true/);
   assert.doesNotMatch(claimantSource, /deliver_designpro_wrapbox_pack/);
 });
