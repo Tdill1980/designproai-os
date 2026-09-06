@@ -100,19 +100,16 @@ test("the six code-only territories reproduce Draw 1's recorded geometry exactly
   assert.deepEqual([d.w, d.h], [p.w, p.h]);
 });
 
-test("the restored product request selects six surfaces with both verified image inputs", () => {
+test("the product request selects the proven field contract with no structural image", () => {
   const { legacy } = fixtureManifests();
-  const teaching = require("../runtime/flat-atlas-topology-examples.cjs").loadBundledAtlasTeachingProof();
-  const extras = {
-    teachingProofStoragePath: `atlas-call1-inputs/${teaching.flattenedTopView.contentHash}.png`,
-    teachingProofIdentity: teaching.identity,
-    guideStoragePath: `atlas-call1-inputs/${"a".repeat(64)}.png`,
-    referenceImagesBase64: ["YmF6"],
-  };
+  const extras = { referenceImagesBase64: ["YmF6"] };
   const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, legacy, extras);
-  assert.equal(body.fieldContract, undefined);
-  assert.equal(body.noseEdge, undefined);
-  for (const key of Object.keys(extras)) assert.deepEqual(body[key], extras[key]);
+  assert.equal(body.fieldContract, "designpro.atlas-field-prompt.v2");
+  assert.deepEqual(body.noseEdge, { driver: "left", passenger: "right" });
+  assert.deepEqual(body.referenceImagesBase64, ["YmF6"]);
+  assert.equal(body.teachingProofStoragePath, undefined);
+  assert.equal(body.teachingProofIdentity, undefined);
+  assert.equal(body.guideStoragePath, undefined);
   assert.equal(body.panels.length, 6);
   assert.equal(body.panels.find(p => p.surfaceId === "PS").normalized.orientation, "rotated +90°");
   assert.equal(body.panels.find(p => p.surfaceId === "DS").normalized.orientation, "rotated -90°");
@@ -122,7 +119,6 @@ test("the DEPLOYED edge assembly produces Draw 1's field prompt byte for byte", 
   const mod = await slice();
   const { field } = fixtureManifests();
   const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {});
-  body.fieldContract = "designpro.atlas-field-prompt.v2";
   const { prompt, references } = mod.buildAtlasCall1Prompt(body);
   assert.equal(references.length, 0);
   assert.equal(prompt.length, DRAW1_PROMPT.length);
@@ -141,7 +137,6 @@ test("the whole model-facing field prompt carries no object-schema, topology or 
   const { field } = fixtureManifests();
   for (const mode of ["commercial", "restyle"]) {
     const body = atlas._test.atlasEdgeRequestBody({ ...FIXTURE_INPUT, mode }, field, {});
-    body.fieldContract = "designpro.atlas-field-prompt.v2";
     const { prompt } = mod.buildAtlasCall1Prompt(body);
     assert.doesNotThrow(() => assertFieldPromptClean(prompt, `the ${mode} field prompt`));
     assert.match(prompt, /OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image\./);
@@ -237,12 +232,11 @@ test("atlasProjectionParts accepts the field manifest and conditions a proof", a
   );
 });
 
-test("the restored product prompt matches the owner's complete specification hash", async () => {
+test("the active product prompt remains the measured Field Recovery v2 prompt", async () => {
   const mod = await slice();
-  const { legacy } = fixtureManifests();
-  const input = { ...FIXTURE_INPUT, companyName: "Precision Climate Solutions", colors: [], style: "", industry: "" };
-  const body = atlas._test.atlasEdgeRequestBody(input, legacy);
+  const { field } = fixtureManifests();
+  const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field);
   const { prompt } = mod.buildAtlasCall1Prompt(body);
-  assert.equal(prompt.length, 4443);
-  assert.equal(sha(prompt), "bae1d8c4541d4923d422b68c5368f7019e8c55e319947fca8ac58f396a5a8eed");
+  assert.equal(prompt.length, DRAW1_PROMPT.length);
+  assert.equal(sha(prompt), sha(DRAW1_PROMPT));
 });
