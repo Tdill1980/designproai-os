@@ -67,6 +67,10 @@ test("seven distinct views automatically precede flat proof, panels and logos", 
     "views.seven-source", "call8.flat-proof", "call8.flat-proof-deferred",
     "call9.surface-panels", "call10.logo-inventory",
   ]);
+  assert.ok(
+    RECEIPTS.includes("panelpro.preflight"),
+    "stamp.build can read the preflight receipt required by its QC certificate",
+  );
   assert.ok(RECEIPTS.includes("final.human-qc"));
   assert.equal(new Set(Object.values(_test.exactSevenViews({ renderAssets: views }, tenantKey, revisionId)).map((asset) => asset.contentHash)).size, 7);
 });
