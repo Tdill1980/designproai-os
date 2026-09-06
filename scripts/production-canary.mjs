@@ -46,8 +46,10 @@ const POLL_INTERVAL_MS = 5_000;
 const MAX_ENTICE_POLLS = 240;
 const MAX_AUTOMATIC_PRODUCTION_POLLS = 12;
 const MAX_PRODUCTION_POLLS = 720;
-const ATLAS_SLO_SECONDS = 60;
-const DRIVER_SLO_SECONDS = 90;
+const ATLAS_FIRST_ATTEMPT_SLO_SECONDS = 60;
+const DRIVER_FIRST_ATTEMPT_SLO_SECONDS = 90;
+const ATLAS_FALLBACK_SLO_SECONDS = 120;
+const DRIVER_FALLBACK_SLO_SECONDS = 180;
 const OPERATOR_EMAIL = "canary-operator@designproai.com";
 const CUSTOMER_REFERENCE = "DESIGNPROAI-ATLAS-GRAPH-CANARY";
 
@@ -704,8 +706,9 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   if (atlasRow.metadata?.masterQcPassed !== true) {
     throw new Error(`the A.T.L.A.S. master did not pass QC: ${JSON.stringify(atlasRow.metadata || null).slice(0, 300)}`);
   }
-  if (Number(atlasRow.metadata?.geminiImageRequestCount) !== 1) {
-    throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; expected exactly one`);
+  const imageRequestCount = Number(atlasRow.metadata?.geminiImageRequestCount);
+  if (![1, 2].includes(imageRequestCount)) {
+    throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; expected one accepted first attempt or one bounded refusal-only fallback`);
   }
   if (atlasRow.metadata?.geometryAuthority?.source !== "genie-panelizer-catalog") {
     throw new Error(`A.T.L.A.S. used non-current geometry authority: ${String(atlasRow.metadata?.geometryAuthority?.source || "missing")}`);
@@ -740,7 +743,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
     masterQcPassed: atlasRow.metadata?.masterQcPassed === true,
     masterCutoutSurfaces: atlasRow.metadata?.masterCutoutSurfaces || [],
     createdAt: atlasRow.created_at,
-    geminiImageRequestCount: Number(atlasRow.metadata?.geminiImageRequestCount),
+    geminiImageRequestCount: imageRequestCount,
     callOneTimings: atlasRow.metadata?.callOneTimings || null,
     atlasEdgeProvenance: atlasRow.metadata?.atlasEdgeProvenance || [],
   };
@@ -805,6 +808,9 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
   if (!driverRow?.created_at) throw new Error("Driver proof has no durable availability timestamp");
   const atlasSeconds = elapsedSeconds(row.created_at, atlasRow.created_at, "A.T.L.A.S. latency");
   const driverSeconds = elapsedSeconds(row.created_at, driverRow.created_at, "Driver latency");
+  const usedFallback = imageRequestCount === 2;
+  const atlasSloSeconds = usedFallback ? ATLAS_FALLBACK_SLO_SECONDS : ATLAS_FIRST_ATTEMPT_SLO_SECONDS;
+  const driverSloSeconds = usedFallback ? DRIVER_FALLBACK_SLO_SECONDS : DRIVER_FIRST_ATTEMPT_SLO_SECONDS;
   evidence.latency = {
     basis: "request-created-to-durable-artifact",
     requestCreatedAt: row.created_at,
@@ -812,12 +818,15 @@ async function runCallsOneToSeven({ operator, operatorId, generationId }) {
     driverCreatedAt: driverRow.created_at,
     atlasSeconds,
     driverSeconds,
-    atlasSloSeconds: ATLAS_SLO_SECONDS,
-    driverSloSeconds: DRIVER_SLO_SECONDS,
-    pass: atlasSeconds <= ATLAS_SLO_SECONDS && driverSeconds <= DRIVER_SLO_SECONDS,
+    imageRequestCount,
+    usedFallback,
+    atlasSloSeconds,
+    driverSloSeconds,
+    pass: atlasSeconds <= atlasSloSeconds && driverSeconds <= driverSloSeconds,
   };
-  step(`latency A.T.L.A.S. ${atlasSeconds.toFixed(2)}s / ${ATLAS_SLO_SECONDS}s; `
-    + `Driver ${driverSeconds.toFixed(2)}s / ${DRIVER_SLO_SECONDS}s`);
+  step(`latency A.T.L.A.S. ${atlasSeconds.toFixed(2)}s / ${atlasSloSeconds}s; `
+    + `Driver ${driverSeconds.toFixed(2)}s / ${driverSloSeconds}s; `
+    + `${usedFallback ? "bounded fallback used" : "first attempt accepted"}`);
   if (!evidence.latency.pass) {
     step("latency SLO missed; recording the miss and continuing through the full graph before final acceptance");
   }

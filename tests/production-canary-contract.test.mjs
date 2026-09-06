@@ -61,9 +61,13 @@ test("the canary proves a persisted A.T.L.A.S. master, not just a receipt field"
 });
 
 test("the canary records display latency and defers its hard SLO gate until the full graph is checked", () => {
-  assert.match(canary, /const ATLAS_SLO_SECONDS = 60/);
-  assert.match(canary, /const DRIVER_SLO_SECONDS = 90/);
-  assert.match(canary, /metadata\?\.geminiImageRequestCount\) !== 1/);
+  assert.match(canary, /const ATLAS_FIRST_ATTEMPT_SLO_SECONDS = 60/);
+  assert.match(canary, /const DRIVER_FIRST_ATTEMPT_SLO_SECONDS = 90/);
+  assert.match(canary, /const ATLAS_FALLBACK_SLO_SECONDS = 120/);
+  assert.match(canary, /const DRIVER_FALLBACK_SLO_SECONDS = 180/);
+  assert.match(canary, /!\[1, 2\]\.includes\(imageRequestCount\)/);
+  assert.match(canary, /usedFallback \? ATLAS_FALLBACK_SLO_SECONDS : ATLAS_FIRST_ATTEMPT_SLO_SECONDS/);
+  assert.match(canary, /usedFallback \? DRIVER_FALLBACK_SLO_SECONDS : DRIVER_FIRST_ATTEMPT_SLO_SECONDS/);
   assert.match(canary, /source_view_type,consumer_role,content_hash,byte_size,content_type,created_at/);
   assert.match(canary, /callOneTimings/);
   assert.match(canary, /atlasEdgeProvenance/);

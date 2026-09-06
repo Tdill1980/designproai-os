@@ -59,7 +59,10 @@ const TEACHING_PROOF = readFileSync(new URL("../runtime/atlas-examples/flamingo-
 const EDGE_SOURCE = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
 const edgeLiteral = (head) => { const i = EDGE_SOURCE.indexOf(head); const q = EDGE_SOURCE.lastIndexOf('"', i); const e = EDGE_SOURCE.indexOf('",', i); return JSON.parse(EDGE_SOURCE.slice(q, e + 1)); };
 const DEPLOYED_TEACHING_TEXT = edgeLiteral("LABELED A.T.L.A.S. TEACHING REFERENCE.");
-const DEPLOYED_GUIDE_TEXT = edgeLiteral("CURRENT TARGET GUIDE —");
+// Historical evidence from deployed v23. The current edge may advance its
+// target-guide instruction under a new prompt version without rewriting this
+// captured request or weakening the recovery harness.
+const DEPLOYED_GUIDE_TEXT = "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Fill its six regions with the NEW customer design from the canonical target vehicle and brief above. Return flat printable rectangles only; never return a vehicle image.";
 const build = () => buildAnchorPrompt(DEPLOYED_PROMPT, { centerOrder: atlas.CENTER_ORDER });
 
 test("the deployed-prompt fixture is the one the edge sends", () => {

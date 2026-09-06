@@ -189,9 +189,9 @@ jobs:
         run: |
           cat <<'NOTE'
           PASS requires the real standalone chain to produce:
-            - one A.T.L.A.S. creative image request
-            - durable A.T.L.A.S. master in 60 seconds or less
-            - durable Driver-side 3D proof in 90 seconds or less
+            - one accepted A.T.L.A.S. first attempt, or one bounded refusal-only fallback (two requests maximum)
+            - durable A.T.L.A.S. master in 60 seconds first-attempt / 120 seconds fallback
+            - durable Driver-side 3D proof in 90 seconds first-attempt / 180 seconds fallback
             - one Entice Call 8 proof and one exact Production copy
             - six Call 9 panel cuts
             - six Call 12 Topaz-enhanced panel masters
