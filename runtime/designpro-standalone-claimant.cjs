@@ -453,6 +453,20 @@ function requiredObject(value, label) {
   return value;
 }
 
+/**
+ * The production dimension manifest is minted by `manifest.resolve`, after
+ * purchase, and `bind_designpro_dimension_manifest` freezes it on the run's
+ * results. Old/in-flight runs may still carry the same value in their input,
+ * so that shape remains a compatibility fallback; it is never preferred over
+ * the manifest GENIE actually bound.
+ */
+function productionDimensionManifest(run, input) {
+  return requiredObject(
+    run?.results?.dimensionManifest ?? input?.dimensionManifest,
+    "production dimensionManifest",
+  );
+}
+
 function requiredString(value, label) {
   const text = String(value || "").trim();
   if (!text) throw new StageError("invalid_stage_input", `${label} is required`, false);
@@ -1561,7 +1575,7 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
       throw new StageError("enhanced_panel_receipt_mismatch", `Call 12 ${panel.surface_key} receipt and stored enhanced panel differ`, false);
     }
   }
-  const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
+  const dimensionManifest = productionDimensionManifest(run, input);
   const dimensions = new Map((dimensionManifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
   const produced = [];
   const spools = [];
@@ -2159,7 +2173,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const correctedSurfaces = [...activeBySurface.keys()].filter(
       (key) => SURFACE_KEYS.includes(key),
     ).sort();
-    const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
+    const dimensionManifest = productionDimensionManifest(run, input);
     const dimensions = new Map((dimensionManifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
     const produced = [];
     const spools = [];
@@ -2309,7 +2323,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         authorizedAssetManifest: authorized, notApplicable: ["output"],
       }, null, []);
     }
-    const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
+    const dimensionManifest = productionDimensionManifest(run, input);
     let verified;
     try {
       verified = await withHeavyOutputLease(sb, stage, () => verifyProductionOutputSet({
@@ -2356,8 +2370,9 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     // the sizes from the bound GENIE manifest -- nothing here is defaulted, so the
     // page can only ever state what the run really recorded.
     const preflightReceipt = await receipt(sb, run.id, "panelpro.preflight");
+    const dimensionManifest = productionDimensionManifest(run, input);
     const certificateSurfaces = SURFACE_KEYS.map((surfaceKey) => {
-      const surface = (input.dimensionManifest?.expectedSurfaces || [])
+      const surface = (dimensionManifest.expectedSurfaces || [])
         .find((item) => String(item.surfaceKey) === surfaceKey) || {};
       const width = Number(surface.widthInches);
       const height = Number(surface.heightInches);
@@ -2426,7 +2441,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       ? (await receipt(sb, sourceRunId, "views.seven-source")).receipt?.viewReceipts
       : [];
     const viewEntries = authorized.zipIncludesSourceViews ? sourceViewZipEntries(sb, sourceViews) : [];
-    const dimensionManifest = requiredObject(input.dimensionManifest, "production dimensionManifest");
+    const dimensionManifest = productionDimensionManifest(run, input);
     const dimensionManifestBytes = Buffer.from(JSON.stringify(canonical(dimensionManifest)));
     const dimensionManifestHash = hashBytes(dimensionManifestBytes);
     const dimensionArchivePath = "dimension-manifest/designpro-genie-dimension-manifest.json";
@@ -2925,4 +2940,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   };
 }
 
-module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, designTimeManifest, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
+module.exports = { registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, designTimeManifest, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, productionDimensionManifest, sourceViewZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views } };
