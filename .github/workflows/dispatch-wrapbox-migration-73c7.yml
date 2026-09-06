@@ -1,0 +1,29 @@
+name: Dispatch WrapBox late-fulfillment production migration
+
+on:
+  push:
+    branches:
+      - codex/dispatch-wrapbox-migration-73c7
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_MAIN_SHA: 73c7a2aa402731fb9fe835922a3c3eda6b252c71
+    steps:
+      - name: Dispatch the exact protected production migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$actual" = "$EXPECTED_MAIN_SHA"
+          gh workflow run release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f production_migration=APPLY_DESIGNPRO_PRODUCTION
