@@ -282,6 +282,60 @@ async function storageBytes(sb, storagePath) {
   fail("delivery_storage_read_failed", `${path}: unsupported Storage response`, { retryable: true });
 }
 
+function digestChunk(value, path) {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  if (value instanceof ArrayBuffer) return Buffer.from(value);
+  if (ArrayBuffer.isView(value)) return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  fail("delivery_storage_read_failed", `${path}: Storage stream returned a non-byte chunk`, { retryable: true });
+}
+
+async function storageDigest(sb, storagePath) {
+  const path = safePath(storagePath, "storagePath");
+  try {
+    const download = sb.storage.from(BUCKET).download(path);
+    const request = typeof download?.asStream === "function" ? download.asStream() : download;
+    const { data, error } = await request;
+    if (error || data == null) {
+      fail("delivery_storage_read_failed", `${path}: ${error?.message || "missing"}`, { retryable: true });
+    }
+
+    const hash = createHash("sha256");
+    let byteSize = 0;
+    const consume = (chunk) => {
+      const bytes = digestChunk(chunk, path);
+      hash.update(bytes);
+      byteSize += bytes.length;
+    };
+
+    if (Buffer.isBuffer(data) || data instanceof Uint8Array || data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+      consume(data);
+    } else {
+      const stream = typeof data.stream === "function" ? data.stream() : data;
+      if (stream && typeof stream[Symbol.asyncIterator] === "function") {
+        for await (const chunk of stream) consume(chunk);
+      } else if (stream && typeof stream.getReader === "function") {
+        const reader = stream.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            consume(value);
+          }
+        } finally {
+          reader.releaseLock?.();
+        }
+      } else {
+        fail("delivery_storage_read_failed", `${path}: unsupported streaming Storage response`, { retryable: true });
+      }
+    }
+    return Object.freeze({ contentHash: hash.digest("hex"), byteSize });
+  } catch (error) {
+    if (error instanceof WrapboxDeliveryError) throw error;
+    fail("delivery_storage_read_failed", `${path}: ${error?.message || "stream failed"}`, { retryable: true });
+  }
+}
+
 function requireRow(row, code, message) {
   if (!row) fail(code, message);
   return row;
@@ -357,10 +411,10 @@ async function publishCompletedWrapboxDelivery({ supabase, runId }) {
     fail("delivery_artifact_identity_mismatch", "Delivery paths or stage-bound artifacts do not match their receipts");
   }
 
-  const sourceZipBytes = await storageBytes(supabase, zipArtifact.storage_path);
-  const deliveredZipBytes = await storageBytes(supabase, deliveredZipPath);
-  if (hashBytes(sourceZipBytes) !== zipHash || Number(zipArtifact.byte_size) !== sourceZipBytes.length
-    || hashBytes(deliveredZipBytes) !== zipHash || deliveredZipBytes.length !== sourceZipBytes.length) {
+  const sourceZip = await storageDigest(supabase, zipArtifact.storage_path);
+  const deliveredZip = await storageDigest(supabase, deliveredZipPath);
+  if (sourceZip.contentHash !== zipHash || Number(zipArtifact.byte_size) !== sourceZip.byteSize
+    || deliveredZip.contentHash !== zipHash || deliveredZip.byteSize !== sourceZip.byteSize) {
     fail("delivery_zip_bytes_changed", "Source or delivered ZIP bytes do not match the approved SHA-256 identity");
   }
   const manifestBytes = await storageBytes(supabase, manifestPath);
@@ -384,14 +438,14 @@ async function publishCompletedWrapboxDelivery({ supabase, runId }) {
     businessIdentity,
     zipPath: deliveredZipPath,
     zipHash,
-    zipBytes: deliveredZipBytes.length,
+    zipBytes: deliveredZip.byteSize,
     logoInventory,
   });
 
   const { data, error } = await supabase.rpc("commit_designpro_wrapbox_pack", {
     p_run_id: run.id,
     p_observed_zip_hash: zipHash,
-    p_observed_zip_bytes: deliveredZipBytes.length,
+    p_observed_zip_bytes: deliveredZip.byteSize,
     p_observed_manifest_hash: manifestHash,
     p_observed_manifest_bytes: manifestBytes.length,
     p_observed_logo_inventory: observedLogoInventory,
@@ -529,5 +583,6 @@ module.exports = {
   reconcileCompletedWrapboxDeliveries,
   resolvedFulfillmentSnapshot,
   sanitizedError,
+  storageDigest,
   validateManifest,
 };
