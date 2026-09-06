@@ -36,6 +36,11 @@ on:
         required: false
         default: ""
         type: string
+      raw_storage_path:
+        description: "failed raw Call-1 object (atlas-call1/<uuid>.png); diagnostic read only"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -60,6 +65,7 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
       RUN_ID: ${{ inputs.run_id }}
       ATLAS_GENERATION_ID: ${{ inputs.atlas_generation_id }}
+      RAW_STORAGE_PATH: ${{ inputs.raw_storage_path }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -75,18 +81,23 @@ jobs:
             exit 39
           fi
           uuid='^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-          # Exactly one selector. Two would silently export the run and ignore
-          # the generation; neither would export nothing and read as success.
-          if [[ -n $RUN_ID && -n $ATLAS_GENERATION_ID ]]; then
-            printf '::error title=Ambiguous selector::pass run_id or atlas_generation_id, never both.\n' >&2
+          # Exactly one selector. Multiple selectors would make the evidence
+          # ambiguous; no selector would export nothing and read as success.
+          selector_count=0
+          [[ -z $RUN_ID ]] || selector_count=$((selector_count + 1))
+          [[ -z $ATLAS_GENERATION_ID ]] || selector_count=$((selector_count + 1))
+          [[ -z $RAW_STORAGE_PATH ]] || selector_count=$((selector_count + 1))
+          if [[ $selector_count -gt 1 ]]; then
+            printf '::error title=Ambiguous selector::pass exactly one selector.\n' >&2
             exit 43
           fi
-          if [[ -z $RUN_ID && -z $ATLAS_GENERATION_ID ]]; then
+          if [[ $selector_count -eq 0 ]]; then
             printf '::error title=No selector::pass run_id or atlas_generation_id.\n' >&2
             exit 44
           fi
           [[ -z $RUN_ID ]] || [[ $RUN_ID =~ $uuid ]]
           [[ -z $ATLAS_GENERATION_ID ]] || [[ $ATLAS_GENERATION_ID =~ $uuid ]]
+          [[ -z $RAW_STORAGE_PATH ]] || [[ $RAW_STORAGE_PATH =~ ^atlas-call1/[0-9a-f-]{36}\.png$ ]]
 
       - name: Pin the droplet SSH identity
         id: ssh
@@ -127,7 +138,7 @@ jobs:
           payload=$(tar -cz scripts/export-designpro-artifacts.mjs | base64 -w0)
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "PAYLOAD='$payload' RUN_ID='$RUN_ID' ATLAS_GENERATION_ID='$ATLAS_GENERATION_ID' bash -s" \
+            "PAYLOAD='$payload' RUN_ID='$RUN_ID' ATLAS_GENERATION_ID='$ATLAS_GENERATION_ID' RAW_STORAGE_PATH='$RAW_STORAGE_PATH' bash -s" \
             > "$RUNNER_TEMP/export.b64" 2>"$RUNNER_TEMP/export.log" <<'REMOTE'
           set -Eeuo pipefail
           release=/opt/designproai-os/current
@@ -145,8 +156,10 @@ jobs:
 
           if [[ -n ${RUN_ID:-} ]]; then
             selector=(--run "$RUN_ID")
-          else
+          elif [[ -n ${ATLAS_GENERATION_ID:-} ]]; then
             selector=(--generation "$ATLAS_GENERATION_ID")
+          else
+            selector=(--raw-storage-path "$RAW_STORAGE_PATH")
           fi
 
           docker run --rm --network host \
@@ -168,7 +181,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: designpro-run-artifacts-${{ inputs.run_id }}${{ inputs.atlas_generation_id }}
+          name: designpro-run-artifacts-${{ inputs.run_id }}${{ inputs.atlas_generation_id }}${{ inputs.raw_storage_path && '-raw-call1' || '' }}
           path: ${{ runner.temp }}/artifacts
           if-no-files-found: error
           retention-days: 30

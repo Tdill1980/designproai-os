@@ -20,13 +20,22 @@ const runId = flag("--run");
 // exactly the state a Calls 1-7 failure has to be diagnosed from, and it was
 // diagnosed from hashes and QC verdicts because the artwork was unreachable.
 const generationId = flag("--generation");
+// A failed Call 1 has no revision row, but its immutable raw provider return is
+// retained under atlas-call1/<uuid>.png. Export that exact private object for
+// diagnosis without pretending it passed acceptance or belongs to a revision.
+const rawStoragePath = flag("--raw-storage-path");
 const outDir = flag("--out") || "/out";
-if (!runId && !generationId) {
-  console.error("--run <uuid> or --generation <uuid> is required");
+const selectors = [runId, generationId, rawStoragePath].filter(Boolean);
+if (selectors.length === 0) {
+  console.error("--run <uuid>, --generation <uuid>, or --raw-storage-path <atlas-call1/uuid.png> is required");
   process.exit(2);
 }
-if (runId && generationId) {
-  console.error("pass --run or --generation, never both");
+if (selectors.length !== 1) {
+  console.error("pass exactly one of --run, --generation, or --raw-storage-path");
+  process.exit(2);
+}
+if (rawStoragePath && !/^atlas-call1\/[0-9a-f-]{36}\.png$/i.test(rawStoragePath)) {
+  console.error("--raw-storage-path must be atlas-call1/<uuid>.png");
   process.exit(2);
 }
 
@@ -49,10 +58,10 @@ async function fetchVerified(storagePath, recordedHash, fileName, extra, sink) {
   writeFileSync(`${outDir}/${fileName}`, bytes);
   sink.push({
     file: fileName, storagePath, recordedHash, observedHash: observed,
-    hashMatches: observed === String(recordedHash || "").toLowerCase(),
+    hashMatches: recordedHash == null ? null : observed === String(recordedHash).toLowerCase(),
     observedBytes: bytes.length, ...extra,
   });
-  console.error(`ok ${fileName} ${bytes.length}B hashMatch=${observed === String(recordedHash || "").toLowerCase()}`);
+  console.error(`ok ${fileName} ${bytes.length}B hashMatch=${recordedHash == null ? "not-recorded" : observed === String(recordedHash).toLowerCase()}`);
 }
 
 /**
@@ -86,6 +95,22 @@ async function writePreviews(files) {
       console.error(`preview failed for ${entry.file}: ${entry.previewError}`);
     }
   }
+}
+
+if (rawStoragePath) {
+  mkdirSync(outDir, { recursive: true });
+  const files = [];
+  await fetchVerified(rawStoragePath, null, "atlas-call1-raw.png", {
+    role: "rejected-call1-provider-return",
+    accepted: false,
+  }, files);
+  await writePreviews(files);
+  writeFileSync(`${outDir}/manifest.json`, JSON.stringify({
+    rawStoragePath,
+    accepted: false,
+    files,
+  }, null, 2));
+  process.exit(files[0]?.file ? 0 : 4);
 }
 
 if (generationId) {
