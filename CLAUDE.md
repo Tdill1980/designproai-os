@@ -2065,6 +2065,31 @@ you go looking for it.
    green its gate. This is deliberate: merging is not the same act as putting
    an artifact on the droplet.
 
+   **`grep -Fq` IS A SUBSTRING MATCH AND HAS NO IDEA WHAT YOU MEANT. NEVER
+   WRITE THE MARKER INTO A SENTENCE ABOUT THE MARKER.** Live on 2026-09-07:
+   `b4b06566` (#324) was merged deliberately WITHOUT the marker so the
+   protected migration could land first — and its body explained that in the
+   words *"Deliberately NOT marked [dark-deploy]: the migration is applied by
+   an explicit protected dispatch, and it should land before the code that
+   reads it."* The grep found the literal string inside that sentence, run
+   `34147603511` fired at 17:26:15 the instant the push gate went green, and
+   the droplet was carrying the new runtime by 17:34 — **twenty-seven minutes
+   before the migration it depends on was applied at 18:01.** The deploy
+   dispatched afterwards then correctly reported
+   `ALREADY_COMPLETE: exact release is locally accepted; no deployment
+   performed`, which reads like a successful deploy and is the opposite: it
+   means the ordering you intended already did not happen.
+
+   Cost this time was zero — the gateway's `refusedViewsForGeneration` returns
+   `[]` on any RPC failure so the header simply went unset, and no generation
+   row was created or touched in the window (measured). Cost is not zero in
+   general: a release whose code hard-depends on new schema goes live against
+   a database that does not have it. **To say the marker is absent, say
+   "no deploy marker" — do not spell it.** And read the pre-transfer inventory
+   in the dark-deploy log (`/opt/designproai-os/current` and `public`
+   symlinks) before believing a deploy did what you asked; it is taken before
+   any mutation, so it is the honest record of what the droplet already had.
+
 **So the order that actually works** is: merge → dispatch `release.yml` on
 `main` with `APPLY_DESIGNPRO_PRODUCTION` (it must be `main`; the job asserts
 `test "$GITHUB_REF" = "refs/heads/main"`, which is why dispatching it on the
