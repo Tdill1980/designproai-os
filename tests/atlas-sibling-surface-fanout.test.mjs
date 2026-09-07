@@ -204,7 +204,26 @@ test("8: Passenger review stays visible while own-panel lineage forbids a Driver
   assert.match(edgeSource, /Customer-facing wording reads normally on every panel/);
   assert.match(edgeSource, /the two sides of the SAME vehicle carrying the SAME design/);
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  assert.doesNotMatch(atlasSource, /mirrorPassengerFromDriver/);
+
+  // ⚠️ THE MIRROR IS NOW REQUIRED, NOT FORBIDDEN. (owner ruling, 2026-09-07:
+  // "We need a mirrored version for passenger of driver.")
+  //
+  // This line used to be `assert.doesNotMatch(atlasSource, /mirrorPassenger…/)`.
+  // What it was really protecting was never the absence of a mirror -- it was
+  // FORWARD-READING TEXT ON BOTH INSTALLED SIDES, which a bare flop destroys
+  // (canaries 6c1bfae6, cad013e1). That guarantee now comes from the
+  // composition itself rather than from refusing to compose: the driver's brand
+  // bands are re-dropped un-flipped, and a design whose lettering cannot be
+  // located keeps its authored passenger instead of shipping reversed type.
+  //
+  // The MASTER's passenger territory is what is mirrored. The seven proofs are
+  // still rendered independently, each from its own surface panel -- which is
+  // why the retired PROOF-side mirror keys the database gate refuses below
+  // (deterministicMirror, passengerProducer, driverContentHash) are still
+  // absent from every view this path writes.
+  assert.match(atlasSource, /mirrorPassengerFromDriver/);
+  assert.match(atlasSource, /if \(!brandBands\.length\) return decline\("brand_bands_not_located"\)/);
+  assert.doesNotMatch(atlasSource, /deterministicMirror|passengerProducer|driverContentHash/);
 });
 
 // 9. the old mirror path is unreachable from active ATLAS generation

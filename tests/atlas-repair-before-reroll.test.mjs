@@ -21,11 +21,29 @@ import { join, resolve } from "node:path";
 
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
 const source = readFileSync(join(ROOT, "runtime/flat-first-atlas.cjs"), "utf8");
-const loop = source.slice(
-  source.indexOf("for (let attempt = 1; attempt <= maxAuthoringAttempts"),
-  source.indexOf("const masterStoragePath = atlasStoragePath"),
-);
-const afterLoop = source.slice(source.indexOf("const masterStoragePath = atlasStoragePath"));
+/**
+ * THE LOOP ENDS WHERE THE LOOP ENDS, NOT AT THE NEXT LANDMARK.
+ *
+ * This used to slice up to `const masterStoragePath = atlasStoragePath`, using
+ * that line as a stand-in for "the authoring loop closed here". It was accurate
+ * only while nothing sat between the two. The passenger composition
+ * (owner ruling 2026-09-07) belongs after acceptance and BEFORE the storage
+ * path -- the path is derived from the master hash, which composition changes --
+ * so the old proxy swept post-acceptance code into `loop` and every
+ * "must not appear in the loop" assertion started convicting the wrong region.
+ *
+ * The boundary is now the loop's own closing brace, which is what the
+ * assertions always meant.
+ */
+const LOOP_START = "for (let attempt = 1; attempt <= maxAuthoringAttempts";
+const LOOP_END = "\n  }\n  // ── PASSENGER IS THE DRIVER FLANK, MIRRORED.";
+const loopStart = source.indexOf(LOOP_START);
+const loopEnd = source.indexOf(LOOP_END);
+if (loopStart < 0 || loopEnd < 0 || loopEnd <= loopStart) {
+  throw new Error("atlas-repair-before-reroll: could not locate the authoring loop bounds");
+}
+const loop = source.slice(loopStart, loopEnd);
+const afterLoop = source.slice(loopEnd);
 
 test("the release gate is deterministic plus the one owner-ruled output-class refusal", () => {
   // OWNER RULING 2026-09-01 narrows the old advisory-only doctrine by exactly
@@ -49,11 +67,68 @@ test("active Call 1 starts no broad semantic analysis beyond the output-class qu
   assert.doesNotMatch(loop, /await\s+validateMaster/);
 });
 
-test("Passenger is never manufactured from Driver in active Call 1", () => {
-  assert.doesNotMatch(source, /require\("\.\/atlas-passenger-mirror\.cjs"\)/);
+/**
+ * PASSENGER IS COMPOSED FROM DRIVER, AND ONLY WHERE IT IS SAFE TO.
+ * (Owner ruling, Trish 2026-09-07: "We need a mirrored version for passenger of
+ * driver.")
+ *
+ * This test used to forbid the composition outright. That fence was right about
+ * the danger and wrong about the outcome: across every run since, the flanks
+ * differed by drift rather than intent, and on e3ade856 the passenger territory
+ * did not compose as passenger artwork at all -- the proof inspector refused
+ * that view twice and the customer got six of seven.
+ *
+ * So the fence is not removed, it is repointed. What must stay true is not
+ * "never mirror" but "never ship reversed lettering, and never let a mirror
+ * happen inside the authoring loop where a re-roll could compound it".
+ */
+test("Passenger is composed from Driver only after acceptance, never inside the authoring loop", () => {
+  // THE LOOP IS STILL SACRED. A composition inside it would mirror a candidate
+  // that has not yet passed the gate, and a re-roll would then measure a sheet
+  // the model did not author.
   assert.doesNotMatch(loop, /mirrorPassengerFromDriver/);
-  assert.doesNotMatch(loop, /masterBytes\s*=\s*mirrored\.bytes/);
-  assert.match(afterLoop, /passengerSource: "authored-passenger-region"/);
+  assert.doesNotMatch(loop, /composePassengerFromDriver/);
+  assert.doesNotMatch(loop, /masterBytes\s*=\s*passengerMirror\.bytes/);
+
+  // The composition happens after the loop, on an accepted master.
+  assert.match(afterLoop, /const passengerMirror = await composePassengerFromDriver\(\{/);
+  // ...and its result is re-validated before it can become canonical, exactly
+  // as the repair path must be: deterministic proves repeatable, not valid.
+  assert.match(afterLoop, /flat_atlas_mirrored_master_invalid/);
+  assert.match(
+    afterLoop,
+    /if \(passengerMirror\.composed\) \{\s*\n\s*\/\/[\s\S]{0,200}deterministicMasterChecks\(passengerMirror\.bytes, manifest\)/,
+    "a composed flank must be re-validated before it is promoted",
+  );
+
+  // ⛔ THE LETTERING GUARD IS THE POINT. A design carrying brand strings whose
+  // bands could not be located must keep its authored passenger -- mirroring it
+  // is what puts a reversed company name on a customer's vehicle (canaries
+  // 6c1bfae6, cad013e1).
+  assert.match(source, /if \(!brandBands\.length\) return decline\("brand_bands_not_located"\)/);
+  assert.match(source, /const lettersMatter = brandStrings\.length > 0/);
+  // Every failure path declines rather than throwing: the worst case of this
+  // change is the behaviour of every run before it.
+  for (const declineReason of [
+    "flank_zones_not_twins",
+    "brand_band_reader_unavailable",
+    "brand_band_read_failed",
+    "brand_bands_not_located",
+  ]) {
+    assert.match(source, new RegExp(`decline\\("${declineReason}"\\)`), `${declineReason} must decline, not throw`);
+  }
+
+  // THE BAND READ MAY NEVER REFUSE A MASTER. The 2026-09-01 ruling stands: a
+  // broad semantic review cannot reject Call 1. Only the measurement is read.
+  assert.doesNotMatch(loop, /createAtlasMasterValidator/);
+  assert.match(source, /brandBands = Array\.isArray\(review\?\.brandBands\) \? review\.brandBands : \[\]/);
+  assert.doesNotMatch(source, /review\.accepted[\s\S]{0,80}throw/);
+
+  // Both outcomes are always stated on the revision.
+  assert.match(afterLoop, /passengerSource: passengerMirror\.composed/);
+  assert.match(afterLoop, /"mirrored-from-driver"/);
+  assert.match(afterLoop, /"authored-passenger-region"/);
+  assert.match(afterLoop, /declineReason: passengerMirror\.composed \? null : passengerMirror\.reason/);
   assert.match(afterLoop, /passengerMirrorTelemetry: \{/);
   assert.match(afterLoop, /blocking: false/);
 });
@@ -72,12 +147,26 @@ test("only a deterministic or output-class refusal can spend an authoring retry"
   assert.doesNotMatch(loop, /flat_atlas_master_semantic_failed/);
 });
 
-test("the authored master is never mutated", () => {
-  // masterBytes stays the lineage identity; the cut-out fill works on a copy
-  // and Passenger's authored pixels are never substituted with Driver.
+test("the authored master is never mutated inside the authoring loop", () => {
+  // masterBytes stays the candidate's own identity for the whole time a re-roll
+  // can still happen. The cut-out fill works on a copy, and no composition may
+  // replace a candidate the gate has not yet accepted.
   assert.ok(!/masterBytes = trialFill/.test(loop), "the authored bytes must never be replaced by a fill");
   assert.ok(!/masterBytes = repairedBytes/.test(loop), "the authored bytes must never be replaced by a fill");
   assert.doesNotMatch(loop, /masterBytes\s*=\s*mirrored\.bytes/);
+  assert.doesNotMatch(loop, /masterBytes\s*=\s*passengerMirror\.bytes/);
+
+  // AFTER ACCEPTANCE, ONE MASTER IS CANONICAL AND THE OTHER IS PROVENANCE.
+  //
+  // The owner settled this shape for the repaired sheet on 2026-08-31 -- "even
+  // after successfully repairing and re-validating the sheet, the canonical
+  // object still points to the ORIGINAL pre-repair bytes ... that is not one
+  // canonical authority" -- and a composed passenger raises exactly the same
+  // question. So the composed sheet becomes the accepted master and the sheet
+  // as authored is kept by hash, never again called canonical.
+  assert.match(afterLoop, /const preMirrorMasterHash = passengerMirror\.composed \? masterHash : null/);
+  assert.match(afterLoop, /masterBytes = passengerMirror\.bytes;\s*\n\s*masterHash = sha256\(masterBytes\)/);
+  assert.match(afterLoop, /preMirrorMasterHash,/);
 });
 
 // ── NOTHING IS RELEASED BEFORE DETERMINISTIC ACCEPTANCE ─────────────────────
