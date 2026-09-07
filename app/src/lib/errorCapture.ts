@@ -94,11 +94,18 @@ function isNoise(message: string, stack?: string | null): boolean {
 }
 
 function appVersion(): string | null {
-  // Vite inlines defined env vars; fall back gracefully when unset.
-  const v =
-    (import.meta.env.VITE_COMMIT_SHA as string | undefined) ??
-    (import.meta.env.VITE_APP_VERSION as string | undefined);
-  return v ?? null;
+  // The commit this bundle was built from, injected by vite.config.ts from git.
+  //
+  // This used to read `VITE_COMMIT_SHA`, a literal checked into
+  // app/.env.production and last edited on 2026-08-13. It kept resolving long
+  // after it stopped being true, so every error logged since then was filed
+  // against commit 6ac1909c whatever was actually deployed -- which makes an
+  // error rate per release unreadable, exactly when comparing releases is the
+  // reason to look. `VITE_APP_VERSION` remains a fallback because it names a
+  // build channel rather than a commit, so it cannot go stale the same way.
+  const sha = typeof __COMMIT_SHA__ !== "undefined" ? __COMMIT_SHA__ : "";
+  if (sha) return sha;
+  return (import.meta.env.VITE_APP_VERSION as string | undefined) ?? null;
 }
 
 /**
