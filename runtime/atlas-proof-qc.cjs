@@ -201,7 +201,7 @@ Do not measure, compare or grade layout, position, scale, orientation or alignme
 
 Expected proof: ${view.label}
 Exact target vehicle: ${vehicleDescription(input)}
-Pickup roof rule active: ${pickup ? "YES" : "NO"}
+Pickup coverage rules active: ${pickup ? "YES" : "NO"}
 Candidate original sha256: ${proofHash}
 Canonical Atlas original sha256: ${atlasHash}
 Exact ${authoritySurface} authority sha256: ${authorityHash}
@@ -213,6 +213,7 @@ ${angles.cameraAngle(sourceViewType)}
 VIEW-SPECIFIC ACCEPTANCE:
 ${view.acceptance}
 ${sourceViewType === "roof" && pickup ? "This pickup roof proof FAILS if any open bed, bedliner, cargo box, tailgate, hood, wheel, side body, floor or wall is visible. Do not excuse a bed view as a roof view." : ""}
+${sourceViewType !== "roof" && pickup ? "PICKUP COVERAGE RULE: the wrap covers the outer painted panels only — cab, bed sides and tailgate exterior. The open bed floor, inner bed walls, rails and wheel-well humps must show bare factory bedliner with ZERO artwork. Artwork visible inside the open bed is a coverage failure, not a perspective effect, and is graded under vehicleContinuityContract." : ""}
 ${sourceViewType === "side" ? "Driver orientation FAILS if the nose points right." : ""}
 ${sourceViewType === "passenger-side" ? "Passenger orientation FAILS if the nose points left or if any readable lettering is horizontally reversed." : ""}
 Any three-quarter glamour composition is Hero, not one of these seven exact proofs, and must fail.
@@ -233,7 +234,7 @@ INSPECTION RULES:
 6. photorealismContract grades real automotive photography, installed cast vinyl, coherent geometry and physical materials.
 7. studioLightingContract grades the identical premium wrap-shop environment and its bright color-accurate lighting. Camera-specific tight crops need not reveal floor or walls when the angle contract excludes them.
 8. atlasContinuityContract grades DESIGN IDENTITY only: is the wrap in the photograph the same design as the attached ${authoritySurface} crop? Fail ONLY for: artwork that is not in the crop at all; a dominant motif, wordmark or logo from the crop that is wholly absent from the vehicle; a materially different colour palette; content plainly taken from a different master zone; or a surface that was independently designed rather than reproduced. Everything in the EXPECTED list above is a pass. If the same elements are present and recognisable, this contract passes even when their placement, size and orientation differ.
-9. vehicleContinuityContract grades the exact vehicle body/cab/bed configuration and plausible anatomy.
+9. vehicleContinuityContract grades the exact vehicle body/cab/bed configuration and plausible anatomy. On a pickup it ALSO grades wrap coverage: printed artwork inside the open cargo bed — floor, inner walls, rails or wheel-well humps — is a "fail" here, because the vinyl never goes there and a proof that shows it is depicting a vehicle that cannot be built.
 10. artifactFreeContract fails melted bodywork, extra wheels, duplicated parts, malformed lettering, impossible panel lines, phantom reflections or other AI artifacts.
 11. Echo the proof, canonical Atlas and exact surface-authority sha256 values exactly. Return only the schema-bound JSON object. No Markdown or prose.
 `;
