@@ -1679,6 +1679,24 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
     if (payload?.teachingProofIdentity) {
       throw new FlatAtlasError("flat_atlas_edge_structural_image_detected", "A teaching sheet reached the one-field Call 1");
     }
+    // AND THE EDGE MUST BE THE ONE THIS RUNTIME WAS BUILT AGAINST.
+    //
+    // The six-surface branch below has always checked this; the field branch
+    // did not, and the two halves ship through DIFFERENT workflows --
+    // deploy-production.yml carries the runtime, deploy-edge-functions.yml
+    // carries the function. So a runtime-first deploy would have sent
+    // `fieldContract` to an older edge that still HAS a field branch, been
+    // answered by it, and silently authored every master with the previous
+    // tail. Nothing downstream would have noticed: the contract matches, the
+    // image count matches, the master is valid. It would simply be the old
+    // conditioning, which is the defect this change exists to remove.
+    if (String(payload?.promptVersion || "") !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION) {
+      throw new FlatAtlasError(
+        "flat_atlas_edge_prompt_version_mismatch",
+        `The edge function is on ${String(payload?.promptVersion || "none")}; this runtime authors against ${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}. Deploy the edge function before the runtime.`,
+        true,
+      );
+    }
   }
   // A six-surface request must not silently accept a field response. The
   // September 6 regression produced valid files from repeated source bands.

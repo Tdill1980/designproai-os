@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const atlas = require('../runtime/flat-first-atlas.cjs');
@@ -122,6 +123,40 @@ test('six-surface transport rejects field-mode, missing teaching identity and mi
   await assert.rejects(atlas._test.callAtlasArtboardEdge({...body,guideStoragePath:undefined},transport),
     error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
   assert.equal(downloads,1,'invalid responses must fail before master download');
+});
+
+// The two halves ship through different workflows, so an edge/runtime skew is
+// a real deploy state, not a hypothetical. On the field branch it is silent by
+// construction -- contract matches, image count matches, master is valid -- and
+// the only thing wrong is that the master was authored with the previous tail.
+test('the field branch refuses an edge running a different prompt version', async t => {
+  const previous={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SERVICE_ROLE_KEY};
+  process.env.SUPABASE_URL='https://fixture.invalid';
+  process.env.SUPABASE_SERVICE_ROLE_KEY='test-only-not-a-real-key-'.repeat(3);
+  t.after(()=>{for(const [name,value] of [['SUPABASE_URL',previous.url],['SUPABASE_SERVICE_ROLE_KEY',previous.key]]){
+    if(value===undefined) delete process.env[name];else process.env[name]=value;
+  }});
+  const bytes=Buffer.from('mock transport bytes');let downloads=0;
+  const body=atlas._test.atlasEdgeRequestBody(input,productManifest(surfaces,undefined,'truck'),
+    {referenceImagesBase64:[]});
+  assert.equal(body.fieldContract,'designpro.atlas-field-prompt.v2');
+  const current=/ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "([^"]+)"/
+    .exec(readFileSync(new URL('../runtime/flat-first-atlas.cjs',import.meta.url),'utf8'))[1];
+  const reply={success:true,imageRequestCount:1,fieldContract:'designpro.atlas-field-prompt.v2',
+    modelInputImageCount:0,promptVersion:current,
+    masterStoragePath:'fixture.png',masterSha256:sha(bytes)};
+  const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},
+    fetchImpl:async()=>({ok:true,status:200,json:async()=>reply})};
+  // Matching version: accepted.
+  assert.equal(sha((await atlas._test.callAtlasArtboardEdge(body,transport)).bytes),sha(bytes));
+  // A stale edge is refused BEFORE the master is downloaded.
+  for(const stale of ['atlas-artboard-designiq.20260906.v25-rectangular-media',
+                      'atlas-artboard-designiq.20260902.v24-one-field','']){
+    await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
+      fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,promptVersion:stale})})}),
+      error=>error.code==='flat_atlas_edge_prompt_version_mismatch');
+  }
+  assert.equal(downloads,1,'a skewed edge must fail before the master download');
 });
 
 // Exercise the actual acceptance loop. A cutout classification is a refusal
