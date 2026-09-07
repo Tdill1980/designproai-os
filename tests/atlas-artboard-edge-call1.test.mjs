@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260906\.v25-rectangular-media"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260907\.v26-field-coordinates"/);
   assert.match(assembly, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(handler, /fieldContract: atlasField \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
@@ -129,10 +129,13 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.equal(runtimeVersion[1], edge[1]);
 });
 
-test("Six-surface restoration sends the pinned teaching proof and target guide without a coordinate table", () => {
-  // Owner ruling 2026-09-02 ("UNFREEZE GET ME A WORKING OS"): Gemini authors
-  // ONE uninterrupted full-bleed composition and is shown NO production
-  // topology. GENIE/runtime owns the six territories as code.
+test("One-field restoration: field territories, the field contract, and no structural image", () => {
+  // Owner ruling 2026-09-07. The six-surface path measured ten consecutive
+  // failed draws (canary 34021490632, four raw candidates all drawing vehicle
+  // anatomy; arrangement A/B 34163297003, 0/18 zones over six draws in two
+  // arrangements). One-field is restored, and the model is shown NO production
+  // topology and NO structural image -- GENIE/runtime owns the six territories
+  // as code, and conditions the composition on their coordinates alone.
   assert.ok(!handler.includes("body.structuralReferenceStoragePath"));
   assert.ok(!handler.includes("body.structuralPairedProofStoragePath"));
   assert.ok(!handler.includes("body.structuralReferenceBase64"));
@@ -144,22 +147,27 @@ test("Six-surface restoration sends the pinned teaching proof and target guide w
   assert.ok(!liveAuthoring.includes("topologyExampleParts("));
   assert.ok(!liveAuthoring.includes("structuralReferenceStoragePath"));
   assert.ok(!liveAuthoring.includes("structuralPairedProofStoragePath"));
+  // The teaching proof and the guide are still BUILT and stored -- they remain
+  // the human installer map and the durable forensic record, and the legacy
+  // six-container branch still consumes them. They simply do not reach the
+  // model on this branch.
   assert.match(runtimeSource, /loadBundledAtlasTeachingProof/);
-  assert.match(liveAuthoring, /teachingProofStoragePath: teachingInputPath/);
   assert.match(liveAuthoring, /renderAtlasAuthoringGuide\(manifest\)/);
-  assert.match(liveAuthoring, /guideStoragePath: guideInputPath/);
   assert.match(liveAuthoring, /renderAtlasGuide\(manifest\)/);
-  assert.match(liveAuthoring, /const manifest = buildAtlasManifest\(surfaces, geometryAuthority/);
-  assert.doesNotMatch(liveAuthoring, /buildFieldTerritories\(/);
+  // The canonical manifest is built, then laid out as field territories.
+  assert.match(liveAuthoring, /const legacyManifest = buildAtlasManifest\(surfaces, geometryAuthority/);
+  assert.match(liveAuthoring, /const manifest = buildFieldTerritories\(legacyManifest\)/);
 
   const requestBody = runtimeSource.slice(
     runtimeSource.indexOf("function atlasEdgeRequestBody("),
     runtimeSource.indexOf("function normalizedZoneTopology("),
   );
-  assert.doesNotMatch(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.doesNotMatch(requestBody, /noseEdge:/);
-  assert.match(requestBody, /teachingProofStoragePath: extras.teachingProofStoragePath/);
-  assert.match(requestBody, /guideStoragePath: extras.guideStoragePath/);
+  // The branch is a property of the manifest, so both paths stay callable.
+  assert.match(requestBody, /manifest\?\.topology === FIELD_TOPOLOGY/);
+  assert.match(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
+  assert.match(requestBody, /noseEdge: manifest\?\.installerMap\?\.noseEdge \|\| NOSE_EDGE/);
+  assert.match(requestBody, /teachingProofStoragePath: extras\.teachingProofStoragePath/);
+  assert.match(requestBody, /guideStoragePath: extras\.guideStoragePath/);
 
   // The edge's field branch: prompt, then verified customer references, then
   // the single image request. The legacy six-container branch survives only
@@ -199,9 +207,15 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
   // The neutral-mask experiment hid so much context that Gemini received six
   // anonymous canvases rather than one flattened vehicle. Restore semantic
   // identity while keeping all inch/pixel/cut geometry server authoritative.
+  // Ends at the ONE-FIELD boundary, not at atlasCreativeDirection. The old end
+  // ran past this function and swallowed the whole field-contract region,
+  // comments included, so prose written ABOUT the one-field tail was convicted
+  // as if the six-container contract had said it to the model. The field tail
+  // has its own locks in atlas-clean-authoring-contract and the whole-prompt
+  // guard in atlas-one-field-call1; nothing loses coverage.
   const flatFunction = edgeSource.slice(
     edgeSource.indexOf("function atlasFlatMasterContract("),
-    edgeSource.indexOf("function atlasCreativeDirection("),
+    edgeSource.indexOf("// ── ONE-FIELD OUTPUT CONTRACT"),
   );
   const contract = flatFunction.slice(flatFunction.indexOf(MARK));
 

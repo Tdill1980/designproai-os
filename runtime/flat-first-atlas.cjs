@@ -43,7 +43,17 @@ const {
 const { MIRROR_CONTRACT, mirrorPassengerFromDriver } = require("./atlas-passenger-mirror.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
-// Restore the existing six-surface authoring path; field territories remain harness-only.
+// ONE-FIELD RESTORED (owner ruling, Trish 2026-09-07). The six-surface
+// authoring path is measurably not producing an acceptable master: canary
+// 34021490632 returned four raw candidates that all drew vehicle anatomy into
+// the print sheet, and arrangement A/B 34163297003 returned 0/18 zones across
+// six further draws in two arrangements, five of six classified
+// `vehicle_depiction` by production's own inspector. Ten consecutive failures.
+// The one-field path last completed end to end on GEN 63e6629a -- accepted
+// master, six panels, seven proofs, Call 8, 2D proof -- and its known defect
+// (weak centre panels) is fixed here by the coordinate conditioning below,
+// not left standing.
+const { buildFieldTerritories, FIELD_TOPOLOGY, NOSE_EDGE } = require("./atlas-field-territories.cjs");
 const { loadBundledAtlasTeachingProof } = require("./flat-atlas-topology-examples.cjs");
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
 
@@ -149,7 +159,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260906.v25-rectangular-media";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260907.v26-field-coordinates";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1563,13 +1573,27 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       placement: zone.placement,
       normalized: normalizedZoneTopology(zone, manifest),
     })),
-    // Omitting fieldContract selects the unchanged deployed six-surface prompt.
-    // Do not send drawn nose edges: the edge validates only left/right even on
-    // this branch, where the field-only nose-edge value is not consumed.
-    // The manifest extraction rotations remain the orientation authority.
-    teachingProofStoragePath: extras.teachingProofStoragePath,
-    teachingProofIdentity: extras.teachingProofIdentity,
-    guideStoragePath: extras.guideStoragePath,
+    // WHICH AUTHORING BRANCH IS A PROPERTY OF THE MANIFEST, NOT A HARD-CODED
+    // CHOICE HERE. A field-territory manifest selects the edge's field branch:
+    // one text part plus verified customer references, NO structural image at
+    // all -- no labeled teaching sheet, no six-region guide. The legacy
+    // manifest selects the unchanged six-container request with both pinned
+    // image inputs. Both remain callable and both remain covered, so reversing
+    // the 2026-09-07 decision is one line at the manifest, not a rebuild.
+    //
+    // The `panels` list above travels either way as OS data the edge
+    // validates; under the field contract the edge now also CONDITIONS the
+    // composition on it instead of discarding it.
+    ...(manifest?.topology === FIELD_TOPOLOGY
+      ? {
+        fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+        noseEdge: manifest?.installerMap?.noseEdge || NOSE_EDGE,
+      }
+      : {
+        teachingProofStoragePath: extras.teachingProofStoragePath,
+        teachingProofIdentity: extras.teachingProofIdentity,
+        guideStoragePath: extras.guideStoragePath,
+      }),
     referenceImagesBase64: extras.referenceImagesBase64,
   };
 }
@@ -1654,6 +1678,24 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
     }
     if (payload?.teachingProofIdentity) {
       throw new FlatAtlasError("flat_atlas_edge_structural_image_detected", "A teaching sheet reached the one-field Call 1");
+    }
+    // AND THE EDGE MUST BE THE ONE THIS RUNTIME WAS BUILT AGAINST.
+    //
+    // The six-surface branch below has always checked this; the field branch
+    // did not, and the two halves ship through DIFFERENT workflows --
+    // deploy-production.yml carries the runtime, deploy-edge-functions.yml
+    // carries the function. So a runtime-first deploy would have sent
+    // `fieldContract` to an older edge that still HAS a field branch, been
+    // answered by it, and silently authored every master with the previous
+    // tail. Nothing downstream would have noticed: the contract matches, the
+    // image count matches, the master is valid. It would simply be the old
+    // conditioning, which is the defect this change exists to remove.
+    if (String(payload?.promptVersion || "") !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION) {
+      throw new FlatAtlasError(
+        "flat_atlas_edge_prompt_version_mismatch",
+        `The edge function is on ${String(payload?.promptVersion || "none")}; this runtime authors against ${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}. Deploy the edge function before the runtime.`,
+        true,
+      );
     }
   }
   // A six-surface request must not silently accept a field response. The
@@ -2281,8 +2323,15 @@ async function generateOrReuseFlatAtlas(options) {
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
 
-  // The original GENIE six-surface manifest retains its canonical identity.
-  const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
+  // The original GENIE six-surface manifest retains its canonical identity, and
+  // the field territories are a LAYOUT of it: same six surfaces, same inches,
+  // same bleed, same proof dependencies, `contract` still MANIFEST_CONTRACT
+  // (PR #300). Only where each territory sits on the 4096² field changes, at
+  // rotation 0, so Driver and Passenger come out the same pixel size -- which
+  // is also what makes the 2026-09-07 mirror composition a clean pixel
+  // operation rather than a rotate-and-resample.
+  const legacyManifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
+  const manifest = buildFieldTerritories(legacyManifest);
   const teachingProof = loadBundledAtlasTeachingProof();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
@@ -2404,6 +2453,13 @@ async function generateOrReuseFlatAtlas(options) {
     ...(await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
+  // Both pinned image inputs are still built, stored and OFFERED. They remain
+  // the human installer map and the durable forensic record, and the legacy
+  // six-container branch consumes them. `atlasEdgeRequestBody` drops them when
+  // the manifest is a field layout: a finished-vehicle proof teaches anatomy
+  // back into the source (canary 33389124918) and a blank canvas reads as
+  // content to interpret, so under the field contract `modelInputImageCount`
+  // is the customer's own references and nothing else.
   const edgeExtras = {
     teachingProofStoragePath: teachingInputPath,
     teachingProofIdentity: teachingProof.identity,
@@ -3027,11 +3083,14 @@ async function generateOrReuseFlatAtlas(options) {
       topologyExamplesApplied: 0,
       topologyExampleIdentity: null,
       topologyExampleIdentities: [],
-      atlasDesignTeachingExampleApplied: true,
-      atlasDesignTeachingExampleIdentity: teachingProof.identity,
+      // These record what actually reached the model. Under the one-field
+      // contract no teaching example is sent, so claiming one was applied
+      // would put a false receipt on every revision -- the forensic record is
+      // the only thing a later reader has.
+      atlasDesignTeachingExampleApplied: manifest.topology !== FIELD_TOPOLOGY,
+      atlasDesignTeachingExampleIdentity: manifest.topology === FIELD_TOPOLOGY ? null : teachingProof.identity,
       atlasDesignTeachingExampleSetHash: currentExampleSetHash,
-      // Restored six-surface authoring has no one-field contract or layout.
-      atlasFieldContract: null,
+      atlasFieldContract: manifest.topology === FIELD_TOPOLOGY ? ATLAS_FIELD_PROMPT_CONTRACT : null,
       // Same rename, same value: this forensic field records the LAYOUT the six
       // panels were cut from, not the manifest identity.
       territoriesContract: manifest.territoriesContract || null,
