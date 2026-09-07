@@ -126,6 +126,36 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            wording is returned to v3 and Call-1 six-pane conditioning work
 #            stops here. The next move is architectural (test 11).
 #
+#   test 12 — ARRANGEMENT (owner: "fix end to end", 2026-09-07). Twelve
+#            experiments share one perfect correlation: every request that
+#            asked for the six surfaces as a vehicle UNROLL (two tall flank
+#            columns either side of a centre spine) drew anatomy, voids or
+#            contour failure in every draw; every request that did not
+#            (thirds, bands) drew anatomy-free full-bleed artwork. Within one
+#            sheet the surfaces that fail are the ones whose rectangle IS a
+#            recognisable vehicle shape (b14af361: driver, passenger, front
+#            failed; hood, roof, rear passed). No test has varied the
+#            arrangement itself. This one does, and nothing else:
+#              A  the deployed request with the teaching proof absent (Test
+#                 8's arm B, measured 0/6): creative assembly, deployed tail,
+#                 guide text, the production UNROLL guide. 3 parts, 1 image.
+#              B  the same six named surfaces at the same inches, arranged as
+#                 STACKED BANDS — driver across the top, passenger beneath,
+#                 rear/roof/hood/front in a row along the bottom, nothing
+#                 rotated — with the tail's five arrangement phrases swapped
+#                 exactly once (reverse-provable) and the guide drawn from
+#                 the bands manifest. 3 parts, 1 image.
+#            The teaching proof is absent from BOTH arms: it is a picture of
+#            the unroll, and Test 3 showed a contradiction between image and
+#            text collapses the output class. `draws` per arm, interleaved.
+#            Each arm is measured and cut against its own manifest with the
+#            production gate, the colour-blind full-bleed metrics and the REAL
+#            `cutCallOnePanels`. PASS is per zone: no anatomy-sized dark
+#            shape, no hole border, full-bleed. If B separates from A, the
+#            arrangement is the cause and the fix is architectural (code owns
+#            the unroll, the model never sees one); if B is also 0/6, the
+#            arrangement is innocent and the search narrows to vocabulary.
+#
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
 # proof and the edge function's hash pin on it are untouched — the variant is
@@ -154,6 +184,7 @@ on:
           - 9-field-recovery
           - 10-anchor-restoration
           - 11-field-recovery-v2
+          - 12-arrangement-ab
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -323,6 +354,8 @@ jobs:
             scripts/atlas-field-recovery-v2.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
+            scripts/atlas-arrangement-contract.mjs \
+            scripts/atlas-arrangement-ab.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
             atlas-call1-build \
             runtime > "$RUNNER_TEMP/ab-payload.tgz"
@@ -381,6 +414,7 @@ jobs:
             9-field-recovery)        runner=scripts/atlas-field-recovery.mjs ;;
             10-anchor-restoration)   runner=scripts/atlas-anchor-recovery.mjs ;;
             11-field-recovery-v2)    runner=scripts/atlas-field-recovery-v2.mjs ;;
+            12-arrangement-ab)       runner=scripts/atlas-arrangement-ab.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs
@@ -390,9 +424,48 @@ jobs:
           esac
           echo "test: $AB_TEST -> $runner"
 
+          # ALLOWLISTED ENVIRONMENT ONLY. (Owner, 2026-09-06.)
+          #
+          # This used to hand docker the whole runtime.env through its env-file
+          # flag: every secret the live service holds, given to a harness that
+          # needs five of them. Now each variable the harness may see is named here,
+          # read from the env file exactly as docker would have read it (the
+          # value after the first `=`, verbatim), and exported so `docker run
+          # -e NAME` picks it up from this shell rather than from a command
+          # line. Values are never echoed; names are.
+          #
+          # The provider variables are exported ONLY when the run is not
+          # capture-only. A capture-only run assembles and hashes both
+          # requests and makes no provider call, so it gets no credential at
+          # all -- a placeholder that is visibly not a key keeps the older
+          # runners' eager provider constructor from refusing to start.
+          HARNESS_ENV_ALWAYS=(SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY GOOGLE_IMAGE_MODEL DESIGNPRO_IMAGE_MODELS DESIGNPRO_SPEC_MODELS)
+          HARNESS_ENV_PROVIDER=(GOOGLE_AI_API_KEY_POOL GOOGLE_AI_API_KEY GEMINI_API_KEY)
+          # `|| true`: under `set -eo pipefail` an absent optional variable is
+          # an empty value, not an abort.
+          read_env() { { grep -E "^$1=" "$env_file" || true; } | head -n1 | cut -d= -f2- || true; }
+          docker_env=()
+          passed_names=()
+          for name in "${HARNESS_ENV_ALWAYS[@]}"; do
+            value=$(read_env "$name")
+            if [ -n "$value" ]; then export "$name=$value"; docker_env+=(-e "$name"); passed_names+=("$name"); fi
+          done
+          if [ "$AB_CAPTURE_ONLY" != "true" ]; then
+            for name in "${HARNESS_ENV_PROVIDER[@]}"; do
+              value=$(read_env "$name")
+              if [ -n "$value" ]; then export "$name=$value"; docker_env+=(-e "$name"); passed_names+=("$name"); fi
+            done
+          else
+            export GOOGLE_AI_API_KEY="CAPTURE_ONLY_NO_CREDENTIAL"
+            docker_env+=(-e GOOGLE_AI_API_KEY)
+            passed_names+=("GOOGLE_AI_API_KEY=CAPTURE_ONLY_NO_CREDENTIAL(placeholder)")
+          fi
+          unset value
+          echo "environment passed to the harness (names only): ${passed_names[*]}"
+
           set +e
           docker run --rm \
-            --env-file "$env_file" \
+            "${docker_env[@]}" \
             -v "$work:/work" -w /work \
             --entrypoint node "$image" \
             "$runner" \
