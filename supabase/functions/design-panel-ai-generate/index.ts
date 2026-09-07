@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260907.v26-field-coordinates";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260907.v27-thirds-revert";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
 // composition and receives NO six-region guide, NO labeled teaching sheet, NO
@@ -581,46 +581,43 @@ function atlasFieldContract(
   bodyClass: string,
   noseEdge: AtlasNoseEdge,
   hasBrandName: boolean,
-  panels: Array<{ label?: unknown; normalized?: AtlasNormalizedRect }>,
+  _panels: Array<{ label?: unknown; normalized?: AtlasNormalizedRect }>,
 ): string {
-  if (!Array.isArray(panels) || panels.length !== 6) {
-    throw new Error(`atlas_field_geometry_required:${Array.isArray(panels) ? panels.length : "none"}`);
-  }
-  const f = (n: number) => n.toFixed(4);
-  const rows = panels
-    .map((panel) => {
-      const n = panel.normalized;
-      if (!n) throw new Error("atlas_field_geometry_required:normalized");
-      const x0 = Number(n.x);
-      const y0 = Number(n.y);
-      return {
-        x0,
-        y0,
-        x1: x0 + Number(n.width),
-        y1: y0 + Number(n.height),
-        sweep: atlasFieldSweep(String(panel.label || ""), noseEdge),
-      };
-    })
-    .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
-    .map((r) => `  ${f(r.x0)} ${f(r.y0)} ${f(r.x1)} ${f(r.y1)}${r.sweep ? `   ${r.sweep}` : ""}`);
-  const lettering = hasBrandName
-    ? "Lettering reads left to right throughout, and the company name appears whole and legible."
-    : "Lettering reads left to right throughout, and any wording the brief calls for appears whole and legible.";
+  // REVERTED to the v24 thirds tail (owner ruling, Trish 2026-09-07, after
+  // canary 34168377318).
+  //
+  // The coordinate conditioning was correct about the GEOMETRY and wrong about
+  // the REPRESENTATION. Gemini painted the numeric table into the sheet as a
+  // caption bar: the Driver panel carried "0.0000 to 0.9114 / 0.9114, 0.3333"
+  // across its top edge, the Front panel carried "0.5413, 0.6665 - 0.9705" in
+  // large type, and the mirrored Passenger carried the same glyphs reversed.
+  // Lettering was ALSO still severed at the cuts, so the containment rule the
+  // coordinates were meant to buy did not land either.
+  //
+  // A bare unlabelled numeric row still reads as a caption to an image model.
+  // That is a finding about the representation, not about the idea: the six
+  // rectangles remain the right geometry and remain on the wire. The next
+  // attempt must carry them in a form that cannot be set in type, and must be
+  // measured on the A/B harness before it reaches production.
+  const focal = hasBrandName
+    ? "the company name whole and legible inside it"
+    : "its focal treatment whole inside it";
+  const focalToo = hasBrandName
+    ? "the company name whole and legible inside it too"
+    : "its focal treatment whole inside it too";
+  const lowerMark = hasBrandName
+    ? "The brand mark may appear here once, compact and whole; every other letter lives in the upper two thirds."
+    : "Any lettering the brief asks for lives in the upper two thirds.";
   return [
     "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.",
     `Paint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.`,
     "",
-    "The square is one picture. These areas of it, written as fractions of the image measured from the top-left corner — left, top, right, bottom — must each carry a complete and finished passage of that picture:",
+    "Compose it in three equal horizontal thirds that read as one picture:",
+    `• THE UPPER THIRD — the primary hero passage: a complete, wide statement of the design, ${focal}, clear of the third's top and bottom edges. ${atlasSweepPhrase(noseEdge.driver)}`,
+    `• THE MIDDLE THIRD — a second hero passage telling the brand story in full, composed afresh as its own arrangement, ${focalToo}. ${atlasSweepPhrase(noseEdge.passenger)}`,
+    `• THE LOWER THIRD — the supporting register: the same ground, palette and motion at a calmer intensity, secondary motifs, finished artwork everywhere. ${lowerMark}`,
     "",
-    ...rows,
-    "",
-    "Every one of those areas has to read on its own as intentional, finished, commercially valuable artwork: real subject matter, real depth, real movement, worth what the customer paid. Not one of them may become empty backdrop, filler, or the quiet leftover of a composition that happens elsewhere.",
-    "",
-    "They are not separate pictures. The ground, palette, texture, lighting and motion run continuously through the whole square and straight across every join between them, so they read as passages of one design and the joins are invisible.",
-    "",
-    `Nothing that has to be read or recognised may run from one of those areas into another: every letter, word, mark and focal subject sits wholly inside a single area and well clear of its four edges. ${lettering}`,
-    "",
-    "Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+    "Lettering reads left to right throughout. Each focal element sits inside one third; the ground and its motion flow through all three continuously, so the transitions are invisible. Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
   ].join("\n");
 }
 

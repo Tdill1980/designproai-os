@@ -105,7 +105,7 @@ test('six-surface transport rejects field-mode, missing teaching identity and mi
   const bytes=Buffer.from('mock transport bytes');let downloads=0;
   const body=atlas._test.atlasEdgeRequestBody(input,atlas.buildAtlasManifest(surfaces),extras);
   const reply={success:true,imageRequestCount:1,fieldContract:null,teachingProofIdentity:teaching.identity,
-    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260907.v26-field-coordinates',
+    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260907.v27-thirds-revert',
     masterStoragePath:'fixture.png',masterSha256:sha(bytes)};
   const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},
     fetchImpl:async()=>({ok:true,status:200,json:async()=>reply})};
