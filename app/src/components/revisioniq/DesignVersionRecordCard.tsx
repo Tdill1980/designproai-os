@@ -46,8 +46,23 @@ import {
   type DesignVersion,
   type DesignVersionHistory,
 } from "@/lib/design-version-history";
-import { dpApi } from "@/lib/designpro-api";
+import { dpApi, type RefusedGenerationView } from "@/lib/designpro-api";
 import { cn } from "@/lib/utils";
+
+/**
+ * Display names for the seven locked view keys. The keys themselves are a
+ * frozen contract (`CALLS_1_7_VIEW_PLAN`), so this is presentation only -- a
+ * label that drifts reads oddly; it cannot mis-address a view.
+ */
+const VIEW_LABEL: Record<string, string> = {
+  side: "Driver Side",
+  "passenger-side": "Passenger Side",
+  hood_detail: "Hood",
+  front: "Front",
+  rear: "Rear",
+  roof: "Roof Plan",
+  "close-up": "Close-Up",
+};
 
 export function DesignVersionRecordCard({
   generationId,
@@ -66,14 +81,29 @@ export function DesignVersionRecordCard({
   // Why the seven-view carousel above may be empty. Two very different reasons
   // look identical from the browser, and the customer is owed the sentence.
   const [proofsSuperseded, setProofsSuperseded] = useState(false);
+  // The third reason, and the one that had no sentence: a view the server
+  // REFUSED. It persists no row, so it cannot show up in the carousel as a gap
+  // -- the set is simply short. Live on generation e3ade856 (2026-09-07): the
+  // passenger proof was refused twice on an artwork-authority mismatch and the
+  // studio could only show six.
+  const [refusedProofs, setRefusedProofs] = useState<RefusedGenerationView[]>([]);
 
   useEffect(() => {
     let live = true;
     setProofsSuperseded(false);
+    setRefusedProofs([]);
     if (!id) return () => { live = false; };
     dpApi.listApprovedViewsWithVerdict(id)
-      .then((result) => { if (live) setProofsSuperseded(result.superseded); })
-      .catch(() => { if (live) setProofsSuperseded(false); });
+      .then((result) => {
+        if (!live) return;
+        setProofsSuperseded(result.superseded);
+        setRefusedProofs(result.refusedViews);
+      })
+      .catch(() => {
+        if (!live) return;
+        setProofsSuperseded(false);
+        setRefusedProofs([]);
+      });
     return () => { live = false; };
   }, [id]);
 
@@ -150,6 +180,26 @@ export function DesignVersionRecordCard({
           architecture and are no longer served. Your design and its six surfaces
           are unaffected — submit a revision to render a new proof set.
         </p>
+      )}
+
+      {/* A REFUSED VIEW IS NAMED, WITH ITS REASON. The proof set being short is
+          not the same as it being unfinished, and the server has always known
+          which it was. The six panels and the accepted proofs are untouched. */}
+      {refusedProofs.length > 0 && (
+        <div className="space-y-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2">
+          <p className="text-[11px] font-semibold text-amber-300">
+            {refusedProofs.length} 3D proof{refusedProofs.length === 1 ? " was" : "s were"} refused
+            and not replaced. The design, its master and its six print panels are unaffected.
+          </p>
+          {refusedProofs.map((view) => (
+            <p key={view.sourceViewType} className="text-[10px] text-amber-200/90">
+              <span className="font-semibold">
+                {VIEW_LABEL[view.sourceViewType] || view.sourceViewType}
+              </span>
+              {view.reason ? ` — ${view.reason}` : " — no reason recorded"}
+            </p>
+          ))}
+        </div>
       )}
 
       {/* Every version, oldest first. V1 is the original design. */}

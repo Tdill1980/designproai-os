@@ -81,3 +81,117 @@ test("the design surface names the refused view and says why", () => {
   // A view with no recorded reason still says something honest.
   assert.match(page, /not generated/, "an absent view with no server reason is left unexplained");
 });
+
+/**
+ * THE STUDIO READS A DIFFERENT ROUTE, SO IT NEEDED ITS OWN HOP.
+ *
+ * RevisionStudioIQ resolves proofs through /jobs/:id/approved-views, whose
+ * source is `designpro_generation_workspace` -- a projection of ACCEPTED views
+ * that has never read the slots table. A refused view is therefore invisible
+ * there too, and for the same underlying reason: it persists no row.
+ *
+ * The refusal rides beside the payload in a header, which is the idiom that
+ * route already uses for `x-designpro-views-superseded`. The database half is
+ * an ADDITIVE companion function; the workspace read is deliberately untouched,
+ * because it is the one whose breakage blanks the studio (CLAUDE.md records the
+ * `pg_catalog.coalesce` incident that did exactly that).
+ */
+test("the approved-views route reports refused views without touching the workspace read", () => {
+  const gateway = readFileSync(
+    resolve(import.meta.dirname, "..", "gateway", "src", "server.mjs"),
+    "utf8",
+  );
+
+  assert.match(gateway, /async function refusedViewsForGeneration\(/, "the gateway has no refused-view read");
+  assert.match(
+    gateway,
+    /rpc\(fetchImpl, token, cfg, "designpro_generation_refused_views"/,
+    "the gateway does not call the additive refusal function",
+  );
+  assert.match(
+    gateway,
+    /res\.setHeader\("x-designpro-views-refused"/,
+    "the refusal never reaches the caller",
+  );
+  // Degrade to silence, never to a lost payload.
+  assert.match(
+    gateway,
+    /async function refusedViewsForGeneration[\s\S]{0,900}catch \{\s*return \[\];\s*\}/,
+    "a failing refusal read must not cost the caller its proofs",
+  );
+
+  // ⛔ The workspace read stays exactly as it was.
+  const workspaceBody = gateway.slice(
+    gateway.indexOf("async function approvedViewsForGeneration"),
+    gateway.indexOf("function validatedGenerationStatus"),
+  );
+  assert.doesNotMatch(
+    workspaceBody,
+    /designpro_generation_refused_views/,
+    "the accepted-view projection must not be widened to carry refusals",
+  );
+});
+
+test("the migration adds a companion function and leaves the workspace read alone", () => {
+  const sql = readFileSync(
+    resolve(
+      import.meta.dirname, "..", "supabase", "migrations",
+      "20260907090000_designpro_generation_refused_views.sql",
+    ),
+    "utf8",
+  );
+
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.designpro_generation_refused_views\(/);
+  assert.match(sql, /STABLE SECURITY DEFINER/);
+  assert.match(sql, /SET search_path TO 'pg_catalog', 'public'/);
+  // The same ownership gate the workspace read uses.
+  assert.match(sql, /designpro_private\.caller_may_read_generation\(p_generation_id\)/);
+  // A slot that later produced a live view is not a standing refusal.
+  assert.match(sql, /NOT EXISTS[\s\S]{0,300}designpro_generation_views[\s\S]{0,200}superseded_at IS NULL/);
+  // It must never edit the read the studio depends on.
+  assert.doesNotMatch(
+    sql,
+    /FUNCTION public\.designpro_generation_workspace/,
+    "this migration must not touch designpro_generation_workspace",
+  );
+
+  // GRAMMAR IS NOT A FUNCTION. `pg_catalog.coalesce(...)` cannot exist: the
+  // parser resolves COALESCE before any search path, and the last migration
+  // that qualified it applied clean everywhere and then raised for every
+  // generation that actually had proofs.
+  //
+  // Checked against EXECUTABLE SQL only. The file's own comment names that
+  // incident, and a check that cannot tell prose from code would either fail on
+  // the explanation or force the explanation out of the file.
+  const executableSql = sql.replace(/--[^\n]*/g, "");
+  assert.doesNotMatch(executableSql, /pg_catalog\.(coalesce|nullif|greatest|least)/i);
+  // Real functions ARE qualified, which is what SET search_path requires.
+  assert.match(sql, /pg_catalog\.jsonb_agg/);
+  assert.match(sql, /pg_catalog\.jsonb_build_object/);
+});
+
+test("the studio surface names each refused proof", () => {
+  const card = readFileSync(
+    resolve(import.meta.dirname, "..", "app", "src", "components", "revisioniq", "DesignVersionRecordCard.tsx"),
+    "utf8",
+  );
+
+  assert.match(card, /setRefusedProofs\(result\.refusedViews\)/, "the studio drops the refusals it was handed");
+  assert.match(card, /refusedProofs\.length > 0 &&/, "the studio never renders a refusal notice");
+  assert.match(card, /VIEW_LABEL\[view\.sourceViewType\]/, "the refused view is not named");
+  assert.match(card, /view\.reason \? ` — \$\{view\.reason\}` : " — no reason recorded"/, "the reason is not shown");
+  // The refusal explains the proofs; it must not imply the design is lost.
+  assert.match(card, /six print panels are unaffected/i);
+});
+
+test("the api parses the refusal header defensively", () => {
+  const api = readFileSync(
+    resolve(import.meta.dirname, "..", "app", "src", "lib", "designpro-api.ts"),
+    "utf8",
+  );
+
+  assert.match(api, /function parseRefusedViewsHeader\(/);
+  assert.match(api, /refusedViews: parseRefusedViewsHeader\(headers\.get\("x-designpro-views-refused"\)\)/);
+  // Malformed JSON in a header must cost the reason, never the views.
+  assert.match(api, /parseRefusedViewsHeader[\s\S]{0,900}catch \{\s*return \[\];\s*\}/);
+});

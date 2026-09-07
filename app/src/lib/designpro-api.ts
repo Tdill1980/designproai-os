@@ -1027,6 +1027,42 @@ export async function createGenerationRequest(
   });
 }
 
+/** A proof view the server refused, as the approved-views route reports it. */
+export type RefusedGenerationView = {
+  sourceViewType: string;
+  consumerRole: string;
+  reason: string | null;
+};
+
+/**
+ * The refusal header, parsed defensively.
+ *
+ * It is JSON in a header, so it can be absent, truncated by a proxy, or simply
+ * not there on an older server. Every one of those must read as "no reason
+ * available" and leave the proofs the response carried untouched -- an
+ * explanation is worth nothing if failing to parse it costs the customer their
+ * design.
+ */
+function parseRefusedViewsHeader(value: string | null): RefusedGenerationView[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((row): row is RefusedGenerationView =>
+        !!row && typeof row === "object"
+        && typeof (row as RefusedGenerationView).sourceViewType === "string")
+      .map((row) => ({
+        sourceViewType: String(row.sourceViewType),
+        consumerRole: String(row.consumerRole || ""),
+        reason: row.reason ? String(row.reason) : null,
+      }))
+      .slice(0, 7);
+  } catch {
+    return [];
+  }
+}
+
 export const dpApi = {
   /* Calls 1-7 */
   createGenerationRequest,
@@ -1195,6 +1231,19 @@ export const dpApi = {
     return {
       views: Array.isArray(payload) ? payload : [],
       superseded: headers.get("x-designpro-views-superseded") === "flat_first_atlas_new_run_required",
+      /**
+       * Views the server refused and never replaced, with the slot's reason.
+       *
+       * A refused view persists no row, so it can never appear in `views` --
+       * not even as an entry without a URL. Without this the studio can only
+       * report a short count, which is what generation e3ade856 showed the
+       * owner: six proofs, no passenger side, and nothing saying the passenger
+       * proof was refused twice on an artwork-authority mismatch.
+       *
+       * Malformed header content is dropped rather than thrown: an unreadable
+       * explanation must never cost the caller the proofs it came with.
+       */
+      refusedViews: parseRefusedViewsHeader(headers.get("x-designpro-views-refused")),
     };
   },
   /**
