@@ -3257,6 +3257,9 @@ module.exports = {
   viewAuthorityFor,
   _test: {
     activeZoneMaskSvg,
+    // Exported so the composition can be EXECUTED on real bytes rather than
+    // asserted about as source text. A guard that has never run is a comment.
+    composePassengerFromDriver,
     // Exported so the GENIE resolver's authority can be validated by its real
     // consumer in one test, across the seam that separates them.
     normalizedGeometryAuthority,
