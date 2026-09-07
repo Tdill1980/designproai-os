@@ -58,9 +58,10 @@ test("Call 1 restores the pinned teaching proof and records its identity", () =>
   assert.match(runtime, /loadBundledAtlasTeachingProof/);
   assert.match(runtime, /teachingProofIdentity: teachingProof\.identity/);
   assert.match(runtime, /atlasDesignTeachingExample: teachingProof\.identity/);
-  assert.match(runtime, /atlasDesignTeachingExampleApplied: true/);
-  assert.match(runtime, /atlasDesignTeachingExampleIdentity: teachingProof\.identity/);
-  assert.match(runtime, /atlasFieldContract: null/);
+  assert.match(runtime, /atlasDesignTeachingExampleApplied: manifest\.topology !== FIELD_TOPOLOGY/);
+  assert.match(runtime, /atlasDesignTeachingExampleIdentity: manifest\.topology === FIELD_TOPOLOGY \? null : teachingProof\.identity/);
+  // The receipt records the contract that actually ran, not a constant.
+  assert.match(runtime, /atlasFieldContract: manifest\.topology === FIELD_TOPOLOGY \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
   assert.match(runtime, /topologyExamplesApplied: 0/);
   assert.doesNotMatch(runtime, /referenceImagesBase64:[^\n]*teachingProof/);
   assert.doesNotMatch(runtime, /loadBundledFlatToFinishedExample/,

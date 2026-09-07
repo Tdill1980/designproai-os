@@ -5,6 +5,12 @@ const require = createRequire(import.meta.url);
 const atlas = require('../runtime/flat-first-atlas.cjs');
 const sharp = require('../runtime/node_modules/sharp');
 const teaching = require('../runtime/flat-atlas-topology-examples.cjs').loadBundledAtlasTeachingProof();
+// Owner ruling 2026-09-07: the runtime lays the canonical GENIE manifest out as
+// field territories before authoring, so a fixture that paints its synthetic
+// master at legacy zone geometry no longer lines up with the zones the loop
+// reads. Build the fixture master through the SAME layout the product uses.
+const { buildFieldTerritories } = require('../runtime/atlas-field-territories.cjs');
+const productManifest = (...a) => buildFieldTerritories(atlas.buildAtlasManifest(...a));
 const sha = atlas._test.sha256;
 const surfaces = [ ['driver',153,56], ['passenger',153,56], ['hood',71.5,56],
   ['roof',74.3,54.8], ['front',129,34], ['rear',76,54] ].map(([surfaceKey,widthInches,heightInches]) => ({
@@ -24,7 +30,7 @@ const extras = {teachingProofStoragePath:`atlas-call1-inputs/${teaching.flattene
 // Six different pixel patterns expose a duplicated register even when its
 // dimensions, PNG hashes and opacity are otherwise valid.
 test('one authored topology preserves all six distinct source regions through persistence', async () => {
-  const manifest = atlas.buildAtlasManifest(surfaces, undefined, 'truck');
+  const manifest = productManifest(surfaces, undefined, 'truck');
   manifest.geometryResolution = geometryResolution;
   const layers = [];
   for (const [i,z] of manifest.zones.entries()) {
@@ -53,18 +59,28 @@ test('one authored topology preserves all six distinct source regions through pe
     store:{async putImmutableBytes(row){stored.set(row.storagePath,row.bytes);return {storagePath:row.storagePath,contentHash:sha(row.bytes),byteSize:row.bytes.length}}},
     callEdge:async body=>{
       calls++;
-      assert.equal(body.fieldContract,undefined);
-      assert.equal(body.noseEdge,undefined);
+      // Owner ruling 2026-09-07: the product authors one field and cuts six
+      // code-only territories. No structural image reaches the model, and the
+      // six regions still travel as OS data the edge validates.
+      assert.equal(body.fieldContract,'designpro.atlas-field-prompt.v2');
+      assert.deepEqual(body.noseEdge,{driver:'left',passenger:'right'});
       assert.equal(body.panels.length,6);
-      assert.equal(sha(stored.get(body.teachingProofStoragePath)),teaching.flattenedTopView.contentHash);
-      assert.ok(stored.get(body.guideStoragePath));
+      assert.equal(body.teachingProofStoragePath,undefined);
+      assert.equal(body.guideStoragePath,undefined);
+      // Both pinned inputs are still BUILT and stored -- installer map and
+      // forensic record -- they simply do not travel to the model.
+      assert.equal(stored.size>0,true);
       return {bytes:source,provenance:{imageRequestCount:1,masterSha256:sha(source)}};
     },
   });
   assert.equal(calls,1);
-  assert.equal(result.metadata.atlasFieldContract,null);
+  assert.equal(result.metadata.atlasFieldContract,'designpro.atlas-field-prompt.v2');
   assert.equal(result.metadata.atlasFieldComposeContract,undefined);
-  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,true);
+  // Owner ruling 2026-09-07: the receipt now records what actually reached
+  // the model. Under the one-field contract no teaching example is sent, so
+  // this is false there and true on the six-container branch.
+  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,false);
+  assert.equal(result.metadata.atlasDesignTeachingExampleIdentity,null);
   assert.equal(inserted.metadata.callOnePanels.length,6);
   for(const original of expected){
     const panel=inserted.metadata.callOnePanels.find(p=>p.surfaceKey===original.surfaceKey);
@@ -88,7 +104,7 @@ test('six-surface transport rejects field-mode, missing teaching identity and mi
   const bytes=Buffer.from('mock transport bytes');let downloads=0;
   const body=atlas._test.atlasEdgeRequestBody(input,atlas.buildAtlasManifest(surfaces),extras);
   const reply={success:true,imageRequestCount:1,fieldContract:null,teachingProofIdentity:teaching.identity,
-    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260906.v25-rectangular-media',
+    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260907.v26-field-coordinates',
     masterStoragePath:'fixture.png',masterSha256:sha(bytes)};
   const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},
     fetchImpl:async()=>({ok:true,status:200,json:async()=>reply})};
@@ -113,7 +129,7 @@ test('six-surface transport rejects field-mode, missing teaching identity and mi
 // fallback as any other refused candidate. This fixture isolates control flow;
 // it does not stand in for the inaccessible 3b9b3209 production artwork.
 async function cutoutLoopFixtures() {
-  const manifest=atlas.buildAtlasManifest(surfaces,undefined,'truck');
+  const manifest=productManifest(surfaces,undefined,'truck');
   const layers=await Promise.all(manifest.zones.map(async z=>({
     input:await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${z.w}" height="${z.h}">
       <defs><linearGradient id="g"><stop stop-color="#227daa"/><stop offset="1" stop-color="#f9b85a"/></linearGradient></defs>

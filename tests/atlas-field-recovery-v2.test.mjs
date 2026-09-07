@@ -153,7 +153,14 @@ test("the WHOLE model-facing prompt carries no object-schema, topology or negati
     assert.throws(() => assertFieldPromptClean(`${field.prompt}\n${word} appears here`), new RegExp(`forbidden framing "${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`), word);
   }
   // the exemptions are exactly the production creative literals, and the unswapped deployed creative is convicted
-  assert.deepEqual([...APPROVED_CREATIVE_PHRASES], ["wet-look surface", "never an on-vehicle photograph", "color story, layout, graphic motifs"]);
+  // "real surface texture" joined the exemptions on 2026-09-04. It belongs to
+  // PHOTOGRAPHIC IMAGERY, which fires only when briefWantsPhoto() is true, so
+  // no fixture here reached it until a real brief (GEN 63e6629a, Arctic Air)
+  // asked for a photograph — and the guard then convicted the CURRENTLY
+  // DEPLOYED v24 prompt for that brief, identically. Pre-existing false
+  // positive on creative language about photographic rendering, not a
+  // production object.
+  assert.deepEqual([...APPROVED_CREATIVE_PHRASES], ["wet-look surface", "real surface texture", "never an on-vehicle photograph", "color story, layout, graphic motifs"]);
   assert.throws(() => assertFieldPromptClean(field.creative), /forbidden framing/);
   // whole-word: "whole" is not "hole", "plates" is not "panel"
   assert.doesNotThrow(() => assertFieldPromptClean("the whole field of faceted plates"));

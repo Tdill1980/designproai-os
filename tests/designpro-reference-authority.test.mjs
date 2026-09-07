@@ -126,9 +126,10 @@ test("the two reference classes are recorded under separate metadata keys", () =
   // One-field contract (owner ruling 2026-09-02): no structural example image
   // is attached to Call 1 any more, and the revision records that as false /
   // null rather than silently dropping the keys.
-  assert.match(source, /atlasDesignTeachingExampleApplied: true/);
-  assert.match(source, /atlasDesignTeachingExampleIdentity: teachingProof\.identity/);
-  assert.match(source, /atlasFieldContract: null/);
+  assert.match(source, /atlasDesignTeachingExampleApplied: manifest\.topology !== FIELD_TOPOLOGY/);
+  assert.match(source, /atlasDesignTeachingExampleIdentity: manifest\.topology === FIELD_TOPOLOGY \? null : teachingProof\.identity/);
+  // The receipt records the contract that actually ran, not a constant.
+  assert.match(source, /atlasFieldContract: manifest\.topology === FIELD_TOPOLOGY \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
   assert.match(source, /verifiedCustomerReferenceCount: Array\.isArray\(input\?\.visionBoardImages\)/);
   // The customer-reference count must never be fed from the topology examples.
   assert.doesNotMatch(source, /verifiedCustomerReferenceCount:[^\n]*topologyExamples/);
