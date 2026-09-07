@@ -282,6 +282,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     generateAdditionalViews,
     isGeneratingAdditional,
     failedViews,
+    failedViewReasons,
     retryFailedView,
     isRetryingView,
     showUpgradeModal,
@@ -2999,11 +3000,25 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     {allViewsRevealed && failedViews.length > 0 && (
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-                        <p className="text-sm text-amber-200">
-                          {isFlatFirstDiagnostic
-                            ? `${allViews.length} of ${requiredViewCount} views generated. The proof set is incomplete. Start a new Precision run; individual views cannot be retried.`
-                            : `${allViews.length} of ${requiredViewCount} views generated. ${failedViews.length} view${failedViews.length > 1 ? 's' : ''} failed - retry below or regenerate all.`}
-                        </p>
+                        <div className="space-y-1">
+                          <p className="text-sm text-amber-200">
+                            {isFlatFirstDiagnostic
+                              ? `${allViews.length} of ${requiredViewCount} views generated. The proof set is incomplete. Start a new Precision run; individual views cannot be retried.`
+                              : `${allViews.length} of ${requiredViewCount} views generated. ${failedViews.length} view${failedViews.length > 1 ? 's' : ''} failed - retry below or regenerate all.`}
+                          </p>
+                          {/* NAME THE VIEW AND SAY WHY. A short count told the
+                              customer a number and nothing else; the server has
+                              always known which view was refused and for what
+                              reason, and it stopped at the request status. */}
+                          {failedViews.map((viewType) => (
+                            <p key={viewType} className="text-xs text-amber-300/90">
+                              <span className="font-semibold">{VIEW_LABEL_MAP[viewType] || viewType}</span>
+                              {failedViewReasons?.[viewType]
+                                ? ` — ${failedViewReasons[viewType]}`
+                                : " — not generated"}
+                            </p>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -3062,8 +3077,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             key={viewType}
                             className="overflow-hidden relative aspect-video bg-secondary/20 border-dashed border-amber-500/30 flex items-center justify-center"
                           >
-                            <div className="text-center space-y-2">
+                            <div className="text-center space-y-2 px-3">
                               <p className="text-sm text-muted-foreground">{VIEW_LABEL_MAP[viewType] || viewType}</p>
+                              {failedViewReasons?.[viewType] && (
+                                <p className="text-[11px] leading-snug text-amber-300/80">
+                                  {failedViewReasons[viewType]}
+                                </p>
+                              )}
                               {isFlatFirstDiagnostic ? (
                                 <p className="text-xs text-amber-300">Start a new Precision run.</p>
                               ) : (

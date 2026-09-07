@@ -174,6 +174,28 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   const [allViews, setAllViews] = useState<any[]>([]);
   const [isGeneratingAdditional, setIsGeneratingAdditional] = useState(false);
   const [failedViews, setFailedViews] = useState<string[]>([]);
+  /**
+   * A REFUSED VIEW HAS NO ROW TO BE MISSING A URL. (live: e3ade856, 2026-09-07)
+   *
+   * `failedViews` was derived only from persisted views that came back without
+   * a signed URL. A slot the server REFUSED never persists a view at all -- it
+   * lives in `designpro_generation_slots` as `state='failed'` and reaches the
+   * browser as `failedShots` on the request status. So the passenger-side proof
+   * on that run, refused twice on `atlasContinuityContract` and recorded on the
+   * receipt as `{"sourceViewType":"passenger-side","reason":"provider_attempts_
+   * exhausted"}`, produced an EMPTY `failedViews`: no banner, no retry card, and
+   * six view tabs with nothing to say why the seventh was absent. The order
+   * button correctly refused, and that refusal was the only thing the customer
+   * was told.
+   *
+   * The whole server chain already carried it: the RPC builds `failedShots` from
+   * the slots table, the gateway forwards it, and `GenerationRequestState` types
+   * it. It was consumed into `personaFailedShots` for the persona surface and
+   * never joined to this one.
+   */
+  const [refusedShots, setRefusedShots] = useState<
+    Array<{ sourceViewType: string; reason: string | null }>
+  >([]);
   const [isRetryingView, setIsRetryingView] = useState<string | null>(null);
   const [designAnchorText, setDesignAnchorText] = useState<string | null>(null);
   const [uploadMode, setUploadMode] = useState<'curated' | 'custom'>('curated');
@@ -386,6 +408,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     setVisualizationId(null);
     setAllViews([]);
     setFailedViews([]);
+    setRefusedShots([]);
     setDesignAnchorText(null);
     setDesignName(null);
     setDesignDnaId(null);
@@ -533,6 +556,14 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       total: state.shotsTotal ?? RENDER_ROLES.length,
     });
     setPersonaFailedShots((state.failedShots || []).map((shot) => shot.sourceViewType));
+    // The server's refusals, kept with their reasons so the surface can say
+    // WHICH view was refused and WHY instead of only that the count is short.
+    setRefusedShots(
+      (state.failedShots || []).map((shot) => ({
+        sourceViewType: String(shot.sourceViewType),
+        reason: shot.reason ?? null,
+      })),
+    );
     if (state.designName) {
       setDesignName(state.designName);
       setPersonaDesignName(state.designName);
@@ -1017,6 +1048,22 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     await runPersonaDesigner(params.prompt, params, vehicleInfo, effectiveMode, pipelineMode);
   };
 
+  /**
+   * Both ways a view can be absent, joined once: a persisted view that could not
+   * be signed, and a slot the server refused outright. Order follows the locked
+   * view order the rest of the surface renders in, and a view is never listed
+   * twice when it appears in both.
+   */
+  const resolvedFailedViews = Array.from(
+    new Set([...failedViews, ...refusedShots.map((shot) => shot.sourceViewType)]),
+  );
+  /** `sourceViewType -> reason`, for the surfaces that explain the absence. */
+  const failedViewReasons = Object.fromEntries(
+    refusedShots
+      .filter((shot) => shot.reason)
+      .map((shot) => [shot.sourceViewType, String(shot.reason)]),
+  ) as Record<string, string>;
+
   return {
     vehicleType,
     setVehicleType,
@@ -1036,7 +1083,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     allViews,
     generateAdditionalViews,
     isGeneratingAdditional,
-    failedViews,
+    failedViews: resolvedFailedViews,
+    failedViewReasons,
     retryFailedView,
     isRetryingView,
     designAnchorText,
