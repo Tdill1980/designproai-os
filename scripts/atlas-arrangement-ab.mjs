@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TEST 12 — ARRANGEMENT A/B: the vehicle UNROLL against STACKED BANDS.
+ * ARRANGEMENT A/B (workflow option `arrangement-ab`): the vehicle UNROLL against STACKED BANDS.
  *
  * The contract (`atlas-arrangement-contract.mjs`) says what the two arms are
  * and proves they differ only in arrangement. This file spends the draws and
@@ -378,7 +378,7 @@ async function main() {
     ...draws.map((d) => `| ${d.label} | ${d.arm} | ${SURFACE_ORDER.map((k) => f(d, k)).join(" | ")} |`),
   ];
   writeFileSync(join(OUT, "COMPARISON.md"), [
-    "# Test 12 — arrangement: vehicle UNROLL (A) vs STACKED BANDS (B), raw pre-repair masters",
+    "# Arrangement A/B: vehicle UNROLL (A) vs STACKED BANDS (B), raw pre-repair masters",
     "",
     "A = deployed creative assembly + deployed six-surface tail + guide text + the production unroll guide (3 parts, 1 image; Test 8's arm B).",
     "B = the same with the five arrangement phrases swapped and the guide drawn as stacked bands: driver across the top, passenger beneath it, rear/roof/hood/front in a row along the bottom. Same six surfaces, same inches, nothing rotated.",

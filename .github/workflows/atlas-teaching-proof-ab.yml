@@ -126,7 +126,7 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            wording is returned to v3 and Call-1 six-pane conditioning work
 #            stops here. The next move is architectural (test 11).
 #
-#   test 12 — ARRANGEMENT (owner: "fix end to end", 2026-09-07). Twelve
+#   arrangement-ab — ARRANGEMENT (owner: "fix end to end", 2026-09-07). Twelve
 #            experiments share one perfect correlation: every request that
 #            asked for the six surfaces as a vehicle UNROLL (two tall flank
 #            columns either side of a centre spine) drew anatomy, voids or
@@ -184,7 +184,7 @@ on:
           - 9-field-recovery
           - 10-anchor-restoration
           - 11-field-recovery-v2
-          - 12-arrangement-ab
+          - arrangement-ab
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -414,7 +414,7 @@ jobs:
             9-field-recovery)        runner=scripts/atlas-field-recovery.mjs ;;
             10-anchor-restoration)   runner=scripts/atlas-anchor-recovery.mjs ;;
             11-field-recovery-v2)    runner=scripts/atlas-field-recovery-v2.mjs ;;
-            12-arrangement-ab)       runner=scripts/atlas-arrangement-ab.mjs ;;
+            arrangement-ab)          runner=scripts/atlas-arrangement-ab.mjs ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs

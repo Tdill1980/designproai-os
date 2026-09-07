@@ -1,4 +1,4 @@
-// TEST 12 — ARRANGEMENT A/B, LOCKED.
+// ARRANGEMENT A/B (workflow option `arrangement-ab`), LOCKED.
 //
 // Without a provider call these convict every way the arrangement test could
 // quietly stop being an arrangement test: a band rotated, a surface's inches
@@ -241,9 +241,9 @@ test("the request guards convict a teaching proof, an identical guide, or an ide
 
 // ── THE HARNESS PLUMBING ────────────────────────────────────────────────────
 
-test("the workflow offers test 12 and ships both scripts to the droplet", () => {
-  assert.match(WORKFLOW, /- 12-arrangement-ab\n/);
-  assert.match(WORKFLOW, /12-arrangement-ab\)\s+runner=scripts\/atlas-arrangement-ab\.mjs/);
+test("the workflow offers the arrangement A/B and ships both scripts to the droplet", () => {
+  assert.match(WORKFLOW, /- arrangement-ab\n/);
+  assert.match(WORKFLOW, /arrangement-ab\)\s+runner=scripts\/atlas-arrangement-ab\.mjs/);
   assert.match(WORKFLOW, /scripts\/atlas-arrangement-ab\.mjs \\/);
   assert.match(WORKFLOW, /scripts\/atlas-arrangement-contract\.mjs \\/);
   assert.match(WORKFLOW, /scripts\/atlas-print-media-contract\.mjs \\/);

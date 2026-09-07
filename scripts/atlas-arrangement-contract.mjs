@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TEST 12 — ARRANGEMENT. Is the vehicle-unroll LAYOUT the cue that makes
+ * ARRANGEMENT A/B (workflow option `arrangement-ab`). Is the vehicle-unroll LAYOUT the cue that makes
  * Gemini draw a vehicle?
  *
  * Twelve recorded experiments share one perfect correlation: every request
