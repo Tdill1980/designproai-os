@@ -33,8 +33,14 @@ const {
 // The transpiled vendor bridge is deleted from the product path.
 const {
   MASTER_QC_CONTRACT,
+  createAtlasMasterValidator,
   deterministicMasterChecks,
 } = require("./atlas-master-qc.cjs");
+// Passenger is composed from Driver in code (owner ruling 2026-09-07). The
+// validator above is imported for ONE reason -- its `driverBrandBands`
+// measurement -- and its verdict is never consulted; see
+// `composePassengerFromDriver`.
+const { MIRROR_CONTRACT, mirrorPassengerFromDriver } = require("./atlas-passenger-mirror.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 // Restore the existing six-surface authoring path; field territories remain harness-only.
@@ -2162,6 +2168,87 @@ function assertAtlasReuseContract(atlas, {
   return atlas;
 }
 
+/**
+ * Compose the passenger flank from the driver flank, or decline and say why.
+ *
+ * THE BAND READ IS A MEASUREMENT, NOT A GATE. `createAtlasMasterValidator`
+ * already asks the inspector for "the bounding rectangle of EVERY band of
+ * readable lettering, logo or contact text on the DRIVER zone -- company name,
+ * phone, URL, tagline, logo lockup" and returns those rectangles on every
+ * non-throwing path, whatever its verdict. That verdict is IGNORED here.
+ *
+ * The 2026-09-01 ruling removed this validator from the authoring loop because
+ * a broad semantic review must never REFUSE Call 1, and it still does not: the
+ * acceptance gate above has already run and passed, this call happens after it,
+ * and nothing it returns can reject a master. Only `driverBrandBands` is read.
+ *
+ * ⛔ FAIL CLOSED, AND FAIL TOWARDS TODAY. Every path that cannot establish the
+ * lettering on a design that HAS lettering declines to compose. The caller then
+ * keeps the authored passenger region, which is exactly what every run before
+ * this one shipped -- so the worst case of this whole change is no change.
+ */
+async function composePassengerFromDriver({
+  masterBytes, manifest, guideBytes, input, provider, logger = () => {},
+}) {
+  const decline = (reason) => ({ composed: false, reason, bandsApplied: 0 });
+  const driver = (manifest?.zones || []).find((zone) => zone.surfaceKey === "driver");
+  const passenger = (manifest?.zones || []).find((zone) => zone.surfaceKey === "passenger");
+  // The two flanks are only twins when the manifest made them the same shape.
+  // GENIE builds them from one pair of inches, so a mismatch is a geometry
+  // defect and composing across it would silently rescale one side.
+  if (!driver || !passenger || Number(driver.w) !== Number(passenger.w) || Number(driver.h) !== Number(passenger.h)) {
+    return decline("flank_zones_not_twins");
+  }
+
+  // Does this design carry lettering that MUST read forward? The brief's own
+  // structured strings answer it without looking at a pixel: a wrap with no
+  // company name, phone or website has no orientation-sensitive text to
+  // protect, so a bare mirror is safe and the band read is not required.
+  const brandStrings = [
+    String(input?.companyName || input?.businessName || "").trim(),
+    String(input?.phone || "").trim(),
+    String(input?.website || "").trim(),
+  ].filter(Boolean);
+  const lettersMatter = brandStrings.length > 0;
+
+  let brandBands = [];
+  if (lettersMatter) {
+    if (!provider || typeof provider.generateRaw !== "function" || !Buffer.isBuffer(guideBytes)) {
+      return decline("brand_band_reader_unavailable");
+    }
+    let review = null;
+    try {
+      const readBands = createAtlasMasterValidator({ provider });
+      review = await readBands({ masterBytes, guideBytes, manifest, input });
+    } catch (cause) {
+      // The validator catches its own errors, so reaching here means the seam
+      // itself failed. An unavailable measurement is a reason to keep the
+      // authored flank, never a reason to fail the run.
+      logger(`passenger mirror: brand band read failed (${String(cause?.message || cause).slice(0, 160)})`);
+      return decline("brand_band_read_failed");
+    }
+    brandBands = Array.isArray(review?.brandBands) ? review.brandBands : [];
+    // ZERO BANDS ON A DESIGN WITH LETTERING IS THE DANGEROUS CASE, and it is
+    // indistinguishable from "the reader could not see them". Mirroring here is
+    // what puts a reversed company name on a customer's vehicle.
+    if (!brandBands.length) return decline("brand_bands_not_located");
+  }
+
+  try {
+    const mirrored = await mirrorPassengerFromDriver({ masterBytes, manifest, brandBands });
+    return {
+      composed: true,
+      bytes: mirrored.bytes,
+      bandsApplied: Number(mirrored.bandsApplied || 0),
+      brandStringCount: brandStrings.length,
+      reason: null,
+    };
+  } catch (cause) {
+    logger(`passenger mirror: composition failed (${String(cause?.message || cause).slice(0, 160)})`);
+    return decline(`composition_failed:${String(cause?.code || "unknown")}`);
+  }
+}
+
 async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
@@ -2471,6 +2558,66 @@ async function generateOrReuseFlatAtlas(options) {
     // contract 2026-09-01): a re-roll is the identical primary request and
     // temperature 1.0 supplies the variation. The refusal itself is recorded
     // above in `edgeProvenance` / the thrown error on exhaustion.
+  }
+  // ── PASSENGER IS THE DRIVER FLANK, MIRRORED. (Owner ruling, Trish 2026-09-07)
+  //
+  // "We need a mirrored version for passenger of driver."
+  //
+  // ⚠️ THIS REVERSES THE 2026-08-27 RULING THAT PASSENGER IS ITS OWN AUTHORED
+  // REGION, and the reversal is deliberate. That rule was right about the
+  // danger -- replacing an authored flank with a pixel mirror destroys real
+  // design work -- and wrong about the outcome in practice: across every run
+  // since, the two flanks have differed by drift rather than by intent, and on
+  // e3ade856 (2026-09-07) the passenger territory did not compose as passenger
+  // artwork at all. The proof inspector refused that view twice --
+  // "Artwork from the authority crop (Hood) is not present on the vehicle's
+  // passenger side" -- and the customer got six views and no seventh.
+  //
+  // A wrap's two flanks are the same design. Mirroring them is what a wrap shop
+  // does, and doing it in CODE removes the one thing an image model has never
+  // done reliably here: put the same composition on both sides with the
+  // lettering forward-reading on each.
+  //
+  // NO SECOND PRODUCER OF DESIGN. Every pixel of the composed passenger flank
+  // is a rearrangement of driver pixels this same Call 1 authored. Nothing is
+  // invented, nothing is inpainted, and the operation is deterministic.
+  //
+  // THE LETTERING IS THE WHOLE RISK. A bare flop reads backwards, which is a
+  // print defect far worse than the drift it replaces (canaries 6c1bfae6 and
+  // cad013e1 are exactly that failure, authored rather than composed). So the
+  // brand bands are lifted from the driver panel and re-dropped UN-FLIPPED, and
+  // when the bands cannot be established on a design that carries lettering,
+  // THE MIRROR DOES NOT RUN. Falling through to the authored passenger is the
+  // behaviour of every run before this one; shipping reversed type is not.
+  const passengerMirror = await composePassengerFromDriver({
+    masterBytes,
+    manifest,
+    guideBytes: authoringGuideBytes,
+    input: authoringInput,
+    provider,
+    logger,
+  });
+  if (passengerMirror.composed) {
+    // Same re-validation the repair path earns: a deterministic transform is
+    // REPEATABLE, which is not the same as VALID.
+    const mirrored = await deterministicMasterChecks(passengerMirror.bytes, manifest);
+    if (mirrored.blockingFailures.length) {
+      throw new FlatAtlasError(
+        "flat_atlas_mirrored_master_invalid",
+        "The composed passenger flank did not leave six valid printable regions: "
+        + mirrored.blockingFailures.join("; "),
+      );
+    }
+    masterDeterministic = mirrored;
+  }
+  // The authored sheet's hash is retained as provenance and never again called
+  // the accepted master -- the same resolution the owner reached for the
+  // repaired sheet on 2026-08-31, for the same reason: two masters is what
+  // makes a correct pair report as a mismatch.
+  const preMirrorMasterHash = passengerMirror.composed ? masterHash : null;
+  if (passengerMirror.composed) {
+    masterBytes = passengerMirror.bytes;
+    masterHash = sha256(masterBytes);
   }
   const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
   // ONE REPAIRED SHEET FEEDS BOTH HALVES OF THE FAN-OUT.
@@ -2911,13 +3058,28 @@ async function generateOrReuseFlatAtlas(options) {
       // still must not print until a human has seen them on a template.
       masterCutoutSurfaces,
       masterCutoutFindings,
-      // Historical readers may inspect this key. New Call-1 revisions never
-      // populate it: Passenger's authored bytes are preserved verbatim.
-      passengerComposed: null,
+      // WHICH PASSENGER THIS RUN SHIPPED, ALWAYS STATED. (owner ruling 2026-09-07)
+      //
+      // Composition can decline -- on a design whose lettering could not be
+      // located it MUST decline -- so "mirrored" is never assumed. The reason is
+      // recorded on the declining path so a flank that differs from Driver is a
+      // fact with an explanation rather than a mystery.
+      passengerComposed: passengerMirror.composed
+        ? {
+            contract: MIRROR_CONTRACT,
+            bandsApplied: passengerMirror.bandsApplied,
+            brandStringCount: passengerMirror.brandStringCount,
+            preMirrorMasterHash,
+          }
+        : null,
       passengerMirrorTelemetry: {
         mae: Number(masterDeterministic?.passengerMirrorMae ?? 0),
         blocking: false,
-        passengerSource: "authored-passenger-region",
+        passengerSource: passengerMirror.composed
+          ? "mirrored-from-driver"
+          : "authored-passenger-region",
+        // Null when composed; the decline reason otherwise.
+        declineReason: passengerMirror.composed ? null : passengerMirror.reason,
       },
       // What the six panels were actually cut from. Equal to the accepted
       // canonical master in BOTH cases now: on a clean run the fill returns the
@@ -3095,6 +3257,9 @@ module.exports = {
   viewAuthorityFor,
   _test: {
     activeZoneMaskSvg,
+    // Exported so the composition can be EXECUTED on real bytes rather than
+    // asserted about as source text. A guard that has never run is a comment.
+    composePassengerFromDriver,
     // Exported so the GENIE resolver's authority can be validated by its real
     // consumer in one test, across the seam that separates them.
     normalizedGeometryAuthority,

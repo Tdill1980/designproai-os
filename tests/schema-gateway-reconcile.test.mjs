@@ -17,7 +17,11 @@ const config = readFileSync(new URL("../supabase/config.toml", import.meta.url),
 
 test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(names.slice(-73), [
+  // The window grows with the chain: it is anchored at
+  // 20260813190000_designpro_design_master_revisions.sql, so every migration
+  // appended below must widen it by one or the chain's head falls out of view
+  // and the assertion convicts an unrelated file.
+  assert.deepEqual(names.slice(-74), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -234,6 +238,10 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // Durable WrapBox publication resolves that same append-only binding;
     // design-first snapshots intentionally remain unbound and immutable.
     "20260906170000_designpro_wrapbox_resolves_late_fulfillment.sql",
+    // A refused proof view, named with its reason, for the surfaces that have
+    // to explain a short set. Purely additive: a new companion function beside
+    // `designpro_generation_workspace`, which is deliberately not touched.
+    "20260907090000_designpro_generation_refused_views.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

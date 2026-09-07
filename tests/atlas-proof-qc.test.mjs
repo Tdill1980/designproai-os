@@ -155,6 +155,68 @@ test("the QC contract imports the locked seven angles, photography and Studio OS
   assert.match(roof, /open bed, bedliner, cargo box, tailgate, hood, wheel, side body, floor or wall is visible/);
 });
 
+/**
+ * THE PICKUP BED RULE REACHES EVERY VIEW, NOT ONLY THE ONE THAT EXCLUDES THE BED.
+ *
+ * Live evidence, generation a503b91b (2026-09-06, 2022 Ford F250 Crew Cab): the
+ * owner opened the proofs and found the wrap painted INSIDE the open cargo bed.
+ * All seven views had scored `pass` on every contract at confidence 1.0 with no
+ * retries -- because the bed clause was gated to `sourceViewType === "roof"`,
+ * the one view framed so the bed is out of shot. On side, passenger-side, rear,
+ * front, hood and close-up the judge was never told the rule, and none of its
+ * nine contracts grades wrap coverage.
+ *
+ * The wording is ported from the standard (non-A.T.L.A.S.) judge, which has
+ * carried it unconditionally on every view all along -- RULE 1: recover the
+ * proven behaviour rather than invent one.
+ *
+ * Its graded home is `vehicleContinuityContract`, which already owns "the exact
+ * vehicle body/cab/bed configuration and plausible anatomy". That needs no
+ * response-schema change: a new contract field would alter the bounded JSON the
+ * model must return, and the fix does not require it.
+ */
+test("every pickup proof view carries the bed-coverage rule, and non-pickups carry none", () => {
+  const pickupInput = { vehicle: { year: "2022", make: "Ford", model: "F250 Crew Cab", type: "truck" } };
+  const carInput = { vehicle: { year: "2022", make: "Toyota", model: "Prius", type: "car" } };
+  const promptFor = (sourceViewType, input) => buildAtlasProofQcPrompt({
+    sourceViewType,
+    input,
+    atlas: {},
+    proofHash: "a".repeat(64),
+    atlasHash: "b".repeat(64),
+    authorityHash: "c".repeat(64),
+    authoritySurface: sourceViewType === "passenger-side" ? "passenger"
+      : sourceViewType === "hood_detail" ? "hood"
+        : sourceViewType === "close-up" ? "driver" : sourceViewType,
+  });
+
+  for (const sourceViewType of ["side", "passenger-side", "hood_detail", "front", "rear", "close-up"]) {
+    const prompt = promptFor(sourceViewType, pickupInput);
+    assert.match(prompt, /PICKUP COVERAGE RULE/, `${sourceViewType} lost the pickup bed-coverage rule`);
+    assert.match(
+      prompt,
+      /open bed floor, inner bed walls, rails and wheel-well humps must show bare factory bedliner with ZERO artwork/,
+      `${sourceViewType} lost the ported bedliner wording`,
+    );
+    assert.match(prompt, /graded under vehicleContinuityContract/, `${sourceViewType} coverage rule has no graded home`);
+  }
+
+  // Roof keeps its own, stricter rule: on that view the bed must not be VISIBLE
+  // at all, which is a framing failure rather than a coverage one.
+  const roofPrompt = promptFor("roof", pickupInput);
+  assert.match(roofPrompt, /Do not excuse a bed view as a roof view/);
+  assert.doesNotMatch(roofPrompt, /PICKUP COVERAGE RULE/);
+
+  // A car has no bed. Naming one would invite the inspector to look for it.
+  for (const sourceViewType of ["side", "rear", "roof"]) {
+    assert.doesNotMatch(promptFor(sourceViewType, carInput), /PICKUP COVERAGE RULE/, `${sourceViewType} invented a bed on a car`);
+    assert.match(promptFor(sourceViewType, carInput), /Pickup coverage rules active: NO/);
+  }
+
+  // The contract that grades it must say so, on every view.
+  assert.match(promptFor("side", pickupInput), /vehicleContinuityContract[\s\S]{0,400}printed artwork inside the open cargo bed/);
+});
+
 test("the validator grades the actual candidate inline against the canonical Atlas with bounded schema JSON", async () => {
   const f = await fixture();
   const calls = [];

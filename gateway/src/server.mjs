@@ -1073,6 +1073,38 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
  * set the server has superseded stays withheld, and the caller is told which
  * of the two empty answers they are looking at instead of guessing.
  */
+/**
+ * The proof views this generation refused and never replaced.
+ *
+ * A SEPARATE READ ON PURPOSE. `designpro_generation_workspace` is the accepted
+ * -view projection RevisionStudioIQ depends on, and it has never looked at the
+ * slots table; widening it to carry refusals would put this information behind
+ * the one function whose breakage blanks the studio. The additive companion
+ * cannot do that, and a failure here degrades to "no reason shown" rather than
+ * to "no proofs shown" -- which is why it never throws.
+ */
+async function refusedViewsForGeneration(fetchImpl, token, cfg, generationIdValue) {
+  const generation = String(generationIdValue || "").toLowerCase();
+  if (!UUID_PATTERN.test(generation)) return [];
+  let rows = null;
+  try {
+    rows = await rpc(fetchImpl, token, cfg, "designpro_generation_refused_views", {
+      p_generation_id: generation,
+    });
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((row) => row && typeof row === "object" && GENERATION_VIEW_ROLE.has(String(row.sourceViewType)))
+    .map((row) => ({
+      sourceViewType: String(row.sourceViewType),
+      consumerRole: GENERATION_VIEW_ROLE.get(String(row.sourceViewType)),
+      reason: row.reason ? String(row.reason).slice(0, 160) : null,
+    }))
+    .slice(0, 7);
+}
+
 async function approvedViewsForGeneration(fetchImpl, token, cfg, generationIdValue) {
   const generation = String(generationIdValue || "").toLowerCase();
   if (!UUID_PATTERN.test(generation)) return { views: [], superseded: false, found: false };
@@ -2904,6 +2936,20 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // A page that cannot tell those apart shows a spinner forever.
         if (result.superseded) {
           res.setHeader("x-designpro-views-superseded", "flat_first_atlas_new_run_required");
+        }
+        // A SHORT SET IS NOT THE SAME AS A PENDING ONE, AND A COUNT SAYS
+        // NEITHER. (live: e3ade856, 2026-09-07)
+        //
+        // A view the server REFUSED persists no row, so it cannot appear in the
+        // list above as anything -- not even as an entry without a URL. The
+        // studio therefore showed six proofs and no way to attribute the
+        // seventh's absence, while the slots table named it exactly:
+        // passenger-side, provider_attempts_exhausted. This is the same idiom
+        // as the superseded header directly above -- the payload stays the
+        // views, and the reason the list is short rides beside it.
+        const refused = await refusedViewsForGeneration(fetchImpl, token, cfg, requestedViewId);
+        if (refused.length) {
+          res.setHeader("x-designpro-views-refused", JSON.stringify(refused));
         }
         return json(res, 200, result.views);
       }
