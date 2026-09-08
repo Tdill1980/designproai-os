@@ -57,6 +57,13 @@ const {
   buildAtlasManifest,
   normalizeAtlasMaster,
 } = require("../runtime/flat-first-atlas.cjs");
+// The SAME resolver + surface projection the worker uses at
+// generation-worker.cjs:944/968, so the probe crops the rectangles production
+// would have cut rather than a geometry of its own.
+const {
+  resolveFlatAtlasPreviewDimensions,
+  expectedSurfacesFromRow,
+} = require("../runtime/genie-universal-resolver.cjs");
 const {
   finishPanel,
   PANEL_CASCADE_ORDER,
@@ -100,7 +107,14 @@ async function main() {
       model: arg("model", "Transit"),
     },
   };
-  const manifest = await buildAtlasManifest({ input, supabase, logger: () => {} });
+  // buildAtlasManifest is positional — (surfaces, geometryAuthority, vehicleType)
+  // — and takes RESOLVED GENIE surfaces, not a request. Mirrors the worker.
+  const dimensionRow = await resolveFlatAtlasPreviewDimensions(supabase, input.vehicle, null);
+  const manifest = buildAtlasManifest(
+    expectedSurfacesFromRow(dimensionRow),
+    dimensionRow.proofGeometryAuthority,
+    dimensionRow.resolvedVehicleClass || input.vehicle.type,
+  );
   const normalized = await normalizeAtlasMaster(rawBytes, manifest);
   const masterBytes = normalized.bytes;
 
