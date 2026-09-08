@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260907.v26-field-coordinates";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orthographic-restored";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
 // composition and receives NO six-region guide, NO labeled teaching sheet, NO
@@ -2560,7 +2560,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // the delivered sheet to those same zones, so it cannot contribute a pixel
     // to a panel. It conditions layout only.
     parts.push({
-      text: "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Copy its six plain rectangular masks exactly as the only six output shapes. Each output region must have four straight edges, four square corners, and continuous customer artwork covering every pixel through every edge and corner. Output exactly six filled rectangular prints separated by dark gutters. Put the NEW customer design from the canonical target and brief inside them. No labels or other content outside the six rectangles.",
+      text: "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Fill its six regions with the NEW customer design from the canonical target vehicle and brief above. Return flat printable rectangles only; never return a vehicle image.",
     });
     await downloadPart(body.guideStoragePath, "image/png");
     // Legacy inline path for callers that still send bytes (harness/tests);

@@ -78,7 +78,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260906.v28-authored-topology";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v23-orthographic-restored";
 // Historical field contract retained for harness compatibility; the product
 // selects the unchanged six-surface branch by omitting this request key.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
@@ -159,7 +159,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260907.v26-field-coordinates";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orthographic-restored";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1573,27 +1573,12 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       placement: zone.placement,
       normalized: normalizedZoneTopology(zone, manifest),
     })),
-    // WHICH AUTHORING BRANCH IS A PROPERTY OF THE MANIFEST, NOT A HARD-CODED
-    // CHOICE HERE. A field-territory manifest selects the edge's field branch:
-    // one text part plus verified customer references, NO structural image at
-    // all -- no labeled teaching sheet, no six-region guide. The legacy
-    // manifest selects the unchanged six-container request with both pinned
-    // image inputs. Both remain callable and both remain covered, so reversing
-    // the 2026-09-07 decision is one line at the manifest, not a rebuild.
-    //
-    // The `panels` list above travels either way as OS data the edge
-    // validates; under the field contract the edge now also CONDITIONS the
-    // composition on it instead of discarding it.
-    ...(manifest?.topology === FIELD_TOPOLOGY
-      ? {
-        fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
-        noseEdge: manifest?.installerMap?.noseEdge || NOSE_EDGE,
-      }
-      : {
-        teachingProofStoragePath: extras.teachingProofStoragePath,
-        teachingProofIdentity: extras.teachingProofIdentity,
-        guideStoragePath: extras.guideStoragePath,
-      }),
+    // v23 SIX-CONTAINER REQUEST. This is the shape that produced the accepted
+    // master 1564c66da0a1c482: the pinned teaching proof and the neutral target
+    // guide both travel, and no field contract is named.
+    teachingProofStoragePath: extras.teachingProofStoragePath,
+    teachingProofIdentity: extras.teachingProofIdentity,
+    guideStoragePath: extras.guideStoragePath,
     referenceImagesBase64: extras.referenceImagesBase64,
   };
 }
@@ -2330,8 +2315,12 @@ async function generateOrReuseFlatAtlas(options) {
   // rotation 0, so Driver and Passenger come out the same pixel size -- which
   // is also what makes the 2026-09-07 mirror composition a clean pixel
   // operation rather than a rotate-and-resample.
-  const legacyManifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
-  const manifest = buildFieldTerritories(legacyManifest);
+  // RESTORED TO v23 (owner ruling, Trish 2026-09-08). The last A.T.L.A.S. the
+  // owner accepted -- master 1564c66da0a1c482, generation 84a3eadf, 2026-09-02
+  // -- was authored on the LEGACY six-container manifest, not on field
+  // territories. Field territories stay in the tree and stay tested; they are
+  // simply not what produced the accepted design.
+  const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
   const teachingProof = loadBundledAtlasTeachingProof();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
