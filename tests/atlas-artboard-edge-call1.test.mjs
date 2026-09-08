@@ -21,7 +21,21 @@ const edgeSource = readFileSync(
 );
 const runtimeSource = readFileSync(join(ROOT, "runtime", "flat-first-atlas.cjs"), "utf8");
 const assembly = edgeSource; // the real assembly lives IN the edge function now
-const handler = edgeSource.slice(edgeSource.indexOf("async function handleAtlasArtboard"));
+// BOUNDED AT THE END OF THE CALL-1 HANDLER, not at end-of-file.
+//
+// This used to slice to the end of the file, which was the same thing while
+// handleAtlasArtboard was last in it. Per-surface finishing (2026-09-08) added
+// handleAtlasPanel below it, and an unbounded slice then counted THAT
+// function's Gemini call against Call 1's exactly-one contract -- convicting a
+// different handler for a rule that is only about this one. Every assertion
+// below stays exactly as strict for the Call-1 handler; atlas-panel has its own
+// one-request lock in tests/atlas-panel-authoring.test.mjs.
+const ATLAS_PANEL_SECTION = "// ATLAS-PANEL — PER-SURFACE AUTHORING";
+const handler = (() => {
+  const from = edgeSource.indexOf("async function handleAtlasArtboard");
+  const to = edgeSource.indexOf(ATLAS_PANEL_SECTION, from);
+  return to === -1 ? edgeSource.slice(from) : edgeSource.slice(from, to);
+})();
 const MARK = "OUTPUT FORMAT \u2014 ONE FLAT A.T.L.A.S. ARTBOARD";
 
 test("Call 1 executes DPAG's own commercial/restyle creative assembly", () => {

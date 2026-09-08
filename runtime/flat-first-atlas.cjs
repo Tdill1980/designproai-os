@@ -56,6 +56,11 @@ const { BUCKET } = require("./generation-store.cjs");
 const { buildFieldTerritories, FIELD_TOPOLOGY, NOSE_EDGE } = require("./atlas-field-territories.cjs");
 const { loadBundledAtlasTeachingProof } = require("./flat-atlas-topology-examples.cjs");
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
+const {
+  PANEL_NEIGHBOURS,
+  PANEL_AUTHORING_PROMPT_VERSION,
+  finishPanel: finishPanelSurface,
+} = require("./atlas-panel-authoring.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -1227,6 +1232,12 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
   // Optional observation only. A timing consumer can never change extraction
   // success, bytes, order or retry behaviour -- even if that consumer throws.
   onPanelTiming = null,
+  // PER-SURFACE FINISHING (owner ruling 2026-09-08). When supplied, each crop
+  // is handed back to the model on its own, at its own proportion, shown the
+  // neighbours already finished, and returned as one whole sheet. Absent — the
+  // resume path, every test, and production until the flag is turned on — the
+  // cut is byte-for-byte what it has always been.
+  finishPanel = null,
 } = {}) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
   // LINEAGE, NOT PROVENANCE. `sourceMasterHash` is the identity PanelPro pairs
@@ -1301,6 +1312,42 @@ async function cutCallOnePanels(surfaceSourceBytes, manifest, canonicalMasterHas
         } catch {
           // Observability is not workflow authority.
         }
+      }
+    }
+    // THE FINISHING PASS SITS BETWEEN THE CUT AND THE RELEASE.
+    //
+    // Here, and not later, because everything downstream of `onPanel` binds to
+    // the panel's `contentHash` — the persisted bytes, the PanelPro row, the
+    // 3D proof's artwork authority. Finishing after the release would publish
+    // one panel and print another.
+    //
+    // It cannot fail the run: `finishPanel` returns the crop unchanged on every
+    // refusal, transport error and regression, so the worst case here is
+    // exactly the panel this loop produced a line earlier.
+    if (typeof finishPanel === "function") {
+      const finish = await finishPanel(panel, panels);
+      if (finish?.applied === true && finish.bytes?.length) {
+        panel = Object.freeze({
+          ...panel,
+          bytes: finish.bytes,
+          contentHash: finish.contentHash,
+          byteSize: finish.bytes.length,
+          // PROVENANCE MUST SAY WHAT ACTUALLY MADE THESE PIXELS.
+          //
+          // A finished sheet is not a `sharp.extract` and must never claim to
+          // be one: `production-provenance.cjs` reads exactly these two fields
+          // to prove production artwork is not an unattributed AI render. The
+          // deterministic crop it was finished from is recorded so the chain
+          // back to the accepted master stays checkable end to end.
+          method: "atlas_panel_finished",
+          deterministic: false,
+          panelAuthoringContract: finish.contract,
+          panelAuthoringPromptVersion: finish.promptVersion,
+          preFinishHash: finish.preFinishHash,
+          finishNeighbourSurfaces: finish.neighbourSurfaces,
+          holeRatioBefore: finish.holeRatioBefore,
+          holeRatioAfter: finish.holeRatioAfter,
+        });
       }
     }
     panels.push(panel);
@@ -1954,6 +2001,115 @@ function atlasStoragePath({ tenantKey, generationId, revisionSequence = 1, kind,
   if (kind === "projection") return `${prefix}/revisions/${Number(revisionSequence)}/projection/${contentHash}.jpg`;
   if (kind === "panel") return `${prefix}/revisions/${Number(revisionSequence)}/panels/${contentHash}.png`;
   throw new FlatAtlasError("flat_atlas_artifact_kind_invalid", `Unknown atlas artifact ${kind}`);
+}
+
+/**
+ * PER-SURFACE FINISHING — THE FLAG, THE TRANSPORT AND THE CASCADE.
+ * ════════════════════════════════════════════════════════════════
+ *
+ * Returns `null` unless `DESIGNPRO_ATLAS_PANEL_FINISH` is explicitly `on`, and
+ * `cutCallOnePanels` then behaves exactly as it always has — same bytes, same
+ * hashes, same provenance. **DEFAULT OFF ON PURPOSE.** The pipeline today gets
+ * a clean master roughly half the time; a change that has never run against a
+ * live customer generation does not get to be the thing standing between the
+ * owner and a design. Turn it on, measure it, then make it the default.
+ *
+ * Misspelling the value resolves to OFF, the same fail-safe direction
+ * `DESIGNPRO_STANDARD_TRANSPORT` uses (RULE 0.16) — a flag must never be able
+ * to switch a customer path on by accident.
+ */
+function atlasPanelFinisher({ input, store, supabase, ownerId, logger, generationId } = {}) {
+  if (String(process.env.DESIGNPRO_ATLAS_PANEL_FINISH || "").trim().toLowerCase() !== "on") {
+    return null;
+  }
+  // The brief travels as judgement context only — never as a blank-page
+  // instruction. The edge prompt says so in as many words, and it is truncated
+  // there too, so a long brief cannot displace the finishing contract.
+  const creativeContext = [
+    String(input?.companyName || "").trim(),
+    String(input?.industryType || "").trim(),
+    String(input?.brandColors || "").trim(),
+  ].filter(Boolean).join(" · ").slice(0, 600);
+
+  return async function finishOnePanel(panel, finishedSoFar) {
+    const wanted = PANEL_NEIGHBOURS[panel.surfaceKey] || [];
+    const byKey = new Map(finishedSoFar.map((done) => [done.surfaceKey, done]));
+    // Only surfaces that are actually finished. The cascade order and the
+    // extraction order are not identical (extraction runs Roof last), so a
+    // neighbour that has not been cut yet is simply absent rather than fatal.
+    const neighbours = wanted.map((key) => byKey.get(key)).filter(Boolean);
+    return finishPanelSurface(panel, {
+      neighbours,
+      creativeContext,
+      store,
+      logger: (message) => logger?.info?.("flat_atlas_panel_finish", { generationId, message }),
+      callEdge: async (body) => {
+        const payload = await callAtlasPanelEdge(body, { ownerId });
+        return {
+          bytes: await downloadVerified(
+            supabase,
+            payload.panelStoragePath,
+            payload.panelSha256,
+            payload.panelBytes,
+          ),
+        };
+      },
+    });
+  };
+}
+
+/**
+ * The `atlas-panel` transport. Deliberately a sibling of
+ * `callAtlasArtboardEdge` rather than a branch inside it: Call 1 carries an
+ * authoring fence, a prompt-version pin and a structural-image count that have
+ * nothing to say about a finishing pass, and folding two contracts into one
+ * function is how those checks drift.
+ */
+async function callAtlasPanelEdge(body, { ownerId, fetchImpl = fetch } = {}) {
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  if (!supabaseUrl || serviceRoleKey.length < 32) {
+    throw new FlatAtlasError("flat_atlas_panel_edge_transport_missing", "SUPABASE_URL / service key are required", true);
+  }
+  const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "content-type": "application/json",
+      "x-designpro-owner-id": String(ownerId || ""),
+    },
+    body: JSON.stringify(body),
+  });
+  let payload = null;
+  try { payload = await response.json(); } catch { payload = null; }
+  if (!response.ok || payload?.success !== true) {
+    throw new FlatAtlasError(
+      "flat_atlas_panel_edge_call_failed",
+      `design-panel-ai-generate atlas-panel failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}`,
+      response.status >= 500,
+    );
+  }
+  // The edge must be the one this runtime was built against, for the same
+  // reason Call 1 checks it: the runtime and the function ship through
+  // different workflows, so a runtime-first deploy would otherwise be answered
+  // by an older function and finish every panel with the previous contract.
+  if (String(payload.promptVersion || "") !== PANEL_AUTHORING_PROMPT_VERSION) {
+    throw new FlatAtlasError(
+      "flat_atlas_panel_edge_prompt_version_mismatch",
+      `The edge function is on ${String(payload.promptVersion || "none")}; this runtime finishes against ${PANEL_AUTHORING_PROMPT_VERSION}`,
+    );
+  }
+  if (String(payload.surfaceKey || "") !== String(body.surfaceKey)) {
+    throw new FlatAtlasError(
+      "flat_atlas_panel_edge_surface_mismatch",
+      `Asked to finish ${body.surfaceKey}; the edge answered for ${payload.surfaceKey}`,
+    );
+  }
+  if (Number(payload.imageRequestCount) !== 1) {
+    throw new FlatAtlasError("flat_atlas_panel_edge_call_count_invalid", `The edge reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
+  }
+  return payload;
 }
 
 async function downloadVerified(supabase, storagePath, expectedHash, expectedBytes) {
@@ -2894,6 +3050,9 @@ async function generateOrReuseFlatAtlas(options) {
     });
   const [callOnePanels, projection] = await Promise.all([
     cutCallOnePanels(surfaceSourceBytes, manifest, acceptedMasterHash, {
+      finishPanel: atlasPanelFinisher({
+        input, store, supabase, ownerId: input?.ownerId, logger, generationId,
+      }),
       onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
         "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },
       ),
@@ -3024,6 +3183,16 @@ async function generateOrReuseFlatAtlas(options) {
     surfaceSourceHash: panel.surfaceSourceHash,
     method: panel.method,
     deterministic: panel.deterministic,
+    // Present only on a finished panel, and required by
+    // `production-provenance.cjs` when `deterministic` is false: the contract
+    // that authored it and the deterministic crop it was authored from. A
+    // cropped panel carries neither and is unchanged.
+    panelAuthoringContract: panel.panelAuthoringContract ?? null,
+    panelAuthoringPromptVersion: panel.panelAuthoringPromptVersion ?? null,
+    preFinishHash: panel.preFinishHash ?? null,
+    finishNeighbourSurfaces: panel.finishNeighbourSurfaces ?? null,
+    holeRatioBefore: panel.holeRatioBefore ?? null,
+    holeRatioAfter: panel.holeRatioAfter ?? null,
     genieManifestId: panel.genieManifestId,
     genieManifestHash: panel.genieManifestHash,
     geometryAuthorityState: panel.geometryAuthorityState,

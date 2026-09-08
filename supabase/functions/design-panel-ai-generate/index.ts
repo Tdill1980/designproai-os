@@ -1268,6 +1268,23 @@ serve(async (req) => {
       }
       return await handleAtlasArtboard(body);
     }
+
+    // ═══ ATLAS-PANEL — PER-SURFACE AUTHORING (owner ruling, Trish 2026-09-08).
+    //
+    // The master stays the design authority. This mode finishes ONE already-cut
+    // surface into a whole printed sheet at its own proportion, shown its
+    // already-finished neighbours so the six read as one design. It is an EDIT
+    // of bytes the master already produced — it never authors a new design and
+    // never sees the brief as a blank-page instruction. See handleAtlasPanel.
+    if (body?.mode === "atlas-panel") {
+      if (!internalCaller.internal) {
+        return new Response(
+          JSON.stringify({ success: false, error: "atlas_panel_internal_only" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      return await handleAtlasPanel(body);
+    }
     const {
       mode,
       prompt,
@@ -2659,6 +2676,231 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         requestId,
         functionName: "design-panel-ai-generate",
         promptVersion: ATLAS_ARTBOARD_PROMPT_VERSION,
+        imageRequestCount: 0,
+        error: String((err as Error)?.message || err).slice(0, 500),
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATLAS-PANEL — PER-SURFACE AUTHORING (owner ruling, Trish 2026-09-08)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// WHAT CHANGED, AND WHY IT IS NOT A SECOND DESIGNER.
+//
+// Call 1 authored one cohesive master and the runtime CUT six rectangles out
+// of it. That cut is why a panel could arrive with a hole in it: the model
+// drew one picture across a shared canvas, and whatever it painted where a
+// wheel opening sits became a missing-artwork field in a production panel
+// (RULE 0.32). It is also why lettering could be severed — a word that
+// straddles the boundary between two territories is split by geometry.
+//
+// This mode does not author a design. It is handed ONE already-cut surface
+// and returns THAT SAME ARTWORK as a whole finished sheet at that surface's
+// own proportion: same composition, same palette, same lettering, holes
+// closed with the design that surrounds them. The master remains the sole
+// creative authority (RULE 0.30) and the sole lineage identity; this is a
+// finishing pass over bytes the master already produced.
+//
+// The neighbours already finished are attached as continuity references, in
+// the owner's cascade order — Driver, then Passenger, then Hood, Roof, Front,
+// Rear — so each sheet is composed knowing what the sheets beside it look
+// like rather than inheriting cohesion only from a shared canvas.
+//
+// NO ASPECT RATIO IS REQUESTED. A driver flank is ~4.2:1 and the model's
+// aspect menu stops at 21:9, so pinning a ratio would letterbox or distort
+// every flank. An edit that carries no imageConfig.aspectRatio follows its
+// input image instead. The runtime does not trust that: it resizes the
+// return to the exact zone rectangle and refuses a panel whose proportion
+// came back wrong, falling back to the deterministic crop.
+//
+// FAILURE IS NEVER FATAL. The caller falls back to the crop it already has,
+// so this path can only raise the floor — it can never lose a run that would
+// have shipped without it.
+const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v1";
+const ATLAS_PANEL_AUTHORING_MODEL = "gemini-3-pro-image";
+const ATLAS_PANEL_MAX_NEIGHBOURS = 3;
+const ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
+
+/**
+ * The finishing instruction.
+ *
+ * Stated as what the sheet IS, never as a list of vehicle parts to avoid.
+ * CLAUDE.md's own measured guidance is that naming anatomy makes the model
+ * over-index on it — Desert Ridge (c3a8ff40) carried ten anatomy refusals and
+ * came back as a van side elevation. There is no vehicle noun in this text.
+ */
+function atlasPanelFinishPrompt(
+  surfaceLabel: string,
+  neighbourLabels: string[],
+  creativeContext: string,
+): string {
+  const lines: string[] = [];
+  lines.push("FLAT PRINTED SHEET — FINISHING PASS.");
+  lines.push("");
+  lines.push(
+    "The first image is one flat printed graphic: a single continuous sheet of printed media, the artwork by itself, before anything is cut or applied to anything. It is not a picture of an object and it has no parts.",
+  );
+  lines.push("");
+  lines.push("Return THIS SAME ARTWORK as one complete, finished sheet:");
+  lines.push("• the same composition, the same palette, the same motifs, in the same places");
+  lines.push("• every word of lettering exactly as it reads here — same words, same spelling, upright, whole, and fully inside the sheet");
+  lines.push("• finished artwork over the entire rectangle, corner to corner, running off all four edges");
+  lines.push("• any area that arrives blank, flat, unresolved or interrupted is completed with the artwork that already surrounds it, so the design reads as continuous everywhere");
+  lines.push("");
+  lines.push("Add nothing and remove nothing: no new subjects, no borders, no margins, no frame, no captions, no labels, no annotation, no signature.");
+  if (neighbourLabels.length > 0) {
+    lines.push("");
+    lines.push(
+      `The remaining ${neighbourLabels.length === 1 ? "image is another sheet" : "images are other sheets"} of the same printed set, already finished. Carry the same ground, palette, motion and motif family across, so the sheets read as one continuous design when they are laid side by side. Do not copy their layout and do not repeat their lettering.`,
+    );
+  }
+  if (creativeContext) {
+    lines.push("");
+    lines.push(`DESIGN CONTEXT (for judgement only — it does not change what is drawn): ${creativeContext}`);
+  }
+  // Named last and only in metadata terms. The label never becomes a pixel.
+  lines.push("");
+  lines.push(`This sheet is internally identified as ${surfaceLabel}. That identity is metadata: it must not appear anywhere in the artwork.`);
+  return lines.join("\n");
+}
+
+async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  try {
+    const surfaceKey = String(body.surfaceKey || "").trim().toLowerCase();
+    if (!["driver", "passenger", "hood", "roof", "front", "rear"].includes(surfaceKey)) {
+      throw new Error(`atlas_panel_surface_unknown:${surfaceKey.slice(0, 40)}`);
+    }
+    const surfaceLabel = String(body.surfaceLabel || surfaceKey).toUpperCase();
+
+    // Cast: Deno types `Uint8Array<ArrayBufferLike>` as not assignable to
+    // BufferSource. The identical call in handleAtlasArtboard carries the same
+    // check failure and deploys correctly; this one is spelled so it does not
+    // add a twelfth to the file's standing count.
+    const sha256Hex = async (bytes: Uint8Array) => {
+      const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as BufferSource);
+      return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    };
+    const parts: Array<Record<string, unknown>> = [];
+    // Same private-storage discipline as Call 1: the bytes travel by path plus
+    // hash, never inline in the JSON body, and a path that does not hash to its
+    // own name is refused rather than sent to the model.
+    const attach = async (path: unknown, expectedHash?: unknown) => {
+      const key = String(path || "").trim();
+      const match = key.match(/^atlas-call1-inputs\/([0-9a-f]{64})\.png$/);
+      if (!match) throw new Error(`atlas_panel_input_path_invalid:${key.slice(0, 160)}`);
+      const { data, error } = await svc.storage.from("wrap-files").download(key);
+      if (error || !data) throw new Error(`atlas_panel_input_download_failed:${key}:${error?.message || "missing"}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const actual = await sha256Hex(bytes);
+      if (actual !== match[1] || (expectedHash && actual !== String(expectedHash))) {
+        throw new Error(`atlas_panel_input_hash_mismatch:${key}`);
+      }
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      parts.push({ inlineData: { mimeType: "image/png", data: btoa(binary) } });
+      return actual;
+    };
+
+    const neighboursIn = Array.isArray(body.neighbours) ? (body.neighbours as Array<Record<string, unknown>>) : [];
+    if (neighboursIn.length > ATLAS_PANEL_MAX_NEIGHBOURS) {
+      throw new Error(`atlas_panel_neighbour_budget_exceeded:${neighboursIn.length}`);
+    }
+    const neighbourLabels = neighboursIn.map((n) => String(n.surfaceLabel || n.surfaceKey || "").toUpperCase());
+    const prompt = atlasPanelFinishPrompt(
+      surfaceLabel,
+      neighbourLabels,
+      String(body.creativeContext || "").trim().slice(0, 600),
+    );
+    parts.push({ text: prompt });
+    // THE SUBJECT SHEET IS FIRST. The prompt says "the first image"; an order
+    // change here silently re-points the whole instruction at a neighbour.
+    const sourcePanelHash = await attach(body.sourcePanelStoragePath, body.sourcePanelHash);
+    const neighbourHashes: string[] = [];
+    for (const neighbour of neighboursIn) {
+      neighbourHashes.push(await attach(neighbour.storagePath, neighbour.contentHash));
+    }
+
+    const model = ATLAS_PANEL_AUTHORING_MODEL;
+    const t0 = Date.now();
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiKey()}`;
+    // NO aspectRatio — see the header. An edit follows its input's proportion;
+    // asking for one from the menu would letterbox or distort every flank.
+    const modelRequest = JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: "4K" },
+      },
+    });
+    const modelRequestByteSize = new TextEncoder().encode(modelRequest).byteLength;
+    if (modelRequestByteSize > ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES) {
+      throw new Error(`atlas_panel_model_request_too_large:${modelRequestByteSize}`);
+    }
+    const geminiRes = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(110_000),
+      body: modelRequest,
+    });
+    console.log(`atlas-panel ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts)`);
+    if (!geminiRes.ok) {
+      throw new Error(`atlas_panel_gemini_http_${geminiRes.status}: ${(await geminiRes.text()).slice(0, 300)}`);
+    }
+    const payload = await geminiRes.json();
+    const candidateParts: Array<Record<string, any>> = payload?.candidates?.[0]?.content?.parts || [];
+    const imagePart = candidateParts.find((p) => p?.inlineData?.data);
+    if (!imagePart) {
+      throw new Error(`atlas_panel_no_image: finishReason=${payload?.candidates?.[0]?.finishReason || "unknown"}`);
+    }
+    const binary = atob(imagePart.inlineData.data);
+    const panelBytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) panelBytes[i] = binary.charCodeAt(i);
+    const panelSha256 = await sha256Hex(panelBytes);
+    const storagePath = `atlas-panel/${requestId}.png`;
+    const { error: upErr } = await svc.storage.from("wrap-files").upload(storagePath, panelBytes, {
+      contentType: "image/png",
+      upsert: false,
+    });
+    if (upErr) throw new Error(`atlas_panel_upload_failed: ${upErr.message}`);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        sourceCommit: ATLAS_ARTBOARD_SOURCE_COMMIT,
+        promptVersion: ATLAS_PANEL_PROMPT_VERSION,
+        model,
+        surfaceKey,
+        imageRequestCount: 1,
+        modelRequestByteSize,
+        modelInputImageCount: 1 + neighboursIn.length,
+        neighbourCount: neighboursIn.length,
+        neighbourHashes,
+        sourcePanelHash,
+        promptChars: prompt.length,
+        panelStoragePath: storagePath,
+        panelSha256,
+        panelBytes: panelBytes.length,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        promptVersion: ATLAS_PANEL_PROMPT_VERSION,
         imageRequestCount: 0,
         error: String((err as Error)?.message || err).slice(0, 500),
       }),
