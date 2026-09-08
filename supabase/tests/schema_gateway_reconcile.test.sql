@@ -289,13 +289,17 @@ select matches(
   'final QC receipt binds canonical DesignID and business Order #'
 );
 select ok(
-  position('jsonb_array_length(COALESCE(p_artifacts,''[]''::jsonb)) IS DISTINCT FROM 3'
+  position('jsonb_array_length(COALESCE(p_artifacts,''[]''::jsonb)) IS DISTINCT FROM (3+v_proof_view_count)'
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
+  AND position('v_proof_view_count:=designpro_private.assert_final_stamped_views(v_run.id,p_receipt,p_artifacts)'
+    in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
+  AND position('jsonb_array_length(v_stamps) IS DISTINCT FROM 7'
+    in pg_get_functiondef('designpro_private.assert_final_stamped_views(uuid,jsonb,jsonb)'::regprocedure)) > 0
   AND position('exact_stamp_artifact_set_required'
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
   AND position('certificateHash'
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0,
-  'stamp completion requires the exact seal, stamped proof and QC certificate set'
+  'stamp completion requires the seal, production proof, QC certificate and all seven bound vehicle proofs'
 );
 select ok(
   (select count(*)=2 from pg_attribute

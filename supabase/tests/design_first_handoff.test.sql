@@ -1,5 +1,5 @@
 begin;
-select plan(43);
+select plan(46);
 
 select has_table(
   'designpro_private','revision_fulfillment_bindings',
@@ -459,178 +459,527 @@ select is(
   'owner and runtime resolve the same frozen late-bound Order #'
 );
 
--- Final QC must consume that same append-only binding.  The source snapshot
--- remains fulfillment-unbound by design; looking for snapshot.orderNumber here
--- is the exact production deadlock this test prevents.
+-- Panel-less historical v2 generations still support the handoff and payment
+-- history above, but the runtime now refuses to manufacture them. Final QC
+-- therefore needs a separate accepted A.T.L.A.S. source: its six canonical
+-- panels cross the real handoff before the immutable snapshot is created.
+-- Fulfillment is still appended afterward, so the final-QC regression remains
+-- the same: snapshot.orderNumber cannot stand in for the late-bound Order #.
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 update public.designpro_qc_members
 set can_final_qc=true
 where user_id='11000000-0000-4000-8000-000000000001';
 
-insert into public.designpro_workflow_stages(
-  id,run_id,stage_key,sequence,status,idempotency_key,
-  verification,output_hash,completed_at
-) values(
-  '36000000-0000-4000-8000-000000000004',
-  '34000000-0000-4000-8000-000000000003',
-  'output.verify',55,'completed',
-  '34000000-0000-4000-8000-000000000003:output.verify',
-  '{"verified":true}'::jsonb,repeat('e',64),now()
+-- Match the runtime's sorted-key compact JSON hashes. Snapshot hashes continue
+-- to be computed by the handoff RPC from the actual frozen PostgreSQL JSON.
+create function pg_temp.handoff_canonical_json(p_value jsonb)
+returns text language sql immutable as $canonical$
+  select case jsonb_typeof(p_value)
+    when 'object' then (
+      select '{'||coalesce(string_agg(to_jsonb(key)::text||':'
+        ||pg_temp.handoff_canonical_json(value),',' order by key collate "C"),'')||'}'
+      from jsonb_each(p_value)
+    )
+    when 'array' then (
+      select '['||coalesce(string_agg(pg_temp.handoff_canonical_json(value),','
+        order by ordinal),'')||']'
+      from jsonb_array_elements(p_value) with ordinality a(value,ordinal)
+    )
+    else p_value::text
+  end;
+$canonical$;
+create function pg_temp.handoff_hash(p_value text)
+returns text language sql immutable as $hash$
+  select encode(extensions.digest(convert_to(p_value,'UTF8'),'sha256'),'hex');
+$hash$;
+create function pg_temp.handoff_json_hash(p_value jsonb)
+returns text language sql immutable as $hash$
+  select pg_temp.handoff_hash(pg_temp.handoff_canonical_json(p_value));
+$hash$;
+
+create temporary table production_panels on commit drop as
+select jsonb_agg(jsonb_build_object(
+  'surfaceKey',surface_key,
+  'contract','designpro.flat-first-atlas-call1-panel.v1',
+  'contentHash',pg_temp.handoff_hash('late-bound-panel-'||surface_key),
+  'sourceMasterHash',pg_temp.handoff_hash('late-bound-master'),
+  'storagePath','designpro/user_11000000-0000-4000-8000-000000000001/'
+    ||'42000000-0000-4000-8000-000000000005/flat-first/v1/panels/'||surface_key||'.png',
+  'byteSize',1024,'contentType','image/png',
+  'trimWidthIn',100+ordinal,'trimHeightIn',50,
+  'printWidthIn',110+ordinal,'printHeightIn',60,
+  'surfaceSqFt',round((100+ordinal)*50/144.0,2),
+  'bleedInches',5,'effectivePpi',17.94,
+  'geometryPurpose','calls-1-7-layout-only'
+) order by ordinal) panels
+from (values ('driver',1),('passenger',2),('hood',3),
+  ('roof',4),('front',5),('rear',6)) p(surface_key,ordinal);
+
+with input(value) as (values(jsonb_build_object(
+  'contractVersion','designpro.calls-1-7-input.v3',
+  'pipelineMode','flat-first-atlas-v1',
+  'vehicle',jsonb_build_object(
+    'year','2018','make','Ford','model','F 150 Crew Cab','type','truck'),
+  'brief','Flamingo Pools canonical production panels',
+  'designName','Flamingo Pools','mode','commercial','companyName','Flamingo Pools'
+))), identity as (
+  select value,pg_temp.handoff_hash(value::text) input_hash,
+    designpro_private.calls_1_7_engine_contract() engine_contract
+  from input
+)
+insert into public.designpro_generation_requests(
+  id,generation_id,owner_id,tenant_key,idempotency_key,state,request_input,
+  input_hash,engine_contract,engine_contract_hash,output_set_hash,
+  engine_receipt,completed_at
+)
+select
+  '41000000-0000-4000-8000-000000000005',
+  '42000000-0000-4000-8000-000000000005',
+  '11000000-0000-4000-8000-000000000001',
+  'user_11000000-0000-4000-8000-000000000001',
+  'calls17:42000000-0000-4000-8000-000000000005:'||input_hash,
+  'outputs_ready',value,input_hash,engine_contract,
+  pg_temp.handoff_hash(engine_contract::text),pg_temp.handoff_hash('late-bound-view-set'),
+  jsonb_build_object(
+    'contractVersion','designpro.calls-1-7-receipt.v1',
+    'handoffRevisionId','43000000-0000-4000-8000-000000000005',
+    'callsCompleted','7','byteVerified','true'
+  ),now()
+from identity;
+
+insert into public.designpro_generation_views(
+  request_id,source_view_type,consumer_role,storage_path,content_hash,
+  byte_size,content_type,metadata
+)
+select
+  '41000000-0000-4000-8000-000000000005',source_view_type,consumer_role,
+  'designpro/user_11000000-0000-4000-8000-000000000001/'
+    ||'42000000-0000-4000-8000-000000000005/calls-1-7/'||source_view_type||'/'
+    ||pg_temp.handoff_hash('late-bound-view-'||consumer_role)||'.png',
+  pg_temp.handoff_hash('late-bound-view-'||consumer_role),2048,'image/png','{}'::jsonb
+from (values ('side','driver'),('passenger-side','passenger'),
+  ('hood_detail','hood'),('front','front'),('rear','rear'),
+  ('close-up','closeup'),('roof','roof')) p(source_view_type,consumer_role);
+
+insert into public.designpro_flat_atlas_revisions(
+  id,request_id,generation_id,owner_id,tenant_key,revision_sequence,
+  guide_storage_path,guide_content_hash,guide_byte_size,guide_content_type,
+  manifest_storage_path,manifest_content_hash,manifest_byte_size,manifest_content_type,
+  master_storage_path,master_content_hash,master_byte_size,master_content_type,
+  projection_storage_path,projection_content_hash,projection_byte_size,projection_content_type,
+  manifest,model,prompt_version,width_px,height_px,effective_ppi,metadata
+)
+select
+  '49000000-0000-4000-8000-000000000005',
+  '41000000-0000-4000-8000-000000000005',
+  '42000000-0000-4000-8000-000000000005',
+  '11000000-0000-4000-8000-000000000001',
+  'user_11000000-0000-4000-8000-000000000001',1,
+  prefix||'guide/'||pg_temp.handoff_hash('late-bound-guide')||'.png',
+    pg_temp.handoff_hash('late-bound-guide'),100,'image/png',
+  prefix||'manifest/'||pg_temp.handoff_json_hash('{}'::jsonb)||'.json',
+    pg_temp.handoff_json_hash('{}'::jsonb),2,'application/json',
+  prefix||'revisions/1/master/'||pg_temp.handoff_hash('late-bound-master')||'.png',
+    pg_temp.handoff_hash('late-bound-master'),4096,'image/png',
+  prefix||'revisions/1/projection/'||pg_temp.handoff_hash('late-bound-projection')||'.jpg',
+    pg_temp.handoff_hash('late-bound-projection'),2048,'image/jpeg',
+  '{}'::jsonb,'gemini','designpro-flat-first-atlas-20260825.v7',4096,4096,17.94,
+  jsonb_build_object('masterQcPassed',true,
+    'masterQcContract','designpro.atlas-master-semantic-qc.v1',
+    'callOnePanels',(select panels from production_panels))
+from (select 'designpro/user_11000000-0000-4000-8000-000000000001/'
+  ||'42000000-0000-4000-8000-000000000005/flat-first/v1/' prefix) p;
+
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"11000000-0000-4000-8000-000000000001","is_anonymous":false}',
+  true);
+create temporary table production_handoff on commit drop as
+select public.handoff_designpro_generation_to_production(
+  '41000000-0000-4000-8000-000000000005') payload;
+select ok(
+  (select snapshot->'callOnePanels'=(select panels from production_panels)
+     AND jsonb_array_length(snapshot->'callOnePanels')=6
+     AND snapshot#>>'{fulfillment,state}'='unbound'
+     AND NOT (snapshot ?| ARRAY['orderNumber','delivery'])
+   from public.designpro_revision_sources
+   where revision_id='43000000-0000-4000-8000-000000000005'),
+  'the production handoff freezes six canonical panels before fulfillment binding'
 );
+select public.bind_designpro_revision_fulfillment(
+  '43000000-0000-4000-8000-000000000005',
+  (select payload->>'recipientIdentityHash' from registered_recipient),
+  'FP-2026-0001','Flamingo Pools'
+);
+
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+create temporary table production_manifest on commit drop as
+select jsonb_build_object(
+  'contract','designpro.genie-dimension-manifest.v1',
+  'genieVerified',true,
+  'totalSqFt',round(sum((p->>'trimWidthIn')::numeric*(p->>'trimHeightIn')::numeric)/144,2),
+  'expectedSurfaces',jsonb_agg(jsonb_build_object(
+    'surfaceKey',p->>'surfaceKey','widthInches',p->'trimWidthIn',
+    'heightInches',p->'trimHeightIn') order by p->>'surfaceKey')
+) manifest
+from production_panels,lateral jsonb_array_elements(panels) p;
+
+insert into public.designpro_workflow_runs(
+  id,workflow_type,owner_id,tenant_key,idempotency_key,status,revision_id,
+  revision_snapshot_hash,entice_pack_id,dimension_manifest_id,
+  source_contract_hash,manifest_hash,artifact_set_hash,input,results
+)
+select
+  '44000000-0000-4000-8000-000000000005','designpro.production_pack',
+  e.owner_id,e.tenant_key,'late-binding-canonical-production','running',e.revision_id,
+  e.revision_snapshot_hash,e.entice_pack_id,
+  '45000000-0000-4000-8000-000000000005',
+  pg_temp.handoff_hash('late-bound-source'),pg_temp.handoff_json_hash(m.manifest),
+  pg_temp.handoff_json_hash(p.panels),
+  jsonb_build_object('sourceEnticeRunId',e.id,
+    'fulfillment',designpro_private.revision_fulfillment(e.revision_id)),
+  jsonb_build_object('sourceEnticeRunId',e.id,'dimensionManifest',m.manifest)
+from public.designpro_workflow_runs e,production_manifest m,production_panels p
+where e.id=(select (payload->>'workflowRunId')::uuid from production_handoff);
+
+insert into public.designpro_purchase_entitlements(
+  owner_id,entice_run_id,generation_id,product_type,amount_cents,checkout_session_id
+) values(
+  '11000000-0000-4000-8000-000000000001',
+  (select (payload->>'workflowRunId')::uuid from production_handoff),
+  '42000000-0000-4000-8000-000000000005',
+  'print_pack_entitlement',29900,'cs_design_first_canonical'
+);
+create temporary table production_identity on commit drop as
+select jsonb_build_object(
+  'workflowRunId',id,'revisionId',revision_id,'enticePackId',entice_pack_id,
+  'dimensionManifestId',dimension_manifest_id,'sourceContractHash',source_contract_hash,
+  'manifestHash',manifest_hash,'artifactSetHash',artifact_set_hash
+) identity from public.designpro_workflow_runs
+where id='44000000-0000-4000-8000-000000000005';
+
+create temporary table production_call8 on commit drop as
+with built as (
+  select jsonb_build_object(
+    'verified',true,'receiptKind','call8.flat-proof','call',8,
+    'producer','designpro.call8-panel-proof.v4','deterministic',true,
+    'imageRequestCount',0,'proofPixelsUsed',false,
+    'dimensionsAuthority','genie-universal-panelizer','bleedInches',5,
+    'manifestHash',r.manifest_hash,'dimensionManifestId',r.dimension_manifest_id,
+    'totalSqFt',m.manifest->'totalSqFt',
+    'sourceProofHash',pg_temp.handoff_hash('late-bound-call8'),
+    'storagePath','designpro/'||r.tenant_key||'/'||r.id::text||'/proof/original-call8.png',
+    'surfaceTiles',(select jsonb_agg(p||jsonb_build_object(
+      'sourcePanelHash',p->>'contentHash','sourcePanelPath',p->>'storagePath',
+      'dimensionRuleBasis','trim-boundary','continuousArtwork',true,
+      'sourceAspectPreserved',true,
+      'bleedInches',jsonb_build_object('top',5,'right',5,'bottom',5,'left',5)
+    ) order by p->>'surfaceKey') from production_panels,
+      lateral jsonb_array_elements(panels) p)
+  ) receipt
+  from public.designpro_workflow_runs r,production_manifest m
+  where r.id='44000000-0000-4000-8000-000000000005'
+)
+select jsonb_build_object('receiptKind','call8.flat-proof',
+  'receiptHash',pg_temp.handoff_json_hash(receipt),
+  'receipt',receipt,'reconciledForProduction',true) call8
+from built;
+
+insert into public.designpro_workflow_stages(
+  id,run_id,stage_key,sequence,status,idempotency_key,output,verification,completed_at
+)
+select id,'44000000-0000-4000-8000-000000000005',stage_key,sequence,'completed',
+  '44000000-0000-4000-8000-000000000005:'||stage_key,output,'{"verified":true}'::jsonb,now()
+from (values
+  ('46000000-0000-4000-8000-000000000001'::uuid,'await_purchase',0,
+    jsonb_build_object('authorizedAssetManifest',jsonb_build_object(
+      'products',jsonb_build_array('print_pack_entitlement'),
+      'productionPackAuthorized',true,'logoPackAuthorized',false,
+      'requiredOutputFiles',18,'zipIncludesSourceViews',true))),
+  ('46000000-0000-4000-8000-000000000002'::uuid,'source.verify',10,
+    jsonb_build_object('call8',(select call8 from production_call8)))
+) s(id,stage_key,sequence,output);
+
+create temporary table production_views on commit drop as
+select jsonb_agg(jsonb_build_object('viewKey',key)||value order by key collate "C") views
+from public.designpro_revision_sources,lateral jsonb_each(snapshot->'renderAssets')
+where revision_id='43000000-0000-4000-8000-000000000005';
+create temporary table production_frozen_views on commit drop as
+select jsonb_build_object('verified',true,'sevenViewsVerified',true,'viewReceipts',views) receipt
+from production_views;
+update public.designpro_workflow_stages
+set status='completed',output=(select receipt from production_frozen_views),
+  verification='{"verified":true}'::jsonb,
+  output_hash=(select pg_temp.handoff_json_hash(receipt) from production_frozen_views),
+  completed_at=now()
+where run_id=(select (payload->>'workflowRunId')::uuid from production_handoff)
+  and stage_key='revision.freeze';
 insert into public.designpro_stage_receipts(
   run_id,stage_id,receipt_kind,identity,receipt,receipt_hash
-) values(
-  '34000000-0000-4000-8000-000000000003',
-  '36000000-0000-4000-8000-000000000004',
-  'output.verified','{}'::jsonb,'{"verified":true}'::jsonb,repeat('e',64)
-);
+)
+select s.run_id,s.id,'views.seven-source','{}'::jsonb,f.receipt,
+  pg_temp.handoff_json_hash(f.receipt)
+from public.designpro_workflow_stages s,production_frozen_views f
+where s.run_id=(select (payload->>'workflowRunId')::uuid from production_handoff)
+  and s.stage_key='revision.freeze';
+
+insert into public.designpro_artifacts(
+  run_id,stage_id,artifact_kind,storage_path,content_hash,byte_size,metadata
+)
+select r.id,'46000000-0000-4000-8000-000000000002','flat-proof',
+  'designpro/'||r.tenant_key||'/'||r.id::text||'/source/call8-2d-production-proof.png',
+  c.call8#>>'{receipt,sourceProofHash}',999,
+  jsonb_build_object('sourceReceiptHash',c.call8->>'receiptHash',
+    'manifestHash',r.manifest_hash,'sourceStoragePath',c.call8#>>'{receipt,storagePath}',
+    'sourceContentHash',c.call8#>>'{receipt,sourceProofHash}')
+from public.designpro_workflow_runs r,production_call8 c
+where r.id='44000000-0000-4000-8000-000000000005';
+
 insert into public.designpro_workflow_stages(
-  id,run_id,stage_key,sequence,status,idempotency_key,wait_reason
-) values(
-  '36000000-0000-4000-8000-000000000005',
-  '34000000-0000-4000-8000-000000000003',
-  'await_final_human_qc',60,'waiting',
-  '34000000-0000-4000-8000-000000000003:await_final_human_qc',
-  'final_human_qc_required'
-);
-update public.designpro_workflow_runs
-set status='approval_required'
-where id='34000000-0000-4000-8000-000000000003';
+  id,run_id,stage_key,sequence,status,idempotency_key
+) values
+  ('46000000-0000-4000-8000-000000000003',
+   '44000000-0000-4000-8000-000000000005','output.verify',55,'pending',
+   '44000000-0000-4000-8000-000000000005:output.verify'),
+  ('46000000-0000-4000-8000-000000000004',
+   '44000000-0000-4000-8000-000000000005','await_final_human_qc',60,'pending',
+   '44000000-0000-4000-8000-000000000005:await_final_human_qc'),
+  ('46000000-0000-4000-8000-000000000005',
+   '44000000-0000-4000-8000-000000000005','stamp.build',70,'pending',
+   '44000000-0000-4000-8000-000000000005:stamp.build');
+-- Seed the same singleton binding claim_designpro_stage acquires before it
+-- starts output.verify. The installed lease trigger still fences this worker.
+update designpro_private.heavy_stage_leases
+set stage_id='46000000-0000-4000-8000-000000000003',
+  lease_owner='pgTAP-output-worker',
+  lease_token='48000000-0000-4000-8000-000000000003',
+  lease_expires_at=now()+interval '10 minutes',updated_at=now()
+where lease_key='production-heavy' and stage_id is null;
+update public.designpro_workflow_stages
+set status='running',lease_owner='pgTAP-output-worker',
+  lease_token='48000000-0000-4000-8000-000000000003',
+  lease_expires_at=now()+interval '10 minutes',started_at=now()
+where id='46000000-0000-4000-8000-000000000003';
+
+create temporary table production_output_files on commit drop as
+select jsonb_build_object(
+  'surfaceKey',p->>'surfaceKey','format',format,
+  'contentHash',pg_temp.handoff_hash('late-bound-output-'||(p->>'surfaceKey')||'-'||format),
+  'byteSize',456,
+  'storagePath','designpro/'||r.tenant_key||'/'||r.id::text
+    ||'/output/'||(p->>'surfaceKey')||'.'||format,
+  'dpi',1500,'outputScale',0.1,'fullScaleBleedInches',5,'colorSpace','sRGB',
+  'widthPixels',(p->>'printWidthIn')::integer*150,
+  'heightPixels',(p->>'printHeightIn')::integer*150
+) file
+from public.designpro_workflow_runs r,production_panels,
+  lateral jsonb_array_elements(panels) p,
+  unnest(ARRAY['png','tiff','eps']) format
+where r.id='44000000-0000-4000-8000-000000000005';
+insert into public.designpro_artifacts(
+  run_id,stage_id,artifact_kind,surface_key,storage_path,content_hash,byte_size,metadata
+)
+select '44000000-0000-4000-8000-000000000005',
+  '46000000-0000-4000-8000-000000000003','output',file->>'surfaceKey',
+  file->>'storagePath',file->>'contentHash',(file->>'byteSize')::bigint,
+  jsonb_build_object('format',file->>'format','width',file->'widthPixels',
+    'height',file->'heightPixels','dpi',1500,'outputScale',0.1,'fullScaleBleedInches',5)
+from production_output_files;
+
+create temporary table production_output on commit drop as
+select jsonb_build_object(
+  'verified',true,'receiptKind','output.verified',
+  'contract','designpro.output-verification.v1',
+  'authorizedAssetManifest',(select output->'authorizedAssetManifest'
+    from public.designpro_workflow_stages
+    where id='46000000-0000-4000-8000-000000000001'),
+  'exactSurfaceSet',jsonb_build_array('driver','passenger','hood','roof','front','rear'),
+  'exactFormatSet',jsonb_build_array('png','tiff','eps'),
+  'fileCount',18,'fullScalePixelsPerInch',150,'fileDpi',1500,
+  'outputScale',0.1,'fullScaleBleedInchesPerEdge',5,
+  'files',(select jsonb_agg(file order by file->>'surfaceKey',file->>'format')
+    from production_output_files),
+  'outputHashes',(select jsonb_agg(file->>'contentHash'
+    order by file->>'surfaceKey',file->>'format') from production_output_files),
+  'proofJoin',jsonb_build_object(
+    'contract','designpro.production-proof-join.v1',
+    'call8ReceiptHash',c.call8->>'receiptHash',
+    'call8ProofHash',c.call8#>>'{receipt,sourceProofHash}',
+    'manifestHash',r.manifest_hash,'sourceViews',v.views,
+    'sourceViewSetHash',pg_temp.handoff_json_hash(v.views),'sevenViewsVerified',true,
+    'viewBinding',jsonb_build_object('contract','designpro.frozen-proof-join.v1',
+      'sourceReceiptHash',pg_temp.handoff_json_hash(f.receipt))
+  )
+) receipt
+from public.designpro_workflow_runs r,production_call8 c,
+  production_views v,production_frozen_views f
+where r.id='44000000-0000-4000-8000-000000000005';
+
+select ok(public.complete_designpro_stage(
+  '46000000-0000-4000-8000-000000000003',
+  '48000000-0000-4000-8000-000000000003',
+  (select identity from production_identity),(select receipt from production_output),
+  (select pg_temp.handoff_json_hash(receipt) from production_output),'[]'::jsonb
+), 'output verification joins the exact GENIE Call 8, seven frozen proofs and 18 files');
 
 select throws_ok(
   $$select public.approve_designpro_human_gate(
-    '34000000-0000-4000-8000-000000000003',
+    '44000000-0000-4000-8000-000000000005',
     'await_final_human_qc',
     '11000000-0000-4000-8000-000000000001',
     'LATE-BOUND-FINAL-QC-WRONG',
-    '{"known":true,"pass":true,"outputHashesVerified":true,"printDimensionsVerified":true,"colorModeVerified":true,"designId":"DID-32000000","orderNumber":"WRONG-ORDER"}'::jsonb
+    '{"known":true,"pass":true,"outputHashesVerified":true,"printDimensionsVerified":true,"colorModeVerified":true,"designId":"DID-42000000","orderNumber":"WRONG-ORDER"}'::jsonb
   )$$,
   'P0001','final_qc_evidence_or_business_identity_incomplete',
   'final QC refuses an Order # other than the frozen late binding'
 );
-
 select public.approve_designpro_human_gate(
-  '34000000-0000-4000-8000-000000000003',
+  '44000000-0000-4000-8000-000000000005',
   'await_final_human_qc',
   '11000000-0000-4000-8000-000000000001',
   'LATE-BOUND-FINAL-QC-PASS',
-  '{"known":true,"pass":true,"outputHashesVerified":true,"printDimensionsVerified":true,"colorModeVerified":true,"designId":"DID-32000000","orderNumber":"FP-2026-0001"}'::jsonb
+  '{"known":true,"pass":true,"outputHashesVerified":true,"printDimensionsVerified":true,"colorModeVerified":true,"designId":"DID-42000000","orderNumber":"FP-2026-0001"}'::jsonb
 );
 select is(
   (select status from public.designpro_workflow_stages
-   where id='36000000-0000-4000-8000-000000000005'),
+   where id='46000000-0000-4000-8000-000000000004'),
   'completed',
   'final QC completes from the exact frozen late-fulfillment binding'
 );
 select is(
   (select receipt#>>'{qc,orderNumber}'
    from public.designpro_stage_receipts
-   where stage_id='36000000-0000-4000-8000-000000000005'),
+   where stage_id='46000000-0000-4000-8000-000000000004'),
   'FP-2026-0001',
   'the final QC receipt freezes the late-bound Order #'
 );
 select ok(
   (select snapshot#>>'{fulfillment,state}'='unbound'
      AND NOT (snapshot ?| ARRAY['orderNumber','delivery'])
+     AND snapshot_hash=pg_temp.handoff_hash(snapshot::text)
    from public.designpro_revision_sources
-   where revision_id='33000000-0000-4000-8000-000000000003'),
+   where revision_id='43000000-0000-4000-8000-000000000005'),
   'final QC never rewrites the immutable design-first snapshot'
 );
 
--- The runtime creates a seal, a stamped Call-8 proof and the human-readable
--- QC certificate.  Completion must resolve the same late binding as final QC,
--- reject a partial pair, and ledger the exact three-file set ZIP consumes.
-insert into public.designpro_workflow_stages(
-  id,run_id,stage_key,sequence,status,idempotency_key,
-  lease_owner,lease_token,lease_expires_at,started_at
-) values(
-  '36000000-0000-4000-8000-000000000006',
-  '34000000-0000-4000-8000-000000000003',
-  'stamp.build',70,'running',
-  '34000000-0000-4000-8000-000000000003:stamp.build',
-  'pgTAP-stamp-worker','38000000-0000-4000-8000-000000000003',
-  now()+interval '10 minutes',now()
-);
-update public.designpro_workflow_runs
-set status='running'
-where id='34000000-0000-4000-8000-000000000003';
+-- The seal, stamped Call 8 and QC certificate retain the original business
+-- identity checks. Each of the seven production proofs now also needs its own
+-- stamp, bound to the exact approved source path/hash and the same reviewer.
+create temporary table production_stamp on commit drop as
+with approval as (
+  select receipt from public.designpro_stage_receipts
+  where run_id='44000000-0000-4000-8000-000000000005'
+    and receipt_kind='final.human-qc'
+), stamp_views as (
+  select jsonb_agg(jsonb_build_object(
+    'viewKey',v->>'viewKey','contentHash',pg_temp.handoff_hash('late-bound-stamped-'||(v->>'viewKey')),
+    'storagePath','designpro/user_11000000-0000-4000-8000-000000000001/'
+      ||'44000000-0000-4000-8000-000000000005/proof/stamped-view-'||(v->>'viewKey')
+      ||'-'||left(v->>'contentHash',24)||'.png',
+    'byteSize',987,'sourceProofHash',v->>'contentHash','sourceProofPath',v->>'storagePath'
+  ) order by v->>'viewKey') views
+  from production_views,lateral jsonb_array_elements(views) v
+)
+select jsonb_build_object(
+  'verified',true,'receiptKind','stamp','designId','DID-42000000',
+  'orderNumber','FP-2026-0001','verifiedBy',a.receipt->>'verifiedBy',
+  'approvalRef',a.receipt->>'approvalRef','approvedAt',a.receipt->>'approvedAt',
+  'stampHash',pg_temp.handoff_hash('late-bound-stamped-call8'),
+  'sealHash',pg_temp.handoff_hash('late-bound-seal'),
+  'certificateHash',pg_temp.handoff_hash('late-bound-certificate'),
+  'sourceProofHash',o.receipt#>>'{proofJoin,call8ProofHash}',
+  'proofJoin',o.receipt->'proofJoin','stampedViews',s.views
+) receipt
+from approval a,production_output o,stamp_views s;
+
+create temporary table production_stamp_artifacts on commit drop as
+with base as (
+  select receipt,jsonb_build_object(
+    'designId',receipt->>'designId','orderNumber',receipt->>'orderNumber',
+    'verifiedBy',receipt->>'verifiedBy','approvalRef',receipt->>'approvalRef',
+    'approvedAt',receipt->>'approvedAt'
+  ) metadata from production_stamp
+), artifacts as (
+  select jsonb_build_object(
+    'kind','stamp','surfaceKey',surface_key,
+    'storagePath','designpro/user_11000000-0000-4000-8000-000000000001/'
+      ||'44000000-0000-4000-8000-000000000005/proof/'||surface_key||'.png',
+    'contentHash',receipt->>hash_key,'byteSize',999,
+    'metadata',metadata||case when surface_key='stamped-proof'
+      then jsonb_build_object('sourceProofHash',receipt->>'sourceProofHash')
+      else '{}'::jsonb end
+  ) artifact
+  from base,(values ('seal','sealHash'),('stamped-proof','stampHash'),
+    ('certificate','certificateHash')) s(surface_key,hash_key)
+  union all
+  select jsonb_build_object(
+    'kind','stamp','surfaceKey','stamped-view-'||(v->>'viewKey'),
+    'storagePath',v->>'storagePath','contentHash',v->>'contentHash','byteSize',v->'byteSize',
+    'metadata',metadata||jsonb_build_object(
+      'sourceViewKey',v->>'viewKey','sourceProofHash',v->>'sourceProofHash',
+      'sourceProofPath',v->>'sourceProofPath','sealHash',receipt->>'sealHash',
+      'sourceViewSetHash',receipt#>>'{proofJoin,sourceViewSetHash}')
+  ) artifact
+  from base,lateral jsonb_array_elements(receipt->'stampedViews') v
+)
+select jsonb_agg(artifact order by artifact->>'surfaceKey') artifacts from artifacts;
+
+update public.designpro_workflow_stages
+set status='running',lease_owner='pgTAP-stamp-worker',
+  lease_token='48000000-0000-4000-8000-000000000005',
+  lease_expires_at=now()+interval '10 minutes',started_at=now()
+where id='46000000-0000-4000-8000-000000000005';
+update public.designpro_workflow_runs set status='running'
+where id='44000000-0000-4000-8000-000000000005';
 
 select throws_ok(
   $$select public.complete_designpro_stage(
-    '36000000-0000-4000-8000-000000000006',
-    '38000000-0000-4000-8000-000000000003',
-    jsonb_build_object(
-      'workflowRunId','34000000-0000-4000-8000-000000000003',
-      'revisionId','33000000-0000-4000-8000-000000000003',
-      'enticePackId',(select entice_pack_id::text from public.designpro_workflow_runs where id='34000000-0000-4000-8000-000000000003'),
-      'dimensionManifestId','35000000-0000-4000-8000-000000000003',
-      'sourceContractHash',repeat('a',64),'manifestHash',repeat('b',64),
-      'artifactSetHash',repeat('c',64)
-    ),
-    jsonb_build_object(
-      'verified',true,'receiptKind','stamp','designId','DID-32000000',
-      'orderNumber','FP-2026-0001',
-      'verifiedBy',(select receipt->>'verifiedBy' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
-      'approvalRef',(select receipt->>'approvalRef' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
-      'approvedAt',(select receipt->>'approvedAt' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
-      'stampHash',repeat('1',64),'sealHash',repeat('2',64),
-      'sourceProofHash',repeat('3',64),'certificateHash',repeat('4',64)
-    ),repeat('1',64),
-    jsonb_build_array(
-      jsonb_build_object('kind','stamp','surfaceKey','seal','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/qc-approval-stamp.png','contentHash',repeat('2',64),'byteSize',100,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001')),
-      jsonb_build_object('kind','stamp','surfaceKey','stamped-proof','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/stamped-call8-proof.png','contentHash',repeat('1',64),'byteSize',200,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001','sourceProofHash',repeat('3',64)))
-    )
+    '46000000-0000-4000-8000-000000000005',
+    '48000000-0000-4000-8000-000000000005',
+    (select identity from production_identity),(select receipt from production_stamp),
+    (select receipt->>'stampHash' from production_stamp),
+    (select jsonb_agg(a) from production_stamp_artifacts,
+      lateral jsonb_array_elements(artifacts) a where a->>'surfaceKey'<>'certificate')
   )$$,
   'P0001','exact_stamp_artifact_set_required',
-  'stamp completion refuses the old two-file set without its QC certificate'
+  'stamp completion refuses a seal and proof without its QC certificate'
 );
-
-select ok(
-  public.complete_designpro_stage(
-    '36000000-0000-4000-8000-000000000006',
-    '38000000-0000-4000-8000-000000000003',
-    jsonb_build_object(
-      'workflowRunId','34000000-0000-4000-8000-000000000003',
-      'revisionId','33000000-0000-4000-8000-000000000003',
-      'enticePackId',(select entice_pack_id::text from public.designpro_workflow_runs where id='34000000-0000-4000-8000-000000000003'),
-      'dimensionManifestId','35000000-0000-4000-8000-000000000003',
-      'sourceContractHash',repeat('a',64),'manifestHash',repeat('b',64),
-      'artifactSetHash',repeat('c',64)
-    ),
-    jsonb_build_object(
-      'verified',true,'receiptKind','stamp','designId','DID-32000000',
-      'orderNumber','FP-2026-0001',
-      'verifiedBy',(select receipt->>'verifiedBy' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
-      'approvalRef',(select receipt->>'approvalRef' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
-      'approvedAt',(select receipt->>'approvedAt' from public.designpro_stage_receipts where run_id='34000000-0000-4000-8000-000000000003' and receipt_kind='final.human-qc'),
-      'stampHash',repeat('1',64),'sealHash',repeat('2',64),
-      'sourceProofHash',repeat('3',64),'certificateHash',repeat('4',64)
-    ),repeat('1',64),
-    jsonb_build_array(
-      jsonb_build_object('kind','stamp','surfaceKey','seal','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/qc-approval-stamp.png','contentHash',repeat('2',64),'byteSize',100,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001')),
-      jsonb_build_object('kind','stamp','surfaceKey','stamped-proof','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/stamped-call8-proof.png','contentHash',repeat('1',64),'byteSize',200,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001','sourceProofHash',repeat('3',64))),
-      jsonb_build_object('kind','stamp','surfaceKey','certificate','storagePath','designpro/user_11000000-0000-4000-8000-000000000001/34000000-0000-4000-8000-000000000003/qc-certificate.png','contentHash',repeat('4',64),'byteSize',300,'metadata',jsonb_build_object('designId','DID-32000000','orderNumber','FP-2026-0001'))
-    )
-  ),
-  'stamp completion accepts the exact runtime-produced three-file set'
+select throws_ok(
+  $$select public.complete_designpro_stage(
+    '46000000-0000-4000-8000-000000000005',
+    '48000000-0000-4000-8000-000000000005',
+    (select identity from production_identity),(select receipt from production_stamp),
+    (select receipt->>'stampHash' from production_stamp),
+    (select jsonb_agg(a) from production_stamp_artifacts,
+      lateral jsonb_array_elements(artifacts) a where a->>'surfaceKey' not like 'stamped-view-%')
+  )$$,
+  'P0001','production_seven_stamped_views_required',
+  'the three QC artifacts cannot replace the seven stamped source proofs'
 );
+select ok(public.complete_designpro_stage(
+  '46000000-0000-4000-8000-000000000005',
+  '48000000-0000-4000-8000-000000000005',
+  (select identity from production_identity),(select receipt from production_stamp),
+  (select receipt->>'stampHash' from production_stamp),
+  (select artifacts from production_stamp_artifacts)
+), 'stamp completion accepts the exact ten artifacts with their late-bound business identity');
 select is(
   (select count(*)::integer from public.designpro_artifacts
-   where run_id='34000000-0000-4000-8000-000000000003'
-     and artifact_kind='stamp'),3,
-  'all three stamp artifacts are persisted'
+   where run_id='44000000-0000-4000-8000-000000000005'
+     and artifact_kind='stamp'),10,
+  'all ten stamp artifacts are persisted'
 );
 select is(
   (select receipt->>'certificateHash' from public.designpro_stage_receipts
-   where run_id='34000000-0000-4000-8000-000000000003'
-     and receipt_kind='stamp'),repeat('4',64),
+   where run_id='44000000-0000-4000-8000-000000000005'
+     and receipt_kind='stamp'),pg_temp.handoff_hash('late-bound-certificate'),
   'the persisted stamp receipt binds the certificate hash'
 );
 select ok(
   (select snapshot#>>'{fulfillment,state}'='unbound'
      AND NOT (snapshot ?| ARRAY['orderNumber','delivery'])
+     AND snapshot_hash=pg_temp.handoff_hash(snapshot::text)
    from public.designpro_revision_sources
-   where revision_id='33000000-0000-4000-8000-000000000003'),
+   where revision_id='43000000-0000-4000-8000-000000000005'),
   'stamp completion never rewrites the immutable design-first snapshot'
 );
 
