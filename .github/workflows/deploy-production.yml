@@ -21,6 +21,19 @@ on:
           - DO_NOT_DEPLOY
           - AUDIT_ONLY_DESIGNPROAI_PROD_SFO3
           - DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3
+      atlas_panel_finish:
+        description: >-
+          Per-surface A.T.L.A.S. panel finishing. "unchanged" keeps whatever the
+          droplet is already running, which is what a routine deploy wants. Only
+          the exact string "on" enables it; the runtime fails safe on anything
+          else.
+        required: false
+        type: choice
+        default: unchanged
+        options:
+          - unchanged
+          - "on"
+          - "off"
       audited_failed_release:
         description: >-
           Exact SHA of an already-diagnosed failed deploy whose quarantined
@@ -503,6 +516,10 @@ jobs:
           KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
           ARCHIVE_DIGEST: ${{ steps.artifact.outputs.archive_digest }}
           RUNTIME_KEY_FILE: ${{ steps.provider-secrets.outputs.runtime_key_file }}
+          # Empty means "leave it as the droplet already has it" -- see
+          # configure-env.sh, which rewrites runtime.env on every deploy and so
+          # must carry the flag forward rather than silently resetting it.
+          ATLAS_PANEL_FINISH: ${{ inputs.atlas_panel_finish == 'unchanged' && '' || inputs.atlas_panel_finish }}
         shell: bash
         run: |
           set +x
@@ -520,7 +537,7 @@ jobs:
             "$STRIPE_SECRET_KEY" \
             "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' '$remote_stage/control/ops/ci-dark-deploy.sh'"
+            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
       - name: Remove only this run's temporary remote staging directory
         if: always() && env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3' && steps.ssh.outputs.key_file != ''
