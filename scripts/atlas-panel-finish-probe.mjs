@@ -47,7 +47,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
-const require = createRequire(import.meta.url);
+// Dependencies live in runtime/node_modules (symlinked to the image's /app
+// /node_modules), not beside this script — the same resolution the existing
+// harness scripts use, e.g. scripts/atlas-measure-master.mjs:29.
+const require = createRequire(path.join(process.cwd(), "runtime/"));
 const sharp = require("sharp");
 const { createClient } = require("@supabase/supabase-js");
 const {
