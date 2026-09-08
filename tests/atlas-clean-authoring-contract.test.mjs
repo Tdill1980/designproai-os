@@ -80,7 +80,7 @@ test("ATLAS creative contract carries named design context and pure rectangular 
 
 test("ATLAS request exposes exact identity, placement and normalized topology but no inch dimensions", () => {
   const request = block(runtime, "function atlasEdgeRequestBody", "async function callAtlasArtboardEdge");
-  const panelBlock = block(request, "panels: manifest.zones.map", "// WHICH AUTHORING BRANCH");
+  const panelBlock = block(request, "panels: manifest.zones.map", "// v23 SIX-CONTAINER REQUEST");
   assert.match(panelBlock, /label:/);
   assert.match(panelBlock, /surfaceId:/);
   assert.match(panelBlock, /placement:/);
@@ -89,9 +89,7 @@ test("ATLAS request exposes exact identity, placement and normalized topology bu
   assert.match(request, /vehicleType:/);
   // Owner ruling 2026-09-07: the branch is a property of the manifest, so BOTH
   // requests are built here and both stay covered.
-  assert.match(request, /manifest\?\.topology === FIELD_TOPOLOGY/);
-  assert.match(request, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.match(request, /noseEdge: manifest\?\.installerMap\?\.noseEdge/);
+  assert.doesNotMatch(request, /fieldContract:|noseEdge:/);
   assert.match(request, /teachingProofStoragePath: extras.teachingProofStoragePath/);
   assert.match(request, /guideStoragePath: extras.guideStoragePath/);
   assert.doesNotMatch(request, /cohesionExample|correctiveNote/);
@@ -110,21 +108,46 @@ test("ATLAS field branch sends the prompt and customer references only", () => {
   // gone: it described a partition the cutter does not use, and the four
   // production surfaces taken from the lower band were being told to be a
   // "supporting register" of "secondary motifs".
-  // v29: the thirds wording that shipped GEN 63e6629a. The v26 coordinate table
-  // was PAINTED into the sheet as a caption bar, so no numerals reach the model.
-  assert.match(fieldTail, /three equal horizontal thirds that read as one picture/);
-  assert.doesNotMatch(fieldTail, /written as fractions of the image|left, top, right, bottom/);
-  assert.doesNotMatch(fieldTail, /\d\.\d{4}/, "no coordinate literal may reach the model");
+  assert.doesNotMatch(fieldTail, /three equal horizontal thirds|THE UPPER THIRD|THE MIDDLE THIRD|THE LOWER THIRD/);
+  assert.doesNotMatch(fieldTail, /supporting register|calmer intensity|secondary motifs/);
+  assert.match(fieldTail, /These areas of it, written as fractions of the image/);
+  assert.match(fieldTail, /must each carry a complete and finished passage/);
+  // Cohesion stays the governing object; no area becomes its own mini-design.
+  assert.match(fieldTail, /They are not separate pictures/);
   const emitted = fieldTail.slice(fieldTail.indexOf("return ["));
-  void emitted;
-  for (const forbidden of ["panel", "artboard", "orthographic", "rectangle", "sheet", "template",
-    "silhouette", "container", "wheel", "window", "do not", "never a", "A.T.L.A.S."]) {
+  for (const forbidden of ["panel", "artboard", "orthographic", "rectangle", "sheet", "template", "silhouette",
+    "container", "wheel", "window", "do not", "never a", "A.T.L.A.S.", "region", "zone", "band", "third",
+    "upper", "middle", "lower", "driver", "passenger", "hood", "roof", "front", "rear", "•"]) {
     assert.ok(!new RegExp(`\\b${forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(emitted),
       `the field tail must not hand the image model "${forbidden}"`);
   }
 });
 
-
+test("ATLAS field geometry is derived from panels[].normalized, never hard-coded", () => {
+  const fieldTail = block(edge, "function atlasFieldContract(", "// ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY");
+  const body = fieldTail.slice(fieldTail.indexOf("{"));
+  // Every coordinate comes off the already-validated request geometry.
+  assert.match(body, /panel\.normalized/);
+  assert.match(body, /Number\(n\.x\)/);
+  assert.match(body, /Number\(n\.y\)/);
+  assert.match(body, /x0 \+ Number\(n\.width\)/);
+  assert.match(body, /y0 \+ Number\(n\.height\)/);
+  // Rows are ordered by the coordinates themselves, so row position cannot be
+  // reverse-mapped onto a production surface.
+  assert.match(body, /\.sort\(\(a, b\) => a\.y0 - b\.y0 \|\| a\.x0 - b\.x0\)/);
+  // A geometry literal here would silently decouple the conditioning from the
+  // cutter. There must not be one.
+  const literals = body.match(/(?<![\w.])\d*\.\d{3,}(?![\w])/g) || [];
+  assert.deepEqual(literals, [], `hard-coded geometry fraction(s) in the field tail: ${literals.join(", ")}`);
+  // Six regions or the call refuses; it never composes against partial geometry.
+  assert.match(body, /atlas_field_geometry_required/);
+  assert.match(body, /panels\.length !== 6/);
+  // Surface identity is consumed server-side and only ever yields a sweep phrase.
+  const sweep = block(edge, "function atlasFieldSweep(", "\n/**");
+  assert.match(sweep, /startsWith\("DRIVER"\)/);
+  assert.match(sweep, /startsWith\("PASSENGER"\)/);
+  assert.match(sweep, /atlasSweepPhrase/);
+});
 
 test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", () => {
   const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
@@ -142,8 +165,8 @@ test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", 
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260908\.v29-one-field-thirds"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260908\.v29-one-field-thirds"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
   assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
 });
