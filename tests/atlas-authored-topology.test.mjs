@@ -11,7 +11,7 @@ const teaching = require('../runtime/flat-atlas-topology-examples.cjs').loadBund
 // master at legacy zone geometry no longer lines up with the zones the loop
 // reads. Build the fixture master through the SAME layout the product uses.
 const { buildFieldTerritories } = require('../runtime/atlas-field-territories.cjs');
-const productManifest = (...a) => buildFieldTerritories(atlas.buildAtlasManifest(...a));
+const productManifest = (...a) => atlas.buildAtlasManifest(...a);
 const sha = atlas._test.sha256;
 const surfaces = [ ['driver',153,56], ['passenger',153,56], ['hood',71.5,56],
   ['roof',74.3,54.8], ['front',129,34], ['rear',76,54] ].map(([surfaceKey,widthInches,heightInches]) => ({
@@ -63,11 +63,11 @@ test('one authored topology preserves all six distinct source regions through pe
       // Owner ruling 2026-09-07: the product authors one field and cuts six
       // code-only territories. No structural image reaches the model, and the
       // six regions still travel as OS data the edge validates.
-      assert.equal(body.fieldContract,'designpro.atlas-field-prompt.v2');
-      assert.deepEqual(body.noseEdge,{driver:'left',passenger:'right'});
+      assert.equal(body.fieldContract,undefined);
+      assert.equal(body.noseEdge,undefined);
       assert.equal(body.panels.length,6);
-      assert.equal(body.teachingProofStoragePath,undefined);
-      assert.equal(body.guideStoragePath,undefined);
+      assert.equal(sha(stored.get(body.teachingProofStoragePath)),teaching.flattenedTopView.contentHash);
+      assert.ok(stored.get(body.guideStoragePath));
       // Both pinned inputs are still BUILT and stored -- installer map and
       // forensic record -- they simply do not travel to the model.
       assert.equal(stored.size>0,true);
@@ -75,13 +75,12 @@ test('one authored topology preserves all six distinct source regions through pe
     },
   });
   assert.equal(calls,1);
-  assert.equal(result.metadata.atlasFieldContract,'designpro.atlas-field-prompt.v2');
+  assert.equal(result.metadata.atlasFieldContract,null);
   assert.equal(result.metadata.atlasFieldComposeContract,undefined);
   // Owner ruling 2026-09-07: the receipt now records what actually reached
   // the model. Under the one-field contract no teaching example is sent, so
   // this is false there and true on the six-container branch.
-  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,false);
-  assert.equal(result.metadata.atlasDesignTeachingExampleIdentity,null);
+  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,true);
   assert.equal(inserted.metadata.callOnePanels.length,6);
   for(const original of expected){
     const panel=inserted.metadata.callOnePanels.find(p=>p.surfaceKey===original.surfaceKey);
@@ -105,7 +104,7 @@ test('six-surface transport rejects field-mode, missing teaching identity and mi
   const bytes=Buffer.from('mock transport bytes');let downloads=0;
   const body=atlas._test.atlasEdgeRequestBody(input,atlas.buildAtlasManifest(surfaces),extras);
   const reply={success:true,imageRequestCount:1,fieldContract:null,teachingProofIdentity:teaching.identity,
-    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260908.v29-one-field-thirds',
+    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260901.v23-orthographic-restored',
     masterStoragePath:'fixture.png',masterSha256:sha(bytes)};
   const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},
     fetchImpl:async()=>({ok:true,status:200,json:async()=>reply})};
@@ -137,9 +136,10 @@ test('the field branch refuses an edge running a different prompt version', asyn
     if(value===undefined) delete process.env[name];else process.env[name]=value;
   }});
   const bytes=Buffer.from('mock transport bytes');let downloads=0;
-  const body=atlas._test.atlasEdgeRequestBody(input,productManifest(surfaces,undefined,'truck'),
-    {referenceImagesBase64:[]});
-  assert.equal(body.fieldContract,'designpro.atlas-field-prompt.v2');
+  // The field branch is no longer selected by production (v23 restore), but the
+  // guard still protects it, so the test names the contract explicitly.
+  const body={...atlas._test.atlasEdgeRequestBody(input,productManifest(surfaces,undefined,'truck'),
+    {referenceImagesBase64:[]}), fieldContract:'designpro.atlas-field-prompt.v2'};
   const current=/ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "([^"]+)"/
     .exec(readFileSync(new URL('../runtime/flat-first-atlas.cjs',import.meta.url),'utf8'))[1];
   const reply={success:true,imageRequestCount:1,fieldContract:'designpro.atlas-field-prompt.v2',

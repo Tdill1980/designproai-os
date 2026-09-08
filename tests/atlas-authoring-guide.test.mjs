@@ -305,8 +305,12 @@ test("the solid-panel output contract lives in the edge function's flat contract
 test("the prompt version fences vehicle-atlas masters from every obsolete authoring contract", () => {
   const { readFileSync } = require("node:fs");
   const atlasSource = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  assert.match(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260908\.v29-one-field-thirds"/);
-  assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260901\.v23-orthographic-restored"/);
+  // RESTORED TO v23 (owner ruling 2026-09-08): v23 is the CURRENT contract --
+  // it authored the accepted master 1564c66da0a1c482 -- so v28 and the other
+  // later contracts are the obsolete ones now.
+  assert.match(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260901\.v23-orthographic-restored"/);
+  assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260906\.v28-authored-topology"/);
+  assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260902\.v24-one-field"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260831\.v16-flat-example-only"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260831\.v14-vehicle-atlas"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260830\.v13-neutral-fields"/);
