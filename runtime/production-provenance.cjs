@@ -75,6 +75,15 @@ const FORBIDDEN_PRODUCERS = Object.freeze([
 
 const LEGAL_PANEL_SOURCES = Object.freeze(["atlas-call1-panel"]);
 const LEGAL_PANEL_PROMOTIONS = Object.freeze(["atlas-call1"]);
+/**
+ * Panel-authoring contracts whose output may be production artwork.
+ *
+ * An allowlist, not a boolean: a panel that was finished rather than cropped
+ * has to name the exact contract that finished it, so widening this is a
+ * deliberate, greppable act rather than a side effect of setting a flag. See
+ * the widening note in `assertPanelAncestry`.
+ */
+const LEGAL_PANEL_AUTHORING_CONTRACTS = Object.freeze(["designpro.atlas-panel-authoring.v1"]);
 
 function collectStringValues(value, into = [], depth = 0) {
   if (depth > 6) return into;
@@ -124,8 +133,39 @@ function assertPanelAncestry(panel) {
       `${label} is not promoted from ${LEGAL_PANEL_PROMOTIONS[0]}`,
     );
   }
+  // ── THE ONE WIDENING, AND EXACTLY WHAT IT COSTS (Trish 2026-09-08) ────────
+  //
+  // This test read `deterministic !== true` and refused everything else. That
+  // was correct while every production panel WAS a `sharp.extract` of the
+  // accepted master, and the property it defends is real: production artwork
+  // must never be an unattributed AI render that nobody can trace.
+  //
+  // Per-surface finishing makes a production panel a model EDIT of that same
+  // crop, so the old predicate would refuse every finished panel. The property
+  // is preserved by replacing "it was cropped" with the stronger, checkable
+  // claim it was standing in for: **this panel names the deterministic crop it
+  // came from, and that crop's own lineage to the accepted master.**
+  //
+  // Be clear about what is given up: a finished panel is no longer reproducible
+  // from the master by replaying pixel arithmetic. What remains is a complete,
+  // hash-bound chain — master → crop (`preFinishHash`) → finished bytes — plus
+  // a named authoring contract, so PanelPro can still prove what made every
+  // pixel it is about to print. An artifact that claims neither lineage is
+  // refused exactly as before.
+  const finishedContract = String(meta.panelAuthoringContract || "").trim();
   if (meta.deterministic !== true) {
-    throw new ProvenanceError("production_ancestry_not_deterministic", `${label} does not claim a deterministic lineage`);
+    if (!LEGAL_PANEL_AUTHORING_CONTRACTS.includes(finishedContract)) {
+      throw new ProvenanceError(
+        "production_ancestry_not_deterministic",
+        `${label} claims neither a deterministic lineage nor a known panel-authoring contract`,
+      );
+    }
+    if (!HASH_RE.test(String(meta.preFinishHash || "").toLowerCase())) {
+      throw new ProvenanceError(
+        "production_ancestry_incomplete",
+        `${label} was finished from a crop it does not name (preFinishHash)`,
+      );
+    }
   }
   for (const field of ["sourceStoragePath", "sourceContentHash", "sourceMasterHash"]) {
     if (!String(meta[field] || "").trim()) {

@@ -1268,6 +1268,23 @@ serve(async (req) => {
       }
       return await handleAtlasArtboard(body);
     }
+
+    // ═══ ATLAS-PANEL — PER-SURFACE AUTHORING (owner ruling, Trish 2026-09-08).
+    //
+    // The master stays the design authority. This mode finishes ONE already-cut
+    // surface into a whole printed sheet at its own proportion, shown its
+    // already-finished neighbours so the six read as one design. It is an EDIT
+    // of bytes the master already produced — it never authors a new design and
+    // never sees the brief as a blank-page instruction. See handleAtlasPanel.
+    if (body?.mode === "atlas-panel") {
+      if (!internalCaller.internal) {
+        return new Response(
+          JSON.stringify({ success: false, error: "atlas_panel_internal_only" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      return await handleAtlasPanel(body);
+    }
     const {
       mode,
       prompt,
@@ -2659,6 +2676,427 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         requestId,
         functionName: "design-panel-ai-generate",
         promptVersion: ATLAS_ARTBOARD_PROMPT_VERSION,
+        imageRequestCount: 0,
+        error: String((err as Error)?.message || err).slice(0, 500),
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATLAS-PANEL — PER-SURFACE AUTHORING (owner ruling, Trish 2026-09-08)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// WHAT CHANGED, AND WHY IT IS NOT A SECOND DESIGNER.
+//
+// Call 1 authored one cohesive master and the runtime CUT six rectangles out
+// of it. That cut is why a panel could arrive with a hole in it: the model
+// drew one picture across a shared canvas, and whatever it painted where a
+// wheel opening sits became a missing-artwork field in a production panel
+// (RULE 0.32). It is also why lettering could be severed — a word that
+// straddles the boundary between two territories is split by geometry.
+//
+// This mode does not author a design. It is handed ONE already-cut surface
+// and returns THAT SAME ARTWORK as a whole finished sheet at that surface's
+// own proportion: same composition, same palette, same lettering, holes
+// closed with the design that surrounds them. The master remains the sole
+// creative authority (RULE 0.30) and the sole lineage identity; this is a
+// finishing pass over bytes the master already produced.
+//
+// The neighbours already finished are attached as continuity references, in
+// the owner's cascade order — Driver, then Passenger, then Hood, Roof, Front,
+// Rear — so each sheet is composed knowing what the sheets beside it look
+// like rather than inheriting cohesion only from a shared canvas.
+//
+// NO ASPECT RATIO IS REQUESTED. A driver flank is ~4.2:1 and the model's
+// aspect menu stops at 21:9, so pinning a ratio would letterbox or distort
+// every flank. An edit that carries no imageConfig.aspectRatio follows its
+// input image instead. The runtime does not trust that: it resizes the
+// return to the exact zone rectangle and refuses a panel whose proportion
+// came back wrong, falling back to the deterministic crop.
+//
+// FAILURE IS NEVER FATAL. The caller falls back to the crop it already has,
+// so this path can only raise the floor — it can never lose a run that would
+// have shipped without it.
+const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v4-signature-fidelity";
+const ATLAS_PANEL_AUTHORING_MODEL = "gemini-3-pro-image";
+/**
+ * Every already-finished sheet may be attached (owner ruling 2026-09-08:
+ * *"make sure each side is getting Atlas example as well as the other sides"*).
+ * Five is the ceiling arithmetic allows — Rear, last in the cascade, has five
+ * finished siblings — and it sits inside the model's 14-asset reference budget
+ * alongside the master and the subject sheet.
+ */
+const ATLAS_PANEL_MAX_NEIGHBOURS = 5;
+/**
+ * The model's documented reference-asset ceiling. The byte cap below is the
+ * binding constraint in practice — references travel downscaled for exactly
+ * that reason — but a count this far under the limit should still be asserted
+ * rather than assumed.
+ */
+const ATLAS_PANEL_MAX_REFERENCE_ASSETS = 14;
+/**
+ * Five, because the cascade is six surfaces and the sixth is the one asking.
+ * Each prior turn is a short text plus an encrypted signature — kilobytes, not
+ * megabytes, because images never travel in history.
+ */
+const ATLAS_PANEL_MAX_PRIOR_TURNS = 10;
+const ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
+
+/**
+ * The finishing instruction.
+ *
+ * Stated as what the sheet IS, never as a list of vehicle parts to avoid.
+ * CLAUDE.md's own measured guidance is that naming anatomy makes the model
+ * over-index on it — Desert Ridge (c3a8ff40) carried ten anatomy refusals and
+ * came back as a van side elevation. There is no vehicle noun in this text.
+ */
+function atlasPanelFinishPrompt(
+  surfaceLabel: string,
+  neighbourLabels: string[],
+  creativeContext: string,
+  hasAtlasReference: boolean,
+): string {
+  // STRUCTURED TAGS, IN ATTACHMENT ORDER.
+  //
+  // The provider's own guidance is to separate instructions from visual inputs
+  // with explicit markup and to name what each asset is for. Every attached
+  // image is declared here in the exact order `handleAtlasPanel` pushes it, so
+  // an ordering change breaks the description loudly instead of silently
+  // re-pointing the instruction at the wrong asset.
+  const inputs: string[] = [];
+  inputs.push(`  <sheet role="subject">The sheet to finish and return. This one, and only this one, is what you are drawing.</sheet>`);
+  if (hasAtlasReference) {
+    inputs.push(`  <reference role="visual-dna">The complete design this sheet belongs to, all of its sheets laid out together. It is the authority for palette, motif family, line weight, texture and overall feel. Read it for consistency. Do not redraw it and do not copy its layout.</reference>`);
+  }
+  for (const label of neighbourLabels) {
+    inputs.push(`  <reference role="sibling-sheet" id="${label}">Another sheet from the same set, already finished. Match its ground, palette and motion so the set reads as one continuous design laid side by side. Do not copy its layout and do not repeat its lettering.</reference>`);
+  }
+
+  return [
+    "<task>",
+    "Generate an image: one flat printed sheet, finished.",
+    "</task>",
+    "",
+    "<inputs>",
+    ...inputs,
+    "</inputs>",
+    "",
+    "<subject>",
+    "The subject sheet is one flat printed graphic — a single continuous sheet of printed media, the artwork by itself, before anything is cut or applied to anything. It is not a picture of an object and it has no parts.",
+    "</subject>",
+    "",
+    "<instructions>",
+    "Generate an image of THAT SAME ARTWORK as one complete, finished sheet:",
+    "• the same composition, the same palette, the same motifs, in the same places",
+    "• every word of lettering exactly as it reads there — same words, same spelling, same order — set upright, whole, sharp, and fully inside the sheet",
+    "• finished artwork over the entire rectangle, corner to corner, running off all four edges",
+    "• any area that arrives blank, flat, unresolved or interrupted is completed with the artwork that already surrounds it, so the design reads as continuous everywhere",
+    "• the same proportion as the subject sheet: return it at the shape it arrived in",
+    "",
+    "Add nothing and remove nothing: no new subjects, no borders, no margins, no frame, no captions, no labels, no annotation, no signature.",
+    "</instructions>",
+    ...(creativeContext
+      ? ["", "<context>", `Whose design this is, for judgement only — it does not change what is drawn: ${creativeContext}`, "</context>"]
+      : []),
+    "",
+    "<identity>",
+    // Metadata only, and stated as such. The label must never become a pixel:
+    // an earlier release had surface names painted onto the artwork.
+    `This sheet is internally identified as ${surfaceLabel}. That identity is metadata and must not appear anywhere in the image.`,
+    "</identity>",
+  ].join("\n");
+}
+
+async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  try {
+    const surfaceKey = String(body.surfaceKey || "").trim().toLowerCase();
+    if (!["driver", "passenger", "hood", "roof", "front", "rear"].includes(surfaceKey)) {
+      throw new Error(`atlas_panel_surface_unknown:${surfaceKey.slice(0, 40)}`);
+    }
+    const surfaceLabel = String(body.surfaceLabel || surfaceKey).toUpperCase();
+
+    // Cast: Deno types `Uint8Array<ArrayBufferLike>` as not assignable to
+    // BufferSource. The identical call in handleAtlasArtboard carries the same
+    // check failure and deploys correctly; this one is spelled so it does not
+    // add a twelfth to the file's standing count.
+    const sha256Hex = async (bytes: Uint8Array) => {
+      const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as BufferSource);
+      return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    };
+    const parts: Array<Record<string, unknown>> = [];
+    // Same private-storage discipline as Call 1: the bytes travel by path plus
+    // hash, never inline in the JSON body, and a path that does not hash to its
+    // own name is refused rather than sent to the model.
+    const attach = async (path: unknown, expectedHash?: unknown) => {
+      const key = String(path || "").trim();
+      // JPEG is allowed because REFERENCES travel downscaled — the master and
+      // the sibling sheets are there for palette and motif continuity, not for
+      // pixels, and six lossless 4K references would blow the request budget
+      // long before the asset count mattered. The SUBJECT sheet is always PNG
+      // at full resolution; it is the only image whose pixels are copied.
+      const match = key.match(/^atlas-call1-inputs\/([0-9a-f]{64})\.(png|jpg)$/);
+      if (!match) throw new Error(`atlas_panel_input_path_invalid:${key.slice(0, 160)}`);
+      const mimeType = match[2] === "jpg" ? "image/jpeg" : "image/png";
+      const { data, error } = await svc.storage.from("wrap-files").download(key);
+      if (error || !data) throw new Error(`atlas_panel_input_download_failed:${key}:${error?.message || "missing"}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const actual = await sha256Hex(bytes);
+      if (actual !== match[1] || (expectedHash && actual !== String(expectedHash))) {
+        throw new Error(`atlas_panel_input_hash_mismatch:${key}`);
+      }
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      parts.push({ inlineData: { mimeType, data: btoa(binary) } });
+      return actual;
+    };
+    /**
+     * A sheet this function produced on an earlier surface, fetched so it can
+     * be replayed inside the model turn it belongs to. Returns base64 rather
+     * than pushing, because a history image belongs in ITS OWN turn's parts,
+     * not appended to the current user turn.
+     *
+     * `atlas-panel/<uuid>.png` is where this handler writes every sheet it
+     * makes, so the prefix is the proof that history can only ever replay this
+     * function's own output — never an arbitrary object from the bucket.
+     */
+    const downloadHistoryImage = async (path: unknown, expectedHash: unknown) => {
+      const key = String(path || "").trim();
+      if (!/^atlas-panel\/[0-9a-f-]{36}\.png$/.test(key)) {
+        throw new Error(`atlas_panel_history_path_invalid:${key.slice(0, 160)}`);
+      }
+      const hash = String(expectedHash || "");
+      if (!/^[0-9a-f]{64}$/.test(hash)) {
+        throw new Error(`atlas_panel_history_hash_invalid:${key}`);
+      }
+      const { data, error } = await svc.storage.from("wrap-files").download(key);
+      if (error || !data) throw new Error(`atlas_panel_history_download_failed:${key}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      if (await sha256Hex(bytes) !== hash) {
+        throw new Error(`atlas_panel_history_hash_mismatch:${key}`);
+      }
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      return btoa(binary);
+    };
+
+    const neighboursIn = Array.isArray(body.neighbours) ? (body.neighbours as Array<Record<string, unknown>>) : [];
+    if (neighboursIn.length > ATLAS_PANEL_MAX_NEIGHBOURS) {
+      throw new Error(`atlas_panel_neighbour_budget_exceeded:${neighboursIn.length}`);
+    }
+    const atlasReferencePath = String(body.atlasReferenceStoragePath || "").trim();
+    const referenceAssetCount = 1 + (atlasReferencePath ? 1 : 0) + neighboursIn.length;
+    if (referenceAssetCount > ATLAS_PANEL_MAX_REFERENCE_ASSETS) {
+      throw new Error(`atlas_panel_reference_budget_exceeded:${referenceAssetCount}`);
+    }
+    // ── THOUGHT SIGNATURES: THE CASCADE IS ONE CONVERSATION ──────────────────
+    //
+    // Gemini 3 returns encrypted representations of its own reasoning, and the
+    // documented guidance for multi-turn image editing is to pass them back so
+    // the chain of visual reasoning survives a stateless backend. Six surfaces
+    // finished one after another IS that workflow: the model that just drew the
+    // driver flank should still be holding why it drew it when it draws the
+    // hood.
+    //
+    // A SIGNATURE IS RETURNED ON THE PART IT ARRIVED ON. This is the whole
+    // contract and the first version of this code got it wrong: on an image
+    // response the signature rides on the IMAGE part, and that version kept the
+    // signature while discarding `inlineData` — handing back a bare signature
+    // attached to nothing. A model turn is therefore replayed FAITHFULLY here,
+    // part for part, in its original order, with each signature still on its
+    // own part.
+    //
+    // The image travels by STORAGE REFERENCE rather than inline base64, and is
+    // rehydrated below into exactly the part shape it was returned in. That is
+    // this file's existing discipline for large inputs — a 2.2MB inline request
+    // killed the worker on 2026-08-27 — and it keeps a six-surface conversation
+    // inside the model-request budget without altering a single part the model
+    // will see.
+    const priorTurnsIn = Array.isArray(body.priorTurns) ? (body.priorTurns as Array<Record<string, unknown>>) : [];
+    if (priorTurnsIn.length > ATLAS_PANEL_MAX_PRIOR_TURNS) {
+      throw new Error(`atlas_panel_prior_turn_budget_exceeded:${priorTurnsIn.length}`);
+    }
+    const priorTurns: Array<Record<string, unknown>> = [];
+    for (const turn of priorTurnsIn) {
+      const role = String(turn.role || "");
+      if (role !== "user" && role !== "model") {
+        throw new Error(`atlas_panel_prior_turn_role_invalid:${role.slice(0, 40)}`);
+      }
+      const turnParts = Array.isArray(turn.parts) ? (turn.parts as Array<Record<string, unknown>>) : [];
+      const replayed: Array<Record<string, unknown>> = [];
+      for (const part of turnParts) {
+        const out: Record<string, unknown> = {};
+        if (typeof part.text === "string") out.text = part.text.slice(0, 4000);
+        // An image the model previously produced, referenced by the path this
+        // function wrote it to. Hash-verified on the way back in, exactly like
+        // every other image this handler attaches.
+        const ref = part.imageRef as Record<string, unknown> | undefined;
+        if (ref) {
+          out.inlineData = {
+            mimeType: "image/png",
+            data: await downloadHistoryImage(ref.storagePath, ref.contentHash),
+          };
+        }
+        // Inline base64 in history is refused rather than silently dropped:
+        // quietly shrinking a caller's history would make a budget bug
+        // invisible, and the reference form above exists precisely so nobody
+        // needs to send one.
+        if (part.inlineData) throw new Error("atlas_panel_prior_turn_carries_inline_image");
+        // LAST, so the signature sits on the same part as its content.
+        if (typeof part.thoughtSignature === "string") {
+          if (!out.text && !out.inlineData) {
+            throw new Error("atlas_panel_prior_turn_orphan_signature");
+          }
+          out.thoughtSignature = part.thoughtSignature;
+        }
+        if (Object.keys(out).length > 0) replayed.push(out);
+      }
+      if (replayed.length === 0) throw new Error("atlas_panel_prior_turn_empty");
+      priorTurns.push({ role, parts: replayed });
+    }
+
+    const neighbourLabels = neighboursIn.map((n) => String(n.surfaceLabel || n.surfaceKey || "").toUpperCase());
+    const prompt = atlasPanelFinishPrompt(
+      surfaceLabel,
+      neighbourLabels,
+      String(body.creativeContext || "").trim().slice(0, 600),
+      Boolean(atlasReferencePath),
+    );
+    parts.push({ text: prompt });
+    // ATTACHMENT ORDER IS THE CONTRACT: subject → A.T.L.A.S. → siblings.
+    //
+    // `atlasPanelFinishPrompt` declares the assets in exactly this order inside
+    // its <inputs> block, so reordering here re-points every role description
+    // at the wrong image. The subject is first because it is the only asset
+    // whose pixels are being redrawn.
+    const sourcePanelHash = await attach(body.sourcePanelStoragePath, body.sourcePanelHash);
+    // THE WHOLE A.T.L.A.S. AS VISUAL DNA (owner ruling 2026-09-08). Each sheet
+    // is composed knowing what the complete design looks like, not only what
+    // its own crop and its siblings look like.
+    const atlasReferenceHash = atlasReferencePath
+      ? await attach(atlasReferencePath, body.atlasReferenceHash)
+      : null;
+    const neighbourHashes: string[] = [];
+    for (const neighbour of neighboursIn) {
+      neighbourHashes.push(await attach(neighbour.storagePath, neighbour.contentHash));
+    }
+
+    const model = ATLAS_PANEL_AUTHORING_MODEL;
+    const t0 = Date.now();
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiKey()}`;
+    // NO aspectRatio — see the header. An edit follows its input's proportion;
+    // asking for one from the menu would letterbox or distort every flank.
+    const modelRequest = JSON.stringify({
+      contents: [...priorTurns, { role: "user", parts }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: "4K" },
+      },
+    });
+    const modelRequestByteSize = new TextEncoder().encode(modelRequest).byteLength;
+    if (modelRequestByteSize > ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES) {
+      throw new Error(`atlas_panel_model_request_too_large:${modelRequestByteSize}`);
+    }
+    const geminiRes = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(110_000),
+      body: modelRequest,
+    });
+    console.log(`atlas-panel ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts)`);
+    if (!geminiRes.ok) {
+      throw new Error(`atlas_panel_gemini_http_${geminiRes.status}: ${(await geminiRes.text()).slice(0, 300)}`);
+    }
+    const payload = await geminiRes.json();
+    const candidateParts: Array<Record<string, any>> = payload?.candidates?.[0]?.content?.parts || [];
+    const imagePart = candidateParts.find((p) => p?.inlineData?.data);
+    if (!imagePart) {
+      throw new Error(`atlas_panel_no_image: finishReason=${payload?.candidates?.[0]?.finishReason || "unknown"}`);
+    }
+    const binary = atob(imagePart.inlineData.data);
+    const panelBytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) panelBytes[i] = binary.charCodeAt(i);
+    const panelSha256 = await sha256Hex(panelBytes);
+    const storagePath = `atlas-panel/${requestId}.png`;
+    const { error: upErr } = await svc.storage.from("wrap-files").upload(storagePath, panelBytes, {
+      contentType: "image/png",
+      upsert: false,
+    });
+    if (upErr) throw new Error(`atlas_panel_upload_failed: ${upErr.message}`);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        sourceCommit: ATLAS_ARTBOARD_SOURCE_COMMIT,
+        promptVersion: ATLAS_PANEL_PROMPT_VERSION,
+        model,
+        surfaceKey,
+        imageRequestCount: 1,
+        modelRequestByteSize,
+        modelInputImageCount: referenceAssetCount,
+        atlasReferenceAttached: Boolean(atlasReferenceHash),
+        atlasReferenceHash,
+        neighbourCount: neighboursIn.length,
+        neighbourHashes,
+        sourcePanelHash,
+        // THE CHAIN, HANDED BACK. The caller appends this as the model turn
+        // and sends it with the next surface, so the reasoning that produced
+        // this sheet is still in context when the next one is drawn. Image
+        // data is stripped: the sheets travel as declared references instead.
+        priorTurnsApplied: priorTurns.length,
+        // THE MODEL TURN, FAITHFUL PART FOR PART.
+        //
+        // Same order, same parts, every signature still on the part it arrived
+        // on. The image is the one substitution — `inlineData` becomes an
+        // `imageRef` naming the object this handler just wrote — and it is
+        // rehydrated into the identical shape on the way back in. Nothing else
+        // is reshaped: the whole value of a signature is that the model
+        // recognises its own turn.
+        modelTurn: {
+          role: "model",
+          parts: candidateParts
+            .map((part) => {
+              const out: Record<string, unknown> = {};
+              if (typeof part?.text === "string" && part.text.trim()) out.text = part.text.slice(0, 4000);
+              if (part?.inlineData?.data) {
+                out.imageRef = { storagePath, contentHash: panelSha256 };
+              }
+              if (typeof part?.thoughtSignature === "string"
+                && (out.text || out.imageRef)) {
+                out.thoughtSignature = part.thoughtSignature;
+              }
+              return out;
+            })
+            .filter((part) => Object.keys(part).length > 0),
+        },
+        thoughtSignatureCount: candidateParts
+          .filter((part) => typeof part?.thoughtSignature === "string").length,
+        promptChars: prompt.length,
+        panelStoragePath: storagePath,
+        panelSha256,
+        panelBytes: panelBytes.length,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        promptVersion: ATLAS_PANEL_PROMPT_VERSION,
         imageRequestCount: 0,
         error: String((err as Error)?.message || err).slice(0, 500),
       }),

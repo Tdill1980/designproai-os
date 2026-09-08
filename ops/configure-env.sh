@@ -97,6 +97,15 @@ else
   worker_secret=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 fi
 unset existing_worker_secret
+# Resolve the panel-finishing flag before the file is rewritten: explicit
+# instruction from this deploy wins, otherwise whatever the running system
+# already had, otherwise off. Read from the LIVE file, not the temp one.
+atlas_panel_finish=${ATLAS_PANEL_FINISH:-}
+if [[ -z $atlas_panel_finish && -s $ROOT/shared/runtime.env ]]; then
+  atlas_panel_finish=$(sed -n 's/^DESIGNPRO_ATLAS_PANEL_FINISH=//p' "$ROOT/shared/runtime.env" | head -n 1)
+fi
+[[ $atlas_panel_finish == "on" ]] || atlas_panel_finish=off
+
 runtime_tmp=$(mktemp "$ROOT/shared/runtime.env.new.XXXXXX")
 gateway_tmp=$(mktemp "$ROOT/shared/gateway.env.new.XXXXXX")
 cleanup() {
@@ -116,6 +125,14 @@ trap cleanup EXIT
   printf 'DESIGNPRO_SPOOL_DIR=/var/lib/designproai/spool\n'
   printf 'SUPABASE_TUS_ENDPOINT=%s\n' "$TUS_ENDPOINT"
   printf 'DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false\n'
+  # PER-SURFACE PANEL FINISHING. Off unless explicitly turned on, and STICKY:
+  # this script rewrites runtime.env on every deploy, so a value that is not
+  # carried forward would silently switch the feature off at the next release
+  # and nobody would know why the panels changed. `ATLAS_PANEL_FINISH` from the
+  # deploy overrides; absent, the current value is preserved; absent both, off.
+  # Only the exact string `on` enables it -- the runtime fails safe on anything
+  # else, so a typo here cannot switch a customer path on.
+  printf 'DESIGNPRO_ATLAS_PANEL_FINISH=%s\n' "$atlas_panel_finish"
   if [[ -n $topaz_key ]]; then
     printf 'DESIGNPRO_TOPAZ_ENABLED=true\n'
     printf 'TOPAZ_API_KEY=%s\n' "$topaz_key"
