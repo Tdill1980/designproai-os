@@ -2161,22 +2161,54 @@ async function downloadVerified(supabase, storagePath, expectedHash, expectedByt
   return bytes;
 }
 
-async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projectionBytes, { reused, panels = null }) {
+async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projectionBytes, {
+  reused, panels = null, supabase = null,
+}) {
   // THE AUTHORITIES COME FROM THE PANELS, ON BOTH PATHS.
   //
   // A fresh run hands its just-cut panels straight in. A RESUMED run has none
-  // in memory, so it re-cuts them from the repaired sheet -- deterministically,
-  // by the same code, from the same rects -- and then PROVES the result against
-  // the hashes the revision recorded. That check is the point: it is the same
-  // guarantee `flat_atlas_surface_source_mismatch` gives the sheet itself, one
-  // level down, and it means a resumed proof is conditioned on bytes identical
-  // to the panel the customer is buying rather than on bytes that merely ought
-  // to be.
-  const authorityPanels = Array.isArray(panels) && panels.length
-    ? panels
-    : await cutCallOnePanels(surfaceSourceBytes, manifest, row.master_content_hash);
+  // in memory and has to recover them, and HOW it recovers them depends on what
+  // made them:
+  //
+  //   A DETERMINISTIC CROP is RE-CUT and proven against the recorded hash.
+  //   Recomputation is the strongest available check -- the same code, the same
+  //   rects, the same bytes -- and it is not weakened here.
+  //
+  //   A FINISHED PANEL cannot be recomputed. It is a model edit, so re-cutting
+  //   reproduces the crop it started from, never the panel that was published.
+  //   Left alone, this function would have re-cut a finished revision, compared
+  //   a crop hash against a finished hash, and raised `panel_rebuild_mismatch`
+  //   on EVERY resumed generation with finishing enabled -- permanently, since
+  //   the mismatch is structural rather than transient. It is re-read from
+  //   immutable storage and hash-verified instead.
+  //
+  // Both routes end at the same guarantee, which is the one that matters: the
+  // resumed proof is conditioned on bytes provably identical to the panel the
+  // customer is buying. Only the proof method differs -- recomputation where it
+  // is possible, content-addressed verification where it is not. That is the
+  // same trade the production-provenance widening made, followed through to the
+  // consumer that would otherwise have broken.
   const recorded = Array.isArray(row.metadata?.callOnePanels) ? row.metadata.callOnePanels : [];
-  if (recorded.length) {
+  const finishedRecords = recorded.filter((entry) => entry?.panelAuthoringContract);
+  let authorityPanels;
+  if (Array.isArray(panels) && panels.length) {
+    authorityPanels = panels;
+  } else if (finishedRecords.length) {
+    if (!supabase?.storage?.from) {
+      throw new FlatAtlasError(
+        "flat_atlas_panel_reload_transport_missing",
+        "A finished revision can only be resumed by re-reading its persisted panels",
+        true,
+      );
+    }
+    authorityPanels = await Promise.all(recorded.map(async (entry) => Object.freeze({
+      ...entry,
+      bytes: await downloadVerified(
+        supabase, entry.storagePath, String(entry.contentHash || "").toLowerCase(), entry.byteSize,
+      ),
+    })));
+  } else {
+    authorityPanels = await cutCallOnePanels(surfaceSourceBytes, manifest, row.master_content_hash);
     for (const panel of authorityPanels) {
       const match = recorded.find((entry) => entry.surfaceKey === panel.surfaceKey);
       if (match && String(match.contentHash || "").toLowerCase() !== panel.contentHash) {
@@ -2306,7 +2338,9 @@ async function loadLatestAtlasRevision(supabase, requestId) {
     || expectedProjection.byteSize !== Number(row.projection_byte_size)) {
     throw new FlatAtlasError("flat_atlas_projection_source_mismatch", "Stored proof-conditioning derivative is not the deterministic child of the canonical PNG master");
   }
-  return rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projectionBytes, { reused: true });
+  // `supabase` so a FINISHED revision can re-read its published panels; a
+  // deterministic one still re-cuts and proves, and never touches storage.
+  return rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, projectionBytes, { reused: true, supabase });
 }
 
 function atlasReceipt(atlas) {

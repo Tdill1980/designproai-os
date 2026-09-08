@@ -355,6 +355,32 @@ test("a rejected reasoning chain degrades to images only, never to a lost panel"
   assert.deepEqual(finish.nextExchanges.map((e) => e.surfaceKey), ["driver"]);
 });
 
+test("a RESUMED finished revision re-reads its panels instead of re-cutting them", () => {
+  // The bug this locks: rowIdentity re-cut panels on resume and asserted they
+  // reproduced the recorded hash. A finished panel is a model edit, so a re-cut
+  // yields the CROP it started from -- a structural mismatch that would have
+  // raised flat_atlas_panel_rebuild_mismatch on every resumed generation with
+  // finishing on, permanently, not transiently.
+  const body = runtimeSrc.slice(
+    runtimeSrc.indexOf("async function rowIdentity("),
+    runtimeSrc.indexOf("const viewAuthorities = await buildViewAuthorities(authorityPanels)"),
+  );
+  assert.match(body, /finishedRecords = recorded\.filter\(\(entry\) => entry\?\.panelAuthoringContract\)/);
+  // Finished: re-read from immutable storage, hash-verified.
+  assert.match(body, /bytes: await downloadVerified\(/);
+  assert.match(body, /flat_atlas_panel_reload_transport_missing/);
+  // Deterministic: recomputation is the stronger check and stays exactly as it
+  // was. It must NOT have been softened into a storage read for everyone.
+  assert.match(body, /authorityPanels = await cutCallOnePanels\(/);
+  assert.match(body, /flat_atlas_panel_rebuild_mismatch/);
+  const recut = body.indexOf("authorityPanels = await cutCallOnePanels(");
+  const finished = body.indexOf("finishedRecords.length");
+  assert.ok(finished > 0 && finished < recut,
+    "the finished branch must be chosen before falling back to re-cutting");
+  // And the resume caller must actually hand it a client to read with.
+  assert.match(runtimeSrc, /\{ reused: true, supabase \}/);
+});
+
 test("holeRatio uses the SAME hole predicate as the master gate", () => {
   // Two definitions of "hole" would let this module accept a sheet the gate
   // convicts. CLAUDE.md makes the same point about the deterministic fill.
