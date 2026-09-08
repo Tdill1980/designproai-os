@@ -163,39 +163,7 @@ test("the DEPLOYED edge assembly reproduces Draw 1's creative half byte for byte
   }
 });
 
-test("the field tail still emits the fixture's six normalized rectangles when explicitly invoked", async () => {
-  // RESTORED TO v23: production no longer SELECTS the field branch, so the
-  // fixture names the contract explicitly. The branch and its territory
-  // builder stay in the tree, tested, and available.
-  const mod = await slice();
-  const { field } = fixtureManifests();
-  const body = { ...atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {}),
-    fieldContract: "designpro.atlas-field-prompt.v2", noseEdge: { driver: "left", passenger: "right" } };
-  const { prompt } = mod.buildAtlasCall1Prompt(body);
-  const tail = prompt.slice(prompt.indexOf(TAIL_MARK));
-  assert.notEqual(tail, DRAW1_V24_TAIL, "Test 14 replaces the tail");
-  assert.doesNotMatch(tail, /three equal horizontal thirds|THE UPPER THIRD|supporting register/);
 
-  // Every emitted row is one of the request's own normalized rectangles, and
-  // every rectangle is emitted exactly once. This is the whole experiment: the
-  // conditioning and the cutter now read the same geometry.
-  const rows = tail.split("\n").filter((line) => /^ {2}[\d.]+ [\d.]+ [\d.]+ [\d.]+/.test(line));
-  assert.equal(rows.length, 6);
-  const expected = body.panels.map((p) => [
-    Number(p.normalized.x).toFixed(4),
-    Number(p.normalized.y).toFixed(4),
-    (Number(p.normalized.x) + Number(p.normalized.width)).toFixed(4),
-    (Number(p.normalized.y) + Number(p.normalized.height)).toFixed(4),
-  ].join(" "));
-  const emitted = rows.map((line) => line.trim().split(/\s+/).slice(0, 4).join(" "));
-  assert.deepEqual([...emitted].sort(), [...expected].sort());
-  // Reading order, not manifest order — row position reveals no surface.
-  const ys = rows.map((line) => Number(line.trim().split(/\s+/)[1]));
-  assert.deepEqual(ys, [...ys].sort((a, b) => a - b));
-  // Exactly the two flanks carry a sweep, and neither is named.
-  assert.equal(rows.filter((line) => /forward energy sweeps/i.test(line)).length, 2);
-  assert.doesNotMatch(tail, /\b(driver|passenger|hood|roof|front|rear)\b/i);
-});
 
 test("the whole model-facing field prompt carries no object-schema, topology or negative vocabulary", async () => {
   const mod = await slice();

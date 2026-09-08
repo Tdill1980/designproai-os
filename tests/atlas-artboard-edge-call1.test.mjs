@@ -70,7 +70,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260908\.v29-one-field-thirds"/);
   assert.match(assembly, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(handler, /fieldContract: atlasField \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
@@ -78,18 +78,16 @@ test("the response carries the full owner proof contract", () => {
   }
 });
 
-test("the final target guide is the v23 neutral-mask instruction", () => {
-  // RESTORED TO v23 (owner ruling 2026-09-08): the configuration that
-  // produced the accepted master 1564c66da0a1c482.
+test("the final target guide requires six complete rectangular prints", () => {
   for (const required of [
-    "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout",
-    "Fill its six regions with the NEW customer design",
-    "Return flat printable rectangles only; never return a vehicle image",
+    "Copy its six plain rectangular masks exactly as the only six output shapes",
+    "four straight edges, four square corners",
+    "continuous customer artwork covering every pixel through every edge and corner",
+    "exactly six filled rectangular prints separated by dark gutters",
+    "No labels or other content outside the six rectangles",
   ]) {
-    assert.ok(handler.includes(required), `missing v23 target-guide rule: ${required}`);
+    assert.ok(handler.includes(required), `missing rectangular target-guide rule: ${required}`);
   }
-  assert.ok(!handler.includes("Copy its six plain rectangular masks exactly"),
-    "the 2026-09-06 rectangular-media rewrite is not part of the accepted v23 configuration");
 });
 
 test("the runtime assembles no creative text and never calls Gemini for Call 1", () => {
@@ -131,30 +129,63 @@ test("the runtime records the prompt version the edge function actually stamps",
   assert.equal(runtimeVersion[1], edge[1]);
 });
 
-test("v23 restoration: legacy manifest, six-container request, both pinned image inputs", () => {
-  // RESTORED TO v23 (owner ruling 2026-09-08): the configuration that
-  // produced the accepted master 1564c66da0a1c482.
+test("One-field restoration: field territories, the field contract, and no structural image", () => {
+  // Owner ruling 2026-09-07. The six-surface path measured ten consecutive
+  // failed draws (canary 34021490632, four raw candidates all drawing vehicle
+  // anatomy; arrangement A/B 34163297003, 0/18 zones over six draws in two
+  // arrangements). One-field is restored, and the model is shown NO production
+  // topology and NO structural image -- GENIE/runtime owns the six territories
+  // as code, and conditions the composition on their coordinates alone.
   assert.ok(!handler.includes("body.structuralReferenceStoragePath"));
+  assert.ok(!handler.includes("body.structuralPairedProofStoragePath"));
+  assert.ok(!handler.includes("body.structuralReferenceBase64"));
   assert.ok(!handler.includes("loadArtboardExamples(svc)"));
   const liveAuthoring = runtimeSource.slice(
     runtimeSource.indexOf("async function generateOrReuseFlatAtlas"),
     runtimeSource.indexOf("async function updateAtlasRevision"),
   );
+  assert.ok(!liveAuthoring.includes("topologyExampleParts("));
+  assert.ok(!liveAuthoring.includes("structuralReferenceStoragePath"));
+  assert.ok(!liveAuthoring.includes("structuralPairedProofStoragePath"));
+  // The teaching proof and the guide are still BUILT and stored -- they remain
+  // the human installer map and the durable forensic record, and the legacy
+  // six-container branch still consumes them. They simply do not reach the
+  // model on this branch.
   assert.match(runtimeSource, /loadBundledAtlasTeachingProof/);
   assert.match(liveAuthoring, /renderAtlasAuthoringGuide\(manifest\)/);
-  assert.match(liveAuthoring, /const manifest = buildAtlasManifest\(surfaces, geometryAuthority/);
-  assert.doesNotMatch(liveAuthoring, /buildFieldTerritories\(/);
+  assert.match(liveAuthoring, /renderAtlasGuide\(manifest\)/);
+  // The canonical manifest is built, then laid out as field territories.
+  assert.match(liveAuthoring, /const legacyManifest = buildAtlasManifest\(surfaces, geometryAuthority/);
+  assert.match(liveAuthoring, /const manifest = buildFieldTerritories\(legacyManifest\)/);
 
   const requestBody = runtimeSource.slice(
     runtimeSource.indexOf("function atlasEdgeRequestBody("),
     runtimeSource.indexOf("function normalizedZoneTopology("),
   );
+  // The branch is a property of the manifest, so both paths stay callable.
+  assert.match(requestBody, /manifest\?\.topology === FIELD_TOPOLOGY/);
+  assert.match(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
+  assert.match(requestBody, /noseEdge: manifest\?\.installerMap\?\.noseEdge \|\| NOSE_EDGE/);
   assert.match(requestBody, /teachingProofStoragePath: extras\.teachingProofStoragePath/);
   assert.match(requestBody, /guideStoragePath: extras\.guideStoragePath/);
-  assert.doesNotMatch(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.doesNotMatch(requestBody, /noseEdge:/);
-});
 
+  // The edge's field branch: prompt, then verified customer references, then
+  // the single image request. The legacy six-container branch survives only
+  // behind `else`, for the harness slice and history.
+  const fieldBranch = handler.slice(handler.indexOf("if (atlasField) {"), handler.indexOf("} else {", handler.indexOf("if (atlasField) {")));
+  assert.match(fieldBranch, /for \(const ref of references\) pushImage\(ref\)/);
+  assert.ok(!fieldBranch.includes("downloadPart("), "no structural image is downloaded in field mode");
+  assert.ok(!fieldBranch.includes("TEACHING REFERENCE"), "no teaching text in field mode");
+  assert.ok(!fieldBranch.includes("TARGET GUIDE"), "no guide text in field mode");
+  assert.ok(!handler.includes("atlasTopologyText(panels"), "no coordinate table reaches the model");
+  assert.ok(!handler.includes("correctiveNote"), "no correctiveNote in the primary-generation contract");
+  assert.doesNotMatch(handler, /cohesionExampleProofStoragePath|INSTALLED DRIVER PROOF/);
+
+  // The runtime refuses an edge answer that did not run the field contract or
+  // that carried more images than the verified customer references.
+  assert.match(runtimeSource, /flat_atlas_edge_field_contract_mismatch/);
+  assert.match(runtimeSource, /flat_atlas_edge_structural_image_detected/);
+});
 
 test("the teaching proof is release-pinned and Call 1 sends no explicit temperature", () => {
   assert.match(assembly, /ATLAS_TEACHING_PROOF_HASH = "684534d27f8e7d70771f4931d9d1119ec73d2a28db774abcc4e343eb6e5e3ded"/);

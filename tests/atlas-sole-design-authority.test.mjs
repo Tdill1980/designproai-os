@@ -107,7 +107,10 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   }
   // The canonical GENIE manifest is still built here; the field territories are
   // a LAYOUT of it (same six surfaces, same inches, same MANIFEST_CONTRACT).
-  assert.match(atlas, /const manifest = buildAtlasManifest\(surfaces, geometryAuthority/);
+  // The canonical GENIE manifest is built here, then laid out as the six
+  // code-only field territories the cutter uses.
+  assert.match(atlas, /const legacyManifest = buildAtlasManifest\(surfaces, geometryAuthority/);
+  assert.match(atlas, /const manifest = buildFieldTerritories\(legacyManifest\)/);
   assert.match(atlas, /loadBundledAtlasTeachingProof/);
 
   // request → worker: the pipeline is chosen from the request's own contract,

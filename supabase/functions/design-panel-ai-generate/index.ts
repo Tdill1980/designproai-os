@@ -49,7 +49,7 @@ import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-ca
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orthographic-restored";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260908.v29-one-field-thirds";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
 // composition and receives NO six-region guide, NO labeled teaching sheet, NO
@@ -581,46 +581,38 @@ function atlasFieldContract(
   bodyClass: string,
   noseEdge: AtlasNoseEdge,
   hasBrandName: boolean,
-  panels: Array<{ label?: unknown; normalized?: AtlasNormalizedRect }>,
+  _panels: Array<{ label?: unknown; normalized?: AtlasNormalizedRect }>,
 ): string {
-  if (!Array.isArray(panels) || panels.length !== 6) {
-    throw new Error(`atlas_field_geometry_required:${Array.isArray(panels) ? panels.length : "none"}`);
-  }
-  const f = (n: number) => n.toFixed(4);
-  const rows = panels
-    .map((panel) => {
-      const n = panel.normalized;
-      if (!n) throw new Error("atlas_field_geometry_required:normalized");
-      const x0 = Number(n.x);
-      const y0 = Number(n.y);
-      return {
-        x0,
-        y0,
-        x1: x0 + Number(n.width),
-        y1: y0 + Number(n.height),
-        sweep: atlasFieldSweep(String(panel.label || ""), noseEdge),
-      };
-    })
-    .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
-    .map((r) => `  ${f(r.x0)} ${f(r.y0)} ${f(r.x1)} ${f(r.y1)}${r.sweep ? `   ${r.sweep}` : ""}`);
-  const lettering = hasBrandName
-    ? "Lettering reads left to right throughout, and the company name appears whole and legible."
-    : "Lettering reads left to right throughout, and any wording the brief calls for appears whole and legible.";
+  // THE v24 THIRDS TAIL. Measured on production, 2026-09-07/08:
+  //
+  //   six-container (v23)   4/4 candidates refused, 15-23% of each zone cut out
+  //   one-field  (v24)      accepted, full chain to WrapBox (GEN 63e6629a)
+  //   one-field  (v26)      accepted, ZERO cutouts, full chain (GEN 6701baf7)
+  //
+  // One-field is what clears the cutout gate. The v26 coordinate table cleared
+  // it too and then got PAINTED into the sheet as a caption bar, so the numbers
+  // are gone and the thirds wording that shipped GEN 63e6629a is back verbatim.
+  // The six rectangles remain on the wire and remain the cutter's authority;
+  // they are simply not shown to the model in a form it can set in type.
+  const focal = hasBrandName
+    ? "the company name whole and legible inside it"
+    : "its focal treatment whole inside it";
+  const focalToo = hasBrandName
+    ? "the company name whole and legible inside it too"
+    : "its focal treatment whole inside it too";
+  const lowerMark = hasBrandName
+    ? "The brand mark may appear here once, compact and whole; every other letter lives in the upper two thirds."
+    : "Any lettering the brief asks for lives in the upper two thirds.";
   return [
     "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.",
     `Paint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.`,
     "",
-    "The square is one picture. These areas of it, written as fractions of the image measured from the top-left corner — left, top, right, bottom — must each carry a complete and finished passage of that picture:",
+    "Compose it in three equal horizontal thirds that read as one picture:",
+    `• THE UPPER THIRD — the primary hero passage: a complete, wide statement of the design, ${focal}, clear of the third's top and bottom edges. ${atlasSweepPhrase(noseEdge.driver)}`,
+    `• THE MIDDLE THIRD — a second hero passage telling the brand story in full, composed afresh as its own arrangement, ${focalToo}. ${atlasSweepPhrase(noseEdge.passenger)}`,
+    `• THE LOWER THIRD — the supporting register: the same ground, palette and motion at a calmer intensity, secondary motifs, finished artwork everywhere. ${lowerMark}`,
     "",
-    ...rows,
-    "",
-    "Every one of those areas has to read on its own as intentional, finished, commercially valuable artwork: real subject matter, real depth, real movement, worth what the customer paid. Not one of them may become empty backdrop, filler, or the quiet leftover of a composition that happens elsewhere.",
-    "",
-    "They are not separate pictures. The ground, palette, texture, lighting and motion run continuously through the whole square and straight across every join between them, so they read as passages of one design and the joins are invisible.",
-    "",
-    `Nothing that has to be read or recognised may run from one of those areas into another: every letter, word, mark and focal subject sits wholly inside a single area and well clear of its four edges. ${lettering}`,
-    "",
-    "Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+    "Lettering reads left to right throughout. Each focal element sits inside one third; the ground and its motion flow through all three continuously, so the transitions are invisible. Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
   ].join("\n");
 }
 
@@ -2560,7 +2552,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // the delivered sheet to those same zones, so it cannot contribute a pixel
     // to a panel. It conditions layout only.
     parts.push({
-      text: "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Fill its six regions with the NEW customer design from the canonical target vehicle and brief above. Return flat printable rectangles only; never return a vehicle image.",
+      text: "CURRENT TARGET GUIDE — this final neutral mask alone controls the requested output layout. Copy its six plain rectangular masks exactly as the only six output shapes. Each output region must have four straight edges, four square corners, and continuous customer artwork covering every pixel through every edge and corner. Output exactly six filled rectangular prints separated by dark gutters. Put the NEW customer design from the canonical target and brief inside them. No labels or other content outside the six rectangles.",
     });
     await downloadPart(body.guideStoragePath, "image/png");
     // Legacy inline path for callers that still send bytes (harness/tests);
