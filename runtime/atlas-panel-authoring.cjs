@@ -75,7 +75,7 @@ const {
 } = require("./atlas-master-qc.cjs");
 
 const PANEL_AUTHORING_CONTRACT = "designpro.atlas-panel-authoring.v1";
-const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v2-atlas-dna";
+const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v3-multi-turn";
 
 /**
  * The owner's cascade. Driver leads because Driver is the shot the customer
@@ -207,6 +207,11 @@ async function finishPanel(panel, {
   // one is composed knowing what the complete design looks like rather than
   // only its own crop (owner ruling 2026-09-08).
   atlasReferenceBytes = null,
+  // The conversation so far, as `{ role, parts }` turns carrying text and
+  // Gemini's encrypted thought signatures — never images. `finishPanel`
+  // appends this pass's own model turn to it on success, so the caller can
+  // hand a growing chain to the next surface. See THOUGHT SIGNATURES below.
+  priorTurns = [],
   creativeContext = "",
   store,
   callEdge,
@@ -276,7 +281,18 @@ async function finishPanel(panel, {
   }
 
   let lastReason = "not_attempted";
+  // THOUGHT SIGNATURES ARE ADDITIVE, AND THE FIRST THING DROPPED.
+  //
+  // Passing the chain back is the documented practice for multi-turn image
+  // editing, and it is the right default here. But it is also the newest and
+  // least-exercised thing in this request: signature acceptance rules are the
+  // provider's, not ours, and a malformed history would fail EVERY surface
+  // identically rather than one of them. So the second attempt deliberately
+  // drops the history and asks again with nothing but the images. A run
+  // therefore degrades to the previous, measured behaviour instead of failing.
+  let chain = Array.isArray(priorTurns) ? priorTurns : [];
   for (let attempt = 1; attempt <= PANEL_FINISH_ATTEMPTS; attempt += 1) {
+    const sendChain = attempt === 1 ? chain : [];
     let candidate;
     try {
       candidate = await callEdge({
@@ -288,10 +304,14 @@ async function finishPanel(panel, {
         atlasReferenceStoragePath: staged.atlas?.storagePath || null,
         atlasReferenceHash: staged.atlas?.contentHash || null,
         neighbours: staged.neighbours,
+        priorTurns: sendChain,
         creativeContext,
       });
     } catch (cause) {
       lastReason = `edge_failed:${String(cause?.message || cause).slice(0, 140)}`;
+      if (attempt === 1 && sendChain.length > 0) {
+        logger(`atlas-panel ${panel.surfaceKey}: retrying without the reasoning chain (${lastReason})`);
+      }
       continue;
     }
 
@@ -312,6 +332,21 @@ async function finishPanel(panel, {
         holeRatioAfter: verdict.afterHoles,
         neighbourSurfaces: staged.neighbours.map((n) => n.surfaceKey),
         atlasReferenceApplied: Boolean(staged.atlas),
+        // THE CHAIN THE NEXT SURFACE SHOULD BE HANDED.
+        //
+        // The user turn is a one-line note rather than a replay of the whole
+        // instruction: the point of the history is the model's own reasoning,
+        // carried by the signature on its turn, not a second copy of prompts
+        // it has already answered. If this attempt fell back to no history,
+        // the chain restarts from here rather than pretending continuity that
+        // the provider never acknowledged.
+        nextTurns: [
+          ...sendChain,
+          { role: "user", parts: [{ text: `Finish the ${SURFACE_LABELS[panel.surfaceKey] || panel.surfaceKey} sheet of this set.` }] },
+          ...(candidate?.modelTurn?.parts?.length ? [candidate.modelTurn] : []),
+        ],
+        thoughtSignatureCount: Number(candidate?.thoughtSignatureCount || 0),
+        priorTurnsApplied: sendChain.length,
       });
     }
     lastReason = verdict.reason;

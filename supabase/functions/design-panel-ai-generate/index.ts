@@ -2719,7 +2719,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
 // FAILURE IS NEVER FATAL. The caller falls back to the crop it already has,
 // so this path can only raise the floor — it can never lose a run that would
 // have shipped without it.
-const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v2-atlas-dna";
+const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v3-multi-turn";
 const ATLAS_PANEL_AUTHORING_MODEL = "gemini-3-pro-image";
 /**
  * Every already-finished sheet may be attached (owner ruling 2026-09-08:
@@ -2736,6 +2736,12 @@ const ATLAS_PANEL_MAX_NEIGHBOURS = 5;
  * rather than assumed.
  */
 const ATLAS_PANEL_MAX_REFERENCE_ASSETS = 14;
+/**
+ * Five, because the cascade is six surfaces and the sixth is the one asking.
+ * Each prior turn is a short text plus an encrypted signature — kilobytes, not
+ * megabytes, because images never travel in history.
+ */
+const ATLAS_PANEL_MAX_PRIOR_TURNS = 10;
 const ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 
 /**
@@ -2861,6 +2867,45 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
     if (referenceAssetCount > ATLAS_PANEL_MAX_REFERENCE_ASSETS) {
       throw new Error(`atlas_panel_reference_budget_exceeded:${referenceAssetCount}`);
     }
+    // ── THOUGHT SIGNATURES: THE CASCADE IS ONE CONVERSATION ──────────────────
+    //
+    // Gemini 3 returns encrypted representations of its own reasoning, and the
+    // documented guidance for multi-turn image editing is to pass them back so
+    // the chain of visual reasoning survives a stateless backend. Six surfaces
+    // finished one after another IS that workflow: the model that just drew the
+    // driver flank should still be holding why it drew it when it draws the
+    // hood.
+    //
+    // WHAT TRAVELS, AND WHAT DOES NOT. Prior turns carry text and signatures
+    // only — never image data. The sheets themselves are already attached as
+    // explicit references with declared roles, so replaying them here would
+    // duplicate megabytes to say something the <inputs> block says better. The
+    // caller is responsible for retrying without prior turns if a request
+    // carrying them is rejected; see `callAtlasPanelEdge`.
+    const priorTurnsIn = Array.isArray(body.priorTurns) ? (body.priorTurns as Array<Record<string, unknown>>) : [];
+    if (priorTurnsIn.length > ATLAS_PANEL_MAX_PRIOR_TURNS) {
+      throw new Error(`atlas_panel_prior_turn_budget_exceeded:${priorTurnsIn.length}`);
+    }
+    const priorTurns = priorTurnsIn.map((turn) => {
+      const role = String(turn.role || "");
+      if (role !== "user" && role !== "model") {
+        throw new Error(`atlas_panel_prior_turn_role_invalid:${role.slice(0, 40)}`);
+      }
+      const turnParts = Array.isArray(turn.parts) ? (turn.parts as Array<Record<string, unknown>>) : [];
+      const sanitised = turnParts.map((part) => {
+        const out: Record<string, unknown> = {};
+        if (typeof part.text === "string") out.text = part.text.slice(0, 4000);
+        if (typeof part.thoughtSignature === "string") out.thoughtSignature = part.thoughtSignature;
+        // An inlineData part here would be a replayed image. Refused rather
+        // than dropped: silently shrinking a caller's history would make a
+        // budget bug invisible.
+        if (part.inlineData) throw new Error("atlas_panel_prior_turn_carries_image");
+        return out;
+      }).filter((part) => Object.keys(part).length > 0);
+      if (sanitised.length === 0) throw new Error("atlas_panel_prior_turn_empty");
+      return { role, parts: sanitised };
+    });
+
     const neighbourLabels = neighboursIn.map((n) => String(n.surfaceLabel || n.surfaceKey || "").toUpperCase());
     const prompt = atlasPanelFinishPrompt(
       surfaceLabel,
@@ -2893,7 +2938,7 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
     // NO aspectRatio — see the header. An edit follows its input's proportion;
     // asking for one from the menu would letterbox or distort every flank.
     const modelRequest = JSON.stringify({
-      contents: [{ role: "user", parts }],
+      contents: [...priorTurns, { role: "user", parts }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
         imageConfig: { imageSize: "4K" },
@@ -2947,6 +2992,24 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
         neighbourCount: neighboursIn.length,
         neighbourHashes,
         sourcePanelHash,
+        // THE CHAIN, HANDED BACK. The caller appends this as the model turn
+        // and sends it with the next surface, so the reasoning that produced
+        // this sheet is still in context when the next one is drawn. Image
+        // data is stripped: the sheets travel as declared references instead.
+        priorTurnsApplied: priorTurns.length,
+        modelTurn: {
+          role: "model",
+          parts: candidateParts
+            .map((part) => {
+              const out: Record<string, unknown> = {};
+              if (typeof part?.text === "string" && part.text.trim()) out.text = part.text.slice(0, 4000);
+              if (typeof part?.thoughtSignature === "string") out.thoughtSignature = part.thoughtSignature;
+              return out;
+            })
+            .filter((part) => Object.keys(part).length > 0),
+        },
+        thoughtSignatureCount: candidateParts
+          .filter((part) => typeof part?.thoughtSignature === "string").length,
         promptChars: prompt.length,
         panelStoragePath: storagePath,
         panelSha256,

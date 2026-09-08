@@ -2033,6 +2033,11 @@ function atlasPanelFinisher({
     String(input?.brandColors || "").trim(),
   ].filter(Boolean).join(" · ").slice(0, 600);
 
+  // The reasoning chain, accumulated across the six surfaces. It holds text
+  // and Gemini's encrypted thought signatures only -- never image data -- so
+  // it stays kilobytes while the sheets travel as declared references.
+  let reasoningChain = [];
+
   return async function finishOnePanel(panel, finishedSoFar) {
     const wanted = PANEL_NEIGHBOURS[panel.surfaceKey] || [];
     const byKey = new Map(finishedSoFar.map((done) => [done.surfaceKey, done]));
@@ -2048,6 +2053,11 @@ function atlasPanelFinisher({
       // siblings would let the set drift away from the design Call 1 actually
       // authored, which is the one thing the master exists to prevent.
       atlasReferenceBytes: surfaceSourceBytes,
+      // MULTI-TURN, NOT SIX ISOLATED TRANSACTIONS. Gemini 3's documented
+      // practice for chained image editing is to carry its own thought
+      // signatures forward, so the model that drew the flanks is still holding
+      // why it drew them when it reaches the hood.
+      priorTurns: reasoningChain,
       creativeContext,
       store,
       logger: (message) => logger?.info?.("flat_atlas_panel_finish", { generationId, message }),
@@ -2060,8 +2070,18 @@ function atlasPanelFinisher({
             payload.panelSha256,
             payload.panelBytes,
           ),
+          modelTurn: payload.modelTurn || null,
+          thoughtSignatureCount: payload.thoughtSignatureCount || 0,
         };
       },
+    }).then((finish) => {
+      // Advance the chain only on an accepted sheet. A refused pass leaves the
+      // history where it was rather than recording reasoning behind bytes the
+      // run then threw away.
+      if (finish?.applied === true && Array.isArray(finish.nextTurns)) {
+        reasoningChain = finish.nextTurns;
+      }
+      return finish;
     });
   };
 }

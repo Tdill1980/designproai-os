@@ -219,6 +219,71 @@ test("every failure path returns the crop unchanged — this can never lose a ru
   assert.match(refused.reason, /^edge_failed:/);
 });
 
+test("the cascade is ONE conversation — thought signatures carry forward", async () => {
+  // Gemini 3's documented practice for chained image editing. Six surfaces
+  // finished in sequence is that workflow: the model that drew the flanks
+  // should still be holding why when it reaches the hood.
+  const bytes = await solid(600, 300);
+  const seen = [];
+  const finish = await authoring.finishPanel(panelFixture(bytes, { width: 600, height: 300 }), {
+    priorTurns: [{ role: "user", parts: [{ text: "earlier" }] }],
+    store: { putImmutableBytes: async () => {} },
+    callEdge: async (request) => {
+      seen.push(request.priorTurns);
+      return {
+        bytes: await solid(600, 300),
+        modelTurn: { role: "model", parts: [{ thoughtSignature: "sig-abc" }] },
+        thoughtSignatureCount: 1,
+      };
+    },
+  });
+  assert.equal(finish.applied, true, finish.reason);
+  assert.deepEqual(seen[0], [{ role: "user", parts: [{ text: "earlier" }] }]);
+  // The chain handed onward: what came in, this pass's own user note, and the
+  // model turn carrying the signature.
+  assert.equal(finish.nextTurns.length, 3);
+  assert.equal(finish.nextTurns[0].parts[0].text, "earlier");
+  assert.equal(finish.nextTurns[1].role, "user");
+  assert.deepEqual(finish.nextTurns[2], { role: "model", parts: [{ thoughtSignature: "sig-abc" }] });
+  assert.equal(finish.thoughtSignatureCount, 1);
+  // The runtime threads it across surfaces and only advances on acceptance.
+  assert.match(runtimeSrc, /priorTurns: reasoningChain,/);
+  assert.match(runtimeSrc, /reasoningChain = finish\.nextTurns;/);
+});
+
+test("a rejected reasoning chain degrades to images only, never to a lost panel", async () => {
+  // Signature acceptance rules are the provider's, not ours, and a malformed
+  // history would fail EVERY surface identically. So attempt 2 drops it.
+  const bytes = await solid(600, 300);
+  const sent = [];
+  const finish = await authoring.finishPanel(panelFixture(bytes, { width: 600, height: 300 }), {
+    priorTurns: [{ role: "model", parts: [{ thoughtSignature: "stale" }] }],
+    store: { putImmutableBytes: async () => {} },
+    callEdge: async (request) => {
+      sent.push(request.priorTurns.length);
+      if (request.priorTurns.length > 0) throw new Error("atlas_panel_prior_turn_role_invalid");
+      return { bytes: await solid(600, 300), modelTurn: null, thoughtSignatureCount: 0 };
+    },
+  });
+  assert.deepEqual(sent, [1, 0], "the second attempt must drop the history");
+  assert.equal(finish.applied, true, "the panel still lands without the chain");
+  // Continuity was never acknowledged, so the chain restarts rather than
+  // claiming a lineage the provider did not confirm.
+  assert.equal(finish.priorTurnsApplied, 0);
+});
+
+test("prior turns carry reasoning, never replayed images", () => {
+  const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));
+  assert.match(handler, /atlas_panel_prior_turn_carries_image/);
+  assert.match(handler, /atlas_panel_prior_turn_role_invalid/);
+  assert.match(handler, /atlas_panel_prior_turn_budget_exceeded/);
+  // Refused rather than silently dropped: quietly shrinking a caller's history
+  // would make a budget bug invisible.
+  const sanitiser = handler.slice(handler.indexOf("const priorTurns = priorTurnsIn.map"));
+  assert.match(sanitiser.slice(0, 900), /if \(part\.inlineData\) throw new Error/);
+  assert.match(handler, /contents: \[\.\.\.priorTurns, \{ role: "user", parts \}\]/);
+});
+
 test("holeRatio uses the SAME hole predicate as the master gate", () => {
   // Two definitions of "hole" would let this module accept a sheet the gate
   // convicts. CLAUDE.md makes the same point about the deterministic fill.
@@ -361,8 +426,8 @@ test("the declared input order is the order the handler actually attaches", () =
 });
 
 test("the edge and the runtime finish against the same pinned contract", () => {
-  assert.match(edgeSrc, /ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish\.20260908\.v2-atlas-dna"/);
-  assert.equal(authoring.PANEL_AUTHORING_PROMPT_VERSION, "atlas-panel-finish.20260908.v2-atlas-dna");
+  assert.match(edgeSrc, /ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish\.20260908\.v3-multi-turn"/);
+  assert.equal(authoring.PANEL_AUTHORING_PROMPT_VERSION, "atlas-panel-finish.20260908.v3-multi-turn");
   // The runtime and the function ship through DIFFERENT workflows, so a
   // runtime-first deploy must refuse rather than be answered by the old edge.
   assert.match(runtimeSrc, /flat_atlas_panel_edge_prompt_version_mismatch/);
