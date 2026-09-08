@@ -95,17 +95,69 @@ test("PASSENGER IS AUTHORED FROM DRIVER, NEVER MIRRORED FROM IT", () => {
     "the finishing module must never mirror one surface into another");
 });
 
-test("the cascade shows each surface the sheets that most constrain it", () => {
+test("EVERY surface is shown every sheet already finished before it", () => {
+  // Owner ruling 2026-09-08: "make sure each side is getting Atlas example as
+  // well as the other sides". The cascade is therefore cumulative -- each
+  // surface sees ALL of its predecessors, not a hand-picked subset.
   assert.deepEqual(authoring.PANEL_CASCADE_ORDER,
     ["driver", "passenger", "hood", "roof", "front", "rear"]);
-  // Both flanks reach every centre surface: they carry the design's identity,
-  // so the centre four are composed against them rather than against each other.
-  for (const centre of ["hood", "roof", "front", "rear"]) {
-    const seen = authoring.PANEL_NEIGHBOURS[centre];
-    assert.ok(seen.includes("driver") && seen.includes("passenger"),
-      `${centre} must be shown both flanks`);
-    assert.ok(seen.length <= 3, `${centre} must stay inside the model-request budget`);
+  authoring.PANEL_CASCADE_ORDER.forEach((surfaceKey, index) => {
+    assert.deepEqual(
+      authoring.PANEL_NEIGHBOURS[surfaceKey],
+      authoring.PANEL_CASCADE_ORDER.slice(0, index),
+      `${surfaceKey} must be shown every sheet finished before it`,
+    );
+  });
+  // Rear is last and therefore the widest request: five siblings, plus the
+  // A.T.L.A.S. and the subject sheet, is seven assets against a ceiling of 14.
+  assert.equal(authoring.PANEL_NEIGHBOURS.rear.length, 5);
+  assert.match(edgeSrc, /ATLAS_PANEL_MAX_NEIGHBOURS = 5/);
+  assert.match(edgeSrc, /ATLAS_PANEL_MAX_REFERENCE_ASSETS = 14/);
+  assert.match(edgeSrc, /atlas_panel_reference_budget_exceeded/);
+});
+
+test("every surface is shown the whole A.T.L.A.S. as visual DNA", async () => {
+  // The master is what keeps six independently-finished sheets from drifting
+  // away from the design Call 1 actually authored.
+  assert.match(runtimeSrc, /atlasReferenceBytes: surfaceSourceBytes,/);
+  const staged = [];
+  const bytes = await solid(600, 300);
+  await authoring.finishPanel(panelFixture(bytes, { width: 600, height: 300 }), {
+    atlasReferenceBytes: await solid(4096, 4096),
+    neighbours: [],
+    store: { putImmutableBytes: async ({ storagePath }) => { staged.push(storagePath); } },
+    callEdge: async (request) => {
+      assert.ok(request.atlasReferenceStoragePath, "the A.T.L.A.S. must reach the request");
+      assert.match(request.atlasReferenceStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.jpg$/);
+      throw new Error("stop here");
+    },
+  });
+  assert.equal(staged.filter((p) => p.endsWith(".png")).length, 1, "the subject sheet stays lossless PNG");
+  assert.ok(staged.some((p) => p.endsWith(".jpg")), "the A.T.L.A.S. reference is downscaled");
+});
+
+test("references travel downscaled; the subject sheet does not", async () => {
+  // Six lossless 4K references would exhaust the ~20MB model-request budget
+  // long before the 14-asset ceiling mattered -- the bytes bind, not the count.
+  const bytes = await solid(600, 300);
+  const uploads = new Map();
+  await authoring.finishPanel(panelFixture(bytes, { width: 600, height: 300 }), {
+    atlasReferenceBytes: await solid(4096, 4096),
+    neighbours: [{ surfaceKey: "driver", bytes: await solid(4096, 980) }],
+    store: {
+      putImmutableBytes: async ({ storagePath, bytes: staged }) => { uploads.set(storagePath, staged); },
+    },
+    callEdge: async () => { throw new Error("stop here"); },
+  });
+  for (const [path, staged] of uploads) {
+    if (!path.endsWith(".jpg")) continue;
+    const meta = await sharp(staged).metadata();
+    assert.ok(Math.max(meta.width, meta.height) <= 1280, `${path} must be downscaled`);
+    assert.ok(staged.length < 900_000, `${path} must be small enough to attach six of`);
   }
+  // The subject sheet is untouched: it is the only image whose pixels are redrawn.
+  const subject = [...uploads].find(([path]) => path.endsWith(".png"))[1];
+  assert.deepEqual(subject, bytes);
 });
 
 test("a candidate returned at the wrong proportion is refused, and the crop wins", async () => {
@@ -238,7 +290,16 @@ test("the edge finishing prompt hands the model no vehicle anatomy", () => {
     edgeSrc.indexOf("async function handleAtlasPanel("),
   );
   assert.ok(tail.length > 0, "the finishing prompt builder must exist");
-  const emitted = tail.slice(tail.indexOf("lines.push"));
+  // Strip the builder's own comments before the sweep. The rule is about what
+  // reaches the MODEL, and a comment explaining why a word is banned is not
+  // the word being handed over -- this repo has convicted its own prose that
+  // way before. Anchoring on a specific call shape is the other trap: this
+  // used to slice from `lines.push`, and silently checked nothing the moment
+  // the builder switched to an array literal.
+  const emitted = tail
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+    .join("\n");
   for (const forbidden of [
     "vehicle", "wheel", "window", "glass", "door", "arch", "bumper", "fender",
     "silhouette", "truck", "van", "car", "panel", "artboard", "template",
@@ -255,9 +316,53 @@ test("the edge finishing prompt hands the model no vehicle anatomy", () => {
   assert.match(emitted, /completed with the artwork that already surrounds it/);
 });
 
+test("the finishing prompt follows the provider's own structured-input guidance", () => {
+  const tail = edgeSrc.slice(
+    edgeSrc.indexOf("function atlasPanelFinishPrompt("),
+    edgeSrc.indexOf("async function handleAtlasPanel("),
+  );
+  // Instructions separated from visual inputs with explicit markup, and every
+  // attached asset declared with the role it plays.
+  for (const tag of ["<task>", "<inputs>", "<subject>", "<instructions>", "<identity>"]) {
+    assert.ok(tail.includes(tag), `the prompt must carry the ${tag} section`);
+  }
+  assert.match(tail, /role="subject"/);
+  assert.match(tail, /role="visual-dna"/);
+  assert.match(tail, /role="sibling-sheet"/);
+  // Ask for an image explicitly, or a multimodal model may answer with text.
+  assert.match(tail, /Generate an image/);
+  // Legible typography is a native capability worth directing at.
+  assert.match(tail, /same words, same spelling, same order/);
+  assert.match(tail, /upright, whole, sharp/);
+  // Say what the output IS, never what to avoid.
+  assert.doesNotMatch(tail.slice(tail.indexOf("<task>")), /\bdo not draw\b|\bavoid\b|\bnever draw\b/i);
+});
+
+test("the declared input order is the order the handler actually attaches", () => {
+  // The <inputs> block names subject → A.T.L.A.S. → siblings. If the handler
+  // pushes them in any other order, every role description points at the wrong
+  // image and nothing would fail loudly.
+  const tail = edgeSrc.slice(
+    edgeSrc.indexOf("function atlasPanelFinishPrompt("),
+    edgeSrc.indexOf("async function handleAtlasPanel("),
+  );
+  const declared = ["role=\"subject\"", "role=\"visual-dna\"", "role=\"sibling-sheet\""]
+    .map((role) => tail.indexOf(role));
+  assert.ok(declared[0] < declared[1] && declared[1] < declared[2], "declared order");
+
+  const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));
+  const attached = [
+    handler.indexOf("attach(body.sourcePanelStoragePath"),
+    handler.indexOf("await attach(atlasReferencePath"),
+    handler.indexOf("for (const neighbour of neighboursIn)"),
+  ];
+  assert.ok(attached.every((at) => at > 0), "all three attachment sites must exist");
+  assert.ok(attached[0] < attached[1] && attached[1] < attached[2], "attachment order must match");
+});
+
 test("the edge and the runtime finish against the same pinned contract", () => {
-  assert.match(edgeSrc, /ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish\.20260908\.v1"/);
-  assert.equal(authoring.PANEL_AUTHORING_PROMPT_VERSION, "atlas-panel-finish.20260908.v1");
+  assert.match(edgeSrc, /ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish\.20260908\.v2-atlas-dna"/);
+  assert.equal(authoring.PANEL_AUTHORING_PROMPT_VERSION, "atlas-panel-finish.20260908.v2-atlas-dna");
   // The runtime and the function ship through DIFFERENT workflows, so a
   // runtime-first deploy must refuse rather than be answered by the old edge.
   assert.match(runtimeSrc, /flat_atlas_panel_edge_prompt_version_mismatch/);

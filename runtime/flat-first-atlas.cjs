@@ -2018,7 +2018,9 @@ function atlasStoragePath({ tenantKey, generationId, revisionSequence = 1, kind,
  * `DESIGNPRO_STANDARD_TRANSPORT` uses (RULE 0.16) — a flag must never be able
  * to switch a customer path on by accident.
  */
-function atlasPanelFinisher({ input, store, supabase, ownerId, logger, generationId } = {}) {
+function atlasPanelFinisher({
+  input, store, supabase, ownerId, logger, generationId, surfaceSourceBytes,
+} = {}) {
   if (String(process.env.DESIGNPRO_ATLAS_PANEL_FINISH || "").trim().toLowerCase() !== "on") {
     return null;
   }
@@ -2040,6 +2042,12 @@ function atlasPanelFinisher({ input, store, supabase, ownerId, logger, generatio
     const neighbours = wanted.map((key) => byKey.get(key)).filter(Boolean);
     return finishPanelSurface(panel, {
       neighbours,
+      // THE WHOLE A.T.L.A.S., ON EVERY SURFACE (owner ruling 2026-09-08). The
+      // accepted sheet is the design's visual DNA -- palette, motif family,
+      // line weight, texture. Showing each surface only its own crop and its
+      // siblings would let the set drift away from the design Call 1 actually
+      // authored, which is the one thing the master exists to prevent.
+      atlasReferenceBytes: surfaceSourceBytes,
       creativeContext,
       store,
       logger: (message) => logger?.info?.("flat_atlas_panel_finish", { generationId, message }),
@@ -3052,6 +3060,8 @@ async function generateOrReuseFlatAtlas(options) {
     cutCallOnePanels(surfaceSourceBytes, manifest, acceptedMasterHash, {
       finishPanel: atlasPanelFinisher({
         input, store, supabase, ownerId: input?.ownerId, logger, generationId,
+        // The accepted sheet, exactly as the panels were cut from it.
+        surfaceSourceBytes,
       }),
       onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
         "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },

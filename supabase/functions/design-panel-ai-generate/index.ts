@@ -2719,9 +2719,23 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
 // FAILURE IS NEVER FATAL. The caller falls back to the crop it already has,
 // so this path can only raise the floor — it can never lose a run that would
 // have shipped without it.
-const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v1";
+const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v2-atlas-dna";
 const ATLAS_PANEL_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_PANEL_MAX_NEIGHBOURS = 3;
+/**
+ * Every already-finished sheet may be attached (owner ruling 2026-09-08:
+ * *"make sure each side is getting Atlas example as well as the other sides"*).
+ * Five is the ceiling arithmetic allows — Rear, last in the cascade, has five
+ * finished siblings — and it sits inside the model's 14-asset reference budget
+ * alongside the master and the subject sheet.
+ */
+const ATLAS_PANEL_MAX_NEIGHBOURS = 5;
+/**
+ * The model's documented reference-asset ceiling. The byte cap below is the
+ * binding constraint in practice — references travel downscaled for exactly
+ * that reason — but a count this far under the limit should still be asserted
+ * rather than assumed.
+ */
+const ATLAS_PANEL_MAX_REFERENCE_ASSETS = 14;
 const ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 
 /**
@@ -2736,35 +2750,57 @@ function atlasPanelFinishPrompt(
   surfaceLabel: string,
   neighbourLabels: string[],
   creativeContext: string,
+  hasAtlasReference: boolean,
 ): string {
-  const lines: string[] = [];
-  lines.push("FLAT PRINTED SHEET — FINISHING PASS.");
-  lines.push("");
-  lines.push(
-    "The first image is one flat printed graphic: a single continuous sheet of printed media, the artwork by itself, before anything is cut or applied to anything. It is not a picture of an object and it has no parts.",
-  );
-  lines.push("");
-  lines.push("Return THIS SAME ARTWORK as one complete, finished sheet:");
-  lines.push("• the same composition, the same palette, the same motifs, in the same places");
-  lines.push("• every word of lettering exactly as it reads here — same words, same spelling, upright, whole, and fully inside the sheet");
-  lines.push("• finished artwork over the entire rectangle, corner to corner, running off all four edges");
-  lines.push("• any area that arrives blank, flat, unresolved or interrupted is completed with the artwork that already surrounds it, so the design reads as continuous everywhere");
-  lines.push("");
-  lines.push("Add nothing and remove nothing: no new subjects, no borders, no margins, no frame, no captions, no labels, no annotation, no signature.");
-  if (neighbourLabels.length > 0) {
-    lines.push("");
-    lines.push(
-      `The remaining ${neighbourLabels.length === 1 ? "image is another sheet" : "images are other sheets"} of the same printed set, already finished. Carry the same ground, palette, motion and motif family across, so the sheets read as one continuous design when they are laid side by side. Do not copy their layout and do not repeat their lettering.`,
-    );
+  // STRUCTURED TAGS, IN ATTACHMENT ORDER.
+  //
+  // The provider's own guidance is to separate instructions from visual inputs
+  // with explicit markup and to name what each asset is for. Every attached
+  // image is declared here in the exact order `handleAtlasPanel` pushes it, so
+  // an ordering change breaks the description loudly instead of silently
+  // re-pointing the instruction at the wrong asset.
+  const inputs: string[] = [];
+  inputs.push(`  <sheet role="subject">The sheet to finish and return. This one, and only this one, is what you are drawing.</sheet>`);
+  if (hasAtlasReference) {
+    inputs.push(`  <reference role="visual-dna">The complete design this sheet belongs to, all of its sheets laid out together. It is the authority for palette, motif family, line weight, texture and overall feel. Read it for consistency. Do not redraw it and do not copy its layout.</reference>`);
   }
-  if (creativeContext) {
-    lines.push("");
-    lines.push(`DESIGN CONTEXT (for judgement only — it does not change what is drawn): ${creativeContext}`);
+  for (const label of neighbourLabels) {
+    inputs.push(`  <reference role="sibling-sheet" id="${label}">Another sheet from the same set, already finished. Match its ground, palette and motion so the set reads as one continuous design laid side by side. Do not copy its layout and do not repeat its lettering.</reference>`);
   }
-  // Named last and only in metadata terms. The label never becomes a pixel.
-  lines.push("");
-  lines.push(`This sheet is internally identified as ${surfaceLabel}. That identity is metadata: it must not appear anywhere in the artwork.`);
-  return lines.join("\n");
+
+  return [
+    "<task>",
+    "Generate an image: one flat printed sheet, finished.",
+    "</task>",
+    "",
+    "<inputs>",
+    ...inputs,
+    "</inputs>",
+    "",
+    "<subject>",
+    "The subject sheet is one flat printed graphic — a single continuous sheet of printed media, the artwork by itself, before anything is cut or applied to anything. It is not a picture of an object and it has no parts.",
+    "</subject>",
+    "",
+    "<instructions>",
+    "Generate an image of THAT SAME ARTWORK as one complete, finished sheet:",
+    "• the same composition, the same palette, the same motifs, in the same places",
+    "• every word of lettering exactly as it reads there — same words, same spelling, same order — set upright, whole, sharp, and fully inside the sheet",
+    "• finished artwork over the entire rectangle, corner to corner, running off all four edges",
+    "• any area that arrives blank, flat, unresolved or interrupted is completed with the artwork that already surrounds it, so the design reads as continuous everywhere",
+    "• the same proportion as the subject sheet: return it at the shape it arrived in",
+    "",
+    "Add nothing and remove nothing: no new subjects, no borders, no margins, no frame, no captions, no labels, no annotation, no signature.",
+    "</instructions>",
+    ...(creativeContext
+      ? ["", "<context>", `Whose design this is, for judgement only — it does not change what is drawn: ${creativeContext}`, "</context>"]
+      : []),
+    "",
+    "<identity>",
+    // Metadata only, and stated as such. The label must never become a pixel:
+    // an earlier release had surface names painted onto the artwork.
+    `This sheet is internally identified as ${surfaceLabel}. That identity is metadata and must not appear anywhere in the image.`,
+    "</identity>",
+  ].join("\n");
 }
 
 async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response> {
@@ -2792,8 +2828,14 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
     // own name is refused rather than sent to the model.
     const attach = async (path: unknown, expectedHash?: unknown) => {
       const key = String(path || "").trim();
-      const match = key.match(/^atlas-call1-inputs\/([0-9a-f]{64})\.png$/);
+      // JPEG is allowed because REFERENCES travel downscaled — the master and
+      // the sibling sheets are there for palette and motif continuity, not for
+      // pixels, and six lossless 4K references would blow the request budget
+      // long before the asset count mattered. The SUBJECT sheet is always PNG
+      // at full resolution; it is the only image whose pixels are copied.
+      const match = key.match(/^atlas-call1-inputs\/([0-9a-f]{64})\.(png|jpg)$/);
       if (!match) throw new Error(`atlas_panel_input_path_invalid:${key.slice(0, 160)}`);
+      const mimeType = match[2] === "jpg" ? "image/jpeg" : "image/png";
       const { data, error } = await svc.storage.from("wrap-files").download(key);
       if (error || !data) throw new Error(`atlas_panel_input_download_failed:${key}:${error?.message || "missing"}`);
       const bytes = new Uint8Array(await data.arrayBuffer());
@@ -2806,7 +2848,7 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
       for (let i = 0; i < bytes.length; i += CHUNK) {
         binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
       }
-      parts.push({ inlineData: { mimeType: "image/png", data: btoa(binary) } });
+      parts.push({ inlineData: { mimeType, data: btoa(binary) } });
       return actual;
     };
 
@@ -2814,16 +2856,32 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
     if (neighboursIn.length > ATLAS_PANEL_MAX_NEIGHBOURS) {
       throw new Error(`atlas_panel_neighbour_budget_exceeded:${neighboursIn.length}`);
     }
+    const atlasReferencePath = String(body.atlasReferenceStoragePath || "").trim();
+    const referenceAssetCount = 1 + (atlasReferencePath ? 1 : 0) + neighboursIn.length;
+    if (referenceAssetCount > ATLAS_PANEL_MAX_REFERENCE_ASSETS) {
+      throw new Error(`atlas_panel_reference_budget_exceeded:${referenceAssetCount}`);
+    }
     const neighbourLabels = neighboursIn.map((n) => String(n.surfaceLabel || n.surfaceKey || "").toUpperCase());
     const prompt = atlasPanelFinishPrompt(
       surfaceLabel,
       neighbourLabels,
       String(body.creativeContext || "").trim().slice(0, 600),
+      Boolean(atlasReferencePath),
     );
     parts.push({ text: prompt });
-    // THE SUBJECT SHEET IS FIRST. The prompt says "the first image"; an order
-    // change here silently re-points the whole instruction at a neighbour.
+    // ATTACHMENT ORDER IS THE CONTRACT: subject → A.T.L.A.S. → siblings.
+    //
+    // `atlasPanelFinishPrompt` declares the assets in exactly this order inside
+    // its <inputs> block, so reordering here re-points every role description
+    // at the wrong image. The subject is first because it is the only asset
+    // whose pixels are being redrawn.
     const sourcePanelHash = await attach(body.sourcePanelStoragePath, body.sourcePanelHash);
+    // THE WHOLE A.T.L.A.S. AS VISUAL DNA (owner ruling 2026-09-08). Each sheet
+    // is composed knowing what the complete design looks like, not only what
+    // its own crop and its siblings look like.
+    const atlasReferenceHash = atlasReferencePath
+      ? await attach(atlasReferencePath, body.atlasReferenceHash)
+      : null;
     const neighbourHashes: string[] = [];
     for (const neighbour of neighboursIn) {
       neighbourHashes.push(await attach(neighbour.storagePath, neighbour.contentHash));
@@ -2883,7 +2941,9 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
         surfaceKey,
         imageRequestCount: 1,
         modelRequestByteSize,
-        modelInputImageCount: 1 + neighboursIn.length,
+        modelInputImageCount: referenceAssetCount,
+        atlasReferenceAttached: Boolean(atlasReferenceHash),
+        atlasReferenceHash,
         neighbourCount: neighboursIn.length,
         neighbourHashes,
         sourcePanelHash,

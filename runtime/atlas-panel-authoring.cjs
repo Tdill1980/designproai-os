@@ -75,7 +75,7 @@ const {
 } = require("./atlas-master-qc.cjs");
 
 const PANEL_AUTHORING_CONTRACT = "designpro.atlas-panel-authoring.v1";
-const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v1";
+const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v2-atlas-dna";
 
 /**
  * The owner's cascade. Driver leads because Driver is the shot the customer
@@ -86,19 +86,44 @@ const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v1";
 const PANEL_CASCADE_ORDER = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
 
 /**
- * Which already-finished sheets each surface is shown. Capped at three: the
- * request carries full-resolution PNGs, and the edge refuses a model request
- * over ~20MB. Driver and Passenger appear in every centre surface's set
- * because they are the flanks the centre has to agree with.
+ * Which already-finished sheets each surface is shown: ALL of them.
+ *
+ * Owner ruling 2026-09-08 — *"make sure each side is getting Atlas example as
+ * well as the other sides"* — so the cascade is cumulative rather than a
+ * hand-picked subset, and Rear, last in line, is composed against all five of
+ * its siblings plus the A.T.L.A.S.
+ *
+ * This is affordable only because references travel downscaled (see below).
+ * An earlier draft capped this at three, reasoning about full-resolution PNGs
+ * against a ~20MB request; shrinking the references removed the constraint
+ * that the cap existed to respect.
  */
 const PANEL_NEIGHBOURS = Object.freeze({
   driver: Object.freeze([]),
   passenger: Object.freeze(["driver"]),
   hood: Object.freeze(["driver", "passenger"]),
   roof: Object.freeze(["driver", "passenger", "hood"]),
-  front: Object.freeze(["driver", "passenger", "hood"]),
-  rear: Object.freeze(["driver", "passenger", "roof"]),
+  front: Object.freeze(["driver", "passenger", "hood", "roof"]),
+  rear: Object.freeze(["driver", "passenger", "hood", "roof", "front"]),
 });
+
+/**
+ * REFERENCES TRAVEL DOWNSCALED. The subject sheet does not.
+ *
+ * The A.T.L.A.S. master and every finished sibling are attached to each pass
+ * for palette, motif family and continuity — "visual DNA", in the provider's
+ * own words. None of their pixels are copied, so none of them need to be
+ * lossless: six 4K PNGs would exhaust the ~20MB model-request budget long
+ * before the 14-asset reference ceiling mattered, and that budget, not the
+ * count, is what actually binds. At 1280px on the long edge and JPEG q82 a
+ * reference is a couple of hundred kilobytes and still carries every colour
+ * and shape relationship the pass needs.
+ *
+ * The SUBJECT sheet stays full-resolution PNG. It is the only image whose
+ * pixels are being redrawn, and degrading it would degrade the panel.
+ */
+const REFERENCE_LONG_EDGE_PX = 1280;
+const REFERENCE_JPEG_QUALITY = 82;
 
 const SURFACE_LABELS = Object.freeze({
   driver: "DRIVER SIDE",
@@ -178,6 +203,10 @@ async function holeRatio(bytes) {
  */
 async function finishPanel(panel, {
   neighbours = [],
+  // The whole accepted A.T.L.A.S. sheet. Every surface is shown it, so each
+  // one is composed knowing what the complete design looks like rather than
+  // only its own crop (owner ruling 2026-09-08).
+  atlasReferenceBytes = null,
   creativeContext = "",
   store,
   callEdge,
@@ -212,15 +241,34 @@ async function finishPanel(panel, {
     await store.putImmutableBytes({ storagePath, bytes, contentType: "image/png" });
     return { storagePath, contentHash: hash };
   };
+  /** A reference, downscaled — see REFERENCE_LONG_EDGE_PX. */
+  const stageReference = async (bytes) => {
+    const small = await sharp(bytes, { limitInputPixels: false })
+      .resize({
+        width: REFERENCE_LONG_EDGE_PX,
+        height: REFERENCE_LONG_EDGE_PX,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: REFERENCE_JPEG_QUALITY, chromaSubsampling: "4:4:4" })
+      .toBuffer();
+    const hash = sha256(small);
+    const storagePath = `atlas-call1-inputs/${hash}.jpg`;
+    await store.putImmutableBytes({ storagePath, bytes: small, contentType: "image/jpeg" });
+    return { storagePath, contentHash: hash };
+  };
 
   let staged;
   try {
     staged = {
+      // Full resolution: this is the only image whose pixels are redrawn.
       source: await stage(panel.bytes),
+      atlas: atlasReferenceBytes?.length ? await stageReference(atlasReferenceBytes) : null,
       neighbours: await Promise.all(neighbours.map(async (neighbour) => ({
         surfaceKey: neighbour.surfaceKey,
         surfaceLabel: SURFACE_LABELS[neighbour.surfaceKey] || neighbour.surfaceKey,
-        ...(await stage(neighbour.bytes)),
+        ...(await stageReference(neighbour.bytes)),
       }))),
     };
   } catch (cause) {
@@ -237,6 +285,8 @@ async function finishPanel(panel, {
         surfaceLabel: SURFACE_LABELS[panel.surfaceKey] || panel.surfaceKey,
         sourcePanelStoragePath: staged.source.storagePath,
         sourcePanelHash: staged.source.contentHash,
+        atlasReferenceStoragePath: staged.atlas?.storagePath || null,
+        atlasReferenceHash: staged.atlas?.contentHash || null,
         neighbours: staged.neighbours,
         creativeContext,
       });
@@ -261,6 +311,7 @@ async function finishPanel(panel, {
         holeRatioBefore: beforeHoles,
         holeRatioAfter: verdict.afterHoles,
         neighbourSurfaces: staged.neighbours.map((n) => n.surfaceKey),
+        atlasReferenceApplied: Boolean(staged.atlas),
       });
     }
     lastReason = verdict.reason;
