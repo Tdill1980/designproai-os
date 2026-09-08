@@ -28,7 +28,7 @@
 
 const sharp = require("sharp");
 
-const PROOF_SHEET_CONTRACT = "designpro.call8-2d-production-proof.v1";
+const PROOF_SHEET_CONTRACT = "designpro.call8-2d-production-proof.v2";
 const SHEET_WIDTH = 3300;
 const SHEET_HEIGHT = 2550;
 const MARGIN = 96;
@@ -139,7 +139,10 @@ function normalizedSurfaces(surfaces) {
     const surfaceKey = String(surface?.surfaceKey || surface?.key || "").trim().toLowerCase();
     const widthInches = Number(surface?.widthInches ?? surface?.trimWidthIn);
     const heightInches = Number(surface?.heightInches ?? surface?.trimHeightIn);
-    if (!SURFACE_LABELS[surfaceKey] || !(widthInches > 0 && heightInches > 0)) continue;
+    if (!SURFACE_LABELS[surfaceKey] || !Number.isFinite(widthInches) || !Number.isFinite(heightInches)
+      || !(widthInches > 0 && heightInches > 0) || byKey.has(surfaceKey)) {
+      throw new ProofSheetError("proof_sheet_surface_invalid", "Each canonical GENIE surface needs one finite positive dimension pair");
+    }
     byKey.set(surfaceKey, {
       surfaceKey, widthInches, heightInches,
       printWidthInches: widthInches + BLEED_INCHES * 2,
@@ -197,13 +200,29 @@ function headerMarkup({ vehicleName, designName, finish, totalSqFt }) {
   <line x1="${MARGIN}" y1="${MARGIN + HEADER_HEIGHT - 26}" x2="${SHEET_WIDTH - MARGIN}" y2="${MARGIN + HEADER_HEIGHT - 26}" stroke="${INK}" stroke-width="3"/>`;
 }
 
+function panelBoundaries(placement, surface) {
+  // Port of RestylePro composeProofSheet/place: the image is the complete
+  // print rectangle; trim sits FIVE PHYSICAL INCHES inside each outside edge.
+  const bleedX = placement.w * BLEED_INCHES / surface.printWidthInches;
+  const bleedY = placement.h * BLEED_INCHES / surface.printHeightInches;
+  return {
+    print: { ...placement },
+    trim: { x: placement.x + bleedX, y: placement.y + bleedY, w: placement.w - bleedX * 2, h: placement.h - bleedY * 2 },
+    bleed: { left: bleedX, right: bleedX, top: bleedY, bottom: bleedY },
+    bleedInches: { top: BLEED_INCHES, right: BLEED_INCHES, bottom: BLEED_INCHES, left: BLEED_INCHES },
+  };
+}
+
 function cellMarkup(cell, surface, placement) {
   const parts = [`<rect x="${cell.frame.x + 6}" y="${cell.frame.y + 6}" width="${cell.frame.w - 12}" height="${cell.frame.h - 12}" fill="none" stroke="${RULE}" stroke-width="2"/>`];
   const captionY = cell.frame.y + cell.frame.h - CAPTION_HEIGHT;
   if (surface && placement) {
-    parts.push(horizontalDimension(placement.x, placement.y + placement.h + 24, placement.w, `${inches(surface.widthInches)}"`));
-    parts.push(verticalDimension(placement.x + placement.w + 26, placement.y, placement.h, `${inches(surface.heightInches)}"`));
-    parts.push(`<rect x="${placement.x}" y="${placement.y}" width="${placement.w}" height="${placement.h}" fill="none" stroke="${RULE}" stroke-width="1.5" stroke-dasharray="8 8"/>`);
+    const { trim } = panelBoundaries(placement, surface);
+    parts.push(horizontalDimension(trim.x, placement.y + placement.h + 24, trim.w, `${inches(surface.widthInches)}"`));
+    parts.push(verticalDimension(placement.x + placement.w + 26, trim.y, trim.h, `${inches(surface.heightInches)}"`));
+    parts.push(`<rect x="${placement.x}" y="${placement.y}" width="${placement.w}" height="${placement.h}" fill="none" stroke="${INK}" stroke-width="2"/>`);
+    parts.push(`<rect x="${trim.x}" y="${trim.y}" width="${trim.w}" height="${trim.h}" fill="none" stroke="#ffffff" stroke-width="4" stroke-dasharray="8 8"/>`);
+    parts.push(`<rect x="${trim.x}" y="${trim.y}" width="${trim.w}" height="${trim.h}" fill="none" stroke="${INK}" stroke-width="2" stroke-dasharray="8 8"/>`);
   }
   parts.push(`<text x="${cell.frame.x + cell.frame.w / 2}" y="${captionY + 34}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="${INK}" letter-spacing="2">${escapeXml(cell.label)}</text>`);
   // EVERY CELL IS A PRINTED PANEL NOW, so the "not a printed panel" caption is
@@ -249,7 +268,7 @@ function footerMarkup(surfaces, totalSqFt, { designId, orderNumber, proofBinding
   <text x="${MARGIN + 190}" y="${top + 52}" font-family="Helvetica, Arial, sans-serif" font-size="25" fill="${INK}">${escapeXml(trimRow)}</text>
   <text x="${MARGIN}" y="${top + 100}" font-family="Helvetica, Arial, sans-serif" font-size="25" font-weight="700" fill="${ACCENT}" letter-spacing="1">PRINT SIZE</text>
   <text x="${MARGIN + 190}" y="${top + 100}" font-family="Helvetica, Arial, sans-serif" font-size="25" fill="${ACCENT}">${escapeXml(printRow)}</text>
-  <text x="${MARGIN}" y="${top + 142}" font-family="Helvetica, Arial, sans-serif" font-size="23" fill="${MUTED}">PRINT SIZE INCLUDES 5" BLEED ON ALL FOUR EDGES. CUT ON THE TRIM LINE.</text>
+  <text x="${MARGIN}" y="${top + 142}" font-family="Helvetica, Arial, sans-serif" font-size="23" fill="${MUTED}">SOLID = PRINT EDGE · DASHED = TRIM · 5" BLEED EACH EDGE · INSTALL CUT AREAS RETAIN NONESSENTIAL BACKGROUND ART.</text>
   ${line("Approved By", MARGIN, 620, signatureY)}
   ${line("Signature", MARGIN + 700, 620, signatureY)}
   ${line("Date", MARGIN + 1400, 420, signatureY)}
@@ -299,23 +318,36 @@ async function renderProofSheet({ panels, surfaces, vehicle, designName, finish,
     if (!Buffer.isBuffer(bytes)) {
       throw new ProofSheetError("proof_sheet_panel_missing", `The 2D production proof requires the deterministic ${surfaceKey} panel`);
     }
-    // `.rotate()` applies an EXIF orientation a panel should never carry, and
-    // is kept only so a re-encoded panel cannot arrive sideways. `flatten` is
-    // the white ground: a panel is opaque corner to corner (RULE 0.15), so on a
-    // correct panel it changes nothing.
-    const source = sharp(bytes, { limitInputPixels: false }).rotate().flatten({ background: "#ffffff" });
+    // The panel is already oriented and filled by its canonical author. A
+    // white flatten used to conceal transparent installation cutouts here.
+    // Refuse them: neither this proof nor a production exporter may paint a
+    // missing area and claim it came from the accepted artwork.
+    const source = sharp(bytes, { limitInputPixels: false });
     const metadata = await source.metadata();
-    if (!metadata.width || !metadata.height) {
+    if (!metadata.width || !metadata.height || metadata.format !== "png" || (metadata.orientation && metadata.orientation !== 1)) {
       throw new ProofSheetError("proof_sheet_panel_unreadable", `${surfaceKey} panel is unreadable`);
     }
+    if (metadata.hasAlpha && (await source.stats()).channels[metadata.channels - 1]?.min !== 255) {
+      throw new ProofSheetError("proof_sheet_panel_has_cutouts", `${surfaceKey} must contain continuous nonessential background artwork through installation cut areas; transparent holes require source correction`);
+    }
     const surface = surfaceByKey.get(surfaceKey);
-    const placement = containedPlacement(cell.image, metadata.width, metadata.height);
-    const resized = await source.resize(placement.w, placement.h, { fit: "fill", kernel: "lanczos3" }).png().toBuffer();
-    composites.push({ input: resized, left: placement.x, top: placement.y });
+    const expectedHeight = metadata.width * surface.printHeightInches / surface.printWidthInches;
+    const expectedWidth = metadata.height * surface.printWidthInches / surface.printHeightInches;
+    if (Math.min(Math.abs(metadata.height - expectedHeight), Math.abs(metadata.width - expectedWidth)) > 2) {
+      throw new ProofSheetError("proof_sheet_panel_geometry_mismatch", `${surfaceKey} pixels do not represent its GENIE print aspect; the proof cannot stretch or relabel it`);
+    }
+    const desired = containedPlacement(cell.image, metadata.width, metadata.height);
+    const resized = await source.resize(desired.w, desired.h, { fit: "inside", kernel: "lanczos3" }).removeAlpha().png().toBuffer({ resolveWithObject: true });
+    const placement = { x: Math.round(cell.image.x + (cell.image.w - resized.info.width) / 2), y: Math.round(cell.image.y + (cell.image.h - resized.info.height) / 2), w: resized.info.width, h: resized.info.height };
+    composites.push({ input: resized.data, left: placement.x, top: placement.y });
     markup.push(cellMarkup(cell, surface, placement));
     tiles.push({
       surfaceKey,
       placement,
+      ...panelBoundaries(placement, surface),
+      dimensionRuleBasis: "trim-boundary",
+      continuousArtwork: true,
+      sourceAspectPreserved: true,
       trimWidthIn: surface.widthInches,
       trimHeightIn: surface.heightInches,
       printWidthIn: surface.printWidthInches,
@@ -362,5 +394,5 @@ module.exports = {
   ProofSheetError,
   proofSheetLayout,
   renderProofSheet,
-  _test: { containedPlacement, escapeXml, inches, normalizedSurfaces, provenanceMarkup, round2 },
+  _test: { containedPlacement, panelBoundaries, cellMarkup, escapeXml, inches, normalizedSurfaces, provenanceMarkup, round2 },
 };

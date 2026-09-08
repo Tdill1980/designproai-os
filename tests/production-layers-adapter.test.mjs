@@ -52,8 +52,14 @@ test("a pack missing any of the six sides is not a pack", () => {
 });
 
 test("each panel is paired with its own approved 3D view", () => {
-  assert.match(api, /listApprovedViews: \(generationId: string\)/);
-  assert.match(api, /\/approved-views/);
+  assert.match(api, /listApprovedViews: \(generationId: string, atlasRevisionId\?: string \| null\)/);
+  assert.match(api, /\?atlasRevisionId=\$\{encodeURIComponent\(atlasRevisionId\)\}/);
+  assert.match(adapter, /selectAtlasRevision\(revisions, revisionId\)/);
+  assert.match(adapter, /if \(revisionId && !selected\) return null/, "a missing named history entry must not select current artwork");
+  assert.match(adapter, /listApprovedViews\(generationId, selected\?\.id\)/);
+  assert.match(adapter, /viewBelongsToRevision\(view, selected\)/, "the exact read still checks the returned master and revision binding");
+  assert.match(adapter, /artifactsForStudioRevision\(artifacts, selected\)/, "panels and views share the selected version");
+  assert.match(adapter, /view\.sourceViewType !== expectedCamera\) continue/, "a close-up or opposite side cannot stand in for the panel's own camera");
   assert.match(adapter, /designViews\[viewType\] = view\.signedUrl/);
   assert.match(adapter, /view\.sourceViewType \|\| SOURCE_VIEW_TYPE_FOR_ROLE/);
 });
@@ -113,10 +119,11 @@ test("the live RevisionStudio resolves the standalone source through one hook", 
   const studio = readFileSync(new URL("../app/src/components/revisioniq/ServerRevisionStudio.tsx", import.meta.url), "utf8");
 
   assert.match(hook, /export function useStandaloneProductionLayers/);
-  assert.match(hook, /loadProductionLayers\(id\)/);
-  // Null is the fallback signal: a design that is not a standalone run leaves
-  // the card resolving for itself, exactly as it does today.
-  assert.match(hook, /\.catch\(\(\) => \{ if \(live\) setLayers\(null\); \}\)/);
+  assert.match(hook, /loadProductionLayers\(id, revisionId\)/);
+  // Polls cannot overlap or let another revision inherit the old pair.
+  assert.match(hook, /Promise\.allSettled/);
+  assert.match(hook, /setLayers\(null\)/);
+  assert.match(hook, /setTimeout\(refresh, 5000\)/);
   assert.match(hook, /if \(!layers \|\| !id\) return null/);
 
   assert.match(jobPage, /useStandaloneProductionLayers/);
@@ -282,7 +289,9 @@ test("the entice half asks for the sale instead of reporting a defect", () => {
 
   // The CTA is live before purchase. That is the whole point of the surface.
   assert.match(card, /!injected\??\.entitlements\??\.productionPack/);
-  assert.match(card, /injected\??\.onOrderProductionPack\s*\n\s*&& \(entice \|\| \(isVerifiedPack && packState\.productionEligible\)\)/);
+  assert.match(card, /injected\??\.onOrderProductionPack\s*\n\s*&& \(entice \|\| isVerifiedPack\)/);
+  // Buying the work cannot depend on the final QC that purchase starts.
+  assert.match(card, /const printReady = isVerifiedPack && packState\.productionEligible/);
   assert.match(card, /GET PRODUCTION PACK/);
 
   // The conversion message, in the owner's own words.

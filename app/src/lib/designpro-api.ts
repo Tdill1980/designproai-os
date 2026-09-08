@@ -493,6 +493,15 @@ export type WorkflowStatus = {
     artifactPath?: string;
   }>;
   failure?: { stage: string; message: string; retryable: boolean };
+  /** Exact child packages pinned by this production run's output verification. */
+  panelProfileOutputs?: Array<{
+    runId: string;
+    artifactSetHash: string;
+    snapshotHash: string;
+    fileCount: number;
+    qcApproved: true;
+    reviewUrl: string;
+  }>;
 };
 
 /** One frozen, owner-scoped 3D view of the revision a run was built from. */
@@ -536,6 +545,33 @@ export type WorkflowArtifact = {
   metadata: Record<string, unknown>;
   signedUrl: string;
   expiresIn: 300;
+};
+
+/** Fixed public narration from the generation OS, including work before handoff. */
+export type GenerationProgress = {
+  contract: "designpro.public-generation-progress.v1";
+  generationId: string;
+  currentRevisionId: string | null;
+  revisionSequence: number | null;
+  generationState: "queued" | "leased" | "retryable" | "outputs_ready" | "failed" | "cancelled" | "unknown";
+  stages: Array<{
+    key: string;
+    label: string;
+    explanation: string;
+    state: "complete" | "running" | "waiting" | "failed" | "pending" | "attention" | "retrying" | "cancelled" | "skipped";
+    dependsOn: string[] | null;
+  }>;
+  artifactIds: string[];
+  workflowRevisionIds: string[];
+  facts: {
+    masterSaved: boolean;
+    productionRunLinked: boolean;
+    handoffNeedsAttention?: boolean;
+    panelCount: number;
+    productionProofReady: boolean;
+    packageReady: boolean;
+  };
+  updatedAt: string | null;
 };
 
 export type AssetIdentity = {
@@ -780,6 +816,8 @@ export type GenerationRequestState = {
   failureCode?: string | null;
   handoffReady?: boolean;
   handoffBlocker?: string | null;
+  /** Presence indicates preparation needs attention; never display its raw code. */
+  revisionHandoffError?: { code?: unknown } | null;
   /** Staging and per-shot state, derived from real slot state on the server. */
   phase?: "designer" | "photographer" | "complete" | "failed";
   shotsComplete?: number;
@@ -788,6 +826,21 @@ export type GenerationRequestState = {
   regeneratingShots?: string[];
   designAnchor?: string | null;
   designName?: string | null;
+};
+
+export type GenerationRevisionInput = {
+  generationId: string;
+  parentAtlasRevisionId: string;
+  parentMasterContentHash: string;
+  instruction: string;
+  affectedSurfaces?: GenieSurfaceKey[];
+  editAssets?: Array<AssetIdentity & { purpose: "reference" }>;
+  panelOutputRunId?: string;
+};
+
+export type GenerationRevisionReceipt = GenerationRequestState & {
+  parentAtlasRevisionId: string;
+  revisionSequence: number;
 };
 
 /**
@@ -1068,6 +1121,11 @@ function parseRefusedViewsHeader(value: string | null): RefusedGenerationView[] 
 export const dpApi = {
   /* Calls 1-7 */
   createGenerationRequest,
+  createGenerationRevision: (input: GenerationRevisionInput) =>
+    request<GenerationRevisionReceipt>("/generation/requests/revisions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   /**
    * Upload-and-verify for a customer-supplied file. Exposed here because intake
    * needs it for the logo before the generation request is queued: the request
@@ -1181,6 +1239,8 @@ export const dpApi = {
   listJobs: () => request<WorkflowStatus[]>("/jobs"),
   getStatus: (generationId: string) =>
     request<WorkflowStatus>(`/jobs/${encodeURIComponent(generationId)}`),
+  getGenerationProgress: (generationId: string) =>
+    request<GenerationProgress>(`/generation/${encodeURIComponent(generationId)}/progress`),
   listArtifacts: (generationId: string) =>
     request<WorkflowArtifact[]>(`/jobs/${encodeURIComponent(generationId)}/artifacts`),
   /**
@@ -1215,8 +1275,8 @@ export const dpApi = {
     const query = params.toString();
     return request<DesignLibraryEntry[]>(`/design-library${query ? `?${query}` : ""}`);
   },
-  listApprovedViews: (generationId: string) =>
-    request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views`),
+  listApprovedViews: (generationId: string, atlasRevisionId?: string | null) =>
+    request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views${atlasRevisionId ? `?atlasRevisionId=${encodeURIComponent(atlasRevisionId)}` : ""}`),
   /**
    * The same read, plus the reason the list may be empty.
    *
@@ -1226,9 +1286,9 @@ export const dpApi = {
    * are unaffected and still readable; only the proofs are withheld, and a
    * customer is owed that sentence rather than a blank carousel.
    */
-  listApprovedViewsWithVerdict: async (generationId: string) => {
+  listApprovedViewsWithVerdict: async (generationId: string, atlasRevisionId?: string | null) => {
     const { payload, headers } = await requestWithHeaders<ApprovedGenerationView[]>(
-      `/jobs/${encodeURIComponent(generationId)}/approved-views`,
+      `/jobs/${encodeURIComponent(generationId)}/approved-views${atlasRevisionId ? `?atlasRevisionId=${encodeURIComponent(atlasRevisionId)}` : ""}`,
     );
     return {
       views: Array.isArray(payload) ? payload : [],

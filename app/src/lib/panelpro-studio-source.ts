@@ -36,8 +36,8 @@ import {
   type WorkflowStatus,
 } from "@/lib/designpro-api";
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
+import { artifactsForStudioRevision, selectAtlasRevision, viewBelongsToRevision } from "@/lib/studio-artifact-identity.mjs";
 import {
-  assetsForVersion,
   designVersionsFrom,
   type DesignVersion,
   type DesignVersionHistory,
@@ -352,14 +352,23 @@ export async function loadPanelProStudioJob(
   if (!id) return null;
   const job = await dpApi.getStatus(id).catch(() => null);
   if (!job) return null;
-  const [views, artifacts, atlasRevisions] = await Promise.all([
-    dpApi.listApprovedViews(job.generationId).catch(() => [] as ApprovedGenerationView[]),
+  const [artifacts, atlasRevisions] = await Promise.all([
     dpApi.listArtifacts(job.generationId).catch(() => [] as WorkflowArtifact[]),
     // A run with no A.T.L.A.S. lineage answers an empty list, which is the
     // honest state for a Standard design rather than an error.
     dpApi.listJobFlatAtlasRevisions(job.generationId).catch(() => [] as FlatAtlasRevision[]),
   ]);
+  const selected = selectAtlasRevision(atlasRevisions);
+  const views = await dpApi.listApprovedViews(job.generationId, selected?.id).catch(() => [] as ApprovedGenerationView[]);
   return studioJobFrom({ job, views, artifacts, atlasRevisions, approvedSides });
+}
+
+/** Read one existing history entry's proof cameras without relabelling current images. */
+export async function loadPanelProVersionViews(generationId: string, version: DesignVersion): Promise<ApprovedGenerationView[]> {
+  if (generationId !== version.generationId || version.revisionId !== version.revision.id
+    || version.masterContentHash !== version.revision.master.contentHash) return [];
+  const views = await dpApi.listApprovedViews(generationId, version.revisionId);
+  return views.filter((view) => viewBelongsToRevision(view, version.revision));
 }
 
 /**
@@ -439,10 +448,9 @@ export async function findPanelProStudioJob(query: string): Promise<string | nul
  * binding to do that already exists on every artifact, so this re-derives the
  * whole job from the sets it was built with, scoped by that version's master.
  *
- * An artifact carrying no master binding is kept rather than dropped: it
- * predates the binding or came from a Standard run, and an empty board would be
- * a worse answer than an honest one. It is never counted as belonging to the
- * selected version -- the surface reports it as unbound.
+ * Unbound history is not a fallback for a selected ATLAS version. A proof can
+ * also prove its lineage through all six input panel hashes. Standard jobs
+ * have no selected ATLAS version and retain their existing source path.
  */
 export function panelProJobAtVersion(
   job: PanelProStudioJob,
@@ -450,7 +458,6 @@ export function panelProJobAtVersion(
   approvedSides?: ReadonlySet<string>,
 ): PanelProStudioJob {
   if (!version) return job;
-  const scoped = assetsForVersion(version, job.raw_artifacts, job.raw_views);
   return studioJobFrom({
     job: {
       ...({} as WorkflowStatus),
@@ -460,14 +467,15 @@ export function panelProJobAtVersion(
       state: job.state,
       currentStage: job.current_stage,
       revisionId: job.revision_id,
-      revision: job.revision,
+      revision: version.version,
       brief: job.brief,
       createdAt: job.created_at,
       vehicle: { year: job.vehicle_year, make: job.vehicle_make, model: job.vehicle_model },
       stages: job.stages,
     } as unknown as WorkflowStatus,
-    views: [...scoped.views, ...scoped.unboundViews],
-    artifacts: [...scoped.artifacts, ...scoped.unboundArtifacts],
+    // Unbound history remains in the raw record, never in a selected pair.
+    views: job.raw_views.filter((view) => viewBelongsToRevision(view, version.revision)),
+    artifacts: artifactsForStudioRevision(job.raw_artifacts, version.revision),
     atlasRevisions: job.atlas_versions,
     approvedSides,
   });

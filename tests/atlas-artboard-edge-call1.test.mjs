@@ -156,7 +156,11 @@ test("v23 restoration: legacy manifest, six-container request, both pinned image
   );
   assert.match(runtimeSource, /loadBundledAtlasTeachingProof/);
   assert.match(liveAuthoring, /renderAtlasAuthoringGuide\(manifest\)/);
-  assert.match(liveAuthoring, /const manifest = buildAtlasManifest\(surfaces, geometryAuthority/);
+  assert.match(liveAuthoring,
+    /const manifest = parentManifest \? structuredClone\(parentManifest\)\s*: buildAtlasManifest\(surfaces, geometryAuthority, input\?\.vehicle\?\.type\);/,
+    "new designs build the six-surface GENIE manifest; edits use an immutable copy of their verified parent manifest");
+  assert.match(liveAuthoring, /if \(!parentManifest && geometryResolution\) manifest\.geometryResolution = geometryResolution;/,
+    "a newly resolved geometry identity must never replace the saved edit parent's geometry");
   assert.doesNotMatch(liveAuthoring, /buildFieldTerritories\(/);
 
   const requestBody = runtimeSource.slice(

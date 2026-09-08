@@ -36,6 +36,7 @@ import {
   type WorkflowStatus,
 } from "@/lib/designpro-api";
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
+import { artifactsForStudioRevision, callOnePanelBelongsToRevision, panelReviewState, selectAtlasRevision, viewBelongsToRevision } from "@/lib/studio-artifact-identity.mjs";
 import type {
   ProductionFlowAssetRow,
   ProductionFlowLogoAsset,
@@ -157,6 +158,8 @@ export type ProductionLayersSource = {
   stage?: "entice" | "production";
   rows: ProductionFlowAssetRow[];
   designViews: Record<string, string>;
+  /** Signed Call 8 image URL; separate from its stable identity binding. */
+  proofUrl?: string | null;
   /**
    * The activated pack, in the shape the card checks against. `id` and
    * `pack_version` are the pack identity every row carries, so the card's
@@ -200,6 +203,8 @@ export function toProductionLayers(input: {
   artifacts: WorkflowArtifact[];
   approvedViews: ApprovedGenerationView[];
   createdAt: string;
+  humanQcApproved?: boolean;
+  revision?: FlatAtlasRevision | null;
 }): ProductionLayers | null {
 
   const bySurface = (kind: string) => {
@@ -254,6 +259,8 @@ export function toProductionLayers(input: {
 
   const designViews: Record<string, string> = {};
   for (const view of input.approvedViews) {
+    const expectedCamera = SOURCE_VIEW_TYPE_FOR_ROLE[view.surfaceKey as never];
+    if (!expectedCamera || view.sourceViewType !== expectedCamera) continue;
     // The card keys its views by the source view type the design was rendered
     // at, so a view is resolved by its own type first and only mapped from the
     // surface key when the row does not state one.
@@ -265,6 +272,7 @@ export function toProductionLayers(input: {
     const panel = branded.get(surface)!;
     const duplicate = clean.get(surface) || null;
     const removedCount = Number(duplicate?.metadata?.removedCount ?? 0);
+    const review = panelReviewState({ panel, revision: input.revision, humanApproved: input.humanQcApproved === true });
     // Call 11 may honestly remove nothing from a side that carries no logo. The
     // card reads that as a reasoned gap and keeps showing the branded panel,
     // which is the deliverable; inventing a clean panel would be the lie.
@@ -295,14 +303,14 @@ export function toProductionLayers(input: {
       depth_mask_url: null,
       final_pack_url: null,
       meta_metrics: {
-        production_eligible: true,
+        production_eligible: review.approved,
         pack_version: identity.version,
         source_hash: identity.sourceHash,
         source_master_hash: String(panel.metadata?.sourceMasterHash || ""),
         source_proof_url: binding,
         expected_sides: expectedSides,
         logo_pack: logoPack,
-        qc: { known: true, pass: true },
+        qc: { known: review.state !== "pending_qc", pass: review.approved, reason: review.label },
         separation_qc: separationGap
           ? {
               known: true,
@@ -370,7 +378,7 @@ export function toAtlasEnticeLayers(input: {
   const panels = new Map<string, FlatAtlasCallOnePanel>();
   for (const panel of input.revision.callOnePanels || []) {
     const surface = String(panel?.surfaceKey || "");
-    if (SIDE_LABEL_FOR_SURFACE[surface] && !panels.has(surface)) panels.set(surface, panel);
+    if (SIDE_LABEL_FOR_SURFACE[surface] && !panels.has(surface) && callOnePanelBelongsToRevision(panel, input.revision)) panels.set(surface, panel);
   }
   // Six sides or nothing. Five panels shown as a set is how a customer finds
   // the sixth at print time.
@@ -378,6 +386,9 @@ export function toAtlasEnticeLayers(input: {
 
   const designViews: Record<string, string> = {};
   for (const view of input.approvedViews) {
+    const expectedCamera = SOURCE_VIEW_TYPE_FOR_ROLE[view.surfaceKey as never];
+    if (!expectedCamera || view.sourceViewType !== expectedCamera) continue;
+    if (!viewBelongsToRevision(view, input.revision)) continue;
     const viewType = String(view.sourceViewType || SOURCE_VIEW_TYPE_FOR_ROLE[view.surfaceKey as never] || "");
     if (viewType && view.signedUrl) designViews[viewType] = view.signedUrl;
   }
@@ -425,7 +436,7 @@ export function toAtlasEnticeLayers(input: {
         source_proof_url: masterBinding,
         expected_sides: expectedSides,
         logo_pack: [],
-        qc: { known: true, pass: true },
+        qc: { known: input.revision.qc?.masterQcPassed === false, pass: false, reason: "Design preview; human production QC is pending" },
         separation_qc: {
           known: true,
           pass: false,
@@ -460,26 +471,32 @@ export function toAtlasEnticeLayers(input: {
  * Never both, and never a merge of the two: after purchase the branded panels
  * are the production artwork and the design-time cut is history.
  */
-export async function loadProductionLayers(generationId: string): Promise<ProductionLayers | null> {
-  const [status, artifacts] = await Promise.all([
-    dpApi.getStatus(generationId) as Promise<WorkflowStatus>,
-    dpApi.listArtifacts(generationId).catch(() => [] as WorkflowArtifact[]),
+export async function loadProductionLayers(generationId: string, revisionId?: string | null): Promise<ProductionLayers | null> {
+  const [status, artifacts, revisions] = await Promise.all([
+    dpApi.getStatus(generationId),
+    dpApi.listArtifacts(generationId),
+    dpApi.listJobFlatAtlasRevisions(generationId),
   ]);
-  const approvedViews = await dpApi.listApprovedViews(generationId).catch(() => []);
+  const selected = selectAtlasRevision(revisions, revisionId);
+  // An explicit missing version must not silently fall back to the newest.
+  if (revisionId && !selected) return null;
+  const approvedViews = await dpApi.listApprovedViews(generationId, selected?.id);
+  const ownArtifacts = artifactsForStudioRevision(artifacts, selected);
+  const ownViews = selected ? approvedViews.filter((view) => viewBelongsToRevision(view, selected)) : approvedViews;
   const call9 = status.stages.find((stage) => stage.key === "panels.build");
   if (call9 && call9.state === "complete") {
     const built = toProductionLayers({
-      artifacts, approvedViews, createdAt: new Date().toISOString(),
+      artifacts: ownArtifacts, approvedViews: ownViews, createdAt: status.updatedAt || status.createdAt || "",
+      revision: selected,
+      // Preflight checks precede the print outputs; only the final release
+      // gate establishes approval of the files shown here.
+      humanQcApproved: status.stages.some((stage) => stage.key === "await_final_human_qc" && stage.state === "complete")
+        && ownArtifacts.filter((artifact) => artifact.kind === "panel").every((artifact) => artifact.metadata?.revisionId === status.revisionId),
     });
     if (built) return built;
   }
-  // Before manufacturing: the panels A.T.L.A.S. Call 1 cut from the accepted
-  // master. The newest revision is the design as it stands now.
-  const revisions = await dpApi.listJobFlatAtlasRevisions(generationId)
-    .catch(() => [] as FlatAtlasRevision[]);
-  const newest = revisions.length ? revisions[revisions.length - 1] : null;
-  if (!newest) return null;
+  if (!selected) return null;
   return toAtlasEnticeLayers({
-    revision: newest, approvedViews, createdAt: new Date().toISOString(),
+    revision: selected, approvedViews: ownViews, createdAt: selected.createdAt || "",
   });
 }

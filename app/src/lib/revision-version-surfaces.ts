@@ -157,6 +157,7 @@ export interface RevisionTimelineCommitLike {
   hero_render_url?: string | null;
   angle_renders_json?: unknown;
   revision_snapshot?: {
+    parentRevisionId?: string | null;
     visualizationId?: string;
     renderUrls?: unknown;
     change?: { viewKeys?: string[]; prompt?: string | null };
@@ -356,7 +357,9 @@ export function buildRevisionVersionTimeline<
 
   const timeline: RevisionTimelineEntry<TRow, TCommit>[] = [];
   for (const [index, source] of sources.entries()) {
-    const previous = timeline[index - 1] || null;
+    const parentId = source.commit?.revision_snapshot?.parentRevisionId;
+    const previous = parentId === undefined ? timeline[index - 1] || null
+      : parentId ? timeline.find((entry) => entry.commit?.id === parentId) || null : null;
     const previousUrls = previous?.currentUrls || {};
     const projection = projectRevisionSurface({
       previousUrls,

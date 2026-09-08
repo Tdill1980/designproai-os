@@ -25,6 +25,7 @@ const input = {contractVersion:atlas.INPUT_CONTRACT,pipelineMode:atlas.PIPELINE_
   vehicle:{year:'2022',make:'Ford',model:'F250 Crew Cab',type:'truck'}};
 const extras = {teachingProofStoragePath:`atlas-call1-inputs/${teaching.flattenedTopView.contentHash}.png`,
   teachingProofIdentity:teaching.identity,guideStoragePath:`atlas-call1-inputs/${'a'.repeat(64)}.png`,referenceImagesBase64:[]};
+const creativeBody = ({ providerRequest: _transportOnly, ...body }) => body;
 
 // Execute the real authoring function, including normalization, gates, storage,
 // extraction and lineage. The provider is replaced only at its network seam.
@@ -55,7 +56,7 @@ test('one authored topology preserves all six distinct source regions through pe
     input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
     generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
     tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',
-    maxAuthoringAttempts:2,provider:{},
+    provider:{},
     supabase:{from(){return query},async rpc(){return {data:true,error:null}}},
     store:{async putImmutableBytes(row){stored.set(row.storagePath,row.bytes);return {storagePath:row.storagePath,contentHash:sha(row.bytes),byteSize:row.bytes.length}}},
     callEdge:async body=>{
@@ -197,7 +198,7 @@ function runCutoutLoop(candidates) {
     input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
     generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
     tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',
-    maxAuthoringAttempts:2,provider:{},
+    provider:{},
     supabase:{from(){return query},async rpc(){return {data:true,error:null}}},
     store:{async putImmutableBytes(row){stored.set(row.storagePath,row.bytes);return {storagePath:row.storagePath,contentHash:sha(row.bytes),byteSize:row.bytes.length}}},
     onMasterReady(){publications++},
@@ -216,7 +217,8 @@ test('cutout-only first candidate uses the unchanged fallback and publishes only
   const run=runCutoutLoop([hole,clean]);
   const result=await run.done;
   assert.equal(run.requests.length,2);
-  assert.deepEqual(run.requests[1],run.requests[0],'the fallback cannot rewrite the brief or prompt');
+  assert.deepEqual(creativeBody(run.requests[1]),creativeBody(run.requests[0]),'the fallback cannot rewrite the brief or prompt');
+  assert.deepEqual(run.requests.map((body)=>body.providerRequest.attemptKey),['master:1','master:2']);
   assert.equal(run.publications,1);
   assert.equal(result.metadata.masterAuthoringAttempts,2);
   const actual=await sharp(run.stored.get(run.inserted.master_storage_path)).ensureAlpha().raw().toBuffer();
@@ -239,7 +241,7 @@ test('two cutout candidates fail closed with retrievable paths and the measured 
     return true;
   });
   assert.equal(run.requests.length,2,'a cutout refusal must use exactly the existing two-attempt budget');
-  assert.deepEqual(run.requests[1],run.requests[0]);
+  assert.deepEqual(creativeBody(run.requests[1]),creativeBody(run.requests[0]));
   assert.equal(run.inserted,null,'refused artwork cannot become an atlas revision');
   assert.equal(run.publications,0,'refused artwork cannot start proofs');
   assert.equal([...run.stored.keys()].some(path=>path.includes('/master/')||path.includes('/panels/')),false);

@@ -236,6 +236,8 @@ const HeaderComponent = () => {
         // board with no job pinned: it opens on the recent-jobs list and the
         // operator picks one, so the door does not require the key.
         ["/designpro/studio-board", "PanelPro Studio"],
+        ["/panelpro-file-output/prepare", "PanelProFileOutput source preparation"],
+        ["/panelpro-file-output/templates", "Vehicle template review"],
         ["/admin/production-packs", "Production packs"],
         ["/admin/production-files", "Production files"],
         ["/admin/production-test", "Production test bench"],

@@ -106,6 +106,22 @@ if [[ -z $atlas_panel_finish && -s $ROOT/shared/runtime.env ]]; then
 fi
 [[ $atlas_panel_finish == "on" ]] || atlas_panel_finish=off
 
+# Independent production-output and template-preview opt-ins. Preserve an
+# installed choice on later deploys; absence on an older release means false.
+# The provider credentials still arrive through the unchanged secret channel.
+resolve_optional_flag() {
+  local key=$1
+  local value=${!key:-}
+  if [[ -z $value && -s $ROOT/shared/runtime.env ]]; then
+    value=$(sed -n "s/^${key}=//p" "$ROOT/shared/runtime.env" | head -n 1)
+  fi
+  value=${value:-false}
+  [[ $value == true || $value == false ]] || { echo "$key must be exactly true or false" >&2; return 4; }
+  printf '%s' "$value"
+}
+panelprofileoutput_enabled=$(resolve_optional_flag DESIGNPRO_PANELPROFILEOUTPUT_ENABLED)
+template_recreate_enabled=$(resolve_optional_flag DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED)
+
 runtime_tmp=$(mktemp "$ROOT/shared/runtime.env.new.XXXXXX")
 gateway_tmp=$(mktemp "$ROOT/shared/gateway.env.new.XXXXXX")
 cleanup() {
@@ -133,6 +149,8 @@ trap cleanup EXIT
   # Only the exact string `on` enables it -- the runtime fails safe on anything
   # else, so a typo here cannot switch a customer path on.
   printf 'DESIGNPRO_ATLAS_PANEL_FINISH=%s\n' "$atlas_panel_finish"
+  printf 'DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=%s\n' "$panelprofileoutput_enabled"
+  printf 'DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=%s\n' "$template_recreate_enabled"
   if [[ -n $topaz_key ]]; then
     printf 'DESIGNPRO_TOPAZ_ENABLED=true\n'
     printf 'TOPAZ_API_KEY=%s\n' "$topaz_key"

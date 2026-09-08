@@ -45,9 +45,16 @@ test("PanelProStudio is backed by the same server artifacts", () => {
   assert.match(panelStudio, /Server production panel/);
 });
 
-test("a revision starts a new current A.T.L.A.S. run, never the obsolete manual source form", () => {
-  assert.match(studio, /Start new A\.T\.L\.A\.S\. design/);
-  assert.match(studio, /new current-architecture A\.T\.L\.A\.S\. run/);
+test("a revision continues through the existing saved design and its exact parent", () => {
+  const flow = readFileSync(new URL("../app/src/lib/revisionstudio-flow.ts", import.meta.url), "utf8");
+  assert.match(studio, /Continue in RevisionStudioIQ/);
+  assert.match(studio, /const revisionUrl = `\/revision-studio\?id=\$\{encodeURIComponent\(generationId\)\}/);
+  assert.match(studio, /revisionInstruction=\$\{encodeURIComponent\(revisionInstruction\.trim\(\)\)\}/);
+  assert.match(flow, /const generationId = String\(input\.source\?\.id \|\| ""\)\.trim\(\)/);
+  assert.match(flow, /dpApi\.createGenerationRevision\(\{\s*generationId,\s*parentAtlasRevisionId: parent\.id,\s*parentMasterContentHash: parent\.master\.contentHash,/);
+  assert.match(flow, /receipt\.generationId !== generationId \|\| receipt\.parentAtlasRevisionId !== parent\.id/);
+  assert.doesNotMatch(flow, /dpApi\.createGenerationRequest|crypto\.randomUUID/,
+    "editing an existing design must not silently create a replacement GenerationID");
   assert.doesNotMatch(studio, /\/designpro\/revisions\/new\?source=/);
 });
 
@@ -671,12 +678,14 @@ const panelProBoard = readFileSync(
  * customer's job, which is never in their feed at all.
  */
 test("a RevisionStudio deep link opens a design the feed cannot answer for", () => {
-  assert.match(revisionStudio, /readRevisionStudioDesign\(deepLinkId\)/);
-  // The feed match stays first: when the row is in hand it is the same object
-  // the grid renders, and reusing it keeps selection and list in sync.
-  assert.match(revisionStudio, /const found = renders\.find/);
-  // One fetch per id, never a loop.
-  assert.match(revisionStudio, /deepLinkFetchedRef\.current === deepLinkId/);
+  assert.match(revisionStudio, /readRevisionStudioDesign\(deepLinkId, deepLinkRevisionId\)/);
+  // A named history version must resolve at the server; the unqualified feed
+  // can be reused only when the link did not specify an older revision.
+  assert.match(revisionStudio, /if \(renders && !deepLinkRevisionId\) \{[\s\S]*?const found = renders\.find/);
+  assert.match(revisionStudio, /const selectionKey = `\$\{deepLinkId \|\| ""\}:\$\{deepLinkRevisionId \|\| "current"\}`/);
+  // One completed read per generation/revision pair; cancelled reads can retry.
+  assert.match(revisionStudio, /deepLinkFetchedRef\.current === selectionKey/);
+  assert.match(revisionStudio, /!settled && deepLinkFetchedRef\.current === selectionKey\) deepLinkFetchedRef\.current = null/);
   // An id this account cannot open is answered, never left spinning.
   assert.match(revisionStudio, /setDeepLinkMissing\(true\)/);
   assert.match(revisionStudio, /That design could not be opened/);

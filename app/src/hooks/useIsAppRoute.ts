@@ -15,6 +15,7 @@ const APP_ROUTE_PREFIXES = [
   "/account",
   "/colorpro",
   "/designpro",
+  "/panelpro-file-output",
   "/restylelibrary",
   "/fadewraps",
   "/wbty",

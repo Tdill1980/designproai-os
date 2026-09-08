@@ -58,9 +58,13 @@ const { loadBundledAtlasTeachingProof } = require("./flat-atlas-topology-example
 const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT } = require("./atlas-output-class.cjs");
 const {
   PANEL_NEIGHBOURS,
+  PANEL_CASCADE_ORDER,
   PANEL_AUTHORING_PROMPT_VERSION,
   finishPanel: finishPanelSurface,
 } = require("./atlas-panel-authoring.cjs");
+const { readAcceptedCheckpoint, writeAcceptedCheckpoint, readAuthoringContext, writeAuthoringContext } = require("./atlas-accepted-checkpoint.cjs");
+const { createFinishingCheckpointStore } = require("./atlas-finishing-checkpoint.cjs");
+const { assembleFinishedMaster, CONTRACT: FINISHED_MASTER_CONTRACT } = require("./atlas-finished-master.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -107,29 +111,11 @@ const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
 // valid master. A genuine creative miss belongs to a customer revision, not a
 // hidden technical rewrite of the accepted authority.
 //
-// ATTEMPT BUDGET RAISED TO 5 (owner ruling, Trish 2026-09-08).
-//
-// The default was ONE. Measured on the deployed six-container path: the same
-// unchanged request produced an accepted master on 2026-09-02 (1564c66d) and
-// was refused four candidates for four on 2026-09-08, every one for large
-// wheel/glass cutouts. That is a coin flip, and at one throw the buyer got
-// nothing roughly half the time.
-//
-// Nine recorded A/B tests (atlas-teaching-proof-ab.yml, tests 1-8) closed the
-// conditioning question: reworded contracts, altered teaching proofs, erased
-// labels, and REMOVING THE EXAMPLE ENTIRELY all measured null. There is no
-// prompt left to write, so the remaining lever is the number of throws.
-//
-// At ~50% per candidate, five attempts reach a clean master ~97% of the time.
-// Each refusal is cheap and invisible: nothing is persisted, no revision is
-// minted, the buyer sees one spinner. The gate is untouched -- a bad master
-// still never becomes canonical, and the run still fails closed if all five
-// are refused.
-//
-// The fallback stays UNCHANGED between attempts: no retry-specific corrective
-// text, no relaxed threshold, no third pipeline. Same request, another throw.
-const MAX_MASTER_AUTHORING_ATTEMPTS = 6;
-const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 5;
+// The governing restoration contract permits one unchanged fallback only after
+// a blocking refusal. An accepted first candidate exits immediately. These
+// limits include cached attempts; a worker restart never resets this budget.
+const MAX_MASTER_AUTHORING_ATTEMPTS = 2;
+const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 2;
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
   const value = Number(raw);
@@ -1645,6 +1631,7 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     teachingProofIdentity: extras.teachingProofIdentity,
     guideStoragePath: extras.guideStoragePath,
     referenceImagesBase64: extras.referenceImagesBase64,
+    ...(extras.revisionContextHash ? { revisionContextHash: extras.revisionContextHash } : {}),
   };
 }
 
@@ -1676,7 +1663,27 @@ function normalizedZoneTopology(zone, manifest) {
   };
 }
 
-async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetch, ownerId, supabase } = {}) {
+async function requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl, mode, revisionIntake = false }) {
+  const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate?action=atlas-provider-capabilities`, {
+    method: "GET",
+    headers: { authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey,
+      "x-designpro-owner-id": String(ownerId || "") },
+  }).catch(() => { throw new FlatAtlasError("flat_atlas_provider_cache_probe_failed",
+    "The nonspending provider-recovery capability check could not be completed", true); });
+  let capabilities = null;
+  try { capabilities = await response.json(); } catch { /* refused below */ }
+  if (!response.ok || capabilities?.providerCacheContract !== "designpro.gemini-provider-cache.v1"
+    || capabilities.cacheOnly !== true || !capabilities.modes?.includes(mode)) {
+    throw new FlatAtlasError("flat_atlas_provider_cache_not_deployed",
+      "The edge must expose durable provider recovery before this runtime can submit or resume authoring", true);
+  }
+  if (revisionIntake && capabilities.revisionIntakeContract !== "designpro.atlas-revision-intake.v1") {
+    throw new FlatAtlasError("flat_atlas_revision_intake_not_deployed",
+      "The edge must expose parent-bound revision editing before this runtime can submit an edit", true);
+  }
+}
+
+async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetch, ownerId, supabase, revisionContext = null } = {}) {
   const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
   if (!supabase?.storage?.from) {
@@ -1685,6 +1692,11 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   if (!supabaseUrl || serviceRoleKey.length < 32) {
     throw new FlatAtlasError("flat_atlas_edge_transport_missing", "SUPABASE_URL / service key are required for the Call-1 edge request", true);
   }
+  if (body.revisionContextHash && (!revisionContext || !body.providerRequest)) {
+    throw new FlatAtlasError("flat_atlas_revision_context_missing", "An edit requires its trusted parent context and current provider lease");
+  }
+  if (body.providerRequest) await requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl,
+    mode: "atlas-artboard", revisionIntake: Boolean(body.revisionContextHash) });
   const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate`, {
     method: "POST",
     headers: {
@@ -1694,18 +1706,32 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       "x-designpro-owner-id": String(ownerId || ""),
     },
     body: JSON.stringify(body),
+  }).catch((cause) => {
+    if (body.providerRequest) throw new FlatAtlasError("provider_outcome_unknown",
+      "The authoring response was interrupted; recover this same provider request before continuing", true);
+    throw cause;
   });
   let payload = null;
   try { payload = await response.json(); } catch { payload = null; }
+  if (body.providerRequest && !payload) {
+    throw new FlatAtlasError("provider_outcome_unknown", "The authoring response could not be decoded; recover the same provider request", true);
+  }
   if (!response.ok || payload?.success !== true) {
-    throw new FlatAtlasError(
-      "flat_atlas_edge_call_failed",
+    throw Object.assign(new FlatAtlasError(
+      /^provider_[a-z0-9_]+$/.test(String(payload?.code || payload?.error || ""))
+        ? String(payload.code || payload.error) : "flat_atlas_edge_call_failed",
       `design-panel-ai-generate atlas-artboard failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}`,
-      response.status >= 500,
-    );
+      typeof payload?.retryable === "boolean" ? payload.retryable
+        : response.status >= 500 || [404, 409, 429].includes(response.status),
+    ), { providerRetryDisposition: payload?.providerRetryDisposition || null,
+      providerOutcome: payload?.providerOutcome || null, retryAfterSeconds: payload?.retryAfterSeconds || null });
   }
   if (Number(payload.imageRequestCount) !== 1) {
     throw new FlatAtlasError("flat_atlas_edge_call_count_invalid", `The edge function reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
+  }
+  if (body.providerRequest && (payload.providerCacheContract !== "designpro.gemini-provider-cache.v1"
+    || !HASH_RE.test(String(payload.providerRequestKey || "")))) {
+    throw new FlatAtlasError("flat_atlas_provider_cache_receipt_missing", "The authoring response lacks its durable request receipt", true);
   }
   // THE EDGE MUST PROVE IT RAN THE FIELD CONTRACT. A response that echoes a
   // different contract, or carries more model-input images than the verified
@@ -1750,7 +1776,27 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   }
   // A six-surface request must not silently accept a field response. The
   // September 6 regression produced valid files from repeated source bands.
-  if (!expectedFieldContract) {
+  if (body.revisionContextHash) {
+    const expectedTeaching = body.teachingProofIdentity;
+    const actualTeaching = payload?.teachingProofIdentity;
+    if (expectedFieldContract || payload?.fieldContract
+      || !body.teachingProofStoragePath || !body.guideStoragePath
+      || !expectedTeaching || !actualTeaching
+      || ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]
+        .some((key) => actualTeaching[key] !== expectedTeaching[key])
+      || payload?.revisionContextHash !== body.revisionContextHash
+      || payload?.parentAtlasRevisionId !== revisionContext.parentAtlasRevisionId
+      || payload?.parentMasterContentHash !== revisionContext.parentMaster?.contentHash
+      || payload?.revisionHistoryMode !== revisionContext.history?.mode
+      || payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION
+      || payload?.model !== DESIGNPANEL_AUTHORING_MODEL
+      || payload?.topologyContract !== "designpro.atlas-normalized-topology.v1"
+      || !Number.isInteger(payload?.modelInputImageCount)
+      || payload.modelInputImageCount < 1 || payload.modelInputImageCount > 14) {
+      throw new FlatAtlasError("flat_atlas_edge_revision_identity_mismatch",
+        "The edit response must prove its exact parent, signed-history mode and six-surface authoring contract");
+    }
+  } else if (!expectedFieldContract) {
     const expectedTeaching = body?.teachingProofIdentity;
     const actualTeaching = payload?.teachingProofIdentity;
     const customerImageCount = Array.isArray(body?.referenceImagesBase64) ? body.referenceImagesBase64.length : 0;
@@ -1784,6 +1830,8 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   logger(`atlas-artboard edge request ${payload.requestId} model=${payload.model} promptChars=${payload.promptChars}`);
   return {
     bytes,
+    model: String(payload.model || "unknown"),
+    contentType: "image/png",
     provenance: {
       requestId: String(payload.requestId),
       functionName: String(payload.functionName),
@@ -1798,6 +1846,12 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       topologyContract: payload.topologyContract || null,
       masterStoragePath: masterPath,
       masterSha256: digest,
+      providerCacheContract: payload.providerCacheContract || null,
+      providerRequestKey: payload.providerRequestKey || null,
+      providerCacheHit: payload.providerCacheHit === true,
+      ...(body.revisionContextHash ? { revisionContextHash: payload.revisionContextHash,
+        parentAtlasRevisionId: payload.parentAtlasRevisionId, parentMasterContentHash: payload.parentMasterContentHash,
+        revisionHistoryMode: payload.revisionHistoryMode } : {}),
       designText: String(payload.designText || ""),
     },
   };
@@ -2004,22 +2058,14 @@ function atlasStoragePath({ tenantKey, generationId, revisionSequence = 1, kind,
 }
 
 /**
- * PER-SURFACE FINISHING — THE FLAG, THE TRANSPORT AND THE CASCADE.
- * ════════════════════════════════════════════════════════════════
- *
- * Returns `null` unless `DESIGNPRO_ATLAS_PANEL_FINISH` is explicitly `on`, and
- * `cutCallOnePanels` then behaves exactly as it always has — same bytes, same
- * hashes, same provenance. **DEFAULT OFF ON PURPOSE.** The pipeline today gets
- * a clean master roughly half the time; a change that has never run against a
- * live customer generation does not get to be the thing standing between the
- * owner and a design. Turn it on, measure it, then make it the default.
- *
- * Misspelling the value resolves to OFF, the same fail-safe direction
- * `DESIGNPRO_STANDARD_TRANSPORT` uses (RULE 0.16) — a flag must never be able
- * to switch a customer path on by accident.
+ * Optional finishing stays default-off. When explicitly enabled, its cascade
+ * runs before canonical publication and records exact recoverable exchanges.
+ * The caller must assemble and revalidate the complete sheet before any panel
+ * or proof is released. A misspelled flag resolves to off.
  */
 function atlasPanelFinisher({
   input, store, supabase, ownerId, logger, generationId, surfaceSourceBytes,
+  requestId, claimToken, checkpointIdentity = null, callPanelEdge = callAtlasPanelEdge,
 } = {}) {
   if (String(process.env.DESIGNPRO_ATLAS_PANEL_FINISH || "").trim().toLowerCase() !== "on") {
     return null;
@@ -2033,11 +2079,15 @@ function atlasPanelFinisher({
     String(input?.brandColors || "").trim(),
   ].filter(Boolean).join(" · ").slice(0, 600);
 
-  // The conversation, accumulated across the six surfaces as whole user/model
+  // The conversation, recovered privately and accumulated as whole user/model
   // exchanges. Each retained model turn replays the sheet it produced, because
   // a thought signature is only meaningful on the part it arrived on -- so the
   // module trims this from the oldest end to stay inside the request budget.
   let reasoningChain = [];
+  const checkpoints = checkpointIdentity ? createFinishingCheckpointStore({
+    supabase, store, bucket: BUCKET, identity: checkpointIdentity,
+    sourceMasterHash: sha256(surfaceSourceBytes), promptVersion: PANEL_AUTHORING_PROMPT_VERSION,
+  }) : null;
 
   return async function finishOnePanel(panel, finishedSoFar) {
     const wanted = PANEL_NEIGHBOURS[panel.surfaceKey] || [];
@@ -2050,7 +2100,13 @@ function atlasPanelFinisher({
     const neighbours = wanted
       .map((key) => byKey.get(key))
       .filter(Boolean);
-    return finishPanelSurface(panel, {
+    const context = { panel, neighbours, priorExchanges: reasoningChain, creativeContext };
+    const saved = await checkpoints?.load(context);
+    if (saved) {
+      reasoningChain = saved.nextExchanges;
+      return saved;
+    }
+    const finish = await finishPanelSurface(panel, {
       neighbours,
       // THE WHOLE A.T.L.A.S., ON EVERY SURFACE (owner ruling 2026-09-08). The
       // accepted sheet is the design's visual DNA -- palette, motif family,
@@ -2066,8 +2122,10 @@ function atlasPanelFinisher({
       creativeContext,
       store,
       logger: (message) => logger?.info?.("flat_atlas_panel_finish", { generationId, message }),
-      callEdge: async (body) => {
-        const payload = await callAtlasPanelEdge(body, { ownerId });
+      callEdge: async (body, { attempt } = {}) => {
+        const payload = await callPanelEdge({ ...body, ...(requestId ? { providerRequest: {
+          requestId, generationId, claimToken, attemptKey: `panel:${panel.surfaceKey}:${attempt}`,
+        } } : {}) }, { ownerId });
         return {
           bytes: await downloadVerified(
             supabase,
@@ -2079,19 +2137,19 @@ function atlasPanelFinisher({
           modelTurn: payload.modelTurn || null,
           historyImageBytes: Number(payload.historyImageBytes || 0),
           thoughtSignatureCount: payload.thoughtSignatureCount || 0,
+          imageRequestCount: Number(payload.imageRequestCount || 0),
+          providerCacheHit: payload.providerCacheHit === true,
           // What replaying this turn will cost the next request.
           panelByteSize: Number(payload.panelBytes || 0),
         };
       },
-    }).then((finish) => {
-      // Advance the chain only on an accepted sheet. A refused pass leaves the
-      // history where it was rather than recording reasoning behind bytes the
-      // run then threw away.
-      if (finish?.applied === true && Array.isArray(finish.nextExchanges)) {
-        reasoningChain = finish.nextExchanges;
-      }
-      return finish;
     });
+    // Advance only on a retained candidate; never replay reasoning for discarded pixels.
+    if (finish?.applied === true && Array.isArray(finish.nextExchanges)) {
+      reasoningChain = finish.nextExchanges;
+    }
+    await checkpoints?.save(context, finish, reasoningChain);
+    return finish;
   };
 }
 
@@ -2108,6 +2166,7 @@ async function callAtlasPanelEdge(body, { ownerId, fetchImpl = fetch } = {}) {
   if (!supabaseUrl || serviceRoleKey.length < 32) {
     throw new FlatAtlasError("flat_atlas_panel_edge_transport_missing", "SUPABASE_URL / service key are required", true);
   }
+  if (body.providerRequest) await requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl, mode: "atlas-panel" });
   const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate`, {
     method: "POST",
     headers: {
@@ -2117,15 +2176,25 @@ async function callAtlasPanelEdge(body, { ownerId, fetchImpl = fetch } = {}) {
       "x-designpro-owner-id": String(ownerId || ""),
     },
     body: JSON.stringify(body),
+  }).catch((cause) => {
+    if (body.providerRequest) throw new FlatAtlasError("provider_outcome_unknown",
+      "The finishing response was interrupted; recover this same provider request before continuing", true);
+    throw cause;
   });
   let payload = null;
   try { payload = await response.json(); } catch { payload = null; }
+  if (body.providerRequest && !payload) {
+    throw new FlatAtlasError("provider_outcome_unknown", "The finishing response could not be decoded; recover the same provider request", true);
+  }
   if (!response.ok || payload?.success !== true) {
-    throw new FlatAtlasError(
-      "flat_atlas_panel_edge_call_failed",
+    throw Object.assign(new FlatAtlasError(
+      /^provider_[a-z0-9_]+$/.test(String(payload?.code || payload?.error || ""))
+        ? String(payload.code || payload.error) : "flat_atlas_panel_edge_call_failed",
       `design-panel-ai-generate atlas-panel failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}`,
-      response.status >= 500,
-    );
+      typeof payload?.retryable === "boolean" ? payload.retryable
+        : response.status >= 500 || [404, 409, 429].includes(response.status),
+    ), { providerRetryDisposition: payload?.providerRetryDisposition || null,
+      providerOutcome: payload?.providerOutcome || null, retryAfterSeconds: payload?.retryAfterSeconds || null });
   }
   // The edge must be the one this runtime was built against, for the same
   // reason Call 1 checks it: the runtime and the function ship through
@@ -2145,6 +2214,10 @@ async function callAtlasPanelEdge(body, { ownerId, fetchImpl = fetch } = {}) {
   }
   if (Number(payload.imageRequestCount) !== 1) {
     throw new FlatAtlasError("flat_atlas_panel_edge_call_count_invalid", `The edge reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
+  }
+  if (body.providerRequest && (payload.providerCacheContract !== "designpro.gemini-provider-cache.v1"
+    || !HASH_RE.test(String(payload.providerRequestKey || "")))) {
+    throw new FlatAtlasError("flat_atlas_provider_cache_receipt_missing", "The finishing response lacks its durable request receipt", true);
   }
   return payload;
 }
@@ -2424,6 +2497,11 @@ function assertAtlasReuseContract(atlas, {
   assertAtlasGeometryBasis(atlas, expectedManifestHash);
   const acceptance = atlas?.masterAcceptance || {};
   const metadata = atlas?.metadata || {};
+  if ((atlas.callOnePanels || []).some((panel) => panel?.panelAuthoringContract)
+    && metadata.masterFinishing?.acceptedMasterHash !== atlas?.master?.contentHash) {
+    throw new FlatAtlasError("flat_atlas_finished_lineage_requires_review",
+      "This historical revision finished panels after publishing a different master. Preserve it for review; do not silently resume production against mixed artwork");
+  }
   const current = atlas?.promptVersion === PROMPT_VERSION
     && acceptance.passed === true
     && acceptance.contract === MASTER_QC_CONTRACT
@@ -2521,6 +2599,42 @@ async function composePassengerFromDriver({
   }
 }
 
+function atlasRevisionIdentity(options) {
+  const revisionSequence = options.revisionSequence ?? 1;
+  const parentRevisionId = options.parentAtlasRevisionId ?? null;
+  const revisionContext = options.revisionContext ?? null;
+  const revisionContextHash = options.revisionContextHash ?? null;
+  const parentManifest = options.parentManifest ?? null;
+  if (!Number.isSafeInteger(revisionSequence) || revisionSequence < 1) {
+    throw new FlatAtlasError("flat_atlas_revision_identity_invalid", "The server must supply the existing revision sequence");
+  }
+  if (revisionSequence === 1) {
+    if (parentRevisionId != null || revisionContext != null || revisionContextHash != null || parentManifest != null) {
+      throw new FlatAtlasError("flat_atlas_revision_identity_invalid", "A first generation cannot claim an edit parent");
+    }
+  } else {
+    const { hashRevisionContext } = require("./atlas-revision-intake.cjs");
+    if (!parentRevisionId || revisionContext?.contractVersion !== "designpro.atlas-revision-intake.v1"
+      || revisionContext.parentAtlasRevisionId !== parentRevisionId
+      || revisionContext.parentRequestId === options.requestId
+      || (!Number.isSafeInteger(revisionContext.parentRevisionSequence)
+        || revisionContext.parentRevisionSequence < 1 || revisionContext.parentRevisionSequence >= revisionSequence)
+      || !HASH_RE.test(String(revisionContextHash || "")) || hashRevisionContext(revisionContext) !== revisionContextHash
+      || !parentManifest || sha256(canonicalBytes(parentManifest)) !== revisionContext.parentManifest?.contentHash
+      || parentManifest.contract !== MANIFEST_CONTRACT || parentManifest.topology !== TOPOLOGY
+      || !Array.isArray(parentManifest.zones) || parentManifest.zones.length !== SURFACE_KEYS.length
+      || SURFACE_KEYS.some(key => parentManifest.zones.filter(zone => zone.surfaceKey === key).length !== 1)
+      || !Array.isArray(revisionContext.affectedSurfaces) || !revisionContext.affectedSurfaces.length
+      || new Set(revisionContext.affectedSurfaces).size !== revisionContext.affectedSurfaces.length
+      || revisionContext.affectedSurfaces.some(key => !SURFACE_KEYS.includes(key))
+      || typeof revisionContext.instruction !== "string" || !revisionContext.instruction.trim()
+      || !["generate-content-replay", "image-reference"].includes(revisionContext.history?.mode)) {
+      throw new FlatAtlasError("flat_atlas_revision_identity_invalid", "An edit must retain its exact parent, instruction, history and measured manifest");
+    }
+  }
+  return { revisionSequence, parentRevisionId, revisionContext, revisionContextHash, parentManifest };
+}
+
 async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
@@ -2543,6 +2657,7 @@ async function generateOrReuseFlatAtlas(options) {
     // The Call-1 transport is injectable so a unit test can drive the authoring
     // loop without a live edge function. Production always uses the real POST.
     callEdge = callAtlasArtboardEdge,
+    callPanelEdge = callAtlasPanelEdge,
     masterRequestMaxBytes = MASTER_REQUEST_MAX_BYTES,
     logger = () => {},
   } = options;
@@ -2552,6 +2667,7 @@ async function generateOrReuseFlatAtlas(options) {
   const maxAuthoringAttempts = resolveMaxAuthoringAttempts(options.maxAuthoringAttempts);
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
+  const { revisionSequence, parentRevisionId, revisionContext, revisionContextHash, parentManifest } = atlasRevisionIdentity(options);
 
   // The original GENIE six-surface manifest retains its canonical identity, and
   // the field territories are a LAYOUT of it: same six surfaces, same inches,
@@ -2565,11 +2681,21 @@ async function generateOrReuseFlatAtlas(options) {
   // -- was authored on the LEGACY six-container manifest, not on field
   // territories. Field territories stay in the tree and stay tested; they are
   // simply not what produced the accepted design.
-  const manifest = buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
+  const manifest = parentManifest ? structuredClone(parentManifest)
+    : buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
   const teachingProof = loadBundledAtlasTeachingProof();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
-  if (geometryResolution) manifest.geometryResolution = geometryResolution;
+  if (!parentManifest && geometryResolution) manifest.geometryResolution = geometryResolution;
+  const checkpointIdentity = {
+    tenantKey, generationId, requestId, ownerId,
+    inputHash: sha256(canonicalBytes(input)), manifestHash: sha256(canonicalBytes(manifest)),
+    promptVersion: PROMPT_VERSION, masterQcContract: MASTER_QC_CONTRACT,
+    finishingMode: String(process.env.DESIGNPRO_ATLAS_PANEL_FINISH || "").trim().toLowerCase() === "on" ? "on" : "off",
+    checkpointKind: "accepted",
+    revisionSequence, parentRevisionId, revisionContextHash,
+  };
+  const storedAuthoringContext = await readAuthoringContext({ supabase, bucket: BUCKET, identity: checkpointIdentity });
 
   // VISIONBOARDIQ RUNS BEFORE THE DESIGN CALL, AND ITS RESULT GOES INTO IT.
   //
@@ -2590,8 +2716,9 @@ async function generateOrReuseFlatAtlas(options) {
   // design call proceeds on the brief with its full professional-design
   // behaviour intact.
   const customerReferenceParts = await verifiedCustomerReferenceParts(supabase, input);
-  const visionBoardStyleDna = String(input?.styleDescriptors || "").trim()
-    || await analyzeVisionBoardStyles({ provider, referenceParts: customerReferenceParts });
+  const visionBoardStyleDna = storedAuthoringContext ? storedAuthoringContext.styleDescriptors
+    : String(input?.styleDescriptors || "").trim()
+      || await analyzeVisionBoardStyles({ provider, referenceParts: customerReferenceParts });
   const authoringInput = visionBoardStyleDna
     ? { ...input, styleDescriptors: visionBoardStyleDna }
     : input;
@@ -2605,7 +2732,7 @@ async function generateOrReuseFlatAtlas(options) {
   // the canonical edge request body (stable fields only) plus that function's
   // pinned prompt version, so the reuse contract still refuses a request whose
   // creative inputs changed.
-  const stableEdgeBody = atlasEdgeRequestBody(authoringInput, manifest, {});
+  const stableEdgeBody = atlasEdgeRequestBody(authoringInput, manifest, { revisionContextHash });
   const promptHash = sha256(Buffer.from(
     `${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
     "utf8",
@@ -2619,6 +2746,10 @@ async function generateOrReuseFlatAtlas(options) {
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
+    if (existing.revisionSequence !== revisionSequence || existing.parentRevisionId !== parentRevisionId
+      || (existing.metadata?.revisionContextHash ?? null) !== revisionContextHash) {
+      throw new FlatAtlasError("flat_atlas_revision_identity_mismatch", "Stored artwork belongs to a different revision parent or edit context");
+    }
     const expectedManifestHash = sha256(canonicalBytes(manifest));
     assertAtlasReuseContract(existing, {
       expectedManifestHash,
@@ -2628,11 +2759,21 @@ async function generateOrReuseFlatAtlas(options) {
     logger(`reused immutable atlas revision ${existing.revisionSequence} ${existing.master.contentHash}`);
     return existing;
   }
+  if (!storedAuthoringContext) await writeAuthoringContext({ store, identity: checkpointIdentity, styleDescriptors: visionBoardStyleDna });
+  const acceptedCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET, identity: checkpointIdentity });
+  const authoredCheckpoint = !acceptedCheckpoint && checkpointIdentity.finishingMode === "on"
+    ? await readAcceptedCheckpoint({ supabase, bucket: BUCKET, identity: { ...checkpointIdentity, checkpointKind: "authored" } })
+    : null;
+  const recoveredCheckpoint = acceptedCheckpoint || authoredCheckpoint;
+  if (recoveredCheckpoint && recoveredCheckpoint.promptHash !== promptHash) {
+    throw new FlatAtlasError("flat_atlas_checkpoint_prompt_mismatch", "Recovery must replay the exact original authoring context");
+  }
 
   // A request lease can expire while an image call is in flight. Claim a
   // durable, append-only authoring fence before spending the single Atlas
   // master call so a replacement worker cannot create a second master.
-  const { data: authoringClaimed, error: authoringClaimError } = await supabase.rpc(
+  const { data: authoringClaimed, error: authoringClaimError } = recoveredCheckpoint
+    ? { data: true, error: null } : await supabase.rpc(
     "claim_designpro_flat_atlas_authoring",
     { p_request_id: requestId, p_claim_token: claimToken },
   );
@@ -2643,14 +2784,11 @@ async function generateOrReuseFlatAtlas(options) {
       true,
     );
   }
-  if (authoringClaimed !== true) {
-    throw new FlatAtlasError(
-      "flat_atlas_authoring_already_started",
-      "This request already spent its one Atlas master-authoring attempt",
-    );
-  }
+  // A spent fence never authorizes a fresh provider call. The edge's read-only
+  // cache probe can recover a completed outcome under the replacement lease.
+  // Its capability handshake fails BEFORE POST on an older edge deployment.
+  const providerRecoveryOnly = authoringClaimed !== true;
 
-  const revisionSequence = 1;
   const manifestBytes = canonicalBytes(manifest);
   const manifestHash = sha256(manifestBytes);
   // TWO RENDERS OF ONE GEOMETRY, SPLIT BY CONSUMER.
@@ -2699,37 +2837,35 @@ async function generateOrReuseFlatAtlas(options) {
     teachingProofIdentity: teachingProof.identity,
     guideStoragePath: guideInputPath,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
+    revisionContextHash,
   };
-  // ONE AUTHORING, BOUNDED RE-ROLLS. The authoring fence above is claimed once,
-  // so no replacement worker can mint a second master -- but inside that fence a
-  // rejected candidate is not "the design": it was never persisted and nobody
-  // saw it. Killing the whole run on the first rejection made every A.T.L.A.S.
-  // request a coin flip on Gemini honouring SOLID PANELS in one throw (live,
-  // 2026-08-24: the first real run after the cutout gate shipped died exactly
-  // there). A rejection now re-rolls with the gate's own findings appended as
-  // corrective direction -- the same generate/inspect/correct loop the proof QC
-  // already runs -- and only the exhausted case fails the run.
-  let generated;
-  let masterBytes;
-  let masterHash;
-  let masterRequestByteSize = 0;
-  let masterAuthoringAttempts = 0;
-  let masterDelivery = null;
+  // One initial candidate and at most one unchanged fallback after an existing
+  // blocking refusal. A retry recovers that exact durable attempt; it never
+  // adds corrective text or automatically authorizes a third creative call.
+  const recoveredState = recoveredCheckpoint?.state;
+  let generated = recoveredState ? { ...recoveredState.generated, bytes: recoveredCheckpoint.rawBytes } : null;
+  let masterBytes = recoveredCheckpoint?.masterBytes;
+  let masterHash = recoveredCheckpoint?.master.contentHash;
+  let masterRequestByteSize = recoveredState?.masterRequestByteSize || 0;
+  let masterAuthoringAttempts = recoveredState?.masterAuthoringAttempts || 0;
+  let masterDelivery = recoveredState?.masterDelivery || null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
   // The pixel measurements that actually decided acceptance, kept for the row.
-  let masterDeterministic = null;
+  let masterDeterministic = recoveredState?.masterDeterministic || null;
   // The output-class receipt for the accepted candidate (owner ruling
   // 2026-09-01): flat_atlas, or unavailable when the inspector transport
   // failed. A vehicle_depiction verdict never reaches acceptance.
-  let outputClassReceipt = null;
-  const edgeProvenance = [];
+  let outputClassReceipt = recoveredState?.outputClassReceipt || null;
+  const edgeProvenance = recoveredState?.edgeProvenance ? [...recoveredState.edgeProvenance] : [];
+  const mintedRevisionId = recoveredCheckpoint?.revisionId || randomUUID();
+  let masterFinishing = recoveredState?.masterFinishing || null;
   // OPTIMIZE TIME TO DRIVER, AND MEASURE IT. (Owner, 2026-08-27: "click->master,
   // master->Driver, click->Driver ... those are the primary latency metrics.")
   // Call 1 owns the first of those three, so it records its own segments on the
   // immutable revision -- an argument about latency is then a query, not a
   // stopwatch held against a browser tab.
-  const callOneStartedAt = Date.now();
+  const callOneStartedAt = recoveredState?.callOneStartedAt || Date.now();
   const timings = {
     authoringMs: 0,
     normalizeMs: 0,
@@ -2740,13 +2876,28 @@ async function generateOrReuseFlatAtlas(options) {
     projectionMs: 0,
     uploadWaitMs: 0,
     semanticWaitMs: 0,
+    ...(recoveredState?.timings || {}),
   };
+  const checkpointState = () => {
+    const { bytes: _providerBytes, ...generatedReceipt } = generated;
+    const { bytes: _deliveryBytes, ...deliveryReceipt } = masterDelivery || {};
+    const { bytes: _mirrorBytes, ...mirrorReceipt } = passengerMirror || {};
+    return { generated: generatedReceipt, masterDelivery: deliveryReceipt, masterDeterministic,
+      outputClassReceipt, edgeProvenance, masterRequestByteSize, masterAuthoringAttempts,
+      maxAuthoringAttemptsAllowed: maxAuthoringAttempts,
+      passengerMirror: mirrorReceipt, preMirrorMasterHash, masterFinishing, timings, callOneStartedAt };
+  };
+  if (!recoveredCheckpoint) {
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
     masterAuthoringAttempts = attempt;
     // NO corrective-note text (owner boundary contract 2026-09-01): every attempt is
     // the identical primary-generation request; temperature 1.0 supplies the
     // re-roll variation. The bounded attempt budget above is unchanged.
     const attemptBody = atlasEdgeRequestBody(authoringInput, manifest, edgeExtras);
+    // This envelope is transport identity only. It never enters the creative
+    // prompt, its stable promptHash, or the model's contents.
+    attemptBody.providerRequest = { requestId, generationId, claimToken, attemptKey: `master:${attempt}`,
+      ...(providerRecoveryOnly ? { cacheOnly: true } : {}) };
     masterRequestByteSize = Buffer.byteLength(JSON.stringify(attemptBody), "utf8");
     if (masterRequestByteSize > masterRequestMaxBytes) {
       throw new FlatAtlasError(
@@ -2759,7 +2910,7 @@ async function generateOrReuseFlatAtlas(options) {
     // exactly one Gemini image request per attempt; this runtime never calls
     // Gemini for Call 1 (owner directive 2026-08-27).
     const authoringStartedAt = Date.now();
-    generated = await callEdge(attemptBody, { logger, ownerId, supabase });
+    generated = await callEdge(attemptBody, { logger, ownerId, supabase, revisionContext });
     timings.authoringMs += Date.now() - authoringStartedAt;
     edgeProvenance.push(generated.provenance);
     const normalizeStartedAt = Date.now();
@@ -2849,6 +3000,7 @@ async function generateOrReuseFlatAtlas(options) {
     // temperature 1.0 supplies the variation. The refusal itself is recorded
     // above in `edgeProvenance` / the thrown error on exhaustion.
   }
+  }
   // ── PASSENGER IS THE DRIVER FLANK, MIRRORED. (Owner ruling, Trish 2026-09-07)
   //
   // "We need a mirrored version for passenger of driver."
@@ -2879,7 +3031,7 @@ async function generateOrReuseFlatAtlas(options) {
   // when the bands cannot be established on a design that carries lettering,
   // THE MIRROR DOES NOT RUN. Falling through to the authored passenger is the
   // behaviour of every run before this one; shipping reversed type is not.
-  const passengerMirror = await composePassengerFromDriver({
+  const passengerMirror = recoveredState?.passengerMirror || await composePassengerFromDriver({
     masterBytes,
     manifest,
     guideBytes: authoringGuideBytes,
@@ -2887,7 +3039,7 @@ async function generateOrReuseFlatAtlas(options) {
     provider,
     logger,
   });
-  if (passengerMirror.composed) {
+  if (passengerMirror.composed && !recoveredCheckpoint) {
     // Same re-validation the repair path earns: a deterministic transform is
     // REPEATABLE, which is not the same as VALID.
     const mirrored = await deterministicMasterChecks(passengerMirror.bytes, manifest);
@@ -2904,12 +3056,12 @@ async function generateOrReuseFlatAtlas(options) {
   // the accepted master -- the same resolution the owner reached for the
   // repaired sheet on 2026-08-31, for the same reason: two masters is what
   // makes a correct pair report as a mismatch.
-  const preMirrorMasterHash = passengerMirror.composed ? masterHash : null;
-  if (passengerMirror.composed) {
+  const preMirrorMasterHash = recoveredState?.preMirrorMasterHash || (passengerMirror.composed ? masterHash : null);
+  if (passengerMirror.composed && !recoveredCheckpoint) {
     masterBytes = passengerMirror.bytes;
     masterHash = sha256(masterBytes);
   }
-  const masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
+  let masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
   // ONE REPAIRED SHEET FEEDS BOTH HALVES OF THE FAN-OUT.
   //
   // `masterBytes` is never touched: it is persisted as authored and stays the
@@ -2943,8 +3095,8 @@ async function generateOrReuseFlatAtlas(options) {
   const repairStartedAt = Date.now();
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
   timings.repairMs += Date.now() - repairStartedAt;
-  const surfaceSourceBytes = cutoutFill.bytes;
-  const panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
+  let surfaceSourceBytes = cutoutFill.bytes;
+  let panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
 
   // ⛔ STRUCTURAL RE-VALIDATION AFTER REPAIR. (Owner, 2026-08-31)
   //
@@ -2973,6 +3125,66 @@ async function generateOrReuseFlatAtlas(options) {
         + repaired.blockingFailures.join("; "),
       );
     }
+  }
+
+  // Optional finishing is PRIVATE preparation until the entire composed sheet
+  // passes the same master gates. Publishing its old master first would let
+  // panels and proofs silently carry different artwork under one parent hash.
+  // Default-off authoring pays no finishing calls and retains its exact pixels.
+  if (checkpointIdentity.finishingMode === "on" && !acceptedCheckpoint) {
+    if (!authoredCheckpoint) await writeAcceptedCheckpoint({
+      store, supabase, bucket: BUCKET, identity: { ...checkpointIdentity, checkpointKind: "authored" }, revisionId: mintedRevisionId,
+      promptHash, authoringInput, masterBytes: surfaceSourceBytes, masterStoragePath,
+      rawBytes: generated.bytes, state: checkpointState(),
+    });
+    const originalSourceHash = sha256(surfaceSourceBytes);
+    const rawPanels = await cutCallOnePanels(surfaceSourceBytes, manifest, originalSourceHash);
+    const finishSurface = atlasPanelFinisher({
+      input, store, supabase, ownerId, logger, generationId, requestId, claimToken, surfaceSourceBytes,
+      checkpointIdentity, callPanelEdge,
+    });
+    const finished = [];
+    const neighbours = [];
+    for (const surfaceKey of PANEL_CASCADE_ORDER) {
+      const panel = rawPanels.find((item) => item.surfaceKey === surfaceKey);
+      const finish = await finishSurface(panel, neighbours);
+      finished.push({ ...panel, finish });
+      neighbours.push(finish.applied ? { ...panel, bytes: finish.bytes, contentHash: finish.contentHash,
+        byteSize: finish.bytes.length } : panel);
+    }
+    const assembled = await assembleFinishedMaster(surfaceSourceBytes, manifest, finished);
+    if (assembled.changed) {
+      const finishedChecks = await deterministicMasterChecks(assembled.bytes, manifest);
+      if (finishedChecks.blockingFailures.length || finishedChecks.cutoutFindings.length) {
+        throw new FlatAtlasError("flat_atlas_finished_master_invalid",
+          "The optional finishing pass did not preserve six complete printable artwork regions: "
+            + [...finishedChecks.blockingFailures, ...finishedChecks.cutoutFindings.map((item) => item.finding)].join("; "));
+      }
+      const finishedClass = await classifyAtlasCandidate({ provider, bytes: assembled.bytes });
+      if (finishedClass.blocking) {
+        throw new FlatAtlasError("flat_atlas_finished_master_output_class_invalid",
+          "The optional finishing pass changed the sheet into a vehicle depiction; nothing was published");
+      }
+      masterBytes = assembled.bytes;
+      masterHash = assembled.contentHash;
+      surfaceSourceBytes = masterBytes;
+      panelSourceHash = masterHash;
+      masterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: masterHash });
+      masterDeterministic = finishedChecks;
+      outputClassReceipt = finishedClass;
+    }
+    masterFinishing = {
+      contract: FINISHED_MASTER_CONTRACT, promptVersion: PANEL_AUTHORING_PROMPT_VERSION,
+      sourceMasterHash: originalSourceHash, acceptedMasterHash: masterHash, changed: assembled.changed,
+      imageRequestCount: finished.reduce((sum, panel) => sum + Number(panel.finish.imageRequestCount || 0), 0),
+      surfaces: finished.map(({ surfaceKey, finish }) => ({
+        surfaceKey, applied: finish.applied === true, reason: finish.reason || null,
+        attempts: Number(finish.attempts || 0), preFinishHash: finish.preFinishHash || null,
+        imageRequestCount: Number(finish.imageRequestCount || 0), providerCacheHits: Number(finish.providerCacheHits || 0),
+        contentHash: finish.contentHash, thoughtSignatureCount: Number(finish.thoughtSignatureCount || 0),
+        checkpointReused: finish.checkpointReused === true,
+      })),
+    };
   }
 
   // ── THE ACCEPTED MASTER IS THE ONE THAT PASSED. (Owner, 2026-08-31) ────────
@@ -3014,6 +3226,13 @@ async function generateOrReuseFlatAtlas(options) {
   const acceptedMasterStoragePath = cutoutFill.changed
     ? atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: acceptedMasterHash })
     : masterStoragePath;
+  // Persist the accepted identity BEFORE observers can start proofs. Recovery
+  // resumes the same revision and accepted bytes without spending Call 1 again.
+  const acceptedRecovery = acceptedCheckpoint ? {
+    storagePath: acceptedCheckpoint.storagePath, contentHash: acceptedCheckpoint.contentHash,
+  } : await writeAcceptedCheckpoint({ store, supabase, bucket: BUCKET, identity: checkpointIdentity, revisionId: mintedRevisionId,
+    promptHash, authoringInput, masterBytes: acceptedMasterBytes, masterStoragePath: acceptedMasterStoragePath,
+    rawBytes: generated.bytes, state: checkpointState() });
 
   // ── THE PROGRESSIVE ATLAS: THE ROOT NODE, PUBLISHED BEFORE ITS BRANCHES ────
   //
@@ -3028,26 +3247,15 @@ async function generateOrReuseFlatAtlas(options) {
   // surface check, same refusal on a mismatch. Nothing is bypassed to go
   // earlier; the object simply exists sooner.
   //
-  // `revisionId` is the one field that cannot exist yet: it is the primary key
-  // of a row written after the panels. It is not read by any conditioning path
-  // (`atlasProjectionParts` never mentions it), and it is filled in below the
-  // moment the row lands -- long before a ~30s proof reaches its persist step.
-  // MINTED HERE, NOT ASSIGNED BY THE INSERT.
-  //
-  // `revisionId` was the one field genuinely unknown at master-ready time: the
-  // primary key of `designpro_flat_atlas_revisions`, previously left to
-  // Postgres's `DEFAULT extensions.gen_random_uuid()`. That default is exactly
-  // as good as a client-generated one -- both are just a random v4 UUID -- so
-  // minting it now and passing it explicitly as the row's `id` on insert loses
-  // nothing and lets every consumer of the progressive root node reference the
-  // real, final identity from the first moment the master exists, instead of
-  // only after the row is written.
-  const mintedRevisionId = randomUUID();
+  // The revision identity was allocated before the durable accepted checkpoint.
+  // A resumed worker reuses that same identity; the final row records it rather
+  // than generating a second ID after proof nodes have already started.
   const progressiveAtlas = {
     contract: ATLAS_CONTRACT,
     promptVersion: PROMPT_VERSION,
     revisionId: mintedRevisionId,
     revisionSequence,
+    parentRevisionId,
     manifest,
     // The ACCEPTED master -- the sheet that passed structural validation, which
     // on a repaired run is the repaired one. Identical to `masterHash`/
@@ -3121,11 +3329,8 @@ async function generateOrReuseFlatAtlas(options) {
     });
   const [callOnePanels, projection] = await Promise.all([
     cutCallOnePanels(surfaceSourceBytes, manifest, acceptedMasterHash, {
-      finishPanel: atlasPanelFinisher({
-        input, store, supabase, ownerId: input?.ownerId, logger, generationId,
-        // The accepted sheet, exactly as the panels were cut from it.
-        surfaceSourceBytes,
-      }),
+      // Finishing, when selected, already passed whole-master acceptance.
+      // These canonical panels are exact crops of the one published master.
       onPanelRetry: ({ surfaceKey, attempt, reason }) => logger?.warn?.(
         "flat_atlas_panel_cut_retry", { generationId, surfaceKey, attempt, reason },
       ),
@@ -3211,14 +3416,14 @@ async function generateOrReuseFlatAtlas(options) {
     tenantKey, generationId, revisionSequence, kind: "projection", contentHash: projection.contentHash,
   });
 
-  // The guide, manifest, master, derivative and six panels enter durable storage
-  // as one parallel batch after deterministic structural acceptance.
+  // Join remaining guide, manifest, derivative and panel writes. The accepted
+  // master is already durable because its checkpoint precedes public events.
   const persistImmutableAssets = () => Promise.all([
     store.putImmutableBytes({ storagePath: guideStoragePath, bytes: guideBytes, contentType: "image/png" }),
     store.putImmutableBytes({ storagePath: manifestStoragePath, bytes: manifestBytes, contentType: "application/json" }),
     // The accepted sheet is what persists under the canonical path. On a
     // clean run these are the same bytes at the same path they always were.
-    store.putImmutableBytes({ storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes, contentType: "image/png" }),
+    // The accepted master was already persisted before its recovery receipt.
     store.putImmutableBytes({
       storagePath: projectionStoragePath, bytes: projection.bytes, contentType: projection.contentType,
     }),
@@ -3285,7 +3490,7 @@ async function generateOrReuseFlatAtlas(options) {
     generation_id: generationId,
     owner_id: ownerId,
     tenant_key: tenantKey,
-    parent_revision_id: null,
+    parent_revision_id: parentRevisionId,
     revision_sequence: revisionSequence,
     guide_storage_path: guideStoragePath,
     guide_content_hash: guideHash,
@@ -3304,8 +3509,8 @@ async function generateOrReuseFlatAtlas(options) {
     projection_byte_size: projection.byteSize,
     projection_content_type: projection.contentType,
     manifest,
-    affected_surfaces: [...SURFACE_KEYS],
-    instruction: null,
+    affected_surfaces: revisionContext ? [...revisionContext.affectedSurfaces] : [...SURFACE_KEYS],
+    instruction: revisionContext?.instruction || null,
     production_eligible: false,
     model: String(generated.model || "unknown"),
     prompt_version: PROMPT_VERSION,
@@ -3319,6 +3524,9 @@ async function generateOrReuseFlatAtlas(options) {
       contract: ATLAS_CONTRACT,
       inputContract: INPUT_CONTRACT,
       pipelineMode: PIPELINE_MODE,
+      revisionContextHash,
+      ...(revisionContext ? { parentMasterContentHash: revisionContext.parentMaster.contentHash,
+        revisionHistoryMode: revisionContext.history.mode } : {}),
       topology: manifest.topology,
       legacyTopology: manifest.legacyTopology || TOPOLOGY,
       geometryAuthority: manifest.geometryAuthority,
@@ -3419,6 +3627,10 @@ async function generateOrReuseFlatAtlas(options) {
       // The deterministic measurements ARE the gate, so they are always present:
       // the judge's own copy when it returned one, the loop's otherwise.
       masterQcDeterministic: masterDeterministic,
+      masterFinishing,
+      acceptedRecovery,
+      recoveredFromAcceptedCheckpoint: Boolean(acceptedCheckpoint),
+      recoveredFromAuthoredCheckpoint: Boolean(authoredCheckpoint),
       masterQcReview: null,
       // Deterministic container/pixel/hash/lineage checks accepted this master.
       masterAcceptance: "deterministic",
@@ -3568,6 +3780,8 @@ module.exports = {
     // Exported so the composition can be EXECUTED on real bytes rather than
     // asserted about as source text. A guard that has never run is a comment.
     composePassengerFromDriver,
+    resolveMaxAuthoringAttempts,
+    atlasRevisionIdentity,
     // Exported so the GENIE resolver's authority can be validated by its real
     // consumer in one test, across the seam that separates them.
     normalizedGeometryAuthority,
@@ -3583,6 +3797,7 @@ module.exports = {
     exampleSetHash,
     estimatedMasterRequestBytes,
     callAtlasArtboardEdge,
+    callAtlasPanelEdge,
     fitCenterColumn,
     fitRotatedSide,
     authoringGuideSvg,

@@ -26,6 +26,8 @@ export interface ProductionFlowAssetMeta {
 export interface ProductionFlowAssetRow {
   id: string;
   job_id?: string;
+  entice_pack_id?: string;
+  revision_id?: string;
   side: string;
   version: string;
   dimensions_inches?: Record<string, number> | null;

@@ -54,6 +54,7 @@ import {
   loadDesignVersionHistory,
   versionCommitsFromHistory,
 } from "@/lib/design-version-history";
+import { artifactsForStudioRevision, selectAtlasRevision, viewBelongsToRevision } from "@/lib/studio-artifact-identity.mjs";
 
 /**
  * One design as the page consumes it. The names are the legacy column names on
@@ -82,7 +83,8 @@ export type RevisionStudioDesignRow = {
   pipeline: "atlas" | "standard" | null;
   created_at: string | null;
   updated_at: string | null;
-  generation_status: "completed";
+  generation_status: "completed" | "processing" | "failed";
+  atlas_revision_id?: string | null;
   /** Synthesized projection of server state -- see the module note. */
   admin_notes: string;
   /** Columns the cards read but the run tables have no equivalent for. */
@@ -133,6 +135,14 @@ export function renderUrlsFromViews(views: readonly ApprovedGenerationView[]): R
     urls[view.sourceViewType] = view.signedUrl;
   }
   return urls;
+}
+
+/** A legacy hero is a saved proof camera, never an alias for active Close-Up. */
+export function historicalStudioProofs(renderUrls: Record<string, unknown> | null | undefined) {
+  const urls = [...new Set([renderUrls?.["hero-3d"], renderUrls?.hero3d]
+    .filter((url): url is string => typeof url === "string" && !!url.trim()))];
+  if (urls.length !== 1) return [];
+  return [{ key: "hero-3d", url: urls[0], label: "Historical 3D proof", readOnly: true as const }];
 }
 
 /**
@@ -197,7 +207,7 @@ export function designRowFromJob(
     pipeline: null,
     created_at: job.createdAt,
     updated_at: job.updatedAt,
-    generation_status: "completed",
+    generation_status: new Set(views.filter((view) => view.signedUrl).map((view) => view.sourceViewType)).size >= 7 ? "completed" : "processing",
     admin_notes: adminNotesFor({ job, artifacts }),
     custom_design_url: null,
     custom_swatch_url: null,
@@ -248,7 +258,7 @@ export function designRowFromLibraryEntry(
     pipeline: entry.pipeline,
     created_at: entry.createdAt,
     updated_at: entry.updatedAt || entry.createdAt,
-    generation_status: "completed",
+    generation_status: new Set(views.filter((view) => view.signedUrl).map((view) => view.sourceViewType)).size >= 7 ? "completed" : "processing",
     admin_notes: adminNotesFor({
       job: {
         generationId: entry.generationId,
@@ -278,18 +288,22 @@ export function designRowFromLibraryEntry(
   };
 }
 
-/** Views and artifacts for one run, each failing soft into an empty list. */
-async function detailFor(generationId: string) {
-  const [views, artifacts] = await Promise.all([
-    // A run whose views cannot be read is still a real design and still gets a
-    // card; it simply shows no preview yet. Dropping it would make a design
-    // disappear from the customer's own studio because one signed URL failed.
-    dpApi.listApprovedViews(generationId).catch(() => [] as ApprovedGenerationView[]),
-    // Artifacts only exist after the production handoff, so an entice-stage run
-    // legitimately has none.
+/** Resolve one revision before projecting any proof, panel, logo or geometry. */
+async function detailFor(generationId: string, revisionId?: string | null) {
+  const [artifacts, revisions] = await Promise.all([
     dpApi.listArtifacts(generationId).catch(() => [] as WorkflowArtifact[]),
+    dpApi.listJobFlatAtlasRevisions(generationId),
   ]);
-  return { views, artifacts };
+  const revision = selectAtlasRevision(revisions, revisionId);
+  if (revisionId && !revision) return { views: [], artifacts: [], revision: null, missingRevision: true };
+  // Resolve the version first: an unqualified read names the latest request,
+  // and filtering those images cannot recover a selected older request.
+  const views = await dpApi.listApprovedViews(generationId, revision?.id);
+  return {
+    views: revision ? views.filter((view) => viewBelongsToRevision(view, revision)) : views.filter((view) => !view.atlasBinding),
+    artifacts: revision ? artifactsForStudioRevision(artifacts, revision) : artifacts,
+    revision, missingRevision: false,
+  };
 }
 
 /**
@@ -311,8 +325,8 @@ export async function listRevisionStudioDesigns(): Promise<RevisionStudioDesignR
   const library = await dpApi.listDesignLibrary();
   const rows = await Promise.all(
     library.map(async (entry) => {
-      const { views, artifacts } = await detailFor(entry.generationId);
-      return designRowFromLibraryEntry(entry, views, artifacts);
+      const detail = await detailFor(entry.generationId).catch(() => ({ views: [], artifacts: [], revision: null }));
+      return { ...designRowFromLibraryEntry(entry, detail.views, detail.artifacts), atlas_revision_id: detail.revision?.id || null };
     }),
   );
   return rows.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
@@ -330,13 +344,16 @@ export async function listRevisionStudioDesigns(): Promise<RevisionStudioDesignR
  */
 export async function readRevisionStudioDesign(
   generationId: string,
+  revisionId?: string | null,
 ): Promise<RevisionStudioDesignRow | null> {
   const id = String(generationId || "").trim();
   if (!id) return null;
   const job = await dpApi.getStatus(id).catch(() => null);
   if (!job) return null;
-  const { views, artifacts } = await detailFor(job.generationId);
-  return designRowFromJob(job, views, artifacts);
+  const detail = await detailFor(job.generationId, revisionId);
+  if (detail.missingRevision) return null;
+  return { ...designRowFromJob(job, detail.views, detail.artifacts), atlas_revision_id: detail.revision?.id || null,
+    ...(detail.revision ? { revision: detail.revision.revisionSequence } : {}) };
 }
 
 /**
@@ -362,11 +379,12 @@ export async function readRevisionStudioDesign(
 export async function loadLayeredEditSources(
   generationId: string,
   surfaceKey: string,
+  revisionId?: string | null,
 ): Promise<{ cleanUrl: string | null; logos: Array<{ url: string; label: string }> }> {
   const id = String(generationId || "").trim();
   const surface = String(surfaceKey || "").trim();
   if (!id || !surface) return { cleanUrl: null, logos: [] };
-  const artifacts = await dpApi.listArtifacts(id).catch(() => [] as WorkflowArtifact[]);
+  const { artifacts } = await detailFor(id, revisionId);
   const clean = artifacts.find(
     (artifact) => artifact.kind === "qc-panel" && artifact.surfaceKey === surface,
   );
@@ -395,12 +413,12 @@ export async function loadLayeredEditSources(
  * Null when Call 9 has not published the driver panel yet, which the caller
  * reports as "set a real vehicle" rather than guessing.
  */
-export async function loadDriverPanelGeometry(generationId: string): Promise<
+export async function loadDriverPanelGeometry(generationId: string, revisionId?: string | null): Promise<
   { trimWidthIn: number; trimHeightIn: number; surfaceSqFt: number | null } | null
 > {
   const id = String(generationId || "").trim();
   if (!id) return null;
-  const artifacts = await dpApi.listArtifacts(id).catch(() => [] as WorkflowArtifact[]);
+  const { artifacts } = await detailFor(id, revisionId);
   const driver = artifacts.find(
     (artifact) => artifact.kind === "panel" && artifact.surfaceKey === "driver",
   );
@@ -441,7 +459,34 @@ export async function listRevisionStudioVersions(
  * verbatim prompts, same timestamps and same master hashes PanelPro shows,
  * because both come from `loadDesignVersionHistory` and nothing else.
  */
-export async function revisionStudioVersionCommits(generationId: string) {
+export async function revisionStudioVersionCommits(generationId: string, revisionId?: string | null) {
   const history = await loadDesignVersionHistory(generationId);
-  return versionCommitsFromHistory(history);
+  const commits = versionCommitsFromHistory(history).map((commit) => ({
+    ...commit,
+    revision_snapshot: { ...commit.revision_snapshot,
+      parentRevisionId: history.versions.find((version) => version.revisionId === commit.id)?.parentRevisionId || null },
+  }));
+  const selected = revisionId
+    ? history.versions.find((version) => version.revisionId === revisionId)
+    : history.current;
+  // The existing ledger remains the history. Only the selected version and
+  // its actual parent need fresh signed proof URLs for inspection/comparison.
+  // A missing named version never substitutes current proofs.
+  if (!selected) return commits;
+  const parent = history.versions.find((version) => version.revisionId === selected.parentRevisionId);
+  const ownViews = await Promise.all([selected, ...(parent ? [parent] : [])].map(async (version) => {
+    const views = await dpApi.listApprovedViews(generationId, version.revisionId);
+    return [version.revisionId, views.filter((view) => viewBelongsToRevision(view, version.revision))] as const;
+  }));
+  const byRevision = new Map(ownViews);
+  return commits.map((commit) => {
+    const views = byRevision.get(commit.id);
+    if (!views) return commit;
+    return {
+      ...commit,
+      // The master stays private. Only proof cameras go into customer history.
+      hero_render_url: views.find((view) => view.sourceViewType === "side")?.signedUrl || null,
+      angle_renders_json: views.map((view) => ({ view: view.sourceViewType, url: view.signedUrl })),
+    };
+  });
 }

@@ -62,8 +62,8 @@ test("every canonical binding cites the accepted master, not the pre-repair one"
     "the published A.T.L.A.S. root must carry the accepted master");
   assert.match(source, /cutCallOnePanels\(surfaceSourceBytes, manifest, acceptedMasterHash, \{/,
     "the six panels must cite the accepted master as their lineage");
-  assert.match(source, /storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes/,
-    "the accepted bytes are what persists under the canonical path");
+  assert.match(source, /masterBytes: acceptedMasterBytes, masterStoragePath: acceptedMasterStoragePath/,
+    "the accepted bytes must enter durable recovery at the canonical path before publication");
   assert.match(source, /master_storage_path: acceptedMasterStoragePath,\s*\n\s*master_content_hash: acceptedMasterHash,\s*\n\s*master_byte_size: acceptedMasterBytes\.length,/,
     "the revision row must record the accepted master");
   assert.match(source, /sourceMasterHash: acceptedMasterHash,/,

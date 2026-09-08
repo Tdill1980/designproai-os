@@ -1,39 +1,17 @@
 /**
- * THE SERVER CONDUCTS. THE BROWSER SUBMITS AND OBSERVES.
- *
- * RevisionStudioIQ used to drive the production half itself: it called the
- * `designpro-file-output-api` edge function to submit a revision, resume a run
- * and poll its status, and it wrote the design's own `render_urls` back to a
- * table. That is browser-owned orchestration, which the canonical contract
- * retires -- and every one of those names is on the customer-path seam gate's
- * forbidden list.
- *
- * This module is the replacement, exposing the same four operations the page
- * already calls, in the same shapes, so the page's ~9,800 lines of UI stay
- * exactly as they are. Underneath, each one is the server's own equivalent:
- *
- *   getDesignBuildStatus  ->  dpApi.getStatus + dpApi.listArtifacts
- *   requestDesignBuild     ->  dpApi.requestResume
- *   resumeDesignBuild     ->  dpApi.requestResume
- *   readDesignAfterEdit       ->  a re-read, because the browser writes nothing
- *
- * WHY SUBMIT AND RESUME ARE THE SAME CALL. In the old world "submit" created a
- * run from a frozen visualization row and "resume" restarted one. Here the run
- * already exists -- the A.T.L.A.S. handoff created it the moment the master was
- * accepted -- so the only honest action a browser has is to ask the server to
- * make pending and retryable work available again. `resume_designpro_workflow`
- * is that action, it never steals an unexpired lease, and it is idempotent.
- *
- * WHY SAVE WRITES NOTHING. A design's views are server-owned artifacts, hashed
- * and bound to the accepted master. A browser that persisted its own copy of
- * `render_urls` would be a second producer of the thing the whole pipeline is
- * anchored to. So the save re-reads the run and returns what the server
- * actually holds; if the page's optimistic copy disagreed, the server's answer
- * is the one that survives.
+ * RevisionStudio submits edit intent against one immutable ATLAS parent.
+ * The server preserves the GenerationID, appends the existing revision history,
+ * and owns the mapped panel/proof regeneration and production handoff.
+ * Browser-edited images are references only, never canonical print artwork.
  */
-import { dpApi, FLAT_FIRST_ATLAS_PIPELINE_MODE } from "@/lib/designpro-api";
+import {
+  dpApi, ROLE_FOR_SOURCE_VIEW_TYPE,
+  type AssetIdentity, type FlatAtlasRevision, type GenerationRevisionReceipt,
+  type GenieSurfaceKey,
+} from "@/lib/designpro-api";
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
-import { readRevisionStudioDesign } from "@/lib/revisionstudio-source";
+import { artifactsForStudioRevision } from "@/lib/studio-artifact-identity.mjs";
+import { composeRenderWithLayers, type PlacedLayer } from "@/lib/logo-composite";
 
 /** What the page labels a build with. Kept verbatim so call sites are unchanged. */
 export type DesignBuildTrigger =
@@ -84,6 +62,8 @@ export async function getDesignBuildStatus(locator: {
   visualizationId?: string | null;
   generationId?: string | null;
   runId?: string | null;
+  atlasRevisionId?: string | null;
+  revisionRequest?: GenerationRevisionReceipt | null;
 }): Promise<DesignBuildStatus> {
   const id = String(
     locator.generationId || locator.visualizationId || locator.runId || "",
@@ -96,13 +76,25 @@ export async function getDesignBuildStatus(locator: {
   if (!id) return empty;
   const job = await dpApi.getStatus(id).catch(() => null);
   if (!job) return empty;
-  const artifacts = await dpApi.listArtifacts(job.generationId).catch(() => []);
-  const proof = selectCustomerProof(artifacts);
+  const [artifacts, revisions, request] = await Promise.all([
+    dpApi.listArtifacts(job.generationId), dpApi.listJobFlatAtlasRevisions(job.generationId),
+    locator.revisionRequest ? dpApi.getGenerationRequest(locator.revisionRequest.requestId) : Promise.resolve(null),
+  ]);
+  if (request && (request.generationId !== job.generationId || request.requestId !== locator.revisionRequest?.requestId)) {
+    throw new Error("The production proof status did not match this revision request.");
+  }
+  const current = locator.revisionRequest
+    ? revisions.find((revision) => revision.generationId === job.generationId
+      && revision.parentRevisionId === locator.revisionRequest!.parentAtlasRevisionId
+      && revision.revisionSequence === locator.revisionRequest!.revisionSequence) || null
+    : revisions.length ? revisionParent(revisions, job.generationId, locator.atlasRevisionId) : null;
+  const proof = selectCustomerProof(current ? artifactsForStudioRevision(artifacts, current) : []);
   const proofUrl = proof?.signedUrl || null;
   return {
     workflowRun: {
       id: job.generationId,
-      workflow_status: workflowStatusFor(job.state),
+      workflow_status: request?.revisionHandoffError ? "failed" : request?.state === "failed" || request?.state === "cancelled" ? request.state
+        : job.state === "failed" ? "failed" : !proofUrl ? "running" : workflowStatusFor(job.state),
     },
     proofUrl: proofUrl,
     activePack: proofUrl ? { proof_artifact: { url: proofUrl } } : null,
@@ -141,95 +133,200 @@ export async function resumeDesignBuild(
   return { idempotent: false };
 }
 
-/**
- * A revision, authored by A.T.L.A.S. from the customer's requested change.
- *
- * The design a customer sees is seven projections of one flattened master, so
- * "revise this" means authoring a new master from a revised brief -- never
- * repainting a proof, which could only make one view disagree with the master
- * the panels are cut from. The gateway enforces exactly this: a per-view
- * regenerate against a flat-first request is refused outright.
- *
- * The source design is not touched. Its master, proofs and panels stay valid
- * and inspectable, which is what makes a version history real rather than a
- * label on an overwritten row.
- *
- * The brief sent is the source design's own brief plus the requested change,
- * in that order, so the revision inherits everything the customer already said
- * instead of being authored from one sentence.
- */
+const EDIT_SURFACES = new Set(["driver", "passenger", "hood", "roof", "front", "rear"]);
+
+/** Keep saved instructions, but never label the parent's artifacts as a pending child. */
+export function pendingRevisionNotes(value: string | Record<string, unknown> | null | undefined): string {
+  let notes: Record<string, unknown> = {};
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) notes = { ...parsed };
+  } catch { /* A malformed legacy note cannot supply artifact identity. */ }
+  for (const key of ["flat_proof_url", "logo_pack", "logo_layers", "ai_edit_summary"]) delete notes[key];
+  return JSON.stringify(notes);
+}
+
+export function revisionSurfaces(viewKeys: readonly string[] = []): GenieSurfaceKey[] {
+  return [...new Set(viewKeys.map((key) => ROLE_FOR_SOURCE_VIEW_TYPE[key] || key)
+    .filter((key) => EDIT_SURFACES.has(key)))] as GenieSurfaceKey[];
+}
+
+/** A missing named parent must never silently become the newest version. */
+export function revisionParent(
+  revisions: readonly FlatAtlasRevision[], generationId: string, requestedId?: string | null,
+): FlatAtlasRevision {
+  const candidates = revisions.filter((revision) => revision.generationId === generationId);
+  const parent = requestedId
+    ? candidates.find((revision) => revision.id === requestedId)
+    : [...candidates].sort((left, right) => right.revisionSequence - left.revisionSequence)[0];
+  if (!parent || !/^[a-f0-9]{64}$/i.test(parent.master?.contentHash || "")) {
+    throw new Error("The selected ATLAS version could not be verified. Reload its version history before revising.");
+  }
+  return parent;
+}
+
+/** Upload exact reference bytes through the existing authenticated asset registry. */
+export async function prepareRevisionReferences(
+  parentId: string, urls: readonly string[],
+): Promise<Array<AssetIdentity & { purpose: "reference" }>> {
+  const unique = [...new Set(urls.filter(Boolean))];
+  if (unique.length > 8) throw new Error("Use at most eight reference images for one revision.");
+  // Keep uploads bounded; one failed reference prevents submitting incomplete intent.
+  const assets: Array<AssetIdentity & { purpose: "reference" }> = [];
+  for (const [index, url] of unique.entries()) {
+    const parsed = new URL(url, typeof location === "undefined" ? "https://designpro.invalid" : location.origin);
+    if (!["https:", "blob:", "data:"].includes(parsed.protocol)) {
+      throw new Error("This edit reference must be an uploaded image.");
+    }
+    const response = await fetch(url, { credentials: "omit", signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) throw new Error("An edit reference could not be read. Re-upload it before submitting.");
+    const declared = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > 25 * 1024 * 1024) throw new Error("An edit reference exceeds 25 MiB.");
+    const blob = await response.blob();
+    if (!["image/png", "image/jpeg", "image/webp"].includes(blob.type) || blob.size < 1 || blob.size > 25 * 1024 * 1024) {
+      throw new Error("Edit references must be PNG, JPEG or WebP images up to 25 MiB.");
+    }
+    const asset = await dpApi.uploadRevisionAsset(parentId, "attachment", new File([blob], `revision-reference-${index + 1}`, { type: blob.type }));
+    assets.push({ purpose: "reference", ...asset });
+  }
+  return assets;
+}
+
+/** Preserve the user's placed art as an edit reference, never as a print source. */
+export async function layerRevisionReferenceFiles(edits: Array<{
+  viewKey: string; backgroundUrl: string; layers: PlacedLayer[];
+}>): Promise<File[]> {
+  if (edits.length > 6 || new Set(edits.map((edit) => edit.viewKey)).size !== edits.length) {
+    throw new Error("Use one edit reference per surface, up to six surfaces.");
+  }
+  const files: File[] = [];
+  for (const edit of edits) {
+    if (!edit.backgroundUrl || !edit.viewKey) throw new Error("A layer edit needs its saved background and view.");
+    const blob = await composeRenderWithLayers(edit.backgroundUrl, edit.layers, { strict: true });
+    if (blob.type !== "image/png" || !blob.size || blob.size > 25 * 1024 * 1024) throw new Error("The composed edit reference must be a PNG up to 25 MiB.");
+    files.push(new File([blob], `layer-edit-${edit.viewKey}.png`, { type: "image/png" }));
+  }
+  return files;
+}
+
 export async function submitDesignRevision(input: {
   source: {
-    id?: string | null;
-    admin_notes?: string | null;
-    finish_type?: string | null;
-    vehicle_type?: string | null;
-    color_name?: string | null;
-    design_file_name?: string | null;
+    id?: string | null; atlas_revision_id?: string | null;
+    admin_notes?: string | null; finish_type?: string | null;
+    vehicle_type?: string | null; color_name?: string | null; design_file_name?: string | null;
+    vehicle_year?: string | null; vehicle_make?: string | null; vehicle_model?: string | null;
+    _revisionRequest?: unknown;
   } | null;
   instruction: string;
   vehicle: { year: string; make: string; model: string };
   designName: string;
-}): Promise<{ generationId: string }> {
+  parentAtlasRevisionId?: string | null;
+  affectedSurfaces?: GenieSurfaceKey[];
+  referenceUrls?: string[];
+  referenceFiles?: File[];
+  editAssets?: Array<AssetIdentity & { purpose: "reference" }>;
+  panelOutputRunId?: string | null;
+}): Promise<GenerationRevisionReceipt> {
+  const generationId = String(input.source?.id || "").trim();
   const instruction = String(input.instruction || "").trim();
-  if (!instruction) throw new Error("A revision needs a description of the change.");
-
-  let notes: Record<string, unknown> = {};
-  try {
-    notes = input.source?.admin_notes ? JSON.parse(input.source.admin_notes) : {};
-  } catch {
-    notes = {};
+  if (!generationId) throw new Error("Open the saved design before revising it.");
+  if (input.source?._revisionRequest && !input.source.atlas_revision_id && !input.parentAtlasRevisionId) {
+    throw new Error("Wait for this version's artwork to be accepted, or select an existing version from history.");
   }
-  const originalBrief = String(notes.original_prompt || "").trim();
-  const brief = originalBrief ? `${originalBrief}\n\nRevision: ${instruction}` : instruction;
-
-  const created = await dpApi.createGenerationRequest({
-    pipelineMode: FLAT_FIRST_ATLAS_PIPELINE_MODE,
-    designName: input.designName.slice(0, 240),
-    vehicle: {
-      year: String(input.vehicle.year || "").trim(),
-      make: String(input.vehicle.make || "").trim(),
-      model: String(input.vehicle.model || "").trim(),
-      // The vehicle class the server validates against. A design carries its
-      // own; anything else would be this browser reclassifying the customer's
-      // vehicle on their behalf.
-      type: String(input.source?.vehicle_type || "car"),
-    },
-    brief: {
-      brief: brief.slice(0, 8000),
-      ...(input.source?.finish_type ? { finish: String(input.source.finish_type) } : {}),
-    },
+  if (!instruction) throw new Error("A revision needs a description of the change.");
+  if (instruction.length > 4000) throw new Error("Keep this revision instruction within 4,000 characters.");
+  for (const field of ["year", "make", "model"] as const) {
+    const previous = String(input.source?.[`vehicle_${field}`] || "").trim();
+    const next = String(input.vehicle[field] || "").trim();
+    if (previous && next && previous.toLowerCase() !== next.toLowerCase()) {
+      throw new Error("This revision keeps the verified vehicle. Open DesignPro to prepare a different vehicle.");
+    }
+  }
+  const revisions = await dpApi.listJobFlatAtlasRevisions(generationId);
+  const parent = revisionParent(revisions, generationId, input.parentAtlasRevisionId || input.source?.atlas_revision_id);
+  if ((input.editAssets?.length || 0) + new Set(input.referenceUrls || []).size + (input.referenceFiles?.length || 0) > 8) {
+    throw new Error("Use at most eight reference images for one revision.");
+  }
+  const editAssets = [...(input.editAssets || []), ...await prepareRevisionReferences(parent.id, input.referenceUrls || [])];
+  for (const file of input.referenceFiles || []) {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || !file.size || file.size > 25 * 1024 * 1024) {
+      throw new Error("Edit references must be PNG, JPEG or WebP images up to 25 MiB.");
+    }
+    editAssets.push({ purpose: "reference", ...await dpApi.uploadRevisionAsset(parent.id, "attachment", file) });
+  }
+  const receipt = await dpApi.createGenerationRevision({
+    generationId,
+    parentAtlasRevisionId: parent.id,
+    parentMasterContentHash: parent.master.contentHash,
+    instruction,
+    ...(input.affectedSurfaces?.length ? { affectedSurfaces: revisionSurfaces(input.affectedSurfaces) } : {}),
+    ...(editAssets.length ? { editAssets } : {}),
+    ...(input.panelOutputRunId ? { panelOutputRunId: input.panelOutputRunId } : {}),
   });
-  return { generationId: created.generationId };
+  if (receipt.generationId !== generationId || receipt.parentAtlasRevisionId !== parent.id ||
+      !receipt.requestId || !Number.isSafeInteger(receipt.revisionSequence) || receipt.revisionSequence <= parent.revisionSequence) {
+    throw new Error("The server did not confirm this revision's existing design and parent version.");
+  }
+  return receipt;
 }
 
-/**
- * What the page's "persist this revision" path becomes: a re-read.
- *
- * The caller hands over the view URLs it just displayed and a patch for the
- * design's notes. Neither is written. The views belong to the server and the
- * notes are a projection of server state, so the honest response is the current
- * row -- which is also what every caller does with the return value: it sets it
- * as the selected design.
- */
+/** Request-specific reads cannot relabel an earlier version's proofs as the new version. */
+export async function readSubmittedRevision(receipt: GenerationRevisionReceipt) {
+  const [request, views, revisions] = await Promise.all([
+    dpApi.getGenerationRequest(receipt.requestId),
+    dpApi.listGenerationViews(receipt.requestId),
+    dpApi.listFlatAtlasRevisions(receipt.requestId),
+  ]);
+  if (request.requestId !== receipt.requestId || request.generationId !== receipt.generationId) {
+    throw new Error("The revision status did not match the submitted request.");
+  }
+  const revision = revisions.find((candidate) => candidate.generationId === receipt.generationId &&
+    candidate.revisionSequence === receipt.revisionSequence && candidate.parentRevisionId === receipt.parentAtlasRevisionId) || null;
+  const renderUrls: Record<string, string> = {};
+  const cameras = new Set<string>();
+  if (revision) for (const view of views) {
+    const role = ROLE_FOR_SOURCE_VIEW_TYPE[view.sourceViewType];
+    if (!role || role !== view.consumerRole || !view.signedUrl || !/^[a-f0-9]{64}$/i.test(view.contentHash || "")) continue;
+    if (cameras.has(view.sourceViewType)) throw new Error("The revision returned duplicate proof identities.");
+    cameras.add(view.sourceViewType);
+    renderUrls[view.sourceViewType] = view.signedUrl;
+    renderUrls[role] = view.signedUrl;
+  }
+  return { request, revision, renderUrls, proofCount: cameras.size };
+}
+
+/** Existing precise-edit saves submit a reference to the same ATLAS edit flow. */
 export async function readDesignAfterEdit(input: {
-  render: { id?: string | null } | null;
+  render: { id?: string | null; atlas_revision_id?: string | null; render_urls?: Record<string, string> } | null;
   renderUrls?: Record<string, string>;
   trigger?: DesignBuildTrigger;
-  change?: unknown;
+  change?: { type?: string; prompt?: string | null; viewKeys?: string[] };
   patch?: Record<string, unknown>;
+  parentAtlasRevisionId?: string | null;
+  panelOutputRunId?: string | null;
 }): Promise<{
-  render_urls: Record<string, string>;
-  admin_notes: string | null;
-  updated_at: string | null;
+  render_urls: Record<string, string>; admin_notes: string | null; updated_at: string | null;
+  revisionReceipt: GenerationRevisionReceipt;
 }> {
   const id = String(input.render?.id || "").trim();
   if (!id) throw new Error("No saved design is selected");
-  const row = await readRevisionStudioDesign(id);
-  if (!row) throw new Error("this design is not a saved revision on the server");
-  return {
-    render_urls: row.render_urls,
-    admin_notes: row.admin_notes,
-    updated_at: row.updated_at,
-  };
+  if (input.trigger === "view_deleted") throw new Error("The seven saved vehicle proofs remain in version history. Use a revision to change the artwork.");
+  const keys = input.change?.viewKeys || [];
+  const references = keys.map((key) => input.renderUrls?.[key]).filter((url, index): url is string =>
+    Boolean(url && url !== input.render?.render_urls?.[keys[index]]));
+  const instruction = input.change?.prompt?.trim() || (references.length
+    ? `Apply the artwork changes shown in the supplied edit reference for ${keys.join(", ")}. Preserve the remaining design and regenerate its matching print panels and vehicle proofs.`
+    : "");
+  if (!instruction) throw new Error("Describe the artwork change or provide the edited reference before saving.");
+  const revisionReceipt = await submitDesignRevision({
+    source: input.render,
+    instruction,
+    vehicle: { year: "", make: "", model: "" },
+    designName: "",
+    parentAtlasRevisionId: input.parentAtlasRevisionId,
+    affectedSurfaces: revisionSurfaces(keys),
+    referenceUrls: references,
+    panelOutputRunId: input.panelOutputRunId,
+  });
+  return { render_urls: {}, admin_notes: null, updated_at: null, revisionReceipt };
 }

@@ -336,9 +336,9 @@ test("Call 9 promotes the Call-1 panels rather than re-cutting them", () => {
   assert.match(helper, /snapshot\?\.callOnePanels/);
   assert.match(helper, /call9_revision_source_drift/);
   assert.doesNotMatch(
-    source,
+    helper,
     /designpro_flat_atlas_revisions/,
-    "manufacturing must not reach into the generation tables for these panels",
+    "manufacturing panel authority must come from the snapshot; late presentation proofs have their own final join",
   );
   // The promoted bytes are verified against their recorded identity, and six
   // distinct surfaces are still required.

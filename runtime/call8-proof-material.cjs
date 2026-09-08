@@ -26,7 +26,9 @@ const { createHash } = require("node:crypto");
 const { canonicalTenantKey, safeStoragePath } = require("./runtime-contract.cjs");
 const { normalizeTextLock, SURFACE_KEYS } = require("./gemini-flat-surface.cjs");
 
-const CALL8_PROOF_CONTRACT = "designpro.call8-panel-proof.v1";
+// A changed drawing contract needs a new material identity: otherwise the
+// corrected trim/bleed drawing would collide with an immutable v1 proof path.
+const CALL8_PROOF_CONTRACT = "designpro.call8-panel-proof.v2";
 const HASH_RE = /^[0-9a-f]{64}$/;
 const MAX_PANEL_BYTES = 512 * 1024 * 1024;
 const PANEL_CONTENT_TYPES = new Set(["image/png"]);
@@ -92,12 +94,21 @@ function normalizeCallOnePanelAsset(value, tenantValue) {
   const trimHeightIn = round2(value.trimHeightIn);
   const printWidthIn = round2(value.printWidthIn);
   const printHeightIn = round2(value.printHeightIn);
-  if (!(trimWidthIn > 0 && trimHeightIn > 0 && printWidthIn > 0 && printHeightIn > 0)) {
+  if (![trimWidthIn, trimHeightIn, printWidthIn, printHeightIn].every(Number.isFinite)
+    || !(trimWidthIn > 0 && trimHeightIn > 0 && printWidthIn > 0 && printHeightIn > 0)) {
     throw new Error(`Call 1 panel ${surfaceKey} carries no trim/print geometry`);
+  }
+  if (round2(printWidthIn - trimWidthIn) !== 10 || round2(printHeightIn - trimHeightIn) !== 10) {
+    throw new Error(`Call 1 panel ${surfaceKey} requires exactly five inches of bleed on every edge`);
+  }
+  const sourceMasterHash = value.sourceMasterHash == null ? null : String(value.sourceMasterHash).toLowerCase();
+  if (sourceMasterHash !== null && !HASH_RE.test(sourceMasterHash)) {
+    throw new Error(`Call 1 panel ${surfaceKey} has an invalid master identity`);
   }
   return Object.freeze({
     surfaceKey, bucket, storagePath, contentHash, byteSize, contentType,
     trimWidthIn, trimHeightIn, printWidthIn, printHeightIn,
+    ...(sourceMasterHash ? { sourceMasterHash } : {}),
   });
 }
 
@@ -136,7 +147,9 @@ function normalizeProofSurfaces(surfaces) {
     const surfaceKey = String(surface?.surfaceKey || "").trim().toLowerCase();
     const widthInches = round2(surface?.widthInches);
     const heightInches = round2(surface?.heightInches);
-    if (!SURFACE_KEYS.includes(surfaceKey) || !(widthInches > 0 && heightInches > 0)) continue;
+    if (!SURFACE_KEYS.includes(surfaceKey) || !Number.isFinite(widthInches) || !Number.isFinite(heightInches)
+      || !(widthInches > 0 && heightInches > 0)) throw new Error("Call 8 requires finite canonical GENIE dimensions");
+    if (bySurface.has(surfaceKey)) throw new Error(`Call 8 GENIE surface ${surfaceKey} appears twice`);
     bySurface.set(surfaceKey, {
       surfaceKey, widthInches, heightInches,
       surfaceSqFt: round2((widthInches * heightInches) / 144),
@@ -153,6 +166,15 @@ function normalizeProofSurfaces(surfaces) {
  */
 function call8ProofMaterialHash({ panels, surfaces, revisionId, textLock, tenantKey }) {
   const panelSet = normalizeCallOnePanelSet(panels, tenantKey);
+  const surfaceSet = normalizeProofSurfaces(surfaces);
+  for (const panel of panelSet) {
+    const surface = surfaceSet.find((item) => item.surfaceKey === panel.surfaceKey);
+    if (panel.trimWidthIn !== surface.widthInches || panel.trimHeightIn !== surface.heightInches) {
+      throw new Error(`Call 8 ${panel.surfaceKey} panel geometry differs from the bound GENIE dimensions`);
+    }
+  }
+  const masters = new Set(panelSet.map((panel) => panel.sourceMasterHash).filter(Boolean));
+  if (masters.size > 1) throw new Error("Call 8 panel set names multiple A.T.L.A.S. masters");
   return hashJson({
     contract: CALL8_PROOF_CONTRACT,
     revisionId: String(revisionId || "").trim().toLowerCase(),
@@ -166,8 +188,9 @@ function call8ProofMaterialHash({ panels, surfaces, revisionId, textLock, tenant
       trimHeightIn: panel.trimHeightIn,
       printWidthIn: panel.printWidthIn,
       printHeightIn: panel.printHeightIn,
+      ...(panel.sourceMasterHash ? { sourceMasterHash: panel.sourceMasterHash } : {}),
     })),
-    surfaces: normalizeProofSurfaces(surfaces),
+    surfaces: surfaceSet,
   });
 }
 

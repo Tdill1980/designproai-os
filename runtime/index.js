@@ -5,6 +5,7 @@ const sharp = require("sharp");
 const { createClient } = require("@supabase/supabase-js");
 const { createHash } = require("node:crypto");
 const { registerDesignProStandaloneClaimant } = require("./designpro-standalone-claimant.cjs");
+const { createPanelproTemplateService } = require("./panelpro-template-service.cjs");
 // `normalizeSourceAsset` / `verifySourceBytes` went with `sourceObject`, the
 // loader that pulled the seven 3D proofs into Call 8. Call 8 reads panels now.
 const { canonicalTenantKey, canonicalUuid, immutableStorageUpload } = require("./runtime-contract.cjs");
@@ -30,6 +31,9 @@ const { dispatchOneWrapboxNotification, reconcileCompletedWrapboxDeliveries } = 
 const { createResendTransport, resendReadiness } = require("./resend-transport.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolImmutableBuffer, uploadSpoolWithTus } = require("./zip-spool.cjs");
 const { createGenerationWorker } = require("./generation-worker.cjs");
+const { createPanelProFileOutputService } = require("./panelpro-file-output-service.cjs");
+const { reservePanelProfileForProduction,attachPanelProfileToProduction } = require("./panelpro-production-attachment.cjs");
+const { createAtlasRevisionIntake } = require("./atlas-revision-intake.cjs");
 
 const PORT = Number(process.env.PORT || 3001);
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
@@ -112,6 +116,17 @@ async function existingMaster(storagePath) {
 let readiness = { ready: false, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID, imageModel: GOOGLE_IMAGE_MODEL, error: "dependency_probe_pending" };
 let claimant = null;
 let generationWorker = null;
+const atlasRevisions=createAtlasRevisionIntake({supabase});
+let revisionHandoffTimer=null,revisionHandoffBusy=false,revisionHandoffError=null;
+const panelProfileOutput = createPanelProFileOutputService({
+  supabase,workerId:`${WORKER_ID}-panelprofile`,enabled:process.env.DESIGNPRO_PANELPROFILEOUTPUT_ENABLED === "true",
+  spoolDir:DESIGNPRO_SPOOL_DIR,supabaseUrl:SUPABASE_URL,serviceRoleKey:SUPABASE_SERVICE_ROLE_KEY,tusEndpoint:SUPABASE_TUS_ENDPOINT,
+});
+const panelProfileTemplates = createPanelproTemplateService({
+  supabase,workerId:`${WORKER_ID}-templates`,enabled:process.env.DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED === "true",
+  apiKey:GOOGLE_AI_API_KEY,spoolDir:DESIGNPRO_SPOOL_DIR,supabaseUrl:SUPABASE_URL,
+  serviceRoleKey:SUPABASE_SERVICE_ROLE_KEY,tusEndpoint:SUPABASE_TUS_ENDPOINT,
+});
 let deliveryTimer = null;
 let deliveryBusy = false;
 const notificationReadiness = resendReadiness(process.env);
@@ -147,6 +162,10 @@ function ensureDeliveryWorkers() {
 }
 
 function stopWorkerLoops() {
+  if(revisionHandoffTimer)clearInterval(revisionHandoffTimer);
+  revisionHandoffTimer=null;
+  panelProfileOutput.stop();
+  panelProfileTemplates.stop();
   if (claimant) claimant.stop();
   claimant = null;
   if (generationWorker) generationWorker.stop();
@@ -171,6 +190,18 @@ function ensureGenerationWorker() {
   generationWorker.start();
 }
 
+function ensureRevisionHandoffs() {
+  if(revisionHandoffTimer)return;
+  const tick=async()=>{
+    if(revisionHandoffBusy)return;
+    revisionHandoffBusy=true;
+    try {const results=await atlasRevisions.drainHandoffs({limit:10});revisionHandoffError=results.find(result=>result.state==="blocked")?.code||null;}
+    catch(error){revisionHandoffError=error.code||"generation_revision_handoff_unavailable";}
+    finally {revisionHandoffBusy=false;}
+  };
+  revisionHandoffTimer=setInterval(()=>void tick(),5000);revisionHandoffTimer.unref?.();void tick();
+}
+
 async function refreshReadiness() {
   try {
     const dependencies = await probeRuntimeDependencies(supabase);
@@ -187,9 +218,12 @@ async function refreshReadiness() {
       };
       return;
     }
-    if (!claimant) claimant = registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY, workerSecret: WORKER_SECRET, workerId: WORKER_ID, port: PORT, spoolDir: DESIGNPRO_SPOOL_DIR, tusEndpoint: SUPABASE_TUS_ENDPOINT });
+    if (!claimant) claimant = registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY, workerSecret: WORKER_SECRET, workerId: WORKER_ID, port: PORT, spoolDir: DESIGNPRO_SPOOL_DIR, tusEndpoint: SUPABASE_TUS_ENDPOINT, panelProfileStatus: panelProfileOutput.health });
     ensureDeliveryWorkers();
     ensureGenerationWorker();
+    ensureRevisionHandoffs();
+    panelProfileOutput.start();
+    panelProfileTemplates.start();
     readiness = {
       ready: true, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID,
       imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV, publicGoLiveEnvironment: PUBLIC_GO_LIVE_ENV,
@@ -199,6 +233,9 @@ async function refreshReadiness() {
       dependencies: {
         ...dependencies, wrapboxPublisher: true, notifications: notificationReadiness, enhancement: enhancementReadiness,
         generation: { started: Boolean(generationWorker), models: generationWorker?.provider?.models || [], keyCount: generationWorker?.provider?.keyCount || 0 },
+        revisionHandoff:{started:Boolean(revisionHandoffTimer),busy:revisionHandoffBusy,lastError:revisionHandoffError},
+        panelProFileOutput:panelProfileOutput.health(),
+        panelProTemplates:panelProfileTemplates.status(),
       },
       checkedAt: new Date().toISOString(),
     };
@@ -208,6 +245,46 @@ async function refreshReadiness() {
   }
 }
 app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(readiness));
+
+app.post("/internal/panelpro-file-output/:action",authMiddleware,async(req,res)=>{
+  try {
+    const ownerId=canonicalUuid(req.body?.ownerId,"ownerId");
+    const payload=req.body?.payload || {};
+    let result;
+    switch(req.params.action) {
+      case "capabilities": result=await panelProfileOutput.capabilities(ownerId);break;
+      case "sources": result=await panelProfileOutput.registerSource(ownerId,payload.handoff);break;
+      case "create": result=await panelProfileOutput.createRun(ownerId,payload);break;
+      case "list": result=await panelProfileOutput.listRuns(ownerId,payload);break;
+      case "get": result=await panelProfileOutput.getRun(ownerId,payload.runId);break;
+      case "approve": await panelProfileOutput.approve(ownerId,payload.runId,payload);result={accepted:true};break;
+      case "resume": await panelProfileOutput.resume(ownerId,payload.runId);result={resumed:true};break;
+      case "reserve": result={...await reservePanelProfileForProduction({supabase,actorId:ownerId,productionRunId:payload.productionRunId}),reserved:true,productionRunId:payload.productionRunId};break;
+      case "attach": result={...await attachPanelProfileToProduction({supabase,actorId:ownerId,childRunId:payload.runId,productionRunId:payload.productionRunId}),attached:true,productionRunId:payload.productionRunId};break;
+      default:return res.status(404).json({error:"panelprofile_action_unknown"});
+    }
+    res.json(result);
+  } catch(error) {res.status(error.status || 400).json({error:error.code || "panelprofile_request_failed",
+    blockers:[{code:error.code || "panelprofile_request_failed"}],
+    ...(error.code==="panelprofile_proof_refresh_required" && error.continuation?{continuation:error.continuation}:{})});}
+});
+
+app.post("/internal/panelpro-templates/:action",authMiddleware,async(req,res)=>{
+  try {
+    const actorId=canonicalUuid(req.body?.actorId,"actorId");
+    const result=await panelProfileTemplates.dispatch(req.params.action,actorId,req.body?.payload||{});
+    res.json(result);
+  } catch(error) {res.status(error.status||400).json({error:error.code||"template_request_failed"});}
+});
+
+app.post("/internal/atlas-revisions/:action",authMiddleware,async(req,res)=>{
+  try {
+    const actorId=canonicalUuid(req.body?.actorId,"actorId");
+    if(!["prepare","enqueue"].includes(req.params.action))return res.status(404).json({error:"generation_revision_action_unknown"});
+    const result=await atlasRevisions[req.params.action](actorId,req.body?.payload||{});
+    res.status(req.params.action==="enqueue"?202:200).json(result);
+  } catch(error){res.status(error.status||400).json({error:error.code||"generation_revision_request_failed"});}
+});
 
 /**
  * PURCHASE WRITES. Privileged, so they live here rather than in the gateway.
@@ -663,6 +740,10 @@ app.post("/compose-proof-sheet", authMiddleware, async (req, res) => {
           trimWidthIn: tile.trimWidthIn, trimHeightIn: tile.trimHeightIn,
           printWidthIn: tile.printWidthIn, printHeightIn: tile.printHeightIn,
           placement: tile.placement,
+          sourceMasterHash: panel.sourceMasterHash,
+          trim: tile.trim, print: tile.print, bleed: tile.bleed,
+          bleedInches: tile.bleedInches, dimensionRuleBasis: tile.dimensionRuleBasis,
+          continuousArtwork: tile.continuousArtwork, sourceAspectPreserved: tile.sourceAspectPreserved,
         };
       }),
       proof: {

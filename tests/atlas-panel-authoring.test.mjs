@@ -544,7 +544,7 @@ test("the atlas-panel edge mode is internal-only and makes exactly one image req
   assert.match(edgeSrc, /if \(body\?\.mode === "atlas-panel"\) \{/);
   const dispatch = edgeSrc.slice(
     edgeSrc.indexOf('if (body?.mode === "atlas-panel") {'),
-    edgeSrc.indexOf("return await handleAtlasPanel(body);"),
+    edgeSrc.indexOf("return await handleAtlasPanel(body, internalCaller.userId!);"),
   );
   assert.match(dispatch, /atlas_panel_internal_only/);
   const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));

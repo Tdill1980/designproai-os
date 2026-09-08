@@ -15,13 +15,13 @@ const web = readFileSync(new URL("../web/src/main.tsx", import.meta.url), "utf8"
   + readFileSync(new URL("../web/src/api.ts", import.meta.url), "utf8");
 const config = readFileSync(new URL("../supabase/config.toml", import.meta.url), "utf8");
 
-test("ordered migration chain includes WrapBox, reconciliation, the isolated Calls 1-7 adapter, then the legacy 2D-proof retirement", () => {
+test("ordered migration chain retains existing production boundaries and appends output graphs and parent-bound revisions", () => {
   const names = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort();
   // The window grows with the chain: it is anchored at
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-74), [
+  assert.deepEqual(names.slice(-79), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -242,6 +242,17 @@ test("ordered migration chain includes WrapBox, reconciliation, the isolated Cal
     // to explain a short set. Purely additive: a new companion function beside
     // `designpro_generation_workspace`, which is deliberately not touched.
     "20260907090000_designpro_generation_refused_views.sql",
+    // The separate deterministic output ledger shares the existing heavy-work
+    // lease and preserves the canonical six-surface production contract.
+    "20260908190825_panelpro_file_output_graph.sql",
+    // Final QC pins Call 8 and all seven proof identities before stamping.
+    "20260908193134_designpro_final_proof_join.sql",
+    // Measured template inputs, private candidates and reviewed bank entries.
+    "20260908194544_panelpro_template_lifecycle.sql",
+    // Optional reviewed physical-piece output joins the existing parent pack.
+    "20260908195123_designpro_panelprofile_production_attachment.sql",
+    // Saved edits retain their Generation ID and existing immutable history.
+    "20260908201216_designpro_parent_bound_atlas_revisions.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

@@ -43,11 +43,16 @@ const panelsBuild = (() => {
 })();
 
 const call8 = (() => {
-  const start = claimant.indexOf("async function buildCall8Proof(");
+  // Both preparation and production reconciliation share this exact composer.
+  // Include its thin completion wrapper so an extracted helper cannot escape
+  // the no-generation and own-panel source assertions below.
+  const start = claimant.indexOf("async function composeCall8Proof(");
+  assert.ok(start >= 0);
   return claimant.slice(start, claimant.indexOf("\nasync function executeEntice(", start));
 })();
 
 test("Call 8's six surface inputs are the six Call-1 panels", () => {
+  assert.match(call8, /const built = await composeCall8Proof\(sb, baseUrl, secret, run, stage, runtimeConfig, input\)/);
   assert.match(call8, /const callOnePanels = await callOnePanelSet\(sb, run\);/);
   assert.match(call8, /call8_production_panels_not_created/);
   // Re-read and re-hashed before they are proofed: the snapshot states the
@@ -107,6 +112,7 @@ test("Call 9 fails closed on byte drift, promotion drift and surface collision",
 
 test("neither Call 8 nor Call 9 contains a model call", () => {
   for (const forbidden of [/generativelanguage/, /generateContent/i, /functions\.invoke/, /fetch\(/]) {
+    assert.doesNotMatch(call8, forbidden);
     assert.doesNotMatch(panelsBuild, forbidden);
     assert.doesNotMatch(gridSlice, forbidden);
     assert.doesNotMatch(proofSheet, forbidden);

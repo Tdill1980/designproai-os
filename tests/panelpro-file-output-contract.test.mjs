@@ -96,3 +96,44 @@ test('a cache miss waits for template validation/banking while a hit avoids recr
     assert.equal(nodes.at(-1).key, 'await_panelpro_preflight_qc');
   }
 });
+
+test('vehicle variant review is preserved and hashed as exact revision and geometry evidence', () => {
+  const data = input();
+  data.templateVehicleReview = { reviewId: 'vehicle-review-1', revisionId: data.revisionId,
+    geometryHash: data.template.geometryHash, dimensionManifestHash: data.dimensionManifestHash,
+    missingVariantsReviewed: true, reviewedBy: '11111111-1111-4111-8111-111111111111' };
+  const request = build(data);
+  assert.deepEqual(request.templateVehicleReview, data.templateVehicleReview);
+  assert.deepEqual(build(JSON.parse(JSON.stringify(request))), request);
+  const changed = structuredClone(data); changed.templateVehicleReview.reviewId = 'vehicle-review-2';
+  assert.notEqual(build(changed).inputHash, request.inputHash);
+  for (const mutate of [
+    (review) => { review.missingVariantsReviewed = false; },
+    (review) => { review.reviewedBy = 'unverified-actor'; },
+    (review) => { review.unhashedExtra = 'silently-ignored-review'; },
+  ]) {
+    const invalid = structuredClone(data); mutate(invalid.templateVehicleReview);
+    assert.throws(() => build(invalid), { code: 'panelprofile_template_vehicle_review_invalid' });
+  }
+});
+
+test('the supported tenth-scale export is explicit and unsupported scales cannot silently change printing size', () => {
+  const data = input(); data.outputScale = 0.1;
+  assert.equal(build(data).outputPolicy.outputScale, 0.1);
+  for (const scale of [1, 0.5, 0.05]) {
+    data.outputScale = scale;
+    assert.throws(() => build(data), { code: 'panelprofile_output_scale_unsupported' });
+  }
+});
+
+test('existing business order labels retain spaces, hash and slash without broadening other identity fields', () => {
+  const data = input(); data.orderId = 'ORDER / 2026 #42';
+  const request = build(data);
+  assert.equal(request.orderId, 'ORDER / 2026 #42');
+  assert.deepEqual(build(JSON.parse(JSON.stringify(request))), request);
+  for (const orderId of ['ORDER\n42', 'ORDER\t42', ' ORDER / 2026 #42', 'ORDER / 2026 #42 ', 'x'.repeat(121)]) {
+    assert.throws(() => build({ ...data, orderId }), { code: 'panelprofile_order_identity_invalid' });
+  }
+  assert.throws(() => build({ ...data, designId: data.orderId }), { code: 'panelprofile_identity_invalid' });
+  assert.throws(() => build({ ...data, revisionId: data.orderId }), { code: 'panelprofile_identity_invalid' });
+});

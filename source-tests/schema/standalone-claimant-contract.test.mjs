@@ -10,7 +10,10 @@ const resolver=readFileSync(resolve(workspace,"runtime/genie-universal-resolver.
 const lower=(source+"\n"+resolver).toLowerCase();
 assert.doesNotThrow(()=>new Function(source),"claimant must parse as JavaScript");
 const tables=[...new Set([...source.matchAll(/\.from\(\s*["']([^"']+)/g)].map(m=>m[1]))];
-const allowedTables=new Set(["designpro_workflow_runs","designpro_workflow_stages","designpro_revision_sources","designpro_stage_receipts","designpro_artifacts","designpro_vehicle_dimensions","designpro_vehicle_specs_universal"]);
+// The proof join reads the existing request/ATLAS/view ledgers to prove that
+// all seven vehicle proofs match the immutable production revision. It never
+// reads customer artwork from the retired shared application tables.
+const allowedTables=new Set(["designpro_workflow_runs","designpro_workflow_stages","designpro_revision_sources","designpro_stage_receipts","designpro_artifacts","designpro_vehicle_dimensions","designpro_vehicle_specs_universal","designpro_flat_atlas_revisions","designpro_generation_requests","designpro_generation_views"]);
 for(const table of tables) assert.ok(allowedTables.has(table),`claimant reads forbidden table ${table}`);
 for(const forbidden of ["workforce_runs","workflow_stage_runs","panelizer_jobs","color_visualizations","design_version_commits","designiq_generations","designpro_entice_packs","designpro_production_jobs","production_flow_assets","production_panel_dispatches","user_roles","railway"])
   assert.ok(!lower.includes(forbidden),`claimant retains legacy/shared surface ${forbidden}`);

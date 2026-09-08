@@ -20,13 +20,39 @@ function canonical(value) {
 }
 function digest(value) { return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex"); }
 function id(value) { if (typeof value !== "string" || !ID.test(value)) fail("panelprofile_identity_invalid"); return value; }
+function orderIdentity(value) {
+  // Business order labels use the existing WrapBox alphabet. Keep them exact;
+  // these labels are metadata, never filenames or path segments.
+  if (typeof value !== 'string' || value !== value.trim()
+    || !/^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$/.test(value)) fail('panelprofile_order_identity_invalid');
+  return value;
+}
 function hash(value) { if (typeof value !== "string" || !HASH.test(value)) fail("panelprofile_hash_invalid"); return value; }
 function positive(value) { if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) fail("panelprofile_dimension_invalid"); return value; }
+function bounds(value) {
+  if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y) || Math.abs(value.x) > 10000 || Math.abs(value.y) > 10000) fail("panelprofile_source_mapping_invalid");
+  return { x: value.x, y: value.y, width: positive(value.width), height: positive(value.height) };
+}
+function mapping(value) { return value == null ? null : { boundsInches: bounds(value.boundsInches) }; }
+function polygon(value) {
+  if (!Array.isArray(value) || value.length < 3 || value.length > 1024
+    || value.some((p) => !Array.isArray(p) || p.length !== 2 || p.some((n) => typeof n !== 'number' || !Number.isFinite(n) || Math.abs(n) > 10000))) fail('panelprofile_outline_invalid');
+  return value.map((p) => [...p]);
+}
 function ref(value) {
   if (!value || typeof value.storagePath !== "string" || !value.storagePath
     || value.storagePath.startsWith("/") || value.storagePath.includes(":")
     || value.storagePath.split("/").some((part) => part === ".." || !part)) fail("panelprofile_storage_identity_invalid");
   return { storagePath: value.storagePath, contentHash: hash(value.contentHash) };
+}
+function templateVehicleReview(value) {
+  if (value == null) return null;
+  const keys = ['reviewId', 'revisionId', 'geometryHash', 'dimensionManifestHash', 'missingVariantsReviewed', 'reviewedBy'];
+  if (typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => !keys.includes(key))
+    || value.missingVariantsReviewed !== true
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.reviewedBy || '')) fail('panelprofile_template_vehicle_review_invalid');
+  return { reviewId: id(value.reviewId), revisionId: id(value.revisionId), geometryHash: hash(value.geometryHash),
+    dimensionManifestHash: hash(value.dimensionManifestHash), missingVariantsReviewed: true, reviewedBy: value.reviewedBy };
 }
 
 /**
@@ -36,25 +62,37 @@ function ref(value) {
  * Geometry below is inches at full size; drawing scale only affects exports.
  */
 function buildPanelProFileOutputHandoff(input) {
+  // Durable retries may receive the canonical handoff instead of the original
+  // intake object. Verify it before restoring the explicit policy inputs.
+  if (input?.contractVersion === CONTRACT && input.inputHash) {
+    const { inputHash, ...stored } = input;
+    if (digest(stored) !== inputHash) fail('panelprofile_handoff_hash_mismatch');
+    input = { ...stored, fullSizePpi: stored.outputPolicy?.fullSizePpi,
+      outputScale: stored.outputPolicy?.outputScale,
+      printableWidthInches: stored.outputPolicy?.printableWidthInches,
+      protectedClearanceInches: stored.outputPolicy?.protectedClearanceInches };
+  }
   if (!input || !SOURCE_APPS.includes(input.sourceApp)) fail("panelprofile_source_app_invalid");
   if (!Array.isArray(input.pieces) || !input.pieces.length || input.pieces.length > 128) fail("panelprofile_piece_set_invalid");
   const template = input.template;
   if (!template || template.geometryValidated !== true || template.cutAreasReviewed !== true) fail("panelprofile_template_validation_required");
   if (template.displayOrigin !== "generated-branded") fail("panelprofile_branded_template_required");
-  if (!Array.isArray(input.availableAssets)) fail("panelprofile_asset_inventory_required");
+  if (!Array.isArray(input.availableAssets) || input.availableAssets.length > 256) fail("panelprofile_asset_inventory_required");
   const assets = input.availableAssets.map((asset) => ({
     assetId: id(asset.assetId), kind: asset.kind === "vector" ? "vector" : asset.kind === "raster" ? "raster" : fail("panelprofile_asset_kind_invalid"),
     ...ref(asset), separable: asset.separable === true,
   })).sort((a, b) => a.assetId.localeCompare(b.assetId));
   if (new Set(assets.map((a) => a.assetId)).size !== assets.length) fail("panelprofile_duplicate_asset");
   const assetIds = new Set(assets.map((a) => a.assetId));
+  let pointCount = 0;
   const pieces = input.pieces.map((piece) => {
     if (!Array.isArray(piece.protectedElements) || !Array.isArray(piece.cutAreas)) fail("panelprofile_coverage_review_required");
     if (piece.protectedElements.length > 64 || piece.cutAreas.length > 64) fail("panelprofile_coverage_complexity_exceeded");
     const protectedElements = piece.protectedElements.map((element) => {
       if (!assetIds.has(element.assetId)) fail("panelprofile_protected_asset_missing");
       const b = element.boundsInches;
-      if (!b || !Number.isFinite(b.x) || !Number.isFinite(b.y)) fail("panelprofile_protected_bounds_invalid");
+      if (!b || !Number.isFinite(b.x) || !Number.isFinite(b.y) || Math.abs(b.x) > 10000 || Math.abs(b.y) > 10000) fail("panelprofile_protected_bounds_invalid");
+      if (b.width > 10000 || b.height > 10000) fail('panelprofile_protected_bounds_invalid');
       return { elementId: id(element.elementId), assetId: element.assetId,
         boundsInches: { x: b.x, y: b.y, width: positive(b.width), height: positive(b.height) },
         canTranslate: element.canTranslate === true && assets.find((a) => a.assetId === element.assetId).separable,
@@ -63,22 +101,38 @@ function buildPanelProFileOutputHandoff(input) {
     if (new Set(protectedElements.map((e) => e.elementId)).size !== protectedElements.length) fail("panelprofile_duplicate_element");
     const cutAreas = piece.cutAreas.map((area) => {
       if (!Array.isArray(area.pointsInches) || area.pointsInches.length < 3 || area.pointsInches.length > 1024
-        || area.pointsInches.some((point) => !Array.isArray(point) || point.length !== 2 || point.some((n) => typeof n !== "number" || !Number.isFinite(n)))) fail("panelprofile_cut_polygon_invalid");
+        || area.pointsInches.some((point) => !Array.isArray(point) || point.length !== 2 || point.some((n) => typeof n !== "number" || !Number.isFinite(n) || Math.abs(n) > 10000))) fail("panelprofile_cut_polygon_invalid");
       return { areaId: id(area.areaId), pointsInches: area.pointsInches.map((point) => [...point]) };
     });
     const widthInches = positive(piece.widthInches);
     const heightInches = positive(piece.heightInches);
+    pointCount += cutAreas.reduce((sum, cut) => sum + cut.pointsInches.length, 0) + (piece.outlineInches?.length || 0);
+    if (pointCount > 16384) fail('panelprofile_coverage_complexity_exceeded');
     if (widthInches > 10000 || heightInches > 10000) fail("panelprofile_dimension_invalid");
     if (new Set(cutAreas.map((a) => a.areaId)).size !== cutAreas.length) fail("panelprofile_duplicate_cut_area");
+    const splitPolicy = piece.splitPolicy == null ? null : {
+      axis: ['x', 'y'].includes(piece.splitPolicy.axis) ? piece.splitPolicy.axis : fail('panelprofile_split_axis_invalid'),
+      overlapInches: positive(piece.splitPolicy.overlapInches), installerReviewed: piece.splitPolicy.installerReviewed === true,
+    };
+    if (splitPolicy && splitPolicy.overlapInches > 5) fail('panelprofile_split_overlap_invalid');
     return { pieceId: id(piece.pieceId), sourceSurfaceKey: id(piece.sourceSurfaceKey), source: ref(piece.source),
       // width/height already include measured bumper/trunk returns. Bleed is
       // a separate addition; it must never substitute for those measurements.
       widthInches, heightInches, bleedInches: { top: 5, right: 5, bottom: 5, left: 5 },
       outputWidthInches: widthInches + 10, outputHeightInches: heightInches + 10,
-      protectedElements, cutAreas,
+      protectedElements, cutAreas, outlineInches: piece.outlineInches == null ? null : polygon(piece.outlineInches),
+      sourceMapping: mapping(piece.sourceMapping), splitPolicy,
+      coverageReview: piece.coverageReview ? {
+        reviewId: id(piece.coverageReview.reviewId), sourceContentHash: hash(piece.coverageReview.sourceContentHash),
+        continuousArtworkVerified: piece.coverageReview.continuousArtworkVerified === true,
+        nonessentialCutFillVerified: piece.coverageReview.nonessentialCutFillVerified === true,
+      } : null,
       composition: piece.composition ? {
         background: ref(piece.composition.background),
         layerSeparationVerified: piece.composition.layerSeparationVerified === true,
+        rebuildFromSeparatedAssets: piece.composition.rebuildFromSeparatedAssets === true,
+        backgroundMapping: mapping(piece.composition.backgroundMapping),
+        nonessentialBackgroundVerified: piece.composition.nonessentialBackgroundVerified === true,
       } : null,
     };
   }).sort((a, b) => a.pieceId.localeCompare(b.pieceId));
@@ -89,15 +143,17 @@ function buildPanelProFileOutputHandoff(input) {
     tenantKey: id(input.tenantKey), sourceJobId: id(input.sourceJobId),
     generationId: input.generationId == null ? null : id(input.generationId),
     designId: input.designId == null ? null : id(input.designId),
-    orderId: input.orderId == null ? null : id(input.orderId),
-    revisionId: id(input.revisionId), master: ref(input.master),
+    orderId: input.orderId == null ? null : orderIdentity(input.orderId),
+    revisionId: id(input.revisionId), atlasRevisionId: input.atlasRevisionId == null ? null : id(input.atlasRevisionId), master: ref(input.master),
     dimensionManifestHash: hash(input.dimensionManifestHash),
+    templateVehicleReview: templateVehicleReview(input.templateVehicleReview),
     template: { templateId: id(template.templateId), version: id(template.version),
       profileHash: hash(template.profileHash), geometryHash: hash(template.geometryHash),
+      geometry: template.geometry == null ? null : ref(template.geometry),
       display: ref(template.display), displayOrigin: "generated-branded", geometryValidated: true, cutAreasReviewed: true },
     availableAssets: assets, pieces,
     outputPolicy: {
-      fullSizePpi: positive(input.fullSizePpi ?? 150), outputScale: 0.1,
+      fullSizePpi: positive(input.fullSizePpi ?? 150), outputScale: positive(input.outputScale ?? 0.1),
       printableWidthInches: positive(input.printableWidthInches),
       protectedClearanceInches: input.protectedClearanceInches == null ? null : positive(input.protectedClearanceInches),
       formats: ["pdf", "png", "tiff"],
@@ -108,7 +164,9 @@ function buildPanelProFileOutputHandoff(input) {
       mutateSourceArtifacts: false, releaseToCustomer: false,
     },
   };
+  if (request.outputPolicy.outputScale !== 0.1) fail('panelprofile_output_scale_unsupported');
   if (request.outputPolicy.fullSizePpi < 150) fail("panelprofile_print_resolution_too_low");
+  if (!Number.isInteger(request.outputPolicy.fullSizePpi) || request.outputPolicy.fullSizePpi > 600 || request.outputPolicy.protectedClearanceInches > 12) fail('panelprofile_output_policy_out_of_bounds');
   if (input.sourceApp === "DesignPro" && !request.generationId) fail("panelprofile_generation_identity_required");
   return { ...request, inputHash: digest(request) };
 }

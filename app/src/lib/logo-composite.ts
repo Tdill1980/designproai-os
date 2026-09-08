@@ -851,7 +851,14 @@ const SIZE_FRACTION: Record<LogoSize, number> = {
 export async function composeRenderWithLayers(
   renderUrl: string,
   layers: PlacedLayer[],
+  options: { strict?: boolean } = {},
 ): Promise<Blob> {
+  if (options.strict && (layers.length > 48 || layers.some((layer) =>
+    !layer.cleanedUrl || ![layer.xPct, layer.yPct, layer.sizePercent ?? SIZE_FRACTION[layer.size], layer.rotationDeg ?? 0].every(Number.isFinite)
+      || layer.xPct < 0 || layer.xPct > 1 || layer.yPct < 0 || layer.yPct > 1
+      || (layer.sizePercent ?? SIZE_FRACTION[layer.size]) <= 0 || (layer.sizePercent ?? SIZE_FRACTION[layer.size]) > 1))) {
+    throw new Error("An edit layer has an invalid position or size. Check every placed element before saving.");
+  }
   const renderBitmap = await urlToImageBitmap(renderUrl);
   const w = renderBitmap.width;
   const h = renderBitmap.height;
@@ -887,6 +894,7 @@ export async function composeRenderWithLayers(
       }
       layerBitmap.close?.();
     } catch (err) {
+      if (options.strict) throw new Error(`The edit reference is incomplete because layer ${layer.id} could not be drawn. Reopen that asset and retry.`);
       console.warn(`[logo-composite] Failed to draw layer ${layer.id}:`, err);
     }
   }

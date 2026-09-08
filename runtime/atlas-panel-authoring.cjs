@@ -1,68 +1,24 @@
 "use strict";
 
 /**
- * A.T.L.A.S. PER-SURFACE PANEL AUTHORING (owner ruling, Trish 2026-09-08)
- * ═══════════════════════════════════════════════════════════════════════
+ * Optional A.T.L.A.S. per-surface finishing.
  *
- * Owner, in her own words: *"Why can't it be designed like my last version of
- * designproai before migration — one continuous design, in parallel, with the
- * other sides being fed the sides: driver, then flipped passenger, then driver
- * and passenger sent to design hood, then driver, passenger, hood, sent to
- * design rear, etc. All shown atlas. So it happens continuously. In parallel."*
+ * Call 1 first authors the complete six-surface source. Its existing master
+ * gates must pass before this optional phase can run. Each edit sees the
+ * original source and the completed earlier sheets in the declared order;
+ * Passenger remains forward-reading and is never a flipped bitmap.
  *
- * WHAT THIS IS
- * ------------
- * Call 1 still authors ONE cohesive master and it remains the sole creative
- * authority (RULE 0.30) and the sole lineage identity (`sourceMasterHash`).
- * The runtime still cuts six rectangles out of it deterministically.
+ * This module does not publish a canonical panel or accept a master. Its
+ * local checks establish only a candidate's dimensions and non-regressing
+ * hole measurements. The caller assembles the finished rectangles back into
+ * their exact original zones, runs the existing whole-master gates, and only
+ * then publishes one canonical master plus deterministic crops of that master.
  *
- * What is new is what happens to each rectangle AFTER the cut. Each surface is
- * handed back to the model on its own, at its own proportion, shown the
- * neighbours that are already finished, and returned as ONE WHOLE SHEET.
- *
- * WHY THE CUT ALONE WAS NOT ENOUGH — both defects are geometric, not creative:
- *
- *   1. A HOLE IN THE MASTER IS A HOLE IN THE PANEL. The model paints one
- *      picture across a shared canvas; whatever it leaves unresolved where a
- *      wheel opening sits becomes a missing-artwork field in a production
- *      panel (RULE 0.32). Measured 2026-09-08: generation `1ea7adfc` refused
- *      two candidates for exactly this and the run died with nothing.
- *   2. A WORD THAT STRADDLES A BOUNDARY IS SEVERED BY THE CUT. Geometry has no
- *      opinion about lettering, so a headline crossing a territory edge is
- *      simply sliced.
- *
- * A finishing pass over ONE rectangle has neither problem to inherit: there is
- * no shared canvas to hallucinate a layout into, and the sheet's own edges are
- * the only edges there are.
- *
- * PASSENGER IS AUTHORED, NEVER MIRRORED
- * -------------------------------------
- * The owner's sketch says "then flipped passenger". Passenger is instead
- * FINISHED IN ITS OWN PASS, shown the finished Driver as its neighbour — which
- * delivers the same intent (Passenger derives its continuity from Driver)
- * without the one thing a flip cannot survive: **a horizontal flip mirrors
- * every letterform**, so a phone number and a company name would print
- * backwards down the passenger flank. That is a fact about mirroring, not a
- * preference. It is also what RULE 0 already requires — *"Passenger is its own
- * named Call-1 authority and must never be replaced by mirrored Driver
- * pixels"* — so the cascade and the standing rule agree.
- *
- * ORDER, AND WHAT "IN PARALLEL" MEANS HERE
- * ----------------------------------------
- * The cascade is necessarily sequential — a neighbour cannot be shown to a
- * sheet before it exists. What runs in parallel is everything downstream:
- * each finished panel is published and its 3D proof released the instant it
- * lands, exactly as `cutCallOnePanels` already streams (RULE 0.23, RULE 0.28
- * §6). Nothing waits for the set.
- *
- * IT CANNOT LOSE A RUN
- * --------------------
- * Every failure path returns the deterministic crop unchanged. A refused
- * finish, a transport error, a wrong-proportion return, a panel that comes
- * back worse than it went in — all of them fall back to exactly the bytes
- * today's pipeline would have shipped. This path can raise the floor and can
- * never lower it, which is the only reason it is safe to put in front of a
- * customer before it has a long measurement history.
+ * Exact user/model exchanges preserve opaque thought signatures on their
+ * original parts. The runtime stores those exchanges privately so a worker
+ * restart can resume the same completed edits. Known failed or refused edits
+ * retain the original crop. An unknown provider outcome or failed durable
+ * recovery stops for recovery; it never authorizes a replacement image call.
  */
 
 const sharp = require("sharp");
@@ -157,7 +113,7 @@ const SURFACE_LABELS = Object.freeze({
   rear: "REAR",
 });
 
-/** One finishing attempt per surface. See `finishPanel`. */
+/** At most two attempts per surface; unknown provider outcomes never advance. */
 const PANEL_FINISH_ATTEMPTS = 2;
 
 /**
@@ -246,8 +202,10 @@ async function holeRatio(bytes) {
  *
  * Returns `{ bytes, contentHash, applied: true, ... }` when the model returned
  * a sheet that measured at least as whole as the crop, and
- * `{ bytes: panel.bytes, applied: false, reason }` in every other case. The
- * caller can use the result unconditionally — that is the point.
+ * `{ bytes: panel.bytes, applied: false, reason }` after bounded candidate
+ * refusal. Typed transport, identity and recovery failures propagate so a
+ * restart resumes the same request. The caller must still validate the
+ * assembled master before publication.
  *
  * @param {object} panel        the deterministic crop, as `cutCallOnePanels` built it
  * @param {object[]} neighbours already-finished panels, in cascade order
@@ -269,10 +227,16 @@ async function finishPanel(panel, {
   callEdge,
   logger = () => {},
 } = {}) {
+  let attempts = 0;
+  let imageRequestCount = 0;
+  let providerCacheHits = 0;
   const unchanged = (reason) => Object.freeze({
     contract: PANEL_AUTHORING_CONTRACT,
     surfaceKey: panel.surfaceKey,
     applied: false,
+    attempts,
+    imageRequestCount,
+    providerCacheHits,
     reason,
     bytes: panel.bytes,
     contentHash: panel.contentHash,
@@ -333,15 +297,11 @@ async function finishPanel(panel, {
   }
 
   let lastReason = "not_attempted";
-  // THOUGHT SIGNATURES ARE ADDITIVE, AND THE FIRST THING DROPPED.
-  //
-  // Passing the chain back is the documented practice for multi-turn image
-  // editing, and it is the right default here. But it is also the newest and
-  // least-exercised thing in this request: signature acceptance rules are the
-  // provider's, not ours, and a malformed history would fail EVERY surface
-  // identically rather than one of them. So the second attempt deliberately
-  // drops the history and asks again with nothing but the images. A run
-  // therefore degrades to the previous, measured behaviour instead of failing.
+  // The existing bounded candidate fallback starts a fresh image-reference
+  // request after a measured candidate refusal. Its context is explicit; it
+  // never attaches an old model signature to newly invented history. Typed
+  // provider/transport failures leave this loop instead of spending that
+  // second candidate or silently removing the signed conversation.
   const chain = trimHistory(Array.isArray(priorExchanges) ? priorExchanges : []);
   for (let attempt = 1; attempt <= PANEL_FINISH_ATTEMPTS; attempt += 1) {
     const sentExchanges = attempt === 1 ? chain : [];
@@ -352,6 +312,7 @@ async function finishPanel(panel, {
     const sentNeighbours = staged.neighbours.filter((neighbour) => !inConversation.has(neighbour.surfaceKey));
     let candidate;
     try {
+      attempts = attempt;
       candidate = await callEdge({
         mode: "atlas-panel",
         surfaceKey: panel.surfaceKey,
@@ -363,8 +324,15 @@ async function finishPanel(panel, {
         neighbours: sentNeighbours,
         priorTurns: sendChain,
         creativeContext,
-      });
+      }, { attempt });
+      imageRequestCount += Number(candidate?.imageRequestCount || 0);
+      if (candidate?.providerCacheHit === true) providerCacheHits += 1;
     } catch (cause) {
+      // An unknown provider outcome is a recovery wait, not permission to
+      // spend a second image request or replace a potentially completed edit.
+      if (String(cause?.code || "").startsWith("provider_")
+        || String(cause?.code || "").startsWith("flat_atlas_")
+        || cause?.providerRetryDisposition === "operator_required") throw cause;
       lastReason = `edge_failed:${String(cause?.message || cause).slice(0, 140)}`;
       if (attempt === 1 && sendChain.length > 0) {
         logger(`atlas-panel ${panel.surfaceKey}: retrying without the reasoning chain (${lastReason})`);
@@ -382,6 +350,8 @@ async function finishPanel(panel, {
         surfaceKey: panel.surfaceKey,
         applied: true,
         attempts: attempt,
+        imageRequestCount,
+        providerCacheHits,
         bytes: verdict.bytes,
         contentHash: sha256(verdict.bytes),
         preFinishHash: panel.contentHash,

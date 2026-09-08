@@ -125,7 +125,7 @@ test("atlas-artboard is internal-only and requires the teaching proof without ch
   const atlasBranch = edge.indexOf('if (body?.mode === "atlas-artboard")');
   const internalOnly = edge.indexOf("if (!internalCaller.internal)", atlasBranch);
   const refusal = edge.indexOf('error: "atlas_artboard_internal_only"', internalOnly);
-  const call = edge.indexOf("return await handleAtlasArtboard(body)", refusal);
+  const call = edge.indexOf("return await handleAtlasArtboard(body, internalCaller.userId!)", refusal);
   const normalMode = edge.indexOf("const {", call);
   assert.ok(atlasBranch > 0 && atlasBranch < internalOnly && internalOnly < refusal
     && refusal < call && call < normalMode,

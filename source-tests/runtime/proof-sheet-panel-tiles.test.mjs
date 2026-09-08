@@ -41,13 +41,13 @@ const surfaces = surfaceKeys.map((surfaceKey, index) => ({
 
 // A panel is a SOLID RECTANGLE of continuous artwork (RULE 0.15), so the
 // fixture is one: opaque, corner to corner, no alpha and no hole.
-function panelBytes(hue) {
-  return sharp({ create: { width: 24, height: 16, channels: 3, background: { r: hue, g: 60, b: 120 } } })
+function panelBytes(hue, surface) {
+  return sharp({ create: { width: Math.round((surface.widthInches + 10) * 4), height: Math.round((surface.heightInches + 10) * 4), channels: 3, background: { r: hue, g: 60, b: 120 } } })
     .png().toBuffer();
 }
 
 async function panelSet(keys = surfaceKeys) {
-  const entries = await Promise.all(keys.map(async (key, index) => [key, await panelBytes(20 + index * 20)]));
+  const entries = await Promise.all(keys.map(async (key, index) => [key, await panelBytes(20 + index * 20, surfaces.find((item) => item.surfaceKey === key) || surfaces[0])]));
   return Object.fromEntries(entries);
 }
 

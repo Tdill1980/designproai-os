@@ -114,6 +114,13 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
     # Same lesson as the v9 DB pin in CLAUDE.md: a gate must not learn a
     # requirement one release before the writer that satisfies it.
     runtime_keys |= {"DESIGNPRO_ATLAS_PANEL_FINISH"} if "DESIGNPRO_ATLAS_PANEL_FINISH" in runtime else set()
+    # Old env files remain upgradeable; new independent graph opt-ins are
+    # strict booleans when present and do not require any new secret keys.
+    for flag in {"DESIGNPRO_PANELPROFILEOUTPUT_ENABLED", "DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED"}:
+        if flag in runtime:
+            if runtime[flag] not in {"true", "false"}:
+                raise ValidationError(f"{flag} must be exactly true or false")
+            runtime_keys.add(flag)
     runtime_keys |= TOPAZ_PROVIDER_KEYS if topaz_mode == "true" else set()
     exact_keys("runtime", runtime, runtime_keys)
     # DESIGNPRO_ADDITIONAL_ORIGINS is optional: present only when a second
@@ -201,4 +208,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

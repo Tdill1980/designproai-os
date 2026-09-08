@@ -4,11 +4,11 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("the worker preserves legacy retry contracts but never auto-requeues A.T.L.A.S.", () => {
+test("the worker retries A.T.L.A.S. only for explicitly recoverable technical failures", () => {
   const worker = read("runtime/generation-worker.cjs");
   assert.match(worker, /let enteredFlatFirst = false/);
   assert.match(worker, /enteredFlatFirst = isFlatFirst/);
-  assert.match(worker, /p_retryable:\s*enteredFlatFirst \? false : error\?\.retryable !== false/);
+  assert.match(worker, /p_retryable:\s*enteredFlatFirst \? error\?\.retryable === true : error\?\.retryable !== false/);
   assert.match(worker, /const retryable = result\.requiresExplicitResume !== true/);
   assert.match(worker, /generation_views_incomplete[\s\S]*?p_retryable:\s*false/);
   assert.doesNotMatch(worker, /generation_slots_failed[\s\S]{0,500}?p_retryable:\s*true/);
@@ -18,7 +18,15 @@ test("Calls 1-7 do not wait on production geometry; production remains strict", 
   const worker = read("runtime/generation-worker.cjs");
   const claimant = read("runtime/designpro-standalone-claimant.cjs");
   const flatFirstBranch = worker.match(/if \(isFlatFirst\) \{[\s\S]*?\n      \}/)?.[0] || "";
-  assert.match(flatFirstBranch, /resolveFlatAtlasPreviewDimensions/);
+  const geometryResolver = worker.slice(worker.indexOf("async function resolveAtlasClaimGeometry("),
+    worker.indexOf("function createGenerationWorker("));
+  assert.match(flatFirstBranch, /await resolveAtlasClaimGeometry\(/);
+  assert.match(geometryResolver, /resolveDimensions = resolveFlatAtlasPreviewDimensions,/);
+  assert.match(geometryResolver, /if \(!prepared\) \{\s*dimensionRow = await resolveDimensions\(/);
+  assert.match(geometryResolver, /if \(parentManifest\) \{\s*return \{/,
+    "a verified saved parent returns its frozen geometry before any new preview lookup");
+  assert.match(geometryResolver, /proofGeometryAuthority: parentManifest\.geometryAuthority/);
+  assert.match(geometryResolver, /geometryResolution: parentManifest\.geometryResolution/);
   assert.doesNotMatch(flatFirstBranch, /resolveOrQueueUniversalDimensions/);
   assert.doesNotMatch(worker, /resolveOrQueueUniversalDimensions/);
   assert.match(claimant, /resolveOrQueueUniversalDimensions\(sb, vehicle, stage, run\.id\)/);
